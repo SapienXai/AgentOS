@@ -526,11 +526,7 @@ export function resolveInitialOnboardingModelId(snapshot: MissionControlSnapshot
     snapshot.diagnostics.modelReadiness.defaultModel ||
     null;
 
-  if (
-    snapshot.workspaces.length > 0 &&
-    resolvedDefaultModel &&
-    snapshot.diagnostics.modelReadiness.defaultModelReady
-  ) {
+  if (resolvedDefaultModel && snapshot.diagnostics.modelReadiness.defaultModelReady) {
     return resolvedDefaultModel;
   }
 

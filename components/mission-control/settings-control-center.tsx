@@ -28,6 +28,11 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { MissionControlShellSettingsPanelProps } from "@/components/mission-control/mission-control-shell.settings";
+import {
+  resolveTransportDiagnosticsSummary,
+  type TransportDiagnosticsSummary,
+  type TransportStatusTone
+} from "@/components/mission-control/settings-control-center.utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,6 +68,7 @@ export function SettingsControlCenter(props: MissionControlShellSettingsPanelPro
   const {
     snapshot,
     surfaceTheme,
+    connectionState,
     gatewayDraft,
     workspaceRootDraft,
     openClawBinarySelection,
@@ -134,6 +140,10 @@ export function SettingsControlCenter(props: MissionControlShellSettingsPanelPro
       failed: latestCommands.filter((command) => command.status !== "ok").length
     }),
     [latestCommands]
+  );
+  const transportSummary = useMemo(
+    () => resolveTransportDiagnosticsSummary(snapshot.diagnostics.transport, connectionState),
+    [connectionState, snapshot.diagnostics.transport]
   );
   const nativeAuthLabel = gatewayAuthStatus
     ? gatewayAuthStatus.native.ok
@@ -770,6 +780,7 @@ export function SettingsControlCenter(props: MissionControlShellSettingsPanelPro
                   }
                 >
                   <div className="space-y-2">
+                    <TransportDiagnosticsPanel summary={transportSummary} surfaceTheme={surfaceTheme} />
                     {latestCommands.length ? (
                       latestCommands.map((command) => (
                         <details
@@ -1096,6 +1107,114 @@ function DiagnosticBlock({
         {value || "No output"}
       </pre>
     </div>
+  );
+}
+
+function TransportDiagnosticsPanel({
+  summary,
+  surfaceTheme
+}: {
+  summary: TransportDiagnosticsSummary;
+  surfaceTheme: SurfaceTheme;
+}) {
+  return (
+    <div className={cn("rounded-[18px] border p-3.5", insetPanelClassName(surfaceTheme))}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className={labelClassName(surfaceTheme)}>Gateway Transport</p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <p className={cn("font-medium", surfaceTheme === "light" ? "text-[#2f251f]" : "text-slate-100")}>
+              {summary.connectionLabel}
+            </p>
+            <span className={transportTonePillClassName(summary.statusTone, surfaceTheme)}>
+              {summary.modeLabel}
+            </span>
+          </div>
+        </div>
+        <div className="text-left sm:text-right">
+          <p className={labelClassName(surfaceTheme)}>Snapshot stream</p>
+          <p className={cn("mt-1.5 text-sm", surfaceTheme === "light" ? "text-[#4f3e34]" : "text-slate-200")}>
+            {summary.streamLabel}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-4">
+        <Metric
+          label="Protocol"
+          value={summary.protocolLabel}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="Fallbacks"
+          value={String(summary.fallbackTotal)}
+          badge={summary.fallbackTotal > 0 ? "Used" : "Clean"}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="Last connected"
+          value={summary.lastConnectedLabel}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="Last disconnected"
+          value={summary.lastDisconnectedLabel}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+      </div>
+
+      {summary.lastNativeError ? (
+        <div className="mt-3">
+          <DiagnosticBlock title="Last native error" value={summary.lastNativeError} surfaceTheme={surfaceTheme} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function transportTonePillClassName(tone: TransportStatusTone, surfaceTheme: SurfaceTheme) {
+  const base = "inline-flex shrink-0 items-center rounded-full border px-2 py-1 text-[9px] uppercase tracking-[0.12em]";
+
+  if (tone === "success") {
+    return cn(
+      base,
+      surfaceTheme === "light"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+        : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
+    );
+  }
+
+  if (tone === "danger") {
+    return cn(
+      base,
+      surfaceTheme === "light"
+        ? "border-red-200 bg-red-50 text-red-700"
+        : "border-rose-300/20 bg-rose-300/10 text-rose-100"
+    );
+  }
+
+  if (tone === "warning") {
+    return cn(
+      base,
+      surfaceTheme === "light"
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : "border-amber-300/20 bg-amber-300/10 text-amber-100"
+    );
+  }
+
+  return cn(
+    base,
+    surfaceTheme === "light"
+      ? "border-[#e2d1c4] bg-white text-[#7b6353]"
+      : "border-white/[0.08] bg-[#101a2a]/92 text-slate-300"
   );
 }
 

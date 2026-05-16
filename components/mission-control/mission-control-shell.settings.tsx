@@ -29,6 +29,7 @@ import { isOpenClawOnboardingModelReady } from "@/lib/openclaw/readiness";
 import { cn } from "@/lib/utils";
 
 type SurfaceTheme = "dark" | "light";
+type SnapshotStreamState = "connecting" | "live" | "retrying";
 type UpdateRunState = "idle" | "running" | "success" | "error";
 type GatewayControlAction = "start" | "stop" | "restart";
 type OnboardingWizardStage = "system" | "models";
@@ -36,6 +37,7 @@ type OnboardingWizardStage = "system" | "models";
 export type MissionControlShellSettingsPanelProps = {
   snapshot: MissionControlSnapshot;
   surfaceTheme: SurfaceTheme;
+  connectionState: SnapshotStreamState;
   gatewayDraft: string;
   workspaceRootDraft: string;
   isSavingGateway: boolean;

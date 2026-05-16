@@ -109,7 +109,7 @@ test("install summary reflects the active install family and root", () => {
   );
 });
 
-test("initial onboarding model stays blank until a connected provider can justify a recommendation", () => {
+test("initial onboarding model uses a ready default without forcing discovery", () => {
   const blankSnapshot = {
     workspaces: [],
     diagnostics: {
@@ -162,6 +162,24 @@ test("initial onboarding model stays blank until a connected provider can justif
       }
     }
   } as unknown as MissionControlSnapshot;
+  const readyDefaultSnapshot = {
+    workspaces: [],
+    diagnostics: {
+      modelReadiness: {
+        resolvedDefaultModel: "openai-codex/gpt-5.4",
+        defaultModel: "openai-codex/gpt-5.4",
+        defaultModelReady: true,
+        recommendedModelId: "openai-codex/gpt-5.4",
+        authProviders: [
+          {
+            provider: "openai-codex",
+            connected: true,
+            canLogin: true
+          }
+        ]
+      }
+    }
+  } as unknown as MissionControlSnapshot;
   const workspaceSnapshot = {
     workspaces: [
       {
@@ -188,6 +206,7 @@ test("initial onboarding model stays blank until a connected provider can justif
   assert.equal(resolveInitialOnboardingModelId(blankSnapshot), null);
   assert.equal(resolveInitialOnboardingModelId(staleDefaultSnapshot), null);
   assert.equal(resolveInitialOnboardingModelId(connectedSnapshot), null);
+  assert.equal(resolveInitialOnboardingModelId(readyDefaultSnapshot), "openai-codex/gpt-5.4");
   assert.equal(resolveInitialOnboardingModelId(workspaceSnapshot), "openai-codex/gpt-5.4");
 });
 

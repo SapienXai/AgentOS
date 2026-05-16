@@ -38,7 +38,8 @@ const docsUrl = OPENCLAW_INSTALL_DOCS_URL;
 const commandTimeoutMs = 10 * 60 * 1000;
 const gatewayStatusTimeoutMs = 8_000;
 const readyTimeoutMs = 12_000;
-const readyPollIntervalMs = 500;
+const readyPollIntervalMs = 250;
+const readySnapshotIntervalMs = 2_000;
 type CommandResult = {
   code: number | null;
   stdout: string;
@@ -326,7 +327,7 @@ export async function POST(request: Request) {
           });
 
           try {
-            snapshot = await waitForReadySnapshot();
+            snapshot = await waitForReadySnapshot(gatewayStatus);
           } catch (error) {
             const gatewayStatusRetry = await readGatewayStatus(openClawBin);
             const gatewayModeBlocked = needsGatewayModeLocalRepair(gatewayStatusRetry);
@@ -539,23 +540,53 @@ async function resolveRuntimeAgentIdFromState() {
   return agentConfig.value.find((agent) => typeof agent.id === "string" && agent.id.trim())?.id ?? null;
 }
 
-async function waitForReadySnapshot() {
+async function waitForReadySnapshot(gatewayStatus?: GatewayStatusPayload | null) {
   const startedAt = Date.now();
+  const gatewayPort = gatewayStatus?.gateway?.port;
+  let latestSnapshot: MissionControlSnapshot | null = null;
+  let lastSnapshotAt = 0;
 
-  const immediateSnapshot = await getMissionControlSnapshot({ force: true, loadProfile: "system" });
+  const loadReadinessSnapshot = async () => {
+    latestSnapshot = await getMissionControlSnapshot({ force: true, loadProfile: "system" });
+    lastSnapshotAt = Date.now();
 
-  if (isOpenClawReady(immediateSnapshot)) {
+    if (isOpenClawReady(latestSnapshot)) {
+      return latestSnapshot;
+    }
+
+    return null;
+  };
+
+  if ((await probeLocalGatewayStatus(gatewayPort))?.rpc?.ok) {
+    const readySnapshot = await loadReadinessSnapshot();
+
+    if (readySnapshot) {
+      return readySnapshot;
+    }
+  }
+
+  const immediateSnapshot = await loadReadinessSnapshot();
+
+  if (immediateSnapshot) {
     return immediateSnapshot;
   }
 
   while (Date.now() - startedAt < readyTimeoutMs) {
-    await delay(readyPollIntervalMs);
+    const localProbe = await probeLocalGatewayStatus(gatewayPort);
+    const shouldReloadSnapshot =
+      Boolean(localProbe?.rpc?.ok) ||
+      !latestSnapshot ||
+      Date.now() - lastSnapshotAt >= readySnapshotIntervalMs;
 
-    const snapshot = await getMissionControlSnapshot({ force: true, loadProfile: "system" });
+    if (shouldReloadSnapshot) {
+      const readySnapshot = await loadReadinessSnapshot();
 
-    if (isOpenClawReady(snapshot)) {
-      return snapshot;
+      if (readySnapshot) {
+        return readySnapshot;
+      }
     }
+
+    await delay(readyPollIntervalMs);
   }
 
   throw new Error(`Readiness check exceeded ${Math.round(readyTimeoutMs / 1000)} seconds.`);
@@ -690,6 +721,9 @@ type GatewayStatusPayload = {
     runtime?: {
       status?: string;
     };
+  };
+  gateway?: {
+    port?: number;
   };
   rpc?: {
     ok?: boolean;

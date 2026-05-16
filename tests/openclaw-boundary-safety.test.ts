@@ -242,9 +242,37 @@ test("update check treats loading registry status as loading instead of up to da
 test("diagnostics command stats count the visible recent command window", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/settings-control-center.tsx"), "utf8");
 
+  assert.match(source, /snapshot\.diagnostics\.transport/);
+  assert.match(source, /<TransportDiagnosticsPanel summary=\{transportSummary\}/);
   assert.match(source, /const latestCommands = commandHistory\.slice\(0, 6\);/);
   assert.match(source, /ok: latestCommands\.filter\(\(command\) => command\.status === "ok"\)\.length/);
   assert.match(source, /failed: latestCommands\.filter\(\(command\) => command\.status !== "ok"\)\.length/);
+});
+
+test("onboarding provider flow skips discovery when provider models already exist", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding-provider-flow.tsx"), "utf8");
+
+  assert.match(source, /hasVisibleModelsForProvider\(providerId\)/);
+  assert.match(source, /result\.connection\.connected &&[\s\S]*autoDiscover &&[\s\S]*!hasVisibleModelsForProvider\(providerId\)/);
+  assert.match(source, /shouldDiscover \? "discovering" : "idle"/);
+});
+
+test("onboarding runtime step only shows checking while setup is running", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding.stages.tsx"), "utf8");
+
+  assert.match(source, /const isChecking = step\.state === "current" && run\.runState === "running";/);
+  assert.match(source, /isRuntimeStep[\s\S]*\? "Needs verification"/);
+  assert.doesNotMatch(source, /run\.runState === "running" \|\| isRuntimeStep/);
+});
+
+test("onboarding refreshes full model snapshot before entering model setup", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
+
+  assert.match(source, /const refreshOnboardingModelSnapshot = useCallback/);
+  assert.match(source, /await refreshOnboardingModelSnapshot\(event\.snapshot \?\? null\)/);
+  assert.match(source, /const continueToModelSetup = \(\) => \{/);
+  assert.match(source, /onContinueToModels=\{continueToModelSetup\}/);
+  assert.doesNotMatch(source, /onContinueToModels=\{\(\) => setOnboardingStage\("models"\)\}/);
 });
 
 function resolveLocalOpenClawImport(filePath: string, specifier: string) {

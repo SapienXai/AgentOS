@@ -233,11 +233,15 @@ export function OpenClawOnboardingProviderFlow({
 
     try {
       const result = await adapter.getConnectionStatus();
-      const nextState = result.connection.connected && autoDiscover ? "discovering" : "idle";
+      const shouldDiscover =
+        result.connection.connected &&
+        autoDiscover &&
+        !hasVisibleModelsForProvider(providerId);
+      const nextState = shouldDiscover ? "discovering" : "idle";
 
       applyActionResult(providerId, result, nextState);
 
-      if (result.connection.connected && autoDiscover) {
+      if (shouldDiscover) {
         await discoverProvider(providerId, true);
       }
     } catch (error) {
@@ -266,17 +270,21 @@ export function OpenClawOnboardingProviderFlow({
       const result = await adapter.connect({
         apiKey: draft.apiKey
       });
+      const shouldDiscover =
+        result.connection.connected &&
+        !result.manualCommand &&
+        !hasVisibleModelsForProvider(providerId);
 
       applyActionResult(
         providerId,
         result,
-        result.manualCommand ? "idle" : result.connection.connected ? "discovering" : "idle",
+        shouldDiscover ? "discovering" : "idle",
         {
           apiKey: result.manualCommand ? draft.apiKey : ""
         }
       );
 
-      if (result.connection.connected && !result.manualCommand) {
+      if (shouldDiscover) {
         await discoverProvider(providerId, true);
       }
     } catch (error) {
@@ -328,6 +336,15 @@ export function OpenClawOnboardingProviderFlow({
     }
 
     onSelectedModelIdChange(model.id);
+  }
+
+  function hasVisibleModelsForProvider(providerId: AddModelsProviderId) {
+    return snapshot.models.some(
+      (model) =>
+        modelMatchesProvider(providerId, model.id, model.provider) &&
+        model.available !== false &&
+        !model.missing
+    );
   }
 
   async function copyText(value: string) {

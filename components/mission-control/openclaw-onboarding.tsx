@@ -104,7 +104,7 @@ export function OpenClawOnboarding({
   const modelReady =
     modelSwitchFeedback.phase === "success" ||
     showReadyState ||
-    (isOpenClawOnboardingModelReady(snapshot) && hasWorkspaceSetup);
+    isOpenClawOnboardingModelReady(snapshot);
   const showLaunchpad = modelReady && (showReadyState || !hasWorkspaceSetup);
   const isLaunchpadBuilding = launchpadCreateRunState === "running";
   const workspaceCount = snapshot.workspaces.length;

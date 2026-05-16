@@ -1008,6 +1008,40 @@ export function MissionControlShell({
     });
   };
 
+  const hydrateOnboardingModelSelection = useCallback((nextSnapshot: MissionControlSnapshot) => {
+    const preferredModelId = resolveInitialOnboardingModelId(nextSnapshot);
+
+    if (!preferredModelId) {
+      return;
+    }
+
+    hydratedOnboardingModelIdRef.current = preferredModelId;
+    setSelectedOnboardingModelId((currentModelId) =>
+      currentModelId.trim() ? currentModelId : preferredModelId
+    );
+  }, []);
+
+  const refreshOnboardingModelSnapshot = useCallback(async (fallbackSnapshot?: MissionControlSnapshot | null) => {
+    let nextSnapshot = fallbackSnapshot ?? null;
+
+    try {
+      nextSnapshot = await refreshSnapshot({ force: true });
+    } catch {
+      // Keep the streamed system snapshot if the full refresh is unavailable.
+    }
+
+    if (nextSnapshot) {
+      setSnapshot(nextSnapshot);
+      hydrateOnboardingModelSelection(nextSnapshot);
+    }
+
+    return nextSnapshot;
+  }, [
+    hydrateOnboardingModelSelection,
+    refreshSnapshot,
+    setSnapshot
+  ]);
+
   const confirmTaskAbort = useCallback(async () => {
     if (!taskAbortRequest || taskAbortRunState === "running") {
       return;
@@ -1375,15 +1409,20 @@ export function MissionControlShell({
             } else {
               sawDone = true;
               setOnboardingPhase(event.phase);
-              setOnboardingStatusMessage(null);
               setOnboardingResultMessage(event.message);
               setOnboardingManualCommand(event.manualCommand ?? null);
               setOnboardingDocsUrl(event.docsUrl ?? null);
-              setOnboardingRunState(event.ok ? "success" : "error");
-
-              if (event.snapshot) {
-                setSnapshot(event.snapshot);
+              if (event.ok) {
+                setOnboardingStatusMessage("Refreshing model status...");
+                await refreshOnboardingModelSnapshot(event.snapshot ?? null);
+              } else {
+                setOnboardingStatusMessage(null);
+                if (event.snapshot) {
+                  setSnapshot(event.snapshot);
+                }
               }
+              setOnboardingStatusMessage(null);
+              setOnboardingRunState(event.ok ? "success" : "error");
 
               if (event.ok) {
                 toast.success("System setup ready.", {
@@ -1409,15 +1448,20 @@ export function MissionControlShell({
         if (event.type === "done") {
           sawDone = true;
           setOnboardingPhase(event.phase);
-          setOnboardingStatusMessage(null);
           setOnboardingResultMessage(event.message);
           setOnboardingManualCommand(event.manualCommand ?? null);
           setOnboardingDocsUrl(event.docsUrl ?? null);
-          setOnboardingRunState(event.ok ? "success" : "error");
-
-          if (event.snapshot) {
-            setSnapshot(event.snapshot);
+          if (event.ok) {
+            setOnboardingStatusMessage("Refreshing model status...");
+            await refreshOnboardingModelSnapshot(event.snapshot ?? null);
+          } else {
+            setOnboardingStatusMessage(null);
+            if (event.snapshot) {
+              setSnapshot(event.snapshot);
+            }
           }
+          setOnboardingStatusMessage(null);
+          setOnboardingRunState(event.ok ? "success" : "error");
         }
       }
 
@@ -2473,9 +2517,20 @@ export function MissionControlShell({
     openSetupWizard("system");
   };
 
+  const continueToModelSetup = () => {
+    setOnboardingStatusMessage("Refreshing model status...");
+    void refreshOnboardingModelSnapshot(snapshot)
+      .catch(() => {})
+      .finally(() => {
+        setOnboardingStatusMessage(null);
+        setOnboardingStage("models");
+      });
+  };
+
   const settingsPanelProps: MissionControlShellSettingsPanelProps = {
     snapshot,
     surfaceTheme,
+    connectionState,
     gatewayDraft,
     workspaceRootDraft,
     isSavingGateway,
@@ -2553,7 +2608,7 @@ export function MissionControlShell({
           onOpenGatewayAuthSettings={openGatewayAuthSettings}
           onEnterAgentOS={enterAgentOS}
           onCreateWorkspace={runLaunchpadWorkspaceCreate}
-          onContinueToModels={() => setOnboardingStage("models")}
+          onContinueToModels={continueToModelSetup}
           onBackToSystem={() => setOnboardingStage("system")}
           onSelectStage={(stage) => {
             setShowOnboardingReadyState(false);
@@ -3177,7 +3232,7 @@ export function MissionControlShell({
             onOpenGatewayAuthSettings={openGatewayAuthSettings}
             onEnterAgentOS={enterAgentOS}
             onCreateWorkspace={runLaunchpadWorkspaceCreate}
-            onContinueToModels={() => setOnboardingStage("models")}
+            onContinueToModels={continueToModelSetup}
             onBackToSystem={() => setOnboardingStage("system")}
             onSelectStage={(stage) => {
               setShowOnboardingReadyState(false);

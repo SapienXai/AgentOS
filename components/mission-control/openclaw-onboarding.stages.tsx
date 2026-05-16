@@ -18,7 +18,6 @@ import {
   type SurfaceTheme,
   type StepState
 } from "@/components/mission-control/openclaw-onboarding.utils";
-import { hasAgentOSWorkspaceSetup } from "@/components/mission-control/mission-control-shell.utils";
 import { OpenClawOnboardingProviderFlow } from "@/components/mission-control/openclaw-onboarding-provider-flow";
 import { formatModelLabel } from "@/lib/openclaw/presenters";
 import { isOpenClawOnboardingModelReady } from "@/lib/openclaw/readiness";
@@ -80,7 +79,17 @@ export function SystemStage({
       <div className="mt-2.5 space-y-1.5">
         {steps.map((step, index) => {
           const isRuntimeStep = step.id === "runtime";
-          const isChecking = step.state === "current" && (run.runState === "running" || isRuntimeStep);
+          const isChecking = step.state === "current" && run.runState === "running";
+          const badgeLabel =
+            step.state === "complete"
+              ? "Ready"
+              : step.state === "current"
+                ? isChecking
+                  ? "Checking"
+                  : isRuntimeStep
+                    ? "Needs verification"
+                    : "Pending"
+                : "Pending";
 
           return (
             <div
@@ -173,7 +182,7 @@ export function SystemStage({
                       stepBadgeClassName(step.state, surfaceTheme)
                     )}
                   >
-                    {step.state === "complete" ? "Ready" : step.state === "current" ? (isChecking ? "Checking" : "Active") : "Pending"}
+                    {badgeLabel}
                   </span>
                 </div>
                 <p
@@ -278,9 +287,8 @@ export function ModelStage({
     snapshot.diagnostics.modelReadiness.resolvedDefaultModel ||
     snapshot.diagnostics.modelReadiness.defaultModel ||
     null;
-  const hasWorkspaceSetup = hasAgentOSWorkspaceSetup(snapshot);
-  const modelReady = isOpenClawOnboardingModelReady(snapshot) && hasWorkspaceSetup;
-  const defaultModelLabel = hasWorkspaceSetup ? resolveModelDisplayLabel(defaultModelId, availableModels) : null;
+  const modelReady = isOpenClawOnboardingModelReady(snapshot);
+  const defaultModelLabel = resolveModelDisplayLabel(defaultModelId, availableModels);
   const switchTargetLabel = resolveModelDisplayLabel(selectedModelId, availableModels);
   const hasPendingModelSwitch = Boolean(
     selectedModelId.trim() && selectedModelId.trim() !== (defaultModelId?.trim() ?? "")
