@@ -3,6 +3,7 @@ import type {
   ModelsPayload,
   ModelsStatusPayload
 } from "@/lib/openclaw/client/gateway-client";
+import { resolveModelRecordProvider } from "@/lib/openclaw/domains/model-provider-connection";
 import type { ModelRecord, OpenClawAgent } from "@/lib/openclaw/types";
 
 function uniqueStrings(values: string[]) {
@@ -67,7 +68,7 @@ export function inferFallbackModelMetadata(modelId: string): {
     };
   }
 
-  if (provider === "gemini") {
+  if (provider === "google" || provider === "gemini") {
     return {
       contextWindow: 1000000,
       local: false
@@ -138,7 +139,8 @@ export function buildModelStatusFromAgentConfig(
 
 export function buildModelRecords(
   models: ModelsPayload["models"],
-  agents: OpenClawAgent[]
+  agents: OpenClawAgent[],
+  modelStatus?: ModelsStatusPayload
 ): ModelRecord[] {
   const modelUsage = new Map<string, number>();
 
@@ -149,7 +151,7 @@ export function buildModelRecords(
   return models.map((model) => ({
     id: model.key,
     name: model.name,
-    provider: model.key.split("/")[0] || "unknown",
+    provider: resolveModelRecordProvider(model.key, modelStatus),
     input: model.input,
     contextWindow: model.contextWindow,
     local: model.local,

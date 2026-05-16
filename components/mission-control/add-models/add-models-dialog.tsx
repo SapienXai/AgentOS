@@ -1114,7 +1114,7 @@ function resolveConnectionDetail(
   const readinessProvider = snapshot.diagnostics.modelReadiness.authProviders.find(
     (provider) => provider.provider === providerId
   );
-  const localModelCount = snapshot.models.filter((model) => model.id.startsWith(`${providerId}/`)).length;
+  const localModelCount = snapshot.models.filter((model) => modelMatchesProvider(providerId, model.id, model.provider)).length;
 
   if (providerId === "ollama") {
     return {
@@ -1142,6 +1142,16 @@ function resolveConnectionDetail(
         ? `${localModelCount} model${localModelCount === 1 ? "" : "s"} are already saved in AgentOS. Connect ${getModelProviderDescriptor(providerId).shortLabel} to use them.`
         : getModelProviderDescriptor(providerId).helperText
   };
+}
+
+function modelMatchesProvider(providerId: AddModelsProviderId, modelId: string, modelProvider?: string | null) {
+  const provider = modelProvider || modelId.split("/", 1)[0] || "";
+
+  if (providerId === "openai-codex") {
+    return provider === "openai-codex" || provider === "openai";
+  }
+
+  return provider === providerId;
 }
 
 function buildProgressSteps(

@@ -2095,7 +2095,7 @@ function formatProviderLabel(provider: string) {
     return "xAI";
   }
 
-  if (normalized === "gemini") {
+  if (normalized === "google" || normalized === "gemini") {
     return "Gemini";
   }
 
@@ -2124,7 +2124,7 @@ function resolveProviderSidebarDetail(provider: string) {
     return "Paste an API key to unlock OpenRouter-hosted routes.";
   }
 
-  if (normalized === "gemini") {
+  if (normalized === "google" || normalized === "gemini") {
     return "Paste a Gemini API key to unlock Gemini-hosted routes.";
   }
 

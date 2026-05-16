@@ -69,7 +69,7 @@ export const modelProviderRegistry: ModelProviderDescriptor[] = [
     helperText: "Use this for API-key-based OpenAI routing."
   },
   {
-    id: "gemini",
+    id: "google",
     label: "Gemini",
     shortLabel: "Gemini",
     description: "Add a Gemini API key, discover Google models, and pick the routes you want.",
@@ -132,12 +132,20 @@ export function isAddModelsProviderId(value: unknown): value is AddModelsProvide
 }
 
 export function normalizeAddModelsProviderId(value: unknown): AddModelsProviderId | null {
+  if (value === "gemini") {
+    return "google";
+  }
+
   if (isAddModelsProviderId(value)) {
     return value;
   }
 
   if (value && typeof value === "object" && "id" in value) {
     const candidateId = (value as { id?: unknown }).id;
+
+    if (candidateId === "gemini") {
+      return "google";
+    }
 
     if (isAddModelsProviderId(candidateId)) {
       return candidateId;

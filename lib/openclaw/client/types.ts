@@ -267,6 +267,8 @@ export type ModelsStatusPayload = {
       providers?: Array<{
         provider?: string;
         status?: string;
+        profiles?: unknown[];
+        effectiveProfiles?: unknown[];
       }>;
     };
   };

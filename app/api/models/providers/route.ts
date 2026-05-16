@@ -18,7 +18,9 @@ import {
   resolveOpenAiCodexAuthRecoveryMessage
 } from "@/lib/openclaw/model-auth-errors";
 import { clearOpenAiCodexAuthRuntimeSmokeFailures } from "@/lib/openclaw/domains/control-plane-settings";
+import { buildModelStatusConnectionStatus } from "@/lib/openclaw/domains/model-provider-connection";
 import { clearMissionControlCaches, getMissionControlSnapshot } from "@/lib/agentos/control-plane";
+import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import type {
   AddModelsCatalogModel,
   AddModelsEmptyState,
@@ -30,6 +32,7 @@ import type {
 } from "@/lib/agentos/contracts";
 import type {
   ModelsPayload,
+  ModelsStatusPayload,
   OpenClawModelScanPayload as OpenClawModelScanPayloadFromClient
 } from "@/lib/openclaw/client/gateway-client";
 
@@ -54,7 +57,7 @@ const providerIdSchema = z.enum([
   "openai",
   "anthropic",
   "xai",
-  "gemini",
+  "google",
   "deepseek",
   "mistral"
 ]);
@@ -106,6 +109,9 @@ type OpenClawConfigPayload = {
       model?: {
         primary?: string;
       };
+      agentRuntime?: {
+        id?: string;
+      };
       models?: Record<string, Record<string, never>>;
     };
   };
@@ -132,6 +138,7 @@ type OpenClawAuthProfilesPayload = {
 
 type OpenClawModelsListPayload = ModelsPayload;
 type OpenClawModelScanPayload = OpenClawModelScanPayloadFromClient;
+type OpenClawModelsStatusPayload = ModelsStatusPayload;
 
 type OllamaState =
   | {
@@ -200,6 +207,7 @@ async function handleProviderAction(
 
   if (input.action === "status") {
     const statusContext = await readProviderConnectionContext(input.provider);
+    await clearConnectedProviderWarnings(input.provider, statusContext.connection);
 
     return buildActionResult({
       ok: true,
@@ -303,6 +311,7 @@ async function discoverProviderModels(
   commandBin = "openclaw"
 ): Promise<AddModelsProviderActionResult> {
   const { connection, ollamaState, configuredModelIds } = await readProviderConnectionContext(provider);
+  await clearConnectedProviderWarnings(provider, connection);
   let models: AddModelsCatalogModel[];
   let fallbackMessage: string | null = null;
 
@@ -375,6 +384,17 @@ async function readProviderCatalog(
   commandBin = "openclaw"
 ): Promise<AddModelsCatalogModel[]> {
   if (provider === "openai-codex") {
+    try {
+      const providerPayload = await readProviderModelPayload(provider, { all: true, provider: "openai" }, commandBin);
+      const providerModels = normalizeCatalogModels(provider, providerPayload.models, configuredModelIds);
+
+      if (providerModels.length > 0) {
+        return providerModels;
+      }
+    } catch {
+      // Fall through to known canonical Codex routes below.
+    }
+
     return buildFallbackCodexCatalog(configuredModelIds);
   }
 
@@ -506,18 +526,18 @@ function buildFallbackCodexCatalog(configuredModelIds: Set<string>): AddModelsCa
     {
       id: "openai/gpt-5.5",
       name: "GPT-5.5",
-      contextWindow: null,
+      contextWindow: 272000,
+      recommended: true
+    },
+    {
+      id: "openai/gpt-5.4-mini",
+      name: "GPT-5.4 Mini",
+      contextWindow: 272000,
       recommended: true
     },
     {
       id: "openai/gpt-5.5-pro",
       name: "GPT-5.5 Pro",
-      contextWindow: null,
-      recommended: false
-    },
-    {
-      id: "openai/gpt-5.2",
-      name: "GPT-5.2",
       contextWindow: null,
       recommended: false
     }
@@ -637,12 +657,13 @@ function buildActionResult({
 }
 
 async function readProviderConnectionContext(provider: AddModelsProviderId) {
-  const [configuredModelIds, config, authProfiles] = await Promise.all([
+  const [configuredModelIds, config, authProfiles, modelStatus] = await Promise.all([
     readConfiguredModelIds(),
     readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {}),
     readJsonFile<OpenClawAuthProfilesPayload>(openClawAuthProfilesPath, {
       version: 1
-    })
+    }),
+    readProviderModelStatus()
   ]);
 
   if (provider === "ollama") {
@@ -656,7 +677,9 @@ async function readProviderConnectionContext(provider: AddModelsProviderId) {
   }
 
   return {
-    connection: buildFileBasedConnectionStatus(provider, config, authProfiles, configuredModelIds),
+    connection:
+      buildModelStatusConnectionStatus(provider, modelStatus, configuredModelIds) ??
+      buildFileBasedConnectionStatus(provider, config, authProfiles, configuredModelIds),
     configuredModelIds,
     ollamaState: null
   };
@@ -726,6 +749,27 @@ async function readConfiguredModelIds() {
   const modelEntries = config.agents?.defaults?.models ?? {};
 
   return new Set(Object.keys(modelEntries));
+}
+
+async function readProviderModelStatus(): Promise<OpenClawModelsStatusPayload | null> {
+  try {
+    return await getOpenClawAdapter().getModelStatus({ timeoutMs: 8_000 });
+  } catch {
+    return null;
+  }
+}
+
+async function clearConnectedProviderWarnings(
+  provider: AddModelsProviderId,
+  connection: AddModelsProviderConnectionStatus
+) {
+  if (
+    provider === "openai-codex" &&
+    connection.connected &&
+    await clearOpenAiCodexAuthRuntimeSmokeFailures()
+  ) {
+    clearMissionControlCaches();
+  }
 }
 
 function resolveOllamaEmptyState(ollamaState: OllamaState | null): AddModelsEmptyState | null {
@@ -817,8 +861,13 @@ async function persistProviderToken(provider: AddModelsProviderId, token: string
 }
 
 async function addModelsToConfig(provider: AddModelsProviderId, modelIds: string[]) {
-  const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
   const normalizedModelIds = modelIds.map((modelId) => normalizeModelIdForProvider(provider, modelId));
+
+  if (await addModelsToConfigViaGateway(provider, normalizedModelIds)) {
+    return;
+  }
+
+  const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
 
   config.meta = {
     ...config.meta,
@@ -841,9 +890,76 @@ async function addModelsToConfig(provider: AddModelsProviderId, modelIds: string
       ...(config.agents.defaults.model || {}),
       primary: normalizedModelIds[0]
     };
+
+    if (provider === "openai-codex") {
+      config.agents.defaults.agentRuntime = {
+        ...(config.agents.defaults.agentRuntime || {}),
+        id: "codex"
+      };
+    } else if (provider === "openai") {
+      config.agents.defaults.agentRuntime = {
+        ...(config.agents.defaults.agentRuntime || {}),
+        id: "pi"
+      };
+    }
   }
 
   await writeJsonFile(openClawConfigPath, config);
+}
+
+async function addModelsToConfigViaGateway(provider: AddModelsProviderId, normalizedModelIds: string[]) {
+  try {
+    const snapshot = await getOpenClawAdapter().call<Record<string, unknown>>("config.get", {}, { timeoutMs: 5_000 });
+    const config = isRecord(snapshot.config) ? snapshot.config : {};
+    const patch: Record<string, unknown> = {
+      agents: {
+        defaults: {
+          models: Object.fromEntries(normalizedModelIds.map((modelId) => [modelId, {}]))
+        }
+      }
+    };
+    const defaultsPatch = (patch.agents as { defaults: Record<string, unknown> }).defaults;
+
+    if (!readConfigPath(config, "agents.defaults.model.primary") && normalizedModelIds[0]) {
+      defaultsPatch.model = {
+        primary: normalizedModelIds[0]
+      };
+
+      if (provider === "openai-codex") {
+        defaultsPatch.agentRuntime = {
+          id: "codex"
+        };
+      } else if (provider === "openai") {
+        defaultsPatch.agentRuntime = {
+          id: "pi"
+        };
+      }
+    }
+
+    if (provider === "openai-codex") {
+      patch.plugins = {
+        entries: {
+          codex: {
+            enabled: true
+          }
+        }
+      };
+    }
+
+    const params: Record<string, unknown> = {
+      raw: JSON.stringify(patch)
+    };
+    const baseHash = typeof snapshot.hash === "string" && snapshot.hash.trim() ? snapshot.hash : null;
+
+    if (baseHash) {
+      params.baseHash = baseHash;
+    }
+
+    await getOpenClawAdapter().call("config.patch", params, { timeoutMs: 5_000 });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function normalizeModelIdForProvider(provider: AddModelsProviderId, modelId: string) {
@@ -903,6 +1019,24 @@ async function writeJsonFile(filePath: string, value: unknown) {
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function readConfigPath(source: unknown, configPath: string) {
+  let current = source;
+
+  for (const segment of configPath.split(".")) {
+    if (!isRecord(current)) {
+      return undefined;
+    }
+
+    current = current[segment];
+  }
+
+  return current;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function resolveProviderFromModelId(modelId: string) {
   return modelId.split("/")[0] as AddModelsProviderId;
 }
@@ -925,7 +1059,7 @@ function isRecommendedModel(provider: AddModelsProviderId, modelId: string) {
   }
 
   if (provider === "openai-codex") {
-    return /openai\/gpt-5\.5|codex/.test(normalized);
+    return /openai\/gpt-5\.5|openai\/gpt-5\.4-mini|codex/.test(normalized);
   }
 
   if (provider === "ollama") {
@@ -944,7 +1078,7 @@ function isRecommendedModel(provider: AddModelsProviderId, modelId: string) {
     return /grok-4|grok-code/.test(normalized);
   }
 
-  if (provider === "gemini") {
+  if (provider === "google") {
     return /gemini-2\.|gemini-3/.test(normalized);
   }
 

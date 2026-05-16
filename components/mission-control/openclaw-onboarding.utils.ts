@@ -370,7 +370,7 @@ export function formatProviderLabel(provider: string) {
   }
 
   if (normalized === "openai-codex") {
-    return "OpenAI Codex";
+    return "ChatGPT";
   }
 
   if (normalized === "openai") {
@@ -389,7 +389,7 @@ export function formatProviderLabel(provider: string) {
     return "xAI";
   }
 
-  if (normalized === "gemini") {
+  if (normalized === "google" || normalized === "gemini") {
     return "Gemini";
   }
 
@@ -418,13 +418,64 @@ export function resolveModelProvider(modelId?: string | null) {
   return provider || null;
 }
 
+export function resolveOnboardingModelProviderId(
+  snapshot: MissionControlSnapshot,
+  modelId?: string | null
+): AddModelsProviderId | null {
+  const modelProvider = resolveModelProvider(modelId);
+
+  if (!modelProvider) {
+    return null;
+  }
+
+  if (modelProvider === "openai" && shouldTreatOpenAiModelAsCodex(snapshot)) {
+    return "openai-codex";
+  }
+
+  return isAddModelsProviderId(modelProvider) ? modelProvider : null;
+}
+
+export function resolveSelectedOnboardingProviderId(
+  snapshot: MissionControlSnapshot,
+  modelId?: string | null,
+  catalogModels: Array<{ id: string; provider: string }> = []
+): AddModelsProviderId | null {
+  const normalizedModelId = modelId?.trim();
+
+  if (!normalizedModelId) {
+    return null;
+  }
+
+  const catalogProvider = catalogModels.find(
+    (model) => model.id === normalizedModelId && isAddModelsProviderId(model.provider)
+  )?.provider;
+
+  if (isAddModelsProviderId(catalogProvider)) {
+    return catalogProvider;
+  }
+
+  const snapshotProvider = snapshot.models.find(
+    (model) => model.id === normalizedModelId && isAddModelsProviderId(model.provider)
+  )?.provider;
+
+  if (isAddModelsProviderId(snapshotProvider)) {
+    if (snapshotProvider === "openai" && shouldTreatOpenAiModelAsCodex(snapshot)) {
+      return "openai-codex";
+    }
+
+    return snapshotProvider;
+  }
+
+  return resolveOnboardingModelProviderId(snapshot, normalizedModelId);
+}
+
 export function resolveInitialOnboardingProviderId(
   snapshot: MissionControlSnapshot,
   selectedModelId?: string | null
 ): AddModelsProviderId {
-  const selectedProvider = resolveModelProvider(selectedModelId);
+  const selectedProvider = resolveOnboardingModelProviderId(snapshot, selectedModelId);
 
-  if (isAddModelsProviderId(selectedProvider)) {
+  if (selectedProvider) {
     return selectedProvider;
   }
 
@@ -451,6 +502,22 @@ export function resolveInitialOnboardingProviderId(
   }
 
   return "openrouter";
+}
+
+function shouldTreatOpenAiModelAsCodex(snapshot: MissionControlSnapshot) {
+  const providers = snapshot.diagnostics.modelReadiness.authProviders;
+  const codexProvider = providers.find((provider) => provider.provider === "openai-codex");
+  const openAiProvider = providers.find((provider) => provider.provider === "openai");
+
+  if (codexProvider?.connected) {
+    return true;
+  }
+
+  if (snapshot.diagnostics.modelReadiness.preferredLoginProvider === "openai-codex") {
+    return true;
+  }
+
+  return Boolean(codexProvider?.canLogin && !openAiProvider?.connected);
 }
 
 export function resolveInitialOnboardingModelId(snapshot: MissionControlSnapshot) {

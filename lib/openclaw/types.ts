@@ -687,7 +687,7 @@ export type AddModelsProviderId =
   | "openai"
   | "anthropic"
   | "xai"
-  | "gemini"
+  | "google"
   | "deepseek"
   | "mistral";
 

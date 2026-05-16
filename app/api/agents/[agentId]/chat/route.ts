@@ -15,6 +15,7 @@ import {
 import { readLatestAgentChatTurn } from "@/lib/openclaw/domains/agent-chat-transcript";
 import { extractMissionControlAction, type MissionControlAction } from "@/lib/openclaw/chat-actions";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { ensureOpenAiCodexAuthOrderForAgent } from "@/lib/openclaw/application/model-auth-service";
 import { recordAgentChatSession } from "@/lib/openclaw/domains/agent-chat-sessions";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import {
@@ -207,6 +208,12 @@ export async function POST(
           });
           return;
         }
+
+        await ensureOpenAiCodexAuthOrderForAgent({
+          agentId,
+          modelId: agent.modelId,
+          agentDir: agent.agentDir
+        });
 
         const submittedMessage = input.message.trim();
         const rawMessage = input.rawMessage?.trim();

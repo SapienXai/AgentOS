@@ -750,7 +750,7 @@ async function loadMissionControlSnapshots({
         ...sharedSnapshotFields,
         workspaces,
         agents,
-        models: buildModelRecords(models, agents),
+        models: buildModelRecords(models, agents, modelStatus),
         runtimes,
         tasks,
         relationships
@@ -759,7 +759,7 @@ async function loadMissionControlSnapshots({
         ...sharedSnapshotFields,
         workspaces: visibleWorkspaces,
         agents: visibleAgents,
-        models: buildModelRecords(models, visibleAgents),
+        models: buildModelRecords(models, visibleAgents, modelStatus),
         runtimes: visibleRuntimes,
         tasks: visibleTasks,
         relationships: visibleRelationships

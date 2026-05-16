@@ -18,13 +18,13 @@ import type {
 } from "@/lib/agentos/contracts";
 import {
   formatProviderLabel,
-  resolveModelProvider,
+  resolveSelectedOnboardingProviderId,
   resolveInitialOnboardingProviderId
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import {
   getModelProviderDescriptor,
-  modelProviderRegistry,
-  normalizeAddModelsProviderId
+  isAddModelsProviderId,
+  modelProviderRegistry
 } from "@/lib/openclaw/model-provider-registry";
 import { getModelProviderAdapter } from "@/lib/openclaw/model-provider-adapters";
 import { isOpenClawTerminalCommand } from "@/lib/openclaw/terminal-command";
@@ -79,9 +79,13 @@ export function OpenClawOnboardingProviderFlow({
   );
   const [isOpeningTerminal, setIsOpeningTerminal] = useState(false);
 
+  const selectedCatalogModels = useMemo(
+    () => Object.values(providerDrafts).flatMap((draft) => draft?.models ?? []),
+    [providerDrafts]
+  );
   const selectedProviderId = useMemo(
-    () => normalizeAddModelsProviderId(resolveModelProvider(selectedModelId)),
-    [selectedModelId]
+    () => resolveSelectedOnboardingProviderId(snapshot, selectedModelId, selectedCatalogModels),
+    [selectedCatalogModels, selectedModelId, snapshot]
   );
 
   useEffect(() => {
@@ -105,7 +109,7 @@ export function OpenClawOnboardingProviderFlow({
       snapshot.models
         .filter(
           (model) =>
-            model.provider === activeProviderId &&
+            modelMatchesProvider(activeProviderId, model.id, model.provider) &&
             model.available !== false &&
             !model.missing
         )
@@ -319,6 +323,10 @@ export function OpenClawOnboardingProviderFlow({
   }
 
   function chooseModel(model: AddModelsCatalogModel) {
+    if (isAddModelsProviderId(model.provider)) {
+      setActiveProviderId(model.provider);
+    }
+
     onSelectedModelIdChange(model.id);
   }
 
@@ -769,7 +777,7 @@ function resolveConnectionDetail(snapshot: MissionControlSnapshot, providerId: A
   const readinessProvider = snapshot.diagnostics.modelReadiness.authProviders.find(
     (provider) => provider.provider === providerId
   );
-  const localModelCount = snapshot.models.filter((model) => model.id.startsWith(`${providerId}/`)).length;
+  const localModelCount = snapshot.models.filter((model) => modelMatchesProvider(providerId, model.id, model.provider)).length;
 
   if (providerId === "ollama") {
     return {
@@ -791,4 +799,14 @@ function resolveConnectionDetail(snapshot: MissionControlSnapshot, providerId: A
         ? `${localModelCount} model${localModelCount === 1 ? "" : "s"} are already saved in AgentOS. Connect ${formatProviderLabel(providerId)} to use them.`
         : getModelProviderDescriptor(providerId).helperText
   };
+}
+
+function modelMatchesProvider(providerId: AddModelsProviderId, modelId: string, modelProvider?: string | null) {
+  const provider = modelProvider || modelId.split("/", 1)[0] || "";
+
+  if (providerId === "openai-codex") {
+    return provider === "openai-codex" || provider === "openai";
+  }
+
+  return provider === providerId;
 }

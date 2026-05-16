@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { ensureOpenAiCodexAuthOrderForAgent } from "@/lib/openclaw/application/model-auth-service";
 import { stringifyCommandFailure } from "@/lib/openclaw/command-failure";
 import {
   clearMissionControlRuntimeHistoryCache,
@@ -112,6 +113,13 @@ export async function ensureOpenClawRuntimeSmokeTest(options: {
   await assertOpenClawRuntimeStateAccess(agentId);
 
   try {
+    const smokeAgent = snapshot.agents.find((agent) => agent.id === agentId);
+    await ensureOpenAiCodexAuthOrderForAgent({
+      agentId,
+      modelId: smokeAgent?.modelId,
+      agentDir: smokeAgent?.agentDir
+    });
+
     const payload = await getOpenClawAdapter().runAgentTurn(
       {
         agentId,

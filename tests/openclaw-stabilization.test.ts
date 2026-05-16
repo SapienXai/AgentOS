@@ -26,6 +26,7 @@ import {
 import { mapSessionCatalogEntryToRuntime } from "@/lib/openclaw/domains/runtime-normalizer";
 import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-normalization";
 import { normalizeChannelRegistry } from "@/lib/openclaw/domains/workspace-manifest";
+import { buildModelStatusConnectionStatus } from "@/lib/openclaw/domains/model-provider-connection";
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
 import { isOpenClawTerminalCommand } from "@/lib/openclaw/terminal-command";
 import {
@@ -34,9 +35,13 @@ import {
   resolveWorkspaceCreationTargetDir
 } from "@/lib/openclaw/domains/workspace-bootstrap";
 import { inferFallbackModelMetadata } from "@/lib/openclaw/adapter/model-adapter";
+import { buildModelRecords } from "@/lib/openclaw/adapter/model-adapter";
+import { resolveOpenAiCodexAuthOrderRepair } from "@/lib/openclaw/application/model-auth-service";
 import { inferSessionKindFromCatalogEntry } from "@/lib/openclaw/domains/session-catalog";
 import {
-  resolveInitialOnboardingProviderId
+  resolveInitialOnboardingProviderId,
+  resolveOnboardingModelProviderId,
+  resolveSelectedOnboardingProviderId
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import { isNewerSnapshot } from "@/hooks/use-mission-control-data";
 import {
@@ -538,6 +543,32 @@ test("openrouter selection keeps openrouter auth prioritized", () => {
   assert.equal(resolveRequiredLoginProvider(snapshot, undefined), "openrouter");
 });
 
+test("openai canonical model requests ChatGPT login when Codex owns the route", () => {
+  const snapshot = {
+    diagnostics: {
+      modelReadiness: {
+        resolvedDefaultModel: "openai/gpt-5.5",
+        defaultModel: "openai/gpt-5.5",
+        preferredLoginProvider: "openai-codex",
+        authProviders: [
+          {
+            provider: "openai-codex",
+            connected: false,
+            canLogin: true
+          },
+          {
+            provider: "openai",
+            connected: false,
+            canLogin: true
+          }
+        ]
+      }
+    }
+  } as unknown as MissionControlSnapshot;
+
+  assert.equal(resolveRequiredLoginProvider(snapshot, "openai/gpt-5.5"), "openai-codex");
+});
+
 test("ollama never requires provider auth handoff", () => {
   const snapshot = {
     diagnostics: {
@@ -635,6 +666,69 @@ test("onboarding starts on the selected, connected, or preferred provider", () =
   } as unknown as MissionControlSnapshot;
 
   assert.equal(resolveInitialOnboardingProviderId(connectedSnapshot, undefined), "ollama");
+});
+
+test("onboarding treats canonical OpenAI model refs as ChatGPT when Codex auth owns the route", () => {
+  const snapshot = {
+    diagnostics: {
+      modelReadiness: {
+        recommendedModelId: "openai/gpt-5.5",
+        preferredLoginProvider: "openai-codex",
+        authProviders: [
+          {
+            provider: "openai-codex",
+            connected: true,
+            canLogin: true,
+            detail: "OAuth connected"
+          },
+          {
+            provider: "openai",
+            connected: false,
+            canLogin: true,
+            detail: null
+          }
+        ]
+      }
+    }
+  } as unknown as MissionControlSnapshot;
+
+  assert.equal(resolveOnboardingModelProviderId(snapshot, "openai/gpt-5.5"), "openai-codex");
+  assert.equal(resolveInitialOnboardingProviderId(snapshot, "openai/gpt-5.5"), "openai-codex");
+});
+
+test("onboarding preserves provider context for ChatGPT catalog selections", () => {
+  const snapshot = {
+    models: [],
+    diagnostics: {
+      modelReadiness: {
+        preferredLoginProvider: "openai",
+        authProviders: [
+          {
+            provider: "openai-codex",
+            connected: false,
+            canLogin: false,
+            detail: null
+          },
+          {
+            provider: "openai",
+            connected: false,
+            canLogin: true,
+            detail: null
+          }
+        ]
+      }
+    }
+  } as unknown as MissionControlSnapshot;
+
+  assert.equal(
+    resolveSelectedOnboardingProviderId(snapshot, "openai/gpt-5.5", [
+      {
+        id: "openai/gpt-5.5",
+        provider: "openai-codex"
+      }
+    ]),
+    "openai-codex"
+  );
 });
 
 test("model onboarding requires an explicit selection before verification", () => {
@@ -768,6 +862,255 @@ test("remote provider connection depends on auth rather than configured models",
     readiness.authProviders.find((provider) => provider.provider === "openrouter")?.connected,
     false
   );
+});
+
+test("canonical OpenAI models can be ready through ChatGPT Codex auth", () => {
+  const readiness = resolveModelReadiness(
+    [
+      {
+        key: "openai/gpt-5.5",
+        local: false,
+        available: true,
+        missing: false
+      }
+    ],
+    {
+      defaultModel: "openai/gpt-5.5",
+      resolvedDefault: "openai/gpt-5.5",
+      auth: {
+        providers: [
+          {
+            provider: "openai-codex",
+            profiles: {
+              count: 1
+            }
+          },
+          {
+            provider: "openai",
+            profiles: {
+              count: 0
+            }
+          }
+        ],
+        oauth: {
+          providers: [
+            {
+              provider: "openai-codex",
+              status: "ok"
+            }
+          ]
+        },
+        missingProvidersInUse: [],
+        unusableProfiles: []
+      }
+    } as never
+  );
+
+  assert.equal(readiness.ready, true);
+  assert.equal(readiness.defaultModelReady, true);
+  assert.equal(
+    readiness.authProviders.find((provider) => provider.provider === "openai-codex")?.connected,
+    true
+  );
+  assert.equal(readiness.preferredLoginProvider, null);
+});
+
+test("provider status treats mixed ChatGPT OAuth profiles as connected", () => {
+  const connection = buildModelStatusConnectionStatus(
+    "openai-codex",
+    {
+      allowed: ["openai/gpt-5.5"],
+      auth: {
+        providers: [
+          {
+            provider: "openai-codex",
+            effective: {
+              kind: "profiles"
+            },
+            profiles: {
+              count: 3
+            }
+          }
+        ],
+        oauth: {
+          providers: [
+            {
+              provider: "openai-codex",
+              status: "expired",
+              profiles: [
+                {
+                  profileId: "openai-codex:default",
+                  status: "expired"
+                },
+                {
+                  profileId: "openai-codex:user@example.com",
+                  status: "ok"
+                }
+              ]
+            } as never
+          ]
+        }
+      }
+    },
+    new Set(["openai/gpt-5.5"])
+  );
+
+  assert.equal(connection?.connected, true);
+  assert.equal(connection?.detail, "OAuth connected");
+});
+
+test("provider status rejects expired-only ChatGPT OAuth profiles", () => {
+  const connection = buildModelStatusConnectionStatus(
+    "openai-codex",
+    {
+      allowed: ["openai/gpt-5.5"],
+      auth: {
+        providers: [
+          {
+            provider: "openai-codex",
+            effective: {
+              kind: "profiles"
+            },
+            profiles: {
+              count: 1
+            }
+          }
+        ],
+        oauth: {
+          providers: [
+            {
+              provider: "openai-codex",
+              status: "expired",
+              profiles: [
+                {
+                  profileId: "openai-codex:default",
+                  status: "expired"
+                }
+              ]
+            } as never
+          ]
+        }
+      }
+    },
+    new Set(["openai/gpt-5.5"])
+  );
+
+  assert.equal(connection?.connected, false);
+});
+
+test("snapshot model records display canonical OpenAI Codex routes as ChatGPT", () => {
+  const records = buildModelRecords(
+    [
+      {
+        key: "openai/gpt-5.4-mini",
+        name: "gpt-5.4-mini",
+        input: "text",
+        contextWindow: 272000,
+        local: false,
+        available: true,
+        missing: false,
+        tags: []
+      }
+    ],
+    [],
+    {
+      allowed: ["openai/gpt-5.4-mini"],
+      auth: {
+        providers: [
+          {
+            provider: "openai-codex",
+            profiles: {
+              count: 1
+            }
+          }
+        ],
+        oauth: {
+          providers: [
+            {
+              provider: "openai-codex",
+              status: "ok",
+              profiles: [
+                {
+                  profileId: "openai-codex:user@example.com",
+                  status: "ok"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  );
+
+  assert.equal(records[0]?.provider, "openai-codex");
+});
+
+test("ChatGPT auth order repair prefers usable Codex OAuth profiles", () => {
+  const repair = resolveOpenAiCodexAuthOrderRepair({
+    auth: {
+      oauth: {
+        providers: [
+          {
+            provider: "openai-codex",
+            status: "expired",
+            profiles: [
+              {
+                profileId: "openai-codex:default",
+                status: "expired"
+              },
+              {
+                profileId: "openai-codex:user@example.com",
+                status: "ok"
+              }
+            ],
+            effectiveProfiles: [
+              {
+                profileId: "openai-codex:default",
+                status: "expired"
+              },
+              {
+                profileId: "openai-codex:user@example.com",
+                status: "ok"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  });
+
+  assert.equal(repair.needsRepair, true);
+  assert.deepEqual(repair.profileIds, ["openai-codex:user@example.com"]);
+});
+
+test("ChatGPT auth order repair is skipped when effective profile is usable", () => {
+  const repair = resolveOpenAiCodexAuthOrderRepair({
+    auth: {
+      oauth: {
+        providers: [
+          {
+            provider: "openai-codex",
+            status: "ok",
+            profiles: [
+              {
+                profileId: "openai-codex:user@example.com",
+                status: "ok"
+              }
+            ],
+            effectiveProfiles: [
+              {
+                profileId: "openai-codex:user@example.com",
+                status: "ok"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  });
+
+  assert.equal(repair.needsRepair, false);
+  assert.deepEqual(repair.profileIds, ["openai-codex:user@example.com"]);
 });
 
 test("ollama is treated as a local provider without auth login", () => {

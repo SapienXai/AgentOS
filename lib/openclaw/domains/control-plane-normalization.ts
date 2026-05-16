@@ -191,10 +191,14 @@ export function resolveModelReadiness(models: ModelLike[], modelStatus?: ModelSt
   const defaultModel = normalizeOptionalValue(modelStatus?.defaultModel ?? undefined);
   const defaultModelId = resolvedDefaultModel ?? defaultModel;
   const defaultProvider = defaultModelId ? resolveModelProviderId(defaultModelId) : null;
-  const defaultModelReady = Boolean(defaultModelId && readyModels.some((model) => model.key === defaultModelId));
+  const defaultModelReady = Boolean(
+    defaultModelId &&
+      readyModels.some((model) => model.key === defaultModelId) &&
+      isModelProviderAuthenticated(defaultProvider, models, authProviderMap, oauthProviderMap)
+  );
   const recommendedModelId = defaultModelReady ? defaultModelId : readyModels[0]?.key ?? null;
   const authProviders = providerIds.map((provider) => {
-    const providerModels = models.filter((model) => (model.key.split("/")[0] || "unknown") === provider);
+    const providerModels = models.filter((model) => modelMatchesAuthProvider(provider, model.key));
     const hasRemoteRoute = providerModels.some((model) => model.local !== true);
     const canLogin = provider !== "ollama" && hasRemoteRoute;
     const providerAuth = authProviderMap.get(provider);
@@ -255,22 +259,21 @@ export function resolveModelReadiness(models: ModelLike[], modelStatus?: ModelSt
     issues.push("Some stored model auth profiles are not usable.");
   }
 
+  const preferredLoginProvider = resolvePreferredLoginProvider({
+    defaultProvider,
+    authProviders,
+    missingProvidersInUse,
+    providerIds,
+    readyModels
+  });
+
   return {
     ready: readyModels.length > 0 && defaultModelReady,
     defaultModel: defaultModel ?? null,
     resolvedDefaultModel: resolvedDefaultModel ?? null,
     defaultModelReady,
     recommendedModelId: recommendedModelId ?? null,
-    preferredLoginProvider:
-      authProviders.find(
-        (provider) =>
-          provider.provider === defaultProvider && !provider.connected && provider.canLogin
-      )?.provider ??
-      missingProvidersInUse.find((provider) =>
-        authProviders.some((entry) => entry.provider === provider && !entry.connected && entry.canLogin)
-      ) ??
-      authProviders.find((provider) => !provider.connected && provider.canLogin)?.provider ??
-      (providerIds.includes("openai-codex") || readyModels.length === 0 ? "openai-codex" : null),
+    preferredLoginProvider,
     totalModelCount: models.length,
     availableModelCount: readyModels.length,
     localModelCount: readyModels.filter((model) => model.local).length,
@@ -279,6 +282,90 @@ export function resolveModelReadiness(models: ModelLike[], modelStatus?: ModelSt
     authProviders,
     issues: unique(issues)
   };
+}
+
+function resolvePreferredLoginProvider(input: {
+  defaultProvider: string | null;
+  authProviders: Array<{ provider: string; connected: boolean; canLogin: boolean }>;
+  missingProvidersInUse: string[];
+  providerIds: string[];
+  readyModels: ModelLike[];
+}) {
+  const defaultProviderCandidates = input.defaultProvider
+    ? resolveAuthProvidersForModelProvider(input.defaultProvider)
+    : [];
+
+  if (
+    defaultProviderCandidates.some((provider) =>
+      input.authProviders.some((entry) => entry.provider === provider && entry.connected)
+    )
+  ) {
+    return null;
+  }
+
+  for (const provider of defaultProviderCandidates) {
+    const candidate = input.authProviders.find(
+      (entry) => entry.provider === provider && !entry.connected && entry.canLogin
+    );
+
+    if (candidate) {
+      return candidate.provider;
+    }
+  }
+
+  const missingProvider = input.missingProvidersInUse.find((provider) =>
+    input.authProviders.some((entry) => entry.provider === provider && !entry.connected && entry.canLogin)
+  );
+
+  if (missingProvider) {
+    return missingProvider;
+  }
+
+  return input.authProviders.find((provider) => !provider.connected && provider.canLogin)?.provider ??
+    (input.providerIds.includes("openai-codex") || input.readyModels.length === 0 ? "openai-codex" : null);
+}
+
+function isModelProviderAuthenticated(
+  provider: string | null,
+  models: ModelLike[],
+  authProviderMap: Map<string, ModelAuthProvider & { provider: string }>,
+  oauthProviderMap: Map<string, ModelOauthProvider & { provider: string }>
+) {
+  if (!provider) {
+    return false;
+  }
+
+  if (provider === "ollama") {
+    return models.some((model) => modelMatchesAuthProvider(provider, model.key) && model.local === true);
+  }
+
+  return resolveAuthProvidersForModelProvider(provider).some((authProvider) =>
+    isAuthProviderConnected(authProvider, authProviderMap, oauthProviderMap)
+  );
+}
+
+function isAuthProviderConnected(
+  provider: string,
+  authProviderMap: Map<string, ModelAuthProvider & { provider: string }>,
+  oauthProviderMap: Map<string, ModelOauthProvider & { provider: string }>
+) {
+  const providerAuth = authProviderMap.get(provider);
+  const oauthStatus = oauthProviderMap.get(provider);
+  return (providerAuth?.profiles?.count ?? 0) > 0 || oauthStatus?.status === "ok";
+}
+
+function modelMatchesAuthProvider(provider: string, modelId: string) {
+  const modelProvider = resolveModelProviderId(modelId) ?? "unknown";
+
+  if (provider === "openai-codex") {
+    return modelProvider === "openai" || modelProvider === "openai-codex";
+  }
+
+  return modelProvider === provider;
+}
+
+function resolveAuthProvidersForModelProvider(provider: string) {
+  return provider === "openai" ? ["openai", "openai-codex"] : [provider];
 }
 
 export function isReadyModelRecord(model: ModelLike) {
@@ -298,7 +385,7 @@ export function formatProviderLabel(provider: string) {
   }
 
   if (normalized === "openai-codex") {
-    return "OpenAI Codex";
+    return "ChatGPT";
   }
 
   if (normalized === "openai") {
@@ -317,7 +404,7 @@ export function formatProviderLabel(provider: string) {
     return "xAI";
   }
 
-  if (normalized === "gemini") {
+  if (normalized === "google" || normalized === "gemini") {
     return "Gemini";
   }
 
@@ -347,6 +434,7 @@ export function resolveProviderSetupDetail(provider: string) {
     normalized === "openai" ||
     normalized === "anthropic" ||
     normalized === "xai" ||
+    normalized === "google" ||
     normalized === "gemini" ||
     normalized === "deepseek" ||
     normalized === "mistral"

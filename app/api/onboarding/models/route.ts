@@ -672,7 +672,7 @@ function formatProviderLabel(provider: string) {
   }
 
   if (normalized === "openai-codex") {
-    return "OpenAI Codex";
+    return "ChatGPT";
   }
 
   if (normalized === "openai") {
@@ -691,7 +691,7 @@ function formatProviderLabel(provider: string) {
     return "xAI";
   }
 
-  if (normalized === "gemini") {
+  if (normalized === "google" || normalized === "gemini") {
     return "Gemini";
   }
 
@@ -710,7 +710,7 @@ function formatProviderLabel(provider: string) {
 }
 
 function resolveProviderAuthHandoff(provider: string, commandBin?: string) {
-  const normalized = provider.trim().toLowerCase();
+  const normalized = normalizeOpenClawAuthProvider(provider);
   const label = formatProviderLabel(provider);
   const bin = commandBin || "openclaw";
 
@@ -729,6 +729,16 @@ function resolveProviderAuthHandoff(provider: string, commandBin?: string) {
     continueMessage: `Continue in terminal to connect ${label}. After auth completes, return here and refresh setup.`,
     verificationMessage: `The model was saved. Continue in terminal to connect ${label} and finish setup.`
   };
+}
+
+function normalizeOpenClawAuthProvider(provider: string) {
+  const normalized = provider.trim().toLowerCase();
+
+  if (normalized === "gemini") {
+    return "google";
+  }
+
+  return normalized;
 }
 
 function resolveDiscoveredModels(stdout: string, snapshot: MissionControlSnapshot) {

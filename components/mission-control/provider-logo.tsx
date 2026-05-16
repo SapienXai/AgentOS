@@ -30,6 +30,10 @@ const providerLogoConfig: Record<string, ProviderLogoConfig> = {
     kind: "simple",
     icon: requireSimpleIcon("siAnthropic", "Anthropic")
   },
+  google: {
+    kind: "simple",
+    icon: requireSimpleIcon("siGooglegemini", "Gemini")
+  },
   gemini: {
     kind: "simple",
     icon: requireSimpleIcon("siGooglegemini", "Gemini")

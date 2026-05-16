@@ -3,8 +3,10 @@ import { NextResponse } from "next/server";
 import { isAddModelsProviderId, modelProviderRegistry } from "@/lib/openclaw/model-provider-registry";
 import { listOpenClawModels } from "@/lib/openclaw/application/catalog-service";
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
+import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { resolveModelRecordProvider } from "@/lib/openclaw/domains/model-provider-connection";
 import type { AddModelsCatalogModel, MissionControlSnapshot } from "@/lib/agentos/contracts";
-import type { ModelsPayload } from "@/lib/openclaw/client/gateway-client";
+import type { ModelsPayload, ModelsStatusPayload } from "@/lib/openclaw/client/gateway-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,21 +30,33 @@ export async function GET() {
 
 async function readGlobalCatalog(): Promise<GlobalCatalogModel[]> {
   try {
-    const payload = await listOpenClawModels({ all: true });
-    return normalizeCatalogModels(payload.models);
+    const [payload, modelStatus] = await Promise.all([
+      listOpenClawModels({ all: true }),
+      readModelStatus()
+    ]);
+    return normalizeCatalogModels(payload.models, modelStatus);
   } catch {
     const snapshot = await getMissionControlSnapshot();
     return normalizeSnapshotModels(snapshot);
   }
 }
 
+async function readModelStatus(): Promise<ModelsStatusPayload | null> {
+  try {
+    return await getOpenClawAdapter().getModelStatus({ timeoutMs: 8_000 });
+  } catch {
+    return null;
+  }
+}
+
 function normalizeCatalogModels(
-  models: ModelsPayload["models"]
+  models: ModelsPayload["models"],
+  modelStatus: ModelsStatusPayload | null
 ): GlobalCatalogModel[] {
   const uniqueModels = new Map<string, ModelsPayload["models"][number]>();
 
   for (const model of models || []) {
-    const providerId = resolveProviderFromModelId(model.key);
+    const providerId = resolveModelRecordProvider(model.key, modelStatus ?? undefined);
 
     if (!isAddModelsProviderId(providerId) || !supportedProviderIds.has(providerId)) {
       continue;
@@ -56,13 +70,13 @@ function normalizeCatalogModels(
   return Array.from(uniqueModels.values()).map((model) => ({
     id: model.key,
     name: model.name,
-    provider: resolveProviderFromModelId(model.key),
+    provider: resolveModelRecordProvider(model.key, modelStatus ?? undefined),
     input: model.input,
     contextWindow: model.contextWindow ?? null,
     local: Boolean(model.local),
     available: model.available !== false,
     missing: Boolean(model.missing),
-    recommended: isRecommendedModel(resolveProviderFromModelId(model.key), model.key),
+    recommended: isRecommendedModel(resolveModelRecordProvider(model.key, modelStatus ?? undefined), model.key),
     supportsTools: model.input.includes("text"),
     isFree: /:free$/i.test(model.key) || /\(free\)/i.test(model.name),
     tags: Array.isArray(model.tags) ? model.tags : []
@@ -88,10 +102,6 @@ function normalizeSnapshotModels(
       isFree: /:free$/i.test(model.id) || /\(free\)/i.test(model.name),
       tags: Array.isArray(model.tags) ? model.tags : []
     }));
-}
-
-function resolveProviderFromModelId(modelId: string) {
-  return modelId.split("/")[0] || "unknown";
 }
 
 function isRecommendedModel(provider: string, modelId: string) {
@@ -121,7 +131,7 @@ function isRecommendedModel(provider: string, modelId: string) {
     return /grok-4|grok-code/.test(normalized);
   }
 
-  if (provider === "gemini") {
+  if (provider === "google") {
     return /gemini-2\.|gemini-3/.test(normalized);
   }
 
