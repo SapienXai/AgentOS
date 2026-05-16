@@ -218,6 +218,7 @@ test("sidebar keeps transient compatibility diagnostics out of the health card",
   assert.match(source, /Reusing the last successful payload while a slow OpenClaw command refreshes in the background/);
   assert.match(source, /Gateway-first request fell back to CLI/);
   assert.match(source, /unsupported/);
+  assert.match(source, /gateway\\.config\\.\(\?:patch\|apply\|set\|unset\)/);
   assert.match(source, /unknown method:/);
 });
 
