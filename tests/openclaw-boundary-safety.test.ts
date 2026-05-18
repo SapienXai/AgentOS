@@ -80,8 +80,6 @@ test("OpenClaw direct CLI JSON usage remains in documented fallback/discovery fi
   const allowed = new Set([
     "lib/openclaw/cli.ts",
     "lib/openclaw/client/cli-gateway-client.ts",
-    "lib/openclaw/domains/agent-config.ts",
-    "lib/openclaw/domains/channels.ts",
     "lib/openclaw/application/settings-service.ts"
   ]);
   const offenders = readProjectSourceFiles(["lib/openclaw"])
@@ -214,6 +212,21 @@ test("model auth repair and planner runtime turns stay behind the OpenClaw adapt
   assert.doesNotMatch(plannerSource, /runOpenClawJson/);
 });
 
+test("read-only agent config and channel discovery use the OpenClaw adapter", () => {
+  const agentConfigSource = readFileSync(
+    path.join(rootDir, "lib/openclaw/domains/agent-config.ts"),
+    "utf8"
+  );
+  const channelsSource = readFileSync(path.join(rootDir, "lib/openclaw/domains/channels.ts"), "utf8");
+
+  assert.match(agentConfigSource, /getOpenClawAdapter\(\)\.getConfig<MutableAgentConfigEntry\[\]>\("agents\.list"\)/);
+  assert.match(channelsSource, /getOpenClawAdapter\(\)\.getConfig<TelegramAllowlistConfig>\("channels\.telegram\.groups"\)/);
+  assert.match(channelsSource, /getOpenClawAdapter\(\)\.getConfig<DiscordGuildConfig>\("channels\.discord\.guilds"\)/);
+  assert.match(channelsSource, /getOpenClawAdapter\(\)\.getChannelLogs/);
+  assert.doesNotMatch(agentConfigSource, /runOpenClawJson/);
+  assert.doesNotMatch(channelsSource, /runOpenClawJson/);
+});
+
 test("Gateway compatibility aliases stay centralized outside application services", () => {
   const compatibilitySource = readFileSync(
     path.join(rootDir, "lib/openclaw/client/gateway-compatibility.ts"),
@@ -230,10 +243,21 @@ test("Gateway compatibility aliases stay centralized outside application service
 
   assert.match(compatibilitySource, /models\.authOrder\.set/);
   assert.match(compatibilitySource, /models\.auth\.order\.set/);
+  assert.match(compatibilitySource, /channelProvisioning/);
+  assert.match(compatibilitySource, /automationProvisioning/);
   assert.doesNotMatch(capabilitySource, /const knownGatewayFirstMethods = \[/);
   assert.match(capabilitySource, /OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS/);
   assert.match(nativeClientSource, /gatewayFirstCompatible/);
   assert.match(nativeClientSource, /getOpenClawGatewayMethodCandidates/);
+});
+
+test("settings gateway card exposes compatibility and fallback operation counts", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/settings-control-center.tsx"), "utf8");
+
+  assert.match(source, /\["Compatibility", formatGatewayCompatibilityStatus\(gatewayCompatibilityProfile\)\]/);
+  assert.match(source, /\["Native ops", formatGatewayOperationCounts\(gatewayCompatibilityProfile\)\]/);
+  assert.match(source, /\["Alias ops", formatGatewayAliasOperations\(gatewayCompatibilityProfile\?\.aliasOperations\)\]/);
+  assert.match(source, /\["Fallback ops", formatGatewayDegradedOperations\(gatewayCompatibilityProfile\?\.degradedOperations\)\]/);
 });
 
 test("CLI runtime event subscriptions fail closed instead of pretending to stream", () => {

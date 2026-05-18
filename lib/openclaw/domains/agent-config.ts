@@ -1,7 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { runOpenClaw, runOpenClawJson } from "@/lib/openclaw/cli";
+import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { runOpenClaw } from "@/lib/openclaw/cli";
 import {
   parseAgentIdentityMarkdown,
   renderAgentIdentityMarkdown as renderAgentIdentityMarkdownTemplate
@@ -114,14 +115,13 @@ export function normalizeDeclaredAgentTools(toolIds: string[]) {
 
 export async function readAgentConfigList(snapshot?: MissionControlSnapshot) {
   try {
-    const config = await runOpenClawJson<MutableAgentConfigEntry[]>([
-      "config",
-      "get",
-      "agents.list",
-      "--json"
-    ]);
+    const config = await getOpenClawAdapter().getConfig<MutableAgentConfigEntry[]>("agents.list");
 
-    return Array.isArray(config) ? config : [];
+    if (Array.isArray(config)) {
+      return config;
+    }
+
+    return config == null && snapshot ? buildAgentConfigListFromSnapshot(snapshot) : [];
   } catch (error) {
     if (isMissingAgentConfigListError(error)) {
       return snapshot ? buildAgentConfigListFromSnapshot(snapshot) : [];

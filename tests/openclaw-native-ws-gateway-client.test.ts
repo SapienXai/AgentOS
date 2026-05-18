@@ -166,6 +166,11 @@ class FallbackGatewayClient implements OpenClawGatewayClient {
     };
   }
 
+  async getChannelLogs() {
+    this.calls.push({ method: "getChannelLogs" });
+    return { lines: [] };
+  }
+
   async listSkills() {
     this.calls.push({ method: "listSkills" });
     return { skills: [] };
@@ -1296,6 +1301,35 @@ test("native WS gateway client falls back when channel status is malformed", asy
   assert.deepEqual(fallback.calls.map((call) => call.method), ["getChannelStatus"]);
   assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.operation, "channels.status");
   assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.kind, "malformed-response");
+});
+
+test("native WS gateway client reads channel logs through Gateway before CLI fallback", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? { protocol: 4 }
+          : { lines: [{ time: "2026-05-18T12:00:00.000Z", message: "hello" }] }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  assert.deepEqual(await client.getChannelLogs({ channel: "telegram", lines: 25 }), {
+    lines: [{ time: "2026-05-18T12:00:00.000Z", message: "hello" }]
+  });
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "channels.logs"]);
+  assert.deepEqual(sentFrames[1]?.params, { channel: "telegram", lines: 25 });
+  assert.deepEqual(fallback.calls, []);
 });
 
 test("native WS gateway client mutates config through Gateway snapshots", async () => {

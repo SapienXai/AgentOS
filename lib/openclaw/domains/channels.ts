@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { runOpenClawJson } from "@/lib/openclaw/cli";
+import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { parseDiscordRouteId, type DiscordRouteId } from "@/lib/openclaw/domains/discord-route";
 import { readOpenClawSurfaceAccounts } from "@/lib/openclaw/surface-adapters";
 import { getSurfaceKind } from "@/lib/openclaw/surface-catalog";
@@ -20,14 +20,6 @@ export { parseDiscordRouteId };
 
 const missionControlRootPath = path.join(/*turbopackIgnore: true*/ process.cwd(), ".mission-control");
 const channelRegistryPath = path.join(missionControlRootPath, "channel-registry.json");
-
-type OpenClawChannelLogsPayload = {
-  lines?: Array<{
-    time?: string;
-    message?: string;
-    raw?: string;
-  }>;
-};
 
 type TelegramAllowlistConfig = Record<
   string,
@@ -205,15 +197,7 @@ export async function discoverSurfaceRoutes(input: {
 
 export async function discoverTelegramGroups(timings?: TimingCollector) {
   const payload = await measureTiming(timings, "telegram-discovery.read-channel-logs", () =>
-    runOpenClawJson<OpenClawChannelLogsPayload>([
-      "channels",
-      "logs",
-      "--channel",
-      "telegram",
-      "--json",
-      "--lines",
-      "200"
-    ]).catch(() => null)
+    readOpenClawChannelLogs("telegram", 200)
   );
 
   if (!payload?.lines?.length) {
@@ -280,15 +264,7 @@ export async function discoverTelegramGroups(timings?: TimingCollector) {
 
 export async function discoverDiscordRoutes(accountId?: string | null, timings?: TimingCollector) {
   const payload = await measureTiming(timings, "discord-discovery.read-channel-logs", () =>
-    runOpenClawJson<OpenClawChannelLogsPayload>([
-      "channels",
-      "logs",
-      "--channel",
-      "discord",
-      "--json",
-      "--lines",
-      "300"
-    ]).catch(() => null)
+    readOpenClawChannelLogs("discord", 300)
   );
 
   const discovered = new Map<string, DiscoveredSurfaceRoute>();
@@ -351,12 +327,7 @@ export async function discoverDiscordRoutes(accountId?: string | null, timings?:
 async function readTelegramAllowlistGroups(timings?: TimingCollector) {
   try {
     const groups = await measureTiming(timings, "telegram-discovery.read-allowlist-config", () =>
-      runOpenClawJson<TelegramAllowlistConfig>([
-        "config",
-        "get",
-        "channels.telegram.groups",
-        "--json"
-      ])
+      getOpenClawAdapter().getConfig<TelegramAllowlistConfig>("channels.telegram.groups")
     );
 
     return Object.keys(groups ?? {})
@@ -376,12 +347,7 @@ async function readTelegramAllowlistGroups(timings?: TimingCollector) {
 async function readDiscordConfiguredRoutes(timings?: TimingCollector) {
   try {
     const guilds = await measureTiming(timings, "discord-discovery.read-config", () =>
-      runOpenClawJson<DiscordGuildConfig>([
-        "config",
-        "get",
-        "channels.discord.guilds",
-        "--json"
-      ])
+      getOpenClawAdapter().getConfig<DiscordGuildConfig>("channels.discord.guilds")
     );
     const routes: DiscoveredSurfaceRoute[] = [];
 
@@ -450,6 +416,14 @@ async function readDiscordConfiguredRoutes(timings?: TimingCollector) {
     return routes;
   } catch {
     return [] as DiscoveredSurfaceRoute[];
+  }
+}
+
+async function readOpenClawChannelLogs(channel: "telegram" | "discord", lines: number) {
+  try {
+    return await getOpenClawAdapter().getChannelLogs({ channel, lines });
+  } catch {
+    return null;
   }
 }
 

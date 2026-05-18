@@ -23,6 +23,8 @@ import type {
   OpenClawArtifactPutInput,
   OpenClawChannelStatusInput,
   OpenClawChannelStatusPayload,
+  OpenClawChannelLogsInput,
+  OpenClawChannelLogsPayload,
   OpenClawAgentListPayload,
   OpenClawAgentTurnInput,
   OpenClawCommandOptions,
@@ -237,6 +239,22 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
 
   getChannelStatus(input: OpenClawChannelStatusInput = {}, options: OpenClawCommandOptions = {}) {
     return this.call<OpenClawChannelStatusPayload>("channels.status", { ...input }, options);
+  }
+
+  getChannelLogs(input: OpenClawChannelLogsInput, options: OpenClawCommandOptions = {}) {
+    const args = [
+      "channels",
+      "logs",
+      "--channel",
+      input.channel,
+      "--json"
+    ];
+
+    if (typeof input.lines === "number" && Number.isFinite(input.lines) && input.lines > 0) {
+      args.push("--lines", String(input.lines));
+    }
+
+    return runOpenClawJson<OpenClawChannelLogsPayload>(args, options);
   }
 
   listSkills(options: OpenClawCommandOptions & { eligible?: boolean } = {}) {

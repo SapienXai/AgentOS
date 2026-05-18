@@ -18,6 +18,8 @@ export type {
   OpenClawArtifactPutInput,
   OpenClawChannelStatusInput,
   OpenClawChannelStatusPayload,
+  OpenClawChannelLogsInput,
+  OpenClawChannelLogsPayload,
   OpenClawPluginListPayload,
   OpenClawSkillListPayload,
   OpenClawAddAgentInput,

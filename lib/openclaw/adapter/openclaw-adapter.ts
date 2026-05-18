@@ -19,6 +19,8 @@ import type {
   OpenClawArtifactPutInput,
   OpenClawChannelStatusInput,
   OpenClawChannelStatusPayload,
+  OpenClawChannelLogsInput,
+  OpenClawChannelLogsPayload,
   OpenClawConfigSchemaPayload,
   OpenClawConfigSchemaLookupInput,
   OpenClawConfigSchemaLookupPayload,
@@ -110,6 +112,7 @@ export interface OpenClawAdapter {
     input?: OpenClawChannelStatusInput,
     options?: OpenClawCommandOptions
   ): Promise<OpenClawChannelStatusPayload>;
+  getChannelLogs(input: OpenClawChannelLogsInput, options?: OpenClawCommandOptions): Promise<OpenClawChannelLogsPayload>;
   listModels(input?: OpenClawListModelsInput, options?: OpenClawCommandOptions): Promise<ModelsPayload>;
   listSkills(options?: OpenClawCommandOptions & { eligible?: boolean }): Promise<OpenClawSkillListPayload>;
   listPlugins(options?: OpenClawCommandOptions): Promise<OpenClawPluginListPayload>;
@@ -272,6 +275,10 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
 
   getChannelStatus(input: OpenClawChannelStatusInput = {}, options: OpenClawCommandOptions = {}) {
     return this.getClient().getChannelStatus(input, options);
+  }
+
+  getChannelLogs(input: OpenClawChannelLogsInput, options: OpenClawCommandOptions = {}) {
+    return this.getClient().getChannelLogs(input, options);
   }
 
   listModels(input: OpenClawListModelsInput = {}, options: OpenClawCommandOptions = {}) {

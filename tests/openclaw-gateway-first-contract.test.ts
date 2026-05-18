@@ -289,6 +289,9 @@ function createContractAdapter(overrides: Partial<OpenClawAdapter> = {}): OpenCl
         channelDefaultAccountId: {}
       };
     },
+    async getChannelLogs() {
+      return { lines: [] };
+    },
     async listModels() {
       return { models: [] };
     },

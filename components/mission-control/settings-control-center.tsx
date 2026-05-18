@@ -54,6 +54,9 @@ const binaryModes: Array<{
 ];
 
 type SurfaceTheme = "dark" | "light";
+type GatewayCompatibilityProfile = NonNullable<
+  NonNullable<MissionControlShellSettingsPanelProps["snapshot"]["diagnostics"]["capabilityMatrix"]>["compatibility"]
+>;
 type SettingsSectionId =
   | "openclaw"
   | "gateway"
@@ -145,6 +148,8 @@ export function SettingsControlCenter(props: MissionControlShellSettingsPanelPro
     () => resolveTransportDiagnosticsSummary(snapshot.diagnostics.transport, connectionState),
     [connectionState, snapshot.diagnostics.transport]
   );
+  const capabilityMatrix = snapshot.diagnostics.capabilityMatrix;
+  const gatewayCompatibilityProfile = capabilityMatrix?.compatibility;
   const nativeAuthLabel = gatewayAuthStatus
     ? gatewayAuthStatus.native.ok
       ? "Authenticated"
@@ -472,10 +477,14 @@ export function SettingsControlCenter(props: MissionControlShellSettingsPanelPro
                       ["Status", `${resolveGatewayLocality(snapshot)} / ${snapshot.diagnostics.loaded || snapshot.diagnostics.rpcOk ? "Online" : "Offline"}`],
                       ["Endpoint", snapshot.diagnostics.gatewayUrl || "Not configured"],
                       ["Auth status", nativeAuthLabel],
-                      ["Protocol", snapshot.diagnostics.capabilityMatrix?.gatewayProtocolVersion || "Unknown"],
-                      ["Native chat", formatCapabilitySupport(snapshot.diagnostics.capabilityMatrix?.nativeMissionDispatch)],
-                      ["Config patch", formatCapabilitySupport(snapshot.diagnostics.capabilityMatrix?.configPatch)],
-                      ["Events", formatCapabilitySupport(snapshot.diagnostics.capabilityMatrix?.eventBridge)]
+                      ["Protocol", capabilityMatrix?.gatewayProtocolVersion || "Unknown"],
+                      ["Compatibility", formatGatewayCompatibilityStatus(gatewayCompatibilityProfile)],
+                      ["Native ops", formatGatewayOperationCounts(gatewayCompatibilityProfile)],
+                      ["Alias ops", formatGatewayAliasOperations(gatewayCompatibilityProfile?.aliasOperations)],
+                      ["Fallback ops", formatGatewayDegradedOperations(gatewayCompatibilityProfile?.degradedOperations)],
+                      ["Native chat", formatCapabilitySupport(capabilityMatrix?.nativeMissionDispatch)],
+                      ["Config patch", formatCapabilitySupport(capabilityMatrix?.configPatch)],
+                      ["Events", formatCapabilitySupport(capabilityMatrix?.eventBridge)]
                     ]}
                     successIndex={2}
                   />
@@ -1419,6 +1428,44 @@ function formatCapabilitySupport(value?: "supported" | "unsupported" | "unknown"
   }
 
   return "Unknown";
+}
+
+function formatGatewayCompatibilityStatus(
+  value?: GatewayCompatibilityProfile
+) {
+  switch (value?.protocol.status) {
+    case "compatible":
+      return "Compatible";
+    case "unsupported":
+      return "Unsupported";
+    case "unknown":
+    default:
+      return "Unknown";
+  }
+}
+
+function formatGatewayOperationCounts(value?: GatewayCompatibilityProfile) {
+  if (!value) {
+    return "Unknown";
+  }
+
+  return `${value.nativeOperationCount} native / ${value.degradedOperationCount} fallback`;
+}
+
+function formatGatewayAliasOperations(value?: string[]) {
+  if (!value) {
+    return "Unknown";
+  }
+
+  return value.length > 0 ? String(value.length) : "None";
+}
+
+function formatGatewayDegradedOperations(value?: string[]) {
+  if (!value) {
+    return "Unknown";
+  }
+
+  return value.length > 0 ? String(value.length) : "None";
 }
 
 function formatGatewayAuthIssue(kind: GatewayNativeAuthStatus["native"]["kind"]) {

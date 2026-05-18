@@ -31,6 +31,8 @@ import type {
   OpenClawArtifactPutInput,
   OpenClawChannelStatusInput,
   OpenClawChannelStatusPayload,
+  OpenClawChannelLogsInput,
+  OpenClawChannelLogsPayload,
   OpenClawAgentListPayload,
   OpenClawAgentTurnInput,
   OpenClawCommandOptions,
@@ -2487,6 +2489,16 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         payload
       ),
       () => this.fallback.getChannelStatus(input, options)
+    );
+  }
+
+  getChannelLogs(input: OpenClawChannelLogsInput, options: OpenClawCommandOptions = {}) {
+    return this.gatewayFirst(
+      "channels.logs",
+      { channel: input.channel, lines: input.lines ?? undefined },
+      options,
+      (payload) => (isObjectRecord(payload) ? payload as OpenClawChannelLogsPayload : {}),
+      () => this.fallback.getChannelLogs(input, options)
     );
   }
 

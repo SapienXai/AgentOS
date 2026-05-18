@@ -87,6 +87,19 @@ export type OpenClawLogsTailPayload = Record<string, unknown> & {
   reset?: boolean;
 };
 
+export interface OpenClawChannelLogsInput {
+  channel: string;
+  lines?: number;
+}
+
+export type OpenClawChannelLogsPayload = Record<string, unknown> & {
+  lines?: Array<Record<string, unknown> & {
+    time?: string;
+    message?: string;
+    raw?: string;
+  }>;
+};
+
 export type StatusPayload = {
   runtimeVersion?: string;
   version?: string;
@@ -690,6 +703,7 @@ export interface OpenClawGatewayClient {
     input?: OpenClawChannelStatusInput,
     options?: OpenClawCommandOptions
   ): Promise<OpenClawChannelStatusPayload>;
+  getChannelLogs(input: OpenClawChannelLogsInput, options?: OpenClawCommandOptions): Promise<OpenClawChannelLogsPayload>;
   listSkills(options?: OpenClawCommandOptions & { eligible?: boolean }): Promise<OpenClawSkillListPayload>;
   listPlugins(options?: OpenClawCommandOptions): Promise<OpenClawPluginListPayload>;
   listModels(input?: OpenClawListModelsInput, options?: OpenClawCommandOptions): Promise<ModelsPayload>;

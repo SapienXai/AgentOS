@@ -104,6 +104,9 @@ function createSettingsAdapter(config: Record<string, unknown> = {}): OpenClawAd
         channelDefaultAccountId: {}
       };
     },
+    async getChannelLogs() {
+      return { lines: [] };
+    },
     async listModels() {
       return { models: [] };
     },
