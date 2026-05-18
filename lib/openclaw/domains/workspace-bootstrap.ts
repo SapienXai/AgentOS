@@ -86,6 +86,11 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+function createWorkspaceScopedAgentId(workspaceSlug: string, agentKey: string) {
+  const normalizedAgentKey = slugify(agentKey) || "agent";
+  return agentKey.startsWith(`${workspaceSlug}-`) ? agentKey : `${workspaceSlug}-${normalizedAgentKey}`;
+}
+
 async function pathExists(targetPath: string) {
   try {
     await access(targetPath);
@@ -589,6 +594,7 @@ export async function scaffoldWorkspaceContents(
   const templateMeta = getWorkspaceTemplateMeta(options.template);
   const createdAt = new Date().toISOString();
   const toolExamples = await detectWorkspaceToolExamples(workspacePath);
+  const workspaceSlug = slugify(options.name);
 
   await ensureWorkspaceGitignore(workspacePath);
   await mkdir(path.join(workspacePath, "skills"), { recursive: true });
@@ -619,7 +625,7 @@ export async function scaffoldWorkspaceContents(
         },
         contextSources: options.contextSources,
         agents: options.agents.map((agent) => ({
-          id: agent.id,
+          id: createWorkspaceScopedAgentId(workspaceSlug, agent.id),
           name: agent.name,
           role: agent.role,
           enabled: agent.enabled,
