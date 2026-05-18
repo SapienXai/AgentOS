@@ -21,6 +21,8 @@ import type {
   OpenClawArtifactListPayload,
   OpenClawArtifactPayload,
   OpenClawArtifactPutInput,
+  OpenClawChannelAccountProvisionInput,
+  OpenClawChannelAccountRemoveInput,
   OpenClawChannelStatusInput,
   OpenClawChannelStatusPayload,
   OpenClawChannelLogsInput,
@@ -41,6 +43,7 @@ import type {
   OpenClawGatewayClient,
   OpenClawGatewayEventCallbacks,
   OpenClawGatewayEventSubscription,
+  OpenClawGmailSetupInput,
   OpenClawHealthPayload,
   OpenClawListModelsInput,
   OpenClawListSessionsInput,
@@ -98,6 +101,64 @@ function buildAgentTurnArgs(input: OpenClawAgentTurnInput) {
   );
 
   return args;
+}
+
+function buildGmailSetupArgs(input: OpenClawGmailSetupInput) {
+  const config = input.config ?? {};
+  const args = ["webhooks", "gmail", "setup", "--account", input.account];
+  const serveConfig = isObjectRecord(config.serve) ? config.serve : {};
+  const tailscaleConfig = isObjectRecord(config.tailscale) ? config.tailscale : {};
+
+  appendOptionalCliFlag(args, "--project", config.project);
+  appendOptionalCliFlag(args, "--topic", config.topic);
+  appendOptionalCliFlag(args, "--subscription", config.subscription);
+  appendOptionalCliFlag(args, "--label", config.label);
+  appendOptionalCliFlag(args, "--hook-url", config.hookUrl);
+  appendOptionalCliFlag(args, "--hook-token", config.hookToken);
+  appendOptionalCliFlag(args, "--push-token", config.pushToken);
+  appendOptionalCliFlag(args, "--bind", serveConfig.bind);
+  appendOptionalCliFlag(args, "--port", serveConfig.port);
+  appendOptionalCliFlag(args, "--path", serveConfig.path);
+  appendBooleanCliFlag(args, "--include-body", config.includeBody);
+  appendOptionalCliFlag(args, "--max-bytes", config.maxBytes);
+  appendOptionalCliFlag(args, "--renew-minutes", config.renewEveryMinutes);
+  appendOptionalCliFlag(args, "--tailscale", tailscaleConfig.mode);
+  appendOptionalCliFlag(args, "--tailscale-path", tailscaleConfig.path);
+  appendOptionalCliFlag(args, "--tailscale-target", tailscaleConfig.target);
+  appendOptionalCliFlag(args, "--push-endpoint", config.pushEndpoint);
+
+  return args;
+}
+
+function appendOptionalCliFlag(args: string[], flag: string, value: unknown) {
+  const normalized = normalizeCliFlagValue(value);
+  if (normalized === null) {
+    return;
+  }
+
+  args.push(flag, normalized);
+}
+
+function appendBooleanCliFlag(args: string[], flag: string, value: unknown) {
+  if (value === true || value === "true") {
+    args.push(flag);
+  }
+}
+
+function normalizeCliFlagValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
@@ -255,6 +316,45 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
     }
 
     return runOpenClawJson<OpenClawChannelLogsPayload>(args, options);
+  }
+
+  provisionChannelAccount(input: OpenClawChannelAccountProvisionInput, options: OpenClawCommandOptions = {}) {
+    const args = [
+      "channels",
+      "add",
+      "--channel",
+      input.channel,
+      "--account",
+      input.account
+    ];
+
+    appendOptionalCliFlag(args, "--token", input.token);
+    appendOptionalCliFlag(args, "--bot-token", input.botToken);
+    appendOptionalCliFlag(args, "--webhook-url", input.webhookUrl);
+    appendOptionalCliFlag(args, "--name", input.name);
+
+    return runOpenClaw(args, options);
+  }
+
+  removeChannelAccount(input: OpenClawChannelAccountRemoveInput, options: OpenClawCommandOptions = {}) {
+    const args = [
+      "channels",
+      "remove",
+      "--channel",
+      input.channel,
+      "--account",
+      input.account
+    ];
+
+    if (input.delete) {
+      args.push("--delete");
+    }
+
+    return runOpenClaw(args, options);
+  }
+
+  setupGmailWebhook(input: OpenClawGmailSetupInput, options: OpenClawCommandOptions = {}) {
+    return runOpenClaw(buildGmailSetupArgs(input), options);
   }
 
   listSkills(options: OpenClawCommandOptions & { eligible?: boolean } = {}) {

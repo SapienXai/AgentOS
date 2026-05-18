@@ -17,6 +17,8 @@ import type {
   OpenClawArtifactListPayload,
   OpenClawArtifactPayload,
   OpenClawArtifactPutInput,
+  OpenClawChannelAccountProvisionInput,
+  OpenClawChannelAccountRemoveInput,
   OpenClawChannelStatusInput,
   OpenClawChannelStatusPayload,
   OpenClawChannelLogsInput,
@@ -38,6 +40,7 @@ import type {
   OpenClawGatewayClient,
   OpenClawGatewayEventCallbacks,
   OpenClawGatewayEventSubscription,
+  OpenClawGmailSetupInput,
   OpenClawHealthPayload,
   OpenClawListModelsInput,
   OpenClawListSessionsInput,
@@ -113,6 +116,9 @@ export interface OpenClawAdapter {
     options?: OpenClawCommandOptions
   ): Promise<OpenClawChannelStatusPayload>;
   getChannelLogs(input: OpenClawChannelLogsInput, options?: OpenClawCommandOptions): Promise<OpenClawChannelLogsPayload>;
+  provisionChannelAccount(input: OpenClawChannelAccountProvisionInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
+  removeChannelAccount(input: OpenClawChannelAccountRemoveInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
+  setupGmailWebhook(input: OpenClawGmailSetupInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   listModels(input?: OpenClawListModelsInput, options?: OpenClawCommandOptions): Promise<ModelsPayload>;
   listSkills(options?: OpenClawCommandOptions & { eligible?: boolean }): Promise<OpenClawSkillListPayload>;
   listPlugins(options?: OpenClawCommandOptions): Promise<OpenClawPluginListPayload>;
@@ -279,6 +285,18 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
 
   getChannelLogs(input: OpenClawChannelLogsInput, options: OpenClawCommandOptions = {}) {
     return this.getClient().getChannelLogs(input, options);
+  }
+
+  provisionChannelAccount(input: OpenClawChannelAccountProvisionInput, options: OpenClawCommandOptions = {}) {
+    return this.getClient().provisionChannelAccount(input, options);
+  }
+
+  removeChannelAccount(input: OpenClawChannelAccountRemoveInput, options: OpenClawCommandOptions = {}) {
+    return this.getClient().removeChannelAccount(input, options);
+  }
+
+  setupGmailWebhook(input: OpenClawGmailSetupInput, options: OpenClawCommandOptions = {}) {
+    return this.getClient().setupGmailWebhook(input, options);
   }
 
   listModels(input: OpenClawListModelsInput = {}, options: OpenClawCommandOptions = {}) {

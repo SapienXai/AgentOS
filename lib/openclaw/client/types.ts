@@ -100,6 +100,26 @@ export type OpenClawChannelLogsPayload = Record<string, unknown> & {
   }>;
 };
 
+export interface OpenClawChannelAccountProvisionInput {
+  channel: string;
+  account: string;
+  name?: string | null;
+  token?: string | null;
+  botToken?: string | null;
+  webhookUrl?: string | null;
+}
+
+export interface OpenClawChannelAccountRemoveInput {
+  channel: string;
+  account: string;
+  delete?: boolean;
+}
+
+export interface OpenClawGmailSetupInput {
+  account: string;
+  config?: Record<string, unknown>;
+}
+
 export type StatusPayload = {
   runtimeVersion?: string;
   version?: string;
@@ -704,6 +724,9 @@ export interface OpenClawGatewayClient {
     options?: OpenClawCommandOptions
   ): Promise<OpenClawChannelStatusPayload>;
   getChannelLogs(input: OpenClawChannelLogsInput, options?: OpenClawCommandOptions): Promise<OpenClawChannelLogsPayload>;
+  provisionChannelAccount(input: OpenClawChannelAccountProvisionInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
+  removeChannelAccount(input: OpenClawChannelAccountRemoveInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
+  setupGmailWebhook(input: OpenClawGmailSetupInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   listSkills(options?: OpenClawCommandOptions & { eligible?: boolean }): Promise<OpenClawSkillListPayload>;
   listPlugins(options?: OpenClawCommandOptions): Promise<OpenClawPluginListPayload>;
   listModels(input?: OpenClawListModelsInput, options?: OpenClawCommandOptions): Promise<ModelsPayload>;

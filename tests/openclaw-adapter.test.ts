@@ -142,6 +142,18 @@ function createMockGatewayClient(overrides: Partial<OpenClawGatewayClient> = {})
       calls.push({ method: "getChannelLogs", action: input.channel, options });
       return { lines: [] };
     },
+    async provisionChannelAccount(input, options?: OpenClawCommandOptions) {
+      calls.push({ method: "provisionChannelAccount", action: input.account, options });
+      return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+    },
+    async removeChannelAccount(input, options?: OpenClawCommandOptions) {
+      calls.push({ method: "removeChannelAccount", action: input.account, options });
+      return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+    },
+    async setupGmailWebhook(input, options?: OpenClawCommandOptions) {
+      calls.push({ method: "setupGmailWebhook", action: input.account, options });
+      return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+    },
     async controlGateway(action: "start" | "stop" | "restart", options?: OpenClawCommandOptions) {
       calls.push({ method: "controlGateway", action, options });
       return { ok: true, action };
@@ -344,6 +356,9 @@ test("OpenClaw adapter exposes catalog, config, agent turn, and probe methods", 
   subscription.close();
   await adapter.getChannelStatus({ probe: true }, { timeoutMs: 4 });
   await adapter.getChannelLogs({ channel: "telegram", lines: 25 }, { timeoutMs: 4 });
+  await adapter.provisionChannelAccount({ channel: "telegram", account: "telegram-main" }, { timeoutMs: 4 });
+  await adapter.removeChannelAccount({ channel: "telegram", account: "telegram-main", delete: true }, { timeoutMs: 4 });
+  await adapter.setupGmailWebhook({ account: "user@example.com", config: { project: "agentos" } }, { timeoutMs: 4 });
   assert.deepEqual(await adapter.getConfig("gateway", { timeoutMs: 5 }), { path: "gateway" });
   assert.equal(await adapter.getConfigSchema({ timeoutMs: 5 }), null);
   assert.deepEqual(await adapter.lookupConfigSchema({ path: "gateway.remote.url" }, { timeoutMs: 5 }), {
@@ -401,6 +416,9 @@ test("OpenClaw adapter exposes catalog, config, agent turn, and probe methods", 
     { method: "subscribeRuntimeEvents", options: { timeoutMs: 4 } },
     { method: "getChannelStatus", options: { timeoutMs: 4 } },
     { method: "getChannelLogs", action: "telegram", options: { timeoutMs: 4 } },
+    { method: "provisionChannelAccount", action: "telegram-main", options: { timeoutMs: 4 } },
+    { method: "removeChannelAccount", action: "telegram-main", options: { timeoutMs: 4 } },
+    { method: "setupGmailWebhook", action: "user@example.com", options: { timeoutMs: 4 } },
     { method: "getConfig", action: "gateway", options: { timeoutMs: 5 } },
     { method: "getConfigSchema", options: { timeoutMs: 5 } },
     { method: "lookupConfigSchema", action: "gateway.remote.url", options: { timeoutMs: 5 } },

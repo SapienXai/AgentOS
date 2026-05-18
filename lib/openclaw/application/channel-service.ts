@@ -9,7 +9,6 @@ import {
   getMissionControlSnapshot,
   invalidateMissionControlSnapshotCache
 } from "@/lib/openclaw/application/mission-control-service";
-import { runOpenClaw } from "@/lib/openclaw/cli";
 import {
   filterAgentPolicySkills,
   upsertAgentConfigEntry
@@ -213,9 +212,16 @@ export async function deleteWorkspaceChannelEverywhere(input: {
 
   if (isPlannerChannelTypeValue(channel.type) && channel.type !== "internal") {
     await measureTiming(timings, "channel.delete-openclaw-remove", () =>
-      runOpenClaw(["channels", "remove", "--channel", channel.type, "--account", channelId, "--delete"], {
-        timeoutMs: 60000
-      })
+      getOpenClawAdapter().removeChannelAccount(
+        {
+          channel: channel.type,
+          account: channelId,
+          delete: true
+        },
+        {
+          timeoutMs: 60000
+        }
+      )
     );
   }
 
@@ -462,52 +468,45 @@ export async function createManagedChatChannelAccount(input: {
       .filter((account) => account.type === input.provider)
       .map((account) => account.id)
   );
-  const args = (() => {
+  const provisionInput = (() => {
     switch (input.provider) {
       case "discord":
         if (!input.token?.trim()) {
           throw new Error("Discord bot token is required.");
         }
-        return ["channels", "add", "--channel", "discord", "--account", accountId, "--token", input.token, "--name", input.name];
+        return {
+          channel: "discord",
+          account: accountId,
+          token: input.token,
+          name: input.name
+        };
       case "slack":
         if (!input.botToken?.trim()) {
           throw new Error("Slack bot token is required.");
         }
-        return [
-          "channels",
-          "add",
-          "--channel",
-          "slack",
-          "--account",
-          accountId,
-          "--bot-token",
-          input.botToken,
-          "--name",
-          input.name
-        ];
+        return {
+          channel: "slack",
+          account: accountId,
+          botToken: input.botToken,
+          name: input.name
+        };
       case "googlechat":
         if (!input.webhookUrl?.trim()) {
           throw new Error("Google Chat webhook URL is required.");
         }
-        return [
-          "channels",
-          "add",
-          "--channel",
-          "googlechat",
-          "--account",
-          accountId,
-          "--webhook-url",
-          input.webhookUrl,
-          "--name",
-          input.name
-        ];
+        return {
+          channel: "googlechat",
+          account: accountId,
+          webhookUrl: input.webhookUrl,
+          name: input.name
+        };
       default:
         throw new Error(`OpenClaw provisioning is not implemented for ${input.provider}.`);
     }
   })();
 
   await measureTiming(timings, `managed-chat.${input.provider}.provision-openclaw`, () =>
-    runOpenClaw(args, { timeoutMs: 60000 })
+    getOpenClawAdapter().provisionChannelAccount(provisionInput, { timeoutMs: 60000 })
   );
 
   const afterAccounts = (
@@ -571,13 +570,14 @@ export async function createManagedSurfaceAccount(input: {
         throw new Error("Gmail account email is required.");
       }
 
-      const gmailSetupArgs = buildGmailProvisionArgs({
-        account,
-        config: provisionConfig
-      });
-
       await measureTiming(timings, "managed-surface.gmail.setup-openclaw", () =>
-        runOpenClaw(gmailSetupArgs, { timeoutMs: 60000 })
+        getOpenClawAdapter().setupGmailWebhook(
+          {
+            account,
+            config: provisionConfig
+          },
+          { timeoutMs: 60000 }
+        )
       );
 
       const currentConfig = await measureTiming(timings, "managed-surface.gmail.read-config", () =>
@@ -723,19 +723,13 @@ export async function createTelegramChannelAccount(
   );
 
   await measureTiming(timings, "telegram.openclaw-add", () =>
-    runOpenClaw(
-      [
-        "channels",
-        "add",
-        "--channel",
-        "telegram",
-        "--account",
-        accountId,
-        "--token",
-        input.token,
-        "--name",
-        input.name
-      ],
+    getOpenClawAdapter().provisionChannelAccount(
+      {
+        channel: "telegram",
+        account: accountId,
+        token: input.token,
+        name: input.name
+      },
       { timeoutMs: 60000 }
     )
   );
@@ -1047,47 +1041,6 @@ function extractManagedSurfaceIdentity(provider: MissionControlSurfaceProvider, 
   }
 }
 
-function buildGmailProvisionArgs(input: { account: string; config: Record<string, unknown> }) {
-  const args = ["webhooks", "gmail", "setup", "--account", input.account];
-  const serveConfig = isObjectRecord(input.config.serve) ? (input.config.serve as Record<string, unknown>) : {};
-  const tailscaleConfig = isObjectRecord(input.config.tailscale) ? (input.config.tailscale as Record<string, unknown>) : {};
-
-  appendFlag(args, "--project", input.config.project);
-  appendFlag(args, "--topic", input.config.topic);
-  appendFlag(args, "--subscription", input.config.subscription);
-  appendFlag(args, "--label", input.config.label);
-  appendFlag(args, "--hook-url", input.config.hookUrl);
-  appendFlag(args, "--hook-token", input.config.hookToken);
-  appendFlag(args, "--push-token", input.config.pushToken);
-  appendFlag(args, "--bind", serveConfig.bind);
-  appendFlag(args, "--port", serveConfig.port);
-  appendFlag(args, "--path", serveConfig.path);
-  appendBooleanFlag(args, "--include-body", input.config.includeBody);
-  appendFlag(args, "--max-bytes", input.config.maxBytes);
-  appendFlag(args, "--renew-minutes", input.config.renewEveryMinutes);
-  appendFlag(args, "--tailscale", tailscaleConfig.mode);
-  appendFlag(args, "--tailscale-path", tailscaleConfig.path);
-  appendFlag(args, "--tailscale-target", tailscaleConfig.target);
-  appendFlag(args, "--push-endpoint", input.config.pushEndpoint);
-
-  return args;
-}
-
-function appendFlag(args: string[], flag: string, value: unknown) {
-  const normalized = normalizeManagedSurfaceFlagValue(value);
-  if (normalized === null) {
-    return;
-  }
-
-  args.push(flag, normalized);
-}
-
-function appendBooleanFlag(args: string[], flag: string, value: unknown) {
-  if (value === true || value === "true") {
-    args.push(flag);
-  }
-}
-
 function normalizeManagedSurfaceProvisionConfig(config?: Record<string, unknown>) {
   const nextConfig: Record<string, unknown> = {};
 
@@ -1194,19 +1147,6 @@ function normalizeManagedSurfaceConfigValue(value: unknown): unknown {
 
 function normalizeManagedSurfaceString(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function normalizeManagedSurfaceFlagValue(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return String(value);
-  }
-
-  if (typeof value === "boolean") {
-    return value ? "true" : "false";
-  }
-
-  const normalized = normalizeManagedSurfaceString(value);
-  return normalized ?? null;
 }
 
 function cloneChannelRegistry(registry: ChannelRegistry): ChannelRegistry {

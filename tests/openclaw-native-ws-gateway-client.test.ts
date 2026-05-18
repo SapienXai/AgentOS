@@ -171,6 +171,21 @@ class FallbackGatewayClient implements OpenClawGatewayClient {
     return { lines: [] };
   }
 
+  async provisionChannelAccount() {
+    this.calls.push({ method: "provisionChannelAccount" });
+    return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+  }
+
+  async removeChannelAccount() {
+    this.calls.push({ method: "removeChannelAccount" });
+    return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+  }
+
+  async setupGmailWebhook() {
+    this.calls.push({ method: "setupGmailWebhook" });
+    return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+  }
+
   async listSkills() {
     this.calls.push({ method: "listSkills" });
     return { skills: [] };
@@ -1329,6 +1344,108 @@ test("native WS gateway client reads channel logs through Gateway before CLI fal
   });
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "channels.logs"]);
   assert.deepEqual(sentFrames[1]?.params, { channel: "telegram", lines: 25 });
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway client provisions channel accounts through Gateway before CLI fallback", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect" ? { protocol: 4 } : { ok: true, accountId: "telegram-main" }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  const result = await client.provisionChannelAccount({
+    channel: "telegram",
+    account: "telegram-main",
+    token: "token",
+    name: "Telegram Main"
+  });
+  assert.deepEqual(JSON.parse(result.stdout), { ok: true, accountId: "telegram-main" });
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "channels.add"]);
+  assert.deepEqual(sentFrames[1]?.params, {
+    channel: "telegram",
+    account: "telegram-main",
+    accountId: "telegram-main",
+    name: "Telegram Main",
+    token: "token"
+  });
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway client removes channel accounts through Gateway before CLI fallback", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect" ? { protocol: 4 } : { ok: true }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  assert.deepEqual(JSON.parse((await client.removeChannelAccount({
+    channel: "telegram",
+    account: "telegram-main",
+    delete: true
+  })).stdout), { ok: true });
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "channels.remove"]);
+  assert.deepEqual(sentFrames[1]?.params, {
+    channel: "telegram",
+    account: "telegram-main",
+    accountId: "telegram-main",
+    delete: true
+  });
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway client sets up Gmail webhooks through Gateway before CLI fallback", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect" ? { protocol: 4 } : { ok: true }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  assert.deepEqual(JSON.parse((await client.setupGmailWebhook({
+    account: "user@example.com",
+    config: { project: "agentos" }
+  })).stdout), { ok: true });
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "webhooks.gmail.setup"]);
+  assert.deepEqual(sentFrames[1]?.params, {
+    account: "user@example.com",
+    config: { project: "agentos" }
+  });
   assert.deepEqual(fallback.calls, []);
 });
 

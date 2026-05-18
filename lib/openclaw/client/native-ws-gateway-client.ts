@@ -29,6 +29,8 @@ import type {
   OpenClawArtifactListPayload,
   OpenClawArtifactPayload,
   OpenClawArtifactPutInput,
+  OpenClawChannelAccountProvisionInput,
+  OpenClawChannelAccountRemoveInput,
   OpenClawChannelStatusInput,
   OpenClawChannelStatusPayload,
   OpenClawChannelLogsInput,
@@ -53,6 +55,7 @@ import type {
   OpenClawGatewayEventFrame,
   OpenClawGatewayEventSubscription,
   OpenClawGatewayRequestPolicy,
+  OpenClawGmailSetupInput,
   OpenClawHealthPayload,
   OpenClawListModelsInput,
   OpenClawListSessionsInput,
@@ -868,6 +871,18 @@ function commandResultFromGatewayPayload(payload: unknown): CommandResult {
   };
 }
 
+function buildChannelAccountProvisionParams(input: OpenClawChannelAccountProvisionInput) {
+  return {
+    channel: input.channel,
+    account: input.account,
+    accountId: input.account,
+    name: input.name?.trim() || undefined,
+    token: input.token?.trim() || undefined,
+    botToken: input.botToken?.trim() || undefined,
+    webhookUrl: input.webhookUrl?.trim() || undefined
+  };
+}
+
 function normalizeModelsPayload(payload: unknown): ModelsPayload {
   const parsed = parseGatewayPayload<{ models: Array<Record<string, unknown>> }>(
     "models.list",
@@ -1149,7 +1164,7 @@ function resolveGatewayRequestPolicy(method: string, options: OpenClawCommandOpt
 }
 
 function isGatewayMutationMethod(method: string) {
-  return /(^|\.)(assign|cancel|create|delete|invoke|put|update|set|unset|patch|apply|send|abort|resolve|restart|start|stop|logout)$/i.test(method);
+  return /(^|\.)(add|assign|cancel|configure|create|delete|invoke|put|remove|setup|update|set|unset|patch|apply|send|abort|resolve|restart|start|stop|logout)$/i.test(method);
 }
 
 function shouldUseCliFallback(
@@ -2499,6 +2514,44 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       options,
       (payload) => (isObjectRecord(payload) ? payload as OpenClawChannelLogsPayload : {}),
       () => this.fallback.getChannelLogs(input, options)
+    );
+  }
+
+  provisionChannelAccount(input: OpenClawChannelAccountProvisionInput, options: OpenClawCommandOptions = {}) {
+    return this.gatewayFirstCompatible(
+      "channelProvisioning",
+      buildChannelAccountProvisionParams(input),
+      options,
+      commandResultFromGatewayPayload,
+      () => this.fallback.provisionChannelAccount(input, options)
+    );
+  }
+
+  removeChannelAccount(input: OpenClawChannelAccountRemoveInput, options: OpenClawCommandOptions = {}) {
+    return this.gatewayFirstCompatible(
+      "channelRemoval",
+      {
+        channel: input.channel,
+        account: input.account,
+        accountId: input.account,
+        delete: input.delete ?? undefined
+      },
+      options,
+      commandResultFromGatewayPayload,
+      () => this.fallback.removeChannelAccount(input, options)
+    );
+  }
+
+  setupGmailWebhook(input: OpenClawGmailSetupInput, options: OpenClawCommandOptions = {}) {
+    return this.gatewayFirstCompatible(
+      "gmailProvisioning",
+      {
+        account: input.account,
+        config: input.config ?? {}
+      },
+      options,
+      commandResultFromGatewayPayload,
+      () => this.fallback.setupGmailWebhook(input, options)
     );
   }
 

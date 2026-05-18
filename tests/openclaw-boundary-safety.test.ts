@@ -95,8 +95,7 @@ test("OpenClaw direct CLI command usage remains in documented fallback/provision
     "lib/openclaw/client/cli-gateway-client.ts",
     "lib/openclaw/domains/agent-config.ts",
     "lib/openclaw/planner.ts",
-    "lib/openclaw/reset.ts",
-    "lib/openclaw/application/channel-service.ts"
+    "lib/openclaw/reset.ts"
   ]);
   const offenders = readProjectSourceFiles(["lib/openclaw"])
     .filter((filePath) => toProjectPath(filePath) !== "lib/openclaw/cli.ts")
@@ -227,6 +226,16 @@ test("read-only agent config and channel discovery use the OpenClaw adapter", ()
   assert.doesNotMatch(channelsSource, /runOpenClawJson/);
 });
 
+test("channel provisioning writes stay behind the OpenClaw adapter", () => {
+  const source = readFileSync(path.join(rootDir, "lib/openclaw/application/channel-service.ts"), "utf8");
+
+  assert.doesNotMatch(source, /from\s+["']@\/lib\/openclaw\/cli["']/);
+  assert.doesNotMatch(source, /runOpenClaw/);
+  assert.match(source, /getOpenClawAdapter\(\)\.provisionChannelAccount/);
+  assert.match(source, /getOpenClawAdapter\(\)\.removeChannelAccount/);
+  assert.match(source, /getOpenClawAdapter\(\)\.setupGmailWebhook/);
+});
+
 test("Gateway compatibility aliases stay centralized outside application services", () => {
   const compatibilitySource = readFileSync(
     path.join(rootDir, "lib/openclaw/client/gateway-compatibility.ts"),
@@ -244,6 +253,8 @@ test("Gateway compatibility aliases stay centralized outside application service
   assert.match(compatibilitySource, /models\.authOrder\.set/);
   assert.match(compatibilitySource, /models\.auth\.order\.set/);
   assert.match(compatibilitySource, /channelProvisioning/);
+  assert.match(compatibilitySource, /channelRemoval/);
+  assert.match(compatibilitySource, /gmailProvisioning/);
   assert.match(compatibilitySource, /automationProvisioning/);
   assert.doesNotMatch(capabilitySource, /const knownGatewayFirstMethods = \[/);
   assert.match(capabilitySource, /OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS/);

@@ -19,6 +19,8 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "channels"
   | "channelLogs"
   | "channelProvisioning"
+  | "channelRemoval"
+  | "gmailProvisioning"
   | "automationProvisioning"
   | "skills"
   | "updates";
@@ -72,6 +74,8 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   { id: "channels", methods: ["channels.status"] },
   { id: "channelLogs", methods: ["channels.logs"] },
   { id: "channelProvisioning", methods: ["channels.add", "channels.create", "channels.configure"] },
+  { id: "channelRemoval", methods: ["channels.remove", "channels.delete"] },
+  { id: "gmailProvisioning", methods: ["webhooks.gmail.setup", "gmail.setup"] },
   { id: "automationProvisioning", methods: ["cron.add", "cron.create"] },
   { id: "skills", methods: ["skills.status"] },
   { id: "updates", methods: ["update.status", "update.run", "status"] }

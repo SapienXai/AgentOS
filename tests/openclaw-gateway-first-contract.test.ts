@@ -292,6 +292,15 @@ function createContractAdapter(overrides: Partial<OpenClawAdapter> = {}): OpenCl
     async getChannelLogs() {
       return { lines: [] };
     },
+    async provisionChannelAccount() {
+      return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+    },
+    async removeChannelAccount() {
+      return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+    },
+    async setupGmailWebhook() {
+      return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+    },
     async listModels() {
       return { models: [] };
     },
