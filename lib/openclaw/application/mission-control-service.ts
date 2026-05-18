@@ -36,6 +36,10 @@ import {
   readOpenClawEventBridgeRuntimes,
   startOpenClawEventBridge
 } from "@/lib/openclaw/application/event-bridge-service";
+import {
+  mapOpenClawRuntimeSnapshotToRuntimes,
+  settleRuntimeSnapshotPayloadFromOpenClaw
+} from "@/lib/openclaw/application/runtime-state-service";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
   buildModelRecords,
@@ -72,6 +76,7 @@ import {
   type GatewayStatusPayload,
   type ModelsPayload,
   type ModelsStatusPayload,
+  type OpenClawRuntimeSnapshotPayload,
   type PresencePayload,
   type StatusPayload
 } from "@/lib/openclaw/client/gateway-client";
@@ -156,6 +161,7 @@ let agentConfigPayloadCache: CachedPayload<AgentConfigPayload> | null = null;
 let modelsPayloadCache: CachedPayload<ModelsPayload> | null = null;
 let modelsStatusPayloadCache: CachedPayload<ModelsStatusPayload> | null = null;
 let sessionsPayloadCache: CachedPayload<SessionsPayload> | null = null;
+let runtimeSnapshotPayloadCache: CachedPayload<OpenClawRuntimeSnapshotPayload> | null = null;
 let presencePayloadCache: CachedPayload<PresencePayload> | null = null;
 let runtimeHistoryCache = new Map<string, RuntimeRecord>();
 const statusPayloadCache = new CachedPayloadController<StatusPayload>();
@@ -189,6 +195,7 @@ export function clearMissionControlCaches() {
   modelsPayloadCache = null;
   modelsStatusPayloadCache = null;
   sessionsPayloadCache = null;
+  runtimeSnapshotPayloadCache = null;
   presencePayloadCache = null;
   clearRuntimeHistoryCache();
 }
@@ -434,6 +441,17 @@ async function loadMissionControlSnapshots({
     const sessionsResult: PromiseSettledResult<SessionsPayload> = systemProfile
       ? createDeferredPayloadResult<SessionsPayload>()
       : await settleSessionsPayloadFromOpenClaw(agentConfig);
+    const runtimeSnapshotMode = getCachedOpenClawCapabilityMatrix()?.operations?.runtimeSnapshot?.mode;
+    const shouldHydrateRuntimeSnapshot =
+      !systemProfile &&
+      runtimeSnapshotMode !== "degraded" &&
+      runtimeSnapshotMode !== "disabled" &&
+      runtimeSnapshotMode !== "cli-fallback";
+    const runtimeSnapshotResult: PromiseSettledResult<OpenClawRuntimeSnapshotPayload> = systemProfile
+      ? createDeferredPayloadResult<OpenClawRuntimeSnapshotPayload>()
+      : shouldHydrateRuntimeSnapshot
+        ? await settleRuntimeSnapshotPayloadFromOpenClaw(profile === "interactive" ? 8_000 : 15_000)
+        : createDeferredPayloadResult<OpenClawRuntimeSnapshotPayload>();
     const resolvedAgents = resolveCachedPayload(agentsResult, agentPayloadCache, (entry) => {
       agentPayloadCache = entry;
     });
@@ -445,6 +463,9 @@ async function loadMissionControlSnapshots({
     });
     const resolvedSessions = resolveCachedPayload(sessionsResult, sessionsPayloadCache, (entry) => {
       sessionsPayloadCache = entry;
+    });
+    const resolvedRuntimeSnapshot = resolveCachedPayload(runtimeSnapshotResult, runtimeSnapshotPayloadCache, (entry) => {
+      runtimeSnapshotPayloadCache = entry;
     });
     const resolvedPresence = resolveCachedPayload(presenceResult, presencePayloadCache, (entry) => {
       presencePayloadCache = entry;
@@ -463,6 +484,7 @@ async function loadMissionControlSnapshots({
       modelsResult.status === "fulfilled" ||
       modelStatusResult.status === "fulfilled" ||
       sessionsResult.status === "fulfilled" ||
+      runtimeSnapshotResult.status === "fulfilled" ||
       presenceResult.status === "fulfilled";
     const agentIds = agentsList.map((agent) => agent.id);
     const runtimeDiagnosticsPromise = buildRuntimeDiagnostics(agentIds, settings);
@@ -534,8 +556,24 @@ async function loadMissionControlSnapshots({
       liveSessionRuntimes,
       dispatchRecords
     );
+    const gatewaySnapshotRuntimes = mapOpenClawRuntimeSnapshotToRuntimes(
+      resolvedRuntimeSnapshot.value,
+      {
+        agentConfig,
+        agentsList,
+        resolveWorkspaceId
+      }
+    );
+    const annotatedGatewaySnapshotRuntimes = annotateMissionDispatchMetadataFromRuntime(
+      gatewaySnapshotRuntimes,
+      dispatchRecords
+    );
     const eventBridgeRuntimes = systemProfile ? [] : await readOpenClawEventBridgeRuntimes();
-    const baseRuntimes = mergeRuntimeHistory([...eventBridgeRuntimes, ...annotatedLiveSessionRuntimes]);
+    const baseRuntimes = mergeRuntimeHistory([
+      ...eventBridgeRuntimes,
+      ...annotatedGatewaySnapshotRuntimes,
+      ...annotatedLiveSessionRuntimes
+    ]);
     const dispatchRuntimes = await buildMissionDispatchRuntimesFromRuntime(
       baseRuntimes,
       dispatchRecords,
@@ -545,7 +583,12 @@ async function loadMissionControlSnapshots({
         reconcileRuntimeState: reconcileMissionDispatchRuntimeState
       }
     );
-    const runtimes = mergeRuntimeHistory([...dispatchRuntimes, ...eventBridgeRuntimes, ...annotatedLiveSessionRuntimes]);
+    const runtimes = mergeRuntimeHistory([
+      ...dispatchRuntimes,
+      ...eventBridgeRuntimes,
+      ...annotatedGatewaySnapshotRuntimes,
+      ...annotatedLiveSessionRuntimes
+    ]);
     await Promise.all(
       workspacePaths.map(async (workspacePath) => {
         const manifest = await readWorkspaceProjectManifest(workspacePath);

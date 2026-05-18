@@ -2,9 +2,17 @@ import type {
   ChannelAccountRecord,
   ChannelRegistry,
   ControlPlaneSnapshot,
+  RuntimeEventFrame,
+  RuntimeEventKind,
   WorkspaceChannelGroupAssignment,
   WorkspaceChannelSummary
 } from "@/lib/agentos/contracts";
+
+type OpenClawGatewayEventFrameInput = {
+  type?: string;
+  event?: string;
+  payload?: unknown;
+};
 
 export function normalizeControlPlaneSnapshot(snapshot: ControlPlaneSnapshot): ControlPlaneSnapshot {
   const cloned = structuredClone(snapshot);
@@ -15,6 +23,63 @@ export function normalizeControlPlaneSnapshot(snapshot: ControlPlaneSnapshot): C
     channelAccounts: normalizeChannelAccounts(cloned.channelAccounts),
     channelRegistry: normalizeChannelRegistry(cloned.channelRegistry)
   };
+}
+
+export function normalizeOpenClawGatewayEventFrame(frame: OpenClawGatewayEventFrameInput): RuntimeEventFrame {
+  const payload = isRecord(frame.payload) ? frame.payload : {};
+  const event = normalizeString(frame.event) || normalizeString(payload.type) || "event";
+
+  return {
+    kind: resolveRuntimeEventKind(event, payload),
+    source: "gateway",
+    event,
+    payload: frame.payload,
+    receivedAt: normalizeEventTimestamp(payload.timestamp ?? payload.ts ?? payload.updatedAt),
+    agentId: normalizeOptionalString(payload.agentId) ?? normalizeOptionalString(payload.agent) ?? undefined,
+    sessionId:
+      normalizeOptionalString(payload.sessionId) ??
+      normalizeOptionalString(payload.session) ??
+      normalizeOptionalString(payload.sessionKey) ??
+      normalizeOptionalString(payload.key) ??
+      undefined,
+    taskId: normalizeOptionalString(payload.taskId) ?? undefined,
+    runId:
+      normalizeOptionalString(payload.runId) ??
+      normalizeOptionalString(payload.run) ??
+      normalizeOptionalString(payload.clientRunId) ??
+      undefined
+  };
+}
+
+function resolveRuntimeEventKind(event: string, payload: Record<string, unknown>): RuntimeEventKind {
+  const explicit = normalizeOptionalString(payload.kind);
+  const value = `${event} ${explicit ?? ""}`.toLowerCase();
+
+  if (value.includes("approval")) {
+    return "approval";
+  }
+
+  if (value.includes("artifact")) {
+    return "artifact";
+  }
+
+  if (value.includes("task")) {
+    return "task";
+  }
+
+  if (value.includes("tool")) {
+    return "tool";
+  }
+
+  if (value.includes("session") || value.includes("chat") || value.includes("agent")) {
+    return "session";
+  }
+
+  if (value.includes("status") || value.includes("runtime")) {
+    return "status";
+  }
+
+  return "unknown";
 }
 
 function normalizeChannelAccounts(accounts: ChannelAccountRecord[]) {
@@ -180,4 +245,22 @@ function normalizeOptionalString(value: unknown) {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeEventTimestamp(value: unknown) {
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? undefined : new Date(parsed).toISOString();
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const timestamp = value < 10_000_000_000 ? value * 1000 : value;
+    return new Date(timestamp).toISOString();
+  }
+
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

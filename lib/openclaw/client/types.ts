@@ -406,6 +406,7 @@ export interface OpenClawRuntimeSnapshotInput {
 }
 
 export type OpenClawRuntimeSnapshotPayload = Record<string, unknown> & {
+  runtimes?: unknown[];
   sessions?: unknown[];
   tasks?: unknown[];
   artifacts?: unknown[];

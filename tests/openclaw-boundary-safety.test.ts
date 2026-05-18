@@ -183,6 +183,35 @@ test("local Gateway port probes do not claim authenticated RPC readiness", () =>
   assert.match(missionControlSource, /const gatewayStatusResult = await settleGatewayStatusPayloadFromOpenClaw\(3_000\);/);
 });
 
+test("runtime state uses Gateway snapshot and adapter event subscriptions", () => {
+  const missionControlSource = readFileSync(
+    path.join(rootDir, "lib/openclaw/application/mission-control-service.ts"),
+    "utf8"
+  );
+  const eventBridgeSource = readFileSync(
+    path.join(rootDir, "lib/openclaw/application/event-bridge-service.ts"),
+    "utf8"
+  );
+  const runtimeStateSource = readFileSync(
+    path.join(rootDir, "lib/openclaw/application/runtime-state-service.ts"),
+    "utf8"
+  );
+
+  assert.match(missionControlSource, /settleRuntimeSnapshotPayloadFromOpenClaw/);
+  assert.match(missionControlSource, /mapOpenClawRuntimeSnapshotToRuntimes/);
+  assert.match(eventBridgeSource, /getOpenClawAdapter\(\)\.subscribeRuntimeEvents/);
+  assert.doesNotMatch(eventBridgeSource, /new NativeWsOpenClawGatewayClient/);
+  assert.match(runtimeStateSource, /getOpenClawAdapter\(\)\.getRuntimeSnapshot/);
+});
+
+test("CLI runtime event subscriptions fail closed instead of pretending to stream", () => {
+  const source = readFileSync(path.join(rootDir, "lib/openclaw/client/cli-gateway-client.ts"), "utf8");
+
+  assert.match(source, /subscribeRuntimeEvents/);
+  assert.match(source, /require the native Gateway transport/);
+  assert.doesNotMatch(source, /subscribeRuntimeEvents[\s\S]*return\s+\{\s*close\(\)/);
+});
+
 test("full uninstall reset avoids OpenClaw-dependent workspace cleanup", () => {
   const source = readFileSync(path.join(rootDir, "lib/openclaw/reset.ts"), "utf8");
 

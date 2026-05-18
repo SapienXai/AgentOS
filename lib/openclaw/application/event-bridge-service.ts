@@ -9,9 +9,12 @@ import type {
   OpenClawGatewayEventFrame,
   OpenClawGatewayEventSubscription
 } from "@/lib/openclaw/client/gateway-client";
+import { normalizeOpenClawGatewayEventToRuntime } from "@/lib/openclaw/application/runtime-state-service";
 import type { RuntimeRecord } from "@/lib/openclaw/types";
 
 type GatewayEventFrame = OpenClawGatewayEventFrame;
+
+export { normalizeOpenClawGatewayEventToRuntime } from "@/lib/openclaw/application/runtime-state-service";
 
 const eventBridgeRoot = path.join(/*turbopackIgnore: true*/ process.cwd(), ".mission-control", "gateway-events");
 const maxBridgeRecords = 500;
@@ -65,55 +68,6 @@ export async function readOpenClawEventBridgeRuntimes(): Promise<RuntimeRecord[]
   } catch {
     return [];
   }
-}
-
-export function normalizeOpenClawGatewayEventToRuntime(frame: GatewayEventFrame): RuntimeRecord | null {
-  const payload = isRecord(frame.payload) ? frame.payload : {};
-  const eventName = readString(frame.event) ?? readString(payload.type) ?? "event";
-  const sessionKey = readString(payload.sessionKey) ?? readString(payload.key);
-  const agentId = readString(payload.agentId) ?? readString(payload.agent) ?? parseAgentIdFromSessionKey(sessionKey);
-  const sessionId = readString(payload.sessionId) ?? readString(payload.session) ?? sessionKey;
-  const runId = readString(payload.runId) ?? readString(payload.run) ?? readString(payload.clientRunId);
-  const taskId = readString(payload.taskId);
-  const timestamp = readTimestamp(payload.timestamp ?? payload.ts ?? payload.updatedAt);
-  const status = normalizeStatus(readString(payload.status) ?? eventName);
-  const text =
-    readString(payload.text) ??
-    readString(payload.message) ??
-    readString(payload.summary) ??
-    readString(payload.detail) ??
-    eventName;
-  const runtimeId =
-    readString(payload.runtimeId) ??
-    `runtime:gateway:${stableRuntimeIdentity(agentId, sessionId, runId, taskId, eventName)}`;
-
-  if (!agentId && !sessionId && !runId && !taskId) {
-    return null;
-  }
-
-  return {
-    id: runtimeId,
-    source: "turn",
-    key: runId || sessionId || taskId || runtimeId,
-    title: readString(payload.title) ?? (taskId ? "Gateway task event" : "Gateway runtime event"),
-    subtitle: text,
-    status,
-    updatedAt: timestamp,
-    ageMs: timestamp ? Math.max(0, Date.now() - timestamp) : null,
-    agentId: agentId ?? undefined,
-    sessionId: sessionId ?? undefined,
-    taskId: taskId ?? undefined,
-    runId: runId ?? undefined,
-    modelId: readString(payload.model) ?? readString(payload.modelId) ?? undefined,
-    toolNames: normalizeToolNames(payload),
-    metadata: {
-      origin: "openclaw-gateway-event",
-      event: eventName,
-      channel: readString(payload.channel) ?? null,
-      approvalId: readString(payload.approvalId) ?? null,
-      mission: readString(payload.mission) ?? readString(payload.prompt) ?? null
-    }
-  };
 }
 
 async function startEventBridge() {
@@ -209,68 +163,10 @@ async function readBridgeRuntimeRecord(filePath: string): Promise<RuntimeRecord 
   }
 }
 
-function normalizeStatus(value: string) {
-  if (/complete|done|success/i.test(value)) {
-    return "completed";
-  }
-
-  if (/cancel|abort/i.test(value)) {
-    return "cancelled";
-  }
-
-  if (/error|fail|stall/i.test(value)) {
-    return "stalled";
-  }
-
-  if (/queue/i.test(value)) {
-    return "queued";
-  }
-
-  return "running";
-}
-
-function normalizeToolNames(payload: Record<string, unknown>) {
-  const names = [
-    readString(payload.toolName),
-    readString(payload.tool)
-  ].filter((entry): entry is string => Boolean(entry));
-  return names.length > 0 ? Array.from(new Set(names)) : undefined;
-}
-
-function stableRuntimeIdentity(...values: Array<string | null | undefined>) {
-  return values.filter(Boolean).join(":").replace(/[^a-zA-Z0-9:_-]+/g, "-") || String(Date.now());
-}
-
 function safeFileName(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-");
 }
 
-function readTimestamp(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value < 10_000_000_000 ? value * 1000 : value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Date.parse(value);
-    return Number.isNaN(parsed) ? Date.now() : parsed;
-  }
-
-  return Date.now();
-}
-
-function readString(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function parseAgentIdFromSessionKey(sessionKey: string | null) {
-  if (!sessionKey?.startsWith("agent:")) {
-    return null;
-  }
-
-  const [, agentId] = sessionKey.split(":");
-  return agentId || null;
 }
