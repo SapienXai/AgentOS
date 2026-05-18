@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -205,6 +205,7 @@ afterEach(() => {
   setOpenClawAdapterForTesting(null);
   delete process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
   delete process.env.AGENTOS_OPENCLAW_GATEWAY_PASSWORD;
+  delete process.env.OPENCLAW_STATE_DIR;
 });
 
 test("Gateway native auth token generation configures OpenClaw and local env without exposing the token", async () => {
@@ -216,12 +217,16 @@ test("Gateway native auth token generation configures OpenClaw and local env wit
   });
   setOpenClawAdapterForTesting(adapter);
 
-  const result = await generateGatewayNativeAuthToken({ cwd });
+  const result = await generateGatewayNativeAuthToken({
+    cwd,
+    verifyNativeAuth: async () => ({ version: "9.9.9" })
+  });
   const envFile = await readFile(join(cwd, ".env.local"), "utf8");
   const configuredToken = await adapter.getConfig<string>("gateway.auth.token");
 
   assert.equal(result.activeEnvName, "AGENTOS_OPENCLAW_GATEWAY_TOKEN");
   assert.equal(result.restarted, true);
+  assert.equal(result.verified, true);
   assert.equal(typeof configuredToken, "string");
   assert.notEqual(configuredToken, "__OPENCLAW_REDACTED__");
   assert.match(envFile, /AGENTOS_OPENCLAW_GATEWAY_TOKEN="/);
@@ -324,6 +329,7 @@ test("Gateway native auth status directs scope-limited failures to local access 
 
 test("Gateway native auth device access repair approves latest local scope request", async () => {
   setOpenClawAdapterForTesting(createSettingsAdapter());
+  process.env.OPENCLAW_STATE_DIR = await mkdtemp(join(tmpdir(), "agentos-gateway-device-repair-"));
   let probeCalls = 0;
   let approveCalls = 0;
 
@@ -347,7 +353,14 @@ test("Gateway native auth device access repair approves latest local scope reque
     readDeviceAuthToken: async () => {
       return {
         token: "operator-device-token",
-        scopes: ["operator.read", "operator.write", "operator.admin"]
+        scopes: [
+          "operator.admin",
+          "operator.read",
+          "operator.write",
+          "operator.approvals",
+          "operator.pairing",
+          "operator.talk.secrets"
+        ]
       };
     }
   });
@@ -357,9 +370,143 @@ test("Gateway native auth device access repair approves latest local scope reque
   assert.equal(result.approved, true);
   assert.equal(result.requestId, "request-1");
   assert.equal(result.deviceId, "device-1");
-  assert.deepEqual(result.scopes, ["operator.read", "operator.write", "operator.admin"]);
+  assert.deepEqual(result.scopes, [
+    "operator.admin",
+    "operator.read",
+    "operator.write",
+    "operator.approvals",
+    "operator.pairing",
+    "operator.talk.secrets"
+  ]);
   assert.equal(result.envSynced, false);
   assert.equal(result.activeEnvName, null);
+});
+
+test("Gateway native auth device access repair still approves CLI scopes when native auth already works", async () => {
+  setOpenClawAdapterForTesting(createSettingsAdapter());
+  process.env.OPENCLAW_STATE_DIR = await mkdtemp(join(tmpdir(), "agentos-gateway-device-repair-"));
+  let probeCalls = 0;
+  let approveCalls = 0;
+
+  const result = await repairGatewayNativeDeviceAccess({
+    nativeProbe: async () => {
+      probeCalls += 1;
+      return { version: "9.9.9" };
+    },
+    approveLatest: async () => {
+      approveCalls += 1;
+      return {
+        requestId: "request-1",
+        device: {
+          deviceId: "device-1",
+          approvedScopes: [
+            "operator.admin",
+            "operator.read",
+            "operator.write",
+            "operator.approvals",
+            "operator.pairing",
+            "operator.talk.secrets"
+          ]
+        }
+      };
+    },
+    readDeviceAuthToken: async () => {
+      return {
+        token: "operator-device-token",
+        scopes: [
+          "operator.admin",
+          "operator.read",
+          "operator.write",
+          "operator.approvals",
+          "operator.pairing",
+          "operator.talk.secrets"
+        ]
+      };
+    }
+  });
+
+  assert.equal(probeCalls, 1);
+  assert.equal(approveCalls, 1);
+  assert.equal(result.approved, true);
+  assert.equal(result.requestId, "request-1");
+  assert.equal(result.deviceId, "device-1");
+  assert.deepEqual(result.scopes, [
+    "operator.admin",
+    "operator.read",
+    "operator.write",
+    "operator.approvals",
+    "operator.pairing",
+    "operator.talk.secrets"
+  ]);
+  assert.equal(result.approvalIssue, null);
+});
+
+test("Gateway native auth device access repair syncs approved pairing token for CLI harnesses", async () => {
+  setOpenClawAdapterForTesting(createSettingsAdapter());
+  const stateDir = await mkdtemp(join(tmpdir(), "agentos-gateway-device-sync-"));
+  const deviceId = "device-1";
+  const scopes = [
+    "operator.admin",
+    "operator.read",
+    "operator.write",
+    "operator.approvals",
+    "operator.pairing",
+    "operator.talk.secrets"
+  ];
+  process.env.OPENCLAW_STATE_DIR = stateDir;
+  await mkdir(join(stateDir, "identity"), { recursive: true });
+  await mkdir(join(stateDir, "devices"), { recursive: true });
+  await writeFile(join(stateDir, "identity", "device.json"), JSON.stringify({
+    version: 1,
+    deviceId
+  }), "utf8");
+  await writeFile(join(stateDir, "identity", "device-auth.json"), JSON.stringify({
+    version: 1,
+    deviceId,
+    tokens: {
+      operator: {
+        token: "old-token",
+        role: "operator",
+        scopes: ["operator.read"]
+      }
+    }
+  }), "utf8");
+  await writeFile(join(stateDir, "devices", "paired.json"), JSON.stringify({
+    [deviceId]: {
+      deviceId,
+      tokens: {
+        operator: {
+          token: "new-token",
+          role: "operator",
+          scopes
+        }
+      }
+    }
+  }), "utf8");
+
+  const result = await repairGatewayNativeDeviceAccess({
+    nativeProbe: async () => ({ version: "9.9.9" }),
+    approveLatest: async () => ({
+      requestId: "request-1",
+      device: {
+        deviceId,
+        approvedScopes: scopes
+      }
+    })
+  });
+  const authStore = JSON.parse(await readFile(join(stateDir, "identity", "device-auth.json"), "utf8")) as {
+    tokens?: {
+      operator?: {
+        token?: string;
+        scopes?: string[];
+      };
+    };
+  };
+
+  assert.equal(result.approved, true);
+  assert.deepEqual(result.scopes, scopes);
+  assert.equal(authStore.tokens?.operator?.token, "new-token");
+  assert.deepEqual(authStore.tokens?.operator?.scopes, scopes);
 });
 
 test("Gateway native auth status does not probe when native WS is force-disabled", async () => {

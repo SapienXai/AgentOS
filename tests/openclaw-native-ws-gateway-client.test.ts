@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import {
@@ -246,11 +249,15 @@ class FallbackGatewayClient implements OpenClawGatewayClient {
     return false;
   }
 
-  async setConfig() {
+  async setConfig(path: string, value: unknown) {
+    this.calls.push({ method: "setConfig", params: { path, value } });
+    this.config.set(path, value);
     return { stdout: "", stderr: "", code: 0 };
   }
 
-  async unsetConfig() {
+  async unsetConfig(path: string) {
+    this.calls.push({ method: "unsetConfig", params: { path } });
+    this.config.delete(path);
     return { stdout: "", stderr: "", code: 0 };
   }
 
@@ -615,7 +622,8 @@ test("native WS gateway client uses Gateway first for typed status requests", as
     "operator.read",
     "operator.write",
     "operator.approvals",
-    "operator.pairing"
+    "operator.pairing",
+    "operator.talk.secrets"
   ]);
   assert.deepEqual(fallback.calls, []);
   assert.deepEqual(getRecentOpenClawGatewayFallbackDiagnostics(), []);
@@ -728,6 +736,72 @@ test("native WS gateway client discovers configured Gateway auth for handshakes"
   assert.deepEqual(sentFrames[0]?.params.auth, {
     token: "local-token"
   });
+});
+
+test("native WS gateway client prefers shared auth over local device tokens", async () => {
+  const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+  const previousToken = process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
+  const stateDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-device-auth-"));
+  const identityDir = join(stateDir, "identity");
+  await mkdir(identityDir, { recursive: true });
+  await writeFile(join(identityDir, "device.json"), JSON.stringify({
+    deviceId: "device-1",
+    publicKeyPem: "unused-public-key",
+    privateKeyPem: "unused-private-key"
+  }), "utf8");
+  await writeFile(join(identityDir, "device-auth.json"), JSON.stringify({
+    deviceId: "device-1",
+    tokens: {
+      operator: {
+        token: "read-only-device-token",
+        scopes: ["operator.read"]
+      }
+    }
+  }), "utf8");
+  process.env.OPENCLAW_STATE_DIR = stateDir;
+  process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = "shared-gateway-token";
+
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect" ? { protocol: 4 } : { version: "9.9.9" }
+      });
+    });
+  });
+
+  try {
+    const client = new NativeWsOpenClawGatewayClient({
+      fallback,
+      webSocketFactory: WebSocketImpl,
+      url: "ws://127.0.0.1:18789",
+      timeoutMs: 250
+    });
+
+    await client.getStatus();
+
+    assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "status"]);
+    assert.deepEqual(sentFrames[0]?.params.auth, {
+      token: "shared-gateway-token"
+    });
+    assert.equal(sentFrames[0]?.params.device, undefined);
+    assert.deepEqual(fallback.configCalls, []);
+  } finally {
+    if (previousStateDir === undefined) {
+      delete process.env.OPENCLAW_STATE_DIR;
+    } else {
+      process.env.OPENCLAW_STATE_DIR = previousStateDir;
+    }
+
+    if (previousToken === undefined) {
+      delete process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
+    } else {
+      process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = previousToken;
+    }
+  }
 });
 
 test("native WS gateway client prefers remote auth for remote Gateway URLs", async () => {
@@ -1468,13 +1542,22 @@ test("native WS gateway client approves device access through Gateway before CLI
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
     globalThis.queueMicrotask(() => {
+      const payload = frame.method === "connect"
+        ? { protocol: 4 }
+        : frame.method === "device.pair.list"
+          ? {
+              pending: [
+                { requestId: "older-request", ts: 1 },
+                { requestId: "latest-request", ts: 2 }
+              ]
+            }
+          : { requestId: "latest-request", device: { deviceId: "device-1", approvedScopes: ["operator.read"] } };
+
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: true,
-        payload: frame.method === "connect"
-          ? { protocol: 4 }
-          : { requestId: "latest", device: { deviceId: "device-1", approvedScopes: ["operator.read"] } }
+        payload
       });
     });
   });
@@ -1486,11 +1569,11 @@ test("native WS gateway client approves device access through Gateway before CLI
   });
 
   assert.deepEqual(await client.approveDeviceAccess({ latest: true }), {
-    requestId: "latest",
+    requestId: "latest-request",
     device: { deviceId: "device-1", approvedScopes: ["operator.read"] }
   });
-  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "devices.approve"]);
-  assert.deepEqual(sentFrames[1]?.params, { latest: true });
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "device.pair.list", "device.pair.approve"]);
+  assert.deepEqual(sentFrames[2]?.params, { requestId: "latest-request" });
   assert.deepEqual(fallback.calls, []);
 });
 
@@ -1579,6 +1662,36 @@ test("native WS gateway client closes persistent connection after Gateway auth U
     "connect",
     "status"
   ]);
+});
+
+test("native WS gateway client falls back to CLI for Gateway auth config repair when token mismatches", async () => {
+  clearOpenClawGatewayFallbackDiagnosticsForTesting();
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: false,
+        error: {
+          message: "INVALID_REQUEST: unauthorized: gateway token mismatch (provide gateway auth token)"
+        }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await client.setConfig("gateway.auth.token", "fresh-token");
+
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect"]);
+  assert.deepEqual(fallback.calls.map((call) => call.method), ["setConfig"]);
+  assert.equal(fallback.config.get("gateway.auth.token"), "fresh-token");
+  assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.kind, "auth");
 });
 
 test("native WS gateway client falls back from config.patch to config.apply", async () => {

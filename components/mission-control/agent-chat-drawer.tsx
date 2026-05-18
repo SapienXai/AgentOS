@@ -21,7 +21,11 @@ import {
   sendAgentChatMessage,
   type AgentChatRunSnapshot
 } from "@/components/mission-control/agent-chat-runner";
-import { resolveAgentChatAuthAction } from "@/lib/openclaw/chat-auth-actions";
+import {
+  resolveAgentChatAuthAction,
+  resolveAgentChatGatewayRepairAction,
+  type AgentChatGatewayRepairAction
+} from "@/lib/openclaw/chat-auth-actions";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import type { MissionControlSnapshot, AgentRecord } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
@@ -180,6 +184,7 @@ export function AgentChatDrawer({
   const [revealingAssistantId, setRevealingAssistantId] = useState<string | null>(null);
   const [revealedAssistantTextById, setRevealedAssistantTextById] = useState<Record<string, string>>({});
   const [expandedThinkingById, setExpandedThinkingById] = useState<Record<string, boolean>>({});
+  const [repairingGatewayMessageId, setRepairingGatewayMessageId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const isVisibleRef = useRef(isVisible);
@@ -342,6 +347,71 @@ export function AgentChatDrawer({
     }
   };
 
+  const repairGatewayAccessAndRetry = async (
+    messageId: string,
+    text: string,
+    action: AgentChatGatewayRepairAction
+  ) => {
+    const retryText = text.trim();
+    if (!retryText || repairingGatewayMessageId || runSnapshot.isRunning) {
+      return;
+    }
+
+    setRepairingGatewayMessageId(messageId);
+
+    try {
+      const response = await fetch("/api/settings/gateway", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ action: action.apiAction })
+      });
+      const result = (await response.json().catch(() => null)) as {
+        authStatus?: {
+          native?: {
+            ok?: boolean;
+            issue?: string | null;
+          };
+        };
+        error?: string;
+      } | null;
+
+      if (!response.ok) {
+        throw new Error(result?.error || "Gateway access could not be repaired.");
+      }
+
+      if (result?.authStatus?.native && result.authStatus.native.ok === false) {
+        throw new Error(result.authStatus.native.issue || "Gateway access still needs attention.");
+      }
+
+      toast.success(`${action.label} repaired.`, {
+        description: "Retrying the chat message."
+      });
+      await onRefresh?.().catch(() => undefined);
+      setRepairingGatewayMessageId(null);
+      await sendAgentChatMessage({
+        agentId: agent.id,
+        agentName: agentLabel,
+        text: retryText,
+        onRefresh,
+        onSnapshotChange,
+        onError: (message) => {
+          toast.error("Chat message failed.", { description: message });
+        }
+      });
+    } catch (error) {
+      toast.error("Gateway repair failed.", {
+        description: error instanceof Error ? error.message : "Unable to repair Gateway access."
+      });
+    } finally {
+      setRepairingGatewayMessageId(null);
+      if (isVisibleRef.current) {
+        requestAnimationFrame(() => textareaRef.current?.focus());
+      }
+    }
+  };
+
   return (
     <div
       className={cn(
@@ -373,7 +443,9 @@ export function AgentChatDrawer({
             const isPendingUser = entry.role === "user" && entry.id === runSnapshot.userMessageId && runSnapshot.isRunning;
             const showInlineStatus = entry.status === "sending" && isPendingUser;
             const errorMessage = entry.errorMessage?.trim();
-            const authAction = errorMessage ? resolveAgentChatAuthAction(errorMessage, agent.modelId) : null;
+            const gatewayRepairAction = errorMessage ? resolveAgentChatGatewayRepairAction(errorMessage) : null;
+            const authAction =
+              errorMessage && !gatewayRepairAction ? resolveAgentChatAuthAction(errorMessage, agent.modelId) : null;
 
             return (
               <div key={entry.id} className={cn("flex", isUser ? "justify-end" : "justify-start")}>
@@ -474,6 +546,29 @@ export function AgentChatDrawer({
                         >
                           <KeyRound className="mr-1.5 h-3.5 w-3.5" />
                           Connect {authAction.label}
+                        </Button>
+                      ) : null}
+                      {gatewayRepairAction ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => void repairGatewayAccessAndRetry(entry.id, entry.text, gatewayRepairAction)}
+                          disabled={Boolean(repairingGatewayMessageId) || runSnapshot.isRunning}
+                          title={gatewayRepairAction.detail}
+                          className={cn(
+                            "mt-1 h-8 rounded-full px-3 text-[11px]",
+                            surfaceTheme === "light"
+                              ? "border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50"
+                              : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/16"
+                          )}
+                        >
+                          {repairingGatewayMessageId === entry.id ? (
+                            <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <KeyRound className="mr-1.5 h-3.5 w-3.5" />
+                          )}
+                          {gatewayRepairAction.cta}
                         </Button>
                       ) : null}
                     </div>

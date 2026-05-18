@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { WebSocket as NodeWebSocket } from "ws";
 import { z } from "zod";
 
 import { CliOpenClawGatewayClient } from "@/lib/openclaw/client/cli-gateway-client";
@@ -116,7 +117,8 @@ const DEFAULT_OPERATOR_SCOPES = [
   "operator.read",
   "operator.write",
   "operator.approvals",
-  "operator.pairing"
+  "operator.pairing",
+  "operator.talk.secrets"
 ];
 const REDACTED_OPENCLAW_SECRET = "__OPENCLAW_REDACTED__";
 
@@ -126,6 +128,9 @@ type WebSocketLike = {
   close(code?: number, reason?: string): void;
   addEventListener?: (type: string, listener: (event: unknown) => void) => void;
   removeEventListener?: (type: string, listener: (event: unknown) => void) => void;
+  on?: (type: string, listener: (...args: unknown[]) => void) => void;
+  off?: (type: string, listener: (...args: unknown[]) => void) => void;
+  removeListener?: (type: string, listener: (...args: unknown[]) => void) => void;
   onopen?: ((event: unknown) => void) | null;
   onmessage?: ((event: unknown) => void) | null;
   onerror?: ((event: unknown) => void) | null;
@@ -651,13 +656,21 @@ function resolveNativeTimeoutMs(input?: number, method?: string) {
 }
 
 function resolveWebSocketFactory(input?: WebSocketFactory): WebSocketFactory {
-  const factory = input ?? (globalThis.WebSocket as unknown as WebSocketFactory | undefined);
+  const factory = input ?? resolveDefaultWebSocketFactory();
 
   if (!factory) {
     throw new NativeGatewayError("Native WebSocket is not available in this runtime.");
   }
 
   return factory;
+}
+
+function resolveDefaultWebSocketFactory(): WebSocketFactory | undefined {
+  if (typeof process !== "undefined" && process.versions?.node) {
+    return NodeWebSocket as unknown as WebSocketFactory;
+  }
+
+  return globalThis.WebSocket as unknown as WebSocketFactory | undefined;
 }
 
 function addSocketListener(
@@ -670,6 +683,30 @@ function addSocketListener(
     return () => socket.removeEventListener?.(eventName, listener);
   }
 
+  if (socket.on) {
+    const wrappedListener = (...args: unknown[]) => {
+      if (eventName === "close") {
+        listener({
+          code: typeof args[0] === "number" ? args[0] : undefined,
+          reason: formatSocketCloseReasonArg(args[1])
+        });
+        return;
+      }
+
+      listener(args[0]);
+    };
+
+    socket.on(eventName, wrappedListener);
+    return () => {
+      if (socket.off) {
+        socket.off(eventName, wrappedListener);
+        return;
+      }
+
+      socket.removeListener?.(eventName, wrappedListener);
+    };
+  }
+
   const key = `on${eventName}` as "onopen" | "onmessage" | "onerror" | "onclose";
   const previous = socket[key];
   socket[key] = listener;
@@ -679,6 +716,22 @@ function addSocketListener(
       socket[key] = previous ?? null;
     }
   };
+}
+
+function formatSocketCloseReasonArg(value: unknown) {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (Buffer.isBuffer(value)) {
+    return value.toString("utf8");
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    return Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString("utf8");
+  }
+
+  return undefined;
 }
 
 function readSocketCloseReason(event: unknown) {
@@ -1620,26 +1673,39 @@ async function buildConnectParams(
   nonce?: string | null
 ): Promise<ConnectParamsContext> {
   const deviceAuth = await resolveLocalGatewayDeviceAuth(url, options);
-  const { token, password } = deviceAuth?.token
-    ? { token: "", password: "" }
-    : await resolveGatewayAuth(fallback, options, url, commandOptions);
-  const authToken = deviceAuth?.token ?? token;
+  const scopes = options.scopes ?? DEFAULT_OPERATOR_SCOPES;
+  let token = "";
+  let password = "";
+
+  try {
+    const gatewayAuth = await resolveGatewayAuth(fallback, options, url, commandOptions);
+    token = gatewayAuth.token;
+    password = gatewayAuth.password;
+  } catch (error) {
+    if (!deviceAuth?.token) {
+      throw error;
+    }
+  }
+
+  const activeDeviceAuth = deviceAuth && !token && !password
+    ? deviceAuth
+    : null;
+  const authToken = activeDeviceAuth?.token ?? token;
   const auth = authToken
     ? { token: authToken }
     : password
       ? { password }
       : undefined;
-  const scopes = options.scopes ?? DEFAULT_OPERATOR_SCOPES;
   const signedAtMs = Date.now();
   const platform = process.platform;
-  const device = deviceAuth && nonce
+  const device = activeDeviceAuth && nonce
     ? {
-      id: deviceAuth.deviceId,
-      publicKey: publicKeyRawBase64UrlFromPem(deviceAuth.publicKeyPem),
+      id: activeDeviceAuth.deviceId,
+      publicKey: publicKeyRawBase64UrlFromPem(activeDeviceAuth.publicKeyPem),
       signature: signDevicePayload(
-        deviceAuth.privateKeyPem,
+        activeDeviceAuth.privateKeyPem,
         buildDeviceAuthPayloadV3({
-          deviceId: deviceAuth.deviceId,
+          deviceId: activeDeviceAuth.deviceId,
           clientId: options.clientName ?? SERVER_OPERATOR_CLIENT_ID,
           clientMode: SERVER_OPERATOR_CLIENT_MODE,
           role: options.role ?? "operator",
@@ -1657,7 +1723,7 @@ async function buildConnectParams(
     : undefined;
 
   return {
-    deviceAuth,
+    deviceAuth: activeDeviceAuth,
     params: {
       minProtocol: MIN_CONTROL_PROTOCOL_VERSION,
       maxProtocol: MAX_CONTROL_PROTOCOL_VERSION,
@@ -2658,16 +2724,40 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     });
   }
 
-  approveDeviceAccess(input: OpenClawDeviceApproveInput = {}, options: OpenClawCommandOptions = {}) {
+  approveDeviceAccess(
+    input: OpenClawDeviceApproveInput = {},
+    options: OpenClawCommandOptions = {}
+  ): Promise<OpenClawDeviceApprovePayload> {
+    if (input.latest !== false && !input.requestId) {
+      return this.gatewayFirstCompatible(
+        "devicePairList",
+        {},
+        options,
+        (payload) => parseObjectGatewayPayload<Record<string, unknown>>("device.pair.list", payload),
+        () => this.fallback.call<Record<string, unknown>>("device.pair.list", {}, options)
+      ).then((payload) => {
+        const requestId = resolveLatestPendingDeviceRequestId(payload);
+
+        if (!requestId) {
+          throw new OpenClawGatewayClientError("No pending OpenClaw device access request found.", "unknown");
+        }
+
+        return this.approveDeviceAccess({
+          ...input,
+          latest: false,
+          requestId
+        }, options);
+      });
+    }
+
     return this.gatewayFirstCompatible(
       "deviceApproval",
       {
-        latest: input.latest ?? true,
         requestId: input.requestId ?? undefined,
         scopes: input.scopes
       },
       options,
-      (payload) => parseObjectGatewayPayload<OpenClawDeviceApprovePayload>("devices.approve", payload),
+      (payload) => parseObjectGatewayPayload<OpenClawDeviceApprovePayload>("device.pair.approve", payload),
       () => this.fallback.approveDeviceAccess(input, options)
     );
   }
@@ -3315,9 +3405,12 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       return commandResultFromGatewayPayload(payload);
     } catch (error) {
       this.options.onNativeFailure?.(error, operation);
-      if (!shouldUseCliFallback(error, error instanceof NativeGatewayRequestError ? error.method : operation, {
+      const failedMethod = error instanceof NativeGatewayRequestError ? error.method : operation;
+      const fallbackAllowed = shouldUseCliFallback(error, failedMethod, {
         safety: "mutation"
-      })) {
+      }) || canFallbackGatewayAuthConfigRepair(error, path);
+
+      if (!fallbackAllowed) {
         throw error;
       }
       this.recordGatewayFallback(operation, error);
@@ -3328,4 +3421,46 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       }
     }
   }
+}
+
+function canFallbackGatewayAuthConfigRepair(error: unknown, path: string) {
+  const kind = normalizeClientError(error).kind;
+
+  if (
+    !isGatewayTransportConfigPath(path) ||
+    (kind !== "auth" && kind !== "timeout" && kind !== "unreachable")
+  ) {
+    return false;
+  }
+
+  if (error instanceof NativeGatewayRequestError) {
+    return !/^config\.(patch|apply|set|unset)$/i.test(error.method);
+  }
+
+  return true;
+}
+
+function resolveLatestPendingDeviceRequestId(payload: Record<string, unknown>) {
+  const pending = Array.isArray(payload.pending) ? payload.pending : [];
+  let selected: { requestId: string; ts: number } | null = null;
+
+  for (const entry of pending) {
+    if (!isObjectRecord(entry)) {
+      continue;
+    }
+
+    const requestId = readNonEmptyString(entry.requestId);
+
+    if (!requestId) {
+      continue;
+    }
+
+    const ts = typeof entry.ts === "number" && Number.isFinite(entry.ts) ? entry.ts : 0;
+
+    if (!selected || ts > selected.ts) {
+      selected = { requestId, ts };
+    }
+  }
+
+  return selected?.requestId ?? null;
 }

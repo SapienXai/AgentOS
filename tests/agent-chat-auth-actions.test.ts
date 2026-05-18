@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { resolveAgentChatAuthAction } from "@/lib/openclaw/chat-auth-actions";
+import {
+  resolveAgentChatAuthAction,
+  resolveAgentChatGatewayRepairAction
+} from "@/lib/openclaw/chat-auth-actions";
 
 test("agent chat auth action detects ChatGPT Codex reconnect messages", () => {
   const action = resolveAgentChatAuthAction(
@@ -42,4 +45,31 @@ test("agent chat auth action maps Gemini model provider to Google", () => {
 
 test("agent chat auth action ignores non-auth chat errors", () => {
   assert.equal(resolveAgentChatAuthAction("OpenClaw completed without returning a response.", "openai/gpt-5.4-mini"), null);
+});
+
+test("agent chat gateway repair action detects OpenClaw scope upgrade failures", () => {
+  const action = resolveAgentChatGatewayRepairAction(
+    "OpenClaw command failed with exit code 1: gateway connect failed: GatewayClientRequestError: scope upgrade pending approval (requestId: 163fa71c-6476-4d48-964b-7c7c423b1238)."
+  );
+
+  assert.equal(action?.label, "Gateway access");
+  assert.equal(action?.apiAction, "repairDeviceAccess");
+});
+
+test("agent chat gateway repair action detects device token scope mismatch diagnostics", () => {
+  const action = resolveAgentChatGatewayRepairAction(
+    "gateway.runtime.snapshot: Gateway-first request fell back to CLI (auth): INVALID_REQUEST: unauthorized: device token scope mismatch (re-pair or approve scope upgrade)"
+  );
+
+  assert.equal(action?.label, "Gateway access");
+  assert.equal(action?.apiAction, "repairDeviceAccess");
+});
+
+test("agent chat gateway repair action detects gateway token mismatch diagnostics", () => {
+  const action = resolveAgentChatGatewayRepairAction(
+    "gateway.health: Gateway-first request fell back to CLI (auth): INVALID_REQUEST: unauthorized: gateway token mismatch (provide gateway auth token)"
+  );
+
+  assert.equal(action?.label, "Gateway token");
+  assert.equal(action?.apiAction, "generateLocalToken");
 });

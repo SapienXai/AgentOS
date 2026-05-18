@@ -16,6 +16,7 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "runtimeSnapshot"
   | "tools"
   | "execApprovals"
+  | "devicePairList"
   | "deviceApproval"
   | "cronRead"
   | "channels"
@@ -78,7 +79,8 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
       "exec.approvals.set"
     ]
   },
-  { id: "deviceApproval", label: "Device access repair", methods: ["devices.approve", "gateway.devices.approve"] },
+  { id: "devicePairList", label: "Device pairing list", methods: ["device.pair.list", "devices.list", "gateway.devices.list"] },
+  { id: "deviceApproval", label: "Device access repair", methods: ["device.pair.approve", "devices.approve", "gateway.devices.approve"] },
   { id: "cronRead", label: "Automation status", methods: ["cron.list", "cron.status"] },
   { id: "channels", label: "Channel status", methods: ["channels.status"] },
   { id: "channelLogs", label: "Channel logs", methods: ["channels.logs"] },

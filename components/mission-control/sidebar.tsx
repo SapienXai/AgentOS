@@ -16,6 +16,7 @@ import {
   Cpu,
   FolderKanban,
   Home,
+  KeyRound,
   LoaderCircle,
   MoreHorizontal,
   RefreshCw,
@@ -72,6 +73,10 @@ import {
   resolveAgentModelLabel,
   toneForHealth
 } from "@/lib/openclaw/presenters";
+import {
+  resolveGatewayAuthRepairAction,
+  type GatewayAuthRepairAction
+} from "@/lib/openclaw/gateway-auth-actions";
 import type { AgentPolicy, AgentPreset, DiscoveredModelCandidate, MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
 
@@ -191,11 +196,13 @@ export function MissionSidebar({
     .replace(/^wss?:\/\//, "")
     .replace(/\/$/, "");
   const visibleDiagnosticIssue = resolveSidebarDiagnosticIssue(snapshot.diagnostics.issues);
+  const gatewayRepairAction = resolveGatewayAuthRepairAction(visibleDiagnosticIssue);
   const [isEditAgentOpen, setIsEditAgentOpen] = useState(false);
   const [isEditAgentAdvancedOpen, setIsEditAgentAdvancedOpen] = useState(false);
   const [isSavingAgent, setIsSavingAgent] = useState(false);
   const [isDeleteWorkspaceOpen, setIsDeleteWorkspaceOpen] = useState(false);
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
+  const [isRepairingGatewayAccess, setIsRepairingGatewayAccess] = useState(false);
   const [isDeleteAgentOpen, setIsDeleteAgentOpen] = useState(false);
   const [isDeletingAgent, setIsDeletingAgent] = useState(false);
   const [editDraft, setEditDraft] = useState<AgentDraft | null>(null);
@@ -262,6 +269,47 @@ export function MissionSidebar({
     }
 
     onToggleCollapsed();
+  };
+  const repairGatewayAccess = async (action: GatewayAuthRepairAction) => {
+    setIsRepairingGatewayAccess(true);
+
+    try {
+      const response = await fetch("/api/settings/gateway", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ action: action.apiAction })
+      });
+      const result = (await response.json().catch(() => null)) as {
+        authStatus?: {
+          native?: {
+            ok?: boolean;
+            issue?: string | null;
+          };
+        };
+        error?: string;
+      } | null;
+
+      if (!response.ok) {
+        throw new Error(result?.error || "Gateway access could not be repaired.");
+      }
+
+      if (result?.authStatus?.native && result.authStatus.native.ok === false) {
+        throw new Error(result.authStatus.native.issue || "Gateway access still needs attention.");
+      }
+
+      toast.success(`${action.label} repaired.`, {
+        description: "Refreshing OpenClaw status."
+      });
+      await onRefresh().catch(() => undefined);
+    } catch (error) {
+      toast.error("Gateway repair failed.", {
+        description: error instanceof Error ? error.message : "Unable to repair Gateway access."
+      });
+    } finally {
+      setIsRepairingGatewayAccess(false);
+    }
   };
   const handleSectionNavigation = useCallback(
     (sectionId: SidebarSectionId) => {
@@ -776,8 +824,26 @@ export function MissionSidebar({
                   </div>
 
                 {visibleDiagnosticIssue ? (
-                  <div className="mt-2.5 rounded-[14px] border border-amber-400/15 bg-amber-400/[0.08] px-2.5 py-1.5 text-[11px] text-amber-100">
-                    {visibleDiagnosticIssue}
+                  <div className="mt-2.5 rounded-[14px] border border-amber-400/15 bg-amber-400/[0.08] px-2.5 py-2 text-[11px] text-amber-100">
+                    <p>{visibleDiagnosticIssue}</p>
+                    {gatewayRepairAction ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void repairGatewayAccess(gatewayRepairAction)}
+                        disabled={isRepairingGatewayAccess}
+                        title={gatewayRepairAction.detail}
+                        className="mt-2 h-7 w-full justify-center rounded-none border-emerald-300/20 bg-emerald-300/10 px-3 text-[10px] text-emerald-50 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-300/30 hover:bg-emerald-300/16 hover:text-emerald-50"
+                      >
+                        {isRepairingGatewayAccess ? (
+                          <LoaderCircle className="mr-1.5 h-3 w-3 animate-spin" />
+                        ) : (
+                          <KeyRound className="mr-1.5 h-3 w-3" />
+                        )}
+                        {gatewayRepairAction.cta}
+                      </Button>
+                    ) : null}
                   </div>
                 ) : null}
 

@@ -468,13 +468,30 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
     return runOpenClawJson<Record<string, unknown>>(["gateway", action, "--json"], options);
   }
 
-  approveDeviceAccess(input: OpenClawDeviceApproveInput = {}, options: OpenClawCommandOptions = {}) {
+  async approveDeviceAccess(
+    input: OpenClawDeviceApproveInput = {},
+    options: OpenClawCommandOptions = {}
+  ): Promise<OpenClawDeviceApprovePayload> {
+    if (input.latest !== false && !input.requestId) {
+      const list = await runOpenClawJson<Record<string, unknown>>(["devices", "list", "--json"], options);
+      const requestId = resolveLatestPendingDeviceRequestId(list);
+
+      if (!requestId) {
+        throw new Error("No pending OpenClaw device access request found.");
+      }
+
+      return this.approveDeviceAccess({
+        ...input,
+        latest: false,
+        requestId
+      }, options);
+    }
+
     const args = ["devices", "approve"];
 
-    if (input.latest !== false && !input.requestId) {
-      args.push("--latest");
+    if (input.requestId) {
+      args.push(input.requestId);
     }
-    appendOptionalCliFlag(args, "--request-id", input.requestId);
     for (const scope of input.scopes ?? []) {
       appendOptionalCliFlag(args, "--scope", scope);
     }
@@ -628,4 +645,32 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
   listCronJobs(input: OpenClawCronListInput = {}, options: OpenClawCommandOptions = {}) {
     return this.call<OpenClawCronListPayload>("cron.list", { ...input }, options);
   }
+}
+
+function resolveLatestPendingDeviceRequestId(payload: Record<string, unknown>) {
+  const pending = Array.isArray(payload.pending) ? payload.pending : [];
+  let selected: { requestId: string; ts: number } | null = null;
+
+  for (const entry of pending) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+
+    const record = entry as Record<string, unknown>;
+    const requestId = typeof record.requestId === "string" && record.requestId.trim()
+      ? record.requestId.trim()
+      : null;
+
+    if (!requestId) {
+      continue;
+    }
+
+    const ts = typeof record.ts === "number" && Number.isFinite(record.ts) ? record.ts : 0;
+
+    if (!selected || ts > selected.ts) {
+      selected = { requestId, ts };
+    }
+  }
+
+  return selected?.requestId ?? null;
 }

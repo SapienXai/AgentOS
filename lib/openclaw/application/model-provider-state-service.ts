@@ -3,6 +3,7 @@ import "server-only";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getModelProviderDescriptor, isAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
@@ -66,6 +67,7 @@ const openClawAuthProfilesPath = path.join(
   "auth-profiles.json"
 );
 const legacyProviderFileFallbackEnv = "AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK";
+const gatewayConfigPatchRetryDelaysMs = [500, 1_250, 2_500];
 
 export async function readOpenClawConfiguredModelIds() {
   const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
@@ -210,6 +212,27 @@ export async function addOpenClawModelsToConfig(provider: AddModelsProviderId, m
 }
 
 async function addModelsToConfigViaGateway(provider: AddModelsProviderId, normalizedModelIds: string[]) {
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt <= gatewayConfigPatchRetryDelaysMs.length; attempt += 1) {
+    try {
+      await addModelsToConfigViaGatewayOnce(provider, normalizedModelIds);
+      return;
+    } catch (error) {
+      lastError = error;
+
+      if (attempt >= gatewayConfigPatchRetryDelaysMs.length || !isRetryableGatewayConfigPatchError(error)) {
+        throw error;
+      }
+
+      await delay(gatewayConfigPatchRetryDelaysMs[attempt] ?? 0);
+    }
+  }
+
+  throw lastError;
+}
+
+async function addModelsToConfigViaGatewayOnce(provider: AddModelsProviderId, normalizedModelIds: string[]) {
   const snapshot = await getOpenClawAdapter().call<Record<string, unknown>>("config.get", {}, { timeoutMs: 5_000 });
   const config = isRecord(snapshot.config) ? snapshot.config : {};
   const patch: Record<string, unknown> = {
@@ -257,6 +280,12 @@ async function addModelsToConfigViaGateway(provider: AddModelsProviderId, normal
   }
 
   await getOpenClawAdapter().call("config.patch", params, { timeoutMs: 5_000 });
+}
+
+function isRetryableGatewayConfigPatchError(error: unknown) {
+  const message = readErrorMessage(error);
+
+  return /1012|service restart|connection closed|closed before|gateway closed|websocket|ECONNREFUSED|ECONNRESET|socket hang up|timed out|timeout/i.test(message);
 }
 
 function normalizeModelIdForProvider(provider: AddModelsProviderId, modelId: string) {

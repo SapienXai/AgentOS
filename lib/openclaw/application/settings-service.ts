@@ -1,9 +1,9 @@
 import "server-only";
 
 import { randomBytes } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { getOpenClawAdapter, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
@@ -41,7 +41,16 @@ const GATEWAY_AUTH_PASSWORD_ENV_NAME = "AGENTOS_OPENCLAW_GATEWAY_PASSWORD";
 const GATEWAY_AUTH_MODE_CONFIG_KEY = "gateway.auth.mode";
 const GATEWAY_AUTH_TOKEN_CONFIG_KEY = "gateway.auth.token";
 const GATEWAY_AUTH_RESTART_SETTLE_MS = 1_250;
+const GATEWAY_AUTH_RESTART_VERIFY_DELAYS_MS = [0, 500, 1_000, 1_500, 2_500, 3_500];
 const GATEWAY_DEVICE_ACCESS_REPAIR_TIMEOUT_MS = 10_000;
+const GATEWAY_DEVICE_ACCESS_REQUIRED_SCOPES = [
+  "operator.admin",
+  "operator.read",
+  "operator.write",
+  "operator.approvals",
+  "operator.pairing",
+  "operator.talk.secrets"
+];
 
 type GatewayNativeAuthStatusOptions = {
   env?: Record<string, string | undefined>;
@@ -288,7 +297,10 @@ export async function saveGatewayNativeAuthCredential(input: {
   };
 }
 
-export async function generateGatewayNativeAuthToken(input: { cwd?: string } = {}) {
+export async function generateGatewayNativeAuthToken(input: {
+  cwd?: string;
+  verifyNativeAuth?: (token: string) => Promise<unknown>;
+} = {}) {
   const token = randomBytes(32).toString("base64url");
 
   await getOpenClawAdapter().setConfig(GATEWAY_AUTH_MODE_CONFIG_KEY, "token", {
@@ -306,6 +318,8 @@ export async function generateGatewayNativeAuthToken(input: { cwd?: string } = {
 
   let restarted = false;
   let restartIssue: string | null = null;
+  let verified = false;
+  let verificationIssue: string | null = null;
 
   try {
     await getOpenClawAdapter().controlGateway("restart", {
@@ -313,6 +327,8 @@ export async function generateGatewayNativeAuthToken(input: { cwd?: string } = {
     });
     restarted = true;
     await delay(GATEWAY_AUTH_RESTART_SETTLE_MS);
+    verificationIssue = await waitForGeneratedGatewayTokenAuth(token, input.verifyNativeAuth);
+    verified = !verificationIssue;
   } catch (error) {
     restartIssue = error instanceof Error ? error.message : "Gateway restart failed.";
   }
@@ -323,18 +339,50 @@ export async function generateGatewayNativeAuthToken(input: { cwd?: string } = {
     envFile: saved.envFile,
     activeEnvName: saved.activeEnvName,
     restarted,
-    restartIssue
+    restartIssue,
+    verified,
+    verificationIssue
   };
+}
+
+async function waitForGeneratedGatewayTokenAuth(
+  token: string,
+  verifyNativeAuth: ((token: string) => Promise<unknown>) | undefined
+) {
+  let issue: string | null = null;
+  const verify = verifyNativeAuth ?? ((value: string) =>
+    new NativeWsOpenClawGatewayClient({ token: value }).callNative("status", {}, {
+      timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
+    }));
+
+  for (const delayMs of GATEWAY_AUTH_RESTART_VERIFY_DELAYS_MS) {
+    if (delayMs > 0) {
+      await delay(delayMs);
+    }
+
+    try {
+      await verify(token);
+      return null;
+    } catch (error) {
+      issue = error instanceof Error ? error.message : "Gateway auth verification failed.";
+    }
+  }
+
+  return issue;
 }
 
 export async function repairGatewayNativeDeviceAccess(
   options: GatewayNativeDeviceAccessRepairOptions = {}
 ): Promise<GatewayNativeDeviceAccessRepairResult> {
+  const readDeviceAuthToken = options.readDeviceAuthToken ?? readLocalOpenClawDeviceAuthToken;
+  let probeSucceeded = false;
+
   try {
     await (options.nativeProbe ?? (() =>
       new NativeWsOpenClawGatewayClient().callNative("status", {}, {
         timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
       })))();
+    probeSucceeded = true;
   } catch {
     // A failed native probe is still useful here because OpenClaw records the
     // pending scope-upgrade request that devices approve can complete.
@@ -355,19 +403,41 @@ export async function repairGatewayNativeDeviceAccess(
   try {
     const payload = await (options.approveLatest ?? approveLatestOpenClawDeviceAccess)();
     result = normalizeGatewayDeviceApprovePayload(payload);
-    deviceToken = await (options.readDeviceAuthToken ?? readLocalOpenClawDeviceAuthToken)();
+    deviceToken = await syncLocalOpenClawDeviceAuthTokenFromPairing() ?? await readDeviceAuthToken();
   } catch (error) {
     approvalIssue = error instanceof Error ? error.message : "OpenClaw device approval failed.";
-    deviceToken = await (options.readDeviceAuthToken ?? readLocalOpenClawDeviceAuthToken)();
+    deviceToken = await syncLocalOpenClawDeviceAuthTokenFromPairing() ?? await readDeviceAuthToken();
 
-    if (!deviceToken?.token) {
+    if (!deviceToken?.token || !hasGatewayDeviceAccessRequiredScopes(deviceToken.scopes)) {
       throw error;
     }
 
     result = {
       ...result,
+      approved: true,
       scopes: deviceToken.scopes
     };
+  }
+
+  if (!result.approved && probeSucceeded && hasGatewayDeviceAccessRequiredScopes(deviceToken?.scopes ?? [])) {
+    result = {
+      ...result,
+      approved: true,
+      scopes: deviceToken?.scopes ?? result.scopes
+    };
+  }
+
+  if (result.approved && hasGatewayDeviceAccessRequiredScopes(deviceToken?.scopes ?? [])) {
+    result = {
+      ...result,
+      scopes: deviceToken?.scopes ?? result.scopes
+    };
+  }
+
+  if (result.approved && !hasGatewayDeviceAccessRequiredScopes(deviceToken?.scopes ?? result.scopes)) {
+    throw new Error(
+      "OpenClaw device access was approved, but the local CLI device token was not updated with the required operator scopes."
+    );
   }
 
   invalidateSettingsSnapshot();
@@ -633,7 +703,7 @@ function normalizeGatewayDeviceApprovePayload(input: unknown): GatewayNativeDevi
 }
 
 async function readLocalOpenClawDeviceAuthToken(): Promise<GatewayDeviceAuthToken | null> {
-  const content = await readOptionalText(join(homedir(), ".openclaw", "identity", "device-auth.json"));
+  const content = await readOptionalText(join(resolveOpenClawStateDir(), "identity", "device-auth.json"));
 
   if (!content.trim()) {
     return null;
@@ -661,6 +731,95 @@ async function readLocalOpenClawDeviceAuthToken(): Promise<GatewayDeviceAuthToke
   } catch {
     return null;
   }
+}
+
+async function syncLocalOpenClawDeviceAuthTokenFromPairing(): Promise<GatewayDeviceAuthToken | null> {
+  const stateDir = resolveOpenClawStateDir();
+  const identity = await readOptionalJson<{
+    deviceId?: unknown;
+  }>(join(stateDir, "identity", "device.json"));
+  const deviceId = readOptionalString(identity?.deviceId);
+
+  if (!deviceId) {
+    return null;
+  }
+
+  const paired = await readOptionalJson<Record<string, {
+    tokens?: {
+      operator?: {
+        token?: unknown;
+        role?: unknown;
+        scopes?: unknown;
+      };
+    };
+  }>>(join(stateDir, "devices", "paired.json"));
+  const operatorToken = paired?.[deviceId]?.tokens?.operator;
+  const token = readOptionalString(operatorToken?.token);
+  const scopes = readStringArray(operatorToken?.scopes);
+
+  if (!token) {
+    return null;
+  }
+
+  const authPath = join(stateDir, "identity", "device-auth.json");
+  const existing = await readOptionalJson<{
+    version?: unknown;
+    deviceId?: unknown;
+    tokens?: Record<string, unknown>;
+  }>(authPath);
+  const tokens = existing?.deviceId === deviceId && existing.tokens && typeof existing.tokens === "object"
+    ? { ...existing.tokens }
+    : {};
+
+  tokens.operator = {
+    token,
+    role: readOptionalString(operatorToken?.role) ?? "operator",
+    scopes,
+    updatedAtMs: Date.now()
+  };
+
+  await mkdir(dirname(authPath), { recursive: true });
+  await writeFile(authPath, `${JSON.stringify({
+    version: 1,
+    deviceId,
+    tokens
+  }, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600
+  });
+
+  return {
+    token,
+    scopes
+  };
+}
+
+async function readOptionalJson<TPayload>(path: string): Promise<TPayload | null> {
+  const content = await readOptionalText(path);
+
+  if (!content.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(content) as TPayload;
+  } catch {
+    return null;
+  }
+}
+
+function resolveOpenClawStateDir() {
+  const override = process.env.OPENCLAW_STATE_DIR?.trim();
+  if (override) {
+    return override.startsWith("~") ? join(homedir(), override.slice(1)) : override;
+  }
+
+  return join(homedir(), ".openclaw");
+}
+
+function hasGatewayDeviceAccessRequiredScopes(scopes: string[]) {
+  const available = new Set(scopes);
+  return GATEWAY_DEVICE_ACCESS_REQUIRED_SCOPES.every((scope) => available.has(scope));
 }
 
 function readOptionalString(value: unknown) {

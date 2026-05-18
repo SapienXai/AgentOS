@@ -3,6 +3,10 @@ import {
   modelProviderRegistry,
   normalizeAddModelsProviderId
 } from "@/lib/openclaw/model-provider-registry";
+import {
+  resolveGatewayAuthRepairAction,
+  type GatewayAuthRepairAction
+} from "@/lib/openclaw/gateway-auth-actions";
 import type { AddModelsProviderId } from "@/lib/openclaw/types";
 
 export type AgentChatAuthAction = {
@@ -10,6 +14,8 @@ export type AgentChatAuthAction = {
   label: string;
   detail: string;
 };
+
+export type AgentChatGatewayRepairAction = GatewayAuthRepairAction;
 
 export function resolveAgentChatAuthAction(
   message: string | null | undefined,
@@ -37,6 +43,12 @@ export function resolveAgentChatAuthAction(
     label,
     detail: `Connect ${label}, then retry this chat message.`
   };
+}
+
+export function resolveAgentChatGatewayRepairAction(
+  message: string | null | undefined
+): AgentChatGatewayRepairAction | null {
+  return resolveGatewayAuthRepairAction(message);
 }
 
 function resolveProviderFromAuthCommand(message: string) {
