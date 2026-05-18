@@ -12,12 +12,15 @@ import {
   OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS,
   OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS,
   getOpenClawGatewayCompatibilityOperation,
-  getOpenClawGatewayMethodCandidates
+  getOpenClawGatewayMethodCandidates,
+  getOpenClawGatewayOperationLabel
 } from "@/lib/openclaw/client/gateway-compatibility";
 import type {
   OpenClawCapabilityMatrix,
   OpenClawCapabilityOperation,
-  OpenClawCapabilitySupport
+  OpenClawCapabilitySupport,
+  OpenClawGatewayMethodContractAudit,
+  OpenClawGatewayMethodContractAuditSource
 } from "@/lib/openclaw/types";
 
 const capabilityCacheTtlMs = 60_000;
@@ -77,18 +80,22 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
   let authScopes: string[] = [];
   let supportedMethods: string[] = [];
   let supportedEvents: string[] = [];
+  let methodContractSource: OpenClawGatewayMethodContractAuditSource = "unavailable";
 
   if (isCliGatewayClientForcedByEnv()) {
+    methodContractSource = "disabled";
     diagnostics.push("Native Gateway WS is disabled by environment configuration.");
   } else {
     if (nativeCapabilityCallerForTesting) {
-      const capabilityPayload = await callFirstSupported(nativeCapabilityCallerForTesting, [
+      const capabilityResult = await callFirstSupported(nativeCapabilityCallerForTesting, [
         "rpc.discover",
         "rpc.methods",
         "system.capabilities",
         "capabilities"
       ], diagnostics);
+      const capabilityPayload = capabilityResult?.payload ?? null;
 
+      methodContractSource = capabilityResult?.method ?? "unavailable";
       protocolVersion = readProtocolVersion(capabilityPayload);
       authMode = readAuthMode(capabilityPayload);
       authRole = readAuthRole(capabilityPayload);
@@ -100,6 +107,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
         const hello = await new NativeWsOpenClawGatewayClient({ timeoutMs: 2_500 }).probeNativeHandshake({
           timeoutMs: 2_500
         });
+        methodContractSource = "gateway-handshake";
         protocolVersion = readProtocolVersion(hello);
         authMode = readAuthMode(hello);
         authRole = readAuthRole(hello);
@@ -125,12 +133,14 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
     ? OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS.filter((method) => !methodSet.has(method))
     : [];
   const operation = (
+    label: string,
     methods: string[],
     events: string[] = [],
     fallbackAllowed = true
   ): OpenClawCapabilityOperation => {
     if (isCliGatewayClientForcedByEnv()) {
       return {
+        label,
         mode: "cli-fallback",
         methods,
         events,
@@ -145,6 +155,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
 
     if (methodSet.size === 0 && eventSet.size === 0) {
       return {
+        label,
         mode: "unknown",
         methods,
         events,
@@ -161,6 +172,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
     const eventSupported = events.some((event) => eventSet.has(event));
     if (supportedMethod || eventSupported) {
       return {
+        label,
         mode: "gateway-native",
         methods,
         events,
@@ -176,6 +188,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
     }
 
     return {
+      label,
       mode: fallbackAllowed ? "degraded" : "disabled",
       methods,
       events,
@@ -192,11 +205,15 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
   const operations = Object.fromEntries(
     OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS.map((definition) => [
       definition.id,
-      operation(definition.methods, definition.events ?? [], definition.fallbackAllowed ?? true)
+      operation(definition.label, definition.methods, definition.events ?? [], definition.fallbackAllowed ?? true)
     ])
   ) as Record<string, OpenClawCapabilityOperation>;
-  const fallbackReasons = getRecentOpenClawGatewayFallbackDiagnostics().map(
-    (entry) => `${entry.operation}: ${entry.kind}: ${entry.issue} Recovery: ${entry.recovery}`
+  const fallbackDiagnostics = getRecentOpenClawGatewayFallbackDiagnostics().map((entry) => ({
+    ...entry,
+    operationLabel: getOpenClawGatewayOperationLabel(entry.operation)
+  }));
+  const fallbackReasons = fallbackDiagnostics.map(
+    (entry) => `${entry.operationLabel} (${entry.operation}): ${entry.kind}: ${entry.issue} Recovery: ${entry.recovery}`
   );
   const degradedFeatures = Object.entries(operations)
     .filter(([, value]) => value.mode === "degraded" || value.mode === "cli-fallback")
@@ -205,9 +222,17 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
     .filter(([, value]) => value.compatibility === "alias" && value.supportedMethod)
     .map(([name, value]) => `${name}: ${value.supportedMethod}`);
   const protocolStatus = resolveProtocolCompatibilityStatus(protocolVersion);
+  const detectedAt = new Date().toISOString();
+  const methodContract = buildGatewayMethodContractAudit({
+    checkedAt: detectedAt,
+    source: methodContractSource,
+    methodSet,
+    operations,
+    unsupportedGatewayMethods
+  });
 
   return {
-    detectedAt: new Date().toISOString(),
+    detectedAt,
     openClawVersion: version ?? null,
     gatewayProtocolVersion: protocolVersion,
     requestedProtocolRange: OPENCLAW_GATEWAY_PROTOCOL_RANGE,
@@ -262,6 +287,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
         version: protocolVersion,
         reason: resolveProtocolCompatibilityReason(protocolVersion, protocolStatus)
       },
+      methodContract,
       nativeOperationCount: Object.values(operations).filter((value) => value.mode === "gateway-native").length,
       degradedOperationCount: Object.values(operations).filter((value) => value.mode === "degraded" || value.mode === "cli-fallback").length,
       unknownOperationCount: Object.values(operations).filter((value) => value.mode === "unknown").length,
@@ -271,6 +297,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
         .map(([name]) => name)
     },
     degradedFeatures,
+    fallbackDiagnostics,
     fallbackReasons,
     unsupportedGatewayMethods,
     diagnostics
@@ -281,16 +308,77 @@ async function callFirstSupported(
   caller: (method: string) => Promise<unknown>,
   methods: string[],
   diagnostics: string[]
-) {
+): Promise<{ method: OpenClawGatewayMethodContractAuditSource; payload: unknown } | null> {
   for (const method of methods) {
     try {
-      return await caller(method);
+      return {
+        method: method as OpenClawGatewayMethodContractAuditSource,
+        payload: await caller(method)
+      };
     } catch (error) {
       diagnostics.push(`${method}: ${readErrorMessage(error)}`);
     }
   }
 
   return null;
+}
+
+function buildGatewayMethodContractAudit(input: {
+  checkedAt: string;
+  source: OpenClawGatewayMethodContractAuditSource;
+  methodSet: Set<string>;
+  operations: Record<string, OpenClawCapabilityOperation>;
+  unsupportedGatewayMethods: string[];
+}): OpenClawGatewayMethodContractAudit {
+  if (input.source === "disabled") {
+    return {
+      status: "unknown",
+      checkedAt: input.checkedAt,
+      source: input.source,
+      refreshIntervalMs: capabilityCacheTtlMs,
+      expectedMethodCount: OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS.length,
+      advertisedMethodCount: 0,
+      missingMethodCount: 0,
+      missingMethods: [],
+      missingOperations: [],
+      reason: "Native Gateway WS is disabled by environment configuration, so AgentOS cannot compare advertised Gateway methods."
+    };
+  }
+
+  if (input.methodSet.size === 0) {
+    return {
+      status: "unknown",
+      checkedAt: input.checkedAt,
+      source: input.source,
+      refreshIntervalMs: capabilityCacheTtlMs,
+      expectedMethodCount: OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS.length,
+      advertisedMethodCount: 0,
+      missingMethodCount: 0,
+      missingMethods: [],
+      missingOperations: [],
+      reason: "OpenClaw Gateway did not advertise method metadata; AgentOS will retry on the next capability refresh."
+    };
+  }
+
+  const missingOperations = Object.entries(input.operations)
+    .filter(([, value]) => value.compatibility === "missing")
+    .map(([name]) => name);
+  const status = input.unsupportedGatewayMethods.length > 0 ? "drift" : "verified";
+
+  return {
+    status,
+    checkedAt: input.checkedAt,
+    source: input.source,
+    refreshIntervalMs: capabilityCacheTtlMs,
+    expectedMethodCount: OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS.length,
+    advertisedMethodCount: input.methodSet.size,
+    missingMethodCount: input.unsupportedGatewayMethods.length,
+    missingMethods: input.unsupportedGatewayMethods,
+    missingOperations,
+    reason: status === "verified"
+      ? "OpenClaw Gateway advertised every AgentOS Gateway-first method candidate."
+      : "OpenClaw Gateway advertised method metadata, but one or more AgentOS Gateway-first candidates are missing."
+  };
 }
 
 function readSupportedMethods(payload: unknown) {

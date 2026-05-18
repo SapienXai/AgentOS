@@ -29,42 +29,47 @@ export type OpenClawGatewayCompatibilityOperationId =
 
 export type OpenClawGatewayCompatibilityOperationDefinition = {
   id: OpenClawGatewayCompatibilityOperationId;
+  label: string;
   methods: string[];
   events?: string[];
   fallbackAllowed?: boolean;
 };
 
 export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibilityOperationDefinition[] = [
-  { id: "health", methods: ["health", "status"] },
-  { id: "modelAuthOrder", methods: ["models.authOrder.set", "models.auth.order.set"] },
-  { id: "logsTail", methods: ["logs.tail"] },
-  { id: "configSchemaLookup", methods: ["config.schema.lookup", "config.schema"] },
-  { id: "configPatch", methods: ["config.patch", "config.apply", "config.set"] },
-  { id: "agentCreate", methods: ["agents.create"] },
-  { id: "agentUpdate", methods: ["agents.update"] },
-  { id: "agentIdentity", methods: ["agents.identity.set", "agents.setIdentity", "agents.set-identity"] },
-  { id: "agentDelete", methods: ["agents.delete"] },
-  { id: "missionDispatch", methods: ["chat.send", "sessions.send"] },
+  { id: "health", label: "Gateway health", methods: ["health", "status"] },
+  { id: "modelAuthOrder", label: "Model auth order", methods: ["models.authOrder.set", "models.auth.order.set"] },
+  { id: "logsTail", label: "Gateway logs", methods: ["logs.tail"] },
+  { id: "configSchemaLookup", label: "Config schema lookup", methods: ["config.schema.lookup", "config.schema"] },
+  { id: "configPatch", label: "Config patch", methods: ["config.patch", "config.apply", "config.set"] },
+  { id: "agentCreate", label: "Agent creation", methods: ["agents.create"] },
+  { id: "agentUpdate", label: "Agent update", methods: ["agents.update"] },
+  { id: "agentIdentity", label: "Agent identity sync", methods: ["agents.identity.set", "agents.setIdentity", "agents.set-identity"] },
+  { id: "agentDelete", label: "Agent removal", methods: ["agents.delete"] },
+  { id: "missionDispatch", label: "Mission dispatch", methods: ["chat.send", "sessions.send"] },
   {
     id: "missionStream",
+    label: "Mission event stream",
     methods: ["sessions.subscribe", "sessions.messages.subscribe"],
     events: ["chat", "agent", "session.message", "session.tool"]
   },
-  { id: "sessionHistory", methods: ["sessions.describe", "sessions.history", "sessions.export"] },
+  { id: "sessionHistory", label: "Session history", methods: ["sessions.describe", "sessions.history", "sessions.export"] },
   {
     id: "taskEvents",
+    label: "Task events",
     methods: ["tasks.subscribe", "tasks.get", "tasks.list"],
     events: ["task", "task.updated", "task.completed"]
   },
   {
     id: "artifacts",
+    label: "Artifact sync",
     methods: ["artifacts.list", "artifacts.get", "artifacts.put", "artifacts.delete"],
     events: ["artifact", "artifact.updated"]
   },
-  { id: "runtimeSnapshot", methods: ["runtime.snapshot"] },
-  { id: "tools", methods: ["tools.catalog", "tools.effective", "tools.invoke"] },
+  { id: "runtimeSnapshot", label: "Runtime snapshot", methods: ["runtime.snapshot"] },
+  { id: "tools", label: "Tool catalog", methods: ["tools.catalog", "tools.effective", "tools.invoke"] },
   {
     id: "execApprovals",
+    label: "Execution approvals",
     methods: [
       "exec.approval.list",
       "exec.approval.get",
@@ -73,16 +78,16 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
       "exec.approvals.set"
     ]
   },
-  { id: "deviceApproval", methods: ["devices.approve", "gateway.devices.approve"] },
-  { id: "cronRead", methods: ["cron.list", "cron.status"] },
-  { id: "channels", methods: ["channels.status"] },
-  { id: "channelLogs", methods: ["channels.logs"] },
-  { id: "channelProvisioning", methods: ["channels.add", "channels.create", "channels.configure"] },
-  { id: "channelRemoval", methods: ["channels.remove", "channels.delete"] },
-  { id: "gmailProvisioning", methods: ["webhooks.gmail.setup", "gmail.setup"] },
-  { id: "automationProvisioning", methods: ["cron.add", "cron.create"] },
-  { id: "skills", methods: ["skills.status"] },
-  { id: "updates", methods: ["update.status", "update.run", "status"] }
+  { id: "deviceApproval", label: "Device access repair", methods: ["devices.approve", "gateway.devices.approve"] },
+  { id: "cronRead", label: "Automation status", methods: ["cron.list", "cron.status"] },
+  { id: "channels", label: "Channel status", methods: ["channels.status"] },
+  { id: "channelLogs", label: "Channel logs", methods: ["channels.logs"] },
+  { id: "channelProvisioning", label: "Channel provisioning", methods: ["channels.add", "channels.create", "channels.configure"] },
+  { id: "channelRemoval", label: "Channel removal", methods: ["channels.remove", "channels.delete"] },
+  { id: "gmailProvisioning", label: "Gmail webhook setup", methods: ["webhooks.gmail.setup", "gmail.setup"] },
+  { id: "automationProvisioning", label: "Automation provisioning", methods: ["cron.add", "cron.create"] },
+  { id: "skills", label: "Skill status", methods: ["skills.status"] },
+  { id: "updates", label: "Update status", methods: ["update.status", "update.run", "status"] }
 ];
 
 const additionalGatewayFirstMethods = [
@@ -134,6 +139,12 @@ const operationDefinitionsById = new Map(
   OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS.map((operation) => [operation.id, operation])
 );
 
+const operationDefinitionsByMethod = new Map(
+  OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS.flatMap((operation) =>
+    operation.methods.map((method) => [method, operation] as const)
+  )
+);
+
 export function getOpenClawGatewayCompatibilityOperation(
   operationId: OpenClawGatewayCompatibilityOperationId
 ) {
@@ -150,4 +161,21 @@ export function getOpenClawGatewayMethodCandidates(
   operationId: OpenClawGatewayCompatibilityOperationId
 ) {
   return getOpenClawGatewayCompatibilityOperation(operationId).methods;
+}
+
+export function getOpenClawGatewayOperationLabel(operationIdOrMethod: string) {
+  return (
+    operationDefinitionsById.get(operationIdOrMethod as OpenClawGatewayCompatibilityOperationId)?.label ??
+    operationDefinitionsByMethod.get(operationIdOrMethod)?.label ??
+    titleizeGatewayOperation(operationIdOrMethod)
+  );
+}
+
+function titleizeGatewayOperation(value: string) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Gateway operation";
 }

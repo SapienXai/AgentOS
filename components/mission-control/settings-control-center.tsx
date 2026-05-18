@@ -57,6 +57,10 @@ type SurfaceTheme = "dark" | "light";
 type GatewayCompatibilityProfile = NonNullable<
   NonNullable<MissionControlShellSettingsPanelProps["snapshot"]["diagnostics"]["capabilityMatrix"]>["compatibility"]
 >;
+type GatewayCapabilityOperations = NonNullable<
+  NonNullable<MissionControlShellSettingsPanelProps["snapshot"]["diagnostics"]["capabilityMatrix"]>["operations"]
+>;
+type GatewayMethodContractAudit = GatewayCompatibilityProfile["methodContract"];
 type SettingsSectionId =
   | "openclaw"
   | "gateway"
@@ -150,6 +154,7 @@ export function SettingsControlCenter(props: MissionControlShellSettingsPanelPro
   );
   const capabilityMatrix = snapshot.diagnostics.capabilityMatrix;
   const gatewayCompatibilityProfile = capabilityMatrix?.compatibility;
+  const gatewayFallbackDiagnostics = capabilityMatrix?.fallbackDiagnostics?.slice(0, 4) ?? [];
   const nativeAuthLabel = gatewayAuthStatus
     ? gatewayAuthStatus.native.ok
       ? "Authenticated"
@@ -479,9 +484,11 @@ export function SettingsControlCenter(props: MissionControlShellSettingsPanelPro
                       ["Auth status", nativeAuthLabel],
                       ["Protocol", capabilityMatrix?.gatewayProtocolVersion || "Unknown"],
                       ["Compatibility", formatGatewayCompatibilityStatus(gatewayCompatibilityProfile)],
+                      ["Contract audit", formatGatewayMethodContractStatus(gatewayCompatibilityProfile?.methodContract)],
+                      ["Contract gaps", formatGatewayMethodContractGaps(gatewayCompatibilityProfile?.methodContract, capabilityMatrix?.operations)],
                       ["Native ops", formatGatewayOperationCounts(gatewayCompatibilityProfile)],
-                      ["Alias ops", formatGatewayAliasOperations(gatewayCompatibilityProfile?.aliasOperations)],
-                      ["Fallback ops", formatGatewayDegradedOperations(gatewayCompatibilityProfile?.degradedOperations)],
+                      ["Alias ops", formatGatewayAliasOperations(gatewayCompatibilityProfile?.aliasOperations, capabilityMatrix?.operations)],
+                      ["Fallback ops", formatGatewayDegradedOperations(gatewayCompatibilityProfile?.degradedOperations, capabilityMatrix?.operations)],
                       ["Native chat", formatCapabilitySupport(capabilityMatrix?.nativeMissionDispatch)],
                       ["Config patch", formatCapabilitySupport(capabilityMatrix?.configPatch)],
                       ["Events", formatCapabilitySupport(capabilityMatrix?.eventBridge)]
@@ -790,6 +797,44 @@ export function SettingsControlCenter(props: MissionControlShellSettingsPanelPro
                 >
                   <div className="space-y-2">
                     <TransportDiagnosticsPanel summary={transportSummary} surfaceTheme={surfaceTheme} />
+                    {gatewayFallbackDiagnostics.length ? (
+                      <div
+                        className={cn(
+                          "border-l-2 py-1 pl-3",
+                          surfaceTheme === "light" ? "border-amber-300" : "border-amber-300/45"
+                        )}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className={labelClassName(surfaceTheme)}>Gateway fallback diagnostics</p>
+                          <span className={cn("text-[11px]", surfaceTheme === "light" ? "text-[#8a7464]" : "text-slate-400")}>
+                            {gatewayFallbackDiagnostics.length} recent
+                          </span>
+                        </div>
+                        <div className="mt-2 space-y-2">
+                          {gatewayFallbackDiagnostics.map((diagnostic) => (
+                            <div key={`${diagnostic.at}-${diagnostic.operation}`} className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-[#3b2d24]" : "text-slate-100")}>
+                                  {diagnostic.operationLabel}
+                                </span>
+                                <code className={cn("rounded-full px-2 py-0.5 text-[10px]", surfaceTheme === "light" ? "bg-[#f3e5d8] text-[#7b6353]" : "bg-white/[0.06] text-slate-300")}>
+                                  {diagnostic.operation}
+                                </code>
+                                <span className={cn("text-[11px]", surfaceTheme === "light" ? "text-amber-700" : "text-amber-200")}>
+                                  {formatGatewayFallbackDiagnosticKind(diagnostic.kind)}
+                                </span>
+                              </div>
+                              <p className={cn("mt-1 text-xs", surfaceTheme === "light" ? "text-[#7b6353]" : "text-slate-400")}>
+                                {diagnostic.issue}
+                              </p>
+                              <p className={cn("mt-0.5 text-xs", surfaceTheme === "light" ? "text-[#8a7464]" : "text-slate-500")}>
+                                {diagnostic.recovery}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                     {latestCommands.length ? (
                       latestCommands.map((command) => (
                         <details
@@ -1452,20 +1497,120 @@ function formatGatewayOperationCounts(value?: GatewayCompatibilityProfile) {
   return `${value.nativeOperationCount} native / ${value.degradedOperationCount} fallback`;
 }
 
-function formatGatewayAliasOperations(value?: string[]) {
+function formatGatewayMethodContractStatus(value?: GatewayMethodContractAudit) {
   if (!value) {
     return "Unknown";
   }
 
-  return value.length > 0 ? String(value.length) : "None";
+  const source = formatGatewayMethodContractSource(value.source);
+
+  switch (value.status) {
+    case "verified":
+      return `Verified via ${source}`;
+    case "drift":
+      return `Drift via ${source}`;
+    case "unknown":
+    default:
+      return `Unknown via ${source}`;
+  }
 }
 
-function formatGatewayDegradedOperations(value?: string[]) {
+function formatGatewayMethodContractGaps(
+  value?: GatewayMethodContractAudit,
+  operations?: GatewayCapabilityOperations
+) {
   if (!value) {
     return "Unknown";
   }
 
-  return value.length > 0 ? String(value.length) : "None";
+  if (value.status === "verified") {
+    return "None";
+  }
+
+  if (value.status === "unknown") {
+    return value.reason;
+  }
+
+  if (value.missingOperations.length > 0) {
+    return formatGatewayOperationList(value.missingOperations, operations);
+  }
+
+  return `${value.missingMethodCount} methods`;
+}
+
+function formatGatewayMethodContractSource(source: GatewayMethodContractAudit["source"]) {
+  switch (source) {
+    case "gateway-handshake":
+      return "handshake";
+    case "disabled":
+      return "disabled";
+    case "unavailable":
+      return "unavailable";
+    default:
+      return source;
+  }
+}
+
+function formatGatewayAliasOperations(value?: string[], operations?: GatewayCapabilityOperations) {
+  if (!value) {
+    return "Unknown";
+  }
+
+  return value.length > 0 ? formatGatewayOperationList(value, operations) : "None";
+}
+
+function formatGatewayDegradedOperations(value?: string[], operations?: GatewayCapabilityOperations) {
+  if (!value) {
+    return "Unknown";
+  }
+
+  return value.length > 0 ? formatGatewayOperationList(value, operations) : "None";
+}
+
+function formatGatewayOperationList(value: string[], operations?: GatewayCapabilityOperations) {
+  const visible = value.slice(0, 3).map((entry) => formatGatewayOperationEntry(entry, operations));
+  const suffix = value.length > visible.length ? ` +${value.length - visible.length}` : "";
+
+  return `${value.length}: ${visible.join(", ")}${suffix}`;
+}
+
+function formatGatewayOperationEntry(entry: string, operations?: GatewayCapabilityOperations) {
+  const [operationId, detail] = entry.split(/:\s*/, 2);
+  const label = operations?.[operationId]?.label ?? titleizeGatewayOperationId(operationId || entry);
+
+  return detail ? `${label} via ${detail}` : label;
+}
+
+function titleizeGatewayOperationId(value: string) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Gateway operation";
+}
+
+function formatGatewayFallbackDiagnosticKind(kind?: string | null) {
+  switch (kind) {
+    case "auth":
+      return "Needs credential";
+    case "scope-limited":
+      return "Needs scope repair";
+    case "protocol-mismatch":
+      return "Protocol mismatch";
+    case "unsupported":
+      return "Unsupported method";
+    case "disabled":
+      return "Disabled";
+    case "unreachable":
+      return "Unreachable";
+    case "timeout":
+      return "Timed out";
+    case "malformed-response":
+      return "Invalid response";
+    default:
+      return "Gateway fallback";
+  }
 }
 
 function formatGatewayAuthIssue(kind: GatewayNativeAuthStatus["native"]["kind"]) {

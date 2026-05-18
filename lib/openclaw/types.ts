@@ -99,6 +99,7 @@ export type OpenClawCapabilitySupport = "supported" | "unsupported" | "unknown";
 export type OpenClawCapabilityOperationMode = "gateway-native" | "cli-fallback" | "degraded" | "disabled" | "unknown";
 
 export interface OpenClawCapabilityOperation {
+  label: string;
   mode: OpenClawCapabilityOperationMode;
   methods: string[];
   events: string[];
@@ -110,17 +111,50 @@ export interface OpenClawCapabilityOperation {
   compatibility?: "preferred" | "alias" | "missing" | "unknown";
 }
 
+export type OpenClawGatewayMethodContractAuditStatus = "verified" | "drift" | "unknown";
+export type OpenClawGatewayMethodContractAuditSource =
+  | "rpc.discover"
+  | "rpc.methods"
+  | "system.capabilities"
+  | "capabilities"
+  | "gateway-handshake"
+  | "disabled"
+  | "unavailable";
+
+export interface OpenClawGatewayMethodContractAudit {
+  status: OpenClawGatewayMethodContractAuditStatus;
+  checkedAt: string;
+  source: OpenClawGatewayMethodContractAuditSource;
+  refreshIntervalMs: number;
+  expectedMethodCount: number;
+  advertisedMethodCount: number;
+  missingMethodCount: number;
+  missingMethods: string[];
+  missingOperations: string[];
+  reason: string;
+}
+
 export interface OpenClawGatewayCompatibilityProfile {
   protocol: {
     status: "compatible" | "unknown" | "unsupported";
     version: string | null;
     reason: string;
   };
+  methodContract: OpenClawGatewayMethodContractAudit;
   nativeOperationCount: number;
   degradedOperationCount: number;
   unknownOperationCount: number;
   aliasOperations: string[];
   degradedOperations: string[];
+}
+
+export interface OpenClawGatewayFallbackDiagnosticRecord {
+  at: string;
+  operation: string;
+  operationLabel: string;
+  issue: string;
+  kind: string;
+  recovery: string;
 }
 
 export interface OpenClawCapabilityMatrix {
@@ -152,6 +186,7 @@ export interface OpenClawCapabilityMatrix {
   operations?: Record<string, OpenClawCapabilityOperation>;
   compatibility?: OpenClawGatewayCompatibilityProfile;
   degradedFeatures?: string[];
+  fallbackDiagnostics?: OpenClawGatewayFallbackDiagnosticRecord[];
   fallbackReasons?: string[];
   unsupportedGatewayMethods: string[];
   diagnostics: string[];

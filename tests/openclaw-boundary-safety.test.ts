@@ -281,19 +281,28 @@ test("Gateway compatibility aliases stay centralized outside application service
   assert.match(compatibilitySource, /channelRemoval/);
   assert.match(compatibilitySource, /gmailProvisioning/);
   assert.match(compatibilitySource, /automationProvisioning/);
+  assert.match(compatibilitySource, /label: "Model auth order"/);
+  assert.match(compatibilitySource, /getOpenClawGatewayOperationLabel/);
   assert.doesNotMatch(capabilitySource, /const knownGatewayFirstMethods = \[/);
   assert.match(capabilitySource, /OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS/);
+  assert.match(capabilitySource, /buildGatewayMethodContractAudit/);
+  assert.match(capabilitySource, /getOpenClawGatewayOperationLabel\(entry\.operation\)/);
   assert.match(nativeClientSource, /gatewayFirstCompatible/);
   assert.match(nativeClientSource, /getOpenClawGatewayMethodCandidates/);
 });
 
-test("settings gateway card exposes compatibility and fallback operation counts", () => {
+test("settings gateway card exposes method contract audit and readable fallback operations", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/settings-control-center.tsx"), "utf8");
 
   assert.match(source, /\["Compatibility", formatGatewayCompatibilityStatus\(gatewayCompatibilityProfile\)\]/);
+  assert.match(source, /\["Contract audit", formatGatewayMethodContractStatus\(gatewayCompatibilityProfile\?\.methodContract\)\]/);
+  assert.match(source, /\["Contract gaps", formatGatewayMethodContractGaps\(gatewayCompatibilityProfile\?\.methodContract, capabilityMatrix\?\.operations\)\]/);
   assert.match(source, /\["Native ops", formatGatewayOperationCounts\(gatewayCompatibilityProfile\)\]/);
-  assert.match(source, /\["Alias ops", formatGatewayAliasOperations\(gatewayCompatibilityProfile\?\.aliasOperations\)\]/);
-  assert.match(source, /\["Fallback ops", formatGatewayDegradedOperations\(gatewayCompatibilityProfile\?\.degradedOperations\)\]/);
+  assert.match(source, /\["Alias ops", formatGatewayAliasOperations\(gatewayCompatibilityProfile\?\.aliasOperations, capabilityMatrix\?\.operations\)\]/);
+  assert.match(source, /\["Fallback ops", formatGatewayDegradedOperations\(gatewayCompatibilityProfile\?\.degradedOperations, capabilityMatrix\?\.operations\)\]/);
+  assert.match(source, /formatGatewayOperationList/);
+  assert.match(source, /Gateway fallback diagnostics/);
+  assert.match(source, /diagnostic\.operationLabel/);
 });
 
 test("CLI runtime event subscriptions fail closed instead of pretending to stream", () => {

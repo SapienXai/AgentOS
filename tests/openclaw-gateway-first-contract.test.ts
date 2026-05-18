@@ -8,6 +8,7 @@ import {
 } from "@/lib/openclaw/application/capability-matrix-service";
 import { normalizeOpenClawGatewayEventToRuntime } from "@/lib/openclaw/application/event-bridge-service";
 import { setOpenClawAdapterForTesting, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS } from "@/lib/openclaw/client/gateway-compatibility";
 import { submitMissionDispatch } from "@/lib/openclaw/domains/mission-dispatch-workflow";
 import type { MissionControlSnapshot } from "@/lib/openclaw/types";
 
@@ -65,11 +66,38 @@ test("capability matrix detects advertised Gateway-first methods", async () => {
   assert.equal(matrix.logsTail, "supported");
   assert.equal(matrix.cronRead, "supported");
   assert.equal(matrix.operations?.agentCreate.mode, "gateway-native");
+  assert.equal(matrix.operations?.agentCreate.label, "Agent creation");
   assert.equal(matrix.operations?.modelAuthOrder.mode, "gateway-native");
   assert.equal(matrix.operations?.missionStream.mode, "gateway-native");
   assert.ok(matrix.unsupportedGatewayMethods.includes("models.list"));
   assert.equal(matrix.operations?.modelAuthOrder.compatibility, "preferred");
   assert.equal(matrix.compatibility?.protocol.status, "compatible");
+  assert.equal(matrix.compatibility?.methodContract.status, "drift");
+  assert.equal(matrix.compatibility?.methodContract.source, "rpc.discover");
+  assert.equal(matrix.compatibility?.methodContract.refreshIntervalMs, 60_000);
+  assert.ok(matrix.compatibility?.methodContract.missingMethods.includes("models.list"));
+  assert.ok(matrix.compatibility?.methodContract.missingOperations.includes("agentIdentity"));
+});
+
+test("capability matrix verifies the advertised Gateway method contract", async () => {
+  setOpenClawAdapterForTesting(createContractAdapter());
+  setOpenClawCapabilityMatrixNativeCallerForTesting(async (method) => {
+    assert.equal(method, "rpc.discover");
+    return {
+      protocolVersion: 4,
+      methods: OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS
+    };
+  });
+
+  const matrix = await getOpenClawCapabilityMatrix({ force: true });
+
+  assert.equal(matrix.compatibility?.methodContract.status, "verified");
+  assert.equal(matrix.compatibility?.methodContract.source, "rpc.discover");
+  assert.equal(matrix.compatibility?.methodContract.expectedMethodCount, OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS.length);
+  assert.equal(matrix.compatibility?.methodContract.advertisedMethodCount, OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS.length);
+  assert.equal(matrix.compatibility?.methodContract.missingMethodCount, 0);
+  assert.deepEqual(matrix.compatibility?.methodContract.missingMethods, []);
+  assert.deepEqual(matrix.compatibility?.methodContract.missingOperations, []);
 });
 
 test("capability matrix reports Gateway compatibility aliases without degrading to CLI", async () => {
@@ -87,6 +115,8 @@ test("capability matrix reports Gateway compatibility aliases without degrading 
   assert.equal(matrix.operations?.modelAuthOrder.supportedMethod, "models.auth.order.set");
   assert.deepEqual(matrix.compatibility?.aliasOperations, ["modelAuthOrder: models.auth.order.set"]);
   assert.equal(matrix.compatibility?.degradedOperations.includes("modelAuthOrder"), false);
+  assert.equal(matrix.compatibility?.methodContract.status, "drift");
+  assert.equal(matrix.compatibility?.methodContract.missingOperations.includes("modelAuthOrder"), false);
 });
 
 test("capability matrix tracks Phase 2 Gateway-native runtime surfaces", async () => {
