@@ -219,8 +219,16 @@ test("sidebar keeps transient compatibility diagnostics out of the health card",
   assert.match(source, /Gateway-first request fell back to CLI/);
   assert.match(source, /unsupported/);
   assert.match(source, /sessions\\.list\|status\|health/);
-  assert.match(source, /gateway\\.config\\.\(\?:patch\|apply\|set\|unset\)/);
+  assert.match(source, /gateway\\.config\\.\(\?:get\|patch\|apply\|set\|unset\)/);
   assert.match(source, /unknown method:/);
+});
+
+test("mission control snapshot does not call Gateway config.get for remote url", () => {
+  const source = readFileSync(path.join(rootDir, "lib/openclaw/application/mission-control-service.ts"), "utf8");
+
+  assert.match(source, /readFile\(path\.join\(openClawStateRootPath, "openclaw\.json"\), "utf8"\)/);
+  assert.match(source, /readNestedConfigValue\(config, gatewayRemoteUrlConfigKey\)/);
+  assert.doesNotMatch(source, /call<unknown>\("config\.get", \{\}, \{ timeoutMs: 5_000 \}\)/);
 });
 
 test("settings control center renders a single hash-selected section", () => {

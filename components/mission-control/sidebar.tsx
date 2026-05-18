@@ -2317,7 +2317,7 @@ function isLowPrioritySidebarDiagnosticIssue(issue: string) {
     /Reusing the last successful gateway status after a transient OpenClaw check failure\./.test(issue) ||
     /^gateway\.[^:]+: Gateway-first request fell back to CLI \(unsupported\):/.test(issue) ||
     /^gateway\.(?:agents\.list|models\.list|sessions\.list|status|health): Gateway-first request fell back to CLI \(timeout\):/i.test(issue) ||
-    /^gateway\.config\.(?:patch|apply|set|unset): Gateway-first request fell back to CLI \(timeout\):/i.test(issue) ||
+    /^gateway\.config\.(?:get|patch|apply|set|unset): Gateway-first request fell back to CLI \(timeout\):/i.test(issue) ||
     /^gateway\.[^:]+: Gateway-first request fell back to CLI \([^)]*\): .*unknown method:/i.test(issue)
   );
 }

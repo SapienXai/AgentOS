@@ -1,5 +1,6 @@
 import "server-only";
 
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -204,13 +205,23 @@ export async function getMissionControlSnapshot(
 
 async function readGatewayRemoteUrlConfig(): Promise<PromiseSettledResult<unknown>> {
   try {
-    const payload = await getOpenClawAdapter().call<unknown>("config.get", {}, { timeoutMs: 5_000 });
+    const rawConfig = await readFile(path.join(openClawStateRootPath, "openclaw.json"), "utf8");
+    const config = JSON.parse(rawConfig) as unknown;
 
     return {
       status: "fulfilled",
-      value: readConfigSnapshotValue(payload, gatewayRemoteUrlConfigKey)
+      value: readNestedConfigValue(config, gatewayRemoteUrlConfigKey) ?? undefined
     };
   } catch (reason) {
+    const code = typeof reason === "object" && reason && "code" in reason ? reason.code : undefined;
+
+    if (code === "ENOENT") {
+      return {
+        status: "fulfilled",
+        value: undefined
+      };
+    }
+
     return {
       status: "rejected",
       reason
@@ -259,14 +270,6 @@ async function settleSessionsPayloadFromOpenClaw(
   } catch {
     return settleSessionsPayloadFromSessionCatalogs(agentConfig, openClawStateRootPath);
   }
-}
-
-function readConfigSnapshotValue(payload: unknown, path: string) {
-  if (!isRecord(payload)) {
-    return null;
-  }
-
-  return readNestedConfigValue(payload.config, path) ?? readNestedConfigValue(payload.resolved, path) ?? null;
 }
 
 function readNestedConfigValue(source: unknown, path: string) {
