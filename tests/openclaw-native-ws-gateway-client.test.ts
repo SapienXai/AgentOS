@@ -254,9 +254,19 @@ class FallbackGatewayClient implements OpenClawGatewayClient {
     return { stdout: "", stderr: "", code: 0 };
   }
 
+  async setAgentIdentity() {
+    this.calls.push({ method: "setAgentIdentity" });
+    return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+  }
+
   async deleteAgent() {
     this.calls.push({ method: "deleteAgent" });
     return { stdout: "", stderr: "", code: 0 };
+  }
+
+  async provisionAutomation() {
+    this.calls.push({ method: "provisionAutomation" });
+    return { stdout: JSON.stringify({ ok: true }), stderr: "" };
   }
 
   async runAgentTurn() {
@@ -1890,6 +1900,90 @@ test("native WS gateway client uses agents.update when supported", async () => {
     name: "Agent One",
     workspace: "/workspace",
     model: "openai/test"
+  });
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway client sets agent identity through Gateway before CLI fallback", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect" ? { protocol: 4 } : { ok: true, agentId: "agent-1" }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await client.setAgentIdentity({
+    agentId: "agent-1",
+    workspace: "/workspace",
+    identityFile: "/workspace/.openclaw/agents/agent-1/agent/IDENTITY.md",
+    name: "Agent One",
+    emoji: "A"
+  });
+
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "agents.identity.set"]);
+  assert.deepEqual(sentFrames[1]?.params, {
+    agentId: "agent-1",
+    agent: "agent-1",
+    workspace: "/workspace",
+    identityFile: "/workspace/.openclaw/agents/agent-1/agent/IDENTITY.md",
+    name: "Agent One",
+    emoji: "A"
+  });
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway client provisions automations through Gateway before CLI fallback", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect" ? { protocol: 4 } : { ok: true, automationId: "digest" }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await client.provisionAutomation({
+    name: "Digest",
+    description: "Daily digest",
+    agentId: "agent-1",
+    message: "Summarize updates",
+    thinking: "medium",
+    timeoutSeconds: 120,
+    schedule: { kind: "every", value: "1d" },
+    announce: { channel: "telegram", target: "team" }
+  });
+
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "cron.add"]);
+  assert.deepEqual(sentFrames[1]?.params, {
+    name: "Digest",
+    description: "Daily digest",
+    agentId: "agent-1",
+    agent: "agent-1",
+    message: "Summarize updates",
+    thinking: "medium",
+    timeoutSeconds: 120,
+    schedule: { kind: "every", value: "1d" },
+    announce: { channel: "telegram", target: "team" }
   });
   assert.deepEqual(fallback.calls, []);
 });

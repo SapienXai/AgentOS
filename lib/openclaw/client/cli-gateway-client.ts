@@ -14,6 +14,7 @@ import type {
   ModelsPayload,
   ModelsStatusPayload,
   OpenClawAddAgentInput,
+  OpenClawAgentIdentityInput,
   OpenClawAgentModelStatusInput,
   OpenClawArtifactDeleteInput,
   OpenClawArtifactGetInput,
@@ -21,6 +22,7 @@ import type {
   OpenClawArtifactListPayload,
   OpenClawArtifactPayload,
   OpenClawArtifactPutInput,
+  OpenClawAutomationProvisionInput,
   OpenClawChannelAccountProvisionInput,
   OpenClawChannelAccountRemoveInput,
   OpenClawChannelStatusInput,
@@ -126,6 +128,60 @@ function buildGmailSetupArgs(input: OpenClawGmailSetupInput) {
   appendOptionalCliFlag(args, "--tailscale-path", tailscaleConfig.path);
   appendOptionalCliFlag(args, "--tailscale-target", tailscaleConfig.target);
   appendOptionalCliFlag(args, "--push-endpoint", config.pushEndpoint);
+
+  return args;
+}
+
+function buildAgentIdentityArgs(input: OpenClawAgentIdentityInput) {
+  const args = [
+    "agents",
+    "set-identity",
+    "--agent",
+    input.agentId,
+    "--workspace",
+    input.workspace,
+    "--identity-file",
+    input.identityFile,
+    "--json"
+  ];
+
+  appendOptionalCliFlag(args, "--name", input.name);
+  appendOptionalCliFlag(args, "--emoji", input.emoji);
+  appendOptionalCliFlag(args, "--theme", input.theme);
+  appendOptionalCliFlag(args, "--avatar", input.avatar);
+
+  return args;
+}
+
+function buildAutomationProvisionArgs(input: OpenClawAutomationProvisionInput) {
+  const args = [
+    "cron",
+    "add",
+    "--name",
+    input.name,
+    "--description",
+    input.description || input.name,
+    "--agent",
+    input.agentId,
+    "--message",
+    input.message,
+    "--thinking",
+    input.thinking || "medium",
+    "--timeout-seconds",
+    String(input.timeoutSeconds ?? 120),
+    "--json"
+  ];
+
+  if (input.schedule.kind === "every") {
+    args.push("--every", input.schedule.value);
+  } else {
+    args.push("--cron", input.schedule.value);
+  }
+
+  if (input.announce?.channel) {
+    args.push("--announce", "--channel", input.announce.channel);
+    appendOptionalCliFlag(args, "--to", input.announce.target);
+  }
 
   return args;
 }
@@ -323,11 +379,10 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
       "channels",
       "add",
       "--channel",
-      input.channel,
-      "--account",
-      input.account
+      input.channel
     ];
 
+    appendOptionalCliFlag(args, "--account", input.account);
     appendOptionalCliFlag(args, "--token", input.token);
     appendOptionalCliFlag(args, "--bot-token", input.botToken);
     appendOptionalCliFlag(args, "--webhook-url", input.webhookUrl);
@@ -490,8 +545,16 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
     return { stdout: JSON.stringify({ ok: true, fallback: "application-config" }), stderr: "" };
   }
 
+  setAgentIdentity(input: OpenClawAgentIdentityInput, options: OpenClawCommandOptions = {}) {
+    return runOpenClaw(buildAgentIdentityArgs(input), options);
+  }
+
   deleteAgent(agentId: string, options: OpenClawCommandOptions = {}) {
     return runOpenClaw(["agents", "delete", agentId, "--force", "--json"], options);
+  }
+
+  provisionAutomation(input: OpenClawAutomationProvisionInput, options: OpenClawCommandOptions = {}) {
+    return runOpenClaw(buildAutomationProvisionArgs(input), options);
   }
 
   runAgentTurn(

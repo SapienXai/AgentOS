@@ -21,6 +21,7 @@ import type {
   ModelsPayload,
   ModelsStatusPayload,
   OpenClawAddAgentInput,
+  OpenClawAgentIdentityInput,
   OpenClawAgentModelStatusInput,
   OpenClawAbortTurnInput,
   OpenClawArtifactDeleteInput,
@@ -29,6 +30,7 @@ import type {
   OpenClawArtifactListPayload,
   OpenClawArtifactPayload,
   OpenClawArtifactPutInput,
+  OpenClawAutomationProvisionInput,
   OpenClawChannelAccountProvisionInput,
   OpenClawChannelAccountRemoveInput,
   OpenClawChannelStatusInput,
@@ -874,12 +876,39 @@ function commandResultFromGatewayPayload(payload: unknown): CommandResult {
 function buildChannelAccountProvisionParams(input: OpenClawChannelAccountProvisionInput) {
   return {
     channel: input.channel,
-    account: input.account,
-    accountId: input.account,
+    account: input.account?.trim() || undefined,
+    accountId: input.account?.trim() || undefined,
     name: input.name?.trim() || undefined,
     token: input.token?.trim() || undefined,
     botToken: input.botToken?.trim() || undefined,
     webhookUrl: input.webhookUrl?.trim() || undefined
+  };
+}
+
+function buildAgentIdentityParams(input: OpenClawAgentIdentityInput) {
+  return {
+    agentId: input.agentId,
+    agent: input.agentId,
+    workspace: input.workspace,
+    identityFile: input.identityFile,
+    name: input.name?.trim() || undefined,
+    emoji: input.emoji?.trim() || undefined,
+    theme: input.theme?.trim() || undefined,
+    avatar: input.avatar?.trim() || undefined
+  };
+}
+
+function buildAutomationProvisionParams(input: OpenClawAutomationProvisionInput) {
+  return {
+    name: input.name,
+    description: input.description || input.name,
+    agentId: input.agentId,
+    agent: input.agentId,
+    message: input.message,
+    thinking: input.thinking || "medium",
+    timeoutSeconds: input.timeoutSeconds ?? 120,
+    schedule: input.schedule,
+    announce: input.announce ?? undefined
   };
 }
 
@@ -2764,6 +2793,16 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     );
   }
 
+  setAgentIdentity(input: OpenClawAgentIdentityInput, options: OpenClawCommandOptions = {}) {
+    return this.gatewayFirstCompatible(
+      "agentIdentity",
+      buildAgentIdentityParams(input),
+      options,
+      commandResultFromGatewayPayload,
+      () => this.fallback.setAgentIdentity(input, options)
+    );
+  }
+
   deleteAgent(agentId: string, options: OpenClawCommandOptions = {}) {
     return this.gatewayFirst(
       "agents.delete",
@@ -2771,6 +2810,16 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       options,
       commandResultFromGatewayPayload,
       () => this.fallback.deleteAgent(agentId, options)
+    );
+  }
+
+  provisionAutomation(input: OpenClawAutomationProvisionInput, options: OpenClawCommandOptions = {}) {
+    return this.gatewayFirstCompatible(
+      "automationProvisioning",
+      buildAutomationProvisionParams(input),
+      options,
+      commandResultFromGatewayPayload,
+      () => this.fallback.provisionAutomation(input, options)
     );
   }
 

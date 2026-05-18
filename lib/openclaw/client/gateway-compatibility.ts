@@ -6,6 +6,7 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "configPatch"
   | "agentCreate"
   | "agentUpdate"
+  | "agentIdentity"
   | "agentDelete"
   | "missionDispatch"
   | "missionStream"
@@ -40,6 +41,7 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   { id: "configPatch", methods: ["config.patch", "config.apply", "config.set"] },
   { id: "agentCreate", methods: ["agents.create"] },
   { id: "agentUpdate", methods: ["agents.update"] },
+  { id: "agentIdentity", methods: ["agents.identity.set", "agents.setIdentity", "agents.set-identity"] },
   { id: "agentDelete", methods: ["agents.delete"] },
   { id: "missionDispatch", methods: ["chat.send", "sessions.send"] },
   {

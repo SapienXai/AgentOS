@@ -16,6 +16,8 @@ export type {
   OpenClawArtifactListPayload,
   OpenClawArtifactPayload,
   OpenClawArtifactPutInput,
+  OpenClawAgentIdentityInput,
+  OpenClawAutomationProvisionInput,
   OpenClawChannelAccountProvisionInput,
   OpenClawChannelAccountRemoveInput,
   OpenClawChannelStatusInput,

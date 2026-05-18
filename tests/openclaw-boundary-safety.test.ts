@@ -93,8 +93,6 @@ test("OpenClaw direct CLI JSON usage remains in documented fallback/discovery fi
 test("OpenClaw direct CLI command usage remains in documented fallback/provisioning files", () => {
   const allowed = new Set([
     "lib/openclaw/client/cli-gateway-client.ts",
-    "lib/openclaw/domains/agent-config.ts",
-    "lib/openclaw/planner.ts",
     "lib/openclaw/reset.ts"
   ]);
   const offenders = readProjectSourceFiles(["lib/openclaw"])
@@ -208,7 +206,7 @@ test("model auth repair and planner runtime turns stay behind the OpenClaw adapt
   assert.match(modelAuthSource, /getOpenClawAdapter\(\)\.setModelAuthOrder/);
   assert.doesNotMatch(modelAuthSource, /runOpenClaw(Json)?/);
   assert.match(plannerSource, /getOpenClawAdapter\(\)\.runAgentTurn/);
-  assert.doesNotMatch(plannerSource, /runOpenClawJson/);
+  assert.doesNotMatch(plannerSource, /runOpenClaw(Json)?/);
 });
 
 test("read-only agent config and channel discovery use the OpenClaw adapter", () => {
@@ -226,6 +224,15 @@ test("read-only agent config and channel discovery use the OpenClaw adapter", ()
   assert.doesNotMatch(channelsSource, /runOpenClawJson/);
 });
 
+test("agent config writes and identity sync stay behind the OpenClaw adapter", () => {
+  const source = readFileSync(path.join(rootDir, "lib/openclaw/domains/agent-config.ts"), "utf8");
+
+  assert.doesNotMatch(source, /from\s+["']@\/lib\/openclaw\/cli["']/);
+  assert.doesNotMatch(source, /runOpenClaw/);
+  assert.match(source, /getOpenClawAdapter\(\)\.setConfig\("agents\.list", configList, \{ strictJson: true \}\)/);
+  assert.match(source, /getOpenClawAdapter\(\)\.setAgentIdentity/);
+});
+
 test("channel provisioning writes stay behind the OpenClaw adapter", () => {
   const source = readFileSync(path.join(rootDir, "lib/openclaw/application/channel-service.ts"), "utf8");
 
@@ -234,6 +241,15 @@ test("channel provisioning writes stay behind the OpenClaw adapter", () => {
   assert.match(source, /getOpenClawAdapter\(\)\.provisionChannelAccount/);
   assert.match(source, /getOpenClawAdapter\(\)\.removeChannelAccount/);
   assert.match(source, /getOpenClawAdapter\(\)\.setupGmailWebhook/);
+});
+
+test("planner provisioning writes stay behind the OpenClaw adapter", () => {
+  const source = readFileSync(path.join(rootDir, "lib/openclaw/planner.ts"), "utf8");
+
+  assert.doesNotMatch(source, /from\s+["']@\/lib\/openclaw\/cli["']/);
+  assert.doesNotMatch(source, /runOpenClaw/);
+  assert.match(source, /getOpenClawAdapter\(\)\.provisionChannelAccount/);
+  assert.match(source, /getOpenClawAdapter\(\)\.provisionAutomation/);
 });
 
 test("Gateway compatibility aliases stay centralized outside application services", () => {
@@ -252,6 +268,7 @@ test("Gateway compatibility aliases stay centralized outside application service
 
   assert.match(compatibilitySource, /models\.authOrder\.set/);
   assert.match(compatibilitySource, /models\.auth\.order\.set/);
+  assert.match(compatibilitySource, /agentIdentity/);
   assert.match(compatibilitySource, /channelProvisioning/);
   assert.match(compatibilitySource, /channelRemoval/);
   assert.match(compatibilitySource, /gmailProvisioning/);

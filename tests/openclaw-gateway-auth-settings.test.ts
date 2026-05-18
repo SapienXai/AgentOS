@@ -153,7 +153,13 @@ function createSettingsAdapter(config: Record<string, unknown> = {}): OpenClawAd
     async updateAgent() {
       return { stdout: "", stderr: "", code: 0 };
     },
+    async setAgentIdentity() {
+      return { stdout: "", stderr: "", code: 0 };
+    },
     async deleteAgent() {
+      return { stdout: "", stderr: "", code: 0 };
+    },
+    async provisionAutomation() {
       return { stdout: "", stderr: "", code: 0 };
     },
     async runAgentTurn() {

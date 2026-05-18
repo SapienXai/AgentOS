@@ -2,7 +2,6 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
-import { runOpenClaw } from "@/lib/openclaw/cli";
 import {
   parseAgentIdentityMarkdown,
   renderAgentIdentityMarkdown as renderAgentIdentityMarkdownTemplate
@@ -132,13 +131,7 @@ export async function readAgentConfigList(snapshot?: MissionControlSnapshot) {
 }
 
 export async function writeAgentConfigList(configList: MutableAgentConfigEntry[]) {
-  await runOpenClaw([
-    "config",
-    "set",
-    "--strict-json",
-    "agents.list",
-    JSON.stringify(configList)
-  ]);
+  await getOpenClawAdapter().setConfig("agents.list", configList, { strictJson: true });
 }
 
 export async function upsertAgentConfigEntry(
@@ -241,35 +234,17 @@ export async function applyAgentIdentity(
     await writeFile(identityFilePath, identityMarkdown, "utf8");
   });
 
-  const args = [
-    "agents",
-    "set-identity",
-    "--agent",
-    agentId,
-    "--workspace",
-    workspacePath,
-    "--identity-file",
-    identityFilePath,
-    "--json"
-  ];
-
-  if (identity.name) {
-    args.push("--name", identity.name);
-  }
-
-  if (identity.emoji) {
-    args.push("--emoji", identity.emoji);
-  }
-
-  if (identity.theme) {
-    args.push("--theme", identity.theme);
-  }
-
-  if (identity.avatar) {
-    args.push("--avatar", identity.avatar);
-  }
-
-  await measureTiming(timings, "agent-identity.sync-openclaw", () => runOpenClaw(args));
+  await measureTiming(timings, "agent-identity.sync-openclaw", () =>
+    getOpenClawAdapter().setAgentIdentity({
+      agentId,
+      workspace: workspacePath,
+      identityFile: identityFilePath,
+      name: identity.name,
+      emoji: identity.emoji,
+      theme: identity.theme,
+      avatar: identity.avatar
+    })
+  );
 }
 
 export async function writeAgentBootstrapFiles(

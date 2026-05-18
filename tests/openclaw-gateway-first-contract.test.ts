@@ -337,7 +337,13 @@ function createContractAdapter(overrides: Partial<OpenClawAdapter> = {}): OpenCl
     async updateAgent() {
       return { stdout: "", stderr: "" };
     },
+    async setAgentIdentity() {
+      return { stdout: "", stderr: "" };
+    },
     async deleteAgent() {
+      return { stdout: "", stderr: "" };
+    },
+    async provisionAutomation() {
       return { stdout: "", stderr: "" };
     },
     async runAgentTurn() {

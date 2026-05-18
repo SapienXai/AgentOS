@@ -102,7 +102,7 @@ export type OpenClawChannelLogsPayload = Record<string, unknown> & {
 
 export interface OpenClawChannelAccountProvisionInput {
   channel: string;
-  account: string;
+  account?: string | null;
   name?: string | null;
   token?: string | null;
   botToken?: string | null;
@@ -118,6 +118,38 @@ export interface OpenClawChannelAccountRemoveInput {
 export interface OpenClawGmailSetupInput {
   account: string;
   config?: Record<string, unknown>;
+}
+
+export interface OpenClawAgentIdentityInput {
+  agentId: string;
+  workspace: string;
+  identityFile: string;
+  name?: string | null;
+  emoji?: string | null;
+  theme?: string | null;
+  avatar?: string | null;
+}
+
+export interface OpenClawAutomationProvisionInput {
+  name: string;
+  description?: string | null;
+  agentId: string;
+  message: string;
+  thinking?: string | null;
+  timeoutSeconds?: number | null;
+  schedule:
+    | {
+        kind: "every";
+        value: string;
+      }
+    | {
+        kind: "cron";
+        value: string;
+      };
+  announce?: {
+    channel: string;
+    target?: string | null;
+  } | null;
 }
 
 export type StatusPayload = {
@@ -756,7 +788,9 @@ export interface OpenClawGatewayClient {
   unsetConfig(path: string, options?: OpenClawCommandOptions): Promise<CommandResult>;
   addAgent(input: OpenClawAddAgentInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   updateAgent?(input: OpenClawUpdateAgentInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
+  setAgentIdentity(input: OpenClawAgentIdentityInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   deleteAgent(agentId: string, options?: OpenClawCommandOptions): Promise<CommandResult>;
+  provisionAutomation(input: OpenClawAutomationProvisionInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   runAgentTurn(
     input: OpenClawAgentTurnInput,
     options?: OpenClawCommandOptions

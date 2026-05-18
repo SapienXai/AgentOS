@@ -9,6 +9,7 @@ import type {
   ModelsPayload,
   ModelsStatusPayload,
   OpenClawAddAgentInput,
+  OpenClawAgentIdentityInput,
   OpenClawAgentModelStatusInput,
   OpenClawAbortTurnInput,
   OpenClawArtifactDeleteInput,
@@ -17,6 +18,7 @@ import type {
   OpenClawArtifactListPayload,
   OpenClawArtifactPayload,
   OpenClawArtifactPutInput,
+  OpenClawAutomationProvisionInput,
   OpenClawChannelAccountProvisionInput,
   OpenClawChannelAccountRemoveInput,
   OpenClawChannelStatusInput,
@@ -145,7 +147,9 @@ export interface OpenClawAdapter {
     options?: OpenClawCommandOptions
   ): Promise<CommandResult>;
   updateAgent(input: OpenClawUpdateAgentInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
+  setAgentIdentity(input: OpenClawAgentIdentityInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   deleteAgent(agentId: string, options?: OpenClawCommandOptions): Promise<CommandResult>;
+  provisionAutomation(input: OpenClawAutomationProvisionInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   runAgentTurn(input: OpenClawAgentTurnInput, options?: OpenClawCommandOptions): Promise<MissionCommandPayload>;
   abortAgentTurn(input: OpenClawAbortTurnInput, options?: OpenClawCommandOptions): Promise<MissionCommandPayload>;
   streamAgentTurn(
@@ -348,8 +352,16 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
       Promise.resolve({ stdout: JSON.stringify({ ok: true, fallback: "application-config" }), stderr: "" });
   }
 
+  setAgentIdentity(input: OpenClawAgentIdentityInput, options: OpenClawCommandOptions = {}) {
+    return this.getClient().setAgentIdentity(input, options);
+  }
+
   deleteAgent(agentId: string, options: OpenClawCommandOptions = {}) {
     return this.getClient().deleteAgent(agentId, options);
+  }
+
+  provisionAutomation(input: OpenClawAutomationProvisionInput, options: OpenClawCommandOptions = {}) {
+    return this.getClient().provisionAutomation(input, options);
   }
 
   runAgentTurn(input: OpenClawAgentTurnInput, options: OpenClawCommandOptions = {}) {

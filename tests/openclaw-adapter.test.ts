@@ -143,7 +143,7 @@ function createMockGatewayClient(overrides: Partial<OpenClawGatewayClient> = {})
       return { lines: [] };
     },
     async provisionChannelAccount(input, options?: OpenClawCommandOptions) {
-      calls.push({ method: "provisionChannelAccount", action: input.account, options });
+      calls.push({ method: "provisionChannelAccount", action: input.account ?? undefined, options });
       return { stdout: JSON.stringify({ ok: true }), stderr: "" };
     },
     async removeChannelAccount(input, options?: OpenClawCommandOptions) {
@@ -218,8 +218,16 @@ function createMockGatewayClient(overrides: Partial<OpenClawGatewayClient> = {})
       calls.push({ method: "updateAgent", action: input.id, options });
       return { stdout: "", stderr: "", code: 0 };
     },
+    async setAgentIdentity(input, options?: OpenClawCommandOptions) {
+      calls.push({ method: "setAgentIdentity", action: input.agentId, options });
+      return { stdout: "", stderr: "", code: 0 };
+    },
     async deleteAgent(agentId: string, options?: OpenClawCommandOptions) {
       calls.push({ method: "deleteAgent", action: agentId, options });
+      return { stdout: "", stderr: "", code: 0 };
+    },
+    async provisionAutomation(input, options?: OpenClawCommandOptions) {
+      calls.push({ method: "provisionAutomation", action: input.name, options });
       return { stdout: "", stderr: "", code: 0 };
     },
     async runAgentTurn(input, options?: OpenClawCommandOptions) {
@@ -369,7 +377,19 @@ test("OpenClaw adapter exposes catalog, config, agent turn, and probe methods", 
   await adapter.unsetConfig("gateway.remote.url", { timeoutMs: 8 });
   await adapter.addAgent({ id: "agent-1", workspace: "/workspace", agentDir: "/agent" }, { timeoutMs: 9 });
   await adapter.updateAgent({ id: "agent-1", name: "Agent One" }, { timeoutMs: 9 });
+  await adapter.setAgentIdentity({
+    agentId: "agent-1",
+    workspace: "/workspace",
+    identityFile: "/agent/IDENTITY.md",
+    name: "Agent One"
+  }, { timeoutMs: 9 });
   await adapter.deleteAgent("agent-1", { timeoutMs: 10 });
+  await adapter.provisionAutomation({
+    name: "Digest",
+    agentId: "agent-1",
+    message: "Run digest",
+    schedule: { kind: "every", value: "1h" }
+  }, { timeoutMs: 10 });
   assert.deepEqual(await adapter.runAgentTurn({ agentId: "agent-1", message: "hello" }, { timeoutMs: 11 }), {
     runId: "run-1"
   });
@@ -427,7 +447,9 @@ test("OpenClaw adapter exposes catalog, config, agent turn, and probe methods", 
     { method: "unsetConfig", action: "gateway.remote.url", options: { timeoutMs: 8 } },
     { method: "addAgent", action: "agent-1", options: { timeoutMs: 9 } },
     { method: "updateAgent", action: "agent-1", options: { timeoutMs: 9 } },
+    { method: "setAgentIdentity", action: "agent-1", options: { timeoutMs: 9 } },
     { method: "deleteAgent", action: "agent-1", options: { timeoutMs: 10 } },
+    { method: "provisionAutomation", action: "Digest", options: { timeoutMs: 10 } },
     { method: "runAgentTurn", action: "agent-1", options: { timeoutMs: 11 } },
     { method: "abortAgentTurn", action: "run-1", options: { timeoutMs: 11 } },
     { method: "streamAgentTurn", action: "agent-1", options: { timeoutMs: 12 } },

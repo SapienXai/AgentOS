@@ -3,7 +3,6 @@ import "server-only";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { runOpenClaw } from "@/lib/openclaw/cli";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { resolveAgentPolicy } from "@/lib/openclaw/agent-presets";
 import {
@@ -1925,7 +1924,7 @@ async function provisionPlannerChannels(
     const credentialMap = Object.fromEntries(
       channel.credentials.map((credential) => [credential.key, credential.value.trim()])
     );
-    const args = buildChannelCommandArgs(channel, credentialMap);
+    const provisioningInput = buildChannelProvisionInput(channel, credentialMap);
     const startingPercent = Math.round((index / enabledChannels.length) * 100);
 
     await options.onProgress?.({
@@ -1934,7 +1933,7 @@ async function provisionPlannerChannels(
       status: "active"
     });
 
-    if (!args) {
+    if (!provisioningInput) {
       warnings.push(`Channel "${channel.name}" uses an unsupported provisioning shape.`);
       await options.onProgress?.({
         message: `Skipped ${channel.name}. AgentOS does not know how to provision this channel shape yet.`,
@@ -1945,7 +1944,7 @@ async function provisionPlannerChannels(
     }
 
     try {
-      await runOpenClaw(args, { timeoutMs: 60000 });
+      await getOpenClawAdapter().provisionChannelAccount(provisioningInput, { timeoutMs: 60000 });
       provisioned.push(channel.name);
       await options.onProgress?.({
         message: `Provisioned ${channel.name}.`,
@@ -1974,59 +1973,39 @@ async function provisionPlannerChannels(
   };
 }
 
-function buildChannelCommandArgs(channel: PlannerChannelSpec, credentialMap: Record<string, string>) {
+function buildChannelProvisionInput(channel: PlannerChannelSpec, credentialMap: Record<string, string>) {
   switch (channel.type) {
     case "telegram":
       return credentialMap.token
-        ? [
-            "channels",
-            "add",
-            "--channel",
-            "telegram",
-            "--token",
-            credentialMap.token,
-            "--name",
-            channel.name
-          ]
+        ? {
+            channel: "telegram",
+            token: credentialMap.token,
+            name: channel.name
+          }
         : null;
     case "discord":
       return credentialMap.token
-        ? [
-            "channels",
-            "add",
-            "--channel",
-            "discord",
-            "--token",
-            credentialMap.token,
-            "--name",
-            channel.name
-          ]
+        ? {
+            channel: "discord",
+            token: credentialMap.token,
+            name: channel.name
+          }
         : null;
     case "slack":
       return credentialMap.botToken
-        ? [
-            "channels",
-            "add",
-            "--channel",
-            "slack",
-            "--bot-token",
-            credentialMap.botToken,
-            "--name",
-            channel.name
-          ]
+        ? {
+            channel: "slack",
+            botToken: credentialMap.botToken,
+            name: channel.name
+          }
         : null;
     case "googlechat":
       return credentialMap.webhookUrl
-        ? [
-            "channels",
-            "add",
-            "--channel",
-            "googlechat",
-            "--webhook-url",
-            credentialMap.webhookUrl,
-            "--name",
-            channel.name
-          ]
+        ? {
+            channel: "googlechat",
+            webhookUrl: credentialMap.webhookUrl,
+            name: channel.name
+          }
         : null;
     default:
       return null;
@@ -2054,7 +2033,7 @@ async function provisionPlannerAutomations(
   }
 
   for (const [index, automation] of enabledAutomations.entries()) {
-    const args = buildAutomationCommandArgs(plan, automation, createdAgentIdMap);
+    const provisioningInput = buildAutomationProvisionInput(plan, automation, createdAgentIdMap);
     const startingPercent = Math.round((index / enabledAutomations.length) * 100);
 
     await options.onProgress?.({
@@ -2063,7 +2042,7 @@ async function provisionPlannerAutomations(
       status: "active"
     });
 
-    if (!args) {
+    if (!provisioningInput) {
       warnings.push(`Automation "${automation.name}" could not be mapped to a live agent.`);
       await options.onProgress?.({
         message: `Skipped ${automation.name}. It could not be mapped to a live agent.`,
@@ -2074,7 +2053,7 @@ async function provisionPlannerAutomations(
     }
 
     try {
-      await runOpenClaw(args, { timeoutMs: 60000 });
+      await getOpenClawAdapter().provisionAutomation(provisioningInput, { timeoutMs: 60000 });
       provisioned.push(automation.name);
       await options.onProgress?.({
         message: `Provisioned automation ${automation.name}.`,
@@ -2113,7 +2092,7 @@ async function provisionPlannerAutomations(
   };
 }
 
-function buildAutomationCommandArgs(
+function buildAutomationProvisionInput(
   plan: WorkspacePlan,
   automation: PlannerAutomationSpec,
   createdAgentIdMap: Record<string, string>
@@ -2124,41 +2103,36 @@ function buildAutomationCommandArgs(
     return null;
   }
 
-  const args = [
-    "cron",
-    "add",
-    "--name",
-    automation.name,
-    "--description",
-    automation.description || automation.name,
-    "--agent",
-    mappedAgentId,
-    "--message",
-    automation.mission,
-    "--thinking",
-    automation.thinking,
-    "--timeout-seconds",
-    "120",
-    "--json"
-  ];
-
-  if (automation.scheduleKind === "every") {
-    args.push("--every", automation.scheduleValue);
-  } else {
-    args.push("--cron", automation.scheduleValue);
-  }
+  const provisioningInput = {
+    name: automation.name,
+    description: automation.description || automation.name,
+    agentId: mappedAgentId,
+    message: automation.mission,
+    thinking: automation.thinking,
+    timeoutSeconds: 120,
+    schedule: automation.scheduleKind === "every"
+      ? {
+          kind: "every" as const,
+          value: automation.scheduleValue
+        }
+      : {
+          kind: "cron" as const,
+          value: automation.scheduleValue
+        },
+    announce: null as { channel: string; target?: string | null } | null
+  };
 
   if (automation.announce && automation.channelId) {
     const channel = plan.operations.channels.find((entry) => entry.id === automation.channelId);
     if (channel && channel.type !== "internal") {
-      args.push("--announce", "--channel", channel.type);
-      if (channel.target) {
-        args.push("--to", channel.target);
-      }
+      provisioningInput.announce = {
+        channel: channel.type,
+        target: channel.target ?? null
+      };
     }
   }
 
-  return args;
+  return provisioningInput;
 }
 
 async function runPlannerKickoffMissions(
