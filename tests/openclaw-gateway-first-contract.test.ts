@@ -68,6 +68,25 @@ test("capability matrix detects advertised Gateway-first methods", async () => {
   assert.equal(matrix.operations?.modelAuthOrder.mode, "gateway-native");
   assert.equal(matrix.operations?.missionStream.mode, "gateway-native");
   assert.ok(matrix.unsupportedGatewayMethods.includes("models.list"));
+  assert.equal(matrix.operations?.modelAuthOrder.compatibility, "preferred");
+  assert.equal(matrix.compatibility?.protocol.status, "compatible");
+});
+
+test("capability matrix reports Gateway compatibility aliases without degrading to CLI", async () => {
+  setOpenClawAdapterForTesting(createContractAdapter());
+  setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({
+    protocolVersion: 4,
+    methods: ["models.auth.order.set"]
+  }));
+
+  const matrix = await getOpenClawCapabilityMatrix({ force: true });
+
+  assert.equal(matrix.operations?.modelAuthOrder.mode, "gateway-native");
+  assert.equal(matrix.operations?.modelAuthOrder.compatibility, "alias");
+  assert.equal(matrix.operations?.modelAuthOrder.preferredMethod, "models.authOrder.set");
+  assert.equal(matrix.operations?.modelAuthOrder.supportedMethod, "models.auth.order.set");
+  assert.deepEqual(matrix.compatibility?.aliasOperations, ["modelAuthOrder: models.auth.order.set"]);
+  assert.equal(matrix.compatibility?.degradedOperations.includes("modelAuthOrder"), false);
 });
 
 test("capability matrix tracks Phase 2 Gateway-native runtime surfaces", async () => {

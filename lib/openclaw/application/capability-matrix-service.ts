@@ -8,6 +8,12 @@ import {
   getRecentOpenClawGatewayFallbackDiagnostics,
   isCliGatewayClientForcedByEnv
 } from "@/lib/openclaw/client/gateway-client";
+import {
+  OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS,
+  OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS,
+  getOpenClawGatewayCompatibilityOperation,
+  getOpenClawGatewayMethodCandidates
+} from "@/lib/openclaw/client/gateway-compatibility";
 import type {
   OpenClawCapabilityMatrix,
   OpenClawCapabilityOperation,
@@ -15,87 +21,6 @@ import type {
 } from "@/lib/openclaw/types";
 
 const capabilityCacheTtlMs = 60_000;
-const knownGatewayFirstMethods = [
-  "health",
-  "status",
-  "diagnostics.stability",
-  "models.list",
-  "models.authStatus",
-  "models.authOrder.set",
-  "models.auth.order.set",
-  "agents.list",
-  "agents.create",
-  "agents.update",
-  "agents.delete",
-  "agents.files.list",
-  "agents.files.get",
-  "agents.files.set",
-  "sessions.list",
-  "sessions.create",
-  "sessions.describe",
-  "sessions.history",
-  "sessions.patch",
-  "sessions.preview",
-  "sessions.resolve",
-  "sessions.send",
-  "sessions.abort",
-  "sessions.subscribe",
-  "sessions.messages.subscribe",
-  "sessions.export",
-  "tasks.list",
-  "tasks.get",
-  "tasks.subscribe",
-  "tasks.assign",
-  "tasks.cancel",
-  "artifacts.list",
-  "artifacts.get",
-  "artifacts.put",
-  "artifacts.delete",
-  "runtime.snapshot",
-  "chat.history",
-  "chat.send",
-  "chat.abort",
-  "config.get",
-  "config.set",
-  "config.schema",
-  "config.schema.lookup",
-  "config.patch",
-  "config.apply",
-  "channels.status",
-  "channels.start",
-  "channels.stop",
-  "channels.logout",
-  "skills.status",
-  "skills.search",
-  "skills.detail",
-  "skills.install",
-  "skills.update",
-  "plugins.uiDescriptors",
-  "tools.catalog",
-  "tools.effective",
-  "tools.invoke",
-  "logs.tail",
-  "exec.approval.request",
-  "exec.approval.get",
-  "exec.approval.list",
-  "exec.approval.resolve",
-  "exec.approval.waitDecision",
-  "exec.approvals.get",
-  "exec.approvals.set",
-  "plugin.approval.list",
-  "plugin.approval.resolve",
-  "cron.list",
-  "cron.status",
-  "update.status",
-  "update.run",
-  "environment.list",
-  "environment.get",
-  "environment.create",
-  "environment.update",
-  "environment.delete",
-  "gateway.restart.preflight",
-  "gateway.restart.request"
-];
 
 let cachedCapabilityMatrix: {
   capturedAt: number;
@@ -197,7 +122,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
     return methods.some((method) => methodSet.has(method)) ? "supported" : "unsupported";
   };
   const unsupportedGatewayMethods = methodSet.size > 0
-    ? knownGatewayFirstMethods.filter((method) => !methodSet.has(method))
+    ? OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS.filter((method) => !methodSet.has(method))
     : [];
   const operation = (
     methods: string[],
@@ -210,7 +135,11 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
         methods,
         events,
         fallbackAllowed,
-        reason: "Native Gateway WS is disabled by environment configuration."
+        reason: "Native Gateway WS is disabled by environment configuration.",
+        preferredMethod: methods[0] ?? null,
+        supportedMethod: null,
+        aliasMethods: methods.slice(1),
+        compatibility: "missing"
       };
     }
 
@@ -220,19 +149,29 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
         methods,
         events,
         fallbackAllowed,
-        reason: "Gateway did not advertise feature metadata; AgentOS will attempt Gateway first and fall back when needed."
+        reason: "Gateway did not advertise feature metadata; AgentOS will attempt Gateway first and fall back when needed.",
+        preferredMethod: methods[0] ?? null,
+        supportedMethod: null,
+        aliasMethods: methods.slice(1),
+        compatibility: "unknown"
       };
     }
 
-    const methodSupported = methods.some((method) => methodSet.has(method));
+    const supportedMethod = methods.find((method) => methodSet.has(method)) ?? null;
     const eventSupported = events.some((event) => eventSet.has(event));
-    if (methodSupported || eventSupported) {
+    if (supportedMethod || eventSupported) {
       return {
         mode: "gateway-native",
         methods,
         events,
         fallbackAllowed,
-        reason: "OpenClaw Gateway advertises native support."
+        reason: supportedMethod && supportedMethod !== methods[0]
+          ? `OpenClaw Gateway advertises compatibility alias ${supportedMethod}.`
+          : "OpenClaw Gateway advertises native support.",
+        preferredMethod: methods[0] ?? null,
+        supportedMethod,
+        aliasMethods: methods.slice(1),
+        compatibility: supportedMethod && supportedMethod !== methods[0] ? "alias" : "preferred"
       };
     }
 
@@ -243,37 +182,29 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
       fallbackAllowed,
       reason: fallbackAllowed
         ? "OpenClaw Gateway does not advertise native support; AgentOS will use compatibility fallback."
-        : "OpenClaw Gateway does not advertise native support and no safe fallback is available."
+        : "OpenClaw Gateway does not advertise native support and no safe fallback is available.",
+      preferredMethod: methods[0] ?? null,
+      supportedMethod: null,
+      aliasMethods: methods.slice(1),
+      compatibility: "missing"
     };
   };
-  const operations: Record<string, OpenClawCapabilityOperation> = {
-    health: operation(["health", "status"]),
-    modelAuthOrder: operation(["models.authOrder.set", "models.auth.order.set"]),
-    logsTail: operation(["logs.tail"]),
-    configSchemaLookup: operation(["config.schema.lookup", "config.schema"]),
-    configPatch: operation(["config.patch", "config.apply", "config.set"]),
-    agentCreate: operation(["agents.create"]),
-    agentUpdate: operation(["agents.update"]),
-    agentDelete: operation(["agents.delete"]),
-    missionDispatch: operation(["chat.send", "sessions.send"]),
-    missionStream: operation(["sessions.subscribe", "sessions.messages.subscribe"], ["chat", "agent", "session.message", "session.tool"]),
-    sessionHistory: operation(["sessions.describe", "sessions.history", "sessions.export"]),
-    taskEvents: operation(["tasks.subscribe", "tasks.get", "tasks.list"], ["task", "task.updated", "task.completed"]),
-    artifacts: operation(["artifacts.list", "artifacts.get", "artifacts.put", "artifacts.delete"], ["artifact", "artifact.updated"]),
-    runtimeSnapshot: operation(["runtime.snapshot"]),
-    tools: operation(["tools.catalog", "tools.effective", "tools.invoke"]),
-    execApprovals: operation(["exec.approval.list", "exec.approval.get", "exec.approval.resolve", "exec.approvals.get", "exec.approvals.set"]),
-    cronRead: operation(["cron.list", "cron.status"]),
-    channels: operation(["channels.status"]),
-    skills: operation(["skills.status"]),
-    updates: operation(["update.status", "update.run", "status"])
-  };
+  const operations = Object.fromEntries(
+    OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS.map((definition) => [
+      definition.id,
+      operation(definition.methods, definition.events ?? [], definition.fallbackAllowed ?? true)
+    ])
+  ) as Record<string, OpenClawCapabilityOperation>;
   const fallbackReasons = getRecentOpenClawGatewayFallbackDiagnostics().map(
     (entry) => `${entry.operation}: ${entry.kind}: ${entry.issue} Recovery: ${entry.recovery}`
   );
   const degradedFeatures = Object.entries(operations)
     .filter(([, value]) => value.mode === "degraded" || value.mode === "cli-fallback")
     .map(([name, value]) => `${name}: ${value.reason}`);
+  const aliasOperations = Object.entries(operations)
+    .filter(([, value]) => value.compatibility === "alias" && value.supportedMethod)
+    .map(([name, value]) => `${name}: ${value.supportedMethod}`);
+  const protocolStatus = resolveProtocolCompatibilityStatus(protocolVersion);
 
   return {
     detectedAt: new Date().toISOString(),
@@ -286,31 +217,27 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
     supportedMethods,
     supportedEvents,
     configSchema: support("config.schema"),
-    configSchemaLookup: support("config.schema.lookup"),
-    configPatch: support("config.patch", "config.apply"),
-    chatEvents: support("chat.send", "chat.history") === "supported" ||
-      ["chat", "agent", "session.message", "session.tool"].some((event) => eventSet.has(event))
+    configSchemaLookup: support(...getOpenClawGatewayMethodCandidates("configSchemaLookup")),
+    configPatch: support(...getOpenClawGatewayMethodCandidates("configPatch")),
+    chatEvents: support(...getOpenClawGatewayMethodCandidates("missionDispatch"), "chat.history") === "supported" ||
+      (getOpenClawGatewayCompatibilityOperation("missionStream").events ?? []).some((event) => eventSet.has(event))
       ? "supported"
       : methodSet.size === 0
         ? "unknown"
         : "unsupported",
-    logsTail: support("logs.tail"),
-    cronRead: support("cron.list", "cron.status"),
-    channels: support("channels.status"),
-    skills: support("skills.status"),
-    approvals: support(
-      "exec.approval.list",
-      "exec.approval.get",
-      "exec.approval.resolve",
-      "exec.approvals.get",
-      "exec.approvals.set",
-      "plugin.approval.list",
-      "plugin.approval.resolve"
+    logsTail: support(...getOpenClawGatewayMethodCandidates("logsTail")),
+    cronRead: support(...getOpenClawGatewayMethodCandidates("cronRead")),
+    channels: support(...getOpenClawGatewayMethodCandidates("channels")),
+    skills: support(...getOpenClawGatewayMethodCandidates("skills")),
+    approvals: support(...getOpenClawGatewayMethodCandidates("execApprovals"), "plugin.approval.list", "plugin.approval.resolve"),
+    updates: support(...getOpenClawGatewayMethodCandidates("updates")),
+    nativeMissionDispatch: support(...getOpenClawGatewayMethodCandidates("missionDispatch")),
+    nativeAgentLifecycle: support(
+      ...getOpenClawGatewayMethodCandidates("agentCreate"),
+      ...getOpenClawGatewayMethodCandidates("agentUpdate"),
+      ...getOpenClawGatewayMethodCandidates("agentDelete")
     ),
-    updates: support("update.status", "update.run", "status"),
-    nativeMissionDispatch: support("chat.send", "sessions.send"),
-    nativeAgentLifecycle: support("agents.create", "agents.update", "agents.delete"),
-    eventBridge: support("sessions.subscribe", "tasks.subscribe") === "supported" ||
+    eventBridge: support(...getOpenClawGatewayMethodCandidates("missionStream"), ...getOpenClawGatewayMethodCandidates("taskEvents")) === "supported" ||
       [
         "chat",
         "agent",
@@ -329,6 +256,20 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
         ? "unknown"
         : "unsupported",
     operations,
+    compatibility: {
+      protocol: {
+        status: protocolStatus,
+        version: protocolVersion,
+        reason: resolveProtocolCompatibilityReason(protocolVersion, protocolStatus)
+      },
+      nativeOperationCount: Object.values(operations).filter((value) => value.mode === "gateway-native").length,
+      degradedOperationCount: Object.values(operations).filter((value) => value.mode === "degraded" || value.mode === "cli-fallback").length,
+      unknownOperationCount: Object.values(operations).filter((value) => value.mode === "unknown").length,
+      aliasOperations,
+      degradedOperations: Object.entries(operations)
+        .filter(([, value]) => value.mode === "degraded" || value.mode === "cli-fallback")
+        .map(([name]) => name)
+    },
     degradedFeatures,
     fallbackReasons,
     unsupportedGatewayMethods,
@@ -414,6 +355,37 @@ function readAuthScopes(payload: unknown) {
     ...readStringArray(readProperty(readProperty(payload, "auth"), "scopes")),
     ...readStringArray(readProperty(readProperty(payload, "security"), "scopes"))
   ])).sort();
+}
+
+function resolveProtocolCompatibilityStatus(protocolVersion: string | null) {
+  if (!protocolVersion) {
+    return "unknown" as const;
+  }
+
+  const numericVersion = Number(protocolVersion);
+  if (!Number.isFinite(numericVersion)) {
+    return "unknown" as const;
+  }
+
+  return numericVersion >= OPENCLAW_GATEWAY_PROTOCOL_RANGE.min &&
+    numericVersion <= OPENCLAW_GATEWAY_PROTOCOL_RANGE.max
+    ? "compatible" as const
+    : "unsupported" as const;
+}
+
+function resolveProtocolCompatibilityReason(
+  protocolVersion: string | null,
+  status: ReturnType<typeof resolveProtocolCompatibilityStatus>
+) {
+  if (status === "compatible") {
+    return `Gateway protocol ${protocolVersion} is within AgentOS' supported range ${OPENCLAW_GATEWAY_PROTOCOL_RANGE.min}-${OPENCLAW_GATEWAY_PROTOCOL_RANGE.max}.`;
+  }
+
+  if (status === "unsupported") {
+    return `Gateway protocol ${protocolVersion} is outside AgentOS' supported range ${OPENCLAW_GATEWAY_PROTOCOL_RANGE.min}-${OPENCLAW_GATEWAY_PROTOCOL_RANGE.max}.`;
+  }
+
+  return "Gateway protocol version was not advertised.";
 }
 
 function readProperty(value: unknown, key: string) {

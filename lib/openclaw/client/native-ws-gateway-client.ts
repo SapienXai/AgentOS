@@ -8,6 +8,10 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import { CliOpenClawGatewayClient } from "@/lib/openclaw/client/cli-gateway-client";
+import {
+  getOpenClawGatewayMethodCandidates,
+  type OpenClawGatewayCompatibilityOperationId
+} from "@/lib/openclaw/client/gateway-compatibility";
 import type { CommandResult } from "@/lib/openclaw/cli";
 import { isOpenClawInvalidConfigError } from "@/lib/openclaw/command-failure";
 import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
@@ -2269,8 +2273,8 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   }
 
   setModelAuthOrder(input: OpenClawModelAuthOrderSetInput, options: OpenClawCommandOptions = {}) {
-    return this.gatewayFirst(
-      "models.authOrder.set",
+    return this.gatewayFirstCompatible(
+      "modelAuthOrder",
       {
         provider: input.provider,
         agentId: input.agentId,
@@ -3014,6 +3018,57 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       this.recordGatewayFallback(method, error);
       return fallback();
     }
+  }
+
+  private async gatewayFirstCompatible<TPayload>(
+    operationId: OpenClawGatewayCompatibilityOperationId,
+    params: Record<string, unknown>,
+    options: OpenClawCommandOptions,
+    normalize: (payload: unknown) => TPayload,
+    fallback: () => Promise<TPayload>
+  ) {
+    if (this.options.forceCli || isCliGatewayClientForcedByEnv()) {
+      return fallback();
+    }
+
+    const methods = getOpenClawGatewayMethodCandidates(operationId);
+    let lastUnsupportedError: unknown = null;
+
+    for (const method of methods) {
+      const policy = resolveGatewayRequestPolicy(method, options);
+
+      try {
+        const payload = normalize(await this.callNative<unknown>(method, params, options, policy));
+        for (const candidate of methods) {
+          clearGatewayFallbackDiagnostic(candidate);
+        }
+        return payload;
+      } catch (error) {
+        this.options.onNativeFailure?.(error, method);
+
+        if (isGatewayMethodUnsupported(error)) {
+          lastUnsupportedError = error;
+          continue;
+        }
+
+        if (!shouldUseCliFallback(error, method, policy)) {
+          throw error;
+        }
+
+        this.recordGatewayFallback(method, error);
+        return fallback();
+      }
+    }
+
+    const fallbackOperation = methods[0] ?? operationId;
+    this.recordGatewayFallback(
+      fallbackOperation,
+      lastUnsupportedError ?? new NativeGatewayError(
+        `OpenClaw Gateway does not advertise a compatible method for ${operationId}.`,
+        { kind: "unsupported" }
+      )
+    );
+    return fallback();
   }
 
   private async gatewayConfigMutationFirst(

@@ -214,6 +214,28 @@ test("model auth repair and planner runtime turns stay behind the OpenClaw adapt
   assert.doesNotMatch(plannerSource, /runOpenClawJson/);
 });
 
+test("Gateway compatibility aliases stay centralized outside application services", () => {
+  const compatibilitySource = readFileSync(
+    path.join(rootDir, "lib/openclaw/client/gateway-compatibility.ts"),
+    "utf8"
+  );
+  const capabilitySource = readFileSync(
+    path.join(rootDir, "lib/openclaw/application/capability-matrix-service.ts"),
+    "utf8"
+  );
+  const nativeClientSource = readFileSync(
+    path.join(rootDir, "lib/openclaw/client/native-ws-gateway-client.ts"),
+    "utf8"
+  );
+
+  assert.match(compatibilitySource, /models\.authOrder\.set/);
+  assert.match(compatibilitySource, /models\.auth\.order\.set/);
+  assert.doesNotMatch(capabilitySource, /const knownGatewayFirstMethods = \[/);
+  assert.match(capabilitySource, /OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS/);
+  assert.match(nativeClientSource, /gatewayFirstCompatible/);
+  assert.match(nativeClientSource, /getOpenClawGatewayMethodCandidates/);
+});
+
 test("CLI runtime event subscriptions fail closed instead of pretending to stream", () => {
   const source = readFileSync(path.join(rootDir, "lib/openclaw/client/cli-gateway-client.ts"), "utf8");
 

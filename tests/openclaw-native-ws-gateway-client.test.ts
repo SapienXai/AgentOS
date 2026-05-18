@@ -996,6 +996,40 @@ test("native WS gateway client sets model auth order through Gateway before CLI 
   assert.deepEqual(fallback.calls, []);
 });
 
+test("native WS gateway client uses model auth order compatibility aliases before CLI fallback", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? { protocol: 4, features: { methods: ["models.auth.order.set"] } }
+          : { ok: true }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await client.setModelAuthOrder({
+    provider: "openai-codex",
+    agentId: "agent-1",
+    profileIds: ["profile-1"]
+  });
+
+  assert.deepEqual(
+    sentFrames.map((frame) => frame.method),
+    ["connect", "models.auth.order.set"]
+  );
+  assert.deepEqual(fallback.calls, []);
+});
+
 test("native WS gateway client clears operation fallback diagnostics after Gateway recovery", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();

@@ -104,6 +104,23 @@ export interface OpenClawCapabilityOperation {
   events: string[];
   fallbackAllowed: boolean;
   reason: string;
+  preferredMethod?: string | null;
+  supportedMethod?: string | null;
+  aliasMethods?: string[];
+  compatibility?: "preferred" | "alias" | "missing" | "unknown";
+}
+
+export interface OpenClawGatewayCompatibilityProfile {
+  protocol: {
+    status: "compatible" | "unknown" | "unsupported";
+    version: string | null;
+    reason: string;
+  };
+  nativeOperationCount: number;
+  degradedOperationCount: number;
+  unknownOperationCount: number;
+  aliasOperations: string[];
+  degradedOperations: string[];
 }
 
 export interface OpenClawCapabilityMatrix {
@@ -133,6 +150,7 @@ export interface OpenClawCapabilityMatrix {
   nativeAgentLifecycle: OpenClawCapabilitySupport;
   eventBridge: OpenClawCapabilitySupport;
   operations?: Record<string, OpenClawCapabilityOperation>;
+  compatibility?: OpenClawGatewayCompatibilityProfile;
   degradedFeatures?: string[];
   fallbackReasons?: string[];
   unsupportedGatewayMethods: string[];
