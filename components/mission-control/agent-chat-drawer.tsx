@@ -22,7 +22,7 @@ import {
   type AgentChatRunSnapshot
 } from "@/components/mission-control/agent-chat-runner";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
-import type { MissionControlSnapshot, OpenClawAgent } from "@/lib/agentos/contracts";
+import type { MissionControlSnapshot, AgentRecord } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
 
 type ChatMessage = AgentChatMessage;
@@ -164,7 +164,7 @@ export function AgentChatDrawer({
   onRefresh,
   onSnapshotChange
 }: {
-  agent: OpenClawAgent;
+  agent: AgentRecord;
   snapshot: MissionControlSnapshot;
   surfaceTheme: "dark" | "light";
   isVisible: boolean;

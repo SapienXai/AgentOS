@@ -3,17 +3,17 @@ import type {
   PersistedNodePosition,
   SpringVelocity
 } from "@/components/mission-control/canvas-types";
-import type { OpenClawAgent } from "@/lib/agentos/contracts";
+import type { AgentRecord } from "@/lib/agentos/contracts";
 
 const surfaceModuleSpringStiffness = 220;
 const surfaceModuleSpringDamping = 20;
 const surfaceModuleSettlingThreshold = 0.35;
 
-export function toSurfaceTetherNodeId(agent: OpenClawAgent, provider: AgentSurfaceBadge["provider"]) {
+export function toSurfaceTetherNodeId(agent: AgentRecord, provider: AgentSurfaceBadge["provider"]) {
   return `surface-module-v1:${agent.workspaceId}:${agent.id}:${provider}`;
 }
 
-export function toSurfaceActionNodeId(agent: OpenClawAgent) {
+export function toSurfaceActionNodeId(agent: AgentRecord) {
   return `surface-add-v1:${agent.workspaceId}:${agent.id}`;
 }
 

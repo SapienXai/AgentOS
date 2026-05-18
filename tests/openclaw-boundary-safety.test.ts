@@ -99,7 +99,6 @@ test("OpenClaw direct CLI command usage remains in documented fallback/provision
   const allowed = new Set([
     "lib/openclaw/client/cli-gateway-client.ts",
     "lib/openclaw/domains/agent-config.ts",
-    "lib/openclaw/domains/agent-provisioning.ts",
     "lib/openclaw/application/model-auth-service.ts",
     "lib/openclaw/planner.ts",
     "lib/openclaw/reset.ts",
@@ -115,6 +114,70 @@ test("OpenClaw direct CLI command usage remains in documented fallback/provision
     .filter((filePath) => !allowed.has(filePath));
 
   assert.deepEqual(offenders, []);
+});
+
+test("AgentOS contracts expose explicit runtime aliases instead of wildcard OpenClaw exports", () => {
+  const source = readFileSync(path.join(rootDir, "lib/agentos/contracts.ts"), "utf8");
+
+  assert.doesNotMatch(source, /export\s+type\s+\*\s+from\s+["']@\/lib\/openclaw\/types["']/);
+  assert.match(source, /export type ControlPlaneSnapshot = MissionControlSnapshot;/);
+  assert.match(source, /export type ControlPlaneDiagnostics = GatewayDiagnostics;/);
+  assert.match(source, /export type AgentRecord = OpenClawAgent;/);
+  assert.match(source, /export type RuntimeActivityRecord = RuntimeRecord;/);
+  assert.match(source, /export type WorkItemRecord = TaskRecord;/);
+});
+
+test("app, components, and hooks use AgentOS aliases for core runtime records", () => {
+  const forbiddenCoreContractTypes = [
+    "GatewayDiagnostics",
+    "OpenClawAgent",
+    "RuntimeRecord",
+    "TaskRecord",
+    "WorkspaceProject"
+  ];
+  const offenders = readProjectSourceFiles(["app", "components", "hooks"])
+    .flatMap((filePath) => {
+      const source = readFileSync(filePath, "utf8");
+      const matches = source.matchAll(
+        /import\s+type\s+\{([\s\S]*?)\}\s+from\s+["']@\/lib\/agentos\/contracts["']/g
+      );
+
+      return Array.from(matches).flatMap((match) =>
+        forbiddenCoreContractTypes
+          .filter((typeName) => new RegExp(`\\b${typeName}\\b`).test(match[1]))
+          .map((typeName) => `${toProjectPath(filePath)} -> ${typeName}`)
+      );
+    })
+    .sort();
+
+  assert.deepEqual(offenders, []);
+});
+
+test("model provider API route keeps local OpenClaw config state behind the application service", () => {
+  const routeSource = readFileSync(path.join(rootDir, "app/api/models/providers/route.ts"), "utf8");
+  const serviceSource = readFileSync(
+    path.join(rootDir, "lib/openclaw/application/model-provider-state-service.ts"),
+    "utf8"
+  );
+
+  assert.match(routeSource, /model-provider-state-service/);
+  assert.doesNotMatch(routeSource, /node:fs\/promises|node:os|auth-profiles\.json|openclaw\.json|getOpenClawAdapter/);
+  assert.match(serviceSource, /openclaw\.json/);
+  assert.match(serviceSource, /auth-profiles\.json/);
+});
+
+test("local Gateway port probes do not claim authenticated RPC readiness", () => {
+  const probeSource = readFileSync(path.join(rootDir, "lib/openclaw/client/local-gateway-probe.ts"), "utf8");
+  const missionControlSource = readFileSync(
+    path.join(rootDir, "lib/openclaw/application/mission-control-service.ts"),
+    "utf8"
+  );
+
+  assert.doesNotMatch(probeSource, /rpc:\s*\{\s*ok:\s*true\s*\}/);
+  assert.match(missionControlSource, /const shouldHydrateGatewayStatus = gatewayStatusCacheNeedsRefresh;/);
+  assert.doesNotMatch(missionControlSource, /const shouldHydrateGatewayStatus = !localGatewayStatus/);
+  assert.match(missionControlSource, /let resolvedGatewayStatus = gatewayStatusCache\.resolve\(gatewayStatusResult\);/);
+  assert.match(missionControlSource, /const gatewayStatusResult = await settleGatewayStatusPayloadFromOpenClaw\(3_000\);/);
 });
 
 test("full uninstall reset avoids OpenClaw-dependent workspace cleanup", () => {

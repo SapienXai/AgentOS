@@ -43,7 +43,7 @@ import type {
   SpringVelocity
 } from "@/components/mission-control/canvas-types";
 import { resolveRelativeTimeReferenceMs } from "@/lib/openclaw/presenters";
-import type { MissionControlSnapshot, TaskRecord } from "@/lib/agentos/contracts";
+import type { MissionControlSnapshot, WorkItemRecord } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
 
 export function MissionCanvas({
@@ -101,12 +101,12 @@ export function MissionCanvas({
   onConfigureAgentCapabilities?: (agentId: string, focus: "skills" | "tools") => void;
   onInspectAgentDetail?: (agentId: string, focus: AgentDetailFocus) => void;
   onOpenWorkspaceChannels?: (workspaceId?: string) => void;
-  onReplyTask: (task: TaskRecord) => void;
-  onCopyTaskPrompt: (task: TaskRecord) => void;
-  onHideTask: (task: TaskRecord) => void;
-  onToggleTaskLock: (task: TaskRecord) => void;
-  onAbortTask: (task: TaskRecord) => void;
-  onInspectTask: (task: TaskRecord, target: "overview" | "output" | "files") => void;
+  onReplyTask: (task: WorkItemRecord) => void;
+  onCopyTaskPrompt: (task: WorkItemRecord) => void;
+  onHideTask: (task: WorkItemRecord) => void;
+  onToggleTaskLock: (task: WorkItemRecord) => void;
+  onAbortTask: (task: WorkItemRecord) => void;
+  onInspectTask: (task: WorkItemRecord, target: "overview" | "output" | "files") => void;
   onSelectNode: (nodeId: string) => void;
   onCanvasNodePointerDownCapture?: () => void;
   className?: string;

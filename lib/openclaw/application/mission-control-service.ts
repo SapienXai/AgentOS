@@ -359,7 +359,7 @@ async function loadMissionControlSnapshots({
       !modelsStatusPayloadCache || Date.now() - modelsStatusPayloadCache.capturedAt > SLOW_PAYLOAD_CACHE_TTL_MS;
 
     if (profile === "interactive" || systemProfile) {
-      const shouldHydrateGatewayStatus = !localGatewayStatus && gatewayStatusCacheNeedsRefresh;
+      const shouldHydrateGatewayStatus = gatewayStatusCacheNeedsRefresh;
       const shouldHydrateStatus = !localGatewayStatus && statusCacheNeedsRefresh;
       const shouldHydrateModelStatus = !systemProfile && modelStatusCacheNeedsRefresh;
 
@@ -397,12 +397,14 @@ async function loadMissionControlSnapshots({
       presenceResult = createDeferredPayloadResult();
     }
 
-    let resolvedGatewayStatus = localGatewayStatus
-      ? {
-          value: localGatewayStatus,
-          reusedCachedValue: false
-        }
-      : gatewayStatusCache.resolve(gatewayStatusResult);
+    let resolvedGatewayStatus = gatewayStatusCache.resolve(gatewayStatusResult);
+
+    if (!resolvedGatewayStatus.value && localGatewayStatus) {
+      resolvedGatewayStatus = {
+        value: localGatewayStatus,
+        reusedCachedValue: false
+      };
+    }
 
     if (!resolvedGatewayStatus.value) {
       const probedGatewayStatus = await probeLocalGatewayStatus(gatewayStatusCache.getCachedPort());
@@ -454,6 +456,7 @@ async function loadMissionControlSnapshots({
     const models = resolvedModels.value?.models ?? localModels.models;
     const presence = resolvedPresence.value ?? [];
     const hasOpenClawSignal =
+      gatewayStatusResult.status === "fulfilled" ||
       statusResult.status === "fulfilled" ||
       agentsResult.status === "fulfilled" ||
       agentConfigResult.status === "fulfilled" ||
@@ -804,13 +807,8 @@ async function buildSystemReadinessSnapshot({
   openclawInstalled: boolean;
   configuredWorkspaceRoot: string | null;
 }): Promise<MissionControlSnapshot> {
-  const gatewayStatusResult = localGatewayStatus
-    ? ({
-        status: "fulfilled",
-        value: localGatewayStatus
-      } satisfies PromiseSettledResult<GatewayStatusPayload>)
-    : await settleGatewayStatusPayloadFromOpenClaw(3_000);
-  const gatewayStatus = localGatewayStatus ?? gatewayStatusCache.resolve(gatewayStatusResult).value;
+  const gatewayStatusResult = await settleGatewayStatusPayloadFromOpenClaw(3_000);
+  const gatewayStatus = gatewayStatusCache.resolve(gatewayStatusResult).value ?? localGatewayStatus;
   const agentConfigResult = await settleAgentConfigFromStateFile(openClawStateRootPath);
   const agentConfig = agentConfigResult.status === "fulfilled" ? agentConfigResult.value : [];
   const agentIds = agentConfig.map((agent) => agent.id).filter(Boolean);

@@ -20,9 +20,6 @@ export async function probeLocalGatewayStatus(port = 18789): Promise<GatewayStat
       bindMode: "loopback",
       port,
       probeUrl: `ws://127.0.0.1:${port}`
-    },
-    rpc: {
-      ok: true
     }
   };
 }

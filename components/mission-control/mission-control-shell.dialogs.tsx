@@ -21,7 +21,7 @@ import {
 } from "@/components/mission-control/mission-control-shell.utils";
 import type {
   MissionControlSnapshot,
-  TaskRecord
+  WorkItemRecord
 } from "@/lib/agentos/contracts";
 import type { OpenClawInstallSummary } from "@/components/mission-control/mission-control-shell.utils";
 import { isOpenClawTerminalCommand } from "@/lib/openclaw/terminal-command";
@@ -54,7 +54,7 @@ export function MissionControlShellDialogs({
   snapshot: MissionControlSnapshot;
   surfaceTheme: SurfaceTheme;
   isInspectorOpen: boolean;
-  taskAbortRequest: TaskRecord | null;
+  taskAbortRequest: WorkItemRecord | null;
   taskAbortRunState: TaskAbortState;
   taskAbortMessage: string | null;
   onTaskAbortOpenChange: (open: boolean) => void;

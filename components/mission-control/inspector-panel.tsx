@@ -50,7 +50,7 @@ import type {
   TaskDetailRecord,
   TaskFeedEvent,
   TaskDetailStreamEvent,
-  TaskRecord,
+  WorkItemRecord,
   WorkspaceResourceState
 } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
@@ -65,7 +65,7 @@ type InspectorPanelProps = {
   onRefresh?: () => Promise<void>;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
   onConfigureAgentCapabilities?: (agentId: string, focus: "skills" | "tools") => void;
-  onAbortTask?: (task: TaskRecord) => void;
+  onAbortTask?: (task: WorkItemRecord) => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   activeTab: "overview" | "chat" | "output" | "files" | "raw";

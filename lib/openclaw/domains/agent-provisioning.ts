@@ -9,7 +9,7 @@ import {
   resolveAgentPolicy
 } from "@/lib/openclaw/agent-presets";
 import { serializeHeartbeatConfig } from "@/lib/openclaw/agent-heartbeat";
-import { runOpenClaw } from "@/lib/openclaw/cli";
+import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import { measureTiming, type TimingCollector } from "@/lib/openclaw/timing";
 import {
@@ -162,23 +162,13 @@ export async function createBootstrappedWorkspaceAgent(params: {
       }),
     params.agent.policy
   );
-  const args = [
-    "agents",
-    "add",
-    agentId,
-    "--workspace",
-    params.workspacePath,
-    "--agent-dir",
-    buildWorkspaceAgentStatePath(params.workspacePath, agentId),
-    "--non-interactive",
-    "--json"
-  ];
-
-  if (modelId) {
-    args.push("--model", modelId);
-  }
-
-  await runOpenClaw(args);
+  await getOpenClawAdapter().addAgent({
+    id: agentId,
+    workspace: params.workspacePath,
+    agentDir: buildWorkspaceAgentStatePath(params.workspacePath, agentId),
+    model: modelId,
+    name: normalizeOptionalValue(params.agent.name)
+  });
 
   const policySkillId = await ensureAgentPolicySkill({
     workspacePath: params.workspacePath,

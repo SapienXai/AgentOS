@@ -68,6 +68,36 @@ test("capability matrix detects advertised Gateway-first methods", async () => {
   assert.ok(matrix.unsupportedGatewayMethods.includes("models.list"));
 });
 
+test("capability matrix tracks Phase 2 Gateway-native runtime surfaces", async () => {
+  setOpenClawAdapterForTesting(createContractAdapter());
+  setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({
+    protocolVersion: 4,
+    methods: [
+      "sessions.describe",
+      "sessions.history",
+      "sessions.export",
+      "tasks.get",
+      "tasks.subscribe",
+      "artifacts.list",
+      "artifacts.get",
+      "runtime.snapshot",
+      "tools.catalog",
+      "tools.effective"
+    ],
+    events: ["task.updated", "artifact.updated"]
+  }));
+
+  const matrix = await getOpenClawCapabilityMatrix({ force: true });
+
+  assert.equal(matrix.operations?.sessionHistory.mode, "gateway-native");
+  assert.equal(matrix.operations?.taskEvents.mode, "gateway-native");
+  assert.equal(matrix.operations?.artifacts.mode, "gateway-native");
+  assert.equal(matrix.operations?.runtimeSnapshot.mode, "gateway-native");
+  assert.equal(matrix.operations?.tools.mode, "gateway-native");
+  assert.ok(!matrix.unsupportedGatewayMethods.includes("tasks.subscribe"));
+  assert.ok(!matrix.unsupportedGatewayMethods.includes("runtime.snapshot"));
+});
+
 test("mission dispatch uses native chat when capability matrix supports it", async () => {
   const calls: string[] = [];
   setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({

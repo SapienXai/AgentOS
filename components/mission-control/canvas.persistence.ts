@@ -3,7 +3,7 @@ import type {
   PersistedNodePosition,
   PersistedNodePositionMap
 } from "@/components/mission-control/canvas-types";
-import type { OpenClawAgent, TaskRecord } from "@/lib/agentos/contracts";
+import type { AgentRecord, WorkItemRecord } from "@/lib/agentos/contracts";
 
 export const emptyPersistedNodePositions: PersistedNodePositionMap = {};
 
@@ -117,7 +117,7 @@ export function resolveNodePersistedPositionKey(node: PersistableCanvasNode) {
   return toPersistedTaskPositionKey(node.data.task);
 }
 
-export function toPersistedAgentPositionKey(agent: OpenClawAgent) {
+export function toPersistedAgentPositionKey(agent: AgentRecord) {
   return `agent:${agent.workspaceId}:${agent.id}`;
 }
 
@@ -125,7 +125,7 @@ export function toLegacyPersistedAgentPositionKey(agentId: string) {
   return `agent:${agentId}`;
 }
 
-export function toPersistedTaskPositionKey(task: TaskRecord) {
+export function toPersistedTaskPositionKey(task: WorkItemRecord) {
   return `task:${task.workspaceId || "global"}:${task.key}`;
 }
 

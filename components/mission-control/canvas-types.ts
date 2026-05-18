@@ -3,14 +3,14 @@ import type { Edge, Node } from "@xyflow/react";
 import type {
   MissionControlSurfaceProvider,
   ModelRecord,
-  OpenClawAgent,
-  RuntimeRecord,
-  TaskRecord,
-  WorkspaceProject
+  AgentRecord,
+  RuntimeActivityRecord,
+  WorkItemRecord,
+  WorkspaceRecord
 } from "@/lib/agentos/contracts";
 
 export type WorkspaceNodeData = Record<string, unknown> & {
-  workspace: WorkspaceProject;
+  workspace: WorkspaceRecord;
   emphasis: boolean;
   taskCardCount: number;
   taskCardsHidden: boolean;
@@ -30,7 +30,7 @@ export type AgentSurfaceBadge = {
 };
 
 export type AgentNodeData = Record<string, unknown> & {
-  agent: OpenClawAgent;
+  agent: AgentRecord;
   modelLabel: string;
   emphasis: boolean;
   focused?: boolean;
@@ -52,7 +52,7 @@ export type AgentNodeData = Record<string, unknown> & {
 };
 
 export type SurfaceTetherNodeData = Record<string, unknown> & {
-  agent: OpenClawAgent;
+  agent: AgentRecord;
   emphasis: boolean;
   provider: MissionControlSurfaceProvider;
   label: string;
@@ -69,29 +69,29 @@ export type SurfaceTetherNodeData = Record<string, unknown> & {
 };
 
 export type RuntimeNodeData = Record<string, unknown> & {
-  runtime: RuntimeRecord;
+  runtime: RuntimeActivityRecord;
   emphasis: boolean;
   pendingCreation?: boolean;
   justCreated?: boolean;
-  onReply?: (runtime: RuntimeRecord) => void;
-  onCopyPrompt?: (runtime: RuntimeRecord) => void;
+  onReply?: (runtime: RuntimeActivityRecord) => void;
+  onCopyPrompt?: (runtime: RuntimeActivityRecord) => void;
   onHide?: (runtimeId: string) => void;
 };
 
 export type TaskNodeData = Record<string, unknown> & {
-  task: TaskRecord;
+  task: WorkItemRecord;
   workspacePath?: string;
   emphasis: boolean;
   relativeTimeReferenceMs: number;
   pendingCreation?: boolean;
   justCreated?: boolean;
   locked?: boolean;
-  onInspect?: (task: TaskRecord, target: "overview" | "output" | "files") => void;
-  onReply?: (task: TaskRecord) => void;
-  onCopyPrompt?: (task: TaskRecord) => void;
-  onHide?: (task: TaskRecord) => void;
-  onToggleLock?: (task: TaskRecord) => void;
-  onAbortTask?: (task: TaskRecord) => void;
+  onInspect?: (task: WorkItemRecord, target: "overview" | "output" | "files") => void;
+  onReply?: (task: WorkItemRecord) => void;
+  onCopyPrompt?: (task: WorkItemRecord) => void;
+  onHide?: (task: WorkItemRecord) => void;
+  onToggleLock?: (task: WorkItemRecord) => void;
+  onAbortTask?: (task: WorkItemRecord) => void;
 };
 
 export type ModelNodeData = Record<string, unknown> & {

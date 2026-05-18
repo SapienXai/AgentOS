@@ -4,7 +4,7 @@ import type {
   MissionControlSnapshot,
   OpenClawModelOnboardingPhase,
   TaskFeedEvent,
-  TaskRecord
+  WorkItemRecord
 } from "@/lib/agentos/contracts";
 
 type UpdateRunState = "idle" | "running" | "success" | "error";
@@ -16,7 +16,7 @@ const workspaceSelectionStorageAllValue = "__all__";
 export type OptimisticMissionTask = {
   requestId: string;
   dispatchId: string | null;
-  task: TaskRecord;
+  task: WorkItemRecord;
 };
 
 type MissionDispatchStart = {
@@ -188,7 +188,7 @@ export function resolveOpenClawInstallSummary(snapshot: Pick<MissionControlSnaps
   };
 }
 
-export function resolveTaskPrompt(task: TaskRecord) {
+export function resolveTaskPrompt(task: WorkItemRecord) {
   if (task.mission?.trim()) {
     return task.mission.trim();
   }
@@ -200,11 +200,11 @@ export function resolveTaskPrompt(task: TaskRecord) {
   return task.subtitle.trim() || "Continue this task.";
 }
 
-export function resolveTaskDispatchStatus(task: TaskRecord) {
+export function resolveTaskDispatchStatus(task: WorkItemRecord) {
   return typeof task.metadata.dispatchStatus === "string" ? task.metadata.dispatchStatus : null;
 }
 
-export function isTaskAborted(task: TaskRecord) {
+export function isTaskAborted(task: WorkItemRecord) {
   const dispatchStatus = resolveTaskDispatchStatus(task);
   const runtimeStatus = task.status as string;
   return (
@@ -215,7 +215,7 @@ export function isTaskAborted(task: TaskRecord) {
   );
 }
 
-export function isTaskAbortable(task: TaskRecord) {
+export function isTaskAbortable(task: WorkItemRecord) {
   if (isTaskAborted(task)) {
     return false;
   }
@@ -246,11 +246,11 @@ export function mergeSnapshotWithOptimisticTasks(
   };
 }
 
-export function findReplacementTaskForOptimisticTask(tasks: TaskRecord[], optimisticTask: OptimisticMissionTask) {
+export function findReplacementTaskForOptimisticTask(tasks: WorkItemRecord[], optimisticTask: OptimisticMissionTask) {
   return tasks.find((task) => matchesOptimisticTaskReplacement(task, optimisticTask)) ?? null;
 }
 
-export function matchesOptimisticTaskReplacement(task: TaskRecord, optimisticTask: OptimisticMissionTask) {
+export function matchesOptimisticTaskReplacement(task: WorkItemRecord, optimisticTask: OptimisticMissionTask) {
   const dispatchId = optimisticTask.dispatchId?.trim();
 
   if (!dispatchId) {
@@ -311,15 +311,15 @@ export function createOptimisticMissionTaskRecord(
 }
 
 export function updateOptimisticMissionTask(
-  task: TaskRecord,
+  task: WorkItemRecord,
   input: {
     dispatchId?: string;
-    status: TaskRecord["status"];
+    status: WorkItemRecord["status"];
     subtitle: string;
     bootstrapStage: string;
     feedEvent: TaskFeedEvent;
   }
-): TaskRecord {
+): WorkItemRecord {
   const events = readOptimisticTaskEvents(task).concat(input.feedEvent);
 
   return {
@@ -338,7 +338,7 @@ export function updateOptimisticMissionTask(
   };
 }
 
-export function readOptimisticTaskEvents(task: TaskRecord) {
+export function readOptimisticTaskEvents(task: WorkItemRecord) {
   const value = task.metadata.optimisticEvents;
 
   if (!Array.isArray(value)) {
@@ -359,7 +359,7 @@ export function dedupeOptimisticTaskEvents(events: TaskFeedEvent[]) {
 }
 
 export function isTaskHiddenByPreferences(
-  task: TaskRecord,
+  task: WorkItemRecord,
   hiddenRuntimeIds: string[],
   hiddenTaskKeys: string[],
   lockedTaskKeys: string[]

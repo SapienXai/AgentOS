@@ -66,9 +66,9 @@ import type {
   AddModelsProviderId,
   DiscoveredModelCandidate,
   MissionResponse,
-    MissionControlSnapshot,
-    OpenClawBinarySelection,
-    OpenClawModelOnboardingPhase,
+  MissionControlSnapshot,
+  OpenClawBinarySelection,
+  OpenClawModelOnboardingPhase,
   OpenClawModelOnboardingStreamEvent,
   OpenClawOnboardingPhase,
   OpenClawOnboardingStreamEvent,
@@ -79,7 +79,7 @@ import type {
   OpenClawUpdateStreamEvent,
   WorkspaceCreateResult,
   WorkspaceCreateStreamEvent,
-  TaskRecord
+  WorkItemRecord
 } from "@/lib/agentos/contracts";
 import { normalizeAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
 import { cn } from "@/lib/utils";
@@ -179,7 +179,7 @@ export function MissionControlShell({
   const [lockedTaskKeys, setLockedTaskKeys] = useState<string[]>([]);
   const [agentActionRequest, setAgentActionRequest] = useState<AgentActionRequest | null>(null);
   const [capabilityEditorRequest, setCapabilityEditorRequest] = useState<CapabilityEditorRequest | null>(null);
-  const [taskAbortRequest, setTaskAbortRequest] = useState<TaskRecord | null>(null);
+  const [taskAbortRequest, setTaskAbortRequest] = useState<WorkItemRecord | null>(null);
   const [taskAbortRunState, setTaskAbortRunState] = useState<TaskAbortState>("idle");
   const [taskAbortMessage, setTaskAbortMessage] = useState<string | null>(null);
   const missionDispatchAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
@@ -600,7 +600,7 @@ export function MissionControlShell({
         entry,
         replacement: findReplacementTaskForOptimisticTask(snapshot.tasks, entry)
       }))
-      .filter((entry): entry is { entry: OptimisticMissionTask; replacement: TaskRecord } => Boolean(entry.replacement));
+      .filter((entry): entry is { entry: OptimisticMissionTask; replacement: WorkItemRecord } => Boolean(entry.replacement));
 
     if (replacements.length === 0) {
       return;

@@ -23,8 +23,8 @@ import { resolveAgentModelLabel } from "@/lib/openclaw/presenters";
 import type {
   MissionControlSnapshot,
   MissionControlSurfaceProvider,
-  OpenClawAgent,
-  TaskRecord
+  AgentRecord,
+  WorkItemRecord
 } from "@/lib/agentos/contracts";
 
 export function buildCanvasGraph(
@@ -50,12 +50,12 @@ export function buildCanvasGraph(
   onConfigureAgentCapabilities: ((agentId: string, focus: "skills" | "tools") => void) | undefined,
   onInspectAgentDetail: ((agentId: string, focus: AgentDetailFocus) => void) | undefined,
   onOpenWorkspaceChannels: ((workspaceId?: string) => void) | undefined,
-  onReplyTask: (task: TaskRecord) => void,
-  onCopyTaskPrompt: (task: TaskRecord) => void,
-  onHideTask: (task: TaskRecord) => void,
-  onToggleTaskLock: (task: TaskRecord) => void,
-  onAbortTask: (task: TaskRecord) => void,
-  onInspectTask: (task: TaskRecord, target: "overview" | "output" | "files") => void,
+  onReplyTask: (task: WorkItemRecord) => void,
+  onCopyTaskPrompt: (task: WorkItemRecord) => void,
+  onHideTask: (task: WorkItemRecord) => void,
+  onToggleTaskLock: (task: WorkItemRecord) => void,
+  onAbortTask: (task: WorkItemRecord) => void,
+  onInspectTask: (task: WorkItemRecord, target: "overview" | "output" | "files") => void,
   persistedNodePositions: PersistedNodePositionMap
 ) {
   const safeHiddenRuntimeIds = Array.isArray(hiddenRuntimeIds) ? hiddenRuntimeIds : [];
@@ -81,7 +81,7 @@ export function buildCanvasGraph(
   const workspaceNodes: CanvasNode[] = [];
   const contentNodes: CanvasNode[] = [];
   const surfaceModuleNodes: CanvasNode[] = [];
-  const graphTasks: TaskRecord[] = [];
+  const graphTasks: WorkItemRecord[] = [];
   let rowTopY = 42;
   let rowMaxHeight = 0;
 
@@ -329,7 +329,7 @@ export function buildCanvasGraph(
 }
 
 export function buildEdgesForNodes(
-  tasks: TaskRecord[],
+  tasks: WorkItemRecord[],
   nodes: CanvasNode[],
   selectedNodeId: string | null,
   justCreatedTaskIds: string[],
@@ -433,7 +433,7 @@ export function buildSurfaceTetherEdges(
 }
 
 export function isTaskHidden(
-  task: TaskRecord,
+  task: WorkItemRecord,
   hiddenRuntimeIds: string[],
   hiddenTaskKeys: string[],
   lockedTaskKeys: string[]
@@ -457,18 +457,18 @@ export function isTaskHidden(
   return task.runtimeIds.every((runtimeId) => safeHiddenRuntimeIds.includes(runtimeId));
 }
 
-export function resolveTaskOwnerId(task: TaskRecord) {
+export function resolveTaskOwnerId(task: WorkItemRecord) {
   return task.primaryAgentId || task.agentIds[0] || null;
 }
 
-export function isLiveTask(task: TaskRecord) {
+export function isLiveTask(task: WorkItemRecord) {
   return task.status === "queued" || task.status === "running";
 }
 
 export function buildAgentSurfaceBadges(
   snapshot: MissionControlSnapshot,
   workspace: MissionControlSnapshot["workspaces"][number],
-  agent: OpenClawAgent
+  agent: AgentRecord
 ) {
   const summaries = new Map<
     string,
