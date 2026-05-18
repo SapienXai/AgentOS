@@ -28,6 +28,8 @@ export type OpenClawGatewayRequestPolicy = {
   safety: "read" | "mutation";
   timeoutMs?: number;
   allowCliFallback?: boolean;
+  allowMutationFallbackOnUnsupported?: boolean;
+  allowUnsafeMutationCliFallback?: boolean;
 };
 
 export interface OpenClawStreamCallbacks {

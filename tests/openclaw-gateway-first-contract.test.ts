@@ -6,13 +6,20 @@ import {
   getOpenClawCapabilityMatrix,
   setOpenClawCapabilityMatrixNativeCallerForTesting
 } from "@/lib/openclaw/application/capability-matrix-service";
-import { normalizeOpenClawGatewayEventToRuntime } from "@/lib/openclaw/application/event-bridge-service";
+import {
+  getOpenClawEventBridgeStatus,
+  normalizeOpenClawGatewayEventToRuntime,
+  resetOpenClawEventBridgeForTesting,
+  setOpenClawEventBridgeReconnectPolicyForTesting,
+  startOpenClawEventBridge
+} from "@/lib/openclaw/application/event-bridge-service";
 import { setOpenClawAdapterForTesting, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS } from "@/lib/openclaw/client/gateway-compatibility";
 import { submitMissionDispatch } from "@/lib/openclaw/domains/mission-dispatch-workflow";
 import type { MissionControlSnapshot } from "@/lib/openclaw/types";
 
 afterEach(() => {
+  resetOpenClawEventBridgeForTesting();
   clearOpenClawCapabilityMatrixCacheForTesting();
   setOpenClawAdapterForTesting(null);
 });
@@ -79,7 +86,7 @@ test("capability matrix detects advertised Gateway-first methods", async () => {
   assert.ok(matrix.compatibility?.methodContract.missingOperations.includes("agentIdentity"));
 });
 
-test("capability matrix verifies the advertised Gateway method contract", async () => {
+test("capability matrix reports fully advertised Gateway method contract without claiming live verification", async () => {
   setOpenClawAdapterForTesting(createContractAdapter());
   setOpenClawCapabilityMatrixNativeCallerForTesting(async (method) => {
     assert.equal(method, "rpc.discover");
@@ -91,13 +98,14 @@ test("capability matrix verifies the advertised Gateway method contract", async 
 
   const matrix = await getOpenClawCapabilityMatrix({ force: true });
 
-  assert.equal(matrix.compatibility?.methodContract.status, "verified");
+  assert.equal(matrix.compatibility?.methodContract.status, "advertised");
   assert.equal(matrix.compatibility?.methodContract.source, "rpc.discover");
   assert.equal(matrix.compatibility?.methodContract.expectedMethodCount, OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS.length);
   assert.equal(matrix.compatibility?.methodContract.advertisedMethodCount, OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS.length);
   assert.equal(matrix.compatibility?.methodContract.missingMethodCount, 0);
   assert.deepEqual(matrix.compatibility?.methodContract.missingMethods, []);
   assert.deepEqual(matrix.compatibility?.methodContract.missingOperations, []);
+  assert.match(matrix.compatibility?.methodContract.reason ?? "", /payload contracts/);
 });
 
 test("capability matrix reports Gateway compatibility aliases without degrading to CLI", async () => {
@@ -229,6 +237,56 @@ test("Gateway event bridge normalizes chat, tool, session, and approval events i
   assert.deepEqual(runtime.toolNames, ["shell"]);
   assert.equal(runtime.metadata.origin, "openclaw-gateway-event");
   assert.equal(runtime.metadata.approvalId, "approval-1");
+});
+
+test("Gateway event bridge reconnects after subscription close without duplicate active starts", async () => {
+  const subscribeCalls: string[] = [];
+  const activeSubscription: { close?: () => void } = {};
+
+  setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({
+    protocolVersion: 4,
+    methods: ["sessions.subscribe"],
+    events: ["session.message"]
+  }));
+  setOpenClawEventBridgeReconnectPolicyForTesting({ baseMs: 10, maxMs: 10 });
+  setOpenClawAdapterForTesting(createContractAdapter({
+    async subscribeRuntimeEvents(_input, callbacks) {
+      subscribeCalls.push("subscribe");
+      let closed = false;
+      activeSubscription.close = () => {
+        if (closed) {
+          return;
+        }
+
+        closed = true;
+        callbacks.onClose?.();
+      };
+
+      return {
+        close() {
+          activeSubscription.close?.();
+        }
+      };
+    }
+  }));
+
+  startOpenClawEventBridge();
+  startOpenClawEventBridge();
+  await waitFor(() => subscribeCalls.length === 1);
+
+  const closeSubscription = activeSubscription.close;
+  if (!closeSubscription) {
+    assert.fail("Expected active Gateway event subscription.");
+  }
+  closeSubscription();
+
+  assert.equal(getOpenClawEventBridgeStatus().connected, false);
+  assert.equal(getOpenClawEventBridgeStatus().reconnecting, true);
+  assert.equal(getOpenClawEventBridgeStatus().reconnectAttempt, 1);
+
+  await waitFor(() => subscribeCalls.length === 2);
+  assert.equal(getOpenClawEventBridgeStatus().connected, true);
+  assert.equal(getOpenClawEventBridgeStatus().reconnecting, false);
 });
 
 function createContractAdapter(overrides: Partial<OpenClawAdapter> = {}): OpenClawAdapter {
@@ -414,6 +472,20 @@ function createContractAdapter(overrides: Partial<OpenClawAdapter> = {}): OpenCl
     },
     ...overrides
   };
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 500) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    if (predicate()) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+
+  assert.fail("Timed out waiting for condition.");
 }
 
 function createSnapshot(): MissionControlSnapshot {

@@ -65,6 +65,7 @@ const openClawAuthProfilesPath = path.join(
   "agent",
   "auth-profiles.json"
 );
+const legacyProviderFileFallbackEnv = "AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK";
 
 export async function readOpenClawConfiguredModelIds() {
   const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
@@ -116,6 +117,10 @@ export async function buildOpenClawFileBasedProviderConnectionStatus(
 }
 
 export async function persistOpenClawProviderToken(provider: AddModelsProviderId, token: string) {
+  assertLegacyProviderFileFallbackEnabled(
+    "Gateway-native provider token persistence is not available yet."
+  );
+
   const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
   const authProfiles = await readJsonFile<OpenClawAuthProfilesPayload>(openClawAuthProfilesPath, {
     version: 1
@@ -153,8 +158,15 @@ export async function persistOpenClawProviderToken(provider: AddModelsProviderId
 export async function addOpenClawModelsToConfig(provider: AddModelsProviderId, modelIds: string[]) {
   const normalizedModelIds = modelIds.map((modelId) => normalizeModelIdForProvider(provider, modelId));
 
-  if (await addModelsToConfigViaGateway(provider, normalizedModelIds)) {
+  try {
+    await addModelsToConfigViaGateway(provider, normalizedModelIds);
     return;
+  } catch (error) {
+    if (!isLegacyProviderFileFallbackEnabled()) {
+      throw new Error(
+        `OpenClaw Gateway config.patch failed while adding models. Legacy file fallback is disabled; set ${legacyProviderFileFallbackEnv}=1 only for explicit recovery. ${readErrorMessage(error)}`
+      );
+    }
   }
 
   const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
@@ -198,58 +210,53 @@ export async function addOpenClawModelsToConfig(provider: AddModelsProviderId, m
 }
 
 async function addModelsToConfigViaGateway(provider: AddModelsProviderId, normalizedModelIds: string[]) {
-  try {
-    const snapshot = await getOpenClawAdapter().call<Record<string, unknown>>("config.get", {}, { timeoutMs: 5_000 });
-    const config = isRecord(snapshot.config) ? snapshot.config : {};
-    const patch: Record<string, unknown> = {
-      agents: {
-        defaults: {
-          models: Object.fromEntries(normalizedModelIds.map((modelId) => [modelId, {}]))
-        }
-      }
-    };
-    const defaultsPatch = (patch.agents as { defaults: Record<string, unknown> }).defaults;
-
-    if (!readConfigPath(config, "agents.defaults.model.primary") && normalizedModelIds[0]) {
-      defaultsPatch.model = {
-        primary: normalizedModelIds[0]
-      };
-
-      if (provider === "openai-codex") {
-        defaultsPatch.agentRuntime = {
-          id: "codex"
-        };
-      } else if (provider === "openai") {
-        defaultsPatch.agentRuntime = {
-          id: "pi"
-        };
+  const snapshot = await getOpenClawAdapter().call<Record<string, unknown>>("config.get", {}, { timeoutMs: 5_000 });
+  const config = isRecord(snapshot.config) ? snapshot.config : {};
+  const patch: Record<string, unknown> = {
+    agents: {
+      defaults: {
+        models: Object.fromEntries(normalizedModelIds.map((modelId) => [modelId, {}]))
       }
     }
+  };
+  const defaultsPatch = (patch.agents as { defaults: Record<string, unknown> }).defaults;
+
+  if (!readConfigPath(config, "agents.defaults.model.primary") && normalizedModelIds[0]) {
+    defaultsPatch.model = {
+      primary: normalizedModelIds[0]
+    };
 
     if (provider === "openai-codex") {
-      patch.plugins = {
-        entries: {
-          codex: {
-            enabled: true
-          }
-        }
+      defaultsPatch.agentRuntime = {
+        id: "codex"
+      };
+    } else if (provider === "openai") {
+      defaultsPatch.agentRuntime = {
+        id: "pi"
       };
     }
-
-    const params: Record<string, unknown> = {
-      raw: JSON.stringify(patch)
-    };
-    const baseHash = typeof snapshot.hash === "string" && snapshot.hash.trim() ? snapshot.hash : null;
-
-    if (baseHash) {
-      params.baseHash = baseHash;
-    }
-
-    await getOpenClawAdapter().call("config.patch", params, { timeoutMs: 5_000 });
-    return true;
-  } catch {
-    return false;
   }
+
+  if (provider === "openai-codex") {
+    patch.plugins = {
+      entries: {
+        codex: {
+          enabled: true
+        }
+      }
+    };
+  }
+
+  const params: Record<string, unknown> = {
+    raw: JSON.stringify(patch)
+  };
+  const baseHash = typeof snapshot.hash === "string" && snapshot.hash.trim() ? snapshot.hash : null;
+
+  if (baseHash) {
+    params.baseHash = baseHash;
+  }
+
+  await getOpenClawAdapter().call("config.patch", params, { timeoutMs: 5_000 });
 }
 
 function normalizeModelIdForProvider(provider: AddModelsProviderId, modelId: string) {
@@ -285,6 +292,25 @@ async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
 async function writeJsonFile(filePath: string, value: unknown) {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function assertLegacyProviderFileFallbackEnabled(reason: string) {
+  if (isLegacyProviderFileFallbackEnabled()) {
+    return;
+  }
+
+  throw new Error(
+    `${reason} Legacy OpenClaw provider file writes are disabled by default; set ${legacyProviderFileFallbackEnv}=1 only for explicit recovery.`
+  );
+}
+
+function isLegacyProviderFileFallbackEnabled() {
+  const value = process.env[legacyProviderFileFallbackEnv];
+  return value === "1" || value?.toLowerCase() === "true" || value?.toLowerCase() === "on";
+}
+
+function readErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error || "Unknown Gateway error.");
 }
 
 function readConfigPath(source: unknown, configPath: string) {

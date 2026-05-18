@@ -227,6 +227,7 @@ class NativeGatewayRequestError extends NativeGatewayError {
 
 type OpenClawGatewayClientErrorKind =
   | "auth"
+  | "conflict"
   | "malformed-response"
   | "protocol-mismatch"
   | "scope-limited"
@@ -323,7 +324,11 @@ function classifyGatewayError(message: string): OpenClawGatewayClientErrorKind {
     return "scope-limited";
   }
 
-  if (/invalid json|malformed|schema|payload/i.test(message)) {
+  if (/base\s*hash|basehash|conflict|stale|precondition|version mismatch|already changed/i.test(message)) {
+    return "conflict";
+  }
+
+  if (/invalid json|invalid request|malformed|schema|payload/i.test(message)) {
     return "malformed-response";
   }
 
@@ -342,6 +347,8 @@ function resolveGatewayRecoveryMessage(error: OpenClawGatewayClientError) {
   switch (error.kind) {
     case "auth":
       return "Check the OpenClaw Gateway token/password or repair local device access in Settings.";
+    case "conflict":
+      return "Refresh the Gateway config snapshot, then retry the action.";
     case "scope-limited":
       return "Approve AgentOS as an OpenClaw operator with the required read/write/admin scopes.";
     case "protocol-mismatch":
@@ -1187,10 +1194,13 @@ function isGatewayMethodUnsupported(error: unknown) {
 }
 
 function resolveGatewayRequestPolicy(method: string, options: OpenClawCommandOptions = {}): OpenClawGatewayRequestPolicy {
+  const safety = isGatewayMutationMethod(method) ? "mutation" : "read";
+
   return {
-    safety: isGatewayMutationMethod(method) ? "mutation" : "read",
+    safety,
     timeoutMs: options.timeoutMs,
-    allowCliFallback: true
+    allowCliFallback: true,
+    allowMutationFallbackOnUnsupported: safety === "mutation"
   };
 }
 
@@ -1207,17 +1217,24 @@ function shouldUseCliFallback(
     return false;
   }
 
-  if (
-    policy.safety === "mutation" &&
-    error instanceof NativeGatewayRequestError &&
-    error.method === method &&
-    error.sent &&
-    normalizeClientError(error).kind === "timeout"
-  ) {
+  if (policy.safety !== "mutation") {
+    return true;
+  }
+
+  if (policy.allowUnsafeMutationCliFallback) {
+    return true;
+  }
+
+  if (error instanceof NativeGatewayRequestError && error.method !== method) {
     return false;
   }
 
-  return true;
+  const normalized = normalizeClientError(error);
+  if (normalized.kind === "unsupported" && policy.allowMutationFallbackOnUnsupported !== false) {
+    return true;
+  }
+
+  return false;
 }
 
 function isGatewayTransportConfigPath(path: string) {
@@ -3248,6 +3265,10 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       try {
         payload = await this.callNative<unknown>("config.patch", patchParams, options, { safety: "mutation" });
       } catch (patchError) {
+        if (!isGatewayMethodUnsupported(patchError)) {
+          throw patchError;
+        }
+
         try {
           const applyParams: Record<string, unknown> = {
             raw: JSON.stringify(config)
@@ -3259,9 +3280,13 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
 
           payload = await this.callNative<unknown>("config.apply", applyParams, options, { safety: "mutation" });
         } catch (applyError) {
+          if (!isGatewayMethodUnsupported(applyError)) {
+            throw applyError;
+          }
+
           if (containsRedactedOpenClawSecret(snapshot.config)) {
             throw new OpenClawGatewayClientError(
-              "OpenClaw returned redacted secrets in the config snapshot; refusing full Gateway config overwrite and using path-level CLI fallback.",
+              "OpenClaw returned redacted secrets in the config snapshot; refusing full Gateway config overwrite.",
               "auth",
               { cause: applyError }
             );
@@ -3275,9 +3300,15 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
             params.baseHash = baseHash;
           }
 
-          payload = await this.callNative<unknown>("config.set", params, options, { safety: "mutation" }).catch(() => {
+          try {
+            payload = await this.callNative<unknown>("config.set", params, options, { safety: "mutation" });
+          } catch (setError) {
+            if (!isGatewayMethodUnsupported(setError)) {
+              throw setError;
+            }
+
             throw patchError;
-          });
+          }
         }
       }
       clearGatewayFallbackDiagnostic(operation);

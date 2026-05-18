@@ -18,7 +18,7 @@ Use this checklist after transport-layer changes and before public launch. Run t
 - Expected UI state:
   - Transport mode: `Native WS`
   - Connection: `Connected` after the first native read
-  - Protocol: `v3` or `v4`
+  - Protocol: `v4` for current OpenClaw builds
   - Snapshot stream: `Live`
   - Fallbacks: `0` for a clean run
   - Last native error: hidden
@@ -79,7 +79,7 @@ Use this checklist after transport-layer changes and before public launch. Run t
 - Refresh `Settings -> Diagnostics`.
 - Expected UI state:
   - Connection moves from `Error` or `Closed` to `Connected`
-  - Protocol becomes `v3` or `v4`
+  - Protocol becomes `v4` for current OpenClaw builds
   - Last native error clears after successful native reads
 - Confirm the dashboard returns to native Gateway reads.
 

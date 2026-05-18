@@ -212,7 +212,21 @@ async function handleProviderAction(
     }
 
     validateApiKey(input.provider, apiKey);
-    await persistOpenClawProviderToken(input.provider, apiKey);
+    try {
+      await persistOpenClawProviderToken(input.provider, apiKey);
+    } catch (error) {
+      const statusContext = await readProviderConnectionContext(input.provider);
+
+      return buildActionResult({
+        ok: false,
+        action: input.action,
+        provider: input.provider,
+        message: readProviderActionError(error),
+        connection: statusContext.connection,
+        models: [],
+        docsUrl: addModelsDocsUrl
+      });
+    }
 
     const snapshot = await getMissionControlSnapshot({ force: true });
     const statusContext = await readProviderConnectionContext(input.provider);
@@ -233,7 +247,23 @@ async function handleProviderAction(
     return discoverProviderModels(input.provider, commandBin);
   }
 
-  await addOpenClawModelsToConfig(input.provider, input.modelIds);
+  try {
+    await addOpenClawModelsToConfig(input.provider, input.modelIds);
+  } catch (error) {
+    const statusContext = await readProviderConnectionContext(input.provider);
+    const providerModels = await readProviderCatalog(input.provider, statusContext.configuredModelIds, commandBin);
+
+    return buildActionResult({
+      ok: false,
+      action: input.action,
+      provider: input.provider,
+      message: readProviderActionError(error),
+      connection: statusContext.connection,
+      models: providerModels,
+      docsUrl: addModelsDocsUrl
+    });
+  }
+
   if (input.provider === "openai-codex" && await clearOpenAiCodexAuthRuntimeSmokeFailures()) {
     clearMissionControlCaches();
   }
@@ -601,6 +631,10 @@ function buildActionResult({
     docsUrl,
     snapshot
   };
+}
+
+function readProviderActionError(error: unknown) {
+  return error instanceof Error ? error.message : "Model provider action failed.";
 }
 
 async function readProviderConnectionContext(provider: AddModelsProviderId) {

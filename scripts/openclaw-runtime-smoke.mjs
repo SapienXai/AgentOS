@@ -105,16 +105,27 @@ record(
     : snapshot.body?.error ?? "snapshot failed"
 );
 
+const capabilityMatrix = snapshot.body?.diagnostics?.capabilityMatrix;
+record(
+  "gateway capability matrix",
+  snapshot.ok && capabilityMatrix ? "PASS" : "BLOCKED",
+  capabilityMatrix
+    ? `protocol=${capabilityMatrix.gatewayProtocolVersion ?? "unknown"}; eventBridge=${capabilityMatrix.eventBridge}; contract=${capabilityMatrix.compatibility?.methodContract?.status ?? "unknown"}`
+    : snapshot.ok
+      ? "capability matrix not available in current snapshot"
+      : snapshot.body?.error ?? "snapshot failed"
+);
+
 const fallbackIssues = Array.isArray(snapshot.body?.diagnostics?.issues)
   ? snapshot.body.diagnostics.issues.filter((issue) => typeof issue === "string" && issue.includes("Gateway-first request fell back to CLI"))
   : [];
 record(
   "gateway fallback diagnostics",
-  snapshot.ok && fallbackIssues.length > 0 ? "PASS" : "BLOCKED",
+  snapshot.ok ? "PASS" : "FAIL",
   snapshot.ok
     ? fallbackIssues.length > 0
       ? `${fallbackIssues.length} fallback diagnostic(s)`
-      : "no Gateway fallback diagnostics present in current snapshot"
+      : "clean: no Gateway fallback diagnostics present"
     : snapshot.body?.error ?? "snapshot failed"
 );
 
@@ -150,6 +161,33 @@ record(
       ? "BLOCKED"
       : "FAIL",
   channelStatusDetail
+);
+
+const eventSubscription = await runNodeEval(
+  `const {getOpenClawAdapter}=require("./lib/openclaw/adapter/openclaw-adapter.ts");
+getOpenClawAdapter().subscribeRuntimeEvents(
+  {includeSessions:true,includeTasks:true,includeArtifacts:true,includeApprovals:true},
+  {onEvent(){},onError(error){console.error(error instanceof Error ? error.message : String(error));}},
+  {timeoutMs:5000}
+).then((subscription)=> {
+  subscription.close();
+  console.log(JSON.stringify({subscribed:true}));
+}).catch((error)=> {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});`
+);
+const eventSubscriptionDetail = eventSubscription.code === 0
+  ? eventSubscription.stdout.trim()
+  : eventSubscription.stderr.trim() || `exit=${eventSubscription.code}`;
+record(
+  "runtime event subscription",
+  eventSubscription.code === 0
+    ? "PASS"
+    : /unsupported|not advertise|pairing|required|auth|scope|gateway/i.test(eventSubscriptionDetail)
+      ? "BLOCKED"
+      : "FAIL",
+  eventSubscriptionDetail
 );
 
 const fallback = await runNodeEval(

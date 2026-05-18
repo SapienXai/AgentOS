@@ -111,7 +111,7 @@ export interface OpenClawCapabilityOperation {
   compatibility?: "preferred" | "alias" | "missing" | "unknown";
 }
 
-export type OpenClawGatewayMethodContractAuditStatus = "verified" | "drift" | "unknown";
+export type OpenClawGatewayMethodContractAuditStatus = "advertised" | "verified" | "drift" | "unknown";
 export type OpenClawGatewayMethodContractAuditSource =
   | "rpc.discover"
   | "rpc.methods"

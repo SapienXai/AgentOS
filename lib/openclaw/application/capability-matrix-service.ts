@@ -363,7 +363,7 @@ function buildGatewayMethodContractAudit(input: {
   const missingOperations = Object.entries(input.operations)
     .filter(([, value]) => value.compatibility === "missing")
     .map(([name]) => name);
-  const status = input.unsupportedGatewayMethods.length > 0 ? "drift" : "verified";
+  const status = input.unsupportedGatewayMethods.length > 0 ? "drift" : "advertised";
 
   return {
     status,
@@ -375,8 +375,8 @@ function buildGatewayMethodContractAudit(input: {
     missingMethodCount: input.unsupportedGatewayMethods.length,
     missingMethods: input.unsupportedGatewayMethods,
     missingOperations,
-    reason: status === "verified"
-      ? "OpenClaw Gateway advertised every AgentOS Gateway-first method candidate."
+    reason: status === "advertised"
+      ? "OpenClaw Gateway advertised every AgentOS Gateway-first method candidate; payload contracts still depend on live RPC behavior."
       : "OpenClaw Gateway advertised method metadata, but one or more AgentOS Gateway-first candidates are missing."
   };
 }

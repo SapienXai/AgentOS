@@ -1637,6 +1637,139 @@ test("native WS gateway client falls back from config.patch to config.apply", as
   assert.deepEqual(fallback.calls, []);
 });
 
+test("native WS gateway client does not escalate config.patch conflict to apply or CLI fallback", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: frame.method !== "config.patch",
+        payload: frame.method === "connect"
+          ? { protocol: 4 }
+          : frame.method === "config.get"
+            ? { exists: true, valid: true, hash: "hash-2", config: { gateway: { remote: {} } } }
+            : frame.method === "config.patch"
+              ? undefined
+              : { ok: true },
+        error: frame.method === "config.patch"
+          ? { code: "CONFIG_CONFLICT", message: "baseHash conflict" }
+          : undefined
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await assert.rejects(
+    () => client.setConfig("gateway.remote.url", "ws://127.0.0.1:18789"),
+    /baseHash conflict/
+  );
+  assert.deepEqual(sentFrames.map((frame) => frame.method), [
+    "connect",
+    "config.get",
+    "config.schema.lookup",
+    "config.patch"
+  ]);
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway client does not escalate config.patch auth failure to apply or CLI fallback", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: frame.method !== "config.patch",
+        payload: frame.method === "connect"
+          ? { protocol: 4 }
+          : frame.method === "config.get"
+            ? { exists: true, valid: true, hash: "hash-2", config: { gateway: { remote: {} } } }
+            : frame.method === "config.patch"
+              ? undefined
+              : { ok: true },
+        error: frame.method === "config.patch"
+          ? { message: "missing operator.admin scope" }
+          : undefined
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await assert.rejects(
+    () => client.setConfig("gateway.remote.url", "ws://127.0.0.1:18789"),
+    /operator\.admin/
+  );
+  assert.deepEqual(sentFrames.map((frame) => frame.method), [
+    "connect",
+    "config.get",
+    "config.schema.lookup",
+    "config.patch"
+  ]);
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway client does not CLI fallback after sent config.apply timeout", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      if (frame.method === "config.patch") {
+        socket.emitMessage({
+          type: "res",
+          id: frame.id,
+          ok: false,
+          error: { message: "unknown method: config.patch" }
+        });
+        return;
+      }
+
+      if (frame.method === "config.apply") {
+        return;
+      }
+
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? { protocol: 4 }
+          : frame.method === "config.get"
+            ? { exists: true, valid: true, hash: "hash-2", config: { gateway: { remote: {} } } }
+            : { ok: true }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 20
+  });
+
+  await assert.rejects(
+    () => client.setConfig("gateway.remote.url", "ws://127.0.0.1:18789"),
+    /Timed out waiting for OpenClaw Gateway method "config.apply"/
+  );
+  assert.deepEqual(sentFrames.map((frame) => frame.method), [
+    "connect",
+    "config.get",
+    "config.schema.lookup",
+    "config.patch",
+    "config.apply"
+  ]);
+  assert.deepEqual(fallback.calls, []);
+});
+
 test("native WS gateway client refuses redacted config writes without CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket(() => {});
@@ -1757,6 +1890,89 @@ test("native WS gateway client does not CLI fallback after sent mutation timeout
     /Timed out waiting for OpenClaw Gateway method "agents.create"/
   );
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "agents.create"]);
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway client falls back for unadvertised mutation methods before sending them", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    if (frame.method === "connect") {
+      globalThis.queueMicrotask(() => {
+        socket.emitMessage({
+          type: "res",
+          id: frame.id,
+          ok: true,
+          payload: { protocol: 4, features: { methods: ["status"] } }
+        });
+      });
+    }
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await client.addAgent({ id: "agent-1", workspace: "/workspace", agentDir: "/agent" });
+
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect"]);
+  assert.deepEqual(fallback.calls.map((call) => call.method), ["addAgent"]);
+});
+
+test("native WS gateway client blocks CLI fallback for sent mutation auth failures", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: frame.method === "connect",
+        payload: frame.method === "connect" ? { protocol: 4 } : undefined,
+        error: frame.method === "connect" ? undefined : { message: "unauthorized" }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await assert.rejects(
+    () => client.addAgent({ id: "agent-1", workspace: "/workspace", agentDir: "/agent" }),
+    /unauthorized/
+  );
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "agents.create"]);
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway client blocks CLI fallback for sent mutation malformed request failures", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: frame.method === "connect",
+        payload: frame.method === "connect" ? { protocol: 4 } : undefined,
+        error: frame.method === "connect" ? undefined : { message: "invalid request payload" }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await assert.rejects(
+    () => client.provisionChannelAccount({ channel: "telegram", account: "main" }),
+    /invalid request payload/
+  );
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "channels.add"]);
   assert.deepEqual(fallback.calls, []);
 });
 

@@ -1505,6 +1505,8 @@ function formatGatewayMethodContractStatus(value?: GatewayMethodContractAudit) {
   const source = formatGatewayMethodContractSource(value.source);
 
   switch (value.status) {
+    case "advertised":
+      return `Advertised via ${source}`;
     case "verified":
       return `Verified via ${source}`;
     case "drift":
@@ -1523,7 +1525,7 @@ function formatGatewayMethodContractGaps(
     return "Unknown";
   }
 
-  if (value.status === "verified") {
+  if (value.status === "advertised" || value.status === "verified") {
     return "None";
   }
 

@@ -6,6 +6,13 @@ Commit tested: `4b71278` plus the working-tree fixes from this pass.
 
 Latest production-readiness validation update: 2026-05-03.
 
+2026-05-18 Gateway-native readiness update:
+
+- `node scripts/openclaw-runtime-smoke.mjs` is the non-destructive runtime smoke entrypoint for Gateway-native transport checks.
+- The script checks Gateway health/status, model status, agents, sessions/recent activity, the Gateway capability matrix, fallback diagnostics, channel/provider status, runtime event subscription readiness, and forced CLI snapshot compatibility.
+- A clean run may report `gateway fallback diagnostics` as `PASS` with zero fallback records. Fallback diagnostics are considered a signal to inspect, not a prerequisite for success.
+- Runtime event subscription may be `BLOCKED` when a real Gateway is unavailable, auth is missing, scopes are insufficient, or the installed OpenClaw build does not advertise compatible events.
+
 Environment:
 
 - AgentOS dev server was already running from `pnpm dev` on `http://localhost:3000`.
