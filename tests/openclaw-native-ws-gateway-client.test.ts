@@ -1751,6 +1751,53 @@ test("native WS gateway client falls back from config.patch to config.apply", as
   assert.deepEqual(fallback.calls, []);
 });
 
+test("native WS gateway client falls back to CLI when config.patch is rate limited", async () => {
+  clearOpenClawGatewayFallbackDiagnosticsForTesting();
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      if (frame.method === "config.patch") {
+        socket.emitMessage({
+          type: "res",
+          id: frame.id,
+          ok: false,
+          error: { message: "UNAVAILABLE: rate limit exceeded for config.patch; retry after 17s" }
+        });
+        return;
+      }
+
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? { protocol: 4 }
+          : frame.method === "config.get"
+            ? { exists: true, valid: true, hash: "hash-3", config: { agents: {} } }
+            : { ok: true, method: frame.method }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await client.setConfig("agents.list", [{ id: "agent-1", workspace: "/workspace" }], { strictJson: true });
+
+  assert.deepEqual(sentFrames.map((frame) => frame.method), [
+    "connect",
+    "config.get",
+    "config.schema.lookup",
+    "config.patch"
+  ]);
+  assert.deepEqual(fallback.calls.map((call) => call.method), ["setConfig"]);
+  assert.deepEqual(fallback.config.get("agents.list"), [{ id: "agent-1", workspace: "/workspace" }]);
+  assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.operation, "config.set");
+});
+
 test("native WS gateway client does not escalate config.patch conflict to apply or CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {

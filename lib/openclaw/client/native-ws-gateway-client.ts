@@ -3412,7 +3412,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       const failedMethod = error instanceof NativeGatewayRequestError ? error.method : operation;
       const fallbackAllowed = shouldUseCliFallback(error, failedMethod, {
         safety: "mutation"
-      }) || canFallbackGatewayAuthConfigRepair(error, path);
+      }) || canFallbackGatewayAuthConfigRepair(error, path) || isGatewayConfigRateLimitError(error);
 
       if (!fallbackAllowed) {
         throw error;
@@ -3442,6 +3442,16 @@ function canFallbackGatewayAuthConfigRepair(error: unknown, path: string) {
   }
 
   return true;
+}
+
+function isGatewayConfigRateLimitError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+
+  return /(^|[^a-z])rate limit(?:ed)?\b|retry after|UNAVAILABLE/i.test(message) &&
+    (
+      !(error instanceof NativeGatewayRequestError) ||
+      /^config\.(get|schema|patch|apply|set|unset)$/i.test(error.method)
+    );
 }
 
 function resolveLatestPendingDeviceRequestId(payload: Record<string, unknown>) {
