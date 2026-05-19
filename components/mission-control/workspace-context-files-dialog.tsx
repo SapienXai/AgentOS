@@ -727,6 +727,10 @@ function buildFileNavigation(files: WorkspaceManagedFile[], agents: WorkspaceDia
     agentFilesByAgentId.set(agentId, agentFiles);
   }
 
+  for (const agent of agents) {
+    agentFilesByAgentId.set(agent.id, sortAgentManagedFiles(agentFilesByAgentId.get(agent.id) ?? []));
+  }
+
   return {
     workspaceFiles,
     agentFilesByAgentId,
@@ -735,6 +739,16 @@ function buildFileNavigation(files: WorkspaceManagedFile[], agents: WorkspaceDia
       files: agentFilesByAgentId.get(agent.id) ?? []
     }))
   };
+}
+
+function sortAgentManagedFiles(files: WorkspaceManagedFile[]) {
+  return files.toSorted(
+    (left, right) => Number(isAgentHeartbeatFile(left)) - Number(isAgentHeartbeatFile(right))
+  );
+}
+
+function isAgentHeartbeatFile(file: WorkspaceManagedFile) {
+  return file.path === "HEARTBEAT.md" || file.path.endsWith("/HEARTBEAT.md");
 }
 
 function getWorkspaceManagedFileAgentId(file: WorkspaceManagedFile, agents: WorkspaceDialogAgent[]) {
