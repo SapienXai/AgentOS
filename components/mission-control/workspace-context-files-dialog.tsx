@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Braces, FileText, Loader2, PlusCircle, RefreshCw, Save, Undo2 } from "lucide-react";
+import { AlertTriangle, Braces, FileText, Loader2, PlusCircle, RefreshCw, Save, Undo2, Users } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,16 +24,7 @@ import type {
 } from "@/lib/openclaw/workspace-file-types";
 import { cn } from "@/lib/utils";
 
-const categoryOrder: WorkspaceManagedFileCategory[] = [
-  "context",
-  "memory",
-  "identity",
-  "tools",
-  "boot",
-  "skills",
-  "project-config",
-  "agent-policy-config"
-];
+type WorkspaceDialogAgent = MissionControlSnapshot["agents"][number];
 
 const categoryLabels: Record<WorkspaceManagedFileCategory, string> = {
   context: "Context",
@@ -74,16 +65,26 @@ export function WorkspaceContextFilesDialog({
   const hasUnsavedChanges = content !== savedContent;
   const activeFile = selectedFile ?? files.find((file) => file.path === selectedPath) ?? null;
   const canEditActiveFile = Boolean(activeFile?.editable && !isLoadingFile);
+  const workspaceAgents = useMemo(() => {
+    if (!workspaceId) {
+      return [];
+    }
 
-  const groupedFiles = useMemo(
-    () =>
-      categoryOrder
-        .map((category) => ({
-          category,
-          files: files.filter((file) => file.category === category)
-        }))
-        .filter((group) => group.files.length > 0),
-    [files]
+    const agents = snapshot.agents.filter((agent) => agent.workspaceId === workspaceId);
+    const workspaceAgentOrder = new Map(
+      (workspace?.agentIds ?? []).map((agentId, index) => [agentId, index])
+    );
+
+    return agents.toSorted(
+      (left, right) =>
+        (workspaceAgentOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+          (workspaceAgentOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER) ||
+        left.name.localeCompare(right.name)
+    );
+  }, [snapshot.agents, workspace?.agentIds, workspaceId]);
+  const fileNavigation = useMemo(
+    () => buildFileNavigation(files, workspaceAgents),
+    [files, workspaceAgents]
   );
 
   const refreshFiles = useCallback(async () => {
@@ -205,6 +206,19 @@ export function WorkspaceContextFilesDialog({
     },
     [hasUnsavedChanges, selectedPath]
   );
+  const selectAgent = useCallback(
+    (agentId: string) => {
+      const agentFiles = fileNavigation.agentFilesByAgentId.get(agentId) ?? [];
+      const firstFile = agentFiles[0];
+
+      if (!firstFile) {
+        return;
+      }
+
+      selectFile(firstFile);
+    },
+    [fileNavigation.agentFilesByAgentId, selectFile]
+  );
 
   const saveFile = useCallback(async () => {
     if (!workspaceId || !activeFile || !activeFile.editable) {
@@ -278,7 +292,7 @@ export function WorkspaceContextFilesDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[340px_minmax(0,1fr)]">
           <aside className="min-h-0 overflow-y-auto border-b border-white/10 bg-white/[0.02] p-3 md:border-b-0 md:border-r">
             <div className="mb-3 flex items-center justify-between gap-3">
               <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">Files</p>
@@ -300,49 +314,105 @@ export function WorkspaceContextFilesDialog({
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Loading workspace files
               </div>
-            ) : groupedFiles.length === 0 ? (
+            ) : files.length === 0 ? (
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3 text-xs text-slate-400">
                 No editable OpenClaw workspace files were found.
               </div>
             ) : (
-              <div className="space-y-4">
-                {groupedFiles.map((group) => (
-                  <div key={group.category} className="space-y-1.5">
-                    <p className="px-2 text-[10px] font-medium uppercase tracking-[0.18em] text-slate-500">
-                      {categoryLabels[group.category]}
-                    </p>
-                    <div className="space-y-1">
-                      {group.files.map((file) => (
-                        <button
-                          key={file.path}
-                          type="button"
-                          onClick={() => selectFile(file)}
-                          className={cn(
-                            "w-full rounded-2xl border px-3 py-2 text-left transition-colors",
-                            file.path === activeFile?.path
-                              ? "border-cyan-300/40 bg-cyan-300/10 text-white"
-                              : "border-transparent text-slate-300 hover:border-white/10 hover:bg-white/[0.04]"
-                          )}
-                        >
-                          <span className="flex min-w-0 items-center gap-2">
-                            {file.language === "json" ? (
-                              <Braces className="h-3.5 w-3.5 shrink-0 text-cyan-200" />
-                            ) : (
-                              <FileText className="h-3.5 w-3.5 shrink-0 text-slate-300" />
-                            )}
-                            <span className="min-w-0 flex-1 truncate text-xs font-medium">{file.label}</span>
-                            {!file.exists && file.createable ? (
-                              <Badge variant="muted" className="rounded-full px-1.5 py-0 text-[10px]">
-                                Create
-                              </Badge>
-                            ) : null}
-                          </span>
-                          <span className="mt-1 block truncate text-[10px] text-slate-500">{file.path}</span>
-                        </button>
-                      ))}
-                    </div>
+              <div className="space-y-5">
+                <div className="space-y-1.5">
+                  <SectionHeading
+                    label="Workspace Core Files"
+                    detail={`${fileNavigation.workspaceFiles.length} files`}
+                  />
+                  <div className="space-y-1">
+                    {fileNavigation.workspaceFiles.map((file) => (
+                      <FileListButton
+                        key={file.path}
+                        file={file}
+                        active={file.path === activeFile?.path}
+                        onSelect={selectFile}
+                      />
+                    ))}
                   </div>
-                ))}
+                </div>
+
+                <div className="space-y-1.5">
+                  <SectionHeading label="Agents" detail={`${workspaceAgents.length} members`} />
+                  <div className="space-y-1">
+                    {workspaceAgents.length === 0 ? (
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3 text-xs text-slate-400">
+                        No agents are assigned to this workspace.
+                      </div>
+                    ) : (
+                      workspaceAgents.map((agent) => {
+                        const agentFiles = fileNavigation.agentFilesByAgentId.get(agent.id) ?? [];
+                        const isActiveAgent = activeFile
+                          ? getWorkspaceManagedFileAgentId(activeFile, workspaceAgents) === agent.id
+                          : false;
+
+                        return (
+                          <button
+                            key={agent.id}
+                            type="button"
+                            onClick={() => selectAgent(agent.id)}
+                            disabled={agentFiles.length === 0}
+                            className={cn(
+                              "w-full rounded-2xl border px-3 py-2 text-left transition-colors disabled:cursor-default disabled:opacity-60",
+                              isActiveAgent
+                                ? "border-cyan-300/35 bg-cyan-300/10 text-white"
+                                : "border-white/5 bg-white/[0.025] text-slate-300 hover:border-white/10 hover:bg-white/[0.05]"
+                            )}
+                          >
+                            <span className="flex min-w-0 items-center gap-2">
+                              <Users className="h-3.5 w-3.5 shrink-0 text-cyan-200" />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-xs font-medium">{agent.name}</span>
+                                <span className="mt-0.5 block truncate text-[10px] text-slate-500">{agent.id}</span>
+                              </span>
+                              <Badge variant="muted" className="rounded-full px-1.5 py-0 text-[10px]">
+                                {agentFiles.length}
+                              </Badge>
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <SectionHeading label="Agent Files" detail="Identity and policy" />
+                  {fileNavigation.agentGroups.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3 text-xs text-slate-400">
+                      No agent-specific editable files were found.
+                    </div>
+                  ) : (
+                    fileNavigation.agentGroups.map((group) => (
+                      <div key={group.agent.id} className="rounded-2xl border border-white/10 bg-white/[0.025] p-2">
+                        <div className="mb-2 flex min-w-0 items-center justify-between gap-2 px-1">
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-medium text-slate-200">{group.agent.name}</p>
+                            <p className="truncate text-[10px] text-slate-500">{group.agent.id}</p>
+                          </div>
+                          <Badge variant="muted" className="shrink-0 rounded-full px-1.5 py-0 text-[10px]">
+                            {group.files.length}
+                          </Badge>
+                        </div>
+                        <div className="space-y-1">
+                          {group.files.map((file) => (
+                            <FileListButton
+                              key={file.path}
+                              file={file}
+                              active={file.path === activeFile?.path}
+                              onSelect={selectFile}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             )}
           </aside>
@@ -440,6 +510,113 @@ export function WorkspaceContextFilesDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function SectionHeading({ label, detail }: { label: string; detail?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-2">
+      <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-slate-500">{label}</p>
+      {detail ? <p className="shrink-0 text-[10px] text-slate-600">{detail}</p> : null}
+    </div>
+  );
+}
+
+function FileListButton({
+  file,
+  active,
+  onSelect
+}: {
+  file: WorkspaceManagedFile;
+  active: boolean;
+  onSelect: (file: WorkspaceManagedFile) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(file)}
+      className={cn(
+        "w-full rounded-2xl border px-3 py-2 text-left transition-colors",
+        active
+          ? "border-cyan-300/40 bg-cyan-300/10 text-white"
+          : "border-transparent text-slate-300 hover:border-white/10 hover:bg-white/[0.04]"
+      )}
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        {file.language === "json" ? (
+          <Braces className="h-3.5 w-3.5 shrink-0 text-cyan-200" />
+        ) : (
+          <FileText className="h-3.5 w-3.5 shrink-0 text-slate-300" />
+        )}
+        <span className="min-w-0 flex-1 truncate text-xs font-medium">{file.label}</span>
+        <Badge variant="muted" className="rounded-full px-1.5 py-0 text-[10px]">
+          {categoryLabels[file.category]}
+        </Badge>
+        {!file.exists && file.createable ? (
+          <Badge variant="muted" className="rounded-full px-1.5 py-0 text-[10px]">
+            Create
+          </Badge>
+        ) : null}
+      </span>
+      <span className="mt-1 block truncate text-[10px] text-slate-500">{file.path}</span>
+    </button>
+  );
+}
+
+function buildFileNavigation(files: WorkspaceManagedFile[], agents: WorkspaceDialogAgent[]) {
+  const workspaceFiles: WorkspaceManagedFile[] = [];
+  const agentFilesByAgentId = new Map<string, WorkspaceManagedFile[]>(
+    agents.map((agent) => [agent.id, []])
+  );
+
+  for (const file of files) {
+    const agentId = getWorkspaceManagedFileAgentId(file, agents);
+
+    if (!agentId) {
+      workspaceFiles.push(file);
+      continue;
+    }
+
+    const agentFiles = agentFilesByAgentId.get(agentId) ?? [];
+    agentFiles.push(file);
+    agentFilesByAgentId.set(agentId, agentFiles);
+  }
+
+  return {
+    workspaceFiles,
+    agentFilesByAgentId,
+    agentGroups: agents
+      .map((agent) => ({
+        agent,
+        files: agentFilesByAgentId.get(agent.id) ?? []
+      }))
+      .filter((group) => group.files.length > 0)
+  };
+}
+
+function getWorkspaceManagedFileAgentId(file: WorkspaceManagedFile, agents: WorkspaceDialogAgent[]) {
+  const agentDirMatch = /^\.openclaw\/agents\/([^/]+)\/agent\//.exec(file.path);
+  if (agentDirMatch?.[1] && agents.some((agent) => agent.id === agentDirMatch[1])) {
+    return agentDirMatch[1];
+  }
+
+  const policyOwner = agents.find(
+    (agent) => file.path === `skills/${buildAgentPolicySkillId(agent.id)}/SKILL.md`
+  );
+
+  return policyOwner?.id ?? null;
+}
+
+function buildAgentPolicySkillId(agentId: string) {
+  return `agent-policy-${slugify(agentId) || "agent"}`;
+}
+
+function slugify(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
 }
 
 function chooseInitialFilePath(files: WorkspaceManagedFile[]) {
