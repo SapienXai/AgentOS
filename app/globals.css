@@ -308,6 +308,37 @@
   box-shadow: 0 10px 18px rgba(var(--workspace-accent-rgb), 0.08);
 }
 
+.workspace-node__workspace-action {
+  cursor: pointer;
+}
+
+.workspace-node__workspace-action .workspace-node__header,
+.workspace-node__workspace-action .workspace-node__title,
+.workspace-node__workspace-action .workspace-node__path {
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease;
+}
+
+.workspace-node__workspace-action:hover .workspace-node__header,
+.workspace-node__workspace-action:focus-visible .workspace-node__header {
+  border-color: rgba(var(--workspace-accent-rgb), 0.5);
+  background: rgba(var(--workspace-accent-rgb), 0.18);
+  box-shadow:
+    var(--workspace-node-header-shadow),
+    0 0 0 1px rgba(var(--workspace-accent-rgb), 0.18),
+    0 16px 34px rgba(var(--workspace-accent-rgb), 0.16);
+}
+
+.workspace-node__workspace-action:hover .workspace-node__title,
+.workspace-node__workspace-action:focus-visible .workspace-node__title,
+.workspace-node__workspace-action:hover .workspace-node__path,
+.workspace-node__workspace-action:focus-visible .workspace-node__path {
+  color: var(--workspace-node-text);
+}
+
 .workspace-node__title {
   color: var(--workspace-node-text);
 }

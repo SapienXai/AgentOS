@@ -116,6 +116,25 @@ const safeOpenClawRootFileNames = new Set([
   "metadata.md",
   "README.md"
 ]);
+const safeAgentScopedFileNames = new Set([
+  "AGENTS.md",
+  "SOUL.md",
+  "USER.md",
+  "IDENTITY.md",
+  "TOOLS.md",
+  "HEARTBEAT.md",
+  "BOOT.md",
+  "BOOTSTRAP.md",
+  "MEMORY.md",
+  "POLICY.md",
+  "policy.md",
+  "policy.json",
+  "profile.md",
+  "profile.json",
+  "metadata.md",
+  "metadata.json",
+  "README.md"
+]);
 
 export async function listWorkspaceManagedFiles(workspaceId: string): Promise<WorkspaceManagedFileListResponse> {
   const workspace = await resolveWorkspace(workspaceId);
@@ -556,6 +575,10 @@ function describeAllowedOpenClawRelativePath(relativePath: string): Omit<Workspa
     parts[1] === "agents" &&
     parts[3] === "agent"
   ) {
+    if (!safeAgentScopedFileNames.has(parts[4])) {
+      return null;
+    }
+
     return {
       category: "agent-policy-config",
       language,

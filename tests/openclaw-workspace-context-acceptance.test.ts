@@ -82,6 +82,7 @@ test("workspace context survives create, dispatch, restart, and second-workspace
 
   assertAddAgentPayload(adapterState.addAgentInputs, first.builderAgentId, first.workspacePath, "openai/test");
   assertAgentConfig(adapterState.agentConfig, first.builderAgentId, first.workspacePath);
+  assert.equal(adapterState.identityInputs.length, 0);
 
   const dispatched = await submitMissionDispatch(
     {
@@ -574,6 +575,8 @@ function assertAgentConfig(config: Array<Record<string, unknown>>, agentId: stri
   const entry = config.find((candidate) => candidate.id === agentId);
   assert.ok(entry);
   assert.equal(entry.workspace, workspacePath);
+  assert.equal(entry.agentDir, buildWorkspaceAgentStatePath(workspacePath, agentId));
+  assert.match(String((entry.identity as { name?: string } | undefined)?.name ?? ""), /Builder$/);
   assert.deepEqual(entry.tools, {
     fs: {
       workspaceOnly: true

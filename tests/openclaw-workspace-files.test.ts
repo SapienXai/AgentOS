@@ -32,6 +32,7 @@ test("lists official OpenClaw workspace files and discovered safe context files"
   await writeFile(path.join(workspacePath, ".openclaw", "config.json"), JSON.stringify({ safeLooking: true }));
   await writeFile(path.join(workspacePath, ".openclaw", "token.json"), JSON.stringify({ token: "hidden" }));
   await writeFile(path.join(workspacePath, ".openclaw", "agents", "builder", "agent", "POLICY.md"), "Policy\n");
+  await writeFile(path.join(workspacePath, ".openclaw", "agents", "builder", "agent", "config.json"), "{}");
 
   const files = await listWorkspaceManagedFilesForPath(workspacePath);
   const paths = files.map((file) => file.path);
@@ -52,6 +53,7 @@ test("lists official OpenClaw workspace files and discovered safe context files"
   assert.ok(paths.includes(".openclaw/agents/builder/agent/POLICY.md"));
   assert.equal(paths.includes(".openclaw/config.json"), false);
   assert.equal(paths.includes(".openclaw/token.json"), false);
+  assert.equal(paths.includes(".openclaw/agents/builder/agent/config.json"), false);
 
   assert.equal(files.find((file) => file.path === "USER.md")?.exists, false);
   assert.equal(files.find((file) => file.path === "USER.md")?.createable, true);

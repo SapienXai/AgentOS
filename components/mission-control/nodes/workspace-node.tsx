@@ -27,41 +27,60 @@ export function WorkspaceNode({ data, selected }: NodeProps<WorkspaceFlowNode>) 
       )}
     >
       <div className="relative z-10 flex items-start justify-between gap-4">
-        <div className="min-w-0 space-y-1.5">
-          <div className="workspace-node__header inline-flex items-center gap-2 rounded-full px-2.5 py-1.5">
-            <div className="workspace-node__header-icon rounded-full p-1.5">
-              <FolderKanban className="h-3 w-3" />
-            </div>
-            <div>
-              {canOpenWorkspaceFiles ? (
-                <button
-                  type="button"
-                  aria-label={`Open workspace files for ${data.workspace.name}`}
-                  title="Open workspace files"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    data.onOpenWorkspaceFiles?.(data.workspace.id);
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  className="workspace-node__title nodrag nopan max-w-[220px] truncate rounded-md text-left font-display text-[12px] tracking-[0.04em] transition-colors hover:text-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60"
-                >
+        {canOpenWorkspaceFiles ? (
+          <motion.button
+            type="button"
+            aria-label={`Open workspace files for ${data.workspace.name}`}
+            title="Open workspace files"
+            onClick={(event) => {
+              event.stopPropagation();
+              data.onOpenWorkspaceFiles?.(data.workspace.id);
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            whileHover={{ scale: 1.025, y: -1 }}
+            whileTap={{ scale: 0.985 }}
+            transition={{ type: "spring", stiffness: 420, damping: 30 }}
+            className="workspace-node__workspace-action nodrag nopan group block min-w-0 max-w-[330px] space-y-1.5 text-left focus-visible:outline-none"
+          >
+            <span className="workspace-node__header inline-flex max-w-full items-center gap-2 rounded-full px-2.5 py-1.5">
+              <span className="workspace-node__header-icon rounded-full p-1.5">
+                <FolderKanban className="h-3 w-3" />
+              </span>
+              <span className="min-w-0">
+                <span className="workspace-node__title block max-w-[220px] truncate font-display text-[12px] tracking-[0.04em]">
                   {data.workspace.name}
-                </button>
-              ) : (
+                </span>
+                <span className="workspace-node__slug block text-[9px] uppercase tracking-[0.22em]">
+                  {data.workspace.slug}
+                </span>
+              </span>
+            </span>
+
+            <span className="workspace-node__path block max-w-[300px] truncate pl-1 text-[9px] uppercase tracking-[0.16em]">
+              {compactPath(data.workspace.path)}
+            </span>
+          </motion.button>
+        ) : (
+          <div className="min-w-0 space-y-1.5">
+            <div className="workspace-node__header inline-flex items-center gap-2 rounded-full px-2.5 py-1.5">
+              <div className="workspace-node__header-icon rounded-full p-1.5">
+                <FolderKanban className="h-3 w-3" />
+              </div>
+              <div>
                 <p className="workspace-node__title font-display text-[12px] tracking-[0.04em]">
                   {data.workspace.name}
                 </p>
-              )}
-              <p className="workspace-node__slug text-[9px] uppercase tracking-[0.22em]">
-                {data.workspace.slug}
-              </p>
+                <p className="workspace-node__slug text-[9px] uppercase tracking-[0.22em]">
+                  {data.workspace.slug}
+                </p>
+              </div>
             </div>
-          </div>
 
-          <p className="workspace-node__path max-w-[300px] truncate pl-1 text-[9px] uppercase tracking-[0.16em]">
-            {compactPath(data.workspace.path)}
-          </p>
-        </div>
+            <p className="workspace-node__path max-w-[300px] truncate pl-1 text-[9px] uppercase tracking-[0.16em]">
+              {compactPath(data.workspace.path)}
+            </p>
+          </div>
+        )}
 
         <div className="flex shrink-0 max-w-[48%] flex-wrap items-center justify-end gap-1.5">
           <Badge

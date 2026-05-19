@@ -18,6 +18,7 @@ import type {
 export type MutableAgentConfigEntry = {
   id: string;
   workspace: string;
+  agentDir?: string;
   name?: string;
   model?: string;
   heartbeat?: {
@@ -138,8 +139,9 @@ export async function upsertAgentConfigEntry(
   agentId: string,
   workspacePath: string,
   updates: {
-    name?: string;
-    model?: string;
+    agentDir?: string | null;
+    name?: string | null;
+    model?: string | null;
     heartbeat?: { every?: string } | null;
     skills?: string[];
     tools?:
@@ -149,6 +151,12 @@ export async function upsertAgentConfigEntry(
           };
         }
       | null;
+    identity?: {
+      name?: string | null;
+      emoji?: string | null;
+      theme?: string | null;
+      avatar?: string | null;
+    } | null;
   },
   snapshot?: MissionControlSnapshot,
   timings?: TimingCollector
@@ -165,14 +173,31 @@ export async function upsertAgentConfigEntry(
 
   nextEntry.workspace = workspacePath;
 
-  if (updates.name) {
-    nextEntry.name = updates.name;
+  if (updates.agentDir !== undefined) {
+    const nextAgentDir = normalizeOptionalValue(updates.agentDir);
+    if (nextAgentDir) {
+      nextEntry.agentDir = nextAgentDir;
+    } else {
+      delete nextEntry.agentDir;
+    }
   }
 
-  if (typeof updates.model === "string") {
-    nextEntry.model = updates.model;
-  } else {
-    delete nextEntry.model;
+  if (updates.name !== undefined) {
+    const nextName = normalizeOptionalValue(updates.name);
+    if (nextName) {
+      nextEntry.name = nextName;
+    } else {
+      delete nextEntry.name;
+    }
+  }
+
+  if (updates.model !== undefined) {
+    const nextModel = normalizeOptionalValue(updates.model);
+    if (nextModel) {
+      nextEntry.model = nextModel;
+    } else {
+      delete nextEntry.model;
+    }
   }
 
   if (updates.heartbeat?.every) {
@@ -195,6 +220,20 @@ export async function upsertAgentConfigEntry(
     delete nextEntry.tools;
   }
 
+  if (updates.identity !== undefined) {
+    if (updates.identity === null) {
+      delete nextEntry.identity;
+    } else {
+      const identity = normalizeAgentIdentity(updates.identity);
+
+      if (Object.keys(identity).length > 0) {
+        nextEntry.identity = identity;
+      } else {
+        delete nextEntry.identity;
+      }
+    }
+  }
+
   if (existingIndex >= 0) {
     configList[existingIndex] = nextEntry;
   } else {
@@ -203,6 +242,25 @@ export async function upsertAgentConfigEntry(
 
   await measureTiming(timings, "agent-config.write", () => writeAgentConfigList(configList));
   return nextEntry;
+}
+
+function normalizeAgentIdentity(identity: {
+  name?: string | null;
+  emoji?: string | null;
+  theme?: string | null;
+  avatar?: string | null;
+}) {
+  const name = normalizeOptionalValue(identity.name);
+  const emoji = normalizeOptionalValue(identity.emoji);
+  const theme = normalizeOptionalValue(identity.theme);
+  const avatar = normalizeOptionalValue(identity.avatar);
+
+  return {
+    ...(name ? { name } : {}),
+    ...(emoji ? { emoji } : {}),
+    ...(theme ? { theme } : {}),
+    ...(avatar ? { avatar } : {})
+  };
 }
 
 export async function applyAgentIdentity(
@@ -233,18 +291,6 @@ export async function applyAgentIdentity(
     await mkdir(path.dirname(identityFilePath), { recursive: true });
     await writeFile(identityFilePath, identityMarkdown, "utf8");
   });
-
-  await measureTiming(timings, "agent-identity.sync-openclaw", () =>
-    getOpenClawAdapter().setAgentIdentity({
-      agentId,
-      workspace: workspacePath,
-      identityFile: identityFilePath,
-      name: identity.name,
-      emoji: identity.emoji,
-      theme: identity.theme,
-      avatar: identity.avatar
-    })
-  );
 }
 
 export async function writeAgentBootstrapFiles(
@@ -302,6 +348,7 @@ function buildAgentConfigListFromSnapshot(snapshot: MissionControlSnapshot) {
     const configEntry: MutableAgentConfigEntry = {
       id: agent.id,
       workspace: agent.workspacePath,
+      agentDir: agent.agentDir,
       name: displayName
     };
 

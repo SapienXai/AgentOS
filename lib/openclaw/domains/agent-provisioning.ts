@@ -151,6 +151,7 @@ export async function createBootstrappedWorkspaceAgent(params: {
   agent: WorkspaceAgentBlueprintInput;
 }) {
   const agentId = createWorkspaceAgentId(params.workspaceSlug, params.agent.id);
+  const agentDir = buildWorkspaceAgentStatePath(params.workspacePath, agentId);
   const modelId =
     normalizeOptionalValue(params.agent.modelId) ?? normalizeOptionalValue(params.workspaceModelId);
   const policy = resolveAgentPolicy(
@@ -165,7 +166,7 @@ export async function createBootstrappedWorkspaceAgent(params: {
   await getOpenClawAdapter().addAgent({
     id: agentId,
     workspace: params.workspacePath,
-    agentDir: buildWorkspaceAgentStatePath(params.workspacePath, agentId),
+    agentDir,
     model: modelId,
     name: normalizeOptionalValue(params.agent.name)
   });
@@ -178,6 +179,7 @@ export async function createBootstrappedWorkspaceAgent(params: {
   });
 
   const configEntry = await upsertAgentConfigEntry(agentId, params.workspacePath, {
+    agentDir,
     name: normalizeOptionalValue(params.agent.name) ?? undefined,
     model: modelId ?? undefined,
     heartbeat: serializeHeartbeatConfig(params.agent.heartbeat),
@@ -191,7 +193,12 @@ export async function createBootstrappedWorkspaceAgent(params: {
               workspaceOnly: true
             }
           }
-        : null
+        : null,
+    identity: {
+      name: normalizeOptionalValue(params.agent.name),
+      emoji: normalizeOptionalValue(params.agent.emoji),
+      theme: normalizeOptionalValue(params.agent.theme)
+    }
   });
 
   await applyAgentIdentity(
@@ -202,7 +209,7 @@ export async function createBootstrappedWorkspaceAgent(params: {
       emoji: normalizeOptionalValue(params.agent.emoji) ?? undefined,
       theme: normalizeOptionalValue(params.agent.theme) ?? undefined
     },
-    buildWorkspaceAgentStatePath(params.workspacePath, agentId)
+    agentDir
   );
 
   return agentId;

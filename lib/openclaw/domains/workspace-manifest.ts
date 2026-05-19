@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -130,6 +130,72 @@ export async function readWorkspaceProjectManifest(
       channels: []
     };
   }
+}
+
+export async function reconcileWorkspaceProjectManifestAgents(
+  workspacePath: string,
+  activeAgentIds: Iterable<string>
+): Promise<WorkspaceProjectManifest> {
+  const projectFilePath = path.join(workspacePath, ".openclaw", "project.json");
+  const activeIds = new Set(
+    Array.from(activeAgentIds)
+      .map((agentId) => normalizeOptionalValue(agentId))
+      .filter((agentId): agentId is string => Boolean(agentId))
+  );
+
+  if (activeIds.size === 0) {
+    return readWorkspaceProjectManifest(workspacePath);
+  }
+
+  try {
+    const raw = await readFile(projectFilePath, "utf8");
+    const candidate = JSON.parse(raw);
+    const parsed = isObjectRecord(candidate) ? candidate : {};
+
+    if (!Array.isArray(parsed.agents)) {
+      return readWorkspaceProjectManifest(workspacePath);
+    }
+
+    const existingAgents = parsed.agents
+      .map((entry) => parseWorkspaceProjectManifestAgent(entry))
+      .filter((entry): entry is WorkspaceProjectManifestAgent => Boolean(entry));
+    const nextAgents = existingAgents.filter((entry) => activeIds.has(entry.id));
+    const staleAgentIds = existingAgents
+      .filter((entry) => !activeIds.has(entry.id))
+      .map((entry) => entry.id);
+
+    if (nextAgents.length === existingAgents.length) {
+      return readWorkspaceProjectManifest(workspacePath);
+    }
+
+    if (nextAgents.length > 0 && !nextAgents.some((entry) => entry.isPrimary)) {
+      nextAgents[0] = {
+        ...nextAgents[0],
+        isPrimary: true
+      };
+    }
+
+    parsed.updatedAt = new Date().toISOString();
+    parsed.agents = nextAgents;
+
+    await writeFile(projectFilePath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
+    await Promise.all(
+      staleAgentIds.map((agentId) =>
+        rm(path.join(workspacePath, "skills", buildAgentPolicySkillDirectoryName(agentId)), {
+          recursive: true,
+          force: true
+        }).catch(() => undefined)
+      )
+    );
+  } catch {
+    return readWorkspaceProjectManifest(workspacePath);
+  }
+
+  return readWorkspaceProjectManifest(workspacePath);
+}
+
+function buildAgentPolicySkillDirectoryName(agentId: string) {
+  return `agent-policy-${slugify(agentId) || "agent"}`;
 }
 
 export function parseWorkspaceProjectManifestAgent(

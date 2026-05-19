@@ -137,6 +137,7 @@ export async function createAgent(input: AgentCreateInput) {
     agentId,
     resolvedWorkspacePath,
     {
+      agentDir,
       name: displayName,
       model: agentModelId,
       heartbeat,
@@ -148,7 +149,13 @@ export async function createAgent(input: AgentCreateInput) {
                 workspaceOnly: true
               }
             }
-          : null
+          : null,
+      identity: {
+        name: displayName,
+        emoji,
+        theme,
+        avatar
+      }
     },
     snapshot
   );
@@ -267,6 +274,7 @@ export async function updateAgent(input: AgentUpdateInput) {
       agentId,
       resolvedWorkspacePath,
       {
+        agentDir: agent.agentDir ?? buildWorkspaceAgentStatePath(resolvedWorkspacePath, agentId),
         model: nextModelId
       },
       snapshot
@@ -315,18 +323,16 @@ export async function updateAgent(input: AgentUpdateInput) {
 
   await getOpenClawAdapter().updateAgent({
     id: agentId,
-    name: normalizeOptionalValue(input.name) ?? currentName ?? agentId,
     workspace: resolvedWorkspacePath,
-    model: nextModelId,
-    emoji: normalizeOptionalValue(input.emoji) ?? currentEmoji,
-    avatar: normalizeOptionalValue(input.avatar)
+    model: nextModelId
   }, { timeoutMs: 15_000 });
 
   const configEntry = await upsertAgentConfigEntry(
     agentId,
     resolvedWorkspacePath,
     {
-      name: normalizeOptionalValue(input.name),
+      agentDir: agent.agentDir ?? buildWorkspaceAgentStatePath(resolvedWorkspacePath, agentId),
+      name: input.name !== undefined ? normalizeOptionalValue(input.name) : undefined,
       model: nextModelId,
       heartbeat,
       skills: uniqueStrings([...nextDeclaredSkills, policySkillId]),
@@ -337,7 +343,13 @@ export async function updateAgent(input: AgentUpdateInput) {
                 workspaceOnly: true
               }
             }
-          : null
+          : null,
+      identity: {
+        name: normalizeOptionalValue(input.name) ?? currentName ?? agentId,
+        emoji: normalizeOptionalValue(input.emoji) ?? currentEmoji,
+        theme: normalizeOptionalValue(input.theme) ?? currentTheme,
+        avatar: normalizeOptionalValue(input.avatar)
+      }
     },
     snapshot
   );
@@ -517,6 +529,7 @@ async function syncAgentPolicySkills(agentIds: string[], snapshot?: MissionContr
       agent.id,
       agent.workspacePath,
       {
+        agentDir: agent.agentDir ?? buildWorkspaceAgentStatePath(agent.workspacePath, agent.id),
         name: agent.name,
         model: normalizeOptionalValue(agent.modelId),
         heartbeat: agent.heartbeat.enabled && agent.heartbeat.every ? { every: agent.heartbeat.every } : null,
@@ -527,7 +540,13 @@ async function syncAgentPolicySkills(agentIds: string[], snapshot?: MissionContr
                 workspaceOnly: true
               }
             }
-          : null
+          : null,
+        identity: {
+          name: agent.identityName ?? agent.name,
+          emoji: agent.identity.emoji,
+          theme: agent.identity.theme,
+          avatar: agent.identity.avatar
+        }
       },
       nextSnapshot
     );

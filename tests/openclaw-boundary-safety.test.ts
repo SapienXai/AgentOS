@@ -223,13 +223,14 @@ test("read-only agent config and channel discovery use the OpenClaw adapter", ()
   assert.doesNotMatch(channelsSource, /runOpenClawJson/);
 });
 
-test("agent config writes and identity sync stay behind the OpenClaw adapter", () => {
+test("agent config writes stay behind the OpenClaw adapter without workspace identity sync", () => {
   const source = readFileSync(path.join(rootDir, "lib/openclaw/domains/agent-config.ts"), "utf8");
 
   assert.doesNotMatch(source, /from\s+["']@\/lib\/openclaw\/cli["']/);
   assert.doesNotMatch(source, /runOpenClaw/);
   assert.match(source, /getOpenClawAdapter\(\)\.setConfig\("agents\.list", configList, \{ strictJson: true \}\)/);
-  assert.match(source, /getOpenClawAdapter\(\)\.setAgentIdentity/);
+  assert.doesNotMatch(source, /getOpenClawAdapter\(\)\.setAgentIdentity/);
+  assert.match(source, /writeFile\(identityFilePath, identityMarkdown, "utf8"\)/);
 });
 
 test("channel provisioning writes stay behind the OpenClaw adapter", () => {

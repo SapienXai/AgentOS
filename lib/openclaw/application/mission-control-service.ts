@@ -121,6 +121,7 @@ import {
 } from "@/lib/openclaw/domains/agent-config";
 import {
   normalizeChannelRegistry,
+  reconcileWorkspaceProjectManifestAgents,
   readWorkspaceProjectManifest
 } from "@/lib/openclaw/domains/workspace-manifest";
 import type { WorkspaceProjectManifest } from "@/lib/openclaw/domains/workspace-manifest";
@@ -550,6 +551,12 @@ async function loadMissionControlSnapshots({
       (agent): agent is AgentPayload[number] & { workspace: string } => Boolean(agent.workspace)
     );
     const workspacePaths = Array.from(new Set(workspaceBoundAgents.map((agent) => agent.workspace)));
+    const activeAgentIdsByWorkspacePath = new Map<string, string[]>();
+    for (const agent of workspaceBoundAgents) {
+      const agentIds = activeAgentIdsByWorkspacePath.get(agent.workspace) ?? [];
+      agentIds.push(agent.id);
+      activeAgentIdsByWorkspacePath.set(agent.workspace, agentIds);
+    }
     const resolveWorkspaceId = createWorkspaceIdResolver(workspacePaths);
     const liveSessionRuntimes = (
       await Promise.all(
@@ -599,7 +606,8 @@ async function loadMissionControlSnapshots({
     ]);
     await Promise.all(
       workspacePaths.map(async (workspacePath) => {
-        const manifest = await readWorkspaceProjectManifest(workspacePath);
+        const activeAgentIds = activeAgentIdsByWorkspacePath.get(workspacePath) ?? [];
+        const manifest = await reconcileWorkspaceProjectManifestAgents(workspacePath, activeAgentIds);
         manifestByWorkspace.set(workspacePath, manifest);
         workspaceBootstrapProfileByWorkspace.set(
           workspacePath,
