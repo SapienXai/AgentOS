@@ -29,6 +29,11 @@ export function buildTaskFeed(
   const agentNameById = new Map(snapshot.agents.map((agent) => [agent.id, formatAgentDisplayName(agent)]));
   const events: TaskFeedEvent[] = [];
   const sortedRuns = [...runs].sort((left, right) => (left.updatedAt ?? 0) - (right.updatedAt ?? 0));
+  const hasAvailableOutput = Array.from(outputsByRuntimeId.values()).some(hasRuntimeOutputEvidence);
+  const seenItemSignatures = new Set<string>();
+  const seenStatusSignatures = new Set<string>();
+  const seenWarningSignatures = new Set<string>();
+  const seenCreatedFilePaths = new Set<string>();
 
   for (const runtime of sortedRuns) {
     if (task.dispatchId && isSyntheticDispatchRuntime(runtime)) {
@@ -41,6 +46,21 @@ export function buildTaskFeed(
 
     if (output?.items.length) {
       for (const item of output.items) {
+        const detail = summarizeText(item.text.trim() || output.errorMessage || runtime.subtitle, 220);
+        const itemSignature = buildFeedContentSignature([
+          "item",
+          item.role,
+          item.toolName ?? "",
+          item.timestamp,
+          detail
+        ]);
+
+        if (seenItemSignatures.has(itemSignature)) {
+          continue;
+        }
+
+        seenItemSignatures.add(itemSignature);
+
         events.push(
           enrichTaskFeedEvent(
             {
@@ -60,7 +80,7 @@ export function buildTaskFeed(
                       ? `Tool · ${item.toolName}`
                       : "Tool update"
                     : "Mission",
-              detail: summarizeText(item.text.trim() || output.errorMessage || runtime.subtitle, 220),
+              detail,
               runtimeId: runtime.id,
               agentId: runtime.agentId,
               toolName: item.toolName,
@@ -73,6 +93,19 @@ export function buildTaskFeed(
         );
       }
     } else {
+      const detail = summarizeText(output?.errorMessage || runtime.subtitle, 220);
+
+      if (hasAvailableOutput && isMissingTranscriptStatus(output, detail)) {
+        continue;
+      }
+
+      const statusSignature = buildFeedContentSignature(["status", runtime.status, detail]);
+      if (seenStatusSignatures.has(statusSignature)) {
+        continue;
+      }
+
+      seenStatusSignatures.add(statusSignature);
+
       events.push(
         enrichTaskFeedEvent(
           {
@@ -80,7 +113,7 @@ export function buildTaskFeed(
             kind: "status",
             timestamp: runtimeTimestamp,
             title: agentName ? `${agentName} · ${runtime.status}` : `Run · ${runtime.status}`,
-            detail: summarizeText(output?.errorMessage || runtime.subtitle, 220),
+            detail,
             runtimeId: runtime.id,
             agentId: runtime.agentId,
             isError: runtime.status === "stalled"
@@ -96,6 +129,13 @@ export function buildTaskFeed(
       (output?.warnings ?? []).concat(extractWarningsFromRuntimeMetadata(runtime))
     );
     for (const warning of warningValues) {
+      const warningSignature = buildFeedContentSignature(["warning", warning]);
+      if (seenWarningSignatures.has(warningSignature)) {
+        continue;
+      }
+
+      seenWarningSignatures.add(warningSignature);
+
       events.push(
         enrichTaskFeedEvent(
           {
@@ -118,6 +158,12 @@ export function buildTaskFeed(
       (output?.createdFiles ?? []).concat(extractCreatedFilesFromRuntimeMetadata(runtime))
     );
     for (const file of createdFiles) {
+      if (seenCreatedFilePaths.has(file.path)) {
+        continue;
+      }
+
+      seenCreatedFilePaths.add(file.path);
+
       events.push(
         enrichTaskFeedEvent(
           {
@@ -222,23 +268,27 @@ export async function buildMissionDispatchFeed(
   }
 
   if (record.runner.lastHeartbeatAt) {
-    events.push(
-      enrichTaskFeedEvent(
-        {
-          id: `${record.id}:heartbeat`,
-          kind: "status",
-          timestamp: record.runner.lastHeartbeatAt,
-          title: "Heartbeat received",
-          detail: `${agentName} is online. Waiting for the first runtime session.`
-        },
-        {
-          urlSources: [agentName, record.outputDirRelative]
-        }
-      )
-    );
+    const shouldShowHeartbeat = !record.observation.observedAt && record.status !== "completed";
+
+    if (shouldShowHeartbeat) {
+      events.push(
+        enrichTaskFeedEvent(
+          {
+            id: `${record.id}:heartbeat`,
+            kind: "status",
+            timestamp: record.runner.lastHeartbeatAt,
+            title: "Heartbeat received",
+            detail: `${agentName} is online. Waiting for the first runtime session.`
+          },
+          {
+            urlSources: [agentName, record.outputDirRelative]
+          }
+        )
+      );
+    }
   }
 
-  if (record.observation.observedAt) {
+  if (record.observation.observedAt && record.status !== "completed") {
     events.push(
       enrichTaskFeedEvent(
         {
@@ -256,7 +306,9 @@ export async function buildMissionDispatchFeed(
   }
 
   if (record.status === "completed") {
-    const completionSummary = resolveMissionDispatchSummary(record) || resolveMissionDispatchResultText(record);
+    const finalResponseText =
+      typeof task.metadata.finalResponseText === "string" ? task.metadata.finalResponseText.trim() : "";
+    const completionSummary = resolveMissionDispatchSummary(record) || resolveMissionDispatchResultText(record) || finalResponseText;
     const outputFile = resolveMissionDispatchOutputFile(record);
     events.push(
       enrichTaskFeedEvent(
@@ -412,6 +464,32 @@ function enrichTaskFeedEvent(
     ...(url ? { url } : {}),
     ...(options?.file ? { filePath: options.file.path, displayPath: options.file.displayPath } : {})
   };
+}
+
+function hasRuntimeOutputEvidence(output: RuntimeOutputRecord) {
+  return (
+    output.status === "available" ||
+    output.items.length > 0 ||
+    Boolean(output.finalText?.trim()) ||
+    output.createdFiles.length > 0
+  );
+}
+
+function isMissingTranscriptStatus(output: RuntimeOutputRecord | undefined, detail: string) {
+  return (
+    output?.status === "missing" ||
+    /No transcript file was found for this runtime session/i.test(detail)
+  );
+}
+
+function buildFeedContentSignature(parts: Array<string | null | undefined>) {
+  return parts
+    .map((part) => normalizeSignaturePart(part ?? ""))
+    .join("|");
+}
+
+function normalizeSignaturePart(value: string) {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 function extractFirstUrlFromSources(sources: Array<string | null | undefined>) {

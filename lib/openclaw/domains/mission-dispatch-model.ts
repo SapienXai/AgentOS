@@ -51,8 +51,8 @@ export type MissionDispatchRecordLike = {
   error: string | null;
 };
 
-const missionDispatchHeartbeatStallMs = 90_000;
-const missionDispatchQueuedStallMs = 30_000;
+const missionDispatchHeartbeatStallMs = 5 * 60_000;
+const missionDispatchQueuedStallMs = 2 * 60_000;
 
 export function extractMissionDispatchSessionId(record: MissionDispatchRecordLike) {
   return (
@@ -152,12 +152,12 @@ export function resolveMissionDispatchCompletionDetail(record: MissionDispatchRe
     return completedSummary;
   }
 
-  if (record.observation.observedAt) {
-    return "Dispatch runner finished. Waiting for the final runtime transcript to sync.";
-  }
-
   if (record.outputDirRelative) {
     return `Dispatch runner finished · ${record.outputDirRelative}`;
+  }
+
+  if (record.observation.observedAt) {
+    return "Dispatch runner finished. Waiting for the final runtime transcript to sync.";
   }
 
   return "Dispatch runner finished.";
@@ -486,6 +486,7 @@ function inferCreatedFilesFromText(value: string | null | undefined) {
 
   const matches = [
     ...value.matchAll(/(?:^|[\s(])((?:\.{1,2}\/)?deliverables\/[^\s`),;]+)/g),
+    ...value.matchAll(/\]\(((?:\/|\.{1,2}\/|deliverables\/)[^)]+)\)/g),
     ...value.matchAll(/`((?:\/|\.{1,2}\/|deliverables\/)[^`\n]+)`/g)
   ];
   const createdFiles: RuntimeCreatedFile[] = [];

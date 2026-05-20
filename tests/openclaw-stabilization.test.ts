@@ -25,6 +25,7 @@ import {
   buildMissionDispatchRuntimes,
   matchMissionDispatchToRuntime
 } from "@/lib/openclaw/domains/mission-dispatch-runtime";
+import { buildTaskFeed } from "@/lib/openclaw/domains/task-feed";
 import {
   mergeRuntimeHistory as mergeRuntimeHistoryRecords
 } from "@/lib/openclaw/domains/runtime-history";
@@ -1735,6 +1736,142 @@ test("mission dispatch terminal status wins over ambient session activity", () =
   assert.equal(tasks[0].status, "completed");
   assert.equal(tasks[0].liveRunCount, 0);
   assert.equal(tasks[0].workspaceId, "workspace-1");
+});
+
+test("task feed collapses duplicate dispatch transcript events", () => {
+  const task = {
+    id: "task-1",
+    key: "dispatch:dispatch-1",
+    title: "Create the Faros document",
+    mission: "Create the Faros document",
+    subtitle: "completed",
+    status: "completed",
+    updatedAt: Date.parse("2026-04-13T00:01:00.000Z"),
+    ageMs: 0,
+    primaryAgentId: "agent-1",
+    runtimeIds: ["runtime:missing", "runtime:available-1", "runtime:available-2"],
+    agentIds: ["agent-1"],
+    sessionIds: ["session-1"],
+    runIds: ["dispatch-1"],
+    runtimeCount: 3,
+    updateCount: 3,
+    liveRunCount: 0,
+    artifactCount: 1,
+    warningCount: 0,
+    dispatchId: "dispatch-1",
+    metadata: {}
+  } as unknown as Parameters<typeof buildTaskFeed>[0];
+  const runs = [
+    {
+      id: "runtime:missing",
+      source: "turn",
+      key: "dispatch-1",
+      title: "Gateway runtime event",
+      subtitle: "sessions.changed",
+      status: "completed",
+      updatedAt: Date.parse("2026-04-13T00:00:30.000Z"),
+      ageMs: 0,
+      agentId: "agent-1",
+      sessionId: "session-1",
+      metadata: {
+        dispatchId: "dispatch-1"
+      }
+    },
+    {
+      id: "runtime:available-1",
+      source: "turn",
+      key: "dispatch-1",
+      title: "Gateway runtime event",
+      subtitle: "completed",
+      status: "completed",
+      updatedAt: Date.parse("2026-04-13T00:01:00.000Z"),
+      ageMs: 0,
+      agentId: "agent-1",
+      sessionId: "session-1",
+      metadata: {
+        dispatchId: "dispatch-1"
+      }
+    },
+    {
+      id: "runtime:available-2",
+      source: "turn",
+      key: "dispatch-1",
+      title: "Gateway runtime event",
+      subtitle: "completed",
+      status: "completed",
+      updatedAt: Date.parse("2026-04-13T00:01:01.000Z"),
+      ageMs: 0,
+      agentId: "agent-1",
+      sessionId: "session-1",
+      metadata: {
+        dispatchId: "dispatch-1"
+      }
+    }
+  ] as unknown as RuntimeRecord[];
+  const output = {
+    sessionId: "session-1",
+    status: "available",
+    finalText: "Created the Faros document.",
+    finalTimestamp: "2026-04-13T00:01:00.000Z",
+    stopReason: "stop",
+    errorMessage: null,
+    items: [
+      {
+        id: "tool-call-1",
+        role: "toolCall",
+        timestamp: "2026-04-13T00:00:45.000Z",
+        text: "Called apply_patch",
+        toolName: "apply_patch"
+      },
+      {
+        id: "assistant-1",
+        role: "assistant",
+        timestamp: "2026-04-13T00:01:00.000Z",
+        text: "Created the Faros document."
+      }
+    ],
+    createdFiles: [
+      {
+        path: "/tmp/workspace-1/deliverables/run/faros.md",
+        displayPath: "deliverables/run/faros.md"
+      }
+    ],
+    warnings: [],
+    warningSummary: null
+  } as unknown as Omit<RuntimeOutputRecord, "runtimeId">;
+  const outputsByRuntimeId = new Map<string, RuntimeOutputRecord>([
+    [
+      "runtime:missing",
+      {
+        runtimeId: "runtime:missing",
+        status: "missing",
+        finalText: null,
+        finalTimestamp: null,
+        stopReason: null,
+        errorMessage: "No transcript file was found for this runtime session.",
+        items: [],
+        createdFiles: [],
+        warnings: [],
+        warningSummary: null
+      }
+    ],
+    ["runtime:available-1", { ...output, runtimeId: "runtime:available-1" }],
+    ["runtime:available-2", { ...output, runtimeId: "runtime:available-2" }]
+  ]);
+
+  const feed = buildTaskFeed(task, runs, outputsByRuntimeId, {
+    agents: [
+      {
+        id: "agent-1",
+        name: "Research Lead"
+      }
+    ]
+  } as Parameters<typeof buildTaskFeed>[3]);
+
+  assert.equal(feed.filter((event) => /No transcript file/.test(event.detail)).length, 0);
+  assert.equal(feed.filter((event) => event.kind === "tool").length, 1);
+  assert.equal(feed.filter((event) => event.kind === "assistant").length, 1);
+  assert.equal(feed.filter((event) => event.kind === "artifact").length, 1);
 });
 
 test("mission dispatch matches gateway completion by dispatch run id", () => {

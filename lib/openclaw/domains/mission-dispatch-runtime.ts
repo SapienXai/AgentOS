@@ -9,6 +9,7 @@ import {
   resolveMissionDispatchBootstrapStage,
   resolveMissionDispatchCompletionDetail,
   resolveMissionDispatchIntegrityWarning,
+  resolveMissionDispatchOutputFile,
   resolveMissionDispatchRuntimeStatus,
   resolveMissionDispatchSubtitle
 } from "@/lib/openclaw/domains/mission-dispatch-model";
@@ -216,7 +217,8 @@ export function scoreMissionDispatchRuntimeMatch(
   }
 
   if (runtimeRunId === record.id) {
-    return isTerminalRuntimeStatus(runtime.status) ? 11_000 : 9_000;
+    const sessionKeyPenalty = isGatewayRequestedSessionKey(runtime.sessionId, record.agentId) ? 120 : 0;
+    return (isTerminalRuntimeStatus(runtime.status) ? 11_000 : 9_000) - sessionKeyPenalty;
   }
 
   if (options.observedRuntimeId && runtime.id === options.observedRuntimeId) {
@@ -272,6 +274,7 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
     typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
   const runtimeMission = resolveRuntimeMissionText(runtime);
   const nextWorkspaceId = record.workspaceId ?? runtime.workspaceId;
+  const outputFile = resolveMissionDispatchOutputFile(record);
   const nextStatus =
     isMissionDispatchTerminalStatus(record.status)
       ? record.status
@@ -285,6 +288,7 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
     runtime.workspaceId === nextWorkspaceId &&
     runtime.metadata.outputDir === record.outputDir &&
     runtime.metadata.outputDirRelative === record.outputDirRelative &&
+    (!outputFile || runtimeMetadataHasCreatedFile(runtime, outputFile.path)) &&
     runtime.status === nextStatus
   ) {
     return runtime;
@@ -309,7 +313,8 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
       routedMission: record.routedMission,
       outputDir: record.outputDir,
       outputDirRelative: record.outputDirRelative,
-      notesDirRelative: record.notesDirRelative
+      notesDirRelative: record.notesDirRelative,
+      ...(outputFile ? { createdFiles: [outputFile] } : {})
     }
   };
 }
@@ -478,6 +483,27 @@ function resolveMissionDispatchAnnotationRuntimes(
 
 function isMissionDispatchTerminalStatus(status: string) {
   return status === "completed" || status === "stalled" || status === "cancelled";
+}
+
+function isGatewayRequestedSessionKey(sessionId: string | null | undefined, agentId: string) {
+  return typeof sessionId === "string" && sessionId.startsWith(`agent:${agentId}:`);
+}
+
+function runtimeMetadataHasCreatedFile(runtime: RuntimeRecord, filePath: string) {
+  const createdFiles = runtime.metadata.createdFiles;
+
+  if (!Array.isArray(createdFiles)) {
+    return false;
+  }
+
+  return createdFiles.some(
+    (entry) =>
+      typeof entry === "object" &&
+      entry !== null &&
+      "path" in entry &&
+      typeof entry.path === "string" &&
+      entry.path === filePath
+  );
 }
 
 function isTerminalRuntimeStatus(status: RuntimeRecord["status"]) {

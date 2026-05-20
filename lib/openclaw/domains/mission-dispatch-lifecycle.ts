@@ -15,7 +15,8 @@ import {
   extractMissionDispatchSessionId,
   isMissionCommandPayload,
   normalizeMissionDispatchStatus,
-  normalizeMissionThinking
+  normalizeMissionThinking,
+  resolveMissionDispatchResultText
 } from "@/lib/openclaw/domains/mission-dispatch-model";
 import {
   extractTranscriptTurns as extractTranscriptTurnsFromTranscript,
@@ -238,6 +239,7 @@ export async function persistMissionDispatchObservation(record: MissionDispatchR
 
 export async function reconcileMissionDispatchRuntimeState(record: MissionDispatchRecordLike, runtime: RuntimeRecord) {
   if (isMissionDispatchTerminalStatus(record.status)) {
+    await backfillCompletedMissionDispatchResultFromRuntime(record, runtime);
     return;
   }
 
@@ -332,6 +334,62 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
       nextStatus === "stalled"
         ? output.errorMessage || latestRecord.error || "OpenClaw runtime ended before the dispatch runner finalized."
         : null
+  });
+}
+
+async function backfillCompletedMissionDispatchResultFromRuntime(
+  record: MissionDispatchRecordLike,
+  runtime: RuntimeRecord
+) {
+  if (record.status !== "completed" || resolveMissionDispatchResultText(record)) {
+    return;
+  }
+
+  if (!runtime.agentId || !runtime.sessionId) {
+    return;
+  }
+
+  const transcriptPath = await resolveRuntimeTranscriptPathFromTranscript(
+    runtime.agentId,
+    runtime.sessionId,
+    record.workspacePath ?? undefined
+  );
+
+  if (!transcriptPath) {
+    return;
+  }
+
+  let raw = "";
+  try {
+    raw = await readFile(transcriptPath, "utf8");
+  } catch {
+    return;
+  }
+
+  const output = parseRuntimeOutputFromTranscript(runtime, raw, record.workspacePath ?? undefined);
+  const result = createMissionDispatchResultFromRuntimeOutput(runtime, output);
+
+  if (!result || !output.finalText?.trim()) {
+    return;
+  }
+
+  const latestRecord = (await readMissionDispatchRecordById(record.id)) ?? record;
+
+  if (latestRecord.status !== "completed" || resolveMissionDispatchResultText(latestRecord)) {
+    return;
+  }
+
+  const finishedAt = output.finalTimestamp ?? timestampFromUnix(runtime.updatedAt) ?? latestRecord.updatedAt;
+
+  await writeMissionDispatchRecord({
+    ...latestRecord,
+    updatedAt: maxIsoTimestamp(latestRecord.updatedAt, finishedAt),
+    runner: {
+      ...latestRecord.runner,
+      finishedAt: latestRecord.runner.finishedAt ?? finishedAt,
+      lastHeartbeatAt: maxIsoTimestamp(latestRecord.runner.lastHeartbeatAt, finishedAt)
+    },
+    result
   });
 }
 

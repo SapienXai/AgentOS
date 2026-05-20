@@ -574,6 +574,7 @@ function inferCreatedFilesFromText(value: string | null | undefined) {
 
   const matches = [
     ...value.matchAll(/(?:^|[\s(])((?:\.{1,2}\/)?deliverables\/[^\s`),;]+)/g),
+    ...value.matchAll(/\]\(((?:\/|\.{1,2}\/|deliverables\/)[^)]+)\)/g),
     ...value.matchAll(/`((?:\/|\.{1,2}\/|deliverables\/)[^`\n]+)`/g)
   ];
   const createdFiles: RuntimeCreatedFile[] = [];
