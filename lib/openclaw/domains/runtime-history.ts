@@ -68,9 +68,24 @@ function pruneRuntimeHistory(runtimes: RuntimeRecord[]) {
     grouped.set(groupKey, list);
   }
 
-  return Array.from(grouped.values()).flatMap((entries) =>
-    entries
-      .sort(sortRuntimesByUpdatedAtDesc)
-      .slice(0, 8)
+  return Array.from(grouped.values()).flatMap((entries) => {
+    const sorted = entries.sort(sortRuntimesByUpdatedAtDesc);
+    const retained = new Map(sorted.slice(0, 8).map((runtime) => [runtime.id, runtime]));
+
+    for (const runtime of sorted) {
+      if (isCurrentDispatchRuntime(runtime)) {
+        retained.set(runtime.id, runtime);
+      }
+    }
+
+    return Array.from(retained.values()).sort(sortRuntimesByUpdatedAtDesc);
+  });
+}
+
+function isCurrentDispatchRuntime(runtime: RuntimeRecord) {
+  return (
+    typeof runtime.metadata.dispatchId === "string" &&
+    runtime.metadata.dispatchId.trim().length > 0 &&
+    runtime.metadata.historical !== true
   );
 }

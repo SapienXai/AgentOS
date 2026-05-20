@@ -990,6 +990,11 @@ function normalizeModelsPayload(payload: unknown): ModelsPayload {
       const input = Array.isArray(entry.input)
         ? entry.input.filter((value): value is string => typeof value === "string").join(",") || "text"
         : readNonEmptyString(entry.input) ?? "text";
+      const tags = Array.isArray(entry.tags) ? entry.tags.filter((tag): tag is string => typeof tag === "string") : [];
+
+      if ((entry.default === true || entry.isDefault === true) && !tags.includes("default")) {
+        tags.push("default");
+      }
 
       return {
         key: key ?? readNonEmptyString(entry.name) ?? "unknown",
@@ -998,7 +1003,7 @@ function normalizeModelsPayload(payload: unknown): ModelsPayload {
         contextWindow: typeof entry.contextWindow === "number" ? entry.contextWindow : null,
         local: typeof entry.local === "boolean" ? entry.local : null,
         available: typeof entry.available === "boolean" ? entry.available : null,
-        tags: Array.isArray(entry.tags) ? entry.tags.filter((tag): tag is string => typeof tag === "string") : [],
+        tags,
         missing: entry.missing === true
       };
     })
@@ -1009,11 +1014,17 @@ function normalizeModelStatusPayload(authPayload: unknown, modelsPayload: unknow
   const auth = isObjectRecord(authPayload) ? authPayload : {};
   const models = modelsPayload ? normalizeModelsPayload(modelsPayload).models : [];
   const allowed = models.map((model) => model.key).filter(Boolean);
+  const defaultModel = resolveDefaultModelFromStatus(auth, models);
+  const resolvedDefault = readNonEmptyString(auth.resolvedDefault) ??
+    readNonEmptyString(auth.resolvedDefaultModel) ??
+    defaultModel;
   const authProviders = Array.isArray(auth.providers)
     ? auth.providers.filter((entry): entry is Record<string, unknown> => isObjectRecord(entry))
     : [];
 
   return {
+    defaultModel,
+    resolvedDefault,
     allowed,
     auth: {
       providers: authProviders.map((entry) => {
@@ -1048,6 +1059,13 @@ function normalizeModelStatusPayload(authPayload: unknown, modelsPayload: unknow
       }
     }
   };
+}
+
+function resolveDefaultModelFromStatus(auth: Record<string, unknown>, models: ModelsPayload["models"]) {
+  return readNonEmptyString(auth.defaultModel) ??
+    readNonEmptyString(auth.default) ??
+    models.find((model) => model.tags.some((tag) => tag.toLowerCase() === "default"))?.key ??
+    null;
 }
 
 function countUsableAuthProfiles(value: unknown) {
@@ -3077,7 +3095,6 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     const chatParams = {
       sessionKey,
       sessionId: input.sessionId,
-      workspace: input.workspace ?? undefined,
       message: input.message,
       thinking: input.thinking,
       timeoutMs,
@@ -3096,7 +3113,6 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       "sessions.send",
       {
         key: sessionKey,
-        workspace: input.workspace ?? undefined,
         message: input.message,
         thinking: input.thinking,
         timeoutMs,

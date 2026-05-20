@@ -1007,6 +1007,52 @@ test("native WS gateway client treats mixed model auth profiles as connected whe
   assert.deepEqual(fallback.calls, []);
 });
 
+test("native WS gateway client derives default model from configured model tags", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      const payload =
+        frame.method === "connect"
+          ? { protocol: 4 }
+          : frame.method === "models.authStatus"
+            ? {
+                providers: [{
+                  provider: "openai-codex",
+                  status: "ok",
+                  profiles: [{ profileId: "openai-codex:user@example.com", status: "ok" }]
+                }]
+              }
+            : {
+                models: [{
+                  id: "gpt-5.4-mini",
+                  provider: "openai",
+                  name: "gpt-5.4-mini",
+                  tags: ["default", "configured"]
+                }]
+              };
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  const status = await client.getModelStatus();
+
+  assert.equal(status.defaultModel, "openai/gpt-5.4-mini");
+  assert.equal(status.resolvedDefault, "openai/gpt-5.4-mini");
+  assert.deepEqual(status.allowed, ["openai/gpt-5.4-mini"]);
+  assert.deepEqual(fallback.calls, []);
+});
+
 test("native WS gateway client reads agent model status through Gateway methods", async () => {
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
@@ -2228,7 +2274,7 @@ test("native WS gateway client uses Gateway first for critical workflows with co
 
   await client.addAgent({ id: "agent-1", workspace: "/workspace", agentDir: "/agent" });
   await client.deleteAgent("agent-1");
-  await client.runAgentTurn({ agentId: "agent-1", message: "hello" });
+  await client.runAgentTurn({ agentId: "agent-1", message: "hello", workspace: "/workspace" });
   await client.abortAgentTurn({ runId: "run-1", reason: "stop" });
 
   assert.deepEqual(sentFrames.map((frame) => frame.method), [
@@ -2243,8 +2289,42 @@ test("native WS gateway client uses Gateway first for critical workflows with co
     workspace: "/workspace",
     agentDir: "/agent"
   });
-  assert.equal(sentFrames.find((frame) => frame.method === "chat.send")?.params.sessionKey, "agent:agent-1:main");
+  const chatParams = sentFrames.find((frame) => frame.method === "chat.send")?.params;
+  assert.equal(chatParams?.sessionKey, "agent:agent-1:main");
+  assert.equal(Object.hasOwn(chatParams ?? {}, "workspace"), false);
   assert.equal(sentFrames.find((frame) => frame.method === "sessions.abort")?.params.runId, "run-1");
+});
+
+test("native WS gateway client omits workspace when falling back from chat.send to sessions.send", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: frame.method !== "chat.send",
+        payload: frame.method === "connect"
+          ? { protocol: 4 }
+          : frame.method === "sessions.send"
+            ? { runId: "run-1", status: "running" }
+            : undefined,
+        error: frame.method === "chat.send" ? { message: "INVALID_REQUEST: unknown method: chat.send" } : undefined
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await client.runAgentTurn({ agentId: "agent-1", message: "hello", workspace: "/workspace" });
+
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "chat.send", "sessions.send"]);
+  assert.equal(Object.hasOwn(sentFrames[1]?.params ?? {}, "workspace"), false);
+  assert.equal(Object.hasOwn(sentFrames[2]?.params ?? {}, "workspace"), false);
+  assert.deepEqual(fallback.calls, []);
 });
 
 test("native WS gateway client uses CLI agent creation to preserve explicit agentDir", async () => {

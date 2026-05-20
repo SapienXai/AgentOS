@@ -48,14 +48,14 @@ export function buildTaskFeed(
               kind:
                 item.role === "assistant"
                   ? "assistant"
-                  : item.role === "toolResult"
+                  : item.role === "toolCall" || item.role === "toolResult"
                     ? "tool"
                     : "user",
               timestamp: item.timestamp,
               title:
                 item.role === "assistant"
                   ? agentName || "Agent update"
-                  : item.role === "toolResult"
+                  : item.role === "toolCall" || item.role === "toolResult"
                     ? item.toolName
                       ? `Tool · ${item.toolName}`
                       : "Tool update"

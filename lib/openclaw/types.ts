@@ -415,7 +415,7 @@ export interface RuntimeRecord {
 
 export interface RuntimeOutputItem {
   id: string;
-  role: "assistant" | "toolResult" | "user";
+  role: "assistant" | "toolCall" | "toolResult" | "user";
   timestamp: string;
   text: string;
   toolName?: string;

@@ -131,7 +131,7 @@ export async function buildTaskIntegrityRecord(input: {
   const { task, dispatchRecord, createdFiles, snapshot } = input;
   const outputDirInspection = await inspectMissionDispatchOutputDir(dispatchRecord?.outputDir ?? null);
   const transcriptTurns = dispatchRecord
-    ? await readMissionDispatchTranscriptTurns(dispatchRecord, snapshot)
+    ? await readMissionDispatchTranscriptTurns(dispatchRecord, snapshot, input.runs)
     : ([] as TranscriptTurn[]);
   const missionText = task.mission || dispatchRecord?.mission || null;
   const matchingTranscriptTurns =
@@ -272,7 +272,7 @@ export async function buildTaskIntegrityRecord(input: {
     matchingTranscriptTurnCount: matchingTranscriptTurns.length,
     finalResponseText,
     finalResponseSource,
-    dispatchSessionId: dispatchRecord ? extractMissionDispatchSessionId(dispatchRecord) : null,
+    dispatchSessionId: dispatchRecord ? resolveMissionDispatchIntegritySessionId(dispatchRecord, input.runs) : null,
     sessionMismatch,
     toolNames,
     emails,
@@ -280,43 +280,78 @@ export async function buildTaskIntegrityRecord(input: {
   };
 }
 
-async function readMissionDispatchTranscriptTurns(record: MissionDispatchRecord, snapshot: MissionControlSnapshot) {
-  const sessionId = extractMissionDispatchSessionId(record);
+async function readMissionDispatchTranscriptTurns(
+  record: MissionDispatchRecord,
+  snapshot: MissionControlSnapshot,
+  runs: RuntimeRecord[]
+) {
+  const sessionIds = resolveMissionDispatchTranscriptSessionIds(record, runs);
 
-  if (!sessionId) {
+  if (sessionIds.length === 0) {
     return [] as TranscriptTurn[];
   }
 
   const agent = snapshot.agents.find((entry) => entry.id === record.agentId);
-  const transcriptPath = await resolveRuntimeTranscriptPathFromTranscript(
-    record.agentId,
-    sessionId,
-    record.workspacePath ?? agent?.workspacePath
-  );
 
-  if (!transcriptPath) {
-    return [] as TranscriptTurn[];
-  }
-
-  try {
-    const raw = await readFile(transcriptPath, "utf8");
-    const transcriptRuntime = {
-      id: `runtime:dispatch:${record.id}`,
+  for (const sessionId of sessionIds) {
+    const transcriptPath = await resolveRuntimeTranscriptPathFromTranscript(
+      record.agentId,
       sessionId,
-      agentId: record.agentId,
-      taskId: record.id,
-      metadata: {
-        dispatchSubmittedAt: record.submittedAt
-      }
-    } as unknown as RuntimeRecord;
-
-    return filterTranscriptTurnsForRuntimeFromTranscript(
-      transcriptRuntime,
-      extractTranscriptTurnsFromTranscript(raw, transcriptRuntime, record.workspacePath ?? agent?.workspacePath)
+      record.workspacePath ?? agent?.workspacePath
     );
-  } catch {
-    return [] as TranscriptTurn[];
+
+    if (!transcriptPath) {
+      continue;
+    }
+
+    try {
+      const raw = await readFile(transcriptPath, "utf8");
+      const transcriptRuntime = {
+        id: `runtime:dispatch:${record.id}`,
+        sessionId,
+        agentId: record.agentId,
+        taskId: record.id,
+        metadata: {
+          dispatchSubmittedAt: record.submittedAt
+        }
+      } as unknown as RuntimeRecord;
+      const turns = filterTranscriptTurnsForRuntimeFromTranscript(
+        transcriptRuntime,
+        extractTranscriptTurnsFromTranscript(raw, transcriptRuntime, record.workspacePath ?? agent?.workspacePath)
+      );
+
+      if (turns.length > 0) {
+        return turns;
+      }
+    } catch {
+      continue;
+    }
   }
+
+  return [] as TranscriptTurn[];
+}
+
+function resolveMissionDispatchIntegritySessionId(record: MissionDispatchRecord, runs: RuntimeRecord[]) {
+  return resolveMissionDispatchTranscriptSessionIds(record, runs)[0] ?? null;
+}
+
+function resolveMissionDispatchTranscriptSessionIds(record: MissionDispatchRecord, runs: RuntimeRecord[]) {
+  const sessionIds = [
+    ...runs
+      .filter((runtime) => missionDispatchRuntimeMatchesRecord(record, runtime))
+      .map((runtime) => runtime.sessionId?.trim() || null),
+    extractMissionDispatchSessionId(record)
+  ];
+
+  return Array.from(new Set(sessionIds.filter((sessionId): sessionId is string => Boolean(sessionId))));
+}
+
+function missionDispatchRuntimeMatchesRecord(record: MissionDispatchRecord, runtime: RuntimeRecord) {
+  const runtimeDispatchId =
+    typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
+  const runtimeRunId = runtime.runId?.trim() || "";
+
+  return runtimeDispatchId === record.id || runtimeRunId === record.id;
 }
 
 async function inspectMissionDispatchOutputDir(outputDir: string | null) {

@@ -79,10 +79,11 @@ async function buildTaskDetailFromResolvedRuns(
     )
   );
   const reconciledTask = dispatchRecord ? reconcileTaskRecordWithDispatchRecord(task, dispatchRecord) : task;
-  const bootstrapFeed = await buildMissionDispatchFeedFromDomain(reconciledTask, dispatchRecord, snapshot);
-  const runtimeFeed = buildTaskFeedFromDomain(reconciledTask, runs, outputByRuntimeId, snapshot);
+  const enrichedTask = enrichTaskRecordWithRuntimeOutputs(reconciledTask, outputs, createdFiles, warnings);
+  const bootstrapFeed = await buildMissionDispatchFeedFromDomain(enrichedTask, dispatchRecord, snapshot);
+  const runtimeFeed = buildTaskFeedFromDomain(enrichedTask, runs, outputByRuntimeId, snapshot);
   const integrity = await buildTaskIntegrityRecordFromMissionDispatch({
-    task: reconciledTask,
+    task: enrichedTask,
     runs,
     outputs,
     createdFiles,
@@ -91,13 +92,44 @@ async function buildTaskDetailFromResolvedRuns(
   });
 
   return {
-    task: reconciledTask,
+    task: enrichedTask,
     runs,
     outputs,
     liveFeed: mergeTaskFeedEventsFromDomain(bootstrapFeed, runtimeFeed),
     createdFiles,
     warnings,
     integrity
+  };
+}
+
+function enrichTaskRecordWithRuntimeOutputs(
+  task: TaskRecord,
+  outputs: Awaited<ReturnType<typeof getRuntimeOutputForResolvedRuntimeFromTranscript>>[],
+  createdFiles: ReturnType<typeof dedupeCreatedFiles>,
+  warnings: string[]
+): TaskRecord {
+  const finalOutput = [...outputs]
+    .reverse()
+    .find((output) => output.finalText?.trim() || output.errorMessage?.trim()) ?? null;
+  const finalText = finalOutput?.finalText?.trim() || null;
+  const resultPreview =
+    finalText ||
+    (typeof task.metadata.resultPreview === "string" ? task.metadata.resultPreview.trim() : "") ||
+    task.subtitle;
+  const turnCount = outputs.filter((output) => output.items.length > 0).length;
+
+  return {
+    ...task,
+    subtitle: finalText ? summarizeText(finalText, 160) : task.subtitle,
+    artifactCount: createdFiles.length,
+    warningCount: warnings.length,
+    metadata: {
+      ...task.metadata,
+      resultPreview,
+      turnCount: turnCount || task.metadata.turnCount,
+      finalResponseText: finalText,
+      finalResponseRuntimeId: finalOutput?.runtimeId ?? null
+    }
   };
 }
 
@@ -123,4 +155,14 @@ function uniqueStrings(values: string[]) {
 
 function sortRuntimesByUpdatedAtDesc(left: RuntimeRecord, right: RuntimeRecord) {
   return (right.updatedAt ?? 0) - (left.updatedAt ?? 0);
+}
+
+function summarizeText(value: string, maxLength: number) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, Math.max(maxLength - 1, 1)).trimEnd()}…`;
 }

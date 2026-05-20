@@ -119,8 +119,10 @@ export async function buildMissionDispatchRuntimes(
     const matchedRuntime = matchMissionDispatchToRuntime(record, currentRuntimes);
 
     if (matchedRuntime) {
-      await helpers.persistObservation(record, matchedRuntime);
-      await helpers.reconcileRuntimeState(record, matchedRuntime);
+      const hydratedRuntime = hydrateMissionDispatchRuntimeFromRelatedSession(matchedRuntime, currentRuntimes);
+      await helpers.persistObservation(record, hydratedRuntime);
+      await helpers.reconcileRuntimeState(record, hydratedRuntime);
+      syntheticRuntimes.push(annotateRuntimeWithMissionDispatch(hydratedRuntime, record));
       continue;
     }
 
@@ -156,7 +158,7 @@ export function matchMissionDispatchToRuntime(
   const sessionId = extractMissionDispatchSessionId(record);
   const observedRuntimeId = record.observation.runtimeId?.trim() || null;
 
-  if (shouldPreferSyntheticMissionDispatchRuntime(observedRuntimeId, runtimes, effectiveStatus)) {
+  if (shouldPreferSyntheticMissionDispatchRuntime(observedRuntimeId, runtimes, record.status)) {
     return null;
   }
 
@@ -178,9 +180,9 @@ export function matchMissionDispatchToRuntime(
 export function shouldPreferSyntheticMissionDispatchRuntime(
   observedRuntimeId: string | null,
   runtimes: RuntimeRecord[],
-  status: RuntimeRecord["status"]
+  status: string
 ) {
-  if ((status !== "completed" && status !== "stalled" && status !== "cancelled") || !observedRuntimeId) {
+  if (!isMissionDispatchTerminalStatus(status) || !observedRuntimeId) {
     return false;
   }
 
@@ -203,6 +205,7 @@ export function scoreMissionDispatchRuntimeMatch(
 
   const runtimeDispatchId =
     typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
+  const runtimeRunId = typeof runtime.runId === "string" ? runtime.runId.trim() : "";
 
   if (runtimeDispatchId && runtimeDispatchId !== record.id) {
     return null;
@@ -210,6 +213,10 @@ export function scoreMissionDispatchRuntimeMatch(
 
   if ((runtime.updatedAt ?? 0) < (Number.isNaN(options.submittedAt) ? 0 : options.submittedAt - 1500)) {
     return null;
+  }
+
+  if (runtimeRunId === record.id) {
+    return isTerminalRuntimeStatus(runtime.status) ? 11_000 : 9_000;
   }
 
   if (options.observedRuntimeId && runtime.id === options.observedRuntimeId) {
@@ -264,6 +271,7 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
   const currentDispatchId =
     typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
   const runtimeMission = resolveRuntimeMissionText(runtime);
+  const nextWorkspaceId = record.workspaceId ?? runtime.workspaceId;
   const nextStatus =
     isMissionDispatchTerminalStatus(record.status)
       ? record.status
@@ -274,6 +282,9 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
     runtimeMission &&
     typeof runtime.metadata.dispatchStatus === "string" &&
     runtime.metadata.dispatchStatus === record.status &&
+    runtime.workspaceId === nextWorkspaceId &&
+    runtime.metadata.outputDir === record.outputDir &&
+    runtime.metadata.outputDirRelative === record.outputDirRelative &&
     runtime.status === nextStatus
   ) {
     return runtime;
@@ -281,7 +292,11 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
 
   return {
     ...runtime,
+    subtitle: isMissionDispatchTerminalStatus(record.status)
+      ? summarizeText(resolveMissionDispatchCompletionDetail(record), 90)
+      : runtime.subtitle,
     status: nextStatus,
+    workspaceId: nextWorkspaceId ?? undefined,
     metadata: {
       ...runtime.metadata,
       dispatchId: record.id,
@@ -291,7 +306,10 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
       dispatchHeartbeatAt: record.runner.lastHeartbeatAt,
       dispatchObservedAt: record.observation.observedAt,
       mission: record.mission,
-      routedMission: record.routedMission
+      routedMission: record.routedMission,
+      outputDir: record.outputDir,
+      outputDirRelative: record.outputDirRelative,
+      notesDirRelative: record.notesDirRelative
     }
   };
 }
@@ -438,7 +456,7 @@ function resolveMissionDispatchAnnotationRuntimes(
       continue;
     }
 
-    if (runtime.agentId !== record.agentId || runtime.sessionId !== sessionId) {
+    if (runtime.agentId !== record.agentId) {
       continue;
     }
 
@@ -446,7 +464,13 @@ function resolveMissionDispatchAnnotationRuntimes(
       continue;
     }
 
-    selected.set(runtime.id, runtime);
+    const runtimeDispatchId =
+      typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
+    const runtimeRunId = typeof runtime.runId === "string" ? runtime.runId.trim() : "";
+
+    if (runtimeDispatchId === record.id || runtimeRunId === record.id || runtime.sessionId === sessionId) {
+      selected.set(runtime.id, runtime);
+    }
   }
 
   return Array.from(selected.values());
@@ -454,6 +478,48 @@ function resolveMissionDispatchAnnotationRuntimes(
 
 function isMissionDispatchTerminalStatus(status: string) {
   return status === "completed" || status === "stalled" || status === "cancelled";
+}
+
+function isTerminalRuntimeStatus(status: RuntimeRecord["status"]) {
+  return status === "completed" || status === "stalled" || status === "cancelled";
+}
+
+function hydrateMissionDispatchRuntimeFromRelatedSession(
+  runtime: RuntimeRecord,
+  runtimes: RuntimeRecord[]
+): RuntimeRecord {
+  if (runtime.tokenUsage && runtime.modelId) {
+    return runtime;
+  }
+
+  const sessionId = runtime.sessionId?.trim();
+
+  if (!runtime.agentId || !sessionId) {
+    return runtime;
+  }
+
+  const relatedSessionRuntime = runtimes
+    .filter((candidate) =>
+      candidate.id !== runtime.id &&
+      candidate.agentId === runtime.agentId &&
+      candidate.sessionId === sessionId &&
+      Boolean(candidate.tokenUsage || candidate.modelId)
+    )
+    .sort(sortRuntimesByUpdatedAtDesc)[0];
+
+  if (!relatedSessionRuntime) {
+    return runtime;
+  }
+
+  return {
+    ...runtime,
+    modelId: runtime.modelId ?? relatedSessionRuntime.modelId,
+    tokenUsage: runtime.tokenUsage ?? relatedSessionRuntime.tokenUsage,
+    metadata: {
+      ...runtime.metadata,
+      ...(relatedSessionRuntime.tokenUsage ? { usageSessionRuntimeId: relatedSessionRuntime.id } : {})
+    }
+  };
 }
 
 function sortRuntimesByUpdatedAtDesc(left: RuntimeRecord, right: RuntimeRecord) {

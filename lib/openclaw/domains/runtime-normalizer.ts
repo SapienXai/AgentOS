@@ -25,8 +25,9 @@ export function mapSessionCatalogEntryToRuntime(
     resolveWorkspaceId?: (workspacePath: string) => string;
   } = {}
 ): RuntimeRecord {
-  const agent = agentsList.find((entry) => entry.id === session.agentId);
-  const config = agentConfig.find((entry) => entry.id === session.agentId);
+  const agentId = session.agentId ?? extractAgentIdFromSessionKey(session.key);
+  const agent = agentsList.find((entry) => entry.id === agentId);
+  const config = agentConfig.find((entry) => entry.id === agentId);
   const workspacePath = agent?.workspace || config?.workspace;
   const workspaceId = workspacePath
     ? (options.resolveWorkspaceId ?? workspaceIdFromPath)(workspacePath)
@@ -49,13 +50,13 @@ export function mapSessionCatalogEntryToRuntime(
     title: isAgentChatSession
       ? "Agent chat session"
       : taskLabel
-      ? `${prettifyAgentName(session.agentId)} · ${taskLabel}`
-      : `${prettifyAgentName(session.agentId)} session`,
+      ? `${prettifyAgentName(agentId)} · ${taskLabel}`
+      : `${prettifyAgentName(agentId)} session`,
     subtitle: isAgentChatSession ? "direct chat" : taskLabel ? `task ${taskLabel} · ${stage || "running"}` : "main session",
     status,
     updatedAt: session.updatedAt ?? null,
     ageMs: session.ageMs ?? null,
-    agentId: session.agentId,
+    agentId,
     workspaceId,
     modelId,
     sessionId: session.sessionId,
@@ -86,7 +87,9 @@ export function mapSessionCatalogEntryToRuntime(
 export function createRuntimeId(session: SessionsPayload["sessions"][number]) {
   const taskId = extractRuntimeKeyToken(session.key, "task");
   const runtimeKey = taskId || session.key || session.sessionId || String(Math.random());
-  const sessionToken = session.sessionId || hashValue(session.agentId || "sessionless");
+  const sessionToken =
+    session.sessionId ||
+    hashValue(session.agentId || extractAgentIdFromSessionKey(session.key) || "sessionless");
   return `runtime:${sessionToken}:${hashValue(runtimeKey)}`;
 }
 
@@ -104,6 +107,15 @@ export function extractRuntimeKeyToken(key: string | undefined, prefix: string) 
 
   const tail = key.slice(index + marker.length);
   return tail.split(":")[0];
+}
+
+function extractAgentIdFromSessionKey(key: string | undefined) {
+  if (!key) {
+    return undefined;
+  }
+
+  const match = /^agent:([^:]+)/.exec(key);
+  return match?.[1];
 }
 
 function prettifyAgentName(agentId: string | undefined) {

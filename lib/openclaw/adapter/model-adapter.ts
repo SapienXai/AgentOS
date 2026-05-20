@@ -137,6 +137,30 @@ export function buildModelStatusFromAgentConfig(
   };
 }
 
+export function mergeModelStatusWithAgentConfigDefaults(
+  modelStatus: ModelsStatusPayload | undefined,
+  agentConfig: AgentConfigPayload
+): ModelsStatusPayload | undefined {
+  const fallbackStatus = buildModelStatusFromAgentConfig(agentConfig);
+
+  if (!modelStatus) {
+    return fallbackStatus;
+  }
+
+  const defaultModel = normalizeModelId(modelStatus.defaultModel) ??
+    normalizeModelId(fallbackStatus?.defaultModel) ??
+    null;
+  const resolvedDefault = normalizeModelId(modelStatus.resolvedDefault) ??
+    normalizeModelId(fallbackStatus?.resolvedDefault) ??
+    defaultModel;
+
+  return {
+    ...modelStatus,
+    defaultModel,
+    resolvedDefault
+  };
+}
+
 export function buildModelRecords(
   models: ModelsPayload["models"],
   agents: OpenClawAgent[],
@@ -160,4 +184,8 @@ export function buildModelRecords(
     tags: model.tags,
     usageCount: modelUsage.get(model.key) ?? 0
   }));
+}
+
+function normalizeModelId(value: string | null | undefined) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }

@@ -58,6 +58,7 @@ export function buildTaskRecord(
   const sessionIds = uniqueStrings(sortedRuntimes.flatMap((runtime) => (runtime.sessionId ? [runtime.sessionId] : [])));
   const runIds = uniqueStrings(sortedRuntimes.flatMap((runtime) => (runtime.runId ? [runtime.runId] : [])));
   const turnCount = countTaskTurns(sortedRuntimes);
+  const dispatchStatus = resolveTaskDispatchStatus(sortedRuntimes);
   const primaryAgentId = primaryRuntime?.agentId || agentIds[0];
   const primaryAgentName = primaryAgentId ? agentNameById.get(primaryAgentId) ?? null : null;
   const latestRuntime = sortedRuntimes[0] ?? null;
@@ -68,7 +69,7 @@ export function buildTaskRecord(
     title: compactMissionText(mission || primaryRuntime?.title || "Untitled task", 52) || "Untitled task",
     mission,
     subtitle,
-    status: resolveTaskStatus(sortedRuntimes),
+    status: resolveTaskStatus(sortedRuntimes, dispatchStatus),
     updatedAt: latestRuntime?.updatedAt ?? null,
     ageMs: latestRuntime?.ageMs ?? null,
     workspaceId: primaryRuntime?.workspaceId,
@@ -82,7 +83,7 @@ export function buildTaskRecord(
     runIds,
     runtimeCount: sortedRuntimes.length,
     updateCount: signalRuntimes.filter((runtime) => runtime.source === "turn").length,
-    liveRunCount: sortedRuntimes.filter((runtime) => runtime.status === "running" || runtime.status === "queued").length,
+    liveRunCount: countLiveTaskRuntimes(sortedRuntimes, dispatchStatus),
     artifactCount: createdFiles.length,
     warningCount: warnings.length,
     tokenUsage,
@@ -98,9 +99,10 @@ export function buildTaskRecord(
           ? primaryRuntime.metadata.bootstrapStage
           : null,
       dispatchStatus:
-        typeof primaryRuntime?.metadata.dispatchStatus === "string"
+        dispatchStatus ??
+        (typeof primaryRuntime?.metadata.dispatchStatus === "string"
           ? primaryRuntime.metadata.dispatchStatus
-          : null,
+          : null),
       dispatchSubmittedAt:
         typeof primaryRuntime?.metadata.dispatchSubmittedAt === "string"
           ? primaryRuntime.metadata.dispatchSubmittedAt
@@ -369,7 +371,14 @@ function scoreTaskRuntime(runtime: RuntimeRecord) {
   return hasMission + dispatchScore + sourceScore + statusScore;
 }
 
-function resolveTaskStatus(runtimes: RuntimeRecord[]): RuntimeRecord["status"] {
+function resolveTaskStatus(
+  runtimes: RuntimeRecord[],
+  dispatchStatus: RuntimeRecord["status"] | null = null
+): RuntimeRecord["status"] {
+  if (dispatchStatus && isTerminalTaskStatus(dispatchStatus)) {
+    return dispatchStatus;
+  }
+
   if (runtimes.some((runtime) => runtime.status === "running")) {
     return "running";
   }
@@ -391,6 +400,48 @@ function resolveTaskStatus(runtimes: RuntimeRecord[]): RuntimeRecord["status"] {
   }
 
   return runtimes[0]?.status ?? "completed";
+}
+
+function countLiveTaskRuntimes(runtimes: RuntimeRecord[], dispatchStatus: RuntimeRecord["status"] | null) {
+  if (dispatchStatus && isTerminalTaskStatus(dispatchStatus)) {
+    return 0;
+  }
+
+  return runtimes.filter((runtime) => runtime.status === "running" || runtime.status === "queued").length;
+}
+
+function resolveTaskDispatchStatus(runtimes: RuntimeRecord[]): RuntimeRecord["status"] | null {
+  const statuses = runtimes
+    .map((runtime) =>
+      typeof runtime.metadata.dispatchStatus === "string" ? runtime.metadata.dispatchStatus.trim() : ""
+    )
+    .filter(Boolean);
+
+  if (statuses.includes("cancelled")) {
+    return "cancelled";
+  }
+
+  if (statuses.includes("stalled")) {
+    return "stalled";
+  }
+
+  if (statuses.includes("completed")) {
+    return "completed";
+  }
+
+  if (statuses.includes("running")) {
+    return "running";
+  }
+
+  if (statuses.includes("queued")) {
+    return "queued";
+  }
+
+  return null;
+}
+
+function isTerminalTaskStatus(status: RuntimeRecord["status"]) {
+  return status === "completed" || status === "stalled" || status === "cancelled";
 }
 
 function resolveDispatchId(runtimes: RuntimeRecord[]) {

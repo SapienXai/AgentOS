@@ -241,6 +241,41 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
     return;
   }
 
+  if (isTerminalRuntimeStatus(runtime.status) && missionDispatchRuntimeMatchesRecord(record, runtime)) {
+    const latestRecord = (await readMissionDispatchRecordById(record.id)) ?? record;
+
+    if (isMissionDispatchTerminalStatus(latestRecord.status)) {
+      return;
+    }
+
+    const finishedAt = timestampFromUnix(runtime.updatedAt);
+    const nextStatus = normalizeRuntimeTerminalStatus(runtime.status);
+
+    await writeMissionDispatchRecord({
+      ...latestRecord,
+      status: nextStatus,
+      updatedAt: maxIsoTimestamp(latestRecord.updatedAt, finishedAt),
+      runner: {
+        ...latestRecord.runner,
+        finishedAt,
+        lastHeartbeatAt: finishedAt
+      },
+      observation: {
+        runtimeId: runtime.id,
+        observedAt: finishedAt
+      },
+      result:
+        nextStatus === "completed"
+          ? latestRecord.result ?? createMissionDispatchResultFromTerminalRuntime(runtime)
+          : latestRecord.result,
+      error:
+        nextStatus === "stalled"
+          ? latestRecord.error || runtime.subtitle || "OpenClaw runtime ended before the dispatch runner finalized."
+          : null
+    });
+    return;
+  }
+
   if (!runtime.agentId || !runtime.sessionId) {
     return;
   }
@@ -298,6 +333,40 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
         ? output.errorMessage || latestRecord.error || "OpenClaw runtime ended before the dispatch runner finalized."
         : null
   });
+}
+
+function missionDispatchRuntimeMatchesRecord(record: MissionDispatchRecordLike, runtime: RuntimeRecord) {
+  const runtimeDispatchId =
+    typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
+  const runtimeRunId = typeof runtime.runId === "string" ? runtime.runId.trim() : "";
+
+  return runtimeDispatchId === record.id || runtimeRunId === record.id;
+}
+
+function isTerminalRuntimeStatus(status: RuntimeRecord["status"]) {
+  return status === "completed" || status === "stalled" || status === "cancelled";
+}
+
+function normalizeRuntimeTerminalStatus(status: RuntimeRecord["status"]): MissionDispatchStatus {
+  if (status === "completed" || status === "cancelled") {
+    return status;
+  }
+
+  return "stalled";
+}
+
+function createMissionDispatchResultFromTerminalRuntime(runtime: RuntimeRecord): MissionDispatchCommandPayloadLike {
+  return {
+    runId: runtime.runId || `runtime:${runtime.id}`,
+    status: "completed",
+    summary: runtime.subtitle || "completed",
+    meta: {
+      agentId: runtime.agentId,
+      sessionId: runtime.sessionId,
+      model: runtime.modelId,
+      usage: runtime.tokenUsage
+    }
+  };
 }
 
 export async function buildObservedMissionDispatchRuntime(record: MissionDispatchRecordLike) {

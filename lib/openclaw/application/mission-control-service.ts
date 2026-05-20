@@ -44,7 +44,8 @@ import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
   buildModelRecords,
   buildModelsPayloadFromFallbackSources,
-  buildModelStatusFromAgentConfig
+  buildModelStatusFromAgentConfig,
+  mergeModelStatusWithAgentConfigDefaults
 } from "@/lib/openclaw/adapter/model-adapter";
 import {
   buildAgentPayloadsFromConfig,
@@ -476,7 +477,7 @@ async function loadMissionControlSnapshots({
     });
     const status = resolvedStatus.value;
     const agentsList = resolvedAgents.value ?? buildAgentPayloadsFromConfig(agentConfig, openClawStateRootPath);
-    const modelStatus = resolvedModelStatus.value ?? buildModelStatusFromAgentConfig(agentConfig);
+    const modelStatus = mergeModelStatusWithAgentConfigDefaults(resolvedModelStatus.value, agentConfig);
     const localModels = buildModelsPayloadFromFallbackSources(agentConfig, modelStatus);
     const models = resolvedModels.value?.models ?? localModels.models;
     const presence = resolvedPresence.value ?? [];
@@ -567,10 +568,6 @@ async function loadMissionControlSnapshots({
         )
       )
     ).flat();
-    const annotatedLiveSessionRuntimes = annotateMissionDispatchMetadataFromRuntime(
-      liveSessionRuntimes,
-      dispatchRecords
-    );
     const gatewaySnapshotRuntimes = mapOpenClawRuntimeSnapshotToRuntimes(
       resolvedRuntimeSnapshot.value,
       {
@@ -579,18 +576,18 @@ async function loadMissionControlSnapshots({
         resolveWorkspaceId
       }
     );
-    const annotatedGatewaySnapshotRuntimes = annotateMissionDispatchMetadataFromRuntime(
-      gatewaySnapshotRuntimes,
+    const eventBridgeRuntimes = systemProfile ? [] : await readOpenClawEventBridgeRuntimes();
+    const runtimeCandidates = [
+      ...eventBridgeRuntimes,
+      ...gatewaySnapshotRuntimes,
+      ...liveSessionRuntimes
+    ];
+    const annotatedRuntimeCandidates = annotateMissionDispatchMetadataFromRuntime(
+      runtimeCandidates,
       dispatchRecords
     );
-    const eventBridgeRuntimes = systemProfile ? [] : await readOpenClawEventBridgeRuntimes();
-    const baseRuntimes = mergeRuntimeHistory([
-      ...eventBridgeRuntimes,
-      ...annotatedGatewaySnapshotRuntimes,
-      ...annotatedLiveSessionRuntimes
-    ]);
     const dispatchRuntimes = await buildMissionDispatchRuntimesFromRuntime(
-      baseRuntimes,
+      annotatedRuntimeCandidates,
       dispatchRecords,
       {
         buildObservedRuntime: buildObservedMissionDispatchRuntime,
@@ -599,10 +596,8 @@ async function loadMissionControlSnapshots({
       }
     );
     const runtimes = mergeRuntimeHistory([
-      ...dispatchRuntimes,
-      ...eventBridgeRuntimes,
-      ...annotatedGatewaySnapshotRuntimes,
-      ...annotatedLiveSessionRuntimes
+      ...annotatedRuntimeCandidates,
+      ...dispatchRuntimes
     ]);
     await Promise.all(
       workspacePaths.map(async (workspacePath) => {

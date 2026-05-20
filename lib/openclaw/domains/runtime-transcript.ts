@@ -25,6 +25,18 @@ type RuntimeSessionEntry = {
   model?: string;
 };
 
+type TranscriptContentItem = {
+  type?: string;
+  text?: string;
+  content?: unknown;
+  thinking?: string;
+  id?: string;
+  name?: string;
+  arguments?: Record<string, unknown>;
+};
+
+type TranscriptMessageContent = string | TranscriptContentItem[] | undefined;
+
 type SessionTranscriptEntry = {
   type?: string;
   id?: string;
@@ -40,14 +52,7 @@ type SessionTranscriptEntry = {
   };
   message?: {
     role?: "assistant" | "toolResult" | "user";
-    content?: Array<{
-      type?: string;
-      text?: string;
-      thinking?: string;
-      id?: string;
-      name?: string;
-      arguments?: Record<string, unknown>;
-    }>;
+    content?: TranscriptMessageContent;
     stopReason?: string;
     errorMessage?: string;
     toolCallId?: string;
@@ -66,6 +71,7 @@ type SessionTranscriptEntry = {
       totalTokens?: number;
       cacheRead?: number;
     };
+    timestamp?: number | string;
   };
 };
 
@@ -244,11 +250,20 @@ export function extractTranscriptTurns(raw: string, runtime: RuntimeRecord, work
       const text = extractTranscriptText(entry.message.content);
       const errorMessage = entry.message.errorMessage ?? null;
       const warningMessage = resolveNonFatalToolWarning(role, entry.message, text, errorMessage);
+      const toolCall = role === "assistant" ? extractTranscriptToolCall(entry.message.content) : null;
+      const itemRole: RuntimeOutputItem["role"] =
+        role === "assistant" && toolCall && !text
+          ? "toolCall"
+          : role;
+      const itemText =
+        text ||
+        errorMessage ||
+        (toolCall ? `Called ${toolCall.name}` : "");
 
-      if (!text && !errorMessage) {
+      if (!itemText) {
         if (
           !(
-            (role === "assistant" && entry.message.content?.some((item) => item.type === "toolCall")) ||
+            (role === "assistant" && hasTranscriptToolCall(entry.message.content)) ||
             (role === "toolResult" && typeof entry.message.toolName === "string" && entry.message.toolName.trim())
           )
         ) {
@@ -258,11 +273,13 @@ export function extractTranscriptTurns(raw: string, runtime: RuntimeRecord, work
 
       const item: RuntimeOutputItem = {
         id: entry.id || `${role}-${Date.now()}`,
-        role,
-        timestamp: entry.timestamp || new Date().toISOString(),
-        text: text || errorMessage || "",
+        role: itemRole,
+        timestamp: readMessageTimestamp(entry) || new Date().toISOString(),
+        text: itemText,
         toolName:
-          role === "toolResult"
+          itemRole === "toolCall"
+            ? toolCall?.name
+            : role === "toolResult"
             ? entry.message.toolName?.trim() || extractToolNameFromTranscriptText(text)
             : undefined,
         stopReason: role === "assistant" ? entry.message.stopReason ?? null : null,
@@ -313,27 +330,12 @@ export function extractTranscriptTurns(raw: string, runtime: RuntimeRecord, work
             currentTurn.pendingToolNames.add(contentItem.name.trim());
           }
 
-          if (contentItem.name !== "write") {
-            continue;
+          for (const file of extractToolCallCreatedFiles(contentItem, sessionCwd)) {
+            currentTurn.pendingCreatedFiles.set(
+              contentItem.id || `${entry.id || "toolCall"}:${file.path}`,
+              file
+            );
           }
-
-          const candidatePath =
-            typeof contentItem.arguments?.path === "string" ? contentItem.arguments.path.trim() : "";
-
-          if (!candidatePath) {
-            continue;
-          }
-
-          const resolved = resolveTranscriptArtifactPath(candidatePath, sessionCwd);
-
-          if (!resolved) {
-            continue;
-          }
-
-          currentTurn.pendingCreatedFiles.set(contentItem.id || `${entry.id || "toolCall"}:${candidatePath}`, {
-            path: resolved.path,
-            displayPath: resolved.displayPath
-          });
         }
       }
 
@@ -348,7 +350,7 @@ export function extractTranscriptTurns(raw: string, runtime: RuntimeRecord, work
       if (
         role === "toolResult" &&
         entry.message.isError !== true &&
-        entry.message.toolName === "write" &&
+        (entry.message.toolName === "write" || entry.message.toolName === "apply_patch") &&
         typeof entry.message.toolCallId === "string"
       ) {
         const createdFile = currentTurn.pendingCreatedFiles.get(entry.message.toolCallId);
@@ -771,23 +773,134 @@ function isHeartbeatTurn(prompt: string) {
   return prompt.toLowerCase().startsWith(transcriptHeartbeatPrefix);
 }
 
-function extractTranscriptText(
-  content: Array<{
-    type?: string;
-    text?: string;
-    thinking?: string;
-  }> = []
-) {
+function readMessageTimestamp(entry: SessionTranscriptEntry) {
+  const value = entry.message?.timestamp;
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return new Date(value).toISOString();
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) {
+      return new Date(parsed).toISOString();
+    }
+  }
+
+  return entry.timestamp || null;
+}
+
+function hasTranscriptToolCall(content: TranscriptMessageContent) {
+  return Array.isArray(content) && content.some((item) => item.type === "toolCall");
+}
+
+function extractTranscriptToolCall(content: TranscriptMessageContent) {
+  if (!Array.isArray(content)) {
+    return null;
+  }
+
+  const item = content.find((entry) => entry.type === "toolCall" && typeof entry.name === "string");
+
+  if (!item || typeof item.name !== "string" || !item.name.trim()) {
+    return null;
+  }
+
+  return {
+    id: typeof item.id === "string" ? item.id : null,
+    name: item.name.trim(),
+    arguments: item.arguments
+  };
+}
+
+function extractTranscriptText(content: TranscriptMessageContent = []) {
+  if (typeof content === "string") {
+    return content.trim();
+  }
+
+  if (!Array.isArray(content)) {
+    return "";
+  }
+
   return content
     .flatMap((item) => {
-      if (item.type === "text" && item.text) {
+      if ((item.type === "text" || item.type === "output_text") && item.text) {
         return [item.text];
+      }
+
+      if (item.type === "toolResult") {
+        const text = readToolResultText(item.content) || item.text;
+        return text ? [text] : [];
       }
 
       return [];
     })
     .join("\n\n")
     .trim();
+}
+
+function readToolResultText(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value.trim() || null;
+  }
+
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const text = value
+    .flatMap((entry) => {
+      if (typeof entry === "string") {
+        return [entry];
+      }
+
+      if (!entry || typeof entry !== "object") {
+        return [];
+      }
+
+      if ("text" in entry && typeof entry.text === "string") {
+        return [entry.text];
+      }
+
+      if ("content" in entry && typeof entry.content === "string") {
+        return [entry.content];
+      }
+
+      return [];
+    })
+    .join("\n\n")
+    .trim();
+
+  return text || null;
+}
+
+function extractToolCallCreatedFiles(contentItem: TranscriptContentItem, sessionCwd?: string) {
+  if (contentItem.type === "write") {
+    const candidatePath =
+      typeof contentItem.arguments?.path === "string" ? contentItem.arguments.path.trim() : "";
+    const resolved = candidatePath ? resolveTranscriptArtifactPath(candidatePath, sessionCwd) : null;
+    return resolved ? [resolved] : [];
+  }
+
+  if (contentItem.name === "write") {
+    const candidatePath =
+      typeof contentItem.arguments?.path === "string" ? contentItem.arguments.path.trim() : "";
+    const resolved = candidatePath ? resolveTranscriptArtifactPath(candidatePath, sessionCwd) : null;
+    return resolved ? [resolved] : [];
+  }
+
+  if (contentItem.name !== "apply_patch" || !Array.isArray(contentItem.arguments?.changes)) {
+    return [];
+  }
+
+  return contentItem.arguments.changes.flatMap((entry: unknown): RuntimeCreatedFile[] => {
+    if (!entry || typeof entry !== "object") {
+      return [];
+    }
+
+    const candidatePath = "path" in entry && typeof entry.path === "string" ? entry.path.trim() : "";
+    const resolved = candidatePath ? resolveTranscriptArtifactPath(candidatePath, sessionCwd) : null;
+    return resolved ? [resolved] : [];
+  });
 }
 
 function extractToolNameFromTranscriptText(text: string) {

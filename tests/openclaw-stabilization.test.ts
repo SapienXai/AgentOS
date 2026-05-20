@@ -21,8 +21,16 @@ import { mapRuntimeSmokeTestEntry } from "@/lib/openclaw/domains/control-plane-s
 import { createMissionDispatchResultFromRuntimeOutput } from "@/lib/openclaw/domains/mission-dispatch-model";
 import {
   annotateMissionDispatchMetadata,
-  annotateMissionDispatchSessions
+  annotateMissionDispatchSessions,
+  buildMissionDispatchRuntimes,
+  matchMissionDispatchToRuntime
 } from "@/lib/openclaw/domains/mission-dispatch-runtime";
+import {
+  mergeRuntimeHistory as mergeRuntimeHistoryRecords
+} from "@/lib/openclaw/domains/runtime-history";
+import {
+  parseRuntimeOutput
+} from "@/lib/openclaw/domains/runtime-transcript";
 import { mapSessionCatalogEntryToRuntime } from "@/lib/openclaw/domains/runtime-normalizer";
 import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-normalization";
 import { normalizeChannelRegistry } from "@/lib/openclaw/domains/workspace-manifest";
@@ -34,8 +42,11 @@ import {
   resolveWorkspaceBootstrapInput,
   resolveWorkspaceCreationTargetDir
 } from "@/lib/openclaw/domains/workspace-bootstrap";
-import { inferFallbackModelMetadata } from "@/lib/openclaw/adapter/model-adapter";
-import { buildModelRecords } from "@/lib/openclaw/adapter/model-adapter";
+import {
+  buildModelRecords,
+  inferFallbackModelMetadata,
+  mergeModelStatusWithAgentConfigDefaults
+} from "@/lib/openclaw/adapter/model-adapter";
 import { resolveOpenAiCodexAuthOrderRepair } from "@/lib/openclaw/application/model-auth-service";
 import { inferSessionKindFromCatalogEntry } from "@/lib/openclaw/domains/session-catalog";
 import {
@@ -866,6 +877,34 @@ test("remote provider connection depends on auth rather than configured models",
   );
 });
 
+test("model status keeps agent config default when native status omits it", () => {
+  const status = mergeModelStatusWithAgentConfigDefaults(
+    {
+      allowed: ["openai/gpt-5.4-mini", "openai/gpt-5.5"],
+      auth: {
+        providers: [
+          {
+            provider: "openai-codex",
+            profiles: {
+              count: 1
+            }
+          }
+        ]
+      }
+    },
+    [
+      {
+        id: "main",
+        model: "openai/gpt-5.4-mini"
+      }
+    ] as never
+  );
+
+  assert.equal(status?.defaultModel, "openai/gpt-5.4-mini");
+  assert.equal(status?.resolvedDefault, "openai/gpt-5.4-mini");
+  assert.deepEqual(status?.allowed, ["openai/gpt-5.4-mini", "openai/gpt-5.5"]);
+});
+
 test("canonical OpenAI models can be ready through ChatGPT Codex auth", () => {
   const readiness = resolveModelReadiness(
     [
@@ -1209,6 +1248,35 @@ test("session catalog entries preserve task-like sessions when chatType is missi
   );
 });
 
+test("session runtime mapping derives agent id from Gateway session keys", () => {
+  const runtime = mapSessionCatalogEntryToRuntime(
+    {
+      key: "agent:agent-1:explicit:session-1",
+      sessionId: "session-1",
+      updatedAt: Date.parse("2026-04-13T00:00:00.000Z"),
+      totalTokens: 42
+    },
+    [
+      {
+        id: "agent-1",
+        workspace: "/tmp/workspace-1",
+        model: "openai/gpt-5.4-mini"
+      }
+    ],
+    [
+      {
+        id: "agent-1",
+        workspace: "/tmp/workspace-1",
+        model: "openai/gpt-5.4-mini"
+      }
+    ]
+  );
+
+  assert.equal(runtime.agentId, "agent-1");
+  assert.equal(runtime.modelId, "openai/gpt-5.4-mini");
+  assert.equal(runtime.tokenUsage?.total, 42);
+});
+
 test("channel registry normalization trims ids and dedupes workspace bindings", () => {
   const registry = {
     version: 1,
@@ -1325,6 +1393,126 @@ test("mission dispatch runtime output merges into a mission payload", () => {
       ]
     }
   });
+});
+
+test("runtime transcript parser reads OpenClaw session content strings and tool calls", () => {
+  const runtime = {
+    id: "runtime:gateway:completed-1",
+    source: "turn",
+    key: "dispatch-1",
+    title: "Gateway runtime event",
+    subtitle: "sessions.changed",
+    status: "completed",
+    updatedAt: Date.parse("2026-04-13T00:01:00.000Z"),
+    ageMs: 0,
+    agentId: "agent-1",
+    workspaceId: "workspace-1",
+    sessionId: "session-1",
+    runId: "dispatch-1",
+    metadata: {
+      mission: "Create the Faros document",
+      dispatchId: "dispatch-1",
+      dispatchSubmittedAt: "2026-04-13T00:00:00.000Z"
+    }
+  } as unknown as RuntimeRecord;
+  const raw = [
+    {
+      type: "session",
+      timestamp: "2026-04-13T00:00:00.000Z",
+      cwd: "/tmp/workspace-1"
+    },
+    {
+      type: "message",
+      id: "user-1",
+      timestamp: "2026-04-13T00:00:01.000Z",
+      message: {
+        role: "user",
+        content: "Create the Faros document",
+        timestamp: Date.parse("2026-04-13T00:00:01.000Z")
+      }
+    },
+    {
+      type: "message",
+      id: "tool-call-1",
+      timestamp: "2026-04-13T00:00:02.000Z",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "call-1",
+            name: "apply_patch",
+            arguments: {
+              changes: [
+                {
+                  path: "/tmp/workspace-1/deliverables/faros.md",
+                  kind: {
+                    type: "add"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        stopReason: "toolUse",
+        timestamp: Date.parse("2026-04-13T00:00:02.000Z")
+      }
+    },
+    {
+      type: "message",
+      id: "tool-result-1",
+      timestamp: "2026-04-13T00:00:03.000Z",
+      message: {
+        role: "toolResult",
+        toolCallId: "call-1",
+        toolName: "apply_patch",
+        isError: false,
+        content: [
+          {
+            type: "toolResult",
+            text: "{\"status\":\"completed\"}"
+          }
+        ],
+        timestamp: Date.parse("2026-04-13T00:00:03.000Z")
+      }
+    },
+    {
+      type: "message",
+      id: "assistant-1",
+      timestamp: "2026-04-13T00:00:04.000Z",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: "Finished: deliverables/faros.md"
+          }
+        ],
+        stopReason: "stop",
+        usage: {
+          input: 10,
+          output: 8,
+          totalTokens: 18
+        },
+        timestamp: Date.parse("2026-04-13T00:00:04.000Z")
+      }
+    }
+  ].map((entry) => JSON.stringify(entry)).join("\n");
+
+  const output = parseRuntimeOutput(runtime, raw, "/tmp/workspace-1");
+
+  assert.equal(output.status, "available");
+  assert.equal(output.finalText, "Finished: deliverables/faros.md");
+  assert.equal(output.stopReason, "stop");
+  assert.equal(output.items.length, 4);
+  assert.equal(output.items[1].role, "toolCall");
+  assert.equal(output.items[1].toolName, "apply_patch");
+  assert.deepEqual(output.createdFiles, [
+    {
+      path: "/tmp/workspace-1/deliverables/faros.md",
+      displayPath: "deliverables/faros.md"
+    }
+  ]);
 });
 
 test("mission dispatch groups direct session turns into one task card", () => {
@@ -1497,6 +1685,270 @@ test("mission dispatch sessions carry explicit task origin before runtime matchi
   assert.equal(tasks.length, 1);
   assert.equal(tasks[0].key, "dispatch:dispatch-1");
   assert.equal(tasks[0].dispatchId, "dispatch-1");
+});
+
+test("mission dispatch terminal status wins over ambient session activity", () => {
+  const runtimes = [
+    {
+      id: "runtime:dispatch-completed",
+      source: "turn",
+      key: "dispatch-1",
+      title: "Gateway runtime event",
+      subtitle: "Dispatch runner finished.",
+      status: "completed",
+      updatedAt: Date.parse("2026-04-13T00:01:00.000Z"),
+      ageMs: 0,
+      agentId: "agent-1",
+      workspaceId: "workspace-1",
+      sessionId: "actual-session",
+      runId: "dispatch-1",
+      metadata: {
+        dispatchId: "dispatch-1",
+        dispatchStatus: "completed",
+        dispatchSubmittedAt: "2026-04-13T00:00:00.000Z",
+        mission: "Create the Faros document"
+      }
+    },
+    {
+      id: "runtime:ambient-session",
+      source: "session",
+      key: "agent:agent-1:explicit:actual-session",
+      title: "Agent session",
+      subtitle: "chat",
+      status: "running",
+      updatedAt: Date.parse("2026-04-13T00:01:01.000Z"),
+      ageMs: 0,
+      agentId: "agent-1",
+      sessionId: "actual-session",
+      metadata: {}
+    }
+  ] as unknown as RuntimeRecord[];
+
+  const tasks = buildTaskRecords(runtimes, [
+    {
+      id: "agent-1",
+      name: "Research Lead"
+    }
+  ] as Parameters<typeof buildTaskRecords>[1]);
+
+  assert.equal(tasks[0].key, "dispatch:dispatch-1");
+  assert.equal(tasks[0].status, "completed");
+  assert.equal(tasks[0].liveRunCount, 0);
+  assert.equal(tasks[0].workspaceId, "workspace-1");
+});
+
+test("mission dispatch matches gateway completion by dispatch run id", () => {
+  const dispatchRecord = {
+    id: "dispatch-1",
+    status: "running",
+    agentId: "agent-1",
+    sessionId: "requested-session",
+    mission: "Create the Faros document",
+    routedMission: "Create the Faros document\n\nTask output routing:\n- Put outputs under deliverables/run/",
+    thinking: "medium",
+    workspaceId: "workspace-1",
+    workspacePath: "/tmp/workspace-1",
+    submittedAt: "2026-04-13T00:00:00.000Z",
+    updatedAt: "2026-04-13T00:00:30.000Z",
+    outputDir: "/tmp/workspace-1/deliverables/run",
+    outputDirRelative: "deliverables/run",
+    notesDirRelative: "memory",
+    runner: {
+      pid: null,
+      childPid: null,
+      startedAt: "2026-04-13T00:00:00.000Z",
+      finishedAt: null,
+      lastHeartbeatAt: "2026-04-13T00:00:30.000Z",
+      logPath: null
+    },
+    observation: {
+      runtimeId: "runtime:gateway:stale-observation",
+      observedAt: "2026-04-13T00:00:30.000Z"
+    },
+    result: {
+      runId: "dispatch-1",
+      status: "started"
+    },
+    error: null
+  } as const;
+  const runtime = {
+    id: "runtime:gateway:completed-1",
+    source: "turn",
+    key: "dispatch-1",
+    title: "Gateway runtime event",
+    subtitle: "sessions.changed",
+    status: "completed",
+    updatedAt: Date.parse("2026-04-13T00:01:00.000Z"),
+    ageMs: 0,
+    agentId: "agent-1",
+    sessionId: "actual-session",
+    runId: "dispatch-1",
+    metadata: {
+      origin: "openclaw-gateway-event"
+    }
+  } as unknown as RuntimeRecord;
+  const laterRunningRuntime = {
+    ...runtime,
+    id: "runtime:gateway:running-1",
+    subtitle: "chat",
+    status: "running",
+    updatedAt: Date.parse("2026-04-13T00:01:01.000Z"),
+    sessionId: "agent:agent-1:explicit:requested-session"
+  } as unknown as RuntimeRecord;
+
+  assert.equal(matchMissionDispatchToRuntime(dispatchRecord, [laterRunningRuntime, runtime])?.id, runtime.id);
+
+  const annotated = annotateMissionDispatchMetadata([laterRunningRuntime, runtime], [dispatchRecord]);
+  assert.equal(annotated[1].metadata.dispatchId, "dispatch-1");
+  assert.equal(annotated[1].metadata.mission, "Create the Faros document");
+  assert.equal(annotated[1].workspaceId, "workspace-1");
+  assert.equal(annotated[1].metadata.outputDir, "/tmp/workspace-1/deliverables/run");
+  assert.equal(annotated[1].metadata.outputDirRelative, "deliverables/run");
+
+  const tasks = buildTaskRecords(annotated, [
+    {
+      id: "agent-1",
+      name: "Research Lead"
+    }
+  ] as Parameters<typeof buildTaskRecords>[1]);
+  assert.equal(tasks[0].workspaceId, "workspace-1");
+});
+
+test("mission dispatch hydrates gateway completion token usage from related session", async () => {
+  const dispatchRecord = {
+    id: "dispatch-1",
+    status: "running",
+    agentId: "agent-1",
+    sessionId: "requested-session",
+    mission: "Create the Faros document",
+    routedMission: "Create the Faros document\n\nTask output routing:\n- Put outputs under deliverables/run/",
+    thinking: "medium",
+    workspaceId: "workspace-1",
+    workspacePath: "/tmp/workspace-1",
+    submittedAt: "2026-04-13T00:00:00.000Z",
+    updatedAt: "2026-04-13T00:00:30.000Z",
+    outputDir: "/tmp/workspace-1/deliverables/run",
+    outputDirRelative: "deliverables/run",
+    notesDirRelative: "memory",
+    runner: {
+      pid: null,
+      childPid: null,
+      startedAt: "2026-04-13T00:00:00.000Z",
+      finishedAt: null,
+      lastHeartbeatAt: "2026-04-13T00:00:30.000Z",
+      logPath: null
+    },
+    observation: {
+      runtimeId: null,
+      observedAt: null
+    },
+    result: {
+      runId: "dispatch-1",
+      status: "started"
+    },
+    error: null
+  } as const;
+  const completedRuntime = {
+    id: "runtime:gateway:completed-1",
+    source: "turn",
+    key: "dispatch-1",
+    title: "Gateway runtime event",
+    subtitle: "sessions.changed",
+    status: "completed",
+    updatedAt: Date.parse("2026-04-13T00:01:00.000Z"),
+    ageMs: 0,
+    agentId: "agent-1",
+    workspaceId: "workspace-1",
+    sessionId: "actual-session",
+    runId: "dispatch-1",
+    metadata: {
+      origin: "openclaw-gateway-event"
+    }
+  } as unknown as RuntimeRecord;
+  const sessionRuntime = {
+    id: "runtime:actual-session:summary",
+    source: "session",
+    key: "agent:agent-1:explicit:actual-session",
+    title: "Agent session",
+    subtitle: "main session",
+    status: "running",
+    updatedAt: Date.parse("2026-04-13T00:01:01.000Z"),
+    ageMs: 0,
+    agentId: "agent-1",
+    workspaceId: "workspace-1",
+    sessionId: "actual-session",
+    modelId: "openai/gpt-5.4-mini",
+    tokenUsage: {
+      input: 259,
+      output: 435,
+      total: 84355,
+      cacheRead: 83661
+    },
+    metadata: {
+      origin: "openclaw-runtime-snapshot"
+    }
+  } as unknown as RuntimeRecord;
+
+  const runtimes = await buildMissionDispatchRuntimes(
+    [completedRuntime, sessionRuntime],
+    [dispatchRecord],
+    {
+      buildObservedRuntime: async () => null,
+      persistObservation: async () => {},
+      reconcileRuntimeState: async () => {}
+    }
+  );
+
+  assert.equal(runtimes[0].id, completedRuntime.id);
+  assert.equal(runtimes[0].status, "completed");
+  assert.deepEqual(runtimes[0].tokenUsage, sessionRuntime.tokenUsage);
+  assert.equal(runtimes[0].modelId, "openai/gpt-5.4-mini");
+  assert.equal(runtimes[0].metadata.dispatchId, "dispatch-1");
+  assert.equal(runtimes[0].metadata.usageSessionRuntimeId, sessionRuntime.id);
+});
+
+test("runtime history keeps current dispatch runtime outside recent agent limit", () => {
+  const base = Date.parse("2026-04-13T00:00:00.000Z");
+  const recentRuntimes = Array.from({ length: 9 }, (_, index) => ({
+    id: `runtime:recent-${index}`,
+    source: "session",
+    key: `agent:agent-1:explicit:recent-${index}`,
+    title: "Agent session",
+    subtitle: "main session",
+    status: "running",
+    updatedAt: base + 10_000 + index,
+    ageMs: 0,
+    agentId: "agent-1",
+    workspaceId: "workspace-1",
+    sessionId: `recent-${index}`,
+    metadata: {}
+  })) as unknown as RuntimeRecord[];
+  const dispatchRuntime = {
+    id: "runtime:gateway:completed-1",
+    source: "turn",
+    key: "dispatch-1",
+    title: "Gateway runtime event",
+    subtitle: "sessions.changed",
+    status: "completed",
+    updatedAt: base,
+    ageMs: 0,
+    agentId: "agent-1",
+    workspaceId: "workspace-1",
+    sessionId: "actual-session",
+    runId: "dispatch-1",
+    metadata: {
+      dispatchId: "dispatch-1"
+    }
+  } as unknown as RuntimeRecord;
+
+  const result = mergeRuntimeHistoryRecords([...recentRuntimes, dispatchRuntime], new Map());
+
+  assert.ok(result.runtimes.some((runtime) => runtime.id === dispatchRuntime.id));
+  assert.equal(result.runtimes.filter((runtime) => runtime.agentId === "agent-1").length, 9);
+
+  const nextResult = mergeRuntimeHistoryRecords(recentRuntimes, result.cache);
+
+  assert.equal(nextResult.runtimes.some((runtime) => runtime.id === dispatchRuntime.id), false);
 });
 
 test("task cards use explicit runtime origin before direct-chat heuristics", () => {
