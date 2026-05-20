@@ -12,6 +12,7 @@ import {
   updateWorkspaceProject
 } from "@/lib/openclaw/application/workspace-service";
 import { abortMissionTask, submitMission } from "@/lib/openclaw/application/mission-service";
+import { controlRunningTaskSession } from "@/lib/openclaw/application/task-control-service";
 import {
   ensureOpenClawRuntimeSmokeTest,
   ensureOpenClawRuntimeStateAccess,
@@ -59,6 +60,7 @@ export {
   abortMissionTask,
   bindWorkspaceChannelAgent,
   clearMissionControlCaches,
+  controlRunningTaskSession,
   createAgent,
   createManagedSurfaceAccount,
   createTelegramChannelAccount,

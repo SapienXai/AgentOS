@@ -4,14 +4,18 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "logsTail"
   | "configSchemaLookup"
   | "configPatch"
+  | "sessionLifecycle"
   | "agentCreate"
   | "agentUpdate"
   | "agentIdentity"
   | "agentDelete"
   | "missionDispatch"
   | "missionStream"
+  | "chatControl"
+  | "agentWait"
   | "sessionHistory"
   | "taskEvents"
+  | "taskCancel"
   | "artifacts"
   | "runtimeSnapshot"
   | "tools"
@@ -42,6 +46,7 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   { id: "logsTail", label: "Gateway logs", methods: ["logs.tail"] },
   { id: "configSchemaLookup", label: "Config schema lookup", methods: ["config.schema.lookup", "config.schema"] },
   { id: "configPatch", label: "Config patch", methods: ["config.patch", "config.apply", "config.set"] },
+  { id: "sessionLifecycle", label: "Session lifecycle", methods: ["sessions.create", "sessions.patch", "sessions.steer"] },
   { id: "agentCreate", label: "Agent creation", methods: ["agents.create"] },
   { id: "agentUpdate", label: "Agent update", methods: ["agents.update"] },
   { id: "agentIdentity", label: "Agent identity sync", methods: ["agents.identity.set", "agents.setIdentity", "agents.set-identity"] },
@@ -53,6 +58,8 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     methods: ["sessions.subscribe", "sessions.messages.subscribe"],
     events: ["chat", "agent", "session.message", "session.tool"]
   },
+  { id: "chatControl", label: "Chat control", methods: ["chat.abort", "chat.inject"] },
+  { id: "agentWait", label: "Agent wait", methods: ["agent.wait"] },
   { id: "sessionHistory", label: "Session history", methods: ["sessions.describe", "sessions.history", "sessions.export"] },
   {
     id: "taskEvents",
@@ -60,6 +67,7 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     methods: ["tasks.subscribe", "tasks.get", "tasks.list"],
     events: ["task", "task.updated", "task.completed"]
   },
+  { id: "taskCancel", label: "Task cancellation", methods: ["tasks.cancel"] },
   {
     id: "artifacts",
     label: "Artifact sync",
@@ -103,11 +111,15 @@ const additionalGatewayFirstMethods = [
   "sessions.list",
   "sessions.create",
   "sessions.patch",
+  "sessions.steer",
   "sessions.preview",
   "sessions.resolve",
   "sessions.abort",
   "chat.history",
   "chat.abort",
+  "chat.inject",
+  "agent.wait",
+  "tasks.cancel",
   "config.get",
   "channels.start",
   "channels.stop",

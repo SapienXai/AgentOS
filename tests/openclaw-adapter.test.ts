@@ -242,6 +242,14 @@ function createMockGatewayClient(overrides: Partial<OpenClawGatewayClient> = {})
       calls.push({ method: "abortAgentTurn", action: input.runId ?? input.sessionId ?? input.agentId ?? undefined, options });
       return { runId: input.runId ?? undefined };
     },
+    async steerSession(input, options?: OpenClawCommandOptions) {
+      calls.push({ method: "steerSession", action: input.key ?? input.sessionId ?? undefined, options });
+      return { ok: true, method: "sessions.steer" };
+    },
+    async injectChat(input, options?: OpenClawCommandOptions) {
+      calls.push({ method: "injectChat", action: input.sessionKey ?? input.sessionId ?? undefined, options });
+      return { ok: true, method: "chat.inject" };
+    },
     async streamAgentTurn(input, _callbacks, options?: OpenClawCommandOptions) {
       calls.push({ method: "streamAgentTurn", action: input.agentId, options });
       return { runId: "run-2" };
@@ -400,6 +408,14 @@ test("OpenClaw adapter exposes catalog, config, agent turn, and probe methods", 
   assert.deepEqual(await adapter.abortAgentTurn({ runId: "run-1" }, { timeoutMs: 11 }), {
     runId: "run-1"
   });
+  assert.deepEqual(await adapter.steerSession({ key: "agent:agent-1:main", message: "Focus on tests" }, { timeoutMs: 11 }), {
+    ok: true,
+    method: "sessions.steer"
+  });
+  assert.deepEqual(await adapter.injectChat({ sessionKey: "agent:agent-1:main", message: "Use this reference" }, { timeoutMs: 11 }), {
+    ok: true,
+    method: "chat.inject"
+  });
   assert.deepEqual(
     await adapter.streamAgentTurn({ agentId: "agent-1", message: "hello" }, {}, { timeoutMs: 12 }),
     { runId: "run-2" }
@@ -457,6 +473,8 @@ test("OpenClaw adapter exposes catalog, config, agent turn, and probe methods", 
     { method: "provisionAutomation", action: "Digest", options: { timeoutMs: 10 } },
     { method: "runAgentTurn", action: "agent-1", options: { timeoutMs: 11 } },
     { method: "abortAgentTurn", action: "run-1", options: { timeoutMs: 11 } },
+    { method: "steerSession", action: "agent:agent-1:main", options: { timeoutMs: 11 } },
+    { method: "injectChat", action: "agent:agent-1:main", options: { timeoutMs: 11 } },
     { method: "streamAgentTurn", action: "agent-1", options: { timeoutMs: 12 } },
     { method: "probeGateway", options: { timeoutMs: 13 } },
     { method: "approveDeviceAccess", action: "latest", options: { timeoutMs: 13 } },

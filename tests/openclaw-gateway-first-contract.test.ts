@@ -15,8 +15,12 @@ import {
 } from "@/lib/openclaw/application/event-bridge-service";
 import { setOpenClawAdapterForTesting, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS } from "@/lib/openclaw/client/gateway-compatibility";
-import { submitMissionDispatch } from "@/lib/openclaw/domains/mission-dispatch-workflow";
-import type { MissionControlSnapshot } from "@/lib/openclaw/types";
+import {
+  abortMissionDispatchTask,
+  submitMissionDispatch
+} from "@/lib/openclaw/domains/mission-dispatch-workflow";
+import { controlRunningTaskSession } from "@/lib/openclaw/application/task-control-service";
+import type { MissionControlSnapshot, TaskDetailRecord } from "@/lib/openclaw/types";
 
 afterEach(() => {
   resetOpenClawEventBridgeForTesting();
@@ -212,6 +216,110 @@ test("mission dispatch still attempts Gateway-first path when capabilities are u
   assert.equal(response.runId, "run-unknown-1");
   assert.equal(response.status, "running");
   assert.deepEqual(calls, [`run:agent-1:${response.dispatchId}`]);
+});
+
+test("task abort cancels native Gateway tasks without requiring dispatch records", async () => {
+  const calls: Array<{ taskId: string; reason?: string | null }> = [];
+  const snapshot = createSnapshot();
+  snapshot.tasks = [{
+    id: "task-native",
+    key: "gateway-task-1",
+    title: "Gateway task",
+    mission: "Run native task",
+    subtitle: "OpenClaw Gateway task",
+    status: "running",
+    updatedAt: Date.now(),
+    ageMs: 0,
+    runtimeIds: [],
+    agentIds: ["agent-1"],
+    sessionIds: [],
+    runIds: [],
+    runtimeCount: 1,
+    updateCount: 1,
+    liveRunCount: 1,
+    artifactCount: 0,
+    warningCount: 0,
+    metadata: {
+      gatewayObjectKind: "task",
+      taskId: "gateway-task-1"
+    }
+  }];
+  setOpenClawAdapterForTesting(createContractAdapter({
+    async cancelTask(input) {
+      calls.push(input);
+      return { ok: true };
+    }
+  }));
+
+  const response = await abortMissionDispatchTask("task-native", "stop it", null, {
+    getMissionControlSnapshot: async () => snapshot,
+    resolveAgentForMission: () => "agent-1",
+    invalidateMissionControlCaches: () => {}
+  });
+
+  assert.equal(response.dispatchId, null);
+  assert.equal(response.status, "cancelled");
+  assert.deepEqual(calls, [{ taskId: "gateway-task-1", reason: "stop it" }]);
+});
+
+test("running task steering resolves a native Gateway session key", async () => {
+  const calls: Array<{ key?: string | null; sessionId?: string | null; message: string }> = [];
+  const taskDetail = createRunningTaskDetail();
+
+  const response = await controlRunningTaskSession(
+    "task-1",
+    { action: "steer", message: "Focus on tests" },
+    {
+      adapter: {
+        async steerSession(input) {
+          calls.push(input);
+          return { ok: true };
+        },
+        async injectChat() {
+          throw new Error("unexpected inject");
+        }
+      },
+      getTaskDetail: async () => taskDetail,
+      invalidateMissionControlSnapshotCache: () => {}
+    }
+  );
+
+  assert.equal(response.ok, true);
+  assert.equal(response.target.sessionKey, "agent:agent-1:explicit:session-1");
+  assert.deepEqual(calls, [{
+    key: "agent:agent-1:explicit:session-1",
+    sessionId: null,
+    message: "Focus on tests"
+  }]);
+});
+
+test("running task context injection uses chat.inject semantics", async () => {
+  const calls: Array<{ sessionKey?: string | null; sessionId?: string | null; message: string }> = [];
+  const taskDetail = createRunningTaskDetail();
+
+  await controlRunningTaskSession(
+    "task-1",
+    { action: "inject", message: "Use this reference" },
+    {
+      adapter: {
+        async steerSession() {
+          throw new Error("unexpected steer");
+        },
+        async injectChat(input) {
+          calls.push(input);
+          return { ok: true };
+        }
+      },
+      getTaskDetail: async () => taskDetail,
+      invalidateMissionControlSnapshotCache: () => {}
+    }
+  );
+
+  assert.deepEqual(calls, [{
+    sessionKey: "agent:agent-1:explicit:session-1",
+    sessionId: null,
+    message: "Use this reference"
+  }]);
 });
 
 test("Gateway event bridge normalizes chat, tool, session, and approval events into runtimes", () => {
@@ -440,6 +548,12 @@ function createContractAdapter(overrides: Partial<OpenClawAdapter> = {}): OpenCl
     async abortAgentTurn() {
       return {};
     },
+    async steerSession() {
+      return {};
+    },
+    async injectChat() {
+      return {};
+    },
     async streamAgentTurn() {
       return {};
     },
@@ -471,6 +585,71 @@ function createContractAdapter(overrides: Partial<OpenClawAdapter> = {}): OpenCl
       return {};
     },
     ...overrides
+  };
+}
+
+function createRunningTaskDetail(): TaskDetailRecord {
+  return {
+    task: {
+      id: "task-1",
+      key: "task-1",
+      title: "Task",
+      mission: "Run task",
+      subtitle: "running",
+      status: "running",
+      updatedAt: Date.now(),
+      ageMs: 0,
+      workspaceId: "workspace-1",
+      primaryAgentId: "agent-1",
+      primaryAgentName: "Agent",
+      primaryRuntimeId: "runtime-1",
+      runtimeIds: ["runtime-1"],
+      agentIds: ["agent-1"],
+      sessionIds: ["session-1"],
+      runIds: ["run-1"],
+      runtimeCount: 1,
+      updateCount: 1,
+      liveRunCount: 1,
+      artifactCount: 0,
+      warningCount: 0,
+      metadata: {}
+    },
+    runs: [{
+      id: "runtime-1",
+      source: "turn",
+      key: "runtime-1",
+      title: "Runtime",
+      subtitle: "running",
+      status: "running",
+      updatedAt: Date.now(),
+      ageMs: 0,
+      agentId: "agent-1",
+      workspaceId: "workspace-1",
+      sessionId: "session-1",
+      taskId: "task-1",
+      runId: "run-1",
+      metadata: {}
+    }],
+    outputs: [],
+    liveFeed: [],
+    createdFiles: [],
+    warnings: [],
+    integrity: {
+      status: "verified",
+      outputDir: null,
+      outputDirRelative: null,
+      outputDirExists: false,
+      outputFileCount: 0,
+      transcriptTurnCount: 0,
+      matchingTranscriptTurnCount: 0,
+      finalResponseText: null,
+      finalResponseSource: "none",
+      dispatchSessionId: null,
+      sessionMismatch: false,
+      toolNames: [],
+      emails: [],
+      issues: []
+    }
   };
 }
 

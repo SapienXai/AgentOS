@@ -168,6 +168,12 @@ function createSettingsAdapter(config: Record<string, unknown> = {}): OpenClawAd
     async abortAgentTurn() {
       return {};
     },
+    async steerSession() {
+      return {};
+    },
+    async injectChat() {
+      return {};
+    },
     async streamAgentTurn() {
       return {};
     },

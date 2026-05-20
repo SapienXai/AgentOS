@@ -277,7 +277,7 @@ export async function POST(
             local: !snapshot.diagnostics.rpcOk
           },
           {},
-          { timeoutMs: 120000, signal: request.signal, forceCli: true }
+          { timeoutMs: 120000, signal: request.signal }
         ) as Promise<AgentChatCommandPayload>;
 
         void (async () => {

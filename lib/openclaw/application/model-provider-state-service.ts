@@ -70,6 +70,19 @@ const legacyProviderFileFallbackEnv = "AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FAL
 const gatewayConfigPatchRetryDelaysMs = [500, 1_250, 2_500];
 
 export async function readOpenClawConfiguredModelIds() {
+  try {
+    const configuredModels = await getOpenClawAdapter().getConfig<Record<string, unknown>>(
+      "agents.defaults.models",
+      { timeoutMs: 5_000 }
+    );
+
+    if (isRecord(configuredModels)) {
+      return new Set(Object.keys(configuredModels));
+    }
+  } catch {
+    // Local file read remains an offline recovery fallback when Gateway config is unavailable.
+  }
+
   const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
   const modelEntries = config.agents?.defaults?.models ?? {};
 
@@ -166,7 +179,7 @@ export async function addOpenClawModelsToConfig(provider: AddModelsProviderId, m
   } catch (error) {
     if (!isLegacyProviderFileFallbackEnabled()) {
       throw new Error(
-        `OpenClaw Gateway config.patch failed while adding models. Legacy file fallback is disabled; set ${legacyProviderFileFallbackEnv}=1 only for explicit recovery. ${readErrorMessage(error)}`
+        `OpenClaw Gateway config update failed while adding models. Legacy file fallback is disabled; set ${legacyProviderFileFallbackEnv}=1 only for explicit recovery. ${readErrorMessage(error)}`
       );
     }
   }
@@ -233,53 +246,32 @@ async function addModelsToConfigViaGateway(provider: AddModelsProviderId, normal
 }
 
 async function addModelsToConfigViaGatewayOnce(provider: AddModelsProviderId, normalizedModelIds: string[]) {
-  const snapshot = await getOpenClawAdapter().call<Record<string, unknown>>("config.get", {}, { timeoutMs: 5_000 });
-  const config = isRecord(snapshot.config) ? snapshot.config : {};
-  const patch: Record<string, unknown> = {
-    agents: {
-      defaults: {
-        models: Object.fromEntries(normalizedModelIds.map((modelId) => [modelId, {}]))
-      }
-    }
-  };
-  const defaultsPatch = (patch.agents as { defaults: Record<string, unknown> }).defaults;
+  const adapter = getOpenClawAdapter();
+  const [existingModels, primaryModel] = await Promise.all([
+    adapter.getConfig<Record<string, unknown>>("agents.defaults.models", { timeoutMs: 5_000 }),
+    adapter.getConfig<string>("agents.defaults.model.primary", { timeoutMs: 5_000 })
+  ]);
+  const nextModels = isRecord(existingModels) ? { ...existingModels } : {};
 
-  if (!readConfigPath(config, "agents.defaults.model.primary") && normalizedModelIds[0]) {
-    defaultsPatch.model = {
-      primary: normalizedModelIds[0]
-    };
+  for (const modelId of normalizedModelIds) {
+    nextModels[modelId] = isRecord(nextModels[modelId]) ? nextModels[modelId] : {};
+  }
+
+  await adapter.setConfig("agents.defaults.models", nextModels, { timeoutMs: 5_000 });
+
+  if (!primaryModel && normalizedModelIds[0]) {
+    await adapter.setConfig("agents.defaults.model.primary", normalizedModelIds[0], { timeoutMs: 5_000 });
 
     if (provider === "openai-codex") {
-      defaultsPatch.agentRuntime = {
-        id: "codex"
-      };
+      await adapter.setConfig("agents.defaults.agentRuntime.id", "codex", { timeoutMs: 5_000 });
     } else if (provider === "openai") {
-      defaultsPatch.agentRuntime = {
-        id: "pi"
-      };
+      await adapter.setConfig("agents.defaults.agentRuntime.id", "pi", { timeoutMs: 5_000 });
     }
   }
 
   if (provider === "openai-codex") {
-    patch.plugins = {
-      entries: {
-        codex: {
-          enabled: true
-        }
-      }
-    };
+    await adapter.setConfig("plugins.entries.codex.enabled", true, { timeoutMs: 5_000 });
   }
-
-  const params: Record<string, unknown> = {
-    raw: JSON.stringify(patch)
-  };
-  const baseHash = typeof snapshot.hash === "string" && snapshot.hash.trim() ? snapshot.hash : null;
-
-  if (baseHash) {
-    params.baseHash = baseHash;
-  }
-
-  await getOpenClawAdapter().call("config.patch", params, { timeoutMs: 5_000 });
 }
 
 function isRetryableGatewayConfigPatchError(error: unknown) {
@@ -340,20 +332,6 @@ function isLegacyProviderFileFallbackEnabled() {
 
 function readErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error || "Unknown Gateway error.");
-}
-
-function readConfigPath(source: unknown, configPath: string) {
-  let current = source;
-
-  for (const segment of configPath.split(".")) {
-    if (!isRecord(current)) {
-      return undefined;
-    }
-
-    current = current[segment];
-  }
-
-  return current;
 }
 
 function modelMatchesProvider(provider: AddModelsProviderId, modelId: string) {

@@ -199,7 +199,7 @@ export async function abortMissionDispatchTask(
   }
 
   if (!dispatchRecord) {
-    throw new Error("Mission dispatch record was not found for this task.");
+    return abortNativeGatewayTask(task, taskId, reason, deps);
   }
 
   if (isMissionDispatchTerminalStatus(dispatchRecord.status)) {
@@ -234,8 +234,17 @@ export async function abortMissionDispatchTask(
 
   let killedChildPid: number | null = null;
   const runId = dispatchRecord.result?.runId ?? null;
+  const adapter = getOpenClawAdapter();
+
+  for (const gatewayTaskId of resolveGatewayTaskCancelIds(task, dispatchRecord)) {
+    await adapter.cancelTask({
+      taskId: gatewayTaskId,
+      reason: abortReason
+    }, { timeoutMs: 15_000 }).catch(() => null);
+  }
+
   if (runId || dispatchRecord.sessionId) {
-    await getOpenClawAdapter().abortAgentTurn({
+    await adapter.abortAgentTurn({
       runId,
       sessionId: dispatchRecord.sessionId,
       agentId: dispatchRecord.agentId,
@@ -255,4 +264,92 @@ export async function abortMissionDispatchTask(
     childPid: killedChildPid ?? nextRecord.runner.childPid,
     abortedAt
   };
+}
+
+function resolveGatewayTaskCancelIds(
+  task: MissionControlSnapshot["tasks"][number] | undefined,
+  dispatchRecord: { id: string; result?: Record<string, unknown> | null } | null
+) {
+  const candidates = [
+    readGatewayTaskId(dispatchRecord?.result),
+    readGatewayTaskId(dispatchRecord?.result?.task),
+    readGatewayTaskId(task?.metadata),
+    task?.metadata.gatewayObjectKind === "task" ? task.metadata.taskId : null,
+    task?.metadata.gatewayObjectKind === "task" ? task?.key : null
+  ];
+  const unique = new Set<string>();
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim() && candidate !== dispatchRecord?.id) {
+      unique.add(candidate.trim());
+    }
+  }
+
+  return [...unique];
+}
+
+async function abortNativeGatewayTask(
+  task: MissionControlSnapshot["tasks"][number] | undefined,
+  taskId: string,
+  reason: string | null | undefined,
+  deps: MissionDispatchWorkflowDependencies
+): Promise<MissionAbortResponse> {
+  if (!task) {
+    throw new Error("Task was not found in the current OpenClaw snapshot.");
+  }
+
+  if (task.status === "completed" || task.status === "stalled" || task.status === "cancelled") {
+    return {
+      taskId,
+      dispatchId: null,
+      status: task.status,
+      summary: task.subtitle || "Task is already terminal.",
+      reason: null,
+      runnerPid: null,
+      childPid: null,
+      abortedAt: new Date().toISOString()
+    };
+  }
+
+  const abortReason = normalizeMissionAbortReason(reason);
+  const gatewayTaskIds = resolveGatewayTaskCancelIds(task, null);
+
+  if (gatewayTaskIds.length === 0) {
+    throw new Error("Mission dispatch record was not found and the task does not expose a Gateway task id.");
+  }
+
+  for (const gatewayTaskId of gatewayTaskIds) {
+    await getOpenClawAdapter().cancelTask({
+      taskId: gatewayTaskId,
+      reason: abortReason
+    }, { timeoutMs: 15_000 });
+  }
+
+  deps.invalidateMissionControlCaches();
+
+  return {
+    taskId,
+    dispatchId: null,
+    status: "cancelled",
+    summary: abortReason,
+    reason: abortReason,
+    runnerPid: null,
+    childPid: null,
+    abortedAt: new Date().toISOString()
+  };
+}
+
+function readGatewayTaskId(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const taskId =
+    record.gatewayTaskId ??
+    record.openClawTaskId ??
+    record.taskId ??
+    record.id;
+
+  return typeof taskId === "string" && taskId.trim() ? taskId.trim() : null;
 }

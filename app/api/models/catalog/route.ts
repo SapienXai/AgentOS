@@ -1,46 +1,23 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { listOpenClawModels } from "@/lib/openclaw/application/catalog-service";
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { addOpenClawModelsToConfig } from "@/lib/openclaw/application/model-provider-state-service";
 import { resolveModelRecordProvider } from "@/lib/openclaw/domains/model-provider-connection";
 import type { AddModelsCatalogModel, MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type { ModelsPayload, ModelsStatusPayload } from "@/lib/openclaw/client/gateway-client";
+import type { AddModelsProviderId } from "@/lib/openclaw/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type GlobalCatalogModel = Omit<AddModelsCatalogModel, "alreadyAdded">;
-const openClawConfigPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
 const catalogAddSchema = z.object({
   provider: z.string().trim().min(1),
   modelIds: z.array(z.string().trim().min(1)).min(1)
 });
-
-type OpenClawConfigPayload = {
-  meta?: {
-    lastTouchedAt?: string;
-  };
-  plugins?: {
-    entries?: Record<string, Record<string, unknown>>;
-  };
-  agents?: {
-    defaults?: {
-      model?: {
-        primary?: string;
-      };
-      agentRuntime?: {
-        id?: string;
-      };
-      models?: Record<string, Record<string, never>>;
-    };
-  };
-};
 
 export async function GET() {
   try {
@@ -167,115 +144,24 @@ function normalizeSnapshotModels(
 }
 
 async function addCatalogModelsToConfig(provider: string, normalizedModelIds: string[]) {
-  if (await addCatalogModelsToConfigViaGateway(provider, normalizedModelIds)) {
-    return;
-  }
-
-  const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
-
-  config.meta = {
-    ...config.meta,
-    lastTouchedAt: new Date().toISOString()
-  };
-  config.agents = config.agents || {};
-  config.agents.defaults = config.agents.defaults || {};
-  config.agents.defaults.models = config.agents.defaults.models || {};
-
-  if (provider === "openai-codex") {
-    config.plugins = config.plugins || {};
-    config.plugins.entries = config.plugins.entries || {};
-    config.plugins.entries.codex = {
-      ...config.plugins.entries.codex,
-      enabled: true
-    };
-  }
-
-  for (const modelId of normalizedModelIds) {
-    config.agents.defaults.models[modelId] = config.agents.defaults.models[modelId] || {};
-  }
-
-  if (!config.agents.defaults.model?.primary && normalizedModelIds[0]) {
-    config.agents.defaults.model = {
-      ...(config.agents.defaults.model || {}),
-      primary: normalizedModelIds[0]
-    };
-    applyRuntimeHint(config.agents.defaults, provider);
-  }
-
-  await writeJsonFile(openClawConfigPath, config);
+  await addOpenClawModelsToConfig(normalizeCatalogProvider(provider), normalizedModelIds);
 }
 
-async function addCatalogModelsToConfigViaGateway(provider: string, normalizedModelIds: string[]) {
-  try {
-    const snapshot = await getOpenClawAdapter().call<Record<string, unknown>>("config.get", {}, { timeoutMs: 5_000 });
-    const config = isRecord(snapshot.config) ? snapshot.config : {};
-    const patch: Record<string, unknown> = {
-      agents: {
-        defaults: {
-          models: Object.fromEntries(normalizedModelIds.map((modelId) => [modelId, {}]))
-        }
-      }
-    };
-    const defaultsPatch = (patch.agents as { defaults: Record<string, unknown> }).defaults;
-
-    if (!readConfigPath(config, "agents.defaults.model.primary") && normalizedModelIds[0]) {
-      defaultsPatch.model = {
-        primary: normalizedModelIds[0]
-      };
-      applyRuntimeHint(defaultsPatch, provider);
-    }
-
-    if (provider === "openai-codex") {
-      patch.plugins = {
-        entries: {
-          codex: {
-            enabled: true
-          }
-        }
-      };
-    }
-
-    const params: Record<string, unknown> = {
-      raw: JSON.stringify(patch)
-    };
-    const baseHash = typeof snapshot.hash === "string" && snapshot.hash.trim() ? snapshot.hash : null;
-
-    if (baseHash) {
-      params.baseHash = baseHash;
-    }
-
-    await getOpenClawAdapter().call("config.patch", params, { timeoutMs: 5_000 });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function applyRuntimeHint(target: Record<string, unknown>, provider: string) {
-  if (provider === "openai-codex") {
-    target.agentRuntime = {
-      ...(isRecord(target.agentRuntime) ? target.agentRuntime : {}),
-      id: "codex"
-    };
-  } else if (provider === "openai") {
-    target.agentRuntime = {
-      ...(isRecord(target.agentRuntime) ? target.agentRuntime : {}),
-      id: "pi"
-    };
-  }
-}
-
-function normalizeCatalogProvider(provider: string) {
+function normalizeCatalogProvider(provider: string): AddModelsProviderId {
   const normalized = provider.trim().toLowerCase();
 
   if (normalized === "gemini") {
     return "google";
   }
 
-  return normalized;
+  if (isAddModelsProviderId(normalized)) {
+    return normalized;
+  }
+
+  throw new Error(`Unsupported OpenClaw model provider: ${provider}`);
 }
 
-function normalizeCatalogModelId(provider: string, modelId: string) {
+function normalizeCatalogModelId(provider: AddModelsProviderId, modelId: string) {
   if (provider === "openai-codex" && modelId.startsWith("openai-codex/")) {
     return `openai/${modelId.slice("openai-codex/".length)}`;
   }
@@ -287,36 +173,18 @@ function normalizeCatalogModelId(provider: string, modelId: string) {
   return modelId;
 }
 
-async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
-  try {
-    const raw = await readFile(filePath, "utf8");
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-async function writeJsonFile(filePath: string, value: unknown) {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
-
-function readConfigPath(source: unknown, configPath: string) {
-  let current = source;
-
-  for (const segment of configPath.split(".")) {
-    if (!isRecord(current)) {
-      return undefined;
-    }
-
-    current = current[segment];
-  }
-
-  return current;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+function isAddModelsProviderId(value: string): value is AddModelsProviderId {
+  return [
+    "openai-codex",
+    "openrouter",
+    "ollama",
+    "openai",
+    "anthropic",
+    "xai",
+    "google",
+    "deepseek",
+    "mistral"
+  ].includes(value);
 }
 
 function isRecommendedModel(provider: string, modelId: string) {

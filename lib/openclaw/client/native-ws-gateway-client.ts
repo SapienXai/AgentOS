@@ -40,7 +40,10 @@ import type {
   OpenClawChannelLogsPayload,
   OpenClawAgentListPayload,
   OpenClawAgentTurnInput,
+  OpenClawChatInjectInput,
   OpenClawCommandOptions,
+  OpenClawConfigMutationMetadata,
+  OpenClawConfigReloadKind,
   OpenClawConfigSchemaPayload,
   OpenClawConfigSchemaLookupInput,
   OpenClawConfigSchemaLookupPayload,
@@ -75,8 +78,10 @@ import type {
   OpenClawSessionExportPayload,
   OpenClawSessionHistoryInput,
   OpenClawSessionHistoryPayload,
+  OpenClawSessionControlPayload,
   OpenClawSessionPayload,
   OpenClawSessionReferenceInput,
+  OpenClawSessionSteerInput,
   OpenClawSessionsPayload,
   OpenClawSkillListPayload,
   OpenClawStreamCallbacks,
@@ -333,7 +338,7 @@ function classifyGatewayError(message: string): OpenClawGatewayClientErrorKind {
     return "conflict";
   }
 
-  if (/invalid json|invalid request|malformed|schema|payload/i.test(message)) {
+  if (/invalid[_\s-]?request|invalid .*params|invalid json|malformed|schema|payload/i.test(message)) {
     return "malformed-response";
   }
 
@@ -928,10 +933,11 @@ function containsRedactedOpenClawSecret(value: unknown): boolean {
   return false;
 }
 
-function commandResultFromGatewayPayload(payload: unknown): CommandResult {
+function commandResultFromGatewayPayload(payload: unknown, metadata?: Record<string, unknown>): CommandResult {
   return {
     stdout: JSON.stringify(payload ?? {}),
-    stderr: ""
+    stderr: "",
+    ...(metadata ? { metadata } : {})
   };
 }
 
@@ -1142,6 +1148,28 @@ function buildSessionReferenceParams(input: OpenClawSessionReferenceInput = {}) 
   };
 }
 
+function buildSessionSteerParams(input: OpenClawSessionSteerInput) {
+  const key = input.key?.trim();
+  const sessionId = input.sessionId?.trim();
+
+  return {
+    key: key || undefined,
+    sessionId: key ? undefined : sessionId || undefined,
+    message: input.message
+  };
+}
+
+function buildChatInjectParams(input: OpenClawChatInjectInput) {
+  const sessionKey = input.sessionKey?.trim();
+  const sessionId = input.sessionId?.trim();
+
+  return {
+    sessionKey: sessionKey || undefined,
+    sessionId: sessionKey ? undefined : sessionId || undefined,
+    message: input.message
+  };
+}
+
 function buildMergePatchForConfigPath(path: string, value: unknown) {
   const segments = parseConfigPath(path);
 
@@ -1322,6 +1350,93 @@ function resolveAgentTurnWaitMs(input: OpenClawAgentTurnInput, options: OpenClaw
   }
 
   return 45_000;
+}
+
+function shouldIgnoreNativeSessionPreparationError(error: unknown) {
+  const kind = normalizeClientError(error).kind;
+  const message = error instanceof Error ? error.message : String(error || "");
+  return (
+    kind === "unsupported" ||
+    kind === "conflict" ||
+    kind === "malformed-response" ||
+    /invalid .*sessions\.(create|patch) params|unexpected property/i.test(message)
+  );
+}
+
+function shouldIgnoreNativeAgentWaitError(error: unknown) {
+  const kind = normalizeClientError(error).kind;
+  return kind === "unsupported" || kind === "timeout" || kind === "malformed-response";
+}
+
+function buildNativeSessionCreateParams(input: OpenClawAgentTurnInput, sessionKey: string) {
+  return {
+    key: sessionKey,
+    agentId: input.agentId
+  };
+}
+
+function buildNativeSessionPatchParams(input: OpenClawAgentTurnInput, sessionKey: string) {
+  return {
+    key: sessionKey,
+    metadata: {
+      agentId: input.agentId,
+      sessionId: input.sessionId ?? undefined,
+      workspace: input.workspace ?? undefined,
+      dispatchId: input.dispatchId ?? undefined,
+      local: input.local ?? undefined,
+      origin: input.dispatchId ? "agentos-mission-dispatch" : "agentos-direct-chat"
+    }
+  };
+}
+
+function normalizeConfigReloadKind(value: unknown): OpenClawConfigReloadKind {
+  if (typeof value !== "string") {
+    return "unknown";
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "restart" || normalized === "hot" || normalized === "none") {
+    return normalized;
+  }
+
+  return "unknown";
+}
+
+function readConfigReloadKindFromSchemaLookup(payload: unknown): OpenClawConfigReloadKind {
+  const visited = new Set<unknown>();
+  const queue = [payload];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || visited.has(current)) {
+      continue;
+    }
+
+    visited.add(current);
+
+    if (isObjectRecord(current)) {
+      const reloadKind = normalizeConfigReloadKind(
+        current.reloadKind ??
+        current.reload ??
+        current.reload_kind ??
+        current.reloadPolicy ??
+        current.reloadRequirement
+      );
+
+      if (reloadKind !== "unknown") {
+        return reloadKind;
+      }
+
+      queue.push(current.schema, current.hint, current.node, current.config);
+      continue;
+    }
+
+    if (Array.isArray(current)) {
+      queue.push(...current);
+    }
+  }
+
+  return "unknown";
 }
 
 function normalizeGatewayTurnEvent(
@@ -3014,6 +3129,44 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     );
   }
 
+  async steerSession(input: OpenClawSessionSteerInput, options: OpenClawCommandOptions = {}) {
+    if (this.options.forceCli || options.forceCli || isCliGatewayClientForcedByEnv()) {
+      throw new OpenClawGatewayClientError("Native OpenClaw Gateway is required for sessions.steer.", "unsupported");
+    }
+
+    const payload = await this.callNative<unknown>(
+      "sessions.steer",
+      buildSessionSteerParams(input),
+      options,
+      {
+        safety: "mutation",
+        timeoutMs: options.timeoutMs,
+        allowCliFallback: false,
+        allowMutationFallbackOnUnsupported: false
+      }
+    );
+    return parseObjectGatewayPayload<OpenClawSessionControlPayload>("sessions.steer", payload);
+  }
+
+  async injectChat(input: OpenClawChatInjectInput, options: OpenClawCommandOptions = {}) {
+    if (this.options.forceCli || options.forceCli || isCliGatewayClientForcedByEnv()) {
+      throw new OpenClawGatewayClientError("Native OpenClaw Gateway is required for chat.inject.", "unsupported");
+    }
+
+    const payload = await this.callNative<unknown>(
+      "chat.inject",
+      buildChatInjectParams(input),
+      options,
+      {
+        safety: "mutation",
+        timeoutMs: options.timeoutMs,
+        allowCliFallback: false,
+        allowMutationFallbackOnUnsupported: false
+      }
+    );
+    return parseObjectGatewayPayload<OpenClawSessionControlPayload>("chat.inject", payload);
+  }
+
   async streamAgentTurn(
     input: OpenClawAgentTurnInput,
     callbacks: OpenClawStreamCallbacks = {},
@@ -3071,7 +3224,11 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         new Promise<null>((resolve) => globalThis.setTimeout(() => resolve(null), waitMs))
       ]);
 
-      return settledPayload ?? dispatchPayload;
+      if (settledPayload) {
+        return settledPayload;
+      }
+
+      return await this.waitForAgentTurnNative(input, dispatchPayload, options) ?? dispatchPayload;
     } catch (error) {
       this.options.onNativeFailure?.(error, "streamAgentTurn");
       const method = error instanceof NativeGatewayRequestError ? error.method : "streamAgentTurn";
@@ -3092,6 +3249,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       ? Math.max(0, Math.floor(input.timeoutSeconds * 1000))
       : undefined;
     const idempotencyKey = input.dispatchId ?? createRequestId();
+    await this.prepareNativeSession(input, sessionKey, options);
     const chatParams = {
       sessionKey,
       sessionId: input.sessionId,
@@ -3120,6 +3278,74 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       },
       options
     );
+  }
+
+  private async prepareNativeSession(input: OpenClawAgentTurnInput, sessionKey: string, options: OpenClawCommandOptions) {
+    if (!input.sessionId && !input.dispatchId) {
+      return;
+    }
+
+    try {
+      await this.callNative<unknown>(
+        "sessions.create",
+        buildNativeSessionCreateParams(input, sessionKey),
+        options,
+        { safety: "mutation" }
+      );
+      clearGatewayFallbackDiagnostic("sessions.create");
+    } catch (error) {
+      if (!shouldIgnoreNativeSessionPreparationError(error)) {
+        throw error;
+      }
+    }
+
+    try {
+      await this.callNative<unknown>(
+        "sessions.patch",
+        buildNativeSessionPatchParams(input, sessionKey),
+        options,
+        { safety: "mutation" }
+      );
+      clearGatewayFallbackDiagnostic("sessions.patch");
+    } catch (error) {
+      if (!shouldIgnoreNativeSessionPreparationError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  private async waitForAgentTurnNative(
+    input: OpenClawAgentTurnInput,
+    dispatchPayload: MissionCommandPayload,
+    options: OpenClawCommandOptions
+  ) {
+    if (!dispatchPayload.runId) {
+      return null;
+    }
+
+    const waitMs = resolveAgentTurnWaitMs(input, options);
+    const sessionKey = buildAgentSessionKey(input.agentId, input.sessionId);
+
+    try {
+      const payload = await this.callNative<MissionCommandPayload>(
+        "agent.wait",
+        {
+          runId: dispatchPayload.runId,
+          sessionKey,
+          sessionId: input.sessionId ?? undefined,
+          timeoutMs: waitMs
+        },
+        { ...options, timeoutMs: waitMs },
+        { safety: "read", timeoutMs: waitMs }
+      );
+      clearGatewayFallbackDiagnostic("agent.wait");
+      return payload;
+    } catch (error) {
+      if (!shouldIgnoreNativeAgentWaitError(error)) {
+        throw error;
+      }
+      return null;
+    }
   }
 
   tailLogs(input: OpenClawLogsTailInput = {}, options: OpenClawCommandOptions = {}) {
@@ -3359,9 +3585,10 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       );
       const config = cloneJsonObject(isObjectRecord(snapshot.config) ? snapshot.config : {});
       mutate(config);
-      await this.callNative<unknown>("config.schema.lookup", { path }, options, { safety: "read" })
+      const schemaLookupPayload = await this.callNative<unknown>("config.schema.lookup", { path }, options, { safety: "read" })
         .catch(() => this.callNative<unknown>("config.schema", {}, options, { safety: "read" }))
         .catch(() => null);
+      const reloadKind = readConfigReloadKindFromSchemaLookup(schemaLookupPayload);
 
       const baseHash = typeof snapshot.hash === "string" && snapshot.hash.trim() ? snapshot.hash : undefined;
       const patch = buildMergePatchForConfigPath(path, operation === "config.unset" ? null : value);
@@ -3373,6 +3600,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         patchParams.baseHash = baseHash;
       }
       let payload: unknown;
+      let appliedVia: OpenClawConfigMutationMetadata["appliedVia"] = "config.patch";
 
       try {
         payload = await this.callNative<unknown>("config.patch", patchParams, options, { safety: "mutation" });
@@ -3391,6 +3619,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
           }
 
           payload = await this.callNative<unknown>("config.apply", applyParams, options, { safety: "mutation" });
+          appliedVia = "config.apply";
         } catch (applyError) {
           if (!isGatewayMethodUnsupported(applyError)) {
             throw applyError;
@@ -3414,6 +3643,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
 
           try {
             payload = await this.callNative<unknown>("config.set", params, options, { safety: "mutation" });
+            appliedVia = "config.set";
           } catch (setError) {
             if (!isGatewayMethodUnsupported(setError)) {
               throw setError;
@@ -3424,7 +3654,29 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         }
       }
       clearGatewayFallbackDiagnostic(operation);
-      return commandResultFromGatewayPayload(payload);
+      const configMutation: OpenClawConfigMutationMetadata = {
+        path,
+        reloadKind,
+        restartRequired: reloadKind === "restart",
+        hotReloaded: reloadKind === "hot",
+        appliedVia,
+        ...(baseHash ? { baseHash } : {})
+      };
+
+      return commandResultFromGatewayPayload(
+        isObjectRecord(payload)
+          ? {
+              ...payload,
+              configMutation
+            }
+          : {
+              ok: true,
+              configMutation
+            },
+        {
+          openClawConfig: configMutation
+        }
+      );
     } catch (error) {
       this.options.onNativeFailure?.(error, operation);
       const failedMethod = error instanceof NativeGatewayRequestError ? error.method : operation;

@@ -6,6 +6,17 @@ export interface OpenClawCommandOptions {
   forceCli?: boolean;
 }
 
+export type OpenClawConfigReloadKind = "restart" | "hot" | "none" | "unknown";
+
+export type OpenClawConfigMutationMetadata = {
+  path: string;
+  reloadKind: OpenClawConfigReloadKind;
+  restartRequired: boolean;
+  hotReloaded: boolean;
+  appliedVia: "config.patch" | "config.apply" | "config.set";
+  baseHash?: string;
+};
+
 export type OpenClawGatewayConnectionState =
   | "cli-forced"
   | "idle"
@@ -679,6 +690,26 @@ export interface OpenClawAbortTurnInput {
   reason?: string | null;
 }
 
+export interface OpenClawSessionSteerInput {
+  key?: string | null;
+  sessionId?: string | null;
+  message: string;
+}
+
+export interface OpenClawChatInjectInput {
+  sessionKey?: string | null;
+  sessionId?: string | null;
+  message: string;
+}
+
+export type OpenClawSessionControlPayload = Record<string, unknown> & {
+  ok?: boolean;
+  status?: string;
+  runId?: string;
+  sessionId?: string;
+  taskId?: string;
+};
+
 export type OpenClawConfigSchemaPayload = Record<string, unknown> & {
   schema?: unknown;
   hash?: string;
@@ -688,6 +719,7 @@ export type OpenClawConfigSchemaPayload = Record<string, unknown> & {
 export type OpenClawConfigSchemaLookupPayload = Record<string, unknown> & {
   path?: string;
   normalizedPath?: string;
+  reloadKind?: OpenClawConfigReloadKind | string;
   schema?: unknown;
   hint?: unknown;
   hintPath?: string;
@@ -815,6 +847,8 @@ export interface OpenClawGatewayClient {
     options?: OpenClawCommandOptions
   ): Promise<MissionCommandPayload>;
   abortAgentTurn?(input: OpenClawAbortTurnInput, options?: OpenClawCommandOptions): Promise<MissionCommandPayload>;
+  steerSession?(input: OpenClawSessionSteerInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionControlPayload>;
+  injectChat?(input: OpenClawChatInjectInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionControlPayload>;
   streamAgentTurn(
     input: OpenClawAgentTurnInput,
     callbacks?: OpenClawStreamCallbacks,

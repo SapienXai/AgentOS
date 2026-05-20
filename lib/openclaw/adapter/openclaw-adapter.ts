@@ -41,6 +41,7 @@ import type {
   OpenClawAgentListPayload,
   OpenClawAgentTurnInput,
   OpenClawCommandOptions,
+  OpenClawChatInjectInput,
   OpenClawGatewayClient,
   OpenClawGatewayEventCallbacks,
   OpenClawGatewayEventSubscription,
@@ -60,7 +61,9 @@ import type {
   OpenClawSessionExportPayload,
   OpenClawSessionHistoryInput,
   OpenClawSessionHistoryPayload,
+  OpenClawSessionControlPayload,
   OpenClawSessionPayload,
+  OpenClawSessionSteerInput,
   OpenClawSessionsPayload,
   OpenClawSkillListPayload,
   OpenClawStreamCallbacks,
@@ -154,6 +157,8 @@ export interface OpenClawAdapter {
   provisionAutomation(input: OpenClawAutomationProvisionInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   runAgentTurn(input: OpenClawAgentTurnInput, options?: OpenClawCommandOptions): Promise<MissionCommandPayload>;
   abortAgentTurn(input: OpenClawAbortTurnInput, options?: OpenClawCommandOptions): Promise<MissionCommandPayload>;
+  steerSession(input: OpenClawSessionSteerInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionControlPayload>;
+  injectChat(input: OpenClawChatInjectInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionControlPayload>;
   streamAgentTurn(
     input: OpenClawAgentTurnInput,
     callbacks?: OpenClawStreamCallbacks,
@@ -376,6 +381,26 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
     return client.abortAgentTurn
       ? client.abortAgentTurn(input, options)
       : client.call<MissionCommandPayload>("chat.abort", { ...input }, options);
+  }
+
+  steerSession(input: OpenClawSessionSteerInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+
+    if (!client.steerSession) {
+      throw new Error("Native OpenClaw Gateway is required for sessions.steer.");
+    }
+
+    return client.steerSession(input, options);
+  }
+
+  injectChat(input: OpenClawChatInjectInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+
+    if (!client.injectChat) {
+      throw new Error("Native OpenClaw Gateway is required for chat.inject.");
+    }
+
+    return client.injectChat(input, options);
   }
 
   streamAgentTurn(

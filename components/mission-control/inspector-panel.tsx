@@ -22,6 +22,7 @@ import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer"
 import { InteractiveContent } from "@/components/mission-control/interactive-content";
 import { RailTooltip } from "@/components/mission-control/rail-tooltip";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge as UiBadge, type BadgeProps } from "@/components/ui/badge";
 import {
   formatAgentFileAccessLabel,
@@ -78,6 +79,15 @@ type AgentRuntimeRecord = MissionControlSnapshot["runtimes"][number];
 
 const INSPECTOR_BADGE_CLASS_NAME =
   "!h-4 !px-1.5 !py-0 !text-[8px] !leading-none !tracking-[0.1em] !whitespace-nowrap";
+
+const STEER_SUGGESTIONS = [
+  "Focus on tests",
+  "Prioritize UI polish",
+  "Avoid changing public API",
+  "Continue from the latest failure"
+] as const;
+
+type RunningTaskControlMode = "steer" | "inject";
 
 function Badge({ className, ...props }: BadgeProps) {
   return <UiBadge {...props} className={cn(INSPECTOR_BADGE_CLASS_NAME, className)} />;
@@ -446,6 +456,7 @@ function InspectorPanelContent({
                           taskDetailLoading={taskDetailLoading}
                           taskDetailError={resolvedTaskDetailError}
                           onAbortTask={onAbortTask}
+                          onControlComplete={onRefresh}
                         />
                       ) : null}
                       {selectedRuntime ? (
@@ -489,6 +500,8 @@ function InspectorPanelContent({
                       taskDetail={effectiveTaskDetail}
                       taskDetailLoading={taskDetailLoading}
                       taskDetailError={resolvedTaskDetailError}
+                      onAbortTask={onAbortTask}
+                      onControlComplete={onRefresh}
                     />
                   ) : null}
 
@@ -1343,7 +1356,8 @@ function TaskContent({
   taskDetail,
   taskDetailLoading,
   taskDetailError,
-  onAbortTask
+  onAbortTask,
+  onControlComplete
 }: {
   snapshot: MissionControlSnapshot;
   task: MissionControlSnapshot["tasks"][number];
@@ -1352,10 +1366,10 @@ function TaskContent({
   taskDetailLoading: boolean;
   taskDetailError: string | null;
   onAbortTask?: (task: MissionControlSnapshot["tasks"][number]) => void;
+  onControlComplete?: () => Promise<void> | void;
 }) {
   const selectedTask = snapshot.tasks.find((entry) => entry.id === taskId) ?? task;
   const isAborted = isTaskAborted(selectedTask);
-  const canAbortTask = Boolean(onAbortTask) && isTaskAbortable(selectedTask);
   const runs =
     taskDetail?.runs ??
     snapshot.runtimes
@@ -1409,27 +1423,11 @@ function TaskContent({
             { label: "Tools", value: String(integrity.toolNames.length) }
           ]}
         />
-        {onAbortTask && (canAbortTask || isAborted) ? (
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant={isAborted ? "secondary" : "destructive"}
-              size="sm"
-              disabled={!canAbortTask}
-              className="gap-2"
-              onClick={() => {
-                if (!canAbortTask) {
-                  return;
-                }
-
-                onAbortTask(selectedTask);
-              }}
-            >
-              <AlertTriangle className="h-3.5 w-3.5" />
-              {isAborted ? "Aborted" : "Abort task"}
-            </Button>
-          </div>
-        ) : null}
+        <RunningTaskControlBar
+          task={selectedTask}
+          onAbortTask={onAbortTask}
+          onControlComplete={onControlComplete}
+        />
         <div className="flex flex-wrap gap-2">
           {workspace ? <Badge variant="muted">{workspace.name}</Badge> : null}
           {primaryAgent ? <Badge variant="default">{formatAgentDisplayName(primaryAgent)}</Badge> : null}
@@ -1668,22 +1666,197 @@ function TaskIntegrityCard({
   );
 }
 
+function RunningTaskControlBar({
+  task,
+  onAbortTask,
+  onControlComplete
+}: {
+  task: MissionControlSnapshot["tasks"][number];
+  onAbortTask?: (task: MissionControlSnapshot["tasks"][number]) => void;
+  onControlComplete?: () => Promise<void> | void;
+}) {
+  const [mode, setMode] = useState<RunningTaskControlMode | null>(null);
+  const [message, setMessage] = useState("");
+  const [pendingMode, setPendingMode] = useState<RunningTaskControlMode | null>(null);
+  const isRunning = isTaskControlAvailable(task);
+  const canAbortTask = Boolean(onAbortTask) && isTaskAbortable(task);
+  const trimmedMessage = message.trim();
+
+  if (!isRunning) {
+    return null;
+  }
+
+  const openMode = (nextMode: RunningTaskControlMode) => {
+    setMode((current) => (current === nextMode ? null : nextMode));
+    setMessage("");
+  };
+
+  const submitControl = async () => {
+    if (!mode || !trimmedMessage || pendingMode) {
+      return;
+    }
+
+    setPendingMode(mode);
+
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/control`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: mode,
+          message: trimmedMessage,
+          dispatchId: task.dispatchId ?? null
+        })
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(readControlError(payload) || "Unable to update the running task.");
+      }
+
+      toast.success(mode === "steer" ? "Steer request sent." : "Context added to session.");
+      setMode(null);
+      setMessage("");
+      void onControlComplete?.();
+    } catch (error) {
+      toast.error(mode === "steer" ? "Steer request failed." : "Context injection failed.", {
+        description: error instanceof Error ? error.message : "Unknown control error."
+      });
+    } finally {
+      setPendingMode(null);
+    }
+  };
+
+  return (
+    <div className="rounded-[14px] border border-cyan-300/12 bg-cyan-400/[0.05] p-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="destructive"
+          size="sm"
+          disabled={!canAbortTask}
+          className="h-8 gap-1.5 rounded-[10px] px-2.5 text-[11px]"
+          onClick={() => {
+            if (!canAbortTask) {
+              return;
+            }
+
+            onAbortTask?.(task);
+          }}
+        >
+          <AlertTriangle className="h-3.5 w-3.5" />
+          Stop
+        </Button>
+        <Button
+          type="button"
+          variant={mode === "steer" ? "default" : "secondary"}
+          size="sm"
+          className="h-8 gap-1.5 rounded-[10px] px-2.5 text-[11px]"
+          onClick={() => openMode("steer")}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          Steer
+        </Button>
+        <Button
+          type="button"
+          variant={mode === "inject" ? "default" : "secondary"}
+          size="sm"
+          className="h-8 gap-1.5 rounded-[10px] px-2.5 text-[11px]"
+          onClick={() => openMode("inject")}
+        >
+          <MessageSquareText className="h-3.5 w-3.5" />
+          Add context
+        </Button>
+      </div>
+
+      {mode ? (
+        <div className="mt-2.5 space-y-2">
+          <Textarea
+            value={message}
+            disabled={Boolean(pendingMode)}
+            rows={3}
+            maxLength={4000}
+            placeholder={
+              mode === "steer"
+                ? "Focus on tests"
+                : "Inject this note/reference into the running session"
+            }
+            className="min-h-[76px] rounded-[12px] px-3 py-2 text-[12px] leading-5"
+            onChange={(event) => setMessage(event.target.value)}
+          />
+          {mode === "steer" ? (
+            <div className="flex flex-wrap gap-1.5">
+              {STEER_SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  disabled={Boolean(pendingMode)}
+                  className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-[10px] text-slate-300 transition-colors hover:border-cyan-300/25 hover:text-cyan-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => setMessage(suggestion)}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={Boolean(pendingMode)}
+              className="h-8 rounded-[10px] px-2.5 text-[11px]"
+              onClick={() => {
+                setMode(null);
+                setMessage("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              disabled={!trimmedMessage || Boolean(pendingMode)}
+              className="h-8 rounded-[10px] px-2.5 text-[11px]"
+              onClick={() => void submitControl()}
+            >
+              {pendingMode ? "Sending..." : mode === "steer" ? "Send steer" : "Add context"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function TaskFeedContent({
   task,
   basePath,
   taskDetail,
   taskDetailLoading,
-  taskDetailError
+  taskDetailError,
+  onAbortTask,
+  onControlComplete
 }: {
   task: MissionControlSnapshot["tasks"][number];
   basePath?: string | null;
   taskDetail: TaskDetailRecord | null;
   taskDetailLoading: boolean;
   taskDetailError: string | null;
+  onAbortTask?: (task: MissionControlSnapshot["tasks"][number]) => void;
+  onControlComplete?: () => Promise<void> | void;
 }) {
   if (taskDetailLoading && !taskDetail) {
     return (
       <InfoCard icon={TerminalSquare} title="Live feed" value="connecting">
+        <RunningTaskControlBar
+          task={task}
+          onAbortTask={onAbortTask}
+          onControlComplete={onControlComplete}
+        />
         <p>Connecting to the task feed…</p>
       </InfoCard>
     );
@@ -1692,6 +1865,11 @@ function TaskFeedContent({
   if (taskDetailError && !taskDetail) {
     return (
       <InfoCard icon={TerminalSquare} title="Live feed" value="error">
+        <RunningTaskControlBar
+          task={task}
+          onAbortTask={onAbortTask}
+          onControlComplete={onControlComplete}
+        />
         <p>{taskDetailError}</p>
       </InfoCard>
     );
@@ -1703,6 +1881,11 @@ function TaskFeedContent({
 
   return (
     <InfoCard icon={TerminalSquare} title="Live feed" value={String(visibleLiveFeed.length)}>
+      <RunningTaskControlBar
+        task={taskDetail?.task ?? task}
+        onAbortTask={onAbortTask}
+        onControlComplete={onControlComplete}
+      />
       {taskDetailError ? (
         <p className="rounded-[12px] border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-[12px] leading-5 text-amber-100">
           {taskDetailError}
@@ -2013,6 +2196,23 @@ function isTaskAbortable(task: MissionControlSnapshot["tasks"][number]) {
 
   const runtimeStatus = task.status as string;
   return runtimeStatus === "running" || runtimeStatus === "queued";
+}
+
+function isTaskControlAvailable(task: MissionControlSnapshot["tasks"][number]) {
+  return isTaskAbortable(task) || task.liveRunCount > 0;
+}
+
+function readControlError(payload: unknown) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const record = payload as Record<string, unknown>;
+  return typeof record.error === "string"
+    ? record.error
+    : typeof record.message === "string"
+      ? record.message
+      : null;
 }
 
 function RuntimeContent({

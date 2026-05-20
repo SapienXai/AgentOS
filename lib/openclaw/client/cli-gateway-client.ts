@@ -31,6 +31,7 @@ import type {
   OpenClawChannelLogsPayload,
   OpenClawAgentListPayload,
   OpenClawAgentTurnInput,
+  OpenClawChatInjectInput,
   OpenClawCommandOptions,
   OpenClawConfigSchemaLookupInput,
   OpenClawConfigSchemaLookupPayload,
@@ -63,7 +64,9 @@ import type {
   OpenClawSessionExportPayload,
   OpenClawSessionHistoryInput,
   OpenClawSessionHistoryPayload,
+  OpenClawSessionControlPayload,
   OpenClawSessionPayload,
+  OpenClawSessionSteerInput,
   OpenClawSessionsPayload,
   OpenClawSkillListPayload,
   OpenClawStreamCallbacks,
@@ -609,6 +612,24 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
       agentId: input.agentId ?? undefined,
       reason: input.reason ?? undefined
     }, options);
+  }
+
+  async steerSession(
+    input: OpenClawSessionSteerInput,
+    options: OpenClawCommandOptions = {}
+  ): Promise<OpenClawSessionControlPayload> {
+    void input;
+    void options;
+    throw new Error("Native OpenClaw Gateway is required for sessions.steer.");
+  }
+
+  async injectChat(
+    input: OpenClawChatInjectInput,
+    options: OpenClawCommandOptions = {}
+  ): Promise<OpenClawSessionControlPayload> {
+    void input;
+    void options;
+    throw new Error("Native OpenClaw Gateway is required for chat.inject.");
   }
 
   streamAgentTurn(

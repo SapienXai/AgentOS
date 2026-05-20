@@ -38,6 +38,7 @@ interface StreamingCommandOptions extends CommandOptions {
 export interface CommandResult {
   stdout: string;
   stderr: string;
+  metadata?: Record<string, unknown>;
 }
 
 export async function runOpenClaw(

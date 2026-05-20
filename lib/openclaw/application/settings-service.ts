@@ -81,6 +81,11 @@ type GatewayAuthConfigSnapshotResult = {
   invalidConfig: boolean;
 };
 
+type GatewayConfigCommandResult = {
+  stdout?: string;
+  metadata?: Record<string, unknown>;
+};
+
 function invalidateSettingsSnapshot() {
   invalidateMissionControlSnapshotCache();
   clearMissionControlRuntimeHistoryCache();
@@ -303,10 +308,10 @@ export async function generateGatewayNativeAuthToken(input: {
 } = {}) {
   const token = randomBytes(32).toString("base64url");
 
-  await getOpenClawAdapter().setConfig(GATEWAY_AUTH_MODE_CONFIG_KEY, "token", {
+  const modeMutation = await getOpenClawAdapter().setConfig(GATEWAY_AUTH_MODE_CONFIG_KEY, "token", {
     timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
   });
-  await getOpenClawAdapter().setConfig(GATEWAY_AUTH_TOKEN_CONFIG_KEY, token, {
+  const tokenMutation = await getOpenClawAdapter().setConfig(GATEWAY_AUTH_TOKEN_CONFIG_KEY, token, {
     timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
   });
 
@@ -320,13 +325,19 @@ export async function generateGatewayNativeAuthToken(input: {
   let restartIssue: string | null = null;
   let verified = false;
   let verificationIssue: string | null = null;
+  const restartRequired = shouldRestartAfterGatewayConfigMutations([
+    [GATEWAY_AUTH_MODE_CONFIG_KEY, modeMutation],
+    [GATEWAY_AUTH_TOKEN_CONFIG_KEY, tokenMutation]
+  ]);
 
   try {
-    await getOpenClawAdapter().controlGateway("restart", {
-      timeoutMs: 20_000
-    });
-    restarted = true;
-    await delay(GATEWAY_AUTH_RESTART_SETTLE_MS);
+    if (restartRequired) {
+      await getOpenClawAdapter().controlGateway("restart", {
+        timeoutMs: 20_000
+      });
+      restarted = true;
+      await delay(GATEWAY_AUTH_RESTART_SETTLE_MS);
+    }
     verificationIssue = await waitForGeneratedGatewayTokenAuth(token, input.verifyNativeAuth);
     verified = !verificationIssue;
   } catch (error) {
@@ -338,6 +349,7 @@ export async function generateGatewayNativeAuthToken(input: {
   return {
     envFile: saved.envFile,
     activeEnvName: saved.activeEnvName,
+    restartRequired,
     restarted,
     restartIssue,
     verified,
@@ -792,6 +804,50 @@ async function syncLocalOpenClawDeviceAuthTokenFromPairing(): Promise<GatewayDev
     token,
     scopes
   };
+}
+
+function shouldRestartAfterGatewayConfigMutations(mutations: Array<[string, GatewayConfigCommandResult]>) {
+  let restartRequired = false;
+
+  for (const [path, result] of mutations) {
+    const reloadKind = readGatewayConfigReloadKind(result);
+
+    if (reloadKind === "restart") {
+      return true;
+    }
+
+    if (reloadKind === "unknown" && gatewayConfigPathUsuallyRequiresRestart(path)) {
+      restartRequired = true;
+    }
+  }
+
+  return restartRequired;
+}
+
+function readGatewayConfigReloadKind(result: GatewayConfigCommandResult): "restart" | "hot" | "none" | "unknown" {
+  const metadata = result.metadata?.openClawConfig;
+  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+    const reloadKind = (metadata as Record<string, unknown>).reloadKind;
+    if (reloadKind === "restart" || reloadKind === "hot" || reloadKind === "none") {
+      return reloadKind;
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(result.stdout || "{}") as { configMutation?: { reloadKind?: unknown } };
+    const reloadKind = parsed.configMutation?.reloadKind;
+    if (reloadKind === "restart" || reloadKind === "hot" || reloadKind === "none") {
+      return reloadKind;
+    }
+  } catch {
+    return "unknown";
+  }
+
+  return "unknown";
+}
+
+function gatewayConfigPathUsuallyRequiresRestart(path: string) {
+  return path === "gateway.mode" || (/^gateway\./.test(path) && !/^gateway\.remote\./.test(path));
 }
 
 async function readOptionalJson<TPayload>(path: string): Promise<TPayload | null> {

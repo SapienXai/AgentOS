@@ -25,13 +25,13 @@ test("adding provider models does not silently fall back to OpenClaw file writes
   const calls: string[] = [];
 
   setOpenClawAdapterForTesting({
-    async call(method: string) {
-      calls.push(method);
-      if (method === "config.get") {
-        return { hash: "hash-1", config: { agents: { defaults: {} } } };
-      }
-
-      throw new Error("Gateway config.patch failed");
+    async getConfig(path: string) {
+      calls.push(`get:${path}`);
+      return null;
+    },
+    async setConfig(path: string) {
+      calls.push(`set:${path}`);
+      throw new Error("Gateway config update failed");
     }
   } as unknown as OpenClawAdapter);
 
@@ -39,30 +39,51 @@ test("adding provider models does not silently fall back to OpenClaw file writes
     () => addOpenClawModelsToConfig("openai", ["openai/gpt-4.1"]),
     /Legacy file fallback is disabled/
   );
-  assert.deepEqual(calls, ["config.get", "config.patch"]);
+  assert.deepEqual(calls, [
+    "get:agents.defaults.models",
+    "get:agents.defaults.model.primary",
+    "set:agents.defaults.models"
+  ]);
 });
 
-test("adding provider models retries transient Gateway restart during config patch", async () => {
+test("adding provider models retries transient Gateway restart during config update", async () => {
   const calls: string[] = [];
-  let patchCalls = 0;
+  let modelSetCalls = 0;
 
   setOpenClawAdapterForTesting({
-    async call(method: string) {
-      calls.push(method);
-      if (method === "config.get") {
-        return { hash: `hash-${calls.length}`, config: { agents: { defaults: {} } } };
+    async getConfig(path: string) {
+      calls.push(`get:${path}`);
+      if (path === "agents.defaults.models") {
+        return {};
       }
 
-      patchCalls += 1;
-      if (patchCalls === 1) {
+      return null;
+    },
+    async setConfig(path: string, value: unknown) {
+      calls.push(`set:${path}`);
+      if (path === "agents.defaults.models") {
+        modelSetCalls += 1;
+      }
+
+      if (path === "agents.defaults.models" && modelSetCalls === 1) {
         throw new Error("OpenClaw Gateway connection closed (1012: service restart).");
       }
 
-      return { ok: true };
+      return { stdout: JSON.stringify({ ok: true, value }), stderr: "" };
     }
   } as unknown as OpenClawAdapter);
 
   await addOpenClawModelsToConfig("openai-codex", ["openai-codex/gpt-5.5"]);
 
-  assert.deepEqual(calls, ["config.get", "config.patch", "config.get", "config.patch"]);
+  assert.deepEqual(calls, [
+    "get:agents.defaults.models",
+    "get:agents.defaults.model.primary",
+    "set:agents.defaults.models",
+    "get:agents.defaults.models",
+    "get:agents.defaults.model.primary",
+    "set:agents.defaults.models",
+    "set:agents.defaults.model.primary",
+    "set:agents.defaults.agentRuntime.id",
+    "set:plugins.entries.codex.enabled"
+  ]);
 });
