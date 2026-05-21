@@ -88,6 +88,7 @@ export type TaskNodeData = Record<string, unknown> & {
   justCreated?: boolean;
   locked?: boolean;
   onInspect?: (task: WorkItemRecord, target: "overview" | "output" | "files") => void;
+  onReviewTask?: (task: WorkItemRecord) => void;
   onReply?: (task: WorkItemRecord) => void;
   onCopyPrompt?: (task: WorkItemRecord) => void;
   onHide?: (task: WorkItemRecord) => void;

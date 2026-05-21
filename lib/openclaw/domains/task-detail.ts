@@ -108,18 +108,18 @@ function enrichTaskRecordWithRuntimeOutputs(
   createdFiles: ReturnType<typeof dedupeCreatedFiles>,
   warnings: string[]
 ): TaskRecord {
-  const finalOutput = [...outputs]
-    .reverse()
-    .find((output) => output.finalText?.trim() || output.errorMessage?.trim()) ?? null;
+  const finalOutput = resolveLatestRuntimeFinalOutput(outputs);
   const finalText = finalOutput?.finalText?.trim() || null;
   const resultPreview =
     finalText ||
     (typeof task.metadata.resultPreview === "string" ? task.metadata.resultPreview.trim() : "") ||
     task.subtitle;
   const turnCount = outputs.filter((output) => output.items.length > 0).length;
+  const recoveredCompletion = task.status === "stalled" && finalOutput ? isCompletedRuntimeOutput(finalOutput) : false;
 
   return {
     ...task,
+    status: recoveredCompletion ? "completed" : task.status,
     subtitle: finalText ? summarizeText(finalText, 160) : task.subtitle,
     artifactCount: createdFiles.length,
     warningCount: warnings.length,
@@ -131,6 +131,58 @@ function enrichTaskRecordWithRuntimeOutputs(
       finalResponseRuntimeId: finalOutput?.runtimeId ?? null
     }
   };
+}
+
+function resolveLatestRuntimeFinalOutput(
+  outputs: Awaited<ReturnType<typeof getRuntimeOutputForResolvedRuntimeFromTranscript>>[]
+) {
+  const withFinalText = outputs
+    .filter((output) => output.finalText?.trim())
+    .sort(sortRuntimeOutputsByFinalTimestampDesc);
+
+  if (withFinalText.length > 0) {
+    return withFinalText[0] ?? null;
+  }
+
+  return outputs
+    .filter((output) => output.errorMessage?.trim() && !isMissingTranscriptMessage(output.errorMessage))
+    .sort(sortRuntimeOutputsByFinalTimestampDesc)[0] ?? null;
+}
+
+function sortRuntimeOutputsByFinalTimestampDesc(
+  left: Awaited<ReturnType<typeof getRuntimeOutputForResolvedRuntimeFromTranscript>>,
+  right: Awaited<ReturnType<typeof getRuntimeOutputForResolvedRuntimeFromTranscript>>
+) {
+  return timestampScore(right.finalTimestamp) - timestampScore(left.finalTimestamp);
+}
+
+function timestampScore(value: string | null | undefined) {
+  const timestamp = value ? Date.parse(value) : Number.NaN;
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function isCompletedRuntimeOutput(
+  output: Awaited<ReturnType<typeof getRuntimeOutputForResolvedRuntimeFromTranscript>>
+) {
+  const stopReason = output.stopReason?.trim();
+
+  return Boolean(
+    output.finalText?.trim() &&
+      output.status === "available" &&
+      !output.errorMessage &&
+      stopReason &&
+      stopReason !== "toolUse" &&
+      stopReason !== "error" &&
+      stopReason !== "aborted"
+  );
+}
+
+function isMissingTranscriptMessage(value: string | null | undefined) {
+  return (
+    typeof value === "string" &&
+    (/No transcript file was found for this runtime session/i.test(value) ||
+      /No transcript entries were found for this runtime/i.test(value))
+  );
 }
 
 function matchesDispatchRecordRuntime(runtime: RuntimeRecord, dispatchRecord: MissionDispatchRecord) {

@@ -7,8 +7,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const controlRequestSchema = z.object({
-  action: z.enum(["steer", "inject"]),
-  message: z.string().trim().min(1).max(4000),
+  action: z.enum(["steer", "inject", "continue"]),
+  message: z.string().trim().min(1).max(12000),
   dispatchId: z.string().trim().min(1).optional().nullable()
 });
 

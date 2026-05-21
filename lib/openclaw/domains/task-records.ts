@@ -469,6 +469,12 @@ function resolveTaskRoutedMission(runtimes: RuntimeRecord[]) {
 
 function resolveTaskResultPreview(runtimes: RuntimeRecord[]) {
   const orderedCandidates = [
+    ...runtimes.filter(
+      (runtime) =>
+        hasTaskOutputIdentity(runtime) &&
+        !isBootstrapOnlyTaskRuntime(runtime) &&
+        (runtime.status === "completed" || runtime.status === "stalled" || runtime.status === "cancelled")
+    ),
     ...runtimes.filter((runtime) => typeof runtime.metadata.turnId === "string"),
     ...runtimes.filter((runtime) => runtime.metadata.recoveredFromObservation === true),
     ...runtimes.filter(
@@ -488,7 +494,7 @@ function resolveTaskResultPreview(runtimes: RuntimeRecord[]) {
     seenRuntimeIds.add(runtime.id);
 
     const subtitle = runtime.subtitle?.trim();
-    if (subtitle) {
+    if (subtitle && isMeaningfulTaskPreview(subtitle)) {
       return subtitle;
     }
   }
@@ -515,8 +521,20 @@ function isBootstrapOnlyTaskRuntime(runtime: RuntimeRecord) {
   );
 }
 
+function hasTaskOutputIdentity(runtime: RuntimeRecord) {
+  return Boolean(
+    typeof runtime.metadata.dispatchId === "string" && runtime.metadata.dispatchId.trim()
+  ) || Boolean(resolveRuntimeMissionText(runtime));
+}
+
+function isMeaningfulTaskPreview(value: string) {
+  const normalized = value.replace(/\s+/g, " ").trim().toLowerCase();
+
+  return Boolean(normalized) && normalized !== "sessions.changed" && normalized !== "session.message";
+}
+
 function aggregateRuntimeTokenUsage(runtimes: RuntimeRecord[]) {
-  const relevant = runtimes.filter((runtime) => runtime.tokenUsage);
+  const relevant = dedupeRuntimeTokenUsage(runtimes).filter((runtime) => runtime.tokenUsage);
 
   if (relevant.length === 0) {
     return undefined;
@@ -536,6 +554,48 @@ function aggregateRuntimeTokenUsage(runtimes: RuntimeRecord[]) {
       cacheRead: 0
     }
   );
+}
+
+function dedupeRuntimeTokenUsage(runtimes: RuntimeRecord[]) {
+  const seen = new Set<string>();
+  const deduped: RuntimeRecord[] = [];
+
+  for (const runtime of runtimes) {
+    if (!runtime.tokenUsage) {
+      continue;
+    }
+
+    const key = createRuntimeTokenUsageKey(runtime);
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(runtime);
+  }
+
+  return deduped;
+}
+
+function createRuntimeTokenUsageKey(runtime: RuntimeRecord) {
+  const dispatchId =
+    typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
+  const usage = runtime.tokenUsage ?? {
+    input: 0,
+    output: 0,
+    total: 0,
+    cacheRead: 0
+  };
+
+  return [
+    dispatchId || runtime.runId || runtime.sessionId || runtime.id,
+    dispatchId ? "" : runtime.sessionId ?? "",
+    usage.input,
+    usage.output,
+    usage.total,
+    usage.cacheRead ?? 0
+  ].join(":");
 }
 
 export function extractCreatedFilesFromRuntimeMetadata(runtime: RuntimeRecord) {
@@ -573,6 +633,7 @@ function inferCreatedFilesFromText(value: string | null | undefined) {
   }
 
   const matches = [
+    ...value.matchAll(/(?:^|[\s:])((?:\/[^\s`),;]+)+\.[A-Za-z0-9][A-Za-z0-9._-]*)/g),
     ...value.matchAll(/(?:^|[\s(])((?:\.{1,2}\/)?deliverables\/[^\s`),;]+)/g),
     ...value.matchAll(/\]\(((?:\/|\.{1,2}\/|deliverables\/)[^)]+)\)/g),
     ...value.matchAll(/`((?:\/|\.{1,2}\/|deliverables\/)[^`\n]+)`/g)

@@ -220,7 +220,11 @@ export async function buildTaskIntegrityRecord(input: {
       title: "No final answer was captured",
       detail: "The task completed without a final assistant response in either the runtime transcript or the dispatch payload."
     });
-  } else if (task.status === "stalled" && finalResponseText) {
+  } else if (
+    task.status === "stalled" &&
+    finalResponseText &&
+    latestMatchingTurn?.status !== "completed"
+  ) {
     issues.push({
       id: "partial-final-response",
       severity: "warning",

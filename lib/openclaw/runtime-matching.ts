@@ -20,7 +20,12 @@ export function matchesMissionText(candidate: string, mission: string) {
     return false;
   }
 
-  return normalizedCandidate === normalizedMission || normalizedCandidate.startsWith(`${normalizedMission} `);
+  return (
+    normalizedCandidate === normalizedMission ||
+    normalizedCandidate.startsWith(`${normalizedMission} `) ||
+    normalizedCandidate.includes(`original mission: ${normalizedMission}`) ||
+    normalizedCandidate.includes(`original mission ${normalizedMission}`)
+  );
 }
 
 function extractRuntimeMissionText(runtime: RuntimeRecord) {

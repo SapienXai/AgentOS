@@ -24,6 +24,7 @@ export function RuntimeNode({ data, selected }: NodeProps<RuntimeFlowNode>) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const badgeVariant = isPendingCreation ? "warning" : badgeVariantForRuntimeStatus(data.runtime.status);
+  const runtimeStatusLabel = displayRuntimeStatus(data.runtime.status);
 
   useEffect(() => {
     if (!menuOpen) {
@@ -193,7 +194,7 @@ export function RuntimeNode({ data, selected }: NodeProps<RuntimeFlowNode>) {
       </div>
 
       <div className="relative mt-2.5 flex flex-wrap items-center gap-1.5">
-        <Badge variant={badgeVariant}>{isPendingCreation ? "materializing" : data.runtime.status}</Badge>
+        <Badge variant={badgeVariant}>{isPendingCreation ? "materializing" : runtimeStatusLabel}</Badge>
         {isJustCreated ? (
           <Badge variant="default" className="gap-1 border-cyan-100/20 bg-cyan-100/12 text-cyan-50">
             <Sparkles className="h-3 w-3" />
@@ -211,12 +212,16 @@ export function RuntimeNode({ data, selected }: NodeProps<RuntimeFlowNode>) {
             : isJustCreated
               ? "Just created"
             : data.runtime.ageMs
-              ? `${Math.round(data.runtime.ageMs / 60000)}m ${data.runtime.status}`
+              ? `${Math.round(data.runtime.ageMs / 60000)}m ${runtimeStatusLabel}`
               : "live"}
         </p>
       </div>
     </motion.div>
   );
+}
+
+function displayRuntimeStatus(status: RuntimeNodeData["runtime"]["status"]) {
+  return status === "stalled" ? "waiting output" : status;
 }
 
 function RuntimeMenuButton({

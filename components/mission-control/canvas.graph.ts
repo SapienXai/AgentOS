@@ -57,6 +57,7 @@ export function buildCanvasGraph(
   onToggleTaskLock: (task: WorkItemRecord) => void,
   onAbortTask: (task: WorkItemRecord) => void,
   onInspectTask: (task: WorkItemRecord, target: "overview" | "output" | "files") => void,
+  onReviewTask: (task: WorkItemRecord) => void,
   persistedNodePositions: PersistedNodePositionMap
 ) {
   const safeHiddenRuntimeIds = Array.isArray(hiddenRuntimeIds) ? hiddenRuntimeIds : [];
@@ -270,7 +271,8 @@ export function buildCanvasGraph(
             onHide: onHideTask,
             onToggleLock: onToggleTaskLock,
             onAbortTask,
-            onInspect: onInspectTask
+            onInspect: onInspectTask,
+            onReviewTask
           }
         });
       });

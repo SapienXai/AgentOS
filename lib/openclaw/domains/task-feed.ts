@@ -30,6 +30,11 @@ export function buildTaskFeed(
   const events: TaskFeedEvent[] = [];
   const sortedRuns = [...runs].sort((left, right) => (left.updatedAt ?? 0) - (right.updatedAt ?? 0));
   const hasAvailableOutput = Array.from(outputsByRuntimeId.values()).some(hasRuntimeOutputEvidence);
+  let silentRuntimeCandidate: {
+    runtime: RuntimeRecord;
+    agentName: string | null;
+    timestamp: string;
+  } | null = null;
   const seenItemSignatures = new Set<string>();
   const seenStatusSignatures = new Set<string>();
   const seenWarningSignatures = new Set<string>();
@@ -95,7 +100,14 @@ export function buildTaskFeed(
     } else {
       const detail = summarizeText(output?.errorMessage || runtime.subtitle, 220);
 
-      if (hasAvailableOutput && isMissingTranscriptStatus(output, detail)) {
+      if (isMissingTranscriptStatus(output, detail)) {
+        if (!hasAvailableOutput && isRuntimeWaitingForOutput(runtime)) {
+          silentRuntimeCandidate = {
+            runtime,
+            agentName,
+            timestamp: runtimeTimestamp
+          };
+        }
         continue;
       }
 
@@ -105,18 +117,19 @@ export function buildTaskFeed(
       }
 
       seenStatusSignatures.add(statusSignature);
+      const presentation = presentRuntimeStatusEvent(runtime, agentName, detail);
 
       events.push(
         enrichTaskFeedEvent(
           {
             id: `${runtime.id}:status`,
-            kind: "status",
+            kind: presentation.kind,
             timestamp: runtimeTimestamp,
-            title: agentName ? `${agentName} · ${runtime.status}` : `Run · ${runtime.status}`,
-            detail,
+            title: presentation.title,
+            detail: presentation.detail,
             runtimeId: runtime.id,
             agentId: runtime.agentId,
-            isError: runtime.status === "stalled"
+            isError: presentation.isError
           },
           {
             urlSources: [output?.errorMessage, runtime.subtitle]
@@ -181,6 +194,31 @@ export function buildTaskFeed(
         )
       );
     }
+  }
+
+  if (silentRuntimeCandidate && !events.some((event) => hasOutputFeedEvidence(event))) {
+    const silentRuntimeEvent = presentSilentRuntimeEvent(
+      silentRuntimeCandidate.runtime,
+      silentRuntimeCandidate.agentName
+    );
+
+    events.push(
+      enrichTaskFeedEvent(
+        {
+          id: `${silentRuntimeCandidate.runtime.id}:waiting-for-output`,
+          kind: "status",
+          timestamp: silentRuntimeCandidate.timestamp,
+          title: silentRuntimeEvent.title,
+          detail: silentRuntimeEvent.detail,
+          runtimeId: silentRuntimeCandidate.runtime.id,
+          agentId: silentRuntimeCandidate.runtime.agentId,
+          isError: false
+        },
+        {
+          urlSources: [silentRuntimeCandidate.runtime.subtitle]
+        }
+      )
+    );
   }
 
   if (events.length === 0 && task.mission && !task.dispatchId) {
@@ -387,21 +425,17 @@ export async function buildMissionDispatchFeed(
   }
 
   if (record.status === "stalled") {
+    const stalledPresentation = presentMissionDispatchStalledEvent(record, agentName);
+
     events.push(
       enrichTaskFeedEvent(
         {
           id: `${record.id}:stalled`,
-          kind: "warning",
+          kind: stalledPresentation.kind,
           timestamp: record.updatedAt,
-          title: record.error ? "Dispatch error" : "Dispatch stalled",
-          detail: summarizeText(
-            record.error ||
-              (record.runner.lastHeartbeatAt
-                ? "OpenClaw stopped reporting progress while waiting for the first runtime."
-                : "OpenClaw did not produce the first heartbeat in time."),
-            220
-          ),
-          isError: true
+          title: stalledPresentation.title,
+          detail: summarizeText(stalledPresentation.detail, 220),
+          isError: stalledPresentation.isError
         },
         {
           urlSources: [record.error, record.outputDirRelative]
@@ -478,8 +512,88 @@ function hasRuntimeOutputEvidence(output: RuntimeOutputRecord) {
 function isMissingTranscriptStatus(output: RuntimeOutputRecord | undefined, detail: string) {
   return (
     output?.status === "missing" ||
-    /No transcript file was found for this runtime session/i.test(detail)
+    isMissingTranscriptMessage(detail)
   );
+}
+
+function isMissingTranscriptMessage(detail: string | null | undefined) {
+  return (
+    typeof detail === "string" &&
+    (/No transcript file was found for this runtime session/i.test(detail) ||
+      /No transcript entries were found for this runtime/i.test(detail))
+  );
+}
+
+function isRuntimeWaitingForOutput(runtime: RuntimeRecord) {
+  return runtime.status === "queued" || runtime.status === "running" || runtime.status === "stalled";
+}
+
+function hasOutputFeedEvidence(event: TaskFeedEvent) {
+  return event.kind === "assistant" || event.kind === "tool" || event.kind === "artifact";
+}
+
+function presentRuntimeStatusEvent(runtime: RuntimeRecord, agentName: string | null, detail: string) {
+  const subject = agentName || "Run";
+
+  if (runtime.status === "stalled") {
+    return {
+      kind: "warning" as const,
+      title: `${subject} · needs attention`,
+      detail,
+      isError: true
+    };
+  }
+
+  return {
+    kind: "status" as const,
+    title: `${subject} · ${runtime.status}`,
+    detail,
+    isError: false
+  };
+}
+
+function presentSilentRuntimeEvent(runtime: RuntimeRecord, agentName: string | null) {
+  const subject = agentName || "Agent";
+
+  if (runtime.status === "running") {
+    return {
+      title: `${subject} · working silently`,
+      detail: "The runtime is live, but no transcript output has been captured yet. The first assistant, tool, or file update will stream here."
+    };
+  }
+
+  return {
+    title: `${subject} · waiting for output`,
+    detail: "AgentOS has not captured transcript output yet. This can happen while the agent is starting, attaching a session, or writing its first update."
+  };
+}
+
+function presentMissionDispatchStalledEvent(record: MissionDispatchRecord, agentName: string) {
+  const missingTranscriptError = isMissingTranscriptMessage(record.error);
+  const hasRuntimeEvidence = Boolean(record.observation.observedAt || record.runner.lastHeartbeatAt);
+  const isSoftStall = missingTranscriptError || (!record.error && hasRuntimeEvidence);
+
+  if (isSoftStall) {
+    return {
+      kind: "status" as const,
+      title: missingTranscriptError ? "Waiting for output" : "Working silently",
+      detail: missingTranscriptError
+        ? `${agentName} has a runtime, but AgentOS has not captured transcript output yet. Updates will stream here when the session writes its first entry.`
+        : `${agentName} is still being observed, but no transcript output has arrived yet. AgentOS will keep the feed attached.`,
+      isError: false
+    };
+  }
+
+  return {
+    kind: "warning" as const,
+    title: "Needs attention",
+    detail:
+      record.error ||
+      (record.runner.lastHeartbeatAt
+        ? "OpenClaw stopped reporting progress while waiting for the first runtime."
+        : "OpenClaw did not produce the first heartbeat in time."),
+    isError: true
+  };
 }
 
 function buildFeedContentSignature(parts: Array<string | null | undefined>) {

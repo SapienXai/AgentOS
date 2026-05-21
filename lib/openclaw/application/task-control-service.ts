@@ -1,11 +1,14 @@
 import "server-only";
 
 import { getOpenClawAdapter, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
-import { invalidateMissionControlSnapshotCache } from "@/lib/openclaw/application/mission-control-service";
+import {
+  getMissionControlSnapshot,
+  invalidateMissionControlSnapshotCache
+} from "@/lib/openclaw/application/mission-control-service";
 import { getTaskDetail } from "@/lib/openclaw/application/runtime-service";
-import type { TaskDetailRecord } from "@/lib/openclaw/types";
+import type { MissionControlSnapshot, TaskDetailRecord } from "@/lib/openclaw/types";
 
-export type RunningTaskControlAction = "steer" | "inject";
+export type RunningTaskControlAction = "steer" | "inject" | "continue";
 
 export interface RunningTaskControlInput {
   action: RunningTaskControlAction;
@@ -28,11 +31,13 @@ export interface RunningTaskControlTarget {
   runId: string | null;
 }
 
-type TaskControlAdapter = Pick<OpenClawAdapter, "steerSession" | "injectChat">;
+type TaskControlAdapter = Pick<OpenClawAdapter, "steerSession" | "injectChat"> &
+  Partial<Pick<OpenClawAdapter, "runAgentTurn">>;
 
 type TaskControlDeps = {
   adapter?: TaskControlAdapter;
   getTaskDetail?: typeof getTaskDetail;
+  getMissionControlSnapshot?: typeof getMissionControlSnapshot;
   invalidateMissionControlSnapshotCache?: typeof invalidateMissionControlSnapshotCache;
 };
 
@@ -50,6 +55,21 @@ export async function controlRunningTaskSession(
   const loadTaskDetail = deps.getTaskDetail ?? getTaskDetail;
   const taskDetail = await loadTaskDetail(taskId, { dispatchId: input.dispatchId ?? null });
   const target = resolveRunningTaskControlTarget(taskDetail);
+  const adapter = deps.adapter ?? getOpenClawAdapter();
+
+  if (input.action === "continue") {
+    const result = await continueTaskSession(taskDetail, target, message, adapter, deps);
+
+    (deps.invalidateMissionControlSnapshotCache ?? invalidateMissionControlSnapshotCache)();
+
+    return {
+      ok: true,
+      action: input.action,
+      taskId: taskDetail.task.id,
+      target,
+      result
+    };
+  }
 
   if (!isTaskControlAvailable(taskDetail)) {
     throw new Error("Task is not currently running.");
@@ -59,7 +79,6 @@ export async function controlRunningTaskSession(
     throw new Error("Task does not expose an active OpenClaw session.");
   }
 
-  const adapter = deps.adapter ?? getOpenClawAdapter();
   const result =
     input.action === "steer"
       ? await adapter.steerSession(
@@ -88,6 +107,43 @@ export async function controlRunningTaskSession(
     target,
     result
   };
+}
+
+async function continueTaskSession(
+  taskDetail: TaskDetailRecord,
+  target: RunningTaskControlTarget,
+  message: string,
+  adapter: TaskControlAdapter,
+  deps: TaskControlDeps
+) {
+  if (!target.agentId) {
+    throw new Error("Task does not expose an OpenClaw agent.");
+  }
+
+  if (!adapter.runAgentTurn) {
+    throw new Error("Task continuation requires OpenClaw mission dispatch support.");
+  }
+
+  const snapshot = await (deps.getMissionControlSnapshot ?? getMissionControlSnapshot)({
+    includeHidden: true
+  }).catch(() => null);
+  const dispatchId = taskDetail.task.dispatchId ?? null;
+  const sessionId = target.sessionId ?? target.sessionKey ?? undefined;
+  const result = await adapter.runAgentTurn(
+    {
+      agentId: target.agentId,
+      sessionId: sessionId ?? undefined,
+      message,
+      thinking: "medium",
+      timeoutSeconds: 45,
+      workspace: resolveTaskWorkspacePath(taskDetail, snapshot),
+      dispatchId,
+      idempotencyKey: dispatchId ? `${dispatchId}:continue:${Date.now()}` : undefined
+    },
+    { timeoutMs: 60_000 }
+  );
+
+  return result as Record<string, unknown>;
 }
 
 function resolveRunningTaskControlTarget(taskDetail: TaskDetailRecord): RunningTaskControlTarget {
@@ -146,6 +202,21 @@ function resolveSessionKey(agentId: string | null, sessionId: string | null) {
   }
 
   return `agent:${agentId}:explicit:${sessionId}`;
+}
+
+function resolveTaskWorkspacePath(taskDetail: TaskDetailRecord, snapshot: MissionControlSnapshot | null) {
+  const task = taskDetail.task;
+  const workspaceId = task.workspaceId?.trim();
+
+  if (!snapshot || !workspaceId) {
+    return null;
+  }
+
+  return (
+    snapshot.workspaces.find((workspace) => workspace.id === workspaceId)?.path ??
+    snapshot.agents.find((agent) => agent.id === task.primaryAgentId)?.workspacePath ??
+    null
+  );
 }
 
 function firstNonEmpty(values: string[]) {

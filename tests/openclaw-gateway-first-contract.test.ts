@@ -324,6 +324,67 @@ test("running task context injection uses chat.inject semantics", async () => {
   }]);
 });
 
+test("task continuation runs a new turn on the existing dispatch session", async () => {
+  const calls: Array<{
+    agentId: string;
+    sessionId?: string;
+    message: string;
+    dispatchId?: string | null;
+    idempotencyKey?: string | null;
+    workspace?: string | null;
+  }> = [];
+  const taskDetail = createRunningTaskDetail();
+  taskDetail.task.status = "stalled";
+  taskDetail.task.liveRunCount = 0;
+  taskDetail.task.dispatchId = "dispatch-1";
+  taskDetail.runs[0]!.status = "stalled";
+
+  const response = await controlRunningTaskSession(
+    "task-1",
+    { action: "continue", message: "Continue from here", dispatchId: "dispatch-1" },
+    {
+      adapter: {
+        async steerSession() {
+          throw new Error("unexpected steer");
+        },
+        async injectChat() {
+          throw new Error("unexpected inject");
+        },
+        async runAgentTurn(input) {
+          calls.push(input);
+          return { runId: "run-2", status: "running" };
+        }
+      },
+      getTaskDetail: async () => taskDetail,
+      getMissionControlSnapshot: async () => createSnapshot(),
+      invalidateMissionControlSnapshotCache: () => {}
+    }
+  );
+
+  assert.equal(response.ok, true);
+  assert.equal(response.action, "continue");
+  assert.equal(response.target.sessionKey, "agent:agent-1:explicit:session-1");
+  assert.equal(calls.length, 1);
+  const call = calls[0]!;
+  assert.deepEqual(
+    {
+      agentId: call.agentId,
+      sessionId: call.sessionId,
+      message: call.message,
+      dispatchId: call.dispatchId,
+      workspace: call.workspace
+    },
+    {
+      agentId: "agent-1",
+      sessionId: "session-1",
+      message: "Continue from here",
+      dispatchId: "dispatch-1",
+      workspace: "/tmp/agentos-contract-workspace"
+    }
+  );
+  assert.match(call.idempotencyKey ?? "", /^dispatch-1:continue:/);
+});
+
 test("Gateway event bridge normalizes chat, tool, session, and approval events into runtimes", () => {
   const runtime = normalizeOpenClawGatewayEventToRuntime({
     type: "event",

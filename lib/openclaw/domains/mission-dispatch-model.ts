@@ -239,10 +239,10 @@ export function resolveMissionDispatchSubtitle(
     }
 
     if (!record.runner.lastHeartbeatAt) {
-      return "Dispatch stalled before the first runner heartbeat.";
+      return "Needs attention before the first runner heartbeat.";
     }
 
-    return "Dispatch stalled while waiting for the first OpenClaw runtime.";
+    return "Working silently while AgentOS waits for the first OpenClaw runtime.";
   }
 
   const bootstrapStage = resolveMissionDispatchBootstrapStage(record, status);
@@ -331,10 +331,25 @@ export function createMissionDispatchResultFromRuntimeOutput(
     return null;
   }
 
+  const usage = selectMissionDispatchResultTokenUsage(runtime.tokenUsage, output.tokenUsage);
+  const hasAgentMeta = Boolean(runtime.agentId || runtime.sessionId || runtime.modelId || usage);
+
   return {
     runId: runtime.runId || `runtime:${runtime.id}`,
     status: output.errorMessage ? "error" : "ok",
     summary: output.errorMessage || "completed",
+    ...(hasAgentMeta
+      ? {
+          meta: {
+            agentMeta: {
+              agentId: runtime.agentId,
+              sessionId: runtime.sessionId,
+              model: runtime.modelId,
+              usage
+            }
+          }
+        }
+      : {}),
     ...(output.finalText
       ? {
           result: {
@@ -348,6 +363,21 @@ export function createMissionDispatchResultFromRuntimeOutput(
         }
       : {})
   };
+}
+
+function selectMissionDispatchResultTokenUsage(
+  runtimeUsage: RuntimeRecord["tokenUsage"] | undefined,
+  outputUsage: RuntimeOutputRecord["tokenUsage"] | undefined
+) {
+  if (!runtimeUsage) {
+    return outputUsage;
+  }
+
+  if (!outputUsage) {
+    return runtimeUsage;
+  }
+
+  return outputUsage.total > runtimeUsage.total ? outputUsage : runtimeUsage;
 }
 
 export function normalizeMissionDispatchStatus(value: unknown): MissionDispatchStatus {
@@ -485,6 +515,7 @@ function inferCreatedFilesFromText(value: string | null | undefined) {
   }
 
   const matches = [
+    ...value.matchAll(/(?:^|[\s:])((?:\/[^\s`),;]+)+\.[A-Za-z0-9][A-Za-z0-9._-]*)/g),
     ...value.matchAll(/(?:^|[\s(])((?:\.{1,2}\/)?deliverables\/[^\s`),;]+)/g),
     ...value.matchAll(/\]\(((?:\/|\.{1,2}\/|deliverables\/)[^)]+)\)/g),
     ...value.matchAll(/`((?:\/|\.{1,2}\/|deliverables\/)[^`\n]+)`/g)

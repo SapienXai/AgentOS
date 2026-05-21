@@ -3357,7 +3357,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     const timeoutMs = typeof input.timeoutSeconds === "number" && Number.isFinite(input.timeoutSeconds)
       ? Math.max(0, Math.floor(input.timeoutSeconds * 1000))
       : undefined;
-    const idempotencyKey = input.dispatchId ?? createRequestId();
+    const idempotencyKey = input.idempotencyKey?.trim() || input.dispatchId || createRequestId();
     await this.prepareNativeSession(input, sessionKey, options);
     const chatParams = {
       sessionKey,

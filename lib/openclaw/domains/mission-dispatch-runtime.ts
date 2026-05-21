@@ -20,7 +20,10 @@ import type { RuntimeRecord } from "@/lib/openclaw/types";
 export type MissionDispatchRuntimeLifecycleHelpers = {
   buildObservedRuntime: (record: MissionDispatchRecordLike) => Promise<RuntimeRecord | null>;
   persistObservation: (record: MissionDispatchRecordLike, runtime: RuntimeRecord) => Promise<void>;
-  reconcileRuntimeState: (record: MissionDispatchRecordLike, runtime: RuntimeRecord) => Promise<void>;
+  reconcileRuntimeState: (
+    record: MissionDispatchRecordLike,
+    runtime: RuntimeRecord
+  ) => Promise<MissionDispatchRecordLike | null | void>;
 };
 
 export function annotateMissionDispatchSessions(
@@ -122,22 +125,20 @@ export async function buildMissionDispatchRuntimes(
     if (matchedRuntime) {
       const hydratedRuntime = hydrateMissionDispatchRuntimeFromRelatedSession(matchedRuntime, currentRuntimes);
       await helpers.persistObservation(record, hydratedRuntime);
-      await helpers.reconcileRuntimeState(record, hydratedRuntime);
-      syntheticRuntimes.push(annotateRuntimeWithMissionDispatch(hydratedRuntime, record));
+      const reconciledRecord = (await helpers.reconcileRuntimeState(record, hydratedRuntime)) ?? record;
+      syntheticRuntimes.push(annotateRuntimeWithMissionDispatch(hydratedRuntime, reconciledRecord));
       continue;
     }
 
     const observedRuntime = await helpers.buildObservedRuntime(record);
 
     if (observedRuntime) {
-      if (!isMissionDispatchTerminalStatus(record.status)) {
-        await helpers.reconcileRuntimeState(record, observedRuntime);
-      }
+      const reconciledRecord = (await helpers.reconcileRuntimeState(record, observedRuntime)) ?? record;
 
       syntheticRuntimes.push(
         buildMissionDispatchTranscriptRuntime(
-          record,
-          observedRuntime.sessionId ?? extractMissionDispatchSessionId(record) ?? undefined
+          reconciledRecord,
+          observedRuntime.sessionId ?? extractMissionDispatchSessionId(reconciledRecord) ?? undefined
         )
       );
       continue;
@@ -275,6 +276,8 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
   const runtimeMission = resolveRuntimeMissionText(runtime);
   const nextWorkspaceId = record.workspaceId ?? runtime.workspaceId;
   const outputFile = resolveMissionDispatchOutputFile(record);
+  const tokenUsage = runtime.tokenUsage ?? extractMissionDispatchTokenUsage(record);
+  const modelId = runtime.modelId ?? extractMissionDispatchModelId(record) ?? undefined;
   const nextStatus =
     isMissionDispatchTerminalStatus(record.status)
       ? record.status
@@ -289,6 +292,8 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
     runtime.metadata.outputDir === record.outputDir &&
     runtime.metadata.outputDirRelative === record.outputDirRelative &&
     (!outputFile || runtimeMetadataHasCreatedFile(runtime, outputFile.path)) &&
+    runtime.tokenUsage === tokenUsage &&
+    runtime.modelId === modelId &&
     runtime.status === nextStatus
   ) {
     return runtime;
@@ -301,6 +306,8 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
       : runtime.subtitle,
     status: nextStatus,
     workspaceId: nextWorkspaceId ?? undefined,
+    modelId,
+    tokenUsage,
     metadata: {
       ...runtime.metadata,
       dispatchId: record.id,

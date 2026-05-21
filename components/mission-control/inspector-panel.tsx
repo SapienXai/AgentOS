@@ -21,6 +21,13 @@ import { toast } from "sonner";
 import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
 import { InteractiveContent } from "@/components/mission-control/interactive-content";
 import { RailTooltip } from "@/components/mission-control/rail-tooltip";
+import {
+  readTaskReviewAction,
+  readTaskReviewReviewedAt,
+  resolveEffectiveTaskReviewStatus,
+  resolveTaskReviewBadgeLabel,
+  resolveTaskReviewSummary
+} from "@/components/mission-control/task-review-state";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge as UiBadge, type BadgeProps } from "@/components/ui/badge";
@@ -1368,7 +1375,10 @@ function TaskContent({
   onAbortTask?: (task: MissionControlSnapshot["tasks"][number]) => void;
   onControlComplete?: () => Promise<void> | void;
 }) {
-  const selectedTask = snapshot.tasks.find((entry) => entry.id === taskId) ?? task;
+  const snapshotTask = snapshot.tasks.find((entry) => entry.id === taskId) ?? task;
+  const selectedTask = taskDetail?.task
+    ? mergeLocalTaskReviewMetadata(taskDetail.task, snapshotTask)
+    : snapshotTask;
   const isAborted = isTaskAborted(selectedTask);
   const runs =
     taskDetail?.runs ??
@@ -1442,7 +1452,12 @@ function TaskContent({
         ) : null}
       </InfoCard>
 
-      <TaskIntegrityCard task={selectedTask} integrity={integrity} basePath={workspacePath} />
+      <TaskIntegrityCard
+        task={selectedTask}
+        integrity={integrity}
+        basePath={workspacePath}
+        latestEvidenceAt={findLatestOutputEvidenceEvent(taskDetail?.liveFeed ?? [])?.timestamp ?? null}
+      />
 
       <InfoCard icon={TerminalSquare} title="Runner logs" value={String(runnerLogs.length)}>
         {runnerLogFile ? (
@@ -1528,23 +1543,35 @@ function TaskContent({
 function TaskIntegrityCard({
   task,
   integrity,
-  basePath
+  basePath,
+  latestEvidenceAt
 }: {
   task: MissionControlSnapshot["tasks"][number];
   integrity: TaskDetailRecord["integrity"];
   basePath?: string | null;
+  latestEvidenceAt?: string | null;
 }) {
   const isAborted = isTaskAborted(task);
   const isOptimisticPending = Boolean(task.metadata.optimistic) && !isAborted && task.status !== "stalled";
   const missingFinalResponseIssue = integrity.issues.find((issue) => issue.id === "missing-final-response");
   const partialFinalResponseIssue = integrity.issues.find((issue) => issue.id === "partial-final-response");
+  const reviewStatus = resolveEffectiveTaskReviewStatus(task, {
+    hasLiveActivity: task.status === "running" || task.status === "queued" || task.liveRunCount > 0,
+    latestEvidenceAt
+  });
+  const reviewAction = readTaskReviewAction(task);
+  const reviewedAt = readTaskReviewReviewedAt(task);
   const summary =
-    isAborted
+    reviewStatus
+      ? resolveTaskReviewSummary(reviewStatus)
+      : isAborted
       ? "This task was aborted by an operator. Captured evidence may be incomplete."
       : isOptimisticPending
         ? "OpenClaw accepted this task. Session, tool, and file evidence will appear here as soon as the first runtime reports in."
         : missingFinalResponseIssue
           ? missingFinalResponseIssue.detail
+        : partialFinalResponseIssue
+          ? partialFinalResponseIssue.detail
         : integrity.status === "verified"
           ? "AgentOS found a matching transcript and the captured result looks internally consistent."
           : integrity.sessionMismatch
@@ -1559,9 +1586,30 @@ function TaskIntegrityCard({
     <InfoCard
       icon={Radar}
       title="Result integrity"
-      value={isAborted ? "aborted" : task.status === "stalled" ? "stalled" : isOptimisticPending ? "pending" : integrity.status}
+      value={
+        reviewStatus
+          ? resolveTaskReviewBadgeLabel(reviewStatus)
+          : isAborted
+          ? "aborted"
+          : partialFinalResponseIssue
+            ? "needs review"
+            : task.status === "stalled" && !integrity.finalResponseText
+              ? "waiting output"
+              : isOptimisticPending
+                ? "pending"
+                : integrity.status
+      }
     >
       <p>{summary}</p>
+      {reviewStatus ? (
+        <div className="rounded-[14px] border border-emerald-400/16 bg-emerald-400/[0.06] px-3 py-2.5">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-100/80">Operator review</p>
+          <p className="mt-2 text-[12px] leading-5 text-emerald-50">
+            {reviewAction || resolveTaskReviewBadgeLabel(reviewStatus)}
+            {reviewedAt ? ` · ${formatRelativeTime(Date.parse(reviewedAt))}` : ""}
+          </p>
+        </div>
+      ) : null}
       <InspectorMetricGrid
         items={[
           { label: "Output files", value: String(integrity.outputFileCount) },
@@ -1875,7 +1923,7 @@ function TaskFeedContent({
     );
   }
 
-  const liveFeed = taskDetail?.liveFeed ?? [];
+  const liveFeed = mergeTaskFeedEvents(taskDetail?.liveFeed ?? [], readTaskFeedEvents(task.metadata.reviewEvents));
   const visibleLiveFeed = liveFeed.filter((event) => !isRunnerLogTaskEvent(event));
   const integrity = taskDetail?.integrity ?? createOptimisticTaskIntegrity(task);
 
@@ -1987,7 +2035,10 @@ function createOptimisticTaskDetail(task: MissionControlSnapshot["tasks"][number
     outputs: [],
     liveFeed: readOptimisticTaskFeed(task),
     createdFiles: [],
-    warnings: task.status === "stalled" || isTaskAborted(task) ? [task.subtitle] : [],
+    warnings:
+      isTaskAborted(task) || (task.status === "stalled" && !isMissingTranscriptCopy(task.subtitle))
+        ? [task.subtitle]
+        : [],
     integrity: createOptimisticTaskIntegrity(task)
   };
 }
@@ -2050,6 +2101,7 @@ function createOptimisticTaskIntegrity(
   task: MissionControlSnapshot["tasks"][number]
 ): TaskDetailRecord["integrity"] {
   const isOptimisticPending = Boolean(task.metadata.optimistic) && !isTaskAborted(task) && task.status !== "stalled";
+  const hasCapturedOutput = hasCapturedTaskOutput(task);
   const issues: TaskDetailRecord["integrity"]["issues"] =
     isTaskAborted(task)
       ? [
@@ -2063,10 +2115,14 @@ function createOptimisticTaskIntegrity(
       : task.status === "stalled"
       ? [
           {
-            id: "stalled-dispatch",
+            id: hasCapturedOutput ? "partial-final-response" : "stalled-dispatch",
             severity: "warning" as const,
-            title: "Dispatch stalled before evidence was captured",
-            detail: task.subtitle
+            title: hasCapturedOutput ? "Final response came from an incomplete runtime" : "Waiting for output evidence",
+            detail: hasCapturedOutput
+              ? "The assistant produced output, but the runtime stalled before the task completed. Treat this as the last captured response, not a verified completion."
+              : isMissingTranscriptCopy(task.subtitle)
+                ? "AgentOS is still waiting for the first transcript entry from this runtime."
+                : task.subtitle
           }
         ]
       : [];
@@ -2092,7 +2148,7 @@ function createOptimisticTaskIntegrity(
     outputFileCount: 0,
     transcriptTurnCount: 0,
     matchingTranscriptTurnCount: 0,
-    finalResponseText: null,
+    finalResponseText: hasCapturedOutput ? readTaskResultPreview(task) : null,
     finalResponseSource: "none",
     dispatchSessionId: null,
     sessionMismatch: false,
@@ -2103,15 +2159,63 @@ function createOptimisticTaskIntegrity(
 }
 
 function readOptimisticTaskFeed(task: MissionControlSnapshot["tasks"][number]) {
-  const value = task.metadata.optimisticEvents;
+  const byId = new Map<string, TaskFeedEvent>();
 
+  for (const event of [
+    ...readTaskFeedEvents(task.metadata.optimisticEvents),
+    ...readTaskFeedEvents(task.metadata.reviewEvents)
+  ]) {
+    byId.set(event.id, event);
+  }
+
+  return [...byId.values()].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+}
+
+function readTaskFeedEvents(value: unknown) {
   if (!Array.isArray(value)) {
     return [] as TaskFeedEvent[];
   }
 
-  return value
-    .filter(isTaskFeedEvent)
-    .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+  return value.filter(isTaskFeedEvent);
+}
+
+function mergeTaskFeedEvents(...eventGroups: TaskFeedEvent[][]) {
+  const byId = new Map<string, TaskFeedEvent>();
+
+  for (const event of eventGroups.flat()) {
+    byId.set(event.id, event);
+  }
+
+  return [...byId.values()].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+}
+
+function mergeLocalTaskReviewMetadata(
+  streamedTask: MissionControlSnapshot["tasks"][number],
+  localTask: MissionControlSnapshot["tasks"][number]
+) {
+  const reviewMetadata = Object.fromEntries(
+    ["reviewStatus", "reviewAction", "reviewedAt", "reviewEvents"]
+      .map((key) => [key, localTask.metadata[key]])
+      .filter(([, value]) => value !== undefined)
+  );
+
+  if (Object.keys(reviewMetadata).length === 0) {
+    return streamedTask;
+  }
+
+  return {
+    ...streamedTask,
+    metadata: {
+      ...streamedTask.metadata,
+      ...reviewMetadata
+    }
+  };
+}
+
+function findLatestOutputEvidenceEvent(feed: TaskFeedEvent[]) {
+  return [...feed]
+    .reverse()
+    .find((event) => event.kind === "assistant" || event.kind === "tool" || event.kind === "artifact") ?? null;
 }
 
 function readTaskPromptText(task: MissionControlSnapshot["tasks"][number]) {
@@ -2130,6 +2234,24 @@ function readTaskResultPreview(task: MissionControlSnapshot["tasks"][number]) {
     typeof task.metadata.resultPreview === "string" ? task.metadata.resultPreview.trim() : "";
 
   return resultPreview || task.subtitle.trim() || "";
+}
+
+function hasCapturedTaskOutput(task: MissionControlSnapshot["tasks"][number]) {
+  const finalResponse =
+    typeof task.metadata.finalResponseText === "string" ? task.metadata.finalResponseText.trim() : "";
+  const resultPreview =
+    typeof task.metadata.resultPreview === "string" ? task.metadata.resultPreview.trim() : "";
+  const candidate = finalResponse || resultPreview;
+
+  return Boolean(candidate && !isWaitingForOutputCopy(candidate));
+}
+
+function isWaitingForOutputCopy(value: string) {
+  return (
+    isMissingTranscriptCopy(value) ||
+    /waiting for (the first )?(transcript|output)/i.test(value) ||
+    /working silently/i.test(value)
+  );
 }
 
 function readTaskSummaryCount(value: unknown, fallback: number) {
@@ -2177,6 +2299,14 @@ function isTaskFeedEvent(value: unknown): value is TaskFeedEvent {
 
 function isRunnerLogTaskEvent(event: TaskFeedEvent) {
   return event.id.startsWith("runner-log:");
+}
+
+function isMissingTranscriptCopy(value: string | null | undefined) {
+  return (
+    typeof value === "string" &&
+    (/No transcript file was found for this runtime session/i.test(value) ||
+      /No transcript entries were found for this runtime/i.test(value))
+  );
 }
 
 function resolveTaskDispatchStatus(task: MissionControlSnapshot["tasks"][number]) {
@@ -2365,22 +2495,31 @@ function RuntimeOutputContent({
         title="Final response"
         value={
           runtime.status === "stalled" || runtime.status === "cancelled"
-            ? runtime.status
+            ? runtime.status === "stalled"
+              ? "waiting output"
+              : runtime.status
             : runtimeOutput.stopReason || runtimeOutput.status
         }
       >
         {runtime.status === "stalled" || runtime.status === "cancelled" ? (
           <p className="mb-2 rounded-[12px] border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-[12px] leading-5 text-amber-100">
-            This runtime did not complete cleanly. The text below is the last captured assistant output, not a verified completion.
+            {runtime.status === "stalled"
+              ? "This runtime is quiet or waiting for transcript output. AgentOS will keep watching for the first assistant update."
+              : "This runtime was cancelled. The text below is the last captured assistant output, not a verified completion."}
           </p>
         ) : null}
-        {runtimeOutput.errorMessage ? (
+        {runtimeOutput.errorMessage && !isMissingTranscriptCopy(runtimeOutput.errorMessage) ? (
           <p className="mb-2 rounded-[12px] border border-rose-400/20 bg-rose-400/10 px-3 py-2 text-[12px] leading-5 text-rose-100">
             {runtimeOutput.errorMessage}
           </p>
         ) : null}
         <InteractiveContent
-          text={runtimeOutput.finalText || runtimeOutput.errorMessage || "No assistant output has been recorded for this runtime yet."}
+          text={
+            runtimeOutput.finalText ||
+            (runtimeOutput.errorMessage && !isMissingTranscriptCopy(runtimeOutput.errorMessage)
+              ? runtimeOutput.errorMessage
+              : "Waiting for the first assistant output from this runtime.")
+          }
           className="text-[13px] leading-5 text-slate-100"
           basePath={basePath}
         />
@@ -2392,7 +2531,7 @@ function RuntimeOutputContent({
       </InfoCard>
 
       <InfoCard icon={Radar} title="Transcript trail" value={String(runtimeOutput.items.length)}>
-        {runtimeOutput.items.length === 0 ? <p>No transcript entries were found.</p> : null}
+        {runtimeOutput.items.length === 0 ? <p>Waiting for the first transcript entry.</p> : null}
         <div className="space-y-2">
           {runtimeOutput.items.map((item) => (
             <div

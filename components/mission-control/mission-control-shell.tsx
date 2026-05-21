@@ -17,6 +17,16 @@ import type { ModelSwitchFeedback } from "@/components/mission-control/openclaw-
 import { ResetDialog } from "@/components/mission-control/reset-dialog";
 import { SettingsControlCenter } from "@/components/mission-control/settings-control-center";
 import { MissionSidebar } from "@/components/mission-control/sidebar";
+import { TaskReviewDialog } from "@/components/mission-control/task-review-dialog";
+import {
+  applyTaskReviewStateToSnapshot,
+  createTaskReviewResolution,
+  parseTaskReviewState,
+  resolveTaskReviewKey,
+  taskReviewStateStorageKey,
+  type TaskReviewStateMap,
+  type TaskReviewStatus
+} from "@/components/mission-control/task-review-state";
 import { WorkspaceChannelsDialog } from "@/components/mission-control/workspace-channels-dialog";
 import { WorkspaceContextFilesDialog } from "@/components/mission-control/workspace-context-files-dialog";
 import { WorkspaceWizardDialog } from "@/components/mission-control/workspace-wizard/workspace-wizard-dialog";
@@ -119,6 +129,12 @@ type AgentModelRequest = {
   requestId: string;
   agentId: string;
 };
+type TaskReviewRequest = {
+  requestId: string;
+  taskId: string;
+  taskKey: string;
+  fallbackTask: WorkItemRecord;
+};
 
 type SurfaceTheme = "dark" | "light";
 type UpdateRunState = "idle" | "running" | "success" | "error";
@@ -162,6 +178,50 @@ function areOpenClawBinarySelectionsEqual(
   );
 }
 
+function isMissingTranscriptActivityMessage(value: string | null | undefined) {
+  return (
+    typeof value === "string" &&
+    (/No transcript file was found for this runtime session/i.test(value) ||
+      /No transcript entries were found for this runtime/i.test(value))
+  );
+}
+
+function buildTaskReviewContinuationPrompt(task: WorkItemRecord, capturedOutput: string) {
+  const originalPrompt = limitTaskReviewMessageSection(resolveTaskPrompt(task), 3200);
+  const output = limitTaskReviewMessageSection(capturedOutput, 7600);
+
+  return [
+    "Continue this task from the last captured output. Finish the remaining work and verify the result.",
+    "",
+    "Original mission:",
+    originalPrompt,
+    output ? "" : null,
+    output ? "Last captured output:" : null,
+    output || null
+  ]
+    .filter((entry): entry is string => typeof entry === "string")
+    .join("\n");
+}
+
+function limitTaskReviewMessageSection(value: string, maxLength: number) {
+  const normalized = value.trim();
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength).trimEnd()}\n\n[truncated for task continuation]`;
+}
+
+function buildTaskReviewRetryPrompt(task: WorkItemRecord) {
+  return [
+    "Retry this task from the original mission. Do not assume the previous stalled runtime completed.",
+    "",
+    "Original mission:",
+    resolveTaskPrompt(task)
+  ].join("\n");
+}
+
 export function MissionControlShell({
   initialSnapshot,
   mode = "mission"
@@ -194,6 +254,9 @@ export function MissionControlShell({
   const [taskAbortRequest, setTaskAbortRequest] = useState<WorkItemRecord | null>(null);
   const [taskAbortRunState, setTaskAbortRunState] = useState<TaskAbortState>("idle");
   const [taskAbortMessage, setTaskAbortMessage] = useState<string | null>(null);
+  const [taskReviewRequest, setTaskReviewRequest] = useState<TaskReviewRequest | null>(null);
+  const [taskReviewState, setTaskReviewState] = useState<TaskReviewStateMap>({});
+  const [hasHydratedTaskReviewState, setHasHydratedTaskReviewState] = useState(false);
   const missionDispatchAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const [recentCreatedAgentId, setRecentCreatedAgentId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -272,10 +335,22 @@ export function MissionControlShell({
   const updateOperationToastIdRef = useRef<string | number | null>(null);
   const activeChatAgentId =
     isInspectorOpen && activeInspectorTab === "chat" ? selectedNodeId : null;
-  const uiSnapshot = useMemo(
-    () => mergeSnapshotWithOptimisticTasks(snapshot, optimisticMissionTasks),
-    [snapshot, optimisticMissionTasks]
-  );
+  const uiSnapshot = useMemo(() => {
+    const mergedSnapshot = mergeSnapshotWithOptimisticTasks(snapshot, optimisticMissionTasks);
+    return applyTaskReviewStateToSnapshot(mergedSnapshot, taskReviewState);
+  }, [snapshot, optimisticMissionTasks, taskReviewState]);
+  const activeTaskReviewTask = useMemo(() => {
+    if (!taskReviewRequest) {
+      return null;
+    }
+
+    return (
+      uiSnapshot.tasks.find(
+        (task) =>
+          task.id === taskReviewRequest.taskId || resolveTaskReviewKey(task) === taskReviewRequest.taskKey
+      ) ?? taskReviewRequest.fallbackTask
+    );
+  }, [taskReviewRequest, uiSnapshot.tasks]);
   const safeHiddenRuntimeIds = useMemo(
     () => (Array.isArray(hiddenRuntimeIds) ? hiddenRuntimeIds : []),
     [hiddenRuntimeIds]
@@ -296,6 +371,19 @@ export function MissionControlShell({
       setSelectedAgentDetailFocus(agentDetailFocus);
     },
     []
+  );
+  const openWorkspaceOnCanvas = useCallback(
+    (workspaceId: string | null, options: { markPending?: boolean } = {}) => {
+      if (options.markPending && workspaceId) {
+        setPendingWorkspaceOpenId(workspaceId);
+      }
+
+      setFocusedAgentId(null);
+      setComposerTargetAgentId(null);
+      setActiveWorkspaceId(workspaceId);
+      selectNode(workspaceId);
+    },
+    [selectNode]
   );
   const settingsRef = useRef<HTMLDivElement | null>(null);
   const canvasNodeInteractionActiveRef = useRef(false);
@@ -571,19 +659,18 @@ export function MissionControlShell({
 
   const openWorkspaceChannels = useCallback((workspaceId?: string) => {
     if (workspaceId) {
-      setActiveWorkspaceId(workspaceId);
+      openWorkspaceOnCanvas(workspaceId);
     }
 
     setIsWorkspaceChannelsOpen(true);
-  }, []);
+  }, [openWorkspaceOnCanvas]);
 
   const openWorkspaceFiles = useCallback(
     (workspaceId: string) => {
-      setActiveWorkspaceId(workspaceId);
-      selectNode(workspaceId);
+      openWorkspaceOnCanvas(workspaceId);
       setWorkspaceFilesDialogId(workspaceId);
     },
-    [selectNode]
+    [openWorkspaceOnCanvas]
   );
 
   const handleWorkspaceFilesOpenChange = useCallback((nextOpen: boolean) => {
@@ -793,6 +880,7 @@ export function MissionControlShell({
     const storedHiddenRuntimeIds = globalThis.localStorage?.getItem(hiddenRuntimeIdsStorageKey);
     const storedHiddenTaskKeys = globalThis.localStorage?.getItem(hiddenTaskKeysStorageKey);
     const storedLockedTaskKeys = globalThis.localStorage?.getItem(lockedTaskKeysStorageKey);
+    const storedTaskReviewState = globalThis.localStorage?.getItem(taskReviewStateStorageKey);
 
     if (storedTheme === "dark" || storedTheme === "light") {
       setSurfaceTheme(storedTheme);
@@ -828,6 +916,9 @@ export function MissionControlShell({
         }
       } catch {}
     }
+
+    setTaskReviewState(parseTaskReviewState(storedTaskReviewState ?? null));
+    setHasHydratedTaskReviewState(true);
   }, []);
 
   useEffect(() => {
@@ -849,6 +940,14 @@ export function MissionControlShell({
   useEffect(() => {
     globalThis.localStorage?.setItem(lockedTaskKeysStorageKey, JSON.stringify(lockedTaskKeys));
   }, [lockedTaskKeys]);
+
+  useEffect(() => {
+    if (!hasHydratedTaskReviewState) {
+      return;
+    }
+
+    globalThis.localStorage?.setItem(taskReviewStateStorageKey, JSON.stringify(taskReviewState));
+  }, [hasHydratedTaskReviewState, taskReviewState]);
 
   useEffect(() => {
     if (!recentDispatchId) {
@@ -2125,9 +2224,7 @@ export function MissionControlShell({
           ? result.workspaceId
           : refreshedSnapshot?.workspaces[0]?.id ?? result.workspaceId;
 
-      setPendingWorkspaceOpenId(nextWorkspaceId);
-      setActiveWorkspaceId(nextWorkspaceId);
-      selectNode(nextWorkspaceId);
+      openWorkspaceOnCanvas(nextWorkspaceId, { markPending: true });
 
       if (refreshedSnapshot) {
         setSnapshot(refreshedSnapshot);
@@ -2159,10 +2256,10 @@ export function MissionControlShell({
   }, [
     dismissOnboarding,
     launchpadWorkspaceCreateRunState,
+    openWorkspaceOnCanvas,
     refresh,
     refreshSnapshot,
     selectedOnboardingModelId,
-    selectNode,
     snapshot.diagnostics.modelReadiness.defaultModel,
     snapshot.diagnostics.modelReadiness.resolvedDefaultModel,
     setSnapshot
@@ -2204,13 +2301,12 @@ export function MissionControlShell({
         : snapshot.workspaces[0]?.id) ?? null;
 
     if (targetWorkspaceId) {
-      setActiveWorkspaceId(targetWorkspaceId);
       setPendingWorkspaceOpenId(null);
-      selectNode(targetWorkspaceId);
+      openWorkspaceOnCanvas(targetWorkspaceId);
     }
 
     dismissOnboarding();
-  }, [activeWorkspaceId, dismissOnboarding, runLaunchpadWorkspaceCreate, selectNode, snapshot]);
+  }, [activeWorkspaceId, dismissOnboarding, openWorkspaceOnCanvas, runLaunchpadWorkspaceCreate, snapshot]);
 
   const controlGateway = async (action: GatewayControlAction) => {
     setGatewayControlAction(action);
@@ -2523,7 +2619,8 @@ export function MissionControlShell({
       "mission-control-locked-task-keys",
       "mission-control-workspace-plan-id",
       "mission-control-recent-prompts",
-      "mission-control-node-positions"
+      "mission-control-node-positions",
+      taskReviewStateStorageKey
     ];
     const prefixKeys = [
       "mission-control-active-workspace-id:",
@@ -2552,6 +2649,7 @@ export function MissionControlShell({
     setHiddenRuntimeIds([]);
     setHiddenTaskKeys([]);
     setLockedTaskKeys([]);
+    setTaskReviewState({});
   };
 
   const resetResetDialogState = () => {
@@ -2786,6 +2884,127 @@ export function MissionControlShell({
       });
   };
 
+  const openTaskReview = useCallback(
+    (task: WorkItemRecord) => {
+      selectNode(task.id, "output");
+      setTaskReviewRequest({
+        requestId: `task-review:${task.id}:${Date.now()}`,
+        taskId: task.id,
+        taskKey: resolveTaskReviewKey(task),
+        fallbackTask: task
+      });
+    },
+    [selectNode]
+  );
+
+  const recordTaskReviewResolution = useCallback(
+    (task: WorkItemRecord, status: TaskReviewStatus, action: string) => {
+      const resolution = createTaskReviewResolution(task, status, action);
+
+      setTaskReviewState((current) => ({
+        ...current,
+        [resolution.taskKey]: resolution
+      }));
+
+      return resolution;
+    },
+    []
+  );
+
+  const closeTaskReview = useCallback(() => {
+    setTaskReviewRequest(null);
+  }, []);
+
+  const acceptTaskReview = useCallback(
+    (task: WorkItemRecord) => {
+      recordTaskReviewResolution(task, "accepted", "Accepted result");
+      closeTaskReview();
+      toast.success("Task result accepted.", {
+        description: "The review warning is marked as handled for this workspace."
+      });
+    },
+    [closeTaskReview, recordTaskReviewResolution]
+  );
+
+  const dismissTaskReview = useCallback(
+    (task: WorkItemRecord) => {
+      recordTaskReviewResolution(task, "dismissed", "Dismissed review");
+      closeTaskReview();
+      toast.message("Task review dismissed.", {
+        description: "The warning remains available in the task evidence."
+      });
+    },
+    [closeTaskReview, recordTaskReviewResolution]
+  );
+
+  const continueTaskReview = useCallback(
+    async (task: WorkItemRecord, capturedOutput: string) => {
+      const message = buildTaskReviewContinuationPrompt(task, capturedOutput);
+
+      try {
+        const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/control`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            action: "continue",
+            message,
+            dispatchId: task.dispatchId ?? null
+          })
+        });
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+        if (!response.ok) {
+          throw new Error(payload?.error || "Unable to continue this task.");
+        }
+
+        recordTaskReviewResolution(task, "continued", "Sent continuation");
+        selectNode(task.id, "output");
+        setIsInspectorOpen(true);
+        closeTaskReview();
+        void refreshSnapshot({ force: true });
+        toast.success("Task continuation sent.", {
+          description: "AgentOS will keep the follow-up attached to the existing task card."
+        });
+      } catch (error) {
+        toast.error("Task continuation failed.", {
+          description: error instanceof Error ? error.message : "Unable to continue this task."
+        });
+      }
+    },
+    [closeTaskReview, recordTaskReviewResolution, refreshSnapshot, selectNode]
+  );
+
+  const retryTaskReview = useCallback(
+    (task: WorkItemRecord) => {
+      recordTaskReviewResolution(task, "retried", "Drafted retry");
+      setComposeIntent({
+        id: `review-retry:${task.id}:${Date.now()}`,
+        mission: buildTaskReviewRetryPrompt(task),
+        agentId: task.primaryAgentId,
+        sourceKind: "reply",
+        sourceLabel: task.title.trim() || "Task review"
+      });
+      setComposerTargetAgentId(task.primaryAgentId ?? null);
+      setIsComposerActive(true);
+      closeTaskReview();
+      toast.success("Retry draft prepared.", {
+        description: "Review the mission input, then send it when ready."
+      });
+    },
+    [closeTaskReview, recordTaskReviewResolution]
+  );
+
+  const openTaskReviewEvidence = useCallback(
+    (task: WorkItemRecord, target: InspectorTabId) => {
+      selectNode(task.id, target);
+      setIsInspectorOpen(true);
+      closeTaskReview();
+    },
+    [closeTaskReview, selectNode]
+  );
+
   const settingsPanelProps: MissionControlShellSettingsPanelProps = {
     snapshot,
     surfaceTheme,
@@ -2888,14 +3107,10 @@ export function MissionControlShell({
         snapshot={snapshot}
         onRefresh={refresh}
         onWorkspaceCreated={(workspaceId) => {
-          setPendingWorkspaceOpenId(workspaceId);
-          setActiveWorkspaceId(workspaceId);
-          selectNode(workspaceId);
+          openWorkspaceOnCanvas(workspaceId, { markPending: true });
         }}
         onWorkspaceUpdated={(workspaceId) => {
-          setPendingWorkspaceOpenId(workspaceId);
-          setActiveWorkspaceId(workspaceId);
-          selectNode(workspaceId);
+          openWorkspaceOnCanvas(workspaceId, { markPending: true });
         }}
       />
 
@@ -3016,9 +3231,7 @@ export function MissionControlShell({
             }}
             onToggleCollapsed={() => setIsSidebarOpen((current) => !current)}
             onSelectWorkspace={(workspaceId) => {
-              setFocusedAgentId(null);
-              setActiveWorkspaceId(workspaceId);
-              selectNode(workspaceId);
+              openWorkspaceOnCanvas(workspaceId);
             }}
             onRefresh={refresh}
             onRunModelRefresh={runModelRefresh}
@@ -3183,6 +3396,7 @@ export function MissionControlShell({
               selectNode(task.id, target);
               setIsInspectorOpen(true);
             }}
+            onReviewTask={openTaskReview}
             onSelectNode={(nodeId) => {
               selectNode(nodeId);
             }}
@@ -3245,9 +3459,7 @@ export function MissionControlShell({
             }}
             onToggleCollapsed={() => setIsSidebarOpen((current) => !current)}
             onSelectWorkspace={(workspaceId) => {
-              setFocusedAgentId(null);
-              setActiveWorkspaceId(workspaceId);
-              selectNode(workspaceId);
+              openWorkspaceOnCanvas(workspaceId);
             }}
             onRefresh={refresh}
             onRunModelRefresh={runModelRefresh}
@@ -3401,6 +3613,8 @@ export function MissionControlShell({
             onMissionResponse={(result, context) => {
               missionDispatchAbortControllersRef.current.delete(context.requestId);
               setLastMission(result);
+              const waitingForTranscriptOutput =
+                result.status === "stalled" && isMissingTranscriptActivityMessage(result.summary);
 
               setOptimisticMissionTasks((current) =>
                 current.map((entry) =>
@@ -3411,30 +3625,45 @@ export function MissionControlShell({
                         task: updateOptimisticMissionTask(entry.task, {
                           dispatchId: result.dispatchId,
                           status:
-                            result.status === "stalled"
+                            waitingForTranscriptOutput
+                              ? "running"
+                              : result.status === "stalled"
                               ? "stalled"
                               : result.status === "cancelled"
                                 ? "cancelled"
                                 : "queued",
                           subtitle: result.summary,
                           bootstrapStage:
-                            result.status === "stalled"
+                            waitingForTranscriptOutput
+                              ? "runtime-observed"
+                              : result.status === "stalled"
                               ? "stalled"
                               : result.status === "cancelled"
                                 ? "cancelled"
                                 : "accepted",
                           feedEvent: {
                             id: `${entry.task.id}:response:${Date.now()}`,
-                            kind: result.status === "stalled" || result.status === "cancelled" ? "warning" : "status",
+                            kind:
+                              result.status === "cancelled" ||
+                              (result.status === "stalled" && !waitingForTranscriptOutput)
+                                ? "warning"
+                                : "status",
                             timestamp: new Date().toISOString(),
                             title:
-                              result.status === "stalled"
+                              waitingForTranscriptOutput
+                                ? "Waiting for output"
+                                : result.status === "stalled"
                                 ? "Dispatch blocked"
                                 : result.status === "cancelled"
                                   ? "Dispatch cancelled"
-                                : "Mission accepted",
-                            detail: result.summary || "Mission accepted and queued for OpenClaw execution.",
-                            isError: result.status === "stalled" || result.status === "cancelled"
+                                  : "Mission accepted",
+                            detail:
+                              waitingForTranscriptOutput
+                                ? "The runtime is live, but AgentOS has not captured transcript output yet."
+                                : result.summary || "Mission accepted and queued for OpenClaw execution.",
+                            isError:
+                              result.status === "cancelled" ||
+                              (result.status === "stalled" && !waitingForTranscriptOutput)
                           }
                         })
                       }
@@ -3463,6 +3692,23 @@ export function MissionControlShell({
           workspaceId={workspaceFilesDialogId}
           open={workspaceFilesDialogId !== null}
           onOpenChange={handleWorkspaceFilesOpenChange}
+        />
+
+        <TaskReviewDialog
+          open={Boolean(taskReviewRequest)}
+          task={activeTaskReviewTask}
+          snapshot={uiSnapshot}
+          surfaceTheme={surfaceTheme}
+          onOpenChange={(open) => {
+            if (!open) {
+              closeTaskReview();
+            }
+          }}
+          onAccept={acceptTaskReview}
+          onContinue={continueTaskReview}
+          onRetry={retryTaskReview}
+          onDismiss={dismissTaskReview}
+          onOpenEvidence={openTaskReviewEvidence}
         />
 
         {shouldShowOnboarding ? (
@@ -3523,14 +3769,10 @@ export function MissionControlShell({
           snapshot={snapshot}
           onRefresh={refresh}
           onWorkspaceCreated={(workspaceId) => {
-            setPendingWorkspaceOpenId(workspaceId);
-            setActiveWorkspaceId(workspaceId);
-            selectNode(workspaceId);
+            openWorkspaceOnCanvas(workspaceId, { markPending: true });
           }}
           onWorkspaceUpdated={(workspaceId) => {
-            setPendingWorkspaceOpenId(workspaceId);
-            setActiveWorkspaceId(workspaceId);
-            selectNode(workspaceId);
+            openWorkspaceOnCanvas(workspaceId, { markPending: true });
           }}
         />
 

@@ -25,7 +25,7 @@ import {
   buildMissionDispatchRuntimes,
   matchMissionDispatchToRuntime
 } from "@/lib/openclaw/domains/mission-dispatch-runtime";
-import { buildTaskFeed } from "@/lib/openclaw/domains/task-feed";
+import { buildMissionDispatchFeed, buildTaskFeed } from "@/lib/openclaw/domains/task-feed";
 import {
   mergeRuntimeHistory as mergeRuntimeHistoryRecords
 } from "@/lib/openclaw/domains/runtime-history";
@@ -37,7 +37,9 @@ import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-norm
 import { normalizeChannelRegistry } from "@/lib/openclaw/domains/workspace-manifest";
 import { buildModelStatusConnectionStatus } from "@/lib/openclaw/domains/model-provider-connection";
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
+import { extractCodexRolloutTokenUsageForTurn } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
 import { isOpenClawTerminalCommand } from "@/lib/openclaw/terminal-command";
+import { matchesMissionText } from "@/lib/openclaw/runtime-matching";
 import {
   extractKickoffProgressMessages,
   resolveWorkspaceBootstrapInput,
@@ -63,6 +65,12 @@ import {
   resolveModelOnboardingActionCopy,
   resolveModelOnboardingStartPhase
 } from "@/components/mission-control/mission-control-shell.utils";
+import {
+  applyTaskReviewStateToSnapshot,
+  createTaskReviewResolution,
+  resolveEffectiveTaskReviewStatus,
+  taskReviewContinuationGraceMs
+} from "@/components/mission-control/task-review-state";
 import { buildAgentChatPrompt } from "@/lib/openclaw/agent-chat-prompt";
 import {
   buildOpenClawUpdateRecoveryManualCommand,
@@ -1396,6 +1404,50 @@ test("mission dispatch runtime output merges into a mission payload", () => {
   });
 });
 
+test("mission dispatch result prefers nonzero transcript usage over zero runtime usage", () => {
+  const runtime = {
+    id: "runtime-1",
+    agentId: "agent-1",
+    sessionId: "session-1",
+    tokenUsage: {
+      input: 0,
+      output: 0,
+      total: 0,
+      cacheRead: 0
+    }
+  } as unknown as RuntimeRecord;
+  const output = {
+    runtimeId: "runtime-1",
+    status: "available",
+    finalText: "Deploy complete.",
+    finalTimestamp: "2026-04-13T00:00:00.000Z",
+    stopReason: "stop",
+    errorMessage: null,
+    items: [],
+    createdFiles: [],
+    warnings: [],
+    warningSummary: null,
+    tokenUsage: {
+      input: 140,
+      output: 14,
+      total: 154,
+      cacheRead: 70
+    }
+  } as unknown as RuntimeOutputRecord;
+
+  assert.deepEqual(createMissionDispatchResultFromRuntimeOutput(runtime, output)?.meta?.agentMeta, {
+    agentId: "agent-1",
+    sessionId: "session-1",
+    model: undefined,
+    usage: {
+      input: 140,
+      output: 14,
+      total: 154,
+      cacheRead: 70
+    }
+  });
+});
+
 test("runtime transcript parser reads OpenClaw session content strings and tool calls", () => {
   const runtime = {
     id: "runtime:gateway:completed-1",
@@ -1505,6 +1557,12 @@ test("runtime transcript parser reads OpenClaw session content strings and tool 
   assert.equal(output.status, "available");
   assert.equal(output.finalText, "Finished: deliverables/faros.md");
   assert.equal(output.stopReason, "stop");
+  assert.deepEqual(output.tokenUsage, {
+    input: 10,
+    output: 8,
+    total: 18,
+    cacheRead: 0
+  });
   assert.equal(output.items.length, 4);
   assert.equal(output.items[1].role, "toolCall");
   assert.equal(output.items[1].toolName, "apply_patch");
@@ -1514,6 +1572,64 @@ test("runtime transcript parser reads OpenClaw session content strings and tool 
       displayPath: "deliverables/faros.md"
     }
   ]);
+});
+
+test("codex rollout parser captures final token usage for mirrored turns", () => {
+  const raw = [
+    {
+      timestamp: "2026-04-13T00:00:01.000Z",
+      type: "event_msg",
+      payload: {
+        type: "task_started",
+        turn_id: "turn-1"
+      }
+    },
+    {
+      timestamp: "2026-04-13T00:00:02.000Z",
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: 100,
+            cached_input_tokens: 25,
+            output_tokens: 10,
+            total_tokens: 110
+          }
+        }
+      }
+    },
+    {
+      timestamp: "2026-04-13T00:00:03.000Z",
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: 140,
+            cached_input_tokens: 70,
+            output_tokens: 14,
+            total_tokens: 154
+          }
+        }
+      }
+    },
+    {
+      timestamp: "2026-04-13T00:00:04.000Z",
+      type: "event_msg",
+      payload: {
+        type: "task_complete",
+        turn_id: "turn-1"
+      }
+    }
+  ].map((entry) => JSON.stringify(entry)).join("\n");
+
+  assert.deepEqual(extractCodexRolloutTokenUsageForTurn(raw, "turn-1"), {
+    input: 140,
+    output: 14,
+    total: 154,
+    cacheRead: 70
+  });
 });
 
 test("mission dispatch groups direct session turns into one task card", () => {
@@ -1738,6 +1854,119 @@ test("mission dispatch terminal status wins over ambient session activity", () =
   assert.equal(tasks[0].workspaceId, "workspace-1");
 });
 
+test("mission dispatch task cards prefer dispatch output over generic gateway events", () => {
+  const runtimes = [
+    {
+      id: "runtime:gateway:session-changed",
+      source: "turn",
+      key: "actual-session",
+      title: "Gateway runtime event",
+      subtitle: "sessions.changed",
+      status: "completed",
+      updatedAt: Date.parse("2026-04-13T00:01:01.000Z"),
+      ageMs: 0,
+      agentId: "agent-1",
+      workspaceId: "workspace-1",
+      sessionId: "actual-session",
+      metadata: {
+        origin: "openclaw-gateway-event"
+      }
+    },
+    {
+      id: "runtime:gateway:dispatch-output",
+      source: "turn",
+      key: "dispatch-1",
+      title: "Gateway runtime event",
+      subtitle: "Prepared the strategy file: /tmp/workspace-1/deliverables/run/linkedin-strategy.md",
+      status: "completed",
+      updatedAt: Date.parse("2026-04-13T00:01:00.000Z"),
+      ageMs: 0,
+      agentId: "agent-1",
+      workspaceId: "workspace-1",
+      sessionId: "actual-session",
+      runId: "dispatch-1",
+      metadata: {
+        dispatchId: "dispatch-1",
+        dispatchStatus: "completed",
+        dispatchSubmittedAt: "2026-04-13T00:00:00.000Z",
+        mission: "Create the LinkedIn strategy"
+      }
+    }
+  ] as unknown as RuntimeRecord[];
+
+  const tasks = buildTaskRecords(runtimes, [
+    {
+      id: "agent-1",
+      name: "Research Lead"
+    }
+  ] as Parameters<typeof buildTaskRecords>[1]);
+
+  assert.equal(tasks[0].status, "completed");
+  assert.match(tasks[0].subtitle, /Prepared the strategy file/);
+  assert.match(String(tasks[0].metadata.resultPreview), /Prepared the strategy file/);
+  assert.equal(tasks[0].artifactCount, 1);
+});
+
+test("mission dispatch task cards dedupe repeated gateway token usage", () => {
+  const tokenUsage = {
+    input: 693,
+    output: 172,
+    total: 81121,
+    cacheRead: 80256
+  };
+  const runtimes = [
+    {
+      id: "runtime:gateway:event-1",
+      source: "turn",
+      key: "dispatch-1",
+      title: "Gateway runtime event",
+      subtitle: "Prepared the strategy file.",
+      status: "completed",
+      updatedAt: Date.parse("2026-04-13T00:01:01.000Z"),
+      ageMs: 0,
+      agentId: "agent-1",
+      workspaceId: "workspace-1",
+      sessionId: "actual-session",
+      runId: "dispatch-1",
+      tokenUsage,
+      metadata: {
+        dispatchId: "dispatch-1",
+        dispatchStatus: "completed",
+        mission: "Create the LinkedIn strategy"
+      }
+    },
+    {
+      id: "runtime:gateway:event-2",
+      source: "turn",
+      key: "dispatch-1",
+      title: "Gateway runtime event",
+      subtitle: "Prepared the strategy file.",
+      status: "completed",
+      updatedAt: Date.parse("2026-04-13T00:01:00.000Z"),
+      ageMs: 0,
+      agentId: "agent-1",
+      workspaceId: "workspace-1",
+      sessionId: "agent:agent-1:explicit:requested-session",
+      runId: "dispatch-1",
+      tokenUsage,
+      metadata: {
+        dispatchId: "dispatch-1",
+        dispatchStatus: "completed",
+        mission: "Create the LinkedIn strategy"
+      }
+    }
+  ] as unknown as RuntimeRecord[];
+
+  const tasks = buildTaskRecords(runtimes, [
+    {
+      id: "agent-1",
+      name: "Research Lead"
+    }
+  ] as Parameters<typeof buildTaskRecords>[1]);
+
+  assert.deepEqual(tasks[0].tokenUsage, tokenUsage);
+});
+
 test("task feed collapses duplicate dispatch transcript events", () => {
   const task = {
     id: "task-1",
@@ -1872,6 +2101,270 @@ test("task feed collapses duplicate dispatch transcript events", () => {
   assert.equal(feed.filter((event) => event.kind === "tool").length, 1);
   assert.equal(feed.filter((event) => event.kind === "assistant").length, 1);
   assert.equal(feed.filter((event) => event.kind === "artifact").length, 1);
+});
+
+test("task feed treats missing transcripts as waiting for output", () => {
+  const task = {
+    id: "task-1",
+    key: "dispatch:dispatch-1",
+    title: "Research the launch",
+    mission: "Research the launch",
+    subtitle: "No transcript entries were found for this runtime.",
+    status: "stalled",
+    updatedAt: Date.parse("2026-04-13T00:01:00.000Z"),
+    ageMs: 0,
+    primaryAgentId: "agent-1",
+    runtimeIds: ["runtime:quiet"],
+    agentIds: ["agent-1"],
+    sessionIds: ["session-1"],
+    runIds: ["dispatch-1"],
+    runtimeCount: 1,
+    updateCount: 1,
+    liveRunCount: 0,
+    artifactCount: 0,
+    warningCount: 0,
+    dispatchId: "dispatch-1",
+    metadata: {}
+  } as unknown as Parameters<typeof buildTaskFeed>[0];
+  const runs = [
+    {
+      id: "runtime:quiet",
+      source: "turn",
+      key: "dispatch-1",
+      title: "Gateway runtime event",
+      subtitle: "No transcript entries were found for this runtime.",
+      status: "stalled",
+      updatedAt: Date.parse("2026-04-13T00:01:00.000Z"),
+      ageMs: 0,
+      agentId: "agent-1",
+      sessionId: "session-1",
+      metadata: {
+        dispatchId: "dispatch-1"
+      }
+    }
+  ] as unknown as RuntimeRecord[];
+  const feed = buildTaskFeed(
+    task,
+    runs,
+    new Map<string, RuntimeOutputRecord>([
+      [
+        "runtime:quiet",
+        {
+          runtimeId: "runtime:quiet",
+          status: "missing",
+          finalText: null,
+          finalTimestamp: null,
+          stopReason: null,
+          errorMessage: "No transcript entries were found for this runtime.",
+          items: [],
+          createdFiles: [],
+          warnings: [],
+          warningSummary: null
+        }
+      ]
+    ]),
+    {
+      agents: [
+        {
+          id: "agent-1",
+          name: "Research Lead"
+        }
+      ]
+    } as Parameters<typeof buildTaskFeed>[3]
+  );
+
+  assert.equal(feed.filter((event) => /No transcript/.test(event.detail)).length, 0);
+  assert.equal(feed.length, 1);
+  assert.equal(feed[0].kind, "status");
+  assert.equal(feed[0].isError, false);
+  assert.match(feed[0].title, /waiting for output/i);
+});
+
+test("task review state annotates task metadata with operator action", () => {
+  const task = {
+    id: "task-1",
+    key: "dispatch:dispatch-1",
+    title: "Review captured output",
+    mission: "Review captured output",
+    subtitle: "Partial final response",
+    status: "stalled",
+    updatedAt: Date.parse("2026-05-21T10:00:00.000Z"),
+    ageMs: 0,
+    primaryAgentId: "agent-1",
+    runtimeIds: ["runtime-1"],
+    agentIds: ["agent-1"],
+    sessionIds: ["session-1"],
+    runIds: ["dispatch-1"],
+    runtimeCount: 1,
+    updateCount: 1,
+    liveRunCount: 0,
+    artifactCount: 0,
+    warningCount: 1,
+    dispatchId: "dispatch-1",
+    metadata: {}
+  } satisfies MissionControlSnapshot["tasks"][number];
+  const snapshot = {
+    generatedAt: "2026-05-21T10:00:00.000Z",
+    mode: "live",
+    diagnostics: {},
+    presence: [],
+    channelAccounts: [],
+    workspaces: [],
+    agents: [],
+    models: [],
+    runtimes: [],
+    tasks: [task],
+    relationships: [],
+    missionPresets: [],
+    channelRegistry: {
+      version: 1,
+      channels: []
+    }
+  } as unknown as MissionControlSnapshot;
+  const resolution = createTaskReviewResolution(
+    task,
+    "accepted",
+    "Accepted result",
+    "2026-05-21T10:05:00.000Z"
+  );
+
+  const nextSnapshot = applyTaskReviewStateToSnapshot(snapshot, {
+    [resolution.taskKey]: resolution
+  });
+
+  assert.equal(snapshot.tasks[0].metadata.reviewStatus, undefined);
+  assert.equal(nextSnapshot.tasks[0].metadata.reviewStatus, "accepted");
+  assert.equal(nextSnapshot.tasks[0].metadata.reviewAction, "Accepted result");
+  assert.equal(nextSnapshot.tasks[0].metadata.reviewedAt, "2026-05-21T10:05:00.000Z");
+  const reviewEvents = nextSnapshot.tasks[0].metadata.reviewEvents;
+  assert.equal(Array.isArray(reviewEvents), true);
+  assert.equal((reviewEvents as Array<{ title: string }>)[0].title, "Review accepted");
+});
+
+test("continued task review state expires when no live activity follows", () => {
+  const task = {
+    id: "task-1",
+    key: "dispatch:dispatch-1",
+    title: "Task",
+    mission: "Run task",
+    subtitle: "Waiting for output",
+    status: "stalled",
+    updatedAt: Date.parse("2026-05-21T10:00:00.000Z"),
+    ageMs: 0,
+    runtimeIds: ["runtime-1"],
+    agentIds: ["agent-1"],
+    sessionIds: ["session-1"],
+    runIds: ["dispatch-1"],
+    runtimeCount: 1,
+    updateCount: 1,
+    liveRunCount: 0,
+    artifactCount: 0,
+    warningCount: 1,
+    dispatchId: "dispatch-1",
+    metadata: {}
+  } satisfies MissionControlSnapshot["tasks"][number];
+  const resolution = createTaskReviewResolution(
+    task,
+    "continued",
+    "Sent continuation",
+    "2026-05-21T10:05:00.000Z"
+  );
+  const continuedTask = {
+    ...task,
+    metadata: {
+      ...task.metadata,
+      reviewStatus: resolution.status,
+      reviewAction: resolution.action,
+      reviewedAt: resolution.reviewedAt
+    }
+  };
+
+  assert.equal(
+    resolveEffectiveTaskReviewStatus(continuedTask, {
+      nowMs: Date.parse("2026-05-21T10:05:30.000Z")
+    }),
+    "continued"
+  );
+  assert.equal(
+    resolveEffectiveTaskReviewStatus(continuedTask, {
+      nowMs: Date.parse("2026-05-21T10:05:00.000Z") + taskReviewContinuationGraceMs + 1
+    }),
+    null
+  );
+  assert.equal(
+    resolveEffectiveTaskReviewStatus(continuedTask, {
+      hasLiveActivity: true,
+      nowMs: Date.parse("2026-05-21T10:20:00.000Z")
+    }),
+    "continued"
+  );
+  assert.equal(
+    resolveEffectiveTaskReviewStatus(continuedTask, {
+      latestEvidenceAt: "2026-05-21T10:05:01.000Z",
+      nowMs: Date.parse("2026-05-21T10:05:30.000Z")
+    }),
+    null
+  );
+});
+
+test("mission matching accepts continuation prompts with original mission context", () => {
+  assert.equal(
+    matchesMissionText(
+      "Continue this task from the last captured output. Finish the remaining work and verify the result.\n\nOriginal mission:\nbana youtube stratejisi önersene bitane kanalı büyütmek için\n\nLast captured output:\n...",
+      "bana youtube stratejisi önersene bitane kanalı büyütmek için"
+    ),
+    true
+  );
+});
+
+test("mission dispatch feed does not turn missing transcripts into dispatch errors", async () => {
+  const task = {
+    id: "task-1",
+    title: "Research the launch",
+    mission: "Research the launch",
+    status: "stalled",
+    primaryAgentId: "agent-1",
+    metadata: {}
+  } as unknown as Parameters<typeof buildMissionDispatchFeed>[0];
+  const feed = await buildMissionDispatchFeed(
+    task,
+    {
+      id: "dispatch-1",
+      status: "stalled",
+      submittedAt: "2026-04-13T00:00:00.000Z",
+      updatedAt: "2026-04-13T00:01:00.000Z",
+      mission: "Research the launch",
+      routedMission: "Research the launch",
+      runner: {
+        pid: 1234,
+        startedAt: "2026-04-13T00:00:05.000Z",
+        finishedAt: null,
+        lastHeartbeatAt: "2026-04-13T00:00:45.000Z",
+        logPath: null
+      },
+      observation: {
+        runtimeId: "runtime:quiet",
+        observedAt: "2026-04-13T00:00:50.000Z"
+      },
+      outputDir: null,
+      outputDirRelative: null,
+      error: "No transcript entries were found for this runtime."
+    } as unknown as Parameters<typeof buildMissionDispatchFeed>[1],
+    {
+      agents: [
+        {
+          id: "agent-1",
+          name: "Research Lead"
+        }
+      ]
+    } as Parameters<typeof buildMissionDispatchFeed>[2]
+  );
+
+  assert.equal(feed.some((event) => event.title === "Dispatch error"), false);
+  const waitingEvent = feed.find((event) => event.id === "dispatch-1:stalled");
+  assert.equal(waitingEvent?.kind, "status");
+  assert.equal(waitingEvent?.isError, false);
+  assert.match(waitingEvent?.title ?? "", /waiting for output/i);
 });
 
 test("mission dispatch matches gateway completion by dispatch run id", () => {
@@ -2042,6 +2535,96 @@ test("mission dispatch hydrates gateway completion token usage from related sess
   assert.equal(runtimes[0].modelId, "openai/gpt-5.4-mini");
   assert.equal(runtimes[0].metadata.dispatchId, "dispatch-1");
   assert.equal(runtimes[0].metadata.usageSessionRuntimeId, sessionRuntime.id);
+});
+
+test("mission dispatch runtimes use reconciled terminal state in the same snapshot", async () => {
+  const dispatchRecord = {
+    id: "dispatch-1",
+    status: "stalled",
+    agentId: "agent-1",
+    sessionId: "requested-session",
+    mission: "Create the LinkedIn strategy",
+    routedMission: "Create the LinkedIn strategy",
+    thinking: "medium",
+    workspaceId: "workspace-1",
+    workspacePath: "/tmp/workspace-1",
+    submittedAt: "2026-04-13T00:00:00.000Z",
+    updatedAt: "2026-04-13T00:01:00.000Z",
+    outputDir: "/tmp/workspace-1/deliverables/run",
+    outputDirRelative: "deliverables/run",
+    notesDirRelative: "memory",
+    runner: {
+      pid: null,
+      childPid: null,
+      startedAt: "2026-04-13T00:00:00.000Z",
+      finishedAt: "2026-04-13T00:01:00.000Z",
+      lastHeartbeatAt: "2026-04-13T00:01:00.000Z",
+      logPath: null
+    },
+    observation: {
+      runtimeId: null,
+      observedAt: null
+    },
+    result: {
+      runId: "dispatch-1",
+      status: "started"
+    },
+    error: "No transcript entries were found for this runtime."
+  } as const;
+  const completedRuntime = {
+    id: "runtime:gateway:completed-1",
+    source: "turn",
+    key: "dispatch-1",
+    title: "Gateway runtime event",
+    subtitle: "Prepared the strategy file.",
+    status: "completed",
+    updatedAt: Date.parse("2026-04-13T00:01:10.000Z"),
+    ageMs: 0,
+    agentId: "agent-1",
+    workspaceId: "workspace-1",
+    sessionId: "actual-session",
+    runId: "dispatch-1",
+    metadata: {
+      origin: "openclaw-gateway-event"
+    }
+  } as unknown as RuntimeRecord;
+  const reconciledRecord = {
+    ...dispatchRecord,
+    status: "completed",
+    updatedAt: "2026-04-13T00:01:10.000Z",
+    runner: {
+      ...dispatchRecord.runner,
+      finishedAt: "2026-04-13T00:01:10.000Z",
+      lastHeartbeatAt: "2026-04-13T00:01:10.000Z"
+    },
+    result: {
+      runId: "dispatch-1",
+      status: "ok",
+      summary: "completed",
+      result: {
+        payloads: [
+          {
+            text: "Prepared the strategy file.",
+            mediaUrl: null
+          }
+        ]
+      }
+    },
+    error: null
+  } satisfies Parameters<typeof buildMissionDispatchRuntimes>[1][number];
+
+  const runtimes = await buildMissionDispatchRuntimes(
+    [completedRuntime],
+    [dispatchRecord],
+    {
+      buildObservedRuntime: async () => null,
+      persistObservation: async () => {},
+      reconcileRuntimeState: async () => reconciledRecord
+    }
+  );
+
+  assert.equal(runtimes[0].status, "completed");
+  assert.equal(runtimes[0].metadata.dispatchStatus, "completed");
 });
 
 test("runtime history keeps current dispatch runtime outside recent agent limit", () => {

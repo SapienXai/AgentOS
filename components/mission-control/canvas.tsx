@@ -76,6 +76,7 @@ export function MissionCanvas({
   onToggleTaskLock,
   onAbortTask,
   onInspectTask,
+  onReviewTask,
   onSelectNode,
   onCanvasNodePointerDownCapture,
   className
@@ -109,6 +110,7 @@ export function MissionCanvas({
   onToggleTaskLock: (task: WorkItemRecord) => void;
   onAbortTask: (task: WorkItemRecord) => void;
   onInspectTask: (task: WorkItemRecord, target: "overview" | "output" | "files") => void;
+  onReviewTask: (task: WorkItemRecord) => void;
   onSelectNode: (nodeId: string) => void;
   onCanvasNodePointerDownCapture?: () => void;
   className?: string;
@@ -162,6 +164,7 @@ export function MissionCanvas({
     onToggleTaskLock,
     onAbortTask,
     onInspectTask,
+    onReviewTask,
     emptyPersistedNodePositions
   );
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(initialGraph.nodes);
@@ -244,6 +247,7 @@ export function MissionCanvas({
       onToggleTaskLock,
       onAbortTask,
       onInspectTask,
+      onReviewTask,
       persistedNodePositionsRef.current
     );
     const scopeChanged = lastCanvasScopeKeyRef.current !== canvasScopeKey;
@@ -287,6 +291,7 @@ export function MissionCanvas({
     onToggleTaskLock,
     onAbortTask,
     onInspectTask,
+    onReviewTask,
     relativeTimeReferenceMs,
     canvasScopeKey,
     setEdges,
@@ -440,7 +445,7 @@ export function MissionCanvas({
     }, 0);
 
     return () => clearTimeout(timeoutId);
-  }, [focusedAgentId, composerTargetAgentId, isComposerActive, composerViewportResetNonce]);
+  }, [focusedAgentId, composerTargetAgentId, isComposerActive, composerViewportResetNonce, canvasScopeKey]);
 
   useEffect(() => {
     if (!recentDispatchId || handledDispatchIdsRef.current.has(recentDispatchId)) {

@@ -379,14 +379,18 @@ export function CommandBar({
         typeof result.meta?.outputDirRelative === "string"
           ? `${result.status} via ${result.agentId} · ${result.meta.outputDirRelative}`
           : `${result.status} via ${result.agentId}`;
+      const waitingForTranscriptOutput =
+        result.status === "stalled" && isMissingTranscriptActivityMessage(result.summary);
 
-      if (result.status === "stalled") {
+      if (result.status === "stalled" && !waitingForTranscriptOutput) {
         toast.error("Mission could not start.", {
           description: result.summary || resultDescription
         });
       } else {
-        toast.success("Mission queued in OpenClaw.", {
-          description: resultDescription
+        toast.success(waitingForTranscriptOutput ? "Mission is running silently." : "Mission queued in OpenClaw.", {
+          description: waitingForTranscriptOutput
+            ? "AgentOS is waiting for the first transcript update."
+            : resultDescription
         });
       }
       void onRefresh().catch(() => null);
@@ -780,6 +784,14 @@ export function CommandBar({
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function isMissingTranscriptActivityMessage(value: string | null | undefined) {
+  return (
+    typeof value === "string" &&
+    (/No transcript file was found for this runtime session/i.test(value) ||
+      /No transcript entries were found for this runtime/i.test(value))
   );
 }
 

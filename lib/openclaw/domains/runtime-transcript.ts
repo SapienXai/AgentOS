@@ -380,7 +380,7 @@ export function extractTranscriptTurns(raw: string, runtime: RuntimeRecord, work
           completion_tokens?: number;
           total_tokens?: number;
         };
-        currentTurn.tokenUsage = {
+        currentTurn.tokenUsage = selectBetterTokenUsage(currentTurn.tokenUsage, {
           input: usage.input ?? usage.prompt_tokens ?? 0,
           output: usage.output ?? usage.completion_tokens ?? 0,
           total:
@@ -388,7 +388,7 @@ export function extractTranscriptTurns(raw: string, runtime: RuntimeRecord, work
             usage.total_tokens ??
             (usage.input ?? usage.prompt_tokens ?? 0) + (usage.output ?? usage.completion_tokens ?? 0),
           cacheRead: usage.cacheRead ?? 0
-        };
+        });
       }
     } catch {
       continue;
@@ -539,7 +539,8 @@ function runtimeOutputFromTurn(runtime: RuntimeRecord, turn: TranscriptTurn): Ru
     items: turn.items.slice(-12),
     createdFiles: turn.createdFiles,
     warnings: turn.warnings,
-    warningSummary: turn.warningSummary
+    warningSummary: turn.warningSummary,
+    tokenUsage: turn.tokenUsage
   };
 }
 
@@ -585,6 +586,17 @@ function finalizeTranscriptTurn(
   };
 }
 
+function selectBetterTokenUsage(
+  current: RuntimeRecord["tokenUsage"] | undefined,
+  next: NonNullable<RuntimeRecord["tokenUsage"]>
+) {
+  if (!current) {
+    return next;
+  }
+
+  return next.total > current.total ? next : current;
+}
+
 function createTurnRuntime(
   runtime: RuntimeRecord,
   turn: TranscriptTurn,
@@ -598,7 +610,7 @@ function createTurnRuntime(
       : turn.finalText
         ? summarizeText(turn.finalText, 90)
         : turn.status === "stalled"
-          ? "Run stalled"
+          ? "Waiting for output"
           : "Main session run";
 
   return {

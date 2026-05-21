@@ -443,6 +443,12 @@ export interface RuntimeOutputRecord {
   createdFiles: RuntimeCreatedFile[];
   warnings: string[];
   warningSummary: string | null;
+  tokenUsage?: {
+    input: number;
+    output: number;
+    total: number;
+    cacheRead?: number;
+  };
 }
 
 export interface TaskRecord {

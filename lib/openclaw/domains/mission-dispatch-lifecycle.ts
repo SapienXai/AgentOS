@@ -13,6 +13,7 @@ import {
 import {
   createMissionDispatchResultFromRuntimeOutput,
   extractMissionDispatchSessionId,
+  extractMissionDispatchTokenUsage,
   isMissionCommandPayload,
   normalizeMissionDispatchStatus,
   normalizeMissionThinking,
@@ -25,7 +26,13 @@ import {
   resolveRuntimeTranscriptPath as resolveRuntimeTranscriptPathFromTranscript
 } from "@/lib/openclaw/domains/runtime-transcript";
 import type { MissionDispatchRecordLike } from "@/lib/openclaw/domains/mission-dispatch-model";
-import type { RuntimeRecord, TaskRecord, MissionDispatchStatus, MissionSubmission } from "@/lib/openclaw/types";
+import type {
+  RuntimeOutputRecord,
+  RuntimeRecord,
+  TaskRecord,
+  MissionDispatchStatus,
+  MissionSubmission
+} from "@/lib/openclaw/types";
 
 type MissionDispatchCommandPayloadLike = {
   runId?: string;
@@ -61,6 +68,8 @@ type MissionDispatchObservation = {
   runtimeId: string | null;
   observedAt: string | null;
 };
+
+type RuntimeTokenUsage = NonNullable<RuntimeRecord["tokenUsage"]>;
 
 export type MissionDispatchRecord = Omit<MissionDispatchRecordLike, "status" | "result"> & {
   status: MissionDispatchStatus;
@@ -241,8 +250,7 @@ export async function persistMissionDispatchObservation(record: MissionDispatchR
 
 export async function reconcileMissionDispatchRuntimeState(record: MissionDispatchRecordLike, runtime: RuntimeRecord) {
   if (isMissionDispatchTerminalStatus(record.status)) {
-    await backfillCompletedMissionDispatchResultFromRuntime(record, runtime);
-    return;
+    return reconcileTerminalMissionDispatchRecordFromRuntime(record, runtime);
   }
 
   if (isTerminalRuntimeStatus(runtime.status) && missionDispatchRuntimeMatchesRecord(record, runtime)) {
@@ -255,7 +263,7 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
     const finishedAt = timestampFromUnix(runtime.updatedAt);
     const nextStatus = normalizeRuntimeTerminalStatus(runtime.status);
 
-    await writeMissionDispatchRecord({
+    const nextRecord = {
       ...latestRecord,
       status: nextStatus,
       updatedAt: maxIsoTimestamp(latestRecord.updatedAt, finishedAt),
@@ -276,32 +284,22 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
         nextStatus === "stalled"
           ? latestRecord.error || runtime.subtitle || "OpenClaw runtime ended before the dispatch runner finalized."
           : null
-    });
-    return;
+    } satisfies MissionDispatchRecordLike;
+
+    await writeMissionDispatchRecord(nextRecord);
+    return nextRecord;
   }
 
   if (!runtime.agentId || !runtime.sessionId) {
     return;
   }
 
-  const transcriptPath = await resolveRuntimeTranscriptPathFromTranscript(
-    runtime.agentId,
-    runtime.sessionId,
-    record.workspacePath ?? undefined
-  );
+  const output = await readRuntimeOutputForMissionDispatchRecord(record, runtime);
 
-  if (!transcriptPath) {
+  if (!output) {
     return;
   }
 
-  let raw = "";
-  try {
-    raw = await readFile(transcriptPath, "utf8");
-  } catch {
-    return;
-  }
-
-  const output = parseRuntimeOutputFromTranscript(runtime, raw, record.workspacePath ?? undefined);
   const finalizedFromTranscript = Boolean(output.finalTimestamp && output.stopReason && output.stopReason !== "toolUse");
   const stalledFromTranscript =
     Boolean(output.errorMessage) || output.stopReason === "error" || output.stopReason === "aborted";
@@ -319,7 +317,7 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
   const finishedAt = output.finalTimestamp ?? timestampFromUnix(runtime.updatedAt);
   const nextStatus = stalledFromTranscript ? "stalled" : "completed";
 
-  await writeMissionDispatchRecord({
+  const nextRecord = {
     ...latestRecord,
     status: nextStatus,
     updatedAt: maxIsoTimestamp(latestRecord.updatedAt, finishedAt),
@@ -336,54 +334,50 @@ export async function reconcileMissionDispatchRuntimeState(record: MissionDispat
       nextStatus === "stalled"
         ? output.errorMessage || latestRecord.error || "OpenClaw runtime ended before the dispatch runner finalized."
         : null
-  });
+  } satisfies MissionDispatchRecordLike;
+
+  await writeMissionDispatchRecord(nextRecord);
+  return nextRecord;
 }
 
 async function backfillCompletedMissionDispatchResultFromRuntime(
   record: MissionDispatchRecordLike,
   runtime: RuntimeRecord
-) {
-  if (record.status !== "completed" || resolveMissionDispatchResultText(record)) {
-    return;
+): Promise<MissionDispatchRecordLike | null> {
+  if (record.status !== "completed") {
+    return null;
   }
 
-  if (!runtime.agentId || !runtime.sessionId) {
-    return;
+  const output = await readRuntimeOutputForMissionDispatchRecord(record, runtime);
+
+  if (!output) {
+    return null;
   }
 
-  const transcriptPath = await resolveRuntimeTranscriptPathFromTranscript(
-    runtime.agentId,
-    runtime.sessionId,
-    record.workspacePath ?? undefined
-  );
-
-  if (!transcriptPath) {
-    return;
-  }
-
-  let raw = "";
-  try {
-    raw = await readFile(transcriptPath, "utf8");
-  } catch {
-    return;
-  }
-
-  const output = parseRuntimeOutputFromTranscript(runtime, raw, record.workspacePath ?? undefined);
   const result = createMissionDispatchResultFromRuntimeOutput(runtime, output);
 
-  if (!result || !output.finalText?.trim()) {
-    return;
+  if (!result || (!output.finalText?.trim() && !output.tokenUsage)) {
+    return null;
   }
 
   const latestRecord = (await readMissionDispatchRecordById(record.id)) ?? record;
 
-  if (latestRecord.status !== "completed" || resolveMissionDispatchResultText(latestRecord)) {
-    return;
+  if (latestRecord.status !== "completed") {
+    return null;
+  }
+
+  if (resolveMissionDispatchResultText(latestRecord) && hasMeaningfulMissionDispatchTokenUsage(latestRecord)) {
+    return null;
   }
 
   const finishedAt = output.finalTimestamp ?? timestampFromUnix(runtime.updatedAt) ?? latestRecord.updatedAt;
 
-  await writeMissionDispatchRecord({
+  const nextResult =
+    latestRecord.result && resolveMissionDispatchResultText(latestRecord)
+      ? mergeMissionDispatchResultMeta(latestRecord.result, result)
+      : result;
+
+  const nextRecord = {
     ...latestRecord,
     updatedAt: maxIsoTimestamp(latestRecord.updatedAt, finishedAt),
     runner: {
@@ -391,8 +385,412 @@ async function backfillCompletedMissionDispatchResultFromRuntime(
       finishedAt: latestRecord.runner.finishedAt ?? finishedAt,
       lastHeartbeatAt: maxIsoTimestamp(latestRecord.runner.lastHeartbeatAt, finishedAt)
     },
-    result
-  });
+    result: nextResult
+  } satisfies MissionDispatchRecordLike;
+
+  await writeMissionDispatchRecord(nextRecord);
+  return nextRecord;
+}
+
+function hasMeaningfulMissionDispatchTokenUsage(record: MissionDispatchRecordLike) {
+  const tokenUsage = extractMissionDispatchTokenUsage(record);
+  return Boolean(tokenUsage && tokenUsage.total > 0);
+}
+
+function mergeMissionDispatchResultMeta(
+  current: NonNullable<MissionDispatchRecordLike["result"]>,
+  next: NonNullable<MissionDispatchRecordLike["result"]>
+): NonNullable<MissionDispatchRecordLike["result"]> {
+  return {
+    ...current,
+    meta: {
+      ...(current.meta ?? {}),
+      ...(next.meta ?? {})
+    },
+    result: current.result
+      ? {
+          ...current.result,
+          meta: {
+            ...(current.result.meta ?? {}),
+            ...(next.result?.meta ?? {}),
+            ...(next.meta ?? {})
+          }
+        }
+      : next.result
+  };
+}
+
+async function reconcileTerminalMissionDispatchRecordFromRuntime(
+  record: MissionDispatchRecordLike,
+  runtime: RuntimeRecord
+): Promise<MissionDispatchRecordLike | null> {
+  if (record.status === "completed") {
+    return backfillCompletedMissionDispatchResultFromRuntime(record, runtime);
+  }
+
+  if (record.status !== "stalled") {
+    return null;
+  }
+
+  const output = await readRuntimeOutputForMissionDispatchRecord(record, runtime);
+
+  if (!output || !isCompletedRuntimeOutput(output)) {
+    return null;
+  }
+
+  const result = createMissionDispatchResultFromRuntimeOutput(runtime, output);
+
+  if (!result) {
+    return null;
+  }
+
+  const latestRecord = (await readMissionDispatchRecordById(record.id)) ?? record;
+
+  if (latestRecord.status === "completed") {
+    return backfillCompletedMissionDispatchResultFromRuntime(latestRecord, runtime);
+  }
+
+  if (latestRecord.status !== "stalled") {
+    return null;
+  }
+
+  const finishedAt = output.finalTimestamp ?? timestampFromUnix(runtime.updatedAt) ?? latestRecord.updatedAt;
+
+  const nextRecord = {
+    ...latestRecord,
+    status: "completed",
+    updatedAt: maxIsoTimestamp(latestRecord.updatedAt, finishedAt),
+    runner: {
+      ...latestRecord.runner,
+      finishedAt,
+      lastHeartbeatAt: maxIsoTimestamp(latestRecord.runner.lastHeartbeatAt, finishedAt)
+    },
+    observation: {
+      runtimeId: runtime.id,
+      observedAt: finishedAt
+    },
+    result,
+    error: null
+  } satisfies MissionDispatchRecordLike;
+
+  await writeMissionDispatchRecord(nextRecord);
+  return nextRecord;
+}
+
+async function readRuntimeOutputForMissionDispatchRecord(
+  record: MissionDispatchRecordLike,
+  runtime: RuntimeRecord
+): Promise<RuntimeOutputRecord | null> {
+  const sessionId = runtime.sessionId ?? extractMissionDispatchSessionId(record);
+
+  if (!runtime.agentId || !sessionId) {
+    return null;
+  }
+
+  const transcriptPath = await resolveRuntimeTranscriptPathFromTranscript(
+    runtime.agentId,
+    sessionId,
+    record.workspacePath ?? undefined
+  );
+
+  if (!transcriptPath) {
+    return null;
+  }
+
+  try {
+    const raw = await readFile(transcriptPath, "utf8");
+    const transcriptRuntime = {
+      ...runtime,
+      sessionId,
+      metadata: {
+        ...runtime.metadata,
+        mission: typeof runtime.metadata.mission === "string" ? runtime.metadata.mission : record.mission,
+        dispatchSubmittedAt:
+          typeof runtime.metadata.dispatchSubmittedAt === "string"
+            ? runtime.metadata.dispatchSubmittedAt
+            : record.submittedAt
+      }
+    } satisfies RuntimeRecord;
+
+    const output = parseRuntimeOutputFromTranscript(transcriptRuntime, raw, record.workspacePath ?? undefined);
+
+    if (hasMeaningfulTokenUsage(output.tokenUsage)) {
+      return output;
+    }
+
+    const rolloutTokenUsage = await readCodexRolloutTokenUsageForMissionDispatchRecord(record, raw);
+    return rolloutTokenUsage ? { ...output, tokenUsage: rolloutTokenUsage } : output;
+  } catch {
+    return null;
+  }
+}
+
+async function readCodexRolloutTokenUsageForMissionDispatchRecord(
+  record: MissionDispatchRecordLike,
+  transcriptRaw: string
+): Promise<RuntimeTokenUsage | null> {
+  const turnId = extractCodexTurnIdFromMissionTranscript(transcriptRaw, record.mission);
+
+  if (!turnId || !record.workspacePath || !record.agentId) {
+    return null;
+  }
+
+  for (const directoryPath of resolveCodexRolloutSessionDirectories(record)) {
+    const entries = await readdir(directoryPath, { withFileTypes: true }).catch(() => []);
+    const rolloutFiles = entries
+      .filter((entry) => entry.isFile() && entry.name.startsWith("rollout-") && entry.name.endsWith(".jsonl"))
+      .map((entry) => path.join(directoryPath, entry.name));
+
+    for (const filePath of rolloutFiles) {
+      const raw = await readFile(filePath, "utf8").catch(() => null);
+
+      if (!raw || !raw.includes(turnId)) {
+        continue;
+      }
+
+      const tokenUsage = extractCodexRolloutTokenUsageForTurn(raw, turnId);
+
+      if (hasMeaningfulTokenUsage(tokenUsage)) {
+        return tokenUsage;
+      }
+    }
+  }
+
+  return null;
+}
+
+export function extractCodexRolloutTokenUsageForTurn(raw: string, turnId: string): RuntimeTokenUsage | null {
+  const normalizedTurnId = turnId.trim();
+
+  if (!normalizedTurnId) {
+    return null;
+  }
+
+  let activeTurn = false;
+  let latestUsage: RuntimeTokenUsage | null = null;
+
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim()) {
+      continue;
+    }
+
+    try {
+      const entry = JSON.parse(line) as unknown;
+
+      if (!isRecord(entry) || entry.type !== "event_msg" || !isRecord(entry.payload)) {
+        continue;
+      }
+
+      const payloadType = typeof entry.payload.type === "string" ? entry.payload.type : "";
+
+      if (payloadType === "task_started" && readString(entry.payload.turn_id) === normalizedTurnId) {
+        activeTurn = true;
+        latestUsage = null;
+        continue;
+      }
+
+      if (!activeTurn) {
+        continue;
+      }
+
+      if (payloadType === "token_count") {
+        const tokenUsage = normalizeCodexRolloutTokenUsage(entry.payload.info);
+
+        if (hasMeaningfulTokenUsage(tokenUsage)) {
+          latestUsage = tokenUsage;
+        }
+        continue;
+      }
+
+      if (payloadType === "task_complete" && readString(entry.payload.turn_id) === normalizedTurnId) {
+        break;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return latestUsage;
+}
+
+function extractCodexTurnIdFromMissionTranscript(raw: string, mission: string) {
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim()) {
+      continue;
+    }
+
+    try {
+      const entry = JSON.parse(line) as unknown;
+
+      if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) {
+        continue;
+      }
+
+      if (entry.message.role !== "user") {
+        continue;
+      }
+
+      const prompt = extractTranscriptMessageText(entry.message.content);
+
+      if (mission.trim() && prompt && !matchesMissionText(prompt, mission) && !prompt.includes(mission.trim())) {
+        continue;
+      }
+
+      const turnId = extractOpenClawMirrorTurnId(entry.message);
+
+      if (turnId) {
+        return turnId;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function extractOpenClawMirrorTurnId(message: Record<string, unknown>) {
+  const openClaw = isRecord(message.__openclaw) ? message.__openclaw : null;
+  const mirrorIdentity = readString(openClaw?.mirrorIdentity);
+  const turnId = mirrorIdentity?.split(":")[0]?.trim();
+
+  return turnId || null;
+}
+
+function extractTranscriptMessageText(content: unknown) {
+  if (typeof content === "string") {
+    return content.trim();
+  }
+
+  if (!Array.isArray(content)) {
+    return "";
+  }
+
+  return content
+    .flatMap((item) => {
+      if (!isRecord(item)) {
+        return [];
+      }
+
+      if ((item.type === "text" || item.type === "output_text") && typeof item.text === "string") {
+        return [item.text];
+      }
+
+      return [];
+    })
+    .join("\n\n")
+    .trim();
+}
+
+function resolveCodexRolloutSessionDirectories(record: MissionDispatchRecordLike) {
+  if (!record.workspacePath || !record.agentId) {
+    return [];
+  }
+
+  const rootPath = path.join(
+    record.workspacePath,
+    ".openclaw",
+    "agents",
+    record.agentId,
+    "agent",
+    "codex-home",
+    "sessions"
+  );
+  const timestamps = [
+    record.submittedAt,
+    record.runner.startedAt,
+    record.runner.finishedAt,
+    record.updatedAt,
+    record.observation.observedAt
+  ];
+  const directories = new Set<string>();
+
+  for (const timestamp of timestamps) {
+    const ms = typeof timestamp === "string" ? Date.parse(timestamp) : Number.NaN;
+
+    if (Number.isNaN(ms)) {
+      continue;
+    }
+
+    for (const offsetMs of [-24 * 60 * 60 * 1000, 0, 24 * 60 * 60 * 1000]) {
+      const date = new Date(ms + offsetMs);
+      directories.add(path.join(rootPath, ...formatCodexSessionDateParts(date, false)));
+      directories.add(path.join(rootPath, ...formatCodexSessionDateParts(date, true)));
+    }
+  }
+
+  return Array.from(directories);
+}
+
+function formatCodexSessionDateParts(date: Date, utc: boolean) {
+  const year = utc ? date.getUTCFullYear() : date.getFullYear();
+  const month = utc ? date.getUTCMonth() + 1 : date.getMonth() + 1;
+  const day = utc ? date.getUTCDate() : date.getDate();
+
+  return [String(year), pad2(month), pad2(day)];
+}
+
+function normalizeCodexRolloutTokenUsage(value: unknown): RuntimeTokenUsage | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const usage = isRecord(value.total_token_usage)
+    ? value.total_token_usage
+    : isRecord(value.last_token_usage)
+      ? value.last_token_usage
+      : null;
+
+  if (!usage) {
+    return null;
+  }
+
+  const total = readNumber(usage.total_tokens);
+
+  if (total === null) {
+    return null;
+  }
+
+  return {
+    input: readNumber(usage.input_tokens) ?? 0,
+    output: readNumber(usage.output_tokens) ?? 0,
+    total,
+    cacheRead: readNumber(usage.cached_input_tokens) ?? 0
+  };
+}
+
+function hasMeaningfulTokenUsage(tokenUsage: RuntimeRecord["tokenUsage"] | null | undefined): tokenUsage is RuntimeTokenUsage {
+  return Boolean(tokenUsage && tokenUsage.total > 0);
+}
+
+function readString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function pad2(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function isCompletedRuntimeOutput(output: RuntimeOutputRecord) {
+  const stopReason = output.stopReason?.trim();
+
+  return Boolean(
+    output.status === "available" &&
+      output.finalText?.trim() &&
+      !output.errorMessage &&
+      stopReason &&
+      stopReason !== "toolUse" &&
+      stopReason !== "error" &&
+      stopReason !== "aborted"
+  );
 }
 
 function missionDispatchRuntimeMatchesRecord(record: MissionDispatchRecordLike, runtime: RuntimeRecord) {

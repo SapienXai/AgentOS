@@ -2,7 +2,9 @@
 
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import {
+  AlertTriangle,
   Ban,
+  CheckCircle2,
   ClipboardList,
   ChevronDown,
   ChevronUp,
@@ -21,6 +23,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { TaskNodeData } from "@/components/mission-control/canvas-types";
 import { InteractiveContent } from "@/components/mission-control/interactive-content";
+import {
+  resolveEffectiveTaskReviewStatus,
+  resolveTaskReviewBadgeLabel,
+  resolveTaskReviewFooterLabel
+} from "@/components/mission-control/task-review-state";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTaskFeed } from "@/hooks/use-task-feed";
@@ -46,30 +53,36 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     selected ||
     Boolean(data.pendingCreation || isPendingTaskBootstrapStage(baseBootstrapStage)) ||
     data.task.status === "running" ||
+    data.task.status === "stalled" ||
     data.task.liveRunCount > 0;
 
-  const optimisticFeed = useMemo(() => {
-    const value = data.task.metadata.optimisticEvents;
-
-    if (!Array.isArray(value)) {
-      return [];
-    }
-
-    return value.filter(isTaskFeedEvent);
-  }, [data.task.metadata.optimisticEvents]);
-  const latestOptimisticEvent =
-    optimisticFeed.length > 0 && isTaskFeedEvent(optimisticFeed[optimisticFeed.length - 1])
+  const optimisticFeed = useMemo(
+    () => readTaskFeedEvents(data.task.metadata.optimisticEvents),
+    [data.task.metadata.optimisticEvents]
+  );
+  const reviewFeed = useMemo(
+    () => readTaskFeedEvents(data.task.metadata.reviewEvents),
+    [data.task.metadata.reviewEvents]
+  );
+  const latestLocalEvent =
+    reviewFeed.length > 0 && isTaskFeedEvent(reviewFeed[reviewFeed.length - 1])
+      ? reviewFeed[reviewFeed.length - 1]
+      : optimisticFeed.length > 0 && isTaskFeedEvent(optimisticFeed[optimisticFeed.length - 1])
       ? optimisticFeed[optimisticFeed.length - 1]
       : null;
   const { feed, detail, loading, error } = useTaskFeed(data.task.id, shouldStreamFeed, {
     dispatchId: data.task.dispatchId,
     optimisticFeed
   });
-  const visibleFeed = useMemo(
-    () => feed.filter((event) => !isRunnerLogTaskEvent(event)),
-    [feed]
+  const mergedFeed = useMemo(
+    () => mergeTaskFeedEvents(feed, reviewFeed),
+    [feed, reviewFeed]
   );
-  const displayTask = detail?.task ?? data.task;
+  const visibleFeed = useMemo(
+    () => mergedFeed.filter((event) => !isRunnerLogTaskEvent(event)),
+    [mergedFeed]
+  );
+  const displayTask = mergeLocalTaskReviewMetadata(detail?.task, data.task);
   const integrity = detail?.integrity ?? null;
   const bootstrapStage =
     typeof displayTask.metadata.bootstrapStage === "string" ? displayTask.metadata.bootstrapStage : null;
@@ -83,13 +96,30 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const isJustCreated = Boolean(data.justCreated);
   const isAborted = isTaskAborted(displayTask);
   const isAbortable = isTaskAbortable(displayTask);
+  const isLiveTask = displayTask.status === "running" || displayTask.status === "queued" || displayTask.liveRunCount > 0;
   const missingFinalResponse = Boolean(
     integrity?.issues.some((issue) => issue.id === "missing-final-response")
   );
+  const partialFinalResponse = Boolean(
+    integrity?.issues.some((issue) => issue.id === "partial-final-response")
+  );
+  const stalledWithCapturedOutput =
+    partialFinalResponse || (displayTask.status === "stalled" && hasCapturedTaskOutput(displayTask));
+  const latestEvidenceEvent = findLatestOutputEvidenceEvent(visibleFeed);
+  const reviewStatus = resolveEffectiveTaskReviewStatus(displayTask, {
+    nowMs: data.relativeTimeReferenceMs,
+    hasLiveActivity: isLiveTask || isPendingCreation,
+    latestEvidenceAt: latestEvidenceEvent?.timestamp ?? null
+  });
+  const visibleReviewStatus =
+    reviewStatus && reviewStatus === "continued" && isLiveTask ? null : reviewStatus;
+  const hasReviewResolution = Boolean(reviewStatus);
+  const hasReviewableIntegrity =
+    integrity ? integrity.status === "warning" || integrity.status === "error" : stalledWithCapturedOutput;
   const completedNeedsReview = Boolean(
-    displayTask.status === "completed" &&
-      integrity &&
-      (integrity.status === "warning" || integrity.status === "error")
+    (displayTask.status === "completed" || stalledWithCapturedOutput) &&
+      hasReviewableIntegrity &&
+      !hasReviewResolution
   );
   const bootstrapElapsedLabel = isPendingCreation
     ? formatElapsedFromIso(dispatchSubmittedAt, data.relativeTimeReferenceMs)
@@ -98,6 +128,8 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     ? "text-rose-200"
     : completedNeedsReview
       ? "text-amber-200"
+      : visibleReviewStatus === "accepted"
+        ? "text-emerald-200"
       : toneForRuntimeStatus(displayTask.status);
   const badgeVariant = isPendingCreation
     ? "warning"
@@ -105,16 +137,33 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       ? "danger"
       : completedNeedsReview
         ? "warning"
+      : visibleReviewStatus === "accepted"
+        ? "success"
+      : visibleReviewStatus
+        ? "muted"
       : badgeVariantForRuntimeStatus(displayTask.status);
-  const badgeLabel = missingFinalResponse
+  const badgeLabel = visibleReviewStatus
+    ? resolveTaskReviewBadgeLabel(visibleReviewStatus)
+    : missingFinalResponse
     ? "no result"
     : completedNeedsReview
       ? "needs review"
       : resolveTaskBadgeLabel(bootstrapStage, displayTask.status, isPendingCreation, isAborted);
-  const footerLabel = missingFinalResponse
+  const footerLabel = visibleReviewStatus
+    ? resolveTaskReviewFooterLabel(visibleReviewStatus)
+    : stalledWithCapturedOutput
+    ? "partial output needs review"
+    : missingFinalResponse
     ? "completed without a final answer"
     : resolveTaskFooterLabel(bootstrapStage, displayTask.liveRunCount, isAborted);
-  const latestFeedEvent = visibleFeed[visibleFeed.length - 1] ?? latestOptimisticEvent ?? null;
+  const latestFeedEvent = visibleFeed[visibleFeed.length - 1] ?? latestLocalEvent ?? null;
+  const showsLiveActivity =
+    !isAborted &&
+    !completedNeedsReview &&
+    (isPendingCreation ||
+      displayTask.status === "running" ||
+      displayTask.liveRunCount > 0 ||
+      Boolean(latestFeedEvent && /working|waiting for output/i.test(latestFeedEvent.title)));
   const activityLabel = latestFeedEvent?.title || footerLabel;
   const activitySummary =
     compactMissionText(latestFeedEvent?.detail, 88) ||
@@ -233,6 +282,16 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                 onClick={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
               >
+                {data.onReviewTask && (completedNeedsReview || hasReviewResolution) ? (
+                  <TaskMenuButton
+                    icon={hasReviewResolution ? CheckCircle2 : AlertTriangle}
+                    label={hasReviewResolution ? "Review record" : "Review result"}
+                    onClick={() => {
+                      data.onReviewTask?.(displayTask);
+                      setMenuOpen(false);
+                    }}
+                  />
+                ) : null}
                 <TaskMenuButton
                   icon={CornerDownLeft}
                   label="Use prompt"
@@ -302,7 +361,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
-        {displayTask.warningCount > 0 ? (
+        {displayTask.warningCount > 0 && !hasReviewResolution ? (
           <Badge variant="warning">
             {displayTask.warningCount} review{displayTask.warningCount === 1 ? "" : "s"}
           </Badge>
@@ -326,6 +385,33 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           {compactMissionText(resultPreview, 168) || resultPreview}
         </p>
       </div>
+
+      {completedNeedsReview && data.onReviewTask ? (
+        <button
+          type="button"
+          className="nodrag nopan mt-3 flex w-full items-center justify-between gap-3 rounded-[14px] border border-amber-300/24 bg-amber-300/[0.1] px-3 py-2.5 text-left text-amber-50 shadow-[0_10px_24px_rgba(245,158,11,0.12)] transition-colors hover:border-amber-200/38 hover:bg-amber-300/[0.14]"
+          onClick={(event) => {
+            event.stopPropagation();
+            data.onReviewTask?.(displayTask);
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] border border-amber-200/20 bg-amber-200/10">
+              <AlertTriangle className="h-3.5 w-3.5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[10px] font-medium uppercase tracking-[0.18em]">
+                Review result
+              </span>
+              <span className="block truncate text-[11px] text-amber-100/72">
+                Accept, continue, retry, or dismiss.
+              </span>
+            </span>
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 -rotate-90 text-amber-100/70" />
+        </button>
+      ) : null}
 
       <div className="mt-3 grid grid-cols-3 gap-1.5">
         <TaskQuickAction
@@ -369,8 +455,11 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           onPointerDown={(event) => event.stopPropagation()}
         >
           <div className="min-w-0">
-            <p className="text-[9px] uppercase tracking-[0.2em] text-slate-500 transition-colors group-hover:text-slate-400">
-              Live feed
+            <p className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.2em] text-slate-500 transition-colors group-hover:text-slate-400">
+              {showsLiveActivity ? (
+                <span className="inline-flex h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.7)] motion-safe:animate-pulse" />
+              ) : null}
+              <span>Live feed</span>
             </p>
             <p className="mt-1 truncate text-[10px] text-slate-300">{activityLabel}</p>
             <p className="mt-1 truncate text-[10px] text-slate-500">{activitySummary}</p>
@@ -455,6 +544,10 @@ function resolveTaskBadgeLabel(
     return "aborted";
   }
 
+  if (status === "stalled" || bootstrapStage === "stalled") {
+    return "waiting output";
+  }
+
   if (!isPendingCreation || !bootstrapStage) {
     return status;
   }
@@ -470,8 +563,6 @@ function resolveTaskBadgeLabel(
       return "awaiting runtime";
     case "runtime-observed":
       return "going live";
-    case "stalled":
-      return "stalled";
     case "completed":
       return "completed";
     default:
@@ -506,7 +597,7 @@ function resolveTaskFooterLabel(bootstrapStage: string | null, liveRunCount: num
     case "runtime-observed":
       return "runtime observed";
     case "stalled":
-      return "dispatch stalled";
+      return "working silently";
     default:
       return liveRunCount > 0 ? `${liveRunCount} live run${liveRunCount === 1 ? "" : "s"}` : "no live runs right now";
   }
@@ -525,6 +616,25 @@ function readTaskResultPreview(task: TaskFlowNode["data"]["task"]) {
   }
 
   return task.subtitle.trim() || "Waiting for the first OpenClaw update.";
+}
+
+function hasCapturedTaskOutput(task: TaskFlowNode["data"]["task"]) {
+  const finalResponse =
+    typeof task.metadata.finalResponseText === "string" ? task.metadata.finalResponseText.trim() : "";
+  const resultPreview =
+    typeof task.metadata.resultPreview === "string" ? task.metadata.resultPreview.trim() : "";
+  const candidate = finalResponse || resultPreview;
+
+  return Boolean(candidate && !isWaitingForOutputCopy(candidate));
+}
+
+function isWaitingForOutputCopy(value: string) {
+  return (
+    /No transcript file was found for this runtime session/i.test(value) ||
+    /No transcript entries were found for this runtime/i.test(value) ||
+    /waiting for (the first )?(transcript|output)/i.test(value) ||
+    /working silently/i.test(value)
+  );
 }
 
 function readTaskSessionCount(task: TaskFlowNode["data"]["task"]) {
@@ -619,6 +729,53 @@ function resolveFeedEventColor(kind: string, isError?: boolean) {
   }
 }
 
+function readTaskFeedEvents(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [] as TaskFeedEvent[];
+  }
+
+  return value
+    .filter(isTaskFeedEvent)
+    .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+}
+
+function mergeTaskFeedEvents(...eventGroups: TaskFeedEvent[][]) {
+  const byId = new Map<string, TaskFeedEvent>();
+
+  for (const event of eventGroups.flat()) {
+    byId.set(event.id, event);
+  }
+
+  return [...byId.values()].sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+}
+
+function mergeLocalTaskReviewMetadata(
+  streamedTask: TaskFlowNode["data"]["task"] | undefined,
+  localTask: TaskFlowNode["data"]["task"]
+) {
+  if (!streamedTask) {
+    return localTask;
+  }
+
+  const reviewMetadata = Object.fromEntries(
+    ["reviewStatus", "reviewAction", "reviewedAt", "reviewEvents"]
+      .map((key) => [key, localTask.metadata[key]])
+      .filter(([, value]) => value !== undefined)
+  );
+
+  if (Object.keys(reviewMetadata).length === 0) {
+    return streamedTask;
+  }
+
+  return {
+    ...streamedTask,
+    metadata: {
+      ...streamedTask.metadata,
+      ...reviewMetadata
+    }
+  };
+}
+
 function formatTimeOnly(iso: string) {
   try {
     const date = new Date(iso);
@@ -638,6 +795,8 @@ function isTaskFeedEvent(value: unknown): value is TaskFeedEvent {
     typeof value === "object" &&
     value !== null &&
     typeof (value as TaskFeedEvent).id === "string" &&
+    typeof (value as TaskFeedEvent).kind === "string" &&
+    typeof (value as TaskFeedEvent).timestamp === "string" &&
     typeof (value as TaskFeedEvent).title === "string" &&
     typeof (value as TaskFeedEvent).detail === "string"
   );
@@ -645,6 +804,12 @@ function isTaskFeedEvent(value: unknown): value is TaskFeedEvent {
 
 function isRunnerLogTaskEvent(event: TaskFeedEvent) {
   return event.id.startsWith("runner-log:");
+}
+
+function findLatestOutputEvidenceEvent(feed: TaskFeedEvent[]) {
+  return [...feed]
+    .reverse()
+    .find((event) => event.kind === "assistant" || event.kind === "tool" || event.kind === "artifact") ?? null;
 }
 
 function TaskMenuButton({

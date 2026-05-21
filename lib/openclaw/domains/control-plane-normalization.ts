@@ -129,7 +129,7 @@ export function resolveAgentAction(params: {
       }
 
       if (params.runtime.status === "stalled") {
-        return `Recent task ${params.runtime.taskId.slice(0, 8)} stalled`;
+        return `Recent task ${params.runtime.taskId.slice(0, 8)} waiting for output`;
       }
 
       return `Recent task ${params.runtime.taskId.slice(0, 8)}`;
