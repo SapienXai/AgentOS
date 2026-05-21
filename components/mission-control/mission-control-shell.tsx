@@ -3517,7 +3517,9 @@ export function MissionControlShell({
           snapshot={uiSnapshot}
           onOpenChange={handleCapabilityEditorOpenChange}
           onSnapshotChange={(updater) => setSnapshot(updater)}
-          onRefresh={refresh}
+          onRefresh={async () => {
+            await refreshSnapshot({ force: true });
+          }}
         />
 
         <AgentModelPickerDialog

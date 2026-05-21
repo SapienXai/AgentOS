@@ -104,6 +104,15 @@ export function filterAgentPolicySkills(skills: string[]) {
   return skills.filter((skillId) => !isAgentPolicySkillId(skillId));
 }
 
+export function normalizeDeclaredAgentSkills(skillIds: string[]) {
+  return uniqueStrings(
+    filterAgentPolicySkills(skillIds)
+      .filter((skillId) => typeof skillId === "string")
+      .map((skillId) => skillId.trim())
+      .filter(Boolean)
+  );
+}
+
 export function normalizeDeclaredAgentTools(toolIds: string[]) {
   return uniqueStrings(
     toolIds

@@ -203,6 +203,15 @@ export function AgentCapabilityEditorDialog({
             kind: "tool" as const,
             category: entry.category
           })),
+          ...(capabilityCatalog?.tools ?? []).map((entry) => ({
+            value: entry.name,
+            label: entry.name,
+            description: entry.description,
+            sourceLabel: formatToolSourceLabel(entry),
+            sourceRank: entry.category === "builtin" ? 0 : entry.category === "plugin" ? 1 : 2,
+            kind: "tool" as const,
+            category: entry.category
+          })),
           ...draftTools
             .filter((toolId) => toolId !== "fs.workspaceOnly" && !(capabilityCatalog?.tools ?? []).some((entry) => entry.name === toolId))
             .map((toolId) => ({

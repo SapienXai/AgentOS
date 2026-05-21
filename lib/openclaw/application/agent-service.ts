@@ -26,6 +26,7 @@ import {
   buildWorkspaceAgentStatePath,
   filterAgentPolicySkills,
   mapAgentHeartbeatToInput,
+  normalizeDeclaredAgentSkills,
   normalizeDeclaredAgentTools,
   readAgentConfigList,
   removeLegacyAgentContextFiles,
@@ -92,7 +93,7 @@ export async function createAgent(input: AgentCreateInput) {
   const declaredSkillIds =
     input.skills === undefined
       ? presetSkillIds
-      : filterKnownOpenClawSkillIds(filterAgentPolicySkills(input.skills));
+      : normalizeDeclaredAgentSkills(input.skills);
   const declaredToolIds =
     input.tools === undefined
       ? presetToolIds
@@ -324,7 +325,7 @@ export async function updateAgent(input: AgentUpdateInput) {
         : shouldResetSkills
         ? presetSkillIds
         : currentDeclaredSkills
-      : filterKnownOpenClawSkillIds(filterAgentPolicySkills(input.skills));
+      : normalizeDeclaredAgentSkills(input.skills);
   for (const skillId of nextDeclaredSkills) {
     await ensureWorkspaceSkillMarkdownFromProvisioning(resolvedWorkspacePath, skillId);
   }

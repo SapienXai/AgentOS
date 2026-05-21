@@ -182,13 +182,15 @@ export function updateSnapshotAgentCapabilities(
   tools: string[]
 ) {
   const normalizedSkills = normalizeCapabilityValues(skills);
-  const normalizedTools = normalizeCapabilityValues(tools);
   const nextAgents = snapshot.agents.map((agent) =>
     agent.id === agentId
       ? {
           ...agent,
           skills: normalizedSkills,
-          tools: normalizedTools
+          tools: normalizeCapabilityValues([
+            ...tools,
+            ...(agent.tools.includes("fs.workspaceOnly") ? ["fs.workspaceOnly"] : [])
+          ])
         }
       : agent
   );
