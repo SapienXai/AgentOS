@@ -1,5 +1,5 @@
 import type { BadgeProps } from "@/components/ui/badge";
-import type { RuntimeStatus } from "@/lib/agentos/contracts";
+import type { AgentStatus, RuntimeStatus } from "@/lib/agentos/contracts";
 import { badgeVariantForRuntimeStatus, toneForRuntimeStatus } from "@/lib/openclaw/presenters";
 
 import type { TaskReviewStatus } from "./task-review-state";
@@ -34,6 +34,26 @@ export type RuntimeNodeToneInput = {
   status: RuntimeStatus;
 };
 
+export type RuntimeNodeShellToneKey =
+  | "pendingCreation"
+  | "fresh"
+  | "cancelled"
+  | "completed"
+  | "default";
+
+export type RuntimeNodeShellToneInput = RuntimeNodeToneInput & {
+  isJustCreated?: boolean;
+  selected?: boolean;
+};
+
+export type RuntimeNodeShellTone = Readonly<{
+  key: RuntimeNodeShellToneKey;
+  selected: string;
+  state: string;
+}>;
+
+export type SurfaceRoleTone = "primary" | "owner" | "delegate" | "mixed";
+
 export const FRESH_NODE_BADGE_CLASSES = "gap-1 border-cyan-100/20 bg-cyan-100/12 text-cyan-50";
 
 export const TASK_NODE_SELECTED_CLASSES =
@@ -46,6 +66,18 @@ export const TASK_NODE_REVIEW_ACTION_CLASSES = {
   detail: "block truncate text-[11px] text-amber-100/72",
   icon: "flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] border border-amber-200/20 bg-amber-200/10"
 } as const;
+
+export const RUNTIME_NODE_SELECTED_CLASSES =
+  "border-cyan-300/[0.45] shadow-[0_18px_42px_rgba(34,211,238,0.16)]";
+
+export const AGENT_NODE_SELECTED_CLASSES =
+  "border-cyan-300/[0.42] shadow-[0_22px_48px_rgba(34,211,238,0.16)]";
+
+export const AGENT_NODE_CREATION_PULSE_CLASSES =
+  "border-cyan-200/50 shadow-[0_24px_56px_rgba(34,211,238,0.22)]";
+
+export const AGENT_NODE_ATTENTION_CLASSES =
+  "border-cyan-200/[0.54] shadow-[0_24px_56px_rgba(34,211,238,0.22)]";
 
 const TASK_NODE_TONES = {
   aborted: {
@@ -115,6 +147,38 @@ const TASK_NODE_TONES = {
     topLine: "bg-gradient-to-r from-white/[0.24] via-white/[0.06] to-transparent"
   }
 } as const satisfies Record<TaskNodeToneKey, TaskNodeVisualTone>;
+
+const RUNTIME_NODE_SHELL_TONES = {
+  pendingCreation: {
+    key: "pendingCreation",
+    selected: "",
+    state:
+      "border-cyan-300/30 bg-[linear-gradient(180deg,rgba(17,31,52,0.98),rgba(8,16,30,0.98))] shadow-[0_24px_54px_rgba(34,211,238,0.22)]"
+  },
+  fresh: {
+    key: "fresh",
+    selected: "",
+    state:
+      "border-cyan-200/40 bg-[linear-gradient(180deg,rgba(20,28,43,0.98),rgba(10,15,28,0.98))] shadow-[0_22px_52px_rgba(125,211,252,0.18)]"
+  },
+  cancelled: {
+    key: "cancelled",
+    selected: "",
+    state:
+      "border-rose-300/30 bg-[linear-gradient(180deg,rgba(43,14,19,0.96),rgba(19,8,12,0.96))] shadow-[0_22px_52px_rgba(244,63,94,0.14)]"
+  },
+  completed: {
+    key: "completed",
+    selected: "",
+    state:
+      "border-white/[0.06] bg-[linear-gradient(180deg,rgba(13,18,30,0.88),rgba(8,12,22,0.88))] opacity-[0.86]"
+  },
+  default: {
+    key: "default",
+    selected: "",
+    state: ""
+  }
+} as const satisfies Record<RuntimeNodeShellToneKey, RuntimeNodeShellTone>;
 
 export function resolveTaskNodeToneKey({
   completedNeedsReview = false,
@@ -234,4 +298,98 @@ export function resolveRuntimeNodeBadgeVariant({
 
 export function resolveRuntimeNodeTokenTone({ status }: RuntimeNodeToneInput): string {
   return toneForRuntimeStatus(status);
+}
+
+export function resolveRuntimeNodeShellToneKey({
+  isPendingCreation = false,
+  isJustCreated = false,
+  status
+}: RuntimeNodeShellToneInput): RuntimeNodeShellToneKey {
+  if (isPendingCreation) {
+    return "pendingCreation";
+  }
+
+  if (isJustCreated) {
+    return "fresh";
+  }
+
+  if (status === "cancelled") {
+    return "cancelled";
+  }
+
+  if (status === "completed") {
+    return "completed";
+  }
+
+  return "default";
+}
+
+export function resolveRuntimeNodeShellTone(input: RuntimeNodeShellToneInput): RuntimeNodeShellTone {
+  const shellTone = RUNTIME_NODE_SHELL_TONES[resolveRuntimeNodeShellToneKey(input)];
+
+  return input.selected
+    ? {
+        ...shellTone,
+        selected: RUNTIME_NODE_SELECTED_CLASSES
+      }
+    : shellTone;
+}
+
+export function resolveAgentStatusDotTone(status: AgentStatus): string {
+  switch (status) {
+    case "engaged":
+      return "bg-cyan-300";
+    case "monitoring":
+      return "bg-emerald-300";
+    case "ready":
+      return "bg-amber-200";
+    case "offline":
+      return "bg-rose-300";
+    default:
+      return "bg-slate-500";
+  }
+}
+
+export function resolveAgentStatusBadgeVariant(status: AgentStatus): BadgeVariant {
+  switch (status) {
+    case "engaged":
+      return "default";
+    case "monitoring":
+      return "success";
+    case "ready":
+      return "warning";
+    case "offline":
+      return "danger";
+    default:
+      return "muted";
+  }
+}
+
+export function resolveWorkspaceHealthBadgeClasses(health: AgentStatus): string {
+  switch (health) {
+    case "engaged":
+      return "border-cyan-300/30 bg-cyan-300/14 text-cyan-50";
+    case "monitoring":
+      return "border-emerald-300/30 bg-emerald-300/14 text-emerald-50";
+    case "ready":
+      return "border-amber-300/30 bg-amber-300/14 text-amber-50";
+    case "offline":
+      return "border-rose-300/30 bg-rose-300/14 text-rose-50";
+    default:
+      return "border-white/12 bg-white/[0.07] text-slate-100";
+  }
+}
+
+export function resolveSurfaceRoleDotClasses(roleTone: SurfaceRoleTone): string {
+  switch (roleTone) {
+    case "owner":
+      return "bg-emerald-100 shadow-[0_0_12px_rgba(52,211,153,0.9)]";
+    case "delegate":
+      return "bg-amber-100 shadow-[0_0_12px_rgba(251,191,36,0.9)]";
+    case "mixed":
+      return "bg-violet-100 shadow-[0_0_12px_rgba(196,181,253,0.9)]";
+    case "primary":
+    default:
+      return "bg-cyan-100 shadow-[0_0_12px_rgba(103,232,249,0.9)]";
+  }
 }

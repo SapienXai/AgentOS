@@ -10,10 +10,14 @@ import {
   type MissionControlShellSettingsPanelProps
 } from "@/components/mission-control/mission-control-shell.settings";
 import { resolveTransportDiagnosticsSummary } from "@/components/mission-control/settings-control-center.utils";
+import {
+  resolveDiagnosticHealthBadgeClasses,
+  resolveDiagnosticHealthDotClasses,
+  resolveGatewayModeBadgeClasses,
+  type SurfaceTheme
+} from "@/components/mission-control/surface-visual-tones";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
-
-type SurfaceTheme = "dark" | "light";
 
 type CanvasTopBarProps = MissionControlShellSettingsPanelProps & {
   settingsRef: MutableRefObject<HTMLDivElement | null>;
@@ -135,7 +139,7 @@ export function CanvasTopBar({
               transition={{ type: "spring", stiffness: 420, damping: 28 }}
               className={cn(
                 "group relative inline-flex cursor-pointer select-none items-center gap-2 overflow-hidden rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.22em] transition-[background-color,border-color,color,box-shadow,transform] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
-                statusBadgeClassName(health, surfaceTheme),
+                resolveDiagnosticHealthBadgeClasses(health, surfaceTheme),
                 surfaceTheme === "light"
                   ? "shadow-[0_10px_24px_rgba(244,63,94,0.12)] hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800"
                   : "shadow-[0_10px_24px_rgba(244,63,94,0.18)] hover:border-rose-300/40 hover:bg-rose-300/15 hover:text-rose-100"
@@ -156,7 +160,7 @@ export function CanvasTopBar({
                 aria-hidden="true"
                 className={cn(
                   "relative z-10 h-2 w-2 rounded-full shadow-[0_0_12px_currentColor]",
-                  statusDotClassName(health)
+                  resolveDiagnosticHealthDotClasses(health)
                 )}
               />
               <span className="relative z-10 inline-flex items-center gap-1.5">
@@ -178,12 +182,12 @@ export function CanvasTopBar({
             <span
               className={cn(
                 "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.22em]",
-                statusBadgeClassName(health, surfaceTheme)
+                resolveDiagnosticHealthBadgeClasses(health, surfaceTheme)
               )}
             >
               <span
                 aria-hidden="true"
-                className={cn("h-2 w-2 rounded-full shadow-[0_0_12px_currentColor]", statusDotClassName(health))}
+                className={cn("h-2 w-2 rounded-full shadow-[0_0_12px_currentColor]", resolveDiagnosticHealthDotClasses(health))}
               />
               {healthLabel}
             </span>
@@ -191,7 +195,7 @@ export function CanvasTopBar({
           <span
             className={cn(
               "hidden items-center gap-1.5 rounded-full border px-2 py-1 text-[9px] font-medium uppercase tracking-[0.18em] sm:inline-flex",
-              gatewayModeBadgeClassName(transportSummary.statusTone, surfaceTheme)
+              resolveGatewayModeBadgeClasses(transportSummary.statusTone, surfaceTheme)
             )}
             title={transportSummary.recovery || transportSummary.lastNativeError || transportSummary.statusLabel}
           >
@@ -237,64 +241,6 @@ function formatHealthLabel(health: MissionControlSnapshot["diagnostics"]["health
     default:
       return "Offline";
   }
-}
-
-function statusBadgeClassName(
-  health: MissionControlSnapshot["diagnostics"]["health"],
-  surfaceTheme: SurfaceTheme
-) {
-  switch (health) {
-    case "healthy":
-      return surfaceTheme === "light"
-        ? "border-emerald-300/80 bg-emerald-50 text-emerald-700"
-        : "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
-    case "degraded":
-      return surfaceTheme === "light"
-        ? "border-amber-300/90 bg-amber-50 text-amber-700"
-        : "border-amber-300/25 bg-amber-300/10 text-amber-200";
-    default:
-      return surfaceTheme === "light"
-        ? "border-rose-300/80 bg-rose-50 text-rose-700"
-        : "border-rose-300/25 bg-rose-300/10 text-rose-200";
-  }
-}
-
-function statusDotClassName(health: MissionControlSnapshot["diagnostics"]["health"]) {
-  switch (health) {
-    case "healthy":
-      return "bg-emerald-400";
-    case "degraded":
-      return "bg-amber-300";
-    default:
-      return "bg-rose-300";
-  }
-}
-
-function gatewayModeBadgeClassName(
-  tone: "success" | "warning" | "danger" | "neutral",
-  surfaceTheme: SurfaceTheme
-) {
-  if (tone === "success") {
-    return surfaceTheme === "light"
-      ? "border-emerald-300/80 bg-emerald-50 text-emerald-700"
-      : "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
-  }
-
-  if (tone === "danger") {
-    return surfaceTheme === "light"
-      ? "border-rose-300/80 bg-rose-50 text-rose-700"
-      : "border-rose-300/25 bg-rose-300/10 text-rose-200";
-  }
-
-  if (tone === "warning") {
-    return surfaceTheme === "light"
-      ? "border-amber-300/80 bg-amber-50 text-amber-700"
-      : "border-amber-300/25 bg-amber-300/10 text-amber-200";
-  }
-
-  return surfaceTheme === "light"
-    ? "border-[#d0bcae] bg-[#efe5dc] text-[#7f6554]"
-    : "border-white/12 bg-white/[0.08] text-slate-300";
 }
 
 function settingsChromeButtonClassName(surfaceTheme: SurfaceTheme) {

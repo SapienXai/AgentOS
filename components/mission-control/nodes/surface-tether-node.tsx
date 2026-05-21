@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { motion } from "motion/react";
 
 import type { SurfaceTetherNodeData } from "@/components/mission-control/canvas-types";
+import { resolveSurfaceRoleDotClasses } from "@/components/mission-control/node-visual-tones";
 import { SurfaceIcon } from "@/components/mission-control/surface-icon";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -17,7 +18,7 @@ export function SurfaceTetherNode({ data, selected }: NodeProps<SurfaceTetherFlo
     ? data.actionLabel ?? "Add a workspace surface"
     : data.roleLabel || `${data.label} connection`;
   const surfaceSummary = formatSurfaceSummary(data.surfaceNames);
-  const roleDotClass = resolveRoleDotClass(data.roleTone);
+  const roleDotClass = resolveSurfaceRoleDotClasses(data.roleTone);
   const accentColor = data.accentColor ?? "#7dd3fc";
   const shellSizeClass = "h-[64px] w-[64px]";
   const shellGlowClass = "inset-[-10px]";
@@ -166,20 +167,6 @@ export function SurfaceTetherNode({ data, selected }: NodeProps<SurfaceTetherFlo
       </Tooltip>
     </TooltipProvider>
   );
-}
-
-function resolveRoleDotClass(roleTone: SurfaceTetherNodeData["roleTone"]) {
-  switch (roleTone) {
-    case "owner":
-      return "bg-emerald-100 shadow-[0_0_12px_rgba(52,211,153,0.9)]";
-    case "delegate":
-      return "bg-amber-100 shadow-[0_0_12px_rgba(251,191,36,0.9)]";
-    case "mixed":
-      return "bg-violet-100 shadow-[0_0_12px_rgba(196,181,253,0.9)]";
-    case "primary":
-    default:
-      return "bg-cyan-100 shadow-[0_0_12px_rgba(103,232,249,0.9)]";
-  }
 }
 
 function formatSurfaceSummary(surfaceNames: string[]) {

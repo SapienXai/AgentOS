@@ -9,8 +9,9 @@ import type { RuntimeNodeData } from "@/components/mission-control/canvas-types"
 import {
   FRESH_NODE_BADGE_CLASSES,
   resolveRuntimeNodeBadgeVariant,
-  resolveRuntimeNodeTokenTone,
-  resolveRuntimeNodeStatusDotTone
+  resolveRuntimeNodeShellTone,
+  resolveRuntimeNodeStatusDotTone,
+  resolveRuntimeNodeTokenTone
 } from "@/components/mission-control/node-visual-tones";
 import { StatusDot } from "@/components/mission-control/status-dot";
 import { Badge } from "@/components/ui/badge";
@@ -21,16 +22,19 @@ type RuntimeFlowNode = Node<RuntimeNodeData, "runtime">;
 
 export function RuntimeNode({ data, selected }: NodeProps<RuntimeFlowNode>) {
   const isPendingCreation = Boolean(data.pendingCreation);
+  const isJustCreated = Boolean(data.justCreated);
   const toneInput = {
     isPendingCreation,
+    isJustCreated,
+    selected,
     status: data.runtime.status
   };
   const tone = resolveRuntimeNodeTokenTone(toneInput);
+  const shellTone = resolveRuntimeNodeShellTone(toneInput);
   const runtimeLabel =
     data.runtime.source === "turn"
       ? shortId(data.runtime.runId || data.runtime.id, 10)
       : shortId(data.runtime.taskId || data.runtime.sessionId);
-  const isJustCreated = Boolean(data.justCreated);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const badgeVariant = resolveRuntimeNodeBadgeVariant(toneInput);
@@ -79,16 +83,8 @@ export function RuntimeNode({ data, selected }: NodeProps<RuntimeFlowNode>) {
       className={cn(
         "relative w-[212px] overflow-hidden rounded-[16px] border border-white/[0.1] bg-[linear-gradient(180deg,rgba(15,24,40,0.94),rgba(8,13,24,0.94))] px-3 py-2.5 shadow-[0_16px_28px_rgba(0,0,0,0.26)] backdrop-blur-xl",
         data.emphasis ? "opacity-100" : "opacity-72",
-        selected && "border-cyan-300/[0.45] shadow-[0_18px_42px_rgba(34,211,238,0.16)]",
-        isPendingCreation && "border-cyan-300/30 bg-[linear-gradient(180deg,rgba(17,31,52,0.98),rgba(8,16,30,0.98))] shadow-[0_24px_54px_rgba(34,211,238,0.22)]",
-        isJustCreated &&
-          "border-cyan-200/40 bg-[linear-gradient(180deg,rgba(20,28,43,0.98),rgba(10,15,28,0.98))] shadow-[0_22px_52px_rgba(125,211,252,0.18)]",
-        data.runtime.status === "cancelled" &&
-          "border-rose-300/30 bg-[linear-gradient(180deg,rgba(43,14,19,0.96),rgba(19,8,12,0.96))] shadow-[0_22px_52px_rgba(244,63,94,0.14)]",
-        data.runtime.status === "completed" &&
-          !isPendingCreation &&
-          !isJustCreated &&
-          "border-white/[0.06] bg-[linear-gradient(180deg,rgba(13,18,30,0.88),rgba(8,12,22,0.88))] opacity-[0.86]"
+        shellTone.selected,
+        shellTone.state
       )}
     >
       {isPendingCreation ? (

@@ -5,6 +5,7 @@ import { Eye, EyeOff, FolderKanban, Layers3, Orbit } from "lucide-react";
 import { motion } from "motion/react";
 
 import type { WorkspaceNodeData } from "@/components/mission-control/canvas-types";
+import { resolveWorkspaceHealthBadgeClasses } from "@/components/mission-control/node-visual-tones";
 import { Badge } from "@/components/ui/badge";
 import { compactPath } from "@/lib/openclaw/presenters";
 import { getWorkspaceNodeStyle } from "@/lib/openclaw/workspace-colors";
@@ -86,7 +87,7 @@ export function WorkspaceNode({ data, selected }: NodeProps<WorkspaceFlowNode>) 
           <Badge
             variant="muted"
             data-health={data.workspace.health}
-            className={cn("workspace-node__health", workspaceHealthBadgeClasses(data.workspace.health))}
+            className={cn("workspace-node__health", resolveWorkspaceHealthBadgeClasses(data.workspace.health))}
           >
             {data.workspace.health}
           </Badge>
@@ -170,19 +171,4 @@ function TaskToggleMetric({
       <span className="workspace-node__chip-value font-display text-[12px] text-inherit">{value}</span>
     </button>
   );
-}
-
-function workspaceHealthBadgeClasses(health: WorkspaceNodeData["workspace"]["health"]) {
-  switch (health) {
-    case "engaged":
-      return "border-cyan-300/30 bg-cyan-300/14 text-cyan-50";
-    case "monitoring":
-      return "border-emerald-300/30 bg-emerald-300/14 text-emerald-50";
-    case "ready":
-      return "border-amber-300/30 bg-amber-300/14 text-amber-50";
-    case "offline":
-      return "border-rose-300/30 bg-rose-300/14 text-rose-50";
-    default:
-      return "border-white/12 bg-white/[0.07] text-slate-100";
-  }
 }

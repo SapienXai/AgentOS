@@ -7,6 +7,13 @@ import { ChevronDown, LocateFixed, MessageCircle, MoreHorizontal } from "lucide-
 import { AnimatePresence, motion } from "motion/react";
 
 import type { AgentDetailFocus, AgentNodeData } from "@/components/mission-control/canvas-types";
+import {
+  AGENT_NODE_ATTENTION_CLASSES,
+  AGENT_NODE_CREATION_PULSE_CLASSES,
+  AGENT_NODE_SELECTED_CLASSES,
+  resolveAgentStatusBadgeVariant,
+  resolveAgentStatusDotTone
+} from "@/components/mission-control/node-visual-tones";
 import { StatusDot } from "@/components/mission-control/status-dot";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -162,16 +169,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   const activeTaskCount = Math.max(0, Number(data.activeTaskCount ?? 0));
   const isAttentionActive = selected || data.composerFocused || data.taskFocused;
   const isCreationPulse = Boolean(data.creationPulse);
-  const dotTone =
-    data.agent.status === "engaged"
-      ? "bg-cyan-300"
-      : data.agent.status === "monitoring"
-        ? "bg-emerald-300"
-        : data.agent.status === "ready"
-          ? "bg-amber-200"
-      : data.agent.status === "offline"
-        ? "bg-rose-300"
-          : "bg-slate-500";
+  const dotTone = resolveAgentStatusDotTone(data.agent.status);
   const presetMeta = getAgentPresetMeta(data.agent.policy.preset);
   const declaredSkills = data.agent.skills;
   const declaredTools = data.agent.tools.filter((tool) => tool !== "fs.workspaceOnly");
@@ -191,16 +189,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
 
     inspectAgentSection(focus);
   };
-  const statusBadgeVariant =
-    data.agent.status === "engaged"
-      ? "default"
-      : data.agent.status === "monitoring"
-        ? "success"
-        : data.agent.status === "ready"
-          ? "warning"
-        : data.agent.status === "offline"
-          ? "danger"
-      : "muted";
+  const statusBadgeVariant = resolveAgentStatusBadgeVariant(data.agent.status);
   const modelBadgeLabel = data.modelLabel || formatModelLabel(data.agent.modelId);
   const themeLabel = data.agent.identity.theme ?? formatAgentPresetLabel(data.agent.policy.preset);
   const skillCount = effectiveSkills.length;
@@ -245,9 +234,9 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
       className={cn(
         "agent-node relative isolate w-[272px] overflow-visible rounded-[24px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(18,20,26,0.96),rgba(9,11,15,0.96))] pt-0 pb-0 shadow-[0_20px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl",
         data.emphasis ? "opacity-100" : "opacity-72",
-        selected && "border-cyan-300/[0.42] shadow-[0_22px_48px_rgba(34,211,238,0.16)]",
-        isCreationPulse && "border-cyan-200/50 shadow-[0_24px_56px_rgba(34,211,238,0.22)]",
-        isAttentionActive && "border-cyan-200/[0.54] shadow-[0_24px_56px_rgba(34,211,238,0.22)]"
+        selected && AGENT_NODE_SELECTED_CLASSES,
+        isCreationPulse && AGENT_NODE_CREATION_PULSE_CLASSES,
+        isAttentionActive && AGENT_NODE_ATTENTION_CLASSES
       )}
     >
       {isCreationPulse ? (
