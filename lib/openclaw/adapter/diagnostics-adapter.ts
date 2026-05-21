@@ -3,6 +3,7 @@ import type {
   StatusPayload
 } from "@/lib/openclaw/client/gateway-client";
 import { isDeferredPayloadResult } from "@/lib/openclaw/client/payload-cache";
+import { getOpenClawGatewayOperationLabel } from "@/lib/openclaw/client/gateway-compatibility";
 import {
   collectIssues,
   compareVersionStrings,
@@ -80,6 +81,11 @@ export function buildGatewayDiagnostics(input: {
   issues: string[];
   versionDiagnostics: ReturnType<typeof buildVersionDiagnostics>;
 }): MissionControlSnapshot["diagnostics"] {
+  const gatewayFallbackDiagnostics = (input.transport?.recentFallbackDiagnostics ?? []).map((entry) => ({
+    ...entry,
+    operationLabel: getOpenClawGatewayOperationLabel(entry.operation)
+  }));
+
   return {
     installed: true,
     loaded: Boolean(input.gatewayStatus?.service?.loaded),
@@ -110,6 +116,10 @@ export function buildGatewayDiagnostics(input: {
     openClawBinarySelection: input.openClawBinarySelection,
     modelReadiness: input.modelReadiness,
     capabilityMatrix: input.capabilityMatrix,
+    gatewayFallbackDiagnostics,
+    gatewayFallbackReasons: gatewayFallbackDiagnostics.map(
+      (entry) => `${entry.operationLabel} (${entry.operation}): ${entry.kind}: ${entry.issue} Recovery: ${entry.recovery}`
+    ),
     runtime: input.runtimeDiagnostics,
     commandHistory: input.commandHistory,
     transport: input.transport,

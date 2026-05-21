@@ -554,7 +554,6 @@ test("native WS gateway client exposes handshake feature discovery", async () =>
 test("native WS gateway client records protocol mismatch recovery diagnostics", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  fallback.statusPayload = { version: "fallback" };
   const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
@@ -572,12 +571,17 @@ test("native WS gateway client records protocol mismatch recovery diagnostics", 
     timeoutMs: 250
   });
 
-  assert.deepEqual(await client.getStatus(), { version: "fallback" });
+  await assert.rejects(
+    () => client.getStatus(),
+    /Gateway-native operation failed; CLI fallback disabled/
+  );
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect"]);
-  const [diagnostic] = getRecentOpenClawGatewayFallbackDiagnostics();
-  assert.equal(diagnostic.operation, "status");
-  assert.equal(diagnostic.kind, "protocol-mismatch");
-  assert.match(diagnostic.recovery, /supported range 3-4/);
+  assert.deepEqual(fallback.calls, []);
+  assert.deepEqual(getRecentOpenClawGatewayFallbackDiagnostics(), []);
+  const diagnostics = client.getDiagnostics();
+  assert.equal(diagnostics.gatewayMode, "unreachable");
+  assert.match(diagnostics.lastNativeError ?? "", /supported range 3-4/);
+  assert.match(diagnostics.recovery ?? "", /supported range 3-4/);
 });
 
 test("native WS gateway client uses Gateway first for typed status requests", async () => {
@@ -640,7 +644,7 @@ test("native WS gateway client uses Gateway first for typed status requests", as
   assert.deepEqual(getRecentOpenClawGatewayFallbackDiagnostics(), []);
 });
 
-test("native WS gateway client backfills missing update registry details from CLI status", async () => {
+test("native WS gateway client does not backfill missing update registry details from CLI status", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
   fallback.statusPayload = {
@@ -668,19 +672,12 @@ test("native WS gateway client backfills missing update registry details from CL
     timeoutMs: 250
   });
 
-  assert.deepEqual(await client.getStatus(), {
-    version: "9.9.9",
-    update: {
-      registry: {
-        latestVersion: "10.0.0"
-      }
-    }
-  });
+  assert.deepEqual(await client.getStatus(), { version: "9.9.9" });
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "status"]);
-  assert.deepEqual(fallback.calls.map((call) => call.method), ["getStatus"]);
+  assert.deepEqual(fallback.calls, []);
 });
 
-test("native WS gateway client reuses cached update registry details without repeated CLI status", async () => {
+test("native WS gateway client keeps status native without cached CLI registry backfill", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
   fallback.statusPayload = {
@@ -710,15 +707,8 @@ test("native WS gateway client reuses cached update registry details without rep
 
   await client.getStatus();
 
-  assert.deepEqual(await client.getStatus(), {
-    version: "9.9.9",
-    update: {
-      registry: {
-        latestVersion: "10.0.0"
-      }
-    }
-  });
-  assert.deepEqual(fallback.calls.map((call) => call.method), ["getStatus"]);
+  assert.deepEqual(await client.getStatus(), { version: "9.9.9" });
+  assert.deepEqual(fallback.calls, []);
 });
 
 test("native WS gateway client discovers configured Gateway auth for handshakes", async () => {
@@ -928,14 +918,19 @@ test("native WS gateway client does not send redacted OpenClaw secrets", async (
     timeoutMs: 250
   });
 
-  assert.deepEqual(await client.getStatus(), {});
+  await assert.rejects(
+    () => client.getStatus(),
+    /Gateway-native operation failed; CLI fallback disabled/
+  );
   assert.equal(sentFrames.length, 0);
-  const [diagnostic] = getRecentOpenClawGatewayFallbackDiagnostics();
-  assert.equal(diagnostic?.kind, "auth");
-  assert.match(diagnostic?.issue, /redacted secret/);
+  assert.deepEqual(fallback.calls, []);
+  assert.deepEqual(getRecentOpenClawGatewayFallbackDiagnostics(), []);
+  const diagnostics = client.getDiagnostics();
+  assert.equal(diagnostics.lastNativeError?.includes("__OPENCLAW_REDACTED__"), false);
+  assert.match(diagnostics.lastNativeError ?? "", /redacted secret/);
 });
 
-test("native WS gateway client falls back when Gateway typed response is malformed", async () => {
+test("native WS gateway client does not hide malformed Gateway typed responses behind CLI", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
@@ -957,10 +952,14 @@ test("native WS gateway client falls back when Gateway typed response is malform
     timeoutMs: 250
   });
 
-  assert.deepEqual(await client.listModels(), { models: [] });
+  await assert.rejects(
+    () => client.listModels(),
+    /Gateway-native operation failed; CLI fallback disabled/
+  );
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "models.list"]);
-  assert.deepEqual(fallback.calls.map((call) => call.method), ["listModels"]);
-  assert.match(getRecentOpenClawGatewayFallbackDiagnostics()[0].issue, /malformed response/);
+  assert.deepEqual(fallback.calls, []);
+  assert.deepEqual(getRecentOpenClawGatewayFallbackDiagnostics(), []);
+  assert.match(client.getDiagnostics().lastNativeError ?? "", /malformed response/);
 });
 
 test("native WS gateway client treats mixed model auth profiles as connected when one profile is usable", async () => {
@@ -1205,12 +1204,15 @@ test("native WS gateway client clears operation fallback diagnostics after Gatew
       socket.emitMessage({
         type: "res",
         id: frame.id,
-        ok: true,
+        ok: frame.method === "connect" || !malformed,
         payload: frame.method === "connect"
           ? { protocol: 3 }
           : malformed
-            ? { models: [{ id: "missing-name" }] }
-            : { models: [{ id: "gpt-5.5", provider: "openai", name: "GPT 5.5", input: ["text"] }] }
+            ? undefined
+            : { models: [{ id: "gpt-5.5", provider: "openai", name: "GPT 5.5", input: ["text"] }] },
+        error: frame.method !== "connect" && malformed
+          ? { message: "INVALID_REQUEST: unknown method: models.list" }
+          : undefined
       });
     });
   });
@@ -1430,7 +1432,7 @@ test("native WS gateway client uses Gateway first for channel status", async () 
   assert.deepEqual(fallback.calls, []);
 });
 
-test("native WS gateway client falls back when channel status is malformed", async () => {
+test("native WS gateway client surfaces malformed channel status without CLI fallback", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
@@ -1450,18 +1452,14 @@ test("native WS gateway client falls back when channel status is malformed", asy
     timeoutMs: 250
   });
 
-  assert.deepEqual(await client.getChannelStatus(), {
-    ts: 0,
-    channelOrder: [],
-    channelLabels: {},
-    channels: {},
-    channelAccounts: {},
-    channelDefaultAccountId: {}
-  });
+  await assert.rejects(
+    () => client.getChannelStatus(),
+    /Gateway-native operation failed; CLI fallback disabled/
+  );
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "channels.status"]);
-  assert.deepEqual(fallback.calls.map((call) => call.method), ["getChannelStatus"]);
-  assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.operation, "channels.status");
-  assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.kind, "malformed-response");
+  assert.deepEqual(fallback.calls, []);
+  assert.deepEqual(getRecentOpenClawGatewayFallbackDiagnostics(), []);
+  assert.match(client.getDiagnostics().lastNativeError ?? "", /malformed response/);
 });
 
 test("native WS gateway client reads channel logs through Gateway before CLI fallback", async () => {
@@ -2040,7 +2038,7 @@ test("native WS gateway client refuses redacted config writes without CLI fallba
   assert.deepEqual(fallback.calls, []);
 });
 
-test("native WS gateway client surfaces CLI fallback failures after Gateway failure", async () => {
+test("native WS gateway client surfaces native failure without CLI fallback after Gateway failure", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
   fallback.failStatus = true;
@@ -2065,13 +2063,16 @@ test("native WS gateway client surfaces CLI fallback failures after Gateway fail
     timeoutMs: 250
   });
 
-  await assert.rejects(() => client.getStatus(), /CLI status failed/);
-  const [diagnostic] = getRecentOpenClawGatewayFallbackDiagnostics();
-  assert.equal(diagnostic.operation, "status");
-  assert.equal(diagnostic.kind, "scope-limited");
+  await assert.rejects(
+    () => client.getStatus(),
+    /Gateway-native operation failed; CLI fallback disabled/
+  );
+  assert.deepEqual(fallback.calls, []);
+  assert.deepEqual(getRecentOpenClawGatewayFallbackDiagnostics(), []);
+  assert.match(client.getDiagnostics().lastNativeError ?? "", /scope denied/);
 });
 
-test("native WS gateway client falls back to CLI client when handshake fails", async () => {
+test("native WS gateway client does not CLI fallback when handshake auth fails", async () => {
   const fallback = new FallbackGatewayClient();
   const failures: string[] = [];
   const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
@@ -2098,14 +2099,15 @@ test("native WS gateway client falls back to CLI client when handshake fails", a
     onNativeFailure: (error) => failures.push(error instanceof Error ? error.message : String(error))
   });
 
-  const result = await client.call<{ fallback: boolean; method: string }>("health", { probe: true });
-
-  assert.deepEqual(result, { fallback: true, method: "health", params: { probe: true } });
-  assert.equal(fallback.calls.length, 1);
+  await assert.rejects(
+    () => client.call<{ fallback: boolean; method: string }>("health", { probe: true }),
+    /Gateway-native operation failed; CLI fallback disabled/
+  );
+  assert.deepEqual(fallback.calls, []);
   assert.match(failures[0], /auth failed/);
 });
 
-test("native WS gateway client falls back to CLI client on timeout", async () => {
+test("native WS gateway client does not CLI fallback on native timeout", async () => {
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl } = createFakeWebSocket(() => {});
   const client = new NativeWsOpenClawGatewayClient({
@@ -2115,10 +2117,11 @@ test("native WS gateway client falls back to CLI client on timeout", async () =>
     timeoutMs: 20
   });
 
-  const result = await client.call<{ fallback: boolean; method: string }>("health", { probe: true });
-
-  assert.deepEqual(result, { fallback: true, method: "health", params: { probe: true } });
-  assert.equal(fallback.calls.length, 1);
+  await assert.rejects(
+    () => client.call<{ fallback: boolean; method: string }>("health", { probe: true }),
+    /Gateway-native operation failed; CLI fallback disabled/
+  );
+  assert.deepEqual(fallback.calls, []);
 });
 
 test("native WS gateway client does not CLI fallback after sent mutation timeout", async () => {

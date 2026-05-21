@@ -6,6 +6,7 @@ import {
   runOpenClawJsonStream
 } from "@/lib/openclaw/cli";
 import { stringifyCommandFailure } from "@/lib/openclaw/command-failure";
+import { OPENCLAW_GATEWAY_PROTOCOL_RANGE } from "@/lib/openclaw/client/native-ws-gateway-types";
 import type {
   AgentPayload,
   GatewayProbePayload,
@@ -46,6 +47,7 @@ import type {
   OpenClawExecApprovalResolveInput,
   OpenClawExecApprovalResolvePayload,
   OpenClawGatewayClient,
+  OpenClawGatewayClientDiagnostics,
   OpenClawGatewayEventCallbacks,
   OpenClawGatewayEventSubscription,
   OpenClawGmailSetupInput,
@@ -319,6 +321,25 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
+  getDiagnostics(): OpenClawGatewayClientDiagnostics {
+    return {
+      mode: "cli",
+      gatewayMode: "cli-forced",
+      statusLabel: "CLI fallback forced",
+      recovery: "Unset the CLI-forced Gateway mode and restart AgentOS to use the native OpenClaw Gateway.",
+      connectionState: "cli-forced",
+      protocolVersion: null,
+      protocolRange: OPENCLAW_GATEWAY_PROTOCOL_RANGE,
+      fallbackCounts: {},
+      fallbackTotal: 0,
+      recentFallbackDiagnostics: [],
+      lastNativeError: null,
+      lastNativeFailureAt: null,
+      lastConnectedAt: null,
+      lastDisconnectedAt: null
+    };
+  }
+
   getHealth(options: OpenClawCommandOptions = {}) {
     return this.call<OpenClawHealthPayload>("health", {}, options);
   }

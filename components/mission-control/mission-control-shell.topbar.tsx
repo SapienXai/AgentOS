@@ -9,6 +9,7 @@ import {
   MissionControlShellSettingsPanel,
   type MissionControlShellSettingsPanelProps
 } from "@/components/mission-control/mission-control-shell.settings";
+import { resolveTransportDiagnosticsSummary } from "@/components/mission-control/settings-control-center.utils";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
 
@@ -89,6 +90,7 @@ export function CanvasTopBar({
   const health = snapshot.diagnostics.health;
   const isOffline = health === "offline";
   const healthLabel = formatHealthLabel(health);
+  const transportSummary = resolveTransportDiagnosticsSummary(snapshot.diagnostics.transport, settingsPanelProps.connectionState);
   const settingsChromeButtonStyles = settingsChromeButtonClassName(surfaceTheme);
   const settingsThemeSwitchTrackStyles = settingsThemeSwitchTrackClassName(surfaceTheme);
   const settingsThemeSwitchThumbStyles = settingsThemeSwitchThumbClassName(surfaceTheme);
@@ -186,6 +188,16 @@ export function CanvasTopBar({
               {healthLabel}
             </span>
           )}
+          <span
+            className={cn(
+              "hidden items-center gap-1.5 rounded-full border px-2 py-1 text-[9px] font-medium uppercase tracking-[0.18em] sm:inline-flex",
+              gatewayModeBadgeClassName(transportSummary.statusTone, surfaceTheme)
+            )}
+            title={transportSummary.recovery || transportSummary.lastNativeError || transportSummary.statusLabel}
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+            {transportSummary.gatewayModeLabel}
+          </span>
           <button
             type="button"
             role="switch"
@@ -256,6 +268,33 @@ function statusDotClassName(health: MissionControlSnapshot["diagnostics"]["healt
     default:
       return "bg-rose-300";
   }
+}
+
+function gatewayModeBadgeClassName(
+  tone: "success" | "warning" | "danger" | "neutral",
+  surfaceTheme: SurfaceTheme
+) {
+  if (tone === "success") {
+    return surfaceTheme === "light"
+      ? "border-emerald-300/80 bg-emerald-50 text-emerald-700"
+      : "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
+  }
+
+  if (tone === "danger") {
+    return surfaceTheme === "light"
+      ? "border-rose-300/80 bg-rose-50 text-rose-700"
+      : "border-rose-300/25 bg-rose-300/10 text-rose-200";
+  }
+
+  if (tone === "warning") {
+    return surfaceTheme === "light"
+      ? "border-amber-300/80 bg-amber-50 text-amber-700"
+      : "border-amber-300/25 bg-amber-300/10 text-amber-200";
+  }
+
+  return surfaceTheme === "light"
+    ? "border-[#d0bcae] bg-[#efe5dc] text-[#7f6554]"
+    : "border-white/12 bg-white/[0.08] text-slate-300";
 }
 
 function settingsChromeButtonClassName(surfaceTheme: SurfaceTheme) {

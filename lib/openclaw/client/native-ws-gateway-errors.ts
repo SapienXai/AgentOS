@@ -84,7 +84,7 @@ export function recordGatewayFallbackDiagnostic(operation: string, error: unknow
   recentGatewayFallbackDiagnostics.unshift({
     at: new Date().toISOString(),
     operation,
-    issue: normalized.message,
+    issue: sanitizeGatewayDiagnosticText(normalized.message),
     kind: normalized.kind,
     recovery: resolveGatewayRecoveryMessage(normalized)
   });
@@ -102,15 +102,21 @@ export function clearGatewayFallbackDiagnostic(operation: string) {
 
 export function normalizeClientError(error: unknown) {
   if (error instanceof OpenClawGatewayClientError) {
-    return error;
+    return new OpenClawGatewayClientError(sanitizeGatewayDiagnosticText(error.message), error.kind, {
+      cause: error.cause ?? error
+    });
   }
 
   if (error instanceof NativeGatewayError) {
-    return new OpenClawGatewayClientError(error.message, error.kind, { cause: error.cause ?? error });
+    return new OpenClawGatewayClientError(sanitizeGatewayDiagnosticText(error.message), error.kind, {
+      cause: error.cause ?? error
+    });
   }
 
   const message = error instanceof Error ? error.message : String(error || "OpenClaw Gateway request failed.");
-  return new OpenClawGatewayClientError(message, classifyGatewayError(message), { cause: error });
+  return new OpenClawGatewayClientError(sanitizeGatewayDiagnosticText(message), classifyGatewayError(message), {
+    cause: error
+  });
 }
 
 export function classifyGatewayError(message: string): OpenClawGatewayClientErrorKind {
@@ -170,6 +176,24 @@ export function resolveGatewayRecoveryMessage(error: OpenClawGatewayClientError)
     default:
       return "Inspect OpenClaw diagnostics for the underlying Gateway failure.";
   }
+}
+
+export function sanitizeGatewayDiagnosticText(value: string | null | undefined) {
+  const text = value?.trim();
+  if (!text) {
+    return "";
+  }
+
+  return text
+    .replace(
+      /\b(authorization|bearer|token|password|secret|api[_-]?key)\b(\s*[:=]\s*)(["']?)[^\s"',;}{]+/gi,
+      (_match, key: string, separator: string, quote: string) => `${key}${separator}${quote}[redacted]`
+    )
+    .replace(
+      /\b(AGENTOS_OPENCLAW_GATEWAY_TOKEN|OPENCLAW_GATEWAY_TOKEN|AGENTOS_OPENCLAW_GATEWAY_PASSWORD|OPENCLAW_GATEWAY_PASSWORD)=["']?[^"'\s]+/g,
+      (_match, key: string) => `${key}=[redacted]`
+    )
+    .replace(/__OPENCLAW_REDACTED__/g, "[redacted]");
 }
 
 export function clearGatewayFallbackDiagnosticsForTesting() {

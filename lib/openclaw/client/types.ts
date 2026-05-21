@@ -25,12 +25,37 @@ export type OpenClawGatewayConnectionState =
   | "closed"
   | "error";
 
+export type OpenClawGatewayMode =
+  | "native-ws"
+  | "cli-forced"
+  | "fallback-active"
+  | "degraded"
+  | "unreachable";
+
+export type OpenClawGatewayRecentFallbackDiagnostic = {
+  at: string;
+  operation: string;
+  issue: string;
+  kind: string;
+  recovery: string;
+};
+
 export type OpenClawGatewayClientDiagnostics = {
   mode: "native-ws" | "cli";
+  gatewayMode: OpenClawGatewayMode;
+  statusLabel: string;
+  recovery: string | null;
   connectionState: OpenClawGatewayConnectionState;
   protocolVersion: number | null;
+  protocolRange: {
+    min: number;
+    max: number;
+  };
   fallbackCounts: Record<string, number>;
+  fallbackTotal: number;
+  recentFallbackDiagnostics: OpenClawGatewayRecentFallbackDiagnostic[];
   lastNativeError: string | null;
+  lastNativeFailureAt: string | null;
   lastConnectedAt: string | null;
   lastDisconnectedAt: string | null;
 };
@@ -39,6 +64,7 @@ export type OpenClawGatewayRequestPolicy = {
   safety: "read" | "mutation";
   timeoutMs?: number;
   allowCliFallback?: boolean;
+  allowReadCliFallbackOnNativeFailure?: boolean;
   allowMutationFallbackOnUnsupported?: boolean;
   allowUnsafeMutationCliFallback?: boolean;
 };

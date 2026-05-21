@@ -65,6 +65,7 @@ export function resolveGatewayRequestPolicy(method: string, options: OpenClawCom
     safety,
     timeoutMs: options.timeoutMs,
     allowCliFallback: true,
+    allowReadCliFallbackOnNativeFailure: false,
     allowMutationFallbackOnUnsupported: safety === "mutation"
   };
 }
@@ -82,8 +83,10 @@ export function shouldUseCliFallback(
     return false;
   }
 
+  const normalized = normalizeClientError(error);
+
   if (policy.safety !== "mutation") {
-    return true;
+    return normalized.kind === "unsupported" || policy.allowReadCliFallbackOnNativeFailure === true;
   }
 
   if (policy.allowUnsafeMutationCliFallback) {
@@ -94,7 +97,6 @@ export function shouldUseCliFallback(
     return false;
   }
 
-  const normalized = normalizeClientError(error);
   if (normalized.kind === "unsupported" && policy.allowMutationFallbackOnUnsupported !== false) {
     return true;
   }

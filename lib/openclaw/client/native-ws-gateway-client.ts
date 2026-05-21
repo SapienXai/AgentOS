@@ -19,8 +19,11 @@ import {
   getRecentOpenClawGatewayFallbackDiagnostics as readRecentOpenClawGatewayFallbackDiagnostics,
   NativeGatewayError,
   NativeGatewayRequestError,
+  normalizeClientError,
   OpenClawGatewayClientError,
-  recordGatewayFallbackDiagnostic
+  recordGatewayFallbackDiagnostic,
+  resolveGatewayRecoveryMessage,
+  sanitizeGatewayDiagnosticText
 } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import {
   buildAgentIdentityParams,
@@ -191,6 +194,13 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   private readonly fallback: OpenClawGatewayClient;
   private readonly connection: PersistentOpenClawGatewayConnection;
   private readonly fallbackCounts: Record<string, number> = {};
+  private lastNativeFailure: {
+    at: string;
+    operation: string;
+    issue: string;
+    kind: string;
+    recovery: string;
+  } | null = null;
 
   constructor(private readonly options: NativeWsOpenClawGatewayClientOptions = {}) {
     this.fallback = options.fallback ?? new CliOpenClawGatewayClient();
@@ -203,22 +213,70 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
 
   getDiagnostics(): OpenClawGatewayClientDiagnostics {
     const connection = this.connection.getDiagnostics();
+    const forceCli = this.options.forceCli || isCliGatewayClientForcedByEnv();
+    const fallbackTotal = Object.values(this.fallbackCounts).reduce((total, value) => {
+      return Number.isFinite(value) && value > 0 ? total + value : total;
+    }, 0);
+    const recentFallbackDiagnostics = readRecentOpenClawGatewayFallbackDiagnostics();
+    const lastNativeError = this.lastNativeFailure?.issue || sanitizeGatewayDiagnosticText(connection.lastNativeError);
+    const gatewayMode = resolveGatewayMode({
+      forceCli,
+      connectionState: connection.connectionState,
+      fallbackTotal,
+      lastNativeError
+    });
+
     return {
-      mode: this.options.forceCli || isCliGatewayClientForcedByEnv() ? "cli" : "native-ws",
-      connectionState: this.options.forceCli || isCliGatewayClientForcedByEnv()
+      mode: forceCli ? "cli" : "native-ws",
+      gatewayMode,
+      statusLabel: resolveGatewayStatusLabel(gatewayMode),
+      recovery: resolveGatewayStatusRecovery(gatewayMode, this.lastNativeFailure?.recovery ?? null),
+      connectionState: forceCli
         ? "cli-forced"
         : connection.connectionState,
       protocolVersion: connection.protocolVersion,
+      protocolRange: OPENCLAW_GATEWAY_PROTOCOL_RANGE,
       fallbackCounts: { ...this.fallbackCounts },
-      lastNativeError: connection.lastNativeError,
+      fallbackTotal,
+      recentFallbackDiagnostics,
+      lastNativeError: lastNativeError || null,
+      lastNativeFailureAt: this.lastNativeFailure?.at ?? null,
       lastConnectedAt: connection.lastConnectedAt,
       lastDisconnectedAt: connection.lastDisconnectedAt
     };
   }
 
+  private recordNativeFailure(operation: string, error: unknown) {
+    const normalized = normalizeClientError(error);
+    this.lastNativeFailure = {
+      at: new Date().toISOString(),
+      operation,
+      issue: sanitizeGatewayDiagnosticText(normalized.message),
+      kind: normalized.kind,
+      recovery: resolveGatewayRecoveryMessage(normalized)
+    };
+  }
+
+  private clearNativeFailure(operation: string) {
+    if (this.lastNativeFailure?.operation === operation) {
+      this.lastNativeFailure = null;
+    }
+  }
+
   private recordGatewayFallback(operation: string, error: unknown) {
+    this.recordNativeFailure(operation, error);
     this.fallbackCounts[operation] = (this.fallbackCounts[operation] ?? 0) + 1;
     recordGatewayFallbackDiagnostic(operation, error);
+  }
+
+  private cliFallbackDisabledError(operation: string, error: unknown) {
+    this.recordNativeFailure(operation, error);
+    const normalized = normalizeClientError(error);
+    return new OpenClawGatewayClientError(
+      `${normalized.message} Gateway-native operation failed; CLI fallback disabled for this operation. Recovery: ${resolveGatewayRecoveryMessage(normalized)}`,
+      normalized.kind,
+      { cause: error }
+    );
   }
 
   getHealth(options: OpenClawCommandOptions = {}) {
@@ -237,26 +295,25 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     }
 
     return this.callNative<unknown>("status", {}, options)
-      .then(async (payload) => {
+      .then((payload) => {
         const status = parseGatewayPayload<StatusPayload>("status", statusPayloadSchema, payload);
 
         clearGatewayFallbackDiagnostic("status");
+        this.clearNativeFailure("status");
 
         if (hasNativeStatusUpdateRegistry(status)) {
           rememberStatusUpdateRegistry(status.update?.registry);
           return status;
         }
 
-        const cachedStatus = mergeStatusPayload(status, null);
-        if (hasNativeStatusUpdateRegistry(cachedStatus)) {
-          return cachedStatus;
-        }
-
-        const fallbackStatus = await this.fallback.getStatus(options).catch(() => null);
-        return mergeStatusPayload(status, fallbackStatus);
+        return mergeStatusPayload(status, null);
       })
       .catch((error) => {
         this.options.onNativeFailure?.(error, "status");
+        const policy = resolveGatewayRequestPolicy("status", options);
+        if (!shouldUseCliFallback(error, "status", policy)) {
+          throw this.cliFallbackDisabledError("status", error);
+        }
         this.recordGatewayFallback("status", error);
         return this.fallback.getStatus(options);
       });
@@ -288,27 +345,39 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       return this.fallback.getModelStatus(options);
     }
 
-    try {
-      const [authResult, modelsResult] = await Promise.allSettled([
-        this.callNative<unknown>("models.authStatus", {}, options),
-        this.callNative<unknown>("models.list", { view: "configured" }, options)
-      ]);
+    const [authResult, modelsResult] = await Promise.allSettled([
+      this.callNative<unknown>("models.authStatus", {}, options),
+      this.callNative<unknown>("models.list", { view: "configured" }, options)
+    ]);
+    const failures = [
+      { method: "models.authStatus", result: authResult },
+      { method: "models.list", result: modelsResult }
+    ].filter((entry): entry is {
+      method: string;
+      result: PromiseRejectedResult;
+    } => entry.result.status === "rejected");
 
-      if (authResult.status === "rejected" && modelsResult.status === "rejected") {
-        throw authResult.reason;
+    for (const failure of failures) {
+      this.options.onNativeFailure?.(failure.result.reason, failure.method);
+      if (!shouldUseCliFallback(failure.result.reason, failure.method, resolveGatewayRequestPolicy(failure.method, options))) {
+        throw this.cliFallbackDisabledError(failure.method, failure.result.reason);
       }
+    }
 
-      clearGatewayFallbackDiagnostic("models.authStatus");
-      clearGatewayFallbackDiagnostic("models.list");
-      return normalizeModelStatusPayload(
-        authResult.status === "fulfilled" ? authResult.value : null,
-        modelsResult.status === "fulfilled" ? modelsResult.value : null
-      );
-    } catch (error) {
-      this.options.onNativeFailure?.(error, "models.authStatus");
+    if (authResult.status === "rejected" && modelsResult.status === "rejected") {
+      const error = authResult.reason;
       this.recordGatewayFallback("models.authStatus", error);
       return this.fallback.getModelStatus(options);
     }
+
+    clearGatewayFallbackDiagnostic("models.authStatus");
+    clearGatewayFallbackDiagnostic("models.list");
+    this.clearNativeFailure("models.authStatus");
+    this.clearNativeFailure("models.list");
+    return normalizeModelStatusPayload(
+      authResult.status === "fulfilled" ? authResult.value : null,
+      modelsResult.status === "fulfilled" ? modelsResult.value : null
+    );
   }
 
   async getAgentModelStatus(input: OpenClawAgentModelStatusInput, options: OpenClawCommandOptions = {}) {
@@ -316,36 +385,48 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       return this.fallback.getAgentModelStatus(input, options);
     }
 
-    try {
-      const agentId = input.agentId;
-      const [authResult, modelsResult] = await Promise.allSettled([
-        this.callNative<unknown>("models.authStatus", { agentId }, options),
-        this.callNative<unknown>("models.list", { view: "configured", agentId }, options)
-      ]);
+    const agentId = input.agentId;
+    const [authResult, modelsResult] = await Promise.allSettled([
+      this.callNative<unknown>("models.authStatus", { agentId }, options),
+      this.callNative<unknown>("models.list", { view: "configured", agentId }, options)
+    ]);
+    const failures = [
+      { method: "models.authStatus", result: authResult },
+      { method: "models.list", result: modelsResult }
+    ].filter((entry): entry is {
+      method: string;
+      result: PromiseRejectedResult;
+    } => entry.result.status === "rejected");
 
-      if (authResult.status === "rejected" && modelsResult.status === "rejected") {
-        throw authResult.reason;
+    for (const failure of failures) {
+      this.options.onNativeFailure?.(failure.result.reason, failure.method);
+      if (!shouldUseCliFallback(failure.result.reason, failure.method, resolveGatewayRequestPolicy(failure.method, options))) {
+        throw this.cliFallbackDisabledError(failure.method, failure.result.reason);
       }
+    }
 
-      clearGatewayFallbackDiagnostic("models.authStatus");
-      clearGatewayFallbackDiagnostic("models.list");
-
-      const authPayload = authResult.status === "fulfilled" ? authResult.value : null;
-      const status = normalizeModelStatusPayload(
-        authPayload,
-        modelsResult.status === "fulfilled" ? modelsResult.value : null
-      );
-
-      if (isObjectRecord(authPayload)) {
-        status.agentDir = readNonEmptyString(authPayload.agentDir) ?? status.agentDir;
-      }
-
-      return status;
-    } catch (error) {
-      this.options.onNativeFailure?.(error, "models.authStatus");
+    if (authResult.status === "rejected" && modelsResult.status === "rejected") {
+      const error = authResult.reason;
       this.recordGatewayFallback("models.authStatus", error);
       return this.fallback.getAgentModelStatus(input, options);
     }
+
+    clearGatewayFallbackDiagnostic("models.authStatus");
+    clearGatewayFallbackDiagnostic("models.list");
+    this.clearNativeFailure("models.authStatus");
+    this.clearNativeFailure("models.list");
+
+    const authPayload = authResult.status === "fulfilled" ? authResult.value : null;
+    const status = normalizeModelStatusPayload(
+      authPayload,
+      modelsResult.status === "fulfilled" ? modelsResult.value : null
+    );
+
+    if (isObjectRecord(authPayload)) {
+      status.agentDir = readNonEmptyString(authPayload.agentDir) ?? status.agentDir;
+    }
+
+    return status;
   }
 
   setModelAuthOrder(input: OpenClawModelAuthOrderSetInput, options: OpenClawCommandOptions = {}) {
@@ -757,12 +838,13 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     try {
       const payload = await this.callNative<TPayload>(method, params, options);
       clearGatewayFallbackDiagnostic(method);
+      this.clearNativeFailure(method);
       return payload;
     } catch (error) {
       this.options.onNativeFailure?.(error, method);
       const policy = resolveGatewayRequestPolicy(method, options);
       if (!shouldUseCliFallback(error, method, policy)) {
-        throw error;
+        throw this.cliFallbackDisabledError(method, error);
       }
       this.recordGatewayFallback(method, error);
       return this.fallback.call<TPayload>(method, params, options);
@@ -810,12 +892,8 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   }
 
   async hasConfig(path: string, options: OpenClawCommandOptions = {}) {
-    try {
-      const value = await this.getConfig(path, options);
-      return value !== null && value !== undefined;
-    } catch {
-      return this.fallback.hasConfig(path, options);
-    }
+    const value = await this.getConfig(path, options);
+    return value !== null && value !== undefined;
   }
 
   setConfig(path: string, value: unknown, options: OpenClawCommandOptions & { strictJson?: boolean } = {}) {
@@ -942,12 +1020,14 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       const payload = await this.runAgentTurnNative(input, options);
       clearGatewayFallbackDiagnostic("chat.send");
       clearGatewayFallbackDiagnostic("sessions.send");
+      this.clearNativeFailure("chat.send");
+      this.clearNativeFailure("sessions.send");
       return payload;
     } catch (error) {
       this.options.onNativeFailure?.(error, "chat.send");
       const method = error instanceof NativeGatewayRequestError ? error.method : "chat.send";
       if (!shouldUseCliFallback(error, method, { safety: "mutation" })) {
-        throw error;
+        throw this.cliFallbackDisabledError(method, error);
       }
       this.recordGatewayFallback("chat.send", error);
       return this.fallback.runAgentTurn(input, options);
@@ -984,18 +1064,24 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       throw new OpenClawGatewayClientError("Native OpenClaw Gateway is required for sessions.steer.", "unsupported");
     }
 
-    const payload = await this.callNative<unknown>(
-      "sessions.steer",
-      buildSessionSteerParams(input),
-      options,
-      {
-        safety: "mutation",
-        timeoutMs: options.timeoutMs,
-        allowCliFallback: false,
-        allowMutationFallbackOnUnsupported: false
-      }
-    );
-    return parseObjectGatewayPayload<OpenClawSessionControlPayload>("sessions.steer", payload);
+    try {
+      const payload = await this.callNative<unknown>(
+        "sessions.steer",
+        buildSessionSteerParams(input),
+        options,
+        {
+          safety: "mutation",
+          timeoutMs: options.timeoutMs,
+          allowCliFallback: false,
+          allowMutationFallbackOnUnsupported: false
+        }
+      );
+      this.clearNativeFailure("sessions.steer");
+      return parseObjectGatewayPayload<OpenClawSessionControlPayload>("sessions.steer", payload);
+    } catch (error) {
+      this.options.onNativeFailure?.(error, "sessions.steer");
+      throw this.cliFallbackDisabledError("sessions.steer", error);
+    }
   }
 
   async injectChat(input: OpenClawChatInjectInput, options: OpenClawCommandOptions = {}) {
@@ -1003,18 +1089,24 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       throw new OpenClawGatewayClientError("Native OpenClaw Gateway is required for chat.inject.", "unsupported");
     }
 
-    const payload = await this.callNative<unknown>(
-      "chat.inject",
-      buildChatInjectParams(input),
-      options,
-      {
-        safety: "mutation",
-        timeoutMs: options.timeoutMs,
-        allowCliFallback: false,
-        allowMutationFallbackOnUnsupported: false
-      }
-    );
-    return parseObjectGatewayPayload<OpenClawSessionControlPayload>("chat.inject", payload);
+    try {
+      const payload = await this.callNative<unknown>(
+        "chat.inject",
+        buildChatInjectParams(input),
+        options,
+        {
+          safety: "mutation",
+          timeoutMs: options.timeoutMs,
+          allowCliFallback: false,
+          allowMutationFallbackOnUnsupported: false
+        }
+      );
+      this.clearNativeFailure("chat.inject");
+      return parseObjectGatewayPayload<OpenClawSessionControlPayload>("chat.inject", payload);
+    } catch (error) {
+      this.options.onNativeFailure?.(error, "chat.inject");
+      throw this.cliFallbackDisabledError("chat.inject", error);
+    }
   }
 
   async streamAgentTurn(
@@ -1067,6 +1159,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       const dispatchPayload = await this.runAgentTurnNative(input, options);
       dispatchedRunId = dispatchPayload.runId ?? null;
       clearGatewayFallbackDiagnostic("streamAgentTurn");
+      this.clearNativeFailure("streamAgentTurn");
 
       const waitMs = resolveAgentTurnWaitMs(input, options);
       const settledPayload = await Promise.race([
@@ -1083,7 +1176,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       this.options.onNativeFailure?.(error, "streamAgentTurn");
       const method = error instanceof NativeGatewayRequestError ? error.method : "streamAgentTurn";
       if (!shouldUseCliFallback(error, method, { safety: "mutation" })) {
-        throw error;
+        throw this.cliFallbackDisabledError(method, error);
       }
       this.recordGatewayFallback("streamAgentTurn", error);
       return this.fallback.streamAgentTurn(input, callbacks, options);
@@ -1293,11 +1386,12 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         options
       );
       clearGatewayFallbackDiagnostic("runtime.subscribe");
+      this.clearNativeFailure("runtime.subscribe");
       return subscription;
     } catch (error) {
       this.options.onNativeFailure?.(error, "runtime.subscribe");
       if (!shouldUseCliFallback(error, "runtime.subscribe", { safety: "read", timeoutMs: options.timeoutMs })) {
-        throw error;
+        throw this.cliFallbackDisabledError("runtime.subscribe", error);
       }
 
       this.recordGatewayFallback("runtime.subscribe", error);
@@ -1354,6 +1448,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         );
         for (const [candidate] of candidates) {
           clearGatewayFallbackDiagnostic(candidate);
+          this.clearNativeFailure(candidate);
         }
         return payload;
       } catch (error) {
@@ -1364,7 +1459,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         }
 
         if (!shouldUseCliFallback(error, method, policy)) {
-          throw error;
+          throw this.cliFallbackDisabledError(method, error);
         }
 
         this.recordGatewayFallback(method, error);
@@ -1408,6 +1503,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         );
         for (const [candidate] of candidates) {
           clearGatewayFallbackDiagnostic(candidate);
+          this.clearNativeFailure(candidate);
         }
         return buildSessionExportPayload(input, payload);
       } catch (error) {
@@ -1418,7 +1514,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         }
 
         if (!shouldUseCliFallback(error, method, policy)) {
-          throw error;
+          throw this.cliFallbackDisabledError(method, error);
         }
 
         this.recordGatewayFallback(method, error);
@@ -1451,11 +1547,12 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     try {
       const payload = normalize(await this.callNative<unknown>(method, params, options, policy));
       clearGatewayFallbackDiagnostic(method);
+      this.clearNativeFailure(method);
       return payload;
     } catch (error) {
       this.options.onNativeFailure?.(error, method);
       if (!shouldUseCliFallback(error, method, policy)) {
-        throw error;
+        throw this.cliFallbackDisabledError(method, error);
       }
       this.recordGatewayFallback(method, error);
       return fallback();
@@ -1483,6 +1580,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         const payload = normalize(await this.callNative<unknown>(method, params, options, policy));
         for (const candidate of methods) {
           clearGatewayFallbackDiagnostic(candidate);
+          this.clearNativeFailure(candidate);
         }
         return payload;
       } catch (error) {
@@ -1494,7 +1592,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         }
 
         if (!shouldUseCliFallback(error, method, policy)) {
-          throw error;
+          throw this.cliFallbackDisabledError(method, error);
         }
 
         this.recordGatewayFallback(method, error);
@@ -1611,6 +1709,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         }
       }
       clearGatewayFallbackDiagnostic(operation);
+      this.clearNativeFailure(operation);
       const configMutation: OpenClawConfigMutationMetadata = {
         path,
         reloadKind,
@@ -1642,7 +1741,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       }) || canFallbackGatewayAuthConfigRepair(error, path) || isGatewayConfigRateLimitError(error);
 
       if (!fallbackAllowed) {
-        throw error;
+        throw this.cliFallbackDisabledError(failedMethod, error);
       }
       this.recordGatewayFallback(operation, error);
       return fallback();
@@ -1651,5 +1750,71 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         this.close(`${operation}:${path}`);
       }
     }
+  }
+}
+
+function resolveGatewayMode(input: {
+  forceCli: boolean;
+  connectionState: OpenClawGatewayClientDiagnostics["connectionState"];
+  fallbackTotal: number;
+  lastNativeError: string | null;
+}): OpenClawGatewayClientDiagnostics["gatewayMode"] {
+  if (input.forceCli) {
+    return "cli-forced";
+  }
+
+  if (input.connectionState === "error") {
+    return "unreachable";
+  }
+
+  if (input.fallbackTotal > 0) {
+    return "fallback-active";
+  }
+
+  if (input.connectionState === "closed" || input.lastNativeError) {
+    return "degraded";
+  }
+
+  return "native-ws";
+}
+
+function resolveGatewayStatusLabel(mode: OpenClawGatewayClientDiagnostics["gatewayMode"]) {
+  switch (mode) {
+    case "native-ws":
+      return "Native Gateway: OK";
+    case "cli-forced":
+      return "CLI fallback forced";
+    case "fallback-active":
+      return "CLI fallback used";
+    case "unreachable":
+      return "Native Gateway: Unreachable";
+    case "degraded":
+    default:
+      return "Native Gateway: Degraded";
+  }
+}
+
+function resolveGatewayStatusRecovery(
+  mode: OpenClawGatewayClientDiagnostics["gatewayMode"],
+  nativeFailureRecovery: string | null
+) {
+  if (mode === "native-ws") {
+    return null;
+  }
+
+  if (nativeFailureRecovery) {
+    return nativeFailureRecovery;
+  }
+
+  switch (mode) {
+    case "cli-forced":
+      return "Unset CLI-forced Gateway mode and restart AgentOS to use native WebSocket transport.";
+    case "fallback-active":
+      return "Inspect recent fallback diagnostics, then update OpenClaw or repair Gateway auth/device access.";
+    case "unreachable":
+      return "Start or restart the OpenClaw Gateway, then retry the native operation.";
+    case "degraded":
+    default:
+      return "Inspect Gateway diagnostics and repair the native Gateway before retrying.";
   }
 }

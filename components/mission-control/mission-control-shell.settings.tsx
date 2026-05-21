@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { resolveTransportDiagnosticsSummary } from "@/components/mission-control/settings-control-center.utils";
 import type { OpenClawInstallSummary } from "@/components/mission-control/mission-control-shell.utils";
 import type {
   AddModelsProviderId,
@@ -72,6 +73,7 @@ export type MissionControlShellSettingsPanelProps = {
 export function MissionControlShellSettingsPanel({
   snapshot,
   surfaceTheme,
+  connectionState,
   isCheckingForUpdates,
   updateRunState,
   lastCheckedAt,
@@ -103,6 +105,7 @@ export function MissionControlShellSettingsPanel({
     snapshot.diagnostics.modelReadiness.defaultModel ||
     "Not selected";
   const gatewayLabel = resolveGatewayLabel(snapshot);
+  const transportSummary = resolveTransportDiagnosticsSummary(snapshot.diagnostics.transport, connectionState);
   const hasAuthIssue = Boolean(
     gatewayAuthStatus &&
       !gatewayAuthStatus.native.ok &&
@@ -246,8 +249,8 @@ export function MissionControlShellSettingsPanel({
           surfaceTheme={surfaceTheme}
           icon={<Wrench className="h-3.5 w-3.5" />}
           label="Gateway"
-          value={gatewayLabel}
-          detail={snapshot.diagnostics.gatewayUrl || "No endpoint"}
+          value={transportSummary.statusLabel}
+          detail={`${gatewayLabel} / ${transportSummary.gatewayModeLabel}`}
         />
         <QuickRow
           surfaceTheme={surfaceTheme}

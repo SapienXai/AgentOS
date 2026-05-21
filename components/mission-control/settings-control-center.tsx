@@ -29,7 +29,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { MissionControlShellSettingsPanelProps } from "@/components/mission-control/mission-control-shell.settings";
 import {
+  formatGatewayFallbackDiagnosticKind,
   resolveTransportDiagnosticsSummary,
+  resolveGatewayFallbackRecovery,
   type TransportDiagnosticsSummary,
   type TransportStatusTone
 } from "@/components/mission-control/settings-control-center.utils";
@@ -154,7 +156,11 @@ export function SettingsControlCenter(props: MissionControlShellSettingsPanelPro
   );
   const capabilityMatrix = snapshot.diagnostics.capabilityMatrix;
   const gatewayCompatibilityProfile = capabilityMatrix?.compatibility;
-  const gatewayFallbackDiagnostics = capabilityMatrix?.fallbackDiagnostics?.slice(0, 4) ?? [];
+  const gatewayFallbackDiagnostics = (
+    snapshot.diagnostics.gatewayFallbackDiagnostics?.length
+      ? snapshot.diagnostics.gatewayFallbackDiagnostics
+      : capabilityMatrix?.fallbackDiagnostics ?? []
+  ).slice(0, 4);
   const nativeAuthLabel = gatewayAuthStatus
     ? gatewayAuthStatus.native.ok
       ? "Authenticated"
@@ -480,9 +486,12 @@ export function SettingsControlCenter(props: MissionControlShellSettingsPanelPro
                     surfaceTheme={surfaceTheme}
                     rows={[
                       ["Status", `${resolveGatewayLocality(snapshot)} / ${snapshot.diagnostics.loaded || snapshot.diagnostics.rpcOk ? "Online" : "Offline"}`],
+                      ["Native Gateway", transportSummary.statusLabel],
+                      ["Gateway mode", transportSummary.gatewayModeLabel],
+                      ["CLI fallback used", `${transportSummary.fallbackTotal} operations`],
                       ["Endpoint", snapshot.diagnostics.gatewayUrl || "Not configured"],
                       ["Auth status", nativeAuthLabel],
-                      ["Protocol", capabilityMatrix?.gatewayProtocolVersion || "Unknown"],
+                      ["Protocol", `${transportSummary.protocolRangeLabel}, connected: ${transportSummary.protocolLabel}`],
                       ["Compatibility", formatGatewayCompatibilityStatus(gatewayCompatibilityProfile)],
                       ["Contract audit", formatGatewayMethodContractStatus(gatewayCompatibilityProfile?.methodContract)],
                       ["Contract gaps", formatGatewayMethodContractGaps(gatewayCompatibilityProfile?.methodContract, capabilityMatrix?.operations)],
@@ -493,8 +502,24 @@ export function SettingsControlCenter(props: MissionControlShellSettingsPanelPro
                       ["Config patch", formatCapabilitySupport(capabilityMatrix?.configPatch)],
                       ["Events", formatCapabilitySupport(capabilityMatrix?.eventBridge)]
                     ]}
-                    successIndex={2}
+                    successIndex={1}
                   />
+
+                  {transportSummary.recovery || transportSummary.lastNativeError ? (
+                    <div className={cn("mt-4 rounded-[18px] border p-3.5", insetPanelClassName(surfaceTheme))}>
+                      <p className={labelClassName(surfaceTheme)}>Native Gateway diagnostic</p>
+                      {transportSummary.lastNativeError ? (
+                        <p className={cn("mt-2 text-xs leading-5", surfaceTheme === "light" ? "text-[#6b5546]" : "text-slate-300")}>
+                          Last native error: {transportSummary.lastNativeError}
+                        </p>
+                      ) : null}
+                      {transportSummary.recovery ? (
+                        <p className={cn("mt-1 text-xs leading-5", surfaceTheme === "light" ? "text-[#52735e]" : "text-slate-400")}>
+                          Recovery: {transportSummary.recovery}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   <div className="mt-4 space-y-3">
                     <div>
@@ -823,12 +848,15 @@ export function SettingsControlCenter(props: MissionControlShellSettingsPanelPro
                                 <span className={cn("text-[11px]", surfaceTheme === "light" ? "text-amber-700" : "text-amber-200")}>
                                   {formatGatewayFallbackDiagnosticKind(diagnostic.kind)}
                                 </span>
+                                <span className={cn("text-[11px]", surfaceTheme === "light" ? "text-[#8a7464]" : "text-slate-500")}>
+                                  {formatTimestamp(diagnostic.at)}
+                                </span>
                               </div>
                               <p className={cn("mt-1 text-xs", surfaceTheme === "light" ? "text-[#7b6353]" : "text-slate-400")}>
-                                {diagnostic.issue}
+                                Reason: {diagnostic.issue}
                               </p>
                               <p className={cn("mt-0.5 text-xs", surfaceTheme === "light" ? "text-[#8a7464]" : "text-slate-500")}>
-                                {diagnostic.recovery}
+                                Recovery: {diagnostic.recovery || resolveGatewayFallbackRecovery(diagnostic.kind)}
                               </p>
                             </div>
                           ))}
@@ -1178,12 +1206,15 @@ function TransportDiagnosticsPanel({
           <p className={labelClassName(surfaceTheme)}>Gateway Transport</p>
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             <p className={cn("font-medium", surfaceTheme === "light" ? "text-[#2f251f]" : "text-slate-100")}>
-              {summary.connectionLabel}
+              {summary.statusLabel}
             </p>
             <span className={transportTonePillClassName(summary.statusTone, surfaceTheme)}>
-              {summary.modeLabel}
+              {summary.gatewayModeLabel}
             </span>
           </div>
+          <p className={cn("mt-1 text-xs", surfaceTheme === "light" ? "text-[#8a7464]" : "text-slate-400")}>
+            {summary.connectionLabel} / {summary.modeLabel}
+          </p>
         </div>
         <div className="text-left sm:text-right">
           <p className={labelClassName(surfaceTheme)}>Snapshot stream</p>
@@ -1195,14 +1226,21 @@ function TransportDiagnosticsPanel({
 
       <div className="mt-3 grid gap-3 sm:grid-cols-4">
         <Metric
-          label="Protocol"
+          label="Protocol support"
+          value={summary.protocolRangeLabel}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="Connected protocol"
           value={summary.protocolLabel}
           surfaceTheme={surfaceTheme}
           dark={surfaceTheme === "dark"}
           compact
         />
         <Metric
-          label="Fallbacks"
+          label="CLI fallback used"
           value={String(summary.fallbackTotal)}
           badge={summary.fallbackTotal > 0 ? "Used" : "Clean"}
           surfaceTheme={surfaceTheme}
@@ -1216,9 +1254,19 @@ function TransportDiagnosticsPanel({
           dark={surfaceTheme === "dark"}
           compact
         />
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <Metric
           label="Last disconnected"
           value={summary.lastDisconnectedLabel}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="Fallback summary"
+          value={summary.fallbackSummaryLabel}
           surfaceTheme={surfaceTheme}
           dark={surfaceTheme === "dark"}
           compact
@@ -1229,6 +1277,11 @@ function TransportDiagnosticsPanel({
         <div className="mt-3">
           <DiagnosticBlock title="Last native error" value={summary.lastNativeError} surfaceTheme={surfaceTheme} />
         </div>
+      ) : null}
+      {summary.recovery ? (
+        <p className={cn("mt-3 text-xs leading-5", surfaceTheme === "light" ? "text-[#52735e]" : "text-slate-400")}>
+          Recovery: {summary.recovery}
+        </p>
       ) : null}
     </div>
   );
@@ -1590,29 +1643,6 @@ function titleizeGatewayOperationId(value: string) {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Gateway operation";
-}
-
-function formatGatewayFallbackDiagnosticKind(kind?: string | null) {
-  switch (kind) {
-    case "auth":
-      return "Needs credential";
-    case "scope-limited":
-      return "Needs scope repair";
-    case "protocol-mismatch":
-      return "Protocol mismatch";
-    case "unsupported":
-      return "Unsupported method";
-    case "disabled":
-      return "Disabled";
-    case "unreachable":
-      return "Unreachable";
-    case "timeout":
-      return "Timed out";
-    case "malformed-response":
-      return "Invalid response";
-    default:
-      return "Gateway fallback";
-  }
 }
 
 function formatGatewayAuthIssue(kind: GatewayNativeAuthStatus["native"]["kind"]) {

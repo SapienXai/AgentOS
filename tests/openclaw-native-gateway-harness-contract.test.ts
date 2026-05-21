@@ -117,15 +117,19 @@ test("unsupported Gateway responses create diagnostics and recover when native s
   assert.equal(client.getDiagnostics().fallbackCounts.health, 1);
 });
 
-test("native read failures fall back to CLI while sent mutation auth failures do not", async () => {
+test("native read failures do not hide behind CLI while sent mutation auth failures do not", async () => {
   const read = createNativeGatewayTestClient();
   read.gateway.route("sessions.list", (_frame, context) => {
     context.fail("Gateway read failed");
   });
 
-  assert.deepEqual(await read.client.listSessions(), { sessions: [] });
+  await assert.rejects(
+    () => read.client.listSessions(),
+    /Gateway-native operation failed; CLI fallback disabled/
+  );
   assert.deepEqual(read.gateway.methods(), ["connect", "sessions.list"]);
-  assert.deepEqual(read.fallback.calls.map((call) => call.method), ["listSessions"]);
+  assert.deepEqual(read.fallback.calls, []);
+  assert.match(read.client.getDiagnostics().lastNativeError ?? "", /Gateway read failed/);
 
   const mutation = createNativeGatewayTestClient();
   mutation.gateway.route("agents.delete", (_frame, context) => {
@@ -246,17 +250,20 @@ test("runtime event subscription forwards Gateway event frames to callbacks", as
   assert.deepEqual(fallback.calls, []);
 });
 
-test("malformed JSON and deterministic timeouts use read fallback diagnostics", async () => {
+test("malformed JSON and deterministic timeouts surface native failures without CLI fallback", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const malformed = createNativeGatewayTestClient();
   malformed.gateway.route("sessions.list", (_frame, context) => {
     context.malformedJson();
   });
 
-  assert.deepEqual(await malformed.client.listSessions(), { sessions: [] });
-  assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.operation, "sessions.list");
-  assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.kind, "malformed-response");
-  assert.deepEqual(malformed.fallback.calls.map((call) => call.method), ["listSessions"]);
+  await assert.rejects(
+    () => malformed.client.listSessions(),
+    /Gateway-native operation failed; CLI fallback disabled/
+  );
+  assert.deepEqual(getRecentOpenClawGatewayFallbackDiagnostics(), []);
+  assert.deepEqual(malformed.fallback.calls, []);
+  assert.equal(malformed.client.getDiagnostics().lastNativeFailureAt !== null, true);
 
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const timeout = createNativeGatewayTestClient({
@@ -268,13 +275,13 @@ test("malformed JSON and deterministic timeouts use read fallback diagnostics", 
     context.leaveOpen();
   });
 
-  assert.deepEqual(await timeout.client.call("health", { probe: true }, { timeoutMs: 5 }), {
-    fallback: true,
-    method: "health",
-    params: { probe: true }
-  });
-  assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.operation, "health");
-  assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.kind, "timeout");
+  await assert.rejects(
+    () => timeout.client.call("health", { probe: true }, { timeoutMs: 5 }),
+    /Gateway-native operation failed; CLI fallback disabled/
+  );
+  assert.deepEqual(getRecentOpenClawGatewayFallbackDiagnostics(), []);
+  assert.deepEqual(timeout.fallback.calls, []);
+  assert.equal(timeout.client.getDiagnostics().gatewayMode, "degraded");
 });
 
 test("config mutation refuses to rewrite redacted secrets from Gateway snapshots", async () => {

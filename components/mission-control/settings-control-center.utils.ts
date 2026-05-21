@@ -5,13 +5,20 @@ export type TransportStatusTone = "success" | "warning" | "danger" | "neutral";
 
 export type TransportDiagnosticsSummary = {
   modeLabel: string;
+  gatewayModeLabel: string;
+  statusLabel: string;
   connectionLabel: string;
   protocolLabel: string;
+  protocolRangeLabel: string;
   streamLabel: string;
   fallbackTotal: number;
+  fallbackOperationCount: number;
+  fallbackSummaryLabel: string;
   lastConnectedLabel: string;
   lastDisconnectedLabel: string;
   lastNativeError: string | null;
+  recovery: string | null;
+  recentFallbackDiagnostics: NonNullable<TransportDiagnostics["recentFallbackDiagnostics"]>;
   statusTone: TransportStatusTone;
 };
 
@@ -27,14 +34,22 @@ export function resolveTransportDiagnosticsSummary(
 
   return {
     modeLabel: formatTransportMode(transport?.mode),
+    gatewayModeLabel: formatGatewayMode(transport?.gatewayMode),
+    statusLabel: formatGatewayStatusLabel(transport),
     connectionLabel,
     protocolLabel: formatProtocolVersion(transport?.protocolVersion),
+    protocolRangeLabel: formatProtocolRange(transport?.protocolRange),
     streamLabel,
     fallbackTotal,
+    fallbackOperationCount: countFallbackOperations(transport?.fallbackCounts),
+    fallbackSummaryLabel: formatFallbackSummary(transport?.fallbackTotal ?? fallbackTotal, transport?.fallbackCounts),
     lastConnectedLabel: formatTransportTimestamp(transport?.lastConnectedAt),
     lastDisconnectedLabel: formatTransportTimestamp(transport?.lastDisconnectedAt),
     lastNativeError: transport?.lastNativeError?.trim() || null,
+    recovery: transport?.recovery?.trim() || null,
+    recentFallbackDiagnostics: transport?.recentFallbackDiagnostics ?? [],
     statusTone: resolveTransportStatusTone({
+      gatewayMode: transport?.gatewayMode,
       connectionState: transport?.connectionState,
       mode: transport?.mode,
       streamState,
@@ -49,6 +64,54 @@ export function sumFallbackCounts(fallbackCounts: Record<string, number> | undef
   }, 0);
 }
 
+export function countFallbackOperations(fallbackCounts: Record<string, number> | undefined) {
+  return Object.values(fallbackCounts ?? {}).filter((value) => Number.isFinite(value) && value > 0).length;
+}
+
+export function formatGatewayFallbackDiagnosticKind(kind?: string | null) {
+  switch (kind) {
+    case "auth":
+      return "Needs credential";
+    case "scope-limited":
+      return "Needs scope repair";
+    case "protocol-mismatch":
+      return "Protocol mismatch";
+    case "unsupported":
+      return "Unsupported method";
+    case "disabled":
+      return "Disabled";
+    case "unreachable":
+      return "Unreachable";
+    case "timeout":
+      return "Timed out";
+    case "malformed-response":
+      return "Invalid response";
+    default:
+      return "Gateway fallback";
+  }
+}
+
+export function resolveGatewayFallbackRecovery(kind?: string | null) {
+  switch (kind) {
+    case "auth":
+      return "Check the Gateway token/password, then restart AgentOS.";
+    case "scope-limited":
+      return "Repair local device access so AgentOS has operator scopes.";
+    case "protocol-mismatch":
+      return "Update OpenClaw or AgentOS so the Gateway protocol versions overlap.";
+    case "unsupported":
+      return "Update OpenClaw or check AgentOS/OpenClaw compatibility for this method.";
+    case "timeout":
+      return "Restart the Gateway and inspect OpenClaw diagnostics for slow handlers.";
+    case "unreachable":
+      return "Start or repair the OpenClaw Gateway.";
+    case "malformed-response":
+      return "Update OpenClaw or report the incompatible Gateway response.";
+    default:
+      return "Inspect diagnostics and retry after Gateway repair.";
+  }
+}
+
 function formatTransportMode(mode: TransportDiagnostics["mode"] | undefined) {
   if (mode === "native-ws") {
     return "Native WS";
@@ -59,6 +122,51 @@ function formatTransportMode(mode: TransportDiagnostics["mode"] | undefined) {
   }
 
   return "Unknown";
+}
+
+function formatGatewayMode(mode: TransportDiagnostics["gatewayMode"] | undefined) {
+  switch (mode) {
+    case "native-ws":
+      return "native-ws";
+    case "cli-forced":
+      return "cli-forced";
+    case "fallback-active":
+      return "fallback-active";
+    case "degraded":
+      return "degraded";
+    case "unreachable":
+      return "unreachable";
+    default:
+      return "unknown";
+  }
+}
+
+function formatGatewayStatusLabel(transport: TransportDiagnostics | undefined) {
+  if (transport?.statusLabel) {
+    return transport.statusLabel;
+  }
+
+  if (!transport) {
+    return "Native Gateway: Unknown";
+  }
+
+  if (transport.mode === "cli" || transport.connectionState === "cli-forced") {
+    return "CLI fallback forced";
+  }
+
+  if (sumFallbackCounts(transport.fallbackCounts) > 0) {
+    return "CLI fallback used";
+  }
+
+  if (transport.connectionState === "connected") {
+    return "Native Gateway: OK";
+  }
+
+  if (transport.connectionState === "error") {
+    return "Native Gateway: Unreachable";
+  }
+
+  return "Native Gateway: Degraded";
 }
 
 function formatTransportConnectionState(state: TransportDiagnostics["connectionState"] | undefined) {
@@ -82,6 +190,26 @@ function formatTransportConnectionState(state: TransportDiagnostics["connectionS
 
 function formatProtocolVersion(version: TransportDiagnostics["protocolVersion"] | undefined) {
   return typeof version === "number" && Number.isFinite(version) ? `v${version}` : "Unknown";
+}
+
+function formatProtocolRange(range: TransportDiagnostics["protocolRange"] | undefined) {
+  if (!range || typeof range.min !== "number" || typeof range.max !== "number") {
+    return "Unknown";
+  }
+
+  return `v${range.min}-v${range.max} supported`;
+}
+
+function formatFallbackSummary(
+  fallbackTotal: number,
+  fallbackCounts: Record<string, number> | undefined
+) {
+  const operationCount = countFallbackOperations(fallbackCounts);
+  if (fallbackTotal <= 0 || operationCount <= 0) {
+    return "CLI fallback used: 0 operations";
+  }
+
+  return `CLI fallback used: ${fallbackTotal} ${fallbackTotal === 1 ? "operation" : "operations"} across ${operationCount} ${operationCount === 1 ? "method" : "methods"}`;
 }
 
 function formatSnapshotStreamState(state: SnapshotStreamState) {
@@ -110,12 +238,13 @@ function formatTransportTimestamp(value: string | null | undefined) {
 }
 
 function resolveTransportStatusTone(input: {
+  gatewayMode: TransportDiagnostics["gatewayMode"] | undefined;
   connectionState: TransportDiagnostics["connectionState"] | undefined;
   mode: TransportDiagnostics["mode"] | undefined;
   streamState: SnapshotStreamState;
   fallbackTotal: number;
 }): TransportStatusTone {
-  if (input.streamState === "retrying" || input.connectionState === "error") {
+  if (input.streamState === "retrying" || input.connectionState === "error" || input.gatewayMode === "unreachable") {
     return "danger";
   }
 
@@ -124,6 +253,8 @@ function resolveTransportStatusTone(input: {
     input.connectionState === "cli-forced" ||
     input.connectionState === "closed" ||
     input.connectionState === "connecting" ||
+    input.gatewayMode === "fallback-active" ||
+    input.gatewayMode === "degraded" ||
     input.fallbackTotal > 0
   ) {
     return "warning";

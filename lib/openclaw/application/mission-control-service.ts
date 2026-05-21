@@ -82,6 +82,7 @@ import {
   type StatusPayload
 } from "@/lib/openclaw/client/gateway-client";
 import { getOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
+import { getOpenClawGatewayOperationLabel } from "@/lib/openclaw/client/gateway-compatibility";
 import {
   buildOpenClawBinarySelectionSnapshot,
   readOpenClawBinarySelection
@@ -885,9 +886,18 @@ async function buildSystemReadinessSnapshot({
   const rpcOk = Boolean(gatewayStatus?.rpc?.ok);
   const loaded = Boolean(gatewayStatus?.service?.loaded || rpcOk);
   const ready = openclawInstalled && rpcOk && runtimeDiagnostics.stateWritable && runtimeDiagnostics.sessionStoreWritable;
+  const transport = getOpenClawGatewayClient().getDiagnostics?.();
+  const gatewayFallbackDiagnostics = (transport?.recentFallbackDiagnostics ?? []).map((entry) => ({
+    ...entry,
+    operationLabel: getOpenClawGatewayOperationLabel(entry.operation)
+  }));
+  const gatewayFallbackIssues = gatewayFallbackDiagnostics.map(
+    (entry) => `gateway.${entry.operation}: Gateway-first request fell back to CLI (${entry.kind}): ${entry.issue} Recovery: ${entry.recovery}`
+  );
   const issues = [
     rpcOk ? null : "OpenClaw Gateway RPC is not ready.",
-    ...runtimeDiagnostics.issues
+    ...runtimeDiagnostics.issues,
+    ...gatewayFallbackIssues
   ].filter((issue): issue is string => Boolean(issue));
   const base = createErrorSnapshot(issues[0] ?? "OpenClaw system readiness snapshot.", {
     installed: openclawInstalled,
@@ -918,8 +928,13 @@ async function buildSystemReadinessSnapshot({
       ),
       modelReadiness,
       capabilityMatrix: getCachedOpenClawCapabilityMatrix() ?? undefined,
+      gatewayFallbackDiagnostics,
+      gatewayFallbackReasons: gatewayFallbackDiagnostics.map(
+        (entry) => `${entry.operationLabel} (${entry.operation}): ${entry.kind}: ${entry.issue} Recovery: ${entry.recovery}`
+      ),
       runtime: runtimeDiagnostics,
       commandHistory: getRecentOpenClawCommandDiagnostics(),
+      transport,
       issues
     },
     missionPresets: [

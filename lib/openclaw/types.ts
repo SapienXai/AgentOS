@@ -228,6 +228,8 @@ export interface GatewayDiagnostics {
   openClawBinarySelection: OpenClawBinarySelection;
   modelReadiness: ModelReadiness;
   capabilityMatrix?: OpenClawCapabilityMatrix;
+  gatewayFallbackDiagnostics?: OpenClawGatewayFallbackDiagnosticRecord[];
+  gatewayFallbackReasons?: string[];
   runtime: OpenClawRuntimeDiagnostics;
   commandHistory?: OpenClawCommandDiagnostic[];
   transport?: import("@/lib/openclaw/client/types").OpenClawGatewayClientDiagnostics;
