@@ -1,6 +1,6 @@
 {
   "name": "@sapienx/agentos",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "AgentOS control plane launcher",
   "type": "module",
   "license": "MIT",
@@ -13,8 +13,10 @@
     "bundle"
   ],
   "scripts": {
+    "check:release": "node scripts/check-release-consistency.mjs",
     "prepare:bundle": "node scripts/prepare-bundle.mjs",
-    "prepack": "node scripts/run-prepack.mjs"
+    "prepack": "node scripts/check-release-consistency.mjs && node scripts/run-prepack.mjs",
+    "prepublishOnly": "node scripts/check-release-consistency.mjs"
   },
   "keywords": [
     "agentos",

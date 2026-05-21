@@ -25,6 +25,10 @@ jobs:
           node-version: 20
           package-manager-cache: false
 
+      - name: Run release consistency check
+        shell: bash
+        run: node packages/agentos/scripts/check-release-consistency.mjs
+
       - id: package
         shell: bash
         run: |

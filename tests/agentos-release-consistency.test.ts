@@ -1,0 +1,85 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { test } from "node:test";
+
+const rootDir = process.cwd();
+const releaseCheckScript = path.join(rootDir, "packages/agentos/scripts/check-release-consistency.mjs");
+const releaseCheckFiles = [
+  "package.json",
+  "README.md",
+  "install.sh",
+  "install.ps1",
+  ".github/workflows/release-agentos.yml",
+  "packages/agentos/package.json",
+  "packages/agentos/README.md",
+  "packages/agentos/bin/agentos.js",
+  "packages/agentos/scripts/check-release-consistency.mjs",
+  "packages/agentos/scripts/prepare-bundle.mjs",
+  "packages/agentos/scripts/run-prepack.mjs"
+];
+
+test("AgentOS release metadata stays consistent", () => {
+  const packageVersion = readPackageVersion(rootDir);
+  const result = runReleaseCheck(rootDir);
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, new RegExp(`AgentOS release consistency check passed for @sapienx/agentos@${escapeRegExp(packageVersion)}`));
+  assert.match(result.stdout, /Root package is private/);
+});
+
+test("AgentOS release check rejects stale README version references", async () => {
+  const staleVersion = readPackageVersion(rootDir);
+  const tempRoot = await copyReleaseCheckFixture();
+  const packageJsonPath = path.join(tempRoot, "packages/agentos/package.json");
+  const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as { version: string };
+  packageJson.version = "9.9.9";
+  await writeFile(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`, "utf8");
+
+  const result = runReleaseCheck(tempRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    new RegExp(`README\\.md: macOS/Linux AGENTOS_VERSION example uses ${escapeRegExp(staleVersion)}, expected 9\\.9\\.9`)
+  );
+  assert.match(
+    result.stderr,
+    new RegExp(`README\\.md: release tag example uses ${escapeRegExp(staleVersion)}, expected 9\\.9\\.9`)
+  );
+});
+
+function runReleaseCheck(repoRoot: string) {
+  return spawnSync(process.execPath, [releaseCheckScript, "--repo-root", repoRoot], {
+    cwd: rootDir,
+    encoding: "utf8"
+  });
+}
+
+async function copyReleaseCheckFixture() {
+  const tempRoot = await mkdtemp(path.join(tmpdir(), "agentos-release-check-"));
+
+  for (const relativePath of releaseCheckFiles) {
+    const sourcePath = path.join(rootDir, relativePath);
+    const targetPath = path.join(tempRoot, relativePath);
+    await mkdir(path.dirname(targetPath), { recursive: true });
+    await cp(sourcePath, targetPath);
+  }
+
+  return tempRoot;
+}
+
+function readPackageVersion(repoRoot: string) {
+  const packageJson = JSON.parse(readFileSync(path.join(repoRoot, "packages/agentos/package.json"), "utf8")) as {
+    version: string;
+  };
+
+  return packageJson.version;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
