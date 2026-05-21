@@ -24,6 +24,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { TaskNodeData } from "@/components/mission-control/canvas-types";
 import { InteractiveContent } from "@/components/mission-control/interactive-content";
 import {
+  FRESH_NODE_BADGE_CLASSES,
+  TASK_NODE_REVIEW_ACTION_CLASSES,
+  TASK_NODE_SELECTED_CLASSES,
+  type TaskNodeToneInput,
+  resolveTaskNodeBadgeVariant,
+  resolveTaskNodeTokenTone,
+  resolveTaskNodeVisualTone
+} from "@/components/mission-control/node-visual-tones";
+import {
   resolveEffectiveTaskReviewStatus,
   resolveTaskReviewBadgeLabel,
   resolveTaskReviewFooterLabel
@@ -32,12 +41,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTaskFeed } from "@/hooks/use-task-feed";
 import type { TaskFeedEvent } from "@/lib/agentos/contracts";
-import {
-  badgeVariantForRuntimeStatus,
-  compactMissionText,
-  formatTokens,
-  toneForRuntimeStatus
-} from "@/lib/openclaw/presenters";
+import { compactMissionText, formatTokens } from "@/lib/openclaw/presenters";
 import { cn } from "@/lib/utils";
 
 type TaskFlowNode = Node<TaskNodeData, "task">;
@@ -124,24 +128,16 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const bootstrapElapsedLabel = isPendingCreation
     ? formatElapsedFromIso(dispatchSubmittedAt, data.relativeTimeReferenceMs)
     : null;
-  const tone = isAborted
-    ? "text-rose-200"
-    : completedNeedsReview
-      ? "text-amber-200"
-      : visibleReviewStatus === "accepted"
-        ? "text-emerald-200"
-      : toneForRuntimeStatus(displayTask.status);
-  const badgeVariant = isPendingCreation
-    ? "warning"
-      : isAborted
-      ? "danger"
-      : completedNeedsReview
-        ? "warning"
-      : visibleReviewStatus === "accepted"
-        ? "success"
-      : visibleReviewStatus
-        ? "muted"
-      : badgeVariantForRuntimeStatus(displayTask.status);
+  const toneInput: TaskNodeToneInput = {
+    completedNeedsReview,
+    isAborted,
+    isJustCreated,
+    isPendingCreation,
+    status: displayTask.status,
+    visibleReviewStatus
+  };
+  const tone = resolveTaskNodeTokenTone(toneInput);
+  const badgeVariant = resolveTaskNodeBadgeVariant(toneInput);
   const badgeLabel = visibleReviewStatus
     ? resolveTaskReviewBadgeLabel(visibleReviewStatus)
     : missingFinalResponse
@@ -178,14 +174,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const turnCount = readTaskTurnCount(displayTask);
   const feedButtonCount = visibleFeed.length > 0 ? String(visibleFeed.length) : undefined;
   const feedPanelId = `task-feed-${data.task.id}`;
-  const visualTone = resolveTaskVisualTone({
-    completedNeedsReview,
-    isAborted,
-    isJustCreated,
-    isPendingCreation,
-    status: displayTask.status,
-    visibleReviewStatus
-  });
+  const visualTone = resolveTaskNodeVisualTone(toneInput);
 
   useEffect(() => {
     if (!menuOpen) {
@@ -230,7 +219,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
         "group relative w-[282px] overflow-visible rounded-[18px] border bg-[linear-gradient(180deg,rgba(13,18,30,0.96),rgba(7,10,18,0.96))] p-3 shadow-[0_18px_42px_rgba(0,0,0,0.3)] backdrop-blur-xl transition-[border-color,box-shadow,opacity] duration-200",
         visualTone.outer,
         data.emphasis ? "opacity-100" : "opacity-72",
-        selected && "border-cyan-300/[0.5] shadow-[0_22px_52px_rgba(34,211,238,0.18)]"
+        selected && TASK_NODE_SELECTED_CLASSES
       )}
     >
       <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[18px]">
@@ -388,7 +377,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           </Badge>
         ) : null}
         {isJustCreated ? (
-          <Badge variant="default" className="gap-1 border-cyan-100/20 bg-cyan-100/12 text-cyan-50">
+          <Badge variant="default" className={FRESH_NODE_BADGE_CLASSES}>
             <Sparkles className="h-3 w-3" />
             new
           </Badge>
@@ -414,7 +403,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       {completedNeedsReview && data.onReviewTask ? (
         <button
           type="button"
-          className="nodrag nopan mt-3 flex w-full items-center justify-between gap-3 rounded-[13px] border border-amber-300/24 bg-amber-300/[0.1] px-3 py-2.5 text-left text-amber-50 shadow-[0_10px_24px_rgba(245,158,11,0.12)] transition-colors hover:border-amber-200/38 hover:bg-amber-300/[0.14]"
+          className={TASK_NODE_REVIEW_ACTION_CLASSES.button}
           onClick={(event) => {
             event.stopPropagation();
             data.onReviewTask?.(displayTask);
@@ -422,19 +411,19 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           onPointerDown={(event) => event.stopPropagation()}
         >
           <span className="flex min-w-0 items-center gap-2">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] border border-amber-200/20 bg-amber-200/10">
+            <span className={TASK_NODE_REVIEW_ACTION_CLASSES.icon}>
               <AlertTriangle className="h-3.5 w-3.5" />
             </span>
             <span className="min-w-0">
               <span className="block text-[10px] font-medium uppercase tracking-[0.18em]">
                 Review result
               </span>
-              <span className="block truncate text-[11px] text-amber-100/72">
+              <span className={TASK_NODE_REVIEW_ACTION_CLASSES.detail}>
                 Accept, continue, retry, or dismiss.
               </span>
             </span>
           </span>
-          <ChevronDown className="h-3.5 w-3.5 -rotate-90 text-amber-100/70" />
+          <ChevronDown className={TASK_NODE_REVIEW_ACTION_CLASSES.chevron} />
         </button>
       ) : null}
 
@@ -557,98 +546,6 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       </div>
     </motion.div>
   );
-}
-
-function resolveTaskVisualTone({
-  completedNeedsReview,
-  isAborted,
-  isJustCreated,
-  isPendingCreation,
-  status,
-  visibleReviewStatus
-}: {
-  completedNeedsReview: boolean;
-  isAborted: boolean;
-  isJustCreated: boolean;
-  isPendingCreation: boolean;
-  status: TaskFlowNode["data"]["task"]["status"];
-  visibleReviewStatus: string | null;
-}) {
-  if (isAborted) {
-    return {
-      dot: "bg-rose-300",
-      glow: "bg-rose-400/[0.12]",
-      handle: "!bg-rose-300/70",
-      icon: "border-rose-300/20 bg-rose-400/[0.09] text-rose-100",
-      outer: "border-rose-300/[0.24]",
-      rail: "bg-gradient-to-b from-rose-300 via-rose-400/70 to-rose-500/20",
-      resultBorder: "border-rose-300/20",
-      topLine: "bg-gradient-to-r from-rose-300/55 via-rose-400/[0.16] to-transparent"
-    };
-  }
-
-  if (completedNeedsReview) {
-    return {
-      dot: "bg-amber-300",
-      glow: "bg-amber-300/[0.16]",
-      handle: "!bg-amber-300/75",
-      icon: "border-amber-300/[0.22] bg-amber-400/[0.1] text-amber-100",
-      outer: "border-amber-300/[0.26] shadow-[0_22px_50px_rgba(245,158,11,0.12)]",
-      rail: "bg-gradient-to-b from-amber-200 via-amber-400/80 to-amber-500/[0.22]",
-      resultBorder: "border-amber-300/[0.24]",
-      topLine: "bg-gradient-to-r from-amber-200/[0.62] via-amber-400/[0.18] to-transparent"
-    };
-  }
-
-  if (isPendingCreation || status === "running" || status === "queued") {
-    return {
-      dot: "bg-cyan-300",
-      glow: "bg-cyan-300/[0.14]",
-      handle: "!bg-cyan-300/75",
-      icon: "border-cyan-300/20 bg-cyan-300/[0.09] text-cyan-100",
-      outer: "border-cyan-300/[0.22] shadow-[0_22px_50px_rgba(34,211,238,0.12)]",
-      rail: "bg-gradient-to-b from-cyan-200 via-cyan-400/[0.78] to-sky-500/[0.22]",
-      resultBorder: "border-cyan-300/[0.22]",
-      topLine: "bg-gradient-to-r from-cyan-200/[0.58] via-cyan-400/[0.18] to-transparent"
-    };
-  }
-
-  if (visibleReviewStatus === "accepted" || status === "completed") {
-    return {
-      dot: "bg-emerald-300",
-      glow: "bg-emerald-300/10",
-      handle: "!bg-emerald-300/65",
-      icon: "border-emerald-300/[0.18] bg-emerald-300/[0.07] text-emerald-100",
-      outer: "border-emerald-300/[0.16]",
-      rail: "bg-gradient-to-b from-emerald-200 via-emerald-400/[0.58] to-emerald-500/[0.16]",
-      resultBorder: "border-emerald-300/[0.16]",
-      topLine: "bg-gradient-to-r from-emerald-200/[0.42] via-emerald-400/[0.12] to-transparent"
-    };
-  }
-
-  if (isJustCreated) {
-    return {
-      dot: "bg-sky-300",
-      glow: "bg-sky-300/[0.14]",
-      handle: "!bg-sky-300/70",
-      icon: "border-sky-300/20 bg-sky-300/[0.08] text-sky-100",
-      outer: "border-sky-300/[0.24]",
-      rail: "bg-gradient-to-b from-sky-200 via-sky-400/70 to-cyan-500/20",
-      resultBorder: "border-sky-300/[0.18]",
-      topLine: "bg-gradient-to-r from-sky-200/[0.52] via-sky-400/[0.14] to-transparent"
-    };
-  }
-
-  return {
-    dot: "bg-slate-400",
-    glow: "bg-slate-200/[0.08]",
-    handle: "!bg-white/35",
-    icon: "border-white/[0.08] bg-white/[0.045] text-slate-200",
-    outer: "border-white/[0.085]",
-    rail: "bg-gradient-to-b from-slate-300/70 via-slate-500/[0.42] to-slate-600/[0.12]",
-    resultBorder: "border-white/[0.1]",
-    topLine: "bg-gradient-to-r from-white/[0.24] via-white/[0.06] to-transparent"
-  };
 }
 
 function resolveTaskBadgeLabel(

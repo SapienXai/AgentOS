@@ -6,25 +6,36 @@ import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 
 import type { RuntimeNodeData } from "@/components/mission-control/canvas-types";
+import {
+  FRESH_NODE_BADGE_CLASSES,
+  resolveRuntimeNodeBadgeVariant,
+  resolveRuntimeNodeTokenTone,
+  resolveRuntimeNodeStatusDotTone
+} from "@/components/mission-control/node-visual-tones";
 import { StatusDot } from "@/components/mission-control/status-dot";
 import { Badge } from "@/components/ui/badge";
-import { badgeVariantForRuntimeStatus, formatTokens, shortId, toneForRuntimeStatus } from "@/lib/openclaw/presenters";
+import { formatTokens, shortId } from "@/lib/openclaw/presenters";
 import { cn } from "@/lib/utils";
 
 type RuntimeFlowNode = Node<RuntimeNodeData, "runtime">;
 
 export function RuntimeNode({ data, selected }: NodeProps<RuntimeFlowNode>) {
-  const tone = toneForRuntimeStatus(data.runtime.status);
+  const isPendingCreation = Boolean(data.pendingCreation);
+  const toneInput = {
+    isPendingCreation,
+    status: data.runtime.status
+  };
+  const tone = resolveRuntimeNodeTokenTone(toneInput);
   const runtimeLabel =
     data.runtime.source === "turn"
       ? shortId(data.runtime.runId || data.runtime.id, 10)
       : shortId(data.runtime.taskId || data.runtime.sessionId);
-  const isPendingCreation = Boolean(data.pendingCreation);
   const isJustCreated = Boolean(data.justCreated);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const badgeVariant = isPendingCreation ? "warning" : badgeVariantForRuntimeStatus(data.runtime.status);
+  const badgeVariant = resolveRuntimeNodeBadgeVariant(toneInput);
   const runtimeStatusLabel = displayRuntimeStatus(data.runtime.status);
+  const statusDotTone = resolveRuntimeNodeStatusDotTone(toneInput);
 
   useEffect(() => {
     if (!menuOpen) {
@@ -117,21 +128,7 @@ export function RuntimeNode({ data, selected }: NodeProps<RuntimeFlowNode>) {
       <div className="relative flex items-start justify-between gap-2.5">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.22em] text-slate-500">
-            <StatusDot
-              tone={
-                isPendingCreation
-                  ? "bg-cyan-300"
-                  : data.runtime.status === "cancelled"
-                    ? "bg-rose-300"
-                  : data.runtime.status === "stalled"
-                    ? "bg-amber-200"
-                  : data.runtime.status === "completed"
-                    ? "bg-emerald-300"
-                    : data.runtime.status === "running"
-                      ? "bg-cyan-300"
-                      : "bg-amber-200"
-              }
-            />
+            <StatusDot tone={statusDotTone} />
             {isPendingCreation ? "Creating task" : data.runtime.source === "turn" ? "Run" : "Task / Run"}
           </div>
           <p className="mt-1.5 truncate font-display text-[0.95rem] text-white">{data.runtime.title}</p>
@@ -196,7 +193,7 @@ export function RuntimeNode({ data, selected }: NodeProps<RuntimeFlowNode>) {
       <div className="relative mt-2.5 flex flex-wrap items-center gap-1.5">
         <Badge variant={badgeVariant}>{isPendingCreation ? "materializing" : runtimeStatusLabel}</Badge>
         {isJustCreated ? (
-          <Badge variant="default" className="gap-1 border-cyan-100/20 bg-cyan-100/12 text-cyan-50">
+          <Badge variant="default" className={FRESH_NODE_BADGE_CLASSES}>
             <Sparkles className="h-3 w-3" />
             new
           </Badge>
