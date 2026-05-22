@@ -1651,6 +1651,8 @@ function formatGatewayAuthIssue(kind: GatewayNativeAuthStatus["native"]["kind"])
       return "Needs credential";
     case "scope-limited":
       return "Needs scope repair";
+    case "rate-limited":
+      return "Rate limited";
     case "disabled":
       return "Disabled";
     case "unreachable":

@@ -40,7 +40,9 @@ export async function submitMissionDispatch(
   const agentId = input.agentId || deps.resolveAgentForMission(snapshot, input.workspaceId);
 
   if (!agentId) {
-    throw new Error("No OpenClaw agent is available for mission dispatch.");
+    throw new Error(
+      "No OpenClaw agent is available for mission dispatch. Finish OpenClaw setup, create a workspace, then create or select an agent."
+    );
   }
 
   const missionAgent = snapshot.agents.find((entry) => entry.id === agentId);

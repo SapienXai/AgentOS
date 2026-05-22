@@ -6,6 +6,10 @@ import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { addOpenClawModelsToConfig } from "@/lib/openclaw/application/model-provider-state-service";
 import { resolveModelRecordProvider } from "@/lib/openclaw/domains/model-provider-connection";
+import {
+  isGatewayAuthSetupRecoveryError,
+  runWithGatewayAuthSetupRecovery
+} from "@/lib/openclaw/model-setup-recovery";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import type { AddModelsCatalogModel, MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type { ModelsPayload, ModelsStatusPayload } from "@/lib/openclaw/client/gateway-client";
@@ -52,7 +56,12 @@ export async function POST(request: Request) {
     const provider = normalizeCatalogProvider(input.provider);
     const modelIds = input.modelIds.map((modelId) => normalizeCatalogModelId(provider, modelId));
 
-    await addCatalogModelsToConfig(provider, modelIds);
+    const addResult = await runWithGatewayAuthSetupRecovery(
+      () => addCatalogModelsToConfig(provider, modelIds),
+      {
+        operationLabel: "adding catalog models"
+      }
+    );
 
     const snapshot = await getMissionControlSnapshot({ force: true });
 
@@ -60,7 +69,9 @@ export async function POST(request: Request) {
       {
         ok: true,
         provider,
-        message: `Added ${modelIds.length} model${modelIds.length === 1 ? "" : "s"} to AgentOS.`,
+        message: addResult.repaired
+          ? `Gateway auth was repaired and ${modelIds.length} model${modelIds.length === 1 ? " was" : "s were"} added to AgentOS.`
+          : `Added ${modelIds.length} model${modelIds.length === 1 ? "" : "s"} to AgentOS.`,
         snapshot: redactSecrets(snapshot)
       },
       { status: 200 }
@@ -68,7 +79,9 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json(
       {
-        error: redactErrorMessage(error, "Catalog models could not be added.")
+        error: isGatewayAuthSetupRecoveryError(error)
+          ? error.message
+          : redactErrorMessage(error, "Catalog models could not be added.")
       },
       { status: 500 }
     );

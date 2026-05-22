@@ -27,6 +27,10 @@ import {
   readOpenClawConfiguredModelIds,
   readOpenClawProviderModelStatus
 } from "@/lib/openclaw/application/model-provider-state-service";
+import {
+  isGatewayAuthSetupRecoveryError,
+  runWithGatewayAuthSetupRecovery
+} from "@/lib/openclaw/model-setup-recovery";
 import type {
   AddModelsCatalogModel,
   AddModelsEmptyState,
@@ -256,11 +260,20 @@ async function handleProviderAction(
     return discoverProviderModels(input.provider, commandBin);
   }
 
+  let repairedGatewayAuth = false;
+
   try {
-    await addOpenClawModelsToConfig(input.provider, input.modelIds);
+    const result = await runWithGatewayAuthSetupRecovery(
+      () => addOpenClawModelsToConfig(input.provider, input.modelIds),
+      {
+        operationLabel: "adding models"
+      }
+    );
+    repairedGatewayAuth = Boolean(result.repaired);
   } catch (error) {
     const statusContext = await readProviderConnectionContext(input.provider);
-    const providerModels = await readProviderCatalog(input.provider, statusContext.configuredModelIds, commandBin);
+    const providerModels = await readProviderCatalog(input.provider, statusContext.configuredModelIds, commandBin)
+      .catch(() => []);
 
     return buildActionResult({
       ok: false,
@@ -269,6 +282,9 @@ async function handleProviderAction(
       message: readProviderActionError(error),
       connection: statusContext.connection,
       models: providerModels,
+      manualCommand: isGatewayAuthSetupRecoveryError(error)
+        ? formatOpenClawCommand(commandBin, ["gateway", "status", "--json"])
+        : null,
       docsUrl: addModelsDocsUrl
     });
   }
@@ -284,7 +300,9 @@ async function handleProviderAction(
     ok: true,
     action: input.action,
     provider: input.provider,
-    message: `Added ${input.modelIds.length} model${input.modelIds.length === 1 ? "" : "s"} to AgentOS.`,
+    message: repairedGatewayAuth
+      ? `Gateway auth was repaired and ${input.modelIds.length} model${input.modelIds.length === 1 ? " was" : "s were"} added to AgentOS.`
+      : `Added ${input.modelIds.length} model${input.modelIds.length === 1 ? "" : "s"} to AgentOS.`,
     snapshot: refreshedSnapshot,
     connection: statusContext.connection,
     models: providerModels,
@@ -642,6 +660,10 @@ function buildActionResult({
 }
 
 function readProviderActionError(error: unknown) {
+  if (isGatewayAuthSetupRecoveryError(error)) {
+    return error.message;
+  }
+
   return redactErrorMessage(error, "Model provider action failed.");
 }
 

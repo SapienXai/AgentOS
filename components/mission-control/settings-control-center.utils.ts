@@ -76,6 +76,8 @@ export function formatGatewayFallbackDiagnosticKind(kind?: string | null) {
       return "Needs scope repair";
     case "protocol-mismatch":
       return "Protocol mismatch";
+    case "rate-limited":
+      return "Rate limited";
     case "unsupported":
       return "Unsupported method";
     case "disabled":
@@ -99,6 +101,8 @@ export function resolveGatewayFallbackRecovery(kind?: string | null) {
       return "Repair local device access so AgentOS has operator scopes.";
     case "protocol-mismatch":
       return "Update OpenClaw or AgentOS so the Gateway protocol versions overlap.";
+    case "rate-limited":
+      return "Wait for the Gateway cooldown to expire, then retry the config action.";
     case "unsupported":
       return "Update OpenClaw or check AgentOS/OpenClaw compatibility for this method.";
     case "timeout":

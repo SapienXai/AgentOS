@@ -4,12 +4,14 @@ import {
   MAX_CONTROL_PROTOCOL_VERSION,
   MIN_CONTROL_PROTOCOL_VERSION
 } from "@/lib/openclaw/client/native-ws-gateway-types";
+import { redactSecretText } from "@/lib/security/redaction";
 
 export type OpenClawGatewayClientErrorKind =
   | "auth"
   | "conflict"
   | "malformed-response"
   | "protocol-mismatch"
+  | "rate-limited"
   | "scope-limited"
   | "timeout"
   | "unsupported"
@@ -140,6 +142,10 @@ export function classifyGatewayError(message: string): OpenClawGatewayClientErro
     return "conflict";
   }
 
+  if (/(^|[^a-z])rate limit(?:ed)?\b|retry after|too many requests/i.test(message)) {
+    return "rate-limited";
+  }
+
   if (/invalid[_\s-]?request|invalid .*params|invalid json|malformed|schema|payload/i.test(message)) {
     return "malformed-response";
   }
@@ -158,19 +164,21 @@ export function classifyGatewayError(message: string): OpenClawGatewayClientErro
 export function resolveGatewayRecoveryMessage(error: OpenClawGatewayClientError) {
   switch (error.kind) {
     case "auth":
-      return "Check the OpenClaw Gateway token/password or repair local device access in Settings.";
+      return "Check the OpenClaw Gateway token/password, then repair local device access in Settings if the operator scope is missing.";
     case "conflict":
       return "Refresh the Gateway config snapshot, then retry the action.";
     case "scope-limited":
       return "Approve AgentOS as an OpenClaw operator with the required read/write/admin scopes.";
     case "protocol-mismatch":
       return `Update OpenClaw or AgentOS so the Gateway protocol overlaps AgentOS' supported range ${MIN_CONTROL_PROTOCOL_VERSION}-${MAX_CONTROL_PROTOCOL_VERSION}.`;
+    case "rate-limited":
+      return "Wait for the OpenClaw Gateway config cooldown to expire, then retry the action.";
     case "unsupported":
       return "OpenClaw does not advertise this Gateway method; AgentOS will use the compatibility fallback when available.";
     case "timeout":
-      return "Check that the OpenClaw Gateway is responsive, then retry the action.";
+      return "Restart the OpenClaw Gateway, inspect diagnostics for slow handlers, then retry the action.";
     case "unreachable":
-      return "Start or repair the OpenClaw Gateway, or keep using CLI fallback for recovery.";
+      return "Start or restart the OpenClaw Gateway, verify the endpoint, or keep using CLI fallback only for recovery.";
     case "malformed-response":
       return "Update OpenClaw or report the incompatible Gateway response shape.";
     default:
@@ -184,7 +192,7 @@ export function sanitizeGatewayDiagnosticText(value: string | null | undefined) 
     return "";
   }
 
-  return text
+  return redactSecretText(text)
     .replace(
       /\b(authorization|bearer|token|password|secret|api[_-]?key)\b(\s*[:=]\s*)(["']?)[^\s"',;}{]+/gi,
       (_match, key: string, separator: string, quote: string) => `${key}${separator}${quote}[redacted]`

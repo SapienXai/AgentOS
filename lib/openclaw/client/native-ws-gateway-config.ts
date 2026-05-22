@@ -117,9 +117,40 @@ export function canFallbackGatewayAuthConfigRepair(error: unknown, path: string)
 export function isGatewayConfigRateLimitError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? "");
 
-  return /(^|[^a-z])rate limit(?:ed)?\b|retry after|UNAVAILABLE/i.test(message) &&
+  return /(^|[^a-z])rate limit(?:ed)?\b|retry after|too many requests|HTTP\s*429/i.test(message) &&
     (
       !(error instanceof NativeGatewayRequestError) ||
       /^config\.(get|schema|patch|apply|set|unset)$/i.test(error.method)
     );
+}
+
+export function readGatewayConfigRateLimitRetryAfterMs(error: unknown) {
+  if (!isGatewayConfigRateLimitError(error)) {
+    return null;
+  }
+
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const match = message.match(/retry after\s+(\d+(?:\.\d+)?)\s*(ms|msec|millisecond(?:s)?|s|sec|second(?:s)?|m|min|minute(?:s)?)?/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const amount = Number(match[1]);
+
+  if (!Number.isFinite(amount) || amount < 0) {
+    return null;
+  }
+
+  const unit = match[2]?.toLowerCase() ?? "s";
+
+  if (unit === "ms" || unit === "msec" || unit.startsWith("millisecond")) {
+    return Math.round(amount);
+  }
+
+  if (unit === "m" || unit === "min" || unit.startsWith("minute")) {
+    return Math.round(amount * 60_000);
+  }
+
+  return Math.round(amount * 1_000);
 }

@@ -4,6 +4,7 @@ export type GatewayNativeAuthIssueKind =
   | "auth"
   | "disabled"
   | "malformed-response"
+  | "rate-limited"
   | "scope-limited"
   | "timeout"
   | "unreachable"

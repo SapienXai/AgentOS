@@ -163,13 +163,14 @@ async function loadMissionControlSnapshots({
   generation?: number;
 } = {}): Promise<SnapshotPair<MissionControlSnapshot>> {
   const localGatewayStatus = await probeLocalGatewayStatus();
-  const openclawInstalled = Boolean(localGatewayStatus) || await detectOpenClaw();
+  const openclawCliInstalled = await detectOpenClaw();
+  const openclawInstalled = openclawCliInstalled || Boolean(localGatewayStatus?.rpc?.ok);
 
   if (!openclawInstalled) {
     return createSnapshotPair(
       createErrorSnapshot("OpenClaw CLI is not installed on this machine.", {
         installed: false,
-        loaded: false,
+        loaded: Boolean(localGatewayStatus?.service?.loaded),
         rpcOk: false
       })
     );

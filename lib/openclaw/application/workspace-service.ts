@@ -78,6 +78,7 @@ import { normalizeOptionalValue } from "@/lib/openclaw/domains/control-plane-nor
 import {
   getConfiguredWorkspaceRoot
 } from "@/lib/openclaw/domains/control-plane-settings";
+import { resolveWorkspaceCreationReadinessError } from "@/lib/openclaw/readiness";
 import {
   resolveWorkspaceIdForPath,
   workspacePathMatchesId
@@ -150,6 +151,12 @@ export async function createWorkspaceProject(
   await progress.addActivity("validate", `Reserved target directory ${targetDir}.`, "done");
 
   const snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
+  const readinessError = resolveWorkspaceCreationReadinessError(snapshot, normalized.modelId);
+
+  if (readinessError) {
+    throw new Error(readinessError);
+  }
+
   await progress.updateStep("validate", {
     percent: 72,
     detail: "Checking current OpenClaw snapshot and agent ids."

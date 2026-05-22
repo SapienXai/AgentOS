@@ -40,8 +40,12 @@ const sensitiveKeySuffixes = [
 ];
 
 const secretAssignmentPattern =
-  /\b([A-Z0-9_]*(?:API_KEY|TOKEN|PASSWORD|SECRET|PRIVATE_KEY|CREDENTIAL)[A-Z0-9_]*|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|auth[-_ ]?token|password|private[-_ ]?key|secret|credential)s?\s*([:=])\s*("([^"]*)"|'([^']*)'|[^\s,;]+)/gi;
+  /\b([A-Z0-9_]*(?:API_KEY|TOKEN|PASSWORD|SECRET|PRIVATE_KEY|CREDENTIAL)[A-Z0-9_]*|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|auth[-_ ]?token|password|private[-_ ]?key|secret|credential)s?\s*([:=])\s*("([^"]*)"|'([^']*)'|[^\s,;&]+)/gi;
 const authorizationBearerPattern = /\b(authorization\s*:\s*bearer\s+)([^\s"',;]+)/gi;
+const quotedSecretAssignmentPattern =
+  /(["'])(api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|auth[-_ ]?token|token|password|private[-_ ]?key|secret|credential|client[-_ ]?secret|webhook[-_ ]?token)\1\s*:\s*(["'])(?:(?!\3).)*\3/gi;
+const secretQueryParamPattern =
+  /([?&](?:api[-_]?key|access[-_]?token|refresh[-_]?token|auth[-_]?token|token|password|private[-_]?key|secret|credential|client[-_]?secret|webhook[-_]?token)=)([^&#\s]+)/gi;
 
 export function redactSecrets<T>(value: T): T {
   return redactValue(value, false, new WeakSet<object>()) as T;
@@ -50,6 +54,10 @@ export function redactSecrets<T>(value: T): T {
 export function redactSecretText(value: string) {
   return value
     .replace(authorizationBearerPattern, (_match, prefix: string) => `${prefix}${REDACTED_SECRET_VALUE}`)
+    .replace(secretQueryParamPattern, (_match, prefix: string) => `${prefix}${REDACTED_SECRET_VALUE}`)
+    .replace(quotedSecretAssignmentPattern, (_match, quote: string, key: string, valueQuote: string) => {
+      return `${quote}${key}${quote}:${valueQuote}${REDACTED_SECRET_VALUE}${valueQuote}`;
+    })
     .replace(secretAssignmentPattern, (_match, key: string, separator: string) => {
       return `${key}${separator}${REDACTED_SECRET_VALUE}`;
     });

@@ -23,7 +23,8 @@ import {
   isAddModelsProviderId,
   normalizeAddModelsProviderId
 } from "@/lib/openclaw/model-provider-registry";
-import { getModelProviderAdapter } from "@/lib/openclaw/model-provider-adapters";
+import { getModelProviderAdapter, ModelProviderActionError } from "@/lib/openclaw/model-provider-adapters";
+import { isOpenClawTerminalCommand } from "@/lib/openclaw/terminal-command";
 import type {
   AddModelsCatalogModel,
   AddModelsEmptyState,
@@ -206,6 +207,11 @@ export function AddModelsDialog({
     : activeDescriptor?.connectKind === "oauth"
       ? "Use your account login first, then pull the available models into this workspace."
       : "Connect the provider first, then pull the available models into this workspace.";
+  const showGatewayRecoveryCommand = Boolean(
+    activeDraft.errorMessage &&
+    activeDraft.manualCommand &&
+    (/gateway/i.test(activeDraft.errorMessage) || /\bgateway\s+status\b/i.test(activeDraft.manualCommand))
+  );
   const catalogModels = useMemo(() => {
     const configuredModelIds = new Set(snapshot.models.map((model) => model.id));
 
@@ -397,9 +403,12 @@ export function AddModelsDialog({
 
       return result;
     } catch (error) {
+      const actionResult = readProviderActionErrorResult(error);
       updateDraft(providerId, {
         flowState: "auth-error",
-        errorMessage: error instanceof Error ? error.message : "Model discovery failed."
+        errorMessage: error instanceof Error ? error.message : "Model discovery failed.",
+        manualCommand: actionResult?.manualCommand ?? null,
+        docsUrl: actionResult?.docsUrl ?? null
       });
 
       return null;
@@ -456,9 +465,14 @@ export function AddModelsDialog({
 
       return true;
     } catch (error) {
+      const actionResult = readProviderActionErrorResult(error);
       updateDraft(providerId, {
         flowState: "add-error",
-        errorMessage: error instanceof Error ? error.message : "Models could not be added."
+        errorMessage: error instanceof Error ? error.message : "Models could not be added.",
+        connection: actionResult?.connection ?? draft.connection,
+        models: actionResult?.models ?? draft.models,
+        manualCommand: actionResult?.manualCommand ?? null,
+        docsUrl: actionResult?.docsUrl ?? null
       });
 
       return false;
@@ -617,6 +631,10 @@ export function AddModelsDialog({
     }));
   }
 
+  function readProviderActionErrorResult(error: unknown) {
+    return error instanceof ModelProviderActionError ? error.result : null;
+  }
+
   function applyActionResult(
     providerId: AddModelsProviderId,
     result: AddModelsProviderActionResult,
@@ -758,6 +776,60 @@ export function AddModelsDialog({
                       {activeDraft.errorMessage ? (
                         <div className="mt-3 rounded-[16px] border border-rose-400/20 bg-rose-400/[0.08] px-3 py-2 text-[11px] text-rose-100">
                           {activeDraft.errorMessage}
+                        </div>
+                      ) : null}
+
+                      {showGatewayRecoveryCommand ? (
+                        <div className="mt-3 rounded-[16px] border border-amber-300/20 bg-amber-300/[0.08] px-3 py-2">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[11px] font-medium text-amber-50">Gateway recovery</p>
+                              <p className="mt-1 max-w-[480px] text-[10px] leading-[0.98rem] text-amber-100/78">
+                                Automatic Gateway auth repair did not finish. Inspect Gateway status, then retry adding models.
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {isOpenClawTerminalCommand(activeDraft.manualCommand) ? (
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  className="h-7 rounded-full px-2.5 text-[10px]"
+                                  disabled={isOpeningTerminal}
+                                  onClick={() => {
+                                    void openTerminal(activeDraft.manualCommand || "");
+                                  }}
+                                >
+                                  {isOpeningTerminal ? (
+                                    <>
+                                      <LoaderCircle className="mr-1.5 h-3 w-3 animate-spin" />
+                                      Opening...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <SquareTerminal className="mr-1.5 h-3 w-3" />
+                                      Open Terminal
+                                    </>
+                                  )}
+                                </Button>
+                              ) : null}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 rounded-full px-2.5 text-[10px]"
+                                onClick={() => {
+                                  void copyText(activeDraft.manualCommand || "");
+                                }}
+                              >
+                                <Copy className="mr-1.5 h-3 w-3" />
+                                Copy command
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="mt-2.5 overflow-x-auto rounded-[14px] border border-white/10 bg-slate-950/60 px-3 py-2">
+                            <code className="text-[10px] text-slate-200">{activeDraft.manualCommand}</code>
+                          </div>
                         </div>
                       ) : null}
 

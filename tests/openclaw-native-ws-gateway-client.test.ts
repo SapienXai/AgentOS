@@ -1840,7 +1840,7 @@ test("native WS gateway client falls back from config.patch to config.apply", as
   assert.deepEqual(fallback.calls, []);
 });
 
-test("native WS gateway client falls back to CLI when config.patch is rate limited", async () => {
+test("native WS gateway client does not use CLI fallback when config.patch is rate limited", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
@@ -1874,7 +1874,10 @@ test("native WS gateway client falls back to CLI when config.patch is rate limit
     timeoutMs: 250
   });
 
-  await client.setConfig("agents.list", [{ id: "agent-1", workspace: "/workspace" }], { strictJson: true });
+  await assert.rejects(
+    () => client.setConfig("agents.list", [{ id: "agent-1", workspace: "/workspace" }], { strictJson: true }),
+    /rate limit exceeded for config\.patch.*CLI fallback disabled/
+  );
 
   assert.deepEqual(sentFrames.map((frame) => frame.method), [
     "connect",
@@ -1882,9 +1885,10 @@ test("native WS gateway client falls back to CLI when config.patch is rate limit
     "config.schema.lookup",
     "config.patch"
   ]);
-  assert.deepEqual(fallback.calls.map((call) => call.method), ["setConfig"]);
-  assert.deepEqual(fallback.config.get("agents.list"), [{ id: "agent-1", workspace: "/workspace" }]);
-  assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.operation, "config.set");
+  assert.deepEqual(fallback.calls, []);
+  assert.deepEqual(getRecentOpenClawGatewayFallbackDiagnostics(), []);
+  assert.equal(client.getDiagnostics().gatewayMode, "degraded");
+  assert.match(client.getDiagnostics().recovery ?? "", /cooldown/);
 });
 
 test("native WS gateway client does not escalate config.patch conflict to apply or CLI fallback", async () => {

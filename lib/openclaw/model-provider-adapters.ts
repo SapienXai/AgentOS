@@ -20,6 +20,16 @@ export type ModelProviderAdapter = {
   addModels: (modelIds: string[]) => Promise<AddModelsProviderActionResult>;
 };
 
+export class ModelProviderActionError extends Error {
+  constructor(
+    message: string,
+    readonly result: AddModelsProviderActionResult | null
+  ) {
+    super(message);
+    this.name = "ModelProviderActionError";
+  }
+}
+
 async function runProviderAction(
   request: AddModelsProviderActionRequest
 ): Promise<AddModelsProviderActionResult> {
@@ -40,7 +50,7 @@ async function runProviderAction(
   }
 
   if (!result.ok && result.message) {
-    throw new Error(result.message);
+    throw new ModelProviderActionError(result.message, result);
   }
 
   return result;

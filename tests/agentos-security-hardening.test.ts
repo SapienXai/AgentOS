@@ -85,6 +85,8 @@ test("secret redaction handles nested objects, arrays, and diagnostic text", () 
   const redacted = redactSecrets({
     token: "top-secret-token",
     password: "top-secret-password",
+    diagnosticUrl: "ws://127.0.0.1:18789/?token=query-secret&safe=1",
+    rawJson: '{"password":"json-secret","clientSecret":"client-secret"}',
     tokenUsage: {
       total: 42
     },
@@ -97,7 +99,7 @@ test("secret redaction handles nested objects, arrays, and diagnostic text", () 
   });
   const serialized = JSON.stringify(redacted);
 
-  assert.doesNotMatch(serialized, /top-secret|bearer-secret|sk-secret/);
+  assert.doesNotMatch(serialized, /top-secret|bearer-secret|sk-secret|query-secret|json-secret|client-secret/);
   assert.match(serialized, new RegExp(REDACTED_SECRET_VALUE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.deepEqual(redacted.tokenUsage, { total: 42 });
 });

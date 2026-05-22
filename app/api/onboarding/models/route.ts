@@ -13,6 +13,13 @@ import {
   getMissionControlSnapshot
 } from "@/lib/agentos/control-plane";
 import { setOpenClawDefaultModel } from "@/lib/openclaw/application/model-provider-state-service";
+import {
+  buildGatewayAuthBlockedMessage,
+  isGatewayAuthSetupRecoveryError,
+  repairGatewayAuthForModelSetupSnapshot,
+  resolveGatewayAuthSetupIssueFromSnapshot,
+  runWithGatewayAuthSetupRecovery
+} from "@/lib/openclaw/model-setup-recovery";
 import { resolveRequiredLoginProvider } from "@/lib/openclaw/model-onboarding";
 import { isAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
@@ -124,17 +131,6 @@ export async function POST(request: Request) {
     let aggregatedStderr = "";
     let manualCommandBin = "openclaw";
 
-    const appendOutput = (result: CommandResult) => {
-      aggregatedStdout += result.stdout;
-      aggregatedStderr += result.stderr;
-
-      if (result.errorMessage) {
-        aggregatedStderr = aggregatedStderr
-          ? `${aggregatedStderr}\n${result.errorMessage}`
-          : result.errorMessage;
-      }
-    };
-
     const fail = async (
       phase: OpenClawModelOnboardingPhase,
       message: string,
@@ -243,11 +239,52 @@ export async function POST(request: Request) {
       manualCommandBin = await resolveOpenClawBin().catch(() => "openclaw");
 
       if (!isSystemReady(snapshot)) {
-        await fail("detecting", "System setup is not complete yet.", {
-          snapshot,
-          manualCommand: formatOpenClawCommand(manualCommandBin, ["gateway", "status", "--json"])
-        });
-        return;
+        try {
+          const repaired = await repairGatewayAuthForModelSetupSnapshot(snapshot, {
+            operationLabel: "model setup",
+            onStatus: (message) => send({
+              type: "status",
+              phase: "detecting",
+              message
+            })
+          });
+
+          if (repaired) {
+            aggregatedStdout = appendLine(
+              aggregatedStdout,
+              repaired.kind === "gateway-token"
+                ? "AgentOS repaired local Gateway token auth for model setup."
+                : "AgentOS repaired local Gateway device access for model setup."
+            );
+            snapshot = await getMissionControlSnapshot({ force: true });
+          }
+        } catch (error) {
+          const recoveryMessage = error instanceof Error
+            ? error.message
+            : "Gateway auth repair failed during model setup.";
+          aggregatedStderr = appendLine(aggregatedStderr, recoveryMessage);
+          await fail("detecting", recoveryMessage, {
+            snapshot,
+            manualCommand: formatOpenClawCommand(manualCommandBin, ["gateway", "status", "--json"])
+          });
+          return;
+        }
+
+        if (!isSystemReady(snapshot)) {
+          const gatewayIssue = resolveGatewayAuthSetupIssueFromSnapshot(snapshot);
+
+          await fail(
+            "detecting",
+            gatewayIssue
+              ? buildGatewayAuthBlockedMessage(gatewayIssue, "model setup")
+              : "OpenClaw system setup is not ready yet. Start or repair the Gateway, run agentos doctor, then retry model setup.",
+            {
+              snapshot,
+              manualCommand: formatOpenClawCommand(manualCommandBin, ["gateway", "status", "--json"])
+            }
+          );
+          return;
+        }
       }
 
       if (input.intent === "refresh") {
@@ -351,44 +388,54 @@ export async function POST(request: Request) {
           message: `Setting ${modelId} as the default model...`
         });
         try {
-          const result = await setOpenClawDefaultModel(modelId, {
+          const result = await runWithGatewayAuthSetupRecovery(() => setOpenClawDefaultModel(modelId, {
             provider: resolveSetDefaultProvider(snapshot, modelId)
+          }), {
+            operationLabel: "setting the default model",
+            onStatus: (message) => send({
+              type: "status",
+              phase: "configuring-default",
+              message
+            })
           });
+          if (result.repaired) {
+            aggregatedStdout = appendLine(
+              aggregatedStdout,
+              result.repaired.kind === "gateway-token"
+                ? "AgentOS repaired local Gateway token auth before saving the default model."
+                : "AgentOS repaired local Gateway device access before saving the default model."
+            );
+          }
           aggregatedStdout = appendLine(
             aggregatedStdout,
-            result.modelId === modelId
-              ? `Default model saved via OpenClaw Gateway config: ${result.modelId}.`
-              : `Default model saved via OpenClaw Gateway config: ${result.modelId} (${modelId}).`
+            result.value.modelId === modelId
+              ? `Default model saved via OpenClaw Gateway config: ${result.value.modelId}.`
+              : `Default model saved via OpenClaw Gateway config: ${result.value.modelId} (${modelId}).`
           );
           return true;
         } catch (error) {
-          const gatewayError = `OpenClaw Gateway config update did not complete: ${readErrorMessage(error)}`;
+          if (isGatewayAuthSetupRecoveryError(error)) {
+            aggregatedStderr = appendLine(aggregatedStderr, error.message);
+            await fail("configuring-default", error.message, {
+              manualCommand: formatOpenClawCommand(openClawBin, ["gateway", "status", "--json"]),
+              docsUrl
+            });
+            return false;
+          }
+
+          const gatewayError = readErrorMessage(error);
           aggregatedStderr = appendLine(aggregatedStderr, gatewayError);
           await send({
             type: "log",
             stream: "stderr",
             text: `${gatewayError}\n`
           });
-          await send({
-            type: "status",
-            phase: "configuring-default",
-            message: "Gateway config update did not complete. Trying OpenClaw CLI fallback..."
-          });
-        }
-
-        const result = await runCommand(openClawBin, ["models", "set", modelId], send);
-        appendOutput(result);
-
-        if (result.errorMessage || result.timedOut || result.code !== 0) {
-          await fail("configuring-default", "OpenClaw could not set the default model.", {
-            exitCode: result.code,
-            manualCommand: formatOpenClawCommand(openClawBin, ["models", "set", modelId]),
+          await fail("configuring-default", gatewayError, {
+            manualCommand: formatOpenClawCommand(openClawBin, ["gateway", "diagnostics"]),
             docsUrl
           });
           return false;
         }
-
-        return true;
       };
 
       const runProviderLogin = async (provider: string) => {

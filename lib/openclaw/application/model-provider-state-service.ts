@@ -6,7 +6,12 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import {
+  isGatewayConfigRateLimitError,
+  readGatewayConfigRateLimitRetryAfterMs
+} from "@/lib/openclaw/client/native-ws-gateway-config";
 import { getModelProviderDescriptor, isAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
+import { redactSecretText } from "@/lib/security/redaction";
 import type {
   AddModelsProviderConnectionStatus,
   AddModelsProviderId
@@ -33,7 +38,7 @@ type OpenClawConfigPayload = {
       agentRuntime?: {
         id?: string;
       };
-      models?: Record<string, Record<string, never>>;
+      models?: Record<string, Record<string, unknown>>;
     };
   };
 };
@@ -68,6 +73,9 @@ const openClawAuthProfilesPath = path.join(
 );
 const legacyProviderFileFallbackEnv = "AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK";
 const gatewayConfigPatchRetryDelaysMs = [500, 1_250, 2_500];
+const maxInlineGatewayConfigRateLimitRetryMs = 3_000;
+
+type OpenClawAgentDefaultsConfig = NonNullable<NonNullable<OpenClawConfigPayload["agents"]>["defaults"]>;
 
 export async function readOpenClawConfiguredModelIds() {
   try {
@@ -178,9 +186,7 @@ export async function addOpenClawModelsToConfig(provider: AddModelsProviderId, m
     return;
   } catch (error) {
     if (!isLegacyProviderFileFallbackEnabled()) {
-      throw new Error(
-        `OpenClaw Gateway config update failed while adding models. Legacy file fallback is disabled; set ${legacyProviderFileFallbackEnv}=1 only for explicit recovery. ${readErrorMessage(error)}`
-      );
+      throw new Error(buildGatewayConfigMutationFailureMessage("adding models", error));
     }
   }
 
@@ -241,9 +247,7 @@ export async function setOpenClawDefaultModel(
     };
   } catch (error) {
     if (!isLegacyProviderFileFallbackEnabled()) {
-      throw new Error(
-        `OpenClaw Gateway config update failed while setting the default model. Legacy file fallback is disabled; set ${legacyProviderFileFallbackEnv}=1 only for explicit recovery. ${readErrorMessage(error)}`
-      );
+      throw new Error(buildGatewayConfigMutationFailureMessage("setting the default model", error));
     }
   }
 
@@ -282,12 +286,13 @@ async function addModelsToConfigViaGateway(provider: AddModelsProviderId, normal
       return;
     } catch (error) {
       lastError = error;
+      const retryDelayMs = resolveGatewayConfigPatchRetryDelayMs(error, attempt);
 
-      if (attempt >= gatewayConfigPatchRetryDelaysMs.length || !isRetryableGatewayConfigPatchError(error)) {
+      if (retryDelayMs === null) {
         throw error;
       }
 
-      await delay(gatewayConfigPatchRetryDelaysMs[attempt] ?? 0);
+      await delay(retryDelayMs);
     }
   }
 
@@ -296,27 +301,29 @@ async function addModelsToConfigViaGateway(provider: AddModelsProviderId, normal
 
 async function addModelsToConfigViaGatewayOnce(provider: AddModelsProviderId, normalizedModelIds: string[]) {
   const adapter = getOpenClawAdapter();
-  const [existingModels, primaryModel] = await Promise.all([
-    adapter.getConfig<Record<string, unknown>>("agents.defaults.models", { timeoutMs: 5_000 }),
-    adapter.getConfig<string>("agents.defaults.model.primary", { timeoutMs: 5_000 })
-  ]);
-  const nextModels = isRecord(existingModels) ? { ...existingModels } : {};
+  const existingDefaults = await adapter.getConfig<OpenClawAgentDefaultsConfig>(
+    "agents.defaults",
+    { timeoutMs: 5_000 }
+  );
+  const nextDefaults = cloneAgentDefaults(existingDefaults);
+  const nextModels = cloneModelEntries(nextDefaults.models);
 
   for (const modelId of normalizedModelIds) {
     nextModels[modelId] = isRecord(nextModels[modelId]) ? nextModels[modelId] : {};
   }
 
-  await adapter.setConfig("agents.defaults.models", nextModels, { timeoutMs: 5_000 });
+  nextDefaults.models = nextModels;
 
-  if (!primaryModel && normalizedModelIds[0]) {
-    await adapter.setConfig("agents.defaults.model.primary", normalizedModelIds[0], { timeoutMs: 5_000 });
+  if (!nextDefaults.model?.primary && normalizedModelIds[0]) {
+    nextDefaults.model = {
+      ...(nextDefaults.model || {}),
+      primary: normalizedModelIds[0]
+    };
 
-    if (provider === "openai-codex") {
-      await adapter.setConfig("agents.defaults.agentRuntime.id", "codex", { timeoutMs: 5_000 });
-    } else if (provider === "openai") {
-      await adapter.setConfig("agents.defaults.agentRuntime.id", "pi", { timeoutMs: 5_000 });
-    }
+    applyDefaultModelRuntimeToDefaults(nextDefaults, provider);
   }
+
+  await adapter.setConfig("agents.defaults", nextDefaults, { timeoutMs: 5_000 });
 
   if (provider === "openai-codex") {
     await adapter.setConfig("plugins.entries.codex.enabled", true, { timeoutMs: 5_000 });
@@ -335,12 +342,13 @@ async function setDefaultModelViaGateway(
       return;
     } catch (error) {
       lastError = error;
+      const retryDelayMs = resolveGatewayConfigPatchRetryDelayMs(error, attempt);
 
-      if (attempt >= gatewayConfigPatchRetryDelaysMs.length || !isRetryableGatewayConfigPatchError(error)) {
+      if (retryDelayMs === null) {
         throw error;
       }
 
-      await delay(gatewayConfigPatchRetryDelaysMs[attempt] ?? 0);
+      await delay(retryDelayMs);
     }
   }
 
@@ -352,35 +360,124 @@ async function setDefaultModelViaGatewayOnce(
   normalizedModelId: string
 ) {
   const adapter = getOpenClawAdapter();
-  const existingModels = await adapter.getConfig<Record<string, unknown>>(
-    "agents.defaults.models",
+  const existingDefaults = await adapter.getConfig<OpenClawAgentDefaultsConfig>(
+    "agents.defaults",
     { timeoutMs: 5_000 }
   );
-  const nextModels = isRecord(existingModels) ? { ...existingModels } : {};
+  const nextDefaults = cloneAgentDefaults(existingDefaults);
+  const nextModels = cloneModelEntries(nextDefaults.models);
   nextModels[normalizedModelId] = isRecord(nextModels[normalizedModelId])
     ? nextModels[normalizedModelId]
     : {};
 
-  await adapter.setConfig("agents.defaults.models", nextModels, { timeoutMs: 5_000 });
-  await adapter.setConfig("agents.defaults.model.primary", normalizedModelId, { timeoutMs: 5_000 });
-  await setGatewayDefaultModelRuntime(provider);
-}
-
-async function setGatewayDefaultModelRuntime(provider: AddModelsProviderId | null) {
-  const adapter = getOpenClawAdapter();
+  nextDefaults.models = nextModels;
+  nextDefaults.model = {
+    ...(nextDefaults.model || {}),
+    primary: normalizedModelId
+  };
+  applyDefaultModelRuntimeToDefaults(nextDefaults, provider);
+  await adapter.setConfig("agents.defaults", nextDefaults, { timeoutMs: 5_000 });
 
   if (provider === "openai-codex") {
-    await adapter.setConfig("agents.defaults.agentRuntime.id", "codex", { timeoutMs: 5_000 });
     await adapter.setConfig("plugins.entries.codex.enabled", true, { timeoutMs: 5_000 });
-  } else if (provider === "openai") {
-    await adapter.setConfig("agents.defaults.agentRuntime.id", "pi", { timeoutMs: 5_000 });
   }
 }
 
-function isRetryableGatewayConfigPatchError(error: unknown) {
+function resolveGatewayConfigPatchRetryDelayMs(error: unknown, attempt: number) {
+  if (attempt >= gatewayConfigPatchRetryDelaysMs.length) {
+    return null;
+  }
+
+  const retryAfterMs = readGatewayConfigRateLimitRetryAfterMs(error);
+
+  if (retryAfterMs !== null) {
+    return retryAfterMs <= maxInlineGatewayConfigRateLimitRetryMs ? retryAfterMs : null;
+  }
+
   const message = readErrorMessage(error);
 
-  return /1012|service restart|connection closed|closed before|gateway closed|websocket|ECONNREFUSED|ECONNRESET|socket hang up|timed out|timeout/i.test(message);
+  if (/1012|service restart|connection closed|closed before|gateway closed|websocket|ECONNREFUSED|ECONNRESET|socket hang up|timed out|timeout/i.test(message)) {
+    return gatewayConfigPatchRetryDelaysMs[attempt] ?? null;
+  }
+
+  return null;
+}
+
+function buildGatewayConfigMutationFailureMessage(action: string, error: unknown) {
+  if (isGatewayConfigRateLimitError(error)) {
+    const retryAfterMs = readGatewayConfigRateLimitRetryAfterMs(error);
+    const retryHint = retryAfterMs !== null
+      ? ` Wait about ${formatRetryAfter(retryAfterMs)} before retrying.`
+      : " Wait for the Gateway config cooldown, then retry.";
+
+    return `OpenClaw Gateway is rate limiting config updates while ${action}.${retryHint} AgentOS did not use CLI or legacy file fallback for this model change.`;
+  }
+
+  return `OpenClaw Gateway config update failed while ${action}. Legacy file fallback is disabled; set ${legacyProviderFileFallbackEnv}=1 only for explicit recovery. ${readErrorMessage(error)}`;
+}
+
+function formatRetryAfter(ms: number) {
+  if (ms >= 60_000) {
+    return `${Math.ceil(ms / 60_000)} minute${Math.ceil(ms / 60_000) === 1 ? "" : "s"}`;
+  }
+
+  return `${Math.ceil(ms / 1_000)} second${Math.ceil(ms / 1_000) === 1 ? "" : "s"}`;
+}
+
+function cloneAgentDefaults(value: unknown): OpenClawAgentDefaultsConfig {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const output = {
+    ...value,
+    models: cloneModelEntries(value.models)
+  } as OpenClawAgentDefaultsConfig;
+
+  if (isRecord(value.model)) {
+    output.model = { ...value.model };
+  } else if (value.model === undefined) {
+    delete output.model;
+  }
+
+  if (isRecord(value.agentRuntime)) {
+    output.agentRuntime = { ...value.agentRuntime };
+  } else if (value.agentRuntime === undefined) {
+    delete output.agentRuntime;
+  }
+
+  return output;
+}
+
+function cloneModelEntries(value: unknown) {
+  const output: Record<string, Record<string, unknown>> = {};
+
+  if (!isRecord(value)) {
+    return output;
+  }
+
+  for (const [modelId, entry] of Object.entries(value)) {
+    output[modelId] = isRecord(entry) ? { ...entry } : {};
+  }
+
+  return output;
+}
+
+function applyDefaultModelRuntimeToDefaults(
+  defaults: OpenClawAgentDefaultsConfig,
+  provider: AddModelsProviderId | null
+) {
+  if (provider === "openai-codex") {
+    defaults.agentRuntime = {
+      ...(defaults.agentRuntime || {}),
+      id: "codex"
+    };
+  } else if (provider === "openai") {
+    defaults.agentRuntime = {
+      ...(defaults.agentRuntime || {}),
+      id: "pi"
+    };
+  }
 }
 
 function normalizeModelIdForProvider(provider: AddModelsProviderId, modelId: string) {
@@ -458,7 +555,7 @@ function isLegacyProviderFileFallbackEnabled() {
 }
 
 function readErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error || "Unknown Gateway error.");
+  return redactSecretText(error instanceof Error ? error.message : String(error || "Unknown Gateway error."));
 }
 
 function modelMatchesProvider(provider: AddModelsProviderId, modelId: string) {

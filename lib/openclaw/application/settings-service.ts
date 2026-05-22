@@ -634,6 +634,7 @@ function readGatewayIssueKind(error: unknown, issue: string): GatewayNativeAuthI
   if (
     kind === "auth" ||
     kind === "malformed-response" ||
+    kind === "rate-limited" ||
     kind === "scope-limited" ||
     kind === "timeout" ||
     kind === "unreachable" ||
@@ -648,6 +649,10 @@ function readGatewayIssueKind(error: unknown, issue: string): GatewayNativeAuthI
 
   if (/scope|permission|not allowed/i.test(issue)) {
     return "scope-limited";
+  }
+
+  if (/(^|[^a-z])rate limit(?:ed)?\b|retry after|too many requests/i.test(issue)) {
+    return "rate-limited";
   }
 
   if (/invalid json|malformed|schema|payload/i.test(issue)) {
@@ -684,6 +689,10 @@ function buildGatewayNativeAuthRecommendation(input: {
 
   if (input.kind === "unreachable" || input.kind === "timeout") {
     return "Start or restart the OpenClaw Gateway, then test native auth again.";
+  }
+
+  if (input.kind === "rate-limited") {
+    return "Wait for the Gateway cooldown to expire, then test native auth again.";
   }
 
   if (input.kind === "scope-limited") {

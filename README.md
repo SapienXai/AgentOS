@@ -85,7 +85,7 @@ First thing to try:
 - Inspect the runtime output or transcript.
 
 If OpenClaw is already installed, AgentOS connects to the live control plane and shows the current gateway, models, agents, and runtimes.
-If OpenClaw is missing or not ready yet, AgentOS opens in an explicit fallback or onboarding flow instead of showing a fake live state.
+If OpenClaw is missing or not ready yet, AgentOS opens in an explicit unavailable/onboarding state instead of showing a fake live state.
 
 ## Product Highlights
 
@@ -230,6 +230,12 @@ In practice, that means:
 - AgentOS keeps the OpenClaw CLI as fallback for install, recovery, gateway process control, and unsupported or older Gateway methods.
 - AgentOS translates UI actions into OpenClaw Gateway calls, documented CLI fallbacks, and real filesystem changes.
 - AgentOS is intentionally not a mock dashboard; it is a control surface over live operational state.
+
+## Compatibility / Tested Runtime
+
+AgentOS is Gateway-first on top of OpenClaw. Use `agentos doctor` and the in-app diagnostics panel to confirm the installed OpenClaw version, Gateway protocol range, native auth state, model readiness, and fallback activity before dispatching real missions.
+
+The 0.4.8 release expects Node.js 20.9 or newer and an OpenClaw Gateway whose protocol overlaps the supported range reported by diagnostics. If compatibility is degraded, update OpenClaw, repair Gateway token/device access, restart the Gateway, and re-run `agentos doctor`.
 
 ## How The System Works
 
@@ -417,13 +423,13 @@ Install a specific published version:
 macOS / Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.4.7 bash
+curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.4.8 bash
 ```
 
 Windows PowerShell:
 
 ```powershell
-$env:AGENTOS_VERSION='0.4.7'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
+$env:AGENTOS_VERSION='0.4.8'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
 ```
 
 Package manager install:
@@ -479,8 +485,8 @@ Push a tag in the format below to build platform-specific release assets on GitH
 
 ```bash
 pnpm check:release
-git tag agentos-v0.4.7
-git push origin agentos-v0.4.7
+git tag agentos-v0.4.8
+git push origin agentos-v0.4.8
 ```
 
 `packages/agentos/package.json` is the published CLI/package version source. The root package is private and may keep a separate workspace app version.
@@ -505,7 +511,7 @@ Open the URL printed by Next.js, typically:
 http://localhost:3000
 ```
 
-If OpenClaw is unavailable when the app starts, AgentOS can fall back to a demo snapshot and exposes an in-app onboarding flow to help bring the local machine online.
+If OpenClaw is unavailable when the app starts, AgentOS shows an explicit unavailable/onboarding state and tells the operator what to repair before write actions can run.
 
 ### Quality Checks
 
@@ -559,7 +565,7 @@ AgentOS keeps most durable operational state close to the workspace and to OpenC
 - Planner drafts and planner runtime assets are stored under the legacy `.mission-control/planner/` path.
 - Planner deploys write workspace-specific planning artifacts under `.openclaw/planner/`, including `blueprint.json` and `deploy-report.json`.
 - Browser convenience state such as theme, draft missions, recent prompts, and the last planner id is stored in `localStorage`.
-- When OpenClaw is unavailable, AgentOS returns an explicit fallback snapshot with demo workspaces, agents, models, and runtimes.
+- When OpenClaw is unavailable, AgentOS returns an explicit unavailable snapshot and keeps write actions blocked until setup is healthy.
 
 ## Screens And Workflows Worth Exploring
 

@@ -11,6 +11,7 @@ import type {
   RuntimeOutputRecord,
   RuntimeRecord
 } from "@/lib/openclaw/types";
+import { redactSecretText } from "@/lib/security/redaction";
 
 type RuntimeSessionEntry = {
   agentId?: string;
@@ -150,14 +151,20 @@ export async function getRuntimeOutputForResolvedRuntime(
   }
 
   if (!runtime.sessionId || !runtime.agentId) {
-    return createMissingRuntimeOutput(runtime, "This runtime does not expose a session transcript yet.");
+    return createMissingRuntimeOutput(
+      runtime,
+      resolveMissingRuntimeOutputMessage(runtime, "This runtime does not expose a session transcript yet.")
+    );
   }
 
   const agent = snapshot.agents.find((entry) => entry.id === runtime.agentId);
   const transcriptPath = await resolveRuntimeTranscriptPath(runtime.agentId, runtime.sessionId, agent?.workspacePath);
 
   if (!transcriptPath) {
-    return createMissingRuntimeOutput(runtime, "No transcript file was found for this runtime session.");
+    return createMissingRuntimeOutput(
+      runtime,
+      resolveMissingRuntimeOutputMessage(runtime, "No transcript file was found for this runtime session.")
+    );
   }
 
   try {
@@ -493,12 +500,39 @@ export function parseRuntimeOutput(runtime: RuntimeRecord, raw: string, workspac
     finalText: null,
     finalTimestamp: null,
     stopReason: null,
-    errorMessage: "No transcript entries were found for this runtime.",
+    errorMessage: resolveMissingRuntimeOutputMessage(runtime, "No transcript entries were found for this runtime."),
     items: [],
     createdFiles: [],
     warnings: [],
     warningSummary: null
   };
+}
+
+function resolveMissingRuntimeOutputMessage(runtime: RuntimeRecord, fallback: string) {
+  const dispatchStatus =
+    typeof runtime.metadata.dispatchStatus === "string" ? runtime.metadata.dispatchStatus : null;
+  const dispatchId = typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId : null;
+  const runtimeError = typeof runtime.metadata.error === "string" && runtime.metadata.error.trim()
+    ? redactSecretText(runtime.metadata.error.trim())
+    : null;
+
+  if (runtimeError) {
+    return runtimeError;
+  }
+
+  if (!dispatchStatus && !dispatchId) {
+    return fallback;
+  }
+
+  if (dispatchStatus === "stalled" || runtime.status === "stalled") {
+    return "Mission dispatch stalled before AgentOS captured transcript output. Check Gateway diagnostics, model readiness, and the dispatch runner details.";
+  }
+
+  if (dispatchStatus === "completed" || runtime.status === "completed") {
+    return "Mission completed, but AgentOS did not recover a transcript or final output yet. Refresh the snapshot and inspect the OpenClaw session diagnostics if this remains empty.";
+  }
+
+  return "Mission dispatch is active, but no transcript output has been captured yet. Wait for the first OpenClaw session update or inspect Gateway diagnostics if it stays empty.";
 }
 
 function resolveRuntimeMissionTurn(runtime: RuntimeRecord, turns: TranscriptTurn[]) {

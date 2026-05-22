@@ -8,7 +8,6 @@ import {
 import {
   canFallbackGatewayAuthConfigRepair,
   buildMergePatchForConfigPath,
-  isGatewayConfigRateLimitError,
   isGatewayTransportConfigPath,
   readConfigReloadKindFromSchemaLookup
 } from "@/lib/openclaw/client/native-ws-gateway-config";
@@ -1738,7 +1737,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       const failedMethod = error instanceof NativeGatewayRequestError ? error.method : operation;
       const fallbackAllowed = shouldUseCliFallback(error, failedMethod, {
         safety: "mutation"
-      }) || canFallbackGatewayAuthConfigRepair(error, path) || isGatewayConfigRateLimitError(error);
+      }) || canFallbackGatewayAuthConfigRepair(error, path);
 
       if (!fallbackAllowed) {
         throw this.cliFallbackDisabledError(failedMethod, error);
@@ -1810,11 +1809,11 @@ function resolveGatewayStatusRecovery(
     case "cli-forced":
       return "Unset CLI-forced Gateway mode and restart AgentOS to use native WebSocket transport.";
     case "fallback-active":
-      return "Inspect recent fallback diagnostics, then update OpenClaw or repair Gateway auth/device access.";
+      return "Inspect recent fallback diagnostics, update OpenClaw for protocol or method gaps, repair token/device access for auth failures, then restart the Gateway if needed.";
     case "unreachable":
-      return "Start or restart the OpenClaw Gateway, then retry the native operation.";
+      return "Start or restart the OpenClaw Gateway, verify the endpoint and token/password, then retry the native operation.";
     case "degraded":
     default:
-      return "Inspect Gateway diagnostics and repair the native Gateway before retrying.";
+      return "Inspect Gateway diagnostics, check token/device access, update OpenClaw for compatibility gaps, then restart the Gateway before retrying.";
   }
 }

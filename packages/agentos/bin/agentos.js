@@ -28,6 +28,7 @@ const startupGracePeriodMs = 15_000;
 const updateCacheTtlMs = 24 * 60 * 60 * 1000;
 const updateWarningCooldownMs = 24 * 60 * 60 * 1000;
 const updateRequestTimeoutMs = 5_000;
+const cliSmokeTestMode = process.env.AGENTOS_CLI_TEST === "1";
 
 main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
@@ -265,6 +266,11 @@ function runDoctor() {
       detail: `${packageJson.name}@${packageJson.version}`
     },
     {
+      ok: true,
+      label: "Install",
+      detail: formatInstallKind(inspectInstallation())
+    },
+    {
       ok: isSupportedNodeVersion(process.versions.node),
       label: "Node.js",
       detail: `${process.version} (required >= 20.9.0)`
@@ -296,7 +302,7 @@ function runDoctor() {
       label: "OpenClaw",
       detail: openClawCheck.available
         ? `${openClawCheck.version || "installed"}${openClawCheck.path ? ` at ${openClawCheck.path}` : ""}`
-        : "not found on PATH"
+        : "not found on PATH; install OpenClaw or continue with the AgentOS onboarding flow"
     },
     {
       ok: browserOpener.available,
@@ -1017,6 +1023,12 @@ function getUpdateSourceId(install) {
 }
 
 async function fetchLatestVersionInfo(install, timeoutMs) {
+  const testOverride = readSmokeTestLatestVersionOverride(install);
+
+  if (testOverride) {
+    return testOverride;
+  }
+
   if (install.kind === "release") {
     return fetchGitHubLatestVersion(timeoutMs);
   }
@@ -1026,6 +1038,26 @@ async function fetchLatestVersionInfo(install, timeoutMs) {
   }
 
   throw new Error("Update checks are not supported for source checkouts.");
+}
+
+function readSmokeTestLatestVersionOverride(install) {
+  if (!cliSmokeTestMode) {
+    return null;
+  }
+
+  const latestVersion = normalizeVersion(process.env.AGENTOS_TEST_LATEST_VERSION);
+
+  if (!latestVersion) {
+    return null;
+  }
+
+  return {
+    latestVersion,
+    downloadBaseUrl:
+      install.kind === "release"
+        ? `https://github.com/${process.env.AGENTOS_REPO || "SapienXai/AgentOS"}/releases/download/agentos-v${latestVersion}`
+        : null
+  };
 }
 
 async function fetchGitHubLatestVersion(timeoutMs) {
@@ -1333,6 +1365,18 @@ function formatConfiguredEnv(options) {
   ];
 
   return pairs.join(", ");
+}
+
+function formatInstallKind(install) {
+  if (install.kind === "release") {
+    return `release at ${install.installRoot}`;
+  }
+
+  if (install.kind === "package-manager") {
+    return "package manager install";
+  }
+
+  return `source checkout at ${findRepoRoot()}`;
 }
 
 async function readTextFile(filePath) {

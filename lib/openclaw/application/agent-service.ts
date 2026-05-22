@@ -46,6 +46,7 @@ import { syncWorkspaceAgentsMarkdown } from "@/lib/openclaw/domains/workspace-ag
 import { normalizeOptionalValue } from "@/lib/openclaw/domains/control-plane-normalization";
 import { writeTextFileEnsured } from "@/lib/openclaw/domains/workspace-bootstrap";
 import { workspaceIdFromPath, workspacePathMatchesId } from "@/lib/openclaw/domains/workspace-id";
+import { resolveAgentCreationReadinessError } from "@/lib/openclaw/readiness";
 import type {
   AgentCreateInput,
   AgentDeleteInput,
@@ -84,6 +85,12 @@ export async function createAgent(input: AgentCreateInput) {
 
   if (!resolvedWorkspacePath || !resolvedWorkspaceId) {
     throw new Error("Workspace was not found for this agent.");
+  }
+
+  const readinessError = resolveAgentCreationReadinessError(snapshot, input.modelId);
+
+  if (readinessError) {
+    throw new Error(readinessError);
   }
 
   const policy = resolveAgentPolicy(input.policy?.preset ?? DEFAULT_AGENT_PRESET, input.policy);

@@ -52,3 +52,9 @@ If AgentOS was installed with `pnpm` or `npm`, update commands only print the ma
 `agentos uninstall` removes a release-installer copy. If the package was installed with `pnpm` or `npm`, remove it with your package manager instead.
 
 AgentOS is designed to work with a local OpenClaw installation. If OpenClaw is missing, AgentOS still starts and guides onboarding in the UI.
+
+Compatibility:
+
+- Requires Node.js 20.9 or newer.
+- Uses OpenClaw Gateway-first transport by default.
+- Run `agentos doctor` and check in-app diagnostics to verify OpenClaw version, Gateway protocol compatibility, native auth, and model readiness before the first mission.
