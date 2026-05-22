@@ -5,6 +5,7 @@ import { createErrorSnapshot } from "@/lib/openclaw/fallback";
 import { getRuntimeOutputForResolvedRuntime } from "@/lib/openclaw/domains/runtime-transcript";
 import { sanitizeGatewayDiagnosticText } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import {
+  isOpenClawOnboardingModelReady,
   resolveAgentCreationReadinessError,
   resolveMissionDispatchReadinessError,
   resolveWorkspaceCreationReadinessError
@@ -61,6 +62,80 @@ test("model readiness failures explain the next action for first workspace and a
   assert.match(resolveWorkspaceCreationReadinessError(snapshot) ?? "", /No models are configured yet/);
   assert.match(resolveWorkspaceCreationReadinessError(snapshot) ?? "", /Choose a model before creating the first workspace/);
   assert.match(resolveAgentCreationReadinessError(snapshot) ?? "", /Choose a ready model before creating the agent/);
+});
+
+test("workspace-backed agent models keep first-run actions usable when the global default is missing", () => {
+  const snapshot = createErrorSnapshot("Model setup default is missing.", {
+    installed: true,
+    loaded: true,
+    rpcOk: true
+  });
+  snapshot.diagnostics.runtime.stateWritable = true;
+  snapshot.diagnostics.runtime.sessionStoreWritable = true;
+  snapshot.workspaces = [
+    {
+      id: "workspace",
+      name: "Workspace",
+      path: "/tmp/workspace",
+      status: "ready",
+      tags: []
+    }
+  ] as unknown as typeof snapshot.workspaces;
+  snapshot.agents = [
+    {
+      id: "main",
+      workspaceId: "workspace",
+      workspacePath: "/tmp/workspace",
+      modelId: "openai/gpt-5.4-mini",
+      name: "Main",
+      status: "ready",
+      role: "Worker",
+      emoji: "A",
+      theme: "slate",
+      avatar: null,
+      heartbeat: null,
+      skills: [],
+      tools: [],
+      policy: {
+        preset: "worker",
+        missingToolBehavior: "ask-setup",
+        installScope: "none",
+        fileAccess: "workspace-only",
+        networkAccess: "restricted"
+      }
+    }
+  ] as unknown as typeof snapshot.agents;
+  snapshot.models = [
+    {
+      id: "openai/gpt-5.4-mini",
+      name: "GPT 5.4 Mini",
+      provider: "openai-codex",
+      input: "remote",
+      contextWindow: null,
+      local: false,
+      available: true,
+      missing: false,
+      tags: [],
+      usageCount: 1
+    }
+  ];
+  snapshot.diagnostics.modelReadiness = {
+    ...snapshot.diagnostics.modelReadiness,
+    ready: false,
+    defaultModel: null,
+    resolvedDefaultModel: null,
+    defaultModelReady: false,
+    recommendedModelId: "openai/gpt-5.4-mini",
+    totalModelCount: 1,
+    availableModelCount: 1,
+    issues: ["Choose a default model to finish setup."]
+  };
+
+  assert.equal(isOpenClawOnboardingModelReady(snapshot), true);
+  assert.equal(resolveMissionDispatchReadinessError(snapshot, "openai/gpt-5.4-mini"), null);
+  assert.equal(resolveWorkspaceCreationReadinessError(snapshot, "openai/gpt-5.4-mini"), null);
+  assert.equal(resolveAgentCreationReadinessError(snapshot, "openai/gpt-5.4-mini"), null);
+  assert.match(resolveAgentCreationReadinessError(snapshot, "openai/missing") ?? "", /not ready/);
 });
 
 test("runtime output surfaces an explicit diagnostic when dispatch output is empty", async () => {

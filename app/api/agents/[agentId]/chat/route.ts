@@ -12,6 +12,12 @@ import {
   isDirectAgentIdentityQuestion,
   isStaleAgentChatContextRecoveryText
 } from "@/lib/openclaw/agent-chat-guards";
+import {
+  emptyAgentChatResponseMessage,
+  extractAssistantTextFromAgentChatStreamLine,
+  extractLatestAssistantTextFromSessionHistory,
+  sanitizeAgentChatReplyText
+} from "@/lib/openclaw/agent-chat-response";
 import { readLatestAgentChatTurn } from "@/lib/openclaw/domains/agent-chat-transcript";
 import { extractMissionControlAction, type MissionControlAction } from "@/lib/openclaw/chat-actions";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
@@ -86,9 +92,6 @@ type AgentChatStreamEvent =
       response?: MissionResponse;
     };
 
-const emptyAgentChatResponseMessage =
-  "OpenClaw completed the turn without assistant response text. Check Gateway diagnostics or retry after OpenClaw writes a transcript entry.";
-
 export async function POST(
   request: Request,
   context: { params: Promise<{ agentId: string }> }
@@ -142,12 +145,27 @@ export async function POST(
       let latestStatusMessage = "";
       let latestTurnStatus: TranscriptTurn["status"] | null = null;
       let keepPolling = true;
+      let streamStdoutBuffer = "";
 
       const stopPolling = () => {
         keepPolling = false;
       };
 
       const wait = (ms: number) => new Promise((resolve) => globalThis.setTimeout(resolve, ms));
+
+      const emitAssistantText = async (value: string | null | undefined) => {
+        const currentText = sanitizeAgentChatReplyText(value);
+
+        if (!currentText || currentText === latestAssistantText) {
+          return;
+        }
+
+        latestAssistantText = currentText;
+        await send({
+          type: "assistant",
+          text: currentText
+        });
+      };
 
       const pollTranscript = async (agentId: string, sessionId: string, workspacePath?: string) => {
         const turn = await readLatestAgentChatTurn(agentId, sessionId, workspacePath);
@@ -167,12 +185,52 @@ export async function POST(
         }
 
         const currentText = typeof turn.finalText === "string" ? sanitizePolledAssistantText(turn.finalText) : "";
-        if (currentText && currentText !== latestAssistantText) {
-          latestAssistantText = currentText;
-          await send({
-            type: "assistant",
-            text: currentText
-          });
+        await emitAssistantText(currentText);
+      };
+
+      const pollGatewayHistory = async (agentId: string, sessionId: string) => {
+        const history = await getOpenClawAdapter().getSessionHistory(
+          {
+            agentId,
+            sessionId,
+            limit: 40
+          },
+          { timeoutMs: 1000 }
+        );
+        await emitAssistantText(extractLatestAssistantTextFromSessionHistory(history));
+      };
+
+      const handleCommandStdout = async (chunk: string) => {
+        streamStdoutBuffer += chunk;
+        const lines = streamStdoutBuffer.split(/\r?\n/);
+        streamStdoutBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          await emitAssistantText(extractAssistantTextFromAgentChatStreamLine(line));
+        }
+      };
+
+      const waitForLateAssistantText = async (agentId: string, sessionId: string, workspacePath?: string) => {
+        const startedAt = Date.now();
+
+        while (!latestAssistantText && Date.now() - startedAt < 6000 && !request.signal.aborted) {
+          await wait(300);
+
+          try {
+            await pollTranscript(agentId, sessionId, workspacePath);
+          } catch {
+            // Transcript files can appear slightly after the Gateway marks a turn complete.
+          }
+
+          if (latestAssistantText) {
+            return;
+          }
+
+          try {
+            await pollGatewayHistory(agentId, sessionId);
+          } catch {
+            // Older Gateways may not expose chat history for explicit sessions.
+          }
         }
       };
 
@@ -278,7 +336,9 @@ export async function POST(
             workspace: agent.workspacePath,
             local: !snapshot.diagnostics.rpcOk
           },
-          {},
+          {
+            onStdout: handleCommandStdout
+          },
           { timeoutMs: 120000, signal: request.signal }
         ) as Promise<AgentChatCommandPayload>;
 
@@ -295,6 +355,10 @@ export async function POST(
         })();
 
         const result = await commandPromise;
+        if (streamStdoutBuffer.trim()) {
+          await emitAssistantText(extractAssistantTextFromAgentChatStreamLine(streamStdoutBuffer));
+          streamStdoutBuffer = "";
+        }
         stopPolling();
 
         try {
@@ -304,6 +368,10 @@ export async function POST(
         }
 
         let response = toAgentChatResponse(agentId, result);
+        if (isEmptyAgentChatResponse(response) && !latestAssistantText) {
+          await waitForLateAssistantText(agentId, sessionId, agent.workspacePath);
+        }
+
         if (latestAssistantText && response.payloads.length === 0) {
           response = {
             ...response,
@@ -441,32 +509,6 @@ function resolveChatStatusMessage(turn: TranscriptTurn) {
 
 function sanitizePolledAssistantText(value: string) {
   return sanitizeAgentChatReplyText(value);
-}
-
-function sanitizeAgentChatReplyText(value: unknown) {
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  const trimmed = value.trim();
-  return stripLeadingThinkingBlock(trimmed);
-}
-
-function stripLeadingThinkingBlock(value: string) {
-  if (!value || !/^\[thinking\]\b/i.test(value)) {
-    return value;
-  }
-
-  const paragraphs = value
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
-
-  if (paragraphs.length <= 2) {
-    return "";
-  }
-
-  return paragraphs.slice(2).join("\n\n").trim();
 }
 
 function toAgentChatResponse(agentId: string, payload: AgentChatCommandPayload): MissionResponse {

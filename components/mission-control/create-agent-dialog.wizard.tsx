@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bot, ChevronRight, FileText, LoaderCircle, Plus, Sparkles, type LucideIcon } from "lucide-react";
 
 import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
@@ -43,6 +43,7 @@ import {
   applyAgentPreset,
   buildAgentDraft,
   buildUniqueAgentId,
+  resolveSuggestedAgentModelId,
   type AgentDraft
 } from "@/components/mission-control/create-agent-dialog.utils";
 
@@ -87,10 +88,12 @@ export function CreateAgentDialog({
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
   const isSubmittingRef = useRef(false);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
-  const [draft, setDraft] = useState<AgentDraft>(() => createCustomAgentDraft(initialWorkspaceId));
+  const [draft, setDraft] = useState<AgentDraft>(() => createCustomAgentDraft(initialWorkspaceId, snapshot));
   const createSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedWorkspace = snapshot.workspaces.find((workspace) => workspace.id === draft.workspaceId) ?? null;
+  const suggestedModelId = resolveSuggestedAgentModelId(snapshot, draft.workspaceId || initialWorkspaceId);
+  const effectiveModelId = draft.modelId.trim() || suggestedModelId;
   const currentPresetMeta = getAgentPresetMeta(draft.policy.preset);
   const generatedAgentId = buildUniqueAgentId(
     snapshot.agents,
@@ -145,7 +148,7 @@ export function CreateAgentDialog({
 
   const stepLabels = getWizardStepLabels(startPoint);
   const activeStepIndex = getWizardActiveStepIndex(startPoint, stage);
-  const canCreate = Boolean(generatedAgentId && selectedWorkspace) && !isSaving;
+  const canCreate = Boolean(generatedAgentId && selectedWorkspace && effectiveModelId) && !isSaving;
   const canAdvanceFromCurrentStage = stage === "details"
     ? canCreate
     : getCanAdvanceFromStage(stage, startPoint, selectedImportAgentId);
@@ -158,6 +161,23 @@ export function CreateAgentDialog({
       : createProgress === "syncing"
         ? "Agent created. Waiting for the canvas card to appear."
         : null;
+  const resetWizardState = useCallback((workspaceId: string) => {
+    const nextDraft = createCustomAgentDraft(workspaceId, snapshot);
+    setStage("start");
+    setStartPoint(null);
+    setSelectedPreset("worker");
+    setSelectedImportAgentId(null);
+    setImportSearch("");
+    setDraft(nextDraft);
+    setIsSaving(false);
+    setCreateProgress("idle");
+    setCreatedAgentId(null);
+    if (createSyncTimeoutRef.current) {
+      clearTimeout(createSyncTimeoutRef.current);
+      createSyncTimeoutRef.current = null;
+    }
+    isSubmittingRef.current = false;
+  }, [snapshot]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -169,7 +189,7 @@ export function CreateAgentDialog({
     }
 
     resetWizardState(initialWorkspaceId);
-  }, [initialWorkspaceId, open]);
+  }, [initialWorkspaceId, open, resetWizardState]);
 
   useEffect(() => {
     if (!open || stage !== "details") {
@@ -178,6 +198,19 @@ export function CreateAgentDialog({
 
     nameInputRef.current?.focus();
   }, [open, stage, startPoint]);
+
+  useEffect(() => {
+    if (!open || draft.modelId.trim() || !suggestedModelId) {
+      return;
+    }
+
+    setDraft((current) => current.modelId.trim()
+      ? current
+      : {
+          ...current,
+          modelId: suggestedModelId
+        });
+  }, [draft.modelId, open, suggestedModelId]);
 
   useEffect(() => {
     return () => {
@@ -236,24 +269,6 @@ export function CreateAgentDialog({
     };
   }, [createProgress, createdAgentId, createdAgentVisible, onAgentCreated]);
 
-  const resetWizardState = (workspaceId: string) => {
-    const nextDraft = createCustomAgentDraft(workspaceId);
-    setStage("start");
-    setStartPoint(null);
-    setSelectedPreset("worker");
-    setSelectedImportAgentId(null);
-    setImportSearch("");
-    setDraft(nextDraft);
-    setIsSaving(false);
-    setCreateProgress("idle");
-    setCreatedAgentId(null);
-    if (createSyncTimeoutRef.current) {
-      clearTimeout(createSyncTimeoutRef.current);
-      createSyncTimeoutRef.current = null;
-    }
-    isSubmittingRef.current = false;
-  };
-
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen && (isSaving || createProgress !== "idle")) {
       return;
@@ -268,8 +283,8 @@ export function CreateAgentDialog({
 
   const handleStartPointSelect = (nextStartPoint: StartPoint) => {
     const workspaceId = draft.workspaceId || initialWorkspaceId;
-    const nextDraft = createCustomAgentDraft(workspaceId);
-    nextDraft.modelId = draft.modelId;
+    const nextDraft = createCustomAgentDraft(workspaceId, snapshot);
+    nextDraft.modelId = draft.modelId || resolveSuggestedAgentModelId(snapshot, workspaceId);
 
     setStartPoint(nextStartPoint);
     setSelectedPreset("worker");
@@ -391,6 +406,7 @@ export function CreateAgentDialog({
         },
         body: JSON.stringify({
           ...draft,
+          modelId: effectiveModelId,
           id: generatedAgentId
         })
       });
@@ -834,6 +850,9 @@ export function CreateAgentDialog({
                             setDraft((current) => ({
                               ...current,
                               workspaceId: event.target.value,
+                              modelId: current.modelId.trim()
+                                ? current.modelId
+                                : resolveSuggestedAgentModelId(snapshot, event.target.value),
                               channelIds: []
                             }))
                           }
@@ -861,7 +880,13 @@ export function CreateAgentDialog({
                           style={isLight ? { colorScheme: "light" } : undefined}
                           className={getCreateAgentControlClassName(surfaceTheme)}
                         >
-                          <option value="">Use OpenClaw default</option>
+                          <option value="">
+                            {snapshot.diagnostics.modelReadiness.defaultModelReady
+                              ? "Use OpenClaw default"
+                              : suggestedModelId
+                                ? `Use suggested model (${suggestedModelId})`
+                                : "Choose a model"}
+                          </option>
                           {snapshot.models.map((model) => (
                             <option key={model.id} value={model.id}>
                               {model.id}
@@ -1153,7 +1178,7 @@ export function CreateAgentDialog({
                                 : "Start a flow"}
                         </Badge>
                         <Badge variant="muted" className="px-2 py-0.5 text-[9px] normal-case tracking-normal">
-                          {draft.modelId || "OpenClaw default"}
+                          {draft.modelId || suggestedModelId || "OpenClaw default"}
                         </Badge>
                         <Badge variant={draft.heartbeat.enabled ? "success" : "muted"} className="px-2 py-0.5 text-[9px] normal-case tracking-normal">
                           Heartbeat {draft.heartbeat.enabled ? draft.heartbeat.every : "off"}
@@ -1276,8 +1301,10 @@ export function CreateAgentDialog({
   );
 }
 
-function createCustomAgentDraft(workspaceId: string): AgentDraft {
-  return applyAgentPreset(buildAgentDraft(workspaceId), "custom");
+function createCustomAgentDraft(workspaceId: string, snapshot: MissionControlSnapshot): AgentDraft {
+  return applyAgentPreset(buildAgentDraft(workspaceId, {
+    modelId: resolveSuggestedAgentModelId(snapshot, workspaceId)
+  }), "custom");
 }
 
 function buildImportedAgentDraft(

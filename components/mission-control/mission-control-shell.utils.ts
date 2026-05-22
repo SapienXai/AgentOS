@@ -561,7 +561,10 @@ export function hasWorkspaceBackedModelSetup(snapshot: MissionControlSnapshot) {
     snapshot.diagnostics.modelReadiness.defaultModel ||
     null;
 
-  return hasAgentOSWorkspaceSetup(snapshot) && Boolean(defaultModel);
+  return hasAgentOSWorkspaceSetup(snapshot) && (
+    Boolean(defaultModel) ||
+    Boolean(resolveUsableWorkspaceAgentModel(snapshot))
+  );
 }
 
 export function shouldShowOnboardingLaunchpad(
@@ -580,4 +583,25 @@ export function shouldShowOnboardingLaunchpad(
     Boolean(options.modelSwitchSucceeded) ||
     hasWorkspaceBackedModelSetup(snapshot)
   );
+}
+
+function resolveUsableWorkspaceAgentModel(snapshot: MissionControlSnapshot) {
+  return snapshot.agents
+    .map((agent) => normalizeModelId(agent.modelId))
+    .find((modelId) => modelId && isSnapshotModelUsable(snapshot, modelId));
+}
+
+function normalizeModelId(value: string | null | undefined) {
+  const normalized = value?.trim();
+  return normalized && normalized !== "unassigned" ? normalized : null;
+}
+
+function isSnapshotModelUsable(snapshot: MissionControlSnapshot, modelId: string) {
+  const model = snapshot.models.find((entry) => entry.id === modelId);
+
+  if (!model) {
+    return false;
+  }
+
+  return model.missing !== true && model.available !== false;
 }

@@ -232,6 +232,15 @@ export function normalizeGatewayTurnEvent(
     return null;
   }
 
+  const messageRole = readGatewayMessageRole(payload.message) ??
+    readNonEmptyString(payload.role) ??
+    readNonEmptyString(payload.authorRole) ??
+    readNonEmptyString(payload.speaker);
+
+  if (messageRole && /^(user|operator|system)$/i.test(messageRole)) {
+    return null;
+  }
+
   const state = readNonEmptyString(payload.state) ?? readNonEmptyString(payload.status) ?? readNonEmptyString(frame.event);
   const text =
     readGatewayMessageText(payload.message) ??
@@ -255,6 +264,21 @@ export function normalizeGatewayTurnEvent(
       payloads: text ? [{ text, mediaUrl: null }] : []
     }
   };
+}
+
+function readGatewayMessageRole(value: unknown): string | null {
+  if (!isObjectRecord(value)) {
+    return null;
+  }
+
+  const author = isObjectRecord(value.author) ? value.author : null;
+
+  return readNonEmptyString(value.role) ??
+    readNonEmptyString(value.type) ??
+    readNonEmptyString(value.speaker) ??
+    readNonEmptyString(author?.role) ??
+    readNonEmptyString(author?.type) ??
+    readNonEmptyString(author?.name);
 }
 
 export function readGatewayMessageText(value: unknown): string | null {

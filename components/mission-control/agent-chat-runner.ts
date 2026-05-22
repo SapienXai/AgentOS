@@ -13,6 +13,7 @@ import {
   isDirectAgentIdentityQuestion,
   isStaleAgentChatContextRecoveryText
 } from "@/lib/openclaw/agent-chat-guards";
+import { sanitizeAgentChatReplyText } from "@/lib/openclaw/agent-chat-response";
 import type { MissionControlSnapshot, MissionResponse } from "@/lib/agentos/contracts";
 
 type AgentChatStreamEvent =
@@ -362,32 +363,6 @@ function recoverDirectIdentityText(text: string, agentName: string, operatorMess
 
 function normalizeAgentChatText(value: string) {
   return value.replace(/\s+/g, " ").trim();
-}
-
-function sanitizeAgentChatReplyText(value: unknown) {
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  const trimmed = value.trim();
-  return stripLeadingThinkingBlock(trimmed);
-}
-
-function stripLeadingThinkingBlock(value: string) {
-  if (!value || !/^\[thinking\]\b/i.test(value)) {
-    return value;
-  }
-
-  const paragraphs = value
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
-
-  if (paragraphs.length <= 2) {
-    return "";
-  }
-
-  return paragraphs.slice(2).join("\n\n").trim();
 }
 
 function readRenamedAgent(meta: MissionResponse["meta"]) {

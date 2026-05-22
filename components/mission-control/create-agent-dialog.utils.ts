@@ -55,6 +55,59 @@ export function buildAgentDraft(workspaceId: string, seed: Partial<AgentDraft> =
   };
 }
 
+export function resolveSuggestedAgentModelId(
+  snapshot: Pick<MissionControlSnapshot, "agents" | "diagnostics" | "models">,
+  workspaceId?: string | null
+) {
+  const defaultModel = snapshot.diagnostics.modelReadiness.defaultModelReady
+    ? normalizeModelId(
+        snapshot.diagnostics.modelReadiness.resolvedDefaultModel ||
+        snapshot.diagnostics.modelReadiness.defaultModel
+      )
+    : null;
+
+  if (defaultModel && isSnapshotModelUsable(snapshot, defaultModel)) {
+    return defaultModel;
+  }
+
+  const workspaceModel = snapshot.agents
+    .filter((agent) => !workspaceId || agent.workspaceId === workspaceId)
+    .map((agent) => normalizeModelId(agent.modelId))
+    .find((modelId) => modelId && isSnapshotModelUsable(snapshot, modelId));
+
+  if (workspaceModel) {
+    return workspaceModel;
+  }
+
+  const recommendedModel = normalizeModelId(snapshot.diagnostics.modelReadiness.recommendedModelId);
+
+  if (recommendedModel && isSnapshotModelUsable(snapshot, recommendedModel)) {
+    return recommendedModel;
+  }
+
+  return snapshot.models
+    .map((model) => normalizeModelId(model.id))
+    .find((modelId) => modelId && isSnapshotModelUsable(snapshot, modelId)) ?? "";
+}
+
+function normalizeModelId(value: string | null | undefined) {
+  const normalized = value?.trim();
+  return normalized && normalized !== "unassigned" ? normalized : null;
+}
+
+function isSnapshotModelUsable(
+  snapshot: Pick<MissionControlSnapshot, "models">,
+  modelId: string
+) {
+  const model = snapshot.models.find((entry) => entry.id === modelId);
+
+  if (!model) {
+    return false;
+  }
+
+  return model.missing !== true && model.available !== false;
+}
+
 export function buildUniqueAgentId(
   agents: MissionControlSnapshot["agents"],
   workspaceSlug: string | undefined,

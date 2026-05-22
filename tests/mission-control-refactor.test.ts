@@ -5,7 +5,8 @@ import {
   applyAgentPreset,
   buildAgentDraft,
   buildScopedAgentId,
-  buildUniqueAgentId
+  buildUniqueAgentId,
+  resolveSuggestedAgentModelId
 } from "@/components/mission-control/create-agent-dialog.utils";
 import {
   createOptimisticMissionTaskRecord,
@@ -33,6 +34,41 @@ test("agent draft helpers keep create flows stable", () => {
   assert.equal(buildScopedAgentId("My Workspace", "Agent Name"), "my-workspace-agent-name");
   assert.equal(buildUniqueAgentId(existingAgents, "My Workspace", "Agent Name"), "my-workspace-agent-name-2");
   assert.equal(applyAgentPreset(draft, "setup").policy.preset, "setup");
+});
+
+test("agent draft model helper prefers workspace and available recommended models when default is missing", () => {
+  const snapshot = {
+    agents: [
+      {
+        id: "main",
+        workspaceId: "workspace",
+        modelId: "openai/gpt-5.4-mini"
+      }
+    ],
+    diagnostics: {
+      modelReadiness: {
+        defaultModelReady: false,
+        defaultModel: null,
+        resolvedDefaultModel: null,
+        recommendedModelId: "openai/gpt-5.5"
+      }
+    },
+    models: [
+      {
+        id: "openai/gpt-5.4-mini",
+        available: true,
+        missing: false
+      },
+      {
+        id: "openai/gpt-5.5",
+        available: true,
+        missing: false
+      }
+    ]
+  } as unknown as MissionControlSnapshot;
+
+  assert.equal(resolveSuggestedAgentModelId(snapshot, "workspace"), "openai/gpt-5.4-mini");
+  assert.equal(resolveSuggestedAgentModelId(snapshot, "other-workspace"), "openai/gpt-5.5");
 });
 
 test("control plane helpers normalize snapshot and onboarding fallback", () => {
@@ -210,9 +246,11 @@ test("initial onboarding model uses a ready default without forcing discovery", 
   assert.equal(resolveInitialOnboardingModelId(workspaceSnapshot), "openai-codex/gpt-5.4");
 });
 
-test("onboarding launchpad requires confirmed setup or a workspace-backed default", () => {
+test("onboarding launchpad requires confirmed setup or a workspace-backed model", () => {
   const detectedDefaultOnly = {
     workspaces: [],
+    agents: [],
+    models: [],
     diagnostics: {
       installed: true,
       rpcOk: true,
@@ -235,6 +273,36 @@ test("onboarding launchpad requires confirmed setup or a workspace-backed defaul
         id: "agent-1"
       }
     ]
+  } as unknown as MissionControlSnapshot;
+  const workspaceBackedAgentModel = {
+    ...detectedDefaultOnly,
+    workspaces: [
+      {
+        id: "workspace-1"
+      }
+    ],
+    agents: [
+      {
+        id: "agent-1",
+        workspaceId: "workspace-1",
+        modelId: "openai/gpt-5.4-mini"
+      }
+    ],
+    models: [
+      {
+        id: "openai/gpt-5.4-mini",
+        available: true,
+        missing: false
+      }
+    ],
+    diagnostics: {
+      ...detectedDefaultOnly.diagnostics,
+      modelReadiness: {
+        ...detectedDefaultOnly.diagnostics.modelReadiness,
+        resolvedDefaultModel: null,
+        defaultModel: null
+      }
+    }
   } as unknown as MissionControlSnapshot;
   const workspaceWithoutAgent = {
     ...detectedDefaultOnly,
@@ -259,6 +327,7 @@ test("onboarding launchpad requires confirmed setup or a workspace-backed defaul
   assert.equal(shouldShowOnboardingLaunchpad(detectedDefaultOnly), false);
   assert.equal(shouldShowOnboardingLaunchpad(workspaceWithoutAgent), false);
   assert.equal(shouldShowOnboardingLaunchpad(workspaceBackedDefault), true);
+  assert.equal(shouldShowOnboardingLaunchpad(workspaceBackedAgentModel), true);
   assert.equal(shouldShowOnboardingLaunchpad(readyModel), false);
   assert.equal(
     shouldShowOnboardingLaunchpad(readyModel, {

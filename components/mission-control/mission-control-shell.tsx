@@ -30,6 +30,7 @@ import {
 import { WorkspaceChannelsDialog } from "@/components/mission-control/workspace-channels-dialog";
 import { WorkspaceContextFilesDialog } from "@/components/mission-control/workspace-context-files-dialog";
 import { WorkspaceWizardDialog } from "@/components/mission-control/workspace-wizard/workspace-wizard-dialog";
+import { resolveSuggestedAgentModelId } from "@/components/mission-control/create-agent-dialog.utils";
 import dynamic from "next/dynamic";
 import { toast } from "@/components/ui/sonner";
 import { useMissionControlData } from "@/hooks/use-mission-control-data";
@@ -2140,8 +2141,7 @@ export function MissionControlShell({
 
     const targetModelId =
       selectedOnboardingModelId.trim() ||
-      snapshot.diagnostics.modelReadiness.resolvedDefaultModel ||
-      snapshot.diagnostics.modelReadiness.defaultModel ||
+      resolveSuggestedAgentModelId(snapshot, activeWorkspaceId) ||
       null;
 
     if (!targetModelId) {
@@ -2259,9 +2259,9 @@ export function MissionControlShell({
     openWorkspaceOnCanvas,
     refresh,
     refreshSnapshot,
+    activeWorkspaceId,
     selectedOnboardingModelId,
-    snapshot.diagnostics.modelReadiness.defaultModel,
-    snapshot.diagnostics.modelReadiness.resolvedDefaultModel,
+    snapshot,
     setSnapshot
   ]);
 

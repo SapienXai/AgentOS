@@ -87,7 +87,14 @@ export async function createAgent(input: AgentCreateInput) {
     throw new Error("Workspace was not found for this agent.");
   }
 
-  const readinessError = resolveAgentCreationReadinessError(snapshot, input.modelId);
+  const requestedModelId = normalizeOptionalValue(input.modelId);
+  const agentModelId =
+    requestedModelId ??
+    resolveSnapshotDefaultAgentModelId(snapshot) ??
+    resolveWorkspaceAgentModelId(snapshot, resolvedWorkspaceId) ??
+    resolveRecommendedAgentModelId(snapshot);
+
+  const readinessError = resolveAgentCreationReadinessError(snapshot, agentModelId);
 
   if (readinessError) {
     throw new Error(readinessError);
@@ -119,8 +126,6 @@ export async function createAgent(input: AgentCreateInput) {
   const setupAgentId =
     snapshot.agents.find((entry) => entry.workspaceId === resolvedWorkspaceId && entry.policy.preset === "setup")?.id ?? null;
   const agentDir = buildWorkspaceAgentStatePath(resolvedWorkspacePath, agentId);
-  const requestedModelId = normalizeOptionalValue(input.modelId);
-  const agentModelId = requestedModelId ?? resolveSnapshotDefaultAgentModelId(snapshot);
 
   await getOpenClawAdapter().addAgent({
     id: agentId,
@@ -487,6 +492,35 @@ function resolveSnapshotDefaultAgentModelId(snapshot: MissionControlSnapshot) {
     normalizeOptionalValue(snapshot.diagnostics.modelReadiness.defaultModel) ??
     undefined
   );
+}
+
+function resolveWorkspaceAgentModelId(snapshot: MissionControlSnapshot, workspaceId: string) {
+  return snapshot.agents
+    .filter((agent) => agent.workspaceId === workspaceId)
+    .map((agent) => normalizeOptionalValue(agent.modelId))
+    .find((modelId) => modelId && modelId !== "unassigned" && isSnapshotModelUsable(snapshot, modelId));
+}
+
+function resolveRecommendedAgentModelId(snapshot: MissionControlSnapshot) {
+  const recommendedModelId = normalizeOptionalValue(snapshot.diagnostics.modelReadiness.recommendedModelId);
+
+  if (recommendedModelId && isSnapshotModelUsable(snapshot, recommendedModelId)) {
+    return recommendedModelId;
+  }
+
+  return snapshot.models
+    .map((model) => normalizeOptionalValue(model.id))
+    .find((modelId) => modelId && isSnapshotModelUsable(snapshot, modelId));
+}
+
+function isSnapshotModelUsable(snapshot: MissionControlSnapshot, modelId: string) {
+  const model = snapshot.models.find((entry) => entry.id === modelId);
+
+  if (!model) {
+    return false;
+  }
+
+  return model.missing !== true && model.available !== false;
 }
 
 function assertAgentIdAvailable(

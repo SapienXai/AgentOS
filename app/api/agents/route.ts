@@ -120,12 +120,26 @@ function formatAgentApiError(
     return "That agent no longer exists in the current workspace.";
   }
 
+  if (
+    /OpenClaw (?:CLI|Gateway|runtime|model setup|system setup)|Agent creation is blocked|Choose a ready model|Workspace was not found|already exists/i.test(message)
+  ) {
+    return message;
+  }
+
   if (/OpenClaw command failed with exit code \d+:/i.test(message)) {
+    const detail = message.replace(/^OpenClaw command failed with exit code \d+:\s*/i, "").trim();
+
     return action === "delete"
-      ? "OpenClaw could not delete the agent right now. Please try again."
+      ? detail
+        ? `OpenClaw could not delete the agent right now. ${detail}`
+        : "OpenClaw could not delete the agent right now. Please try again."
       : action === "create"
-        ? "OpenClaw could not create the agent right now. Please try again."
-        : "OpenClaw could not update the agent right now. Please try again.";
+        ? detail
+          ? `OpenClaw could not create the agent right now. ${detail}`
+          : "OpenClaw could not create the agent right now. Please try again."
+        : detail
+          ? `OpenClaw could not update the agent right now. ${detail}`
+          : "OpenClaw could not update the agent right now. Please try again.";
   }
 
   return action === "delete"

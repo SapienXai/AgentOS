@@ -2988,6 +2988,19 @@ test("native WS gateway client streams agent turns through chat.send and session
           payload: {
             sessionKey: "agent:agent-1:explicit:session-1",
             runId: "run-1",
+            status: "running",
+            message: {
+              role: "user",
+              text: "You are chatting directly with the operator inside AgentOS."
+            }
+          }
+        });
+        subscriptionSocket?.emitMessage({
+          type: "event",
+          event: "session.message",
+          payload: {
+            sessionKey: "agent:agent-1:explicit:session-1",
+            runId: "run-1",
             status: "completed",
             message: { text: "Done from Gateway" }
           }
@@ -3021,6 +3034,7 @@ test("native WS gateway client streams agent turns through chat.send and session
   assert.equal(result.status, "completed");
   assert.equal(result.payloads?.[0]?.text, "Done from Gateway");
   assert.match(stdout.join(""), /Done from Gateway/);
+  assert.doesNotMatch(stdout.join(""), /You are chatting directly with the operator/);
   assert.deepEqual(fallback.calls, []);
 });
 

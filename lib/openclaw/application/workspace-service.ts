@@ -151,7 +151,12 @@ export async function createWorkspaceProject(
   await progress.addActivity("validate", `Reserved target directory ${targetDir}.`, "done");
 
   const snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
-  const readinessError = resolveWorkspaceCreationReadinessError(snapshot, normalized.modelId);
+  const workspaceModelId =
+    normalized.modelId ??
+    resolveWorkspaceBlueprintModelId(snapshot, enabledAgents) ??
+    resolveSnapshotDefaultAgentModelId(snapshot) ??
+    resolveRecommendedWorkspaceModelId(snapshot);
+  const readinessError = resolveWorkspaceCreationReadinessError(snapshot, workspaceModelId);
 
   if (readinessError) {
     throw new Error(readinessError);
@@ -227,9 +232,6 @@ export async function createWorkspaceProject(
   await progress.completeStep("scaffold", "Workspace files and starter docs are in place.");
 
   const createdAgentIds: string[] = [];
-  const workspaceModelId =
-    normalized.modelId ??
-    resolveSnapshotDefaultAgentModelId(await getMissionControlSnapshot({ includeHidden: true }));
 
   await progress.startStep(
     "agents",
@@ -955,6 +957,37 @@ function resolveSnapshotDefaultAgentModelId(snapshot: MissionControlSnapshot) {
     normalizeOptionalValue(snapshot.diagnostics.modelReadiness.defaultModel) ??
     undefined
   );
+}
+
+function resolveWorkspaceBlueprintModelId(
+  snapshot: MissionControlSnapshot,
+  agents: WorkspaceAgentBlueprintInput[]
+) {
+  return agents
+    .map((agent) => normalizeOptionalValue(agent.modelId))
+    .find((modelId) => modelId && isSnapshotModelUsable(snapshot, modelId));
+}
+
+function resolveRecommendedWorkspaceModelId(snapshot: MissionControlSnapshot) {
+  const recommendedModelId = normalizeOptionalValue(snapshot.diagnostics.modelReadiness.recommendedModelId);
+
+  if (recommendedModelId && isSnapshotModelUsable(snapshot, recommendedModelId)) {
+    return recommendedModelId;
+  }
+
+  return snapshot.models
+    .map((model) => normalizeOptionalValue(model.id))
+    .find((modelId) => modelId && isSnapshotModelUsable(snapshot, modelId));
+}
+
+function isSnapshotModelUsable(snapshot: MissionControlSnapshot, modelId: string) {
+  const model = snapshot.models.find((entry) => entry.id === modelId);
+
+  if (!model) {
+    return false;
+  }
+
+  return model.missing !== true && model.available !== false;
 }
 
 function resolveWorkspaceRoot(configuredWorkspaceRoot?: string | null) {

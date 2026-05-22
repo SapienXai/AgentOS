@@ -74,7 +74,10 @@ export async function submitMissionDispatch(
         missionAgent ? { id: missionAgent.id, name: missionAgent.name } : null
       )
     : mission;
-  const readinessError = resolveMissionDispatchReadinessError(snapshot);
+  const readinessError = resolveMissionDispatchReadinessError(
+    snapshot,
+    missionAgent?.modelId === "unassigned" ? null : missionAgent?.modelId
+  );
 
   let dispatchRecord = createMissionDispatchRecord({
     agentId,
