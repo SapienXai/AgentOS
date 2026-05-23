@@ -1207,7 +1207,6 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     const idempotencyKey = input.idempotencyKey?.trim() || input.dispatchId || createRequestId();
     await this.prepareNativeSession(input, sessionKey, options);
     const chatParams = {
-      agentId: input.agentId,
       sessionKey,
       sessionId: input.sessionId,
       message: input.message,

@@ -2390,8 +2390,8 @@ test("native WS gateway client uses Gateway first for critical workflows with co
     agentDir: "/agent"
   });
   const chatParams = sentFrames.find((frame) => frame.method === "chat.send")?.params;
-  assert.equal(chatParams?.agentId, "agent-1");
   assert.equal(chatParams?.sessionKey, "agent:agent-1:main");
+  assert.equal(Object.hasOwn(chatParams ?? {}, "agentId"), false);
   assert.equal(Object.hasOwn(chatParams ?? {}, "workspace"), false);
   assert.equal(sentFrames.find((frame) => frame.method === "sessions.abort")?.params.runId, "run-1");
 });
@@ -2460,8 +2460,12 @@ test("native WS gateway client retries chat.send when the Gateway registry confi
   assert.equal(result.runId, "run-1");
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "chat.send", "agents.list", "chat.send"]);
   assert.deepEqual(
-    sentFrames.filter((frame) => frame.method === "chat.send").map((frame) => frame.params.agentId),
-    ["agent-1", "agent-1"]
+    sentFrames.filter((frame) => frame.method === "chat.send").map((frame) => frame.params.sessionKey),
+    ["agent:agent-1:main", "agent:agent-1:main"]
+  );
+  assert.equal(
+    sentFrames.filter((frame) => frame.method === "chat.send").some((frame) => Object.hasOwn(frame.params, "agentId")),
+    false
   );
   assert.deepEqual(fallback.calls, []);
 });
