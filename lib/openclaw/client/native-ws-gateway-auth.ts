@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { readAgentOsGatewayAuthCredential } from "@/lib/agentos/runtime-auth";
 import { OpenClawGatewayClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import {
   DEFAULT_OPERATOR_SCOPES,
@@ -166,10 +167,28 @@ export async function resolveGatewayAuth(
     };
   }
 
+  const savedCredential = isLocalGatewayUrl(url)
+    ? await readAgentOsGatewayAuthCredential()
+    : null;
+
+  if (savedCredential?.kind === "token") {
+    return {
+      token: savedCredential.value,
+      password: ""
+    };
+  }
+
   const passwordResult = await resolveConfiguredGatewaySecret(fallback, configPasswordPaths, commandOptions, {
     readLocalConfigFile: !options.webSocketFactory
   });
   const password = passwordResult.invalidConfig ? "" : passwordResult.value;
+
+  if (!password && savedCredential?.kind === "password") {
+    return {
+      token: "",
+      password: savedCredential.value
+    };
+  }
 
   return {
     token: "",

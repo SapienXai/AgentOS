@@ -10,6 +10,7 @@ import {
   NativeWsOpenClawGatewayClient,
   type WebSocketFactory
 } from "@/lib/openclaw/client/native-ws-gateway-client";
+import { resolveConfiguredGatewaySecretFromLocalConfig } from "@/lib/openclaw/client/native-ws-gateway-auth";
 import type {
   OpenClawAddAgentInput,
   OpenClawCommandOptions,
@@ -737,6 +738,36 @@ test("native WS gateway client discovers configured Gateway auth for handshakes"
   assert.deepEqual(sentFrames[0]?.params.auth, {
     token: "local-token"
   });
+});
+
+test("native WS gateway auth can read local OpenClaw config without CLI secret probes", async () => {
+  const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+  const stateDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-config-auth-"));
+  process.env.OPENCLAW_STATE_DIR = stateDir;
+  await writeFile(join(stateDir, "openclaw.json"), JSON.stringify({
+    gateway: {
+      auth: {
+        token: "local-config-token"
+      }
+    }
+  }), "utf8");
+
+  try {
+    assert.deepEqual(
+      await resolveConfiguredGatewaySecretFromLocalConfig(["gateway.auth.token"]),
+      {
+        value: "local-config-token",
+        invalidConfig: false,
+        fromConfigFile: true
+      }
+    );
+  } finally {
+    if (previousStateDir === undefined) {
+      delete process.env.OPENCLAW_STATE_DIR;
+    } else {
+      process.env.OPENCLAW_STATE_DIR = previousStateDir;
+    }
+  }
 });
 
 test("native WS gateway client prefers shared auth over local device tokens", async () => {

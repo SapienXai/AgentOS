@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -211,6 +212,8 @@ afterEach(() => {
   setOpenClawAdapterForTesting(null);
   delete process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
   delete process.env.AGENTOS_OPENCLAW_GATEWAY_PASSWORD;
+  delete process.env.AGENTOS_PACKAGE_RUNTIME;
+  delete process.env.AGENTOS_RUNTIME_DIR;
   delete process.env.OPENCLAW_STATE_DIR;
 });
 
@@ -641,6 +644,40 @@ test("Gateway native auth credential save writes a gitignored local env file wit
     nativeProbe: async () => ({})
   });
 
+  assert.equal(status.envFile.token, true);
+  assert.equal(status.envFile.password, false);
+  assert.equal(status.envFile.gitignored, true);
+});
+
+test("Gateway native auth credential save uses user runtime state in packaged runtime", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agentos-gateway-auth-package-cwd-"));
+  const runtimeDir = await mkdtemp(join(tmpdir(), "agentos-gateway-auth-runtime-"));
+  process.env.AGENTOS_PACKAGE_RUNTIME = "1";
+  process.env.AGENTOS_RUNTIME_DIR = runtimeDir;
+
+  const result = await saveGatewayNativeAuthCredential({
+    kind: "token",
+    value: "package-token",
+    cwd
+  });
+  const stateFile = await readFile(join(runtimeDir, "openclaw-gateway-auth.json"), "utf8");
+
+  assert.equal(existsSync(join(cwd, ".env.local")), false);
+  assert.equal(result.envFile, "openclaw-gateway-auth.json");
+  assert.equal(result.activeEnvName, "AGENTOS_OPENCLAW_GATEWAY_TOKEN");
+  assert.doesNotMatch(JSON.stringify(result), /package-token/);
+  assert.match(stateFile, /"kind": "token"/);
+  assert.match(stateFile, /"value": "package-token"/);
+  assert.equal((await stat(join(runtimeDir, "openclaw-gateway-auth.json"))).mode & 0o777, 0o600);
+
+  setOpenClawAdapterForTesting(createSettingsAdapter());
+  const status = await getGatewayNativeAuthStatus({
+    cwd,
+    env: {},
+    nativeProbe: async () => ({})
+  });
+
+  assert.equal(status.envFile.path, join(runtimeDir, "openclaw-gateway-auth.json"));
   assert.equal(status.envFile.token, true);
   assert.equal(status.envFile.password, false);
   assert.equal(status.envFile.gitignored, true);

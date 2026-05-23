@@ -12,6 +12,8 @@ const windowsPreloadPath = path.join(scriptDir, "windows-readdir-workaround.cjs"
 
 const env = sanitizePathEnv(process.env);
 
+cleanNextBuildOutput();
+
 await runCommand(process.execPath, resolveBuildArgs(), {
   cwd: repoRoot,
   env
@@ -36,6 +38,13 @@ function resolveBuildArgs() {
   }
 
   return args;
+}
+
+function cleanNextBuildOutput() {
+  fs.rmSync(path.join(repoRoot, ".next"), {
+    recursive: true,
+    force: true
+  });
 }
 
 function sanitizePathEnv(sourceEnv) {

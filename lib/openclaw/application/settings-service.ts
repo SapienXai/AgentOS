@@ -6,6 +6,14 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import {
+  AGENTOS_GATEWAY_AUTH_STATE_FILE,
+  AGENTOS_RUNTIME_DIR_ENV,
+  isAgentOsPackageRuntime,
+  readAgentOsGatewayAuthCredential,
+  resolveAgentOsGatewayAuthStatePath,
+  saveAgentOsGatewayAuthCredential
+} from "@/lib/agentos/runtime-auth";
 import { getOpenClawAdapter, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
   clearMissionControlRuntimeHistoryCache,
@@ -283,11 +291,25 @@ export async function saveGatewayNativeAuthCredential(input: {
     throw new Error("Gateway token/password is too long.");
   }
 
-  const envFilePath = join(input.cwd ?? process.cwd(), GATEWAY_AUTH_ENV_FILE_NAME);
-  const existing = await readOptionalText(envFilePath);
-  const next = updateEnvFileCredential(existing, input.kind, value);
+  let savedCredentialPath = AGENTOS_GATEWAY_AUTH_STATE_FILE;
 
-  await writeFile(envFilePath, next, "utf8");
+  if (shouldPersistGatewayAuthStateFile()) {
+    await saveAgentOsGatewayAuthCredential({
+      kind: input.kind,
+      value
+    });
+  } else {
+    savedCredentialPath = GATEWAY_AUTH_ENV_FILE_NAME;
+  }
+
+  if (!isAgentOsPackageRuntime()) {
+    const envFilePath = join(input.cwd ?? process.cwd(), GATEWAY_AUTH_ENV_FILE_NAME);
+    const existing = await readOptionalText(envFilePath);
+    const next = updateEnvFileCredential(existing, input.kind, value);
+
+    await writeFile(envFilePath, next, "utf8");
+    savedCredentialPath = GATEWAY_AUTH_ENV_FILE_NAME;
+  }
 
   if (input.kind === "token") {
     process.env[GATEWAY_AUTH_TOKEN_ENV_NAME] = value;
@@ -300,10 +322,14 @@ export async function saveGatewayNativeAuthCredential(input: {
   resetOpenClawGatewayClient("gateway auth credential updated");
 
   return {
-    envFile: GATEWAY_AUTH_ENV_FILE_NAME,
+    envFile: savedCredentialPath,
     activeEnvName: input.kind === "token" ? GATEWAY_AUTH_TOKEN_ENV_NAME : GATEWAY_AUTH_PASSWORD_ENV_NAME,
     restartRecommended: true
   };
+}
+
+function shouldPersistGatewayAuthStateFile() {
+  return isAgentOsPackageRuntime() || Boolean(process.env[AGENTOS_RUNTIME_DIR_ENV]?.trim());
 }
 
 export async function generateGatewayNativeAuthToken(input: {
@@ -662,6 +688,17 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 }
 
 async function readGatewayAuthEnvFileState(cwd: string): Promise<GatewayNativeAuthStatus["envFile"]> {
+  if (isAgentOsPackageRuntime()) {
+    const credential = await readAgentOsGatewayAuthCredential();
+
+    return {
+      path: resolveAgentOsGatewayAuthStatePath(),
+      token: credential?.kind === "token",
+      password: credential?.kind === "password",
+      gitignored: true
+    };
+  }
+
   const envFilePath = join(cwd, GATEWAY_AUTH_ENV_FILE_NAME);
   const content = await readOptionalText(envFilePath);
   const gitignore = await readOptionalText(join(cwd, ".gitignore"));

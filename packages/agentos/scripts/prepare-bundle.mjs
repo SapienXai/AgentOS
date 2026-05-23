@@ -139,8 +139,11 @@ async function materializeBundleNodeModules(nodeModulesDir) {
 async function removeLocalRuntimeFiles(dir) {
   await rm(path.join(dir, ".env"), { force: true });
   await rm(path.join(dir, ".env.local"), { force: true });
+  await rm(path.join(dir, ".env.development"), { force: true });
   await rm(path.join(dir, ".env.development.local"), { force: true });
+  await rm(path.join(dir, ".env.production"), { force: true });
   await rm(path.join(dir, ".env.production.local"), { force: true });
+  await rm(path.join(dir, ".env.test"), { force: true });
   await rm(path.join(dir, ".env.test.local"), { force: true });
   await rm(path.join(dir, ".mission-control"), { recursive: true, force: true });
 }

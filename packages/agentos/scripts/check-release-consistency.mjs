@@ -243,7 +243,7 @@ function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundl
     "package.json",
     "scripts.build:agentos-package",
     rootPackage.scripts?.["build:agentos-package"],
-    `pnpm check:release && pnpm exec next build && node ${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`
+    `pnpm check:release && node ${AGENTOS_PACKAGE_DIR}/scripts/run-prepack.mjs`
   );
   expectEqual(
     context,
@@ -264,11 +264,14 @@ function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundl
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`, prepareBundle, 'const packageDir = path.resolve(scriptDir, "..");');
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`, prepareBundle, 'const repoRoot = path.resolve(packageDir, "..", "..");');
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`, prepareBundle, 'const bundleDir = path.join(packageDir, "bundle");');
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`, prepareBundle, 'await rm(path.join(dir, ".env.local"), { force: true });');
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`, prepareBundle, "Prepared AgentOS bundle");
   }
 
   if (runPrepack) {
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/run-prepack.mjs`, runPrepack, 'const repoRoot = path.resolve(packageDir, "..", "..");');
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/run-prepack.mjs`, runPrepack, 'cleanNextBuildOutput();');
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/run-prepack.mjs`, runPrepack, 'fs.rmSync(path.join(repoRoot, ".next"),');
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/run-prepack.mjs`, runPrepack, 'resolveNextCliPath(), "build", "--webpack"');
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/run-prepack.mjs`, runPrepack, 'path.join(scriptDir, "prepare-bundle.mjs")');
   }

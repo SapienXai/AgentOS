@@ -1,6 +1,6 @@
 {
   "name": "@sapienx/agentos",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "AgentOS control plane launcher",
   "type": "module",
   "license": "MIT",

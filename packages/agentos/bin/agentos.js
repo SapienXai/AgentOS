@@ -29,6 +29,16 @@ const updateCacheTtlMs = 24 * 60 * 60 * 1000;
 const updateWarningCooldownMs = 24 * 60 * 60 * 1000;
 const updateRequestTimeoutMs = 5_000;
 const cliSmokeTestMode = process.env.AGENTOS_CLI_TEST === "1";
+const bundleRuntimeEnvFiles = [
+  ".env",
+  ".env.local",
+  ".env.development",
+  ".env.development.local",
+  ".env.production",
+  ".env.production.local",
+  ".env.test",
+  ".env.test.local"
+];
 
 main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
@@ -99,6 +109,7 @@ async function main() {
 
 async function startServer(rawArgs) {
   ensureBundleExists();
+  removeBundleRuntimeEnvFiles();
 
   const options = parseStartArgs(rawArgs);
   const runtimeStatePath = resolveRuntimeStatePath(options.port);
@@ -152,7 +163,10 @@ async function startServer(rawArgs) {
     env: {
       ...process.env,
       PORT: String(options.port),
-      HOSTNAME: options.host
+      HOSTNAME: options.host,
+      AGENTOS_PACKAGE_RUNTIME: "1",
+      AGENTOS_RUNTIME_DIR: runtimeInstallRoot,
+      AGENTOS_BUNDLE_DIR: bundleDir
     }
   });
 
@@ -319,6 +333,12 @@ function runDoctor() {
 
   if (!checks.every((check) => check.ok || check.label === "OpenClaw" || check.label === "Browser opener")) {
     process.exitCode = 1;
+  }
+}
+
+function removeBundleRuntimeEnvFiles() {
+  for (const fileName of bundleRuntimeEnvFiles) {
+    rmSync(path.join(bundleDir, fileName), { force: true });
   }
 }
 

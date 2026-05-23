@@ -98,6 +98,44 @@ test("agentos start and stop maintain runtime state without real OpenClaw", asyn
   }
 });
 
+test("agentos start scrubs package runtime env files before launching the bundle", async () => {
+  const fixture = await createCliFixture();
+  const port = allocateSmokePort();
+  const env = createSmokeEnv(fixture.installRoot);
+  const bundledEnvPath = path.join(fixture.packageDir, "bundle", ".env.local");
+  let startProcess: ChildProcessWithoutNullStreams | null = null;
+
+  await writeFile(bundledEnvPath, "AGENTOS_OPENCLAW_GATEWAY_TOKEN=\"stale-token\"\n", "utf8");
+
+  try {
+    startProcess = spawn(process.execPath, [
+      fixture.cliPath,
+      "start",
+      "--port",
+      String(port),
+      "--host",
+      "127.0.0.1",
+      "--no-open"
+    ], { env });
+
+    const output = collectProcessOutput(startProcess);
+    await waitForRuntimeState(path.join(fixture.installRoot, "run", `agentos-${port}.json`));
+    await waitFor(() => /Package runtime: 1/.test(output()) ? true : null, 2_000);
+
+    assert.equal(existsSync(bundledEnvPath), false);
+    assert.match(output(), new RegExp(`Runtime dir: ${escapeRegExp(fixture.installRoot)}`));
+
+    const stopResult = runCli(fixture.cliPath, ["stop", "--port", String(port)], { env });
+    assert.equal(stopResult.status, 0, stopResult.stderr);
+    await waitForProcessExit(startProcess);
+  } finally {
+    if (startProcess && startProcess.exitCode === null && startProcess.signalCode === null) {
+      startProcess.kill("SIGTERM");
+      await waitForProcessExit(startProcess).catch(() => undefined);
+    }
+  }
+});
+
 test("package-manager update --check prints package manager guidance without network", async () => {
   const fixture = await createCliFixture({
     packageDir: path.join(await mkdtemp(path.join(os.tmpdir(), "agentos-pm-fixture-")), "node_modules", "@sapienx", "agentos")
@@ -201,6 +239,8 @@ function renderStubServer() {
     'import http from "node:http";',
     'if (process.env.AGENTOS_CLI_TEST === "1") {',
     '  console.log("Ready in 1ms");',
+    '  console.log(`Package runtime: ${process.env.AGENTOS_PACKAGE_RUNTIME || ""}`);',
+    '  console.log(`Runtime dir: ${process.env.AGENTOS_RUNTIME_DIR || ""}`);',
     '  setInterval(() => {}, 1000);',
     '  process.on("SIGTERM", () => process.exit(0));',
     '  process.on("SIGINT", () => process.exit(0));',
