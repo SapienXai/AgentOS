@@ -9,6 +9,8 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { createTerminalBoot } from "./terminal-boot.js";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
 const packageJsonPath = path.join(packageRoot, "package.json");
@@ -99,7 +101,7 @@ async function main() {
     return;
   }
 
-  if (firstArg === "start") {
+  if (firstArg === "start" || firstArg === "dev") {
     await startServer(args.slice(1));
     return;
   }
@@ -143,18 +145,34 @@ async function startServer(rawArgs) {
     clearRuntimeState(runtimeStatePath);
   }
 
-  console.log(`Starting AgentOS on ${url}`);
+  const boot = createTerminalBoot({
+    plain: options.plain,
+    stdout: process.stdout,
+    stderr: process.stderr,
+    env: process.env
+  });
 
-  if (!openClawCheck.available) {
-    console.log("OpenClaw was not found in PATH or the default local install paths. AgentOS will start and guide onboarding in the UI.");
-  } else if (openClawCheck.version) {
-    console.log(`OpenClaw detected: ${openClawCheck.version}`);
+  if (boot.isPlain()) {
+    console.log(`Starting AgentOS on ${url}`);
+
+    if (!openClawCheck.available) {
+      console.log("OpenClaw was not found in PATH or the default local install paths. AgentOS will start and guide onboarding in the UI.");
+    } else if (openClawCheck.version) {
+      console.log(`OpenClaw detected: ${openClawCheck.version}`);
+    }
+  } else {
+    boot.start();
+    boot.updateStatus("workspaceEngine", "loading", "bundle ready");
+    applyOpenClawBootStatus(boot, openClawCheck);
   }
 
   if (options.open && !browserOpener.available) {
-    console.warn(
-      `Browser auto-open is unavailable on this machine${browserOpener.detail ? ` (${browserOpener.detail})` : ""}.`
-    );
+    const message = `Browser auto-open is unavailable on this machine${browserOpener.detail ? ` (${browserOpener.detail})` : ""}.`;
+    if (boot.isPlain()) {
+      console.warn(message);
+    } else {
+      boot.warn(message);
+    }
   }
 
   const child = spawn(process.execPath, [bundledServerPath], {
@@ -187,14 +205,46 @@ async function startServer(rawArgs) {
     throw error;
   }
 
+  if (!boot.isPlain()) {
+    boot.updateStatus("workspaceEngine", "ready", "runtime state written");
+    boot.updateStatus("agentRuntime", "starting", `pid ${child.pid}`);
+  }
+
+  const startupState = {
+    ready: false,
+    completing: false,
+    completed: boot.isPlain(),
+    bufferedLogs: []
+  };
   const browserState = { opened: false };
-  const relayStdout = createRelay(process.stdout, options, url, browserOpener, browserState);
-  const relayStderr = createRelay(process.stderr, options, url, browserOpener, browserState);
+  const onServerReady = () => {
+    if (startupState.ready) {
+      return;
+    }
+
+    startupState.ready = true;
+
+    if (options.open && browserOpener.available && !browserState.opened) {
+      browserState.opened = true;
+      openBrowser(url, browserOpener);
+    }
+
+    if (boot.isPlain()) {
+      return;
+    }
+
+    startupState.completing = true;
+    void completeBootAfterServerReady(boot, startupState, url);
+  };
+  const relayStdout = createRelay(process.stdout, boot, startupState, onServerReady);
+  const relayStderr = createRelay(process.stderr, boot, startupState, onServerReady);
 
   child.stdout.on("data", relayStdout);
   child.stderr.on("data", relayStderr);
 
-  schedulePassiveUpdateNotice();
+  if (boot.isPlain()) {
+    schedulePassiveUpdateNotice();
+  }
 
   let cleanedUp = false;
   const shutdownState = {
@@ -227,8 +277,12 @@ async function startServer(rawArgs) {
     shutdownState.parentSignal = signal;
 
     if (signal === "SIGINT") {
+      boot.stop({ clear: true });
+      flushBufferedStartupLogs(startupState);
       process.stdout.write("\nStopping AgentOS... Press Ctrl+C again to force quit.\n");
     } else {
+      boot.stop({ clear: true });
+      flushBufferedStartupLogs(startupState);
       console.log(`Stopping AgentOS after ${signal}...`);
     }
 
@@ -247,12 +301,19 @@ async function startServer(rawArgs) {
 
   child.on("error", (error) => {
     cleanup();
+    boot.stop({ clear: true });
+    flushBufferedStartupLogs(startupState);
     console.error(`AgentOS failed to start: ${error.message}`);
     process.exit(1);
   });
 
   child.on("exit", (code, signal) => {
     cleanup();
+
+    if (!startupState.completed) {
+      boot.stop({ clear: true });
+      flushBufferedStartupLogs(startupState);
+    }
 
     if (shutdownState.parentSignal) {
       process.kill(process.pid, shutdownState.parentSignal);
@@ -465,12 +526,219 @@ async function runStop(rawArgs) {
   console.log(`Stopped AgentOS on port ${options.port}.`);
 }
 
+function applyOpenClawBootStatus(boot, openClawCheck) {
+  if (!openClawCheck.available) {
+    boot.updateStatus("openclawGateway", "warning", "OpenClaw not found; onboarding will guide setup");
+    boot.updateStatus("nativeGateway", "disabled", "waiting for OpenClaw");
+    return;
+  }
+
+  boot.updateStatus("openclawGateway", "checking", openClawCheck.version || "OpenClaw detected");
+  boot.updateStatus("nativeGateway", "waiting", "probing gateway");
+
+  const gatewayStatus = inspectOpenClawGatewayStatus(openClawCheck);
+
+  if (gatewayStatus.ok) {
+    boot.updateStatus("openclawGateway", "connected", gatewayStatus.gatewayMessage);
+    boot.updateStatus("nativeGateway", gatewayStatus.nativeState, gatewayStatus.nativeMessage);
+    return;
+  }
+
+  boot.updateStatus("openclawGateway", "warning", gatewayStatus.gatewayMessage);
+  boot.updateStatus("nativeGateway", "disabled", gatewayStatus.nativeMessage);
+}
+
+function inspectOpenClawGatewayStatus(openClawCheck) {
+  const command = openClawCheck.path || "openclaw";
+  const result = spawnSync(command, ["gateway", "status", "--json"], {
+    encoding: "utf8",
+    timeout: 1_500
+  });
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`.trim();
+
+  if (result.error) {
+    return {
+      ok: false,
+      gatewayMessage: result.error.code === "ETIMEDOUT" ? "gateway probe timed out" : "gateway status unavailable",
+      nativeMessage: "Gateway will be checked in the UI",
+      nativeState: "disabled"
+    };
+  }
+
+  if (result.status !== 0) {
+    return {
+      ok: false,
+      gatewayMessage: summarizeBootText(output) || "gateway not reachable yet",
+      nativeMessage: "start or repair OpenClaw Gateway in setup",
+      nativeState: "disabled"
+    };
+  }
+
+  const parsed = parseFirstJsonObject(output);
+  const capability = String(parsed?.capability || parsed?.Capability || "");
+  const connected = /connected|ok|reachable/i.test(output);
+  const missingOperatorScope = /no-operator-scope|operator scope/i.test(capability || output);
+
+  return {
+    ok: true,
+    gatewayMessage: connected ? "reachable" : "status available",
+    nativeState: missingOperatorScope ? "warning" : "active",
+    nativeMessage: missingOperatorScope ? "operator scope needs repair" : "native RPC available"
+  };
+}
+
+async function completeBootAfterServerReady(boot, startupState, url) {
+  boot.updateStatus("agentRuntime", "ready", "server ready");
+  boot.updateStatus("localServerUrl", "ready", url);
+  boot.updateStatus("models", "loading", "checking readiness");
+  boot.updateStatus("channels", "loading", "checking registry");
+
+  const readiness = await readStartupReadiness(url);
+
+  if (readiness.openClawGateway) {
+    boot.updateStatus("openclawGateway", readiness.openClawGateway.state, readiness.openClawGateway.message);
+  }
+
+  if (readiness.nativeGateway) {
+    boot.updateStatus("nativeGateway", readiness.nativeGateway.state, readiness.nativeGateway.message);
+  }
+
+  boot.updateStatus("workspaceEngine", readiness.workspaceEngine.state, readiness.workspaceEngine.message);
+  boot.updateStatus("models", readiness.models.state, readiness.models.message);
+  boot.updateStatus("channels", readiness.channels.state, readiness.channels.message);
+  boot.complete(url);
+  startupState.bufferedLogs = [];
+  startupState.completed = true;
+  schedulePassiveUpdateNotice();
+}
+
+async function readStartupReadiness(url) {
+  const fallback = {
+    workspaceEngine: { state: "ready", message: "available" },
+    models: { state: "warning", message: "finish setup in the UI" },
+    channels: { state: "disabled", message: "none confirmed yet" }
+  };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2_500);
+
+  try {
+    const response = await fetch(`${url}/api/snapshot`, {
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      return fallback;
+    }
+
+    const snapshot = await response.json();
+    return summarizeStartupSnapshot(snapshot);
+  } catch {
+    return fallback;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function summarizeStartupSnapshot(snapshot) {
+  const diagnostics = isRecord(snapshot?.diagnostics) ? snapshot.diagnostics : {};
+  const modelReadiness = isRecord(diagnostics.modelReadiness) ? diagnostics.modelReadiness : {};
+  const transport = isRecord(diagnostics.transport) ? diagnostics.transport : {};
+  const workspaces = Array.isArray(snapshot?.workspaces) ? snapshot.workspaces : [];
+  const channelAccounts = Array.isArray(snapshot?.channelAccounts) ? snapshot.channelAccounts : [];
+  const channelRegistry = isRecord(snapshot?.channelRegistry) && Array.isArray(snapshot.channelRegistry.channels)
+    ? snapshot.channelRegistry.channels
+    : [];
+  const rpcOk = diagnostics.rpcOk === true;
+  const modelReady = modelReadiness.ready === true || modelReadiness.defaultModelReady === true;
+  const availableModelCount = numberOrZero(modelReadiness.availableModelCount);
+  const modelIssues = Array.isArray(modelReadiness.issues) ? modelReadiness.issues.filter(Boolean) : [];
+  const enabledChannels = channelAccounts.filter((channel) => channel && channel.enabled !== false).length + channelRegistry.length;
+  const transportStatus = typeof transport.gatewayMode === "string"
+    ? transport.gatewayMode
+    : typeof transport.statusLabel === "string"
+      ? transport.statusLabel
+      : "";
+
+  return {
+    openClawGateway: {
+      state: rpcOk ? "connected" : "warning",
+      message: rpcOk ? "authenticated RPC ready" : summarizeBootText(diagnostics.health) || "setup may be required"
+    },
+    nativeGateway: {
+      state: rpcOk ? "active" : "warning",
+      message: transportStatus || (rpcOk ? "native Gateway active" : "check diagnostics")
+    },
+    workspaceEngine: {
+      state: "ready",
+      message: workspaces.length > 0 ? `${workspaces.length} workspace${workspaces.length === 1 ? "" : "s"}` : "ready for first workspace"
+    },
+    models: {
+      state: modelReady || availableModelCount > 0 ? "ready" : "warning",
+      message: modelReady
+        ? modelReadiness.resolvedDefaultModel || modelReadiness.defaultModel || "default model ready"
+        : modelIssues[0] || "model setup needed"
+    },
+    channels: {
+      state: enabledChannels > 0 ? "ready" : "disabled",
+      message: enabledChannels > 0 ? `${enabledChannels} configured` : "no channels configured"
+    }
+  };
+}
+
+function flushBufferedStartupLogs(startupState) {
+  if (!startupState?.bufferedLogs?.length) {
+    return;
+  }
+
+  for (const entry of startupState.bufferedLogs) {
+    entry.target.write(entry.text);
+  }
+
+  startupState.bufferedLogs = [];
+}
+
+function parseFirstJsonObject(value) {
+  if (!value) {
+    return null;
+  }
+
+  const start = value.indexOf("{");
+  const end = value.lastIndexOf("}");
+
+  if (start < 0 || end <= start) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+function summarizeBootText(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.replace(/\s+/g, " ").trim().slice(0, 96);
+}
+
+function numberOrZero(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function isRecord(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function parseStartArgs(rawArgs) {
   const envPort = process.env.AGENTOS_PORT || process.env.PORT;
   const options = {
     host: process.env.AGENTOS_HOST || "127.0.0.1",
     port: envPort && /^\d+$/.test(envPort) ? Number(envPort) : 3000,
-    open: parseBooleanEnv(process.env.AGENTOS_OPEN)
+    open: parseBooleanEnv(process.env.AGENTOS_OPEN),
+    plain: false
   };
 
   for (let index = 0; index < rawArgs.length; index += 1) {
@@ -513,6 +781,11 @@ function parseStartArgs(rawArgs) {
 
     if (arg === "--no-open") {
       options.open = false;
+      continue;
+    }
+
+    if (arg === "--plain") {
+      options.plain = true;
       continue;
     }
 
@@ -798,6 +1071,7 @@ function printHelp() {
 Usage:
   agentos
   agentos start --port 3000 --host 127.0.0.1 --open
+  agentos dev --plain
   agentos update [--check]
   agentos stop --port 3000 [--force]
   agentos doctor
@@ -809,6 +1083,7 @@ Options:
   start: --host, -H   Host to bind the local server (default: 127.0.0.1)
   start: --open, -o   Open AgentOS in the default browser after startup or reuse an existing instance
   start: --no-open    Disable browser auto-open even if AGENTOS_OPEN is set
+  start: --plain      Disable the AgentOS boot splash and live startup UI
   stop:  --port, -p   Port to stop (default: 3000)
   stop:  --force, -f  Send SIGKILL if SIGTERM does not stop the server
 `);
@@ -840,20 +1115,39 @@ Options:
 `);
 }
 
-function createRelay(target, options, url, browserOpener, browserState) {
+function createRelay(target, boot, startupState, onServerReady) {
   return (chunk) => {
     const text = chunk.toString();
-    target.write(text);
+    const ready = isServerReadyOutput(text);
 
-    if (browserState.opened || !options.open || !browserOpener.available) {
+    if (ready) {
+      onServerReady();
+    }
+
+    if (boot.isPlain() || startupState.completed) {
+      target.write(text);
       return;
     }
 
-    if (text.includes("Ready in") || text.includes("Local:")) {
-      browserState.opened = true;
-      openBrowser(url, browserOpener);
+    startupState.bufferedLogs.push({
+      target,
+      text
+    });
+
+    if (target === process.stderr) {
+      boot.warn(text);
+    } else if (isImportantStartupLog(text)) {
+      boot.log(text);
     }
   };
+}
+
+function isServerReadyOutput(text) {
+  return text.includes("Ready in") || text.includes("Local:");
+}
+
+function isImportantStartupLog(text) {
+  return /\b(warn|warning|error|failed|exception|EADDRINUSE|EACCES)\b/i.test(text);
 }
 
 function printUpdateStatus(status, options = {}) {

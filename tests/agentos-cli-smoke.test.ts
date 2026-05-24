@@ -5,9 +5,11 @@ import { chmod, cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
 
 const rootDir = process.cwd();
 const realCliPath = path.join(rootDir, "packages", "agentos", "bin", "agentos.js");
+const realTerminalBootPath = path.join(rootDir, "packages", "agentos", "bin", "terminal-boot.js");
 const realPackageJsonPath = path.join(rootDir, "packages", "agentos", "package.json");
 const packageJson = JSON.parse(readFileSync(realPackageJsonPath, "utf8")) as {
   name: string;
@@ -98,6 +100,43 @@ test("agentos start and stop maintain runtime state without real OpenClaw", asyn
   }
 });
 
+test("agentos dev --plain starts with normal logs and no boot splash", async () => {
+  const fixture = await createCliFixture();
+  const port = allocateSmokePort();
+  const env = createSmokeEnv(fixture.installRoot);
+  let startProcess: ChildProcessWithoutNullStreams | null = null;
+
+  try {
+    startProcess = spawn(process.execPath, [
+      fixture.cliPath,
+      "dev",
+      "--plain",
+      "--port",
+      String(port),
+      "--host",
+      "127.0.0.1",
+      "--no-open"
+    ], { env });
+
+    const output = collectProcessOutput(startProcess);
+    await waitForRuntimeState(path.join(fixture.installRoot, "run", `agentos-${port}.json`));
+    await waitFor(() => new RegExp(`Starting AgentOS on http://localhost:${port}`).test(output()) ? true : null, 2_000);
+    await waitFor(() => /Ready in 1ms/.test(output()) ? true : null, 2_000);
+
+    assert.doesNotMatch(output(), /█████╗/);
+    assert.match(output(), /Ready in 1ms/);
+
+    const stopResult = runCli(fixture.cliPath, ["stop", "--port", String(port)], { env });
+    assert.equal(stopResult.status, 0, stopResult.stderr);
+    await waitForProcessExit(startProcess);
+  } finally {
+    if (startProcess && startProcess.exitCode === null && startProcess.signalCode === null) {
+      startProcess.kill("SIGTERM");
+      await waitForProcessExit(startProcess).catch(() => undefined);
+    }
+  }
+});
+
 test("agentos start scrubs package runtime env files before launching the bundle", async () => {
   const fixture = await createCliFixture();
   const port = allocateSmokePort();
@@ -134,6 +173,55 @@ test("agentos start scrubs package runtime env files before launching the bundle
       await waitForProcessExit(startProcess).catch(() => undefined);
     }
   }
+});
+
+test("terminal boot renders a clean default header, opt-in large header, and compact fallback", async () => {
+  const terminalBoot = runTerminalBootEval(`{
+    header: AGENTOS_BOOT_HEADER,
+    medium: renderBootFrame({ columns: 100, color: false, unicode: true, frameIndex: 0 }),
+    wideDefault: renderBootFrame({ columns: 160, color: false, unicode: true, frameIndex: 0 }),
+    large: renderBootFrame({ columns: 140, color: false, unicode: true, frameIndex: 0, env: { AGENTOS_LARGE_BOOT_HEADER: "1" } }),
+    narrow: renderBootFrame({ columns: 32, color: false, unicode: true, frameIndex: 0 }),
+    complete: renderBootFrame({ columns: 100, color: false, unicode: true, complete: true, finalInfo: "http://localhost:3000" })
+  }`) as { header: string; medium: string; wideDefault: string; large: string; narrow: string; complete: string };
+  const medium = terminalBoot.medium;
+  const wideDefault = terminalBoot.wideDefault;
+  const large = terminalBoot.large;
+  const narrow = terminalBoot.narrow;
+  const complete = terminalBoot.complete;
+
+  assert.match(medium, /^\n  ▄▀█ █▀▀ █▀▀/m);
+  assert.match(medium, /Built on OpenClaw · Human operating layer for AI agents/);
+  assert.match(medium, /OpenClaw Gateway\s+checking/);
+  assert.match(medium, /Workspace .* Agent .* Channel/);
+  assert.doesNotMatch(medium, /█████╗/);
+  assert.doesNotMatch(wideDefault, /█████╗/);
+  assert.match(large, /█████╗/);
+  assert.ok(large.includes(terminalBoot.header.split("\n")[0]));
+  assert.match(narrow, /AgentOS · Built on OpenClaw/);
+  assert.doesNotMatch(narrow, /█████╗/);
+  assert.match(complete, /^\n  ▄▀█ █▀▀ █▀▀/m);
+  assert.match(complete, /OpenClaw Gateway\s+checking/);
+  assert.match(complete, /AgentOS ready · http:\/\/localhost:3000/);
+  assert.doesNotMatch(complete, /Workspace .* Agent .* Channel/);
+});
+
+test("terminal boot uses plain mode for CI and non-TTY while NO_COLOR disables color only", async () => {
+  const terminalBoot = runTerminalBootEval(`{
+    nonTtyPlain: shouldUsePlainBoot({ stdout: { isTTY: false }, stderr: { isTTY: true }, env: {} }),
+    ciPlain: shouldUsePlainBoot({ stdout: { isTTY: true }, stderr: { isTTY: true }, env: { CI: "1" } }),
+    noColor: supportsBootColor({ stdout: { isTTY: true }, env: { NO_COLOR: "1", TERM: "xterm-256color" } }),
+    colored: renderBootFrame({ columns: 100, color: true, unicode: true }),
+    plain: renderBootFrame({ columns: 100, color: false, unicode: true })
+  }`) as { nonTtyPlain: boolean; ciPlain: boolean; noColor: boolean; colored: string; plain: string };
+  const colored = terminalBoot.colored;
+  const plain = terminalBoot.plain;
+
+  assert.equal(terminalBoot.nonTtyPlain, true);
+  assert.equal(terminalBoot.ciPlain, true);
+  assert.equal(terminalBoot.noColor, false);
+  assert.match(colored, /\u001B\[/);
+  assert.doesNotMatch(plain, /\u001B\[/);
 });
 
 test("package-manager update --check prints package manager guidance without network", async () => {
@@ -199,6 +287,7 @@ async function createCliFixture(options: { packageDir?: string } = {}) {
   await mkdir(path.join(packageDir, "bin"), { recursive: true });
   await mkdir(path.join(packageDir, "bundle"), { recursive: true });
   await cp(realCliPath, cliPath);
+  await cp(realTerminalBootPath, path.join(packageDir, "bin", "terminal-boot.js"));
   await writeFile(path.join(packageDir, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`, "utf8");
   await writeFile(path.join(packageDir, "bundle", "server.js"), renderStubServer(), "utf8");
 
@@ -316,6 +405,20 @@ async function waitFor<T>(read: () => Promise<T | null> | T | null, timeoutMs: n
   }
 
   throw new Error(`Timed out after ${timeoutMs}ms.`);
+}
+
+function runTerminalBootEval(expression: string) {
+  const script = [
+    `import { AGENTOS_BOOT_HEADER, renderBootFrame, shouldUsePlainBoot, supportsBootColor } from ${JSON.stringify(pathToFileURL(realTerminalBootPath).href)};`,
+    `console.log(JSON.stringify(${expression}));`
+  ].join("\n");
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+    cwd: rootDir,
+    encoding: "utf8"
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
 }
 
 function allocateSmokePort() {
