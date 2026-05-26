@@ -15,6 +15,8 @@ import { openClawStateRootPath } from "@/lib/openclaw/state/paths";
 import { isOpenClawSystemReady } from "@/lib/openclaw/readiness";
 import {
   OPENCLAW_INSTALL_DOCS_URL,
+  buildOpenClawPathSetupSummary,
+  ensureOpenClawLocalBinOnPath,
   getOpenClawInstallCommand,
   getOpenClawLocalPrefix,
   getOpenClawLocalPrefixBinPath
@@ -749,6 +751,54 @@ async function installOpenClawCli(
     detail: getOpenClawLocalPrefixBinPath()
   });
   resetOpenClawBinCache();
+
+  await send({
+    type: "status",
+    phase: "installing-cli",
+    message: "Adding OpenClaw to the terminal PATH..."
+  });
+
+  try {
+    const pathSetupResult = await ensureOpenClawLocalBinOnPath();
+    const pathSetupSummary = buildOpenClawPathSetupSummary(pathSetupResult);
+
+    appendOutput({
+      code: 0,
+      stdout: `${pathSetupSummary}\n`,
+      stderr: pathSetupResult.warnings.length > 0 ? `${pathSetupResult.warnings.join("\n")}\n` : "",
+      timedOut: false
+    });
+
+    await send({
+      type: "log",
+      stream: "stdout",
+      text: `${pathSetupSummary}\n`
+    });
+
+    for (const warning of pathSetupResult.warnings) {
+      await send({
+        type: "log",
+        stream: "stderr",
+        text: `${warning}\n`
+      });
+    }
+  } catch (error) {
+    const message = redactErrorMessage(
+      error,
+      "OpenClaw installed, but AgentOS could not update the terminal PATH automatically."
+    );
+    appendOutput({
+      code: 0,
+      stdout: "",
+      stderr: `${message}\n`,
+      timedOut: false
+    });
+    await send({
+      type: "log",
+      stream: "stderr",
+      text: `${message}\n`
+    });
+  }
 
   try {
     return await resolveOpenClawBin();

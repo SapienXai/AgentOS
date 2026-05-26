@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 
 import { normalizeControlPlaneSnapshot } from "@/lib/agentos/acl/openclaw";
 import { getOpenClawBinCandidates, parseOpenClawVersion } from "@/lib/openclaw/cli";
 import {
   getOpenClawBundledNodeBinPath,
+  ensureOpenClawLocalBinOnPath,
   getOpenClawInstallCommand,
   getOpenClawLocalPrefixBinPath,
-  getOpenClawUserLocalBinPath
+  getOpenClawUserLocalBinPath,
+  mergeDirectoryIntoPathList,
+  pathListIncludesDirectory
 } from "@/lib/openclaw/install";
 import {
   buildOpenClawBinarySelectionSnapshot,
@@ -521,6 +527,90 @@ test("openclaw onboarding uses the official installer command", () => {
   assert.match(command, /install-cli\.sh/);
   assert.match(command, /--no-onboard/);
   assert.match(command, /\$HOME\/\.openclaw/);
+});
+
+test("openclaw path list helpers avoid duplicate terminal path entries", () => {
+  assert.equal(
+    mergeDirectoryIntoPathList("/usr/bin:/bin", "/Users/example/.openclaw/bin", "darwin"),
+    "/Users/example/.openclaw/bin:/usr/bin:/bin"
+  );
+  assert.equal(
+    mergeDirectoryIntoPathList("/Users/example/.openclaw/bin:/usr/bin", "/Users/example/.openclaw/bin", "darwin"),
+    "/Users/example/.openclaw/bin:/usr/bin"
+  );
+  assert.equal(
+    pathListIncludesDirectory(
+      "C:\\Users\\Example\\.openclaw\\bin;C:\\Windows\\System32",
+      "c:\\users\\example\\.openclaw\\bin",
+      "win32"
+    ),
+    true
+  );
+});
+
+test("openclaw path setup writes idempotent zsh startup files", async () => {
+  const homeDir = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-path-"));
+  const env: NodeJS.ProcessEnv = {
+    NODE_ENV: "test",
+    PATH: "/usr/bin",
+    SHELL: "/bin/zsh"
+  };
+  const binDir = path.join(homeDir, ".openclaw", "bin");
+  const zshrcPath = path.join(homeDir, ".zshrc");
+  const envFilePath = path.join(homeDir, ".openclaw", "agentos-env.sh");
+
+  const firstResult = await ensureOpenClawLocalBinOnPath({
+    env,
+    homeDir,
+    platform: "darwin",
+    shell: "/bin/zsh"
+  });
+
+  assert.equal(env.PATH?.startsWith(`${binDir}:`), true);
+  assert.equal(firstResult.createdFiles.includes(zshrcPath), true);
+  assert.equal(firstResult.createdFiles.includes(envFilePath), true);
+  assert.match(await readFile(envFilePath, "utf8"), /\$HOME\/\.openclaw\/bin/);
+
+  const firstZshrc = await readFile(zshrcPath, "utf8");
+  assert.match(firstZshrc, /OpenClaw PATH/);
+  assert.match(firstZshrc, /\$HOME\/\.openclaw\/agentos-env\.sh/);
+
+  const secondResult = await ensureOpenClawLocalBinOnPath({
+    env,
+    homeDir,
+    platform: "darwin",
+    shell: "/bin/zsh"
+  });
+
+  assert.equal(secondResult.createdFiles.length, 0);
+  assert.equal(secondResult.updatedFiles.length, 0);
+  assert.equal(await readFile(zshrcPath, "utf8"), firstZshrc);
+});
+
+test("openclaw path setup updates Windows user PATH without setx", async () => {
+  const env: NodeJS.ProcessEnv = {
+    NODE_ENV: "test",
+    Path: "C:\\Windows\\System32"
+  };
+  const scripts: string[] = [];
+  const result = await ensureOpenClawLocalBinOnPath({
+    env,
+    homeDir: "C:\\Users\\Example",
+    platform: "win32",
+    windowsUserPath: "C:\\Windows\\System32",
+    runPowerShellScript: async (script) => {
+      scripts.push(script);
+      return "";
+    }
+  });
+
+  assert.equal(result.updatedWindowsUserPath, true);
+  assert.equal(
+    pathListIncludesDirectory(env.Path, "C:\\Users\\Example\\.openclaw\\bin", "win32"),
+    true
+  );
+  assert.equal(scripts.length, 1);
+  assert.match(scripts[0], /SetEnvironmentVariable\('Path'/);
 });
 
 test("openclaw terminal command detection accepts quoted binary paths", () => {
