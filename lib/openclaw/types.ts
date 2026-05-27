@@ -820,7 +820,7 @@ export interface AddModelsEmptyState {
   commands?: string[];
 }
 
-export type AddModelsProviderAction = "status" | "connect" | "discover" | "add-models";
+export type AddModelsProviderAction = "status" | "connect" | "discover" | "add-models" | "set-default";
 
 export type AddModelsProviderActionRequest =
   | {
@@ -842,6 +842,11 @@ export type AddModelsProviderActionRequest =
       action: "add-models";
       provider: AddModelsProviderId;
       modelIds: string[];
+    }
+  | {
+      action: "set-default";
+      provider: AddModelsProviderId;
+      modelId: string;
     };
 
 export interface AddModelsProviderActionResult {
@@ -854,6 +859,11 @@ export interface AddModelsProviderActionResult {
   emptyState?: AddModelsEmptyState | null;
   manualCommand?: string | null;
   docsUrl?: string | null;
+  defaultModel?: {
+    id: string;
+    provider: AddModelsProviderId;
+    via: "gateway" | "legacy-file";
+  };
   snapshot?: MissionControlSnapshot;
 }
 

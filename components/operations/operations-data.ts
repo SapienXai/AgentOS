@@ -22,7 +22,6 @@ import {
   HardDrive,
   Mail,
   MessageCircle,
-  Network,
   Puzzle,
   ShieldCheck,
   Sparkles,
@@ -56,7 +55,7 @@ import {
 import type { StatusTone } from "@/components/operations/operations-ui";
 
 export type AgentFilter = "all" | "ready" | "running" | "idle" | "needs-approval";
-export type TaskFilter = "all" | "queue" | "running" | "approval" | "completed";
+export type TaskFilter = "all" | "queued" | "running" | "approval" | "completed" | "cancelled" | "stalled";
 export type IntegrationStatus = AgentOSIntegrationStatus;
 
 export type AgentView = {
@@ -81,7 +80,7 @@ export type AgentView = {
 export type TaskView = {
   id: string;
   title: string;
-  status: "queue" | "running" | "approval" | "completed";
+  status: Exclude<TaskFilter, "all">;
   statusLabel: string;
   statusTone: StatusTone;
   agentName: string;
@@ -140,165 +139,6 @@ export type FileView = {
   iconTone: StatusTone;
   source?: WorkspaceManagedFile;
 };
-
-const agentExamples: AgentView[] = [
-  {
-    id: "example-coincollect-strategist",
-    name: "Coincollect Strategist",
-    purpose: "Strategic crypto operations and market intelligence.",
-    status: "ready",
-    statusLabel: "Ready",
-    statusTone: "success",
-    modelLabel: "GPT-5.4-MINI",
-    policyLabel: "Balanced",
-    workspaceName: "Coincollect",
-    toolsCount: 24,
-    sessionsCount: 128,
-    lastActiveLabel: "2m ago",
-    online: true,
-    icon: ShieldCheck,
-    iconTone: "warning"
-  },
-  {
-    id: "example-browser-agent",
-    name: "Browser Agent",
-    purpose: "Autonomous web research, extraction, and monitoring.",
-    status: "running",
-    statusLabel: "Running",
-    statusTone: "info",
-    modelLabel: "GPT-5.4-MINI",
-    policyLabel: "Autonomous",
-    workspaceName: "Coincollect",
-    toolsCount: 18,
-    sessionsCount: 86,
-    lastActiveLabel: "1m ago",
-    online: true,
-    icon: Globe2,
-    iconTone: "info"
-  },
-  {
-    id: "example-campaign-manager",
-    name: "Campaign Manager",
-    purpose: "Plans, launches, and optimizes marketing campaigns.",
-    status: "idle",
-    statusLabel: "Idle",
-    statusTone: "warning",
-    modelLabel: "GPT-4.1",
-    policyLabel: "Guided",
-    workspaceName: "Coincollect",
-    toolsCount: 22,
-    sessionsCount: 64,
-    lastActiveLabel: "18m ago",
-    online: false,
-    icon: Network,
-    iconTone: "purple"
-  },
-  {
-    id: "example-agent-atlas",
-    name: "Agent Atlas",
-    purpose: "Orchestrates agents and routes tasks across the system.",
-    status: "ready",
-    statusLabel: "Ready",
-    statusTone: "success",
-    modelLabel: "GPT-5.4-MINI",
-    policyLabel: "Autonomous",
-    workspaceName: "Coincollect",
-    toolsCount: 31,
-    sessionsCount: 210,
-    lastActiveLabel: "3m ago",
-    online: true,
-    icon: Sparkles,
-    iconTone: "info"
-  },
-  {
-    id: "example-support-operator",
-    name: "Support Operator",
-    purpose: "Handles user inquiries and resolves support tickets.",
-    status: "needs-approval",
-    statusLabel: "Needs Approval",
-    statusTone: "danger",
-    modelLabel: "GPT-4.1",
-    policyLabel: "Guided",
-    workspaceName: "Coincollect",
-    toolsCount: 16,
-    sessionsCount: 48,
-    lastActiveLabel: "45m ago",
-    online: true,
-    icon: MessageCircle,
-    iconTone: "danger"
-  },
-  {
-    id: "example-research-scout",
-    name: "Research Scout",
-    purpose: "Finds and summarizes insights from across the web.",
-    status: "idle",
-    statusLabel: "Idle",
-    statusTone: "warning",
-    modelLabel: "Claude-3.5",
-    policyLabel: "Balanced",
-    workspaceName: "Coincollect",
-    toolsCount: 14,
-    sessionsCount: 32,
-    lastActiveLabel: "1h ago",
-    online: false,
-    icon: BrainCircuit,
-    iconTone: "purple"
-  }
-];
-
-const taskExamples: TaskView[] = [
-  ["Growth Experiments Q3", "queue", "Campaign Manager", "Research", "Medium", 0, "May 28, 2025 09:00", "850K"],
-  ["Market Outlook - May 2025", "running", "Research Scout", "Analysis", "High", 65, "Started 1h 12m ago", "2.1M"],
-  ["Audience Research Sync", "running", "Agent Atlas", "Research", "Medium", 40, "Started 45m ago", "650K"],
-  ["Community Rewards Audit", "queue", "Support Operator", "Audit", "Low", 0, "May 28, 2025 10:00", "85K"],
-  ["Telegram Content Batch", "queue", "Campaign Manager", "Content", "Medium", 0, "May 28, 2025 11:00", "60K"],
-  ["Website Monitoring", "queue", "Browser Agent", "Monitoring", "Low", 0, "May 28, 2025 12:30", "45K"],
-  ["Tokenomics Model Update", "approval", "Research Scout", "Analysis", "High", 0, "Due May 28, 2025 14:00", "780K"],
-  ["Q2 Marketing Report", "approval", "Campaign Manager", "Report", "Medium", 0, "Due May 28, 2025 13:30", "320K"],
-  ["Risk Assessment Refresh", "approval", "DeFi Risk Assessment", "Audit", "High", 0, "Due May 28, 2025 15:00", "550K"],
-  ["Daily Market Summary", "completed", "Research Scout", "Summary", "Low", 100, "Completed 2h ago", "130K"],
-  ["X / Twitter Trend Analysis", "completed", "Agent Atlas", "Trends", "Medium", 100, "Completed 3h ago", "90K"],
-  ["Docs Knowledge Update", "completed", "Support Operator", "Docs", "Low", 100, "Completed 5h ago", "70K"]
-].map(([title, status, agentName, category, priority, progress, dueLabel, tokenLabel], index) => ({
-  id: `example-task-${index + 1}`,
-  title: String(title),
-  status: status as TaskView["status"],
-  statusLabel: status === "approval" ? "Awaiting Approval" : toTitleCase(String(status)),
-  statusTone: status === "running" ? "info" : status === "completed" ? "success" : status === "approval" ? "warning" : "muted",
-  agentName: String(agentName),
-  category: String(category),
-  priority: priority as TaskView["priority"],
-  progress: Number(progress),
-  dueLabel: String(dueLabel),
-  tokenLabel: String(tokenLabel),
-  objective: "Complete the assigned operational work and keep linked agents in sync.",
-  description: "This task represents a planned AgentOS workflow with policy checks, runtime tracking, and generated outputs.",
-  artifactCount: index % 3,
-  warningCount: status === "approval" ? 1 : 0
-}));
-
-const modelExamples: ModelView[] = [
-  ["gpt-5.4-mini", "GPT-5.4-MINI", "OpenAI", "Healthy", "218ms", "128K", "$0.15 / $0.60", "10K TPM / 60 RPM", "Primary", "1m ago"],
-  ["gpt-4.1", "GPT-4.1", "OpenAI", "Healthy", "271ms", "128K", "$2.00 / $8.00", "6K TPM / 30 RPM", "Fallback", "3m ago"],
-  ["claude-3.5-sonnet", "Claude-3.5 Sonnet", "Anthropic", "Healthy", "312ms", "200K", "$3.00 / $15.00", "6K TPM / 30 RPM", "Fallback", "2m ago"],
-  ["gemini-2.5-pro", "Gemini 2.5 Pro", "Google", "Healthy", "340ms", "1M", "$1.25 / $5.00", "8K TPM / 50 RPM", "Secondary", "5m ago"],
-  ["deepseek-v3", "DeepSeek-V3", "DeepSeek", "Healthy", "286ms", "128K", "$0.27 / $1.10", "8K TPM / 40 RPM", "Secondary", "6m ago"],
-  ["openrouter-mixtral-8x22b", "OpenRouter Mixtral 8x22B", "OpenRouter", "Healthy", "512ms", "128K", "$0.35 / $1.40", "5K TPM / 20 RPM", "Experimental", "12m ago"],
-  ["ollama-llama-3.1-70b", "Ollama Llama 3.1 70B", "Ollama", "Local", "18ms", "128K", "$0.00 / $0.00", "Unlimited", "Experimental", "-"]
-].map(([id, name, provider, statusLabel, latencyLabel, contextLabel, costLabel, rateLimitLabel, role, lastActiveLabel]) => ({
-  id,
-  name,
-  provider,
-  statusLabel,
-  statusTone: statusLabel === "Local" ? "info" : "success",
-  latencyLabel,
-  contextLabel,
-  costLabel,
-  rateLimitLabel,
-  role: role as ModelView["role"],
-  lastActiveLabel,
-  capabilities: ["Reasoning", "Function Calling", "JSON Mode", "Tool Use"]
-}));
 
 const integrationStatusTones: Record<IntegrationStatus, StatusTone> = {
   connected: "success",
@@ -372,6 +212,7 @@ export function scopeMissionControlSnapshot(
   );
   const modelIds = new Set(
     [
+      ...workspace.modelIds,
       ...agents.map((agent) => agent.modelId),
       ...runtimes.map((runtime) => runtime.modelId),
       snapshot.diagnostics.modelReadiness.resolvedDefaultModel,
@@ -406,33 +247,28 @@ export function scopeMissionControlSnapshot(
   };
 }
 
-export function buildAgentViews(
-  snapshot: MissionControlSnapshot,
-  options: { useExamples?: boolean } = {}
-): AgentView[] {
+export function buildAgentViews(snapshot: MissionControlSnapshot): AgentView[] {
   if (snapshot.agents.length === 0) {
-    if (options.useExamples === false) {
-      return [];
-    }
-
-    return agentExamples;
+    return [];
   }
 
   const referenceMs = resolveRelativeTimeReferenceMs(snapshot.generatedAt);
   const workspaceById = new Map(snapshot.workspaces.map((workspace) => [workspace.id, workspace]));
+  const modelById = new Map(snapshot.models.map((model) => [model.id, model]));
 
   return snapshot.agents.map((agent) => {
     const status = mapAgentStatus(agent);
+    const workspaceName = workspaceById.get(agent.workspaceId)?.name ?? agent.workspaceId ?? "Unassigned";
     return {
       id: agent.id,
       name: formatAgentDisplayName(agent),
-      purpose: agent.profile.purpose || agent.currentAction || "OpenClaw agent ready for workspace tasks.",
+      purpose: agent.profile.purpose || agent.currentAction || "Not reported",
       status,
       statusLabel: status === "needs-approval" ? "Needs Approval" : status === "running" ? "Running" : toTitleCase(status),
       statusTone: statusToneForAgentFilter(status),
-      modelLabel: snapshot.models.find((model) => model.id === agent.modelId)?.name || agent.modelId || "Default",
+      modelLabel: modelById.get(agent.modelId)?.name || agent.modelId || "Unassigned",
       policyLabel: toTitleCase(agent.policy.preset),
-      workspaceName: workspaceById.get(agent.workspaceId)?.name || agent.workspaceId || "Workspace",
+      workspaceName,
       toolsCount: uniqueCount([...(agent.tools || []), ...(agent.observedTools || [])]),
       sessionsCount: agent.sessionCount,
       lastActiveLabel: formatRelativeTime(agent.lastActiveAt, referenceMs),
@@ -444,38 +280,32 @@ export function buildAgentViews(
   });
 }
 
-export function buildTaskViews(
-  snapshot: MissionControlSnapshot,
-  options: { useExamples?: boolean } = {}
-): TaskView[] {
+export function buildTaskViews(snapshot: MissionControlSnapshot): TaskView[] {
   if (snapshot.tasks.length === 0) {
-    if (options.useExamples === false) {
-      return [];
-    }
-
-    return taskExamples;
+    return [];
   }
 
   const referenceMs = resolveRelativeTimeReferenceMs(snapshot.generatedAt);
 
   return snapshot.tasks.map((task) => {
     const status = mapTaskStatus(task);
-    const progress = status === "completed" ? 100 : status === "running" ? Math.min(95, 25 + task.updateCount * 10) : 0;
+    const progress = resolveTaskProgress(task, status);
+    const fallbackDescription = task.subtitle || task.mission || task.title || task.id;
 
     return {
       id: task.id,
       title: task.title || task.mission || task.id,
       status,
-      statusLabel: status === "approval" ? "Awaiting Approval" : status === "queue" ? "Queued" : toTitleCase(status),
-      statusTone: status === "completed" ? "success" : status === "running" ? "info" : status === "approval" ? "warning" : "muted",
+      statusLabel: resolveTaskStatusLabel(status),
+      statusTone: resolveTaskStatusTone(status),
       agentName: task.primaryAgentName || "Unassigned",
-      category: readMetadataString(task.metadata, ["category", "type", "source"]) || "Mission",
+      category: readMetadataString(task.metadata, ["category", "type", "source"]) || "Uncategorized",
       priority: inferTaskPriority(task),
       progress,
-      dueLabel: formatRelativeTime(task.updatedAt, referenceMs),
+      dueLabel: readMetadataString(task.metadata, ["dueLabel", "dueAt", "scheduledAt"]) || formatRelativeTime(task.updatedAt, referenceMs),
       tokenLabel: formatTokens(task.tokenUsage?.total),
-      objective: task.mission || task.subtitle || "Track and complete this OpenClaw task.",
-      description: task.subtitle || task.mission || "OpenClaw task details will appear here as runtime state updates.",
+      objective: task.mission || fallbackDescription,
+      description: fallbackDescription,
       artifactCount: task.artifactCount,
       warningCount: task.warningCount,
       source: task
@@ -483,32 +313,25 @@ export function buildTaskViews(
   });
 }
 
-export function buildModelViews(
-  snapshot: MissionControlSnapshot,
-  options: { useExamples?: boolean } = {}
-): ModelView[] {
+export function buildModelViews(snapshot: MissionControlSnapshot): ModelView[] {
   if (snapshot.models.length === 0) {
-    if (options.useExamples === false) {
-      return [];
-    }
-
-    return modelExamples;
+    return [];
   }
 
   const defaultModelId = snapshot.diagnostics.modelReadiness.resolvedDefaultModel ?? snapshot.diagnostics.modelReadiness.defaultModel;
 
-  return snapshot.models.map((model, index) => ({
+  return snapshot.models.map((model) => ({
     id: model.id,
     name: model.name || model.id,
     provider: formatProviderName(model.provider),
     statusLabel: model.local ? "Local" : model.missing || model.available === false ? "Unavailable" : "Healthy",
     statusTone: model.missing || model.available === false ? "danger" : model.local ? "info" : "success",
-    latencyLabel: model.local ? "18ms" : `${210 + (index % 6) * 47}ms`,
+    latencyLabel: "Not reported",
     contextLabel: formatContextWindow(model.contextWindow),
-    costLabel: model.local ? "$0.00 / $0.00" : estimateModelCost(model.provider),
-    rateLimitLabel: model.local ? "Unlimited" : `${5 + (index % 5)}K TPM / ${20 + (index % 5) * 10} RPM`,
-    role: model.id === defaultModelId || model.tags.includes("default") ? "Primary" : index < 3 ? "Fallback" : index < 5 ? "Secondary" : "Experimental",
-    lastActiveLabel: model.usageCount > 0 ? `${Math.max(1, model.usageCount)} uses` : "-",
+    costLabel: "Not reported",
+    rateLimitLabel: "Not reported",
+    role: resolveModelRole(model, defaultModelId),
+    lastActiveLabel: model.usageCount > 0 ? `${model.usageCount} use${model.usageCount === 1 ? "" : "s"}` : "Not reported",
     capabilities: buildModelCapabilities(model),
     source: model
   }));
@@ -530,17 +353,13 @@ export function buildFileViews(
   workspace: WorkspaceRecord | null,
   agents: AgentRecord[]
 ): FileView[] {
-  if (files.length === 0 && workspace) {
-    return [
-      ...workspace.bootstrap.coreFiles.map((file) => buildSyntheticFile(file.label, "Core Knowledge", "context", workspace)),
-      ...workspace.bootstrap.optionalFiles.map((file) => buildSyntheticFile(file.label, "Memory", "memory", workspace)),
-      ...(workspace.bootstrap.contextFiles ?? []).map((file) => buildSyntheticFile(file.label, "Reports", "context", workspace))
-    ];
+  if (files.length === 0) {
+    return [];
   }
 
-  return files.map((file, index) => {
+  return files.map((file) => {
     const collection = collectionForFile(file);
-    const ownerAgent = agents[index % Math.max(1, agents.length)];
+    const ownerAgent = resolveFileOwnerAgent(file, agents);
     return {
       id: `${workspace?.id ?? "global"}:${file.path}`,
       name: file.label,
@@ -549,7 +368,7 @@ export function buildFileViews(
       type: languageLabel(file.language),
       category: file.category,
       collection,
-      updatedLabel: file.exists ? `${index + 1}h ago` : "Not created",
+      updatedLabel: file.exists ? "Not reported" : "Not created",
       owner: ownerAgent ? formatAgentDisplayName(ownerAgent) : "Workspace",
       workspaceId: workspace?.id ?? null,
       workspaceName: workspace?.name ?? "All workspaces",
@@ -557,7 +376,7 @@ export function buildFileViews(
       sizeLabel: file.size == null ? "-" : formatBytes(file.size),
       sizeBytes: file.size,
       tags: tagFile(file),
-      tasks: (index % 8) + 1,
+      tasks: 0,
       icon: iconForFile(file.path, file.language),
       iconTone: toneForFile(file),
       source: file
@@ -646,7 +465,7 @@ function mapAgentStatus(agent: AgentRecord): AgentFilter {
 }
 
 function mapTaskStatus(task: WorkItemRecord): TaskView["status"] {
-  if (task.warningCount > 0 && task.status !== "completed") {
+  if (task.warningCount > 0 && task.status !== "completed" && task.status !== "cancelled") {
     return "approval";
   }
 
@@ -655,18 +474,63 @@ function mapTaskStatus(task: WorkItemRecord): TaskView["status"] {
   }
 
   if (task.status === "queued" || task.status === "idle") {
-    return "queue";
+    return "queued";
   }
 
   if (task.status === "completed") {
     return "completed";
   }
 
-  if (task.status === "stalled") {
-    return "approval";
+  if (task.status === "cancelled") {
+    return "cancelled";
   }
 
-  return "queue";
+  if (task.status === "stalled") {
+    return "stalled";
+  }
+
+  return "queued";
+}
+
+function resolveTaskProgress(task: WorkItemRecord, status: TaskView["status"]) {
+  const metadataProgress = readMetadataNumber(task.metadata, ["progress", "progressPercent", "percentComplete"]);
+  if (metadataProgress != null) {
+    return clampProgress(metadataProgress);
+  }
+
+  return status === "completed" ? 100 : 0;
+}
+
+function resolveTaskStatusLabel(status: TaskView["status"]) {
+  if (status === "approval") {
+    return "Awaiting Approval";
+  }
+
+  if (status === "queued") {
+    return "Queued";
+  }
+
+  return toTitleCase(status);
+}
+
+function resolveTaskStatusTone(status: TaskView["status"]): StatusTone {
+  if (status === "completed") {
+    return "success";
+  }
+
+  if (status === "running") {
+    return "info";
+  }
+
+  if (status === "approval" || status === "stalled") {
+    return "warning";
+  }
+
+  if (status === "cancelled") {
+    return "danger";
+  }
+
+  return "muted";
 }
 
 function inferTaskPriority(task: WorkItemRecord): TaskView["priority"] {
@@ -713,6 +577,28 @@ function readMetadataString(metadata: Record<string, unknown>, keys: string[]) {
   return null;
 }
 
+function readMetadataNumber(metadata: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = metadata[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return null;
+}
+
+function clampProgress(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
 function uniqueCount(values: string[]) {
   return new Set(values.filter(Boolean)).size;
 }
@@ -733,37 +619,34 @@ function formatProviderName(value: string) {
   return toTitleCase(value.replace(/[-_]/g, " "));
 }
 
-function estimateModelCost(provider: string) {
-  switch (provider) {
-    case "openai":
-      return "$0.15 / $0.60";
-    case "anthropic":
-      return "$3.00 / $15.00";
-    case "google":
-      return "$1.25 / $5.00";
-    case "deepseek":
-      return "$0.27 / $1.10";
-    default:
-      return "$0.35 / $1.40";
+function resolveModelRole(model: ModelRecord, defaultModelId: string | null | undefined): ModelView["role"] {
+  const tags = new Set(model.tags.map((tag) => tag.toLowerCase()));
+
+  if (model.id === defaultModelId || tags.has("default") || tags.has("primary")) {
+    return "Primary";
   }
+
+  if (tags.has("fallback")) {
+    return "Fallback";
+  }
+
+  if (tags.has("experimental") || tags.has("preview") || tags.has("beta")) {
+    return "Experimental";
+  }
+
+  return "Secondary";
 }
 
 function buildModelCapabilities(model: ModelRecord) {
-  const base = ["Reasoning", "JSON Mode"];
+  const capabilities = model.input
+    .split(/[+,/|]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => (entry === "image" ? "Vision" : toTitleCase(entry)));
 
-  if (model.input.includes("image")) {
-    base.push("Vision");
-  }
+  capabilities.push(...model.tags.map(toTitleCase));
 
-  if (!model.local) {
-    base.push("Function Calling", "Tool Use");
-  }
-
-  if (model.tags.length > 0) {
-    base.push(...model.tags.slice(0, 2).map(toTitleCase));
-  }
-
-  return Array.from(new Set(base));
+  return Array.from(new Set(capabilities));
 }
 
 function normalizeIntegrationKey(value: string) {
@@ -798,34 +681,6 @@ function aliasIntegrationKey(value: string) {
   }
 
   return value;
-}
-
-function buildSyntheticFile(
-  name: string,
-  collection: string,
-  category: string,
-  workspace: WorkspaceRecord | null
-): FileView {
-  return {
-    id: `synthetic-${workspace?.id ?? "global"}-${name}`,
-    name,
-    path: `/${name}`,
-    relativePath: name,
-    type: name.endsWith(".json") ? "JSON" : "Markdown",
-    category,
-    collection,
-    updatedLabel: "From workspace manifest",
-    owner: "Workspace",
-    workspaceId: workspace?.id ?? null,
-    workspaceName: workspace?.name ?? "All workspaces",
-    workspacePath: workspace?.path ?? null,
-    sizeLabel: "-",
-    sizeBytes: null,
-    tags: [collection.toLowerCase().split(" ")[0]],
-    tasks: 0,
-    icon: name.endsWith(".json") ? FileJson : FileText,
-    iconTone: collection === "Memory" ? "purple" : "info"
-  };
 }
 
 function collectionForFile(file: WorkspaceManagedFile) {
@@ -897,6 +752,41 @@ function tagFile(file: WorkspaceManagedFile) {
   return tags.slice(0, 3);
 }
 
+function resolveFileOwnerAgent(file: WorkspaceManagedFile, agents: AgentRecord[]) {
+  const profileMatch = /^agents\/([^/]+)\/PROFILE\.md$/.exec(file.path);
+  const agentProfileOwner = profileMatch?.[1]
+    ? agents.find((agent) => agent.id === profileMatch[1])
+    : null;
+
+  if (agentProfileOwner) {
+    return agentProfileOwner;
+  }
+
+  const agentDirMatch = /^\.openclaw\/agents\/([^/]+)\/agent\//.exec(file.path);
+  const agentDirOwner = agentDirMatch?.[1]
+    ? agents.find((agent) => agent.id === agentDirMatch[1])
+    : null;
+
+  if (agentDirOwner) {
+    return agentDirOwner;
+  }
+
+  return agents.find((agent) => file.path === `skills/${buildAgentPolicySkillId(agent.id)}/SKILL.md`) ?? null;
+}
+
+function buildAgentPolicySkillId(agentId: string) {
+  return `agent-policy-${slugify(agentId) || "agent"}`;
+}
+
+function slugify(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
 function toTitleCase(value: string) {
   return value
     .split(/[\s-]+/)
@@ -914,10 +804,12 @@ export const agentStatusIcons: Record<AgentFilter, LucideIcon> = {
 };
 
 export const taskStatusIcons: Record<TaskView["status"], LucideIcon> = {
-  queue: CircleDashed,
+  queued: CircleDashed,
   running: Zap,
   approval: ClipboardCheck,
-  completed: CircleCheck
+  completed: CircleCheck,
+  cancelled: XCircle,
+  stalled: CirclePause
 };
 
 export const integrationStatusIcons: Record<IntegrationStatus, LucideIcon> = {

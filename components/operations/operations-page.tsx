@@ -9,7 +9,6 @@ import {
   BrainCircuit,
   Check,
   CircleCheck,
-  CircleDollarSign,
   Clock3,
   ClipboardList,
   Database,
@@ -41,6 +40,11 @@ import {
 } from "lucide-react";
 
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
+import { AgentCapabilityEditorDialog } from "@/components/mission-control/agent-capability-editor-dialog";
+import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
+import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
+import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
+import { WorkspaceContextFilesDialog } from "@/components/mission-control/workspace-context-files-dialog";
 import { WorkspaceChannelsDialog } from "@/components/mission-control/workspace-channels-dialog";
 import { OperationsShell } from "@/components/operations/operations-shell";
 import {
@@ -88,15 +92,19 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/sonner";
-import type { AddModelsProviderId, MissionControlSnapshot } from "@/lib/agentos/contracts";
+import { Textarea } from "@/components/ui/textarea";
+import type { AddModelsProviderId, AgentRecord, MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type {
   WorkspaceManagedFile,
+  WorkspaceManagedFileReadResponse,
   WorkspaceManagedFileListResponse
 } from "@/lib/openclaw/workspace-file-types";
+import { isAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
 import { cn } from "@/lib/utils";
 
 export type OperationsPageId = "agents" | "tasks" | "files" | "models" | "integrations";
@@ -112,7 +120,15 @@ export function OperationsPage({
     <OperationsShell initialSnapshot={initialSnapshot}>
       {(context) => {
         if (page === "agents") {
-          return <AgentsPageContent snapshot={context.snapshot} activeWorkspaceId={context.activeWorkspaceId} />;
+          return (
+            <AgentsPageContent
+              snapshot={context.snapshot}
+              rootSnapshot={context.rootSnapshot}
+              activeWorkspaceId={context.activeWorkspaceId}
+              refresh={context.refresh}
+              setSnapshot={context.setSnapshot}
+            />
+          );
         }
 
         if (page === "tasks") {
@@ -135,7 +151,14 @@ export function OperationsPage({
         }
 
         if (page === "models") {
-          return <ModelsPageContent snapshot={context.snapshot} activeWorkspaceId={context.activeWorkspaceId} />;
+          return (
+            <ModelsPageContent
+              snapshot={context.snapshot}
+              rootSnapshot={context.rootSnapshot}
+              refresh={context.refresh}
+              setSnapshot={context.setSnapshot}
+            />
+          );
         }
 
         return (
@@ -154,20 +177,33 @@ export function OperationsPage({
 
 function AgentsPageContent({
   snapshot,
-  activeWorkspaceId
+  rootSnapshot,
+  activeWorkspaceId,
+  refresh,
+  setSnapshot
 }: {
   snapshot: MissionControlSnapshot;
+  rootSnapshot: MissionControlSnapshot;
   activeWorkspaceId: string | null;
+  refresh: () => Promise<void>;
+  setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
 }) {
   const agents = useMemo(
-    () => buildAgentViews(snapshot, { useExamples: !activeWorkspaceId }),
-    [activeWorkspaceId, snapshot]
+    () => buildAgentViews(snapshot),
+    [snapshot]
   );
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<AgentFilter>("all");
+  const [sort, setSort] = useState<"last-active" | "name" | "status" | "workspace">("last-active");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [selectedId, setSelectedId] = useState(agents[0]?.id ?? "");
-  const [followedIds, setFollowedIds] = useState<string[]>([]);
+  const [chatAgentId, setChatAgentId] = useState<string | null>(null);
+  const [modelAgentId, setModelAgentId] = useState<string | null>(null);
+  const [capabilityAgentId, setCapabilityAgentId] = useState<string | null>(null);
+  const [capabilityFocus, setCapabilityFocus] = useState<"skills" | "tools">("skills");
+  const [dispatchAgent, setDispatchAgent] = useState<AgentView | null>(null);
+  const [deletingAgentId, setDeletingAgentId] = useState<string | null>(null);
+  const [isAddModelsDialogOpen, setIsAddModelsDialogOpen] = useState(false);
 
   const filteredAgents = agents.filter((agent) => {
     const query = search.trim().toLowerCase();
@@ -179,8 +215,9 @@ function AgentsPageContent({
         .includes(query);
     const matchesFilter = filter === "all" || agent.status === filter;
     return matchesSearch && matchesFilter;
-  });
-  const selectedAgent = agents.find((agent) => agent.id === selectedId) ?? filteredAgents[0] ?? agents[0] ?? null;
+  }).sort((left, right) => sortAgentViews(left, right, sort));
+  const selectedAgent = filteredAgents.find((agent) => agent.id === selectedId) ?? filteredAgents[0] ?? null;
+  const chatAgent = chatAgentId ? rootSnapshot.agents.find((agent) => agent.id === chatAgentId) ?? null : null;
   const runningCount = agents.filter((agent) => agent.status === "running").length;
   const readyCount = agents.filter((agent) => agent.status === "ready").length;
   const idleCount = agents.filter((agent) => agent.status === "idle").length;
@@ -193,16 +230,86 @@ function AgentsPageContent({
     idle: idleCount,
     "needs-approval": approvalCount
   };
+  const sortModes: Array<typeof sort> = ["last-active", "name", "status", "workspace"];
+
+  const openCapabilityEditor = (agentId: string, focus: "skills" | "tools") => {
+    setCapabilityAgentId(agentId);
+    setCapabilityFocus(focus);
+  };
+
+  const deleteAgent = async (agent: AgentView) => {
+    if (!agent.source) {
+      toast.message("Delete is unavailable.", {
+        description: "This row is not backed by an AgentOS agent record."
+      });
+      return;
+    }
+
+    if (!window.confirm(`Delete ${agent.name}? This removes the OpenClaw agent from AgentOS.`)) {
+      return;
+    }
+
+    setDeletingAgentId(agent.id);
+
+    try {
+      const response = await fetch("/api/agents", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentId: agent.source.id })
+      });
+      const result = await response.json().catch(() => null) as { error?: string } | null;
+      if (!response.ok || result?.error) {
+        throw new Error(result?.error || "Agent deletion failed.");
+      }
+      toast.success("Agent deleted.");
+      setSelectedId("");
+      await refresh();
+    } catch (error) {
+      toast.error("Agent deletion failed.", {
+        description: readClientError(error)
+      });
+    } finally {
+      setDeletingAgentId(null);
+    }
+  };
 
   return (
-    <OperationsPageLayout
-      main={
-        <>
+    <>
+      <OperationsPageLayout
+        main={
+          <>
           <PageHeader
             title="Agents"
             subtitle="Manage your AI workforce. Monitor health, configure capabilities, and run agents at scale."
-            secondaryAction={{ label: "Import Agent", icon: Import, onClick: () => toast.message("Agent import is not exposed by OpenClaw yet.") }}
-            primaryAction={{ label: "Create Agent", icon: Plus, onClick: () => toast.message("Use Mission Control to create an OpenClaw agent.") }}
+            actions={
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 rounded-[10px] px-3 text-xs"
+                  disabled
+                  title="Agent import requires a backend import contract."
+                >
+                  <Import className="mr-1.5 h-3.5 w-3.5" />
+                  Import Agent
+                </Button>
+                <CreateAgentDialog
+                  snapshot={rootSnapshot}
+                  defaultWorkspaceId={activeWorkspaceId}
+                  onRefresh={refresh}
+                  onSnapshotChange={(updater) => setSnapshot((current) => updater(current))}
+                  onAgentCreated={setSelectedId}
+                  onAgentCreatedVisible={setSelectedId}
+                  surfaceTheme="dark"
+                  trigger={
+                    <Button size="sm" className="h-8 rounded-[10px] bg-blue-500 px-3 text-xs text-white shadow-blue-500/20 hover:bg-blue-400">
+                      <Plus className="mr-1.5 h-3.5 w-3.5" />
+                      Create Agent
+                    </Button>
+                  }
+                />
+              </>
+            }
           />
 
           <StatGrid columns={5}>
@@ -210,7 +317,7 @@ function AgentsPageContent({
             <StatCard label="Active" value={String(runningCount)} detail={`${Math.round((runningCount / Math.max(1, agents.length)) * 100)}% of total`} icon={Activity} tone="success" />
             <StatCard label="Idle" value={String(idleCount)} detail={`${Math.round((idleCount / Math.max(1, agents.length)) * 100)}% of total`} icon={Clock3} tone="warning" />
             <StatCard label="Needs Approval" value={String(approvalCount)} detail={`${Math.round((approvalCount / Math.max(1, agents.length)) * 100)}% of total`} icon={ShieldCheck} tone="danger" />
-            <StatCard label="Tokens (7D)" value={formatBigNumber(tokenTotal || 4_200_000)} detail={tokenTotal ? "From live runtimes" : "Waiting for runtime usage"} icon={Sparkles} tone="purple" />
+            <StatCard label="Runtime Tokens" value={formatBigNumber(tokenTotal)} detail={tokenTotal ? "From live runtimes" : "No runtime token usage reported"} icon={Sparkles} tone="purple" />
           </StatGrid>
 
           <SearchToolbar
@@ -219,8 +326,8 @@ function AgentsPageContent({
             searchPlaceholder="Search agents..."
             right={<ViewToggle value={view} onChange={setView} />}
           >
-            <ToolbarButton icon={Filter} label="Filter" />
-            <ToolbarButton icon={SlidersHorizontal} label="Sort: Last active" chevron />
+            <ToolbarButton icon={Filter} label={`Filter: ${agentFilterLabel(filter)}`} active={filter !== "all"} onClick={() => setFilter("all")} />
+            <ToolbarButton icon={SlidersHorizontal} label={`Sort: ${formatAgentSortLabel(sort)}`} chevron onClick={() => setSort((current) => sortModes[(sortModes.indexOf(current) + 1) % sortModes.length])} />
           </SearchToolbar>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -244,15 +351,9 @@ function AgentsPageContent({
                   agent={agent}
                   selected={selectedAgent?.id === agent.id}
                   list={view === "list"}
-                  followed={followedIds.includes(agent.id)}
                   onSelect={() => setSelectedId(agent.id)}
-                  onFollow={() =>
-                    setFollowedIds((current) =>
-                      current.includes(agent.id)
-                        ? current.filter((id) => id !== agent.id)
-                        : [...current, agent.id]
-                    )
-                  }
+                  onMessage={() => setChatAgentId(agent.id)}
+                  onRunTask={() => setDispatchAgent(agent)}
                 />
               ))}
             </div>
@@ -263,8 +364,72 @@ function AgentsPageContent({
           <RecentAgentActivity snapshot={snapshot} agents={agents} />
         </>
       }
-      inspector={selectedAgent ? <AgentInspector agent={selectedAgent} followed={followedIds.includes(selectedAgent.id)} /> : null}
+      inspector={selectedAgent ? (
+        <AgentInspector
+          agent={selectedAgent}
+          deleting={deletingAgentId === selectedAgent.id}
+          onMessage={() => setChatAgentId(selectedAgent.id)}
+          onRunTask={() => setDispatchAgent(selectedAgent)}
+          onChangeModel={() => setModelAgentId(selectedAgent.id)}
+          onManagePolicy={() => openCapabilityEditor(selectedAgent.id, "skills")}
+          onManageTools={() => openCapabilityEditor(selectedAgent.id, "tools")}
+          onDelete={() => void deleteAgent(selectedAgent)}
+        />
+      ) : null}
     />
+      <Dialog open={Boolean(chatAgent)} onOpenChange={(open) => setChatAgentId(open ? chatAgentId : null)}>
+        <DialogContent className="flex h-[min(82dvh,760px)] max-w-3xl flex-col rounded-[18px] border-white/[0.10] bg-[#08111f]/95 p-4">
+          <DialogHeader>
+            <DialogTitle>{chatAgent ? `Message ${formatAgentDisplayNameFromRecord(chatAgent)}` : "Agent Chat"}</DialogTitle>
+            <DialogDescription>
+              Messages are sent through the existing AgentOS/OpenClaw agent chat runner.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1">
+            {chatAgent ? (
+              <AgentChatDrawer
+                agent={chatAgent}
+                snapshot={rootSnapshot}
+                surfaceTheme="dark"
+                isVisible={Boolean(chatAgent)}
+                onRefresh={refresh}
+                onSnapshotChange={(updater) => setSnapshot((current) => updater(current))}
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <AgentModelPickerDialog
+        open={Boolean(modelAgentId)}
+        agentId={modelAgentId}
+        snapshot={rootSnapshot}
+        onOpenChange={(open) => setModelAgentId(open ? modelAgentId : null)}
+        onSnapshotChange={(updater) => setSnapshot((current) => updater(current))}
+        onRefresh={refresh}
+        onOpenAddModels={() => setIsAddModelsDialogOpen(true)}
+      />
+      <AddModelsDialog
+        open={isAddModelsDialogOpen}
+        onOpenChange={setIsAddModelsDialogOpen}
+        snapshot={rootSnapshot}
+        onSnapshotChange={setSnapshot}
+      />
+      <AgentCapabilityEditorDialog
+        open={Boolean(capabilityAgentId)}
+        agentId={capabilityAgentId}
+        initialFocus={capabilityFocus}
+        snapshot={rootSnapshot}
+        onOpenChange={(open) => setCapabilityAgentId(open ? capabilityAgentId : null)}
+        onSnapshotChange={(updater) => setSnapshot((current) => updater(current))}
+        onRefresh={refresh}
+      />
+      <MissionDispatchDialog
+        open={Boolean(dispatchAgent)}
+        agent={dispatchAgent}
+        onOpenChange={(open) => setDispatchAgent(open ? dispatchAgent : null)}
+        onSubmitted={refresh}
+      />
+    </>
   );
 }
 
@@ -272,16 +437,16 @@ function AgentCard({
   agent,
   selected,
   list,
-  followed,
   onSelect,
-  onFollow
+  onMessage,
+  onRunTask
 }: {
   agent: AgentView;
   selected: boolean;
   list: boolean;
-  followed: boolean;
   onSelect: () => void;
-  onFollow: () => void;
+  onMessage: () => void;
+  onRunTask: () => void;
 }) {
   return (
     <div
@@ -321,13 +486,20 @@ function AgentCard({
             <span>Last active <b className="ml-1 normal-case tracking-normal text-slate-200">{agent.lastActiveLabel}</b></span>
           </div>
           <div className="mt-2.5 grid grid-cols-[1fr_1fr_auto] gap-2">
-            <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" onClick={(event) => { event.stopPropagation(); toast.message(`Messaging ${agent.name} opens from Mission Control chat.`); }}>
+            <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" onClick={(event) => { event.stopPropagation(); onMessage(); }}>
               <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> Message
             </Button>
-            <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" onClick={(event) => { event.stopPropagation(); toast.message(`Task creation for ${agent.name} is ready for a Mission Control handoff.`); }}>
+            <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" onClick={(event) => { event.stopPropagation(); onRunTask(); }}>
               <Play className="mr-1.5 h-3.5 w-3.5" /> Run Task
             </Button>
-            <Button variant={followed ? "default" : "secondary"} size="sm" className="h-8 rounded-[9px] px-2.5" onClick={(event) => { event.stopPropagation(); onFollow(); }}>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-8 rounded-[9px] px-2.5"
+              disabled
+              title="Following agents requires backend support."
+              onClick={(event) => event.stopPropagation()}
+            >
               <Star className="h-3.5 w-3.5" />
             </Button>
           </div>
@@ -337,7 +509,25 @@ function AgentCard({
   );
 }
 
-function AgentInspector({ agent, followed }: { agent: AgentView; followed: boolean }) {
+function AgentInspector({
+  agent,
+  deleting,
+  onMessage,
+  onRunTask,
+  onChangeModel,
+  onManagePolicy,
+  onManageTools,
+  onDelete
+}: {
+  agent: AgentView;
+  deleting: boolean;
+  onMessage: () => void;
+  onRunTask: () => void;
+  onChangeModel: () => void;
+  onManagePolicy: () => void;
+  onManageTools: () => void;
+  onDelete: () => void;
+}) {
   return (
     <InspectorPanelFrame>
       <div className="flex items-start gap-3">
@@ -359,39 +549,52 @@ function AgentInspector({ agent, followed }: { agent: AgentView; followed: boole
       </div>
 
       <div className="mt-3 grid grid-cols-3 gap-2">
-        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" onClick={() => toast.message(`Messaging ${agent.name} opens from Mission Control chat.`)}>Message</Button>
-        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" onClick={() => toast.message("Run Task will use the existing mission dispatch flow once a task brief is supplied.")}>Run Task</Button>
-        <Button size="sm" className="h-8 rounded-[9px] bg-amber-400 px-2 text-xs text-slate-950 hover:bg-amber-300" onClick={() => toast.message(followed ? "Agent already followed." : "Follow state is local to this page.")}>Follow</Button>
+        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" onClick={onMessage}>Message</Button>
+        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" onClick={onRunTask}>Run Task</Button>
+        <Button
+          size="sm"
+          className="h-8 rounded-[9px] bg-amber-400 px-2 text-xs text-slate-950 hover:bg-amber-300"
+          disabled
+          title="Following agents requires backend support."
+        >
+          Follow
+        </Button>
       </div>
 
       <div className="mt-4 rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3">
-        <KeyValue label="Role" value={agent.policyLabel === "Browser" ? "Browser Operations Agent" : "Strategic Operations Agent"} />
-        <KeyValue label="Policy Mode" value={agent.policyLabel} action={<button className="text-blue-300">Manage</button>} />
+        <KeyValue label="Role" value={agent.source?.policy.preset ? toTitleCase(agent.source.policy.preset) : agent.policyLabel} />
+        <KeyValue label="Policy Mode" value={agent.policyLabel} action={<button className="text-blue-300" onClick={onManagePolicy}>Manage</button>} />
         <KeyValue label="Workspace Scope" value={`${agent.workspaceName} (Full Access)`} />
-        <KeyValue label="Default Model" value={agent.modelLabel} action={<button className="text-blue-300">Change</button>} />
-        <KeyValue label="Tools Enabled" value={`${agent.toolsCount} tools`} action={<button className="text-blue-300">Manage</button>} />
+        <KeyValue label="Default Model" value={agent.modelLabel} action={<button className="text-blue-300" onClick={onChangeModel}>Change</button>} />
+        <KeyValue label="Tools Enabled" value={`${agent.toolsCount} tools`} action={<button className="text-blue-300" onClick={onManageTools}>Manage</button>} />
       </div>
 
       <SectionCard title="Runtime Summary" className="mt-3">
         <div className="px-3 py-2 text-xs">
-          <KeyValue label="Sessions (7D)" value={<span>{agent.sessionsCount} <span className="ml-2 text-emerald-300">+12%</span></span>} />
-          <KeyValue label="Tasks Completed (7D)" value={<span>{Math.max(1, Math.round(agent.sessionsCount * 0.72))} <span className="ml-2 text-emerald-300">+9%</span></span>} />
-          <KeyValue label="Success Rate" value="98.3%" />
-          <KeyValue label="Avg. Response Time" value="4.2s" />
-          <KeyValue label="Tokens Used (7D)" value="1.24M" />
+          <KeyValue label="Sessions" value={String(agent.sessionsCount)} />
+          <KeyValue label="Active runtimes" value={String(agent.source?.activeRuntimeIds.length ?? 0)} />
+          <KeyValue label="Status" value={agent.source?.status ?? agent.statusLabel} />
+          <KeyValue label="Heartbeat" value={agent.source?.heartbeat.enabled ? agent.source.heartbeat.every ?? "Enabled" : "Disabled"} />
+          <KeyValue label="Last active" value={agent.lastActiveLabel} />
         </div>
       </SectionCard>
 
-      <SectionCard title="Recent Sessions" className="mt-3" action={<button className="text-[0.68rem] text-blue-300">View all</button>}>
-        <div className="divide-y divide-white/[0.07] px-3">
-          {["Market Outlook - May 2025", "Liquid Staking Report", "DeFi Risk Assessment"].map((title, index) => (
-            <div key={title} className="flex items-center justify-between gap-2 py-2.5 text-xs">
-              <span className="truncate text-slate-100">{title}</span>
-              <span className="shrink-0 text-[0.68rem] text-slate-500">{index === 0 ? "2m ago" : index === 1 ? "18m ago" : "1h ago"}</span>
-            </div>
-          ))}
+      <SectionCard title="Backend Support" className="mt-3">
+        <div className="space-y-2 p-3 text-xs leading-5 text-slate-300">
+          <p>Message, model changes, capability management, mission dispatch, and delete are connected to existing AgentOS/OpenClaw APIs.</p>
+          <p className="text-slate-500">Follow/import actions are disabled because this codebase does not expose persistence or import contracts for them.</p>
         </div>
       </SectionCard>
+      <Button
+        variant="destructive"
+        size="sm"
+        className="mt-3 h-8 w-full rounded-[9px] text-xs"
+        disabled={deleting || !agent.source}
+        title={agent.source ? "Delete this AgentOS/OpenClaw agent." : "Delete requires a real agent record."}
+        onClick={onDelete}
+      >
+        {deleting ? "Deleting..." : "Delete Agent"}
+      </Button>
     </InspectorPanelFrame>
   );
 }
@@ -407,15 +610,12 @@ function RecentAgentActivity({ snapshot, agents }: { snapshot: MissionControlSna
       time: runtime.updatedAt ? "recently" : "no activity"
     };
   });
-  const displayRows = rows.length > 0 ? rows : [
-    { agent: "Browser Agent", event: "Completed task", status: "completed", task: "Competitive landscape scan", time: "1m ago" },
-    { agent: "Coincollect Strategist", event: "Created report", status: "completed", task: "Market Outlook - May 2025", time: "3m ago" },
-    { agent: "Campaign Manager", event: "Launched campaign", status: "completed", task: "Q2 Web3 Growth Push", time: "8h ago" },
-    { agent: "Support Operator", event: "Awaiting approval", status: "queued", task: "Refund request - #12874", time: "45m ago" }
-  ];
 
   return (
-    <SectionCard title="Recent Activity" action={<button className="text-xs text-blue-300">View all activity</button>}>
+    <SectionCard title="Recent Activity">
+      {rows.length === 0 ? (
+        <EmptyState title="No runtime activity" description="No agent runtime events were reported in the current AgentOS snapshot." />
+      ) : (
       <div className="overflow-x-auto">
         <table className="w-full min-w-[680px] text-left text-xs">
           <thead className="border-b border-white/[0.07] text-[0.58rem] uppercase tracking-[0.14em] text-slate-500">
@@ -428,7 +628,7 @@ function RecentAgentActivity({ snapshot, agents }: { snapshot: MissionControlSna
             </tr>
           </thead>
           <tbody className="divide-y divide-white/[0.06] text-slate-300">
-            {displayRows.map((row, index) => (
+            {rows.map((row, index) => (
               <tr key={`${row.agent}-${row.task}-${index}`} className="hover:bg-white/[0.025]">
                 <td className="px-3 py-2.5 text-white">{row.agent}</td>
                 <td className="px-3 py-2.5">{row.event}</td>
@@ -440,6 +640,7 @@ function RecentAgentActivity({ snapshot, agents }: { snapshot: MissionControlSna
           </tbody>
         </table>
       </div>
+      )}
     </SectionCard>
   );
 }
@@ -454,19 +655,15 @@ function TasksPageContent({
   refresh: () => Promise<void>;
 }) {
   const tasks = useMemo(
-    () => buildTaskViews(snapshot, { useExamples: !activeWorkspaceId }),
-    [activeWorkspaceId, snapshot]
+    () => buildTaskViews(snapshot),
+    [snapshot]
   );
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | TaskView["status"]>("all");
+  const [sort, setSort] = useState<"updated" | "title" | "status" | "agent">("updated");
   const [view, setView] = useState<"board" | "list">("board");
   const [selectedId, setSelectedId] = useState(tasks[0]?.id ?? "");
-  const [automationState, setAutomationState] = useState<Record<string, boolean>>({
-    "Auto-approve low risk tasks": true,
-    "Retry failed tasks (3 attempts)": true,
-    "Notify on approval requests": true,
-    "Archive completed tasks (30d)": true
-  });
+  const [dispatchOpen, setDispatchOpen] = useState(false);
 
   const filteredTasks = tasks.filter((task) => {
     const query = search.trim().toLowerCase();
@@ -475,19 +672,31 @@ function TasksPageContent({
       [task.title, task.agentName, task.category, task.objective, task.description].join(" ").toLowerCase().includes(query);
     const matchesFilter = filter === "all" || task.status === filter;
     return matchesSearch && matchesFilter;
-  });
-  const selectedTask = tasks.find((task) => task.id === selectedId) ?? filteredTasks[0] ?? tasks[0] ?? null;
-  const statusCounts = {
-    queue: tasks.filter((task) => task.status === "queue").length,
+  }).sort((left, right) => sortTaskViews(left, right, sort));
+  const selectedTask = filteredTasks.find((task) => task.id === selectedId) ?? filteredTasks[0] ?? null;
+  const statusCounts: Record<TaskView["status"], number> = {
+    queued: tasks.filter((task) => task.status === "queued").length,
     running: tasks.filter((task) => task.status === "running").length,
     approval: tasks.filter((task) => task.status === "approval").length,
-    completed: tasks.filter((task) => task.status === "completed").length
+    completed: tasks.filter((task) => task.status === "completed").length,
+    cancelled: tasks.filter((task) => task.status === "cancelled").length,
+    stalled: tasks.filter((task) => task.status === "stalled").length
   };
   const tokenTotal = snapshot.tasks.reduce((sum, task) => sum + (task.tokenUsage?.total ?? 0), 0) || summarizeTokens(snapshot);
+  const sortModes: Array<typeof sort> = ["updated", "title", "status", "agent"];
 
   const abortTask = async (task: TaskView) => {
+    if (!canCancelTask(task)) {
+      toast.message("Cancel is unavailable.", {
+        description: "Only live, queued, stalled, or approval tasks can be cancelled through the current task API."
+      });
+      return;
+    }
+
     if (!task.source) {
-      toast.message("Cancel is local for sample tasks.");
+      toast.message("Cancel is unavailable.", {
+        description: "This row is not backed by an AgentOS task record."
+      });
       return;
     }
 
@@ -514,23 +723,40 @@ function TasksPageContent({
   };
 
   return (
-    <OperationsPageLayout
+    <>
+      <OperationsPageLayout
       main={
         <>
           <PageHeader
             title="Tasks"
             subtitle="Plan, monitor, and execute work across your agents. Track progress and manage approvals."
-            secondaryAction={{ label: "Import Tasks", icon: FileInput, onClick: () => toast.message("Task import is not available yet.") }}
-            primaryAction={{ label: "Create Task", icon: Plus, onClick: () => toast.message("Task creation uses Mission Control mission dispatch.") }}
+            actions={
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 rounded-[10px] px-3 text-xs"
+                  disabled
+                  title="Task import requires a backend import contract."
+                >
+                  <FileInput className="mr-1.5 h-3.5 w-3.5" />
+                  Import Tasks
+                </Button>
+                <Button size="sm" className="h-8 rounded-[10px] bg-blue-500 px-3 text-xs text-white shadow-blue-500/20 hover:bg-blue-400" onClick={() => setDispatchOpen(true)}>
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                  Create Task
+                </Button>
+              </>
+            }
           />
 
           <StatGrid columns={4}>
-            <StatCard label="Total Tasks" value={String(tasks.length)} detail={`${snapshot.tasks.length || tasks.length} tracked`} icon={ClipboardList} tone="info" />
-            <StatCard label="Running" value={String(statusCounts.running)} detail="+2 vs last 7d" icon={Activity} tone="success" />
-            <StatCard label="Queued" value={String(statusCounts.queue)} detail="-3 vs last 7d" icon={Clock3} tone="warning" />
-            <StatCard label="Needs Approval" value={String(statusCounts.approval)} detail="+1 vs last 7d" icon={ShieldCheck} tone="danger" />
-            <StatCard label="Completed Today" value={String(statusCounts.completed)} detail="+29% vs yesterday" icon={CircleCheck} tone="purple" />
-            <StatCard label="Token Spend (7D)" value={formatBigNumber(tokenTotal || 4_200_000)} detail={tokenTotal ? "From live task usage" : "+18% vs last 7d"} icon={Sparkles} tone="purple" />
+            <StatCard label="Total Tasks" value={String(tasks.length)} detail={`${snapshot.tasks.length} tracked from snapshot`} icon={ClipboardList} tone="info" />
+            <StatCard label="Running" value={String(statusCounts.running)} detail="Live task records" icon={Activity} tone="success" />
+            <StatCard label="Queued" value={String(statusCounts.queued)} detail="Waiting to run" icon={Clock3} tone="warning" />
+            <StatCard label="Needs Approval" value={String(statusCounts.approval)} detail="Warnings or review gates" icon={ShieldCheck} tone="danger" />
+            <StatCard label="Completed" value={String(statusCounts.completed)} detail="Completed task records" icon={CircleCheck} tone="purple" />
+            <StatCard label="Runtime Tokens" value={formatBigNumber(tokenTotal)} detail={tokenTotal ? "From live task/runtime usage" : "No token usage reported"} icon={Sparkles} tone="purple" />
           </StatGrid>
 
           <SearchToolbar
@@ -539,27 +765,29 @@ function TasksPageContent({
             searchPlaceholder="Search tasks..."
             right={<ViewToggle value={view === "board" ? "board" : "list"} labels={["Board", "List"]} onChange={(value) => setView(value === "grid" ? "board" : "list")} />}
           >
-            <ToolbarButton icon={Filter} label="Filter" />
-            <ToolbarButton icon={SlidersHorizontal} label="Sort: Due date" chevron />
-            <ToolbarButton icon={Layers3} label="Group: Status" chevron active />
+            <ToolbarButton icon={Filter} label={`Filter: ${formatTaskFilterLabel(filter)}`} active={filter !== "all"} onClick={() => setFilter("all")} />
+            <ToolbarButton icon={SlidersHorizontal} label={`Sort: ${formatTaskSortLabel(sort)}`} chevron onClick={() => setSort((current) => sortModes[(sortModes.indexOf(current) + 1) % sortModes.length])} />
+            <ToolbarButton icon={Layers3} label="Group: Status" active disabled title="The board is grouped by status." />
           </SearchToolbar>
 
           <div className="flex flex-wrap items-center gap-2">
-            {(["all", "queue", "running", "approval", "completed"] as Array<"all" | TaskView["status"]>).map((id) => (
+            {(["all", "queued", "running", "approval", "stalled", "completed", "cancelled"] as Array<"all" | TaskView["status"]>).map((id) => (
               <FilterChip
                 key={id}
-                label={id === "all" ? "All" : id === "approval" ? "Awaiting Approval" : toTitleCase(id)}
+                label={formatTaskFilterLabel(id)}
                 count={id === "all" ? tasks.length : statusCounts[id]}
                 active={filter === id}
-                tone={id === "running" ? "info" : id === "completed" ? "success" : id === "approval" ? "warning" : "muted"}
+                tone={resolveTaskTone(id)}
                 onClick={() => setFilter(id)}
               />
             ))}
           </div>
 
-          {view === "board" ? (
-            <div className="grid gap-2.5 xl:grid-cols-4">
-              {(["queue", "running", "approval", "completed"] as TaskView["status"][]).map((status) => (
+          {filteredTasks.length === 0 ? (
+            <EmptyState title="No tasks match your filters" description="Clear search or switch filters to inspect the current AgentOS task snapshot." />
+          ) : view === "board" ? (
+            <div className="grid gap-2.5 xl:grid-cols-3 min-[1600px]:grid-cols-6">
+              {(["queued", "running", "approval", "stalled", "completed", "cancelled"] as TaskView["status"][]).map((status) => (
                 <TaskColumn
                   key={status}
                   status={status}
@@ -580,15 +808,25 @@ function TasksPageContent({
             </SectionCard>
           )}
 
-          <div className="grid gap-2.5 xl:grid-cols-3">
+          <div className="grid gap-2.5 xl:grid-cols-2">
             <RecentTasksPanel tasks={tasks.slice(0, 5)} />
-            <ScheduledTasksPanel tasks={tasks.slice(0, 4)} />
-            <AutomationsPanel state={automationState} onChange={setAutomationState} />
+            <UnsupportedPanel
+              title="Automation Controls"
+              description="Task scheduling toggles, approval decisions, pause, and retry controls are not exposed by the current Operations backend. Existing live cancellation and mission dispatch remain enabled."
+            />
           </div>
         </>
       }
       inspector={selectedTask ? <TaskInspector task={selectedTask} onAbort={() => abortTask(selectedTask)} /> : null}
     />
+      <MissionDispatchDialog
+        open={dispatchOpen}
+        agent={null}
+        defaultWorkspaceId={activeWorkspaceId}
+        onOpenChange={setDispatchOpen}
+        onSubmitted={refresh}
+      />
+    </>
   );
 }
 
@@ -612,11 +850,11 @@ function TaskColumn({
         <div className="flex items-center gap-2">
           <Icon className="h-3.5 w-3.5 text-blue-300" />
           <h2 className="text-[0.66rem] font-bold uppercase tracking-[0.13em] text-blue-200">
-            {status === "queue" ? "Queue" : status === "approval" ? "Awaiting Approval" : toTitleCase(status)}
+            {formatTaskFilterLabel(status)}
           </h2>
           <span className="rounded-full bg-white/[0.08] px-1.5 py-0.5 text-[0.62rem] text-slate-400">{tasks.length}</span>
         </div>
-        <button className="text-slate-500 hover:text-white" type="button" onClick={() => toast.message("Add Task opens Mission Control dispatch.")}>
+        <button className="text-slate-500" type="button" disabled title="Use Create Task to submit a mission through the supported dispatch flow.">
           <Plus className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -626,8 +864,9 @@ function TaskColumn({
         ))}
         <button
           type="button"
-          onClick={() => toast.message("Add Task opens Mission Control dispatch.")}
-          className="rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-xs text-blue-300 hover:bg-white/[0.06]"
+          disabled
+          title="Inline column creation is disabled; use Create Task to submit a mission through the supported dispatch flow."
+          className="rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-xs text-slate-500"
         >
           <Plus className="mr-1.5 inline h-3.5 w-3.5" /> Add Task
         </button>
@@ -647,6 +886,7 @@ function TaskCard({
   onSelect: () => void;
   onAbort: () => void;
 }) {
+  const cancelEnabled = canCancelTask(task);
   return (
     <div
       role="button"
@@ -690,19 +930,26 @@ function TaskCard({
       <div className="mt-2.5 flex gap-2">
         {task.status === "approval" ? (
           <>
-            <Button variant="secondary" size="sm" className="h-7 flex-1 rounded-[8px] px-2 text-[0.7rem]" onClick={(event) => { event.stopPropagation(); toast.message("Review state is local until approvals are exposed here."); }}>Review</Button>
-            <Button variant="secondary" size="sm" className="h-7 flex-1 rounded-[8px] border-rose-400/20 px-2 text-[0.7rem] text-rose-200" onClick={(event) => { event.stopPropagation(); toast.message("Reject state is local until approvals are exposed here."); }}>Reject</Button>
+            <Button variant="secondary" size="sm" className="h-7 flex-1 rounded-[8px] px-2 text-[0.7rem]" disabled title="Approval review decisions are not exposed by the current task API." onClick={(event) => event.stopPropagation()}>Review</Button>
+            <Button variant="secondary" size="sm" className="h-7 flex-1 rounded-[8px] border-rose-400/20 px-2 text-[0.7rem] text-rose-200" disabled title="Reject is not exposed by the current task API." onClick={(event) => event.stopPropagation()}>Reject</Button>
           </>
         ) : task.status === "running" ? (
-          <Button variant="secondary" size="sm" className="h-7 flex-1 rounded-[8px] px-2 text-[0.7rem]" onClick={(event) => { event.stopPropagation(); toast.message("Pause is not exposed by the current task API."); }}>
+          <Button variant="secondary" size="sm" className="h-7 flex-1 rounded-[8px] px-2 text-[0.7rem]" disabled title="Pause is not exposed by the current task API." onClick={(event) => event.stopPropagation()}>
             <Pause className="mr-1.5 h-3 w-3" /> Pause
           </Button>
         ) : (
-          <Button variant="secondary" size="sm" className="h-7 flex-1 rounded-[8px] px-2 text-[0.7rem]" onClick={(event) => { event.stopPropagation(); toast.message("Open task in the inspector."); }}>
+          <Button variant="secondary" size="sm" className="h-7 flex-1 rounded-[8px] px-2 text-[0.7rem]" onClick={(event) => { event.stopPropagation(); onSelect(); }}>
             <Play className="mr-1.5 h-3 w-3" /> Open
           </Button>
         )}
-        <Button variant="secondary" size="sm" className="h-7 rounded-[8px] px-2" onClick={(event) => { event.stopPropagation(); onAbort(); }}>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="h-7 rounded-[8px] px-2"
+          disabled={!cancelEnabled}
+          title={cancelEnabled ? "Cancel this task through the supported abort action." : "This task status cannot be cancelled."}
+          onClick={(event) => { event.stopPropagation(); onAbort(); }}
+        >
           <X className="h-3 w-3" />
         </Button>
       </div>
@@ -711,11 +958,22 @@ function TaskCard({
 }
 
 function TaskListRow({ task, selected, onSelect, onAbort }: { task: TaskView; selected: boolean; onSelect: () => void; onAbort: () => void }) {
+  const cancelEnabled = canCancelTask(task);
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
-      className={cn("grid w-full grid-cols-[1fr_auto_auto_auto] items-center gap-3 px-3 py-2.5 text-left text-xs hover:bg-white/[0.035]", selected && "bg-blue-500/[0.08]")}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      className={cn(
+        "grid w-full grid-cols-[1fr_auto_auto_auto] items-center gap-3 px-3 py-2.5 text-left text-xs hover:bg-white/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
+        selected && "bg-blue-500/[0.08]"
+      )}
     >
       <span className="min-w-0">
         <span className="block truncate font-semibold text-white">{task.title}</span>
@@ -723,12 +981,22 @@ function TaskListRow({ task, selected, onSelect, onAbort }: { task: TaskView; se
       </span>
       <StatusBadge label={task.statusLabel} tone={task.statusTone} />
       <span className="w-24 text-right text-slate-400">{task.tokenLabel}</span>
-      <Button variant="secondary" size="sm" className="h-7 rounded-[8px] px-2 text-[0.7rem]" onClick={(event) => { event.stopPropagation(); onAbort(); }}>Cancel</Button>
-    </button>
+      <Button
+        variant="secondary"
+        size="sm"
+        className="h-7 rounded-[8px] px-2 text-[0.7rem]"
+        disabled={!cancelEnabled}
+        title={cancelEnabled ? "Cancel this task through the supported abort action." : "This task status cannot be cancelled."}
+        onClick={(event) => { event.stopPropagation(); onAbort(); }}
+      >
+        Cancel
+      </Button>
+    </div>
   );
 }
 
 function TaskInspector({ task, onAbort }: { task: TaskView; onAbort: () => void }) {
+  const cancelEnabled = canCancelTask(task);
   return (
     <InspectorPanelFrame title="Task Details">
       <h2 className="text-base font-semibold text-white">{task.title}</h2>
@@ -742,7 +1010,7 @@ function TaskInspector({ task, onAbort }: { task: TaskView; onAbort: () => void 
             <p className="truncate text-xs font-semibold text-white">{task.agentName}</p>
             <p className="mt-1 text-[0.68rem] text-slate-400">{task.category} work item</p>
           </div>
-          <Button variant="secondary" size="sm" className="h-7 rounded-[8px] px-2 text-[0.7rem]" onClick={() => toast.message("Agent messaging opens from Mission Control.")}>Message</Button>
+          <Button variant="secondary" size="sm" className="h-7 rounded-[8px] px-2 text-[0.7rem]" disabled title="Task-to-agent messaging is not exposed from this inspector. Use the Agents page chat for direct messages.">Message</Button>
         </div>
       </SectionCard>
       <div className="mt-3 space-y-3">
@@ -768,16 +1036,16 @@ function TaskInspector({ task, onAbort }: { task: TaskView; onAbort: () => void 
         <ProgressBar value={task.progress} />
       </div>
       <div className="mt-4 rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3">
-        <KeyValue label="Policy" value="Market Research Policy v2.1" />
-        <KeyValue label="Approvals" value={task.status === "approval" ? "0 / 1 pending" : "None required"} />
+        <KeyValue label="Task Key" value={task.source?.key ?? "Not reported"} />
+        <KeyValue label="Approvals" value={task.status === "approval" ? "Review required by task warnings" : "Not reported"} />
         <KeyValue label="Outputs / Files" value={`${task.artifactCount} files`} />
         <KeyValue label="Warnings" value={`${task.warningCount} warnings`} />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <Button size="sm" className="h-8 rounded-[9px] bg-blue-500 text-xs text-white hover:bg-blue-400" onClick={() => toast.message("Open task selected in inspector.")}>Open</Button>
-        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => toast.message("Pause is not exposed by the current task API.")}>Pause</Button>
-        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => toast.message("Run Again needs a task brief confirmation flow.")}>Run Again</Button>
-        <Button variant="destructive" size="sm" className="h-8 rounded-[9px] text-xs" onClick={onAbort}>Cancel</Button>
+        <Button size="sm" className="h-8 rounded-[9px] bg-blue-500 text-xs text-white hover:bg-blue-400" disabled title="Task details are already shown in this inspector.">Open</Button>
+        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" disabled title="Pause is not exposed by the current task API.">Pause</Button>
+        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" disabled title="Retry/run-again requires a supported replay contract for the original mission.">Run Again</Button>
+        <Button variant="destructive" size="sm" className="h-8 rounded-[9px] text-xs" disabled={!cancelEnabled} title={cancelEnabled ? "Cancel this task through the supported abort action." : "This task status cannot be cancelled."} onClick={onAbort}>Cancel</Button>
       </div>
     </InspectorPanelFrame>
   );
@@ -785,7 +1053,10 @@ function TaskInspector({ task, onAbort }: { task: TaskView; onAbort: () => void 
 
 function RecentTasksPanel({ tasks }: { tasks: TaskView[] }) {
   return (
-    <SectionCard title="Recent Activity" action={<button className="text-xs text-blue-300">View all activity</button>}>
+    <SectionCard title="Recent Activity">
+      {tasks.length === 0 ? (
+        <EmptyState title="No task activity" description="No task records were reported in the current AgentOS snapshot." />
+      ) : (
       <div className="divide-y divide-white/[0.06] px-3">
         {tasks.map((task) => (
           <div key={task.id} className="flex items-center justify-between gap-2 py-2.5 text-[0.68rem]">
@@ -794,49 +1065,7 @@ function RecentTasksPanel({ tasks }: { tasks: TaskView[] }) {
           </div>
         ))}
       </div>
-    </SectionCard>
-  );
-}
-
-function ScheduledTasksPanel({ tasks }: { tasks: TaskView[] }) {
-  return (
-    <SectionCard title="Scheduled Tasks" action={<button className="text-xs text-blue-300">View calendar</button>}>
-      <div className="divide-y divide-white/[0.06] px-3">
-        {tasks.map((task, index) => (
-          <div key={task.id} className="grid grid-cols-[1fr_auto] gap-2 py-2.5 text-[0.68rem]">
-            <span className="truncate text-slate-300">{task.title}</span>
-            <span className="text-slate-500">{index % 2 ? "Daily · 10:00" : "Weekly · Mon 09:00"}</span>
-          </div>
-        ))}
-      </div>
-    </SectionCard>
-  );
-}
-
-function AutomationsPanel({
-  state,
-  onChange
-}: {
-  state: Record<string, boolean>;
-  onChange: (state: Record<string, boolean>) => void;
-}) {
-  return (
-    <SectionCard title="Automations" action={<button className="text-xs text-blue-300">Manage</button>}>
-      <div className="divide-y divide-white/[0.06] px-3">
-        {Object.entries(state).map(([label, enabled]) => (
-          <button
-            type="button"
-            key={label}
-            onClick={() => onChange({ ...state, [label]: !enabled })}
-            className="flex w-full items-center justify-between gap-2 py-2.5 text-left text-[0.68rem]"
-          >
-            <span className="text-slate-300">{label}</span>
-            <span className={cn("h-4 w-7 rounded-full p-0.5 transition-colors", enabled ? "bg-emerald-400" : "bg-white/[0.12]")}>
-              <span className={cn("block h-3 w-3 rounded-full bg-white transition-transform", enabled && "translate-x-3")} />
-            </span>
-          </button>
-        ))}
-      </div>
+      )}
     </SectionCard>
   );
 }
@@ -860,9 +1089,12 @@ function FilesPageContent({
   const [fileError, setFileError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [collection, setCollection] = useState("All Files");
+  const [sort, setSort] = useState<"name" | "path" | "size" | "collection">("path");
   const [view, setView] = useState<"grid" | "list">("list");
   const [selectedFileId, setSelectedFileId] = useState("");
-  const [tab, setTab] = useState<"Details" | "Versions" | "Activity">("Details");
+  const [previewFile, setPreviewFile] = useState<FileView | null>(null);
+  const [workspaceFilesOpen, setWorkspaceFilesOpen] = useState(false);
+  const [fileReloadKey, setFileReloadKey] = useState(0);
 
   useEffect(() => {
     if (visibleWorkspaces.length === 0) {
@@ -912,7 +1144,7 @@ function FilesPageContent({
     return () => {
       cancelled = true;
     };
-  }, [visibleWorkspaces]);
+  }, [fileReloadKey, visibleWorkspaces]);
 
   const fileViews = useMemo(
     () =>
@@ -926,7 +1158,6 @@ function FilesPageContent({
     [filesByWorkspace, snapshot.agents, visibleWorkspaces]
   );
 
-  const selectedFile = fileViews.find((file) => file.id === selectedFileId) ?? fileViews[0] ?? null;
   const filteredFiles = fileViews.filter((file) => {
     const query = search.trim().toLowerCase();
     const matchesSearch =
@@ -934,12 +1165,14 @@ function FilesPageContent({
       [file.name, file.path, file.type, file.owner, file.workspaceName, ...file.tags].join(" ").toLowerCase().includes(query);
     const matchesCollection = collection === "All Files" || file.collection === collection;
     return matchesSearch && matchesCollection;
-  });
+  }).sort((left, right) => sortFileViews(left, right, sort));
+  const selectedFile = filteredFiles.find((file) => file.id === selectedFileId) ?? filteredFiles[0] ?? null;
   const totalSize = fileViews.reduce((sum, file) => sum + (file.sizeBytes ?? 0), 0);
   const generatedCount = fileViews.filter((file) => file.collection === "Generated Outputs").length;
   const memoryCount = fileViews.filter((file) => file.collection === "Memory").length;
   const coreCount = fileViews.filter((file) => file.collection === "Core Knowledge").length;
-  const collectionItems = ["All Files", "Core Knowledge", "Memory", "Generated Outputs", "Reports", "Screenshots", "Datasets", "Campaigns", "Archived", "Trash"];
+  const collectionItems = ["All Files", ...Array.from(new Set(fileViews.map((file) => file.collection))).sort()];
+  const sortModes: Array<typeof sort> = ["path", "name", "collection", "size"];
 
   const revealFile = async (file: FileView) => {
     if (!file.workspacePath) {
@@ -966,22 +1199,55 @@ function FilesPageContent({
   };
 
   return (
-    <OperationsPageLayout
+    <>
+      <OperationsPageLayout
       main={
         <>
           <PageHeader
             title="Files"
             subtitle="Manage workspace documents, knowledge files, memory, and generated outputs."
-            secondaryAction={{ label: "Import from Agent", icon: Import, onClick: () => toast.message("Agent output import will use runtime artifacts when exposed here.") }}
-            primaryAction={{ label: "Upload Files", icon: Upload, onClick: () => toast.message("Uploads are not exposed by the current workspace file API.") }}
+            actions={
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 rounded-[10px] px-3 text-xs"
+                  disabled
+                  title="Runtime artifact import is not exposed by the current workspace file API."
+                >
+                  <Import className="mr-1.5 h-3.5 w-3.5" />
+                  Import from Agent
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 rounded-[10px] px-3 text-xs"
+                  disabled
+                  title="Uploads are not exposed by the current workspace file API."
+                >
+                  <Upload className="mr-1.5 h-3.5 w-3.5" />
+                  Upload Files
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-8 rounded-[10px] bg-blue-500 px-3 text-xs text-white shadow-blue-500/20 hover:bg-blue-400"
+                  disabled={!activeWorkspaceId}
+                  title={activeWorkspaceId ? "Open the existing workspace file reader/editor." : "Select a workspace to open workspace files."}
+                  onClick={() => setWorkspaceFilesOpen(true)}
+                >
+                  <FileText className="mr-1.5 h-3.5 w-3.5" />
+                  Workspace Files
+                </Button>
+              </>
+            }
           />
 
           <StatGrid columns={5}>
             <StatCard label="Total Files" value={String(fileViews.length)} detail={isLoadingFiles ? "Loading workspace files" : `${filteredFiles.length} visible`} icon={FileText} tone="info" />
             <StatCard label="Core Files" value={String(coreCount)} detail={`${Math.round((coreCount / Math.max(1, fileViews.length)) * 100)}% of total`} icon={FilePlus2} tone="success" />
-            <StatCard label="Generated Outputs" value={String(generatedCount)} detail="From tasks and skills" icon={BrainCircuit} tone="purple" />
+            <StatCard label="Generated Outputs" value={String(generatedCount)} detail="Managed workspace files" icon={BrainCircuit} tone="purple" />
             <StatCard label="Memory Docs" value={String(memoryCount)} detail="Durable context" icon={Database} tone="warning" />
-            <StatCard label="Storage Used" value={formatBytes(totalSize || 2_420_000_000)} detail={totalSize ? "Workspace files" : "Waiting for file sizes"} icon={HardDrive} tone="info" />
+            <StatCard label="Storage Used" value={formatBytes(totalSize)} detail={fileViews.some((file) => file.sizeBytes != null) ? "From file metadata" : "No file sizes reported"} icon={HardDrive} tone="info" />
           </StatGrid>
 
           <SearchToolbar
@@ -990,9 +1256,9 @@ function FilesPageContent({
             searchPlaceholder="Search files..."
             right={<ViewToggle value={view} onChange={setView} />}
           >
-            <ToolbarButton icon={Filter} label="Filter" />
-            <ToolbarButton icon={ListFilter} label="All Types" chevron />
-            <ToolbarButton icon={SlidersHorizontal} label="Sort: Last updated" chevron />
+            <ToolbarButton icon={Filter} label={`Collection: ${collection}`} active={collection !== "All Files"} onClick={() => setCollection("All Files")} />
+            <ToolbarButton icon={ListFilter} label="Workspace managed files" disabled title="Only managed workspace files are exposed by the current file API." />
+            <ToolbarButton icon={SlidersHorizontal} label={`Sort: ${formatFileSortLabel(sort)}`} chevron onClick={() => setSort((current) => sortModes[(sortModes.indexOf(current) + 1) % sortModes.length])} />
           </SearchToolbar>
 
           {fileError ? (
@@ -1000,7 +1266,7 @@ function FilesPageContent({
           ) : null}
 
           <div className="grid gap-2.5 xl:grid-cols-[180px_minmax(0,1fr)]">
-            <SectionCard title="Collections" action={<button className="text-slate-400 hover:text-white"><Plus className="h-3.5 w-3.5" /></button>}>
+            <SectionCard title="Collections" action={<button className="text-slate-500" disabled title="Custom collections are not exposed by the workspace file API."><Plus className="h-3.5 w-3.5" /></button>}>
               <div className="flex flex-col gap-1 p-2.5">
                 {collectionItems.map((item) => {
                   const Icon = fileCollectionIcons[item] ?? Folder;
@@ -1024,16 +1290,20 @@ function FilesPageContent({
               <div className="mt-auto border-t border-white/[0.07] p-3">
                 <div className="mb-2 flex items-center justify-between text-[0.68rem] text-slate-400">
                   <span>Storage</span>
-                  <span>{totalSize ? "Live" : "Sample"}</span>
+                  <span>{fileViews.some((file) => file.sizeBytes != null) ? "Reported" : "Unknown"}</span>
                 </div>
-                <ProgressBar value={totalSize ? Math.min(100, (totalSize / 10_000_000_000) * 100) : 24} />
-                <Button variant="secondary" size="sm" className="mt-3 h-7 w-full rounded-[8px] px-2 text-[0.7rem]" onClick={() => toast.message("Storage management is not exposed yet.")}>Manage Storage</Button>
+                <ProgressBar value={fileViews.some((file) => file.sizeBytes != null) ? Math.min(100, (totalSize / 10_000_000_000) * 100) : 0} />
+                <Button variant="secondary" size="sm" className="mt-3 h-7 w-full rounded-[8px] px-2 text-[0.7rem]" disabled title="Storage quota management is not exposed by the current workspace file API.">Manage Storage</Button>
               </div>
             </SectionCard>
 
             <SectionCard title={`Files (${fileViews.length})`}>
-              {view === "list" ? (
-                <FilesTable files={filteredFiles} selectedId={selectedFile?.id} onSelect={setSelectedFileId} />
+              {isLoadingFiles ? (
+                <div className="p-6 text-center text-xs text-slate-400">Loading workspace files...</div>
+              ) : filteredFiles.length === 0 ? (
+                <EmptyState title="No files found" description={fileViews.length === 0 ? "No managed workspace files were returned by the current workspace file API." : "Clear search or collection filters to inspect another file set."} />
+              ) : view === "list" ? (
+                <FilesTable files={filteredFiles} selectedId={selectedFile?.id} onSelect={setSelectedFileId} onPreview={setPreviewFile} onReveal={revealFile} />
               ) : (
                 <div className="grid gap-2.5 p-3 lg:grid-cols-2 2xl:grid-cols-3">
                   {filteredFiles.map((file) => (
@@ -1051,26 +1321,46 @@ function FilesPageContent({
                 </div>
               )}
               <div className="flex items-center justify-between border-t border-white/[0.07] px-3 py-2.5 text-[0.68rem] text-slate-400">
-                <span>Showing 1 to {filteredFiles.length} of {fileViews.length} files</span>
-                <span className="flex items-center gap-2"><button className="rounded border border-blue-400/40 px-2 py-1 text-blue-200">1</button><button>2</button><button>3</button><span>...</span></span>
+                <span>Showing {filteredFiles.length} of {fileViews.length} files</span>
+                <span>Workspace managed files only</span>
               </div>
             </SectionCard>
           </div>
         </>
       }
-      inspector={selectedFile ? <FileInspector file={selectedFile} tab={tab} onTabChange={setTab} onReveal={() => revealFile(selectedFile)} /> : null}
+      inspector={selectedFile ? <FileInspector file={selectedFile} onReveal={() => revealFile(selectedFile)} onPreview={() => setPreviewFile(selectedFile)} /> : null}
     />
+      <WorkspaceContextFilesDialog
+        snapshot={snapshot}
+        workspaceId={activeWorkspaceId}
+        open={workspaceFilesOpen}
+        onOpenChange={setWorkspaceFilesOpen}
+      />
+      <FilePreviewDialog
+        file={previewFile}
+        open={Boolean(previewFile)}
+        onOpenChange={(open) => setPreviewFile(open ? previewFile : null)}
+        onSaved={() => {
+          setPreviewFile(null);
+          setFileReloadKey((current) => current + 1);
+        }}
+      />
+    </>
   );
 }
 
 function FilesTable({
   files,
   selectedId,
-  onSelect
+  onSelect,
+  onPreview,
+  onReveal
 }: {
   files: FileView[];
   selectedId?: string;
   onSelect: (id: string) => void;
+  onPreview: (file: FileView) => void;
+  onReveal: (file: FileView) => void;
 }) {
   return (
     <div className="overflow-x-auto">
@@ -1084,7 +1374,6 @@ function FilesTable({
             <th className="px-2 py-2.5 font-semibold">Owner / Agent</th>
             <th className="px-2 py-2.5 font-semibold">Size</th>
             <th className="px-2 py-2.5 font-semibold">Tags</th>
-            <th className="px-2 py-2.5 font-semibold">Tasks</th>
             <th className="px-3 py-2.5 font-semibold">Actions</th>
           </tr>
         </thead>
@@ -1110,8 +1399,36 @@ function FilesTable({
               <td className="px-2 py-2.5"><span className="line-clamp-2 max-w-24">{file.owner}</span></td>
               <td className="px-2 py-2.5">{file.sizeLabel}</td>
               <td className="px-2 py-2.5"><div className="flex max-w-28 flex-wrap gap-1">{file.tags.slice(0, 2).map((tag) => <MiniBadge key={tag}>{tag}</MiniBadge>)}</div></td>
-              <td className="px-2 py-2.5 text-white">{file.tasks}</td>
-              <td className="px-3 py-2.5"><MoreButton /></td>
+              <td className="px-3 py-2.5">
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-7 rounded-[8px] px-2 text-[0.7rem]"
+                    disabled={!file.source?.exists}
+                    title={file.source?.exists ? "Read this managed workspace file." : "File is not created yet."}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onPreview(file);
+                    }}
+                  >
+                    Preview
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-7 rounded-[8px] px-2 text-[0.7rem]"
+                    disabled={!file.workspacePath}
+                    title={file.workspacePath ? "Reveal this file in Finder." : "Reveal requires a workspace path."}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onReveal(file);
+                    }}
+                  >
+                    Reveal
+                  </Button>
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -1122,14 +1439,12 @@ function FilesTable({
 
 function FileInspector({
   file,
-  tab,
-  onTabChange,
-  onReveal
+  onReveal,
+  onPreview
 }: {
   file: FileView;
-  tab: "Details" | "Versions" | "Activity";
-  onTabChange: (tab: "Details" | "Versions" | "Activity") => void;
   onReveal: () => void;
+  onPreview: () => void;
 }) {
   return (
     <InspectorPanelFrame>
@@ -1145,23 +1460,11 @@ function FileInspector({
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2">
         <Button size="sm" className="h-8 rounded-[9px] bg-blue-500 px-2 text-xs text-white hover:bg-blue-400" onClick={onReveal}><SquareArrowOutUpRight className="mr-1.5 h-3.5 w-3.5" />Open</Button>
-        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" onClick={() => toast.message("Preview will use the existing workspace file reader in a future pass.")}>Preview</Button>
-        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" onClick={() => toast.message("More file actions are pending backend support.")}>More</Button>
+        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" disabled={!file.source?.exists} title={file.source?.exists ? "Read this managed workspace file." : "File is not created yet."} onClick={onPreview}>Preview</Button>
+        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" disabled title="Additional file actions require backend support.">More</Button>
       </div>
-      <div className="mt-3 flex border-b border-white/[0.08]">
-        {(["Details", "Versions", "Activity"] as const).map((item) => (
-          <button
-            key={item}
-            type="button"
-            onClick={() => onTabChange(item)}
-            className={cn("border-b-2 px-3 py-2.5 text-xs transition-colors", tab === item ? "border-blue-400 text-blue-200" : "border-transparent text-slate-400 hover:text-white")}
-          >
-            {item}
-          </button>
-        ))}
-      </div>
-      {tab === "Details" ? (
-        <>
+      <div className="mt-3 border-b border-white/[0.08] px-3 py-2.5 text-xs text-blue-200">Details</div>
+      <>
           <div className="mt-3 rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3">
             <KeyValue label="File Path" value={file.path} />
             <KeyValue label="Type" value={file.type} />
@@ -1169,7 +1472,7 @@ function FileInspector({
             <KeyValue label="Last Updated" value={file.updatedLabel} />
             <KeyValue label="Workspace" value={file.workspaceName} />
             <KeyValue label="Owner / Agent" value={file.owner} />
-            <KeyValue label="Linked Task" value={`${file.tasks} tasks`} />
+            <KeyValue label="Workspace API" value={file.source ? "Managed file" : "Not reported"} />
           </div>
           <div className="mt-3">
             <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-slate-500">Tags</p>
@@ -1180,74 +1483,267 @@ function FileInspector({
             <p className="mt-1.5 text-xs leading-5 text-slate-300">{file.source?.description ?? "Workspace context file managed by AgentOS and OpenClaw."}</p>
           </div>
         </>
-      ) : tab === "Versions" ? (
-        <div className="mt-3 divide-y divide-white/[0.07] rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3">
-          {["v3.4 (current)", "v3.3", "v3.2"].map((version, index) => (
-            <div key={version} className="flex items-center justify-between gap-2 py-2.5 text-xs">
-              <span className="text-blue-200">{version}</span>
-              <span className="text-slate-400">{index === 0 ? "Current" : `${index + 2} days ago`}</span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="mt-3 space-y-2.5">
-          {["Opened by workspace", "Added to context", "Linked to task"].map((event, index) => (
-            <div key={event} className="rounded-[10px] border border-white/[0.08] bg-white/[0.03] p-2.5 text-xs text-slate-300">
-              <span className="text-white">{event}</span>
-              <span className="ml-2 text-[0.68rem] text-slate-500">{index + 1}h ago</span>
-            </div>
-          ))}
-        </div>
-      )}
       <SectionCard title="Quick Actions" className="mt-4">
         <div className="grid grid-cols-2 gap-2 p-2.5">
-          <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" onClick={() => toast.message("Share is pending backend support.")}>Share</Button>
-          <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" onClick={() => toast.message("Added to local context selection.")}>Add to Context</Button>
-          <Button variant="destructive" size="sm" className="col-span-2 h-8 rounded-[9px] px-2 text-xs" onClick={() => toast.message("Move to Trash requires file mutation support.")}>Move to Trash</Button>
+          <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" disabled title="Share requires backend support.">Share</Button>
+          <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" disabled title="Context selection persistence is not exposed by the workspace file API.">Add to Context</Button>
+          <Button variant="destructive" size="sm" className="col-span-2 h-8 rounded-[9px] px-2 text-xs" disabled title="Trash/delete is not exposed by the workspace file API.">Move to Trash</Button>
         </div>
       </SectionCard>
     </InspectorPanelFrame>
   );
 }
 
+function FilePreviewDialog({
+  file,
+  open,
+  onOpenChange,
+  onSaved
+}: {
+  file: FileView | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [content, setContent] = useState("");
+  const [savedContent, setSavedContent] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canRead = Boolean(file?.workspaceId && file?.source?.exists);
+  const canSave = Boolean(file?.workspaceId && file?.source?.editable && content !== savedContent && !loading && !saving);
+
+  useEffect(() => {
+    if (!open || !file) {
+      setContent("");
+      setSavedContent("");
+      setError(null);
+      return;
+    }
+
+    if (!canRead) {
+      setError("This file cannot be read because it is not created yet or is not attached to a workspace.");
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/workspaces/${encodeURIComponent(file.workspaceId ?? "")}/files?path=${encodeURIComponent(file.relativePath)}`,
+          { cache: "no-store" }
+        );
+        const result = (await response.json()) as WorkspaceManagedFileReadResponse & { error?: string };
+        if (!response.ok || result.error) {
+          throw new Error(result.error || "Workspace file could not be read.");
+        }
+
+        if (!cancelled) {
+          setContent(result.content);
+          setSavedContent(result.content);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setError(readClientError(error));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canRead, file, open]);
+
+  const saveFile = async () => {
+    if (!file?.workspaceId) {
+      setError("This file is not attached to a workspace.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/workspaces/${encodeURIComponent(file.workspaceId)}/files`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: file.relativePath,
+          content
+        })
+      });
+      const result = (await response.json()) as WorkspaceManagedFileReadResponse & { error?: string };
+      if (!response.ok || result.error) {
+        throw new Error(result.error || "Workspace file could not be saved.");
+      }
+      setSavedContent(result.content);
+      setContent(result.content);
+      toast.success("Workspace file saved.");
+      onSaved();
+    } catch (error) {
+      setError(readClientError(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex h-[min(82dvh,780px)] max-w-4xl flex-col rounded-[18px] border-white/[0.10] bg-[#08111f]/95 p-4">
+        <DialogHeader>
+          <DialogTitle>{file?.name ?? "Workspace File"}</DialogTitle>
+          <DialogDescription>
+            Reads and saves through the existing workspace file API with workspace path safety checks.
+          </DialogDescription>
+        </DialogHeader>
+        {error ? (
+          <div className="rounded-[10px] border border-rose-300/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-100">{error}</div>
+        ) : null}
+        <Textarea
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+          readOnly={loading || saving || !file?.source?.editable}
+          placeholder={loading ? "Loading workspace file..." : "File content"}
+          className="min-h-0 flex-1 resize-none rounded-[12px] border-white/[0.10] bg-slate-950/50 font-mono text-xs leading-5 text-slate-100"
+        />
+        <DialogFooter>
+          <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+          <Button
+            size="sm"
+            className="h-8 rounded-[9px] bg-blue-500 text-xs text-white hover:bg-blue-400"
+            disabled={!canSave}
+            title={file?.source?.editable ? "Save this managed workspace file." : "This managed file is read-only."}
+            onClick={() => void saveFile()}
+          >
+            {saving ? "Saving..." : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ModelsPageContent({
   snapshot,
-  activeWorkspaceId
+  rootSnapshot,
+  refresh,
+  setSnapshot
 }: {
   snapshot: MissionControlSnapshot;
-  activeWorkspaceId: string | null;
+  rootSnapshot: MissionControlSnapshot;
+  refresh: () => Promise<void>;
+  setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
 }) {
   const models = useMemo(
-    () => buildModelViews(snapshot, { useExamples: !activeWorkspaceId }),
-    [activeWorkspaceId, snapshot]
+    () => buildModelViews(snapshot),
+    [snapshot]
   );
   const [search, setSearch] = useState("");
   const [provider, setProvider] = useState("All Providers");
+  const [sort, setSort] = useState<"name" | "provider" | "status" | "role">("provider");
   const [selectedId, setSelectedId] = useState(models[0]?.id ?? "");
-  const [localRoles, setLocalRoles] = useState<Record<string, ModelView["role"]>>({});
   const [tab, setTab] = useState<"Details" | "Capabilities" | "Performance">("Details");
+  const [isAddModelsDialogOpen, setIsAddModelsDialogOpen] = useState(false);
+  const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null);
 
-  const effectiveModels = models.map((model) => ({ ...model, role: localRoles[model.id] ?? model.role }));
-  const providers = ["All Providers", ...Array.from(new Set(effectiveModels.map((model) => model.provider)))];
-  const filteredModels = effectiveModels.filter((model) => {
+  const providers = ["All Providers", ...Array.from(new Set(models.map((model) => model.provider)))];
+  const sortModes: Array<typeof sort> = ["provider", "name", "status", "role"];
+  const filteredModels = models.filter((model) => {
     const query = search.trim().toLowerCase();
     const matchesSearch = !query || [model.name, model.provider, model.id, model.role].join(" ").toLowerCase().includes(query);
     const matchesProvider = provider === "All Providers" || model.provider === provider;
     return matchesSearch && matchesProvider;
-  });
-  const selectedModel = effectiveModels.find((model) => model.id === selectedId) ?? filteredModels[0] ?? effectiveModels[0] ?? null;
-  const connectedProviders = new Set(effectiveModels.filter((model) => model.statusTone !== "danger").map((model) => model.provider)).size;
+  }).sort((left, right) => sortModelViews(left, right, sort));
+  const selectedModel = filteredModels.find((model) => model.id === selectedId) ?? filteredModels[0] ?? null;
+  const connectedProviders = new Set(models.filter((model) => model.statusTone !== "danger").map((model) => model.provider)).size;
   const tokenTotal = summarizeTokens(snapshot);
+  const defaultModelId = snapshot.diagnostics.modelReadiness.resolvedDefaultModel ?? snapshot.diagnostics.modelReadiness.defaultModel;
+
+  const setDefaultModel = async (model: ModelView) => {
+    const rawProvider = model.source?.provider;
+    if (!rawProvider || !isAddModelsProviderId(rawProvider)) {
+      toast.message("Default model change is unavailable.", {
+        description: "This model provider is not supported by the model provider API."
+      });
+      return;
+    }
+
+    setSettingDefaultId(model.id);
+
+    try {
+      const response = await fetch("/api/models/providers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "set-default",
+          provider: rawProvider,
+          modelId: model.id
+        })
+      });
+      const result = await response.json().catch(() => null) as {
+        ok?: boolean;
+        message?: string;
+        error?: string;
+        snapshot?: MissionControlSnapshot;
+      } | null;
+
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || result?.message || "Default model update failed.");
+      }
+
+      if (result.snapshot) {
+        setSnapshot(result.snapshot);
+      } else {
+        await refresh();
+      }
+
+      toast.success("Default model updated.", {
+        description: result.message
+      });
+    } catch (error) {
+      toast.error("Default model update failed.", {
+        description: readClientError(error)
+      });
+    } finally {
+      setSettingDefaultId(null);
+    }
+  };
 
   return (
-    <OperationsPageLayout
-      main={
-        <>
+    <>
+      <OperationsPageLayout
+        main={
+          <>
           <PageHeader
             title="Models"
             subtitle="Configure default models, providers, routing, and runtime preferences for your AI agents."
-            secondaryAction={{ label: "Import Model", icon: Import, onClick: () => toast.message("Import Model is handled by the Add Models flow in Mission Control.") }}
-            primaryAction={{ label: "Add Model", icon: Plus, onClick: () => toast.message("Use Mission Control Add Models to connect providers and discover models.") }}
+            actions={
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 rounded-[10px] px-3 text-xs"
+                  disabled
+                  title="Model import is handled by the Add Models flow; there is no separate import backend."
+                >
+                  <Import className="mr-1.5 h-3.5 w-3.5" />
+                  Import Model
+                </Button>
+                <Button size="sm" className="h-8 rounded-[10px] bg-blue-500 px-3 text-xs text-white shadow-blue-500/20 hover:bg-blue-400" onClick={() => setIsAddModelsDialogOpen(true)}>
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                  Add Model
+                </Button>
+              </>
+            }
           />
 
           <SearchToolbar
@@ -1256,46 +1752,46 @@ function ModelsPageContent({
             searchPlaceholder="Search models..."
           >
             <ToolbarButton icon={Database} label={provider} chevron onClick={() => setProvider((current) => providers[(providers.indexOf(current) + 1) % providers.length])} />
-            <ToolbarButton icon={Filter} label="Filter" />
-            <ToolbarButton icon={SlidersHorizontal} label="Sort: Last active" chevron />
+            <ToolbarButton icon={Filter} label="Configured models" disabled title="Only configured models are exposed by the current model snapshot." />
+            <ToolbarButton icon={SlidersHorizontal} label={`Sort: ${formatModelSortLabel(sort)}`} chevron onClick={() => setSort((current) => sortModes[(sortModes.indexOf(current) + 1) % sortModes.length])} />
           </SearchToolbar>
 
           <StatGrid columns={4}>
-            <StatCard label="Connected Providers" value={String(connectedProviders)} detail="+1 this week" icon={Plug} tone="info" />
-            <StatCard label="Active Models" value={String(effectiveModels.filter((model) => model.statusTone !== "danger").length)} detail="+2 this week" icon={BrainCircuit} tone="success" />
-            <StatCard label="Default Models" value={String(effectiveModels.filter((model) => model.role === "Primary").length)} detail="Across use cases" icon={CircleCheck} tone="warning" />
-            <StatCard label="Requests This Week" value="128.4K" detail="+18% vs last 7d" icon={Activity} tone="purple" />
-            <StatCard label="Token Usage" value={formatBigNumber(tokenTotal || 4_210_000_000)} detail={tokenTotal ? "From live runtimes" : "+22% vs last 7d"} icon={Sparkles} tone="purple" />
-            <StatCard label="Model Cost (7D)" value="$128.47" detail="+15% vs last 7d" icon={CircleDollarSign} tone="muted" />
+            <StatCard label="Providers" value={String(connectedProviders)} detail={`${providers.length - 1} configured providers`} icon={Plug} tone="info" />
+            <StatCard label="Configured Models" value={String(models.length)} detail={`${models.filter((model) => model.statusTone !== "danger").length} available`} icon={BrainCircuit} tone="success" />
+            <StatCard label="Default Model" value={defaultModelId ? "1" : "0"} detail={defaultModelId ?? "No default configured"} icon={CircleCheck} tone="warning" />
+            <StatCard label="Runtime Tokens" value={formatBigNumber(tokenTotal)} detail={tokenTotal ? "From live runtimes" : "No token usage reported"} icon={Sparkles} tone="purple" />
           </StatGrid>
 
           <SectionCard title="Providers & Models">
-            <ModelsTable models={filteredModels} selectedId={selectedModel?.id} onSelect={setSelectedId} />
+            {filteredModels.length === 0 ? (
+              <EmptyState title="No models found" description="Add models through the existing model setup flow or clear the current search/provider filter." />
+            ) : (
+              <ModelsTable models={filteredModels} selectedId={selectedModel?.id} settingDefaultId={settingDefaultId} onSelect={setSelectedId} onSetDefault={(model) => void setDefaultModel(model)} />
+            )}
           </SectionCard>
 
           <div className="grid gap-2.5 xl:grid-cols-[0.9fr_1.6fr]">
-            <SectionCard title="Default by Use Case">
+            <SectionCard title="Default Route">
               <div className="divide-y divide-white/[0.07] px-3">
-                {["Reasoning & Analysis", "Chat & Conversation", "Research & Summarization", "Automation & Tool Use", "Low-Cost Background Tasks"].map((useCase, index) => {
-                  const model = effectiveModels[index % Math.max(1, effectiveModels.length)];
-                  return (
-                    <div key={useCase} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 py-2.5 text-xs">
-                      <span className="truncate text-slate-300">{useCase}</span>
-                      <MiniBadge>Primary</MiniBadge>
-                      <span className="truncate text-white">{model?.name ?? "Unassigned"}</span>
-                    </div>
-                  );
-                })}
+                <KeyValue label="Configured default" value={defaultModelId ?? "Not configured"} />
+                <KeyValue label="Readiness" value={snapshot.diagnostics.modelReadiness.ready ? "Ready" : "Needs setup"} />
+                <KeyValue label="Available models" value={String(snapshot.diagnostics.modelReadiness.availableModelCount)} />
+                <KeyValue label="Missing models" value={String(snapshot.diagnostics.modelReadiness.missingModelCount)} />
               </div>
             </SectionCard>
-            <SectionCard title="Model Routing & Usage (7D)">
+            <SectionCard title="Model Usage">
               <div className="p-3">
                 <div className="grid grid-cols-3 gap-3 text-xs">
-                  <MetricMini label="Total Requests" value="128.4K" />
-                  <MetricMini label="Total Tokens" value={formatBigNumber(tokenTotal || 4_210_000_000)} />
-                  <MetricMini label="Avg Latency" value="286ms" />
+                  <MetricMini label="Requests" value="Not reported" />
+                  <MetricMini label="Total Tokens" value={formatBigNumber(tokenTotal)} />
+                  <MetricMini label="Avg Latency" value="Not reported" />
                 </div>
-                <UsageChart className="mt-4" />
+                <UnsupportedPanel
+                  className="mt-4"
+                  title="Live routing metrics unavailable"
+                  description="The current snapshot does not expose model request, cost, latency, or route split analytics. AgentOS shows configured models and runtime token usage only."
+                />
               </div>
             </SectionCard>
           </div>
@@ -1307,32 +1803,42 @@ function ModelsPageContent({
             model={selectedModel}
             tab={tab}
             onTabChange={setTab}
-            onSetRole={(role) => {
-              setLocalRoles((current) => ({ ...current, [selectedModel.id]: role }));
-              toast.success(`${selectedModel.name} set as ${role.toLowerCase()}.`);
-            }}
+            settingDefault={settingDefaultId === selectedModel.id}
+            onSetDefault={() => void setDefaultModel(selectedModel)}
+            onOpenAddModels={() => setIsAddModelsDialogOpen(true)}
           />
         ) : null
       }
     />
+      <AddModelsDialog
+        open={isAddModelsDialogOpen}
+        onOpenChange={setIsAddModelsDialogOpen}
+        snapshot={rootSnapshot}
+        onSnapshotChange={setSnapshot}
+      />
+    </>
   );
 }
 
 function ModelsTable({
   models,
   selectedId,
-  onSelect
+  settingDefaultId,
+  onSelect,
+  onSetDefault
 }: {
   models: ModelView[];
   selectedId?: string;
+  settingDefaultId: string | null;
   onSelect: (id: string) => void;
+  onSetDefault: (model: ModelView) => void;
 }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[900px] text-left text-xs">
         <thead className="border-b border-white/[0.07] text-[0.56rem] uppercase tracking-[0.14em] text-slate-500">
           <tr>
-            {["Model / Provider", "Status", "Latency", "Context Window", "Cost (Input / Output)", "Rate Limit", "Role", "Last Active", "Actions"].map((header) => (
+            {["Model / Provider", "Status", "Context Window", "Role", "Usage", "Actions"].map((header) => (
               <th key={header} className="px-3 py-2.5 font-semibold">{header}</th>
             ))}
           </tr>
@@ -1347,13 +1853,24 @@ function ModelsTable({
                 </div>
               </td>
               <td className="px-3 py-2.5"><StatusBadge label={model.statusLabel} tone={model.statusTone} /></td>
-              <td className="px-3 py-2.5">{model.latencyLabel}</td>
               <td className="px-3 py-2.5">{model.contextLabel}</td>
-              <td className="px-3 py-2.5">{model.costLabel}<span className="block text-[0.66rem] text-slate-500">per 1M tokens</span></td>
-              <td className="px-3 py-2.5">{model.rateLimitLabel}</td>
               <td className="px-3 py-2.5"><StatusBadge label={model.role} tone={model.role === "Primary" ? "info" : model.role === "Fallback" ? "purple" : model.role === "Secondary" ? "success" : "warning"} dot={false} /></td>
               <td className="px-3 py-2.5">{model.lastActiveLabel}</td>
-              <td className="px-3 py-2.5"><MoreButton /></td>
+              <td className="px-3 py-2.5">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-7 rounded-[8px] px-2 text-[0.7rem]"
+                  disabled={settingDefaultId === model.id || model.role === "Primary" || model.statusTone === "danger"}
+                  title={model.role === "Primary" ? "This model is already the default." : model.statusTone === "danger" ? "Unavailable models cannot be selected as default." : "Set this configured model as the AgentOS default."}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSetDefault(model);
+                  }}
+                >
+                  {settingDefaultId === model.id ? "Saving..." : "Set Default"}
+                </Button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -1366,12 +1883,16 @@ function ModelInspector({
   model,
   tab,
   onTabChange,
-  onSetRole
+  settingDefault,
+  onSetDefault,
+  onOpenAddModels
 }: {
   model: ModelView;
   tab: "Details" | "Capabilities" | "Performance";
   onTabChange: (tab: "Details" | "Capabilities" | "Performance") => void;
-  onSetRole: (role: ModelView["role"]) => void;
+  settingDefault: boolean;
+  onSetDefault: () => void;
+  onOpenAddModels: () => void;
 }) {
   return (
     <InspectorPanelFrame>
@@ -1385,14 +1906,22 @@ function ModelInspector({
             </div>
             <StatusBadge label={model.statusLabel} tone={model.statusTone} />
           </div>
-          <p className="mt-2.5 text-xs leading-5 text-slate-300">Most capable configured model route for AgentOS agents.</p>
+          <p className="mt-2.5 text-xs leading-5 text-slate-300">Configured model route reported by AgentOS/OpenClaw.</p>
         </div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <Button size="sm" className="col-span-2 h-8 rounded-[9px] bg-blue-500 text-xs text-white hover:bg-blue-400" onClick={() => onSetRole("Primary")}>Set as Primary</Button>
-        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs text-violet-200" onClick={() => onSetRole("Fallback")}>Set as Fallback</Button>
-        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => toast.message("Model editing is handled by the Add Models flow.")}>Edit</Button>
-        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => toast.message("Disable is local until model removal is exposed here.")}>Disable</Button>
+        <Button
+          size="sm"
+          className="col-span-2 h-8 rounded-[9px] bg-blue-500 text-xs text-white hover:bg-blue-400"
+          disabled={settingDefault || model.role === "Primary" || model.statusTone === "danger"}
+          title={model.role === "Primary" ? "This model is already the default." : model.statusTone === "danger" ? "Unavailable models cannot be selected as default." : "Set this configured model as the AgentOS default."}
+          onClick={onSetDefault}
+        >
+          {settingDefault ? "Saving..." : "Set as Default"}
+        </Button>
+        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs text-violet-200" disabled title="Fallback routing is not exposed by the current model provider API.">Set as Fallback</Button>
+        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={onOpenAddModels}>Add Models</Button>
+        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" disabled title="Model removal/disable is not exposed by the current model provider API.">Disable</Button>
       </div>
       <div className="mt-3 flex border-b border-white/[0.08]">
         {(["Details", "Capabilities", "Performance"] as const).map((item) => (
@@ -1405,15 +1934,18 @@ function ModelInspector({
           <KeyValue label="API Status" value={model.statusLabel} />
           <KeyValue label="Model ID" value={model.id} />
           <KeyValue label="Context Window" value={model.contextLabel} />
-          <KeyValue label="Max Output" value="32,768 tokens" />
-          <KeyValue label="Knowledge Cutoff" value="Apr 2025" />
+          <KeyValue label="Latency" value={model.latencyLabel} />
+          <KeyValue label="Rate Limit" value={model.rateLimitLabel} />
           <KeyValue label="Cost / 1M" value={model.costLabel} />
         </div>
       ) : tab === "Capabilities" ? (
         <div className="mt-3 flex flex-wrap gap-1.5">{model.capabilities.map((capability) => <MiniBadge key={capability}>{capability}</MiniBadge>)}</div>
       ) : (
         <div className="mt-4">
-          <UsageChart />
+          <UnsupportedPanel
+            title="Performance metrics unavailable"
+            description="The current snapshot does not expose per-model latency, cost, request volume, or route split analytics."
+          />
           <div className="mt-3 grid grid-cols-2 gap-2.5">
             <MetricMini label="Latency" value={model.latencyLabel} />
             <MetricMini label="Rate Limit" value={model.rateLimitLabel} />
@@ -2375,24 +2907,248 @@ function MetricTile({
   );
 }
 
-function UsageChart({ className }: { className?: string }) {
-  const lines = [
-    "M 0 90 C 45 62 68 70 100 42 S 168 76 210 48 S 282 44 320 24",
-    "M 0 112 C 38 90 70 86 105 80 S 175 98 210 72 S 275 76 320 58",
-    "M 0 132 C 45 118 72 112 104 108 S 170 116 210 92 S 270 106 320 86"
-  ];
+function UnsupportedPanel({
+  title,
+  description,
+  className
+}: {
+  title: string;
+  description: string;
+  className?: string;
+}) {
   return (
-    <div className={cn("h-40 rounded-[10px] border border-white/[0.08] bg-slate-950/35 p-2.5", className)}>
-      <svg viewBox="0 0 320 150" className="h-full w-full overflow-visible">
-        {[20, 55, 90, 125].map((y) => (
-          <line key={y} x1="0" x2="320" y1={y} y2={y} stroke="rgba(255,255,255,0.08)" />
-        ))}
-        <path d={lines[0]} fill="none" stroke="#3b82f6" strokeWidth="3" />
-        <path d={lines[1]} fill="none" stroke="#a855f7" strokeWidth="2" />
-        <path d={lines[2]} fill="none" stroke="#f59e0b" strokeWidth="2" />
-      </svg>
+    <div className={cn("rounded-[12px] border border-white/[0.08] bg-white/[0.03] p-3", className)}>
+      <p className="text-xs font-semibold text-white">{title}</p>
+      <p className="mt-2 text-xs leading-5 text-slate-400">{description}</p>
     </div>
   );
+}
+
+function MissionDispatchDialog({
+  open,
+  agent,
+  defaultWorkspaceId = null,
+  onOpenChange,
+  onSubmitted
+}: {
+  open: boolean;
+  agent: AgentView | null;
+  defaultWorkspaceId?: string | null;
+  onOpenChange: (open: boolean) => void;
+  onSubmitted: () => Promise<void>;
+}) {
+  const [mission, setMission] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const workspaceId = agent?.source?.workspaceId ?? defaultWorkspaceId ?? undefined;
+
+  useEffect(() => {
+    if (open) {
+      setMission("");
+      setError(null);
+    }
+  }, [open]);
+
+  const submitMission = async () => {
+    const trimmedMission = mission.trim();
+    if (!trimmedMission) {
+      setError("Enter a task brief before submitting.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/mission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mission: trimmedMission,
+          agentId: agent?.source?.id,
+          workspaceId
+        })
+      });
+      const result = await response.json().catch(() => null) as { error?: string; summary?: string } | null;
+      if (!response.ok || result?.error) {
+        throw new Error(result?.error || "Mission dispatch failed.");
+      }
+      toast.success("Task submitted.", {
+        description: result?.summary
+      });
+      onOpenChange(false);
+      await onSubmitted();
+    } catch (error) {
+      setError(readClientError(error));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl rounded-[18px] border-white/[0.10] bg-[#08111f]/95 p-4">
+        <DialogHeader>
+          <DialogTitle>{agent ? `Run task with ${agent.name}` : "Create Task"}</DialogTitle>
+          <DialogDescription>
+            Submits through the existing AgentOS mission dispatch flow.
+          </DialogDescription>
+        </DialogHeader>
+        {error ? <div className="rounded-[10px] border border-rose-300/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-100">{error}</div> : null}
+        <Textarea
+          value={mission}
+          onChange={(event) => setMission(event.target.value)}
+          placeholder="Describe the task to run..."
+          className="min-h-36 rounded-[12px] border-white/[0.10] bg-slate-950/50 text-sm text-slate-100"
+        />
+        <DialogFooter>
+          <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            className="h-8 rounded-[9px] bg-blue-500 text-xs text-white hover:bg-blue-400"
+            disabled={submitting || !mission.trim()}
+            onClick={() => void submitMission()}
+          >
+            {submitting ? "Submitting..." : "Submit Task"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function sortAgentViews(left: AgentView, right: AgentView, sort: "last-active" | "name" | "status" | "workspace") {
+  if (sort === "name") {
+    return left.name.localeCompare(right.name);
+  }
+
+  if (sort === "status") {
+    return left.statusLabel.localeCompare(right.statusLabel) || left.name.localeCompare(right.name);
+  }
+
+  if (sort === "workspace") {
+    return left.workspaceName.localeCompare(right.workspaceName) || left.name.localeCompare(right.name);
+  }
+
+  return (right.source?.lastActiveAt ?? 0) - (left.source?.lastActiveAt ?? 0) || left.name.localeCompare(right.name);
+}
+
+function formatAgentSortLabel(sort: "last-active" | "name" | "status" | "workspace") {
+  if (sort === "last-active") {
+    return "Last active";
+  }
+
+  return toTitleCase(sort);
+}
+
+function sortTaskViews(left: TaskView, right: TaskView, sort: "updated" | "title" | "status" | "agent") {
+  if (sort === "title") {
+    return left.title.localeCompare(right.title);
+  }
+
+  if (sort === "status") {
+    return left.statusLabel.localeCompare(right.statusLabel) || left.title.localeCompare(right.title);
+  }
+
+  if (sort === "agent") {
+    return left.agentName.localeCompare(right.agentName) || left.title.localeCompare(right.title);
+  }
+
+  return (right.source?.updatedAt ?? 0) - (left.source?.updatedAt ?? 0) || left.title.localeCompare(right.title);
+}
+
+function formatTaskSortLabel(sort: "updated" | "title" | "status" | "agent") {
+  if (sort === "updated") {
+    return "Last updated";
+  }
+
+  return toTitleCase(sort);
+}
+
+function formatTaskFilterLabel(filter: "all" | TaskView["status"]) {
+  if (filter === "all") {
+    return "All";
+  }
+
+  if (filter === "approval") {
+    return "Awaiting Approval";
+  }
+
+  return toTitleCase(filter);
+}
+
+function resolveTaskTone(filter: "all" | TaskView["status"]) {
+  if (filter === "running") {
+    return "info";
+  }
+
+  if (filter === "completed") {
+    return "success";
+  }
+
+  if (filter === "approval" || filter === "stalled") {
+    return "warning";
+  }
+
+  if (filter === "cancelled") {
+    return "danger";
+  }
+
+  return "muted";
+}
+
+function canCancelTask(task: TaskView) {
+  return Boolean(task.source && ["queued", "running", "approval", "stalled"].includes(task.status));
+}
+
+function sortFileViews(left: FileView, right: FileView, sort: "name" | "path" | "size" | "collection") {
+  if (sort === "name") {
+    return left.name.localeCompare(right.name);
+  }
+
+  if (sort === "collection") {
+    return left.collection.localeCompare(right.collection) || left.name.localeCompare(right.name);
+  }
+
+  if (sort === "size") {
+    return (right.sizeBytes ?? -1) - (left.sizeBytes ?? -1) || left.name.localeCompare(right.name);
+  }
+
+  return left.relativePath.localeCompare(right.relativePath);
+}
+
+function formatFileSortLabel(sort: "name" | "path" | "size" | "collection") {
+  if (sort === "path") {
+    return "Path";
+  }
+
+  return toTitleCase(sort);
+}
+
+function sortModelViews(left: ModelView, right: ModelView, sort: "name" | "provider" | "status" | "role") {
+  if (sort === "name") {
+    return left.name.localeCompare(right.name);
+  }
+
+  if (sort === "status") {
+    return left.statusLabel.localeCompare(right.statusLabel) || left.name.localeCompare(right.name);
+  }
+
+  if (sort === "role") {
+    return left.role.localeCompare(right.role) || left.name.localeCompare(right.name);
+  }
+
+  return left.provider.localeCompare(right.provider) || left.name.localeCompare(right.name);
+}
+
+function formatModelSortLabel(sort: "name" | "provider" | "status" | "role") {
+  return toTitleCase(sort);
+}
+
+function formatAgentDisplayNameFromRecord(agent: AgentRecord) {
+  return agent.identityName?.trim() || agent.name || agent.id;
 }
 
 function agentFilterLabel(filter: AgentFilter) {

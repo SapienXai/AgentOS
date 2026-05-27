@@ -25,7 +25,8 @@ import {
   buildOpenClawFileBasedProviderConnectionStatus,
   persistOpenClawProviderToken,
   readOpenClawConfiguredModelIds,
-  readOpenClawProviderModelStatus
+  readOpenClawProviderModelStatus,
+  setOpenClawDefaultModel
 } from "@/lib/openclaw/application/model-provider-state-service";
 import {
   isGatewayAuthSetupRecoveryError,
@@ -91,6 +92,11 @@ const requestSchema = z.discriminatedUnion("action", [
     action: z.literal("add-models"),
     provider: providerIdSchema,
     modelIds: z.array(z.string().trim().min(1)).min(1)
+  }),
+  z.object({
+    action: z.literal("set-default"),
+    provider: providerIdSchema,
+    modelId: z.string().trim().min(1)
   })
 ]);
 
@@ -260,6 +266,10 @@ async function handleProviderAction(
     return discoverProviderModels(input.provider, commandBin);
   }
 
+  if (input.action === "set-default") {
+    return setProviderDefaultModel(input.provider, input.modelId, commandBin);
+  }
+
   let repairedGatewayAuth = false;
 
   try {
@@ -307,6 +317,82 @@ async function handleProviderAction(
     connection: statusContext.connection,
     models: providerModels,
     docsUrl: addModelsDocsUrl
+  });
+}
+
+async function setProviderDefaultModel(
+  provider: AddModelsProviderId,
+  modelId: string,
+  commandBin = "openclaw"
+): Promise<AddModelsProviderActionResult> {
+  if (!modelIdMatchesProviderRequest(provider, modelId)) {
+    const statusContext = await readProviderConnectionContext(provider);
+
+    return buildActionResult({
+      ok: false,
+      action: "set-default",
+      provider,
+      message: `${getModelProviderDescriptor(provider).shortLabel} cannot set ${modelId} as its default model.`,
+      connection: statusContext.connection,
+      models: [],
+      docsUrl: addModelsDocsUrl
+    });
+  }
+
+  let repairedGatewayAuth = false;
+  let savedDefault: Awaited<ReturnType<typeof setOpenClawDefaultModel>>;
+
+  try {
+    const result = await runWithGatewayAuthSetupRecovery(
+      () => setOpenClawDefaultModel(modelId, { provider }),
+      {
+        operationLabel: "setting the default model"
+      }
+    );
+    repairedGatewayAuth = Boolean(result.repaired);
+    savedDefault = result.value;
+  } catch (error) {
+    const statusContext = await readProviderConnectionContext(provider);
+    const providerModels = await readProviderCatalog(provider, statusContext.configuredModelIds, commandBin)
+      .catch(() => []);
+
+    return buildActionResult({
+      ok: false,
+      action: "set-default",
+      provider,
+      message: readProviderActionError(error),
+      connection: statusContext.connection,
+      models: providerModels,
+      manualCommand: isGatewayAuthSetupRecoveryError(error)
+        ? formatOpenClawCommand(commandBin, ["gateway", "status", "--json"])
+        : null,
+      docsUrl: addModelsDocsUrl
+    });
+  }
+
+  if (provider === "openai-codex" && await clearOpenAiCodexAuthRuntimeSmokeFailures()) {
+    clearMissionControlCaches();
+  }
+  const refreshedSnapshot = await getMissionControlSnapshot({ force: true });
+  const statusContext = await readProviderConnectionContext(provider);
+  const providerModels = await readProviderCatalog(provider, statusContext.configuredModelIds, commandBin);
+
+  return buildActionResult({
+    ok: true,
+    action: "set-default",
+    provider,
+    message: repairedGatewayAuth
+      ? `Gateway auth was repaired and ${savedDefault.modelId} was saved as the default model.`
+      : `${savedDefault.modelId} was saved as the default model.`,
+    snapshot: refreshedSnapshot,
+    connection: statusContext.connection,
+    models: providerModels,
+    docsUrl: addModelsDocsUrl,
+    defaultModel: {
+      id: savedDefault.modelId,
+      provider: savedDefault.provider ?? provider,
+      via: savedDefault.via
+    }
   });
 }
 
@@ -632,7 +718,8 @@ function buildActionResult({
   models,
   emptyState = null,
   manualCommand = null,
-  docsUrl = null
+  docsUrl = null,
+  defaultModel
 }: {
   ok: boolean;
   action: AddModelsProviderActionResult["action"];
@@ -644,6 +731,7 @@ function buildActionResult({
   emptyState?: AddModelsEmptyState | null;
   manualCommand?: string | null;
   docsUrl?: string | null;
+  defaultModel?: AddModelsProviderActionResult["defaultModel"];
 }): AddModelsProviderActionResult {
   return {
     ok,
@@ -655,6 +743,7 @@ function buildActionResult({
     emptyState,
     manualCommand,
     docsUrl,
+    defaultModel,
     snapshot
   };
 }
@@ -842,6 +931,14 @@ function modelMatchesProvider(provider: AddModelsProviderId, modelId: string) {
   }
 
   return modelProvider === provider && isAddModelsProviderId(modelProvider);
+}
+
+function modelIdMatchesProviderRequest(provider: AddModelsProviderId, modelId: string) {
+  if (!modelId.includes("/")) {
+    return true;
+  }
+
+  return modelMatchesProvider(provider, modelId);
 }
 
 function isRecommendedModel(provider: AddModelsProviderId, modelId: string) {

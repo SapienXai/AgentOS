@@ -91,15 +91,17 @@ export function PageHeader({
   subtitle,
   primaryAction,
   secondaryAction,
+  actions,
   children
 }: {
   title: string;
   subtitle: string;
-  primaryAction: { label: string; icon?: LucideIcon; onClick?: () => void };
+  primaryAction?: { label: string; icon?: LucideIcon; onClick?: () => void; disabled?: boolean; title?: string };
   secondaryAction?: { label: string; icon?: LucideIcon; onClick?: () => void };
+  actions?: ReactNode;
   children?: ReactNode;
 }) {
-  const PrimaryIcon = primaryAction.icon;
+  const PrimaryIcon = primaryAction?.icon;
   const SecondaryIcon = secondaryAction?.icon;
 
   return (
@@ -112,16 +114,28 @@ export function PageHeader({
           <p className="mt-1.5 max-w-3xl text-[0.78rem] leading-5 text-slate-300">{subtitle}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {secondaryAction ? (
-            <Button variant="secondary" size="sm" className="h-8 rounded-[10px] px-3 text-xs" onClick={secondaryAction.onClick}>
-              {SecondaryIcon ? <SecondaryIcon className="mr-1.5 h-3.5 w-3.5" /> : null}
-              {secondaryAction.label}
-            </Button>
-          ) : null}
-          <Button size="sm" className="h-8 rounded-[10px] bg-blue-500 px-3 text-xs text-white shadow-blue-500/20 hover:bg-blue-400" onClick={primaryAction.onClick}>
-            {PrimaryIcon ? <PrimaryIcon className="mr-1.5 h-3.5 w-3.5" /> : null}
-            {primaryAction.label}
-          </Button>
+          {actions ?? (
+            <>
+              {secondaryAction ? (
+                <Button variant="secondary" size="sm" className="h-8 rounded-[10px] px-3 text-xs" onClick={secondaryAction.onClick}>
+                  {SecondaryIcon ? <SecondaryIcon className="mr-1.5 h-3.5 w-3.5" /> : null}
+                  {secondaryAction.label}
+                </Button>
+              ) : null}
+              {primaryAction ? (
+                <Button
+                  size="sm"
+                  className="h-8 rounded-[10px] bg-blue-500 px-3 text-xs text-white shadow-blue-500/20 hover:bg-blue-400"
+                  onClick={primaryAction.onClick}
+                  disabled={primaryAction.disabled}
+                  title={primaryAction.title}
+                >
+                  {PrimaryIcon ? <PrimaryIcon className="mr-1.5 h-3.5 w-3.5" /> : null}
+                  {primaryAction.label}
+                </Button>
+              ) : null}
+            </>
+          )}
         </div>
       </div>
       {children ? <div className="mt-4">{children}</div> : null}
@@ -209,21 +223,29 @@ export function ToolbarButton({
   label,
   chevron,
   active,
-  onClick
+  onClick,
+  disabled,
+  title
 }: {
   icon?: LucideIcon;
   label: string;
   chevron?: boolean;
   active?: boolean;
   onClick?: () => void;
+  disabled?: boolean;
+  title?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
+      title={title}
       className={cn(
         "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border px-2.5 text-[0.74rem] font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
-        active
+        disabled
+          ? "cursor-not-allowed border-white/[0.06] bg-white/[0.025] text-slate-600"
+          : active
           ? "border-sky-300/30 bg-sky-400/14 text-sky-100"
           : "border-white/[0.09] bg-white/[0.045] text-slate-300 hover:border-white/[0.14] hover:bg-white/[0.075] hover:text-white"
       )}
@@ -454,22 +476,30 @@ export function IconButton({
   icon: Icon,
   active,
   dot,
-  onClick
+  onClick,
+  disabled,
+  title
 }: {
   ariaLabel: string;
   icon: LucideIcon;
   active?: boolean;
   dot?: boolean;
   onClick?: () => void;
+  disabled?: boolean;
+  title?: string;
 }) {
   return (
     <button
       type="button"
       aria-label={ariaLabel}
       onClick={onClick}
+      disabled={disabled}
+      title={title}
       className={cn(
         "relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
-        active
+        disabled
+          ? "cursor-not-allowed border-white/[0.06] bg-white/[0.025] text-slate-600"
+          : active
           ? "border-sky-300/30 bg-sky-400/14 text-sky-200"
           : "border-white/[0.08] bg-white/[0.035] text-slate-400 hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white"
       )}
@@ -480,8 +510,8 @@ export function IconButton({
   );
 }
 
-export function MoreButton({ onClick }: { onClick?: () => void }) {
-  return <IconButton ariaLabel="More actions" icon={MoreHorizontal} onClick={onClick} />;
+export function MoreButton({ onClick, title = "More actions require backend support." }: { onClick?: () => void; title?: string }) {
+  return <IconButton ariaLabel="More actions" icon={MoreHorizontal} onClick={onClick} disabled={!onClick} title={title} />;
 }
 
 export function EmptyState({
