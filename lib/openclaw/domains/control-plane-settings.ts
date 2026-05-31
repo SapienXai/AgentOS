@@ -2,7 +2,11 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { OpenClawRuntimeSmokeTest } from "@/lib/agentos/contracts";
+import type {
+  OpenClawCompatibilitySmokeReport,
+  OpenClawRuntimeSmokeTest,
+  OpenClawSmokeTestCheck
+} from "@/lib/agentos/contracts";
 import {
   buildOpenAiCodexAuthLoginCommand,
   isOpenAiCodexAuthFailure,
@@ -27,6 +31,7 @@ export type MissionControlSettings = {
   runtimePreflight?: {
     smokeTests?: Record<string, RuntimeSmokeTestCacheEntry>;
   };
+  compatibilitySmokeTest?: OpenClawCompatibilitySmokeReport;
 };
 
 export function normalizeGatewayRemoteUrl(value: string | null | undefined) {
@@ -112,10 +117,12 @@ export async function readMissionControlSettings(): Promise<MissionControlSettin
     const runtimePreflight = normalizeRuntimePreflightSettings(
       typeof parsed.runtimePreflight === "object" && parsed.runtimePreflight ? parsed.runtimePreflight : undefined
     );
+    const compatibilitySmokeTest = normalizeCompatibilitySmokeTest(parsed.compatibilitySmokeTest);
 
     return {
       ...(workspaceRoot ? { workspaceRoot } : {}),
-      ...(runtimePreflight ? { runtimePreflight } : {})
+      ...(runtimePreflight ? { runtimePreflight } : {}),
+      ...(compatibilitySmokeTest ? { compatibilitySmokeTest } : {})
     };
   } catch {
     return {};
@@ -161,6 +168,10 @@ export function getLatestRuntimeSmokeTest(settings: MissionControlSettings): Ope
   return mapRuntimeSmokeTestEntry(latest?.[0] ?? null, latest?.[1] ?? null);
 }
 
+export function getLatestOpenClawCompatibilitySmokeTest(settings: MissionControlSettings) {
+  return settings.compatibilitySmokeTest ?? null;
+}
+
 export function isRuntimeSmokeTestFresh(entry: RuntimeSmokeTestCacheEntry | null) {
   if (!entry || entry.status !== "passed") {
     return false;
@@ -189,10 +200,19 @@ export async function persistRuntimeSmokeTest(result: OpenClawRuntimeSmokeTest) 
   };
 
   await writeMissionControlSettings({
-    ...(settings.workspaceRoot ? { workspaceRoot: settings.workspaceRoot } : {}),
+    ...settings,
     runtimePreflight: {
       smokeTests
     }
+  });
+}
+
+export async function persistOpenClawCompatibilitySmokeTest(result: OpenClawCompatibilitySmokeReport) {
+  const settings = await readMissionControlSettings();
+
+  await writeMissionControlSettings({
+    ...settings,
+    compatibilitySmokeTest: normalizeCompatibilitySmokeTest(result) ?? result
   });
 }
 
@@ -209,16 +229,16 @@ export async function clearOpenAiCodexAuthRuntimeSmokeFailures() {
     return false;
   }
 
-  await writeMissionControlSettings({
-    ...(settings.workspaceRoot ? { workspaceRoot: settings.workspaceRoot } : {}),
-    ...(Object.keys(nextSmokeTests).length > 0
-      ? {
-          runtimePreflight: {
-            smokeTests: nextSmokeTests
-          }
-        }
-      : {})
-  });
+  const nextSettings: MissionControlSettings = { ...settings };
+  if (Object.keys(nextSmokeTests).length > 0) {
+    nextSettings.runtimePreflight = {
+      smokeTests: nextSmokeTests
+    };
+  } else {
+    delete nextSettings.runtimePreflight;
+  }
+
+  await writeMissionControlSettings(nextSettings);
 
   return true;
 }
@@ -285,6 +305,132 @@ function normalizeRuntimePreflightSettings(value: unknown): MissionControlSettin
   );
 
   return Object.keys(smokeTests).length > 0 ? { smokeTests } : undefined;
+}
+
+function normalizeCompatibilitySmokeTest(value: unknown): OpenClawCompatibilitySmokeReport | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const status = normalizeCompatibilityStatus(candidate.status);
+  const checkedAt = typeof candidate.checkedAt === "string" && candidate.checkedAt.trim()
+    ? candidate.checkedAt
+    : null;
+  const compatibility = normalizeCompatibilitySummary(candidate.compatibility);
+
+  if (!status || !checkedAt || !compatibility) {
+    return undefined;
+  }
+
+  const durationMs = typeof candidate.durationMs === "number" && Number.isFinite(candidate.durationMs)
+    ? Math.max(0, candidate.durationMs)
+    : 0;
+  const safeToDispatchMissions = candidate.safeToDispatchMissions === true;
+  const recovery = typeof candidate.recovery === "string" && candidate.recovery.trim()
+    ? candidate.recovery.trim()
+    : "Review OpenClaw compatibility diagnostics, then rerun the smoke test.";
+  const checks = Array.isArray(candidate.checks)
+    ? candidate.checks.map(normalizeCompatibilitySmokeCheck).filter((entry): entry is OpenClawSmokeTestCheck => Boolean(entry))
+    : [];
+
+  return {
+    status,
+    checkedAt,
+    durationMs,
+    safeToDispatchMissions,
+    recovery,
+    checks,
+    compatibility
+  };
+}
+
+function normalizeCompatibilitySmokeCheck(value: unknown): OpenClawSmokeTestCheck | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const status = normalizeSmokeCheckStatus(candidate.status);
+  const id = typeof candidate.id === "string" && candidate.id.trim() ? candidate.id.trim() : null;
+  const label = typeof candidate.label === "string" && candidate.label.trim() ? candidate.label.trim() : null;
+  const summary = typeof candidate.summary === "string" && candidate.summary.trim() ? candidate.summary.trim() : null;
+
+  if (!id || !label || !status || !summary) {
+    return null;
+  }
+
+  return {
+    id,
+    label,
+    status,
+    required: candidate.required === true,
+    summary,
+    recovery: typeof candidate.recovery === "string" && candidate.recovery.trim()
+      ? candidate.recovery.trim()
+      : null,
+    durationMs: typeof candidate.durationMs === "number" && Number.isFinite(candidate.durationMs)
+      ? Math.max(0, candidate.durationMs)
+      : 0,
+    ...(candidate.rawDetails !== undefined ? { rawDetails: candidate.rawDetails } : {})
+  };
+}
+
+function normalizeCompatibilitySummary(value: unknown): OpenClawCompatibilitySmokeReport["compatibility"] | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const range = candidate.agentOsSupportedProtocolRange && typeof candidate.agentOsSupportedProtocolRange === "object"
+    ? candidate.agentOsSupportedProtocolRange as Record<string, unknown>
+    : null;
+  const rangeMin = typeof range?.min === "number" && Number.isFinite(range.min) ? range.min : null;
+  const rangeMax = typeof range?.max === "number" && Number.isFinite(range.max) ? range.max : null;
+
+  if (rangeMin === null || rangeMax === null) {
+    return null;
+  }
+
+  return {
+    installedVersion: normalizeOptionalString(candidate.installedVersion),
+    requiredOpenClawVersion: normalizeOptionalString(candidate.requiredOpenClawVersion),
+    recommendedOpenClawVersion: normalizeOptionalString(candidate.recommendedOpenClawVersion),
+    gatewayProtocolVersion: normalizeOptionalString(candidate.gatewayProtocolVersion),
+    requiredGatewayProtocolVersion: normalizeOptionalString(candidate.requiredGatewayProtocolVersion) ?? "4",
+    agentOsSupportedProtocolRange: {
+      min: rangeMin,
+      max: rangeMax
+    },
+    nodeVersion: normalizeOptionalString(candidate.nodeVersion),
+    nodeRequiredVersion: normalizeOptionalString(candidate.nodeRequiredVersion) ?? "22.19.0",
+    nodeRecommendedVersion: normalizeOptionalString(candidate.nodeRecommendedVersion) ?? "24.x",
+    nodeStatus: candidate.nodeStatus === "supported" || candidate.nodeStatus === "unsupported" || candidate.nodeStatus === "unknown"
+      ? candidate.nodeStatus
+      : "unknown",
+    gatewayAuthStatus: normalizeOptionalString(candidate.gatewayAuthStatus) ?? "Unknown",
+    nativeGatewayStatus: normalizeOptionalString(candidate.nativeGatewayStatus) ?? "Unknown",
+    cliFallbackUsageCount: typeof candidate.cliFallbackUsageCount === "number" && Number.isFinite(candidate.cliFallbackUsageCount)
+      ? Math.max(0, candidate.cliFallbackUsageCount)
+      : 0,
+    lastNativeError: normalizeOptionalString(candidate.lastNativeError),
+    lastFallbackReason: normalizeOptionalString(candidate.lastFallbackReason),
+    modelReady: typeof candidate.modelReady === "boolean" ? candidate.modelReady : null
+  };
+}
+
+function normalizeCompatibilityStatus(value: unknown) {
+  return value === "compatible" || value === "degraded" || value === "incompatible" || value === "unknown"
+    ? value
+    : null;
+}
+
+function normalizeSmokeCheckStatus(value: unknown) {
+  return value === "pass" || value === "warning" || value === "fail" ? value : null;
+}
+
+function normalizeOptionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function normalizeRuntimeSmokeTestError(error: string | null) {

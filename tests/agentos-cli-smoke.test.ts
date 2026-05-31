@@ -263,6 +263,53 @@ test("package-manager update --check prints package manager guidance without net
   assert.match(result.stdout, /npm install -g @sapienx\/agentos@latest/);
 });
 
+test("package-manager update --check falls back to package manager metadata when registry fetch fails", async () => {
+  const fixture = await createCliFixture({
+    packageDir: path.join(await mkdtemp(path.join(os.tmpdir(), "agentos-pm-fallback-")), "node_modules", "@sapienx", "agentos")
+  });
+  const fakeBinDir = path.join(fixture.installRoot, "fake-bin");
+  const latestVersion = bumpPatchVersion(packageJson.version);
+
+  await writeFakePackageManagerBinary(fakeBinDir, "npm", latestVersion);
+
+  const result = runCli(fixture.cliPath, ["update", "--check"], {
+    env: {
+      ...createSmokeEnv(fixture.installRoot),
+      AGENTOS_TEST_FORCE_NPM_FETCH_FAILURE: "1",
+      PATH: `${fakeBinDir}${path.delimiter}${process.env.PATH || ""}`
+    }
+  });
+
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(
+    result.stdout,
+    new RegExp(`Update available: ${escapeRegExp(packageJson.version)} -> ${escapeRegExp(latestVersion)}\\.`)
+  );
+  assert.match(result.stdout, /This AgentOS install appears to come from a package manager\./);
+});
+
+test("package-manager update --check still reports when update cache cannot be written", async () => {
+  const fixture = await createCliFixture({
+    packageDir: path.join(await mkdtemp(path.join(os.tmpdir(), "agentos-pm-cache-")), "node_modules", "@sapienx", "agentos")
+  });
+  const latestVersion = bumpPatchVersion(packageJson.version);
+
+  await writeFile(fixture.installRoot, "not a directory\n", "utf8");
+
+  const result = runCli(fixture.cliPath, ["update", "--check"], {
+    env: {
+      ...createSmokeEnv(fixture.installRoot),
+      AGENTOS_TEST_LATEST_VERSION: latestVersion
+    }
+  });
+
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(
+    result.stdout,
+    new RegExp(`Update available: ${escapeRegExp(packageJson.version)} -> ${escapeRegExp(latestVersion)}\\.`)
+  );
+});
+
 test("package-manager uninstall redirects to package manager commands", async () => {
   const fixture = await createCliFixture({
     packageDir: path.join(await mkdtemp(path.join(os.tmpdir(), "agentos-pm-uninstall-")), "node_modules", "@sapienx", "agentos")
@@ -378,6 +425,21 @@ async function writeFakeOpenClawBinary(installRoot: string) {
   }
 
   await writeFile(binPath, "#!/bin/sh\necho OpenClaw 0.0.0-test\n", "utf8");
+  await chmod(binPath, 0o755);
+  return binPath;
+}
+
+async function writeFakePackageManagerBinary(binDir: string, command: string, version: string) {
+  await mkdir(binDir, { recursive: true });
+
+  if (process.platform === "win32") {
+    const binPath = path.join(binDir, `${command}.cmd`);
+    await writeFile(binPath, `@echo off\r\necho "${version}"\r\n`, "utf8");
+    return binPath;
+  }
+
+  const binPath = path.join(binDir, command);
+  await writeFile(binPath, `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(version)}'\n`, "utf8");
   await chmod(binPath, 0o755);
   return binPath;
 }

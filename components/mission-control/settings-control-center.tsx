@@ -62,6 +62,9 @@ type GatewayCapabilityOperations = NonNullable<
   NonNullable<MissionControlShellSettingsPanelProps["snapshot"]["diagnostics"]["capabilityMatrix"]>["operations"]
 >;
 type GatewayMethodContractAudit = GatewayCompatibilityProfile["methodContract"];
+type CompatibilitySmokeReport = NonNullable<
+  MissionControlShellSettingsPanelProps["snapshot"]["diagnostics"]["compatibilitySmokeTest"]
+>;
 type SettingsSectionId =
   | "openclaw"
   | "gateway"
@@ -138,7 +141,14 @@ export function SettingsControlCenter(
   const [isSavingGatewayAuthCredential, setIsSavingGatewayAuthCredential] = useState(false);
   const [isGeneratingGatewayAuthToken, setIsGeneratingGatewayAuthToken] = useState(false);
   const [isRepairingGatewayDeviceAccess, setIsRepairingGatewayDeviceAccess] = useState(false);
+  const [compatibilitySmokeReport, setCompatibilitySmokeReport] = useState<CompatibilitySmokeReport | null>(
+    () => snapshot.diagnostics.compatibilitySmokeTest ?? null
+  );
+  const [compatibilitySmokeError, setCompatibilitySmokeError] = useState<string | null>(null);
+  const [isRunningCompatibilitySmoke, setIsRunningCompatibilitySmoke] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => resolveInitialSettingsSection());
+  const [settingsHashHydrated, setSettingsHashHydrated] = useState(false);
+  const renderedActiveSection = settingsHashHydrated ? activeSection : resolveInitialSettingsSection();
   const hasUpdateAvailable = Boolean(snapshot.diagnostics.updateAvailable && snapshot.diagnostics.latestVersion);
   const isUpdateRegistryLoading = Boolean(
     snapshot.diagnostics.version && !snapshot.diagnostics.latestVersion && !snapshot.diagnostics.updateError
@@ -187,6 +197,25 @@ export function SettingsControlCenter(
       : formatGatewayAuthIssue(gatewayAuthStatus.native.kind)
     : "Unknown";
 
+  useEffect(() => {
+    const snapshotReport = snapshot.diagnostics.compatibilitySmokeTest;
+    if (!snapshotReport) {
+      return;
+    }
+
+    setCompatibilitySmokeReport((current) => {
+      if (!current) {
+        return snapshotReport;
+      }
+
+      const currentTime = Date.parse(current.checkedAt);
+      const snapshotTime = Date.parse(snapshotReport.checkedAt);
+      return Number.isFinite(snapshotTime) && (!Number.isFinite(currentTime) || snapshotTime > currentTime)
+        ? snapshotReport
+        : current;
+    });
+  }, [snapshot.diagnostics.compatibilitySmokeTest]);
+
   const refreshGatewayAuthStatus = useCallback(async () => {
     setIsCheckingGatewayAuth(true);
     setGatewayAuthError(null);
@@ -210,7 +239,8 @@ export function SettingsControlCenter(
     }
 
     const syncActiveSectionFromHash = () => {
-      setActiveSection(resolveInitialSettingsSection());
+      setActiveSection(resolveHashSettingsSection());
+      setSettingsHashHydrated(true);
       scrollSettingsToTop();
     };
 
@@ -324,6 +354,32 @@ export function SettingsControlCenter(
     }
   };
 
+  const runCompatibilitySmokeTest = async () => {
+    setIsRunningCompatibilitySmoke(true);
+    setCompatibilitySmokeError(null);
+
+    try {
+      const response = await fetch("/api/openclaw/compatibility-smoke", {
+        method: "POST",
+        cache: "no-store"
+      });
+
+      if (!response.ok) {
+        const result = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(result?.error || "OpenClaw compatibility smoke test failed.");
+      }
+
+      const result = (await response.json()) as { report: CompatibilitySmokeReport };
+      setCompatibilitySmokeReport(result.report);
+    } catch (error) {
+      setCompatibilitySmokeError(
+        error instanceof Error ? error.message : "Unable to run OpenClaw compatibility smoke test."
+      );
+    } finally {
+      setIsRunningCompatibilitySmoke(false);
+    }
+  };
+
   return (
     <main
       className={cn(
@@ -349,7 +405,7 @@ export function SettingsControlCenter(
                 )}
               >
                 {settingsSections.map((section) => {
-                  const active = activeSection === section.id;
+                  const active = renderedActiveSection === section.id;
                   const Icon = section.icon;
 
                   return (
@@ -382,7 +438,7 @@ export function SettingsControlCenter(
             </div>
 
             <div className="mt-5 flex flex-col gap-4">
-              {activeSection === "openclaw" ? (
+              {renderedActiveSection === "openclaw" ? (
               <section id="openclaw" className="scroll-mt-24">
                 <div
                   className={cn(
@@ -537,7 +593,7 @@ export function SettingsControlCenter(
               </section>
               ) : null}
 
-              {activeSection === "gateway" ? (
+              {renderedActiveSection === "gateway" ? (
               <section id="gateway" className="scroll-mt-24">
                 <Card title="Gateway" icon={ShieldCheck} surfaceTheme={surfaceTheme}>
                   <InfoRows
@@ -561,6 +617,18 @@ export function SettingsControlCenter(
                       ["Events", formatCapabilitySupport(capabilityMatrix?.eventBridge)]
                     ]}
                     successIndex={1}
+                  />
+
+                  <CompatibilityPanel
+                    report={compatibilitySmokeReport}
+                    snapshot={snapshot}
+                    capabilityMatrix={capabilityMatrix}
+                    transportSummary={transportSummary}
+                    nativeAuthLabel={nativeAuthLabel}
+                    error={compatibilitySmokeError}
+                    isRunning={isRunningCompatibilitySmoke}
+                    onRun={() => void runCompatibilitySmokeTest()}
+                    surfaceTheme={surfaceTheme}
                   />
 
                   {transportSummary.recovery || transportSummary.lastNativeError ? (
@@ -738,7 +806,7 @@ export function SettingsControlCenter(
               </section>
               ) : null}
 
-              {activeSection === "models" ? (
+              {renderedActiveSection === "models" ? (
               <section id="models" className="scroll-mt-24">
                 <Card title="Models" icon={Box} surfaceTheme={surfaceTheme}>
                   <InfoRows
@@ -797,7 +865,7 @@ export function SettingsControlCenter(
               </section>
               ) : null}
 
-              {activeSection === "workspace" ? (
+              {renderedActiveSection === "workspace" ? (
               <section id="workspace" className="scroll-mt-24">
                 <Card title="Workspace" icon={Folder} surfaceTheme={surfaceTheme}>
                   <div>
@@ -857,7 +925,7 @@ export function SettingsControlCenter(
               </section>
               ) : null}
 
-              {activeSection === "diagnostics" ? (
+              {renderedActiveSection === "diagnostics" ? (
               <section id="diagnostics" className="scroll-mt-24">
                 <Card
                   title="Diagnostics"
@@ -979,7 +1047,7 @@ export function SettingsControlCenter(
               </section>
               ) : null}
 
-              {activeSection === "agents" ? (
+              {renderedActiveSection === "agents" ? (
               <section id="agents" className="scroll-mt-24">
                 <Card title="Agents" icon={Bot} surfaceTheme={surfaceTheme}>
                   <InfoRows
@@ -1001,7 +1069,7 @@ export function SettingsControlCenter(
               </section>
               ) : null}
 
-              {activeSection === "advanced" ? (
+              {renderedActiveSection === "advanced" ? (
               <section id="advanced" className="scroll-mt-24">
                 <Card title="Advanced" icon={Settings2} surfaceTheme={surfaceTheme}>
                   <div className="grid gap-3 sm:grid-cols-3">
@@ -1038,7 +1106,7 @@ export function SettingsControlCenter(
               </section>
               ) : null}
 
-              {activeSection === "danger-zone" ? (
+              {renderedActiveSection === "danger-zone" ? (
               <section id="danger-zone" className="scroll-mt-24">
                 <div
                   className={cn(
@@ -1246,6 +1314,172 @@ function DiagnosticBlock({
       >
         {value || "No output"}
       </pre>
+    </div>
+  );
+}
+
+function CompatibilityPanel({
+  report,
+  snapshot,
+  capabilityMatrix,
+  transportSummary,
+  nativeAuthLabel,
+  error,
+  isRunning,
+  onRun,
+  surfaceTheme
+}: {
+  report: CompatibilitySmokeReport | null;
+  snapshot: MissionControlShellSettingsPanelProps["snapshot"];
+  capabilityMatrix: MissionControlShellSettingsPanelProps["snapshot"]["diagnostics"]["capabilityMatrix"];
+  transportSummary: TransportDiagnosticsSummary;
+  nativeAuthLabel: string;
+  error: string | null;
+  isRunning: boolean;
+  onRun: () => void;
+  surfaceTheme: SurfaceTheme;
+}) {
+  const compatibility = report?.compatibility;
+  const protocolRange = compatibility
+    ? `v${compatibility.agentOsSupportedProtocolRange.min}-v${compatibility.agentOsSupportedProtocolRange.max}`
+    : transportSummary.protocolRangeLabel;
+  const fallbackReason =
+    compatibility?.lastFallbackReason ||
+    snapshot.diagnostics.gatewayFallbackDiagnostics?.[0]?.issue ||
+    "None";
+  const lastNativeError = compatibility?.lastNativeError || transportSummary.lastNativeError || "None";
+  const recovery =
+    report?.recovery ||
+    transportSummary.recovery ||
+    snapshot.diagnostics.issues[0] ||
+    "Run the smoke test to verify OpenClaw compatibility.";
+  const statusLabel = report ? formatCompatibilitySmokeStatus(report.status) : "Unknown";
+  const statusTone = report ? compatibilitySmokeStatusTone(report.status) : "neutral";
+  const safeLabel = report
+    ? report.safeToDispatchMissions
+      ? "Safe to dispatch"
+      : "Do not dispatch"
+    : "Not tested";
+
+  return (
+    <div className={cn("mt-4 rounded-[18px] border p-3.5", insetPanelClassName(surfaceTheme))}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className={labelClassName(surfaceTheme)}>Compatibility</p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <p className={cn("font-medium", surfaceTheme === "light" ? "text-[#2f251f]" : "text-slate-100")}>
+              {statusLabel}
+            </p>
+            <span className={transportTonePillClassName(statusTone, surfaceTheme)}>{safeLabel}</span>
+          </div>
+          <p className={cn("mt-1 text-xs", surfaceTheme === "light" ? "text-[#8a7464]" : "text-slate-400")}>
+            Last test: {report ? formatTimestamp(report.checkedAt) : "Not run"}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onRun}
+          disabled={isRunning}
+          className={secondaryButtonClassName(surfaceTheme, "px-4")}
+        >
+          {isRunning ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
+          {isRunning ? "Running..." : "Run OpenClaw Smoke Test"}
+        </Button>
+      </div>
+
+      <div className="mt-3">
+        <InfoRows
+          surfaceTheme={surfaceTheme}
+          rows={[
+            ["Installed OpenClaw", formatVersionValue(compatibility?.installedVersion ?? snapshot.diagnostics.version ?? null)],
+            ["Required OpenClaw", formatVersionValue(compatibility?.requiredOpenClawVersion ?? null)],
+            ["Recommended OpenClaw", formatVersionValue(compatibility?.recommendedOpenClawVersion ?? snapshot.diagnostics.latestVersion ?? null)],
+            ["Gateway protocol", compatibility?.gatewayProtocolVersion ? `v${compatibility.gatewayProtocolVersion}` : capabilityMatrix?.gatewayProtocolVersion ? `v${capabilityMatrix.gatewayProtocolVersion}` : transportSummary.protocolLabel],
+            ["AgentOS protocol range", protocolRange],
+            ["Node.js", compatibility?.nodeVersion ? `${compatibility.nodeVersion} / ${formatNodeStatus(compatibility.nodeStatus)}` : "Run smoke test"],
+            ["Gateway auth", compatibility?.gatewayAuthStatus || nativeAuthLabel],
+            ["Native Gateway", compatibility?.nativeGatewayStatus || transportSummary.statusLabel],
+            ["CLI fallback count", String(compatibility?.cliFallbackUsageCount ?? transportSummary.fallbackTotal)],
+            ["Last native error", lastNativeError],
+            ["Last fallback reason", fallbackReason]
+          ]}
+        />
+      </div>
+
+      <div
+        className={cn(
+          "mt-3 rounded-[16px] border p-3 text-xs leading-5",
+          surfaceTheme === "light"
+            ? "border-[#eadbcf] bg-[#fffdf9] text-[#5a4638]"
+            : "border-white/[0.08] bg-[#0d1624] text-slate-300"
+        )}
+      >
+        <p className={labelClassName(surfaceTheme)}>Recovery suggestion</p>
+        <p className="mt-1.5">{recovery}</p>
+        {error ? (
+          <p className={cn("mt-1.5", surfaceTheme === "light" ? "text-rose-700" : "text-rose-200")}>
+            {error}
+          </p>
+        ) : null}
+      </div>
+
+      {report?.checks.length ? (
+        <div className="mt-3 space-y-2">
+          {report.checks.map((check) => (
+            <details
+              key={check.id}
+              className={cn(
+                "group rounded-[16px] border",
+                surfaceTheme === "light"
+                  ? "border-[#e7d8ca] bg-[#fffdf9]"
+                  : "border-white/[0.08] bg-[#101a2a]/92"
+              )}
+            >
+              <summary className="flex cursor-pointer list-none items-center gap-3 px-3.5 py-2.5">
+                <span className={transportTonePillClassName(smokeCheckTone(check.status), surfaceTheme)}>
+                  {formatSmokeCheckStatus(check.status)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className={cn("truncate text-sm font-medium", surfaceTheme === "light" ? "text-[#3b2d24]" : "text-slate-100")}>
+                    {check.label}
+                  </p>
+                  <p className={cn("mt-0.5 truncate text-xs", surfaceTheme === "light" ? "text-[#8a7464]" : "text-slate-400")}>
+                    {check.summary}
+                  </p>
+                </div>
+                <span className={cn("hidden text-xs sm:inline", surfaceTheme === "light" ? "text-[#9a8271]" : "text-slate-400")}>
+                  {check.durationMs} ms
+                </span>
+                <ChevronDown className={cn("h-4 w-4 transition-transform group-open:rotate-180", surfaceTheme === "light" ? "text-[#9a8271]" : "text-slate-400")} />
+              </summary>
+              <div
+                className={cn(
+                  "border-t p-3.5",
+                  surfaceTheme === "light" ? "border-[#eadbcf]" : "border-white/[0.08]"
+                )}
+              >
+                {check.recovery ? (
+                  <p className={cn("mb-3 text-xs leading-5", surfaceTheme === "light" ? "text-[#6b5546]" : "text-slate-300")}>
+                    Recovery: {check.recovery}
+                  </p>
+                ) : null}
+                <DiagnosticBlock
+                  title="raw details"
+                  value={formatRawDetails(check.rawDetails)}
+                  surfaceTheme={surfaceTheme}
+                />
+              </div>
+            </details>
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          title="No compatibility smoke report"
+          detail="Run the smoke test to verify OpenClaw binary, Gateway, models, sessions, tasks, config, events, and fallback behavior."
+          surfaceTheme={surfaceTheme}
+        />
+      )}
     </div>
   );
 }
@@ -1586,6 +1820,92 @@ function formatCapabilitySupport(value?: "supported" | "unsupported" | "unknown"
   return "Unknown";
 }
 
+function formatCompatibilitySmokeStatus(value: CompatibilitySmokeReport["status"]) {
+  switch (value) {
+    case "compatible":
+      return "Compatible";
+    case "degraded":
+      return "Degraded";
+    case "incompatible":
+      return "Incompatible";
+    case "unknown":
+    default:
+      return "Unknown";
+  }
+}
+
+function compatibilitySmokeStatusTone(value: CompatibilitySmokeReport["status"]): TransportStatusTone {
+  switch (value) {
+    case "compatible":
+      return "success";
+    case "degraded":
+      return "warning";
+    case "incompatible":
+      return "danger";
+    case "unknown":
+    default:
+      return "neutral";
+  }
+}
+
+function formatSmokeCheckStatus(value: CompatibilitySmokeReport["checks"][number]["status"]) {
+  switch (value) {
+    case "pass":
+      return "Pass";
+    case "warning":
+      return "Warning";
+    case "fail":
+      return "Fail";
+    default:
+      return "Unknown";
+  }
+}
+
+function smokeCheckTone(value: CompatibilitySmokeReport["checks"][number]["status"]): TransportStatusTone {
+  switch (value) {
+    case "pass":
+      return "success";
+    case "warning":
+      return "warning";
+    case "fail":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+function formatNodeStatus(value: CompatibilitySmokeReport["compatibility"]["nodeStatus"]) {
+  switch (value) {
+    case "supported":
+      return "Supported";
+    case "unsupported":
+      return "Unsupported";
+    case "unknown":
+    default:
+      return "Unknown";
+  }
+}
+
+function formatVersionValue(value: string | null | undefined) {
+  return value ? `v${value.replace(/^v/i, "")}` : "Unknown";
+}
+
+function formatRawDetails(value: unknown) {
+  if (value === undefined || value === null) {
+    return "No raw details";
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
 function formatGatewayCompatibilityStatus(
   value?: GatewayCompatibilityProfile
 ) {
@@ -1770,8 +2090,12 @@ function scrollSettingsToTop() {
 }
 
 function resolveInitialSettingsSection(): SettingsSectionId {
+  return "openclaw";
+}
+
+function resolveHashSettingsSection(): SettingsSectionId {
   if (typeof window === "undefined") {
-    return "openclaw";
+    return resolveInitialSettingsSection();
   }
 
   switch (window.location.hash.replace(/^#/, "")) {

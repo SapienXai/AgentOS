@@ -1496,7 +1496,7 @@ function isUpdateCacheFresh(status) {
 }
 
 function markUpdateNotified(status) {
-  writeUpdateCache({
+  writeUpdateCacheBestEffort({
     ...status,
     cachedNotifiedVersion: status.latestVersion,
     cachedNotifiedAt: new Date().toISOString()
@@ -1543,6 +1543,14 @@ function writeUpdateCache(payload) {
   writeFileSync(updateCachePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 }
 
+function writeUpdateCacheBestEffort(payload) {
+  try {
+    writeUpdateCache(payload);
+  } catch {
+    // Update availability should not disappear just because the cache is unavailable.
+  }
+}
+
 async function getUpdateStatus({ install, forceRefresh, timeoutMs, fallbackToCache }) {
   try {
     const cache = readCachedUpdateStatus(install);
@@ -1567,7 +1575,7 @@ async function getUpdateStatus({ install, forceRefresh, timeoutMs, fallbackToCac
       cachedNotifiedAt: cache?.cachedNotifiedAt || null
     };
 
-    writeUpdateCache(status);
+    writeUpdateCacheBestEffort(status);
     return status;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1678,6 +1686,29 @@ async function fetchGitHubLatestVersion(timeoutMs) {
 }
 
 async function fetchNpmLatestVersion(timeoutMs) {
+  try {
+    return await fetchNpmLatestVersionFromRegistry(timeoutMs);
+  } catch (error) {
+    const fallback = fetchNpmLatestVersionWithPackageManager(timeoutMs);
+
+    if (fallback.ok) {
+      return {
+        latestVersion: fallback.latestVersion,
+        downloadBaseUrl: null
+      };
+    }
+
+    throw new Error(
+      `npm registry fetch failed (${formatErrorMessage(error)}); package manager fallback failed (${fallback.errorMessage})`
+    );
+  }
+}
+
+async function fetchNpmLatestVersionFromRegistry(timeoutMs) {
+  if (cliSmokeTestMode && parseBooleanEnv(process.env.AGENTOS_TEST_FORCE_NPM_FETCH_FAILURE)) {
+    throw new Error("forced npm registry fetch failure");
+  }
+
   const response = await fetchJsonWithTimeout(`https://registry.npmjs.org/${encodeURIComponent(packageJson.name)}/latest`, timeoutMs, {
     headers: {
       Accept: "application/json",
@@ -1695,6 +1726,86 @@ async function fetchNpmLatestVersion(timeoutMs) {
     latestVersion,
     downloadBaseUrl: null
   };
+}
+
+function fetchNpmLatestVersionWithPackageManager(timeoutMs) {
+  const command = resolvePackageManagerViewCommand();
+
+  if (!command) {
+    return {
+      ok: false,
+      errorMessage: "npm or pnpm was not found on PATH"
+    };
+  }
+
+  const result = spawnSync(command, ["view", packageJson.name, "version", "--json"], {
+    encoding: "utf8",
+    timeout: timeoutMs,
+    env: {
+      ...process.env,
+      NO_UPDATE_NOTIFIER: "1",
+      npm_config_audit: "false",
+      npm_config_fund: "false",
+      npm_config_loglevel: "silent",
+      npm_config_progress: "false"
+    }
+  });
+
+  if (result.error) {
+    return {
+      ok: false,
+      errorMessage: result.error.message
+    };
+  }
+
+  if (result.status !== 0) {
+    return {
+      ok: false,
+      errorMessage: (result.stderr || result.stdout || `${path.basename(command)} exited with ${result.status}`).trim()
+    };
+  }
+
+  const latestVersion = parsePackageManagerViewVersion(result.stdout);
+
+  if (!latestVersion) {
+    return {
+      ok: false,
+      errorMessage: "package manager metadata did not include a valid version"
+    };
+  }
+
+  return {
+    ok: true,
+    latestVersion
+  };
+}
+
+function resolvePackageManagerViewCommand() {
+  return resolveCommandPath("npm") || resolveCommandPath("pnpm");
+}
+
+function parsePackageManagerViewVersion(output) {
+  const trimmed = output.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+
+    if (typeof parsed === "string") {
+      return normalizeVersion(parsed);
+    }
+  } catch {
+    // Some package managers may ignore --json for simple scalar output.
+  }
+
+  return normalizeVersion(trimmed.split(/\r?\n/).find(Boolean) || "");
+}
+
+function formatErrorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function fetchJsonWithTimeout(url, timeoutMs, options = {}) {

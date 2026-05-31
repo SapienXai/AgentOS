@@ -391,6 +391,7 @@ async function loadMissionControlSnapshots({
     const runtimeDiagnostics = await runtimeDiagnosticsPromise;
     const diagnostics = await buildLiveMissionControlDiagnostics({
       profile,
+      settings,
       configuredWorkspaceRoot: configuredWorkspaceRoot ?? null,
       configuredGatewayUrl,
       gatewayStatus,

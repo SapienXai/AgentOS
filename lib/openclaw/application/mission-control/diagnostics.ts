@@ -36,6 +36,7 @@ import {
 } from "@/lib/openclaw/adapter/model-adapter";
 import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-normalization";
 import {
+  getLatestOpenClawCompatibilitySmokeTest,
   getLatestRuntimeSmokeTest,
   type MissionControlSettings
 } from "@/lib/openclaw/domains/control-plane-settings";
@@ -71,6 +72,7 @@ export async function buildMissionControlRuntimeDiagnostics(
 
 export async function buildLiveMissionControlDiagnostics(input: {
   profile: "interactive" | "refresh" | "system";
+  settings: MissionControlSettings;
   configuredWorkspaceRoot: string | null;
   configuredGatewayUrl?: string | null;
   gatewayStatus?: GatewayStatusPayload;
@@ -138,6 +140,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
     openClawBinarySelection,
     modelReadiness,
     capabilityMatrix,
+    compatibilitySmokeTest: getLatestOpenClawCompatibilitySmokeTest(input.settings),
     commandHistory: getRecentOpenClawCommandDiagnostics(),
     transport,
     versionDiagnostics,

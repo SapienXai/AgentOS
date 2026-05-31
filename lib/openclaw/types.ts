@@ -45,6 +45,8 @@ export interface ModelAuthProviderStatus {
 }
 
 export type OpenClawRuntimeSmokeTestStatus = "not-run" | "passed" | "failed";
+export type OpenClawCompatibilityStatus = "compatible" | "degraded" | "incompatible" | "unknown";
+export type OpenClawSmokeTestCheckStatus = "pass" | "warning" | "fail";
 
 export interface OpenClawRuntimeSessionStore {
   id: string;
@@ -69,6 +71,47 @@ export interface OpenClawRuntimeDiagnostics {
   sessionStores: OpenClawRuntimeSessionStore[];
   smokeTest: OpenClawRuntimeSmokeTest;
   issues: string[];
+}
+
+export interface OpenClawSmokeTestCheck {
+  id: string;
+  label: string;
+  status: OpenClawSmokeTestCheckStatus;
+  required: boolean;
+  summary: string;
+  recovery: string | null;
+  durationMs: number;
+  rawDetails?: unknown;
+}
+
+export interface OpenClawCompatibilitySmokeReport {
+  status: OpenClawCompatibilityStatus;
+  checkedAt: string;
+  durationMs: number;
+  safeToDispatchMissions: boolean;
+  recovery: string;
+  checks: OpenClawSmokeTestCheck[];
+  compatibility: {
+    installedVersion: string | null;
+    requiredOpenClawVersion: string | null;
+    recommendedOpenClawVersion: string | null;
+    gatewayProtocolVersion: string | null;
+    requiredGatewayProtocolVersion: string;
+    agentOsSupportedProtocolRange: {
+      min: number;
+      max: number;
+    };
+    nodeVersion: string | null;
+    nodeRequiredVersion: string;
+    nodeRecommendedVersion: string;
+    nodeStatus: "supported" | "unsupported" | "unknown";
+    gatewayAuthStatus: string;
+    nativeGatewayStatus: string;
+    cliFallbackUsageCount: number;
+    lastNativeError: string | null;
+    lastFallbackReason: string | null;
+    modelReady: boolean | null;
+  };
 }
 
 export interface OpenClawBinarySelection {
@@ -230,6 +273,7 @@ export interface GatewayDiagnostics {
   capabilityMatrix?: OpenClawCapabilityMatrix;
   gatewayFallbackDiagnostics?: OpenClawGatewayFallbackDiagnosticRecord[];
   gatewayFallbackReasons?: string[];
+  compatibilitySmokeTest?: OpenClawCompatibilitySmokeReport | null;
   runtime: OpenClawRuntimeDiagnostics;
   commandHistory?: OpenClawCommandDiagnostic[];
   transport?: import("@/lib/openclaw/client/types").OpenClawGatewayClientDiagnostics;

@@ -118,11 +118,16 @@ export async function updateGatewayRemoteUrl(input: { gatewayUrl?: string | null
 export async function updateWorkspaceRoot(input: { workspaceRoot?: string | null }) {
   const workspaceRoot = normalizeWorkspaceRoot(input.workspaceRoot);
   const settings = await readMissionControlSettings();
+  const nextSettings = {
+    ...settings,
+    ...(workspaceRoot ? { workspaceRoot } : {})
+  };
 
-  await writeMissionControlSettings({
-    ...(workspaceRoot ? { workspaceRoot } : {}),
-    ...(settings.runtimePreflight ? { runtimePreflight: settings.runtimePreflight } : {})
-  });
+  if (!workspaceRoot) {
+    delete nextSettings.workspaceRoot;
+  }
+
+  await writeMissionControlSettings(nextSettings);
 
   invalidateSettingsSnapshot();
 
