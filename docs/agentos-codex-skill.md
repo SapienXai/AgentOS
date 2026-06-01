@@ -96,6 +96,7 @@ Enter release mode only when the user asks for release preparation. Check and al
 - `packages/agentos/package.json` version, the published package source of truth
 - Root `package.json` scripts and private workspace version expectations
 - npm package metadata and lockfile consistency
+- Before npm publish, load local publish credentials from `.env.local` without printing secret values; verify `NPM_TOKEN`/`NODE_AUTH_TOKEN` is present, then use a temporary npm userconfig that maps `//registry.npmjs.org/:_authToken` to that token before running `pnpm publish:agentos`
 - GitHub release tag format: `agentos-v<version>`
 - README and package README install commands and version examples
 - `install.sh` and `install.ps1`
