@@ -1389,8 +1389,7 @@ function TaskContent({
   const workspace = resolveTaskWorkspace(snapshot, selectedTask, runs);
   const primaryAgent = snapshot.agents.find((entry) => entry.id === selectedTask?.primaryAgentId);
   const createdFiles =
-    taskDetail?.createdFiles ??
-    dedupeCreatedFiles(runs.flatMap((runtime) => extractCreatedFilesFromRuntime(runtime)));
+    dedupeCreatedFiles(taskDetail?.createdFiles ?? runs.flatMap((runtime) => extractCreatedFilesFromRuntime(runtime)));
   const warnings = taskDetail?.warnings ?? [];
 
   if (!task) {
@@ -2001,8 +2000,7 @@ function TaskFilesContent({
       .filter((runtime) => task.runtimeIds.includes(runtime.id))
       .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
   const createdFiles =
-    taskDetail?.createdFiles ??
-    dedupeCreatedFiles(runs.flatMap((runtime) => extractCreatedFilesFromRuntime(runtime)));
+    dedupeCreatedFiles(taskDetail?.createdFiles ?? runs.flatMap((runtime) => extractCreatedFilesFromRuntime(runtime)));
   const integrity = taskDetail?.integrity ?? createOptimisticTaskIntegrity(task);
   const workspacePath = resolveTaskWorkspacePath(snapshot, task, runs);
 
@@ -2483,6 +2481,8 @@ function RuntimeOutputContent({
     );
   }
 
+  const createdFiles = dedupeCreatedFiles(runtimeOutput.createdFiles);
+
   return (
     <div className="space-y-3.5">
       {runtimeOutput.warningSummary ? (
@@ -2491,9 +2491,9 @@ function RuntimeOutputContent({
         </InfoCard>
       ) : null}
 
-      <InfoCard icon={FileJson} title="Created files" value={String(runtimeOutput.createdFiles.length)}>
+      <InfoCard icon={FileJson} title="Created files" value={String(createdFiles.length)}>
         <InspectorCreatedFileList
-          files={runtimeOutput.createdFiles}
+          files={createdFiles}
           basePath={basePath}
           emptyLabel="This runtime transcript does not include a successful file creation."
         />
@@ -2748,17 +2748,19 @@ function InspectorCreatedFileList({
   basePath,
   emptyLabel
 }: {
-  files: RuntimeCreatedFile[];
+  files: RuntimeCreatedFile[] | null | undefined;
   basePath?: string | null;
   emptyLabel: string;
 }) {
-  if (files.length === 0) {
+  const visibleFiles = dedupeCreatedFiles(files ?? []);
+
+  if (visibleFiles.length === 0) {
     return <p className="text-[12px] text-slate-400">{emptyLabel}</p>;
   }
 
   return (
     <div className="space-y-2">
-      {files.map((file) => {
+      {visibleFiles.map((file) => {
         const canReveal = isAbsoluteLocalPath(file.path) || Boolean(basePath);
 
         return (
@@ -2916,17 +2918,27 @@ function extractWarningsFromRuntime(runtime: MissionControlSnapshot["runtimes"][
   return rawWarnings.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
 }
 
-function dedupeCreatedFiles(files: RuntimeCreatedFile[]) {
+function dedupeCreatedFiles(files: unknown) {
   const seen = new Set<string>();
   const deduped: RuntimeCreatedFile[] = [];
+  const entries = Array.isArray(files) ? files : [];
 
-  for (const file of files) {
-    if (!file.path || seen.has(file.path)) {
+  for (const file of entries) {
+    const pathValue = typeof file?.path === "string" ? file.path.trim() : "";
+    const displayPathValue =
+      typeof file?.displayPath === "string" && file.displayPath.trim().length > 0
+        ? file.displayPath.trim()
+        : pathValue;
+
+    if (!pathValue || seen.has(pathValue)) {
       continue;
     }
 
-    seen.add(file.path);
-    deduped.push(file);
+    seen.add(pathValue);
+    deduped.push({
+      path: pathValue,
+      displayPath: displayPathValue
+    });
   }
 
   return deduped;
@@ -2953,7 +2965,11 @@ function taskFeedBadgeVariant(
   }
 }
 
-function isAbsoluteLocalPath(targetPath: string) {
+function isAbsoluteLocalPath(targetPath: string | null | undefined) {
+  if (typeof targetPath !== "string") {
+    return false;
+  }
+
   return targetPath.startsWith("/") || /^[A-Za-z]:[\\/]/.test(targetPath);
 }
 
