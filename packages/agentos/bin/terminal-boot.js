@@ -42,6 +42,7 @@ const BOOT_TAGLINE = `${BOOT_PRIMARY_LINE} · ${BOOT_SECONDARY_LINE}`;
 const MEDIUM_HEADER_MIN_COLUMNS = 48;
 const LARGE_HEADER_MIN_COLUMNS = 82;
 const DASHBOARD_MIN_COLUMNS = 56;
+const PANEL_MAX_COLUMNS = 80;
 const MEDIUM_AGENT_WORDMARK = [
   "▄▀█ █▀▀ █▀▀ █▄░█ ▀█▀",
   "█▀█ █▄█ ██▄ █░▀█  █ "
@@ -814,7 +815,9 @@ function renderBorder(options) {
     return options.color.brand(`${left}${horizontal}${safeTitle}${horizontal.repeat(remaining)}${right}`);
   }
 
-  return options.color.divider(`${left}${horizontal.repeat(innerWidth)}${right}`);
+  const paintBorder = options.edge === "middle" ? options.color.accent : options.color.brand;
+
+  return paintBorder(`${left}${horizontal.repeat(innerWidth)}${right}`);
 }
 
 function boxLine(value, options) {
@@ -855,7 +858,7 @@ function boxChars(unicode) {
 }
 
 function divider(columns, unicode = true) {
-  return (unicode ? "─" : "-").repeat(Math.max(24, Math.min(normalizeColumns(columns), 96)));
+  return (unicode ? "─" : "-").repeat(Math.max(24, Math.min(normalizeColumns(columns), PANEL_MAX_COLUMNS)));
 }
 
 function parseHex(value) {
@@ -887,7 +890,7 @@ function normalizeColumns(columns) {
 }
 
 function panelWidth(columns) {
-  return Math.max(24, Math.min(normalizeColumns(columns), 96));
+  return Math.max(24, Math.min(normalizeColumns(columns), PANEL_MAX_COLUMNS));
 }
 
 function padAnsi(value, width) {

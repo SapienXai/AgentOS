@@ -201,8 +201,11 @@ test("terminal boot renders refined large, medium, compact, and complete frames"
     wideDefault: renderBootFrame({ columns: 100, color: false, unicode: true, frameIndex: 0 }),
     large: renderBootFrame({ columns: 140, color: false, unicode: true, frameIndex: 0 }),
     narrow: renderBootFrame({ columns: 32, color: false, unicode: true, frameIndex: 0 }),
-    complete: renderBootFrame({ columns: 100, color: false, unicode: true, complete: true, finalInfo: "http://localhost:3000" })
-  }`) as { header: string; medium: string; wideDefault: string; large: string; narrow: string; complete: string };
+    complete: renderBootFrame({ columns: 100, color: false, unicode: true, complete: true, finalInfo: "http://localhost:3000" }),
+    coloredComplete: renderBootFrame({ columns: 100, color: true, unicode: true, complete: true, finalInfo: "http://localhost:3000" }),
+    wideDefaultWidth: renderBootFrame({ columns: 100, color: false, unicode: true, frameIndex: 0 }).split("\\n").find((line) => line.includes("AGENTOS CONTROL ROOM")).length,
+    largeWidth: renderBootFrame({ columns: 140, color: false, unicode: true, frameIndex: 0 }).split("\\n").find((line) => line.includes("AGENTOS CONTROL ROOM")).length
+  }`) as { header: string; medium: string; wideDefault: string; large: string; narrow: string; complete: string; coloredComplete: string; wideDefaultWidth: number; largeWidth: number };
   const medium = terminalBoot.medium;
   const wideDefault = terminalBoot.wideDefault;
   const large = terminalBoot.large;
@@ -220,6 +223,8 @@ test("terminal boot renders refined large, medium, compact, and complete frames"
   assert.doesNotMatch(medium, /█████╗/);
   assert.match(wideDefault, /█████╗/);
   assert.match(large, /█████╗/);
+  assert.equal(terminalBoot.wideDefaultWidth, 80);
+  assert.equal(terminalBoot.largeWidth, 80);
   assert.ok(large.includes(terminalBoot.header.split("\n")[0]));
   assert.match(narrow, /AgentOS/);
   assert.match(narrow, /Built on OpenClaw/);
@@ -229,6 +234,9 @@ test("terminal boot renders refined large, medium, compact, and complete frames"
   assert.match(complete, /AgentOS ready/);
   assert.match(complete, /Local UI:\s+http:\/\/localhost:3000/);
   assert.doesNotMatch(complete, /Workspace .* Agent .* Channel/);
+  assert.match(terminalBoot.coloredComplete, /\u001B\[38;2;255;23;68m└/);
+  assert.match(terminalBoot.coloredComplete, /\u001B\[38;2;255;90;109m├/);
+  assert.doesNotMatch(terminalBoot.coloredComplete, /\u001B\[38;2;74;18;27m[└├]/);
 });
 
 test("terminal boot uses plain mode for CI and non-TTY while NO_COLOR disables color only", async () => {

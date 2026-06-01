@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { rm } from "node:fs/promises";
+import path from "node:path";
 import { afterEach, test } from "node:test";
 
 import {
@@ -22,11 +24,29 @@ import {
 import { controlRunningTaskSession } from "@/lib/openclaw/application/task-control-service";
 import type { MissionControlSnapshot, TaskDetailRecord } from "@/lib/openclaw/types";
 
-afterEach(() => {
+const createdMissionDispatchIds = new Set<string>();
+
+afterEach(async () => {
   resetOpenClawEventBridgeForTesting();
   clearOpenClawCapabilityMatrixCacheForTesting();
   setOpenClawAdapterForTesting(null);
+
+  const dispatchIds = [...createdMissionDispatchIds];
+  createdMissionDispatchIds.clear();
+
+  await Promise.all(
+    dispatchIds.flatMap((dispatchId) => [
+      rm(path.join(process.cwd(), ".mission-control", "dispatches", `${dispatchId}.json`), { force: true }),
+      rm(path.join(process.cwd(), ".mission-control", "dispatches", `${dispatchId}.log.jsonl`), { force: true })
+    ])
+  );
 });
+
+function trackMissionDispatch(dispatchId: string | null | undefined) {
+  if (dispatchId) {
+    createdMissionDispatchIds.add(dispatchId);
+  }
+}
 
 test("capability matrix detects advertised Gateway-first methods", async () => {
   setOpenClawAdapterForTesting(createContractAdapter());
@@ -186,6 +206,7 @@ test("mission dispatch uses native chat when capability matrix supports it", asy
     resolveAgentForMission: () => "agent-1",
     invalidateMissionControlCaches: () => {}
   });
+  trackMissionDispatch(response.dispatchId);
 
   assert.equal(response.runId, "run-native-1");
   assert.equal(response.status, "running");
@@ -214,6 +235,7 @@ test("mission dispatch still attempts Gateway-first path when capabilities are u
     resolveAgentForMission: () => "agent-1",
     invalidateMissionControlCaches: () => {}
   });
+  trackMissionDispatch(response.dispatchId);
 
   assert.equal(response.runId, "run-unknown-1");
   assert.equal(response.status, "running");

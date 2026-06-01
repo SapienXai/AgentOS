@@ -1555,6 +1555,13 @@ function TaskIntegrityCard({
   const isOptimisticPending = Boolean(task.metadata.optimistic) && !isAborted && task.status !== "stalled";
   const missingFinalResponseIssue = integrity.issues.find((issue) => issue.id === "missing-final-response");
   const partialFinalResponseIssue = integrity.issues.find((issue) => issue.id === "partial-final-response");
+  const hasPartialRuntimeEvidence = Boolean(
+    integrity.finalResponseText ||
+      integrity.outputFileCount > 0 ||
+      integrity.transcriptTurnCount > 0 ||
+      integrity.matchingTranscriptTurnCount > 0 ||
+      integrity.toolNames.length > 0
+  );
   const reviewStatus = resolveEffectiveTaskReviewStatus(task, {
     hasLiveActivity: task.status === "running" || task.status === "queued" || task.liveRunCount > 0,
     latestEvidenceAt
@@ -1594,7 +1601,9 @@ function TaskIntegrityCard({
           : partialFinalResponseIssue
             ? "needs review"
             : task.status === "stalled" && !integrity.finalResponseText
-              ? "waiting output"
+              ? hasPartialRuntimeEvidence
+                ? "needs review"
+                : "waiting output"
               : isOptimisticPending
                 ? "pending"
                 : integrity.status
@@ -2496,7 +2505,7 @@ function RuntimeOutputContent({
         value={
           runtime.status === "stalled" || runtime.status === "cancelled"
             ? runtime.status === "stalled"
-              ? "waiting output"
+              ? "stalled"
               : runtime.status
             : runtimeOutput.stopReason || runtimeOutput.status
         }

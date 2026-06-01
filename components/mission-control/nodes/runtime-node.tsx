@@ -214,7 +214,7 @@ export function RuntimeNode({ data, selected }: NodeProps<RuntimeFlowNode>) {
 }
 
 function displayRuntimeStatus(status: RuntimeNodeData["runtime"]["status"]) {
-  return status === "stalled" ? "waiting output" : status;
+  return status === "stalled" ? "stalled" : status;
 }
 
 function RuntimeMenuButton({

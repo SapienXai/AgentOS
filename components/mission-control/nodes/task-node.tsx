@@ -37,6 +37,12 @@ import {
   resolveTaskReviewBadgeLabel,
   resolveTaskReviewFooterLabel
 } from "@/components/mission-control/task-review-state";
+import {
+  hasTaskRuntimeOutputEvidence,
+  isWaitingForOutputCopy,
+  readTaskResultPreview,
+  resolveTaskBadgeLabel
+} from "@/components/mission-control/task-node-status";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTaskFeed } from "@/hooks/use-task-feed";
@@ -107,8 +113,9 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const partialFinalResponse = Boolean(
     integrity?.issues.some((issue) => issue.id === "partial-final-response")
   );
+  const hasRuntimeOutputEvidence = hasTaskRuntimeOutputEvidence(displayTask, visibleFeed);
   const stalledWithCapturedOutput =
-    partialFinalResponse || (displayTask.status === "stalled" && hasCapturedTaskOutput(displayTask));
+    partialFinalResponse || (displayTask.status === "stalled" && hasRuntimeOutputEvidence);
   const latestEvidenceEvent = findLatestOutputEvidenceEvent(visibleFeed);
   const reviewStatus = resolveEffectiveTaskReviewStatus(displayTask, {
     nowMs: data.relativeTimeReferenceMs,
@@ -119,7 +126,11 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     reviewStatus && reviewStatus === "continued" && isLiveTask ? null : reviewStatus;
   const hasReviewResolution = Boolean(reviewStatus);
   const hasReviewableIntegrity =
-    integrity ? integrity.status === "warning" || integrity.status === "error" : stalledWithCapturedOutput;
+    integrity
+      ? integrity.status === "warning" ||
+        integrity.status === "error" ||
+        (displayTask.status === "stalled" && hasRuntimeOutputEvidence)
+      : stalledWithCapturedOutput;
   const completedNeedsReview = Boolean(
     (displayTask.status === "completed" || stalledWithCapturedOutput) &&
       hasReviewableIntegrity &&
@@ -144,7 +155,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     ? "no result"
     : completedNeedsReview
       ? "needs review"
-      : resolveTaskBadgeLabel(bootstrapStage, displayTask.status, isPendingCreation, isAborted);
+      : resolveTaskBadgeLabel(bootstrapStage, displayTask.status, isPendingCreation, isAborted, hasRuntimeOutputEvidence);
   const footerLabel = visibleReviewStatus
     ? resolveTaskReviewFooterLabel(visibleReviewStatus)
     : stalledWithCapturedOutput
@@ -167,9 +178,12 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       ? [footerLabel, bootstrapElapsedLabel ? `${bootstrapElapsedLabel} elapsed` : null].filter(Boolean).join(" · ")
       : compactMissionText(displayTask.subtitle, 72) || footerLabel);
   const promptText = readTaskPromptText(displayTask);
+  const rawResultPreview = readTaskResultPreview(displayTask);
   const resultPreview = missingFinalResponse
     ? "No final answer was captured from OpenClaw for this task."
-    : readTaskResultPreview(displayTask);
+    : stalledWithCapturedOutput && isWaitingForOutputCopy(rawResultPreview)
+      ? "Partial runtime evidence captured. Review the live feed for the latest tool output."
+      : rawResultPreview;
   const sessionCount = readTaskSessionCount(displayTask);
   const turnCount = readTaskTurnCount(displayTask);
   const feedButtonCount = visibleFeed.length > 0 ? String(visibleFeed.length) : undefined;
@@ -548,42 +562,6 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   );
 }
 
-function resolveTaskBadgeLabel(
-  bootstrapStage: string | null,
-  status: TaskFlowNode["data"]["task"]["status"],
-  isPendingCreation: boolean,
-  isAborted: boolean
-) {
-  if (isAborted) {
-    return "aborted";
-  }
-
-  if (status === "stalled" || bootstrapStage === "stalled") {
-    return "waiting output";
-  }
-
-  if (!isPendingCreation || !bootstrapStage) {
-    return status;
-  }
-
-  switch (bootstrapStage) {
-    case "submitting":
-      return "submitting";
-    case "accepted":
-      return "accepted";
-    case "waiting-for-heartbeat":
-      return "starting runner";
-    case "waiting-for-runtime":
-      return "awaiting runtime";
-    case "runtime-observed":
-      return "going live";
-    case "completed":
-      return "completed";
-    default:
-      return status;
-  }
-}
-
 function isPendingTaskBootstrapStage(bootstrapStage: string | null) {
   return (
     bootstrapStage === "submitting" ||
@@ -619,36 +597,6 @@ function resolveTaskFooterLabel(bootstrapStage: string | null, liveRunCount: num
 
 function readTaskPromptText(task: TaskFlowNode["data"]["task"]) {
   return task.mission?.trim() || task.title.trim() || "Untitled task";
-}
-
-function readTaskResultPreview(task: TaskFlowNode["data"]["task"]) {
-  const resultPreview =
-    typeof task.metadata.resultPreview === "string" ? task.metadata.resultPreview.trim() : "";
-
-  if (resultPreview) {
-    return resultPreview;
-  }
-
-  return task.subtitle.trim() || "Waiting for the first OpenClaw update.";
-}
-
-function hasCapturedTaskOutput(task: TaskFlowNode["data"]["task"]) {
-  const finalResponse =
-    typeof task.metadata.finalResponseText === "string" ? task.metadata.finalResponseText.trim() : "";
-  const resultPreview =
-    typeof task.metadata.resultPreview === "string" ? task.metadata.resultPreview.trim() : "";
-  const candidate = finalResponse || resultPreview;
-
-  return Boolean(candidate && !isWaitingForOutputCopy(candidate));
-}
-
-function isWaitingForOutputCopy(value: string) {
-  return (
-    /No transcript file was found for this runtime session/i.test(value) ||
-    /No transcript entries were found for this runtime/i.test(value) ||
-    /waiting for (the first )?(transcript|output)/i.test(value) ||
-    /working silently/i.test(value)
-  );
 }
 
 function readTaskSessionCount(task: TaskFlowNode["data"]["task"]) {
