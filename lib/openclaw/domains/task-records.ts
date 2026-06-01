@@ -190,11 +190,11 @@ function selectTaskSignalRuntimes(runtimes: RuntimeRecord[]) {
 function isDirectChatRuntime(runtime: RuntimeRecord) {
   const origin = typeof runtime.metadata.origin === "string" ? runtime.metadata.origin : null;
 
-  if (origin === "mission-dispatch") {
+  if (origin === "mission-dispatch" || origin === "agentos-mission-dispatch") {
     return false;
   }
 
-  if (origin === "agent-chat") {
+  if (origin === "agent-chat" || origin === "agentos-direct-chat") {
     return true;
   }
 
@@ -214,6 +214,10 @@ function isDirectChatRuntime(runtime: RuntimeRecord) {
     return false;
   }
 
+  if (origin === "openclaw-gateway-event") {
+    return true;
+  }
+
   if (typeof runtime.metadata.chatType === "string" && runtime.metadata.chatType === "direct") {
     return true;
   }
@@ -230,12 +234,23 @@ function isDirectChatRuntime(runtime: RuntimeRecord) {
 }
 
 function hasTaskIdentity(runtime: RuntimeRecord) {
+  const origin = typeof runtime.metadata.origin === "string" ? runtime.metadata.origin : null;
+  const runIdIdentifiesTask =
+    origin !== "openclaw-gateway-event" &&
+    origin !== "agentos-direct-chat" &&
+    Boolean(runtime.runId?.trim());
+  const metadataRunIdIdentifiesTask =
+    origin !== "openclaw-gateway-event" &&
+    origin !== "agentos-direct-chat" &&
+    typeof runtime.metadata.runId === "string" &&
+    Boolean(runtime.metadata.runId.trim());
+
   return Boolean(
     runtime.taskId?.trim() ||
-      runtime.runId?.trim() ||
+      runIdIdentifiesTask ||
       resolveRuntimeMetadataMissionText(runtime) ||
       (typeof runtime.metadata.taskId === "string" && runtime.metadata.taskId.trim()) ||
-      (typeof runtime.metadata.runId === "string" && runtime.metadata.runId.trim()) ||
+      metadataRunIdIdentifiesTask ||
       (typeof runtime.metadata.bootstrapStage === "string" && runtime.metadata.bootstrapStage.trim()) ||
       (typeof runtime.metadata.dispatchStatus === "string" && runtime.metadata.dispatchStatus.trim())
   );

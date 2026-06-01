@@ -93,6 +93,7 @@ import {
   isDirectAgentIdentityQuestion,
   isStaleAgentChatContextRecoveryText
 } from "@/lib/openclaw/agent-chat-guards";
+import { annotateAgentChatRuntimes } from "@/lib/openclaw/domains/agent-chat-sessions";
 import { resolveAgentModelLabel } from "@/lib/openclaw/presenters";
 import { buildProvisionConfig, isProvisionFieldSatisfied } from "@/lib/openclaw/surface-provision";
 import type { SurfaceProvisionField } from "@/lib/openclaw/surface-catalog";
@@ -2898,6 +2899,106 @@ test("task cards use explicit runtime origin before direct-chat heuristics", () 
   assert.equal(tasks.length, 1);
   assert.equal(tasks[0].key, "dispatch:dispatch-1");
   assert.deepEqual(tasks[0].runtimeIds, ["runtime:mission-dispatch"]);
+});
+
+test("task cards ignore Gateway runtime events from recorded direct chat sessions", () => {
+  const runtimes = annotateAgentChatRuntimes(
+    [
+      {
+        id: "runtime:gateway:direct-chat",
+        source: "turn",
+        key: "agentos:mpvp9v8y:rdxnctfeg5o",
+        title: "Gateway runtime event",
+        subtitle: "chat",
+        status: "running",
+        updatedAt: Date.parse("2026-04-13T00:00:30.000Z"),
+        ageMs: 0,
+        agentId: "agent-1",
+        workspaceId: "workspace-1",
+        sessionId: "agent:agent-1:explicit:chat-session",
+        runId: "agentos:mpvp9v8y:rdxnctfeg5o",
+        metadata: {
+          origin: "openclaw-gateway-event",
+          event: "chat"
+        }
+      },
+      {
+        id: "runtime:mission-dispatch",
+        source: "turn",
+        key: "dispatch-1",
+        title: "Gateway runtime event",
+        subtitle: "Wrote the deliverable",
+        status: "completed",
+        updatedAt: Date.parse("2026-04-13T00:01:00.000Z"),
+        ageMs: 0,
+        agentId: "agent-1",
+        workspaceId: "workspace-1",
+        sessionId: "dispatch-session",
+        runId: "dispatch-1",
+        metadata: {
+          origin: "mission-dispatch",
+          dispatchId: "dispatch-1",
+          mission: "Create the Faros document"
+        }
+      }
+    ] as unknown as RuntimeRecord[],
+    new Map([
+      [
+        "agent-1:chat-session",
+        {
+          agentId: "agent-1",
+          sessionId: "chat-session",
+          workspacePath: "/tmp/workspace-1",
+          createdAt: "2026-04-13T00:00:00.000Z",
+          updatedAt: "2026-04-13T00:00:30.000Z",
+          origin: "agent-chat"
+        }
+      ]
+    ])
+  );
+
+  const tasks = buildTaskRecords(runtimes, [
+    {
+      id: "agent-1",
+      name: "Research Lead"
+    }
+  ] as Parameters<typeof buildTaskRecords>[1]);
+
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].key, "dispatch:dispatch-1");
+  assert.deepEqual(tasks[0].runtimeIds, ["runtime:mission-dispatch"]);
+});
+
+test("task cards ignore raw Gateway events without mission task identity", () => {
+  const runtimes = [
+    {
+      id: "runtime:gateway:raw-event",
+      source: "turn",
+      key: "agentos:mpvp9v8y:rdxnctfeg5o",
+      title: "Gateway runtime event",
+      subtitle: "sessions.changed",
+      status: "running",
+      updatedAt: Date.parse("2026-04-13T00:00:30.000Z"),
+      ageMs: 0,
+      agentId: "agent-1",
+      workspaceId: "workspace-1",
+      sessionId: "session-1",
+      runId: "agentos:mpvp9v8y:rdxnctfeg5o",
+      metadata: {
+        origin: "openclaw-gateway-event",
+        event: "sessions.changed"
+      }
+    }
+  ] as unknown as RuntimeRecord[];
+
+  const tasks = buildTaskRecords(runtimes, [
+    {
+      id: "agent-1",
+      name: "Research Lead"
+    }
+  ] as Parameters<typeof buildTaskRecords>[1]);
+
+  assert.equal(tasks.length, 0);
 });
 
 test("task cards ignore unscoped direct session records", () => {

@@ -66,6 +66,7 @@ export function mapOpenClawRuntimeSnapshotToRuntimes(
 
 export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEventFrame): RuntimeRecord | null {
   const payload = isRecord(frame.payload) ? frame.payload : {};
+  const payloadMetadata = readNestedRecord(payload, "metadata");
   const eventName = readString(frame.event) ?? readString(payload.type) ?? "event";
   const sessionKey = readString(payload.sessionKey) ?? readString(payload.key);
   const agentId = readString(payload.agentId) ?? readString(payload.agent) ?? parseAgentIdFromSessionKey(sessionKey);
@@ -108,11 +109,17 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
     modelId: readString(payload.model) ?? readString(payload.modelId) ?? undefined,
     toolNames: normalizeToolNames(payload),
     metadata: {
-      origin: "openclaw-gateway-event",
+      origin:
+        readString(payload.origin) ??
+        readString(payloadMetadata?.origin) ??
+        "openclaw-gateway-event",
       event: eventName,
       channel: readString(payload.channel) ?? null,
       approvalId: readString(payload.approvalId) ?? null,
       artifactId: artifactId ?? null,
+      dispatchId: readString(payload.dispatchId) ?? readString(payloadMetadata?.dispatchId) ?? null,
+      kind: readString(payload.kind) ?? readString(payloadMetadata?.kind) ?? null,
+      chatType: readString(payload.chatType) ?? readString(payloadMetadata?.chatType) ?? null,
       mission: readString(payload.mission) ?? readString(payload.prompt) ?? null,
       createdFiles
     }

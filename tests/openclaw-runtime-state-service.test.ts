@@ -86,3 +86,26 @@ test("Gateway event normalizers preserve runtime-neutral task and artifact state
   assert.equal(event.taskId, "task-1");
   assert.equal(event.receivedAt, "2026-05-18T10:00:00.000Z");
 });
+
+test("Gateway event normalizer preserves AgentOS direct chat origin metadata", () => {
+  const runtime = normalizeOpenClawGatewayEventToRuntime({
+    type: "event",
+    event: "chat",
+    payload: {
+      agentId: "agent-1",
+      sessionId: "agent:agent-1:explicit:chat-session",
+      runId: "agentos:mpvp9v8y:rdxnctfeg5o",
+      message: "Agent is replying",
+      metadata: {
+        origin: "agentos-direct-chat",
+        kind: "direct",
+        chatType: "direct"
+      }
+    }
+  });
+
+  assert.ok(runtime);
+  assert.equal(runtime.metadata.origin, "agentos-direct-chat");
+  assert.equal(runtime.metadata.kind, "direct");
+  assert.equal(runtime.metadata.chatType, "direct");
+});

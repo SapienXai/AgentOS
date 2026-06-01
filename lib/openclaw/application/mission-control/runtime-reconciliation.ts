@@ -12,6 +12,7 @@ import type {
   OpenClawRuntimeSnapshotPayload
 } from "@/lib/openclaw/client/gateway-client";
 import {
+  annotateAgentChatRuntimes,
   annotateAgentChatSessions,
   readAgentChatSessionIndex
 } from "@/lib/openclaw/domains/agent-chat-sessions";
@@ -93,11 +94,15 @@ export async function reconcileMissionControlRuntimes(input: {
     }
   );
   const eventBridgeRuntimes = input.systemProfile ? [] : await readOpenClawEventBridgeRuntimes();
-  const runtimeCandidates = [
-    ...eventBridgeRuntimes,
-    ...gatewaySnapshotRuntimes,
-    ...liveSessionRuntimes
-  ];
+  const agentChatSessionIndex = await readAgentChatSessionIndex();
+  const runtimeCandidates = annotateAgentChatRuntimes(
+    [
+      ...eventBridgeRuntimes,
+      ...gatewaySnapshotRuntimes,
+      ...liveSessionRuntimes
+    ],
+    agentChatSessionIndex
+  );
   const annotatedRuntimeCandidates = annotateMissionDispatchMetadataFromRuntime(
     runtimeCandidates,
     input.dispatchRecords

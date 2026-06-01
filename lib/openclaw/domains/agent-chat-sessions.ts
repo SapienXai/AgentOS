@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { SessionsPayload } from "@/lib/openclaw/domains/session-catalog";
+import type { RuntimeRecord } from "@/lib/openclaw/types";
 
 export type AgentChatSessionOrigin = "agent-chat";
 
@@ -99,6 +100,34 @@ export function annotateAgentChatSessions(
   });
 }
 
+export function annotateAgentChatRuntimes(
+  runtimes: RuntimeRecord[],
+  index: Map<string, AgentChatSessionRecord>
+): RuntimeRecord[] {
+  if (runtimes.length === 0 || index.size === 0) {
+    return runtimes;
+  }
+
+  return runtimes.map((runtime) => {
+    const record = findAgentChatSessionRecordForRuntime(runtime, index);
+
+    if (!record) {
+      return runtime;
+    }
+
+    return {
+      ...runtime,
+      metadata: {
+        ...runtime.metadata,
+        origin: record.origin,
+        kind: "direct",
+        chatType: "direct",
+        agentChatSessionId: record.sessionId
+      }
+    };
+  });
+}
+
 async function readAgentChatSessionRegistry(): Promise<AgentChatSessionRegistry> {
   try {
     const raw = await readFile(agentChatSessionsPath, "utf8");
@@ -165,6 +194,80 @@ function pruneAgentChatSessionRecords(records: AgentChatSessionRecord[]) {
   }
 
   return deduped.slice(0, maxAgentChatSessionRecords);
+}
+
+function findAgentChatSessionRecordForRuntime(
+  runtime: RuntimeRecord,
+  index: Map<string, AgentChatSessionRecord>
+) {
+  const agentId = runtime.agentId?.trim();
+
+  if (!agentId || hasMissionTaskIdentity(runtime)) {
+    return null;
+  }
+
+  for (const sessionId of resolveRuntimeSessionIdCandidates(runtime)) {
+    const record = index.get(createAgentChatSessionKey(agentId, sessionId));
+
+    if (record) {
+      return record;
+    }
+  }
+
+  return null;
+}
+
+function hasMissionTaskIdentity(runtime: RuntimeRecord) {
+  const origin = typeof runtime.metadata.origin === "string" ? runtime.metadata.origin.trim() : "";
+  const dispatchId = typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
+  const mission = typeof runtime.metadata.mission === "string" ? runtime.metadata.mission.trim() : "";
+
+  return Boolean(
+    origin === "mission-dispatch" ||
+      origin === "agentos-mission-dispatch" ||
+      dispatchId ||
+      mission ||
+      runtime.taskId?.trim()
+  );
+}
+
+function resolveRuntimeSessionIdCandidates(runtime: RuntimeRecord) {
+  const rawCandidates = [
+    runtime.sessionId,
+    runtime.key,
+    typeof runtime.metadata.sessionId === "string" ? runtime.metadata.sessionId : null,
+    typeof runtime.metadata.sessionKey === "string" ? runtime.metadata.sessionKey : null,
+    typeof runtime.metadata.key === "string" ? runtime.metadata.key : null
+  ];
+  const candidates = new Set<string>();
+
+  for (const rawValue of rawCandidates) {
+    const value = rawValue?.trim();
+
+    if (!value) {
+      continue;
+    }
+
+    candidates.add(value);
+
+    const explicitSessionId = extractExplicitSessionId(value);
+    if (explicitSessionId) {
+      candidates.add(explicitSessionId);
+    }
+  }
+
+  return [...candidates];
+}
+
+function extractExplicitSessionId(value: string) {
+  const marker = ":explicit:";
+  const markerIndex = value.indexOf(marker);
+
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  return value.slice(markerIndex + marker.length).split(":")[0]?.trim() || null;
 }
 
 function createAgentChatSessionKey(agentId: string, sessionId: string) {
