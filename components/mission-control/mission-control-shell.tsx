@@ -35,6 +35,7 @@ import dynamic from "next/dynamic";
 import { toast } from "@/components/ui/sonner";
 import { useMissionControlData } from "@/hooks/use-mission-control-data";
 import type { AgentDetailFocus } from "@/components/mission-control/canvas-types";
+import { resolveTaskWorkspaceId } from "@/components/mission-control/canvas.graph";
 import type { OptimisticMissionTask } from "@/components/mission-control/mission-control-shell.utils";
 import {
   CanvasTitlePill as MissionControlCanvasTitlePill,
@@ -437,14 +438,16 @@ export function MissionControlShell({
   const shouldShowOnboarding =
     shouldAutoShowOnboarding || showOnboardingReadyState || isOnboardingForcedOpen;
   const scopedTasks = uiSnapshot.tasks.filter(
-    (task) => !activeWorkspaceId || task.workspaceId === activeWorkspaceId
+    (task) => !activeWorkspaceId || resolveTaskWorkspaceId(task, uiSnapshot.agents) === activeWorkspaceId
   );
   const hiddenScopedTaskCount = scopedTasks.filter((task) =>
     isTaskHiddenByPreferences(task, safeHiddenRuntimeIds, safeHiddenTaskKeys, safeLockedTaskKeys)
   ).length;
   const toggleWorkspaceTaskCards = useCallback(
     (workspaceId: string) => {
-      const workspaceTasks = uiSnapshot.tasks.filter((task) => task.workspaceId === workspaceId);
+      const workspaceTasks = uiSnapshot.tasks.filter(
+        (task) => resolveTaskWorkspaceId(task, uiSnapshot.agents) === workspaceId
+      );
       const toggleableTasks = workspaceTasks.filter((task) => !safeLockedTaskKeys.includes(task.key));
 
       if (toggleableTasks.length === 0) {
@@ -468,7 +471,7 @@ export function MissionControlShell({
         Array.from(new Set([...current, ...workspaceRuntimeIds]))
       );
     },
-    [uiSnapshot.tasks, safeHiddenRuntimeIds, safeHiddenTaskKeys, safeLockedTaskKeys]
+    [uiSnapshot.agents, uiSnapshot.tasks, safeHiddenRuntimeIds, safeHiddenTaskKeys, safeLockedTaskKeys]
   );
 
   const handleFocusAgent = useCallback(

@@ -42,7 +42,8 @@ export {
   buildSurfaceTetherEdges,
   isLiveTask,
   isTaskHidden,
-  resolveTaskOwnerId
+  resolveTaskOwnerId,
+  resolveTaskWorkspaceId
 } from "@/components/mission-control/canvas.graph";
 
 export {

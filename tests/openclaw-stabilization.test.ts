@@ -1870,6 +1870,39 @@ test("mission dispatch groups direct session turns into one task card", () => {
   assert.equal(tasks[0].artifactCount, 1);
 });
 
+test("task records inherit workspace id from their owning agent", () => {
+  const tasks = buildTaskRecords(
+    [
+      {
+        id: "runtime:turn-1",
+        source: "turn",
+        key: "session-1",
+        title: "Gateway runtime event",
+        subtitle: "agent",
+        status: "running",
+        updatedAt: Date.parse("2026-04-13T00:00:30.000Z"),
+        ageMs: 0,
+        agentId: "agent-1",
+        sessionId: "session-1",
+        metadata: {
+          mission: "Create the Faros document",
+          turnId: "turn-1"
+        }
+      }
+    ] as RuntimeRecord[],
+    [
+      {
+        id: "agent-1",
+        name: "Research Lead",
+        workspaceId: "workspace-1"
+      }
+    ] as Parameters<typeof buildTaskRecords>[1]
+  );
+
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].workspaceId, "workspace-1");
+});
+
 test("mission dispatch sessions carry explicit task origin before runtime matching", () => {
   const dispatchRecord = {
     id: "dispatch-1",

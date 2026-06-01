@@ -95,9 +95,11 @@ export function buildCanvasGraph(
       : snapshot.agents.filter((agent) => agent.workspaceId === workspace.id);
     const workspaceTaskRecords = isFocusMode
       ? snapshot.tasks.filter(
-          (task) => task.workspaceId === workspace.id && task.primaryAgentId === focusedAgentId
+          (task) =>
+            resolveTaskWorkspaceId(task, snapshot.agents) === workspace.id &&
+            task.primaryAgentId === focusedAgentId
         )
-      : snapshot.tasks.filter((task) => task.workspaceId === workspace.id);
+      : snapshot.tasks.filter((task) => resolveTaskWorkspaceId(task, snapshot.agents) === workspace.id);
     const workspaceToggleTasks = isFocusMode
       ? []
       : workspaceTaskRecords.filter((task) => !safeLockedTaskKeys.includes(task.key));
@@ -463,6 +465,26 @@ export function isTaskHidden(
 
 export function resolveTaskOwnerId(task: WorkItemRecord) {
   return task.primaryAgentId || task.agentIds[0] || null;
+}
+
+export function resolveTaskWorkspaceId(task: WorkItemRecord, agents: AgentRecord[]) {
+  if (task.workspaceId?.trim()) {
+    return task.workspaceId;
+  }
+
+  const taskAgentIds = [task.primaryAgentId, ...task.agentIds].filter(
+    (value): value is string => typeof value === "string" && value.trim().length > 0
+  );
+
+  for (const agentId of taskAgentIds) {
+    const workspaceId = agents.find((agent) => agent.id === agentId)?.workspaceId;
+
+    if (workspaceId) {
+      return workspaceId;
+    }
+  }
+
+  return null;
 }
 
 export function isLiveTask(task: WorkItemRecord) {

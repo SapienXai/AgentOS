@@ -7,6 +7,7 @@ export function buildTaskRecords(runtimes: RuntimeRecord[], agents: OpenClawAgen
   const taskRuntimes = runtimes.filter((runtime) => !isDirectChatRuntime(runtime));
   const groups = new Map<string, RuntimeRecord[]>();
   const agentNameById = new Map(agents.map((agent) => [agent.id, compactAgentName(agent)]));
+  const agentWorkspaceIdById = new Map(agents.map((agent) => [agent.id, agent.workspaceId]));
   const dispatchIdBySessionKey = buildDispatchIdBySessionKey(taskRuntimes);
 
   for (const runtime of taskRuntimes) {
@@ -17,14 +18,17 @@ export function buildTaskRecords(runtimes: RuntimeRecord[], agents: OpenClawAgen
   }
 
   return Array.from(groups.entries())
-    .map(([groupKey, groupedRuntimes]) => buildTaskRecord(groupKey, groupedRuntimes, agentNameById))
+    .map(([groupKey, groupedRuntimes]) =>
+      buildTaskRecord(groupKey, groupedRuntimes, agentNameById, agentWorkspaceIdById)
+    )
     .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
 }
 
 export function buildTaskRecord(
   groupKey: string,
   runtimes: RuntimeRecord[],
-  agentNameById: Map<string, string>
+  agentNameById: Map<string, string>,
+  agentWorkspaceIdById: Map<string, string> = new Map()
 ): TaskRecord {
   const sortedRuntimes = [...runtimes].sort(sortRuntimesByUpdatedAtDesc);
   const signalRuntimes = selectTaskSignalRuntimes(sortedRuntimes);
@@ -61,6 +65,7 @@ export function buildTaskRecord(
   const dispatchStatus = resolveTaskDispatchStatus(sortedRuntimes);
   const primaryAgentId = primaryRuntime?.agentId || agentIds[0];
   const primaryAgentName = primaryAgentId ? agentNameById.get(primaryAgentId) ?? null : null;
+  const workspaceId = resolveTaskWorkspaceId(sortedRuntimes, primaryAgentId, agentIds, agentWorkspaceIdById);
   const latestRuntime = sortedRuntimes[0] ?? null;
 
   return {
@@ -72,7 +77,7 @@ export function buildTaskRecord(
     status: resolveTaskStatus(sortedRuntimes, dispatchStatus),
     updatedAt: latestRuntime?.updatedAt ?? null,
     ageMs: latestRuntime?.ageMs ?? null,
-    workspaceId: primaryRuntime?.workspaceId,
+    workspaceId,
     primaryAgentId,
     primaryAgentName,
     primaryRuntimeId: primaryRuntime?.id,
@@ -127,6 +132,33 @@ export function buildTaskRecord(
           : null
     }
   };
+}
+
+function resolveTaskWorkspaceId(
+  runtimes: RuntimeRecord[],
+  primaryAgentId: string | undefined,
+  agentIds: string[],
+  agentWorkspaceIdById: Map<string, string>
+) {
+  const runtimeWorkspaceId = runtimes
+    .map((runtime) => runtime.workspaceId?.trim())
+    .find((value): value is string => Boolean(value));
+
+  if (runtimeWorkspaceId) {
+    return runtimeWorkspaceId;
+  }
+
+  const taskAgentIds = uniqueStrings([primaryAgentId, ...agentIds].filter(Boolean) as string[]);
+
+  for (const agentId of taskAgentIds) {
+    const workspaceId = agentWorkspaceIdById.get(agentId)?.trim();
+
+    if (workspaceId) {
+      return workspaceId;
+    }
+  }
+
+  return undefined;
 }
 
 function compactAgentName(agent: OpenClawAgent) {
