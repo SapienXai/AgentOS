@@ -518,6 +518,64 @@ export function buildSurfaceBindingRepairResult(input: {
   };
 }
 
+export type SurfaceReconcilePreviewAudit = {
+  id: string;
+  createdAt: string;
+  dryRun: boolean;
+  applied: boolean;
+  scope: "workspace" | "all";
+  workspaceId: string | null;
+  plannedConfigPaths: string[];
+  previousBindings?: unknown[];
+  nextBindings?: unknown[];
+};
+
+export function validateSurfaceReconcilePreviewForApply(input: {
+  preview: SurfaceReconcilePreviewAudit;
+  previewMaxAgeMs: number;
+  nowMs?: number;
+  scope: "workspace" | "all";
+  workspaceId: string | null;
+  plannedConfigPaths: string[];
+  currentBindings: unknown[];
+  nextBindings: unknown[];
+}) {
+  const createdAtMs = Date.parse(input.preview.createdAt);
+  const nowMs = input.nowMs ?? Date.now();
+
+  if (input.preview.dryRun !== true) {
+    throw new Error("Surface repair preview audit is not a dry-run preview.");
+  }
+
+  if (input.preview.applied !== false) {
+    throw new Error("Surface repair preview audit was already applied.");
+  }
+
+  if (input.preview.scope !== input.scope) {
+    throw new Error("Surface repair preview scope does not match this apply request.");
+  }
+
+  if ((input.preview.workspaceId ?? null) !== (input.workspaceId ?? null)) {
+    throw new Error("Surface repair preview workspace does not match this apply request.");
+  }
+
+  if (!Number.isFinite(createdAtMs) || nowMs - createdAtMs > input.previewMaxAgeMs) {
+    throw new Error("Surface repair preview is stale. Run a new dry-run preview before applying repair.");
+  }
+
+  if (!stringArraysEqual(input.preview.plannedConfigPaths, input.plannedConfigPaths)) {
+    throw new Error("Surface repair planned config paths changed since preview. Run a new dry-run preview.");
+  }
+
+  if (Array.isArray(input.preview.previousBindings) && !configValuesEqual(input.preview.previousBindings, input.currentBindings)) {
+    throw new Error("Current OpenClaw bindings changed since preview. Run a new dry-run preview before applying repair.");
+  }
+
+  if (Array.isArray(input.preview.nextBindings) && !configValuesEqual(input.preview.nextBindings, input.nextBindings)) {
+    throw new Error("Surface repair target bindings changed since preview. Run a new dry-run preview.");
+  }
+}
+
 export function mergeManagedOpenClawBindings(input: {
   registry: ChannelRegistry;
   currentBindings: unknown[];
@@ -1130,6 +1188,14 @@ function normalizeOptionalString(value: unknown) {
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringArraysEqual(left: string[], right: string[]) {
+  return JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
+}
+
+function configValuesEqual(left: unknown, right: unknown) {
+  return stableStringify(left ?? null) === stableStringify(right ?? null);
 }
 
 function uniqueStrings(values: Array<string | null | undefined>) {

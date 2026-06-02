@@ -149,6 +149,7 @@ export function WorkspaceChannelsDialog({
   const [routeErrorsBySurfaceId, setRouteErrorsBySurfaceId] = useState<Record<string, string | null>>({});
   const [deleteTarget, setDeleteTarget] = useState<ChannelAccountRecord | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [repairPreview, setRepairPreview] = useState<SurfaceBindingRepairResult | null>(null);
   const [provisionDraft, setProvisionDraft] = useState<Record<string, string | boolean>>(
     buildEmptyProvisionDraft(getSurfaceCatalogEntry(activeProvider))
   );
@@ -355,6 +356,7 @@ export function WorkspaceChannelsDialog({
       setDiscoveredRoutesBySurfaceId({});
       setRouteErrorsBySurfaceId({});
       setLoadingRoutesBySurfaceId({});
+      setRepairPreview(null);
       return;
     }
 
@@ -901,25 +903,23 @@ export function WorkspaceChannelsDialog({
       }
 
       const preview = previewResult.repair;
-      const confirmed = window.confirm(
-        [
-          "Apply OpenClaw binding repair?",
-          "",
-          `${preview.addedBindingCount} binding${preview.addedBindingCount === 1 ? "" : "s"} will be added.`,
-          `${preview.removedBindingCount} binding${preview.removedBindingCount === 1 ? "" : "s"} will be removed.`,
-          `Preview audit: ${preview.auditId}`,
-          "",
-          "AgentOS will write a redacted backup snapshot before changing OpenClaw config."
-        ].join("\n")
-      );
+      setRepairPreview(preview);
+      toast.info("Binding repair preview created.", {
+        description: `Audit ${preview.auditId} was written without changing OpenClaw config.`
+      });
+    } catch (error) {
+      await showSurfaceMutationError("Binding repair preview failed.", error, handleRepairSurfaceDrift, ["operator.admin"]);
+    } finally {
+      endSaving();
+    }
+  };
 
-      if (!confirmed) {
-        toast.info("Binding repair preview created.", {
-          description: `Audit ${preview.auditId} was written without changing OpenClaw config.`
-        });
-        return;
-      }
+  const handleApplySurfaceRepairPreview = async () => {
+    if (!workspace || !repairPreview?.auditId) {
+      return;
+    }
 
+    try {
       beginSaving("Applying OpenClaw binding repair...");
       const response = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/surfaces/reconcile`, {
         method: "POST",
@@ -930,7 +930,7 @@ export function WorkspaceChannelsDialog({
           scope: "workspace",
           dryRun: false,
           confirm: "apply-surface-reconcile",
-          previewAuditId: preview.auditId
+          previewAuditId: repairPreview.auditId
         })
       });
       const result = (await response.json()) as SurfaceReconcileResult;
@@ -943,6 +943,7 @@ export function WorkspaceChannelsDialog({
       }
 
       const repair = result.repair;
+      setRepairPreview(null);
       toast.success("OpenClaw bindings repaired.", {
         description: repair
           ? `${repair.addedBindingCount} added, ${repair.removedBindingCount} removed. Backup ${repair.backupId || "recorded"}.`
@@ -950,7 +951,7 @@ export function WorkspaceChannelsDialog({
       });
       void onRefresh().catch(() => {});
     } catch (error) {
-      await showSurfaceMutationError("Binding repair failed.", error, handleRepairSurfaceDrift, ["operator.admin"]);
+      await showSurfaceMutationError("Binding repair failed.", error, undefined, ["operator.admin"]);
     } finally {
       endSaving();
     }
@@ -974,6 +975,7 @@ export function WorkspaceChannelsDialog({
     Boolean(newPrimaryAgentId) &&
     Boolean(getProvisionDraftText(provisionDraft, "name").trim()) &&
     provisionFieldsReady;
+  const repairPreviewConfigPaths = repairPreview?.restorePlan?.configPaths ?? [];
 
   const renderProvisionField = (field: SurfaceProvisionField) => {
     const fieldId = `surface-${field.key}`;
@@ -1891,6 +1893,82 @@ export function WorkspaceChannelsDialog({
               onClick={() => void handleDeleteAccountEverywhere()}
             >
               {isSaving ? "Deleting..." : "Delete everywhere"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(repairPreview)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !isSaving) {
+            setRepairPreview(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Apply OpenClaw binding repair</DialogTitle>
+            <DialogDescription>
+              Confirm the previewed repair before AgentOS writes a bounded OpenClaw config patch.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-[20px] border border-amber-300/25 bg-amber-400/[0.08] p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-amber-50">Operator confirmation required</p>
+                <p className="mt-1 text-xs leading-5 text-amber-100/80">
+                  AgentOS will write a redacted backup snapshot before changing only the approved OpenClaw config
+                  paths shown here.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SurfaceMetric label="Bindings added" value={String(repairPreview?.addedBindingCount ?? 0)} />
+            <SurfaceMetric label="Bindings removed" value={String(repairPreview?.removedBindingCount ?? 0)} />
+          </div>
+
+          <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">Preview audit</p>
+            <p className="mt-1 break-all font-mono text-[11px] leading-5 text-slate-200">
+              {repairPreview?.auditId ?? "unknown"}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">Approved config paths</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {repairPreviewConfigPaths.length > 0 ? (
+                repairPreviewConfigPaths.map((configPath) => (
+                  <Badge key={configPath} variant="muted" className="h-6 rounded-full px-2 text-[10px]">
+                    {configPath}
+                  </Badge>
+                ))
+              ) : (
+                <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
+                  no config changes
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              disabled={isSaving}
+              onClick={() => setRepairPreview(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={isSaving || !repairPreview?.auditId}
+              onClick={() => void handleApplySurfaceRepairPreview()}
+            >
+              {isSaving ? "Applying..." : "Apply repair"}
             </Button>
           </DialogFooter>
         </DialogContent>

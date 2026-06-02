@@ -93,9 +93,34 @@ test("agentos doctor reports read-only OpenClaw Gateway compatibility details", 
   assert.match(result.stdout, /Native auth\s+✓ OK\s+native RPC available/);
   assert.match(result.stdout, /Model readiness\s+✓ OK\s+models\.list and models\.authStatus readable/);
   assert.match(result.stdout, /Config access\s+✓ OK\s+config\.get readable/);
+  assert.match(result.stdout, /Config schema\s+✓ OK\s+config\.schema readable/);
+  assert.match(result.stdout, /Config patch\s+✓ OK\s+config\.patch advertised/);
   assert.match(result.stdout, /Channel status\s+✓ OK\s+channels\.status readable/);
   assert.match(result.stdout, /Fallback count\s+– DISABLED\s+available when AgentOS is running/);
   assert.match(result.stdout, /Last native failure\s+– DISABLED\s+available when AgentOS is running/);
+});
+
+test("agentos doctor deep mode can print OpenClaw compatibility JSON", async () => {
+  const fixture = await createCliFixture();
+  const fakeOpenClaw = await writeFakeOpenClawGatewayBinary(fixture.installRoot);
+  const result = runCli(fixture.cliPath, ["doctor", "--deep", "--json"], {
+    env: {
+      ...createSmokeEnv(fixture.installRoot),
+      OPENCLAW_BIN: fakeOpenClaw
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const parsed = JSON.parse(result.stdout) as {
+    deep?: boolean;
+    checks?: Array<{ label?: string; state?: string; detail?: string }>;
+  };
+  const checks = new Map((parsed.checks ?? []).map((check) => [check.label, check]));
+
+  assert.equal(parsed.deep, true);
+  assert.equal(checks.get("Gateway protocol")?.state, "ok");
+  assert.equal(checks.get("Config schema")?.detail, "config.schema readable");
+  assert.match(checks.get("Config patch")?.detail ?? "", /config\.patch advertised/);
 });
 
 test("agentos doctor warns when Gateway required method metadata is incomplete", async () => {
@@ -567,6 +592,7 @@ async function writeFakeOpenClawGatewayBinary(
     "  if (method === 'models.list') { print({ models: [{ id: 'openai/gpt-5.5', ready: true }] }); process.exit(0); }",
     "  if (method === 'models.authStatus') { print({ providers: [{ provider: 'openai', connected: true }] }); process.exit(0); }",
     "  if (method === 'config.get') { if (configFailureMessage) { console.error(configFailureMessage); process.exit(1); } print({ bindings: [] }); process.exit(0); }",
+    "  if (method === 'config.schema') { print({ schema: { type: 'object' } }); process.exit(0); }",
     "  if (method === 'channels.status') { print({ channels: [] }); process.exit(0); }",
     "}",
     "console.error(`unexpected openclaw args: ${args.join(' ')}`);",

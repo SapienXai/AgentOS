@@ -446,15 +446,29 @@ async function runDoctor(rawArgs) {
     }
   ];
 
-  console.log(renderDoctorReport({
-    title: "AGENTOS DOCTOR",
-    rows: checks.map((check) => ({
-      label: check.label,
-      state: check.state,
-      message: check.detail
-    })),
-    footer: "Doctor shows install and runtime diagnostics. The in-app diagnostics panel has live Gateway/model detail."
-  }));
+  if (doctorOptions.json) {
+    console.log(JSON.stringify({
+      title: "AGENTOS DOCTOR",
+      generatedAt: new Date().toISOString(),
+      deep: doctorOptions.deep,
+      targetUrl,
+      checks: checks.map((check) => ({
+        label: check.label,
+        state: check.state,
+        detail: check.detail
+      }))
+    }, null, 2));
+  } else {
+    console.log(renderDoctorReport({
+      title: "AGENTOS DOCTOR",
+      rows: checks.map((check) => ({
+        label: check.label,
+        state: check.state,
+        message: check.detail
+      })),
+      footer: "Doctor shows install and runtime diagnostics. The in-app diagnostics panel has live Gateway/model detail."
+    }));
+  }
 
   if (checks.some((check) => check.state === "failed")) {
     process.exitCode = 1;
@@ -464,10 +478,16 @@ async function runDoctor(rawArgs) {
 function parseDoctorArgs(rawArgs) {
   const startArgs = [];
   let deep = false;
+  let json = false;
 
   for (const arg of rawArgs) {
     if (arg === "--deep") {
       deep = true;
+      continue;
+    }
+
+    if (arg === "--json") {
+      json = true;
       continue;
     }
 
@@ -476,6 +496,7 @@ function parseDoctorArgs(rawArgs) {
 
   return {
     deep,
+    json,
     startArgs
   };
 }
@@ -847,6 +868,7 @@ async function inspectOpenClawCompatibility(openClawCheck, gatewayStatus, target
   const modelsProbe = runOpenClawGatewayCall(command, "models.list");
   const modelAuthProbe = runOpenClawGatewayCall(command, "models.authStatus");
   const configProbe = runOpenClawGatewayCall(command, "config.get");
+  const configSchemaProbe = runOpenClawGatewayCall(command, "config.schema");
   const channelProbe = runOpenClawGatewayCall(command, "channels.status");
   const agentOsDiagnostics = await readAgentOsDiagnostics(targetUrl);
   const payloads = [
@@ -871,6 +893,7 @@ async function inspectOpenClawCompatibility(openClawCheck, gatewayStatus, target
     ? summarizeBootText(transport.lastNativeError)
     : null;
   const modelReadiness = summarizeModelReadiness(agentOsDiagnostics, modelsProbe, modelAuthProbe);
+  const configPatchMethod = resolveConfigPatchMethod(supportedMethods);
 
   return [
     {
@@ -912,6 +935,20 @@ async function inspectOpenClawCompatibility(openClawCheck, gatewayStatus, target
       state: configProbe.ok ? "ok" : "warning",
       label: "Config access",
       detail: configProbe.ok ? "config.get readable" : configProbe.message
+    },
+    {
+      state: configSchemaProbe.ok ? "ok" : "warning",
+      label: "Config schema",
+      detail: configSchemaProbe.ok ? "config.schema readable" : configSchemaProbe.message
+    },
+    {
+      state: supportedMethods.length === 0 ? "warning" : configPatchMethod ? "ok" : "warning",
+      label: "Config patch",
+      detail: supportedMethods.length === 0
+        ? "method metadata unavailable; config patch support is unknown"
+        : configPatchMethod
+          ? `${configPatchMethod} advertised; doctor does not mutate config`
+          : "config.patch/config.apply not advertised"
     },
     {
       state: channelProbe.ok ? "ok" : "warning",
@@ -1203,6 +1240,10 @@ function resolveProtocolState(protocolVersion) {
 
 function summarizeProbeFailure(probe, fallback) {
   return probe?.ok ? fallback : probe?.message || fallback;
+}
+
+function resolveConfigPatchMethod(supportedMethods) {
+  return ["config.patch", "config.apply", "config.set"].find((method) => supportedMethods.includes(method)) || null;
 }
 
 function readFirstProtocolVersion(payloads) {
@@ -1707,12 +1748,14 @@ function printDoctorHelp() {
 Usage:
   agentos doctor
   agentos doctor --deep
+  agentos doctor --deep --json
   agentos doctor --deep --port 3000 --host 127.0.0.1
 
 Options:
   --deep       Run read-only OpenClaw compatibility probes for Gateway protocol, native auth, scopes,
-               required methods, config access, channel status, model readiness, fallback count, and
-               last native failure.
+               required methods, config access, config schema/patch capability, channel status,
+               model readiness, fallback count, and last native failure.
+  --json       Print diagnostics as JSON.
   --port, -p   AgentOS port used when reading /api/diagnostics in deep mode (default: 3000)
   --host, -H   AgentOS host used when reading /api/diagnostics in deep mode (default: 127.0.0.1)
 

@@ -255,12 +255,23 @@ test("channel provisioning writes stay behind the OpenClaw adapter", () => {
 
 test("surface reconcile dry-run skips OpenClaw config writes and provider side effects", () => {
   const source = readFileSync(path.join(rootDir, "lib/openclaw/application/channel-service.ts"), "utf8");
+  const surfaceRuntime = readFileSync(path.join(rootDir, "lib/openclaw/surface-runtime.ts"), "utf8");
   const route = readFileSync(path.join(rootDir, "app/api/workspaces/[workspaceId]/surfaces/reconcile/route.ts"), "utf8");
+  const dialog = readFileSync(path.join(rootDir, "components/mission-control/workspace-channels-dialog.tsx"), "utf8");
 
   assert.match(source, /const dryRun = input\.dryRun === true/);
-  assert.match(source, /assertSurfaceReconcilePreviewAuditExists\(confirmedPreviewAuditId\)/);
+  assert.match(source, /readSurfaceReconcilePreviewAudit\(confirmedPreviewAuditId\)/);
+  assert.match(source, /validateSurfaceReconcilePreviewForApply/);
+  assert.match(source, /surfaceReconcilePreviewMaxAgeMs = 15 \* 60 \* 1000/);
+  assert.match(source, /approvedSurfaceRepairConfigPaths = new Set/);
+  assert.match(source, /assertApprovedSurfaceRepairConfigPaths\(plannedConfigPaths\)/);
+  assert.match(surfaceRuntime, /Current OpenClaw bindings changed since preview/);
   assert.match(source, /writeSurfaceReconcileBackup/);
+  assert.match(source, /surface-reconcile\.backup-read/);
   assert.match(source, /surface-reconcile\.backup-write/);
+  assert.match(source, /previousConfigValues/);
+  assert.match(source, /const backup = redactSecrets/);
+  assert.match(source, /const audit = redactSecrets/);
   assert.match(source, /const configMutations = dryRun\s+\?\s+undefined\s+:\s+await measureTiming\([\s\S]*?applySurfaceConfigRepairPatch/);
   assert.match(source, /if \(scope === "all" && !dryRun\)/);
   assert.match(source, /if \(!dryRun\) \{\s+invalidateSnapshotCache\(\);/);
@@ -268,6 +279,9 @@ test("surface reconcile dry-run skips OpenClaw config writes and provider side e
   assert.match(route, /surfaceReconcileApplyConfirmation = "apply-surface-reconcile"/);
   assert.match(route, /Surface repair apply requires explicit confirmation/);
   assert.match(route, /Surface repair apply requires a dry-run preview audit id/);
+  assert.doesNotMatch(dialog, /window\.confirm/);
+  assert.match(dialog, /Apply OpenClaw binding repair/);
+  assert.match(dialog, /handleApplySurfaceRepairPreview/);
 });
 
 test("settings device access repair stays behind the OpenClaw adapter", () => {

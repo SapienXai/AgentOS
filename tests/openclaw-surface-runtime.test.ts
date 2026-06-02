@@ -8,7 +8,9 @@ import {
   buildSurfaceDriftSnapshot,
   createConfigOnlySurfaceRuntimeSnapshot,
   mergeManagedOpenClawBindings,
-  normalizeSurfaceRuntimeFromChannelStatus
+  normalizeSurfaceRuntimeFromChannelStatus,
+  validateSurfaceReconcilePreviewForApply,
+  type SurfaceReconcilePreviewAudit
 } from "@/lib/openclaw/surface-runtime";
 import type {
   ChannelAccountRecord,
@@ -362,6 +364,121 @@ test("surface binding repair result carries dry-run audit and restore metadata w
   assert.equal(result.restorePlan?.backupId, "surface-reconcile-backup-test");
 });
 
+test("validates surface repair preview audit before apply", () => {
+  const registry = createRegistry();
+  const previousBindings = buildManagedOpenClawBindings(registry);
+  const nextBindings = mergeManagedOpenClawBindings({
+    registry,
+    currentBindings: previousBindings,
+    scope: "workspace",
+    workspaceId: "workspace-1"
+  });
+  const preview = createSurfaceRepairPreviewAudit({
+    previousBindings,
+    nextBindings
+  });
+
+  assert.doesNotThrow(() =>
+    validateSurfaceReconcilePreviewForApply({
+      preview,
+      previewMaxAgeMs: 15 * 60 * 1000,
+      nowMs: Date.parse("2026-06-02T00:05:00.000Z"),
+      scope: "workspace",
+      workspaceId: "workspace-1",
+      plannedConfigPaths: ["bindings"],
+      currentBindings: previousBindings,
+      nextBindings
+    })
+  );
+
+  assert.throws(
+    () =>
+      validateSurfaceReconcilePreviewForApply({
+        preview,
+        previewMaxAgeMs: 15 * 60 * 1000,
+        nowMs: Date.parse("2026-06-02T00:20:00.000Z"),
+        scope: "workspace",
+        workspaceId: "workspace-1",
+        plannedConfigPaths: ["bindings"],
+        currentBindings: previousBindings,
+        nextBindings
+      }),
+    /preview is stale/
+  );
+
+  assert.throws(
+    () =>
+      validateSurfaceReconcilePreviewForApply({
+        preview,
+        previewMaxAgeMs: 15 * 60 * 1000,
+        nowMs: Date.parse("2026-06-02T00:05:00.000Z"),
+        scope: "workspace",
+        workspaceId: "workspace-2",
+        plannedConfigPaths: ["bindings"],
+        currentBindings: previousBindings,
+        nextBindings
+      }),
+    /preview workspace does not match/
+  );
+
+  assert.throws(
+    () =>
+      validateSurfaceReconcilePreviewForApply({
+        preview,
+        previewMaxAgeMs: 15 * 60 * 1000,
+        nowMs: Date.parse("2026-06-02T00:05:00.000Z"),
+        scope: "workspace",
+        workspaceId: "workspace-1",
+        plannedConfigPaths: ["bindings", "channels.telegram.enabled"],
+        currentBindings: previousBindings,
+        nextBindings
+      }),
+    /planned config paths changed/
+  );
+
+  assert.throws(
+    () =>
+      validateSurfaceReconcilePreviewForApply({
+        preview,
+        previewMaxAgeMs: 15 * 60 * 1000,
+        nowMs: Date.parse("2026-06-02T00:05:00.000Z"),
+        scope: "workspace",
+        workspaceId: "workspace-1",
+        plannedConfigPaths: ["bindings"],
+        currentBindings: [
+          ...previousBindings,
+          {
+            agentId: "unexpected-agent",
+            match: {
+              channel: "telegram",
+              accountId: "tg-main"
+            }
+          }
+        ],
+        nextBindings
+      }),
+    /Current OpenClaw bindings changed since preview/
+  );
+
+  assert.throws(
+    () =>
+      validateSurfaceReconcilePreviewForApply({
+        preview: {
+          ...preview,
+          applied: true
+        },
+        previewMaxAgeMs: 15 * 60 * 1000,
+        nowMs: Date.parse("2026-06-02T00:05:00.000Z"),
+        scope: "workspace",
+        workspaceId: "workspace-1",
+        plannedConfigPaths: ["bindings"],
+        currentBindings: previousBindings,
+        nextBindings
+      }),
+    /already applied/
+  );
+});
+
 test("detects and removes orphan AgentOS-managed OpenClaw bindings", () => {
   const registry = createRegistry();
   const orphanBinding = {
@@ -398,6 +515,23 @@ test("detects and removes orphan AgentOS-managed OpenClaw bindings", () => {
 
   assert.equal(JSON.stringify(repaired).includes("telegram-agentos-old"), false);
 });
+
+function createSurfaceRepairPreviewAudit(input: {
+  previousBindings: unknown[];
+  nextBindings: unknown[];
+}): SurfaceReconcilePreviewAudit {
+  return {
+    id: "surface-reconcile-2026-06-02T00-00-00-000Z-test00",
+    createdAt: "2026-06-02T00:00:00.000Z",
+    dryRun: true,
+    applied: false,
+    scope: "workspace",
+    workspaceId: "workspace-1",
+    plannedConfigPaths: ["bindings"],
+    previousBindings: input.previousBindings,
+    nextBindings: input.nextBindings
+  };
+}
 
 function createRegistry(): ChannelRegistry {
   return {

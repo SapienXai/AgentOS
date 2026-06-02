@@ -30,7 +30,9 @@ import {
   buildSurfaceBindingRepairResult,
   buildSurfaceDriftSnapshot,
   createConfigOnlySurfaceRuntimeSnapshot,
-  mergeManagedOpenClawBindings
+  mergeManagedOpenClawBindings,
+  validateSurfaceReconcilePreviewForApply,
+  type SurfaceReconcilePreviewAudit
 } from "@/lib/openclaw/surface-runtime";
 import {
   normalizeChannelRegistry,
@@ -68,6 +70,15 @@ type TelegramSettingsPatchPlan = {
   patch: OpenClawConfigPatch | null;
   defaultAccountId: string | null;
 };
+type SurfaceReconcileConfigBackupValues = Record<string, unknown>;
+
+const surfaceReconcilePreviewMaxAgeMs = 15 * 60 * 1000;
+const approvedSurfaceRepairConfigPaths = new Set([
+  "bindings",
+  "channels.telegram.enabled",
+  "channels.telegram.defaultAccount",
+  "channels.telegram.groups"
+]);
 
 export {
   discoverDiscordRoutes,
@@ -280,9 +291,7 @@ export async function reconcileWorkspaceSurfaceBindings(input: {
   if (scope === "workspace" && !workspaceId) {
     throw new Error("Workspace id is required.");
   }
-  if (!dryRun) {
-    await assertSurfaceReconcilePreviewAuditExists(confirmedPreviewAuditId);
-  }
+  const previewAudit = dryRun ? null : await readSurfaceReconcilePreviewAudit(confirmedPreviewAuditId);
 
   const registry = await measureTiming(timings, "surface-reconcile.registry-read", () => readChannelRegistry());
   if (scope === "workspace") {
@@ -318,12 +327,27 @@ export async function reconcileWorkspaceSurfaceBindings(input: {
   const plannedConfigPaths = reconcilePatch
     ? flattenSurfaceConfigRepairPatch(reconcilePatch).map((write) => write.path)
     : [];
+  assertApprovedSurfaceRepairConfigPaths(plannedConfigPaths);
+  if (previewAudit) {
+    validateSurfaceReconcilePreviewForApply({
+      preview: previewAudit,
+      previewMaxAgeMs: surfaceReconcilePreviewMaxAgeMs,
+      scope,
+      workspaceId: scope === "workspace" ? workspaceId : null,
+      plannedConfigPaths,
+      currentBindings: previousBindings,
+      nextBindings
+    });
+  }
   const auditId = createSurfaceReconcileAuditId();
   const auditPath = path.join(missionControlRootPath, "surface-reconcile", `${auditId}.json`);
   const backupId = dryRun ? null : createSurfaceReconcileBackupId();
   const backupPath = backupId
     ? path.join(missionControlRootPath, "surface-reconcile", `${backupId}.json`)
     : null;
+  const previousConfigValues = dryRun
+    ? null
+    : await readSurfaceReconcileConfigBackupValues(plannedConfigPaths, timings);
   const restorePlan = buildSurfaceReconcileRestorePlan({
     auditId,
     createdAt: new Date().toISOString(),
@@ -343,7 +367,8 @@ export async function reconcileWorkspaceSurfaceBindings(input: {
       previousBindings,
       nextBindings,
       reconcilePatch,
-      plannedConfigPaths
+      plannedConfigPaths,
+      previousConfigValues
     }, timings);
   }
   const configMutations = dryRun
@@ -1079,7 +1104,7 @@ function createSurfaceReconcileBackupId() {
   return `surface-reconcile-backup-${timestamp}-${suffix}`;
 }
 
-async function assertSurfaceReconcilePreviewAuditExists(auditId: string | null) {
+async function readSurfaceReconcilePreviewAudit(auditId: string | null): Promise<SurfaceReconcilePreviewAudit> {
   if (!auditId) {
     throw new Error("Surface repair requires a dry-run preview audit id before applying changes.");
   }
@@ -1089,12 +1114,81 @@ async function assertSurfaceReconcilePreviewAuditExists(auditId: string | null) 
   }
 
   const previewAuditPath = path.join(missionControlRootPath, "surface-reconcile", `${auditId}.json`);
+  let raw: string;
 
   try {
-    await access(previewAuditPath);
+    raw = await readFile(previewAuditPath, "utf8");
   } catch {
     throw new Error("Surface repair preview audit was not found. Run a dry-run preview before applying repair.");
   }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("Surface repair preview audit is unreadable. Run a new dry-run preview before applying repair.");
+  }
+
+  if (!isObjectRecord(parsed)) {
+    throw new Error("Surface repair preview audit is invalid. Run a new dry-run preview before applying repair.");
+  }
+
+  const parsedAuditId = typeof parsed.id === "string" ? normalizeOptionalValue(parsed.id) : null;
+  const scope = parsed.scope === "workspace" || parsed.scope === "all" ? parsed.scope : null;
+  const createdAt = typeof parsed.createdAt === "string" && parsed.createdAt.trim() ? parsed.createdAt : null;
+  const plannedConfigPaths = Array.isArray(parsed.plannedConfigPaths)
+    ? parsed.plannedConfigPaths.filter((entry): entry is string => typeof entry === "string" && Boolean(entry.trim()))
+    : [];
+
+  if (parsedAuditId !== auditId) {
+    throw new Error("Surface repair preview audit id does not match the requested preview.");
+  }
+
+  if (!scope || !createdAt) {
+    throw new Error("Surface repair preview audit is missing required metadata. Run a new dry-run preview before applying repair.");
+  }
+
+  assertApprovedSurfaceRepairConfigPaths(plannedConfigPaths);
+
+  return {
+    id: auditId,
+    createdAt,
+    dryRun: parsed.dryRun === true,
+    applied: parsed.applied === false ? false : true,
+    scope,
+    workspaceId: typeof parsed.workspaceId === "string" ? normalizeOptionalValue(parsed.workspaceId) ?? null : null,
+    plannedConfigPaths,
+    ...(Array.isArray(parsed.previousBindings) ? { previousBindings: parsed.previousBindings } : {}),
+    ...(Array.isArray(parsed.nextBindings) ? { nextBindings: parsed.nextBindings } : {})
+  };
+}
+
+function assertApprovedSurfaceRepairConfigPaths(paths: string[]) {
+  const unsupportedPath = paths.find((entry) => !approvedSurfaceRepairConfigPaths.has(entry));
+
+  if (unsupportedPath) {
+    throw new Error(`Surface repair is not allowed to write OpenClaw config path ${unsupportedPath}.`);
+  }
+}
+
+async function readSurfaceReconcileConfigBackupValues(
+  plannedConfigPaths: string[],
+  timings?: TimingCollector
+): Promise<SurfaceReconcileConfigBackupValues> {
+  assertApprovedSurfaceRepairConfigPaths(plannedConfigPaths);
+
+  const adapter = getOpenClawAdapter();
+  const previousConfigValues: SurfaceReconcileConfigBackupValues = {};
+
+  for (const configPath of Array.from(new Set(plannedConfigPaths)).sort()) {
+    previousConfigValues[configPath] = await measureTiming(
+      timings,
+      `surface-reconcile.backup-read.${configPath}`,
+      () => adapter.getConfig<unknown>(configPath, { timeoutMs: 60_000 })
+    );
+  }
+
+  return previousConfigValues;
 }
 
 function buildSurfaceReconcileRestorePlan(input: {
@@ -1153,6 +1247,7 @@ async function writeSurfaceReconcileBackup(input: {
   nextBindings: unknown[];
   reconcilePatch: OpenClawConfigPatch | null;
   plannedConfigPaths: string[];
+  previousConfigValues: SurfaceReconcileConfigBackupValues | null;
 }, timings?: TimingCollector) {
   const backup = redactSecrets({
     id: input.backupId,
@@ -1165,10 +1260,11 @@ async function writeSurfaceReconcileBackup(input: {
     plannedConfigPaths: input.plannedConfigPaths,
     previousBindings: input.previousBindings,
     nextBindings: input.nextBindings,
+    previousConfigValues: input.previousConfigValues,
     reconcilePatch: input.reconcilePatch,
     restoreInstructions: input.plannedConfigPaths.length > 0
       ? input.plannedConfigPaths.map((configPath) =>
-          `Restore only ${configPath} from previousBindings or the matching previous config value after operator review.`
+          `Restore only ${configPath} from previousConfigValues after operator review.`
         )
       : ["No OpenClaw config path changes were planned."]
   });
@@ -1243,6 +1339,7 @@ async function applySurfaceConfigRepairPatch(
   const adapter = getOpenClawAdapter();
   const mutations: SurfaceConfigRepairMutation[] = [];
   const writes = flattenSurfaceConfigRepairPatch(patch);
+  assertApprovedSurfaceRepairConfigPaths(writes.map((write) => write.path));
 
   for (const write of writes) {
     const result = await measureTiming(timings, `surface-repair.set-config.${write.path}`, () =>
