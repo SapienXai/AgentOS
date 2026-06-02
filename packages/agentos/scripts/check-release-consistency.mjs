@@ -114,10 +114,22 @@ function validateAgentosPackage(context, agentosPackage) {
   }
 
   expectEqual(context, AGENTOS_PACKAGE_JSON, "type", agentosPackage.type, "module");
+  expectEqual(
+    context,
+    AGENTOS_PACKAGE_JSON,
+    "description",
+    agentosPackage.description,
+    "Gateway-first local AgentOS control plane for OpenClaw"
+  );
   expectEqual(context, AGENTOS_PACKAGE_JSON, "license", agentosPackage.license, "MIT");
   expectEqual(context, AGENTOS_PACKAGE_JSON, "bin.agentos", agentosPackage.bin?.agentos, AGENTOS_BIN_ENTRY);
   expectEqual(context, AGENTOS_PACKAGE_JSON, "engines.node", agentosPackage.engines?.node, REQUIRED_NODE_ENGINE);
   expectEqual(context, AGENTOS_PACKAGE_JSON, "publishConfig.access", agentosPackage.publishConfig?.access, "public");
+  expectEqual(context, AGENTOS_PACKAGE_JSON, "homepage", agentosPackage.homepage, "https://sapienx.app/agentos");
+  expectEqual(context, AGENTOS_PACKAGE_JSON, "repository.type", agentosPackage.repository?.type, "git");
+  expectEqual(context, AGENTOS_PACKAGE_JSON, "repository.url", agentosPackage.repository?.url, "git+https://github.com/SapienXai/AgentOS.git");
+  expectEqual(context, AGENTOS_PACKAGE_JSON, "repository.directory", agentosPackage.repository?.directory, AGENTOS_PACKAGE_DIR);
+  expectEqual(context, AGENTOS_PACKAGE_JSON, "bugs.url", agentosPackage.bugs?.url, "https://github.com/SapienXai/AgentOS/issues");
 
   for (const fileEntry of ["README.md", "bin", "bundle"]) {
     if (!Array.isArray(agentosPackage.files) || !agentosPackage.files.includes(fileEntry)) {
@@ -215,6 +227,13 @@ function validateReadmes(context, readme, packageReadme, agentosPackage) {
     expectIncludes(context, "README.md", readme, "packages/agentos/package.json");
     expectIncludes(context, "README.md", readme, `Node.js ${REQUIRED_NODE_MAJOR} or newer`);
     expectIncludes(context, "README.md", readme, `- Node.js ${REQUIRED_NODE_MAJOR} or newer`);
+    expectIncludes(context, "README.md", readme, "current stable OpenClaw release (`2026.5.28` or newer stable builds with compatible Gateway protocol support)");
+    expectIncludes(context, "README.md", readme, "CLI fallback remains explicit and visible");
+    expectIncludes(context, "README.md", readme, "Accounts and browser profiles are an MVP bridge");
+    expectIncludes(context, "README.md", readme, "OpenClaw does not yet expose typed browser-profile dispatch");
+    expectIncludes(context, "README.md", readme, "`requires_approval` account access rules are intentionally blocked until approval dispatch exists");
+    expectIncludes(context, "README.md", readme, "Surface repair is preview-first");
+    expectIncludes(context, "README.md", readme, "`agentos doctor --deep` is the release-readiness diagnostic");
 
     expectVersionReferences(context, "README.md", readme, agentosPackage.version, [
       {
@@ -245,6 +264,10 @@ function validateReadmes(context, readme, packageReadme, agentosPackage) {
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "pnpm add -g @sapienx/agentos");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "agentos update --check");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, `Node.js ${REQUIRED_NODE_MAJOR} or newer`);
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "current stable OpenClaw release (`2026.5.28` or newer stable builds with compatible Gateway protocol support)");
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "Gateway-first transport by default, with explicit CLI fallback");
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "Account-target browser-profile dispatch is an MVP bridge");
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "`requires_approval` rules remain blocked until approval dispatch exists");
   }
 }
 

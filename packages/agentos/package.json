@@ -1,7 +1,7 @@
 {
   "name": "@sapienx/agentos",
   "version": "0.6.3",
-  "description": "AgentOS control plane launcher",
+  "description": "Gateway-first local AgentOS control plane for OpenClaw",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -22,8 +22,19 @@
     "agentos",
     "openclaw",
     "agents",
-    "ai"
+    "ai",
+    "gateway",
+    "control-plane"
   ],
+  "homepage": "https://sapienx.app/agentos",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SapienXai/AgentOS.git",
+    "directory": "packages/agentos"
+  },
+  "bugs": {
+    "url": "https://github.com/SapienXai/AgentOS/issues"
+  },
   "engines": {
     "node": ">=24.0.0"
   },

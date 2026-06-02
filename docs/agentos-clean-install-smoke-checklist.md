@@ -5,7 +5,7 @@ Use this checklist before publishing or announcing an AgentOS release. It is man
 ## Prerequisites
 
 - Use Node.js 24 or newer.
-- Install or select OpenClaw `2026.5.28`.
+- Install or select the current stable OpenClaw release (`2026.5.28` or newer stable builds with compatible Gateway protocol support).
 - Start the OpenClaw Gateway on loopback.
 - Confirm `openclaw gateway status --json` reports protocol v4, reachable RPC, and operator auth.
 
@@ -47,6 +47,15 @@ Expected:
 - Abort one active run if available.
 - Send a direct chat message to an agent.
 - Refresh `/api/snapshot?force=true` and confirm runtime cards show real source/degraded state.
+
+## Accounts And Browser Profiles
+
+- Open the Accounts page and confirm it reads real OpenClaw browser profiles or shows an explicit unavailable state.
+- Connect Account should open a login URL through a reported OpenClaw browser profile and save only the AgentOS login-target entry after the browser action succeeds.
+- Confirm the UI states that website account identity is not verified by OpenClaw and typed browser-profile dispatch is not exposed yet.
+- Grant `Can use profile` only to browser-capable agents and confirm agents without access cannot launch account-target tasks.
+- Confirm `requires_approval` access rules remain blocked/coming soon until approval dispatch exists.
+- Confirm saved login target URLs do not retain query strings or fragments containing tokens, cookies, passwords, or other secrets.
 
 ## Surface Repair
 

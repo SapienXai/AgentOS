@@ -85,7 +85,7 @@ First thing to try:
 - Dispatch a mission.
 - Inspect the runtime output or transcript.
 
-If OpenClaw is already installed, AgentOS connects to the live control plane and shows the current gateway, models, agents, and runtimes.
+If OpenClaw is already installed, AgentOS connects to the live control plane and shows the current Gateway, models, agents, and runtimes.
 If OpenClaw is missing or not ready yet, AgentOS opens in an explicit unavailable/onboarding state instead of showing a fake live state.
 
 ## Product Highlights
@@ -236,7 +236,16 @@ In practice, that means:
 
 AgentOS is Gateway-first on top of OpenClaw. Use `agentos doctor` and the in-app diagnostics panel to confirm the installed OpenClaw version, Gateway protocol range, native auth state, model readiness, and fallback activity before dispatching real missions.
 
-The 0.6.3 release expects Node.js 24 or newer and an OpenClaw Gateway whose protocol overlaps the supported range reported by diagnostics. If compatibility is degraded, update OpenClaw, repair Gateway token/device access, restart the Gateway, and re-run `agentos doctor`.
+The 0.6.3 release expects Node.js 24 or newer and the current stable OpenClaw release (`2026.5.28` or newer stable builds with compatible Gateway protocol support). If compatibility is degraded, update OpenClaw, repair Gateway token/device access, restart the Gateway, and re-run `agentos doctor --deep`.
+
+### Current Compatibility Notes
+
+- AgentOS uses OpenClaw Gateway-first transport by default. CLI fallback remains explicit and visible for install, recovery, Gateway process control, older or unsupported Gateway methods, malformed responses, scope limits, and unavailable native auth.
+- Accounts and browser profiles are an MVP bridge. AgentOS can read OpenClaw browser profiles, start or attach a reported profile, open a login target, and enforce AgentOS access rules before account-target task launch. OpenClaw does not yet expose typed browser-profile dispatch, verified website account identity, or a direct browser-profile parameter for mission dispatch, so AgentOS passes selected profile/session context to eligible browser-capable agents.
+- `requires_approval` account access rules are intentionally blocked until approval dispatch exists. They are persisted as policy state but cannot run a task yet.
+- Surface repair is preview-first. Apply only after reviewing the dry-run audit, backup path, affected config paths, and restore instructions.
+- `agentos doctor --deep` is the release-readiness diagnostic for Gateway protocol, native auth, scopes, required methods, config access, schema/patch support, channel status, model readiness, fallback count, and the last native failure.
+- Package release checks are covered by `pnpm check:release` and `pnpm smoke:agentos-package`; use the clean-install smoke checklist before publishing or announcing a release.
 
 ## How The System Works
 
@@ -279,6 +288,7 @@ The 0.6.3 release expects Node.js 24 or newer and an OpenClaw Gateway whose prot
 - Gateway event bridge for supported OpenClaw chat, tool, log, session, and approval events.
 - Gateway diagnostics, capability matrix, native auth repair, and control actions.
 - Local-first settings for gateway endpoint and workspace root.
+- Accounts page for OpenClaw browser-profile login targets, with AgentOS-side access rules and clear browser-profile dispatch limitations.
 - Install paths through the release installer and package manager.
 
 ### What is coming next

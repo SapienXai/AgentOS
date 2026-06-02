@@ -46,6 +46,8 @@ AGENTOS_OPEN=1
 
 `agentos doctor` prints deeper install diagnostics: effective URL, bundle status, Node.js compatibility, OpenClaw detection, Gateway reachability, and browser auto-open support.
 
+`agentos doctor --deep` adds read-only OpenClaw compatibility probes for Gateway protocol, native auth, scopes, required methods, config access, config schema/patch support, channel status, model readiness, fallback count, and the last native failure when AgentOS is running.
+
 `agentos stop` sends `SIGTERM` to the AgentOS server listening on the selected port. If the runtime state is stale and no process is listening there, the CLI clears that stale state automatically.
 
 `agentos update` refreshes a release installation in place. `agentos update --check` only checks whether a newer version exists.
@@ -59,5 +61,7 @@ AgentOS is designed to work with a local OpenClaw installation. If OpenClaw is m
 Compatibility:
 
 - Requires Node.js 24 or newer.
-- Uses OpenClaw Gateway-first transport by default.
-- Run `agentos doctor` and check in-app diagnostics to verify OpenClaw version, Gateway protocol compatibility, native auth, and model readiness before the first mission.
+- Expects the current stable OpenClaw release (`2026.5.28` or newer stable builds with compatible Gateway protocol support).
+- Uses OpenClaw Gateway-first transport by default, with explicit CLI fallback for install, recovery, Gateway process control, older or unsupported Gateway methods, malformed responses, scope limits, and unavailable native auth.
+- Run `agentos doctor --deep` and check in-app diagnostics to verify OpenClaw version, Gateway protocol compatibility, native auth, scopes, fallback activity, and model readiness before the first mission.
+- Account-target browser-profile dispatch is an MVP bridge until OpenClaw exposes typed browser-profile dispatch. AgentOS enforces access rules before task launch and passes selected profile/session context; `requires_approval` rules remain blocked until approval dispatch exists.
