@@ -33,6 +33,9 @@ jobs:
       - name: Run lint
         run: pnpm lint
 
+      - name: Generate Next.js route types
+        run: pnpm typegen
+
       - name: Run typecheck
         run: pnpm typecheck
 

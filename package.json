@@ -15,6 +15,7 @@
     "pack:agentos": "pnpm check:release && npm pack ./packages/agentos --pack-destination /tmp --cache /tmp/agentos-npm-cache",
     "start": "next start",
     "lint": "eslint .",
+    "typegen": "next typegen",
     "typecheck": "tsc --noEmit",
     "test": "node -r ./tests/register-paths.cjs -r jiti/register.js --test",
     "publish:agentos": "pnpm check:release && npm publish ./packages/agentos --access public --cache /tmp/agentos-npm-cache"

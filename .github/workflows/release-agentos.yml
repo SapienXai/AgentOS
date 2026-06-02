@@ -36,6 +36,7 @@ jobs:
         shell: bash
         run: |
           pnpm lint
+          pnpm typegen
           pnpm typecheck
           pnpm test
           pnpm build

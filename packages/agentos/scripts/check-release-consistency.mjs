@@ -247,6 +247,13 @@ function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundl
   expectEqual(
     context,
     "package.json",
+    "scripts.typegen",
+    rootPackage.scripts?.typegen,
+    "next typegen"
+  );
+  expectEqual(
+    context,
+    "package.json",
     "scripts.check:release",
     rootPackage.scripts?.["check:release"],
     `node ${CHECK_SCRIPT}`
@@ -306,6 +313,7 @@ function validateCiWorkflow(context, workflow) {
   expectIncludes(context, ".github/workflows/ci.yml", workflow, `node-version: ${REQUIRED_NODE_MAJOR}`);
   expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm install --frozen-lockfile");
   expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm lint");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm typegen");
   expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm typecheck");
   expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm test");
   expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm build");
@@ -320,6 +328,7 @@ function validateReleaseWorkflow(context, workflow, agentosPackage) {
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, '- "agentos-v*"');
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm install --frozen-lockfile");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm lint");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm typegen");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm typecheck");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm test");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm build");
