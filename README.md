@@ -236,7 +236,7 @@ In practice, that means:
 
 AgentOS is Gateway-first on top of OpenClaw. Use `agentos doctor` and the in-app diagnostics panel to confirm the installed OpenClaw version, Gateway protocol range, native auth state, model readiness, and fallback activity before dispatching real missions.
 
-The 0.6.1 release expects Node.js 24 or newer and an OpenClaw Gateway whose protocol overlaps the supported range reported by diagnostics. If compatibility is degraded, update OpenClaw, repair Gateway token/device access, restart the Gateway, and re-run `agentos doctor`.
+The 0.6.2 release expects Node.js 24 or newer and an OpenClaw Gateway whose protocol overlaps the supported range reported by diagnostics. If compatibility is degraded, update OpenClaw, repair Gateway token/device access, restart the Gateway, and re-run `agentos doctor`.
 
 ## How The System Works
 
@@ -424,13 +424,13 @@ Install a specific published version:
 macOS / Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.6.1 bash
+curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.6.2 bash
 ```
 
 Windows PowerShell:
 
 ```powershell
-$env:AGENTOS_VERSION='0.6.1'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
+$env:AGENTOS_VERSION='0.6.2'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
 ```
 
 Package manager install:
@@ -486,8 +486,8 @@ Push a tag in the format below to build platform-specific release assets on GitH
 
 ```bash
 pnpm check:release
-git tag agentos-v0.6.1
-git push origin agentos-v0.6.1
+git tag agentos-v0.6.2
+git push origin agentos-v0.6.2
 ```
 
 `packages/agentos/package.json` is the published CLI/package version source. The root package is private and may keep a separate workspace app version.
