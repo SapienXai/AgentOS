@@ -44,6 +44,8 @@ type RawBrowserTab = {
 };
 
 const browserRequestTimeoutMs = 15_000;
+const browserOpenRequestTimeoutMs = 45_000;
+const browserTabRecoveryTimeoutMs = 10_000;
 const managedProfileColor = "#2563eb";
 
 export async function listOpenClawBrowserProfiles(): Promise<OpenClawBrowserProfilesResponse> {
@@ -90,16 +92,34 @@ export async function openLoginUrlInOpenClawBrowserProfile(input: {
   const profileName = normalizeExistingProfileName(input.profileName);
   const loginUrl = normalizeLoginUrl(input.loginUrl);
   const label = normalizeOptionalLabel(input.label);
-  const tab = await callBrowserRequest<unknown>({
-    method: "POST",
+  const request = {
+    method: "POST" as const,
     path: "/tabs/open",
     query: { profile: profileName },
     body: {
       url: loginUrl,
       ...(label ? { label } : {})
     },
-    timeoutMs: browserRequestTimeoutMs
-  });
+    timeoutMs: browserOpenRequestTimeoutMs
+  };
+  let tab: unknown;
+
+  try {
+    tab = await callBrowserRequest<unknown>(request);
+  } catch (error) {
+    const recoveredTab = await recoverOpenLoginTabAfterTimeout({
+      error,
+      profileName,
+      loginUrl,
+      label
+    });
+
+    if (!recoveredTab) {
+      throw error;
+    }
+
+    tab = recoveredTab;
+  }
 
   return {
     ok: true,
@@ -107,6 +127,49 @@ export async function openLoginUrlInOpenClawBrowserProfile(input: {
     source: "openclaw.browser.request",
     tab: normalizeBrowserTab(tab)
   };
+}
+
+async function recoverOpenLoginTabAfterTimeout(input: {
+  error: unknown;
+  profileName: string;
+  loginUrl: string;
+  label?: string;
+}) {
+  const message = input.error instanceof Error ? input.error.message : String(input.error);
+  if (!/Timed out waiting for OpenClaw Gateway method "browser\.request"|browser request timed out|timeout/i.test(message)) {
+    return null;
+  }
+
+  try {
+    const payload = await callBrowserRequest<{ tabs?: unknown[] }>({
+      method: "GET",
+      path: "/tabs",
+      query: { profile: input.profileName },
+      timeoutMs: browserTabRecoveryTimeoutMs
+    });
+    const tabs = Array.isArray(payload.tabs) ? payload.tabs.map((tab) => normalizeBrowserTab(tab)) : [];
+    return tabs.find((tab) => isRecoveredLoginTab(tab, input)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function isRecoveredLoginTab(
+  tab: OpenClawBrowserTabView | undefined,
+  input: {
+    loginUrl: string;
+    label?: string;
+  }
+) {
+  if (!tab) {
+    return false;
+  }
+
+  if (input.label && tab.label === input.label) {
+    return true;
+  }
+
+  return tab.url === input.loginUrl;
 }
 
 async function callBrowserRequest<TPayload>(params: BrowserRequestParams): Promise<TPayload> {
@@ -144,7 +207,23 @@ function normalizeBrowserRequestErrorMessage(error: unknown, params: BrowserRequ
     return `${profileLabel} could not be attached through OpenClaw. Keep Chrome open, approve the attach prompt, and retry. If OpenClaw asks for remote debugging, open chrome://inspect and enable it before retrying. If you do not need your signed-in browser session, use the managed "openclaw" profile instead.`;
   }
 
+  const unresolvedHost = readUnresolvedHost(message);
+  if (unresolvedHost) {
+    return `OpenClaw could not resolve ${unresolvedHost}. Check DNS, VPN, firewall, or network filtering for this domain, then retry. AgentOS did not save the login target because the browser page was not confirmed open.`;
+  }
+
   return message;
+}
+
+function readUnresolvedHost(message: string) {
+  const match = /\bgetaddrinfo\s+ENOTFOUND\s+([^\s"'<>]+)/i.exec(message);
+  const host = match?.[1]?.trim().replace(/[.,;:]+$/, "");
+
+  if (!host || !/^[a-z0-9.-]+$/i.test(host)) {
+    return null;
+  }
+
+  return host.toLowerCase();
 }
 
 function isExistingChromeAttachError(message: string, params: BrowserRequestParams) {

@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, KeyRound, Link2, Loader2, Plus, RefreshCw, Trash2, UserRound } from "lucide-react";
+import Link from "next/link";
 
 import { AccountIcon } from "@/components/mission-control/account-icon";
 import { SurfaceIcon } from "@/components/mission-control/surface-icon";
@@ -2198,17 +2199,25 @@ function AccountsSurfaceSection({
               Attach saved browser-profile account targets to an agent. AgentOS enforces these bindings before account-target task launch.
             </p>
           </div>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="h-8 rounded-full px-3 text-[11px] sm:shrink-0"
-            disabled={isSaving}
-            onClick={onRefreshAccounts}
-          >
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-            Refresh
-          </Button>
+          <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
+            <Button asChild type="button" variant="default" size="sm" className="h-8 rounded-full px-3 text-[11px]">
+              <Link href="/accounts?connect=1">
+                <KeyRound className="mr-1.5 h-3.5 w-3.5" />
+                Connect Account
+              </Link>
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="h-8 rounded-full px-3 text-[11px]"
+              disabled={isSaving}
+              onClick={onRefreshAccounts}
+            >
+              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">

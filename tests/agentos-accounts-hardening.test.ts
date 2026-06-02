@@ -180,7 +180,47 @@ test("browser profile service uses OpenClaw browser.request and sanitizes URL fi
     url: "https://example.com/login",
     label: "portal-login"
   });
+  assert.equal(calls[2]?.params.timeoutMs, 45_000);
   assert.equal(opened.tab?.url, "https://example.com/login");
+});
+
+test("browser profile service recovers a login tab when OpenClaw open times out after creating it", async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  setOpenClawAdapterForTesting(createBrowserAdapter(async (method, params) => {
+    calls.push({ method, params });
+
+    if (params.path === "/tabs/open") {
+      throw new Error('Timed out waiting for OpenClaw Gateway method "browser.request". token=query-secret');
+    }
+
+    if (params.path === "/tabs") {
+      return {
+        tabs: [
+          {
+            tabId: "tab-discord",
+            label: "discord-login-run",
+            url: "https://discord.com/login?token=response-secret#hash-secret"
+          }
+        ]
+      };
+    }
+
+    return {};
+  }));
+
+  const opened = await openLoginUrlInOpenClawBrowserProfile({
+    profileName: "OpenClaw",
+    loginUrl: "https://discord.com/login?token=query-secret#hash-secret",
+    label: "Discord Login Run"
+  });
+
+  assert.deepEqual(calls.map((call) => call.params.path), ["/tabs/open", "/tabs"]);
+  assert.equal(calls[0]?.params.timeoutMs, 45_000);
+  assert.equal(calls[1]?.params.timeoutMs, 10_000);
+  assert.deepEqual(calls[1]?.params.query, { profile: "openclaw" });
+  assert.equal(opened.tab?.tabId, "tab-discord");
+  assert.equal(opened.tab?.label, "discord-login-run");
+  assert.equal(opened.tab?.url, "https://discord.com/login");
 });
 
 test("browser profile service redacts unsupported browser.request errors", async () => {
@@ -194,6 +234,30 @@ test("browser profile service redacts unsupported browser.request errors", async
       assert.ok(error instanceof Error);
       assert.match(error.message, /browser\.request/);
       assert.doesNotMatch(error.message, /query-secret|plain-secret/);
+      return true;
+    }
+  );
+});
+
+test("browser profile service explains DNS failures without saving fake browser success", async () => {
+  setOpenClawAdapterForTesting(createBrowserAdapter(async () => {
+    throw new Error(
+      "UNAVAILABLE: Error: getaddrinfo ENOTFOUND discord.com token=query-secret " +
+        "Gateway-native operation failed; CLI fallback disabled for this operation."
+    );
+  }));
+
+  await assert.rejects(
+    () => openLoginUrlInOpenClawBrowserProfile({
+      profileName: "openclaw",
+      loginUrl: "https://discord.com/login"
+    }),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /could not resolve discord\.com/);
+      assert.match(error.message, /DNS, VPN, firewall, or network filtering/);
+      assert.match(error.message, /did not save the login target/);
+      assert.doesNotMatch(error.message, /query-secret|Gateway-native operation failed|CLI fallback disabled/);
       return true;
     }
   );

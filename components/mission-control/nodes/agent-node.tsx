@@ -180,6 +180,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   const observedTools = data.agent.observedTools ?? [];
   const surfaceBadges = data.surfaceBadges ?? [];
   const accountBadges = data.accountBadges ?? [];
+  const canOpenWorkspaceChannels = Boolean(data.onOpenWorkspaceChannels);
   const maxVisibleConnectionBadges = 4;
   const visibleSurfaceBadges = surfaceBadges.slice(0, maxVisibleConnectionBadges);
   const visibleAccountBadges = accountBadges.slice(
@@ -375,25 +376,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               className="pointer-events-none absolute -bottom-2 right-5 h-12 w-12 rounded-full bg-cyan-300/14 blur-2xl"
             />
 
-            <div className="absolute left-2 top-2 z-40 flex max-w-[calc(100%-56px)] items-center gap-1.5">
-              <button
-                type="button"
-                aria-label={`Connect surfaces and accounts for ${agentLabel}`}
-                title={`Connect surfaces and accounts for ${agentLabel}`}
-                disabled={!data.onOpenWorkspaceChannels}
-                className={cn(
-                  "nodrag nopan inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-cyan-200/20 bg-slate-950/72 text-cyan-100 shadow-[0_10px_24px_rgba(0,0,0,0.32)] backdrop-blur-xl transition-colors hover:border-cyan-200/36 hover:bg-cyan-300/14 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/35",
-                  !data.onOpenWorkspaceChannels && "cursor-not-allowed opacity-50 hover:border-cyan-200/20 hover:bg-slate-950/72"
-                )}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  data.onOpenWorkspaceChannels?.(data.agent.workspaceId, data.agent.id);
-                }}
-                onPointerDown={(event) => event.stopPropagation()}
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-
+            <div className="absolute left-11 top-2 z-50 flex max-w-[calc(100%-88px)] items-center gap-1.5">
               {visibleSurfaceBadges.map((surfaceBadge) => (
                 <span
                   key={`surface:${surfaceBadge.provider}`}
@@ -444,6 +427,51 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               </div>
             </div>
           </div>
+
+          <motion.button
+            type="button"
+            aria-label={`Connect surfaces and accounts for ${agentLabel}`}
+            title={`Connect surfaces and accounts for ${agentLabel}`}
+            disabled={!canOpenWorkspaceChannels}
+            initial={false}
+            animate={
+              canOpenWorkspaceChannels
+                ? {
+                    scale: [1, 1.08, 1],
+                    y: [0, -0.5, 0]
+                  }
+                : { scale: 1, y: 0 }
+            }
+            transition={{ duration: 2.8, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+            className={cn(
+              "nodrag nopan absolute left-[-2px] top-[-10px] z-[90] inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-visible rounded-full border border-violet-200/55 bg-[radial-gradient(circle_at_36%_24%,rgba(216,180,254,0.58),rgba(168,85,247,0.34)_36%,rgba(24,13,43,0.94)_80%)] text-violet-50 shadow-[0_0_0_1px_rgba(196,181,253,0.24),0_0_26px_rgba(168,85,247,0.54),0_14px_30px_rgba(0,0,0,0.42)] backdrop-blur-xl transition-colors hover:border-violet-200/75 hover:text-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-200/60",
+              !canOpenWorkspaceChannels &&
+                "cursor-not-allowed border-slate-500/20 bg-slate-950/72 text-slate-500 shadow-[0_10px_24px_rgba(0,0,0,0.32)]"
+            )}
+            onClick={(event) => {
+              event.stopPropagation();
+              data.onOpenWorkspaceChannels?.(data.agent.workspaceId, data.agent.id);
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            {canOpenWorkspaceChannels ? (
+              <>
+                <motion.span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-[-10px] rounded-full bg-violet-400/28 blur-md"
+                  animate={{ opacity: [0.34, 0.86, 0.34], scale: [0.86, 1.18, 0.86] }}
+                  transition={{ duration: 2.4, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+                />
+                <motion.span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-[-4px] rounded-full border border-fuchsia-200/36"
+                  animate={{ opacity: [0, 0.88, 0], scale: [0.82, 1.38, 0.82] }}
+                  transition={{ duration: 2.15, repeat: Number.POSITIVE_INFINITY, ease: "easeOut" }}
+                />
+              </>
+            ) : null}
+            <Plus className="relative z-10 h-4 w-4 drop-shadow-[0_0_8px_rgba(216,180,254,0.92)]" />
+          </motion.button>
 
           <div className="absolute right-2 top-2 z-40" ref={menuRef}>
             <button

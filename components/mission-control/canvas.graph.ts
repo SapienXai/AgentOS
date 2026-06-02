@@ -434,7 +434,7 @@ export function buildSurfaceTetherEdges(
       sourceHandle: "source-surface",
       targetHandle: node.data.variant === "add" ? "target-surface-action" : "target-surface",
       type: "simplebezier",
-      zIndex: 16,
+      zIndex: 8,
       animated: true,
       data: {
         surfaceTether: true,

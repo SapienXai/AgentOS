@@ -1846,6 +1846,17 @@ function AccountsPageContent({
     void loadAccessRules();
   }, [loadAccessRules]);
 
+  useEffect(() => {
+    if (!activeWorkspaceId || typeof window === "undefined") {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("connect") === "1") {
+      setConnectDialogOpen(true);
+    }
+  }, [activeWorkspaceId]);
+
   const postProfileMutation = async (
     body: Record<string, unknown>,
     fallbackError: string
@@ -1946,7 +1957,7 @@ function AccountsPageContent({
           action: "open-login",
           profileName: target.browserProfileName,
           loginUrl: target.loginUrl,
-          label: `${slugifyClient(target.serviceName)}-login`
+          label: buildConnectAccountTabLabel(target.serviceId)
         },
         "Unable to open the login URL in OpenClaw."
       );
@@ -2885,7 +2896,7 @@ function ConnectAccountWizardContent({
         mode,
         profileName: resolvedProfileName,
         loginUrl: resolvedWebsite.loginUrl,
-        label: resolvedWebsite.label,
+        label: buildConnectAccountTabLabel(resolvedWebsite.serviceId),
         serviceId: resolvedWebsite.serviceId,
         serviceName: resolvedWebsite.serviceName,
         primaryDomain: resolvedWebsite.primaryDomain
@@ -3147,6 +3158,11 @@ function validateConnectBrowserProfileInput(input: {
   }
 
   return null;
+}
+
+function buildConnectAccountTabLabel(serviceId: string) {
+  const base = slugifyClient(serviceId) || "account";
+  return `${base}-login-${Date.now().toString(36)}`;
 }
 
 function normalizeAccessPermission(value: string): AccountAccessPermission {
