@@ -1,6 +1,7 @@
 import "server-only";
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type {
@@ -59,43 +60,29 @@ export async function replaceAccountAccessRulesForTarget(input: {
   const workspaceId = normalizeRequiredString(input.workspaceId, "Workspace id");
   const targetId = normalizeRequiredString(input.targetId, "Login target id");
   const registry = await readAccountAccessPolicyRegistry();
-  const existingByAgent = new Map(
-    registry.rules
-      .filter((rule) => rule.workspaceId === workspaceId && rule.targetId === targetId)
-      .map((rule) => [rule.agentId, rule])
-  );
-  const nextRules = input.rules
-    .map((rule) => normalizeWritableAccessRule({
-      ...rule,
-      workspaceId,
-      targetId,
-      now,
-      existing: existingByAgent.get(rule.agentId)
-    }))
-    .filter(isAccountAccessRuleView);
-
-  const rules = [
-    ...registry.rules.filter((rule) => rule.workspaceId !== workspaceId || rule.targetId !== targetId),
-    ...nextRules
-  ].sort(sortAccountAccessRules);
+  const rules = buildReplacementAccountAccessRulesForTarget({
+    currentRules: registry.rules,
+    workspaceId,
+    targetId,
+    rules: input.rules,
+    now
+  });
 
   await writeAccountAccessPolicyRegistry({ version: 1, rules });
   return listAccountAccessRules({ workspaceId });
 }
 
 export async function deleteAccountAccessRulesForTarget(input: {
-  workspaceId?: string | null;
+  workspaceId: string;
   targetId: string;
 }): Promise<AccountAccessRulesResponse> {
-  const workspaceId = normalizeOptionalString(input.workspaceId);
+  const workspaceId = normalizeRequiredString(input.workspaceId, "Workspace id");
   const targetId = normalizeRequiredString(input.targetId, "Login target id");
   const registry = await readAccountAccessPolicyRegistry();
-  const rules = registry.rules.filter((rule) => {
-    if (rule.targetId !== targetId) {
-      return true;
-    }
-
-    return Boolean(workspaceId && rule.workspaceId !== workspaceId);
+  const rules = removeAccountAccessRulesForTarget({
+    currentRules: registry.rules,
+    workspaceId,
+    targetId
   });
 
   await writeAccountAccessPolicyRegistry({ version: 1, rules });
@@ -111,7 +98,25 @@ export async function resolveAccountAccessDecision(input: {
   const targetId = normalizeRequiredString(input.targetId, "Login target id");
   const agentId = normalizeRequiredString(input.agentId, "Agent id");
   const registry = await readAccountAccessPolicyRegistry();
-  const rule = registry.rules.find(
+  return resolveAccountAccessDecisionFromRules(registry.rules, {
+    workspaceId,
+    targetId,
+    agentId
+  });
+}
+
+export function resolveAccountAccessDecisionFromRules(
+  rules: AccountAccessRuleView[],
+  input: {
+    workspaceId: string;
+    targetId: string;
+    agentId: string;
+  }
+): AccountAccessDecision {
+  const workspaceId = normalizeRequiredString(input.workspaceId, "Workspace id");
+  const targetId = normalizeRequiredString(input.targetId, "Login target id");
+  const agentId = normalizeRequiredString(input.agentId, "Agent id");
+  const rule = rules.find(
     (entry) => entry.workspaceId === workspaceId && entry.targetId === targetId && entry.agentId === agentId
   ) ?? null;
 
@@ -122,6 +127,16 @@ export async function resolveAccountAccessDecision(input: {
       approvalRequired: false,
       rule,
       error: "This agent is not allowed to use the selected account target."
+    };
+  }
+
+  if (rule.permission === "requires_approval") {
+    return {
+      ok: true,
+      allowed: false,
+      approvalRequired: true,
+      rule,
+      error: "This account target requires approval, but account approval dispatch is not exposed yet."
     };
   }
 
@@ -138,7 +153,7 @@ async function readAccountAccessPolicyRegistry(): Promise<AccountAccessPolicyReg
     const content = await readFile(accountAccessPolicyPath, "utf8");
     const parsed = JSON.parse(content) as Partial<AccountAccessPolicyRegistry>;
     const rules = Array.isArray(parsed.rules)
-      ? parsed.rules.map(normalizeAccountAccessRule).filter(isAccountAccessRuleView)
+      ? dedupeAccountAccessRules(parsed.rules.map(normalizeAccountAccessRule).filter(isAccountAccessRuleView))
       : [];
 
     return {
@@ -158,7 +173,76 @@ async function readAccountAccessPolicyRegistry(): Promise<AccountAccessPolicyReg
 
 async function writeAccountAccessPolicyRegistry(registry: AccountAccessPolicyRegistry) {
   await mkdir(path.dirname(accountAccessPolicyPath), { recursive: true });
-  await writeFile(accountAccessPolicyPath, `${JSON.stringify(registry, null, 2)}\n`, "utf8");
+  const tempPath = `${accountAccessPolicyPath}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(tempPath, `${JSON.stringify(registry, null, 2)}\n`, "utf8");
+  await rename(tempPath, accountAccessPolicyPath);
+}
+
+export function buildAccountAccessRulesForTarget(input: {
+  currentRules: AccountAccessRuleView[];
+  workspaceId: string;
+  targetId: string;
+  nextRules: AccountAccessRuleView[];
+}) {
+  return [
+    ...input.currentRules.filter((rule) => rule.workspaceId !== input.workspaceId || rule.targetId !== input.targetId),
+    ...input.nextRules
+  ].sort(sortAccountAccessRules);
+}
+
+export function buildReplacementAccountAccessRulesForTarget(input: {
+  currentRules: AccountAccessRuleView[];
+  workspaceId: string;
+  targetId: string;
+  rules: Array<{
+    agentId: string;
+    agentName: string;
+    permission: AccountAccessPermission;
+    notes?: string | null;
+  }>;
+  now: string;
+}) {
+  const existingByAgent = new Map(
+    input.currentRules
+      .filter((rule) => rule.workspaceId === input.workspaceId && rule.targetId === input.targetId)
+      .map((rule) => [rule.agentId, rule])
+  );
+  const nextRulesByAgent = new Map<string, AccountAccessRuleView>();
+
+  for (const rule of input.rules) {
+    const agentId = normalizeRequiredString(rule.agentId, "Agent id");
+    const nextRule = normalizeWritableAccessRule({
+      ...rule,
+      agentId,
+      workspaceId: input.workspaceId,
+      targetId: input.targetId,
+      now: input.now,
+      existing: existingByAgent.get(agentId)
+    });
+
+    if (nextRule) {
+      nextRulesByAgent.set(agentId, nextRule);
+    } else {
+      nextRulesByAgent.delete(agentId);
+    }
+  }
+
+  return buildAccountAccessRulesForTarget({
+    currentRules: input.currentRules,
+    workspaceId: input.workspaceId,
+    targetId: input.targetId,
+    nextRules: Array.from(nextRulesByAgent.values())
+  });
+}
+
+export function removeAccountAccessRulesForTarget(input: {
+  currentRules: AccountAccessRuleView[];
+  workspaceId: string;
+  targetId: string;
+}) {
+  return input.currentRules
+    .filter((rule) => rule.workspaceId !== input.workspaceId || rule.targetId !== input.targetId)
+    .sort(sortAccountAccessRules);
 }
 
 function normalizeWritableAccessRule(input: {
@@ -231,6 +315,25 @@ function normalizeAccountAccessRule(value: unknown): AccountAccessRuleView | nul
     createdAt,
     updatedAt
   };
+}
+
+function dedupeAccountAccessRules(rules: AccountAccessRuleView[]) {
+  const byScope = new Map<string, AccountAccessRuleView>();
+
+  for (const rule of rules) {
+    const key = buildAccessRuleId(rule);
+    if (rule.permission === "no_access") {
+      byScope.delete(key);
+      continue;
+    }
+
+    byScope.set(key, {
+      ...rule,
+      id: key
+    });
+  }
+
+  return Array.from(byScope.values()).sort(sortAccountAccessRules);
 }
 
 function buildAccessRuleId(input: {

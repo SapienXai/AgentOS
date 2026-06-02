@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   deleteAccountLoginTarget,
+  findAccountLoginTarget,
   listAccountLoginTargets,
   upsertAccountLoginTarget
 } from "@/lib/agentos/application/account-login-target-service";
@@ -69,10 +70,14 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const input = deleteLoginTargetSchema.parse(await request.json());
-    await deleteAccountAccessRulesForTarget({
-      targetId: input.id,
-      workspaceId: input.workspaceId
-    });
+    const target = await findAccountLoginTarget(input);
+    if (target) {
+      await deleteAccountAccessRulesForTarget({
+        targetId: target.id,
+        workspaceId: target.workspaceId
+      });
+    }
+
     return NextResponse.json(redactSecrets(await deleteAccountLoginTarget(input)));
   } catch (error) {
     return NextResponse.json(

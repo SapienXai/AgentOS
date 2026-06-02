@@ -9,6 +9,7 @@ import type {
   OpenClawBrowserTabView,
   OpenClawBrowserTransport
 } from "@/lib/openclaw/browser-profile-types";
+import { redactErrorMessage, redactSecretText } from "@/lib/security/redaction";
 
 type BrowserRequestParams = {
   method: "GET" | "POST" | "DELETE";
@@ -109,17 +110,24 @@ export async function openLoginUrlInOpenClawBrowserProfile(input: {
 }
 
 async function callBrowserRequest<TPayload>(params: BrowserRequestParams): Promise<TPayload> {
-  return getOpenClawAdapter().call<TPayload>(
-    "browser.request",
-    {
-      method: params.method,
-      path: params.path,
-      ...(params.query ? { query: params.query } : {}),
-      ...(params.body ? { body: params.body } : {}),
-      ...(params.timeoutMs ? { timeoutMs: params.timeoutMs } : {})
-    },
-    { timeoutMs: params.timeoutMs ?? browserRequestTimeoutMs }
-  );
+  try {
+    return await getOpenClawAdapter().call<TPayload>(
+      "browser.request",
+      {
+        method: params.method,
+        path: params.path,
+        ...(params.query ? { query: params.query } : {}),
+        ...(params.body ? { body: params.body } : {}),
+        ...(params.timeoutMs ? { timeoutMs: params.timeoutMs } : {})
+      },
+      { timeoutMs: params.timeoutMs ?? browserRequestTimeoutMs }
+    );
+  } catch (error) {
+    throw new Error(redactErrorMessage(
+      error,
+      "OpenClaw browser profile capability is unavailable. Ensure OpenClaw exposes browser.request."
+    ));
+  }
 }
 
 function normalizeBrowserProfile(value: unknown): OpenClawBrowserProfileView | null {
@@ -144,7 +152,7 @@ function normalizeBrowserProfile(value: unknown): OpenClawBrowserProfileView | n
     transport,
     transportLabel: transport === "chrome-mcp" ? "Chrome MCP" : transport === "cdp" ? "CDP" : "Not reported",
     cdpPort: readNumber(profile.cdpPort),
-    cdpUrl: readString(profile.cdpUrl),
+    cdpUrl: readRedactedString(profile.cdpUrl),
     color: readString(profile.color) || managedProfileColor,
     running,
     statusLabel: running ? "Running" : "Stopped",
@@ -173,7 +181,7 @@ function normalizeBrowserTab(value: unknown): OpenClawBrowserTabView | undefined
     suggestedTargetId: readString(tab.suggestedTargetId),
     label: readString(tab.label),
     title: readString(tab.title),
-    url: readString(tab.url)
+    url: readSafeUrl(tab.url)
   };
 }
 
@@ -193,6 +201,8 @@ function normalizeLoginUrl(value: string) {
       throw new Error("Login URL must use http or https.");
     }
 
+    url.search = "";
+    url.hash = "";
     return url.toString();
   } catch {
     throw new Error("A valid Login URL is required.");
@@ -214,6 +224,31 @@ function readTransport(value: unknown): OpenClawBrowserTransport | null {
 
 function readString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function readRedactedString(value: unknown) {
+  const stringValue = readString(value);
+  return stringValue ? redactSecretText(stringValue) : null;
+}
+
+function readSafeUrl(value: unknown) {
+  const stringValue = readString(value);
+  if (!stringValue) {
+    return null;
+  }
+
+  try {
+    const url = new URL(stringValue);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return redactSecretText(stringValue);
+    }
+
+    url.search = "";
+    url.hash = "";
+    return redactSecretText(url.toString());
+  } catch {
+    return redactSecretText(stringValue);
+  }
 }
 
 function readNumber(value: unknown) {

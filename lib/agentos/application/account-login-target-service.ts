@@ -1,6 +1,7 @@
 import "server-only";
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type {
@@ -87,11 +88,35 @@ export async function deleteAccountLoginTarget(input: {
   workspaceId?: string | null;
 }): Promise<AccountLoginTargetsResponse> {
   const id = normalizeRequiredString(input.id, "Login target id");
+  const workspaceId = normalizeOptionalString(input.workspaceId);
   const registry = await readAccountLoginTargetRegistry();
-  const nextTargets = registry.targets.filter((target) => target.id !== id);
+  const nextTargets = registry.targets.filter((target) => {
+    if (target.id !== id) {
+      return true;
+    }
+
+    return Boolean(workspaceId && target.workspaceId !== workspaceId);
+  });
 
   await writeAccountLoginTargetRegistry({ version: 1, targets: nextTargets });
-  return listAccountLoginTargets({ workspaceId: input.workspaceId });
+  return listAccountLoginTargets({ workspaceId });
+}
+
+export async function findAccountLoginTarget(input: {
+  id: string;
+  workspaceId?: string | null;
+}) {
+  const id = normalizeRequiredString(input.id, "Login target id");
+  const workspaceId = normalizeOptionalString(input.workspaceId);
+  const registry = await readAccountLoginTargetRegistry();
+
+  return registry.targets.find((target) => {
+    if (target.id !== id) {
+      return false;
+    }
+
+    return !workspaceId || target.workspaceId === workspaceId;
+  }) ?? null;
 }
 
 async function readAccountLoginTargetRegistry(): Promise<AccountLoginTargetRegistry> {
@@ -119,10 +144,12 @@ async function readAccountLoginTargetRegistry(): Promise<AccountLoginTargetRegis
 
 async function writeAccountLoginTargetRegistry(registry: AccountLoginTargetRegistry) {
   await mkdir(path.dirname(accountLoginTargetsPath), { recursive: true });
-  await writeFile(accountLoginTargetsPath, `${JSON.stringify(registry, null, 2)}\n`, "utf8");
+  const tempPath = `${accountLoginTargetsPath}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(tempPath, `${JSON.stringify(registry, null, 2)}\n`, "utf8");
+  await rename(tempPath, accountLoginTargetsPath);
 }
 
-function normalizeAccountLoginTarget(value: unknown): AccountLoginTargetView | null {
+export function normalizeAccountLoginTarget(value: unknown): AccountLoginTargetView | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -130,7 +157,7 @@ function normalizeAccountLoginTarget(value: unknown): AccountLoginTargetView | n
   const workspaceId = normalizeOptionalString(value.workspaceId);
   const serviceId = normalizeOptionalString(value.serviceId);
   const serviceName = normalizeOptionalString(value.serviceName);
-  const primaryDomain = normalizeOptionalString(value.primaryDomain);
+  const primaryDomain = normalizeStoredDomain(value.primaryDomain);
   const browserProfileName = normalizeOptionalString(value.browserProfileName);
   const lastOpenedAt = normalizeIsoDate(value.lastOpenedAt);
   const createdAt = normalizeIsoDate(value.createdAt) ?? lastOpenedAt;
@@ -148,7 +175,7 @@ function normalizeAccountLoginTarget(value: unknown): AccountLoginTargetView | n
     serviceId,
     serviceName,
     primaryDomain,
-    loginUrl: normalizeOptionalString(value.loginUrl) ?? `https://${primaryDomain}`,
+    loginUrl: normalizeStoredLoginUrl(value.loginUrl, primaryDomain),
     browserProfileName,
     status: "saved_in_browser_profile",
     statusLabel: "Saved in browser profile",
@@ -178,7 +205,7 @@ function sortAccountLoginTargets(left: AccountLoginTargetView, right: AccountLog
     left.serviceName.localeCompare(right.serviceName);
 }
 
-function normalizeStorableLoginUrl(value: string) {
+export function normalizeStorableLoginUrl(value: string) {
   try {
     const url = new URL(value.trim());
     if (url.protocol !== "http:" && url.protocol !== "https:") {
@@ -193,6 +220,21 @@ function normalizeStorableLoginUrl(value: string) {
   }
 }
 
+export function normalizeStoredLoginUrl(value: unknown, primaryDomain: string) {
+  const fallback = `https://${primaryDomain}`;
+  const candidate = normalizeOptionalString(value);
+
+  if (!candidate) {
+    return fallback;
+  }
+
+  try {
+    return normalizeStorableLoginUrl(candidate);
+  } catch {
+    return fallback;
+  }
+}
+
 function normalizeDomain(value: string) {
   const domain = value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) {
@@ -200,6 +242,19 @@ function normalizeDomain(value: string) {
   }
 
   return domain;
+}
+
+function normalizeStoredDomain(value: unknown) {
+  const candidate = normalizeOptionalString(value);
+  if (!candidate) {
+    return null;
+  }
+
+  try {
+    return normalizeDomain(candidate);
+  } catch {
+    return null;
+  }
 }
 
 function requireSlug(value: string, label: string) {

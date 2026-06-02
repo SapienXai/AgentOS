@@ -1696,6 +1696,8 @@ function AccountsPageContent({
     [activeWorkspaceId, snapshot.agents]
   );
   const browserAgentCount = workspaceAgents.filter(agentHasBrowserAccess).length;
+  const runnableAccessRuleCount = accessRules.filter((rule) => rule.permission === "use_browser_profile").length;
+  const approvalBlockedAccessRuleCount = accessRules.filter((rule) => rule.permission === "requires_approval").length;
   const runningCount = profiles.filter((profile) => profile.running).length;
   const managedCount = profiles.filter((profile) => profile.driver === "openclaw").length;
   const existingSessionCount = profiles.filter((profile) => profile.driver === "existing-session").length;
@@ -2057,7 +2059,7 @@ function AccountsPageContent({
               <StatCard label="Profiles" value={loading ? "-" : String(profiles.length)} detail={`${managedCount} managed, ${existingSessionCount} existing-session`} icon={Chrome} tone="info" />
               <StatCard label="Login Targets" value={targetsLoading ? "-" : String(loginTargets.length)} detail="Created through Connect Account" icon={KeyRound} tone={loginTargets.length > 0 ? "success" : "muted"} />
               <StatCard label="Running" value={loading ? "-" : String(runningCount)} detail={`${tabCount} open browser tabs`} icon={Fingerprint} tone={runningCount > 0 ? "success" : "muted"} />
-              <StatCard label="Agent Access" value={accessRulesLoading ? "-" : String(accessRules.length)} detail={`${browserAgentCount} browser-capable agents`} icon={UserCog} tone={accessRules.length > 0 ? "success" : "muted"} />
+              <StatCard label="Runnable Access" value={accessRulesLoading ? "-" : String(runnableAccessRuleCount)} detail={`${browserAgentCount} browser-capable agents · ${approvalBlockedAccessRuleCount} approval-blocked`} icon={UserCog} tone={runnableAccessRuleCount > 0 ? "success" : "muted"} />
               <StatCard label="Gateway State" value={error ? "Blocked" : loading ? "Checking" : "Ready"} detail={error ? "OpenClaw browser unavailable" : "Real browser profile API"} icon={Gauge} tone={error ? "warning" : "success"} />
             </StatGrid>
 
@@ -2323,10 +2325,13 @@ function LoginTargetCard({
   onRunTask: () => void;
 }) {
   const workspaceAgentIds = new Set(workspaceAgents.map((agent) => agent.id));
-  const allowedRules = accessRules.filter(
-    (rule) => workspaceAgentIds.has(rule.agentId) && rule.permission !== "no_access"
+  const runnableRules = accessRules.filter(
+    (rule) => workspaceAgentIds.has(rule.agentId) && rule.permission === "use_browser_profile"
   );
-  const browserCapableAllowedRules = allowedRules.filter((rule) => {
+  const approvalRules = accessRules.filter(
+    (rule) => workspaceAgentIds.has(rule.agentId) && rule.permission === "requires_approval"
+  );
+  const browserCapableRunnableRules = runnableRules.filter((rule) => {
     const agent = workspaceAgents.find((entry) => entry.id === rule.agentId);
     return agent ? agentHasBrowserAccess(agent) : false;
   });
@@ -2357,18 +2362,22 @@ function LoginTargetCard({
       <div className="border-t border-white/[0.07] px-3 py-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-slate-500">Agent Access</p>
-          <MiniBadge>{allowedRules.length} allowed</MiniBadge>
+          <div className="flex flex-wrap gap-1.5">
+            <MiniBadge>{runnableRules.length} runnable</MiniBadge>
+            {approvalRules.length > 0 ? <MiniBadge>{approvalRules.length} approval-blocked</MiniBadge> : null}
+          </div>
         </div>
-        {allowedRules.length === 0 ? (
+        {runnableRules.length === 0 && approvalRules.length === 0 ? (
           <p className="mt-2 text-[0.68rem] leading-5 text-slate-500">
             No agent can use this account target until access is granted.
           </p>
         ) : (
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {allowedRules.slice(0, 4).map((rule) => (
+            {runnableRules.slice(0, 4).map((rule) => (
               <MiniBadge key={rule.id}>{rule.agentName}</MiniBadge>
             ))}
-            {allowedRules.length > 4 ? <MiniBadge>+{allowedRules.length - 4} more</MiniBadge> : null}
+            {runnableRules.length > 4 ? <MiniBadge>+{runnableRules.length - 4} more</MiniBadge> : null}
+            {approvalRules.length > 0 ? <MiniBadge>Approval required until dispatch support exists</MiniBadge> : null}
           </div>
         )}
         <p className="mt-2 text-[0.66rem] leading-5 text-slate-500">
@@ -2402,8 +2411,8 @@ function LoginTargetCard({
           variant="secondary"
           size="sm"
           className="h-7 rounded-[8px] px-2 text-[0.7rem]"
-          disabled={busy || !profileAvailable || browserCapableAllowedRules.length === 0}
-          title={browserCapableAllowedRules.length > 0 ? "Run a task with an allowed browser-capable agent." : "Grant access to a browser-capable agent first."}
+          disabled={busy || !profileAvailable || browserCapableRunnableRules.length === 0}
+          title={browserCapableRunnableRules.length > 0 ? "Run a task with an allowed browser-capable agent." : "Grant runnable access to a browser-capable agent first."}
           onClick={onRunTask}
         >
           <Play className="mr-1 h-3 w-3" />
@@ -2528,7 +2537,7 @@ function ManageAccountAccessDialog({
           </DialogHeader>
 
           <div className="rounded-[10px] border border-cyan-300/18 bg-cyan-400/10 px-3 py-2 text-xs leading-5 text-cyan-100">
-            AgentOS enforces this before account-target task launch. OpenClaw does not expose a direct browser-profile dispatch parameter yet.
+            AgentOS enforces this before account-target task launch. Requires approval rules stay blocked until approval dispatch exists.
           </div>
 
           <SectionCard>

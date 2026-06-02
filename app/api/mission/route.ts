@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { submitMission } from "@/lib/agentos/control-plane";
-import { resolveAccountAccessDecision } from "@/lib/agentos/application/account-access-policy-service";
-import { listAccountLoginTargets } from "@/lib/agentos/application/account-login-target-service";
+import { resolveAccountTargetMissionContext } from "@/lib/agentos/application/account-target-mission-context-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
@@ -46,49 +45,4 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-}
-
-async function resolveAccountTargetMissionContext(input: {
-  workspaceId?: string;
-  agentId?: string;
-  accountTargetId: string;
-}) {
-  if (!input.workspaceId) {
-    throw new Error("Workspace id is required when running a task with an account target.");
-  }
-
-  if (!input.agentId) {
-    throw new Error("Select an agent before running a task with an account target.");
-  }
-
-  const targetsResponse = await listAccountLoginTargets({ workspaceId: input.workspaceId });
-  const target = targetsResponse.targets.find((entry) => entry.id === input.accountTargetId);
-
-  if (!target) {
-    throw new Error("The selected account target was not found in this workspace.");
-  }
-
-  const decision = await resolveAccountAccessDecision({
-    workspaceId: input.workspaceId,
-    targetId: target.id,
-    agentId: input.agentId
-  });
-
-  if (!decision.allowed) {
-    throw new Error(decision.error ?? "This agent is not allowed to use the selected account target.");
-  }
-
-  if (decision.approvalRequired) {
-    throw new Error("This account target requires approval, but account approval dispatch is not exposed yet.");
-  }
-
-  return [
-    "[AgentOS account target]",
-    `Service: ${target.serviceName}`,
-    `Domain: ${target.primaryDomain}`,
-    `OpenClaw browser profile: ${target.browserProfileName}`,
-    `Login URL: ${target.loginUrl}`,
-    "Use this existing browser profile/session if your browser tools support profile selection. Do not ask for, print, or store passwords, tokens, cookies, or secrets.",
-    "If the browser tool cannot select a profile, stop and report that OpenClaw profile selection is not exposed for this dispatch path."
-  ].join("\n");
 }
