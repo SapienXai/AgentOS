@@ -1,8 +1,13 @@
 "use client";
 
+import { type ReactNode, useMemo, useState } from "react";
 import * as simpleIcons from "simple-icons";
 import { KeyRound } from "lucide-react";
 
+import {
+  resolveAccountFaviconSources,
+  resolveAccountIconKey
+} from "@/components/mission-control/account-icon.utils";
 import { cn } from "@/lib/utils";
 
 type SimpleIconData = {
@@ -12,23 +17,6 @@ type SimpleIconData = {
 };
 
 const simpleIconMap = simpleIcons as Record<string, SimpleIconData | undefined>;
-
-const accountIconKeys: Record<string, string> = {
-  "product-hunt": "siProducthunt",
-  "producthunt.com": "siProducthunt",
-  gmail: "siGmail",
-  "mail.google.com": "siGmail",
-  "accounts.google.com": "siGmail",
-  "x-twitter": "siX",
-  "x.com": "siX",
-  "twitter.com": "siX",
-  github: "siGithub",
-  "github.com": "siGithub",
-  discord: "siDiscord",
-  "discord.com": "siDiscord",
-  telegram: "siTelegram",
-  "web.telegram.org": "siTelegram"
-};
 
 export function AccountIcon({
   serviceId,
@@ -41,32 +29,42 @@ export function AccountIcon({
   primaryDomain?: string | null;
   className?: string;
 }) {
-  const iconKey = resolveAccountIconKey(serviceId, primaryDomain, serviceName);
+  const faviconSources = useMemo(
+    () => resolveAccountFaviconSources({ serviceId, serviceName, primaryDomain }),
+    [primaryDomain, serviceId, serviceName]
+  );
+  const faviconSourcesKey = faviconSources.join("\u0000");
+  const iconKey = resolveAccountIconKey({ serviceId, primaryDomain, serviceName });
   const icon = iconKey ? simpleIconMap[iconKey] : undefined;
   const fallbackLabel = (serviceName || primaryDomain || serviceId || "Account").trim().slice(0, 1).toUpperCase();
+  const fallbackIcon = icon ? (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-[58%] w-[58%] select-none"
+      fill={`#${icon.hex}`}
+    >
+      <path d={icon.path} />
+    </svg>
+  ) : fallbackLabel ? (
+    <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/88">
+      {fallbackLabel}
+    </span>
+  ) : (
+    <KeyRound className="h-[54%] w-[54%] text-white/88" />
+  );
 
   return (
     <div
       className={cn(
-        "flex items-center justify-center rounded-full border border-white/12 bg-slate-950/72 text-white shadow-[0_8px_18px_rgba(0,0,0,0.28)] backdrop-blur-xl",
+        "flex items-center justify-center overflow-hidden rounded-full border border-white/12 bg-slate-950/72 text-white shadow-[0_8px_18px_rgba(0,0,0,0.28)] backdrop-blur-xl",
         className
       )}
       aria-hidden="true"
     >
-      {icon ? (
-        <svg
-          viewBox="0 0 24 24"
-          className="h-[58%] w-[58%] select-none"
-          fill={`#${icon.hex}`}
-        >
-          <path d={icon.path} />
-        </svg>
-      ) : fallbackLabel ? (
-        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/88">
-          {fallbackLabel}
-        </span>
+      {faviconSources.length > 0 ? (
+        <AccountFavicon key={faviconSourcesKey} sources={faviconSources} fallback={fallbackIcon} />
       ) : (
-        <KeyRound className="h-[54%] w-[54%] text-white/88" />
+        fallbackIcon
       )}
     </div>
   );
@@ -77,38 +75,29 @@ export function resolveAccountAccentColor(input: {
   primaryDomain?: string | null;
   serviceName?: string | null;
 }) {
-  const iconKey = resolveAccountIconKey(input.serviceId, input.primaryDomain, input.serviceName);
+  const iconKey = resolveAccountIconKey(input);
   const icon = iconKey ? simpleIconMap[iconKey] : undefined;
   return icon ? `#${icon.hex}` : "#facc15";
 }
 
-function resolveAccountIconKey(
-  serviceId?: string | null,
-  primaryDomain?: string | null,
-  serviceName?: string | null
-) {
-  const candidates = [
-    normalizeIconLookupKey(serviceId),
-    normalizeIconLookupKey(primaryDomain),
-    normalizeIconLookupKey(serviceName)
-  ].filter((entry): entry is string => Boolean(entry));
+function AccountFavicon({ sources, fallback }: { sources: string[]; fallback: ReactNode }) {
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const source = sources[sourceIndex];
 
-  for (const candidate of candidates) {
-    const direct = accountIconKeys[candidate];
-    if (direct) {
-      return direct;
-    }
-
-    const withoutWww = candidate.replace(/^www\./, "");
-    if (accountIconKeys[withoutWww]) {
-      return accountIconKeys[withoutWww];
-    }
+  if (!source) {
+    return fallback;
   }
 
-  return null;
-}
-
-function normalizeIconLookupKey(value?: string | null) {
-  const normalized = value?.trim().toLowerCase();
-  return normalized || null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- Account favicons are dynamic remote URLs and should not require Next image host configuration.
+    <img
+      src={source}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      className="h-[70%] w-[70%] select-none rounded-[4px] object-contain"
+      onError={() => setSourceIndex((current) => current + 1)}
+    />
+  );
 }

@@ -32,6 +32,7 @@ import {
   Plug,
   Plus,
   RefreshCw,
+  Search,
   SearchCheck,
   ShieldCheck,
   SlidersHorizontal,
@@ -40,11 +41,11 @@ import {
   Star,
   UserCog,
   Upload,
-  UserCheck,
   Workflow,
   X
 } from "lucide-react";
 
+import { AccountIcon } from "@/components/mission-control/account-icon";
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
 import { AgentCapabilityEditorDialog } from "@/components/mission-control/agent-capability-editor-dialog";
 import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
@@ -72,6 +73,11 @@ import {
   ViewToggle,
   pageSurface
 } from "@/components/operations/operations-ui";
+import {
+  accountLoginExamples,
+  resolveConnectAccountWebsite,
+  type ConnectAccountWebsiteExample
+} from "@/components/operations/connect-account-url";
 import {
   buildAgentViews,
   buildFileViews,
@@ -1698,13 +1704,15 @@ function AccountsPageContent({
   const browserAgentCount = workspaceAgents.filter(agentHasBrowserAccess).length;
   const runnableAccessRuleCount = accessRules.filter((rule) => rule.permission === "use_browser_profile").length;
   const approvalBlockedAccessRuleCount = accessRules.filter((rule) => rule.permission === "requires_approval").length;
-  const runningCount = profiles.filter((profile) => profile.running).length;
-  const managedCount = profiles.filter((profile) => profile.driver === "openclaw").length;
-  const existingSessionCount = profiles.filter((profile) => profile.driver === "existing-session").length;
-  const tabCount = profiles.reduce((total, profile) => total + profile.tabCount, 0);
+  const usableProfiles = useMemo(() => profiles.filter(isUsableAccountBrowserProfile), [profiles]);
+  const hiddenUnavailableProfiles = useMemo(() => profiles.filter((profile) => !isUsableAccountBrowserProfile(profile)), [profiles]);
+  const runningCount = usableProfiles.filter((profile) => profile.running).length;
+  const managedCount = usableProfiles.filter((profile) => profile.driver === "openclaw").length;
+  const existingSessionCount = usableProfiles.filter((profile) => profile.driver === "existing-session").length;
+  const tabCount = usableProfiles.reduce((total, profile) => total + profile.tabCount, 0);
   const driverFilters: Array<"all" | OpenClawBrowserDriver> = ["all", "openclaw", "existing-session"];
   const statusFilters: Array<"all" | "running" | "stopped"> = ["all", "running", "stopped"];
-  const profileNames = useMemo(() => new Set(profiles.map((profile) => profile.name)), [profiles]);
+  const profileNames = useMemo(() => new Set(usableProfiles.map((profile) => profile.name)), [usableProfiles]);
   const accessRulesByTargetId = useMemo(() => {
     const rulesByTarget = new Map<string, AccountAccessRuleView[]>();
 
@@ -1742,7 +1750,7 @@ function AccountsPageContent({
       target.loginUrl
     ].join(" ").toLowerCase().includes(searchQuery);
   });
-  const filteredProfiles = profiles.filter((profile) => {
+  const filteredProfiles = usableProfiles.filter((profile) => {
     const matchesSearch =
       !searchQuery ||
       [
@@ -2056,7 +2064,7 @@ function AccountsPageContent({
             </PageHeader>
 
             <StatGrid columns={5}>
-              <StatCard label="Profiles" value={loading ? "-" : String(profiles.length)} detail={`${managedCount} managed, ${existingSessionCount} existing-session`} icon={Chrome} tone="info" />
+              <StatCard label="Profiles" value={loading ? "-" : String(usableProfiles.length)} detail={`${managedCount} managed, ${existingSessionCount} attached session`} icon={Chrome} tone="info" />
               <StatCard label="Login Targets" value={targetsLoading ? "-" : String(loginTargets.length)} detail="Created through Connect Account" icon={KeyRound} tone={loginTargets.length > 0 ? "success" : "muted"} />
               <StatCard label="Running" value={loading ? "-" : String(runningCount)} detail={`${tabCount} open browser tabs`} icon={Fingerprint} tone={runningCount > 0 ? "success" : "muted"} />
               <StatCard label="Runnable Access" value={accessRulesLoading ? "-" : String(runnableAccessRuleCount)} detail={`${browserAgentCount} browser-capable agents · ${approvalBlockedAccessRuleCount} approval-blocked`} icon={UserCog} tone={runnableAccessRuleCount > 0 ? "success" : "muted"} />
@@ -2066,6 +2074,12 @@ function AccountsPageContent({
             <div className="rounded-[12px] border border-cyan-300/18 bg-cyan-400/10 px-3 py-2.5 text-xs leading-5 text-cyan-100">
               AgentOS does not store raw passwords. Sessions are stored in OpenClaw browser profiles.
             </div>
+
+            {hiddenUnavailableProfiles.length > 0 ? (
+              <div className="rounded-[12px] border border-amber-300/20 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-100">
+                {hiddenUnavailableProfiles.length} OpenClaw browser profile{hiddenUnavailableProfiles.length === 1 ? "" : "s"} reported by Gateway are hidden because they are not attached or usable for account login yet.
+              </div>
+            ) : null}
 
             <SectionCard title="Browser Profile Access">
               <div className="grid gap-3 p-3 text-xs leading-5 text-slate-300 lg:grid-cols-2">
@@ -2164,7 +2178,7 @@ function AccountsPageContent({
                 <FilterChip
                   key={status}
                   label={formatBrowserProfileStateFilter(status)}
-                  count={status === "all" ? profiles.length : profiles.filter((profile) => status === "running" ? profile.running : !profile.running).length}
+                  count={status === "all" ? usableProfiles.length : usableProfiles.filter((profile) => status === "running" ? profile.running : !profile.running).length}
                   active={statusFilter === status}
                   tone={status === "running" ? "success" : status === "stopped" ? "muted" : "info"}
                   onClick={() => setStatusFilter(status)}
@@ -2174,7 +2188,7 @@ function AccountsPageContent({
                 <FilterChip
                   key={driver}
                   label={formatBrowserDriverFilter(driver)}
-                  count={driver === "all" ? profiles.length : profiles.filter((profile) => profile.driver === driver).length}
+                  count={driver === "all" ? usableProfiles.length : usableProfiles.filter((profile) => profile.driver === driver).length}
                   active={driverFilter === driver}
                   tone={driver === "existing-session" ? "warning" : driver === "openclaw" ? "info" : "purple"}
                   onClick={() => setDriverFilter(driver)}
@@ -2201,9 +2215,9 @@ function AccountsPageContent({
               <EmptyState title="Loading browser profiles" description="Reading OpenClaw browser profile state through the Gateway." />
             ) : filteredProfiles.length === 0 ? (
               <EmptyState
-                title={profiles.length === 0 ? "No browser profiles reported" : "No profiles match"}
-                description={profiles.length === 0
-                  ? "Create or enable a browser profile in OpenClaw first, then use Connect Account to open a manual login flow in that profile."
+                title={profiles.length === 0 ? "No browser profiles reported" : usableProfiles.length === 0 ? "No usable browser profiles" : "No profiles match"}
+                description={profiles.length === 0 || usableProfiles.length === 0
+                  ? "Create, enable, or attach a usable OpenClaw browser profile first, then use Connect Account to open a manual login flow in that profile."
                   : "Clear search or filters to inspect another OpenClaw browser profile."}
               />
             ) : (
@@ -2227,7 +2241,7 @@ function AccountsPageContent({
         workspace={activeWorkspace}
         onOpenChange={setConnectDialogOpen}
         onSubmit={connectAccount}
-        profiles={profiles}
+        profiles={usableProfiles}
       />
       <ManageAccountAccessDialog
         open={Boolean(manageAccessTarget)}
@@ -2795,91 +2809,6 @@ type ConnectBrowserProfileInput = {
 
 type ConnectBrowserProfileMode = "existing" | "signed-in-chrome";
 
-type ConnectBrowserServiceOption = {
-  id: string;
-  label: string;
-  service: string;
-  loginUrl: string;
-  domains: string[];
-  icon: LucideIcon;
-  iconTone: "success" | "info" | "warning" | "danger" | "muted" | "purple";
-};
-
-const connectBrowserServices: ConnectBrowserServiceOption[] = [
-  {
-    id: "product-hunt",
-    label: "Product Hunt",
-    service: "Product Hunt",
-    loginUrl: "https://www.producthunt.com/login",
-    domains: ["producthunt.com"],
-    icon: KeyRound,
-    iconTone: "warning"
-  },
-  {
-    id: "gmail",
-    label: "Gmail",
-    service: "Gmail",
-    loginUrl: "https://accounts.google.com/",
-    domains: ["mail.google.com", "accounts.google.com"],
-    icon: MessageSquare,
-    iconTone: "danger"
-  },
-  {
-    id: "x-twitter",
-    label: "X / Twitter",
-    service: "X / Twitter",
-    loginUrl: "https://x.com/login",
-    domains: ["x.com", "twitter.com"],
-    icon: BellRing,
-    iconTone: "muted"
-  },
-  {
-    id: "github",
-    label: "GitHub",
-    service: "GitHub",
-    loginUrl: "https://github.com/login",
-    domains: ["github.com"],
-    icon: Workflow,
-    iconTone: "muted"
-  },
-  {
-    id: "linkedin",
-    label: "LinkedIn",
-    service: "LinkedIn",
-    loginUrl: "https://www.linkedin.com/login",
-    domains: ["linkedin.com"],
-    icon: UserCheck,
-    iconTone: "info"
-  },
-  {
-    id: "discord",
-    label: "Discord",
-    service: "Discord",
-    loginUrl: "https://discord.com/login",
-    domains: ["discord.com"],
-    icon: MessageSquare,
-    iconTone: "purple"
-  },
-  {
-    id: "telegram",
-    label: "Telegram",
-    service: "Telegram",
-    loginUrl: "https://web.telegram.org/",
-    domains: ["web.telegram.org"],
-    icon: MessageSquare,
-    iconTone: "success"
-  },
-  {
-    id: "custom",
-    label: "Custom Website",
-    service: "Custom Website",
-    loginUrl: "",
-    domains: [],
-    icon: Chrome,
-    iconTone: "info"
-  }
-];
-
 function ConnectAccountWizard({
   open,
   workspace,
@@ -2919,48 +2848,34 @@ function ConnectAccountWizardContent({
   onCancel: () => void;
   onSubmit: (input: ConnectBrowserProfileInput) => Promise<void>;
 }) {
-  const initialService = connectBrowserServices[0];
   const defaultExistingProfileName = profiles.find((profile) => profile.name === "openclaw")?.name ?? profiles[0]?.name ?? "";
-  const hasSignedInChromeProfile = profiles.some((profile) => profile.name === "user");
-  const [selectedServiceId, setSelectedServiceId] = useState(initialService.id);
-  const [customWebsiteName, setCustomWebsiteName] = useState("");
-  const [customLoginUrl, setCustomLoginUrl] = useState("");
-  const [customPrimaryDomain, setCustomPrimaryDomain] = useState("");
+  const signedInChromeProfile = profiles.find((profile) => profile.name === "user") ?? null;
+  const hasSignedInChromeProfile = Boolean(signedInChromeProfile);
+  const signedInChromeReady = signedInChromeProfile?.running === true;
+  const [websiteInput, setWebsiteInput] = useState("");
   const [mode, setMode] = useState<ConnectBrowserProfileMode>("existing");
   const [existingProfileName, setExistingProfileName] = useState(defaultExistingProfileName);
   const [submitting, setSubmitting] = useState(false);
-  const selectedService = connectBrowserServices.find((service) => service.id === selectedServiceId) ?? initialService;
-  const isCustomService = selectedService.id === "custom";
-  const resolvedServiceName = isCustomService ? customWebsiteName.trim() || "Custom Website" : selectedService.service;
-  const resolvedLoginUrl = isCustomService ? customLoginUrl.trim() : selectedService.loginUrl;
-  const resolvedDomain = isCustomService ? customPrimaryDomain.trim() : selectedService.domains[0] ?? selectedService.service.toLowerCase();
+  const resolvedWebsite = useMemo(() => resolveConnectAccountWebsite(websiteInput), [websiteInput]);
+  const resolvedServiceName = resolvedWebsite?.serviceName ?? "Website";
+  const resolvedLoginUrl = resolvedWebsite?.loginUrl ?? "";
+  const resolvedDomain = resolvedWebsite?.primaryDomain ?? "";
   const resolvedProfileName =
     mode === "signed-in-chrome"
       ? "user"
       : existingProfileName.trim();
   const validationMessage = validateConnectBrowserProfileInput({
     workspace,
-    isCustomService,
-    customWebsiteName,
-    customLoginUrl,
-    customPrimaryDomain,
+    website: resolvedWebsite,
     mode,
     profileName: resolvedProfileName,
     existingProfileName,
-    hasSignedInChromeProfile
+    hasSignedInChromeProfile,
+    signedInChromeReady
   });
 
-  const selectService = (service: ConnectBrowserServiceOption) => {
-    setSelectedServiceId(service.id);
-    if (service.id !== "custom") {
-      setCustomWebsiteName("");
-      setCustomLoginUrl("");
-      setCustomPrimaryDomain("");
-    }
-  };
-
   const submit = async () => {
-    if (validationMessage || !workspace) {
+    if (validationMessage || !workspace || !resolvedWebsite) {
       return;
     }
 
@@ -2969,11 +2884,11 @@ function ConnectAccountWizardContent({
       await onSubmit({
         mode,
         profileName: resolvedProfileName,
-        loginUrl: resolvedLoginUrl,
-        label: `${slugifyClient(resolvedServiceName)}-login`,
-        serviceId: selectedService.id === "custom" ? slugifyClient(resolvedServiceName) || "custom" : selectedService.id,
-        serviceName: resolvedServiceName,
-        primaryDomain: resolvedDomain
+        loginUrl: resolvedWebsite.loginUrl,
+        label: resolvedWebsite.label,
+        serviceId: resolvedWebsite.serviceId,
+        serviceName: resolvedWebsite.serviceName,
+        primaryDomain: resolvedWebsite.primaryDomain
       });
     } finally {
       setSubmitting(false);
@@ -2981,7 +2896,7 @@ function ConnectAccountWizardContent({
   };
 
   return (
-    <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto rounded-[18px] border-white/[0.10] bg-[#08111f]/95 p-4">
+    <DialogContent className="max-h-[92vh] w-[calc(100vw-2rem)] max-w-3xl overflow-y-auto rounded-[18px] border-white/[0.10] bg-[#08111f]/95 p-4">
       <div className="border-b border-white/[0.08] p-4">
         <DialogHeader>
           <DialogTitle>Connect Account</DialogTitle>
@@ -2994,54 +2909,50 @@ function ConnectAccountWizardContent({
         </div>
       </div>
 
-      <div className="flex flex-col gap-4 p-4">
+      <div className="flex min-w-0 flex-col gap-4 p-4">
         <WizardSectionTitle
           title="Login Target"
-          description="Choose the website to open. AgentOS does not infer or store login success."
+          description="Type one website or choose a shortcut. AgentOS opens that URL in the selected OpenClaw browser profile."
         />
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {connectBrowserServices.map((service) => {
-            const selected = service.id === selectedServiceId;
-            return (
-              <button
-                key={service.id}
-                type="button"
-                onClick={() => selectService(service)}
-                className={cn(
-                  "rounded-[12px] border p-3 text-left transition hover:border-blue-300/35 hover:bg-blue-400/10",
-                  selected ? "border-blue-300/45 bg-blue-400/12" : "border-white/[0.08] bg-white/[0.035]"
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <EntityIcon icon={service.icon} label={service.label} tone={service.iconTone} />
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-semibold text-white">{service.label}</p>
-                    <p className="mt-0.5 truncate text-[0.66rem] text-slate-500">{service.domains[0] ?? "Manual URL"}</p>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
+        <div className="min-w-0 max-w-full rounded-[22px] border border-white/[0.08] bg-white/[0.035] p-3 shadow-[0_20px_48px_rgba(0,0,0,0.24)]">
+          <div className="flex h-12 items-center gap-3 rounded-full border border-white/[0.10] bg-slate-950/70 px-4 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_18px_40px_rgba(15,23,42,0.25)]">
+            <Search className="h-4 w-4 shrink-0 text-slate-400" />
+            <Input
+              id="connect-website-url"
+              value={websiteInput}
+              onChange={(event) => setWebsiteInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void submit();
+                }
+              }}
+              placeholder="Search or type a website URL"
+              className="h-10 min-w-0 border-0 bg-transparent px-0 text-sm text-white shadow-none outline-none placeholder:text-slate-500 focus-visible:ring-0"
+            />
+            {resolvedWebsite ? (
+              <AccountIcon
+                serviceId={resolvedWebsite.serviceId}
+                serviceName={resolvedWebsite.serviceName}
+                primaryDomain={resolvedWebsite.primaryDomain}
+                className="h-7 w-7 shrink-0 border-white/10 bg-slate-950/40 shadow-none"
+              />
+            ) : null}
+          </div>
 
-        {isCustomService ? (
-          <div className="grid gap-3 rounded-[12px] border border-white/[0.08] bg-white/[0.035] p-3 sm:grid-cols-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="connect-custom-name">Website name</Label>
-              <Input id="connect-custom-name" value={customWebsiteName} onChange={(event) => {
-                setCustomWebsiteName(event.target.value);
-              }} placeholder="Example Portal" className="h-9 rounded-[10px] bg-slate-950/50 text-xs" />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="connect-custom-url">Login URL</Label>
-              <Input id="connect-custom-url" value={customLoginUrl} onChange={(event) => setCustomLoginUrl(event.target.value)} placeholder="https://example.com/login" className="h-9 rounded-[10px] bg-slate-950/50 text-xs" />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="connect-custom-domain">Primary domain</Label>
-              <Input id="connect-custom-domain" value={customPrimaryDomain} onChange={(event) => setCustomPrimaryDomain(event.target.value)} placeholder="example.com" className="h-9 rounded-[10px] bg-slate-950/50 text-xs" />
+          <div className="mt-4 w-full min-w-0 max-w-full overflow-x-auto pb-1" aria-label="Common login targets">
+            <div className="flex w-max gap-2 pr-1">
+              {accountLoginExamples.map((example) => (
+                <WebsiteShortcutButton
+                  key={example.id}
+                  example={example}
+                  active={resolvedWebsite?.serviceId === example.id}
+                  onClick={() => setWebsiteInput(example.loginUrl)}
+                />
+              ))}
             </div>
           </div>
-        ) : null}
+        </div>
 
         <WizardSectionTitle
           title="Browser Profile"
@@ -3054,12 +2965,14 @@ function ConnectAccountWizardContent({
             description="Use a profile reported by OpenClaw."
             onClick={() => setMode("existing")}
           />
-          <ProfileModeOption
-            active={mode === "signed-in-chrome"}
-            title="Signed-in Chrome"
-            description="Use OpenClaw's built-in user profile."
-            onClick={() => setMode("signed-in-chrome")}
-          />
+          {hasSignedInChromeProfile ? (
+            <ProfileModeOption
+              active={mode === "signed-in-chrome"}
+              title="Signed-in Chrome"
+              description="Attach to the already-open signed-in Chrome profile reported as user."
+              onClick={() => setMode("signed-in-chrome")}
+            />
+          ) : null}
         </div>
 
         {mode === "existing" ? (
@@ -3076,7 +2989,9 @@ function ConnectAccountWizardContent({
 
         {mode === "signed-in-chrome" ? (
           <div className="rounded-[12px] border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100">
-            The built-in user profile attaches to the signed-in Chrome session through OpenClaw. Use it only when existing cookies matter and the operator is present to approve browser prompts.
+            {signedInChromeReady
+              ? "Signed-in Chrome is attached through OpenClaw. Use it only when existing cookies matter and the operator is present."
+              : "Signed-in Chrome is not attached through OpenClaw yet. Start or attach the user profile from Browser Profiles after launching Chrome with remote debugging, or use the managed openclaw profile."}
           </div>
         ) : null}
 
@@ -3135,6 +3050,38 @@ function ProfileModeOption({
   );
 }
 
+function WebsiteShortcutButton({
+  example,
+  active,
+  onClick
+}: {
+  example: ConnectAccountWebsiteExample;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const primaryDomain = example.domains[0] ?? example.loginUrl;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "group flex w-[76px] shrink-0 flex-col items-center gap-2 rounded-[14px] border border-transparent px-2 py-2 text-center transition hover:border-blue-300/24 hover:bg-blue-400/10",
+        active && "border-blue-300/35 bg-blue-400/12"
+      )}
+      title={example.loginUrl}
+    >
+      <AccountIcon
+        serviceId={example.id}
+        serviceName={example.service}
+        primaryDomain={primaryDomain}
+        className="h-11 w-11 border-white/12 bg-white/[0.04] shadow-[0_10px_22px_rgba(0,0,0,0.18)] transition group-hover:border-blue-200/28"
+      />
+      <span className="w-full truncate text-[0.68rem] font-medium text-slate-300">{example.label}</span>
+    </button>
+  );
+}
+
 function WizardSectionTitle({ title, description }: { title: string; description: string }) {
   return (
     <div>
@@ -3172,31 +3119,19 @@ function formatAccountTimestamp(value: string) {
 
 function validateConnectBrowserProfileInput(input: {
   workspace: WorkspaceRecord | null;
-  isCustomService: boolean;
-  customWebsiteName: string;
-  customLoginUrl: string;
-  customPrimaryDomain: string;
+  website: ReturnType<typeof resolveConnectAccountWebsite>;
   mode: ConnectBrowserProfileMode;
   profileName: string;
   existingProfileName: string;
   hasSignedInChromeProfile: boolean;
+  signedInChromeReady: boolean;
 }) {
   if (!input.workspace) {
     return "Select a workspace before connecting accounts.";
   }
 
-  if (input.isCustomService) {
-    if (!input.customWebsiteName.trim()) {
-      return "Website name is required for Custom Website.";
-    }
-
-    if (!isLikelyUrl(input.customLoginUrl)) {
-      return "A valid Login URL is required for Custom Website.";
-    }
-
-    if (!input.customPrimaryDomain.trim()) {
-      return "Primary domain is required for Custom Website.";
-    }
+  if (!input.website) {
+    return "Enter a valid website URL.";
   }
 
   if (input.mode === "existing" && !input.existingProfileName.trim()) {
@@ -3207,20 +3142,15 @@ function validateConnectBrowserProfileInput(input: {
     return "The signed-in Chrome profile is not reported by OpenClaw.";
   }
 
+  if (input.mode === "signed-in-chrome" && !input.signedInChromeReady) {
+    return "Signed-in Chrome is reported by OpenClaw but is not attached yet. Start or attach the user browser profile first, or use the managed openclaw profile.";
+  }
+
   return null;
 }
 
 function normalizeAccessPermission(value: string): AccountAccessPermission {
   return value === "use_browser_profile" || value === "requires_approval" ? value : "no_access";
-}
-
-function isLikelyUrl(value: string) {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 function formatBrowserProfileStateFilter(status: "all" | "running" | "stopped") {
@@ -3229,6 +3159,10 @@ function formatBrowserProfileStateFilter(status: "all" | "running" | "stopped") 
 
 function formatBrowserDriverFilter(driver: "all" | OpenClawBrowserDriver) {
   return driver === "all" ? "All" : driver === "existing-session" ? "Existing session" : "Managed";
+}
+
+function isUsableAccountBrowserProfile(profile: OpenClawBrowserProfileView) {
+  return !(profile.name === "user" && profile.driver === "existing-session" && !profile.running);
 }
 
 function readBrowserProfileError(error: unknown, fallback: string) {

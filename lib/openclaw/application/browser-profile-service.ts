@@ -123,11 +123,36 @@ async function callBrowserRequest<TPayload>(params: BrowserRequestParams): Promi
       { timeoutMs: params.timeoutMs ?? browserRequestTimeoutMs }
     );
   } catch (error) {
-    throw new Error(redactErrorMessage(
-      error,
-      "OpenClaw browser profile capability is unavailable. Ensure OpenClaw exposes browser.request."
-    ));
+    throw new Error(normalizeBrowserRequestErrorMessage(error, params));
   }
+}
+
+function normalizeBrowserRequestErrorMessage(error: unknown, params: BrowserRequestParams) {
+  const message = redactErrorMessage(
+    error,
+    "OpenClaw browser profile capability is unavailable. Ensure OpenClaw exposes browser.request."
+  );
+
+  if (isExistingChromeAttachError(message, params)) {
+    const profileName = params.query?.profile?.trim().toLowerCase();
+    const profileLabel = profileName === "user"
+      ? "Signed-in Chrome"
+      : profileName
+        ? `Existing Chrome profile "${profileName}"`
+        : "Existing Chrome profile";
+
+    return `${profileLabel} could not be attached through OpenClaw. Keep Chrome open, approve the attach prompt, and retry. If OpenClaw asks for remote debugging, open chrome://inspect and enable it before retrying. If you do not need your signed-in browser session, use the managed "openclaw" profile instead.`;
+  }
+
+  return message;
+}
+
+function isExistingChromeAttachError(message: string, params: BrowserRequestParams) {
+  if (params.query?.profile?.trim().toLowerCase() === "user") {
+    return /Chrome MCP|existing-session|DevToolsActivePort|Could not connect to Chrome/i.test(message);
+  }
+
+  return /Chrome MCP existing-session attach|DevToolsActivePort/i.test(message);
 }
 
 function normalizeBrowserProfile(value: unknown): OpenClawBrowserProfileView | null {

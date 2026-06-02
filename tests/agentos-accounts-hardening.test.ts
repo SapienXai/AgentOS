@@ -199,6 +199,30 @@ test("browser profile service redacts unsupported browser.request errors", async
   );
 });
 
+test("browser profile service normalizes signed-in Chrome attach failures", async () => {
+  setOpenClawAdapterForTesting(createBrowserAdapter(async () => {
+    throw new Error(
+      "INVALID_REQUEST: Chrome MCP existing-session attach for profile \"user\" could not connect to Chrome. " +
+        "Cause: Could not find DevToolsActivePort for chrome at /Users/kazimakgul/Library/Application Support/Google/Chrome/DevToolsActivePort " +
+        "Gateway-native operation failed; CLI fallback disabled for this operation. Recovery: Update OpenClaw or report the incompatible Gateway response shape."
+    );
+  }));
+
+  await assert.rejects(
+    () => openLoginUrlInOpenClawBrowserProfile({
+      profileName: "user",
+      loginUrl: "https://example.com/login"
+    }),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Signed-in Chrome could not be attached through OpenClaw/);
+      assert.match(error.message, /managed "openclaw" profile/);
+      assert.doesNotMatch(error.message, /DevToolsActivePort|Gateway-native operation failed|Update OpenClaw|kazimakgul/);
+      return true;
+    }
+  );
+});
+
 function decisionInput(agentId: string) {
   return {
     workspaceId: "workspace-1",
