@@ -38,6 +38,7 @@ import {
   Sparkles,
   SquareArrowOutUpRight,
   Star,
+  UserCog,
   Upload,
   UserCheck,
   Workflow,
@@ -105,6 +106,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/sonner";
 import { Textarea } from "@/components/ui/textarea";
+import type {
+  AccountAccessPermission,
+  AccountAccessRulesResponse,
+  AccountAccessRuleView
+} from "@/lib/agentos/account-access-policy-types";
 import type {
   AccountLoginTargetsResponse,
   AccountLoginTargetView
@@ -1670,14 +1676,19 @@ function AccountsPageContent({
 }) {
   const [profiles, setProfiles] = useState<OpenClawBrowserProfileView[]>([]);
   const [loginTargets, setLoginTargets] = useState<AccountLoginTargetView[]>([]);
+  const [accessRules, setAccessRules] = useState<AccountAccessRuleView[]>([]);
   const [loading, setLoading] = useState(true);
   const [targetsLoading, setTargetsLoading] = useState(true);
+  const [accessRulesLoading, setAccessRulesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [targetsError, setTargetsError] = useState<string | null>(null);
+  const [accessRulesError, setAccessRulesError] = useState<string | null>(null);
   const [profileSearch, setProfileSearch] = useState("");
   const [driverFilter, setDriverFilter] = useState<"all" | OpenClawBrowserDriver>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "running" | "stopped">("all");
   const [connectDialogOpen, setConnectDialogOpen] = useState(false);
+  const [manageAccessTarget, setManageAccessTarget] = useState<AccountLoginTargetView | null>(null);
+  const [missionTarget, setMissionTarget] = useState<AccountLoginTargetView | null>(null);
   const [busyProfileName, setBusyProfileName] = useState<string | null>(null);
   const [busyLoginTargetId, setBusyLoginTargetId] = useState<string | null>(null);
   const workspaceAgents = useMemo(
@@ -1692,6 +1703,28 @@ function AccountsPageContent({
   const driverFilters: Array<"all" | OpenClawBrowserDriver> = ["all", "openclaw", "existing-session"];
   const statusFilters: Array<"all" | "running" | "stopped"> = ["all", "running", "stopped"];
   const profileNames = useMemo(() => new Set(profiles.map((profile) => profile.name)), [profiles]);
+  const accessRulesByTargetId = useMemo(() => {
+    const rulesByTarget = new Map<string, AccountAccessRuleView[]>();
+
+    for (const rule of accessRules) {
+      const current = rulesByTarget.get(rule.targetId) ?? [];
+      current.push(rule);
+      rulesByTarget.set(rule.targetId, current);
+    }
+
+    return rulesByTarget;
+  }, [accessRules]);
+  const agentsByWorkspaceId = useMemo(() => {
+    const byWorkspace = new Map<string, AgentRecord[]>();
+
+    for (const agent of snapshot.agents) {
+      const current = byWorkspace.get(agent.workspaceId) ?? [];
+      current.push(agent);
+      byWorkspace.set(agent.workspaceId, current);
+    }
+
+    return byWorkspace;
+  }, [snapshot.agents]);
   const searchQuery = profileSearch.trim().toLowerCase();
   const filteredLoginTargets = loginTargets.filter((target) => {
     if (!searchQuery) {
@@ -1769,6 +1802,28 @@ function AccountsPageContent({
     }
   }, [activeWorkspaceId]);
 
+  const loadAccessRules = useCallback(async () => {
+    setAccessRulesLoading(true);
+    setAccessRulesError(null);
+
+    try {
+      const query = activeWorkspaceId ? `?workspaceId=${encodeURIComponent(activeWorkspaceId)}` : "";
+      const response = await fetch(`/api/accounts/access-rules${query}`, { cache: "no-store" });
+      const payload = await response.json().catch(() => null) as AccountAccessRulesResponse | null;
+
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error ?? "Unable to read account access rules.");
+      }
+
+      setAccessRules(payload.rules);
+    } catch (loadError) {
+      setAccessRules([]);
+      setAccessRulesError(readBrowserProfileError(loadError, "Unable to read account access rules."));
+    } finally {
+      setAccessRulesLoading(false);
+    }
+  }, [activeWorkspaceId]);
+
   useEffect(() => {
     void loadProfiles();
   }, [loadProfiles]);
@@ -1776,6 +1831,10 @@ function AccountsPageContent({
   useEffect(() => {
     void loadLoginTargets();
   }, [loadLoginTargets]);
+
+  useEffect(() => {
+    void loadAccessRules();
+  }, [loadAccessRules]);
 
   const postProfileMutation = async (
     body: Record<string, unknown>,
@@ -1811,6 +1870,34 @@ function AccountsPageContent({
     return payload;
   };
 
+  const saveAccessRulesForTarget = async (
+    target: AccountLoginTargetView,
+    rules: Array<{
+      agentId: string;
+      agentName: string;
+      permission: AccountAccessPermission;
+      notes?: string | null;
+    }>
+  ) => {
+    const response = await fetch("/api/accounts/access-rules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: target.workspaceId,
+        targetId: target.id,
+        rules
+      })
+    });
+    const payload = await response.json().catch(() => null) as AccountAccessRulesResponse | null;
+
+    if (!response.ok || !payload?.ok) {
+      throw new Error(payload?.error ?? "Unable to save account access rules.");
+    }
+
+    setAccessRules(payload.rules);
+    return payload;
+  };
+
   const removeLoginTarget = async (target: AccountLoginTargetView) => {
     setBusyLoginTargetId(target.id);
 
@@ -1827,6 +1914,7 @@ function AccountsPageContent({
       }
 
       setLoginTargets(payload.targets);
+      await loadAccessRules();
       toast.success("Login target forgotten.", {
         description: "Only the AgentOS account list entry was removed. Browser profile sessions were not changed."
       });
@@ -1969,7 +2057,7 @@ function AccountsPageContent({
               <StatCard label="Profiles" value={loading ? "-" : String(profiles.length)} detail={`${managedCount} managed, ${existingSessionCount} existing-session`} icon={Chrome} tone="info" />
               <StatCard label="Login Targets" value={targetsLoading ? "-" : String(loginTargets.length)} detail="Created through Connect Account" icon={KeyRound} tone={loginTargets.length > 0 ? "success" : "muted"} />
               <StatCard label="Running" value={loading ? "-" : String(runningCount)} detail={`${tabCount} open browser tabs`} icon={Fingerprint} tone={runningCount > 0 ? "success" : "muted"} />
-              <StatCard label="Browser Agents" value={String(browserAgentCount)} detail="Agents with browser-capable tools" icon={Bot} tone={browserAgentCount > 0 ? "success" : "muted"} />
+              <StatCard label="Agent Access" value={accessRulesLoading ? "-" : String(accessRules.length)} detail={`${browserAgentCount} browser-capable agents`} icon={UserCog} tone={accessRules.length > 0 ? "success" : "muted"} />
               <StatCard label="Gateway State" value={error ? "Blocked" : loading ? "Checking" : "Ready"} detail={error ? "OpenClaw browser unavailable" : "Real browser profile API"} icon={Gauge} tone={error ? "warning" : "success"} />
             </StatGrid>
 
@@ -1985,7 +2073,7 @@ function AccountsPageContent({
                 </div>
                 <div>
                   <p className="font-semibold text-white">What is not exposed yet</p>
-                  <p className="mt-1 text-slate-400">OpenClaw does not expose verified website account identities or per-agent account access rules to AgentOS, so targets stay marked as manual verification needed.</p>
+                  <p className="mt-1 text-slate-400">OpenClaw does not expose verified website account identities or a direct browser-profile dispatch parameter to AgentOS. Agent access is enforced by AgentOS before account-target task launch.</p>
                 </div>
               </div>
             </SectionCard>
@@ -2011,30 +2099,34 @@ function AccountsPageContent({
               />
               <ToolbarButton
                 icon={RefreshCw}
-                label={loading || targetsLoading ? "Refreshing" : "Refresh"}
-                active={loading || targetsLoading}
+                label={loading || targetsLoading || accessRulesLoading ? "Refreshing" : "Refresh"}
+                active={loading || targetsLoading || accessRulesLoading}
                 onClick={() => {
                   void loadProfiles();
                   void loadLoginTargets();
+                  void loadAccessRules();
                 }}
               />
             </SearchToolbar>
 
             <SectionCard title="Connected Login Targets">
-              {targetsError ? (
+              {targetsError || accessRulesError ? (
                 <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex min-w-0 items-start gap-3">
                     <EntityIcon icon={AlertTriangle} label="Login targets unavailable" tone="warning" />
                     <div className="min-w-0">
                       <h2 className="text-sm font-semibold text-white">Account login targets are unavailable</h2>
-                      <p className="mt-1 text-xs leading-5 text-slate-400">{targetsError}</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-400">{targetsError ?? accessRulesError}</p>
                     </div>
                   </div>
-                  <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => void loadLoginTargets()}>
+                  <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => {
+                    void loadLoginTargets();
+                    void loadAccessRules();
+                  }}>
                     Retry
                   </Button>
                 </div>
-              ) : targetsLoading ? (
+              ) : targetsLoading || accessRulesLoading ? (
                 <div className="p-4 text-xs text-slate-400">Loading login targets...</div>
               ) : filteredLoginTargets.length === 0 ? (
                 <div className="p-4">
@@ -2052,9 +2144,13 @@ function AccountsPageContent({
                       key={target.id}
                       target={target}
                       profileAvailable={profileNames.has(target.browserProfileName)}
+                      accessRules={accessRulesByTargetId.get(target.id) ?? []}
+                      workspaceAgents={agentsByWorkspaceId.get(target.workspaceId) ?? []}
                       busy={busyLoginTargetId === target.id}
                       onOpen={() => void openLoginTarget(target)}
                       onForget={() => void removeLoginTarget(target)}
+                      onManageAccess={() => setManageAccessTarget(target)}
+                      onRunTask={() => setMissionTarget(target)}
                     />
                   ))}
                 </div>
@@ -2131,6 +2227,25 @@ function AccountsPageContent({
         onSubmit={connectAccount}
         profiles={profiles}
       />
+      <ManageAccountAccessDialog
+        open={Boolean(manageAccessTarget)}
+        target={manageAccessTarget}
+        agents={manageAccessTarget ? agentsByWorkspaceId.get(manageAccessTarget.workspaceId) ?? [] : []}
+        accessRules={manageAccessTarget ? accessRulesByTargetId.get(manageAccessTarget.id) ?? [] : []}
+        onOpenChange={(open) => setManageAccessTarget(open ? manageAccessTarget : null)}
+        onSave={saveAccessRulesForTarget}
+      />
+      <AccountTargetMissionDialog
+        open={Boolean(missionTarget)}
+        target={missionTarget}
+        agents={missionTarget ? agentsByWorkspaceId.get(missionTarget.workspaceId) ?? [] : []}
+        accessRules={missionTarget ? accessRulesByTargetId.get(missionTarget.id) ?? [] : []}
+        onOpenChange={(open) => setMissionTarget(open ? missionTarget : null)}
+        onSubmitted={async () => {
+          setMissionTarget(null);
+          await loadProfiles();
+        }}
+      />
     </>
   );
 }
@@ -2189,16 +2304,33 @@ function BrowserProfileCard({
 function LoginTargetCard({
   target,
   profileAvailable,
+  accessRules,
+  workspaceAgents,
   busy,
   onOpen,
-  onForget
+  onForget,
+  onManageAccess,
+  onRunTask
 }: {
   target: AccountLoginTargetView;
   profileAvailable: boolean;
+  accessRules: AccountAccessRuleView[];
+  workspaceAgents: AgentRecord[];
   busy: boolean;
   onOpen: () => void;
   onForget: () => void;
+  onManageAccess: () => void;
+  onRunTask: () => void;
 }) {
+  const workspaceAgentIds = new Set(workspaceAgents.map((agent) => agent.id));
+  const allowedRules = accessRules.filter(
+    (rule) => workspaceAgentIds.has(rule.agentId) && rule.permission !== "no_access"
+  );
+  const browserCapableAllowedRules = allowedRules.filter((rule) => {
+    const agent = workspaceAgents.find((entry) => entry.id === rule.agentId);
+    return agent ? agentHasBrowserAccess(agent) : false;
+  });
+
   return (
     <div className="rounded-[12px] border border-white/[0.08] bg-white/[0.035]">
       <div className="flex items-start justify-between gap-3 p-3">
@@ -2222,6 +2354,27 @@ function LoginTargetCard({
       <div className="border-t border-white/[0.07] px-3 py-2 text-[0.68rem] leading-5 text-slate-400">
         AgentOS records that this login target was opened in the selected browser profile. Website account identity is not verified by OpenClaw.
       </div>
+      <div className="border-t border-white/[0.07] px-3 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-slate-500">Agent Access</p>
+          <MiniBadge>{allowedRules.length} allowed</MiniBadge>
+        </div>
+        {allowedRules.length === 0 ? (
+          <p className="mt-2 text-[0.68rem] leading-5 text-slate-500">
+            No agent can use this account target until access is granted.
+          </p>
+        ) : (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {allowedRules.slice(0, 4).map((rule) => (
+              <MiniBadge key={rule.id}>{rule.agentName}</MiniBadge>
+            ))}
+            {allowedRules.length > 4 ? <MiniBadge>+{allowedRules.length - 4} more</MiniBadge> : null}
+          </div>
+        )}
+        <p className="mt-2 text-[0.66rem] leading-5 text-slate-500">
+          AgentOS blocks account-target dispatch for agents without access. OpenClaw does not expose a direct browser-profile dispatch parameter yet.
+        </p>
+      </div>
       <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.07] p-3">
         <Button
           variant="secondary"
@@ -2238,6 +2391,28 @@ function LoginTargetCard({
           variant="secondary"
           size="sm"
           className="h-7 rounded-[8px] px-2 text-[0.7rem]"
+          disabled={busy || !profileAvailable}
+          title="Select which workspace agents can use this account target."
+          onClick={onManageAccess}
+        >
+          <UserCog className="mr-1 h-3 w-3" />
+          Manage access
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="h-7 rounded-[8px] px-2 text-[0.7rem]"
+          disabled={busy || !profileAvailable || browserCapableAllowedRules.length === 0}
+          title={browserCapableAllowedRules.length > 0 ? "Run a task with an allowed browser-capable agent." : "Grant access to a browser-capable agent first."}
+          onClick={onRunTask}
+        >
+          <Play className="mr-1 h-3 w-3" />
+          Run task
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="h-7 rounded-[8px] px-2 text-[0.7rem]"
           disabled={busy}
           title="Remove this AgentOS list entry only. Browser profile sessions are not changed."
           onClick={onForget}
@@ -2248,6 +2423,354 @@ function LoginTargetCard({
         <MiniBadge>{profileAvailable ? "Profile available" : "Profile missing"}</MiniBadge>
       </div>
     </div>
+  );
+}
+
+type AccountAccessDraft = Record<string, {
+  permission: AccountAccessPermission;
+  notes: string;
+}>;
+
+function ManageAccountAccessDialog({
+  open,
+  target,
+  agents,
+  accessRules,
+  onOpenChange,
+  onSave
+}: {
+  open: boolean;
+  target: AccountLoginTargetView | null;
+  agents: AgentRecord[];
+  accessRules: AccountAccessRuleView[];
+  onOpenChange: (open: boolean) => void;
+  onSave: (
+    target: AccountLoginTargetView,
+    rules: Array<{
+      agentId: string;
+      agentName: string;
+      permission: AccountAccessPermission;
+      notes?: string | null;
+    }>
+  ) => Promise<unknown>;
+}) {
+  const [draft, setDraft] = useState<AccountAccessDraft>({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const sortedAgents = useMemo(
+    () => [...agents].sort((left, right) => left.name.localeCompare(right.name)),
+    [agents]
+  );
+
+  useEffect(() => {
+    if (!open || !target) {
+      return;
+    }
+
+    const nextDraft: AccountAccessDraft = {};
+    for (const agent of sortedAgents) {
+      const rule = accessRules.find((entry) => entry.agentId === agent.id);
+      nextDraft[agent.id] = {
+        permission: rule?.permission === "requires_approval" ? "requires_approval" : rule?.permission === "use_browser_profile" ? "use_browser_profile" : "no_access",
+        notes: rule?.notes ?? ""
+      };
+    }
+
+    setDraft(nextDraft);
+    setError(null);
+  }, [accessRules, open, sortedAgents, target]);
+
+  const save = async () => {
+    if (!target) {
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      await onSave(
+        target,
+        sortedAgents.map((agent) => {
+          const agentDraft = draft[agent.id] ?? { permission: "no_access" as AccountAccessPermission, notes: "" };
+          return {
+            agentId: agent.id,
+            agentName: agent.name,
+            permission: agentHasBrowserAccess(agent) ? agentDraft.permission : "no_access",
+            notes: agentDraft.notes
+          };
+        })
+      );
+      toast.success("Account access saved.", {
+        description: `Agent access for ${target.serviceName} now uses AgentOS policy state.`
+      });
+      onOpenChange(false);
+    } catch (saveError) {
+      const message = readBrowserProfileError(saveError, "Unable to save account access rules.");
+      setError(message);
+      toast.error("Account access was not saved.", {
+        description: message
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {target ? (
+        <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto rounded-[18px] border-white/[0.10] bg-[#08111f]/95 p-4">
+          <DialogHeader>
+            <DialogTitle>Manage Account Access</DialogTitle>
+            <DialogDescription>
+              Select which workspace agents may use this saved browser profile session.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-[10px] border border-cyan-300/18 bg-cyan-400/10 px-3 py-2 text-xs leading-5 text-cyan-100">
+            AgentOS enforces this before account-target task launch. OpenClaw does not expose a direct browser-profile dispatch parameter yet.
+          </div>
+
+          <SectionCard>
+            <div className="grid gap-2 p-3 sm:grid-cols-2">
+              <KeyValue label="Account target" value={target.serviceName} />
+              <KeyValue label="Domain" value={target.primaryDomain} />
+              <KeyValue label="Browser profile" value={target.browserProfileName} />
+              <KeyValue label="Workspace" value={target.workspaceName} />
+            </div>
+          </SectionCard>
+
+          {sortedAgents.length === 0 ? (
+            <EmptyState title="No workspace agents" description="Create an agent in this workspace before granting account access." />
+          ) : (
+            <div className="rounded-[12px] border border-white/[0.08] bg-white/[0.03]">
+              {sortedAgents.map((agent) => {
+                const canUseBrowser = agentHasBrowserAccess(agent);
+                const agentDraft = draft[agent.id] ?? { permission: "no_access" as AccountAccessPermission, notes: "" };
+
+                return (
+                  <div key={agent.id} className="grid gap-3 border-b border-white/[0.07] p-3 last:border-b-0 md:grid-cols-[minmax(0,1fr)_180px]">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-white">{agent.name}</p>
+                        <MiniBadge>{canUseBrowser ? "Browser-capable" : "Browser tools missing"}</MiniBadge>
+                      </div>
+                      <p className="mt-1 text-[0.68rem] leading-5 text-slate-500">
+                        {canUseBrowser
+                          ? "This agent can be granted account-target task access."
+                          : "Enable browser/chrome tools before this agent can use account sessions."}
+                      </p>
+                      <Input
+                        value={agentDraft.notes}
+                        disabled={!canUseBrowser || agentDraft.permission === "no_access"}
+                        onChange={(event) => {
+                          const notes = event.target.value;
+                          setDraft((current) => ({
+                            ...current,
+                            [agent.id]: {
+                              ...(current[agent.id] ?? { permission: "no_access" as AccountAccessPermission, notes: "" }),
+                              notes
+                            }
+                          }));
+                        }}
+                        placeholder="Optional policy note"
+                        className="mt-2 h-8 rounded-[9px] bg-slate-950/50 text-xs"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor={`access-${target.id}-${agent.id}`}>Permission</Label>
+                      <select
+                        id={`access-${target.id}-${agent.id}`}
+                        value={agentDraft.permission}
+                        disabled={!canUseBrowser}
+                        onChange={(event) => {
+                          const permission = normalizeAccessPermission(event.target.value);
+                          setDraft((current) => ({
+                            ...current,
+                            [agent.id]: {
+                              ...(current[agent.id] ?? { permission: "no_access" as AccountAccessPermission, notes: "" }),
+                              permission
+                            }
+                          }));
+                        }}
+                        className="h-9 rounded-[10px] border border-white/[0.10] bg-slate-950/50 px-3 text-xs text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <option value="no_access">No access</option>
+                        <option value="use_browser_profile">Can use profile</option>
+                        <option value="requires_approval" disabled>Requires approval (coming soon)</option>
+                      </select>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {error ? <div className="rounded-[10px] border border-rose-300/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-100">{error}</div> : null}
+
+          <DialogFooter>
+            <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" className="h-8 rounded-[9px] bg-blue-500 text-xs text-white hover:bg-blue-400" disabled={saving || sortedAgents.length === 0} onClick={() => void save()}>
+              {saving ? "Saving..." : "Save access"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      ) : null}
+    </Dialog>
+  );
+}
+
+function AccountTargetMissionDialog({
+  open,
+  target,
+  agents,
+  accessRules,
+  onOpenChange,
+  onSubmitted
+}: {
+  open: boolean;
+  target: AccountLoginTargetView | null;
+  agents: AgentRecord[];
+  accessRules: AccountAccessRuleView[];
+  onOpenChange: (open: boolean) => void;
+  onSubmitted: () => Promise<void>;
+}) {
+  const allowedAgents = useMemo(() => {
+    const ruleByAgentId = new Map(accessRules.map((rule) => [rule.agentId, rule]));
+    return agents
+      .filter((agent) => agentHasBrowserAccess(agent))
+      .filter((agent) => {
+        const rule = ruleByAgentId.get(agent.id);
+        return rule?.permission === "use_browser_profile";
+      })
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [accessRules, agents]);
+  const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [mission, setMission] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    setSelectedAgentId(allowedAgents[0]?.id ?? "");
+    setMission("");
+    setError(null);
+  }, [allowedAgents, open]);
+
+  const submit = async () => {
+    if (!target || !selectedAgentId || !mission.trim()) {
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/mission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mission: mission.trim(),
+          agentId: selectedAgentId,
+          workspaceId: target.workspaceId,
+          accountTargetId: target.id
+        })
+      });
+      const result = await response.json().catch(() => null) as { error?: string; summary?: string } | null;
+
+      if (!response.ok || result?.error) {
+        throw new Error(result?.error || "Mission dispatch failed.");
+      }
+
+      toast.success("Task submitted.", {
+        description: result?.summary ?? `${target.serviceName} account target context was attached.`
+      });
+      onOpenChange(false);
+      await onSubmitted();
+    } catch (submitError) {
+      const message = readBrowserProfileError(submitError, "Mission dispatch failed.");
+      setError(message);
+      toast.error("Task was not submitted.", {
+        description: message
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {target ? (
+        <DialogContent className="max-w-xl rounded-[18px] border-white/[0.10] bg-[#08111f]/95 p-4">
+          <DialogHeader>
+            <DialogTitle>Run Task With Account</DialogTitle>
+            <DialogDescription>
+              Dispatch to an allowed browser-capable agent with account target context.
+            </DialogDescription>
+          </DialogHeader>
+
+          <SectionCard>
+            <div className="grid gap-2 p-3 sm:grid-cols-2">
+              <KeyValue label="Account target" value={target.serviceName} />
+              <KeyValue label="Browser profile" value={target.browserProfileName} />
+              <KeyValue label="Domain" value={target.primaryDomain} />
+              <KeyValue label="Dispatch enforcement" value="AgentOS policy guard" />
+            </div>
+          </SectionCard>
+
+          <div className="rounded-[10px] border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100">
+            OpenClaw does not expose a direct browser-profile dispatch parameter yet. AgentOS blocks unauthorized agents and includes the selected profile/session as task context.
+          </div>
+
+          {allowedAgents.length === 0 ? (
+            <EmptyState title="No allowed browser-capable agents" description="Grant account access to a browser-capable agent before running a task with this login target." />
+          ) : (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor={`account-task-agent-${target.id}`}>Agent</Label>
+                <select
+                  id={`account-task-agent-${target.id}`}
+                  value={selectedAgentId}
+                  onChange={(event) => setSelectedAgentId(event.target.value)}
+                  className="h-9 rounded-[10px] border border-white/[0.10] bg-slate-950/50 px-3 text-xs text-white"
+                >
+                  {allowedAgents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>{agent.name}</option>
+                  ))}
+                </select>
+              </div>
+              <Textarea
+                value={mission}
+                onChange={(event) => setMission(event.target.value)}
+                placeholder={`Describe what the agent should do using ${target.serviceName}...`}
+                className="min-h-32 rounded-[12px] border-white/[0.10] bg-slate-950/50 text-sm text-slate-100"
+              />
+            </>
+          )}
+
+          {error ? <div className="rounded-[10px] border border-rose-300/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-100">{error}</div> : null}
+
+          <DialogFooter>
+            <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="h-8 rounded-[9px] bg-blue-500 text-xs text-white hover:bg-blue-400"
+              disabled={submitting || allowedAgents.length === 0 || !selectedAgentId || !mission.trim()}
+              onClick={() => void submit()}
+            >
+              {submitting ? "Submitting..." : "Submit task"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      ) : null}
+    </Dialog>
   );
 }
 
@@ -2676,6 +3199,10 @@ function validateConnectBrowserProfileInput(input: {
   }
 
   return null;
+}
+
+function normalizeAccessPermission(value: string): AccountAccessPermission {
+  return value === "use_browser_profile" || value === "requires_approval" ? value : "no_access";
 }
 
 function isLikelyUrl(value: string) {

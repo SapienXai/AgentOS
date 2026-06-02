@@ -9,8 +9,12 @@ const surfaceModuleSpringStiffness = 220;
 const surfaceModuleSpringDamping = 20;
 const surfaceModuleSettlingThreshold = 0.35;
 
-export function toSurfaceTetherNodeId(agent: AgentRecord, provider: AgentSurfaceBadge["provider"]) {
+export function toSurfaceTetherNodeId(agent: AgentRecord, provider: AgentSurfaceBadge["provider"] | string) {
   return `surface-module-v1:${agent.workspaceId}:${agent.id}:${provider}`;
+}
+
+export function toAccountTetherNodeId(agent: AgentRecord, accountId: string) {
+  return `account-module-v1:${agent.workspaceId}:${agent.id}:${accountId}`;
 }
 
 export function toSurfaceActionNodeId(agent: AgentRecord) {

@@ -4,6 +4,7 @@ import { Handle, Position, type Node as FlowNode, type NodeProps } from "@xyflow
 import { Plus } from "lucide-react";
 import { motion } from "motion/react";
 
+import { AccountIcon } from "@/components/mission-control/account-icon";
 import type { SurfaceTetherNodeData } from "@/components/mission-control/canvas-types";
 import { resolveSurfaceRoleDotClasses } from "@/components/mission-control/node-visual-tones";
 import { SurfaceIcon } from "@/components/mission-control/surface-icon";
@@ -14,8 +15,11 @@ type SurfaceTetherFlowNode = FlowNode<SurfaceTetherNodeData, "surface-module">;
 
 export function SurfaceTetherNode({ data, selected }: NodeProps<SurfaceTetherFlowNode>) {
   const isAddSurface = data.variant === "add";
+  const isAccount = data.variant === "account";
   const tooltipLabel = isAddSurface
     ? data.actionLabel ?? "Add a workspace surface"
+    : isAccount
+      ? data.roleLabel || `${data.label} account access`
     : data.roleLabel || `${data.label} connection`;
   const surfaceSummary = formatSurfaceSummary(data.surfaceNames);
   const roleDotClass = resolveSurfaceRoleDotClasses(data.roleTone);
@@ -101,9 +105,16 @@ export function SurfaceTetherNode({ data, selected }: NodeProps<SurfaceTetherFlo
                 <div className="relative z-10 flex h-10 w-10 items-center justify-center rounded-full border border-cyan-200/20 bg-cyan-300/10 text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.18)]">
                   <Plus className="h-5 w-5" />
                 </div>
+              ) : isAccount ? (
+                <AccountIcon
+                  serviceId={data.accountServiceId}
+                  serviceName={data.accountServiceName}
+                  primaryDomain={data.accountPrimaryDomain}
+                  className="relative z-10 h-10 w-10 border-white/12 bg-transparent shadow-none"
+                />
               ) : (
                 <SurfaceIcon
-                  provider={data.provider}
+                  provider={data.provider!}
                   className="relative z-10 h-10 w-10 border-white/12 bg-transparent shadow-none"
                 />
               )}
@@ -160,7 +171,9 @@ export function SurfaceTetherNode({ data, selected }: NodeProps<SurfaceTetherFlo
               <p className="text-[12px] leading-5 text-white">{tooltipLabel}</p>
             </div>
             {isAddSurface ? null : surfaceSummary ? (
-              <p className="text-[11px] leading-4 text-slate-400">Related surfaces: {surfaceSummary}</p>
+              <p className="text-[11px] leading-4 text-slate-400">
+                {isAccount ? "Related accounts" : "Related surfaces"}: {surfaceSummary}
+              </p>
             ) : null}
           </div>
         </TooltipContent>

@@ -1,4 +1,5 @@
 import type {
+  AgentAccountBadge,
   AgentDetailFocus,
   AgentSurfaceBadge,
   CanvasEdge,
@@ -6,9 +7,8 @@ import type {
   PersistedNodePositionMap
 } from "@/components/mission-control/canvas-types";
 import {
-  resolveSurfaceActionAnchorPosition,
   resolveSurfaceModuleAnchorPosition,
-  toSurfaceActionNodeId,
+  toAccountTetherNodeId,
   toSurfaceTetherNodeId
 } from "@/components/mission-control/canvas.motion";
 import {
@@ -22,13 +22,16 @@ import { getSurfaceCatalogEntry } from "@/lib/openclaw/surface-catalog";
 import { resolveAgentModelLabel } from "@/lib/openclaw/presenters";
 import type {
   MissionControlSnapshot,
-  MissionControlSurfaceProvider,
   AgentRecord,
   WorkItemRecord
 } from "@/lib/agentos/contracts";
+import type { AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
+import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-types";
 
 export function buildCanvasGraph(
   snapshot: MissionControlSnapshot,
+  accountTargets: AccountLoginTargetView[],
+  accountAccessRules: AccountAccessRuleView[],
   relativeTimeReferenceMs: number,
   activeWorkspaceId: string | null,
   focusedAgentId: string | null,
@@ -49,7 +52,7 @@ export function buildCanvasGraph(
   onConfigureAgentModel: ((agentId: string) => void) | undefined,
   onConfigureAgentCapabilities: ((agentId: string, focus: "skills" | "tools") => void) | undefined,
   onInspectAgentDetail: ((agentId: string, focus: AgentDetailFocus) => void) | undefined,
-  onOpenWorkspaceChannels: ((workspaceId?: string) => void) | undefined,
+  onOpenWorkspaceChannels: ((workspaceId?: string, agentId?: string) => void) | undefined,
   onOpenWorkspaceFiles: ((workspaceId: string) => void) | undefined,
   onReplyTask: (task: WorkItemRecord) => void,
   onCopyTaskPrompt: (task: WorkItemRecord) => void,
@@ -132,6 +135,8 @@ export function buildCanvasGraph(
       const activeTaskCount = agentTasks.filter((task) => isLiveTask(task)).length;
       const isAgentChatOpen = activeChatAgentId === agent.id;
       const surfaceBadges = buildAgentSurfaceBadges(snapshot, workspace, agent);
+      const accountBadges = buildAgentAccountBadges(accountTargets, accountAccessRules, workspace, agent);
+      const connectedBadgeCount = surfaceBadges.length + accountBadges.length;
       const modelLabel = resolveAgentModelLabel(agent.modelId, snapshot.models);
       const agentPosition = resolvePersistedPosition(
         toPersistedAgentPositionKey(agent),
@@ -168,6 +173,7 @@ export function buildCanvasGraph(
           relativeTimeReferenceMs,
           modelLabel,
           surfaceBadges,
+          accountBadges,
           onMessage: onMessageAgent,
           onEdit: onEditAgent,
           onDelete: onDeleteAgent,
@@ -179,34 +185,6 @@ export function buildCanvasGraph(
         }
       });
 
-      surfaceModuleNodes.push({
-        id: toSurfaceActionNodeId(agent),
-        type: "surface-module",
-        draggable: false,
-        selectable: false,
-        width: 64,
-        height: 64,
-        position: resolveSurfaceActionAnchorPosition(agentPosition, surfaceBadges.length),
-        zIndex: isComposerHighlightedAgent ? 55 : isTaskFocusedAgent ? 48 : 19,
-        selected: false,
-        data: {
-          agent,
-          emphasis: isFocusMode ? true : !activeWorkspaceId || activeWorkspaceId === workspace.id,
-          provider: "surface-add" as MissionControlSurfaceProvider,
-          variant: "add",
-          label: "Add surface",
-          actionLabel: "Connect a new workspace surface",
-          anchorIndex: 0,
-          anchorCount: surfaceBadges.length + 1,
-          surfaceCount: 0,
-          surfaceNames: [],
-          roleLabel: "Connect a new workspace surface",
-          roleTone: "primary",
-          accentColor: "#7dd3fc",
-          onClick: onOpenWorkspaceChannels ? () => onOpenWorkspaceChannels(workspace.id) : undefined
-        }
-      });
-
       surfaceBadges.forEach((surfaceBadge, surfaceIndex) => {
         surfaceModuleNodes.push({
           id: toSurfaceTetherNodeId(agent, surfaceBadge.provider),
@@ -215,7 +193,7 @@ export function buildCanvasGraph(
           selectable: false,
           width: 64,
           height: 64,
-          position: resolveSurfaceModuleAnchorPosition(agentPosition, surfaceIndex, surfaceBadges.length),
+          position: resolveSurfaceModuleAnchorPosition(agentPosition, surfaceIndex, connectedBadgeCount),
           zIndex: isComposerHighlightedAgent ? 55 : isTaskFocusedAgent ? 48 : 18,
           selected: false,
           data: {
@@ -225,12 +203,46 @@ export function buildCanvasGraph(
             variant: "surface",
             label: surfaceBadge.label,
             anchorIndex: surfaceIndex + 1,
-            anchorCount: surfaceBadges.length + 1,
+            anchorCount: connectedBadgeCount + 1,
             surfaceCount: surfaceBadge.count,
             surfaceNames: surfaceBadge.surfaceNames ?? [],
             roleLabel: surfaceBadge.roleLabel,
             roleTone: surfaceBadge.roleTone ?? "primary",
             accentColor: surfaceBadge.accentColor ?? null
+          }
+        });
+      });
+
+      accountBadges.forEach((accountBadge, accountIndex) => {
+        const anchorIndex = surfaceBadges.length + accountIndex;
+
+        surfaceModuleNodes.push({
+          id: toAccountTetherNodeId(agent, accountBadge.id),
+          type: "surface-module",
+          draggable: false,
+          selectable: false,
+          width: 64,
+          height: 64,
+          position: resolveSurfaceModuleAnchorPosition(agentPosition, anchorIndex, connectedBadgeCount),
+          zIndex: isComposerHighlightedAgent ? 55 : isTaskFocusedAgent ? 48 : 18,
+          selected: false,
+          data: {
+            agent,
+            emphasis: isFocusMode ? true : !activeWorkspaceId || activeWorkspaceId === workspace.id,
+            variant: "account",
+            label: accountBadge.serviceName,
+            anchorIndex: anchorIndex + 1,
+            anchorCount: connectedBadgeCount + 1,
+            surfaceCount: accountBadge.count,
+            surfaceNames: accountBadge.accountNames ?? [],
+            roleLabel: accountBadge.roleLabel,
+            roleTone: "delegate",
+            accentColor: accountBadge.accentColor ?? null,
+            accountId: accountBadge.id,
+            accountServiceId: accountBadge.serviceId,
+            accountServiceName: accountBadge.serviceName,
+            accountPrimaryDomain: accountBadge.primaryDomain,
+            accountBrowserProfileName: accountBadge.browserProfileName
           }
         });
       });
@@ -579,4 +591,102 @@ export function buildAgentSurfaceBadges(
       } satisfies AgentSurfaceBadge;
     })
     .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+export function buildAgentAccountBadges(
+  accountTargets: AccountLoginTargetView[],
+  accessRules: AccountAccessRuleView[],
+  workspace: MissionControlSnapshot["workspaces"][number],
+  agent: AgentRecord
+) {
+  const targetsById = new Map(
+    accountTargets
+      .filter((target) => target.workspaceId === workspace.id)
+      .map((target) => [target.id, target])
+  );
+  const summaries = new Map<
+    string,
+    {
+      targetIds: Set<string>;
+      accountNames: Set<string>;
+      serviceId: string;
+      serviceName: string;
+      primaryDomain: string;
+      browserProfileName: string;
+    }
+  >();
+
+  for (const rule of accessRules) {
+    if (
+      rule.workspaceId !== workspace.id ||
+      rule.agentId !== agent.id ||
+      rule.permission !== "use_browser_profile"
+    ) {
+      continue;
+    }
+
+    const target = targetsById.get(rule.targetId);
+    if (!target) {
+      continue;
+    }
+
+    const key = target.serviceId || target.primaryDomain || target.id;
+    const current =
+      summaries.get(key) ?? {
+        targetIds: new Set<string>(),
+        accountNames: new Set<string>(),
+        serviceId: target.serviceId,
+        serviceName: target.serviceName,
+        primaryDomain: target.primaryDomain,
+        browserProfileName: target.browserProfileName
+      };
+
+    current.targetIds.add(target.id);
+    current.accountNames.add(`${target.serviceName} · ${target.browserProfileName}`);
+    summaries.set(key, current);
+  }
+
+  return Array.from(summaries.entries())
+    .map(([id, summary]) => ({
+      id,
+      serviceId: summary.serviceId,
+      serviceName: summary.serviceName,
+      primaryDomain: summary.primaryDomain,
+      browserProfileName: summary.browserProfileName,
+      count: summary.targetIds.size,
+      roleLabel: `Can use ${summary.serviceName} via ${summary.browserProfileName}`,
+      accentColor: resolveAccountBadgeAccentColor(summary.serviceId, summary.primaryDomain),
+      accountNames: Array.from(summary.accountNames).sort((left, right) => left.localeCompare(right))
+    }) satisfies AgentAccountBadge)
+    .sort((left, right) => left.serviceName.localeCompare(right.serviceName));
+}
+
+function resolveAccountBadgeAccentColor(serviceId: string, primaryDomain: string) {
+  const key = `${serviceId} ${primaryDomain}`.toLowerCase();
+
+  if (key.includes("product-hunt") || key.includes("producthunt")) {
+    return "#da552f";
+  }
+
+  if (key.includes("gmail") || key.includes("google")) {
+    return "#ea4335";
+  }
+
+  if (key.includes("x-twitter") || key.includes("x.com") || key.includes("twitter")) {
+    return "#ffffff";
+  }
+
+  if (key.includes("github")) {
+    return "#f5f5f5";
+  }
+
+  if (key.includes("discord")) {
+    return "#5865f2";
+  }
+
+  if (key.includes("telegram")) {
+    return "#26a5e4";
+  }
+
+  return "#facc15";
 }

@@ -19,6 +19,7 @@ import {
   resolveSurfaceActionAnchorPosition,
   resolveSurfaceModuleAnchorPosition,
   stepSurfaceModuleSpring,
+  toAccountTetherNodeId,
   toSurfaceActionNodeId,
   toSurfaceTetherNodeId
 } from "@/components/mission-control/canvas.motion";
@@ -64,6 +65,7 @@ export {
   resolveSurfaceActionAnchorPosition,
   resolveSurfaceModuleAnchorPosition,
   stepSurfaceModuleSpring,
+  toAccountTetherNodeId,
   toLegacyPersistedAgentPositionKey,
   toLegacyPersistedTaskPositionKey,
   toPersistedAgentPositionKey,

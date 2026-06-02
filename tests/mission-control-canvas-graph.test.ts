@@ -90,6 +90,8 @@ test("canvas places agent-owned tasks when task workspace id is missing", () => 
 
   const graph = buildCanvasGraph(
     snapshot,
+    [],
+    [],
     0,
     null,
     null,

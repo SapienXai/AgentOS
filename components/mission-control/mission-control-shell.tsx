@@ -101,6 +101,14 @@ import type {
   WorkspaceCreateStreamEvent,
   WorkItemRecord
 } from "@/lib/agentos/contracts";
+import type {
+  AccountAccessRulesResponse,
+  AccountAccessRuleView
+} from "@/lib/agentos/account-access-policy-types";
+import type {
+  AccountLoginTargetsResponse,
+  AccountLoginTargetView
+} from "@/lib/agentos/account-login-target-types";
 import {
   getModelProviderDescriptor,
   normalizeAddModelsProviderId
@@ -339,6 +347,9 @@ export function MissionControlShell({
   const [workspaceWizardInitialMode, setWorkspaceWizardInitialMode] = useState<"basic" | "advanced">("basic");
   const [workspaceWizardEditId, setWorkspaceWizardEditId] = useState<string | null>(null);
   const [isWorkspaceChannelsOpen, setIsWorkspaceChannelsOpen] = useState(false);
+  const [workspaceChannelsInitialAgentId, setWorkspaceChannelsInitialAgentId] = useState<string | null>(null);
+  const [accountTargets, setAccountTargets] = useState<AccountLoginTargetView[]>([]);
+  const [accountAccessRules, setAccountAccessRules] = useState<AccountAccessRuleView[]>([]);
   const [workspaceFilesDialogId, setWorkspaceFilesDialogId] = useState<string | null>(null);
   const [isAddModelsDialogOpen, setIsAddModelsDialogOpen] = useState(false);
   const [initialAddModelsProvider, setInitialAddModelsProvider] = useState<AddModelsProviderId | null>(null);
@@ -683,13 +694,41 @@ export function MissionControlShell({
     }
   }, []);
 
-  const openWorkspaceChannels = useCallback((workspaceId?: string) => {
+  const loadAccountBindings = useCallback(async () => {
+    try {
+      const [targetsResponse, rulesResponse] = await Promise.all([
+        fetch("/api/accounts/login-targets", { cache: "no-store" }),
+        fetch("/api/accounts/access-rules", { cache: "no-store" })
+      ]);
+      const targetsPayload = await targetsResponse.json().catch(() => null) as AccountLoginTargetsResponse | null;
+      const rulesPayload = await rulesResponse.json().catch(() => null) as AccountAccessRulesResponse | null;
+
+      if (targetsResponse.ok && targetsPayload?.ok) {
+        setAccountTargets(targetsPayload.targets);
+      }
+
+      if (rulesResponse.ok && rulesPayload?.ok) {
+        setAccountAccessRules(rulesPayload.rules);
+      }
+    } catch {
+      setAccountTargets([]);
+      setAccountAccessRules([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAccountBindings();
+  }, [loadAccountBindings]);
+
+  const openWorkspaceChannels = useCallback((workspaceId?: string, agentId?: string) => {
     if (workspaceId) {
       openWorkspaceOnCanvas(workspaceId);
     }
 
+    setWorkspaceChannelsInitialAgentId(agentId ?? null);
     setIsWorkspaceChannelsOpen(true);
-  }, [openWorkspaceOnCanvas]);
+    void loadAccountBindings();
+  }, [loadAccountBindings, openWorkspaceOnCanvas]);
 
   const openWorkspaceFiles = useCallback(
     (workspaceId: string) => {
@@ -3500,6 +3539,8 @@ export function MissionControlShell({
         <div className="absolute inset-0 z-10">
           <MissionCanvasView
             snapshot={uiSnapshot}
+            accountTargets={accountTargets}
+            accountAccessRules={accountAccessRules}
             activeWorkspaceId={activeWorkspaceId}
             selectedNodeId={selectedNodeId}
             focusedAgentId={focusedAgentId}
@@ -3918,10 +3959,20 @@ export function MissionControlShell({
         <WorkspaceChannelsDialog
           snapshot={uiSnapshot}
           workspaceId={activeWorkspaceId ?? uiSnapshot.workspaces[0]?.id ?? null}
+          accountTargets={accountTargets}
+          accountAccessRules={accountAccessRules}
+          initialAgentId={workspaceChannelsInitialAgentId}
           open={isWorkspaceChannelsOpen}
-          onOpenChange={setIsWorkspaceChannelsOpen}
+          onOpenChange={(open) => {
+            setIsWorkspaceChannelsOpen(open);
+            if (!open) {
+              setWorkspaceChannelsInitialAgentId(null);
+            }
+          }}
           onRefresh={refresh}
           onSnapshotChange={setSnapshot}
+          onAccountAccessRulesChange={setAccountAccessRules}
+          onAccountTargetsChange={setAccountTargets}
         />
 
         <WorkspaceContextFilesDialog

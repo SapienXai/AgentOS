@@ -44,10 +44,14 @@ import type {
 } from "@/components/mission-control/canvas-types";
 import { resolveRelativeTimeReferenceMs } from "@/lib/openclaw/presenters";
 import type { MissionControlSnapshot, WorkItemRecord } from "@/lib/agentos/contracts";
+import type { AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
+import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-types";
 import { cn } from "@/lib/utils";
 
 export function MissionCanvas({
   snapshot,
+  accountTargets,
+  accountAccessRules,
   activeWorkspaceId,
   selectedNodeId,
   focusedAgentId,
@@ -82,6 +86,8 @@ export function MissionCanvas({
   className
 }: {
   snapshot: MissionControlSnapshot;
+  accountTargets: AccountLoginTargetView[];
+  accountAccessRules: AccountAccessRuleView[];
   activeWorkspaceId: string | null;
   selectedNodeId: string | null;
   focusedAgentId: string | null;
@@ -102,7 +108,7 @@ export function MissionCanvas({
   onConfigureAgentModel?: (agentId: string) => void;
   onConfigureAgentCapabilities?: (agentId: string, focus: "skills" | "tools") => void;
   onInspectAgentDetail?: (agentId: string, focus: AgentDetailFocus) => void;
-  onOpenWorkspaceChannels?: (workspaceId?: string) => void;
+  onOpenWorkspaceChannels?: (workspaceId?: string, agentId?: string) => void;
   onOpenWorkspaceFiles?: (workspaceId: string) => void;
   onReplyTask: (task: WorkItemRecord) => void;
   onCopyTaskPrompt: (task: WorkItemRecord) => void;
@@ -136,6 +142,8 @@ export function MissionCanvas({
       : "all";
   const initialGraph = buildCanvasGraph(
     snapshot,
+    accountTargets,
+    accountAccessRules,
     relativeTimeReferenceMs,
     activeWorkspaceId,
     focusedAgentId,
@@ -219,6 +227,8 @@ export function MissionCanvas({
   useEffect(() => {
     const nextGraph = buildCanvasGraph(
       snapshot,
+      accountTargets,
+      accountAccessRules,
       relativeTimeReferenceMs,
       activeWorkspaceId,
       focusedAgentId,
@@ -264,6 +274,8 @@ export function MissionCanvas({
     setEdges(nextGraph.edges);
   }, [
     snapshot,
+    accountTargets,
+    accountAccessRules,
     activeWorkspaceId,
     focusedAgentId,
     recentCreatedAgentId,

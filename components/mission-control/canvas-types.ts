@@ -30,6 +30,18 @@ export type AgentSurfaceBadge = {
   surfaceNames?: string[];
 };
 
+export type AgentAccountBadge = {
+  id: string;
+  serviceId: string;
+  serviceName: string;
+  primaryDomain: string;
+  browserProfileName: string;
+  count: number;
+  roleLabel: string;
+  accentColor?: string | null;
+  accountNames?: string[];
+};
+
 export type AgentNodeData = Record<string, unknown> & {
   agent: AgentRecord;
   modelLabel: string;
@@ -42,6 +54,7 @@ export type AgentNodeData = Record<string, unknown> & {
   chatOpen?: boolean;
   relativeTimeReferenceMs: number;
   surfaceBadges?: AgentSurfaceBadge[];
+  accountBadges?: AgentAccountBadge[];
   onMessage?: (agentId: string) => void;
   onEdit?: (agentId: string) => void;
   onDelete?: (agentId: string) => void;
@@ -49,15 +62,15 @@ export type AgentNodeData = Record<string, unknown> & {
   onConfigureModel?: (agentId: string) => void;
   onConfigureCapabilities?: (agentId: string, focus: "skills" | "tools") => void;
   onInspect?: (agentId: string, focus: AgentDetailFocus) => void;
-  onOpenWorkspaceChannels?: (workspaceId?: string) => void;
+  onOpenWorkspaceChannels?: (workspaceId?: string, agentId?: string) => void;
 };
 
 export type SurfaceTetherNodeData = Record<string, unknown> & {
   agent: AgentRecord;
   emphasis: boolean;
-  provider: MissionControlSurfaceProvider;
+  provider?: MissionControlSurfaceProvider;
   label: string;
-  variant?: "surface" | "add";
+  variant?: "surface" | "account" | "add";
   anchorIndex: number;
   anchorCount: number;
   surfaceCount: number;
@@ -65,6 +78,11 @@ export type SurfaceTetherNodeData = Record<string, unknown> & {
   roleLabel: string;
   roleTone: "primary" | "owner" | "delegate" | "mixed";
   accentColor?: string | null;
+  accountId?: string;
+  accountServiceId?: string;
+  accountServiceName?: string;
+  accountPrimaryDomain?: string;
+  accountBrowserProfileName?: string;
   actionLabel?: string;
   onClick?: () => void;
 };

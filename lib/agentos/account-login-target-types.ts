@@ -1,4 +1,4 @@
-export type AccountLoginTargetStatus = "manual_verification_needed";
+export type AccountLoginTargetStatus = "saved_in_browser_profile";
 
 export type AccountLoginTargetView = {
   id: string;
@@ -12,7 +12,7 @@ export type AccountLoginTargetView = {
   browserProfileName: string;
   status: AccountLoginTargetStatus;
   statusLabel: string;
-  statusTone: "warning";
+  statusTone: "success";
   source: "agentos.connect-account";
   createdAt: string;
   updatedAt: string;

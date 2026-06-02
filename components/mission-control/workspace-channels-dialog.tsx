@@ -2,8 +2,9 @@
 
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Link2, Loader2, Plus, RefreshCw, Trash2, UserRound } from "lucide-react";
+import { AlertTriangle, KeyRound, Link2, Loader2, Plus, RefreshCw, Trash2, UserRound } from "lucide-react";
 
+import { AccountIcon } from "@/components/mission-control/account-icon";
 import { SurfaceIcon } from "@/components/mission-control/surface-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,6 +61,14 @@ import type {
   SurfaceBindingRepairResult,
   WorkspaceChannelGroupAssignment
 } from "@/lib/agentos/contracts";
+import type {
+  AccountAccessRuleView,
+  AccountAccessRulesResponse
+} from "@/lib/agentos/account-access-policy-types";
+import type {
+  AccountLoginTargetsResponse,
+  AccountLoginTargetView
+} from "@/lib/agentos/account-login-target-types";
 import { cn } from "@/lib/utils";
 
 type ChannelMutationResult = {
@@ -87,23 +96,34 @@ type GatewayAuthStatusResult = {
 };
 
 const SURFACE_KIND_ORDER: MissionControlSurfaceKind[] = ["chat", "inbox", "trigger"];
+type WorkspaceDialogSection = "surfaces" | "accounts";
 
 export function WorkspaceChannelsDialog({
   snapshot,
   workspaceId,
+  accountTargets = [],
+  accountAccessRules = [],
+  initialAgentId = null,
   open,
   initialProvider = null,
   onOpenChange,
   onRefresh,
-  onSnapshotChange
+  onSnapshotChange,
+  onAccountAccessRulesChange,
+  onAccountTargetsChange
 }: {
   snapshot: MissionControlSnapshot;
   workspaceId: string | null;
+  accountTargets?: AccountLoginTargetView[];
+  accountAccessRules?: AccountAccessRuleView[];
+  initialAgentId?: string | null;
   open: boolean;
   initialProvider?: MissionControlSurfaceProvider | null;
   onOpenChange: (open: boolean) => void;
   onRefresh: () => Promise<void>;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
+  onAccountAccessRulesChange?: (rules: AccountAccessRuleView[]) => void;
+  onAccountTargetsChange?: (targets: AccountLoginTargetView[]) => void;
 }) {
   const workspace = useMemo(
     () => snapshot.workspaces.find((entry) => entry.id === workspaceId) ?? null,
@@ -116,6 +136,14 @@ export function WorkspaceChannelsDialog({
   const workspaceSurfaces = useMemo(
     () => (workspace ? getWorkspaceChannels(snapshot, workspace.id) : []),
     [snapshot, workspace]
+  );
+  const workspaceAccountTargets = useMemo(
+    () => (workspace ? accountTargets.filter((target) => target.workspaceId === workspace.id) : []),
+    [accountTargets, workspace]
+  );
+  const workspaceAccountAccessRules = useMemo(
+    () => (workspace ? accountAccessRules.filter((rule) => rule.workspaceId === workspace.id) : []),
+    [accountAccessRules, workspace]
   );
   const allAccounts = useMemo(() => sortSurfaceAccounts(snapshot.channelAccounts), [snapshot.channelAccounts]);
   const surfaceCatalogEntries = useMemo(
@@ -135,11 +163,13 @@ export function WorkspaceChannelsDialog({
     return SURFACE_KIND_ORDER.filter((kind) => catalogKinds.has(kind));
   }, [surfaceCatalogEntries]);
 
+  const [activeSection, setActiveSection] = useState<WorkspaceDialogSection>("surfaces");
   const [activeKind, setActiveKind] = useState<MissionControlSurfaceKind>("chat");
   const [activeProvider, setActiveProvider] = useState<MissionControlSurfaceProvider>("telegram");
   const [isSaving, setIsSaving] = useState(false);
   const [savingMessage, setSavingMessage] = useState<string | null>(null);
   const [newPrimaryAgentId, setNewPrimaryAgentId] = useState("");
+  const [selectedAccountAgentId, setSelectedAccountAgentId] = useState("");
   const [delegateDraftBySurfaceId, setDelegateDraftBySurfaceId] = useState<Record<string, string>>({});
   const [delegateRouteDraftBySurfaceId, setDelegateRouteDraftBySurfaceId] = useState<Record<string, string>>({});
   const [discoveredRoutesBySurfaceId, setDiscoveredRoutesBySurfaceId] = useState<
@@ -202,6 +232,21 @@ export function WorkspaceChannelsDialog({
         (surface) => surface.id === accountId || surface.id === toLegacySurfaceId(accountId)
       ),
     [providerWorkspaceSurfaces]
+  );
+  const accountRulesByTargetId = useMemo(() => {
+    const rulesByTargetId = new Map<string, AccountAccessRuleView[]>();
+
+    for (const rule of workspaceAccountAccessRules) {
+      const current = rulesByTargetId.get(rule.targetId) ?? [];
+      current.push(rule);
+      rulesByTargetId.set(rule.targetId, current);
+    }
+
+    return rulesByTargetId;
+  }, [workspaceAccountAccessRules]);
+  const selectedAccountAgent = useMemo(
+    () => workspaceAgents.find((agent) => agent.id === selectedAccountAgentId) ?? null,
+    [selectedAccountAgentId, workspaceAgents]
   );
   const resolveAgentDisplayName = useCallback(
     (agentId: string | null | undefined, fallback = "Unset") => {
@@ -361,9 +406,13 @@ export function WorkspaceChannelsDialog({
     }
 
     if (!newPrimaryAgentId) {
-      setNewPrimaryAgentId(workspaceAgents[0]?.id ?? "");
+      setNewPrimaryAgentId(initialAgentId ?? workspaceAgents[0]?.id ?? "");
     }
-  }, [currentCatalogEntry, newPrimaryAgentId, open, workspaceAgents]);
+
+    if (!selectedAccountAgentId || (initialAgentId && selectedAccountAgentId !== initialAgentId)) {
+      setSelectedAccountAgentId(initialAgentId ?? workspaceAgents[0]?.id ?? "");
+    }
+  }, [currentCatalogEntry, initialAgentId, newPrimaryAgentId, open, selectedAccountAgentId, workspaceAgents]);
 
   useEffect(() => {
     setProvisionDraft(buildEmptyProvisionDraft(currentCatalogEntry));
@@ -470,6 +519,27 @@ export function WorkspaceChannelsDialog({
     return result;
   };
 
+  const refreshAccounts = async () => {
+    const workspaceQuery = workspace ? `?workspaceId=${encodeURIComponent(workspace.id)}` : "";
+    const [targetsResponse, rulesResponse] = await Promise.all([
+      fetch(`/api/accounts/login-targets${workspaceQuery}`, { cache: "no-store" }),
+      fetch(`/api/accounts/access-rules${workspaceQuery}`, { cache: "no-store" })
+    ]);
+    const targetsPayload = await targetsResponse.json().catch(() => null) as AccountLoginTargetsResponse | null;
+    const rulesPayload = await rulesResponse.json().catch(() => null) as AccountAccessRulesResponse | null;
+
+    if (!targetsResponse.ok || !targetsPayload?.ok) {
+      throw new Error(targetsPayload?.error ?? "Account targets could not be loaded.");
+    }
+
+    if (!rulesResponse.ok || !rulesPayload?.ok) {
+      throw new Error(rulesPayload?.error ?? "Account access rules could not be loaded.");
+    }
+
+    onAccountTargetsChange?.(mergeAccountTargets(accountTargets, targetsPayload.targets, workspace?.id ?? null));
+    onAccountAccessRulesChange?.(mergeAccountAccessRules(accountAccessRules, rulesPayload.rules, workspace?.id ?? null));
+  };
+
   const applyRegistryUpdate = (result: ChannelMutationResult) => {
     if (!result.registry || !onSnapshotChange) {
       return;
@@ -482,6 +552,63 @@ export function WorkspaceChannelsDialog({
       }
       return next;
     });
+  };
+
+  const updateAgentAccountAccess = async (target: AccountLoginTargetView, linked: boolean) => {
+    if (!workspace || !selectedAccountAgent) {
+      return;
+    }
+
+    beginSaving(linked ? "Removing account access..." : "Adding account access...");
+
+    try {
+      const currentRules = accountRulesByTargetId.get(target.id) ?? [];
+      const nextRules = [
+        ...currentRules
+          .filter((rule) => rule.agentId !== selectedAccountAgent.id)
+          .map((rule) => ({
+            agentId: rule.agentId,
+            agentName: rule.agentName,
+            permission: rule.permission,
+            notes: rule.notes
+          })),
+        ...(linked
+          ? []
+          : [{
+              agentId: selectedAccountAgent.id,
+              agentName: formatAgentDisplayName(selectedAccountAgent),
+              permission: "use_browser_profile" as const,
+              notes: `Granted from Workspace Surfaces for ${target.serviceName}.`
+            }])
+      ];
+      const response = await fetch("/api/accounts/access-rules", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          workspaceId: workspace.id,
+          targetId: target.id,
+          rules: nextRules
+        })
+      });
+      const result = await response.json().catch(() => null) as AccountAccessRulesResponse | null;
+
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error ?? "Account access could not be updated.");
+      }
+
+      onAccountAccessRulesChange?.(mergeAccountAccessRules(accountAccessRules, result.rules, workspace.id));
+      toast.success(linked ? "Account access removed." : "Account access added.", {
+        description: `${formatAgentDisplayName(selectedAccountAgent)} ${linked ? "can no longer use" : "can use"} ${target.serviceName}.`
+      });
+    } catch (error) {
+      toast.error("Account access update failed.", {
+        description: error instanceof Error ? error.message : "Unknown account access error."
+      });
+    } finally {
+      endSaving();
+    }
   };
 
   const resolveSurfaceGatewayRepairAction = async (message: string) => {
@@ -1088,6 +1215,9 @@ export function WorkspaceChannelsDialog({
               <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
                 {allAccounts.length} accounts
               </Badge>
+              <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
+                {workspaceAccountTargets.length} account targets
+              </Badge>
             </div>
           </div>
         </DialogHeader>
@@ -1148,18 +1278,38 @@ export function WorkspaceChannelsDialog({
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
         <div className="grid min-h-0 gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
           <aside className="h-fit rounded-2xl border border-white/10 bg-white/[0.025] p-2.5 sm:sticky sm:top-0">
-            <Tabs value={activeKind} onValueChange={(value) => setActiveKind(value as MissionControlSurfaceKind)}>
-              <TabsList className="grid h-9 w-full grid-cols-3 rounded-xl">
-                {availableKinds.map((kind) => (
-                  <TabsTrigger key={kind} className="h-7 rounded-lg px-2 text-[11px]" value={kind}>
-                    {formatSurfaceKindLabel(kind)}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+            <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/8 bg-black/15 p-1">
+              {(["surfaces", "accounts"] as WorkspaceDialogSection[]).map((section) => (
+                <button
+                  key={section}
+                  type="button"
+                  onClick={() => setActiveSection(section)}
+                  className={cn(
+                    "rounded-lg px-2 py-1.5 text-[11px] font-medium transition-colors",
+                    activeSection === section
+                      ? "bg-cyan-300/14 text-cyan-50"
+                      : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
+                  )}
+                >
+                  {section === "surfaces" ? "Surfaces" : "Accounts"}
+                </button>
+              ))}
+            </div>
 
-            <div className="mt-2.5 space-y-1.5">
-              {providerOptions.map((provider) => {
+            {activeSection === "surfaces" ? (
+              <>
+                <Tabs value={activeKind} onValueChange={(value) => setActiveKind(value as MissionControlSurfaceKind)} className="mt-2.5">
+                  <TabsList className="grid h-9 w-full grid-cols-3 rounded-xl">
+                    {availableKinds.map((kind) => (
+                      <TabsTrigger key={kind} className="h-7 rounded-lg px-2 text-[11px]" value={kind}>
+                        {formatSurfaceKindLabel(kind)}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+
+                <div className="mt-2.5 space-y-1.5">
+                  {providerOptions.map((provider) => {
                 const entry = surfaceCatalogByProvider.get(provider) ?? getSurfaceCatalogEntry(provider);
                 const providerSurfaceCount = workspaceSurfaces.filter((surface) => surface.type === provider).length;
                 const providerAccountCount = allAccounts.filter((account) => account.type === provider).length;
@@ -1195,11 +1345,43 @@ export function WorkspaceChannelsDialog({
                     </Badge>
                   </button>
                 );
-              })}
-            </div>
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="mt-2.5 space-y-2 rounded-xl border border-white/8 bg-white/[0.02] p-2.5">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="h-3.5 w-3.5 text-amber-200" />
+                  <p className="text-xs font-medium text-white">Workspace accounts</p>
+                </div>
+                <p className="text-[11px] leading-4 text-slate-500">
+                  Grant saved browser-profile account targets to workspace agents.
+                </p>
+                <Badge variant="muted" className="h-5 w-fit rounded-full px-2 text-[10px]">
+                  {workspaceAccountTargets.length} available
+                </Badge>
+              </div>
+            )}
           </aside>
 
           <div className="min-w-0 space-y-4">
+            {activeSection === "accounts" ? (
+              <AccountsSurfaceSection
+                workspaceAgents={workspaceAgents}
+                selectedAgentId={selectedAccountAgentId}
+                onSelectedAgentIdChange={setSelectedAccountAgentId}
+                accountTargets={workspaceAccountTargets}
+                accountRulesByTargetId={accountRulesByTargetId}
+                isSaving={isSaving}
+                onToggleAccountAccess={(target, linked) => void updateAgentAccountAccess(target, linked)}
+                onRefreshAccounts={() => void refreshAccounts().catch((error) => {
+                  toast.error("Accounts refresh failed.", {
+                    description: error instanceof Error ? error.message : "Unknown account refresh error."
+                  });
+                })}
+              />
+            ) : (
+              <>
             {workspaceDriftIssues.length > 0 ? (
               <section className="rounded-2xl border border-amber-300/20 bg-amber-400/[0.06] p-3.5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1830,6 +2012,8 @@ export function WorkspaceChannelsDialog({
                 </div>
               </div>
             </section>
+              </>
+            )}
           </div>
         </div>
 
@@ -1977,6 +2161,184 @@ export function WorkspaceChannelsDialog({
   );
 }
 
+function AccountsSurfaceSection({
+  workspaceAgents,
+  selectedAgentId,
+  onSelectedAgentIdChange,
+  accountTargets,
+  accountRulesByTargetId,
+  isSaving,
+  onToggleAccountAccess,
+  onRefreshAccounts
+}: {
+  workspaceAgents: MissionControlSnapshot["agents"];
+  selectedAgentId: string;
+  onSelectedAgentIdChange: (agentId: string) => void;
+  accountTargets: AccountLoginTargetView[];
+  accountRulesByTargetId: Map<string, AccountAccessRuleView[]>;
+  isSaving: boolean;
+  onToggleAccountAccess: (target: AccountLoginTargetView, linked: boolean) => void;
+  onRefreshAccounts: () => void;
+}) {
+  const selectedAgent = workspaceAgents.find((agent) => agent.id === selectedAgentId) ?? null;
+  const selectedAgentCanUseBrowser = selectedAgent ? agentHasBrowserAccess(selectedAgent) : false;
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-3.5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-medium text-white">Accounts</p>
+              <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
+                {accountTargets.length} target{accountTargets.length === 1 ? "" : "s"}
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Attach saved browser-profile account targets to an agent. AgentOS enforces these bindings before account-target task launch.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="h-8 rounded-full px-3 text-[11px] sm:shrink-0"
+            disabled={isSaving}
+            onClick={onRefreshAccounts}
+          >
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        </div>
+
+        <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+            <FormField label="Agent" htmlFor="account-agent">
+              <select
+                id="account-agent"
+                value={selectedAgentId}
+                disabled={isSaving || workspaceAgents.length === 0}
+                onChange={(event) => onSelectedAgentIdChange(event.target.value)}
+                className="flex h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="">Select agent</option>
+                {workspaceAgents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {formatAgentDisplayName(agent)}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            <div className="mt-3 rounded-xl border border-white/8 bg-black/15 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">Browser capability</p>
+              <p className="mt-1 text-xs text-slate-300">
+                {selectedAgent
+                  ? selectedAgentCanUseBrowser
+                    ? "This agent has browser-capable tools."
+                    : "This agent needs browser/chrome tools before it can use account sessions."
+                  : "Select an agent to manage account access."}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-amber-300/15 bg-amber-400/[0.06] p-3">
+            <p className="text-xs font-medium text-amber-50">OpenClaw limitation</p>
+            <p className="mt-1 text-[11px] leading-5 text-amber-100/75">
+              OpenClaw does not expose a direct browser-profile dispatch parameter to AgentOS yet. These bindings are real AgentOS access rules and are shown on the canvas, but task launch still passes the selected profile as account context.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-3.5">
+        <div className="flex items-center justify-between gap-3">
+          <p className="min-w-0 truncate text-sm font-medium text-white">Workspace account targets</p>
+          <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
+            {selectedAgent ? formatAgentDisplayName(selectedAgent) : "No agent"}
+          </Badge>
+        </div>
+
+        {accountTargets.length === 0 ? (
+          <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-3 py-3 text-sm leading-5 text-slate-500">
+            No account targets are connected for this workspace. Use the Accounts page Connect Account flow to open a real OpenClaw browser login target first.
+          </div>
+        ) : (
+          <div className="mt-3 space-y-2.5">
+            {accountTargets.map((target) => {
+              const targetRules = accountRulesByTargetId.get(target.id) ?? [];
+              const linked = targetRules.some(
+                (rule) => rule.agentId === selectedAgentId && rule.permission === "use_browser_profile"
+              );
+              const linkedAgents = targetRules.filter((rule) => rule.permission === "use_browser_profile");
+              const disabledReason = !selectedAgent
+                ? "Select an agent before attaching this account."
+                : !selectedAgentCanUseBrowser
+                  ? "Enable browser/chrome tools for this agent before attaching accounts."
+                  : "";
+
+              return (
+                <div
+                  key={target.id}
+                  className="flex flex-col gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <AccountIcon
+                      serviceId={target.serviceId}
+                      serviceName={target.serviceName}
+                      primaryDomain={target.primaryDomain}
+                      className="h-8 w-8 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-medium text-white">{target.serviceName}</p>
+                        <Badge
+                          variant="muted"
+                          className={cn(
+                            "h-5 rounded-full px-2 text-[10px]",
+                            linked
+                              ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-100"
+                              : "border-white/10 bg-white/[0.04] text-slate-300"
+                          )}
+                        >
+                          {linked ? "Linked to agent" : "Not linked"}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 truncate text-[11px] text-slate-500">
+                        {target.primaryDomain} · profile {target.browserProfileName}
+                      </p>
+                      {linkedAgents.length > 0 ? (
+                        <p className="mt-1 text-[11px] leading-4 text-slate-500">
+                          Linked agents: {formatLinkedAccountAgents(linkedAgents)}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={linked ? "secondary" : "default"}
+                    className="h-8 rounded-full px-3 text-[11px] sm:shrink-0"
+                    disabled={isSaving || Boolean(disabledReason)}
+                    title={disabledReason || (linked ? "Remove this account from the selected agent." : "Attach this account to the selected agent.")}
+                    onClick={() => onToggleAccountAccess(target, linked)}
+                  >
+                    {linked ? "Remove" : (
+                      <>
+                        <Link2 className="mr-1.5 h-3.5 w-3.5" />
+                        Add to agent
+                      </>
+                    )}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function FormField({
   label,
   htmlFor,
@@ -2003,6 +2365,51 @@ function SurfaceMetric({ label, value }: { label: string; value: string }) {
       <p className="mt-1 truncate text-[11px] text-slate-200">{value}</p>
     </div>
   );
+}
+
+function mergeAccountTargets(
+  currentTargets: AccountLoginTargetView[],
+  nextWorkspaceTargets: AccountLoginTargetView[],
+  workspaceId: string | null
+) {
+  if (!workspaceId) {
+    return nextWorkspaceTargets;
+  }
+
+  return [
+    ...currentTargets.filter((target) => target.workspaceId !== workspaceId),
+    ...nextWorkspaceTargets
+  ];
+}
+
+function mergeAccountAccessRules(
+  currentRules: AccountAccessRuleView[],
+  nextWorkspaceRules: AccountAccessRuleView[],
+  workspaceId: string | null
+) {
+  if (!workspaceId) {
+    return nextWorkspaceRules;
+  }
+
+  return [
+    ...currentRules.filter((rule) => rule.workspaceId !== workspaceId),
+    ...nextWorkspaceRules
+  ];
+}
+
+function formatLinkedAccountAgents(rules: AccountAccessRuleView[]) {
+  const labels = rules.map((rule) => rule.agentName).sort((left, right) => left.localeCompare(right));
+
+  if (labels.length <= 3) {
+    return labels.join(", ");
+  }
+
+  return `${labels.slice(0, 3).join(", ")} +${labels.length - 3} more`;
+}
+
+function agentHasBrowserAccess(agent: MissionControlSnapshot["agents"][number]) {
+  const tools = [...(agent.tools ?? []), ...(agent.observedTools ?? [])].map((tool) => tool.toLowerCase());
+  return agent.policy.preset === "browser" || tools.some((tool) => tool === "browser" || tool.includes("chrome"));
 }
 
 function readSurfaceErrorMessage(error: unknown) {

@@ -6,6 +6,7 @@ import {
   listAccountLoginTargets,
   upsertAccountLoginTarget
 } from "@/lib/agentos/application/account-login-target-service";
+import { deleteAccountAccessRulesForTarget } from "@/lib/agentos/application/account-access-policy-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
@@ -68,6 +69,10 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const input = deleteLoginTargetSchema.parse(await request.json());
+    await deleteAccountAccessRulesForTarget({
+      targetId: input.id,
+      workspaceId: input.workspaceId
+    });
     return NextResponse.json(redactSecrets(await deleteAccountLoginTarget(input)));
   } catch (error) {
     return NextResponse.json(

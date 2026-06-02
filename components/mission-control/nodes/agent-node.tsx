@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { Handle, Position, type Node as FlowNode, type NodeProps } from "@xyflow/react";
-import { ChevronDown, LocateFixed, MessageCircle, MoreHorizontal } from "lucide-react";
+import { ChevronDown, LocateFixed, MessageCircle, MoreHorizontal, Plus } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 
+import { AccountIcon } from "@/components/mission-control/account-icon";
 import type { AgentDetailFocus, AgentNodeData } from "@/components/mission-control/canvas-types";
 import {
   AGENT_NODE_ATTENTION_CLASSES,
@@ -25,6 +26,7 @@ import {
   readAgentChatMessages,
   resolveAgentChatUnreadCount
 } from "@/components/mission-control/agent-chat-storage";
+import { SurfaceIcon } from "@/components/mission-control/surface-icon";
 import {
   formatAgentFileAccessLabel,
   formatAgentInstallScopeLabel,
@@ -176,6 +178,21 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   const effectiveSkills = declaredSkills.length > 0 ? declaredSkills : presetMeta.skillIds;
   const effectiveTools = declaredTools.length > 0 ? declaredTools : presetMeta.tools;
   const observedTools = data.agent.observedTools ?? [];
+  const surfaceBadges = data.surfaceBadges ?? [];
+  const accountBadges = data.accountBadges ?? [];
+  const maxVisibleConnectionBadges = 4;
+  const visibleSurfaceBadges = surfaceBadges.slice(0, maxVisibleConnectionBadges);
+  const visibleAccountBadges = accountBadges.slice(
+    0,
+    Math.max(maxVisibleConnectionBadges - visibleSurfaceBadges.length, 0)
+  );
+  const hiddenConnectionBadgeCount = Math.max(
+    surfaceBadges.length +
+      accountBadges.length -
+      visibleSurfaceBadges.length -
+      visibleAccountBadges.length,
+    0
+  );
   const declaredToolCount = effectiveTools.length;
   const observedToolCount = observedTools.length;
   const inspectAgentSection = (focus: AgentDetailFocus) => {
@@ -357,6 +374,62 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               aria-hidden="true"
               className="pointer-events-none absolute -bottom-2 right-5 h-12 w-12 rounded-full bg-cyan-300/14 blur-2xl"
             />
+
+            <div className="absolute left-2 top-2 z-40 flex max-w-[calc(100%-56px)] items-center gap-1.5">
+              <button
+                type="button"
+                aria-label={`Connect surfaces and accounts for ${agentLabel}`}
+                title={`Connect surfaces and accounts for ${agentLabel}`}
+                disabled={!data.onOpenWorkspaceChannels}
+                className={cn(
+                  "nodrag nopan inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-cyan-200/20 bg-slate-950/72 text-cyan-100 shadow-[0_10px_24px_rgba(0,0,0,0.32)] backdrop-blur-xl transition-colors hover:border-cyan-200/36 hover:bg-cyan-300/14 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/35",
+                  !data.onOpenWorkspaceChannels && "cursor-not-allowed opacity-50 hover:border-cyan-200/20 hover:bg-slate-950/72"
+                )}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  data.onOpenWorkspaceChannels?.(data.agent.workspaceId, data.agent.id);
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+
+              {visibleSurfaceBadges.map((surfaceBadge) => (
+                <span
+                  key={`surface:${surfaceBadge.provider}`}
+                  title={surfaceBadge.roleLabel}
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+                >
+                  <SurfaceIcon provider={surfaceBadge.provider} className="h-7 w-7 border-white/12 bg-slate-950/72" />
+                </span>
+              ))}
+
+              {visibleAccountBadges.map((accountBadge) => (
+                <span
+                  key={`account:${accountBadge.id}`}
+                  title={accountBadge.roleLabel}
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+                >
+                  <AccountIcon
+                    serviceId={accountBadge.serviceId}
+                    serviceName={accountBadge.serviceName}
+                    primaryDomain={accountBadge.primaryDomain}
+                    className="h-7 w-7 border-amber-200/18 bg-slate-950/72"
+                  />
+                </span>
+              ))}
+
+              {hiddenConnectionBadgeCount > 0 ? (
+                <span
+                  title={`${hiddenConnectionBadgeCount} more connected surface or account badge${
+                    hiddenConnectionBadgeCount === 1 ? "" : "s"
+                  }`}
+                  className="inline-flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-slate-950/72 px-2 text-[10px] font-semibold text-slate-200 shadow-[0_10px_24px_rgba(0,0,0,0.32)] backdrop-blur-xl"
+                >
+                  +{hiddenConnectionBadgeCount}
+                </span>
+              ) : null}
+            </div>
 
             <div className="absolute inset-x-0 bottom-0 z-30 p-3.5">
               <div className="max-w-[80%]">
