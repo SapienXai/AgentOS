@@ -255,12 +255,19 @@ test("channel provisioning writes stay behind the OpenClaw adapter", () => {
 
 test("surface reconcile dry-run skips OpenClaw config writes and provider side effects", () => {
   const source = readFileSync(path.join(rootDir, "lib/openclaw/application/channel-service.ts"), "utf8");
+  const route = readFileSync(path.join(rootDir, "app/api/workspaces/[workspaceId]/surfaces/reconcile/route.ts"), "utf8");
 
   assert.match(source, /const dryRun = input\.dryRun === true/);
+  assert.match(source, /assertSurfaceReconcilePreviewAuditExists\(confirmedPreviewAuditId\)/);
+  assert.match(source, /writeSurfaceReconcileBackup/);
+  assert.match(source, /surface-reconcile\.backup-write/);
   assert.match(source, /const configMutations = dryRun\s+\?\s+undefined\s+:\s+await measureTiming\([\s\S]*?applySurfaceConfigRepairPatch/);
   assert.match(source, /if \(scope === "all" && !dryRun\)/);
   assert.match(source, /if \(!dryRun\) \{\s+invalidateSnapshotCache\(\);/);
   assert.match(source, /writeSurfaceReconcileAudit/);
+  assert.match(route, /surfaceReconcileApplyConfirmation = "apply-surface-reconcile"/);
+  assert.match(route, /Surface repair apply requires explicit confirmation/);
+  assert.match(route, /Surface repair apply requires a dry-run preview audit id/);
 });
 
 test("settings device access repair stays behind the OpenClaw adapter", () => {

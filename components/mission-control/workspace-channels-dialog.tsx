@@ -884,22 +884,60 @@ export function WorkspaceChannelsDialog({
       return;
     }
 
-    beginSaving("Repairing OpenClaw bindings...");
+    beginSaving("Previewing OpenClaw binding repair...");
 
     try {
+      const previewResponse = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/surfaces/reconcile`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ scope: "workspace", dryRun: true })
+      });
+      const previewResult = (await previewResponse.json()) as SurfaceReconcileResult;
+
+      if (!previewResponse.ok || previewResult.error || !previewResult.repair?.auditId) {
+        throw new Error(previewResult.error || "OpenClaw binding repair preview could not be created.");
+      }
+
+      const preview = previewResult.repair;
+      const confirmed = window.confirm(
+        [
+          "Apply OpenClaw binding repair?",
+          "",
+          `${preview.addedBindingCount} binding${preview.addedBindingCount === 1 ? "" : "s"} will be added.`,
+          `${preview.removedBindingCount} binding${preview.removedBindingCount === 1 ? "" : "s"} will be removed.`,
+          `Preview audit: ${preview.auditId}`,
+          "",
+          "AgentOS will write a redacted backup snapshot before changing OpenClaw config."
+        ].join("\n")
+      );
+
+      if (!confirmed) {
+        toast.info("Binding repair preview created.", {
+          description: `Audit ${preview.auditId} was written without changing OpenClaw config.`
+        });
+        return;
+      }
+
+      beginSaving("Applying OpenClaw binding repair...");
       const response = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/surfaces/reconcile`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ scope: "workspace" })
+        body: JSON.stringify({
+          scope: "workspace",
+          dryRun: false,
+          confirm: "apply-surface-reconcile",
+          previewAuditId: preview.auditId
+        })
       });
       const result = (await response.json()) as SurfaceReconcileResult;
 
       if (!response.ok || result.error) {
         throw new Error(result.error || "OpenClaw bindings could not be reconciled.");
       }
-
       if (result.snapshot && onSnapshotChange) {
         onSnapshotChange(() => result.snapshot!);
       }
@@ -907,7 +945,7 @@ export function WorkspaceChannelsDialog({
       const repair = result.repair;
       toast.success("OpenClaw bindings repaired.", {
         description: repair
-          ? `${repair.addedBindingCount} added, ${repair.removedBindingCount} removed.`
+          ? `${repair.addedBindingCount} added, ${repair.removedBindingCount} removed. Backup ${repair.backupId || "recorded"}.`
           : "Managed bindings were rewritten from the AgentOS registry."
       });
       void onRefresh().catch(() => {});

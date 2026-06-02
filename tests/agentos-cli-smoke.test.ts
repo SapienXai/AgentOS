@@ -43,6 +43,20 @@ test("agentos doctor prints deterministic package, install, node, platform, bund
   assert.match(result.stdout, /Configured env\s+✓ OK\s+AGENTOS_HOST=127\.0\.0\.1, AGENTOS_PORT=3000/);
   assert.match(result.stdout, /OpenClaw\s+⚠ WARNING\s+not found in PATH or default local instal/);
   assert.match(result.stdout, /Gateway\s+– DISABLED\s+OpenClaw is required before Gateway RPC/);
+  assert.doesNotMatch(result.stdout, /Gateway protocol/);
+  assert.doesNotMatch(result.stdout, /Required methods/);
+  assert.doesNotMatch(result.stdout, /Model readiness/);
+});
+
+test("agentos doctor help documents deep compatibility probes", async () => {
+  const fixture = await createCliFixture();
+  const result = runCli(fixture.cliPath, ["doctor", "--help"], {
+    env: createSmokeEnv(fixture.installRoot)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /agentos doctor --deep/);
+  assert.match(result.stdout, /Scope approval warnings/);
 });
 
 test("agentos doctor detects an explicit OpenClaw binary outside PATH", async () => {
@@ -65,7 +79,7 @@ test("agentos doctor detects an explicit OpenClaw binary outside PATH", async ()
 test("agentos doctor reports read-only OpenClaw Gateway compatibility details", async () => {
   const fixture = await createCliFixture();
   const fakeOpenClaw = await writeFakeOpenClawGatewayBinary(fixture.installRoot);
-  const result = runCli(fixture.cliPath, ["doctor"], {
+  const result = runCli(fixture.cliPath, ["doctor", "--deep"], {
     env: {
       ...createSmokeEnv(fixture.installRoot),
       OPENCLAW_BIN: fakeOpenClaw
@@ -76,6 +90,8 @@ test("agentos doctor reports read-only OpenClaw Gateway compatibility details", 
   assert.match(result.stdout, /Gateway protocol\s+✓ OK\s+v4 \(required v4\)/);
   assert.match(result.stdout, /Required methods\s+✓ OK\s+17 required methods advertised/);
   assert.match(result.stdout, /Gateway scopes\s+✓ OK\s+operator scopes approved/);
+  assert.match(result.stdout, /Native auth\s+✓ OK\s+native RPC available/);
+  assert.match(result.stdout, /Model readiness\s+✓ OK\s+models\.list and models\.authStatus readable/);
   assert.match(result.stdout, /Config access\s+✓ OK\s+config\.get readable/);
   assert.match(result.stdout, /Channel status\s+✓ OK\s+channels\.status readable/);
   assert.match(result.stdout, /Fallback count\s+– DISABLED\s+available when AgentOS is running/);
@@ -88,7 +104,7 @@ test("agentos doctor warns when Gateway required method metadata is incomplete",
     methods: ["health", "status"],
     scopes: ["operator.read"]
   });
-  const result = runCli(fixture.cliPath, ["doctor"], {
+  const result = runCli(fixture.cliPath, ["doctor", "--deep"], {
     env: {
       ...createSmokeEnv(fixture.installRoot),
       OPENCLAW_BIN: fakeOpenClaw
@@ -105,7 +121,7 @@ test("agentos doctor redacts Gateway probe failure details", async () => {
   const fakeOpenClaw = await writeFakeOpenClawGatewayBinary(fixture.installRoot, {
     configFailureMessage: "config.get failed token=plain-secret-token"
   });
-  const result = runCli(fixture.cliPath, ["doctor"], {
+  const result = runCli(fixture.cliPath, ["doctor", "--deep"], {
     env: {
       ...createSmokeEnv(fixture.installRoot),
       OPENCLAW_BIN: fakeOpenClaw
@@ -548,6 +564,8 @@ async function writeFakeOpenClawGatewayBinary(
     "  const method = args[2];",
     "  if (method === 'status') { print({ protocolVersion: 4, features: { methods }, auth: { role: 'operator', scopes } }); process.exit(0); }",
     "  if (method === 'health') { print({ ok: true }); process.exit(0); }",
+    "  if (method === 'models.list') { print({ models: [{ id: 'openai/gpt-5.5', ready: true }] }); process.exit(0); }",
+    "  if (method === 'models.authStatus') { print({ providers: [{ provider: 'openai', connected: true }] }); process.exit(0); }",
     "  if (method === 'config.get') { if (configFailureMessage) { console.error(configFailureMessage); process.exit(1); } print({ bindings: [] }); process.exit(0); }",
     "  if (method === 'channels.status') { print({ channels: [] }); process.exit(0); }",
     "}",

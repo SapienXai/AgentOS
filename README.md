@@ -486,6 +486,7 @@ Push a tag in the format below to build platform-specific release assets on GitH
 
 ```bash
 pnpm check:release
+pnpm smoke:agentos-package
 git tag agentos-v0.6.3
 git push origin agentos-v0.6.3
 ```
@@ -518,9 +519,16 @@ If OpenClaw is unavailable when the app starts, AgentOS shows an explicit unavai
 
 ```bash
 pnpm lint
+pnpm typegen
 pnpm typecheck
+pnpm test
 pnpm build
+pnpm check:release
+pnpm smoke:agentos-package
 ```
+
+For a real local release rehearsal, run the clean-install smoke checklist in
+[`docs/agentos-clean-install-smoke-checklist.md`](docs/agentos-clean-install-smoke-checklist.md).
 
 ## Operational Notes
 

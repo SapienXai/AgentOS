@@ -20,7 +20,8 @@ const releaseCheckFiles = [
   "packages/agentos/bin/agentos.js",
   "packages/agentos/scripts/check-release-consistency.mjs",
   "packages/agentos/scripts/prepare-bundle.mjs",
-  "packages/agentos/scripts/run-prepack.mjs"
+  "packages/agentos/scripts/run-prepack.mjs",
+  "packages/agentos/scripts/smoke-package.mjs"
 ];
 
 test("AgentOS release metadata stays consistent", () => {

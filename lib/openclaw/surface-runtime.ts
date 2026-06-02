@@ -475,6 +475,9 @@ export function buildSurfaceBindingRepairResult(input: {
   applied?: boolean;
   auditId?: string;
   auditPath?: string;
+  confirmedPreviewAuditId?: string;
+  backupId?: string;
+  backupPath?: string;
   restorePlan?: SurfaceBindingRepairResult["restorePlan"];
 }): SurfaceBindingRepairResult {
   const previousKeys = new Set(
@@ -498,6 +501,9 @@ export function buildSurfaceBindingRepairResult(input: {
     applied: input.applied ?? input.dryRun !== true,
     ...(input.auditId ? { auditId: input.auditId } : {}),
     ...(input.auditPath ? { auditPath: input.auditPath } : {}),
+    ...(input.confirmedPreviewAuditId ? { confirmedPreviewAuditId: input.confirmedPreviewAuditId } : {}),
+    ...(input.backupId ? { backupId: input.backupId } : {}),
+    ...(input.backupPath ? { backupPath: input.backupPath } : {}),
     ...(input.restorePlan ? { restorePlan: input.restorePlan } : {}),
     expectedBindingCount: buildManagedOpenClawBindings(input.registry, {
       workspaceId: input.scope === "workspace" ? input.workspaceId : null

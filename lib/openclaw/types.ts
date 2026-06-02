@@ -503,6 +503,9 @@ export interface SurfaceBindingRepairResult {
   applied: boolean;
   auditId?: string;
   auditPath?: string;
+  confirmedPreviewAuditId?: string;
+  backupId?: string;
+  backupPath?: string;
   restorePlan?: SurfaceBindingRepairRestorePlan;
   expectedBindingCount: number;
   previousBindingCount: number;
@@ -518,6 +521,9 @@ export interface SurfaceBindingRepairRestorePlan {
   auditId: string;
   createdAt: string;
   configPaths: string[];
+  backupId?: string;
+  backupPath?: string;
+  confirmedPreviewAuditId?: string;
   instructions: string[];
 }
 

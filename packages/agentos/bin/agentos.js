@@ -96,7 +96,12 @@ async function main() {
   }
 
   if (firstArg === "doctor") {
-    await runDoctor();
+    if (args[1] === "--help" || args[1] === "-h" || args[1] === "help") {
+      printDoctorHelp();
+      return;
+    }
+
+    await runDoctor(args.slice(1));
     return;
   }
 
@@ -369,13 +374,14 @@ async function startServer(rawArgs) {
   });
 }
 
-async function runDoctor() {
-  const options = parseStartArgs([]);
+async function runDoctor(rawArgs) {
+  const doctorOptions = parseDoctorArgs(rawArgs);
+  const options = parseStartArgs(doctorOptions.startArgs);
   const openClawCheck = detectOpenClaw();
   const gatewayStatus = openClawCheck.available ? inspectOpenClawGatewayStatus(openClawCheck) : null;
   const browserOpener = detectBrowserOpener();
   const targetUrl = `http://${displayHost(options.host)}:${options.port}`;
-  const compatibility = openClawCheck.available
+  const compatibility = doctorOptions.deep && openClawCheck.available
     ? await inspectOpenClawCompatibility(openClawCheck, gatewayStatus, targetUrl)
     : [];
   const checks = [
@@ -453,6 +459,25 @@ async function runDoctor() {
   if (checks.some((check) => check.state === "failed")) {
     process.exitCode = 1;
   }
+}
+
+function parseDoctorArgs(rawArgs) {
+  const startArgs = [];
+  let deep = false;
+
+  for (const arg of rawArgs) {
+    if (arg === "--deep") {
+      deep = true;
+      continue;
+    }
+
+    startArgs.push(arg);
+  }
+
+  return {
+    deep,
+    startArgs
+  };
 }
 
 function runStatus(rawArgs) {
@@ -819,6 +844,8 @@ async function inspectOpenClawCompatibility(openClawCheck, gatewayStatus, target
   const command = openClawCheck.path || "openclaw";
   const statusProbe = runOpenClawGatewayCall(command, "status");
   const healthProbe = runOpenClawGatewayCall(command, "health");
+  const modelsProbe = runOpenClawGatewayCall(command, "models.list");
+  const modelAuthProbe = runOpenClawGatewayCall(command, "models.authStatus");
   const configProbe = runOpenClawGatewayCall(command, "config.get");
   const channelProbe = runOpenClawGatewayCall(command, "channels.status");
   const agentOsDiagnostics = await readAgentOsDiagnostics(targetUrl);
@@ -843,6 +870,7 @@ async function inspectOpenClawCompatibility(openClawCheck, gatewayStatus, target
   const lastNativeFailure = typeof transport?.lastNativeError === "string" && transport.lastNativeError.trim()
     ? summarizeBootText(transport.lastNativeError)
     : null;
+  const modelReadiness = summarizeModelReadiness(agentOsDiagnostics, modelsProbe, modelAuthProbe);
 
   return [
     {
@@ -871,6 +899,16 @@ async function inspectOpenClawCompatibility(openClawCheck, gatewayStatus, target
           : `missing ${missingScopes.join(", ")}`
     },
     {
+      state: gatewayStatus?.nativeState === "active" ? "ok" : gatewayStatus?.nativeState === "warning" ? "warning" : "disabled",
+      label: "Native auth",
+      detail: gatewayStatus?.nativeMessage || "native Gateway auth metadata unavailable"
+    },
+    {
+      state: modelReadiness.state,
+      label: "Model readiness",
+      detail: modelReadiness.detail
+    },
+    {
       state: configProbe.ok ? "ok" : "warning",
       label: "Config access",
       detail: configProbe.ok ? "config.get readable" : configProbe.message
@@ -897,6 +935,48 @@ async function inspectOpenClawCompatibility(openClawCheck, gatewayStatus, target
         : "available when AgentOS is running"
     }
   ];
+}
+
+function summarizeModelReadiness(agentOsDiagnostics, modelsProbe, modelAuthProbe) {
+  const readiness = isRecord(agentOsDiagnostics.payload?.diagnostics?.modelReadiness)
+    ? agentOsDiagnostics.payload.diagnostics.modelReadiness
+    : null;
+
+  if (readiness) {
+    const availableModelCount = numberOrZero(readiness.availableModelCount);
+    const defaultModel =
+      readString(readiness.resolvedDefaultModel) ||
+      readString(readiness.defaultModel) ||
+      readString(readiness.recommendedModelId);
+    const ready = readiness.ready === true || readiness.defaultModelReady === true || availableModelCount > 0;
+    const issues = Array.isArray(readiness.issues) ? readiness.issues.map(readString).filter(Boolean) : [];
+
+    return {
+      state: ready ? "ok" : "warning",
+      detail: ready
+        ? `${availableModelCount} available model${availableModelCount === 1 ? "" : "s"}${defaultModel ? `; default ${defaultModel}` : ""}`
+        : issues[0] || "model readiness is incomplete"
+    };
+  }
+
+  if (modelsProbe.ok) {
+    return {
+      state: "ok",
+      detail: modelAuthProbe.ok ? "models.list and models.authStatus readable" : "models.list readable; auth status unavailable"
+    };
+  }
+
+  if (agentOsDiagnostics.ok) {
+    return {
+      state: "warning",
+      detail: "model readiness metadata unavailable"
+    };
+  }
+
+  return {
+    state: "disabled",
+    detail: "available when AgentOS is running or models.list is readable"
+  };
 }
 
 function runOpenClawGatewayCall(command, method, params = {}) {
@@ -1604,6 +1684,7 @@ Usage:
   agentos update [--check]
   agentos stop --port 3000 [--force]
   agentos doctor
+  agentos doctor --deep
   agentos uninstall [--yes]
   agentos --version
 
@@ -1617,6 +1698,27 @@ Options:
   status: --host, -H  Host to display when no runtime state exists (default: 127.0.0.1)
   stop:  --port, -p   Port to stop (default: 3000)
   stop:  --force, -f  Send SIGKILL if SIGTERM does not stop the server
+`);
+}
+
+function printDoctorHelp() {
+  console.log(`Show AgentOS install and OpenClaw runtime diagnostics.
+
+Usage:
+  agentos doctor
+  agentos doctor --deep
+  agentos doctor --deep --port 3000 --host 127.0.0.1
+
+Options:
+  --deep       Run read-only OpenClaw compatibility probes for Gateway protocol, native auth, scopes,
+               required methods, config access, channel status, model readiness, fallback count, and
+               last native failure.
+  --port, -p   AgentOS port used when reading /api/diagnostics in deep mode (default: 3000)
+  --host, -H   AgentOS host used when reading /api/diagnostics in deep mode (default: 127.0.0.1)
+
+Notes:
+  Scope approval warnings mean OpenClaw has not approved the operator scopes needed for deep read-only probes.
+  When AgentOS is running, /api/diagnostics adds live fallback, native failure, and model readiness detail.
 `);
 }
 

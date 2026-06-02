@@ -335,10 +335,16 @@ test("surface binding repair result carries dry-run audit and restore metadata w
     applied: false,
     auditId: "surface-reconcile-test",
     auditPath: "/tmp/surface-reconcile-test.json",
+    confirmedPreviewAuditId: "surface-reconcile-preview",
+    backupId: "surface-reconcile-backup-test",
+    backupPath: "/tmp/surface-reconcile-backup-test.json",
     restorePlan: {
       auditId: "surface-reconcile-test",
       createdAt: "2026-06-02T00:00:00.000Z",
       configPaths: ["bindings"],
+      confirmedPreviewAuditId: "surface-reconcile-preview",
+      backupId: "surface-reconcile-backup-test",
+      backupPath: "/tmp/surface-reconcile-backup-test.json",
       instructions: ["Review audit surface-reconcile-test before restoring bindings."]
     },
     drift
@@ -348,8 +354,12 @@ test("surface binding repair result carries dry-run audit and restore metadata w
   assert.equal(result.applied, false);
   assert.equal(result.auditId, "surface-reconcile-test");
   assert.equal(result.auditPath, "/tmp/surface-reconcile-test.json");
+  assert.equal(result.confirmedPreviewAuditId, "surface-reconcile-preview");
+  assert.equal(result.backupId, "surface-reconcile-backup-test");
+  assert.equal(result.backupPath, "/tmp/surface-reconcile-backup-test.json");
   assert.equal(result.configMutations, undefined);
   assert.deepEqual(result.restorePlan?.configPaths, ["bindings"]);
+  assert.equal(result.restorePlan?.backupId, "surface-reconcile-backup-test");
 });
 
 test("detects and removes orphan AgentOS-managed OpenClaw bindings", () => {

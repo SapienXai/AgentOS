@@ -49,6 +49,7 @@ export function checkReleaseConsistency(options = {}) {
   const launcher = readText(context, `${AGENTOS_PACKAGE_DIR}/${AGENTOS_BIN_ENTRY}`);
   const prepareBundle = readText(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`);
   const runPrepack = readText(context, `${AGENTOS_PACKAGE_DIR}/scripts/run-prepack.mjs`);
+  const smokePackage = readText(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`);
 
   if (!rootPackage || !agentosPackage) {
     return buildResult(context, agentosPackage);
@@ -59,7 +60,7 @@ export function checkReleaseConsistency(options = {}) {
   validateLauncher(context, launcher, agentosPackage);
   validateInstallers(context, installSh, installPs1);
   validateReadmes(context, readme, packageReadme, agentosPackage);
-  validateBuildScripts(context, rootPackage, agentosPackage, prepareBundle, runPrepack);
+  validateBuildScripts(context, rootPackage, agentosPackage, prepareBundle, runPrepack, smokePackage);
   validateCiWorkflow(context, ciWorkflow);
   validateReleaseWorkflow(context, workflow, agentosPackage);
 
@@ -207,6 +208,10 @@ function validateReadmes(context, readme, packageReadme, agentosPackage) {
     expectIncludes(context, "README.md", readme, "pnpm add -g @sapienx/agentos");
     expectIncludes(context, "README.md", readme, "npm install -g @sapienx/agentos");
     expectIncludes(context, "README.md", readme, "pnpm check:release");
+    expectIncludes(context, "README.md", readme, "pnpm typegen");
+    expectIncludes(context, "README.md", readme, "pnpm test");
+    expectIncludes(context, "README.md", readme, "pnpm smoke:agentos-package");
+    expectIncludes(context, "README.md", readme, "docs/agentos-clean-install-smoke-checklist.md");
     expectIncludes(context, "README.md", readme, "packages/agentos/package.json");
     expectIncludes(context, "README.md", readme, `Node.js ${REQUIRED_NODE_MAJOR} or newer`);
     expectIncludes(context, "README.md", readme, `- Node.js ${REQUIRED_NODE_MAJOR} or newer`);
@@ -243,7 +248,7 @@ function validateReadmes(context, readme, packageReadme, agentosPackage) {
   }
 }
 
-function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundle, runPrepack) {
+function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundle, runPrepack, smokePackage) {
   expectEqual(
     context,
     "package.json",
@@ -275,6 +280,14 @@ function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundl
   expectEqual(
     context,
     "package.json",
+    "scripts.smoke:agentos-package",
+    rootPackage.scripts?.["smoke:agentos-package"],
+    `node ${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`
+  );
+  expectFileExists(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`);
+  expectEqual(
+    context,
+    "package.json",
     "scripts.publish:agentos",
     rootPackage.scripts?.["publish:agentos"],
     "pnpm check:release && npm publish ./packages/agentos --access public --cache /tmp/agentos-npm-cache"
@@ -294,6 +307,13 @@ function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundl
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/run-prepack.mjs`, runPrepack, 'fs.rmSync(path.join(repoRoot, ".next"),');
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/run-prepack.mjs`, runPrepack, 'resolveNextCliPath(), "build", "--webpack"');
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/run-prepack.mjs`, runPrepack, 'path.join(scriptDir, "prepare-bundle.mjs")');
+  }
+
+  if (smokePackage) {
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "\"pack\"");
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "[\"--version\"]");
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "[\"doctor\", \"--deep\"]");
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "\"bundle\", \"server.js\"");
   }
 
   if (agentosPackage.bin?.agentos !== AGENTOS_BIN_ENTRY) {
@@ -333,6 +353,8 @@ function validateReleaseWorkflow(context, workflow, agentosPackage) {
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm test");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm build");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm check:release");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "Smoke AgentOS CLI package");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "packages/agentos/scripts/smoke-package.mjs --tarball");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "require('./packages/agentos/package.json').version");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "Ensure tag matches package version");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "npm pack ./packages/agentos --pack-destination dist");

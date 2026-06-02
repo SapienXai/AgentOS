@@ -146,6 +146,14 @@ jobs:
           fs.copyFileSync(versionedPath, stablePath);
           EOF
 
+      - name: Smoke AgentOS CLI package
+        shell: bash
+        env:
+          AGENTOS_PLATFORM: ${{ matrix.platform }}
+          AGENTOS_ARCH: ${{ matrix.arch }}
+        run: |
+          node packages/agentos/scripts/smoke-package.mjs --tarball "dist/agentos-${AGENTOS_PLATFORM}-${AGENTOS_ARCH}.tgz"
+
       - name: Create SHA-256 checksums
         shell: bash
         run: |

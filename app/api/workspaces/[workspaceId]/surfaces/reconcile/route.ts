@@ -17,8 +17,11 @@ export const dynamic = "force-dynamic";
 
 const reconcileSchema = z.object({
   scope: z.enum(["workspace", "all"]).optional(),
-  dryRun: z.boolean().optional()
+  dryRun: z.boolean().optional(),
+  confirm: z.string().optional(),
+  previewAuditId: z.string().optional()
 });
+const surfaceReconcileApplyConfirmation = "apply-surface-reconcile";
 
 export async function POST(request: Request, context: { params: Promise<{ workspaceId: string }> }) {
   const timings = createTimingCollector("workspace-surface-reconcile");
@@ -27,17 +30,25 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
     const { workspaceId } = await context.params;
     const body = await request.json().catch(() => ({}));
     const input = await measureTiming(timings, "request.parse", async () => reconcileSchema.parse(body));
+    const dryRun = input.dryRun === true;
+    if (!dryRun && input.confirm !== surfaceReconcileApplyConfirmation) {
+      throw new Error("Surface repair apply requires explicit confirmation.");
+    }
+    if (!dryRun && !input.previewAuditId?.trim()) {
+      throw new Error("Surface repair apply requires a dry-run preview audit id.");
+    }
     const repair = await measureTiming(timings, "surface.reconcile", () =>
       reconcileWorkspaceSurfaceBindings(
         {
           workspaceId,
           scope: input.scope ?? "workspace",
-          dryRun: input.dryRun === true
+          dryRun,
+          confirmedPreviewAuditId: dryRun ? undefined : input.previewAuditId
         },
         timings
       )
     );
-    const snapshot = input.dryRun === true
+    const snapshot = dryRun
       ? null
       : await measureTiming(timings, "snapshot.refresh", () =>
           getMissionControlSnapshot({ force: true, loadProfile: "refresh" })

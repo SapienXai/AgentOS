@@ -271,12 +271,17 @@ export async function reconcileWorkspaceSurfaceBindings(input: {
   workspaceId: string;
   scope?: "workspace" | "all";
   dryRun?: boolean;
+  confirmedPreviewAuditId?: string;
 }, timings?: TimingCollector) {
   const scope = input.scope ?? "workspace";
   const dryRun = input.dryRun === true;
   const workspaceId = normalizeOptionalValue(input.workspaceId) ?? null;
+  const confirmedPreviewAuditId = normalizeOptionalValue(input.confirmedPreviewAuditId) ?? null;
   if (scope === "workspace" && !workspaceId) {
     throw new Error("Workspace id is required.");
+  }
+  if (!dryRun) {
+    await assertSurfaceReconcilePreviewAuditExists(confirmedPreviewAuditId);
   }
 
   const registry = await measureTiming(timings, "surface-reconcile.registry-read", () => readChannelRegistry());
@@ -315,11 +320,32 @@ export async function reconcileWorkspaceSurfaceBindings(input: {
     : [];
   const auditId = createSurfaceReconcileAuditId();
   const auditPath = path.join(missionControlRootPath, "surface-reconcile", `${auditId}.json`);
+  const backupId = dryRun ? null : createSurfaceReconcileBackupId();
+  const backupPath = backupId
+    ? path.join(missionControlRootPath, "surface-reconcile", `${backupId}.json`)
+    : null;
   const restorePlan = buildSurfaceReconcileRestorePlan({
     auditId,
     createdAt: new Date().toISOString(),
-    configPaths: plannedConfigPaths
+    configPaths: plannedConfigPaths,
+    confirmedPreviewAuditId: confirmedPreviewAuditId ?? undefined,
+    backupId: backupId ?? undefined,
+    backupPath: backupPath ?? undefined
   });
+  if (backupId && backupPath) {
+    await writeSurfaceReconcileBackup({
+      backupId,
+      backupPath,
+      auditId,
+      confirmedPreviewAuditId,
+      scope,
+      workspaceId: scope === "workspace" ? workspaceId : null,
+      previousBindings,
+      nextBindings,
+      reconcilePatch,
+      plannedConfigPaths
+    }, timings);
+  }
   const configMutations = dryRun
     ? undefined
     : await measureTiming(timings, "surface-reconcile.config-write", () =>
@@ -360,6 +386,9 @@ export async function reconcileWorkspaceSurfaceBindings(input: {
     applied: !dryRun,
     auditId,
     auditPath,
+    confirmedPreviewAuditId: confirmedPreviewAuditId ?? undefined,
+    backupId: backupId ?? undefined,
+    backupPath: backupPath ?? undefined,
     restorePlan,
     drift
   });
@@ -1044,10 +1073,37 @@ function createSurfaceReconcileAuditId() {
   return `surface-reconcile-${timestamp}-${suffix}`;
 }
 
+function createSurfaceReconcileBackupId() {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `surface-reconcile-backup-${timestamp}-${suffix}`;
+}
+
+async function assertSurfaceReconcilePreviewAuditExists(auditId: string | null) {
+  if (!auditId) {
+    throw new Error("Surface repair requires a dry-run preview audit id before applying changes.");
+  }
+
+  if (!/^surface-reconcile-\d{4}-\d{2}-\d{2}T[0-9-]+Z-[a-z0-9]{6}$/.test(auditId)) {
+    throw new Error("Surface repair preview audit id is invalid.");
+  }
+
+  const previewAuditPath = path.join(missionControlRootPath, "surface-reconcile", `${auditId}.json`);
+
+  try {
+    await access(previewAuditPath);
+  } catch {
+    throw new Error("Surface repair preview audit was not found. Run a dry-run preview before applying repair.");
+  }
+}
+
 function buildSurfaceReconcileRestorePlan(input: {
   auditId: string;
   createdAt: string;
   configPaths: string[];
+  confirmedPreviewAuditId?: string;
+  backupId?: string;
+  backupPath?: string;
 }): SurfaceBindingRepairResult["restorePlan"] {
   const configPaths = Array.from(new Set(input.configPaths)).sort();
 
@@ -1055,12 +1111,71 @@ function buildSurfaceReconcileRestorePlan(input: {
     auditId: input.auditId,
     createdAt: input.createdAt,
     configPaths,
-    instructions: configPaths.length > 0
-      ? configPaths.map((configPath) =>
-          `Review audit ${input.auditId}, verify the previous ${configPath} value, then restore only that OpenClaw config path if rollback is required.`
-        )
-      : [`Review audit ${input.auditId}; no OpenClaw config path changes were planned.`]
+    ...(input.backupId ? { backupId: input.backupId } : {}),
+    ...(input.backupPath ? { backupPath: input.backupPath } : {}),
+    ...(input.confirmedPreviewAuditId ? { confirmedPreviewAuditId: input.confirmedPreviewAuditId } : {}),
+    instructions: buildSurfaceReconcileRestoreInstructions({
+      auditId: input.auditId,
+      configPaths,
+      backupId: input.backupId,
+      backupPath: input.backupPath
+    })
   };
+}
+
+function buildSurfaceReconcileRestoreInstructions(input: {
+  auditId: string;
+  configPaths: string[];
+  backupId?: string;
+  backupPath?: string;
+}) {
+  if (input.configPaths.length === 0) {
+    return [`Review audit ${input.auditId}; no OpenClaw config path changes were planned.`];
+  }
+
+  const backupDetail = input.backupId && input.backupPath
+    ? ` Use backup ${input.backupId} at ${input.backupPath} as the redacted previous-value reference.`
+    : " Run a new dry-run preview before applying a rollback.";
+
+  return input.configPaths.map((configPath) =>
+    `Review audit ${input.auditId}, verify the previous ${configPath} value, then restore only that OpenClaw config path if rollback is required.${backupDetail}`
+  );
+}
+
+async function writeSurfaceReconcileBackup(input: {
+  backupId: string;
+  backupPath: string;
+  auditId: string;
+  confirmedPreviewAuditId: string | null;
+  scope: "workspace" | "all";
+  workspaceId: string | null;
+  previousBindings: unknown[];
+  nextBindings: unknown[];
+  reconcilePatch: OpenClawConfigPatch | null;
+  plannedConfigPaths: string[];
+}, timings?: TimingCollector) {
+  const backup = redactSecrets({
+    id: input.backupId,
+    createdAt: new Date().toISOString(),
+    kind: "surface-reconcile-backup",
+    auditId: input.auditId,
+    confirmedPreviewAuditId: input.confirmedPreviewAuditId,
+    scope: input.scope,
+    workspaceId: input.workspaceId,
+    plannedConfigPaths: input.plannedConfigPaths,
+    previousBindings: input.previousBindings,
+    nextBindings: input.nextBindings,
+    reconcilePatch: input.reconcilePatch,
+    restoreInstructions: input.plannedConfigPaths.length > 0
+      ? input.plannedConfigPaths.map((configPath) =>
+          `Restore only ${configPath} from previousBindings or the matching previous config value after operator review.`
+        )
+      : ["No OpenClaw config path changes were planned."]
+  });
+
+  await measureTiming(timings, "surface-reconcile.backup-write", () =>
+    writeTextFileEnsured(input.backupPath, `${JSON.stringify(backup, null, 2)}\n`)
+  );
 }
 
 async function writeSurfaceReconcileAudit(input: {
@@ -1086,6 +1201,9 @@ async function writeSurfaceReconcileAudit(input: {
     removedBindingCount: input.repair.removedBindingCount,
     plannedConfigPaths: input.plannedConfigPaths,
     configMutations: input.repair.configMutations ?? [],
+    confirmedPreviewAuditId: input.repair.confirmedPreviewAuditId,
+    backupId: input.repair.backupId,
+    backupPath: input.repair.backupPath,
     restorePlan: input.repair.restorePlan,
     previousBindings: input.previousBindings,
     nextBindings: input.nextBindings,
