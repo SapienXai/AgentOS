@@ -62,6 +62,61 @@ test("agentos doctor detects an explicit OpenClaw binary outside PATH", async ()
   );
 });
 
+test("agentos doctor reports read-only OpenClaw Gateway compatibility details", async () => {
+  const fixture = await createCliFixture();
+  const fakeOpenClaw = await writeFakeOpenClawGatewayBinary(fixture.installRoot);
+  const result = runCli(fixture.cliPath, ["doctor"], {
+    env: {
+      ...createSmokeEnv(fixture.installRoot),
+      OPENCLAW_BIN: fakeOpenClaw
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Gateway protocol\s+✓ OK\s+v4 \(required v4\)/);
+  assert.match(result.stdout, /Required methods\s+✓ OK\s+17 required methods advertised/);
+  assert.match(result.stdout, /Gateway scopes\s+✓ OK\s+operator scopes approved/);
+  assert.match(result.stdout, /Config access\s+✓ OK\s+config\.get readable/);
+  assert.match(result.stdout, /Channel status\s+✓ OK\s+channels\.status readable/);
+  assert.match(result.stdout, /Fallback count\s+– DISABLED\s+available when AgentOS is running/);
+  assert.match(result.stdout, /Last native failure\s+– DISABLED\s+available when AgentOS is running/);
+});
+
+test("agentos doctor warns when Gateway required method metadata is incomplete", async () => {
+  const fixture = await createCliFixture();
+  const fakeOpenClaw = await writeFakeOpenClawGatewayBinary(fixture.installRoot, {
+    methods: ["health", "status"],
+    scopes: ["operator.read"]
+  });
+  const result = runCli(fixture.cliPath, ["doctor"], {
+    env: {
+      ...createSmokeEnv(fixture.installRoot),
+      OPENCLAW_BIN: fakeOpenClaw
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Required methods\s+⚠ WARNING\s+missing models\.list/);
+  assert.match(result.stdout, /Gateway scopes\s+⚠ WARNING\s+missing operator\.admin/);
+});
+
+test("agentos doctor redacts Gateway probe failure details", async () => {
+  const fixture = await createCliFixture();
+  const fakeOpenClaw = await writeFakeOpenClawGatewayBinary(fixture.installRoot, {
+    configFailureMessage: "config.get failed token=plain-secret-token"
+  });
+  const result = runCli(fixture.cliPath, ["doctor"], {
+    env: {
+      ...createSmokeEnv(fixture.installRoot),
+      OPENCLAW_BIN: fakeOpenClaw
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Config access\s+⚠ WARNING\s+config\.get failed token=\[redacted\]/);
+  assert.doesNotMatch(result.stdout, /plain-secret-token/);
+});
+
 test("agentos status prints a concise branded runtime dashboard", async () => {
   const fixture = await createCliFixture();
   const result = runCli(fixture.cliPath, ["status"], {
@@ -437,6 +492,76 @@ async function writeFakeOpenClawBinary(installRoot: string) {
   }
 
   await writeFile(binPath, "#!/bin/sh\necho OpenClaw 0.0.0-test\n", "utf8");
+  await chmod(binPath, 0o755);
+  return binPath;
+}
+
+async function writeFakeOpenClawGatewayBinary(
+  installRoot: string,
+  options: { methods?: string[]; scopes?: string[]; configFailureMessage?: string } = {}
+) {
+  const binDir = path.join(installRoot, "fake-openclaw-gateway");
+  const scriptPath = path.join(binDir, "openclaw-gateway.js");
+  const binPath = path.join(binDir, process.platform === "win32" ? "openclaw.cmd" : "openclaw");
+  const methods = options.methods ?? [
+    "health",
+    "status",
+    "models.list",
+    "models.authStatus",
+    "agents.list",
+    "agents.create",
+    "agents.update",
+    "agents.delete",
+    "sessions.list",
+    "chat.send",
+    "config.get",
+    "config.schema",
+    "config.schema.lookup",
+    "config.patch",
+    "config.apply",
+    "channels.status",
+    "logs.tail"
+  ];
+  const scopes = options.scopes ?? [
+    "operator.admin",
+    "operator.read",
+    "operator.write",
+    "operator.approvals",
+    "operator.pairing",
+    "operator.talk.secrets"
+  ];
+
+  await mkdir(binDir, { recursive: true });
+  await writeFile(scriptPath, [
+    "#!/usr/bin/env node",
+    `const methods = ${JSON.stringify(methods)};`,
+    `const scopes = ${JSON.stringify(scopes)};`,
+    `const configFailureMessage = ${JSON.stringify(options.configFailureMessage ?? null)};`,
+    "const args = process.argv.slice(2);",
+    "function print(value) { console.log(JSON.stringify(value)); }",
+    "if (args[0] === '--version') { console.log('OpenClaw 2026.5.28'); process.exit(0); }",
+    "if (args[0] === 'gateway' && args[1] === 'status') {",
+    "  print({ status: 'connected', rpc: { ok: true, protocolVersion: 4, methods, auth: { role: 'operator', scopes } } });",
+    "  process.exit(0);",
+    "}",
+    "if (args[0] === 'gateway' && args[1] === 'call') {",
+    "  const method = args[2];",
+    "  if (method === 'status') { print({ protocolVersion: 4, features: { methods }, auth: { role: 'operator', scopes } }); process.exit(0); }",
+    "  if (method === 'health') { print({ ok: true }); process.exit(0); }",
+    "  if (method === 'config.get') { if (configFailureMessage) { console.error(configFailureMessage); process.exit(1); } print({ bindings: [] }); process.exit(0); }",
+    "  if (method === 'channels.status') { print({ channels: [] }); process.exit(0); }",
+    "}",
+    "console.error(`unexpected openclaw args: ${args.join(' ')}`);",
+    "process.exit(2);"
+  ].join("\n"), "utf8");
+
+  if (process.platform === "win32") {
+    await writeFile(binPath, `@echo off\r\n"${process.execPath}" "${scriptPath}" %*\r\n`, "utf8");
+    return binPath;
+  }
+
+  await chmod(scriptPath, 0o755);
+  await writeFile(binPath, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(scriptPath)} "$@"\n`, "utf8");
   await chmod(binPath, 0o755);
   return binPath;
 }

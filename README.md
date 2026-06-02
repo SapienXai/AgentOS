@@ -387,7 +387,7 @@ Many internal files still use legacy `mission-control` naming.
 
 ### Prerequisites
 
-- A recent Node.js runtime
+- Node.js 24 or newer
 - `pnpm`
 - OpenClaw installed locally and reachable on `PATH`
 

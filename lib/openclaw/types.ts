@@ -499,6 +499,11 @@ export interface SurfaceBindingRepairResult {
   scope: "workspace" | "all";
   workspaceId: string | null;
   checkedAt: string;
+  dryRun: boolean;
+  applied: boolean;
+  auditId?: string;
+  auditPath?: string;
+  restorePlan?: SurfaceBindingRepairRestorePlan;
   expectedBindingCount: number;
   previousBindingCount: number;
   nextBindingCount: number;
@@ -507,6 +512,13 @@ export interface SurfaceBindingRepairResult {
   addedBindingCount: number;
   configMutations?: SurfaceConfigRepairMutation[];
   drift: SurfaceDriftSnapshot;
+}
+
+export interface SurfaceBindingRepairRestorePlan {
+  auditId: string;
+  createdAt: string;
+  configPaths: string[];
+  instructions: string[];
 }
 
 export interface SurfaceConfigRepairMutation {

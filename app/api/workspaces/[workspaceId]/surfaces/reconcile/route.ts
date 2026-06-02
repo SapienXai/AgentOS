@@ -16,7 +16,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const reconcileSchema = z.object({
-  scope: z.enum(["workspace", "all"]).optional()
+  scope: z.enum(["workspace", "all"]).optional(),
+  dryRun: z.boolean().optional()
 });
 
 export async function POST(request: Request, context: { params: Promise<{ workspaceId: string }> }) {
@@ -30,20 +31,23 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
       reconcileWorkspaceSurfaceBindings(
         {
           workspaceId,
-          scope: input.scope ?? "workspace"
+          scope: input.scope ?? "workspace",
+          dryRun: input.dryRun === true
         },
         timings
       )
     );
-    const snapshot = await measureTiming(timings, "snapshot.refresh", () =>
-      getMissionControlSnapshot({ force: true, loadProfile: "refresh" })
-    );
+    const snapshot = input.dryRun === true
+      ? null
+      : await measureTiming(timings, "snapshot.refresh", () =>
+          getMissionControlSnapshot({ force: true, loadProfile: "refresh" })
+        );
     const summary = timings.summary();
     console.info(formatTimingSummary(summary));
 
     return NextResponse.json(redactSecrets({
       repair,
-      snapshot,
+      ...(snapshot ? { snapshot } : {}),
       timings: summary
     }));
   } catch (error) {

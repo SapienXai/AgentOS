@@ -40,15 +40,18 @@ import { writeTextFileEnsured } from "@/lib/openclaw/domains/workspace-bootstrap
 import { normalizeOptionalValue } from "@/lib/openclaw/domains/control-plane-normalization";
 import {
   channelRegistryPath,
+  missionControlRootPath,
   openClawStateRootPath
 } from "@/lib/openclaw/state/paths";
 import { measureTiming, type TimingCollector } from "@/lib/openclaw/timing";
+import { redactSecrets } from "@/lib/security/redaction";
 import type {
   ChannelAccountRecord,
   ChannelRegistry,
   MissionControlSnapshot,
   MissionControlSurfaceProvider,
   PlannerChannelType,
+  SurfaceBindingRepairResult,
   SurfaceConfigRepairMutation,
   WorkspaceChannelGroupAssignment,
   WorkspaceChannelSummary,
@@ -267,8 +270,10 @@ export async function deleteWorkspaceChannelEverywhere(input: {
 export async function reconcileWorkspaceSurfaceBindings(input: {
   workspaceId: string;
   scope?: "workspace" | "all";
+  dryRun?: boolean;
 }, timings?: TimingCollector) {
   const scope = input.scope ?? "workspace";
+  const dryRun = input.dryRun === true;
   const workspaceId = normalizeOptionalValue(input.workspaceId) ?? null;
   if (scope === "workspace" && !workspaceId) {
     throw new Error("Workspace id is required.");
@@ -305,12 +310,23 @@ export async function reconcileWorkspaceSurfaceBindings(input: {
       )
     : { patch: null, defaultAccountId: null };
   const reconcilePatch = mergeConfigPatches({ bindings: nextBindings }, telegramPatchPlan.patch);
+  const plannedConfigPaths = reconcilePatch
+    ? flattenSurfaceConfigRepairPatch(reconcilePatch).map((write) => write.path)
+    : [];
+  const auditId = createSurfaceReconcileAuditId();
+  const auditPath = path.join(missionControlRootPath, "surface-reconcile", `${auditId}.json`);
+  const restorePlan = buildSurfaceReconcileRestorePlan({
+    auditId,
+    createdAt: new Date().toISOString(),
+    configPaths: plannedConfigPaths
+  });
+  const configMutations = dryRun
+    ? undefined
+    : await measureTiming(timings, "surface-reconcile.config-write", () =>
+        applySurfaceConfigRepairPatch(reconcilePatch!, timings)
+      );
 
-  const configMutations = await measureTiming(timings, "surface-reconcile.config-write", () =>
-    applySurfaceConfigRepairPatch(reconcilePatch!, timings)
-  );
-
-  if (scope === "all") {
+  if (scope === "all" && !dryRun) {
     const telegramChannels = managedChannels.filter((channel) => channel.type === "telegram");
     await measureTiming(timings, "surface-reconcile.telegram-settings-side-effects", () =>
       reconcileManagedTelegramSettingsSideEffects(telegramChannels, telegramPatchPlan.defaultAccountId, timings)
@@ -333,16 +349,35 @@ export async function reconcileWorkspaceSurfaceBindings(input: {
     workspaceId: scope === "workspace" ? workspaceId : null
   });
 
-  invalidateSnapshotCache();
-  return buildSurfaceBindingRepairResult({
+  const repair = buildSurfaceBindingRepairResult({
     scope,
     workspaceId: scope === "workspace" ? workspaceId : null,
     registry,
     previousBindings,
     nextBindings,
     configMutations,
+    dryRun,
+    applied: !dryRun,
+    auditId,
+    auditPath,
+    restorePlan,
     drift
   });
+
+  await writeSurfaceReconcileAudit({
+    auditPath,
+    repair,
+    previousBindings,
+    nextBindings,
+    reconcilePatch,
+    plannedConfigPaths
+  }, timings);
+
+  if (!dryRun) {
+    invalidateSnapshotCache();
+  }
+
+  return repair;
 }
 
 export async function setWorkspaceChannelPrimary(input: {
@@ -1001,6 +1036,66 @@ function mergeConfigPatches(...patches: Array<OpenClawConfigPatch | null | undef
   }
 
   return merged;
+}
+
+function createSurfaceReconcileAuditId() {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `surface-reconcile-${timestamp}-${suffix}`;
+}
+
+function buildSurfaceReconcileRestorePlan(input: {
+  auditId: string;
+  createdAt: string;
+  configPaths: string[];
+}): SurfaceBindingRepairResult["restorePlan"] {
+  const configPaths = Array.from(new Set(input.configPaths)).sort();
+
+  return {
+    auditId: input.auditId,
+    createdAt: input.createdAt,
+    configPaths,
+    instructions: configPaths.length > 0
+      ? configPaths.map((configPath) =>
+          `Review audit ${input.auditId}, verify the previous ${configPath} value, then restore only that OpenClaw config path if rollback is required.`
+        )
+      : [`Review audit ${input.auditId}; no OpenClaw config path changes were planned.`]
+  };
+}
+
+async function writeSurfaceReconcileAudit(input: {
+  auditPath: string;
+  repair: SurfaceBindingRepairResult;
+  previousBindings: unknown[];
+  nextBindings: unknown[];
+  reconcilePatch: OpenClawConfigPatch | null;
+  plannedConfigPaths: string[];
+}, timings?: TimingCollector) {
+  const audit = redactSecrets({
+    id: input.repair.auditId,
+    createdAt: input.repair.checkedAt,
+    kind: "surface-reconcile",
+    dryRun: input.repair.dryRun,
+    applied: input.repair.applied,
+    scope: input.repair.scope,
+    workspaceId: input.repair.workspaceId,
+    changed: input.repair.changed,
+    previousBindingCount: input.repair.previousBindingCount,
+    nextBindingCount: input.repair.nextBindingCount,
+    addedBindingCount: input.repair.addedBindingCount,
+    removedBindingCount: input.repair.removedBindingCount,
+    plannedConfigPaths: input.plannedConfigPaths,
+    configMutations: input.repair.configMutations ?? [],
+    restorePlan: input.repair.restorePlan,
+    previousBindings: input.previousBindings,
+    nextBindings: input.nextBindings,
+    reconcilePatch: input.reconcilePatch,
+    drift: input.repair.drift
+  });
+
+  await measureTiming(timings, "surface-reconcile.audit-write", () =>
+    writeTextFileEnsured(input.auditPath, `${JSON.stringify(audit, null, 2)}\n`)
+  );
 }
 
 function deepMergeConfigPatch(left: OpenClawConfigPatch, right: OpenClawConfigPatch): OpenClawConfigPatch {

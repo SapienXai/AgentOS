@@ -30,7 +30,36 @@ const startupGracePeriodMs = 15_000;
 const updateCacheTtlMs = 24 * 60 * 60 * 1000;
 const updateWarningCooldownMs = 24 * 60 * 60 * 1000;
 const updateRequestTimeoutMs = 5_000;
+const openClawGatewayProbeTimeoutMs = 1_500;
 const cliSmokeTestMode = process.env.AGENTOS_CLI_TEST === "1";
+const requiredOpenClawGatewayProtocolVersion = 4;
+const requiredOpenClawGatewayMethods = [
+  "health",
+  "status",
+  "models.list",
+  "models.authStatus",
+  "agents.list",
+  "agents.create",
+  "agents.update",
+  "agents.delete",
+  "sessions.list",
+  "chat.send",
+  "config.get",
+  "config.schema",
+  "config.schema.lookup",
+  "config.patch",
+  "config.apply",
+  "channels.status",
+  "logs.tail"
+];
+const requiredOpenClawOperatorScopes = [
+  "operator.admin",
+  "operator.read",
+  "operator.write",
+  "operator.approvals",
+  "operator.pairing",
+  "operator.talk.secrets"
+];
 const bundleRuntimeEnvFiles = [
   ".env",
   ".env.local",
@@ -67,7 +96,7 @@ async function main() {
   }
 
   if (firstArg === "doctor") {
-    runDoctor();
+    await runDoctor();
     return;
   }
 
@@ -340,12 +369,15 @@ async function startServer(rawArgs) {
   });
 }
 
-function runDoctor() {
+async function runDoctor() {
   const options = parseStartArgs([]);
   const openClawCheck = detectOpenClaw();
   const gatewayStatus = openClawCheck.available ? inspectOpenClawGatewayStatus(openClawCheck) : null;
   const browserOpener = detectBrowserOpener();
   const targetUrl = `http://${displayHost(options.host)}:${options.port}`;
+  const compatibility = openClawCheck.available
+    ? await inspectOpenClawCompatibility(openClawCheck, gatewayStatus, targetUrl)
+    : [];
   const checks = [
     {
       state: "ok",
@@ -398,6 +430,7 @@ function runDoctor() {
         ? "OpenClaw is required before Gateway RPC can be checked"
         : gatewayStatus?.gatewayMessage || "Gateway status unavailable"
     },
+    ...compatibility,
     {
       state: browserOpener.available ? "ok" : "warning",
       label: "Browser opener",
@@ -746,7 +779,7 @@ function inspectOpenClawGatewayStatus(openClawCheck) {
   const command = openClawCheck.path || "openclaw";
   const result = spawnSync(command, ["gateway", "status", "--json"], {
     encoding: "utf8",
-    timeout: 1_500
+    timeout: openClawGatewayProbeTimeoutMs
   });
   const output = `${result.stdout || ""}\n${result.stderr || ""}`.trim();
 
@@ -775,10 +808,158 @@ function inspectOpenClawGatewayStatus(openClawCheck) {
 
   return {
     ok: true,
+    payload: parsed,
     gatewayMessage: connected ? "reachable" : "status available",
     nativeState: missingOperatorScope ? "warning" : "active",
     nativeMessage: missingOperatorScope ? "operator scope needs repair" : "native RPC available"
   };
+}
+
+async function inspectOpenClawCompatibility(openClawCheck, gatewayStatus, targetUrl) {
+  const command = openClawCheck.path || "openclaw";
+  const statusProbe = runOpenClawGatewayCall(command, "status");
+  const healthProbe = runOpenClawGatewayCall(command, "health");
+  const configProbe = runOpenClawGatewayCall(command, "config.get");
+  const channelProbe = runOpenClawGatewayCall(command, "channels.status");
+  const agentOsDiagnostics = await readAgentOsDiagnostics(targetUrl);
+  const payloads = [
+    gatewayStatus?.payload,
+    statusProbe.payload,
+    healthProbe.payload
+  ].filter(Boolean);
+  const protocolVersion = readFirstProtocolVersion(payloads);
+  const supportedMethods = readSupportedMethods(payloads);
+  const scopes = readAuthScopes(payloads);
+  const missingMethods = supportedMethods.length > 0
+    ? requiredOpenClawGatewayMethods.filter((method) => !supportedMethods.includes(method))
+    : [];
+  const missingScopes = scopes.length > 0
+    ? requiredOpenClawOperatorScopes.filter((scope) => !scopes.includes(scope))
+    : [];
+  const transport = isRecord(agentOsDiagnostics.payload?.diagnostics?.transport)
+    ? agentOsDiagnostics.payload.diagnostics.transport
+    : null;
+  const fallbackTotal = Number.isFinite(transport?.fallbackTotal) ? Number(transport.fallbackTotal) : null;
+  const lastNativeFailure = typeof transport?.lastNativeError === "string" && transport.lastNativeError.trim()
+    ? summarizeBootText(transport.lastNativeError)
+    : null;
+
+  return [
+    {
+      state: resolveProtocolState(protocolVersion),
+      label: "Gateway protocol",
+      detail: protocolVersion
+        ? `v${protocolVersion} (required v${requiredOpenClawGatewayProtocolVersion})`
+        : summarizeProbeFailure(statusProbe, gatewayStatus?.gatewayMessage || "protocol metadata unavailable")
+    },
+    {
+      state: supportedMethods.length === 0 ? "warning" : missingMethods.length === 0 ? "ok" : "warning",
+      label: "Required methods",
+      detail: supportedMethods.length === 0
+        ? "method metadata unavailable; compatibility is unknown"
+        : missingMethods.length === 0
+          ? `${requiredOpenClawGatewayMethods.length} required methods advertised`
+          : `missing ${missingMethods.slice(0, 5).join(", ")}${missingMethods.length > 5 ? ` +${missingMethods.length - 5}` : ""}`
+    },
+    {
+      state: scopes.length === 0 ? "warning" : missingScopes.length === 0 ? "ok" : "warning",
+      label: "Gateway scopes",
+      detail: scopes.length === 0
+        ? summarizeProbeFailure(statusProbe, "scope metadata unavailable")
+        : missingScopes.length === 0
+          ? "operator scopes approved"
+          : `missing ${missingScopes.join(", ")}`
+    },
+    {
+      state: configProbe.ok ? "ok" : "warning",
+      label: "Config access",
+      detail: configProbe.ok ? "config.get readable" : configProbe.message
+    },
+    {
+      state: channelProbe.ok ? "ok" : "warning",
+      label: "Channel status",
+      detail: channelProbe.ok ? "channels.status readable" : channelProbe.message
+    },
+    {
+      state: agentOsDiagnostics.ok && fallbackTotal !== null ? "ok" : agentOsDiagnostics.ok ? "warning" : "disabled",
+      label: "Fallback count",
+      detail: agentOsDiagnostics.ok
+        ? fallbackTotal !== null
+          ? `${fallbackTotal} Gateway fallback${fallbackTotal === 1 ? "" : "s"} recorded`
+          : "transport fallback metadata unavailable"
+        : agentOsDiagnostics.message
+    },
+    {
+      state: agentOsDiagnostics.ok ? lastNativeFailure ? "warning" : "ok" : "disabled",
+      label: "Last native failure",
+      detail: agentOsDiagnostics.ok
+        ? lastNativeFailure || "none recorded"
+        : "available when AgentOS is running"
+    }
+  ];
+}
+
+function runOpenClawGatewayCall(command, method, params = {}) {
+  const result = spawnSync(command, ["gateway", "call", method, "--params", JSON.stringify(params), "--json"], {
+    encoding: "utf8",
+    timeout: openClawGatewayProbeTimeoutMs
+  });
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`.trim();
+
+  if (result.error) {
+    return {
+      ok: false,
+      payload: null,
+      message: result.error.code === "ETIMEDOUT" ? `${method} probe timed out` : `${method} probe unavailable`
+    };
+  }
+
+  if (result.status !== 0) {
+    return {
+      ok: false,
+      payload: null,
+      message: summarizeBootText(output) || `${method} probe failed`
+    };
+  }
+
+  return {
+    ok: true,
+    payload: parseFirstJsonObject(output),
+    message: "ok"
+  };
+}
+
+async function readAgentOsDiagnostics(targetUrl) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 800);
+
+  try {
+    const response = await fetch(`${targetUrl}/api/diagnostics`, {
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        payload: null,
+        message: `AgentOS diagnostics returned HTTP ${response.status}`
+      };
+    }
+
+    return {
+      ok: true,
+      payload: await response.json(),
+      message: "ok"
+    };
+  } catch {
+    return {
+      ok: false,
+      payload: null,
+      message: "available when AgentOS is running"
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function completeBootAfterServerReady(boot, startupState, url) {
@@ -914,7 +1095,14 @@ function summarizeBootText(value) {
     return "";
   }
 
-  return value.replace(/\s+/g, " ").trim().slice(0, 96);
+  return redactDiagnosticText(value).replace(/\s+/g, " ").trim().slice(0, 96);
+}
+
+function redactDiagnosticText(value) {
+  return value
+    .replace(/([?&](?:token|password|secret|api[_-]?key)=)[^&\s]+/gi, "$1[redacted]")
+    .replace(/(authorization:\s*bearer\s+)[^\s]+/gi, "$1[redacted]")
+    .replace(/\b(token|password|secret|api[_-]?key)\s*[:=]\s*"?[^"\s,}]+/gi, "$1=[redacted]");
 }
 
 function numberOrZero(value) {
@@ -923,6 +1111,107 @@ function numberOrZero(value) {
 
 function isRecord(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function resolveProtocolState(protocolVersion) {
+  if (!protocolVersion) {
+    return "warning";
+  }
+
+  return Number(protocolVersion) === requiredOpenClawGatewayProtocolVersion ? "ok" : "warning";
+}
+
+function summarizeProbeFailure(probe, fallback) {
+  return probe?.ok ? fallback : probe?.message || fallback;
+}
+
+function readFirstProtocolVersion(payloads) {
+  for (const payload of payloads) {
+    const value =
+      readProperty(payload, "protocolVersion") ??
+      readProperty(payload, "protocol") ??
+      readProperty(readProperty(payload, "gateway"), "protocolVersion") ??
+      readProperty(readProperty(payload, "rpc"), "protocolVersion") ??
+      readProperty(readProperty(payload, "rpc"), "protocol");
+
+    const normalized = readStringOrNumber(value);
+
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+function readSupportedMethods(payloads) {
+  const methods = new Set();
+
+  for (const payload of payloads) {
+    for (const method of [
+      ...readStringArray(readProperty(payload, "methods")),
+      ...readStringArray(readProperty(payload, "supportedMethods")),
+      ...readStringArray(readProperty(readProperty(payload, "rpc"), "methods")),
+      ...readStringArray(readProperty(readProperty(payload, "features"), "methods")),
+      ...readMethodObjects(readProperty(payload, "methods")),
+      ...readMethodObjects(readProperty(readProperty(payload, "rpc"), "methods"))
+    ]) {
+      methods.add(method);
+    }
+  }
+
+  return Array.from(methods).sort();
+}
+
+function readAuthScopes(payloads) {
+  const scopes = new Set();
+
+  for (const payload of payloads) {
+    for (const scope of [
+      ...readStringArray(readProperty(payload, "scopes")),
+      ...readStringArray(readProperty(readProperty(payload, "auth"), "scopes")),
+      ...readStringArray(readProperty(readProperty(payload, "security"), "scopes")),
+      ...readStringArray(readProperty(readProperty(readProperty(payload, "rpc"), "auth"), "scopes"))
+    ]) {
+      scopes.add(scope);
+    }
+  }
+
+  return Array.from(scopes).sort();
+}
+
+function readMethodObjects(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => readString(readProperty(entry, "name")) || readString(readProperty(entry, "method")))
+    .filter(Boolean);
+}
+
+function readStringArray(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map(readString).filter(Boolean);
+}
+
+function readString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readStringOrNumber(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return readString(value);
+}
+
+function readProperty(value, key) {
+  return isRecord(value) ? value[key] : undefined;
 }
 
 function parseStartArgs(rawArgs) {

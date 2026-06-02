@@ -13,6 +13,7 @@ const releaseCheckFiles = [
   "README.md",
   "install.sh",
   "install.ps1",
+  ".github/workflows/ci.yml",
   ".github/workflows/release-agentos.yml",
   "packages/agentos/package.json",
   "packages/agentos/README.md",
@@ -50,6 +51,31 @@ test("AgentOS release check rejects stale README version references", async () =
     result.stderr,
     new RegExp(`README\\.md: release tag example uses ${escapeRegExp(staleVersion)}, expected 9\\.9\\.9`)
   );
+});
+
+test("AgentOS release check rejects missing root Node 24 engine", async () => {
+  const tempRoot = await copyReleaseCheckFixture();
+  const packageJsonPath = path.join(tempRoot, "package.json");
+  const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as { engines?: Record<string, string> };
+  delete packageJson.engines;
+  await writeFile(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`, "utf8");
+
+  const result = runReleaseCheck(tempRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /package\.json: engines\.node is undefined, expected ">=24\.0\.0"/);
+});
+
+test("AgentOS release check rejects vague README Node prerequisites", async () => {
+  const tempRoot = await copyReleaseCheckFixture();
+  const readmePath = path.join(tempRoot, "README.md");
+  const readme = await readFile(readmePath, "utf8");
+  await writeFile(readmePath, readme.replace("- Node.js 24 or newer", "- A recent Node.js runtime"), "utf8");
+
+  const result = runReleaseCheck(tempRoot);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /README\.md: Expected to find "- Node\.js 24 or newer"/);
 });
 
 function runReleaseCheck(repoRoot: string) {

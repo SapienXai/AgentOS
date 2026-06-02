@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "packageManager": "pnpm@10.30.3",
   "scripts": {
     "dev": "next dev",

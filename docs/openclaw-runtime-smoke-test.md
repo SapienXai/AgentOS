@@ -13,6 +13,19 @@ Latest production-readiness validation update: 2026-05-03.
 - A clean run may report `gateway fallback diagnostics` as `PASS` with zero fallback records. Fallback diagnostics are considered a signal to inspect, not a prerequisite for success.
 - Runtime event subscription may be `BLOCKED` when a real Gateway is unavailable, auth is missing, scopes are insufficient, or the installed OpenClaw build does not advertise compatible events.
 
+2026-06-02 post-0.6.1 integration smoke strategy:
+
+- Run the automated quality gates first: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, and `pnpm check:release`.
+- Use Node.js 24 or newer for every local, CI, release, and package-manager smoke run.
+- Install or select OpenClaw `2026.5.28`, start its Gateway on loopback, and verify `openclaw gateway status --json` reports protocol v4, operator auth, and approved operator scopes.
+- Run `agentos doctor` before starting the UI. It should report OpenClaw version, Gateway protocol, required method discovery, scopes, config access, channel status, fallback count, and last native failure. Fallback count and last native failure may be disabled until AgentOS is running.
+- Start AgentOS from the packaged CLI or a clean source checkout, then compare `agentos doctor`, `/api/diagnostics`, and the in-app diagnostics panel for protocol, version, method drift, scopes, fallback count, and last native failure.
+- Run `AGENTOS_SMOKE_BASE_URL=http://localhost:3000 node scripts/openclaw-runtime-smoke.mjs` after the UI is reachable.
+- Exercise a real mission flow: load snapshot, select or create a workspace-backed agent, dispatch a mission, abort one active run, send a direct chat message, refresh `/api/snapshot?force=true`, and confirm runtime cards show source/degraded state without inventing success from sidecar state.
+- Exercise explicit degradation: forced CLI mode, Gateway unavailable, bad token, missing scope approval, and redacted config secret scenarios. CLI fallback must be visible in diagnostics and must not hide unsafe mutations.
+- Exercise surface reconcile safely: run a dry-run preview first, inspect the generated `.mission-control/surface-reconcile/*.json` audit record and restore plan, then apply repair only to managed bindings. Unmanaged OpenClaw bindings must remain untouched.
+- Keep this smoke manual or environment-gated. It should not be a required CI job because it depends on a local OpenClaw Gateway, operator auth, model availability, and external provider credentials.
+
 Environment:
 
 - AgentOS dev server was already running from `pnpm dev` on `http://localhost:3000`.

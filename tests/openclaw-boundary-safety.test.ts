@@ -253,6 +253,16 @@ test("channel provisioning writes stay behind the OpenClaw adapter", () => {
   assert.match(source, /getOpenClawAdapter\(\)\.setupGmailWebhook/);
 });
 
+test("surface reconcile dry-run skips OpenClaw config writes and provider side effects", () => {
+  const source = readFileSync(path.join(rootDir, "lib/openclaw/application/channel-service.ts"), "utf8");
+
+  assert.match(source, /const dryRun = input\.dryRun === true/);
+  assert.match(source, /const configMutations = dryRun\s+\?\s+undefined\s+:\s+await measureTiming\([\s\S]*?applySurfaceConfigRepairPatch/);
+  assert.match(source, /if \(scope === "all" && !dryRun\)/);
+  assert.match(source, /if \(!dryRun\) \{\s+invalidateSnapshotCache\(\);/);
+  assert.match(source, /writeSurfaceReconcileAudit/);
+});
+
 test("settings device access repair stays behind the OpenClaw adapter", () => {
   const source = readFileSync(path.join(rootDir, "lib/openclaw/application/settings-service.ts"), "utf8");
 

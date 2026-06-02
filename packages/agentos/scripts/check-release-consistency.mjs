@@ -44,6 +44,7 @@ export function checkReleaseConsistency(options = {}) {
   const packageReadme = readText(context, `${AGENTOS_PACKAGE_DIR}/README.md`);
   const installSh = readText(context, "install.sh");
   const installPs1 = readText(context, "install.ps1");
+  const ciWorkflow = readText(context, ".github/workflows/ci.yml");
   const workflow = readText(context, ".github/workflows/release-agentos.yml");
   const launcher = readText(context, `${AGENTOS_PACKAGE_DIR}/${AGENTOS_BIN_ENTRY}`);
   const prepareBundle = readText(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`);
@@ -59,6 +60,7 @@ export function checkReleaseConsistency(options = {}) {
   validateInstallers(context, installSh, installPs1);
   validateReadmes(context, readme, packageReadme, agentosPackage);
   validateBuildScripts(context, rootPackage, agentosPackage, prepareBundle, runPrepack);
+  validateCiWorkflow(context, ciWorkflow);
   validateReleaseWorkflow(context, workflow, agentosPackage);
 
   return buildResult(context, agentosPackage);
@@ -85,6 +87,8 @@ function validateRootPackage(context, rootPackage, agentosPackage) {
   if (rootPackage.private !== true) {
     addIssue(context, "package.json", "Root package must remain private because published release metadata lives in packages/agentos/package.json.");
   }
+
+  expectEqual(context, "package.json", "engines.node", rootPackage.engines?.node, REQUIRED_NODE_ENGINE);
 
   if (rootPackage.version !== agentosPackage.version) {
     if (rootPackage.private === true) {
@@ -205,6 +209,7 @@ function validateReadmes(context, readme, packageReadme, agentosPackage) {
     expectIncludes(context, "README.md", readme, "pnpm check:release");
     expectIncludes(context, "README.md", readme, "packages/agentos/package.json");
     expectIncludes(context, "README.md", readme, `Node.js ${REQUIRED_NODE_MAJOR} or newer`);
+    expectIncludes(context, "README.md", readme, `- Node.js ${REQUIRED_NODE_MAJOR} or newer`);
 
     expectVersionReferences(context, "README.md", readme, agentosPackage.version, [
       {
@@ -289,13 +294,36 @@ function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundl
   }
 }
 
+function validateCiWorkflow(context, workflow) {
+  if (!workflow) {
+    return;
+  }
+
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "name: CI");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "pull_request:");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "branches:");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "- main");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, `node-version: ${REQUIRED_NODE_MAJOR}`);
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm install --frozen-lockfile");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm lint");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm typecheck");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm test");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm build");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm check:release");
+}
+
 function validateReleaseWorkflow(context, workflow, agentosPackage) {
   if (!workflow) {
     return;
   }
 
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, '- "agentos-v*"');
-  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, `node ${CHECK_SCRIPT}`);
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm install --frozen-lockfile");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm lint");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm typecheck");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm test");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm build");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm check:release");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "require('./packages/agentos/package.json').version");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "Ensure tag matches package version");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "npm pack ./packages/agentos --pack-destination dist");

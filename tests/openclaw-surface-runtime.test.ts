@@ -306,6 +306,52 @@ test("repairs managed bindings without returning binding secrets", () => {
   assert.equal(JSON.stringify(nextBindings).includes("thread-extra"), false);
 });
 
+test("surface binding repair result carries dry-run audit and restore metadata without config mutations", () => {
+  const registry = createRegistry();
+  const previousBindings = buildManagedOpenClawBindings(registry);
+  const nextBindings = mergeManagedOpenClawBindings({
+    registry,
+    currentBindings: previousBindings,
+    scope: "workspace",
+    workspaceId: "workspace-1"
+  });
+  const drift = buildSurfaceDriftSnapshot({
+    registry,
+    configuredAccounts: [
+      { id: "tg-main", type: "telegram", name: "Telegram Main", enabled: true },
+      { id: "discord-main", type: "discord", name: "Discord Main", enabled: true }
+    ],
+    surfaceRuntime: createConfigOnlySurfaceRuntimeSnapshot([], registry),
+    currentBindings: nextBindings,
+    workspaceId: "workspace-1"
+  });
+  const result = buildSurfaceBindingRepairResult({
+    scope: "workspace",
+    workspaceId: "workspace-1",
+    registry,
+    previousBindings,
+    nextBindings,
+    dryRun: true,
+    applied: false,
+    auditId: "surface-reconcile-test",
+    auditPath: "/tmp/surface-reconcile-test.json",
+    restorePlan: {
+      auditId: "surface-reconcile-test",
+      createdAt: "2026-06-02T00:00:00.000Z",
+      configPaths: ["bindings"],
+      instructions: ["Review audit surface-reconcile-test before restoring bindings."]
+    },
+    drift
+  });
+
+  assert.equal(result.dryRun, true);
+  assert.equal(result.applied, false);
+  assert.equal(result.auditId, "surface-reconcile-test");
+  assert.equal(result.auditPath, "/tmp/surface-reconcile-test.json");
+  assert.equal(result.configMutations, undefined);
+  assert.deepEqual(result.restorePlan?.configPaths, ["bindings"]);
+});
+
 test("detects and removes orphan AgentOS-managed OpenClaw bindings", () => {
   const registry = createRegistry();
   const orphanBinding = {
