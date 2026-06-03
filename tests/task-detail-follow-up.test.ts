@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildTaskDetailFromTaskRecord } from "@/lib/openclaw/domains/task-detail";
+import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
 import type { MissionControlSnapshot, RuntimeRecord, TaskRecord } from "@/lib/openclaw/types";
 
 test("task detail includes follow-up runtimes from the same session context", async () => {
@@ -35,6 +36,100 @@ test("task detail includes follow-up runtimes from the same session context", as
   assert.deepEqual(detail.task.runtimeIds, ["runtime-2", "runtime-1"]);
   assert.deepEqual(detail.task.runIds, ["run-2", "run-1"]);
   assert.equal(detail.task.runtimeCount, 2);
+});
+
+test("task detail links follow-up runtimes by normalized session and continue run id", async () => {
+  const baseRuntime = createRuntime({
+    id: "runtime-base",
+    runId: "dispatch-1",
+    sessionId: "agent:agent-1:explicit:session-raw",
+    subtitle: "Initial task result.",
+    updatedAt: 1000,
+    metadata: {
+      dispatchId: "dispatch-1",
+      mission: "Initial task"
+    }
+  });
+  const followUpChatRuntime = createRuntime({
+    id: "runtime-follow-chat",
+    runId: "dispatch-1:continue:2000",
+    sessionId: "agent:agent-1:explicit:session-raw",
+    status: "running",
+    subtitle: "chat",
+    updatedAt: 2000,
+    metadata: {
+      event: "chat"
+    }
+  });
+  const followUpCompletionRuntime = createRuntime({
+    id: "runtime-follow-complete",
+    runId: "dispatch-1:continue:2000",
+    sessionId: "session-created",
+    status: "completed",
+    subtitle: "sessions.changed",
+    updatedAt: 2100,
+    metadata: {
+      event: "sessions.changed"
+    }
+  });
+  const task = createTask({
+    runtimeIds: [baseRuntime.id],
+    runIds: [baseRuntime.runId!],
+    sessionIds: ["session-raw"],
+    dispatchId: "dispatch-1"
+  });
+  const snapshot = {
+    runtimes: [baseRuntime, followUpChatRuntime, followUpCompletionRuntime],
+    agents: [],
+    tasks: [task],
+    workspaces: []
+  } as unknown as MissionControlSnapshot;
+
+  const detail = await buildTaskDetailFromTaskRecord(task, snapshot, null);
+  const followUps = detail.task.metadata.followUps as Array<{ runId: string; status: string }>;
+
+  assert.deepEqual(
+    detail.runs.map((runtime) => runtime.id),
+    ["runtime-follow-complete", "runtime-follow-chat", "runtime-base"]
+  );
+  assert.equal(followUps.length, 1);
+  assert.equal(followUps[0]?.runId, "dispatch-1:continue:2000");
+  assert.equal(followUps[0]?.status, "completed");
+});
+
+test("task records expose derived follow-ups so card numbers survive refresh", () => {
+  const baseRuntime = createRuntime({
+    id: "runtime-base",
+    runId: "dispatch-1",
+    sessionId: "agent:agent-1:explicit:session-raw",
+    subtitle: "Initial task result.",
+    metadata: {
+      dispatchId: "dispatch-1",
+      mission: "Initial task"
+    }
+  });
+  const followUpRuntime = createRuntime({
+    id: "runtime-follow",
+    runId: "dispatch-1:continue:2000",
+    sessionId: "agent:agent-1:explicit:session-raw",
+    status: "completed",
+    subtitle: "sessions.changed",
+    updatedAt: 2000,
+    metadata: {
+      event: "sessions.changed"
+    }
+  });
+
+  const records = buildTaskRecords([baseRuntime, followUpRuntime], [{
+    id: "agent-1",
+    name: "Agent One"
+  } as never]);
+  const followUps = records[0]?.metadata.followUps as Array<{ runId: string; status: string }> | undefined;
+
+  assert.equal(records.length, 1);
+  assert.equal(followUps?.length, 1);
+  assert.equal(followUps?.[0]?.runId, "dispatch-1:continue:2000");
+  assert.equal(followUps?.[0]?.status, "completed");
 });
 
 function createRuntime(overrides: Partial<RuntimeRecord>): RuntimeRecord {

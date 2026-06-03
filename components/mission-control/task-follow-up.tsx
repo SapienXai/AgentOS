@@ -10,6 +10,7 @@ import {
   buildTaskFollowUpPrompt,
   resolveTaskFollowUpAvailability
 } from "@/lib/openclaw/domains/task-follow-up";
+import type { TaskFollowUpRecord } from "@/lib/openclaw/domains/task-follow-up-records";
 import type { RuntimeCreatedFile, TaskRecord } from "@/lib/openclaw/types";
 import { compactMissionText } from "@/lib/openclaw/presenters";
 import { cn } from "@/lib/utils";
@@ -23,18 +24,7 @@ export type TaskMetricItem = {
   onClick?: () => void;
 };
 
-export type SubmittedTaskFollowUp = {
-  id: string;
-  message: string;
-  prompt: string;
-  createdAt: string;
-  taskId?: string | null;
-  dispatchId?: string | null;
-  runId?: string | null;
-  sessionId?: string | null;
-  status?: string | null;
-  summary?: string | null;
-};
+export type SubmittedTaskFollowUp = TaskFollowUpRecord;
 
 export function formatFollowUpDetail(followUp: SubmittedTaskFollowUp) {
   if (followUp.summary) {

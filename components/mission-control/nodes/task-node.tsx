@@ -57,24 +57,34 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTaskFeed } from "@/hooks/use-task-feed";
 import type { RuntimeOutputRecord, RuntimeRecord, TaskFeedEvent } from "@/lib/agentos/contracts";
+import {
+  mergeTaskFollowUps,
+  readTaskFollowUpsFromMetadata
+} from "@/lib/openclaw/domains/task-follow-up-records";
 import { compactMissionText, formatTokens } from "@/lib/openclaw/presenters";
 import { cn } from "@/lib/utils";
 
 type TaskFlowNode = Node<TaskNodeData, "task">;
+const FOLLOW_UP_STALE_MS = 90_000;
 
 export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [titleExpanded, setTitleExpanded] = useState(false);
-  const [followUps, setFollowUps] = useState<SubmittedTaskFollowUp[]>([]);
+  const [localFollowUps, setLocalFollowUps] = useState<SubmittedTaskFollowUp[]>([]);
   const [activeFollowUpIndex, setActiveFollowUpIndex] = useState<number | null>(null);
+  const basePersistedFollowUps = useMemo(
+    () => readTaskFollowUpsFromMetadata(data.task.metadata),
+    [data.task.metadata]
+  );
   const baseBootstrapStage =
     typeof data.task.metadata.bootstrapStage === "string" ? data.task.metadata.bootstrapStage : null;
   const shouldStreamFeed =
     expanded ||
     selected ||
-    followUps.length > 0 ||
+    localFollowUps.length > 0 ||
+    basePersistedFollowUps.length > 0 ||
     activeFollowUpIndex !== null ||
     Boolean(data.pendingCreation || isPendingTaskBootstrapStage(baseBootstrapStage)) ||
     data.task.status === "running" ||
@@ -108,6 +118,14 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     [mergedFeed]
   );
   const displayTask = mergeLocalTaskReviewMetadata(detail?.task, data.task);
+  const persistedFollowUps = useMemo(
+    () => readTaskFollowUpsFromMetadata(displayTask.metadata),
+    [displayTask.metadata]
+  );
+  const followUps = useMemo(
+    () => mergeTaskFollowUps(localFollowUps, persistedFollowUps),
+    [localFollowUps, persistedFollowUps]
+  );
   const integrity = detail?.integrity ?? null;
   const bootstrapStage =
     typeof displayTask.metadata.bootstrapStage === "string" ? displayTask.metadata.bootstrapStage : null;
@@ -154,8 +172,10 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const bootstrapElapsedLabel = isPendingCreation
     ? formatElapsedFromIso(dispatchSubmittedAt, data.relativeTimeReferenceMs)
     : null;
+  const effectiveActiveFollowUpIndex =
+    activeFollowUpIndex !== null && activeFollowUpIndex < followUps.length ? activeFollowUpIndex : null;
   const activeFollowUp =
-    activeFollowUpIndex !== null ? followUps[activeFollowUpIndex] ?? null : null;
+    effectiveActiveFollowUpIndex !== null ? followUps[effectiveActiveFollowUpIndex] ?? null : null;
   const activeFollowUpRuntimes = activeFollowUp ? resolveFollowUpRuntimes(activeFollowUp, detail?.runs ?? []) : [];
   const activeFollowUpRuntime = resolveRepresentativeFollowUpRuntime(activeFollowUpRuntimes);
   const activeFollowUpOutputs =
@@ -169,7 +189,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       ? createFollowUpOptimisticFeed(activeFollowUp)
       : realDisplayedFeed;
   const activeFollowUpStatus = activeFollowUp
-    ? resolveFollowUpStatus(activeFollowUp, activeFollowUpRuntime, activeFollowUpOutput)
+    ? resolveFollowUpStatus(activeFollowUp, activeFollowUpRuntime, activeFollowUpOutput, activeFollowUpRuntimes)
     : null;
   const toneInput: TaskNodeToneInput = {
     completedNeedsReview,
@@ -201,7 +221,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       ? "needs review"
       : resolveTaskBadgeLabel(bootstrapStage, displayTask.status, isPendingCreation, isAborted, hasRuntimeOutputEvidence);
   const footerLabel = activeFollowUp
-    ? resolveFollowUpFooterLabel(activeFollowUp, activeFollowUpRuntime, activeFollowUpOutput)
+    ? resolveFollowUpFooterLabel(activeFollowUp, activeFollowUpRuntime, activeFollowUpOutput, activeFollowUpRuntimes)
     : visibleReviewStatus
     ? resolveTaskReviewFooterLabel(visibleReviewStatus)
     : stalledWithCapturedOutput
@@ -251,7 +271,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const feedPanelId = `task-feed-${data.task.id}`;
   const visualTone = resolveTaskNodeVisualTone(displayedToneInput);
   const cardCount = 1 + followUps.length;
-  const currentCardNumber = activeFollowUpIndex === null ? 1 : activeFollowUpIndex + 2;
+  const currentCardNumber = effectiveActiveFollowUpIndex === null ? 1 : effectiveActiveFollowUpIndex + 2;
   const nextCardNumber = currentCardNumber >= cardCount ? 1 : currentCardNumber + 1;
   const displayPromptText = activeFollowUp ? activeFollowUp.message : promptText;
   const displayResultTitle = activeFollowUp ? `Follow-up ${currentCardNumber - 1}` : "Latest result";
@@ -259,7 +279,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     ? resolveFollowUpResultText(activeFollowUp, activeFollowUpRuntime, activeFollowUpOutput)
     : resultPreview;
   const activeInspectorContext = activeFollowUp
-    ? buildTaskCardInspectorContext(data.task.id, activeFollowUp, activeFollowUpIndex ?? 0, currentCardNumber)
+    ? buildTaskCardInspectorContext(data.task.id, activeFollowUp, effectiveActiveFollowUpIndex ?? 0, currentCardNumber)
     : null;
   const taskMetrics: TaskMetricItem[] = [
     {
@@ -419,9 +439,9 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                     const nextFollowUpIndex =
                       activeFollowUpIndex === null
                         ? 0
-                        : activeFollowUpIndex + 1 >= followUps.length
+                        : effectiveActiveFollowUpIndex === null || effectiveActiveFollowUpIndex + 1 >= followUps.length
                           ? null
-                          : activeFollowUpIndex + 1;
+                          : effectiveActiveFollowUpIndex + 1;
                     setActiveFollowUpIndex(nextFollowUpIndex);
                     data.onActiveCardChange?.(
                       data.task,
@@ -606,8 +626,8 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
             compact
             className="nodrag nopan mt-4"
             onSubmitted={(followUp) => {
-              setFollowUps((current) => [...current, followUp]);
               const nextIndex = followUps.length;
+              setLocalFollowUps((current) => mergeTaskFollowUps(current, [followUp]));
               setActiveFollowUpIndex(nextIndex);
               data.onActiveCardChange?.(
                 data.task,
@@ -876,7 +896,8 @@ function createFollowUpOptimisticFeed(followUp: SubmittedTaskFollowUp): TaskFeed
 function resolveFollowUpStatus(
   followUp: SubmittedTaskFollowUp,
   runtime: RuntimeRecord | null,
-  output: RuntimeOutputRecord | null | undefined
+  output: RuntimeOutputRecord | null | undefined,
+  runtimes: RuntimeRecord[] = []
 ) {
   const status = normalizeRuntimeStatus(followUp.status);
   if (status && status !== "running") {
@@ -891,11 +912,32 @@ function resolveFollowUpStatus(
     return "completed";
   }
 
-  if (runtime?.status === "stalled" || runtime?.status === "cancelled" || runtime?.status === "queued") {
-    return runtime.status;
+  if (runtimes.some((entry) => entry.status === "cancelled")) {
+    return "cancelled";
+  }
+
+  if (runtimes.some((entry) => entry.status === "stalled")) {
+    return "stalled";
+  }
+
+  if (runtimes.some((entry) => entry.status === "completed")) {
+    return "completed";
+  }
+
+  if (runtime?.status === "queued" || runtimes.some((entry) => entry.status === "queued")) {
+    return "queued";
+  }
+
+  if (runtimes.some((entry) => entry.status === "running") && isFollowUpRuntimeGroupStale(runtimes)) {
+    return "stalled";
   }
 
   return "running";
+}
+
+function isFollowUpRuntimeGroupStale(runtimes: RuntimeRecord[]) {
+  const latestUpdatedAt = Math.max(...runtimes.map((runtime) => timestampNumberToMs(runtime.updatedAt)));
+  return latestUpdatedAt > 0 && Date.now() - latestUpdatedAt > FOLLOW_UP_STALE_MS;
 }
 
 function resolveFollowUpResultText(
@@ -934,9 +976,10 @@ function resolveFollowUpResultText(
 function resolveFollowUpFooterLabel(
   followUp: SubmittedTaskFollowUp,
   runtime: RuntimeRecord | null,
-  output: RuntimeOutputRecord | null | undefined
+  output: RuntimeOutputRecord | null | undefined,
+  runtimes: RuntimeRecord[] = []
 ) {
-  const status = resolveFollowUpStatus(followUp, runtime, output);
+  const status = resolveFollowUpStatus(followUp, runtime, output, runtimes);
 
   switch (status) {
     case "queued":

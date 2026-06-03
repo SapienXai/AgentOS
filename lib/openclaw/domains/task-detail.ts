@@ -26,6 +26,11 @@ import {
 } from "@/lib/openclaw/domains/mission-dispatch-runtime";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import { getRuntimeOutputForResolvedRuntime as getRuntimeOutputForResolvedRuntimeFromTranscript } from "@/lib/openclaw/domains/runtime-transcript";
+import {
+  deriveTaskFollowUpsFromRuntimes,
+  mergeTaskFollowUps,
+  readTaskFollowUpsFromMetadata
+} from "@/lib/openclaw/domains/task-follow-up-records";
 
 export async function buildTaskDetailFromTaskRecord(
   task: TaskRecord,
@@ -85,7 +90,7 @@ async function buildTaskDetailFromResolvedRuns(
     createdFiles,
     warnings
   );
-  const enrichedTask = enrichTaskRecordWithRuntimeOutputs(reconciledTask, outputs, createdFiles, warnings);
+  const enrichedTask = enrichTaskRecordWithRuntimeOutputs(reconciledTask, runs, outputs, createdFiles, warnings);
   const bootstrapFeed = await buildMissionDispatchFeedFromDomain(enrichedTask, dispatchRecord, snapshot);
   const runtimeFeed = buildTaskFeedFromDomain(enrichedTask, runs, outputByRuntimeId, snapshot);
   const integrity = await buildTaskIntegrityRecordFromMissionDispatch({
@@ -110,6 +115,7 @@ async function buildTaskDetailFromResolvedRuns(
 
 function enrichTaskRecordWithRuntimeOutputs(
   task: TaskRecord,
+  runs: RuntimeRecord[],
   outputs: Awaited<ReturnType<typeof getRuntimeOutputForResolvedRuntimeFromTranscript>>[],
   createdFiles: ReturnType<typeof dedupeCreatedFiles>,
   warnings: string[]
@@ -122,6 +128,10 @@ function enrichTaskRecordWithRuntimeOutputs(
     task.subtitle;
   const turnCount = outputs.filter((output) => output.items.length > 0).length;
   const recoveredCompletion = task.status === "stalled" && finalOutput ? isCompletedRuntimeOutput(finalOutput) : false;
+  const followUps = mergeTaskFollowUps(
+    readTaskFollowUpsFromMetadata(task.metadata),
+    deriveTaskFollowUpsFromRuntimes(task, runs, outputs)
+  );
 
   return {
     ...task,
@@ -134,7 +144,8 @@ function enrichTaskRecordWithRuntimeOutputs(
       resultPreview,
       turnCount: turnCount || task.metadata.turnCount,
       finalResponseText: finalText,
-      finalResponseRuntimeId: finalOutput?.runtimeId ?? null
+      finalResponseRuntimeId: finalOutput?.runtimeId ?? null,
+      followUps
     }
   };
 }
@@ -270,7 +281,7 @@ function collectTaskDetailRuns(
 ) {
   const byId = new Map(directRuns.map((runtime) => [runtime.id, runtime]));
   const dispatchId = task.dispatchId?.trim() || null;
-  const sessionIds = new Set(task.sessionIds.map((value) => value.trim()).filter(Boolean));
+  const sessionIds = new Set(task.sessionIds.flatMap((value) => normalizeSessionReferences(value)));
   const runIds = new Set(task.runIds.map((value) => value.trim()).filter(Boolean));
   const agentIds = new Set(task.agentIds.map((value) => value.trim()).filter(Boolean));
   if (task.primaryAgentId) {
@@ -287,7 +298,29 @@ function collectTaskDetailRuns(
     }
   }
 
+  expandTaskRunsByMatchedRunId(byId, allRuntimes);
+
   return [...byId.values()];
+}
+
+function expandTaskRunsByMatchedRunId(byId: Map<string, RuntimeRecord>, allRuntimes: RuntimeRecord[]) {
+  const matchedRunIds = new Set(
+    [...byId.values()]
+      .map((runtime) => runtime.runId?.trim())
+      .filter((value): value is string => Boolean(value))
+  );
+
+  if (matchedRunIds.size === 0) {
+    return;
+  }
+
+  for (const runtime of allRuntimes) {
+    if (byId.has(runtime.id) || !runtime.runId || !matchedRunIds.has(runtime.runId)) {
+      continue;
+    }
+
+    byId.set(runtime.id, runtime);
+  }
 }
 
 function runtimeMatchesTaskContext(
@@ -308,8 +341,8 @@ function runtimeMatchesTaskContext(
     return true;
   }
 
-  const sessionId = runtime.sessionId?.trim();
-  if (!sessionId || !context.sessionIds.has(sessionId)) {
+  const sessionIds = normalizeSessionReferences(runtime.sessionId);
+  if (sessionIds.length === 0 || !sessionIds.some((sessionId) => context.sessionIds.has(sessionId))) {
     return false;
   }
 
@@ -318,6 +351,16 @@ function runtimeMatchesTaskContext(
   }
 
   return Boolean(runtime.agentId && context.agentIds.has(runtime.agentId));
+}
+
+function normalizeSessionReferences(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const match = trimmed.match(/^agent:([^:]+):explicit:(.+)$/);
+  return match ? [trimmed, match[2] ?? ""] : [trimmed];
 }
 
 function readRuntimeMetadataString(runtime: RuntimeRecord, key: string) {

@@ -18,6 +18,10 @@ import {
   type SubmittedTaskFollowUp,
   type TaskMetricItem
 } from "@/components/mission-control/task-follow-up";
+import {
+  mergeTaskFollowUps,
+  readTaskFollowUpsFromMetadata
+} from "@/lib/openclaw/domains/task-follow-up-records";
 
 export function TasksPageContent({
   snapshot,
@@ -307,12 +311,22 @@ function TaskCard({
   const cancelEnabled = canCancelTask(task);
   const resultText = readTaskResultText(task);
   const [titleExpanded, setTitleExpanded] = useState(false);
-  const [followUps, setFollowUps] = useState<SubmittedTaskFollowUp[]>([]);
+  const [localFollowUps, setLocalFollowUps] = useState<SubmittedTaskFollowUp[]>([]);
   const [activeFollowUpIndex, setActiveFollowUpIndex] = useState<number | null>(null);
+  const persistedFollowUps = useMemo(
+    () => (task.source ? readTaskFollowUpsFromMetadata(task.source.metadata) : []),
+    [task.source]
+  );
+  const followUps = useMemo(
+    () => mergeTaskFollowUps(localFollowUps, persistedFollowUps),
+    [localFollowUps, persistedFollowUps]
+  );
+  const effectiveActiveFollowUpIndex =
+    activeFollowUpIndex !== null && activeFollowUpIndex < followUps.length ? activeFollowUpIndex : null;
   const activeFollowUp =
-    activeFollowUpIndex !== null ? followUps[activeFollowUpIndex] ?? null : null;
+    effectiveActiveFollowUpIndex !== null ? followUps[effectiveActiveFollowUpIndex] ?? null : null;
   const cardCount = 1 + followUps.length;
-  const currentCardNumber = activeFollowUpIndex === null ? 1 : activeFollowUpIndex + 2;
+  const currentCardNumber = effectiveActiveFollowUpIndex === null ? 1 : effectiveActiveFollowUpIndex + 2;
   const nextCardNumber = currentCardNumber >= cardCount ? 1 : currentCardNumber + 1;
   const displayTitle = activeFollowUp ? activeFollowUp.message : task.title;
   const displayResultTitle = activeFollowUp ? `Follow-up ${currentCardNumber - 1}` : "Latest result";
@@ -366,9 +380,9 @@ function TaskCard({
                     const nextFollowUpIndex =
                       activeFollowUpIndex === null
                         ? 0
-                        : activeFollowUpIndex + 1 >= followUps.length
+                        : effectiveActiveFollowUpIndex === null || effectiveActiveFollowUpIndex + 1 >= followUps.length
                           ? null
-                          : activeFollowUpIndex + 1;
+                          : effectiveActiveFollowUpIndex + 1;
                     setTitleExpanded(false);
                     setActiveFollowUpIndex(nextFollowUpIndex);
                     onActiveFollowUpChange(nextFollowUpIndex === null ? null : followUps[nextFollowUpIndex] ?? null);
@@ -426,8 +440,8 @@ function TaskCard({
               compact
               className="mt-4"
               onSubmitted={(followUp) => {
-                setFollowUps((current) => [...current, followUp]);
                 setActiveFollowUpIndex(followUps.length);
+                setLocalFollowUps((current) => mergeTaskFollowUps(current, [followUp]));
                 onActiveFollowUpChange(followUp);
                 return onFollowUpComplete();
               }}

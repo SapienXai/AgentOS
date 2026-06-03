@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { compactMissionText, stripMissionRouting } from "@/lib/openclaw/presenters";
 import type { OpenClawAgent, RuntimeCreatedFile, RuntimeRecord, TaskRecord } from "@/lib/openclaw/types";
+import { deriveTaskFollowUpsFromRuntimes } from "@/lib/openclaw/domains/task-follow-up-records";
 
 export function buildTaskRecords(runtimes: RuntimeRecord[], agents: OpenClawAgent[]): TaskRecord[] {
   const taskRuntimes = runtimes.filter((runtime) => !isDirectChatRuntime(runtime));
@@ -17,10 +18,13 @@ export function buildTaskRecords(runtimes: RuntimeRecord[], agents: OpenClawAgen
     groups.set(groupKey, group);
   }
 
-  return Array.from(groups.entries())
+  const tasks = Array.from(groups.entries())
     .map(([groupKey, groupedRuntimes]) =>
       buildTaskRecord(groupKey, groupedRuntimes, agentNameById, agentWorkspaceIdById)
-    )
+    );
+
+  return tasks
+    .map((task) => attachDerivedFollowUps(task, runtimes))
     .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
 }
 
@@ -130,6 +134,21 @@ export function buildTaskRecord(
         typeof primaryRuntime?.metadata.outputDirRelative === "string"
           ? primaryRuntime.metadata.outputDirRelative
           : null
+    }
+  };
+}
+
+function attachDerivedFollowUps(task: TaskRecord, runtimes: RuntimeRecord[]): TaskRecord {
+  const followUps = deriveTaskFollowUpsFromRuntimes(task, runtimes);
+  if (followUps.length === 0) {
+    return task;
+  }
+
+  return {
+    ...task,
+    metadata: {
+      ...task.metadata,
+      followUps
     }
   };
 }
