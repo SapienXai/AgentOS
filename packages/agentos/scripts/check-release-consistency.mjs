@@ -359,6 +359,8 @@ function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundl
   if (smokePackage) {
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "\"pack\"");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "assertPackageTarballContents(packageTarball)");
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "tarballPathForTar(tarballPath)");
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "replace(/^([A-Za-z]):\\//");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "\"package/bin/terminal-boot.js\"");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "[\"--version\"]");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "[\"doctor\", \"--deep\"]");

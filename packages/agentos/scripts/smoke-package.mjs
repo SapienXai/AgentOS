@@ -97,7 +97,7 @@ function installPackage(tarballPath) {
 }
 
 function assertPackageTarballContents(tarballPath) {
-  const result = run(tarCommand(), ["-tzf", tarballPath], {
+  const result = run(tarCommand(), ["-tzf", tarballPathForTar(tarballPath)], {
     cwd: repoRoot
   });
   const entries = new Set(
@@ -200,6 +200,21 @@ function npmCommand() {
 
 function tarCommand() {
   return process.platform === "win32" ? "tar.exe" : "tar";
+}
+
+function tarballPathForTar(tarballPath) {
+  if (process.platform !== "win32") {
+    return tarballPath;
+  }
+
+  const relativePath = path.relative(repoRoot, tarballPath);
+  if (relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)) {
+    return relativePath.split(path.sep).join("/");
+  }
+
+  return tarballPath
+    .replace(/\\/g, "/")
+    .replace(/^([A-Za-z]):\//, (_, drive) => `/${drive.toLowerCase()}/`);
 }
 
 function shouldUseShell(command) {
