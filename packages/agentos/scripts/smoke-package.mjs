@@ -16,6 +16,7 @@ const tarball = resolveTarball(process.argv.slice(2));
 
 try {
   const packageTarball = tarball ?? packPackage();
+  assertPackageTarballContents(packageTarball);
   installPackage(packageTarball);
   const installedPackageRoot = resolveInstalledPackageRoot();
   const installedBin = resolveInstalledBinPath();
@@ -95,6 +96,36 @@ function installPackage(tarballPath) {
   });
 }
 
+function assertPackageTarballContents(tarballPath) {
+  const result = run(tarCommand(), ["-tzf", tarballPath], {
+    cwd: repoRoot
+  });
+  const entries = new Set(
+    result.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim().replace(/^\.\//, ""))
+      .filter(Boolean)
+  );
+  const requiredEntries = [
+    "package/package.json",
+    "package/README.md",
+    "package/bin/agentos.js",
+    "package/bin/terminal-boot.js",
+    "package/bundle/server.js"
+  ];
+  const missingEntries = requiredEntries.filter((entry) => !entries.has(entry));
+
+  if (missingEntries.length > 0) {
+    throw new Error(`Package tarball is missing expected npm files: ${missingEntries.join(", ")}`);
+  }
+
+  for (const forbiddenEntry of ["package/.env", "package/.env.local"]) {
+    if (entries.has(forbiddenEntry)) {
+      throw new Error(`Package tarball must not include source environment file: ${forbiddenEntry}`);
+    }
+  }
+}
+
 function resolveInstalledPackageRoot() {
   const result = run(npmCommand(), ["root", "--global", "--prefix", installPrefix], {
     cwd: repoRoot
@@ -165,6 +196,10 @@ function run(command, args, options = {}) {
 
 function npmCommand() {
   return process.platform === "win32" ? "npm.cmd" : "npm";
+}
+
+function tarCommand() {
+  return process.platform === "win32" ? "tar.exe" : "tar";
 }
 
 function shouldUseShell(command) {

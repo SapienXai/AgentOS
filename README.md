@@ -236,7 +236,7 @@ In practice, that means:
 
 AgentOS is Gateway-first on top of OpenClaw. Use `agentos doctor` and the in-app diagnostics panel to confirm the installed OpenClaw version, Gateway protocol range, native auth state, model readiness, and fallback activity before dispatching real missions.
 
-The 0.6.5 release expects Node.js 24 or newer and the current stable OpenClaw release (`2026.5.28` or newer stable builds with compatible Gateway protocol support). If compatibility is degraded, update OpenClaw, repair Gateway token/device access, restart the Gateway, and re-run `agentos doctor --deep`.
+The 0.6.6 release expects Node.js 24 or newer and the current stable OpenClaw release (`2026.5.28` or newer stable builds with compatible Gateway protocol support). If compatibility is degraded, update OpenClaw, repair Gateway token/device access, restart the Gateway, and re-run `agentos doctor --deep`.
 
 ### Current Compatibility Notes
 
@@ -246,6 +246,10 @@ The 0.6.5 release expects Node.js 24 or newer and the current stable OpenClaw re
 - Surface repair is preview-first. Apply only after reviewing the dry-run audit, backup path, affected config paths, and restore instructions.
 - `agentos doctor --deep` is the release-readiness diagnostic for Gateway protocol, native auth, scopes, required methods, config access, schema/patch support, channel status, model readiness, fallback count, and the last native failure.
 - Package release checks are covered by `pnpm check:release` and `pnpm smoke:agentos-package`; use the clean-install smoke checklist before publishing or announcing a release.
+
+## Security Model
+
+AgentOS is local-first and is intended to bind to loopback by default. Packaged AgentOS generates an API token under the local runtime directory, starts the server with token authentication, and the launcher opens an authenticated local URL. API routes are protected centrally before route handlers run. Remote OpenClaw Gateway URLs are blocked by default unless `AGENTOS_ALLOW_REMOTE_GATEWAY_URL=1` is set explicitly. Sensitive local config/auth files are written with owner-only permissions where applicable. Do not expose AgentOS publicly without your own network controls, access policy, and monitoring.
 
 ## How The System Works
 
@@ -434,13 +438,13 @@ Install a specific published version:
 macOS / Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.6.5 bash
+curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.6.6 bash
 ```
 
 Windows PowerShell:
 
 ```powershell
-$env:AGENTOS_VERSION='0.6.5'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
+$env:AGENTOS_VERSION='0.6.6'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
 ```
 
 Package manager install:
@@ -497,8 +501,8 @@ Push a tag in the format below to build platform-specific release assets on GitH
 ```bash
 pnpm check:release
 pnpm smoke:agentos-package
-git tag agentos-v0.6.5
-git push origin agentos-v0.6.5
+git tag agentos-v0.6.6
+git push origin agentos-v0.6.6
 ```
 
 `packages/agentos/package.json` is the published CLI/package version source. The root package is private and may keep a separate workspace app version.

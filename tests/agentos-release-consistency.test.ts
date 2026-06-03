@@ -11,6 +11,8 @@ const releaseCheckScript = path.join(rootDir, "packages/agentos/scripts/check-re
 const releaseCheckFiles = [
   "package.json",
   "README.md",
+  "SECURITY.md",
+  "docs/agentos-clean-install-smoke-checklist.md",
   "install.sh",
   "install.ps1",
   ".github/workflows/ci.yml",

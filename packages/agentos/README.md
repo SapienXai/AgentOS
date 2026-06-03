@@ -58,6 +58,13 @@ If AgentOS was installed with `pnpm` or `npm`, update commands only print the ma
 
 AgentOS is designed to work with a local OpenClaw installation. If OpenClaw is missing, AgentOS still starts and guides onboarding in the UI.
 
+Security:
+
+- AgentOS is intended to bind locally by default; avoid exposing it publicly without your own network controls.
+- Packaged AgentOS uses API token authentication and opens an authenticated local URL from the launcher.
+- API routes are centrally protected, and remote Gateway URLs are blocked by default unless explicitly allowed with `AGENTOS_ALLOW_REMOTE_GATEWAY_URL=1`.
+- Sensitive local config/auth files are written with owner-only permissions where applicable.
+
 Compatibility:
 
 - Requires Node.js 24 or newer.

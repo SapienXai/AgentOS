@@ -42,6 +42,8 @@ export function checkReleaseConsistency(options = {}) {
   const agentosPackage = readJson(context, AGENTOS_PACKAGE_JSON);
   const readme = readText(context, "README.md");
   const packageReadme = readText(context, `${AGENTOS_PACKAGE_DIR}/README.md`);
+  const security = readText(context, "SECURITY.md");
+  const cleanInstallChecklist = readText(context, "docs/agentos-clean-install-smoke-checklist.md");
   const installSh = readText(context, "install.sh");
   const installPs1 = readText(context, "install.ps1");
   const ciWorkflow = readText(context, ".github/workflows/ci.yml");
@@ -60,6 +62,7 @@ export function checkReleaseConsistency(options = {}) {
   validateLauncher(context, launcher, agentosPackage);
   validateInstallers(context, installSh, installPs1);
   validateReadmes(context, readme, packageReadme, agentosPackage);
+  validateSecurityDocs(context, security, cleanInstallChecklist);
   validateBuildScripts(context, rootPackage, agentosPackage, prepareBundle, runPrepack, smokePackage);
   validateCiWorkflow(context, ciWorkflow);
   validateReleaseWorkflow(context, workflow, agentosPackage);
@@ -264,10 +267,31 @@ function validateReadmes(context, readme, packageReadme, agentosPackage) {
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "pnpm add -g @sapienx/agentos");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "agentos update --check");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, `Node.js ${REQUIRED_NODE_MAJOR} or newer`);
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "Packaged AgentOS uses API token authentication");
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "AGENTOS_ALLOW_REMOTE_GATEWAY_URL=1");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "current stable OpenClaw release (`2026.5.28` or newer stable builds with compatible Gateway protocol support)");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "Gateway-first transport by default, with explicit CLI fallback");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "Account-target browser-profile dispatch is an MVP bridge");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "`requires_approval` rules remain blocked until approval dispatch exists");
+  }
+}
+
+function validateSecurityDocs(context, security, cleanInstallChecklist) {
+  if (security) {
+    expectIncludes(context, "SECURITY.md", security, "Keep it bound to `127.0.0.1`");
+    expectIncludes(context, "SECURITY.md", security, "Packaged AgentOS generates a local API token");
+    expectIncludes(context, "SECURITY.md", security, "protects API routes centrally");
+    expectIncludes(context, "SECURITY.md", security, "AGENTOS_ALLOW_REMOTE_GATEWAY_URL=1");
+    expectIncludes(context, "SECURITY.md", security, "Do not expose AgentOS publicly");
+  }
+
+  if (cleanInstallChecklist) {
+    expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, `Node.js ${REQUIRED_NODE_MAJOR} or newer`);
+    expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "current stable OpenClaw release (`2026.5.28` or newer stable builds with compatible Gateway protocol support)");
+    expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "agentos doctor --deep");
+    expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "physical operator machine");
+    expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "`requires_approval` access rules remain blocked/coming soon until approval dispatch exists");
+    expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "Run the repair preview first");
   }
 }
 
@@ -334,6 +358,8 @@ function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundl
 
   if (smokePackage) {
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "\"pack\"");
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "assertPackageTarballContents(packageTarball)");
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "\"package/bin/terminal-boot.js\"");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "[\"--version\"]");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "[\"doctor\", \"--deep\"]");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "\"bundle\", \"server.js\"");

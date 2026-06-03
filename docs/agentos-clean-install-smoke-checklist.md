@@ -37,6 +37,8 @@ Expected:
 - `agentos doctor` reports package, Node.js, bundle, OpenClaw, and Gateway basics without deep compatibility noise.
 - `agentos doctor --deep` reports Gateway protocol, native auth, scopes, required methods, config access, channel status, model readiness, fallback count, and last native failure.
 - Scope approval warnings are acceptable only when OpenClaw is actually waiting for operator scope approval.
+- The packaged launcher opens an authenticated local URL and does not require source checkout config files.
+- Run this section on a physical operator machine before publishing or announcing a release.
 
 ## Mission Flow
 
