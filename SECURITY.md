@@ -4,7 +4,7 @@
 
 Please do not open public issues for suspected vulnerabilities.
 
-Email private reports to security@sapienx.ai with:
+Email private reports to info@sapienx.app with:
 
 - Affected AgentOS version or commit
 - Reproduction steps and impact
