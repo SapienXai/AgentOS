@@ -577,13 +577,53 @@ export async function materializeWorkspaceSource(params: {
       throw new Error("Repository URL is required when cloning a repo.");
     }
 
+    assertSafeWorkspaceCloneRepoUrl(repoUrl);
     await ensureTargetPathVacant(params.targetDir);
     await mkdir(path.dirname(params.targetDir), { recursive: true });
-    await runSystemCommand("git", ["clone", repoUrl, params.targetDir]);
+    await runSystemCommand("git", ["clone", "--", repoUrl, params.targetDir]);
     return;
   }
 
   await ensureFreshWorkspaceDirectory(params.targetDir);
+}
+
+export function assertSafeWorkspaceCloneRepoUrl(repoUrl: string) {
+  const value = repoUrl.trim();
+
+  if (!value) {
+    throw new Error("Repository URL is required when cloning a repo.");
+  }
+
+  if (value.startsWith("-")) {
+    throw new Error("Repository URL cannot start with a dash.");
+  }
+
+  if (/[\u0000-\u001f\u007f]/.test(value)) {
+    throw new Error("Repository URL cannot contain control characters.");
+  }
+
+  const lowerValue = value.toLowerCase();
+  if (lowerValue.startsWith("ext::") || lowerValue.startsWith("file://")) {
+    throw new Error("Repository URL must use https://, ssh://, git://, or git@host:path syntax.");
+  }
+
+  if (/^https:\/\/[^/\s]+\/\S+$/i.test(value)) {
+    return;
+  }
+
+  if (/^ssh:\/\/[^/\s]+\/\S+$/i.test(value)) {
+    return;
+  }
+
+  if (/^git:\/\/[^/\s]+\/\S+$/i.test(value)) {
+    return;
+  }
+
+  if (/^git@[^:\s]+:[^\s]+$/i.test(value)) {
+    return;
+  }
+
+  throw new Error("Repository URL must use https://, ssh://, git://, or git@host:path syntax.");
 }
 
 export async function scaffoldWorkspaceContents(

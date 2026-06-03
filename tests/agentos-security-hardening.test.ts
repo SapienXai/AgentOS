@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
+import { evaluateAgentOsApiRequest } from "@/lib/security/api-auth";
 import { evaluateLocalOperatorRequest } from "@/lib/security/local-operator";
 import { REDACTED_SECRET_VALUE, redactSecrets } from "@/lib/security/redaction";
+import { assertExecutableOpenClawBinary } from "@/lib/openclaw/binary-selection";
+import { saveGatewayNativeAuthCredential } from "@/lib/openclaw/application/settings-service";
 import { writeWorkspaceManagedFileForPath } from "@/lib/openclaw/application/workspace-file-service";
+import { normalizeGatewayRemoteUrl } from "@/lib/openclaw/domains/control-plane-settings";
+import { assertSafeWorkspaceCloneRepoUrl } from "@/lib/openclaw/domains/workspace-bootstrap";
 import { sanitizeOpenClawCommandArgsForDiagnostics } from "@/lib/openclaw/cli";
 import { isOpenClawTerminalCommand } from "@/lib/openclaw/terminal-command";
 
@@ -79,6 +84,54 @@ test("safe read requests are not blocked by the local operator guard", () => {
   });
 
   assert.deepEqual(decision, { ok: true });
+});
+
+test("API auth blocks safe reads when a bearer token is configured", () => {
+  const missing = evaluateAgentOsApiRequest({
+    method: "GET",
+    url: "http://localhost:3000/api/snapshot",
+    headers: new Headers({
+      host: "localhost:3000"
+    }),
+    env: {
+      AGENTOS_API_TOKEN: "local-secret",
+      NODE_ENV: "production"
+    }
+  });
+
+  assert.equal(missing.ok, false);
+  assert.equal(missing.ok ? null : missing.status, 401);
+
+  const authorized = evaluateAgentOsApiRequest({
+    method: "GET",
+    url: "http://localhost:3000/api/snapshot",
+    headers: new Headers({
+      authorization: "Bearer local-secret",
+      host: "localhost:3000"
+    }),
+    env: {
+      AGENTOS_API_TOKEN: "local-secret",
+      NODE_ENV: "production"
+    }
+  });
+
+  assert.deepEqual(authorized, { ok: true });
+});
+
+test("API auth development fallback blocks non-local read routes", () => {
+  const decision = evaluateAgentOsApiRequest({
+    method: "GET",
+    url: "https://agentos.example.com/api/snapshot",
+    headers: new Headers({
+      host: "agentos.example.com"
+    }),
+    env: {
+      NODE_ENV: "development"
+    }
+  });
+
+  assert.equal(decision.ok, false);
+  assert.equal(decision.ok ? null : decision.code, "unsafe-local-api");
 });
 
 test("forwarded non-local clients cannot use mutation APIs", () => {
@@ -169,11 +222,86 @@ test("workspace managed file writes reject symlink parent escapes", async () => 
   await assert.rejects(() => readFile(path.join(outsidePath, "notes.md"), "utf8"), /ENOENT/);
 });
 
+test("workspace clone URLs reject git transport and argument injection forms", () => {
+  assert.doesNotThrow(() => assertSafeWorkspaceCloneRepoUrl("https://github.com/SapienXai/AgentOS.git"));
+  assert.doesNotThrow(() => assertSafeWorkspaceCloneRepoUrl("ssh://git@github.com/SapienXai/AgentOS.git"));
+  assert.doesNotThrow(() => assertSafeWorkspaceCloneRepoUrl("git@github.com:SapienXai/AgentOS.git"));
+
+  assert.throws(() => assertSafeWorkspaceCloneRepoUrl("ext::sh -c touch /tmp/agentos-pwned"), /https/);
+  assert.throws(() => assertSafeWorkspaceCloneRepoUrl("file:///tmp/repo"), /https/);
+  assert.throws(() => assertSafeWorkspaceCloneRepoUrl("--upload-pack=/tmp/evil"), /dash/);
+});
+
+test("workspace clone command separates git options from repository URL", () => {
+  const source = readProjectFile("lib/openclaw/domains/workspace-bootstrap.ts");
+
+  assert.match(source, /runSystemCommand\("git", \["clone", "--", repoUrl, params\.targetDir\]\)/);
+});
+
+test("OpenClaw binary selection rejects non-OpenClaw executable names", async () => {
+  await assert.rejects(() => assertExecutableOpenClawBinary("/bin/sh"), /named openclaw/);
+});
+
+test("gateway remote URL defaults to loopback targets only", () => {
+  const previous = process.env.AGENTOS_ALLOW_REMOTE_GATEWAY_URL;
+
+  try {
+    delete process.env.AGENTOS_ALLOW_REMOTE_GATEWAY_URL;
+    assert.equal(normalizeGatewayRemoteUrl("127.0.0.1:18789"), "ws://127.0.0.1:18789");
+    assert.equal(normalizeGatewayRemoteUrl("ws://localhost:18789/"), "ws://localhost:18789");
+    assert.throws(() => normalizeGatewayRemoteUrl("ws://example.com:18789"), /localhost/);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.AGENTOS_ALLOW_REMOTE_GATEWAY_URL;
+    } else {
+      process.env.AGENTOS_ALLOW_REMOTE_GATEWAY_URL = previous;
+    }
+  }
+});
+
+test("source gateway credential files are written owner-only", async () => {
+  const cwd = await makeWorkspace("agentos-gateway-credential-");
+  const previousToken = process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
+  const previousPassword = process.env.AGENTOS_OPENCLAW_GATEWAY_PASSWORD;
+
+  try {
+    await saveGatewayNativeAuthCredential({
+      kind: "token",
+      value: "local-test-token",
+      cwd
+    });
+
+    const mode = (await stat(path.join(cwd, ".env.local"))).mode & 0o777;
+    assert.equal(mode, 0o600);
+  } finally {
+    if (previousToken === undefined) {
+      delete process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
+    } else {
+      process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = previousToken;
+    }
+
+    if (previousPassword === undefined) {
+      delete process.env.AGENTOS_OPENCLAW_GATEWAY_PASSWORD;
+    } else {
+      process.env.AGENTOS_OPENCLAW_GATEWAY_PASSWORD = previousPassword;
+    }
+  }
+});
+
 test("API middleware centrally covers mutation routes including Gateway auth", () => {
   const middlewareSource = readProjectFile("proxy.ts");
 
   assert.match(middlewareSource, /matcher:\s*\["\/api\/:path\*"\]/);
-  assert.match(middlewareSource, /evaluateLocalOperatorRequest/);
+  assert.match(middlewareSource, /evaluateAgentOsApiRequest/);
+});
+
+test("packaged launcher provisions API tokens outside source config", () => {
+  const launcherSource = readProjectFile("packages/agentos/bin/agentos.js");
+
+  assert.match(launcherSource, /const apiTokenPath = path\.join\(runtimeInstallRoot, "api-token"\)/);
+  assert.match(launcherSource, /AGENTOS_API_TOKEN: apiToken/);
+  assert.match(launcherSource, /mode: 0o600/);
+  assert.match(launcherSource, /agentos_token/);
 });
 
 test("OpenClaw CLI execution keeps argument-array spawn boundaries", () => {

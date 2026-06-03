@@ -16,9 +16,10 @@ export function evaluateLocalOperatorRequest(input: {
   method: string;
   url: string;
   headers: Headers;
+  allowSafeMethods?: boolean;
 }): LocalOperatorGuardDecision {
   const method = input.method.toUpperCase();
-  if (SAFE_API_METHODS.has(method)) {
+  if (input.allowSafeMethods !== false && SAFE_API_METHODS.has(method)) {
     return { ok: true };
   }
 

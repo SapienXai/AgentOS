@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import os from "node:os";
 import path from "node:path";
@@ -22,6 +22,7 @@ const defaultInstallRoot = path.join(os.homedir(), ".agentos");
 const defaultBinDir = path.join(os.homedir(), ".local", "bin");
 const runtimeInstallRoot = resolveRuntimeInstallRoot();
 const runtimeStateDir = path.join(runtimeInstallRoot, "run");
+const apiTokenPath = path.join(runtimeInstallRoot, "api-token");
 const updateCacheDir = path.join(runtimeInstallRoot, "cache");
 const updateCachePath = path.join(updateCacheDir, "update-check.json");
 const stopPollIntervalMs = 100;
@@ -162,7 +163,9 @@ async function startServer(rawArgs) {
   const trackedState = readRuntimeState(runtimeStatePath);
   const openClawCheck = detectOpenClaw();
   const browserOpener = detectBrowserOpener();
+  const apiToken = ensureAgentOsApiToken();
   const url = createAgentOsUrl(options.host, options.port);
+  const authUrl = createAgentOsAuthUrl(url, apiToken);
   const existingServer = await detectExistingServer(options, trackedState, runtimeStatePath);
 
   if (existingServer) {
@@ -172,11 +175,12 @@ async function startServer(rawArgs) {
           `Browser auto-open is unavailable on this machine${browserOpener.detail ? ` (${browserOpener.detail})` : ""}.`
         );
         console.log(`AgentOS is already running on ${existingServer.url} (PID ${existingServer.pid}).`);
+        console.log(`Open AgentOS: ${createAgentOsAuthUrl(existingServer.url, apiToken)}`);
         return;
       }
 
       console.log(`AgentOS is already running on ${existingServer.url} (PID ${existingServer.pid}). Opening it...`);
-      openBrowser(existingServer.url, browserOpener);
+      openBrowser(createAgentOsAuthUrl(existingServer.url, apiToken), browserOpener);
       return;
     }
 
@@ -229,6 +233,7 @@ async function startServer(rawArgs) {
       HOSTNAME: options.host,
       AGENTOS_PACKAGE_RUNTIME: "1",
       AGENTOS_RUNTIME_DIR: runtimeInstallRoot,
+      AGENTOS_API_TOKEN: apiToken,
       AGENTOS_BUNDLE_DIR: bundleDir
     }
   });
@@ -271,15 +276,18 @@ async function startServer(rawArgs) {
 
     if (options.open && browserOpener.available && !browserState.opened) {
       browserState.opened = true;
-      openBrowser(url, browserOpener);
+      openBrowser(authUrl, browserOpener);
     }
 
     if (boot.isPlain()) {
+      if (!browserState.opened) {
+        console.log(`Open AgentOS: ${authUrl}`);
+      }
       return;
     }
 
     startupState.completing = true;
-    void completeBootAfterServerReady(boot, startupState, url);
+    void completeBootAfterServerReady(boot, startupState, url, authUrl, apiToken);
   };
   const relayStdout = createRelay(process.stdout, boot, startupState, onServerReady);
   const relayStderr = createRelay(process.stderr, boot, startupState, onServerReady);
@@ -377,12 +385,13 @@ async function startServer(rawArgs) {
 async function runDoctor(rawArgs) {
   const doctorOptions = parseDoctorArgs(rawArgs);
   const options = parseStartArgs(doctorOptions.startArgs);
+  const apiToken = readAgentOsApiToken();
   const openClawCheck = detectOpenClaw();
   const gatewayStatus = openClawCheck.available ? inspectOpenClawGatewayStatus(openClawCheck) : null;
   const browserOpener = detectBrowserOpener();
   const targetUrl = `http://${displayHost(options.host)}:${options.port}`;
   const compatibility = doctorOptions.deep && openClawCheck.available
-    ? await inspectOpenClawCompatibility(openClawCheck, gatewayStatus, targetUrl)
+    ? await inspectOpenClawCompatibility(openClawCheck, gatewayStatus, targetUrl, apiToken)
     : [];
   const checks = [
     {
@@ -861,7 +870,7 @@ function inspectOpenClawGatewayStatus(openClawCheck) {
   };
 }
 
-async function inspectOpenClawCompatibility(openClawCheck, gatewayStatus, targetUrl) {
+async function inspectOpenClawCompatibility(openClawCheck, gatewayStatus, targetUrl, apiToken = null) {
   const command = openClawCheck.path || "openclaw";
   const statusProbe = runOpenClawGatewayCall(command, "status");
   const healthProbe = runOpenClawGatewayCall(command, "health");
@@ -870,7 +879,7 @@ async function inspectOpenClawCompatibility(openClawCheck, gatewayStatus, target
   const configProbe = runOpenClawGatewayCall(command, "config.get");
   const configSchemaProbe = runOpenClawGatewayCall(command, "config.schema");
   const channelProbe = runOpenClawGatewayCall(command, "channels.status");
-  const agentOsDiagnostics = await readAgentOsDiagnostics(targetUrl);
+  const agentOsDiagnostics = await readAgentOsDiagnostics(targetUrl, apiToken);
   const payloads = [
     gatewayStatus?.payload,
     statusProbe.payload,
@@ -1046,12 +1055,13 @@ function runOpenClawGatewayCall(command, method, params = {}) {
   };
 }
 
-async function readAgentOsDiagnostics(targetUrl) {
+async function readAgentOsDiagnostics(targetUrl, apiToken = null) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 800);
 
   try {
     const response = await fetch(`${targetUrl}/api/diagnostics`, {
+      headers: apiToken ? { authorization: `Bearer ${apiToken}` } : undefined,
       signal: controller.signal
     });
 
@@ -1079,13 +1089,13 @@ async function readAgentOsDiagnostics(targetUrl) {
   }
 }
 
-async function completeBootAfterServerReady(boot, startupState, url) {
+async function completeBootAfterServerReady(boot, startupState, url, authUrl, apiToken) {
   boot.updateStatus("agentRuntime", "ready", "server ready");
   boot.updateStatus("localServerUrl", "ready", url);
   boot.updateStatus("models", "loading", "checking readiness");
   boot.updateStatus("channels", "loading", "checking registry");
 
-  const readiness = await readStartupReadiness(url);
+  const readiness = await readStartupReadiness(url, apiToken);
 
   if (readiness.openClawGateway) {
     boot.updateStatus("openclawGateway", readiness.openClawGateway.state, readiness.openClawGateway.message);
@@ -1098,12 +1108,12 @@ async function completeBootAfterServerReady(boot, startupState, url) {
   boot.updateStatus("workspaceEngine", readiness.workspaceEngine.state, readiness.workspaceEngine.message);
   boot.updateStatus("models", readiness.models.state, readiness.models.message);
   boot.updateStatus("channels", readiness.channels.state, readiness.channels.message);
-  boot.complete(url);
+  boot.complete(authUrl);
   startupState.bufferedLogs = [];
   startupState.completed = true;
 }
 
-async function readStartupReadiness(url) {
+async function readStartupReadiness(url, apiToken = null) {
   const fallback = {
     workspaceEngine: { state: "ready", message: "available" },
     models: { state: "warning", message: "finish setup in the UI" },
@@ -1114,6 +1124,7 @@ async function readStartupReadiness(url) {
 
   try {
     const response = await fetch(`${url}/api/snapshot`, {
+      headers: apiToken ? { authorization: `Bearer ${apiToken}` } : undefined,
       signal: controller.signal
     });
 
@@ -1704,6 +1715,19 @@ function ensureBundleExists() {
 
 function createAgentOsUrl(host, port) {
   return `http://${displayHost(host)}:${port}`;
+}
+
+function createAgentOsAuthUrl(url, apiToken) {
+  if (!apiToken) {
+    return url;
+  }
+
+  const parsed = new URL(url);
+  const params = new URLSearchParams(parsed.hash ? parsed.hash.slice(1) : "");
+  params.set("agentos_token", apiToken);
+  parsed.hash = params.toString();
+
+  return parsed.toString();
 }
 
 function displayHost(host) {
@@ -2677,7 +2701,39 @@ function writeRuntimeState(runtimeStatePath, payload) {
   mkdirSync(runtimeStateDir, {
     recursive: true
   });
-  writeFileSync(runtimeStatePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  writeFileSync(runtimeStatePath, `${JSON.stringify(payload, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600
+  });
+  chmodSync(runtimeStatePath, 0o600);
+}
+
+function ensureAgentOsApiToken() {
+  const existing = readAgentOsApiToken();
+  if (existing) {
+    return existing;
+  }
+
+  const token = randomBytes(32).toString("base64url");
+  mkdirSync(runtimeInstallRoot, {
+    recursive: true
+  });
+  writeFileSync(apiTokenPath, `${token}\n`, {
+    encoding: "utf8",
+    mode: 0o600
+  });
+  chmodSync(apiTokenPath, 0o600);
+
+  return token;
+}
+
+function readAgentOsApiToken() {
+  try {
+    const token = readFileSync(apiTokenPath, "utf8").trim();
+    return token || null;
+  } catch {
+    return null;
+  }
 }
 
 function syncRuntimeState(runtimeStatePath, trackedState, payload) {

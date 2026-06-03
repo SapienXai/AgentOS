@@ -9,6 +9,18 @@ const siteDescription = "Human Control Layer for AI Agents and Companies | Built
 const socialImagePath = "/readme/readme.jpeg";
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.VERCEL_URL;
 const metadataBase = new URL(siteUrl ? (siteUrl.startsWith("http") ? siteUrl : `https://${siteUrl}`) : "http://localhost:3000");
+const agentOsApiAuthBootstrap = `
+(() => {
+  const hash = window.location.hash ? window.location.hash.slice(1) : "";
+  const params = new URLSearchParams(hash);
+  const token = params.get("agentos_token");
+  if (!token) return;
+  document.cookie = "agentos_api_token=" + encodeURIComponent(token) + "; Path=/; SameSite=Strict";
+  params.delete("agentos_token");
+  const nextHash = params.toString();
+  history.replaceState(null, "", window.location.pathname + window.location.search + (nextHash ? "#" + nextHash : ""));
+})();
+`;
 
 export const viewport: Viewport = {
   themeColor: "#09101c"
@@ -59,6 +71,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body>
+        <script dangerouslySetInnerHTML={{ __html: agentOsApiAuthBootstrap }} />
         {children}
         <Toaster theme="dark" richColors closeButton />
       </body>

@@ -1,5 +1,5 @@
 import { constants as fsConstants } from "node:fs";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -72,11 +72,37 @@ export async function readOpenClawBinarySelection(): Promise<OpenClawBinarySelec
 
 export async function writeOpenClawBinarySelection(selection: OpenClawBinarySelection) {
   await mkdir(openClawStateRootPath, { recursive: true });
-  await writeFile(openClawBinarySelectionPath, `${JSON.stringify(selection, null, 2)}\n`, "utf8");
+  await writeFile(openClawBinarySelectionPath, `${JSON.stringify(selection, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600
+  });
+  await chmod(openClawBinarySelectionPath, 0o600);
 }
 
 export async function assertExecutableOpenClawBinary(binPath: string) {
   await access(binPath, fsConstants.X_OK);
+
+  const baseName = path.basename(binPath).toLowerCase();
+  if (baseName !== "openclaw" && baseName !== "openclaw.exe") {
+    throw new Error("OpenClaw binary path must point to an executable named openclaw.");
+  }
+
+  const result = spawnSync(binPath, ["--version"], {
+    encoding: "utf8",
+    timeout: 5_000,
+    env: {
+      ...process.env
+    }
+  });
+
+  if (result.error || result.status !== 0) {
+    throw new Error("OpenClaw binary did not pass the --version probe.");
+  }
+
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`.trim();
+  if (!/\bopenclaw\b/i.test(output) && !/\b\d+(?:\.\d+)+\b/.test(output)) {
+    throw new Error("OpenClaw binary did not return a recognizable version.");
+  }
 }
 
 export async function resolveGlobalOpenClawBinaryPath() {

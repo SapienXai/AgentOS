@@ -1,6 +1,6 @@
 import "server-only";
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -597,7 +597,14 @@ async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
 
 async function writeJsonFile(filePath: string, value: unknown) {
   await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: filePath === openClawAuthProfilesPath ? 0o600 : 0o644
+  });
+
+  if (filePath === openClawAuthProfilesPath) {
+    await chmod(filePath, 0o600);
+  }
 }
 
 function assertLegacyProviderFileFallbackEnabled(reason: string) {

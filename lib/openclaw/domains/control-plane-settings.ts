@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -17,6 +17,7 @@ const missionControlRootPath = path.join(/*turbopackIgnore: true*/ process.cwd()
 const missionControlSettingsPath = path.join(missionControlRootPath, "settings.json");
 const runtimeSmokeTestTtlMs = 12 * 60 * 60 * 1000;
 const providerAuthSmokeTestTtlMs = 5 * 60 * 1000;
+const allowRemoteGatewayUrlEnv = "AGENTOS_ALLOW_REMOTE_GATEWAY_URL";
 
 export type RuntimeSmokeTestCacheEntry = {
   status: "passed" | "failed";
@@ -56,6 +57,10 @@ export function normalizeGatewayRemoteUrl(value: string | null | undefined) {
 
   if (!parsed.hostname) {
     throw new Error("Gateway address must include a hostname.");
+  }
+
+  if (!isLoopbackGatewayHost(parsed.hostname) && process.env[allowRemoteGatewayUrlEnv] !== "1") {
+    throw new Error(`Gateway address must target localhost unless ${allowRemoteGatewayUrlEnv}=1 is set.`);
   }
 
   return parsed.toString().replace(/\/$/, "");
@@ -131,7 +136,32 @@ export async function readMissionControlSettings(): Promise<MissionControlSettin
 
 export async function writeMissionControlSettings(settings: MissionControlSettings) {
   await mkdir(missionControlRootPath, { recursive: true });
-  await writeFile(missionControlSettingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+  await writeFile(missionControlSettingsPath, `${JSON.stringify(settings, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600
+  });
+  await chmod(missionControlSettingsPath, 0o600);
+}
+
+function isLoopbackGatewayHost(hostname: string) {
+  const normalized = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
+
+  if (normalized === "localhost" || normalized === "::1" || normalized === "0:0:0:0:0:0:0:1") {
+    return true;
+  }
+
+  const ipv4MappedLoopback = normalized.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (ipv4MappedLoopback) {
+    return isLoopbackGatewayHost(ipv4MappedLoopback[1]);
+  }
+
+  const ipv4 = normalized.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!ipv4) {
+    return false;
+  }
+
+  const parts = ipv4.slice(1).map(Number);
+  return parts.every((part) => part >= 0 && part <= 255) && parts[0] === 127;
 }
 
 export function getRuntimeSmokeTestCacheEntry(settings: MissionControlSettings, agentId: string) {

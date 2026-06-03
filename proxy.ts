@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { evaluateLocalOperatorRequest } from "@/lib/security/local-operator";
+import { evaluateAgentOsApiRequest } from "@/lib/security/api-auth";
 
 export function proxy(request: NextRequest) {
-  const decision = evaluateLocalOperatorRequest({
+  const decision = evaluateAgentOsApiRequest({
     method: request.method,
     url: request.url,
     headers: request.headers

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -313,7 +313,11 @@ export async function saveGatewayNativeAuthCredential(input: {
     const existing = await readOptionalText(envFilePath);
     const next = updateEnvFileCredential(existing, input.kind, value);
 
-    await writeFile(envFilePath, next, "utf8");
+    await writeFile(envFilePath, next, {
+      encoding: "utf8",
+      mode: 0o600
+    });
+    await chmod(envFilePath, 0o600);
     savedCredentialPath = GATEWAY_AUTH_ENV_FILE_NAME;
   }
 
@@ -927,6 +931,7 @@ async function syncLocalOpenClawDeviceAuthTokenFromPairing(): Promise<GatewayDev
     encoding: "utf8",
     mode: 0o600
   });
+  await chmod(authPath, 0o600);
 
   return {
     token,
