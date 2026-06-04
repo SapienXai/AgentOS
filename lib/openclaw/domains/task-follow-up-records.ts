@@ -1,5 +1,4 @@
 import type { RuntimeCreatedFile, RuntimeOutputRecord, RuntimeRecord, TaskRecord } from "@/lib/openclaw/types";
-import { createHash } from "node:crypto";
 
 const FOLLOW_UP_STALE_MS = 90_000;
 type TaskFollowUpTokenUsage = NonNullable<RuntimeRecord["tokenUsage"]>;
@@ -121,7 +120,7 @@ function resolveFollowUpGroupKey(dispatchId: string, runtime: RuntimeRecord) {
     readRuntimeMetadataString(runtime, "routedMission");
 
   if (prompt && /Operator follow-up:/i.test(prompt)) {
-    return `prompt:${createHash("sha1").update(prompt).digest("hex").slice(0, 12)}`;
+    return `prompt:${hashFollowUpPrompt(prompt)}`;
   }
 
   return null;
@@ -421,6 +420,19 @@ function normalizeSessionReference(value: string | null | undefined) {
 function readRuntimeMetadataString(runtime: RuntimeRecord, key: string) {
   const value = runtime.metadata[key];
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function hashFollowUpPrompt(value: string) {
+  let primary = 0x811c9dc5;
+  let secondary = 0x9e3779b9;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    primary = Math.imul(primary ^ code, 0x01000193);
+    secondary = Math.imul(secondary + code + index, 0x85ebca6b);
+  }
+
+  return `${(primary >>> 0).toString(16).padStart(8, "0")}${(secondary >>> 0).toString(16).padStart(8, "0")}`.slice(0, 12);
 }
 
 function readString(value: unknown) {

@@ -29,6 +29,10 @@ import {
   isKnownOpenAiCodexModelId,
   normalizeOpenAiCodexModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
+import {
+  mergeOllamaCatalogModels,
+  parseOllamaListModelNames
+} from "@/lib/openclaw/domains/model-provider-catalog";
 import { clearMissionControlCaches, getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import {
   addOpenClawModelsToConfig,
@@ -964,40 +968,6 @@ async function readLocalOllamaCatalog(configuredModelIds: Set<string>): Promise<
   });
 }
 
-export function mergeOllamaCatalogModels(
-  openClawModels: AddModelsCatalogModel[],
-  localModels: AddModelsCatalogModel[]
-) {
-  const merged = new Map<string, AddModelsCatalogModel>();
-
-  for (const model of openClawModels) {
-    merged.set(model.id, model);
-  }
-
-  for (const model of localModels) {
-    const existing = merged.get(model.id);
-
-    merged.set(model.id, existing
-      ? {
-          ...existing,
-          name: existing.name || model.name,
-          input: existing.input || model.input,
-          contextWindow: existing.contextWindow ?? model.contextWindow,
-          local: true,
-          available: existing.available || model.available,
-          missing: existing.missing && model.missing,
-          alreadyAdded: existing.alreadyAdded || model.alreadyAdded,
-          recommended: existing.recommended || model.recommended,
-          supportsTools: existing.supportsTools || model.supportsTools,
-          isFree: existing.isFree || model.isFree,
-          tags: Array.from(new Set([...existing.tags, ...model.tags]))
-        }
-      : model);
-  }
-
-  return Array.from(merged.values());
-}
-
 async function readLocalOllamaModels(): Promise<OllamaState> {
   const output = await runLocalOllamaList().catch((error) => {
     const message = error instanceof Error ? error.message : String(error || "");
@@ -1056,16 +1026,6 @@ function runLocalOllamaList() {
       reject(new Error(stderr.trim() || `ollama list exited with code ${code ?? "unknown"}.`));
     });
   });
-}
-
-export function parseOllamaListModelNames(output: string) {
-  return output
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => !/^NAME\s+ID\s+SIZE\s+MODIFIED\b/i.test(line))
-    .map((line) => line.split(/\s+/)[0]?.trim() ?? "")
-    .filter((modelName, index, entries) => modelName && entries.indexOf(modelName) === index);
 }
 
 function normalizeModelIdForProvider(provider: AddModelsProviderId, modelId: string) {

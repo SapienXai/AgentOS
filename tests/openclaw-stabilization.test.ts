@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 
 import { normalizeControlPlaneSnapshot } from "@/lib/agentos/acl/openclaw";
-import { mergeOllamaCatalogModels, parseOllamaListModelNames } from "@/app/api/models/providers/route";
+import { mergeOllamaCatalogModels, parseOllamaListModelNames } from "@/lib/openclaw/domains/model-provider-catalog";
 import { getOpenClawBinCandidates, parseOpenClawVersion } from "@/lib/openclaw/cli";
 import {
   getOpenClawBundledNodeBinPath,
