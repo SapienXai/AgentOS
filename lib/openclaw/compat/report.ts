@@ -24,6 +24,7 @@ import {
   uniqueSorted
 } from "@/lib/openclaw/compat/capabilities";
 import { checkOpenClawCompatibilityContracts } from "@/lib/openclaw/compat/contracts";
+import { resolveOpenClawCompatibilityTarget } from "@/lib/openclaw/compat/targets";
 import type {
   OpenClawCompatibilityContractCheck,
   OpenClawCompatibilityMethodSource,
@@ -31,6 +32,7 @@ import type {
   OpenClawCompatibilityReportInput,
   OpenClawCompatibilityStatus,
   OpenClawCompatibilityTarget,
+  OpenClawVersionSource,
   OpenClawGatewayHealthStatus,
   OpenClawGatewayProtocolCompatibilityStatus
 } from "@/lib/openclaw/compat/types";
@@ -52,6 +54,7 @@ export type OpenClawCompatibilityReportOptions = {
   gatewayStatus?: GatewayStatusPayload | null;
   transport?: OpenClawGatewayClientDiagnostics | null;
   installedVersion?: string | null;
+  openClawVersionSource?: OpenClawVersionSource;
   cliAvailable?: boolean;
   nativeClientOptions?: NativeWsOpenClawGatewayClientOptions;
   nativeTimeoutMs?: number;
@@ -128,11 +131,15 @@ export async function generateOpenClawCompatibilityReport(
     normalizeVersion(options.installedVersion) ??
     readStatusVersion(status) ??
     normalizeVersion(fallbackVersion);
-  const target = options.target ?? {
-    kind: "local" as const,
-    label: "Local OpenClaw",
-    version: installedVersion
-  };
+  const openClawVersionSource = options.openClawVersionSource ?? resolveOpenClawVersionSource({
+    explicitVersion: options.installedVersion,
+    statusVersion: readStatusVersion(status),
+    fallbackVersion
+  });
+  const target = options.target ?? resolveOpenClawCompatibilityTarget({
+    target: "real-local",
+    gatewayUrl: options.nativeClientOptions?.url
+  });
   const nativeDetection = await detectNativeCapabilities({
     options,
     diagnostics,
@@ -179,6 +186,7 @@ export async function generateOpenClawCompatibilityReport(
     target,
     generatedAt,
     installedVersion,
+    openClawVersionSource,
     recommendedVersion: OPENCLAW_RECOMMENDED_VERSION,
     supportedBaselineVersion: OPENCLAW_SUPPORTED_BASELINE_VERSION,
     testedVersions: uniqueSorted([
@@ -229,7 +237,14 @@ export function buildOpenClawCompatibilityReport(
     unsupportedSurfaces: summarizeContractSurfaces(unsupportedContracts),
     failedSurfaces: summarizeContractSurfaces(failedContracts),
     supportedOpenClawVersion: input.supportedBaselineVersion,
-    testedOpenClawVersions: [...input.testedVersions]
+    testedOpenClawVersions: [...input.testedVersions],
+    unsupportedOperationCount: unsupportedContracts.length,
+    degradedOperationCount: degradedContracts.length,
+    failedOperationCount: failedContracts.length,
+    targetName: input.target.name,
+    targetKind: input.target.kind,
+    isRealRuntime: input.target.isRealRuntime,
+    isSimulatedRuntime: input.target.isSimulatedRuntime
   };
   const outcome = resolveOverallStatus({
     gatewayHealth: input.gatewayHealth,
@@ -240,11 +255,20 @@ export function buildOpenClawCompatibilityReport(
   return {
     generatedAt: input.generatedAt,
     target: input.target,
+    targetName: input.target.name,
+    targetKind: input.target.kind,
+    targetAliasUsed: input.target.aliasUsed ?? null,
+    gatewayUrl: input.target.gatewayUrl ?? null,
+    openClawVersionSource: input.openClawVersionSource,
+    runtimeStartedBy: input.target.runtimeStartedBy,
+    isRealRuntime: input.target.isRealRuntime,
+    isSimulatedRuntime: input.target.isSimulatedRuntime,
     status: outcome.status,
     statusReason: outcome.reason,
     recovery: outcome.recovery,
     openClaw: {
       installedVersion: input.installedVersion,
+      versionSource: input.openClawVersionSource,
       recommendedVersion: input.recommendedVersion,
       supportedBaselineVersion: input.supportedBaselineVersion,
       testedVersions: [...input.testedVersions]
@@ -629,6 +653,22 @@ function normalizeString(value: unknown) {
 
 function normalizeVersion(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim().replace(/^v/i, "") : null;
+}
+
+function resolveOpenClawVersionSource(input: {
+  explicitVersion: string | null | undefined;
+  statusVersion: string | null;
+  fallbackVersion: string | null;
+}): OpenClawVersionSource {
+  if (
+    normalizeVersion(input.explicitVersion) ||
+    normalizeVersion(input.statusVersion) ||
+    normalizeVersion(input.fallbackVersion)
+  ) {
+    return "detected";
+  }
+
+  return "unknown";
 }
 
 function readErrorMessage(error: unknown) {

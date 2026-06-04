@@ -1,6 +1,16 @@
-export type OpenClawCompatibilityStatus = "compatible" | "degraded" | "incompatible";
+export type OpenClawCompatibilityStatus = "compatible" | "degraded" | "incompatible" | "unknown";
 
-export type OpenClawCompatibilityTargetKind = "local" | "test-gateway" | "baseline-contract";
+export type OpenClawCompatibilityTargetKind = "real" | "simulated";
+
+export type OpenClawCompatibilityTargetName =
+  | "simulated-stable"
+  | "simulated-beta-shape"
+  | "real-local"
+  | "real-stable";
+
+export type OpenClawCompatibilityRuntimeStartedBy = "ci" | "script" | "external" | "unknown";
+
+export type OpenClawVersionSource = "detected" | "recommended" | "assumed" | "unknown";
 
 export type OpenClawCompatibilityCapabilityId =
   | "gatewayHealth"
@@ -39,9 +49,15 @@ export type OpenClawCompatibilityMethodSource =
   | "unavailable";
 
 export interface OpenClawCompatibilityTarget {
+  name: OpenClawCompatibilityTargetName;
   kind: OpenClawCompatibilityTargetKind;
   label: string;
+  aliasUsed?: string | null;
   version?: string | null;
+  gatewayUrl?: string | null;
+  runtimeStartedBy: OpenClawCompatibilityRuntimeStartedBy;
+  isRealRuntime: boolean;
+  isSimulatedRuntime: boolean;
 }
 
 export interface OpenClawCompatibilityCapability {
@@ -85,6 +101,13 @@ export interface OpenClawCompatibilityReleaseSummary {
   failedSurfaces: string[];
   supportedOpenClawVersion: string;
   testedOpenClawVersions: string[];
+  unsupportedOperationCount: number;
+  degradedOperationCount: number;
+  failedOperationCount: number;
+  targetName: OpenClawCompatibilityTargetName;
+  targetKind: OpenClawCompatibilityTargetKind;
+  isRealRuntime: boolean;
+  isSimulatedRuntime: boolean;
 }
 
 export type OpenClawCompatibilityFallbackDiagnostic = {
@@ -103,11 +126,20 @@ export type OpenClawCompatibilityTransportDiagnostics = {
 export interface OpenClawCompatibilityReport {
   generatedAt: string;
   target: OpenClawCompatibilityTarget;
+  targetName: OpenClawCompatibilityTargetName;
+  targetKind: OpenClawCompatibilityTargetKind;
+  targetAliasUsed: string | null;
+  gatewayUrl: string | null;
+  openClawVersionSource: OpenClawVersionSource;
+  runtimeStartedBy: OpenClawCompatibilityRuntimeStartedBy;
+  isRealRuntime: boolean;
+  isSimulatedRuntime: boolean;
   status: OpenClawCompatibilityStatus;
   statusReason: string;
   recovery: string;
   openClaw: {
     installedVersion: string | null;
+    versionSource: OpenClawVersionSource;
     recommendedVersion: string;
     supportedBaselineVersion: string;
     testedVersions: string[];
@@ -164,6 +196,7 @@ export type OpenClawCompatibilityReportInput = {
   target: OpenClawCompatibilityTarget;
   generatedAt: string;
   installedVersion: string | null;
+  openClawVersionSource: OpenClawVersionSource;
   recommendedVersion: string;
   supportedBaselineVersion: string;
   testedVersions: string[];
