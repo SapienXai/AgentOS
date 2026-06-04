@@ -640,6 +640,12 @@ export type ModelsStatusPayload = {
       profiles?: {
         count?: number;
       };
+      syntheticAuth?: {
+        value?: string;
+        source?: string;
+        credential?: string;
+        mode?: string;
+      };
     }>;
     missingProvidersInUse?: string[];
     unusableProfiles?: unknown[];

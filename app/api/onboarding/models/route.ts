@@ -23,6 +23,7 @@ import {
 import { resolveOpenAiCodexAuthHandoff } from "@/lib/openclaw/model-auth-errors";
 import { resolveRequiredLoginProvider } from "@/lib/openclaw/model-onboarding";
 import { isAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
+import { isKnownOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
 import { readOpenClawCodexPluginReady } from "@/lib/openclaw/application/model-provider-state-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import type {
@@ -806,7 +807,7 @@ function resolveSetDefaultProvider(
   )?.provider;
 
   if (isAddModelsProviderId(snapshotProvider)) {
-    if (snapshotProvider === "openai" && shouldTreatOpenAiModelAsCodex(snapshot)) {
+    if (snapshotProvider === "openai" && shouldTreatOpenAiModelAsCodex(snapshot, normalizedModelId)) {
       return "openai-codex";
     }
 
@@ -815,14 +816,18 @@ function resolveSetDefaultProvider(
 
   const modelProvider = normalizedModelId.split("/", 1)[0] || null;
 
-  if (modelProvider === "openai" && shouldTreatOpenAiModelAsCodex(snapshot)) {
+  if (modelProvider === "openai" && shouldTreatOpenAiModelAsCodex(snapshot, normalizedModelId)) {
     return "openai-codex";
   }
 
   return isAddModelsProviderId(modelProvider) ? modelProvider : null;
 }
 
-function shouldTreatOpenAiModelAsCodex(snapshot: MissionControlSnapshot) {
+function shouldTreatOpenAiModelAsCodex(snapshot: MissionControlSnapshot, modelId: string) {
+  if (!isKnownOpenAiCodexModelId(modelId)) {
+    return false;
+  }
+
   const providers = snapshot.diagnostics.modelReadiness.authProviders;
   const codexProvider = providers.find((provider) => provider.provider === "openai-codex");
   const openAiProvider = providers.find((provider) => provider.provider === "openai");

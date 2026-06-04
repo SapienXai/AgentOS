@@ -3,8 +3,13 @@ import type {
   ModelsPayload,
   ModelsStatusPayload
 } from "@/lib/openclaw/client/gateway-client";
-import { resolveModelRecordProvider } from "@/lib/openclaw/domains/model-provider-connection";
-import type { ModelRecord, OpenClawAgent } from "@/lib/openclaw/types";
+import {
+  buildModelStatusConnectionStatus,
+  modelRecordIdentityKey,
+  normalizeOpenAiCodexModelId,
+  resolveModelRecordProvider
+} from "@/lib/openclaw/domains/model-provider-connection";
+import type { AddModelsProviderId, ModelRecord, OpenClawAgent } from "@/lib/openclaw/types";
 
 type AgentModelDefaultLike = {
   model?: string | null;
@@ -179,21 +184,100 @@ export function buildModelRecords(
   const modelUsage = new Map<string, number>();
 
   for (const agent of agents) {
-    modelUsage.set(agent.modelId, (modelUsage.get(agent.modelId) ?? 0) + 1);
+    const canonicalModelId = normalizeOpenAiCodexModelId(agent.modelId);
+    modelUsage.set(canonicalModelId, (modelUsage.get(canonicalModelId) ?? 0) + 1);
   }
 
-  return models.map((model) => ({
-    id: model.key,
-    name: model.name,
-    provider: resolveModelRecordProvider(model.key, modelStatus),
-    input: model.input,
-    contextWindow: model.contextWindow,
-    local: model.local,
-    available: model.available,
-    missing: model.missing,
-    tags: model.tags,
-    usageCount: modelUsage.get(model.key) ?? 0
-  }));
+  const recordsByIdentity = new Map<string, ModelRecord>();
+
+  for (const model of models) {
+    const provider = resolveModelRecordProvider(model.key, modelStatus, model);
+    const id = normalizeOpenAiCodexModelId(model.key);
+    const record: ModelRecord = {
+      id,
+      name: model.name,
+      provider,
+      input: model.input,
+      contextWindow: model.contextWindow,
+      local: model.local,
+      available: resolveModelRecordAvailability(model, provider, modelStatus),
+      missing: model.missing,
+      tags: model.tags,
+      usageCount: modelUsage.get(id) ?? 0
+    };
+    const identityKey = modelRecordIdentityKey(model.key, provider);
+    const existing = recordsByIdentity.get(identityKey);
+
+    recordsByIdentity.set(identityKey, existing ? mergeModelRecords(existing, record) : record);
+  }
+
+  return Array.from(recordsByIdentity.values());
+}
+
+function mergeModelRecords(existing: ModelRecord, candidate: ModelRecord): ModelRecord {
+  const preferred = scoreModelRecord(candidate) > scoreModelRecord(existing) ? candidate : existing;
+  const fallback = preferred === candidate ? existing : candidate;
+
+  return {
+    ...preferred,
+    contextWindow: preferred.contextWindow ?? fallback.contextWindow,
+    local: preferred.local ?? fallback.local,
+    available: preferred.available === true || fallback.available === true
+      ? true
+      : preferred.available ?? fallback.available,
+    missing: preferred.missing && fallback.missing,
+    tags: uniqueStrings([...preferred.tags, ...fallback.tags]),
+    usageCount: Math.max(preferred.usageCount, fallback.usageCount)
+  };
+}
+
+function scoreModelRecord(record: ModelRecord) {
+  let score = 0;
+
+  if (record.available === true) {
+    score += 100;
+  }
+
+  if (!record.missing) {
+    score += 50;
+  }
+
+  if (record.provider === "openai-codex") {
+    score += 10;
+  }
+
+  if (record.usageCount > 0) {
+    score += 5;
+  }
+
+  return score;
+}
+
+function resolveModelRecordAvailability(
+  model: ModelsPayload["models"][number],
+  provider: string,
+  modelStatus?: ModelsStatusPayload
+) {
+  if (model.available === false || model.missing || model.local === true || !modelStatus || !isAddModelsProviderId(provider)) {
+    return model.available;
+  }
+
+  const connection = buildModelStatusConnectionStatus(provider, modelStatus, [normalizeOpenAiCodexModelId(model.key)]);
+  return connection?.connected ? model.available : false;
+}
+
+function isAddModelsProviderId(provider: string): provider is AddModelsProviderId {
+  return [
+    "openai-codex",
+    "openrouter",
+    "ollama",
+    "openai",
+    "anthropic",
+    "xai",
+    "google",
+    "deepseek",
+    "mistral"
+  ].includes(provider);
 }
 
 function normalizeModelId(value: string | null | undefined) {

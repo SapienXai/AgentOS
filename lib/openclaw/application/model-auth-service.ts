@@ -15,6 +15,7 @@ type OpenAiCodexAuthOrderRepair = {
 };
 
 const repairCacheTtlMs = 5 * 60 * 1000;
+const legacyProviderFileFallbackEnv = "AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK";
 const repairedAuthOrderCache = new Map<string, { expiresAt: number; profileKey: string }>();
 
 export async function ensureOpenAiCodexAuthOrderForAgent({
@@ -38,7 +39,7 @@ export async function ensureOpenAiCodexAuthOrderForAgent({
   try {
     status = await getOpenClawAdapter().getAgentModelStatus({ agentId }, { timeoutMs: 8_000 });
   } catch (error) {
-    const copiedProfileIds = agentDir
+    const copiedProfileIds = agentDir && isLegacyProviderFileFallbackEnabled()
       ? await copyOpenAiCodexProfilesFromMainStore(agentDir).catch(() => [])
       : [];
 
@@ -72,7 +73,7 @@ export async function ensureOpenAiCodexAuthOrderForAgent({
 
   const resolvedAgentDir = readString((status as Record<string, unknown>).agentDir) ?? agentDir ?? null;
 
-  if (resolvedAgentDir) {
+  if (resolvedAgentDir && isLegacyProviderFileFallbackEnabled()) {
     await persistOpenAiCodexProfileCopies(resolvedAgentDir, repair.profileIds).catch(() => undefined);
   }
 
@@ -112,7 +113,7 @@ async function setOpenAiCodexAuthOrderWithRetry(agentId: string, profileIds: str
     try {
       await getOpenClawAdapter().setModelAuthOrder(
         {
-          provider: "openai-codex",
+          provider: "openai",
           agentId,
           profileIds
         },
@@ -210,7 +211,7 @@ function isOpenAiCodexOAuthCredential(value: unknown): value is Record<string, u
   return (
     isRecord(value) &&
     value.type === "oauth" &&
-    value.provider === "openai-codex" &&
+    (value.provider === "openai" || value.provider === "openai-codex") &&
     isRecord(value.oauthRef)
   );
 }
@@ -219,6 +220,8 @@ export function resolveOpenAiCodexAuthOrderRepair(
   modelStatus: ModelsStatusPayload
 ): OpenAiCodexAuthOrderRepair {
   const oauthProvider = modelStatus.auth?.oauth?.providers?.find(
+    (entry) => entry.provider === "openai"
+  ) ?? modelStatus.auth?.oauth?.providers?.find(
     (entry) => entry.provider === "openai-codex"
   );
   const profiles = Array.isArray(oauthProvider?.profiles) ? oauthProvider.profiles : [];
@@ -259,6 +262,11 @@ export function resolveOpenAiCodexAuthOrderRepair(
     profileIds,
     reason: "needs-order"
   };
+}
+
+function isLegacyProviderFileFallbackEnabled() {
+  const value = process.env[legacyProviderFileFallbackEnv];
+  return value === "1" || value?.toLowerCase() === "true" || value?.toLowerCase() === "on";
 }
 
 function isUsableAuthProfile(value: unknown): value is Record<string, unknown> {

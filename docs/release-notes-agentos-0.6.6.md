@@ -11,7 +11,7 @@ AgentOS 0.6.6 is a release-readiness polish build for the packaged local control
 - Keeps `requires_approval` account rules persisted but blocked until approval dispatch exists.
 - Verifies package smoke through `pnpm smoke:agentos-package`, including npm tarball content checks, package install, `agentos --version`, `agentos doctor`, and `agentos doctor --deep`.
 - Reaffirms Node.js 24 or newer as the required runtime for local, CI, release, and package-manager smoke runs.
-- Documents compatibility with OpenClaw `2026.5.28` or newer compatible stable builds.
+- Documents compatibility with the OpenClaw supported baseline from `lib/openclaw/versions.ts`.
 
 ## Verification
 

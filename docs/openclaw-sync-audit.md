@@ -29,9 +29,9 @@ Current source expectation:
 - Gateway discovery source: `hello-ok.features.methods` and `hello-ok.features.events`
 - Current method names include `health`, `status`, `models.list`, `models.authStatus`, `agents.list/create/update/delete`, `sessions.list/create/send/abort/subscribe/messages.subscribe`, `chat.history/send/abort`, `channels.status/start/stop/logout`, `skills.status/search/detail/install/update`, `plugins.uiDescriptors`, `config.get/set/schema/schema.lookup/patch/apply`, `exec.approval.*`, `plugin.approval.*`, `update.status`, `update.run`, and `gateway.restart.*`.
 
-Local installed OpenClaw observed during the audit: `2026.5.12 (f066dd2)`.
+Local installed OpenClaw observed during the original audit was a pre-baseline build.
 
-Latest OpenClaw source observed during the audit: `2026.5.16`.
+Latest OpenClaw source observed during the original audit was also pre-baseline.
 
 ## Gateway-First Now
 

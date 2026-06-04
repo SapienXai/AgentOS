@@ -7,6 +7,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
+import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
+
 const rootDir = process.cwd();
 const realCliPath = path.join(rootDir, "packages", "agentos", "bin", "agentos.js");
 const realTerminalBootPath = path.join(rootDir, "packages", "agentos", "bin", "terminal-boot.js");
@@ -580,7 +582,7 @@ async function writeFakeOpenClawGatewayBinary(
     `const configFailureMessage = ${JSON.stringify(options.configFailureMessage ?? null)};`,
     "const args = process.argv.slice(2);",
     "function print(value) { console.log(JSON.stringify(value)); }",
-    "if (args[0] === '--version') { console.log('OpenClaw 2026.5.28'); process.exit(0); }",
+    `if (args[0] === '--version') { console.log('OpenClaw ${OPENCLAW_RECOMMENDED_VERSION}'); process.exit(0); }`,
     "if (args[0] === 'gateway' && args[1] === 'status') {",
     "  print({ status: 'connected', rpc: { ok: true, protocolVersion: 4, methods, auth: { role: 'operator', scopes } } });",
     "  process.exit(0);",

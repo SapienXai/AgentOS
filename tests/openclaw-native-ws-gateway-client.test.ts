@@ -17,6 +17,7 @@ import type {
   OpenClawCommandOptions,
   OpenClawGatewayClient
 } from "@/lib/openclaw/client/gateway-client";
+import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 
 type SentFrame = {
   type: string;
@@ -533,7 +534,7 @@ test("native WS gateway client exposes handshake feature discovery", async () =>
         payload: {
           type: "hello-ok",
           protocol: 4,
-          server: { version: "2026.5.12" },
+          server: { version: OPENCLAW_RECOMMENDED_VERSION },
           features: {
             methods: ["status", "chat.send", "sessions.subscribe"],
             events: ["chat", "sessions.changed"]

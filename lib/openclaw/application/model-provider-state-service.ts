@@ -11,6 +11,7 @@ import {
   readGatewayConfigRateLimitRetryAfterMs
 } from "@/lib/openclaw/client/native-ws-gateway-config";
 import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
+import { isKnownOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
 import { getModelProviderDescriptor, isAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
 import { redactSecretText } from "@/lib/security/redaction";
 import type {
@@ -132,7 +133,7 @@ export async function buildOpenClawFileBasedProviderConnectionStatus(
   const providerAuthCount = [
     ...Object.values(config.auth?.profiles ?? {}),
     ...Object.values(authProfiles.profiles ?? {})
-  ].filter((entry) => providerAuthEntryMatchesAddModelsProvider(entry.provider, provider)).length;
+  ].filter((entry) => providerAuthEntryMatchesAddModelsProvider(entry, provider)).length;
   const connected = providerAuthCount > 0 ||
     (provider === "openai-codex" && configuredCount > 0 && isCodexHarnessEnabled(config));
 
@@ -650,25 +651,30 @@ function readErrorMessage(error: unknown) {
 }
 
 function modelMatchesProvider(provider: AddModelsProviderId, modelId: string) {
-  const modelProvider = modelId.split("/")[0] as AddModelsProviderId;
+  const modelProvider = modelId.split("/")[0] ?? "";
 
   if (provider === "openai-codex") {
-    return modelProvider === "codex" || modelProvider === "openai" || modelProvider === "openai-codex";
+    return modelProvider === "codex" ||
+      modelProvider === "openai-codex" ||
+      isKnownOpenAiCodexModelId(modelId);
   }
 
   return modelProvider === provider && isAddModelsProviderId(modelProvider);
 }
 
 function providerAuthEntryMatchesAddModelsProvider(
-  entryProvider: string | undefined,
+  entry: { provider?: string; type?: string; mode?: string },
   provider: AddModelsProviderId
 ) {
+  const entryProvider = entry.provider;
   if (!entryProvider) {
     return false;
   }
 
   if (provider === "openai-codex") {
-    return entryProvider === "codex" || entryProvider === "openai-codex";
+    return entryProvider === "codex" ||
+      entryProvider === "openai-codex" ||
+      (entryProvider === "openai" && ["oauth", "app-server", "codex-app-server"].includes(entry.type ?? entry.mode ?? ""));
   }
 
   return entryProvider === provider;

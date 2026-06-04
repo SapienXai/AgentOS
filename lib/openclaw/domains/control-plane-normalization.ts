@@ -1,4 +1,5 @@
 import type { AgentStatus, ModelReadiness, RuntimeRecord } from "@/lib/openclaw/types";
+import { isKnownOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
 
 type RuntimeLike = {
   status?: RuntimeRecord["status"] | string;
@@ -21,6 +22,9 @@ type ModelAuthProvider = {
   provider?: string | null;
   profiles?: {
     count?: number | null;
+  } | null;
+  effective?: {
+    kind?: string | null;
   } | null;
 };
 
@@ -194,7 +198,7 @@ export function resolveModelReadiness(models: ModelLike[], modelStatus?: ModelSt
   const defaultModelReady = Boolean(
     defaultModelId &&
       readyModels.some((model) => model.key === defaultModelId) &&
-      isModelProviderAuthenticated(defaultProvider, models, authProviderMap, oauthProviderMap)
+      isModelProviderAuthenticated(defaultProvider, defaultModelId, models, authProviderMap, oauthProviderMap)
   );
   const recommendedModelId = defaultModelReady ? defaultModelId : readyModels[0]?.key ?? null;
   const authProviders = providerIds.map((provider) => {
@@ -203,15 +207,21 @@ export function resolveModelReadiness(models: ModelLike[], modelStatus?: ModelSt
     const canLogin = provider !== "ollama" && hasRemoteRoute;
     const providerAuth = authProviderMap.get(provider);
     const oauthStatus = oauthProviderMap.get(provider);
+    const openAiEffectiveKind = providerAuth?.effective?.kind?.trim().toLowerCase();
     const connected =
       provider === "ollama"
         ? providerModels.some((model) => model.local)
-        : (providerAuth?.profiles?.count ?? 0) > 0 || oauthStatus?.status === "ok";
+        : provider === "openai"
+          ? Boolean(
+              ((providerAuth?.profiles?.count ?? 0) > 0 && openAiEffectiveKind !== "oauth") ||
+              (openAiEffectiveKind && ["ok", "profiles", "token", "apikey", "api-key"].includes(openAiEffectiveKind))
+            )
+          : (providerAuth?.profiles?.count ?? 0) > 0 || oauthStatus?.status === "ok";
     let detail: string | null = null;
 
-    if (oauthStatus?.status === "ok") {
+    if (provider !== "openai" && oauthStatus?.status === "ok") {
       detail = "OAuth connected";
-    } else if ((providerAuth?.profiles?.count ?? 0) > 0) {
+    } else if ((providerAuth?.profiles?.count ?? 0) > 0 && (provider !== "openai" || openAiEffectiveKind !== "oauth")) {
       detail = `${providerAuth?.profiles?.count} auth profile${providerAuth?.profiles?.count === 1 ? "" : "s"}`;
     } else if (provider === "ollama" && connected) {
       detail = "Local Ollama model detected.";
@@ -261,6 +271,7 @@ export function resolveModelReadiness(models: ModelLike[], modelStatus?: ModelSt
 
   const preferredLoginProvider = resolvePreferredLoginProvider({
     defaultProvider,
+    defaultModelId: defaultModelId ?? null,
     authProviders,
     missingProvidersInUse,
     providerIds,
@@ -286,13 +297,14 @@ export function resolveModelReadiness(models: ModelLike[], modelStatus?: ModelSt
 
 function resolvePreferredLoginProvider(input: {
   defaultProvider: string | null;
+  defaultModelId: string | null;
   authProviders: Array<{ provider: string; connected: boolean; canLogin: boolean }>;
   missingProvidersInUse: string[];
   providerIds: string[];
   readyModels: ModelLike[];
 }) {
   const defaultProviderCandidates = input.defaultProvider
-    ? resolveAuthProvidersForModelProvider(input.defaultProvider)
+    ? resolveAuthProvidersForModel(input.defaultProvider, input.defaultModelId)
     : [];
 
   if (
@@ -327,6 +339,7 @@ function resolvePreferredLoginProvider(input: {
 
 function isModelProviderAuthenticated(
   provider: string | null,
+  modelId: string | null,
   models: ModelLike[],
   authProviderMap: Map<string, ModelAuthProvider & { provider: string }>,
   oauthProviderMap: Map<string, ModelOauthProvider & { provider: string }>
@@ -339,7 +352,7 @@ function isModelProviderAuthenticated(
     return models.some((model) => modelMatchesAuthProvider(provider, model.key) && model.local === true);
   }
 
-  return resolveAuthProvidersForModelProvider(provider).some((authProvider) =>
+  return resolveAuthProvidersForModel(provider, modelId).some((authProvider) =>
     isAuthProviderConnected(authProvider, authProviderMap, oauthProviderMap)
   );
 }
@@ -351,6 +364,15 @@ function isAuthProviderConnected(
 ) {
   const providerAuth = authProviderMap.get(provider);
   const oauthStatus = oauthProviderMap.get(provider);
+
+  if (provider === "openai") {
+    const effectiveKind = providerAuth?.effective?.kind?.trim().toLowerCase();
+    return Boolean(
+      ((providerAuth?.profiles?.count ?? 0) > 0 && effectiveKind !== "oauth") ||
+      (effectiveKind && ["ok", "profiles", "token", "apikey", "api-key"].includes(effectiveKind))
+    );
+  }
+
   return (providerAuth?.profiles?.count ?? 0) > 0 || oauthStatus?.status === "ok";
 }
 
@@ -358,14 +380,20 @@ function modelMatchesAuthProvider(provider: string, modelId: string) {
   const modelProvider = resolveModelProviderId(modelId) ?? "unknown";
 
   if (provider === "openai-codex") {
-    return modelProvider === "openai" || modelProvider === "openai-codex";
+    return modelProvider === "openai-codex" ||
+      modelProvider === "codex" ||
+      (modelProvider === "openai" && isKnownOpenAiCodexModelId(modelId));
   }
 
   return modelProvider === provider;
 }
 
-function resolveAuthProvidersForModelProvider(provider: string) {
-  return provider === "openai" ? ["openai", "openai-codex"] : [provider];
+function resolveAuthProvidersForModel(provider: string, modelId: string | null) {
+  if (provider === "openai" && modelId && isKnownOpenAiCodexModelId(modelId)) {
+    return ["openai", "openai-codex"];
+  }
+
+  return [provider];
 }
 
 export function isReadyModelRecord(model: ModelLike) {

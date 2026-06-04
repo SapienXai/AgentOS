@@ -3,6 +3,7 @@ import type {
   AddModelsProviderConnectKind,
   AddModelsProviderId
 } from "@/lib/openclaw/types";
+import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 
 export type ModelProviderDescriptor = {
   id: AddModelsProviderId;
@@ -25,7 +26,7 @@ export const modelProviderRegistry: ModelProviderDescriptor[] = [
     category: "primary",
     connectKind: "oauth",
     accent: "from-[#d8f5eb] via-[#ebfbf5] to-white",
-    helperText: "OpenClaw 2026.6.1 uses the Codex app-server plugin for this route."
+    helperText: `OpenClaw ${OPENCLAW_RECOMMENDED_VERSION} uses the Codex app-server plugin for this route.`
   },
   {
     id: "openrouter",

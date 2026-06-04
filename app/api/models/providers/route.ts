@@ -22,7 +22,11 @@ import {
   getLatestOpenAiCodexAuthRuntimeSmokeFailure,
   readMissionControlSettings
 } from "@/lib/openclaw/domains/control-plane-settings";
-import { buildModelStatusConnectionStatus } from "@/lib/openclaw/domains/model-provider-connection";
+import {
+  buildModelStatusConnectionStatus,
+  isKnownOpenAiCodexModelId,
+  normalizeOpenAiCodexModelId
+} from "@/lib/openclaw/domains/model-provider-connection";
 import { clearMissionControlCaches, getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import {
   addOpenClawModelsToConfig,
@@ -492,7 +496,8 @@ async function readProviderCatalog(
   if (provider === "openai-codex") {
     try {
       const providerPayload = await readProviderModelPayload(provider, { all: true, provider: "openai" }, commandBin);
-      const providerModels = normalizeCatalogModels(provider, providerPayload.models, configuredModelIds);
+      const providerModels = normalizeCatalogModels(provider, providerPayload.models, configuredModelIds)
+        .filter((model) => isKnownOpenAiCodexModelId(model.id) || model.tags.some(isCodexModelTag));
 
       if (providerModels.length > 0) {
         return providerModels;
@@ -652,12 +657,6 @@ function buildFallbackCodexCatalog(configuredModelIds: Set<string>): AddModelsCa
       name: "GPT-5.4 Mini",
       contextWindow: 272000,
       recommended: true
-    },
-    {
-      id: "openai/gpt-5.5-pro",
-      name: "GPT-5.5 Pro",
-      contextWindow: null,
-      recommended: false
     }
   ].map((model) => ({
     id: model.id,
@@ -919,8 +918,8 @@ async function readOllamaState(): Promise<OllamaState> {
 }
 
 function normalizeModelIdForProvider(provider: AddModelsProviderId, modelId: string) {
-  if (provider === "openai-codex" && modelId.startsWith("openai-codex/")) {
-    return `openai/${modelId.slice("openai-codex/".length)}`;
+  if (provider === "openai-codex") {
+    return normalizeOpenAiCodexModelId(modelId);
   }
 
   return modelId;
@@ -949,14 +948,16 @@ function validateApiKey(provider: AddModelsProviderId, token: string) {
 }
 
 function resolveProviderFromModelId(modelId: string) {
-  return modelId.split("/")[0] as AddModelsProviderId;
+  return modelId.split("/")[0] ?? "";
 }
 
 function modelMatchesProvider(provider: AddModelsProviderId, modelId: string) {
   const modelProvider = resolveProviderFromModelId(modelId);
 
   if (provider === "openai-codex") {
-    return modelProvider === "codex" || modelProvider === "openai" || modelProvider === "openai-codex";
+    return modelProvider === "codex" ||
+      modelProvider === "openai-codex" ||
+      isKnownOpenAiCodexModelId(modelId);
   }
 
   return modelProvider === provider && isAddModelsProviderId(modelProvider);
@@ -1010,4 +1011,8 @@ function isRecommendedModel(provider: AddModelsProviderId, modelId: string) {
   }
 
   return false;
+}
+
+function isCodexModelTag(tag: string) {
+  return /^(codex|openai-codex|chatgpt|app-server|codex-app-server)$/i.test(tag.trim());
 }

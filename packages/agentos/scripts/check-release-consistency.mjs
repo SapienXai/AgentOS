@@ -18,6 +18,8 @@ const INSTALL_COMMAND = "curl -fsSL https://raw.githubusercontent.com/SapienXai/
 const WINDOWS_INSTALL_COMMAND = "iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex";
 const REQUIRED_NODE_ENGINE = ">=24.0.0";
 const REQUIRED_NODE_MAJOR = "24";
+const OPENCLAW_VERSIONS_FILE = "lib/openclaw/versions.ts";
+const OPENCLAW_BASELINE_COPY = "OpenClaw supported baseline from `lib/openclaw/versions.ts`";
 const RELEASE_ASSETS = [
   "agentos-darwin-arm64.tgz",
   "agentos-darwin-x64.tgz",
@@ -52,12 +54,14 @@ export function checkReleaseConsistency(options = {}) {
   const prepareBundle = readText(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`);
   const runPrepack = readText(context, `${AGENTOS_PACKAGE_DIR}/scripts/run-prepack.mjs`);
   const smokePackage = readText(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`);
+  const openClawVersions = readText(context, OPENCLAW_VERSIONS_FILE);
 
   if (!rootPackage || !agentosPackage) {
     return buildResult(context, agentosPackage);
   }
 
   validateRootPackage(context, rootPackage, agentosPackage);
+  validateOpenClawVersions(context, openClawVersions);
   validateAgentosPackage(context, agentosPackage);
   validateLauncher(context, launcher, agentosPackage);
   validateInstallers(context, installSh, installPs1);
@@ -170,6 +174,30 @@ function validateAgentosPackage(context, agentosPackage) {
   );
 }
 
+function validateOpenClawVersions(context, openClawVersions) {
+  if (!openClawVersions) {
+    context.issues.push(`${OPENCLAW_VERSIONS_FILE}: missing OpenClaw version constants file`);
+    return;
+  }
+
+  const recommended = readTypeScriptStringConstant(openClawVersions, "OPENCLAW_RECOMMENDED_VERSION");
+  const supportedBaseline = readTypeScriptStringConstant(openClawVersions, "OPENCLAW_SUPPORTED_BASELINE_VERSION");
+
+  if (!recommended) {
+    context.issues.push(`${OPENCLAW_VERSIONS_FILE}: missing OPENCLAW_RECOMMENDED_VERSION`);
+  }
+
+  if (!supportedBaseline) {
+    context.issues.push(`${OPENCLAW_VERSIONS_FILE}: missing OPENCLAW_SUPPORTED_BASELINE_VERSION`);
+  }
+
+  if (recommended && supportedBaseline && recommended !== supportedBaseline) {
+    context.issues.push(
+      `${OPENCLAW_VERSIONS_FILE}: OPENCLAW_RECOMMENDED_VERSION (${recommended}) must match OPENCLAW_SUPPORTED_BASELINE_VERSION (${supportedBaseline})`
+    );
+  }
+}
+
 function validateLauncher(context, launcher, agentosPackage) {
   if (!launcher) {
     return;
@@ -230,7 +258,7 @@ function validateReadmes(context, readme, packageReadme, agentosPackage) {
     expectIncludes(context, "README.md", readme, "packages/agentos/package.json");
     expectIncludes(context, "README.md", readme, `Node.js ${REQUIRED_NODE_MAJOR} or newer`);
     expectIncludes(context, "README.md", readme, `- Node.js ${REQUIRED_NODE_MAJOR} or newer`);
-    expectIncludes(context, "README.md", readme, "current stable OpenClaw release (`2026.5.28` or newer stable builds with compatible Gateway protocol support)");
+    expectIncludes(context, "README.md", readme, OPENCLAW_BASELINE_COPY);
     expectIncludes(context, "README.md", readme, "CLI fallback remains explicit and visible");
     expectIncludes(context, "README.md", readme, "Accounts and browser profiles are an MVP bridge");
     expectIncludes(context, "README.md", readme, "OpenClaw does not yet expose typed browser-profile dispatch");
@@ -269,7 +297,7 @@ function validateReadmes(context, readme, packageReadme, agentosPackage) {
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, `Node.js ${REQUIRED_NODE_MAJOR} or newer`);
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "Packaged AgentOS uses API token authentication");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "AGENTOS_ALLOW_REMOTE_GATEWAY_URL=1");
-    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "current stable OpenClaw release (`2026.5.28` or newer stable builds with compatible Gateway protocol support)");
+    expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, OPENCLAW_BASELINE_COPY);
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "Gateway-first transport by default, with explicit CLI fallback");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "Account-target browser-profile dispatch is an MVP bridge");
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/README.md`, packageReadme, "`requires_approval` rules remain blocked until approval dispatch exists");
@@ -287,7 +315,7 @@ function validateSecurityDocs(context, security, cleanInstallChecklist) {
 
   if (cleanInstallChecklist) {
     expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, `Node.js ${REQUIRED_NODE_MAJOR} or newer`);
-    expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "current stable OpenClaw release (`2026.5.28` or newer stable builds with compatible Gateway protocol support)");
+    expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, OPENCLAW_BASELINE_COPY);
     expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "agentos doctor --deep");
     expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "physical operator machine");
     expectIncludes(context, "docs/agentos-clean-install-smoke-checklist.md", cleanInstallChecklist, "`requires_approval` access rules remain blocked/coming soon until approval dispatch exists");
@@ -493,6 +521,11 @@ function readJson(context, relativePath) {
     addIssue(context, relativePath, `Invalid JSON: ${detail}`);
     return null;
   }
+}
+
+function readTypeScriptStringConstant(source, name) {
+  const pattern = new RegExp(`export\\s+const\\s+${name}\\s*=\\s*"([^"]+)"\\s*;`);
+  return source.match(pattern)?.[1] ?? null;
 }
 
 function expectFileExists(context, relativePath) {

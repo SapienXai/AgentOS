@@ -5,6 +5,11 @@ import type {
   AddModelsProviderId
 } from "@/lib/openclaw/types";
 
+type ModelProviderMetadata = {
+  provider?: string | null;
+  tags?: string[] | null;
+};
+
 export function buildModelStatusConnectionStatus(
   provider: AddModelsProviderId,
   modelStatus: ModelsStatusPayload | null,
@@ -33,14 +38,16 @@ export function buildModelStatusConnectionStatus(
   const profileCount = readNumber(authProvider?.profiles?.count) ?? 0;
   const effectiveKind = readString(authProvider?.effective?.kind)?.toLowerCase();
   const syntheticAuthValue = readString(authProvider?.syntheticAuth?.value);
-  const connected = provider === "ollama"
-    ? visibleCount > 0
-    : oauthProfiles
-      ? usableOauthProfileCount > 0 || oauthStatus === "ok"
-      : oauthStatus === "ok" ||
-        profileCount > 0 ||
-        Boolean(syntheticAuthValue) ||
-        Boolean(effectiveKind && ["ok", "profiles", "token", "apikey", "api-key", "oauth", "synthetic"].includes(effectiveKind));
+  const connected = resolveProviderConnected({
+    provider,
+    visibleCount,
+    oauthProfiles,
+    usableOauthProfileCount,
+    oauthStatus,
+    profileCount,
+    effectiveKind,
+    syntheticAuthValue
+  });
 
   return {
     provider,
@@ -59,47 +66,108 @@ export function buildModelStatusConnectionStatus(
   };
 }
 
-export function modelMatchesAddModelsProvider(provider: AddModelsProviderId, modelId: string) {
-  const modelProvider = modelId.split("/", 1)[0] || "";
+export function modelMatchesAddModelsProvider(
+  provider: AddModelsProviderId,
+  modelId: string,
+  modelProviderHint?: string | null
+) {
+  const modelProvider = modelProviderHint || modelId.split("/", 1)[0] || "";
 
   if (provider === "openai-codex") {
-    return modelProvider === "codex" || modelProvider === "openai" || modelProvider === "openai-codex";
+    return modelProvider === "codex" ||
+      modelProvider === "openai-codex" ||
+      isKnownOpenAiCodexModelId(modelId);
   }
 
   return modelProvider === provider;
 }
 
-export function resolveModelRecordProvider(modelId: string, modelStatus?: ModelsStatusPayload) {
+export function resolveModelRecordProvider(
+  modelId: string,
+  modelStatus?: ModelsStatusPayload,
+  metadata: ModelProviderMetadata = {}
+) {
   const modelProvider = modelId.split("/", 1)[0] || "unknown";
+  const metadataProvider = metadata.provider?.trim() || null;
 
-  if (modelProvider === "codex") {
+  if (metadataProvider === "codex" || metadataProvider === "openai-codex" || modelProvider === "codex") {
     return "openai-codex";
   }
 
-  if (modelProvider === "openai" && shouldDisplayOpenAiModelAsCodex(modelId, modelStatus)) {
+  if (modelProvider === "openai" && shouldDisplayOpenAiModelAsCodex(modelId, modelStatus, metadata)) {
     return "openai-codex";
   }
 
   return modelProvider;
 }
 
-export function isOpenAiCodexBackedModel(modelId: string, modelStatus?: ModelsStatusPayload) {
-  const modelProvider = modelId.split("/", 1)[0] || "";
+export function normalizeOpenAiCodexModelId(modelId: string) {
+  const normalized = modelId.trim();
+  const aliasMatch = /^(?:codex|openai-codex)\/(.+)$/i.exec(normalized);
 
-  if (modelProvider === "openai-codex") {
-    return true;
+  if (aliasMatch) {
+    return `openai/${aliasMatch[1]}`;
   }
 
-  if (modelProvider === "codex") {
-    return true;
-  }
-
-  return modelProvider === "openai" && (/^openai\/gpt-/i.test(modelId) || shouldDisplayOpenAiModelAsCodex(modelId, modelStatus));
+  return normalized;
 }
 
-function shouldDisplayOpenAiModelAsCodex(modelId: string, modelStatus?: ModelsStatusPayload) {
+export function modelRecordIdentityKey(
+  modelId: string,
+  provider: string
+) {
+  const canonicalModelId = normalizeOpenAiCodexModelId(modelId);
+
+  if (
+    provider === "openai-codex" ||
+    /^codex\//i.test(modelId) ||
+    /^openai-codex\//i.test(modelId) ||
+    isKnownOpenAiCodexModelId(canonicalModelId)
+  ) {
+    return `openai-codex:${canonicalModelId.toLowerCase()}`;
+  }
+
+  return `${provider}:${canonicalModelId.toLowerCase()}`;
+}
+
+export function isOpenAiCodexBackedModel(
+  modelId: string,
+  modelStatus?: ModelsStatusPayload,
+  metadata: ModelProviderMetadata = {}
+) {
+  const modelProvider = modelId.split("/", 1)[0] || "";
+  const metadataProvider = metadata.provider?.trim() || null;
+
+  if (metadataProvider === "openai-codex" || modelProvider === "openai-codex") {
+    return true;
+  }
+
+  if (metadataProvider === "codex" || modelProvider === "codex") {
+    return true;
+  }
+
+  return modelProvider === "openai" && shouldDisplayOpenAiModelAsCodex(modelId, modelStatus, metadata);
+}
+
+export function isKnownOpenAiCodexModelId(modelId: string) {
+  return /^openai\/(?:gpt-5\.5|gpt-5\.4-mini)$/i.test(modelId) || /^openai\/.*codex/i.test(modelId);
+}
+
+function shouldDisplayOpenAiModelAsCodex(
+  modelId: string,
+  modelStatus?: ModelsStatusPayload,
+  metadata: ModelProviderMetadata = {}
+) {
   if (/^openai\/.*codex/i.test(modelId)) {
     return true;
+  }
+
+  if (metadata.tags?.some(isCodexModelTag)) {
+    return true;
+  }
+
+  if (!isKnownOpenAiCodexModelId(modelId)) {
+    return false;
   }
 
   if (!modelStatus) {
@@ -110,6 +178,57 @@ function shouldDisplayOpenAiModelAsCodex(modelId: string, modelStatus?: ModelsSt
   const openAiStatus = buildModelStatusConnectionStatus("openai", modelStatus, []);
 
   return Boolean(codexStatus?.connected && !openAiStatus?.connected);
+}
+
+function resolveProviderConnected({
+  provider,
+  visibleCount,
+  oauthProfiles,
+  usableOauthProfileCount,
+  oauthStatus,
+  profileCount,
+  effectiveKind,
+  syntheticAuthValue
+}: {
+  provider: AddModelsProviderId;
+  visibleCount: number;
+  oauthProfiles: unknown[] | null;
+  usableOauthProfileCount: number;
+  oauthStatus?: string;
+  profileCount: number;
+  effectiveKind?: string;
+  syntheticAuthValue: string | null;
+}) {
+  if (provider === "ollama") {
+    return visibleCount > 0;
+  }
+
+  if (provider === "openai-codex") {
+    return Boolean(
+      (oauthProfiles && usableOauthProfileCount > 0) ||
+      oauthStatus === "ok" ||
+      syntheticAuthValue ||
+      effectiveKind === "oauth" ||
+      effectiveKind === "synthetic"
+    );
+  }
+
+  if (provider === "openai") {
+    return Boolean(
+      (profileCount > 0 && effectiveKind !== "oauth") ||
+      (effectiveKind && ["ok", "profiles", "token", "apikey", "api-key"].includes(effectiveKind)) ||
+      (syntheticAuthValue && effectiveKind !== "oauth")
+    );
+  }
+
+  return oauthStatus === "ok" ||
+    profileCount > 0 ||
+    Boolean(syntheticAuthValue) ||
+    Boolean(effectiveKind && ["ok", "profiles", "token", "apikey", "api-key", "oauth", "synthetic"].includes(effectiveKind));
+}
+
+function isCodexModelTag(tag: string) {
+  return /^(codex|openai-codex|chatgpt|app-server|codex-app-server)$/i.test(tag.trim());
 }
 
 function resolveConnectionDetail({
@@ -171,7 +290,7 @@ function providerRecordMatchesAddModelsProvider(recordProvider: string | null, p
   }
 
   if (provider === "openai-codex") {
-    return recordProvider === "codex" || recordProvider === "openai-codex";
+    return recordProvider === "openai" || recordProvider === "codex" || recordProvider === "openai-codex";
   }
 
   return recordProvider === provider;

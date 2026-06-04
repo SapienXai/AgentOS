@@ -2,6 +2,7 @@ export function isOpenAiCodexAuthRefreshFailure(output: string) {
   const normalized = output.trim();
 
   return (
+    /OAuth token refresh failed for openai/i.test(normalized) ||
     /OAuth token refresh failed for openai-codex/i.test(normalized) ||
     /OpenAI Codex token refresh failed\s*\(401\)/i.test(normalized) ||
     /refresh token has already been used to generate a new access token/i.test(normalized)
@@ -23,7 +24,7 @@ export function isOpenAiCodexAuthRecoveryMessage(output: string) {
 
   return (
     /Your ChatGPT\/Codex session has expired/i.test(normalized) &&
-    /models auth login --provider (?:openai-codex|codex)/i.test(normalized)
+    /models auth login --provider (?:openai|openai-codex|codex)/i.test(normalized)
   );
 }
 
@@ -49,14 +50,14 @@ export function resolveOpenAiCodexAuthRecoveryMessage(command: string) {
 export function buildOpenAiCodexAuthLoginCommand(commandBin: string, options?: { force?: boolean }) {
   const forceFlag = options?.force ? " --force" : "";
 
-  return `${quoteShellArg(commandBin)} models auth login --provider codex --method app-server${forceFlag} --set-default`;
+  return `${quoteShellArg(commandBin)} models auth login --provider openai${forceFlag} --set-default`;
 }
 
 export function buildOpenAiCodexAuthRepairCommand(commandBin: string, options?: { force?: boolean }) {
   const command = quoteShellArg(commandBin);
   const forceFlag = options?.force ? " --force" : "";
 
-  return `${command} plugins install --force @openclaw/codex && ${command} doctor --fix && ${command} gateway restart && ${command} models auth login --provider codex --method app-server${forceFlag} --set-default`;
+  return `${command} plugins install --force @openclaw/codex && ${command} doctor --fix && ${command} gateway restart && ${command} models auth login --provider openai${forceFlag} --set-default`;
 }
 
 export function resolveOpenAiCodexAuthHandoff(

@@ -19,9 +19,9 @@ The original 2026-05-03 pass did not migrate unsupported or behaviorally ambiguo
 Evidence sources:
 
 - AgentOS client and adapter code.
-- Latest OpenClaw Gateway protocol docs and OpenClaw source checked on 2026-05-16.
+- Latest OpenClaw Gateway protocol docs and OpenClaw source checked during the original migration pass.
 - Existing AgentOS tests and runtime smoke behavior.
-- Local `openclaw gateway call` probes against installed OpenClaw `2026.5.12`.
+- Local `openclaw gateway call` probes against a pre-baseline OpenClaw install.
 
 Confirmed Gateway methods relevant to this pass:
 

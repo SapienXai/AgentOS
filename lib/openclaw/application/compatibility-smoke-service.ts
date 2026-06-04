@@ -24,7 +24,10 @@ import {
   persistOpenClawCompatibilitySmokeTest,
   readMissionControlSettings
 } from "@/lib/openclaw/domains/control-plane-settings";
-import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
+import {
+  OPENCLAW_RECOMMENDED_VERSION,
+  OPENCLAW_SUPPORTED_BASELINE_VERSION
+} from "@/lib/openclaw/versions";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import type {
   ModelReadiness,
@@ -208,7 +211,7 @@ export async function runOpenClawCompatibilitySmokeTest(): Promise<OpenClawCompa
         summary: loaded
           ? "Gateway service is loaded, but RPC is not ready."
           : "Gateway service is not loaded or did not report readiness.",
-        recovery: "Run `openclaw gateway start`, then retry. Use `openclaw gateway status --require-rpc` for RPC proof.",
+        recovery: "Run `openclaw gateway start`, then retry. Use `openclaw gateway status --json` for RPC proof.",
         rawDetails: payload
       };
     }
@@ -625,7 +628,7 @@ export async function runOpenClawCompatibilitySmokeTest(): Promise<OpenClawCompa
     checks,
     compatibility: {
       installedVersion: context.installedVersion,
-      requiredOpenClawVersion: null,
+      requiredOpenClawVersion: OPENCLAW_SUPPORTED_BASELINE_VERSION,
       recommendedOpenClawVersion: context.recommendedOpenClawVersion,
       gatewayProtocolVersion: context.gatewayProtocolVersion,
       requiredGatewayProtocolVersion: OPENCLAW_REQUIRED_GATEWAY_PROTOCOL_VERSION,

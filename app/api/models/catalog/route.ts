@@ -4,8 +4,9 @@ import { z } from "zod";
 import { listOpenClawModels } from "@/lib/openclaw/application/catalog-service";
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { buildModelRecords } from "@/lib/openclaw/adapter/model-adapter";
 import { addOpenClawModelsToConfig } from "@/lib/openclaw/application/model-provider-state-service";
-import { resolveModelRecordProvider } from "@/lib/openclaw/domains/model-provider-connection";
+import { normalizeOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
 import {
   isGatewayAuthSetupRecoveryError,
   runWithGatewayAuthSetupRecovery
@@ -113,26 +114,18 @@ function normalizeCatalogModels(
   models: ModelsPayload["models"],
   modelStatus: ModelsStatusPayload | null
 ): GlobalCatalogModel[] {
-  const uniqueModels = new Map<string, ModelsPayload["models"][number]>();
-
-  for (const model of models || []) {
-    if (!uniqueModels.has(model.key)) {
-      uniqueModels.set(model.key, model);
-    }
-  }
-
-  return Array.from(uniqueModels.values()).map((model) => ({
-    id: model.key,
+  return buildModelRecords(models || [], [], modelStatus ?? undefined).map((model) => ({
+    id: model.id,
     name: model.name,
-    provider: resolveModelRecordProvider(model.key, modelStatus ?? undefined),
+    provider: model.provider,
     input: model.input,
     contextWindow: model.contextWindow ?? null,
     local: Boolean(model.local),
     available: model.available !== false,
     missing: Boolean(model.missing),
-    recommended: isRecommendedModel(resolveModelRecordProvider(model.key, modelStatus ?? undefined), model.key),
+    recommended: isRecommendedModel(model.provider, model.id),
     supportsTools: model.input.includes("text"),
-    isFree: /:free$/i.test(model.key) || /\(free\)/i.test(model.name),
+    isFree: /:free$/i.test(model.id) || /\(free\)/i.test(model.name),
     tags: Array.isArray(model.tags) ? model.tags : []
   }));
 }
@@ -176,8 +169,8 @@ function normalizeCatalogProvider(provider: string): AddModelsProviderId {
 }
 
 function normalizeCatalogModelId(provider: AddModelsProviderId, modelId: string) {
-  if (provider === "openai-codex" && modelId.startsWith("openai-codex/")) {
-    return `openai/${modelId.slice("openai-codex/".length)}`;
+  if (provider === "openai-codex") {
+    return normalizeOpenAiCodexModelId(modelId);
   }
 
   if (modelId.startsWith("gemini/")) {

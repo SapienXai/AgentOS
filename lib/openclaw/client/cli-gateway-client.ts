@@ -8,6 +8,7 @@ import {
 import { stringifyCommandFailure } from "@/lib/openclaw/command-failure";
 import { containsRedactedOpenClawSecret } from "@/lib/openclaw/client/native-ws-gateway-utils";
 import { OPENCLAW_GATEWAY_PROTOCOL_RANGE } from "@/lib/openclaw/client/native-ws-gateway-types";
+import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 import type {
   AgentPayload,
   GatewayProbePayload,
@@ -498,7 +499,7 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
   ): Promise<OpenClawArtifactPayload> {
     void input;
     void options;
-    throw new Error("Artifact writes are not part of the OpenClaw 2026.5.28 Gateway baseline; native Gateway support must be explicitly advertised before AgentOS can use artifacts.put.");
+    throw new Error(`Artifact writes are not part of the OpenClaw ${OPENCLAW_SUPPORTED_BASELINE_VERSION} Gateway baseline; native Gateway support must be explicitly advertised before AgentOS can use artifacts.put.`);
   }
 
   async deleteArtifact(
@@ -507,7 +508,7 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
   ): Promise<OpenClawArtifactPayload> {
     void input;
     void options;
-    throw new Error("Artifact deletion is not part of the OpenClaw 2026.5.28 Gateway baseline; native Gateway support must be explicitly advertised before AgentOS can use artifacts.delete.");
+    throw new Error(`Artifact deletion is not part of the OpenClaw ${OPENCLAW_SUPPORTED_BASELINE_VERSION} Gateway baseline; native Gateway support must be explicitly advertised before AgentOS can use artifacts.delete.`);
   }
 
   async getRuntimeSnapshot(input: OpenClawRuntimeSnapshotInput = {}, options: OpenClawCommandOptions = {}) {

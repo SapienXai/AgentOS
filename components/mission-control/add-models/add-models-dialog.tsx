@@ -25,6 +25,7 @@ import {
 } from "@/lib/openclaw/model-provider-registry";
 import { getModelProviderAdapter, ModelProviderActionError } from "@/lib/openclaw/model-provider-adapters";
 import { isOpenClawTerminalCommand } from "@/lib/openclaw/terminal-command";
+import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import type {
   AddModelsCatalogModel,
   AddModelsEmptyState,
@@ -844,7 +845,7 @@ export function AddModelsDialog({
                                 <div>
                                   <p className="font-display text-[0.88rem] text-white">Use Codex app-server</p>
                                   <p className="mt-1 max-w-[500px] text-[10px] leading-[0.98rem] text-slate-400">
-                                    OpenClaw 2026.6.1 uses the Codex app-server plugin for ChatGPT-backed models.
+                                    OpenClaw {OPENCLAW_RECOMMENDED_VERSION} uses the Codex app-server plugin for ChatGPT-backed models.
                                   </p>
                                 </div>
                                 <Button
@@ -1294,7 +1295,7 @@ function modelMatchesProvider(providerId: AddModelsProviderId, modelId: string, 
   const provider = modelProvider || modelId.split("/", 1)[0] || "";
 
   if (providerId === "openai-codex") {
-    return provider === "openai-codex" || provider === "openai";
+    return provider === "openai-codex" || provider === "codex";
   }
 
   return provider === providerId;

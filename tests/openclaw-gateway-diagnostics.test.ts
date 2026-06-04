@@ -5,6 +5,7 @@ import {
   buildGatewayDiagnostics,
   buildVersionDiagnostics
 } from "@/lib/openclaw/adapter/diagnostics-adapter";
+import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import type { MissionControlSnapshot, ModelReadiness, OpenClawBinarySelection } from "@/lib/openclaw/types";
 
 const runtimeDiagnostics: MissionControlSnapshot["diagnostics"]["runtime"] = {
@@ -145,27 +146,27 @@ test("gateway diagnostics surface pending device access instead of native timeou
 
 test("version diagnostics use update.status when status lacks registry details", () => {
   const diagnostics = buildVersionDiagnostics({
-    status: { version: "2026.5.22" },
+    status: { version: "2026.6.0" },
     updateStatus: {
       result: {
         update: {
           registry: {
-            latestVersion: "2026.5.28"
+            latestVersion: OPENCLAW_RECOMMENDED_VERSION
           }
         }
       }
     }
   });
 
-  assert.equal(diagnostics.currentVersion, "2026.5.22");
-  assert.equal(diagnostics.latestVersion, "2026.5.28");
+  assert.equal(diagnostics.currentVersion, "2026.6.0");
+  assert.equal(diagnostics.latestVersion, OPENCLAW_RECOMMENDED_VERSION);
   assert.equal(diagnostics.updateAvailable, true);
   assert.match(diagnostics.updateInfo ?? "", /Update available/);
 });
 
 test("version diagnostics expose update.status errors instead of reporting loading", () => {
   const diagnostics = buildVersionDiagnostics({
-    status: { version: "2026.5.22" },
+    status: { version: "2026.6.0" },
     updateStatusError: "scope upgrade pending approval"
   });
 

@@ -52,9 +52,19 @@ export function resolveAgentChatGatewayRepairAction(
 }
 
 function resolveProviderFromAuthCommand(message: string) {
-  const providerMatch =
-    message.match(/\bmodels\s+auth\s+(?:login|paste-token)\b[\s\S]*?--provider(?:=|\s+)(["']?)([a-z0-9_-]+)\1/i) ??
-    message.match(/\b--provider(?:=|\s+)(["']?)([a-z0-9_-]+)\1/i);
+  const authCommandMatch = message.match(
+    /\bmodels\s+auth\s+(login|paste-token)\b[\s\S]*?--provider(?:=|\s+)(["']?)([a-z0-9_-]+)\2/i
+  );
+
+  if (authCommandMatch?.[1] === "login" && authCommandMatch[3] === "openai") {
+    return "openai-codex";
+  }
+
+  if (authCommandMatch?.[3]) {
+    return normalizeAddModelsProviderId(authCommandMatch[3]);
+  }
+
+  const providerMatch = message.match(/\b--provider(?:=|\s+)(["']?)([a-z0-9_-]+)\1/i);
 
   return normalizeAddModelsProviderId(providerMatch?.[2] ?? null);
 }

@@ -1,6 +1,9 @@
+import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
+
 export type OpenClawGatewayCompatibilityOperationId =
   | "health"
   | "modelAuthOrder"
+  | "modelScan"
   | "logsTail"
   | "configSchemaLookup"
   | "configPatch"
@@ -15,15 +18,18 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "agentWait"
   | "sessionHistory"
   | "taskEvents"
+  | "taskAssign"
   | "taskCancel"
   | "artifacts"
   | "runtimeSnapshot"
   | "tools"
+  | "plugins"
   | "execApprovals"
   | "devicePairList"
   | "deviceApproval"
   | "cronRead"
   | "channels"
+  | "channelList"
   | "channelLogs"
   | "channelProvisioning"
   | "channelRemoval"
@@ -44,6 +50,7 @@ export type OpenClawGatewayCompatibilityOperationDefinition = {
 export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibilityOperationDefinition[] = [
   { id: "health", label: "Gateway health", methods: ["health", "status"], baseline: "required" },
   { id: "modelAuthOrder", label: "Model auth order", methods: ["models.authOrder.set", "models.auth.order.set"], baseline: "experimental" },
+  { id: "modelScan", label: "Model scan", methods: ["models.scan"], baseline: "optional" },
   { id: "logsTail", label: "Gateway logs", methods: ["logs.tail"], baseline: "required" },
   { id: "configSchemaLookup", label: "Config schema lookup", methods: ["config.schema.lookup", "config.schema"], baseline: "required" },
   { id: "configPatch", label: "Config patch", methods: ["config.patch", "config.apply", "config.set"], baseline: "required" },
@@ -70,6 +77,7 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     events: ["task", "task.updated", "task.completed"],
     baseline: "optional"
   },
+  { id: "taskAssign", label: "Task assignment", methods: ["tasks.assign"], fallbackAllowed: false, baseline: "experimental" },
   { id: "taskCancel", label: "Task cancellation", methods: ["tasks.cancel"], baseline: "optional" },
   {
     id: "artifacts",
@@ -80,6 +88,7 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   },
   { id: "runtimeSnapshot", label: "Runtime snapshot", methods: ["sessions.list", "tasks.list"], baseline: "required" },
   { id: "tools", label: "Tool catalog", methods: ["tools.catalog", "tools.effective", "tools.invoke"], fallbackAllowed: false, baseline: "optional" },
+  { id: "plugins", label: "Plugin catalog", methods: ["plugins.uiDescriptors", "plugins.list"], baseline: "optional" },
   {
     id: "execApprovals",
     label: "Execution approvals",
@@ -96,6 +105,7 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   { id: "deviceApproval", label: "Device access repair", methods: ["device.pair.approve", "devices.approve", "gateway.devices.approve"], baseline: "optional" },
   { id: "cronRead", label: "Automation status", methods: ["cron.list", "cron.status"], baseline: "optional" },
   { id: "channels", label: "Channel status", methods: ["channels.status"], baseline: "required" },
+  { id: "channelList", label: "Channel list", methods: ["channels.list", "channels.status"], baseline: "optional" },
   { id: "channelLogs", label: "Channel logs", methods: ["channels.logs"], baseline: "optional" },
   { id: "channelProvisioning", label: "Channel provisioning", methods: ["channels.add", "channels.create", "channels.configure"], baseline: "experimental" },
   { id: "channelRemoval", label: "Channel removal", methods: ["channels.remove", "channels.delete"], baseline: "experimental" },
@@ -105,13 +115,14 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   { id: "updates", label: "Update status", methods: ["update.status", "update.run", "status"], baseline: "optional" }
 ];
 
-export const OPENCLAW_GATEWAY_BASELINE_VERSION = "2026.5.28";
+export const OPENCLAW_GATEWAY_BASELINE_VERSION = OPENCLAW_SUPPORTED_BASELINE_VERSION;
 
 export const OPENCLAW_GATEWAY_BASELINE_PROTOCOL_VERSION = 4;
 
-export const OPENCLAW_2026_5_28_REQUIRED_GATEWAY_METHODS = [
+export const OPENCLAW_2026_6_1_REQUIRED_GATEWAY_METHODS = [
   "health",
   "status",
+  "update.status",
   "models.list",
   "models.authStatus",
   "agents.list",
@@ -119,8 +130,10 @@ export const OPENCLAW_2026_5_28_REQUIRED_GATEWAY_METHODS = [
   "agents.update",
   "agents.delete",
   "sessions.list",
+  "sessions.preview",
   "chat.send",
   "config.get",
+  "config.set",
   "config.schema",
   "config.schema.lookup",
   "config.patch",
@@ -129,7 +142,7 @@ export const OPENCLAW_2026_5_28_REQUIRED_GATEWAY_METHODS = [
   "logs.tail"
 ] as const;
 
-export const OPENCLAW_2026_5_28_OPTIONAL_GATEWAY_METHODS = [
+export const OPENCLAW_2026_6_1_OPTIONAL_GATEWAY_METHODS = [
   "agent.identity.get",
   "agent.wait",
   "artifacts.download",
@@ -139,24 +152,30 @@ export const OPENCLAW_2026_5_28_OPTIONAL_GATEWAY_METHODS = [
   "chat.history",
   "chat.inject",
   "channels.logout",
+  "channels.list",
   "channels.start",
   "channels.stop",
   "cron.list",
   "cron.status",
   "devices.list",
+  "device.pair.list",
+  "device.pair.approve",
+  "device.pair.reject",
+  "device.pair.remove",
   "exec.approval.get",
   "exec.approval.list",
   "exec.approval.request",
   "exec.approval.resolve",
   "exec.approval.waitDecision",
   "plugins.uiDescriptors",
+  "plugins.list",
+  "models.scan",
   "sessions.abort",
   "sessions.create",
   "sessions.describe",
   "sessions.get",
   "sessions.messages.subscribe",
   "sessions.patch",
-  "sessions.preview",
   "sessions.resolve",
   "sessions.steer",
   "sessions.subscribe",
@@ -172,8 +191,7 @@ export const OPENCLAW_2026_5_28_OPTIONAL_GATEWAY_METHODS = [
   "tools.catalog",
   "tools.effective",
   "tools.invoke",
-  "update.run",
-  "update.status"
+  "update.run"
 ] as const;
 
 export const OPENCLAW_EXPERIMENTAL_GATEWAY_METHODS = [
@@ -190,6 +208,7 @@ export const OPENCLAW_EXPERIMENTAL_GATEWAY_METHODS = [
   "environment.delete",
   "gateway.restart.preflight",
   "gateway.restart.request",
+  "tasks.assign",
   "models.authOrder.set",
   "models.auth.order.set",
   "agents.identity.set",
@@ -208,8 +227,8 @@ export const OPENCLAW_EXPERIMENTAL_GATEWAY_METHODS = [
 ] as const;
 
 const additionalGatewayFirstMethods = [
-  ...OPENCLAW_2026_5_28_REQUIRED_GATEWAY_METHODS,
-  ...OPENCLAW_2026_5_28_OPTIONAL_GATEWAY_METHODS,
+  ...OPENCLAW_2026_6_1_REQUIRED_GATEWAY_METHODS,
+  ...OPENCLAW_2026_6_1_OPTIONAL_GATEWAY_METHODS,
   ...OPENCLAW_EXPERIMENTAL_GATEWAY_METHODS
 ];
 
@@ -222,17 +241,17 @@ export const OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS = Array.from(
 
 export const OPENCLAW_GATEWAY_BASELINE_METHODS = Array.from(
   new Set([
-    ...OPENCLAW_2026_5_28_REQUIRED_GATEWAY_METHODS,
-    ...OPENCLAW_2026_5_28_OPTIONAL_GATEWAY_METHODS
+    ...OPENCLAW_2026_6_1_REQUIRED_GATEWAY_METHODS,
+    ...OPENCLAW_2026_6_1_OPTIONAL_GATEWAY_METHODS
   ])
 ).sort();
 
 export const OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS = Array.from(
-  new Set(OPENCLAW_2026_5_28_REQUIRED_GATEWAY_METHODS)
+  new Set(OPENCLAW_2026_6_1_REQUIRED_GATEWAY_METHODS)
 ).sort();
 
 export const OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS = Array.from(
-  new Set(OPENCLAW_2026_5_28_OPTIONAL_GATEWAY_METHODS)
+  new Set(OPENCLAW_2026_6_1_OPTIONAL_GATEWAY_METHODS)
 ).sort();
 
 export const OPENCLAW_GATEWAY_EXPERIMENTAL_METHODS = Array.from(

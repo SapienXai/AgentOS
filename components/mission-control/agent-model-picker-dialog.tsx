@@ -14,6 +14,10 @@ import {
   getModelProviderDescriptor,
   isAddModelsProviderId
 } from "@/lib/openclaw/model-provider-registry";
+import {
+  modelRecordIdentityKey,
+  normalizeOpenAiCodexModelId
+} from "@/lib/openclaw/domains/model-provider-connection";
 import { formatAgentDisplayName, formatContextWindow, formatModelLabel } from "@/lib/openclaw/presenters";
 import type { AddModelsProviderId, MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
@@ -38,14 +42,15 @@ export function AgentModelPickerDialog({
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
 }) {
   const agent = agentId ? snapshot.agents.find((entry) => entry.id === agentId) ?? null : null;
-  const currentModelId = agent?.modelId && agent.modelId !== "unassigned" ? agent.modelId : "";
-  const currentModel = currentModelId ? snapshot.models.find((entry) => entry.id === currentModelId) ?? null : null;
-  const currentModelSelectable = currentModel ? isSelectableModel(currentModel) : false;
+  const currentModelId = agent?.modelId && agent.modelId !== "unassigned" ? normalizeOpenAiCodexModelId(agent.modelId) : "";
   const [selectedModelId, setSelectedModelId] = useState(currentModelId);
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const snapshotRef = useRef(snapshot);
+  const modelOptions = useMemo(() => dedupeSnapshotModels(snapshot.models), [snapshot.models]);
+  const currentModel = currentModelId ? findModelByCanonicalId(modelOptions, currentModelId) : null;
+  const currentModelSelectable = currentModel ? isSelectableModel(currentModel) : false;
 
   useEffect(() => {
     snapshotRef.current = snapshot;
@@ -62,7 +67,7 @@ export function AgentModelPickerDialog({
       return;
     }
 
-    setSelectedModelId(currentAgent.modelId === "unassigned" ? "" : currentAgent.modelId);
+    setSelectedModelId(currentAgent.modelId === "unassigned" ? "" : normalizeOpenAiCodexModelId(currentAgent.modelId));
     setSearch("");
     setError(null);
   }, [agentId, open]);
@@ -70,7 +75,7 @@ export function AgentModelPickerDialog({
   const visibleModels = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return [...snapshot.models]
+    return [...modelOptions]
       .sort((left, right) => {
         const leftUnavailable = !isSelectableModel(left);
         const rightUnavailable = !isSelectableModel(right);
@@ -99,14 +104,14 @@ export function AgentModelPickerDialog({
         const haystack = `${model.name} ${model.id} ${model.provider} ${model.input} ${model.tags.join(" ")}`.toLowerCase();
         return haystack.includes(query);
       });
-  }, [search, snapshot.models]);
+  }, [modelOptions, search]);
 
   const selectedModel = selectedModelId
-    ? snapshot.models.find((entry) => entry.id === selectedModelId) ?? null
+    ? findModelByCanonicalId(modelOptions, selectedModelId)
     : null;
   const selectedModelSelectable = selectedModel ? isSelectableModel(selectedModel) : false;
   const hasChanges = Boolean(selectedModelId) && selectedModelId !== currentModelId;
-  const selectableModelCount = snapshot.models.filter((model) => isSelectableModel(model)).length;
+  const selectableModelCount = modelOptions.filter((model) => isSelectableModel(model)).length;
   const currentStatusLabel = currentModel
     ? resolveModelStatusLabel(currentModel)
     : currentModelId
@@ -472,11 +477,12 @@ function updateSnapshotAgentModel(
   agentId: string,
   modelId: string
 ) {
+  const canonicalModelId = normalizeOpenAiCodexModelId(modelId);
   const nextAgents = snapshot.agents.map((agent) =>
     agent.id === agentId
       ? {
           ...agent,
-          modelId
+          modelId: canonicalModelId
         }
       : agent
   );
@@ -489,15 +495,90 @@ function updateSnapshotAgentModel(
       continue;
     }
 
-    modelUsage.set(assignedModelId, (modelUsage.get(assignedModelId) ?? 0) + 1);
+    const canonicalAssignedModelId = normalizeOpenAiCodexModelId(assignedModelId);
+    modelUsage.set(canonicalAssignedModelId, (modelUsage.get(canonicalAssignedModelId) ?? 0) + 1);
   }
 
   return {
     ...snapshot,
     agents: nextAgents,
-    models: snapshot.models.map((model) => ({
+    models: dedupeSnapshotModels(snapshot.models).map((model) => ({
       ...model,
       usageCount: modelUsage.get(model.id) ?? 0
     }))
   };
+}
+
+function findModelByCanonicalId(
+  models: AgentModelRecord[],
+  modelId: string
+) {
+  const canonicalModelId = normalizeOpenAiCodexModelId(modelId);
+
+  return models.find((entry) => normalizeOpenAiCodexModelId(entry.id) === canonicalModelId) ?? null;
+}
+
+function dedupeSnapshotModels(models: AgentModelRecord[]) {
+  const recordsByIdentity = new Map<string, AgentModelRecord>();
+
+  for (const model of models) {
+    const canonicalId = normalizeOpenAiCodexModelId(model.id);
+    const normalizedModel = canonicalId === model.id
+      ? model
+      : {
+          ...model,
+          id: canonicalId
+        };
+    const identityKey = modelRecordIdentityKey(model.id, model.provider);
+    const existing = recordsByIdentity.get(identityKey);
+
+    recordsByIdentity.set(
+      identityKey,
+      existing ? mergeSnapshotModelRecords(existing, normalizedModel) : normalizedModel
+    );
+  }
+
+  return Array.from(recordsByIdentity.values());
+}
+
+function mergeSnapshotModelRecords(
+  existing: AgentModelRecord,
+  candidate: AgentModelRecord
+) {
+  const preferred = scoreSnapshotModelRecord(candidate) > scoreSnapshotModelRecord(existing) ? candidate : existing;
+  const fallback = preferred === candidate ? existing : candidate;
+
+  return {
+    ...preferred,
+    contextWindow: preferred.contextWindow ?? fallback.contextWindow,
+    local: preferred.local ?? fallback.local,
+    available: preferred.available === true || fallback.available === true
+      ? true
+      : preferred.available ?? fallback.available,
+    missing: preferred.missing && fallback.missing,
+    tags: Array.from(new Set([...preferred.tags, ...fallback.tags].filter(Boolean))),
+    usageCount: Math.max(preferred.usageCount, fallback.usageCount)
+  };
+}
+
+function scoreSnapshotModelRecord(model: AgentModelRecord) {
+  let score = 0;
+
+  if (model.available === true) {
+    score += 100;
+  }
+
+  if (!model.missing) {
+    score += 50;
+  }
+
+  if (model.provider === "openai-codex") {
+    score += 10;
+  }
+
+  if (model.usageCount > 0) {
+    score += 5;
+  }
+
+  return score;
 }

@@ -3,6 +3,7 @@ import {
   isOpenClawOnboardingModelReady,
   isOpenClawSystemReady
 } from "@/lib/openclaw/readiness";
+import { isKnownOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
 import { isAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
 import type {
   AddModelsProviderId,
@@ -443,13 +444,14 @@ export function resolveOnboardingModelProviderId(
   snapshot: MissionControlSnapshot,
   modelId?: string | null
 ): AddModelsProviderId | null {
+  const normalizedModelId = modelId?.trim() ?? "";
   const modelProvider = resolveModelProvider(modelId);
 
   if (!modelProvider) {
     return null;
   }
 
-  if (modelProvider === "openai" && shouldTreatOpenAiModelAsCodex(snapshot)) {
+  if (modelProvider === "openai" && shouldTreatOpenAiModelAsCodex(snapshot, normalizedModelId)) {
     return "openai-codex";
   }
 
@@ -480,7 +482,7 @@ export function resolveSelectedOnboardingProviderId(
   )?.provider;
 
   if (isAddModelsProviderId(snapshotProvider)) {
-    if (snapshotProvider === "openai" && shouldTreatOpenAiModelAsCodex(snapshot)) {
+    if (snapshotProvider === "openai" && shouldTreatOpenAiModelAsCodex(snapshot, normalizedModelId)) {
       return "openai-codex";
     }
 
@@ -525,7 +527,11 @@ export function resolveInitialOnboardingProviderId(
   return "openrouter";
 }
 
-function shouldTreatOpenAiModelAsCodex(snapshot: MissionControlSnapshot) {
+function shouldTreatOpenAiModelAsCodex(snapshot: MissionControlSnapshot, modelId: string) {
+  if (!isKnownOpenAiCodexModelId(modelId)) {
+    return false;
+  }
+
   const providers = snapshot.diagnostics.modelReadiness.authProviders;
   const codexProvider = providers.find((provider) => provider.provider === "openai-codex");
   const openAiProvider = providers.find((provider) => provider.provider === "openai");
