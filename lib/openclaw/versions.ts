@@ -1,0 +1,1 @@
+export const OPENCLAW_RECOMMENDED_VERSION = "2026.6.1";

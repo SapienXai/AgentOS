@@ -10,8 +10,12 @@ import {
 import {
   buildOpenAiCodexAuthLoginCommand,
   isOpenAiCodexAuthRefreshFailure,
+  isOpenAiCodexProviderPluginMissing,
   isOpenAiCodexDiscoveryTimeout,
-  resolveOpenAiCodexAuthRecoveryMessage
+  resolveOpenAiCodexAuthRecoveryMessage,
+  buildOpenAiCodexAuthRepairCommand,
+  resolveOpenAiCodexAuthHandoff,
+  resolveOpenAiCodexProviderPluginRecoveryMessage
 } from "@/lib/openclaw/model-auth-errors";
 import {
   clearOpenAiCodexAuthRuntimeSmokeFailures,
@@ -23,6 +27,7 @@ import { clearMissionControlCaches, getMissionControlSnapshot } from "@/lib/agen
 import {
   addOpenClawModelsToConfig,
   buildOpenClawFileBasedProviderConnectionStatus,
+  readOpenClawCodexPluginReady,
   persistOpenClawProviderToken,
   readOpenClawConfiguredModelIds,
   readOpenClawProviderModelStatus,
@@ -82,7 +87,8 @@ const requestSchema = z.discriminatedUnion("action", [
     action: z.literal("connect"),
     provider: providerIdSchema,
     apiKey: optionalInputString,
-    endpoint: optionalInputString
+    endpoint: optionalInputString,
+    force: z.boolean().optional()
   }),
   z.object({
     action: z.literal("discover"),
@@ -195,21 +201,32 @@ async function handleProviderAction(
     if (input.provider === "openai-codex") {
       const statusContext = await readProviderConnectionContext(input.provider);
 
+      if (statusContext.connection.connected) {
+        return buildActionResult({
+          ok: true,
+          action: input.action,
+          provider: input.provider,
+          message: "Codex app-server is already connected. Discover models to refresh the catalog.",
+          connection: statusContext.connection,
+          models: [],
+          manualCommand: null,
+          docsUrl: addModelsDocsUrl
+        });
+      }
+
+      const codexPluginReady = await readOpenClawCodexPluginReady().catch(() => false);
+      const authHandoff = resolveOpenAiCodexAuthHandoff(commandBin, codexPluginReady, {
+        force: input.force === true
+      });
+
       return buildActionResult({
         ok: true,
         action: input.action,
         provider: input.provider,
-        message: "Continue in Terminal to connect your ChatGPT account, then come back to discover models.",
+        message: authHandoff.continueMessage,
         connection: statusContext.connection,
         models: [],
-        manualCommand: formatOpenClawCommand(commandBin, [
-          "models",
-          "auth",
-          "login",
-          "--provider",
-          "openai-codex",
-          "--set-default"
-        ]),
+        manualCommand: authHandoff.command,
         docsUrl: addModelsDocsUrl
       });
     }
@@ -535,6 +552,18 @@ async function scanProviderModels(provider: AddModelsProviderId, commandBin = "o
 
 function normalizeProviderCatalogError(provider: AddModelsProviderId, error: unknown, commandBin = "openclaw") {
   const message = stringifyProviderError(error);
+
+  if (
+    provider === "openai-codex" &&
+    isOpenAiCodexProviderPluginMissing(message)
+  ) {
+    const command = buildOpenAiCodexAuthRepairCommand(commandBin);
+
+    return new ProviderAuthActionError(
+      resolveOpenAiCodexProviderPluginRecoveryMessage(command),
+      command
+    );
+  }
 
   if (
     provider === "openai-codex" &&
@@ -927,7 +956,7 @@ function modelMatchesProvider(provider: AddModelsProviderId, modelId: string) {
   const modelProvider = resolveProviderFromModelId(modelId);
 
   if (provider === "openai-codex") {
-    return modelProvider === "openai" || modelProvider === "openai-codex";
+    return modelProvider === "codex" || modelProvider === "openai" || modelProvider === "openai-codex";
   }
 
   return modelProvider === provider && isAddModelsProviderId(modelProvider);

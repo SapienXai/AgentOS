@@ -58,6 +58,22 @@ test("stalled tasks without output evidence still wait for output", () => {
   );
 });
 
+test("runtime-observed tasks without output evidence stay on waiting output instead of going live", () => {
+  const task = createTask({
+    status: "running",
+    subtitle: "Runtime observed. Waiting for the first output update.",
+    metadata: {
+      resultPreview: "agent",
+      turnCount: 0
+    }
+  });
+
+  assert.equal(
+    resolveTaskBadgeLabel("runtime-observed", task.status, true, false, false),
+    "waiting output"
+  );
+});
+
 function createTask(overrides: Partial<WorkItemRecord> = {}): WorkItemRecord {
   return {
     id: "task:test",

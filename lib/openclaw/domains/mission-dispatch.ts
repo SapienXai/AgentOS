@@ -43,9 +43,9 @@ const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 
 export function extractMissionDispatchSessionId(record: MissionDispatchRecord) {
   return (
-    (record.sessionId?.trim() || null) ??
     extractMissionDispatchString(extractMissionDispatchAgentMeta(record), "sessionId") ??
-    extractSessionIdFromRuntimeId(record.observation.runtimeId)
+    extractSessionIdFromRuntimeId(record.observation.runtimeId) ??
+    (record.sessionId?.trim() || null)
   );
 }
 

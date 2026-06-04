@@ -1032,6 +1032,7 @@ export type AddModelsProviderActionRequest =
       provider: AddModelsProviderId;
       apiKey?: string;
       endpoint?: string;
+      force?: boolean;
     }
   | {
       action: "discover";

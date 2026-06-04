@@ -56,9 +56,9 @@ const missionDispatchQueuedStallMs = 2 * 60_000;
 
 export function extractMissionDispatchSessionId(record: MissionDispatchRecordLike) {
   return (
-    (record.sessionId?.trim() || null) ??
     extractMissionDispatchString(extractMissionDispatchAgentMeta(record), "sessionId") ??
-    extractSessionIdFromRuntimeId(record.observation.runtimeId)
+    extractSessionIdFromRuntimeId(record.observation.runtimeId) ??
+    (record.sessionId?.trim() || null)
   );
 }
 
@@ -144,6 +144,10 @@ export function resolveMissionDispatchCompletionDetail(record: MissionDispatchRe
 
   if (record.status === "cancelled") {
     return summarizeText(record.error || "Mission aborted by operator.", 90);
+  }
+
+  if (record.status === "stalled") {
+    return summarizeText(record.error || resolveMissionDispatchSummary(record) || "OpenClaw did not capture a final agent response.", 120);
   }
 
   const completedSummary = resolveMissionDispatchSummary(record) || resolveMissionDispatchResultText(record);
@@ -248,7 +252,7 @@ export function resolveMissionDispatchSubtitle(
   const bootstrapStage = resolveMissionDispatchBootstrapStage(record, status);
 
   if (bootstrapStage === "runtime-observed") {
-    return "First runtime observed. Promoting the task to live updates.";
+    return "Runtime observed. Waiting for the first output update.";
   }
 
   if (bootstrapStage === "waiting-for-runtime") {

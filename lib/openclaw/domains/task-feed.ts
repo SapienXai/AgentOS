@@ -334,7 +334,7 @@ export async function buildMissionDispatchFeed(
           kind: "status",
           timestamp: record.observation.observedAt,
           title: "Runtime observed",
-          detail: "The task is now live. Runtime updates will continue below."
+          detail: "OpenClaw observed a runtime. Waiting for the first output update."
         },
         {
           urlSources: [record.outputDirRelative]

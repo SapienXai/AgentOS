@@ -5,6 +5,7 @@ import { setOpenClawAdapterForTesting, type OpenClawAdapter } from "@/lib/opencl
 import {
   addOpenClawModelsToConfig,
   persistOpenClawProviderToken,
+  readOpenClawCodexPluginReady,
   setOpenClawDefaultModel
 } from "@/lib/openclaw/application/model-provider-state-service";
 
@@ -20,6 +21,46 @@ test("provider token persistence does not silently write OpenClaw auth files by 
     () => persistOpenClawProviderToken("openai", "sk-test"),
     /Legacy OpenClaw provider file writes are disabled by default/
   );
+});
+
+test("Codex plugin readiness requires the plugin registry entry", async () => {
+  setOpenClawAdapterForTesting({
+    async listPlugins() {
+      return {
+        plugins: [
+          {
+            id: "codex",
+            name: "@openclaw/codex",
+            status: "enabled"
+          }
+        ]
+      };
+    }
+  } as unknown as OpenClawAdapter);
+
+  assert.equal(await readOpenClawCodexPluginReady(), true);
+});
+
+test("Codex plugin readiness rejects missing or failed registry entries", async () => {
+  setOpenClawAdapterForTesting({
+    async listPlugins() {
+      return {
+        plugins: [
+          {
+            id: "other",
+            name: "Other"
+          },
+          {
+            id: "@openclaw/codex",
+            name: "@openclaw/codex",
+            status: "error"
+          }
+        ]
+      };
+    }
+  } as unknown as OpenClawAdapter);
+
+  assert.equal(await readOpenClawCodexPluginReady(), false);
 });
 
 test("adding provider models does not silently fall back to OpenClaw file writes after Gateway failure", async () => {

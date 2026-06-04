@@ -29,7 +29,7 @@ export function resolveTaskBadgeLabel(
     case "waiting-for-runtime":
       return "awaiting runtime";
     case "runtime-observed":
-      return "going live";
+      return hasRuntimeOutputEvidence ? status : "waiting output";
     case "completed":
       return "completed";
     default:

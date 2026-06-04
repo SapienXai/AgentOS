@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ComponentType, type ReactNode } from "react";
+import { useState, type ComponentType, type ReactNode, type Ref } from "react";
 import { ChevronDown, Loader2, MessageSquare, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,10 @@ import {
   buildTaskFollowUpPrompt,
   resolveTaskFollowUpAvailability
 } from "@/lib/openclaw/domains/task-follow-up";
-import type { TaskFollowUpRecord } from "@/lib/openclaw/domains/task-follow-up-records";
+import {
+  resolveTaskFollowUpDisplayMessage,
+  type TaskFollowUpRecord
+} from "@/lib/openclaw/domains/task-follow-up-records";
 import type { RuntimeCreatedFile, TaskRecord } from "@/lib/openclaw/types";
 import { compactMissionText } from "@/lib/openclaw/presenters";
 import { cn } from "@/lib/utils";
@@ -27,25 +30,42 @@ export type TaskMetricItem = {
 export type SubmittedTaskFollowUp = TaskFollowUpRecord;
 
 export function formatFollowUpDetail(followUp: SubmittedTaskFollowUp) {
+  const message = resolveTaskFollowUpDisplayMessage(followUp) ?? followUp.message.trim();
+  const displayMessage = message || "Follow-up";
+
   if (followUp.summary) {
     return [
       "Operator follow-up:",
-      followUp.message,
+      displayMessage,
       "",
       "Agent response:",
       followUp.summary
     ].join("\n");
   }
 
+  if (isFollowUpTimeoutStatus(followUp.status)) {
+    return [
+      "Operator follow-up:",
+      displayMessage,
+      "",
+      "No agent answer was captured before the OpenClaw wait window expired."
+    ].join("\n");
+  }
+
   return [
     "Operator follow-up:",
-    followUp.message,
+    displayMessage,
     "",
     `Sent ${formatFollowUpTimestamp(followUp.createdAt)}.`,
     followUp.runId
       ? `OpenClaw run ${followUp.runId} is being tracked for this follow-up.`
       : "Waiting for the agent result to appear in the task feed and latest result."
   ].join("\n");
+}
+
+function isFollowUpTimeoutStatus(status: string | null | undefined) {
+  const normalized = status?.trim().toLowerCase();
+  return normalized === "timeout" || normalized === "timed_out" || normalized === "stalled" || normalized === "failed";
 }
 
 export function TaskMetricRow({
@@ -170,6 +190,9 @@ export function TaskFollowUpComposer({
   createdFiles,
   outputSummary,
   onSubmitted,
+  onExpandRequest,
+  textareaRef,
+  expanded = false,
   className,
   compact = false
 }: {
@@ -178,6 +201,9 @@ export function TaskFollowUpComposer({
   createdFiles?: RuntimeCreatedFile[];
   outputSummary?: string | null;
   onSubmitted?: (followUp: SubmittedTaskFollowUp) => Promise<void> | void;
+  onExpandRequest?: () => void;
+  textareaRef?: Ref<HTMLTextAreaElement>;
+  expanded?: boolean;
   className?: string;
   compact?: boolean;
 }) {
@@ -252,25 +278,32 @@ export function TaskFollowUpComposer({
     <div
       className={cn(
         "rounded-[16px] border border-cyan-200/14 bg-slate-950/36 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
+        expanded && "border-cyan-200/24 bg-slate-950/46",
         className
       )}
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
       <div className="flex items-end gap-2">
-        <div className="flex min-h-11 flex-1 items-start gap-2 rounded-[13px] border border-white/[0.07] bg-black/18 px-2.5 py-2">
-          <MessageSquare className="mt-1 h-4 w-4 shrink-0 text-slate-400" />
+        <div className={cn(
+          "flex min-h-11 flex-1 items-start gap-2 rounded-[13px] border border-white/[0.07] bg-black/18 px-2.5 py-2 transition-[min-height,border-color,background-color] duration-200",
+          expanded && "min-h-14 border-cyan-200/20 bg-black/24"
+        )}>
+          <MessageSquare className={cn("mt-1 h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200", expanded && "scale-110 text-cyan-100")} />
           <Textarea
+            ref={textareaRef}
             value={message}
             maxLength={4000}
             disabled={submitting || !availability.available}
             placeholder="Ask a follow-up..."
             className={cn(
               "min-h-8 resize-none border-0 bg-transparent p-0 font-medium text-slate-100 caret-emerald-200 shadow-none placeholder:font-medium placeholder:text-slate-400 focus-visible:ring-0",
-              compact ? "text-base leading-7" : "text-[16px] leading-7"
+              compact ? "text-base leading-7" : "text-[16px] leading-7",
+              expanded && "text-[17px]"
             )}
-            rows={compact ? 1 : 2}
+            rows={expanded ? 3 : compact ? 1 : 2}
             title={availability.reason ?? undefined}
+            onFocus={() => onExpandRequest?.()}
             onChange={(event) => setMessage(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {

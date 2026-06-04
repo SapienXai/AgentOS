@@ -14,7 +14,9 @@ import {
   FolderOpenDot,
   Lock,
   LockOpen,
+  MessageSquare,
   MoreHorizontal,
+  Plus,
   RefreshCw,
   Rows3,
   Sparkles,
@@ -59,7 +61,8 @@ import { useTaskFeed } from "@/hooks/use-task-feed";
 import type { RuntimeOutputRecord, RuntimeRecord, TaskFeedEvent } from "@/lib/agentos/contracts";
 import {
   mergeTaskFollowUps,
-  readTaskFollowUpsFromMetadata
+  readTaskFollowUpsFromMetadata,
+  resolveTaskFollowUpDisplayMessage
 } from "@/lib/openclaw/domains/task-follow-up-records";
 import { compactMissionText, formatTokens } from "@/lib/openclaw/presenters";
 import { cn } from "@/lib/utils";
@@ -67,10 +70,23 @@ import { cn } from "@/lib/utils";
 type TaskFlowNode = Node<TaskNodeData, "task">;
 const FOLLOW_UP_STALE_MS = 90_000;
 
+type TaskWorkspaceTab = {
+  id: string;
+  index: number | null;
+  kind: "task" | "follow-up";
+  label: string;
+  title: string;
+  statusLabel: string;
+  hasLiveActivity: boolean;
+};
+
 export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [composerExpanded, setComposerExpanded] = useState(false);
   const [titleExpanded, setTitleExpanded] = useState(false);
   const [localFollowUps, setLocalFollowUps] = useState<SubmittedTaskFollowUp[]>([]);
   const [activeFollowUpIndex, setActiveFollowUpIndex] = useState<number | null>(null);
@@ -270,17 +286,70 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const feedButtonCount = String(displayedFeed.length);
   const feedPanelId = `task-feed-${data.task.id}`;
   const visualTone = resolveTaskNodeVisualTone(displayedToneInput);
-  const cardCount = 1 + followUps.length;
   const currentCardNumber = effectiveActiveFollowUpIndex === null ? 1 : effectiveActiveFollowUpIndex + 2;
-  const nextCardNumber = currentCardNumber >= cardCount ? 1 : currentCardNumber + 1;
-  const displayPromptText = activeFollowUp ? activeFollowUp.message : promptText;
-  const displayResultTitle = activeFollowUp ? `Follow-up ${currentCardNumber - 1}` : "Latest result";
+  const displayPromptText = activeFollowUp
+    ? resolveTaskFollowUpDisplayMessage(activeFollowUp) ?? activeFollowUp.message
+    : promptText;
+  const displayResultTitle = activeFollowUp ? "Follow-up result" : "Latest result";
   const displayResultText = activeFollowUp
     ? resolveFollowUpResultText(activeFollowUp, activeFollowUpRuntime, activeFollowUpOutput)
     : resultPreview;
   const activeInspectorContext = activeFollowUp
     ? buildTaskCardInspectorContext(data.task.id, activeFollowUp, effectiveActiveFollowUpIndex ?? 0, currentCardNumber)
     : null;
+
+  useEffect(() => {
+    if (!composerExpanded) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!cardRef.current?.contains(event.target as globalThis.Node)) {
+        setComposerExpanded(false);
+        setTitleExpanded(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    return () => window.removeEventListener("pointerdown", handlePointerDown, true);
+  }, [composerExpanded]);
+
+  const tabs: TaskWorkspaceTab[] = [
+    {
+      id: "task",
+      index: null,
+      kind: "task",
+      label: "Task 1",
+      title: compactMissionText(promptText, 36) || "Original task",
+      statusLabel: displayTask.status,
+      hasLiveActivity: !activeFollowUp && showsLiveActivity
+    },
+    ...followUps.map((followUp, index) => ({
+      id: followUp.runId || followUp.id,
+      index,
+      kind: "follow-up" as const,
+      label: "Follow-up",
+      title: compactMissionText(resolveTaskFollowUpDisplayMessage(followUp) ?? followUp.message, 34) || "Follow-up",
+      statusLabel: normalizeRuntimeStatus(followUp.status) ?? "running",
+      hasLiveActivity: activeFollowUp?.id === followUp.id && showsLiveActivity
+    }))
+  ];
+  const activeTabId = activeFollowUp ? activeFollowUp.runId || activeFollowUp.id : "task";
+  const selectTaskTab = (nextIndex: number | null) => {
+    setTitleExpanded(false);
+    setActiveFollowUpIndex(nextIndex);
+    data.onActiveCardChange?.(
+      data.task,
+      nextIndex === null
+        ? null
+        : buildTaskCardInspectorContext(
+            data.task.id,
+            followUps[nextIndex]!,
+            nextIndex,
+            nextIndex + 2
+          )
+    );
+  };
   const taskMetrics: TaskMetricItem[] = [
     {
       icon: Users,
@@ -304,12 +373,10 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       value: feedButtonCount,
       active: expanded,
       onClick: () => {
+        setExpanded((current) => !current);
         if (data.onInspect) {
           data.onInspect(data.task, "output", activeInspectorContext);
-          return;
         }
-
-        setExpanded((current) => !current);
       }
     },
     {
@@ -343,6 +410,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
 
   return (
     <motion.div
+      ref={cardRef}
       initial={
         isPendingCreation
           ? { opacity: 0, scale: 0.92, y: -10 }
@@ -366,10 +434,11 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           : undefined
       }
       className={cn(
-        "group relative w-[620px] max-w-[calc(100vw-32px)] overflow-visible rounded-[28px] border bg-[linear-gradient(180deg,rgba(12,19,33,0.98),rgba(5,10,20,0.98))] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.38)] backdrop-blur-xl transition-[border-color,box-shadow,opacity] duration-200",
+        "group relative w-[720px] max-w-[calc(100vw-32px)] overflow-visible rounded-[24px] border bg-[linear-gradient(180deg,rgba(12,19,33,0.98),rgba(5,10,20,0.98))] p-2.5 shadow-[0_24px_70px_rgba(0,0,0,0.38)] backdrop-blur-xl transition-[border-color,box-shadow,opacity,transform] duration-200 transform-gpu origin-center",
         visualTone.outer,
         data.emphasis ? "opacity-100" : "opacity-72",
-        selected && TASK_NODE_SELECTED_CLASSES
+        selected && TASK_NODE_SELECTED_CLASSES,
+        composerExpanded && "z-30 scale-[1.03] shadow-[0_30px_92px_rgba(0,0,0,0.5)]"
       )}
     >
       <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[18px]">
@@ -380,6 +449,16 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       </div>
 
       <div className="relative z-10">
+        <TaskWorkspaceTabs
+          activeTabId={activeTabId}
+          tabs={tabs}
+          onAdd={() => {
+            setComposerExpanded(true);
+            composerInputRef.current?.focus();
+          }}
+          onSelect={(tab) => selectTaskTab(tab.index)}
+        />
+
       {isPendingCreation ? (
         <motion.div
           className="pointer-events-none absolute inset-[-14px] rounded-[22px] border border-cyan-200/16"
@@ -395,7 +474,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
         className={cn("!h-2.5 !w-2.5 !border-0", visualTone.handle)}
       />
 
-      <div className="relative z-20">
+      <div className="relative z-20 rounded-[20px] border border-white/[0.06] bg-[linear-gradient(180deg,rgba(11,19,34,0.72),rgba(5,10,20,0.72))] px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
         <div className="min-w-0">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -427,39 +506,6 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
               <Badge variant={badgeVariant} className="max-w-[150px] truncate px-3 py-1.5 text-[11px]">
                 {badgeLabel}
               </Badge>
-              {followUps.length > 0 ? (
-                <button
-                  type="button"
-                  aria-label={`Current card ${currentCardNumber} of ${cardCount}; show card ${nextCardNumber}`}
-                  title={`Current card ${currentCardNumber} of ${cardCount}; click to show card ${nextCardNumber}`}
-                  className="nodrag nopan inline-flex h-8 min-w-8 items-center justify-center rounded-full border border-cyan-200/16 bg-cyan-300/[0.07] px-2 font-mono text-[11px] font-semibold text-cyan-100 transition-colors hover:border-cyan-200/30 hover:bg-cyan-300/[0.12]"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setTitleExpanded(false);
-                    const nextFollowUpIndex =
-                      activeFollowUpIndex === null
-                        ? 0
-                        : effectiveActiveFollowUpIndex === null || effectiveActiveFollowUpIndex + 1 >= followUps.length
-                          ? null
-                          : effectiveActiveFollowUpIndex + 1;
-                    setActiveFollowUpIndex(nextFollowUpIndex);
-                    data.onActiveCardChange?.(
-                      data.task,
-                      nextFollowUpIndex === null
-                        ? null
-                        : buildTaskCardInspectorContext(
-                            data.task.id,
-                            followUps[nextFollowUpIndex]!,
-                            nextFollowUpIndex,
-                            nextFollowUpIndex + 2
-                          )
-                    );
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                >
-                  {currentCardNumber}
-                </button>
-              ) : null}
               <button
                 type="button"
                 aria-label="Task actions"
@@ -554,7 +600,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           >
             <h3
               className={cn(
-                "min-w-0 flex-1 font-display text-[1.85rem] font-semibold leading-[1.08] text-white",
+                "min-w-0 flex-1 font-display text-[1.48rem] font-semibold leading-[1.08] text-white md:text-[1.55rem]",
                 !titleExpanded && "line-clamp-2"
               )}
             >
@@ -582,13 +628,13 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
             </span>
           </div>
 
-          <TaskMetricRow metrics={taskMetrics} compact className="mt-4" />
+          <TaskMetricRow metrics={taskMetrics} compact className="mt-3" />
 
           <ExpandableTaskResult
             title={displayResultTitle}
             result={displayResultText}
             compact
-            className={cn("mt-4", visualTone.resultBorder)}
+            className={cn("mt-3", visualTone.resultBorder)}
           />
 
           {completedNeedsReview && data.onReviewTask ? (
@@ -618,55 +664,37 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
             </button>
           ) : null}
 
-          <TaskFollowUpComposer
-            task={displayTask}
-            latestResult={resultPreview}
-            createdFiles={detail?.createdFiles}
-            outputSummary={activitySummary}
-            compact
-            className="nodrag nopan mt-4"
-            onSubmitted={(followUp) => {
-              const nextIndex = followUps.length;
-              setLocalFollowUps((current) => mergeTaskFollowUps(current, [followUp]));
-              setActiveFollowUpIndex(nextIndex);
-              data.onActiveCardChange?.(
-                data.task,
-                buildTaskCardInspectorContext(data.task.id, followUp, nextIndex, nextIndex + 2)
-              );
-              setExpanded(true);
-            }}
-          />
         </div>
       </div>
 
-      <div className={cn("mt-4 rounded-[16px] border border-white/[0.07] bg-white/[0.025] px-2.5 py-1.5", expanded && "pb-2.5")}>
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-controls={feedPanelId}
-          className="nodrag nopan group flex w-full items-start justify-between gap-3 rounded-[10px] border border-transparent px-1 py-1 text-left transition-colors hover:bg-white/[0.035]"
-          onClick={(event) => {
-            event.stopPropagation();
-            setExpanded((current) => !current);
-          }}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <div className="min-w-0">
-            <p className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500 transition-colors group-hover:text-slate-400">
-              {showsLiveActivity ? (
-                <span className={cn("inline-flex h-1.5 w-1.5 rounded-full shadow-[0_0_10px_rgba(34,211,238,0.7)]", visualTone.dot, "motion-safe:animate-pulse")} />
-              ) : null}
-              <span>Live feed</span>
-            </p>
-            <p className="mt-1 truncate text-[10.5px] text-slate-300">{activityLabel}</p>
-            {expanded ? <p className="mt-1 truncate text-[10px] text-slate-500">{activitySummary}</p> : null}
-          </div>
-          <div className="mt-0.5 shrink-0 rounded-full border border-white/[0.08] bg-white/[0.035] p-1 text-slate-400 transition-colors group-hover:border-white/[0.12] group-hover:text-slate-200">
-            {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-          </div>
-        </button>
+        {expanded ? (
+          <div className="mt-2.5 rounded-[16px] border border-white/[0.07] bg-white/[0.025] px-2.5 py-1.5 pb-2.5">
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-controls={feedPanelId}
+              className="nodrag nopan group flex w-full items-start justify-between gap-3 rounded-[10px] border border-transparent px-1 py-1 text-left transition-colors hover:bg-white/[0.035]"
+              onClick={(event) => {
+                event.stopPropagation();
+                setExpanded((current) => !current);
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500 transition-colors group-hover:text-slate-400">
+                  {showsLiveActivity ? (
+                    <span className={cn("inline-flex h-1.5 w-1.5 rounded-full shadow-[0_0_10px_rgba(34,211,238,0.7)]", visualTone.dot, "motion-safe:animate-pulse")} />
+                  ) : null}
+                  <span>Live feed</span>
+                </p>
+                <p className="mt-1 truncate text-[10.5px] text-slate-300">{activityLabel}</p>
+                <p className="mt-1 truncate text-[10px] text-slate-500">{activitySummary}</p>
+              </div>
+              <div className="mt-0.5 shrink-0 rounded-full border border-white/[0.08] bg-white/[0.035] p-1 text-slate-400 transition-colors group-hover:border-white/[0.12] group-hover:text-slate-200">
+                <ChevronUp className="h-3 w-3" />
+              </div>
+            </button>
 
-        {expanded && (
           <motion.div
             id={feedPanelId}
             initial={{ height: 0, opacity: 0 }}
@@ -677,7 +705,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="pt-2.5">
-              <ScrollArea className="h-[112px] w-full pr-3">
+              <ScrollArea className="h-[96px] w-full pr-3">
                 {loading && displayedFeed.length === 0 ? (
                   <div className="py-4 text-center text-[10px] text-slate-500">
                     Connecting to feed...
@@ -726,11 +754,168 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
               </ScrollArea>
             </div>
           </motion.div>
-        )}
-      </div>
+          </div>
+        ) : null}
+      <TaskFollowUpComposer
+        task={displayTask}
+        latestResult={displayResultText}
+        createdFiles={detail?.createdFiles}
+        outputSummary={activitySummary}
+        compact
+        expanded={composerExpanded}
+        onExpandRequest={() => setComposerExpanded(true)}
+        textareaRef={composerInputRef}
+        className="nodrag nopan mt-2.5"
+        onSubmitted={(followUp) => {
+          const nextIndex = followUps.length;
+          setLocalFollowUps((current) => mergeTaskFollowUps(current, [followUp]));
+          setActiveFollowUpIndex(nextIndex);
+          data.onActiveCardChange?.(
+            data.task,
+            buildTaskCardInspectorContext(data.task.id, followUp, nextIndex, nextIndex + 2)
+          );
+          setExpanded(true);
+        }}
+      />
       </div>
     </motion.div>
   );
+}
+
+function TaskWorkspaceTabs({
+  activeTabId,
+  tabs,
+  onAdd,
+  onSelect
+}: {
+  activeTabId: string;
+  tabs: TaskWorkspaceTab[];
+  onAdd: () => void;
+  onSelect: (tab: TaskWorkspaceTab) => void;
+}) {
+  const activeIndex = Math.max(tabs.findIndex((tab) => tab.id === activeTabId), 0);
+  const selectByOffset = (offset: number) => {
+    const nextTab = tabs[(activeIndex + offset + tabs.length) % tabs.length];
+    if (nextTab) {
+      onSelect(nextTab);
+    }
+  };
+
+  return (
+    <div
+      className="nodrag nopan relative z-20 mb-2 flex items-end gap-2 pb-px"
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <div
+        role="tablist"
+        aria-label="Task workspace tabs"
+        className={cn(
+          "min-w-0 items-end gap-2",
+          tabs.length <= 7 ? "grid flex-1" : "flex min-w-max overflow-x-auto"
+        )}
+        style={tabs.length <= 7 ? { gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` } : undefined}
+      >
+        {tabs.map((tab) => {
+          const active = tab.id === activeTabId;
+          const Icon = tab.kind === "task" ? ClipboardList : MessageSquare;
+
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              title={`${tab.label}: ${tab.title}`}
+              className={cn(
+                "group/tab relative flex h-[64px] items-center gap-3 rounded-t-[18px] border px-3 text-left outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-cyan-200/45",
+                tabs.length <= 7 ? "min-w-0 w-full" : "min-w-[178px] max-w-[260px] shrink-0",
+                active
+                  ? "border-cyan-200/28 bg-cyan-300/[0.09] text-white shadow-[0_-10px_34px_rgba(45,212,191,0.13)]"
+                  : "border-white/[0.075] bg-white/[0.025] text-slate-300 hover:border-cyan-200/16 hover:bg-white/[0.045]"
+              )}
+              onClick={() => onSelect(tab)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowRight") {
+                  event.preventDefault();
+                  selectByOffset(1);
+                } else if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  selectByOffset(-1);
+                } else if (event.key === "Home") {
+                  event.preventDefault();
+                  if (tabs[0]) {
+                    onSelect(tabs[0]);
+                  }
+                } else if (event.key === "End") {
+                  event.preventDefault();
+                  const lastTab = tabs[tabs.length - 1];
+                  if (lastTab) {
+                    onSelect(lastTab);
+                  }
+                }
+              }}
+            >
+              <span
+                className={cn(
+                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border transition-colors",
+                  active
+                    ? "border-emerald-200/24 bg-emerald-300/[0.12] text-emerald-100"
+                    : "border-white/[0.08] bg-white/[0.035] text-slate-400 group-hover/tab:text-slate-200"
+                )}
+              >
+                <Icon className="h-[18px] w-[18px]" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className={cn("flex items-center gap-1.5 text-[11px] font-semibold", active ? "text-emerald-200" : "text-slate-400")}>
+                  {tab.hasLiveActivity ? (
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.75)] motion-safe:animate-pulse" />
+                  ) : null}
+                  <span className="truncate">{tab.label}</span>
+                  <span className={cn("h-1 w-1 rounded-full", tabStatusDotClassName(tab.statusLabel))} />
+                </span>
+                <span className="mt-1 block truncate text-[11px] font-semibold leading-4 text-slate-100">
+                  {tab.title}
+                </span>
+              </span>
+              <span
+                className={cn(
+                  "absolute inset-x-3 bottom-0 h-0.5 rounded-full transition-all duration-200",
+                  active ? "bg-emerald-300 shadow-[0_0_16px_rgba(52,211,153,0.75)]" : "bg-transparent"
+                )}
+              />
+            </button>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        aria-label="Focus follow-up composer"
+        title="Focus follow-up composer"
+        className="mb-1 inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] border border-white/[0.08] bg-white/[0.045] text-slate-200 shadow-[0_10px_24px_rgba(0,0,0,0.18)] outline-none transition-all duration-200 hover:border-cyan-200/22 hover:bg-cyan-300/[0.08] hover:text-cyan-100 focus-visible:ring-2 focus-visible:ring-cyan-200/45"
+        onClick={onAdd}
+      >
+        <Plus className="h-5 w-5" />
+      </button>
+    </div>
+  );
+}
+
+function tabStatusDotClassName(status: string) {
+  switch (status) {
+    case "completed":
+      return "bg-emerald-300";
+    case "running":
+    case "queued":
+      return "bg-cyan-300";
+    case "stalled":
+      return "bg-amber-300";
+    case "cancelled":
+      return "bg-rose-300";
+    default:
+      return "bg-slate-500";
+  }
 }
 
 function isPendingTaskBootstrapStage(bootstrapStage: string | null) {
@@ -758,7 +943,7 @@ function resolveTaskFooterLabel(bootstrapStage: string | null, liveRunCount: num
     case "waiting-for-runtime":
       return "waiting for first OpenClaw runtime";
     case "runtime-observed":
-      return "runtime observed";
+      return "waiting for output";
     case "stalled":
       return "working silently";
     default:
@@ -960,10 +1145,12 @@ function resolveFollowUpResultText(
     return runtimeSubtitle;
   }
 
+  const message = resolveTaskFollowUpDisplayMessage(followUp) ?? followUp.message;
+
   if (runtime || followUp.runId) {
     return [
       "Operator follow-up:",
-      followUp.message,
+      message,
       "",
       "OpenClaw accepted this follow-up and AgentOS is tracking the live run.",
       "No agent answer has been captured yet."
@@ -1003,11 +1190,12 @@ function buildTaskCardInspectorContext(
   followUpIndex: number,
   cardNumber: number
 ): TaskCardInspectorContext {
+  const message = resolveTaskFollowUpDisplayMessage(followUp) ?? followUp.message;
   return {
     taskId,
     cardNumber,
     followUpIndex,
-    message: followUp.message,
+    message,
     runId: followUp.runId ?? null,
     sessionId: followUp.sessionId ?? null,
     status: followUp.status ?? null,
@@ -1025,6 +1213,11 @@ function normalizeRuntimeStatus(value: string | null | undefined): RuntimeRecord
     case "stalled":
     case "cancelled":
       return value;
+    case "timeout":
+    case "timed_out":
+    case "failed":
+    case "error":
+      return "stalled";
     default:
       return null;
   }

@@ -16,9 +16,18 @@ import {
   stopMissionDispatchChildProcess,
   writeMissionDispatchRecord
 } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
-import { resolveMissionDispatchCompletionDetail } from "@/lib/openclaw/domains/mission-dispatch-model";
+import {
+  extractMissionCommandPayloads,
+  resolveMissionDispatchCompletionDetail
+} from "@/lib/openclaw/domains/mission-dispatch-model";
 import { resolveMissionDispatchReadinessError } from "@/lib/openclaw/readiness";
-import type { MissionAbortResponse, MissionControlSnapshot, MissionResponse, MissionSubmission } from "@/lib/openclaw/types";
+import type {
+  MissionAbortResponse,
+  MissionControlSnapshot,
+  MissionDispatchStatus,
+  MissionResponse,
+  MissionSubmission
+} from "@/lib/openclaw/types";
 
 export type MissionDispatchWorkflowDependencies = {
   getMissionControlSnapshot: (options?: { force?: boolean; includeHidden?: boolean }) => Promise<MissionControlSnapshot>;
@@ -135,14 +144,15 @@ export async function submitMissionDispatch(
         { timeoutMs: 60_000 }
       );
       const now = new Date().toISOString();
+      const nextStatus = resolveGatewayMissionDispatchStatus(payload.status);
       dispatchRecord = {
         ...dispatchRecord,
-        status: payload.status === "completed" ? "completed" : payload.status === "stalled" ? "stalled" : "running",
+        status: nextStatus,
         updatedAt: now,
         runner: {
           ...dispatchRecord.runner,
           startedAt: now,
-          finishedAt: payload.status === "completed" || payload.status === "stalled" ? now : null,
+          finishedAt: nextStatus === "completed" || nextStatus === "stalled" ? now : null,
           lastHeartbeatAt: now
         },
         observation: {
@@ -150,7 +160,7 @@ export async function submitMissionDispatch(
           observedAt: now
         },
         result: payload,
-        error: payload.status === "stalled" ? payload.summary ?? "OpenClaw Gateway dispatch stalled." : null
+        error: nextStatus === "stalled" ? resolveGatewayMissionDispatchError(payload) : null
       };
       await writeMissionDispatchRecord(dispatchRecord);
     } else {
@@ -170,13 +180,19 @@ export async function submitMissionDispatch(
 
   deps.invalidateMissionControlCaches();
 
+  const payloads = extractMissionCommandPayloads(dispatchRecord.result);
+  const summary =
+    dispatchRecord.status === "completed" || dispatchRecord.status === "stalled" || dispatchRecord.status === "cancelled"
+      ? resolveMissionDispatchCompletionDetail(dispatchRecord)
+      : dispatchRecord.result?.summary || "Mission accepted and queued for OpenClaw execution.";
+
   return {
     dispatchId: dispatchRecord.id,
     runId: dispatchRecord.result?.runId ?? null,
     agentId,
     status: dispatchRecord.status,
-    summary: "Mission accepted and queued for OpenClaw execution.",
-    payloads: [],
+    summary,
+    payloads,
     meta: {
       outputDir: outputPlan?.absoluteOutputDir,
       outputDirRelative: outputPlan?.relativeOutputDir,
@@ -357,4 +373,49 @@ function readGatewayTaskId(value: unknown) {
     record.id;
 
   return typeof taskId === "string" && taskId.trim() ? taskId.trim() : null;
+}
+
+function resolveGatewayMissionDispatchStatus(status: string | undefined): MissionDispatchStatus {
+  const normalized = status?.trim().toLowerCase();
+
+  if (normalized === "completed" || normalized === "complete" || normalized === "succeeded" || normalized === "success") {
+    return "completed";
+  }
+
+  if (normalized === "cancelled" || normalized === "canceled") {
+    return "cancelled";
+  }
+
+  if (
+    normalized === "stalled" ||
+    normalized === "timeout" ||
+    normalized === "timed_out" ||
+    normalized === "failed" ||
+    normalized === "error"
+  ) {
+    return "stalled";
+  }
+
+  return "running";
+}
+
+function resolveGatewayMissionDispatchError(payload: { status?: string; summary?: string }) {
+  const summary = payload.summary?.trim();
+  if (summary) {
+    return summary;
+  }
+
+  const status = payload.status?.trim().toLowerCase();
+  const timeoutPhase =
+    typeof (payload as Record<string, unknown>).timeoutPhase === "string"
+      ? ((payload as Record<string, unknown>).timeoutPhase as string).trim()
+      : "";
+
+  if (status === "timeout" || status === "timed_out") {
+    return timeoutPhase
+      ? `OpenClaw Gateway wait timed out during ${timeoutPhase}.`
+      : "OpenClaw Gateway wait timed out before an agent response was captured.";
+  }
+
+  return "OpenClaw Gateway dispatch stalled before an agent response was captured.";
 }

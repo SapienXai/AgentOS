@@ -20,8 +20,10 @@ import {
   resolveGatewayAuthSetupIssueFromSnapshot,
   runWithGatewayAuthSetupRecovery
 } from "@/lib/openclaw/model-setup-recovery";
+import { resolveOpenAiCodexAuthHandoff } from "@/lib/openclaw/model-auth-errors";
 import { resolveRequiredLoginProvider } from "@/lib/openclaw/model-onboarding";
 import { isAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
+import { readOpenClawCodexPluginReady } from "@/lib/openclaw/application/model-provider-state-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import type {
   DiscoveredModelCandidate,
@@ -130,6 +132,7 @@ export async function POST(request: Request) {
     let aggregatedStdout = "";
     let aggregatedStderr = "";
     let manualCommandBin = "openclaw";
+    let codexPluginReady = false;
 
     const fail = async (
       phase: OpenClawModelOnboardingPhase,
@@ -166,11 +169,18 @@ export async function POST(request: Request) {
       const snapshot = await getMissionControlSnapshot({ force: true });
 
       if (!isModelReady(snapshot)) {
-        const failure = resolveVerificationFailure(snapshot, preferredModelId, manualCommandBin);
+        const failure = resolveVerificationFailure(snapshot, preferredModelId, manualCommandBin, {
+          codexPluginReady
+        });
 
         await fail("verifying", failure.message || message, {
           snapshot,
-          manualCommand: manualCommand ?? failure.manualCommand ?? buildModelManualCommand(snapshot, preferredModelId, manualCommandBin),
+          manualCommand:
+            manualCommand ??
+            failure.manualCommand ??
+            buildModelManualCommand(snapshot, preferredModelId, manualCommandBin, {
+              codexPluginReady
+            }),
           docsUrl
         });
         return null;
@@ -197,7 +207,11 @@ export async function POST(request: Request) {
             : "AgentOS could not verify a real agent turn yet.",
           {
             snapshot: freshSnapshot,
-            manualCommand: manualCommand ?? buildModelManualCommand(freshSnapshot, preferredModelId, manualCommandBin),
+            manualCommand:
+              manualCommand ??
+              buildModelManualCommand(freshSnapshot, preferredModelId, manualCommandBin, {
+                codexPluginReady
+              }),
             docsUrl
           }
         );
@@ -237,6 +251,7 @@ export async function POST(request: Request) {
 
       let snapshot = await getMissionControlSnapshot({ force: true });
       manualCommandBin = await resolveOpenClawBin().catch(() => "openclaw");
+      codexPluginReady = await readOpenClawCodexPluginReady().catch(() => false);
 
       if (!isSystemReady(snapshot)) {
         try {
@@ -305,7 +320,9 @@ export async function POST(request: Request) {
 
         await fail("refreshing", "Model setup still needs attention.", {
           snapshot,
-          manualCommand: buildModelManualCommand(snapshot, undefined, manualCommandBin),
+          manualCommand: buildModelManualCommand(snapshot, undefined, manualCommandBin, {
+            codexPluginReady
+          }),
           docsUrl
         });
         return;
@@ -472,7 +489,9 @@ export async function POST(request: Request) {
           return true;
         }
 
-        const authHandoff = resolveProviderAuthHandoff(provider, openClawBin);
+        const authHandoff = resolveProviderAuthHandoff(provider, openClawBin, {
+          codexPluginReady
+        });
 
         await send({
           type: "status",
@@ -756,12 +775,15 @@ function isLikelyDelayedGatewaySettleError(message: string) {
 function buildModelManualCommand(
   snapshot: MissionControlSnapshot,
   preferredModelId?: string | null,
-  commandBin?: string
+  commandBin?: string,
+  options?: {
+    codexPluginReady?: boolean;
+  }
 ) {
   const provider = resolveRequiredLoginProvider(snapshot, preferredModelId);
 
   if (provider) {
-    return resolveProviderAuthHandoff(provider, commandBin).command;
+    return resolveProviderAuthHandoff(provider, commandBin, options).command;
   }
 
   const recommendedModelId =
@@ -819,12 +841,15 @@ function shouldTreatOpenAiModelAsCodex(snapshot: MissionControlSnapshot) {
 function resolveVerificationFailure(
   snapshot: MissionControlSnapshot,
   preferredModelId?: string | null,
-  commandBin?: string
+  commandBin?: string,
+  options?: {
+    codexPluginReady?: boolean;
+  }
 ) {
   const provider = resolveRequiredLoginProvider(snapshot, preferredModelId);
 
   if (provider) {
-    const authHandoff = resolveProviderAuthHandoff(provider, commandBin);
+    const authHandoff = resolveProviderAuthHandoff(provider, commandBin, options);
 
     return {
       message: authHandoff.verificationMessage,
@@ -836,7 +861,7 @@ function resolveVerificationFailure(
     message: snapshot.diagnostics.modelReadiness.defaultModel
       ? "The default model is set, but AgentOS still cannot verify it yet."
       : "Choose a default model to finish setup.",
-    manualCommand: buildModelManualCommand(snapshot, preferredModelId, commandBin)
+    manualCommand: buildModelManualCommand(snapshot, preferredModelId, commandBin, options)
   };
 }
 
@@ -897,7 +922,13 @@ function formatProviderLabel(provider: string) {
     .join(" ");
 }
 
-function resolveProviderAuthHandoff(provider: string, commandBin?: string) {
+function resolveProviderAuthHandoff(
+  provider: string,
+  commandBin?: string,
+  options?: {
+    codexPluginReady?: boolean;
+  }
+) {
   const normalized = normalizeOpenClawAuthProvider(provider);
   const label = formatProviderLabel(provider);
   const bin = commandBin || "openclaw";
@@ -909,6 +940,10 @@ function resolveProviderAuthHandoff(provider: string, commandBin?: string) {
       continueMessage: `Continue in terminal to paste your ${label} API key. After auth completes, return here and refresh setup.`,
       verificationMessage: `The model was saved. Continue in terminal to paste your ${label} API key and finish setup.`
     };
+  }
+
+  if (normalized === "codex" || normalized === "openai-codex") {
+    return resolveOpenAiCodexAuthHandoff(bin, options?.codexPluginReady ?? true);
   }
 
   return {

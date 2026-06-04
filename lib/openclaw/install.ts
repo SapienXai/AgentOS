@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 
+import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
+
 export const OPENCLAW_INSTALL_DOCS_URL = "https://docs.openclaw.ai/install";
 
 const OPENCLAW_INSTALL_CLI_URL = "https://openclaw.ai/install-cli.sh";
@@ -55,11 +57,26 @@ export function getOpenClawUserLocalBinPath() {
 }
 
 export function getOpenClawInstallCommand() {
+  const installAndPinRecommendedVersionCommand = buildOpenClawInstallPinCommand();
+
   if (process.platform === "win32") {
-    return `& ([scriptblock]::Create((iwr -useb ${OPENCLAW_INSTALL_POWERSHELL_URL}))) -NoOnboard`;
+    return `& ([scriptblock]::Create((iwr -useb ${OPENCLAW_INSTALL_POWERSHELL_URL}))) -Tag ${OPENCLAW_RECOMMENDED_VERSION} -NoOnboard; if ($LASTEXITCODE -eq 0) { ${installAndPinRecommendedVersionCommand} } else { exit $LASTEXITCODE }`;
   }
 
-  return `set -euo pipefail; curl -fsSL --proto '=https' --tlsv1.2 ${OPENCLAW_INSTALL_CLI_URL} | bash -s -- --prefix "$HOME/.openclaw" --no-onboard`;
+  return `set -euo pipefail; curl -fsSL --proto '=https' --tlsv1.2 ${OPENCLAW_INSTALL_CLI_URL} | bash -s -- --prefix "$HOME/.openclaw" --version ${OPENCLAW_RECOMMENDED_VERSION} --no-onboard && ${installAndPinRecommendedVersionCommand}`;
+}
+
+function buildOpenClawInstallPinCommand() {
+  const commandPath = quoteShellArg(getOpenClawLocalPrefixBinPath());
+  return `${commandPath} update --tag ${OPENCLAW_RECOMMENDED_VERSION} --yes`;
+}
+
+function quoteShellArg(value: string) {
+  if (/^[a-zA-Z0-9_./:@%+=,-]+$/.test(value)) {
+    return value;
+  }
+
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 export async function ensureOpenClawLocalBinOnPath(

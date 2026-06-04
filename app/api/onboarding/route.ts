@@ -21,6 +21,7 @@ import {
   getOpenClawLocalPrefix,
   getOpenClawLocalPrefixBinPath
 } from "@/lib/openclaw/install";
+import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import {
   clearMissionControlCaches,
   getMissionControlSnapshot,
@@ -33,7 +34,6 @@ import {
   resolveGatewayAuthSetupIssueFromSnapshot
 } from "@/lib/openclaw/model-setup-recovery";
 import {
-  generateGatewayNativeAuthToken,
   repairGatewayNativeDeviceAccess,
   saveGatewayNativeAuthCredential
 } from "@/lib/openclaw/application/settings-service";
@@ -732,7 +732,7 @@ async function installOpenClawCli(
   await send({
     type: "status",
     phase: "installing-cli",
-    message: `Installing OpenClaw into ${getOpenClawLocalPrefix()}...`
+    message: `Installing OpenClaw v${OPENCLAW_RECOMMENDED_VERSION} into ${getOpenClawLocalPrefix()}...`
   });
 
   const installResult = await runCommand("bash", ["-lc", installCommand], send);
@@ -809,12 +809,16 @@ async function installOpenClawCli(
 
 async function syncGatewayAuthTokenBeforeFirstStart(
   openClawBin: string,
-  send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>
+  send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>,
+  options: {
+    phase?: OpenClawOnboardingPhase;
+    message?: string;
+  } = {}
 ) {
   await send({
     type: "status",
-    phase: "installing-gateway",
-    message: "Preparing Gateway auth for AgentOS before first start..."
+    phase: options.phase ?? "installing-gateway",
+    message: options.message ?? "Preparing Gateway auth for AgentOS before first start..."
   });
 
   const token = randomBytes(32).toString("base64url");
@@ -1063,12 +1067,10 @@ async function repairGatewayAuthForSystemSetup(
     },
     repairGatewayAuth: async (kind) => {
       if (kind === "gateway-token") {
-        return generateGatewayNativeAuthToken({
-          verifyDelaysMs: [0, 750, 1_500, 3_000]
-        });
+        return repairGatewayAuthKindForSystemSetup(kind, openClawBin, send);
       }
 
-      return repairGatewayDeviceAccessForSystemSetup(openClawBin, async () => {
+      return repairGatewayDeviceAccessForSystemSetup(openClawBin, send, async () => {
         await send({
           type: "status",
           phase: "verifying",
@@ -1094,7 +1096,7 @@ async function repairGatewayAuthForSystemSetup(
     message: buildSystemSetupGatewayAuthRepairStatus(gatewayStatusIssue.kind)
   });
 
-  await repairGatewayAuthKindForSystemSetup(gatewayStatusIssue.kind, openClawBin, async () => {
+  await repairGatewayAuthKindForSystemSetup(gatewayStatusIssue.kind, openClawBin, send, async () => {
     await send({
       type: "status",
       phase: "verifying",
@@ -1114,19 +1116,26 @@ async function repairGatewayAuthForSystemSetup(
 async function repairGatewayAuthKindForSystemSetup(
   kind: GatewayAuthSetupIssueKind,
   openClawBin?: string,
+  send?: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>,
   onFallbackToToken?: () => Promise<void> | void
 ) {
   if (kind === "gateway-token") {
-    return generateGatewayNativeAuthToken({
-      verifyDelaysMs: [0, 750, 1_500, 3_000]
+    if (!openClawBin || !send) {
+      throw new Error("OpenClaw CLI is required to repair Gateway token auth during system setup.");
+    }
+
+    return syncGatewayAuthTokenBeforeFirstStart(openClawBin, send, {
+      phase: "verifying",
+      message: "Gateway auth changed during setup. Rotating the local Gateway token before system setup readiness..."
     });
   }
 
-  return repairGatewayDeviceAccessForSystemSetup(openClawBin, onFallbackToToken);
+  return repairGatewayDeviceAccessForSystemSetup(openClawBin, send, onFallbackToToken);
 }
 
 async function repairGatewayDeviceAccessForSystemSetup(
   openClawBin?: string,
+  send?: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>,
   onFallbackToToken?: () => Promise<void> | void
 ) {
   try {
@@ -1142,8 +1151,13 @@ async function repairGatewayDeviceAccessForSystemSetup(
 
     await onFallbackToToken?.();
 
-    return generateGatewayNativeAuthToken({
-      verifyDelaysMs: [0, 750, 1_500, 3_000]
+    if (!openClawBin || !send) {
+      throw new Error("OpenClaw CLI is required to rotate Gateway token auth during system setup.");
+    }
+
+    return syncGatewayAuthTokenBeforeFirstStart(openClawBin, send, {
+      phase: "verifying",
+      message: "Rotating the local Gateway token before system setup readiness..."
     });
   }
 }

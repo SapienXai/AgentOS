@@ -22,6 +22,7 @@ import {
   resolveOpenClawBinarySelectionPath
 } from "@/lib/openclaw/binary-selection";
 import { resolveRequiredLoginProvider } from "@/lib/openclaw/model-onboarding";
+import { resolveOpenAiCodexAuthHandoff } from "@/lib/openclaw/model-auth-errors";
 import { resolveUpdateInfo } from "@/lib/openclaw/domains/control-plane-normalization";
 import { mapRuntimeSmokeTestEntry } from "@/lib/openclaw/domains/control-plane-settings";
 import { createMissionDispatchResultFromRuntimeOutput } from "@/lib/openclaw/domains/mission-dispatch-model";
@@ -44,6 +45,7 @@ import { normalizeChannelRegistry } from "@/lib/openclaw/domains/workspace-manif
 import { buildModelStatusConnectionStatus } from "@/lib/openclaw/domains/model-provider-connection";
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
 import { extractCodexRolloutTokenUsageForTurn } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
+import { extractMissionDispatchSessionId } from "@/lib/openclaw/domains/mission-dispatch-model";
 import { isOpenClawTerminalCommand } from "@/lib/openclaw/terminal-command";
 import { matchesMissionText } from "@/lib/openclaw/runtime-matching";
 import {
@@ -88,6 +90,7 @@ import {
   buildOpenClawRuntimeSmokeTestRecoveryCommand,
   classifyOpenClawRuntimeSmokeTestFailure
 } from "@/lib/openclaw/runtime-compatibility";
+import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import {
   buildDirectAgentIdentityReply,
   isDirectAgentIdentityQuestion,
@@ -393,7 +396,15 @@ Capability: admin-capable`;
     {
       kind: "provider-auth",
       detail:
-        "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai-codex --set-default"
+        "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider codex --method app-server --set-default"
+    }
+  );
+  assert.deepEqual(
+    classifyOpenClawRuntimeSmokeTestFailure("Error: No provider plugins found. Install one via `openclaw plugins install`."),
+    {
+      kind: "provider-auth",
+      detail:
+        "OpenClaw needs the Codex provider plugin installed and enabled before auth login can continue. Install the plugin, refresh the registry, restart the gateway, then retry. Run: openclaw plugins install --force @openclaw/codex && openclaw doctor --fix && openclaw gateway restart && openclaw models auth login --provider codex --method app-server --set-default"
     }
   );
 });
@@ -408,8 +419,35 @@ test("openclaw runtime failure message explains codex route rejection", () => {
   assert.equal(resolveOpenClawRuntimeFailureMessage("unrelated failure"), null);
   assert.equal(
     resolveOpenClawRuntimeFailureMessage("OpenAI Codex token refresh failed (401)"),
-    "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai-codex --set-default"
+    "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider codex --method app-server --set-default"
   );
+});
+
+test("codex auth handoff installs the provider plugin before login when needed", () => {
+  const ready = resolveOpenAiCodexAuthHandoff("/Users/example/.openclaw/bin/openclaw", true);
+  const switchAccount = resolveOpenAiCodexAuthHandoff("/Users/example/.openclaw/bin/openclaw", true, {
+    force: true
+  });
+  const missing = resolveOpenAiCodexAuthHandoff("/Users/example/.openclaw/bin/openclaw", false);
+
+  assert.equal(
+    ready.command,
+    "/Users/example/.openclaw/bin/openclaw models auth login --provider codex --method app-server --set-default"
+  );
+  assert.equal(
+    ready.continueMessage,
+    "Continue in terminal to finish the Codex app-server setup. After auth completes, return here and refresh setup."
+  );
+  assert.equal(
+    switchAccount.command,
+    "/Users/example/.openclaw/bin/openclaw models auth login --provider codex --method app-server --force --set-default"
+  );
+  assert.match(switchAccount.continueMessage, /refresh the Codex app-server setup/);
+  assert.match(missing.command, /plugins install --force @openclaw\/codex/);
+  assert.match(missing.command, /doctor --fix/);
+  assert.match(missing.command, /gateway restart/);
+  assert.match(missing.command, /models auth login --provider codex --method app-server --set-default/);
+  assert.match(missing.continueMessage, /install the Codex provider plugin/i);
 });
 
 test("stale codex auth smoke failures do not keep runtime warnings pinned", () => {
@@ -418,7 +456,7 @@ test("stale codex auth smoke failures do not keep runtime warnings pinned", () =
       status: "failed",
       checkedAt: "2020-01-01T00:00:00.000Z",
       error:
-        "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai-codex --set-default"
+        "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider codex --method app-server --set-default"
     }).status,
     "not-run"
   );
@@ -427,7 +465,7 @@ test("stale codex auth smoke failures do not keep runtime warnings pinned", () =
       status: "failed",
       checkedAt: new Date().toISOString(),
       error:
-        "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai-codex --set-default"
+        "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider codex --method app-server --set-default"
     }).status,
     "failed"
   );
@@ -521,13 +559,18 @@ test("openclaw onboarding uses the official installer command", () => {
 
   if (process.platform === "win32") {
     assert.match(command, /install\.ps1/);
+    assert.match(command, new RegExp(`-Tag\\s+${OPENCLAW_RECOMMENDED_VERSION}`));
     assert.match(command, /-NoOnboard/);
+    assert.match(command, new RegExp(`--tag\\s+${OPENCLAW_RECOMMENDED_VERSION}`));
     return;
   }
 
   assert.match(command, /install-cli\.sh/);
+  assert.match(command, new RegExp(`--version\\s+${OPENCLAW_RECOMMENDED_VERSION}`));
   assert.match(command, /--no-onboard/);
   assert.match(command, /\$HOME\/\.openclaw/);
+  assert.match(command, new RegExp(`--tag\\s+${OPENCLAW_RECOMMENDED_VERSION}`));
+  assert.match(command, /--yes/);
 });
 
 test("openclaw path list helpers avoid duplicate terminal path entries", () => {
@@ -615,13 +658,13 @@ test("openclaw path setup updates Windows user PATH without setx", async () => {
 });
 
 test("openclaw terminal command detection accepts quoted binary paths", () => {
-  assert.equal(isOpenClawTerminalCommand("openclaw models auth login --provider openai-codex"), true);
+  assert.equal(isOpenClawTerminalCommand("openclaw models auth login --provider codex"), true);
   assert.equal(
-    isOpenClawTerminalCommand("'/Users/kazim akgul/.openclaw/bin/openclaw' models auth login --provider openai-codex"),
+    isOpenClawTerminalCommand("'/Users/kazim akgul/.openclaw/bin/openclaw' models auth login --provider codex"),
     true
   );
   assert.equal(
-    isOpenClawTerminalCommand('"/Users/kazim akgul/.openclaw/bin/openclaw" models auth login --provider openai-codex'),
+    isOpenClawTerminalCommand('"/Users/kazim akgul/.openclaw/bin/openclaw" models auth login --provider codex'),
     true
   );
   assert.equal(isOpenClawTerminalCommand("node /tmp/whatever.js"), false);
@@ -1152,6 +1195,39 @@ test("provider status treats mixed ChatGPT OAuth profiles as connected", () => {
   assert.equal(connection?.detail, "OAuth connected");
 });
 
+test("provider status treats Codex app-server synthetic auth as connected", () => {
+  const connection = buildModelStatusConnectionStatus(
+    "openai-codex",
+    {
+      allowed: ["codex/gpt-5.5"],
+      auth: {
+        providers: [
+          {
+            provider: "codex",
+            effective: {
+              kind: "synthetic",
+              detail: "codex-app-server"
+            },
+            profiles: {
+              count: 0
+            },
+            syntheticAuth: {
+              value: "plugin-owned",
+              source: "codex-app-server",
+              credential: "codex-app-server",
+              mode: "token"
+            }
+          }
+        ]
+      }
+    },
+    new Set(["codex/gpt-5.5"])
+  );
+
+  assert.equal(connection?.connected, true);
+  assert.equal(connection?.detail, "Codex app-server connected with 1 available model.");
+});
+
 test("provider status rejects expired-only ChatGPT OAuth profiles", () => {
   const connection = buildModelStatusConnectionStatus(
     "openai-codex",
@@ -1591,6 +1667,57 @@ test("mission dispatch result prefers nonzero transcript usage over zero runtime
   });
 });
 
+test("mission dispatch session id prefers recovered session metadata over the placeholder dispatch id", () => {
+  const record = {
+    id: "dispatch-1",
+    agentId: "agent-1",
+    mission: "Test mission",
+    routedMission: "Test mission",
+    thinking: "medium" as const,
+    status: "running",
+    workspaceId: null,
+    workspacePath: null,
+    submittedAt: "2026-06-04T00:00:00.000Z",
+    updatedAt: "2026-06-04T00:00:01.000Z",
+    outputDir: null,
+    outputDirRelative: null,
+    notesDirRelative: null,
+    runner: {
+      pid: null,
+      childPid: null,
+      startedAt: null,
+      finishedAt: null,
+      lastHeartbeatAt: null,
+      logPath: null
+    },
+    observation: {
+      runtimeId: null,
+      observedAt: null
+    },
+    result: {
+      runId: "run-1",
+      status: "ok",
+      summary: "completed",
+      meta: {
+        agentMeta: {
+          agentId: "agent-1",
+          sessionId: "session-real",
+          model: "gpt-5",
+          usage: {
+            input: 10,
+            output: 20,
+            total: 30
+          }
+        }
+      }
+    },
+    error: null,
+    sessionId: "session-placeholder"
+  };
+
+  assert.equal(extractMissionDispatchSessionId(record), "session-real");
+});
+
 test("runtime transcript parser reads OpenClaw session content strings and tool calls", () => {
   const runtime = {
     id: "runtime:gateway:completed-1",
@@ -1715,6 +1842,81 @@ test("runtime transcript parser reads OpenClaw session content strings and tool 
       displayPath: "deliverables/faros.md"
     }
   ]);
+});
+
+test("runtime transcript parser recovers follow-up turns from the stored turn prompt", () => {
+  const prompt = [
+    "Continue this task in the existing task context. Use the current OpenClaw session state and previous result; do not restart unless the operator explicitly asks for a retry.",
+    "",
+    "Operator follow-up:",
+    "Please verify the rollout status.",
+    "",
+    "Original mission:",
+    "Create the Faros document",
+    "",
+    "Latest result:",
+    "The document is complete."
+  ].join("\n");
+  const runtime = {
+    id: "runtime:gateway:follow-up-1",
+    source: "turn",
+    key: "dispatch-1:continue:1234",
+    title: "Gateway runtime event",
+    subtitle: "sessions.changed",
+    status: "completed",
+    updatedAt: Date.parse("2026-04-13T00:02:00.000Z"),
+    ageMs: 0,
+    agentId: "agent-1",
+    workspaceId: "workspace-1",
+    sessionId: "session-1",
+    runId: "dispatch-1:continue:1234",
+    metadata: {
+      turnPrompt: prompt
+    }
+  } as unknown as RuntimeRecord;
+  const raw = [
+    {
+      type: "session",
+      timestamp: "2026-04-13T00:00:00.000Z",
+      cwd: "/tmp/workspace-1"
+    },
+    {
+      type: "message",
+      id: "user-1",
+      timestamp: "2026-04-13T00:02:01.000Z",
+      message: {
+        role: "user",
+        content: prompt,
+        timestamp: Date.parse("2026-04-13T00:02:01.000Z")
+      }
+    },
+    {
+      type: "message",
+      id: "assistant-1",
+      timestamp: "2026-04-13T00:02:10.000Z",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: "Rollout status is clear."
+          }
+        ],
+        stopReason: "stop",
+        usage: {
+          input: 12,
+          output: 6,
+          totalTokens: 18
+        },
+        timestamp: Date.parse("2026-04-13T00:02:10.000Z")
+      }
+    }
+  ].map((entry) => JSON.stringify(entry)).join("\n");
+
+  const output = parseRuntimeOutput(runtime, raw, "/tmp/workspace-1");
+
+  assert.equal(output.status, "available");
+  assert.equal(output.finalText, "Rollout status is clear.");
 });
 
 test("codex rollout parser captures final token usage for mirrored turns", () => {

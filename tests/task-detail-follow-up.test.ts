@@ -3,7 +3,8 @@ import test from "node:test";
 
 import { buildTaskDetailFromTaskRecord } from "@/lib/openclaw/domains/task-detail";
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
-import type { MissionControlSnapshot, RuntimeRecord, TaskRecord } from "@/lib/openclaw/types";
+import { deriveTaskFollowUpsFromRuntimes, readTaskFollowUpsFromMetadata } from "@/lib/openclaw/domains/task-follow-up-records";
+import type { MissionControlSnapshot, RuntimeOutputRecord, RuntimeRecord, TaskRecord } from "@/lib/openclaw/types";
 
 test("task detail includes follow-up runtimes from the same session context", async () => {
   const baseRuntime = createRuntime({
@@ -68,8 +69,14 @@ test("task detail links follow-up runtimes by normalized session and continue ru
     status: "completed",
     subtitle: "sessions.changed",
     updatedAt: 2100,
+    tokenUsage: {
+      input: 120,
+      output: 30,
+      total: 150
+    },
     metadata: {
-      event: "sessions.changed"
+      event: "sessions.changed",
+      createdFiles: [{ path: "/tmp/follow-up.txt", displayPath: "follow-up.txt" }]
     }
   });
   const task = createTask({
@@ -86,7 +93,11 @@ test("task detail links follow-up runtimes by normalized session and continue ru
   } as unknown as MissionControlSnapshot;
 
   const detail = await buildTaskDetailFromTaskRecord(task, snapshot, null);
-  const followUps = detail.task.metadata.followUps as Array<{ runId: string; status: string }>;
+  const followUps = detail.task.metadata.followUps as Array<{
+    runId: string;
+    status: string;
+    tokenUsage?: { total: number };
+  }>;
 
   assert.deepEqual(
     detail.runs.map((runtime) => runtime.id),
@@ -95,6 +106,7 @@ test("task detail links follow-up runtimes by normalized session and continue ru
   assert.equal(followUps.length, 1);
   assert.equal(followUps[0]?.runId, "dispatch-1:continue:2000");
   assert.equal(followUps[0]?.status, "completed");
+  assert.equal(followUps[0]?.tokenUsage?.total, 150);
 });
 
 test("task records expose derived follow-ups so card numbers survive refresh", () => {
@@ -115,8 +127,14 @@ test("task records expose derived follow-ups so card numbers survive refresh", (
     status: "completed",
     subtitle: "sessions.changed",
     updatedAt: 2000,
+    tokenUsage: {
+      input: 70,
+      output: 20,
+      total: 90
+    },
     metadata: {
-      event: "sessions.changed"
+      event: "sessions.changed",
+      createdFiles: [{ path: "/tmp/follow-up.txt", displayPath: "follow-up.txt" }]
     }
   });
 
@@ -124,12 +142,175 @@ test("task records expose derived follow-ups so card numbers survive refresh", (
     id: "agent-1",
     name: "Agent One"
   } as never]);
-  const followUps = records[0]?.metadata.followUps as Array<{ runId: string; status: string }> | undefined;
+  const followUps = records[0]?.metadata.followUps as Array<{
+    runId: string;
+    status: string;
+    tokenUsage?: { total: number };
+    createdFiles?: Array<{ path: string }>;
+  }> | undefined;
 
   assert.equal(records.length, 1);
   assert.equal(followUps?.length, 1);
   assert.equal(followUps?.[0]?.runId, "dispatch-1:continue:2000");
   assert.equal(followUps?.[0]?.status, "completed");
+  assert.equal(followUps?.[0]?.tokenUsage?.total, 90);
+  assert.equal(followUps?.[0]?.createdFiles?.[0]?.path, "/tmp/follow-up.txt");
+});
+
+test("follow-up metadata restores the actual question instead of a numbered placeholder", () => {
+  const followUps = readTaskFollowUpsFromMetadata({
+    followUps: [
+      {
+        id: "follow-up-1",
+        message: "Follow-up 1",
+        prompt: [
+          "Continue this task in the existing task context.",
+          "",
+          "Operator follow-up:",
+          "Please summarize the changed files.",
+          "",
+          "Original mission:",
+          "Prepare the release notes."
+        ].join("\n"),
+        createdAt: "2026-06-04T00:00:00.000Z",
+        taskId: "task-1"
+      }
+    ]
+  });
+
+  assert.equal(followUps.length, 1);
+  assert.equal(followUps[0]?.message, "Please summarize the changed files.");
+  assert.equal(followUps[0]?.prompt?.includes("Operator follow-up:"), true);
+});
+
+test("follow-up derivation recovers the operator question from runtime output items", () => {
+  const runtime = createRuntime({
+    id: "runtime-follow-output",
+    runId: "dispatch-1:continue:2000",
+    sessionId: "agent:agent-1:explicit:session-raw",
+    status: "completed",
+    subtitle: "sessions.changed",
+    updatedAt: 2000,
+    metadata: {
+      event: "sessions.changed"
+    }
+  });
+  const task = createTask({
+    runtimeIds: [runtime.id],
+    runIds: [runtime.runId!],
+    sessionIds: ["session-raw"],
+    dispatchId: "dispatch-1"
+  });
+  const outputs: RuntimeOutputRecord[] = [
+    {
+      runtimeId: runtime.id,
+      sessionId: "session-raw",
+      taskId: task.id,
+      status: "available",
+      finalText: "Done.",
+      finalTimestamp: "2026-06-04T00:00:02.000Z",
+      stopReason: "stop",
+      errorMessage: null,
+      items: [
+        {
+          id: "user-1",
+          role: "user",
+          timestamp: "2026-06-04T00:00:00.000Z",
+          text: [
+            "Continue this task in the existing task context. Use the current OpenClaw session state and previous result; do not restart unless the operator explicitly asks for a retry.",
+            "",
+            "Operator follow-up:",
+            "Please summarize the changed files.",
+            "",
+            "Original mission:",
+            "Prepare the release notes."
+          ].join("\n")
+        },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          timestamp: "2026-06-04T00:00:02.000Z",
+          text: "Done.",
+          stopReason: "stop"
+        }
+      ],
+      createdFiles: [],
+      warnings: [],
+      warningSummary: null
+    }
+  ];
+  const followUps = deriveTaskFollowUpsFromRuntimes(task, [runtime], outputs);
+
+  assert.equal(followUps.length, 1);
+  assert.equal(followUps[0]?.message, "Please summarize the changed files.");
+  assert.match(followUps[0]?.prompt ?? "", /Operator follow-up:/);
+});
+
+test("follow-up derivation groups turn runtimes even when the run id is not namespaced like a dispatch continuation", () => {
+  const runtime = createRuntime({
+    id: "runtime-follow-derived",
+    runId: "turn-42",
+    sessionId: "agent:agent-1:explicit:session-raw",
+    status: "completed",
+    subtitle: "Rollout complete.",
+    updatedAt: 2100,
+    metadata: {
+      turnPrompt: [
+        "Continue this task in the existing task context. Use the current OpenClaw session state and previous result; do not restart unless the operator explicitly asks for a retry.",
+        "",
+        "Operator follow-up:",
+        "Check whether the deployment succeeded.",
+        "",
+        "Original mission:",
+        "Prepare the release notes."
+      ].join("\n")
+    }
+  });
+
+  const outputs: RuntimeOutputRecord[] = [
+    {
+      runtimeId: runtime.id,
+      sessionId: runtime.sessionId,
+      taskId: "task-1",
+      status: "available",
+      finalText: "Deployment succeeded.",
+      finalTimestamp: "2026-06-04T00:00:02.000Z",
+      stopReason: "stop",
+      errorMessage: null,
+      items: [
+        {
+          id: "user-1",
+          role: "user",
+          timestamp: "2026-06-04T00:00:00.000Z",
+          text: runtime.metadata.turnPrompt as string
+        },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          timestamp: "2026-06-04T00:00:02.000Z",
+          text: "Deployment succeeded.",
+          stopReason: "stop"
+        }
+      ],
+      createdFiles: [],
+      warnings: [],
+      warningSummary: null
+    }
+  ];
+
+  const followUps = deriveTaskFollowUpsFromRuntimes(
+    createTask({
+      dispatchId: "dispatch-1",
+      sessionIds: ["session-raw"]
+    }),
+    [runtime],
+    outputs
+  );
+
+  assert.equal(followUps.length, 1);
+  assert.equal(followUps[0]?.message, "Check whether the deployment succeeded.");
+  assert.equal(followUps[0]?.status, "completed");
+  assert.equal(followUps[0]?.summary, "Deployment succeeded.");
 });
 
 function createRuntime(overrides: Partial<RuntimeRecord>): RuntimeRecord {

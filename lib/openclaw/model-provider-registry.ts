@@ -21,11 +21,11 @@ export const modelProviderRegistry: ModelProviderDescriptor[] = [
     id: "openai-codex",
     label: "ChatGPT",
     shortLabel: "ChatGPT",
-    description: "Connect your ChatGPT account and pull in Codex-ready models.",
+    description: "Use OpenClaw's Codex app-server provider and pull in Codex-ready models.",
     category: "primary",
     connectKind: "oauth",
     accent: "from-[#d8f5eb] via-[#ebfbf5] to-white",
-    helperText: "Account-based login with the OpenClaw provider flow."
+    helperText: "OpenClaw 2026.6.1 uses the Codex app-server plugin for this route."
   },
   {
     id: "openrouter",
@@ -132,6 +132,10 @@ export function isAddModelsProviderId(value: unknown): value is AddModelsProvide
 }
 
 export function normalizeAddModelsProviderId(value: unknown): AddModelsProviderId | null {
+  if (value === "codex") {
+    return "openai-codex";
+  }
+
   if (value === "gemini") {
     return "google";
   }
@@ -142,6 +146,10 @@ export function normalizeAddModelsProviderId(value: unknown): AddModelsProviderI
 
   if (value && typeof value === "object" && "id" in value) {
     const candidateId = (value as { id?: unknown }).id;
+
+    if (candidateId === "codex") {
+      return "openai-codex";
+    }
 
     if (candidateId === "gemini") {
       return "google";
@@ -156,6 +164,10 @@ export function normalizeAddModelsProviderId(value: unknown): AddModelsProviderI
 }
 
 export function formatModelProviderLabel(providerId: string) {
+  if (providerId === "codex") {
+    return "Codex";
+  }
+
   const descriptor = modelProviderRegistry.find((provider) => provider.id === providerId);
 
   if (descriptor) {

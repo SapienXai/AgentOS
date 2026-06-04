@@ -109,6 +109,12 @@ export async function readOpenClawProviderModelStatus(): Promise<ModelsStatusPay
   }
 }
 
+export async function readOpenClawCodexPluginReady(): Promise<boolean> {
+  const plugins = await getOpenClawAdapter().listPlugins({ timeoutMs: 5_000 });
+
+  return plugins.plugins.some(isReadyCodexPlugin);
+}
+
 export async function buildOpenClawFileBasedProviderConnectionStatus(
   provider: AddModelsProviderId,
   configuredModelIds: Set<string>
@@ -126,8 +132,9 @@ export async function buildOpenClawFileBasedProviderConnectionStatus(
   const providerAuthCount = [
     ...Object.values(config.auth?.profiles ?? {}),
     ...Object.values(authProfiles.profiles ?? {})
-  ].filter((entry) => entry.provider === provider).length;
-  const connected = providerAuthCount > 0;
+  ].filter((entry) => providerAuthEntryMatchesAddModelsProvider(entry.provider, provider)).length;
+  const connected = providerAuthCount > 0 ||
+    (provider === "openai-codex" && configuredCount > 0 && isCodexHarnessEnabled(config));
 
   return {
     provider,
@@ -582,6 +589,22 @@ function enableCodexHarness(config: OpenClawConfigPayload) {
   }
 }
 
+function isCodexHarnessEnabled(config: OpenClawConfigPayload) {
+  const entry = config.plugins?.entries?.codex;
+  const allowed = Array.isArray(config.plugins?.allow) && config.plugins.allow.includes("codex");
+
+  return (Boolean(entry) && entry?.enabled !== false) || allowed;
+}
+
+function isReadyCodexPlugin(plugin: { id: string; name: string; status?: string }) {
+  const id = plugin.id.trim().toLowerCase();
+  const name = plugin.name.trim().toLowerCase();
+  const status = plugin.status?.trim().toLowerCase() ?? "";
+  const isCodexPlugin = id === "codex" || id === "@openclaw/codex" || name === "codex" || name === "@openclaw/codex";
+
+  return isCodexPlugin && !["disabled", "missing", "error", "failed", "blocked"].includes(status);
+}
+
 function stripLegacyAgentRuntimeFromDefaults(defaults: OpenClawAgentDefaultsConfig) {
   delete (defaults as Record<string, unknown>).agentRuntime;
 }
@@ -630,10 +653,25 @@ function modelMatchesProvider(provider: AddModelsProviderId, modelId: string) {
   const modelProvider = modelId.split("/")[0] as AddModelsProviderId;
 
   if (provider === "openai-codex") {
-    return modelProvider === "openai" || modelProvider === "openai-codex";
+    return modelProvider === "codex" || modelProvider === "openai" || modelProvider === "openai-codex";
   }
 
   return modelProvider === provider && isAddModelsProviderId(modelProvider);
+}
+
+function providerAuthEntryMatchesAddModelsProvider(
+  entryProvider: string | undefined,
+  provider: AddModelsProviderId
+) {
+  if (!entryProvider) {
+    return false;
+  }
+
+  if (provider === "openai-codex") {
+    return entryProvider === "codex" || entryProvider === "openai-codex";
+  }
+
+  return entryProvider === provider;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

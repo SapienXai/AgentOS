@@ -8,17 +8,31 @@ export function isOpenAiCodexAuthRefreshFailure(output: string) {
   );
 }
 
+export function isOpenAiCodexProviderPluginMissing(output: string) {
+  const normalized = output.trim();
+
+  return (
+    /No provider plugins found/i.test(normalized) ||
+    /plugin not installed:\s*codex/i.test(normalized) ||
+    /plugins\.entries\.codex.*plugin not installed/i.test(normalized)
+  );
+}
+
 export function isOpenAiCodexAuthRecoveryMessage(output: string) {
   const normalized = output.trim();
 
   return (
     /Your ChatGPT\/Codex session has expired/i.test(normalized) &&
-    /models auth login --provider openai-codex/i.test(normalized)
+    /models auth login --provider (?:openai-codex|codex)/i.test(normalized)
   );
 }
 
 export function isOpenAiCodexAuthFailure(output: string) {
-  return isOpenAiCodexAuthRefreshFailure(output) || isOpenAiCodexAuthRecoveryMessage(output);
+  return (
+    isOpenAiCodexAuthRefreshFailure(output) ||
+    isOpenAiCodexAuthRecoveryMessage(output) ||
+    isOpenAiCodexProviderPluginMissing(output)
+  );
 }
 
 export function isOpenAiCodexDiscoveryTimeout(output: string) {
@@ -32,8 +46,59 @@ export function resolveOpenAiCodexAuthRecoveryMessage(command: string) {
   ].join(" ");
 }
 
-export function buildOpenAiCodexAuthLoginCommand(commandBin: string) {
-  return `${quoteShellArg(commandBin)} models auth login --provider openai-codex --set-default`;
+export function buildOpenAiCodexAuthLoginCommand(commandBin: string, options?: { force?: boolean }) {
+  const forceFlag = options?.force ? " --force" : "";
+
+  return `${quoteShellArg(commandBin)} models auth login --provider codex --method app-server${forceFlag} --set-default`;
+}
+
+export function buildOpenAiCodexAuthRepairCommand(commandBin: string, options?: { force?: boolean }) {
+  const command = quoteShellArg(commandBin);
+  const forceFlag = options?.force ? " --force" : "";
+
+  return `${command} plugins install --force @openclaw/codex && ${command} doctor --fix && ${command} gateway restart && ${command} models auth login --provider codex --method app-server${forceFlag} --set-default`;
+}
+
+export function resolveOpenAiCodexAuthHandoff(
+  commandBin: string,
+  pluginReady: boolean,
+  options?: {
+    force?: boolean;
+  }
+) {
+  if (pluginReady) {
+    const command = buildOpenAiCodexAuthLoginCommand(commandBin, options);
+    const actionLabel = options?.force ? "refresh the Codex app-server setup" : "finish the Codex app-server setup";
+
+    return {
+      command,
+      statusMessage: "Preparing Codex app-server setup in terminal...",
+      continueMessage:
+        `Continue in terminal to ${actionLabel}. After auth completes, return here and refresh setup.`,
+      verificationMessage:
+        `The model was saved. Continue in terminal to ${actionLabel} and finish setup.`
+    };
+  }
+
+  const command = buildOpenAiCodexAuthRepairCommand(commandBin, options);
+  const actionLabel = options?.force ? "refresh the Codex app-server setup" : "finish the Codex app-server setup";
+
+  return {
+    command,
+    statusMessage: "Preparing Codex plugin setup in terminal...",
+    continueMessage:
+      `Continue in terminal to install the Codex provider plugin, then ${actionLabel}.`,
+    verificationMessage:
+      `The model was saved. Install the Codex provider plugin, then ${actionLabel}.`
+  };
+}
+
+export function resolveOpenAiCodexProviderPluginRecoveryMessage(command: string) {
+  return [
+    "OpenClaw needs the Codex provider plugin installed and enabled before auth login can continue.",
+    "Install the plugin, refresh the registry, restart the gateway, then retry.",
+    `Run: ${command}`
+  ].join(" ");
 }
 
 function quoteShellArg(value: string) {

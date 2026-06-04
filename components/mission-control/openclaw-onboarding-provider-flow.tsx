@@ -253,7 +253,7 @@ export function OpenClawOnboardingProviderFlow({
     }
   }
 
-  async function connectProvider(providerId: AddModelsProviderId) {
+  async function connectProvider(providerId: AddModelsProviderId, options?: { force?: boolean }) {
     const adapter = getModelProviderAdapter(providerId);
     const draft = resolveDraft(providerDrafts[providerId]);
 
@@ -262,13 +262,16 @@ export function OpenClawOnboardingProviderFlow({
       errorMessage: null,
       statusMessage:
         providerId === "openai-codex"
-          ? "Opening the ChatGPT sign-in flow..."
+          ? options?.force
+            ? "Refreshing Codex app-server setup..."
+            : "Checking Codex app-server setup..."
           : `Connecting ${getModelProviderDescriptor(providerId).shortLabel}...`
     });
 
     try {
       const result = await adapter.connect({
-        apiKey: draft.apiKey
+        apiKey: draft.apiKey,
+        force: options?.force
       });
       const shouldDiscover =
         result.connection.connected &&
@@ -537,9 +540,9 @@ export function OpenClawOnboardingProviderFlow({
           <div className="mt-4 rounded-[20px] border border-white/10 bg-white/[0.03] p-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="font-display text-[0.88rem] text-white">Connect your ChatGPT account</p>
+                <p className="font-display text-[0.88rem] text-white">Use Codex app-server</p>
                 <p className="mt-1 max-w-[500px] text-[10px] leading-[0.98rem] text-slate-400">
-                  This uses OpenClaw&apos;s account-based login flow. No API key is required.
+                  OpenClaw 2026.6.1 uses the Codex app-server plugin for ChatGPT-backed models.
                 </p>
               </div>
               <Button
@@ -559,15 +562,26 @@ export function OpenClawOnboardingProviderFlow({
                   "Connect ChatGPT"
                 )}
               </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-8 rounded-full px-3 text-[10px]"
+                disabled={activeDraft.flowState === "connecting" && !activeDraft.manualCommand}
+                onClick={() => {
+                  void connectProvider(activeProviderId, { force: true });
+                }}
+              >
+                Refresh app-server
+              </Button>
             </div>
 
             {activeDraft.manualCommand ? (
               <div className="mt-3 rounded-[16px] border border-cyan-300/15 bg-cyan-300/[0.07] p-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="text-[11px] font-medium text-cyan-50">Finish sign-in in Terminal</p>
+                    <p className="text-[11px] font-medium text-cyan-50">Finish setup in Terminal</p>
                     <p className="mt-1 max-w-[460px] text-[10px] leading-[0.98rem] text-cyan-100/80">
-                      Open Terminal, complete the provider login, then come back and refresh this provider.
+                      Open Terminal, complete the Codex app-server setup, then come back and refresh this provider.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">

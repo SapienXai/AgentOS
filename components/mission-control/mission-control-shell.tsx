@@ -3704,6 +3704,8 @@ export function MissionControlShell({
                               ? "stalled"
                               : result.status === "cancelled"
                                 ? "cancelled"
+                                : result.status === "completed"
+                                  ? "completed"
                                 : "queued",
                           subtitle: result.summary,
                           bootstrapStage:
@@ -3713,6 +3715,8 @@ export function MissionControlShell({
                               ? "stalled"
                               : result.status === "cancelled"
                                 ? "cancelled"
+                                : result.status === "completed"
+                                  ? "completed"
                                 : "accepted",
                           feedEvent: {
                             id: `${entry.task.id}:response:${Date.now()}`,
@@ -3729,6 +3733,8 @@ export function MissionControlShell({
                                 ? "Dispatch blocked"
                                 : result.status === "cancelled"
                                   ? "Dispatch cancelled"
+                                  : result.status === "completed"
+                                    ? "Mission finished"
                                   : "Mission accepted",
                             detail:
                               waitingForTranscriptOutput

@@ -237,6 +237,33 @@ test("mission dispatch uses native chat when capability matrix supports it", asy
   assert.deepEqual(calls, [`run:agent-1:${response.dispatchId}`]);
 });
 
+test("mission dispatch records Gateway wait timeouts as stalled", async () => {
+  setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({
+    protocolVersion: 4,
+    methods: ["chat.send", "agent.wait"]
+  }));
+  setOpenClawAdapterForTesting(createContractAdapter({
+    async runAgentTurn() {
+      return {
+        runId: "run-timeout-1",
+        status: "timeout",
+        timeoutPhase: "gateway_draining"
+      } as unknown as Awaited<ReturnType<OpenClawAdapter["runAgentTurn"]>>;
+    }
+  }));
+
+  const response = await submitMissionDispatch({ mission: "Wait for timeout", workspaceId: "workspace-1" }, {
+    getMissionControlSnapshot: async () => createSnapshot(),
+    resolveAgentForMission: () => "agent-1",
+    invalidateMissionControlCaches: () => {}
+  });
+  trackMissionDispatch(response.dispatchId);
+
+  assert.equal(response.runId, "run-timeout-1");
+  assert.equal(response.status, "stalled");
+  assert.match(response.summary, /timed out during gateway_draining/i);
+});
+
 test("mission dispatch still attempts Gateway-first path when capabilities are unknown", async () => {
   const calls: string[] = [];
   setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({

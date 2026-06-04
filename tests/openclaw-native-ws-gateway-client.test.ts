@@ -2531,6 +2531,188 @@ test("native WS gateway client uses Gateway first for critical workflows with co
   assert.equal(sentFrames.find((frame) => frame.method === "sessions.abort")?.params.runId, "run-1");
 });
 
+test("native WS gateway client waits for agent turn completion when a timeout is requested", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? {
+              protocol: 4,
+              features: {
+                methods: ["chat.send", "agent.wait"]
+              }
+            }
+          : frame.method === "agent.wait"
+            ? {
+                runId: "run-1",
+                status: "completed",
+                summary: "Done",
+                payloads: [{ text: "Done", mediaUrl: null }]
+              }
+            : {
+                runId: "run-1",
+                status: "started"
+              }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  const result = await client.runAgentTurn({
+    agentId: "agent-1",
+    sessionId: "session-1",
+    message: "hello",
+    timeoutSeconds: 1
+  });
+
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "chat.send", "agent.wait"]);
+  assert.deepEqual(sentFrames[2]?.params, {
+    runId: "run-1",
+    timeoutMs: 1000
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(result.payloads?.[0]?.text, "Done");
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway client retries agent wait with session params for legacy Gateway schemas", async () => {
+  const fallback = new FallbackGatewayClient();
+  let waitAttempts = 0;
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      if (frame.method === "connect") {
+        socket.emitMessage({
+          type: "res",
+          id: frame.id,
+          ok: true,
+          payload: {
+            protocol: 4,
+            features: {
+              methods: ["chat.send", "agent.wait"]
+            }
+          }
+        });
+        return;
+      }
+
+      if (frame.method === "agent.wait") {
+        waitAttempts += 1;
+        socket.emitMessage({
+          type: "res",
+          id: frame.id,
+          ok: waitAttempts > 1,
+          error: waitAttempts === 1
+            ? { message: "INVALID_REQUEST: invalid agent.wait params: must have required property 'sessionKey'" }
+            : undefined,
+          payload: waitAttempts > 1
+            ? {
+                runId: "run-1",
+                status: "completed",
+                summary: "Done",
+                payloads: [{ text: "Done", mediaUrl: null }]
+              }
+            : undefined
+        });
+        return;
+      }
+
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: {
+          runId: "run-1",
+          status: "started"
+        }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  const result = await client.runAgentTurn({
+    agentId: "agent-1",
+    sessionId: "session-1",
+    message: "hello",
+    timeoutSeconds: 1
+  });
+
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "chat.send", "agent.wait", "agent.wait"]);
+  assert.deepEqual(sentFrames[2]?.params, {
+    runId: "run-1",
+    timeoutMs: 1000
+  });
+  assert.deepEqual(sentFrames[3]?.params, {
+    runId: "run-1",
+    sessionKey: "agent:agent-1:explicit:session-1",
+    sessionId: "session-1",
+    timeoutMs: 1000
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(result.payloads?.[0]?.text, "Done");
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway client returns Gateway wait timeout payloads", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? {
+              protocol: 4,
+              features: {
+                methods: ["chat.send", "agent.wait"]
+              }
+            }
+          : frame.method === "agent.wait"
+            ? {
+                runId: "run-1",
+                status: "timeout",
+                timeoutPhase: "gateway_draining"
+              }
+            : {
+                runId: "run-1",
+                status: "started"
+              }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  const result = await client.runAgentTurn({
+    agentId: "agent-1",
+    message: "hello",
+    timeoutSeconds: 1
+  });
+
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "chat.send", "agent.wait"]);
+  assert.equal(result.status, "timeout");
+  assert.equal((result as { timeoutPhase?: string }).timeoutPhase, "gateway_draining");
+  assert.deepEqual(fallback.calls, []);
+});
+
 test("native WS gateway client retries chat.send when the Gateway registry confirms the agent", async () => {
   const fallback = new FallbackGatewayClient();
   let chatAttempts = 0;

@@ -8,7 +8,17 @@ import {
 
 test("agent chat auth action detects ChatGPT Codex reconnect messages", () => {
   const action = resolveAgentChatAuthAction(
-    "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai-codex --set-default",
+    "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider codex --method app-server --set-default",
+    "openai/gpt-5.4-mini"
+  );
+
+  assert.equal(action?.provider, "openai-codex");
+  assert.equal(action?.label, "ChatGPT");
+});
+
+test("agent chat auth action understands Codex provider login commands", () => {
+  const action = resolveAgentChatAuthAction(
+    "Run: openclaw models auth login --provider codex --method app-server --set-default",
     "openai/gpt-5.4-mini"
   );
 

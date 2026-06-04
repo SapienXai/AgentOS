@@ -159,6 +159,25 @@ test("model provider API route keeps local OpenClaw config state behind the appl
   assert.match(serviceSource, /auth-profiles\.json/);
 });
 
+test("model provider API route uses the Codex login command helper", () => {
+  const routeSource = readFileSync(path.join(rootDir, "app/api/models/providers/route.ts"), "utf8");
+
+  assert.match(routeSource, /readOpenClawCodexPluginReady/);
+  assert.match(routeSource, /resolveOpenAiCodexAuthHandoff\(commandBin,\s*codexPluginReady/);
+  assert.match(routeSource, /statusContext\.connection\.connected/);
+  assert.doesNotMatch(routeSource, /readOpenClawCodexPluginReady\(\)\.catch\(\(\) => true\)/);
+  assert.doesNotMatch(routeSource, /models\s+auth\s+login\s+--provider\s+openai-codex\s+--set-default/);
+});
+
+test("model onboarding route installs the Codex plugin before provider login when needed", () => {
+  const routeSource = readFileSync(path.join(rootDir, "app/api/onboarding/models/route.ts"), "utf8");
+
+  assert.match(routeSource, /readOpenClawCodexPluginReady/);
+  assert.match(routeSource, /resolveOpenAiCodexAuthHandoff/);
+  assert.match(routeSource, /codexPluginReady/);
+  assert.doesNotMatch(routeSource, /readOpenClawCodexPluginReady\(\)\.catch\(\(\) => true\)/);
+});
+
 test("local Gateway port probes do not claim authenticated RPC readiness", () => {
   const probeSource = readFileSync(path.join(rootDir, "lib/openclaw/client/local-gateway-probe.ts"), "utf8");
   const snapshotLoaderSource = readFileSync(
@@ -314,7 +333,10 @@ test("system onboarding repairs Gateway auth before runtime state verification",
   assert.match(source, /Preparing Gateway auth for AgentOS before first start/);
   assert.match(source, /needsGatewayBootstrapConfigRepair/);
   assert.match(source, /\["config", "set", "gateway\.mode", "local"\]/);
-  assert.match(source, /generateGatewayNativeAuthToken\(\{\s*verifyDelaysMs/);
+  assert.match(source, /\["config", "set", "gateway\.auth\.mode", "token"\]/);
+  assert.match(source, /\["config", "set", "gateway\.auth\.token", token\]/);
+  assert.match(source, /Rotating the local Gateway token before system setup readiness/);
+  assert.doesNotMatch(source, /generateGatewayNativeAuthToken/);
   assert.match(source, /AgentOS repaired local Gateway token auth during system setup verification/);
 });
 

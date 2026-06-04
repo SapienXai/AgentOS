@@ -23,6 +23,7 @@ import {
   shouldDeferWorkspaceSelectionHydration
 } from "@/components/mission-control/mission-control-shell.utils";
 import { resolveInitialOnboardingModelId } from "@/components/mission-control/openclaw-onboarding.utils";
+import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import type { MissionControlSnapshot, OperationProgressSnapshot } from "@/lib/agentos/contracts";
 
 test("agent draft helpers keep create flows stable", () => {
@@ -89,6 +90,7 @@ test("control plane helpers normalize snapshot and onboarding fallback", () => {
 
   assert.equal(resolveGatewayDraft(gatewaySnapshot), "ws://127.0.0.1:18789");
   assert.equal(resolveOnboardingAction(onboardingSnapshot).label, "Install OpenClaw");
+  assert.match(resolveOnboardingAction(onboardingSnapshot).description, new RegExp(OPENCLAW_RECOMMENDED_VERSION));
 
   const onlineWithoutWorkspace = {
     workspaces: [],

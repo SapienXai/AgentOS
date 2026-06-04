@@ -1,5 +1,6 @@
 import { compactPath, formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import { isOpenClawOnboardingSystemReady } from "@/lib/openclaw/readiness";
+import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import type {
   MissionControlSnapshot,
   OpenClawModelOnboardingPhase,
@@ -530,7 +531,7 @@ export function resolveOnboardingAction(snapshot: MissionControlSnapshot) {
   if (!snapshot.diagnostics.installed) {
     return {
       label: "Install OpenClaw",
-      description: "Download the CLI and get AgentOS ready."
+      description: `Download the CLI and get AgentOS ready. Recommended setup target: v${OPENCLAW_RECOMMENDED_VERSION}.`
     };
   }
 

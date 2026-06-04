@@ -1073,7 +1073,11 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       clearGatewayFallbackDiagnostic("sessions.send");
       this.clearNativeFailure("chat.send");
       this.clearNativeFailure("sessions.send");
-      return payload;
+      if (!shouldWaitForNativeAgentTurn(input, payload)) {
+        return payload;
+      }
+
+      return await this.waitForAgentTurnNative(input, payload, options) ?? payload;
     } catch (error) {
       this.options.onNativeFailure?.(error, "chat.send");
       const method = error instanceof NativeGatewayRequestError ? error.method : "chat.send";
@@ -1358,23 +1362,29 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     }
 
     const waitMs = resolveAgentTurnWaitMs(input, options);
-    const sessionKey = buildAgentSessionKey(input.agentId, input.sessionId);
+    const requestTimeoutMs = resolveNativeAgentWaitRequestTimeoutMs(waitMs);
 
     try {
       const payload = await this.callNative<MissionCommandPayload>(
         "agent.wait",
-        {
-          runId: dispatchPayload.runId,
-          sessionKey,
-          sessionId: input.sessionId ?? undefined,
-          timeoutMs: waitMs
-        },
-        { ...options, timeoutMs: waitMs },
-        { safety: "read", timeoutMs: waitMs }
+        buildNativeAgentWaitParams(input, dispatchPayload.runId, waitMs),
+        { ...options, timeoutMs: requestTimeoutMs },
+        { safety: "read", timeoutMs: requestTimeoutMs }
       );
       clearGatewayFallbackDiagnostic("agent.wait");
       return payload;
     } catch (error) {
+      if (shouldRetryNativeAgentWaitWithSessionParams(error)) {
+        const payload = await this.callNative<MissionCommandPayload>(
+          "agent.wait",
+          buildNativeAgentWaitParams(input, dispatchPayload.runId, waitMs, { includeSession: true }),
+          { ...options, timeoutMs: requestTimeoutMs },
+          { safety: "read", timeoutMs: requestTimeoutMs }
+        );
+        clearGatewayFallbackDiagnostic("agent.wait");
+        return payload;
+      }
+
       if (!shouldIgnoreNativeAgentWaitError(error)) {
         throw error;
       }
@@ -1868,6 +1878,49 @@ function isGatewayAgentNotFoundError(error: unknown, agentId: string) {
 
   const escapedAgentId = escapeRegExp(agentId);
   return new RegExp(`\\bagent\\s+["'\`]?${escapedAgentId}["'\`]?\\s+not\\s+found\\b`, "i").test(message);
+}
+
+function shouldWaitForNativeAgentTurn(input: OpenClawAgentTurnInput, payload: MissionCommandPayload) {
+  if (!payload.runId) {
+    return false;
+  }
+
+  if (typeof input.timeoutSeconds !== "number" || !Number.isFinite(input.timeoutSeconds) || input.timeoutSeconds <= 0) {
+    return false;
+  }
+
+  const status = payload.status?.trim().toLowerCase();
+  return !status || status === "started" || status === "running" || status === "queued";
+}
+
+function buildNativeAgentWaitParams(
+  input: OpenClawAgentTurnInput,
+  runId: string,
+  timeoutMs: number,
+  options: { includeSession?: boolean } = {}
+) {
+  if (!options.includeSession) {
+    return {
+      runId,
+      timeoutMs
+    };
+  }
+
+  return {
+    runId,
+    sessionKey: buildAgentSessionKey(input.agentId, input.sessionId),
+    sessionId: input.sessionId ?? undefined,
+    timeoutMs
+  };
+}
+
+function resolveNativeAgentWaitRequestTimeoutMs(waitMs: number) {
+  return Math.max(waitMs + 5_000, 5_000);
+}
+
+function shouldRetryNativeAgentWaitWithSessionParams(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /agent\.wait/i.test(message) && /must have required property ['"]?(sessionKey|sessionId|key)['"]?/i.test(message);
 }
 
 function gatewayAgentListIncludes(payload: OpenClawAgentListPayload, agentId: string) {

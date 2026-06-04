@@ -24,6 +24,7 @@ import {
   persistOpenClawCompatibilitySmokeTest,
   readMissionControlSettings
 } from "@/lib/openclaw/domains/control-plane-settings";
+import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import type {
   ModelReadiness,
@@ -84,7 +85,7 @@ export async function runOpenClawCompatibilitySmokeTest(): Promise<OpenClawCompa
   const context: SmokeContext = {
     openClawBin: null,
     installedVersion: null,
-    recommendedOpenClawVersion: null,
+    recommendedOpenClawVersion: OPENCLAW_RECOMMENDED_VERSION,
     gatewayProtocolVersion: null,
     nodeVersion: process.versions.node || null,
     nodeStatus: classifyOpenClawNodeVersion(process.versions.node).status,
@@ -306,10 +307,6 @@ export async function runOpenClawCompatibilitySmokeTest(): Promise<OpenClawCompa
         const healthOk = health.ok !== false;
         const runtimeVersion = readString(status.runtimeVersion) ?? readString(status.version);
         context.installedVersion = context.installedVersion ?? runtimeVersion;
-        context.recommendedOpenClawVersion =
-          readString(readObject(readObject(status.update)?.registry)?.latestVersion) ??
-          context.recommendedOpenClawVersion;
-
         return {
           status: healthOk ? "pass" : "fail",
           summary: healthOk ? "Native health and status RPCs responded." : "Native health RPC reported not OK.",
@@ -823,10 +820,6 @@ function isGatewayProtocolCompatible(protocol: string) {
 function normalizeVersion(value: string | null | undefined) {
   const trimmed = value?.trim().replace(/^v/i, "");
   return trimmed || null;
-}
-
-function readObject(value: unknown) {
-  return value && typeof value === "object" ? value as Record<string, unknown> : null;
 }
 
 function readString(value: unknown) {

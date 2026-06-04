@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Activity, ChevronDown, CircleCheck, Clock3, ClipboardList, FileInput, Filter, FolderOpenDot, Layers3, Plus, RefreshCw, Rows3, ShieldCheck, SlidersHorizontal, Sparkles, Users, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Activity, ChevronDown, CircleCheck, Clock3, ClipboardList, FileInput, Filter, FolderOpenDot, Layers3, MessageSquare, Plus, RefreshCw, Rows3, ShieldCheck, SlidersHorizontal, Sparkles, Users, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
@@ -20,8 +20,19 @@ import {
 } from "@/components/mission-control/task-follow-up";
 import {
   mergeTaskFollowUps,
-  readTaskFollowUpsFromMetadata
+  readTaskFollowUpsFromMetadata,
+  resolveTaskFollowUpDisplayMessage
 } from "@/lib/openclaw/domains/task-follow-up-records";
+import { compactMissionText, formatTokens } from "@/lib/openclaw/presenters";
+
+type OperationTaskTab = {
+  id: string;
+  index: number | null;
+  kind: "task" | "follow-up";
+  label: string;
+  title: string;
+  statusLabel: string;
+};
 
 export function TasksPageContent({
   snapshot,
@@ -310,6 +321,9 @@ function TaskCard({
 }) {
   const cancelEnabled = canCancelTask(task);
   const resultText = readTaskResultText(task);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [composerExpanded, setComposerExpanded] = useState(false);
   const [titleExpanded, setTitleExpanded] = useState(false);
   const [localFollowUps, setLocalFollowUps] = useState<SubmittedTaskFollowUp[]>([]);
   const [activeFollowUpIndex, setActiveFollowUpIndex] = useState<number | null>(null);
@@ -325,18 +339,59 @@ function TaskCard({
     activeFollowUpIndex !== null && activeFollowUpIndex < followUps.length ? activeFollowUpIndex : null;
   const activeFollowUp =
     effectiveActiveFollowUpIndex !== null ? followUps[effectiveActiveFollowUpIndex] ?? null : null;
-  const cardCount = 1 + followUps.length;
-  const currentCardNumber = effectiveActiveFollowUpIndex === null ? 1 : effectiveActiveFollowUpIndex + 2;
-  const nextCardNumber = currentCardNumber >= cardCount ? 1 : currentCardNumber + 1;
-  const displayTitle = activeFollowUp ? activeFollowUp.message : task.title;
-  const displayResultTitle = activeFollowUp ? `Follow-up ${currentCardNumber - 1}` : "Latest result";
+  const displayTitle = activeFollowUp
+    ? resolveTaskFollowUpDisplayMessage(activeFollowUp) ?? activeFollowUp.message
+    : task.title;
+  const displayResultTitle = activeFollowUp ? "Follow-up result" : "Latest result";
   const displayResultText = activeFollowUp ? formatFollowUpDetail(activeFollowUp) : resultText;
   const displayStatus = activeFollowUp ? mapFollowUpStatus(activeFollowUp.status) : task.status;
   const displayStatusLabel = activeFollowUp ? formatFollowUpStatusLabel(displayStatus) : task.statusLabel;
   const displayStatusTone = activeFollowUp ? statusToneForFollowUp(displayStatus) : task.statusTone;
   const metrics = activeFollowUp ? buildFollowUpMetrics(activeFollowUp) : buildTaskMetrics(task);
+  const tabs: OperationTaskTab[] = [
+    {
+      id: "task",
+      index: null,
+      kind: "task",
+      label: "Task 1",
+      title: compactMissionText(task.title, 28) || "Original task",
+      statusLabel: task.statusLabel
+    },
+    ...followUps.map((followUp, index) => ({
+      id: followUp.runId || followUp.id,
+      index,
+      kind: "follow-up" as const,
+      label: "Follow-up",
+      title: compactMissionText(resolveTaskFollowUpDisplayMessage(followUp) ?? followUp.message, 28) || "Follow-up",
+      statusLabel: formatFollowUpStatusLabel(mapFollowUpStatus(followUp.status))
+    }))
+  ];
+  const activeTabId = activeFollowUp ? activeFollowUp.runId || activeFollowUp.id : "task";
+  const selectTaskTab = (nextIndex: number | null) => {
+    setTitleExpanded(false);
+    setActiveFollowUpIndex(nextIndex);
+    onActiveFollowUpChange(nextIndex === null ? null : followUps[nextIndex] ?? null);
+  };
+
+  useEffect(() => {
+    if (!composerExpanded) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!cardRef.current?.contains(event.target as globalThis.Node)) {
+        setComposerExpanded(false);
+        setTitleExpanded(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    return () => window.removeEventListener("pointerdown", handlePointerDown, true);
+  }, [composerExpanded]);
+
   return (
     <div
+      ref={cardRef}
       role="button"
       tabIndex={0}
       onClick={onSelect}
@@ -347,12 +402,22 @@ function TaskCard({
         }
       }}
       className={cn(
-        "relative overflow-hidden rounded-[22px] border bg-[linear-gradient(180deg,rgba(12,19,33,0.96),rgba(5,10,20,0.96))] p-4 text-left shadow-[0_18px_50px_rgba(0,0,0,0.24)] transition-all hover:border-cyan-200/22 hover:bg-white/[0.055] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
-        selected ? "border-cyan-300/45 shadow-[0_0_0_1px_rgba(34,211,238,0.16),0_18px_50px_rgba(0,0,0,0.32)]" : "border-white/[0.08]"
+        "relative overflow-hidden rounded-[20px] border bg-[linear-gradient(180deg,rgba(12,19,33,0.96),rgba(5,10,20,0.96))] p-2.5 text-left shadow-[0_18px_50px_rgba(0,0,0,0.24)] transition-[transform,box-shadow,border-color,background-color] hover:border-cyan-200/22 hover:bg-white/[0.055] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40 transform-gpu origin-center",
+        selected ? "border-cyan-300/45 shadow-[0_0_0_1px_rgba(34,211,238,0.16),0_18px_50px_rgba(0,0,0,0.32)]" : "border-white/[0.08]",
+        composerExpanded && "z-30 scale-[1.03] shadow-[0_28px_90px_rgba(0,0,0,0.42)]"
       )}
     >
       <div className="pointer-events-none absolute inset-y-5 left-0 w-1 rounded-r-full bg-cyan-300/45" />
-      <div className="min-w-0">
+      <TaskCardTabs
+        activeTabId={activeTabId}
+        tabs={tabs}
+        onAdd={() => {
+          setComposerExpanded(true);
+          composerInputRef.current?.focus();
+        }}
+        onSelect={(tab) => selectTaskTab(tab.index)}
+      />
+      <div className="min-w-0 rounded-[16px] border border-white/[0.06] bg-white/[0.025] p-3.5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2.5">
@@ -369,29 +434,6 @@ function TaskCard({
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <StatusBadge label={displayStatusLabel} tone={displayStatusTone} />
-              {followUps.length > 0 ? (
-                <button
-                  type="button"
-                  aria-label={`Current card ${currentCardNumber} of ${cardCount}; show card ${nextCardNumber}`}
-                  title={`Current card ${currentCardNumber} of ${cardCount}; click to show card ${nextCardNumber}`}
-                  className="inline-flex h-7 min-w-7 items-center justify-center rounded-full border border-cyan-200/16 bg-cyan-300/[0.07] px-2 font-mono text-[10px] font-semibold text-cyan-100 transition-colors hover:border-cyan-200/30 hover:bg-cyan-300/[0.12]"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    const nextFollowUpIndex =
-                      activeFollowUpIndex === null
-                        ? 0
-                        : effectiveActiveFollowUpIndex === null || effectiveActiveFollowUpIndex + 1 >= followUps.length
-                          ? null
-                          : effectiveActiveFollowUpIndex + 1;
-                    setTitleExpanded(false);
-                    setActiveFollowUpIndex(nextFollowUpIndex);
-                    onActiveFollowUpChange(nextFollowUpIndex === null ? null : followUps[nextFollowUpIndex] ?? null);
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                >
-                  {currentCardNumber}
-                </button>
-              ) : null}
               <MoreButton />
             </div>
           </div>
@@ -419,7 +461,7 @@ function TaskCard({
             </span>
           </button>
 
-          <TaskMetricRow metrics={metrics} compact className="mt-4" />
+          <TaskMetricRow metrics={metrics} compact className="mt-3" />
 
           {task.status === "running" ? (
             <div className="mt-3">
@@ -431,24 +473,9 @@ function TaskCard({
             </div>
           ) : null}
 
-          <ExpandableTaskResult title={displayResultTitle} result={displayResultText} compact className="mt-4" />
+          <ExpandableTaskResult title={displayResultTitle} result={displayResultText} compact className="mt-3" />
 
-          {task.source ? (
-            <TaskFollowUpComposer
-              task={task.source}
-              latestResult={resultText}
-              compact
-              className="mt-4"
-              onSubmitted={(followUp) => {
-                setActiveFollowUpIndex(followUps.length);
-                setLocalFollowUps((current) => mergeTaskFollowUps(current, [followUp]));
-                onActiveFollowUpChange(followUp);
-                return onFollowUpComplete();
-              }}
-            />
-          ) : null}
-
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <span className="text-[0.68rem] text-slate-500">{task.dueLabel}</span>
             <Button
               variant="secondary"
@@ -463,8 +490,159 @@ function TaskCard({
             </Button>
           </div>
       </div>
+      {task.source ? (
+      <TaskFollowUpComposer
+        task={task.source}
+        latestResult={displayResultText}
+        compact
+        expanded={composerExpanded}
+        onExpandRequest={() => setComposerExpanded(true)}
+        textareaRef={composerInputRef}
+        className="mt-2.5"
+        onSubmitted={(followUp) => {
+            const nextIndex = followUps.length;
+            setActiveFollowUpIndex(nextIndex);
+            setLocalFollowUps((current) => mergeTaskFollowUps(current, [followUp]));
+            onActiveFollowUpChange(followUp);
+            return onFollowUpComplete();
+          }}
+        />
+      ) : null}
     </div>
   );
+}
+
+function TaskCardTabs({
+  activeTabId,
+  tabs,
+  onAdd,
+  onSelect
+}: {
+  activeTabId: string;
+  tabs: OperationTaskTab[];
+  onAdd: () => void;
+  onSelect: (tab: OperationTaskTab) => void;
+}) {
+  const activeIndex = Math.max(tabs.findIndex((tab) => tab.id === activeTabId), 0);
+  const selectByOffset = (offset: number) => {
+    const nextTab = tabs[(activeIndex + offset + tabs.length) % tabs.length];
+    if (nextTab) {
+      onSelect(nextTab);
+    }
+  };
+
+  return (
+    <div
+      className="mb-2 flex items-end gap-1.5 pb-px"
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <div
+        role="tablist"
+        aria-label="Task workspace tabs"
+        className={cn(
+          "min-w-0 items-end gap-1.5",
+          tabs.length <= 7 ? "grid flex-1" : "flex min-w-max overflow-x-auto"
+        )}
+        style={tabs.length <= 7 ? { gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` } : undefined}
+      >
+        {tabs.map((tab) => {
+          const active = tab.id === activeTabId;
+          const Icon = tab.kind === "task" ? ClipboardList : MessageSquare;
+
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              title={`${tab.label}: ${tab.title}`}
+              className={cn(
+                "group/tab relative flex h-[50px] items-center gap-2 rounded-t-[15px] border px-2.5 text-left outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-cyan-200/45",
+                tabs.length <= 7 ? "min-w-0 w-full" : "min-w-[148px] max-w-[220px] shrink-0",
+                active
+                  ? "border-cyan-200/26 bg-cyan-300/[0.09] text-white shadow-[0_-8px_24px_rgba(45,212,191,0.12)]"
+                  : "border-white/[0.075] bg-white/[0.025] text-slate-300 hover:border-cyan-200/16 hover:bg-white/[0.045]"
+              )}
+              onClick={() => onSelect(tab)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowRight") {
+                  event.preventDefault();
+                  selectByOffset(1);
+                } else if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  selectByOffset(-1);
+                } else if (event.key === "Home") {
+                  event.preventDefault();
+                  if (tabs[0]) {
+                    onSelect(tabs[0]);
+                  }
+                } else if (event.key === "End") {
+                  event.preventDefault();
+                  const lastTab = tabs[tabs.length - 1];
+                  if (lastTab) {
+                    onSelect(lastTab);
+                  }
+                }
+              }}
+            >
+              <span
+                className={cn(
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border transition-colors",
+                  active
+                    ? "border-emerald-200/24 bg-emerald-300/[0.12] text-emerald-100"
+                    : "border-white/[0.08] bg-white/[0.035] text-slate-400 group-hover/tab:text-slate-200"
+                )}
+              >
+                <Icon className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className={cn("flex items-center gap-1.5 text-[10px] font-semibold", active ? "text-emerald-200" : "text-slate-400")}>
+                  <span className="truncate">{tab.label}</span>
+                  <span className={cn("h-1 w-1 shrink-0 rounded-full", taskCardTabStatusDotClassName(tab.statusLabel))} />
+                </span>
+                <span className="mt-0.5 block truncate text-[10px] font-semibold leading-4 text-slate-100">
+                  {tab.title}
+                </span>
+              </span>
+              <span
+                className={cn(
+                  "absolute inset-x-2.5 bottom-0 h-0.5 rounded-full transition-all duration-200",
+                  active ? "bg-emerald-300 shadow-[0_0_14px_rgba(52,211,153,0.75)]" : "bg-transparent"
+                )}
+              />
+            </button>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        aria-label="Focus follow-up composer"
+        title="Focus follow-up composer"
+        className="mb-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] border border-white/[0.08] bg-white/[0.045] text-slate-200 outline-none transition-all duration-200 hover:border-cyan-200/22 hover:bg-cyan-300/[0.08] hover:text-cyan-100 focus-visible:ring-2 focus-visible:ring-cyan-200/45"
+        onClick={onAdd}
+      >
+        <Plus className="h-[18px] w-[18px]" />
+      </button>
+    </div>
+  );
+}
+
+function taskCardTabStatusDotClassName(statusLabel: string) {
+  switch (statusLabel.toLowerCase()) {
+    case "completed":
+      return "bg-emerald-300";
+    case "running":
+    case "queued":
+      return "bg-cyan-300";
+    case "stalled":
+      return "bg-amber-300";
+    case "cancelled":
+      return "bg-rose-300";
+    default:
+      return "bg-slate-500";
+  }
 }
 
 function TaskInspector({
@@ -484,8 +662,11 @@ function TaskInspector({
   const displayStatus = activeFollowUp ? mapFollowUpStatus(activeFollowUp.status) : task.status;
   const displayStatusLabel = activeFollowUp ? formatFollowUpStatusLabel(displayStatus) : task.statusLabel;
   const displayStatusTone = activeFollowUp ? statusToneForFollowUp(displayStatus) : task.statusTone;
-  const displayTitle = activeFollowUp?.message || task.title;
-  const displayObjective = activeFollowUp?.message || task.objective;
+  const displayFollowUpMessage = activeFollowUp
+    ? resolveTaskFollowUpDisplayMessage(activeFollowUp) ?? activeFollowUp.message
+    : null;
+  const displayTitle = displayFollowUpMessage || task.title;
+  const displayObjective = displayFollowUpMessage || task.objective;
   const displayDescription = activeFollowUp
     ? activeFollowUp.summary || formatFollowUpDetail(activeFollowUp)
     : task.description;
@@ -620,13 +801,13 @@ function buildFollowUpMetrics(followUp: SubmittedTaskFollowUp): TaskMetricItem[]
     {
       icon: Sparkles,
       label: "Tokens",
-      value: "0",
+      value: formatTokens(followUp.tokenUsage?.total),
       highlighted: true
     },
     {
       icon: Rows3,
       label: "Feed",
-      value: followUp.summary ? 1 : 0
+      value: followUp.summary ? 1 : "n/a"
     },
     {
       icon: FolderOpenDot,
@@ -636,7 +817,7 @@ function buildFollowUpMetrics(followUp: SubmittedTaskFollowUp): TaskMetricItem[]
     {
       icon: Sparkles,
       label: "Files",
-      value: 0
+      value: followUp.createdFiles ? followUp.createdFiles.length : "n/a"
     }
   ];
 }
@@ -649,6 +830,11 @@ function mapFollowUpStatus(value: string | null | undefined): TaskView["status"]
     case "completed":
     case "cancelled":
       return value;
+    case "timeout":
+    case "timed_out":
+    case "failed":
+    case "error":
+      return "stalled";
     default:
       return "running";
   }

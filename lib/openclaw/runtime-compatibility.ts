@@ -1,8 +1,11 @@
 import type { MissionControlSnapshot } from "@/lib/openclaw/types";
 import {
   buildOpenAiCodexAuthLoginCommand,
+  buildOpenAiCodexAuthRepairCommand,
   isOpenAiCodexAuthFailure,
-  resolveOpenAiCodexAuthRecoveryMessage
+  isOpenAiCodexProviderPluginMissing,
+  resolveOpenAiCodexAuthRecoveryMessage,
+  resolveOpenAiCodexProviderPluginRecoveryMessage
 } from "@/lib/openclaw/model-auth-errors";
 
 type SmokeTestFailureKind = "model-route" | "plugin-runtime" | "provider-auth" | "session-store-permission";
@@ -36,6 +39,17 @@ export function classifyOpenClawRuntimeSmokeTestFailure(output: string): SmokeTe
 
   if (!normalized) {
     return null;
+  }
+
+  if (
+    isOpenAiCodexProviderPluginMissing(normalized)
+  ) {
+    return {
+      kind: "provider-auth",
+      detail: resolveOpenAiCodexProviderPluginRecoveryMessage(
+        buildOpenAiCodexAuthRepairCommand("openclaw")
+      )
+    };
   }
 
   if (
@@ -93,7 +107,9 @@ export function buildOpenClawRuntimeSmokeTestRecoveryCommand(command: string, ou
   }
 
   if (classification?.kind === "provider-auth") {
-    return buildOpenAiCodexAuthLoginCommand(command);
+    return isOpenAiCodexProviderPluginMissing(output)
+      ? buildOpenAiCodexAuthRepairCommand(command)
+      : buildOpenAiCodexAuthLoginCommand(command);
   }
 
   if (classification?.kind === "session-store-permission") {

@@ -32,13 +32,15 @@ export function buildModelStatusConnectionStatus(
   const oauthStatus = readString(oauthProvider?.status)?.toLowerCase();
   const profileCount = readNumber(authProvider?.profiles?.count) ?? 0;
   const effectiveKind = readString(authProvider?.effective?.kind)?.toLowerCase();
+  const syntheticAuthValue = readString(authProvider?.syntheticAuth?.value);
   const connected = provider === "ollama"
     ? visibleCount > 0
     : oauthProfiles
       ? usableOauthProfileCount > 0 || oauthStatus === "ok"
       : oauthStatus === "ok" ||
         profileCount > 0 ||
-        Boolean(effectiveKind && ["ok", "profiles", "token", "apikey", "api-key", "oauth"].includes(effectiveKind));
+        Boolean(syntheticAuthValue) ||
+        Boolean(effectiveKind && ["ok", "profiles", "token", "apikey", "api-key", "oauth", "synthetic"].includes(effectiveKind));
 
   return {
     provider,
@@ -61,7 +63,7 @@ export function modelMatchesAddModelsProvider(provider: AddModelsProviderId, mod
   const modelProvider = modelId.split("/", 1)[0] || "";
 
   if (provider === "openai-codex") {
-    return modelProvider === "openai" || modelProvider === "openai-codex";
+    return modelProvider === "codex" || modelProvider === "openai" || modelProvider === "openai-codex";
   }
 
   return modelProvider === provider;
@@ -69,6 +71,10 @@ export function modelMatchesAddModelsProvider(provider: AddModelsProviderId, mod
 
 export function resolveModelRecordProvider(modelId: string, modelStatus?: ModelsStatusPayload) {
   const modelProvider = modelId.split("/", 1)[0] || "unknown";
+
+  if (modelProvider === "codex") {
+    return "openai-codex";
+  }
 
   if (modelProvider === "openai" && shouldDisplayOpenAiModelAsCodex(modelId, modelStatus)) {
     return "openai-codex";
@@ -81,6 +87,10 @@ export function isOpenAiCodexBackedModel(modelId: string, modelStatus?: ModelsSt
   const modelProvider = modelId.split("/", 1)[0] || "";
 
   if (modelProvider === "openai-codex") {
+    return true;
+  }
+
+  if (modelProvider === "codex") {
     return true;
   }
 
@@ -134,6 +144,10 @@ function resolveConnectionDetail({
       return `${profileCount} auth profile${profileCount === 1 ? "" : "s"}`;
     }
 
+    if (provider === "openai-codex" && visibleCount > 0) {
+      return `Codex app-server connected with ${visibleCount} available model${visibleCount === 1 ? "" : "s"}.`;
+    }
+
     return visibleCount > 0
       ? `${visibleCount} configured model${visibleCount === 1 ? "" : "s"} in AgentOS.`
       : `${descriptor.shortLabel} is connected.`;
@@ -148,7 +162,19 @@ function findProviderRecord<T extends { provider?: unknown }>(
   entries: T[] | undefined,
   provider: AddModelsProviderId
 ) {
-  return entries?.find((entry) => readString(entry.provider) === provider);
+  return entries?.find((entry) => providerRecordMatchesAddModelsProvider(readString(entry.provider), provider));
+}
+
+function providerRecordMatchesAddModelsProvider(recordProvider: string | null, provider: AddModelsProviderId) {
+  if (!recordProvider) {
+    return false;
+  }
+
+  if (provider === "openai-codex") {
+    return recordProvider === "codex" || recordProvider === "openai-codex";
+  }
+
+  return recordProvider === provider;
 }
 
 function countUsableAuthProfiles(value: unknown[]) {

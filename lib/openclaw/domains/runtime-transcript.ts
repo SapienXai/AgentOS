@@ -536,7 +536,16 @@ function resolveMissingRuntimeOutputMessage(runtime: RuntimeRecord, fallback: st
 }
 
 function resolveRuntimeMissionTurn(runtime: RuntimeRecord, turns: TranscriptTurn[]) {
-  const mission = typeof runtime.metadata.mission === "string" ? runtime.metadata.mission : null;
+  const mission =
+    typeof runtime.metadata.turnPrompt === "string" && runtime.metadata.turnPrompt.trim().length > 0
+      ? runtime.metadata.turnPrompt
+      : typeof runtime.metadata.prompt === "string" && runtime.metadata.prompt.trim().length > 0
+        ? runtime.metadata.prompt
+        : typeof runtime.metadata.mission === "string" && runtime.metadata.mission.trim().length > 0
+          ? runtime.metadata.mission
+          : typeof runtime.metadata.routedMission === "string" && runtime.metadata.routedMission.trim().length > 0
+            ? runtime.metadata.routedMission
+            : null;
 
   if (!mission) {
     return null;
