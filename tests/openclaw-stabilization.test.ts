@@ -5,6 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 
 import { normalizeControlPlaneSnapshot } from "@/lib/agentos/acl/openclaw";
+import { mergeOllamaCatalogModels, parseOllamaListModelNames } from "@/app/api/models/providers/route";
 import { getOpenClawBinCandidates, parseOpenClawVersion } from "@/lib/openclaw/cli";
 import {
   getOpenClawBundledNodeBinPath,
@@ -1739,6 +1740,76 @@ test("ollama is treated as a local provider without auth login", () => {
   assert.equal(ollamaProvider?.connected, true);
   assert.equal(ollamaProvider?.canLogin, false);
   assert.equal(readiness.preferredLoginProvider, null);
+});
+
+test("Ollama local fallback parses installed models from ollama list output", () => {
+  assert.deepEqual(
+    parseOllamaListModelNames(`NAME             ID              SIZE      MODIFIED
+qwen3.5:9b       6488c96fa5fa    6.6 GB    3 months ago
+qwen3:8b         500a1f067a9f    5.2 GB    4 months ago
+llama3:8b        365c0bd3c000    4.7 GB    4 months ago
+llama3:latest    365c0bd3c000    4.7 GB    4 months ago
+`),
+    ["qwen3.5:9b", "qwen3:8b", "llama3:8b", "llama3:latest"]
+  );
+});
+
+test("Ollama catalog keeps registered models and adds other local models", () => {
+  const merged = mergeOllamaCatalogModels(
+    [
+      {
+        id: "ollama/qwen3.5:9b",
+        name: "qwen3.5:9b",
+        provider: "ollama",
+        input: "text",
+        contextWindow: null,
+        local: false,
+        available: true,
+        missing: false,
+        alreadyAdded: true,
+        recommended: true,
+        supportsTools: true,
+        isFree: false,
+        tags: []
+      }
+    ],
+    [
+      {
+        id: "ollama/qwen3.5:9b",
+        name: "qwen3.5:9b",
+        provider: "ollama",
+        input: "text",
+        contextWindow: null,
+        local: true,
+        available: true,
+        missing: false,
+        alreadyAdded: true,
+        recommended: true,
+        supportsTools: true,
+        isFree: false,
+        tags: ["local-ollama"]
+      },
+      {
+        id: "ollama/llama3:8b",
+        name: "llama3:8b",
+        provider: "ollama",
+        input: "text",
+        contextWindow: null,
+        local: true,
+        available: true,
+        missing: false,
+        alreadyAdded: false,
+        recommended: true,
+        supportsTools: true,
+        isFree: false,
+        tags: ["local-ollama"]
+      }
+    ]
+  );
+
+  assert.deepEqual(merged.map((model) => model.id), ["ollama/qwen3.5:9b", "ollama/llama3:8b"]);
+  assert.equal(merged[0]?.local, true);
+  assert.deepEqual(merged[0]?.tags, ["local-ollama"]);
 });
 
 test("fallback model metadata keeps local and context hints", () => {

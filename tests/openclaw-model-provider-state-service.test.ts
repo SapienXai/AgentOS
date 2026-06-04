@@ -286,6 +286,114 @@ test("setting the default model writes OpenClaw Gateway config", async () => {
   });
 });
 
+test("setting an Ollama default model registers the provider model before changing the default", async () => {
+  const calls: string[] = [];
+  const values = new Map<string, unknown>();
+
+  setOpenClawAdapterForTesting({
+    async getConfig(path: string) {
+      calls.push(`get:${path}`);
+      if (path === "models.providers.ollama") {
+        return {
+          models: [
+            {
+              id: "llama3:8b",
+              name: "llama3:8b"
+            }
+          ]
+        };
+      }
+
+      if (path === "agents.defaults") {
+        return { models: {} };
+      }
+
+      return null;
+    },
+    async setConfig(path: string, value: unknown) {
+      calls.push(`set:${path}`);
+      values.set(path, value);
+      return { stdout: JSON.stringify({ ok: true, value }), stderr: "" };
+    }
+  } as unknown as OpenClawAdapter);
+
+  const result = await setOpenClawDefaultModel("ollama/qwen3.5:9b", {
+    provider: "ollama"
+  });
+
+  assert.deepEqual(result, {
+    modelId: "ollama/qwen3.5:9b",
+    provider: "ollama",
+    via: "gateway"
+  });
+  assert.deepEqual(calls, [
+    "get:models.providers.ollama",
+    "set:models.providers.ollama",
+    "get:agents.defaults",
+    "set:agents.defaults"
+  ]);
+  assert.deepEqual(values.get("models.providers.ollama"), {
+    models: [
+      {
+        id: "llama3:8b",
+        name: "llama3:8b"
+      },
+      {
+        id: "qwen3.5:9b",
+        name: "qwen3.5:9b"
+      }
+    ]
+  });
+  assert.deepEqual(values.get("agents.defaults"), {
+    models: {
+      "ollama/qwen3.5:9b": {}
+    },
+    model: {
+      primary: "ollama/qwen3.5:9b"
+    }
+  });
+});
+
+test("setting an already registered Ollama default model avoids duplicate provider config writes", async () => {
+  const calls: string[] = [];
+
+  setOpenClawAdapterForTesting({
+    async getConfig(path: string) {
+      calls.push(`get:${path}`);
+      if (path === "models.providers.ollama") {
+        return {
+          models: [
+            {
+              id: "qwen3.5:9b",
+              name: "qwen3.5:9b"
+            }
+          ]
+        };
+      }
+
+      if (path === "agents.defaults") {
+        return { models: {} };
+      }
+
+      return null;
+    },
+    async setConfig(path: string) {
+      calls.push(`set:${path}`);
+      return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+    }
+  } as unknown as OpenClawAdapter);
+
+  await setOpenClawDefaultModel("ollama/qwen3.5:9b", {
+    provider: "ollama"
+  });
+
+  assert.deepEqual(calls, [
+    "get:models.providers.ollama",
+    "get:agents.defaults",
+    "set:agents.defaults"
+  ]);
+});
+
 test("setting a Codex default model normalizes the model ref and enables Codex runtime", async () => {
   const calls: string[] = [];
   const values = new Map<string, unknown>();

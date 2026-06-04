@@ -40,12 +40,24 @@ type OpenClawConfigPayload = {
       models?: Record<string, OpenClawModelDefaultsEntry>;
     };
   };
+  models?: {
+    providers?: Record<string, OpenClawProviderModelsEntry>;
+  };
 };
 
 type OpenClawModelDefaultsEntry = Record<string, unknown> & {
   agentRuntime?: {
     id?: string;
   };
+};
+
+type OpenClawProviderModelsEntry = Record<string, unknown> & {
+  models?: OpenClawProviderModelEntry[];
+};
+
+type OpenClawProviderModelEntry = Record<string, unknown> & {
+  id?: string;
+  name?: string;
 };
 
 type OpenClawAuthProfilesPayload = {
@@ -216,6 +228,8 @@ export async function addOpenClawModelsToConfig(provider: AddModelsProviderId, m
     enableCodexHarness(config);
   }
 
+  applyProviderModelRegistry(config, provider, normalizedModelIds);
+
   for (const modelId of normalizedModelIds) {
     config.agents.defaults.models[modelId] = config.agents.defaults.models[modelId] || {};
     applyModelRuntimePolicyToModelEntries(config.agents.defaults.models, modelId, provider);
@@ -273,6 +287,7 @@ export async function ensureOpenClawModelRuntimeConfig(
   config.agents.defaults.models = config.agents.defaults.models || {};
   config.agents.defaults.models[normalizedModelId] =
     config.agents.defaults.models[normalizedModelId] || {};
+  applyProviderModelRegistry(config, provider, [normalizedModelId]);
   applyDefaultModelRuntime(config, provider, normalizedModelId);
   stripLegacyAgentRuntimeFromDefaults(config.agents.defaults);
 
@@ -321,6 +336,7 @@ export async function setOpenClawDefaultModel(
     ...(config.agents.defaults.model || {}),
     primary: normalizedModelId
   };
+  applyProviderModelRegistry(config, provider, [normalizedModelId]);
   applyDefaultModelRuntime(config, provider, normalizedModelId);
   stripLegacyAgentRuntimeFromDefaults(config.agents.defaults);
 
@@ -358,6 +374,8 @@ async function addModelsToConfigViaGateway(provider: AddModelsProviderId, normal
 
 async function addModelsToConfigViaGatewayOnce(provider: AddModelsProviderId, normalizedModelIds: string[]) {
   const adapter = getOpenClawAdapter();
+  await ensureProviderModelRegistryViaGateway(adapter, provider, normalizedModelIds);
+
   const existingDefaults = await adapter.getConfig<OpenClawAgentDefaultsConfig>(
     "agents.defaults",
     { timeoutMs: 5_000 }
@@ -438,6 +456,8 @@ async function ensureModelRuntimeConfigViaGateway(provider: AddModelsProviderId,
 
 async function ensureModelRuntimeConfigViaGatewayOnce(provider: AddModelsProviderId, normalizedModelId: string) {
   const adapter = getOpenClawAdapter();
+  await ensureProviderModelRegistryViaGateway(adapter, provider, [normalizedModelId]);
+
   const existingDefaults = await adapter.getConfig<OpenClawAgentDefaultsConfig>(
     "agents.defaults",
     { timeoutMs: 5_000 }
@@ -486,6 +506,8 @@ async function setDefaultModelViaGatewayOnce(
   normalizedModelId: string
 ) {
   const adapter = getOpenClawAdapter();
+  await ensureProviderModelRegistryViaGateway(adapter, provider, [normalizedModelId]);
+
   const existingDefaults = await adapter.getConfig<OpenClawAgentDefaultsConfig>(
     "agents.defaults",
     { timeoutMs: 5_000 }
@@ -654,6 +676,114 @@ function applyModelRuntimePolicyToModelEntries(
       id: runtimeId
     }
   };
+}
+
+async function ensureProviderModelRegistryViaGateway(
+  adapter: ReturnType<typeof getOpenClawAdapter>,
+  provider: AddModelsProviderId | null,
+  normalizedModelIds: string[]
+) {
+  if (provider !== "ollama") {
+    return;
+  }
+
+  const modelEntries = normalizedModelIds
+    .map((modelId) => toProviderScopedModelId(provider, modelId))
+    .filter(Boolean);
+
+  if (modelEntries.length === 0) {
+    return;
+  }
+
+  let existingProviderConfig: unknown = null;
+
+  try {
+    existingProviderConfig = await adapter.getConfig<OpenClawProviderModelsEntry>(
+      "models.providers.ollama",
+      { timeoutMs: 5_000 }
+    );
+  } catch {
+    existingProviderConfig = null;
+  }
+
+  const nextProviderConfig = cloneProviderModelsEntry(existingProviderConfig);
+  const existingIds = new Set(
+    nextProviderConfig.models
+      ?.map((entry) => entry.id?.trim())
+      .filter((id): id is string => Boolean(id)) ?? []
+  );
+  let changed = false;
+
+  for (const id of modelEntries) {
+    if (!existingIds.has(id)) {
+      nextProviderConfig.models = [...(nextProviderConfig.models ?? []), { id, name: id }];
+      existingIds.add(id);
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    await adapter.setConfig("models.providers.ollama", nextProviderConfig, { timeoutMs: 5_000 });
+  }
+}
+
+function applyProviderModelRegistry(
+  config: OpenClawConfigPayload,
+  provider: AddModelsProviderId | null,
+  normalizedModelIds: string[]
+) {
+  if (provider !== "ollama") {
+    return;
+  }
+
+  config.models = config.models || {};
+  config.models.providers = config.models.providers || {};
+
+  const nextProviderConfig = cloneProviderModelsEntry(config.models.providers.ollama);
+  const existingIds = new Set(
+    nextProviderConfig.models
+      ?.map((entry) => entry.id?.trim())
+      .filter((id): id is string => Boolean(id)) ?? []
+  );
+
+  for (const modelId of normalizedModelIds) {
+    const id = toProviderScopedModelId(provider, modelId);
+
+    if (id && !existingIds.has(id)) {
+      nextProviderConfig.models = [...(nextProviderConfig.models ?? []), { id, name: id }];
+      existingIds.add(id);
+    }
+  }
+
+  config.models.providers.ollama = nextProviderConfig;
+}
+
+function cloneProviderModelsEntry(value: unknown): OpenClawProviderModelsEntry {
+  if (!isRecord(value)) {
+    return { models: [] };
+  }
+
+  const models = Array.isArray(value.models)
+    ? value.models
+        .filter(isRecord)
+        .map((entry) => ({ ...entry } as OpenClawProviderModelEntry))
+    : [];
+
+  return {
+    ...value,
+    models
+  } as OpenClawProviderModelsEntry;
+}
+
+function toProviderScopedModelId(provider: AddModelsProviderId, modelId: string) {
+  const trimmed = modelId.trim();
+  const prefix = `${provider}/`;
+
+  if (!trimmed) {
+    return "";
+  }
+
+  return trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : trimmed;
 }
 
 function resolveModelScopedRuntimeId(provider: AddModelsProviderId | null) {

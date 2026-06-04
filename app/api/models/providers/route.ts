@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process";
+
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -61,6 +63,7 @@ export const dynamic = "force-dynamic";
 
 const addModelsDocsUrl = "https://docs.openclaw.ai/cli/models";
 const codexDiscoveryTimeoutMs = 15_000;
+const ollamaListTimeoutMs = 5_000;
 const providerIdSchema = z.enum([
   "openai-codex",
   "openrouter",
@@ -513,14 +516,22 @@ async function readProviderCatalog(
   const providerModels = normalizeCatalogModels(provider, providerPayload.models, configuredModelIds);
 
   if (providerModels.length > 0) {
-    return providerModels;
+    return provider === "ollama"
+      ? mergeOllamaCatalogModels(providerModels, await readLocalOllamaCatalog(configuredModelIds))
+      : providerModels;
   }
 
   const globalPayload = await readProviderModelPayload(provider, { all: true }, commandBin);
   const globalModels = normalizeCatalogModels(provider, globalPayload.models, configuredModelIds);
 
-  if (globalModels.length > 0 || provider === "ollama") {
-    return globalModels;
+  if (globalModels.length > 0) {
+    return provider === "ollama"
+      ? mergeOllamaCatalogModels(globalModels, await readLocalOllamaCatalog(configuredModelIds))
+      : globalModels;
+  }
+
+  if (provider === "ollama") {
+    return readLocalOllamaCatalog(configuredModelIds);
   }
 
   const scanPayload = await scanProviderModels(provider, commandBin);
@@ -862,7 +873,7 @@ function resolveProviderStatusMessage(
   connection: AddModelsProviderConnectionStatus
 ) {
   if (provider === "ollama" && !connection.connected) {
-    return "Ollama is not available on this machine yet.";
+    return connection.detail || "Ollama is not available on this machine yet.";
   }
 
   if (connection.connected) {
@@ -923,6 +934,138 @@ async function readOllamaState(): Promise<OllamaState> {
       models: []
     };
   }
+}
+
+async function readLocalOllamaCatalog(configuredModelIds: Set<string>): Promise<AddModelsCatalogModel[]> {
+  const local = await readLocalOllamaModels();
+
+  if (!local.installed) {
+    return [];
+  }
+
+  return local.models.map((modelName) => {
+    const modelId = `ollama/${modelName}`;
+
+    return {
+      id: modelId,
+      name: modelName,
+      provider: "ollama",
+      input: "text",
+      contextWindow: null,
+      local: true,
+      available: true,
+      missing: false,
+      alreadyAdded: configuredModelIds.has(modelId),
+      recommended: isRecommendedModel("ollama", modelId),
+      supportsTools: true,
+      isFree: false,
+      tags: ["local-ollama"]
+    };
+  });
+}
+
+export function mergeOllamaCatalogModels(
+  openClawModels: AddModelsCatalogModel[],
+  localModels: AddModelsCatalogModel[]
+) {
+  const merged = new Map<string, AddModelsCatalogModel>();
+
+  for (const model of openClawModels) {
+    merged.set(model.id, model);
+  }
+
+  for (const model of localModels) {
+    const existing = merged.get(model.id);
+
+    merged.set(model.id, existing
+      ? {
+          ...existing,
+          name: existing.name || model.name,
+          input: existing.input || model.input,
+          contextWindow: existing.contextWindow ?? model.contextWindow,
+          local: true,
+          available: existing.available || model.available,
+          missing: existing.missing && model.missing,
+          alreadyAdded: existing.alreadyAdded || model.alreadyAdded,
+          recommended: existing.recommended || model.recommended,
+          supportsTools: existing.supportsTools || model.supportsTools,
+          isFree: existing.isFree || model.isFree,
+          tags: Array.from(new Set([...existing.tags, ...model.tags]))
+        }
+      : model);
+  }
+
+  return Array.from(merged.values());
+}
+
+async function readLocalOllamaModels(): Promise<OllamaState> {
+  const output = await runLocalOllamaList().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error || "");
+
+    if (/spawn|not found|enoent/i.test(message)) {
+      return null;
+    }
+
+    return "";
+  });
+
+  if (output === null) {
+    return {
+      installed: false,
+      models: []
+    };
+  }
+
+  return {
+    installed: true,
+    models: parseOllamaListModelNames(output)
+  };
+}
+
+function runLocalOllamaList() {
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn("ollama", ["list"], {
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "";
+    let stderr = "";
+    const timer = globalThis.setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error("Timed out while running ollama list."));
+    }, ollamaListTimeoutMs);
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", (error) => {
+      globalThis.clearTimeout(timer);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      globalThis.clearTimeout(timer);
+      if (code === 0) {
+        resolve(stdout);
+        return;
+      }
+
+      reject(new Error(stderr.trim() || `ollama list exited with code ${code ?? "unknown"}.`));
+    });
+  });
+}
+
+export function parseOllamaListModelNames(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^NAME\s+ID\s+SIZE\s+MODIFIED\b/i.test(line))
+    .map((line) => line.split(/\s+/)[0]?.trim() ?? "")
+    .filter((modelName, index, entries) => modelName && entries.indexOf(modelName) === index);
 }
 
 function normalizeModelIdForProvider(provider: AddModelsProviderId, modelId: string) {
