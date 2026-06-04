@@ -6,6 +6,10 @@ import path from "node:path";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { isOpenAiCodexBackedModel } from "@/lib/openclaw/domains/model-provider-connection";
+import {
+  buildOpenAiCodexAuthLoginCommand,
+  resolveOpenAiCodexAuthRecoveryMessage
+} from "@/lib/openclaw/model-auth-errors";
 import type { ModelsStatusPayload } from "@/lib/openclaw/client/gateway-client";
 
 type OpenAiCodexAuthOrderRepair = {
@@ -52,6 +56,11 @@ export async function ensureOpenAiCodexAuthOrderForAgent({
   }
 
   const repair = resolveOpenAiCodexAuthOrderRepair(status);
+  const authBlock = resolveOpenAiCodexRuntimeAuthBlock(status);
+
+  if (authBlock) {
+    throw new Error(authBlock);
+  }
 
   if (!repair.needsRepair) {
     return {
@@ -262,6 +271,38 @@ export function resolveOpenAiCodexAuthOrderRepair(
     profileIds,
     reason: "needs-order"
   };
+}
+
+export function resolveOpenAiCodexRuntimeAuthBlock(modelStatus: ModelsStatusPayload) {
+  const unusableProfiles = Array.isArray(modelStatus.auth?.unusableProfiles)
+    ? modelStatus.auth.unusableProfiles
+    : [];
+  const blockedProfile = unusableProfiles.find((entry) => {
+    if (!isRecord(entry)) {
+      return false;
+    }
+
+    const provider = readString(entry.provider)?.toLowerCase();
+    const profileId = readString(entry.profileId)?.toLowerCase();
+    const kind = readString(entry.kind)?.toLowerCase();
+    const status = readString(entry.status)?.toLowerCase();
+    const issue = readString(entry.issue)?.toLowerCase();
+
+    return (
+      (provider === "openai" || provider === "openai-codex" || profileId?.startsWith("openai:")) &&
+      ["cooldown", "expired", "missing", "invalid", "error", "disabled", "revoked"].some((value) =>
+        kind === value || status === value || issue?.includes(value)
+      )
+    );
+  });
+
+  if (!blockedProfile) {
+    return null;
+  }
+
+  return resolveOpenAiCodexAuthRecoveryMessage(
+    buildOpenAiCodexAuthLoginCommand("openclaw", { force: true })
+  );
 }
 
 function isLegacyProviderFileFallbackEnabled() {

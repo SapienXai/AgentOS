@@ -58,7 +58,10 @@ import {
   inferFallbackModelMetadata,
   mergeModelStatusWithAgentConfigDefaults
 } from "@/lib/openclaw/adapter/model-adapter";
-import { resolveOpenAiCodexAuthOrderRepair } from "@/lib/openclaw/application/model-auth-service";
+import {
+  resolveOpenAiCodexAuthOrderRepair,
+  resolveOpenAiCodexRuntimeAuthBlock
+} from "@/lib/openclaw/application/model-auth-service";
 import { inferSessionKindFromCatalogEntry } from "@/lib/openclaw/domains/session-catalog";
 import {
   resolveEffectiveWizardStage,
@@ -1666,6 +1669,38 @@ test("ChatGPT auth order repair is skipped when effective profile is usable", ()
 
   assert.equal(repair.needsRepair, false);
   assert.deepEqual(repair.profileIds, ["openai-codex:user@example.com"]);
+});
+
+test("ChatGPT runtime auth preflight blocks cooldown profiles before dispatch", () => {
+  const block = resolveOpenAiCodexRuntimeAuthBlock({
+    auth: {
+      unusableProfiles: [
+        {
+          profileId: "openai:user@example.com",
+          provider: "openai",
+          kind: "cooldown",
+          remainingMs: 10_000
+        }
+      ],
+      oauth: {
+        providers: [
+          {
+            provider: "openai",
+            status: "ok",
+            profiles: [
+              {
+                profileId: "openai:user@example.com",
+                status: "static"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  } as never);
+
+  assert.match(block ?? "", /Reconnect ChatGPT/);
+  assert.match(block ?? "", /models auth login --provider openai (?:--force )?--set-default/);
 });
 
 test("ollama is treated as a local provider without auth login", () => {
