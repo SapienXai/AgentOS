@@ -1372,6 +1372,33 @@ test("provider status does not treat Codex runtime OAuth profiles as OpenAI API 
   assert.equal(connection?.connected, false);
 });
 
+test("provider status treats usable Codex runtime auth routes as ChatGPT connection", () => {
+  const connection = buildModelStatusConnectionStatus(
+    "openai-codex",
+    {
+      allowed: ["openai/gpt-5.5"],
+      auth: {
+        runtimeAuthRoutes: [
+          {
+            provider: "openai",
+            runtime: "codex",
+            authProvider: "openai",
+            status: "usable"
+          }
+        ],
+        providers: [],
+        oauth: {
+          providers: []
+        }
+      }
+    },
+    new Set(["openai/gpt-5.5"])
+  );
+
+  assert.equal(connection?.connected, true);
+  assert.equal(connection?.detail, "OAuth connected");
+});
+
 test("provider status treats OpenAI API key profiles as OpenAI connection", () => {
   const connection = buildModelStatusConnectionStatus(
     "openai",

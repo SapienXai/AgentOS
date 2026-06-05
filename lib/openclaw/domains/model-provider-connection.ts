@@ -44,6 +44,7 @@ export function buildModelStatusConnectionStatus(
   const oauthProfileCount = readNumber(profileSummary.oauth) ?? 0;
   const effectiveKind = readString(authProvider?.effective?.kind)?.toLowerCase();
   const syntheticAuthValue = readString(authProvider?.syntheticAuth?.value);
+  const hasUsableRuntimeAuthRoute = hasUsableOpenAiCodexRuntimeAuthRoute(modelStatus);
   const connected = resolveProviderConnected({
     provider,
     visibleCount,
@@ -55,7 +56,8 @@ export function buildModelStatusConnectionStatus(
     apiKeyProfileCount,
     oauthProfileCount,
     effectiveKind,
-    syntheticAuthValue
+    syntheticAuthValue,
+    hasUsableRuntimeAuthRoute
   });
 
   return {
@@ -70,7 +72,8 @@ export function buildModelStatusConnectionStatus(
       visibleCount,
       profileCount,
       usableOauthProfileCount,
-      oauthStatus
+      oauthStatus,
+      hasUsableRuntimeAuthRoute
     })
   };
 }
@@ -200,7 +203,8 @@ function resolveProviderConnected({
   apiKeyProfileCount,
   oauthProfileCount,
   effectiveKind,
-  syntheticAuthValue
+  syntheticAuthValue,
+  hasUsableRuntimeAuthRoute
 }: {
   provider: AddModelsProviderId;
   visibleCount: number;
@@ -213,6 +217,7 @@ function resolveProviderConnected({
   oauthProfileCount: number;
   effectiveKind?: string;
   syntheticAuthValue: string | null;
+  hasUsableRuntimeAuthRoute: boolean;
 }) {
   if (provider === "ollama") {
     return visibleCount > 0;
@@ -223,6 +228,7 @@ function resolveProviderConnected({
       (oauthProfiles && usableOauthProfileCount > 0) ||
       oauthStatus === "ok" ||
       syntheticAuthValue ||
+      hasUsableRuntimeAuthRoute ||
       effectiveKind === "oauth" ||
       effectiveKind === "synthetic"
     );
@@ -255,7 +261,8 @@ function resolveConnectionDetail({
   visibleCount,
   profileCount,
   usableOauthProfileCount,
-  oauthStatus
+  oauthStatus,
+  hasUsableRuntimeAuthRoute
 }: {
   provider: AddModelsProviderId;
   descriptor: ReturnType<typeof getModelProviderDescriptor>;
@@ -264,6 +271,7 @@ function resolveConnectionDetail({
   profileCount: number;
   usableOauthProfileCount: number;
   oauthStatus?: string;
+  hasUsableRuntimeAuthRoute: boolean;
 }) {
   if (provider === "ollama") {
     return visibleCount > 0
@@ -272,7 +280,7 @@ function resolveConnectionDetail({
   }
 
   if (connected) {
-    if (usableOauthProfileCount > 0 || oauthStatus === "ok") {
+    if (usableOauthProfileCount > 0 || oauthStatus === "ok" || hasUsableRuntimeAuthRoute) {
       return "OAuth connected";
     }
 
@@ -311,6 +319,30 @@ function providerRecordMatchesAddModelsProvider(recordProvider: string | null, p
   }
 
   return recordProvider === provider;
+}
+
+function hasUsableOpenAiCodexRuntimeAuthRoute(modelStatus: ModelsStatusPayload) {
+  return (modelStatus.auth?.runtimeAuthRoutes ?? []).some((entry) => {
+    if (!isRecord(entry)) {
+      return false;
+    }
+
+    const provider = readString(entry.provider)?.toLowerCase();
+    const runtime = readString(entry.runtime)?.toLowerCase();
+    const authProvider = readString(entry.authProvider)?.toLowerCase();
+    const status = readString(entry.status)?.toLowerCase();
+
+    const codexRuntime =
+      runtime === "codex" ||
+      runtime === "openai-codex" ||
+      runtime === "app-server" ||
+      runtime === "codex-app-server";
+    const openAiRoute = provider === "openai" || provider === "codex" || provider === "openai-codex";
+    const openAiAuth = !authProvider || authProvider === "openai" || authProvider === "codex" || authProvider === "openai-codex";
+    const usableStatus = !status || ["ok", "usable", "ready", "connected"].includes(status);
+
+    return codexRuntime && openAiRoute && openAiAuth && usableStatus;
+  });
 }
 
 function countUsableAuthProfiles(value: unknown[]) {

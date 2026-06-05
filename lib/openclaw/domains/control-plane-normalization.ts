@@ -51,6 +51,12 @@ type ModelStatusLike = {
   defaultModel?: string | null;
   auth?: {
     providers?: ModelAuthProviderLike[] | null;
+    runtimeAuthRoutes?: Array<{
+      provider?: string | null;
+      runtime?: string | null;
+      authProvider?: string | null;
+      status?: string | null;
+    }> | null;
     oauth?: {
       providers?: ModelOauthProviderLike[] | null;
     } | null;
@@ -216,7 +222,6 @@ export function resolveModelReadiness(models: ModelLike[], modelStatus?: ModelSt
     const canLogin = provider !== "ollama" && hasRemoteRoute;
     const providerAuth = authProviderMap.get(provider);
     const oauthStatus = oauthProviderMap.get(provider);
-    const openAiEffectiveKind = providerAuth?.effective?.kind?.trim().toLowerCase();
     const connected =
       provider === "ollama"
         ? providerModels.some((model) => model.local)
@@ -225,7 +230,8 @@ export function resolveModelReadiness(models: ModelLike[], modelStatus?: ModelSt
           : provider === "openai-codex"
             ? isOpenAiCodexAuthConnected(
                 providerAuth ?? authProviderMap.get("openai"),
-                oauthStatus ?? oauthProviderMap.get("openai")
+                oauthStatus ?? oauthProviderMap.get("openai"),
+                modelStatus
               )
           : (providerAuth?.profiles?.count ?? 0) > 0 || oauthStatus?.status === "ok";
     let detail: string | null = null;
@@ -413,7 +419,8 @@ function isOpenAiApiAuthConnected(providerAuth: ModelAuthProvider | undefined) {
 
 function isOpenAiCodexAuthConnected(
   providerAuth: ModelAuthProvider | undefined,
-  oauthStatus: ModelOauthProvider | undefined
+  oauthStatus: ModelOauthProvider | undefined,
+  modelStatus?: ModelStatusLike
 ) {
   const effectiveKind = providerAuth?.effective?.kind?.trim().toLowerCase();
   const oauthProfileCount = providerAuth?.profiles?.oauth ?? 0;
@@ -423,9 +430,30 @@ function isOpenAiCodexAuthConnected(
     oauthStatus?.status === "ok" ||
     oauthProfileCount > 0 ||
     syntheticAuthValue ||
+    hasUsableOpenAiCodexRuntimeAuthRoute(modelStatus) ||
     effectiveKind === "oauth" ||
     effectiveKind === "synthetic"
   );
+}
+
+function hasUsableOpenAiCodexRuntimeAuthRoute(modelStatus?: ModelStatusLike) {
+  return (modelStatus?.auth?.runtimeAuthRoutes ?? []).some((entry) => {
+    const provider = entry?.provider?.trim().toLowerCase();
+    const runtime = entry?.runtime?.trim().toLowerCase();
+    const authProvider = entry?.authProvider?.trim().toLowerCase();
+    const status = entry?.status?.trim().toLowerCase();
+
+    const codexRuntime =
+      runtime === "codex" ||
+      runtime === "openai-codex" ||
+      runtime === "app-server" ||
+      runtime === "codex-app-server";
+    const openAiRoute = provider === "openai" || provider === "codex" || provider === "openai-codex";
+    const openAiAuth = !authProvider || authProvider === "openai" || authProvider === "codex" || authProvider === "openai-codex";
+    const usableStatus = !status || ["ok", "usable", "ready", "connected"].includes(status);
+
+    return codexRuntime && openAiRoute && openAiAuth && usableStatus;
+  });
 }
 
 function resolveAuthProviderIdForModel(modelId: string) {

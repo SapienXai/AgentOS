@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
 import { setOpenClawAdapterForTesting, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { POST as modelsProviderPost } from "@/app/api/models/providers/route";
 import {
   addOpenClawModelsToConfig,
   ensureOpenClawModelRuntimeConfig,
@@ -22,6 +23,43 @@ test("provider token persistence does not silently write OpenClaw auth files by 
     () => persistOpenClawProviderToken("openai", "sk-test"),
     /Legacy OpenClaw provider file writes are disabled by default/
   );
+});
+
+test("OpenRouter connect returns terminal paste-token handoff when native token persistence is unavailable", async () => {
+  setOpenClawAdapterForTesting({
+    async getConfig() {
+      return {};
+    },
+    async getModelStatus() {
+      return {
+        allowed: [],
+        auth: {
+          providers: [],
+          oauth: {
+            providers: []
+          }
+        }
+      };
+    }
+  } as unknown as OpenClawAdapter);
+
+  const response = await modelsProviderPost(
+    new Request("http://agentos.test/api/models/providers", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "connect",
+        provider: "openrouter",
+        apiKey: "sk-or-test-secret"
+      })
+    })
+  );
+  const payload = await response.json();
+  const serialized = JSON.stringify(payload);
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.match(payload.manualCommand, /models auth paste-token --provider openrouter/);
+  assert.doesNotMatch(serialized, /sk-or-test-secret/);
 });
 
 test("Codex plugin readiness requires the plugin registry entry", async () => {

@@ -263,6 +263,20 @@ async function handleProviderAction(
       await persistOpenClawProviderToken(input.provider, apiKey);
     } catch (error) {
       const statusContext = await readProviderConnectionContext(input.provider);
+      const tokenHandoff = resolveProviderTokenAuthHandoff(input.provider, commandBin, error);
+
+      if (tokenHandoff) {
+        return buildActionResult({
+          ok: true,
+          action: input.action,
+          provider: input.provider,
+          message: tokenHandoff.continueMessage,
+          connection: statusContext.connection,
+          models: [],
+          manualCommand: tokenHandoff.command,
+          docsUrl: addModelsDocsUrl
+        });
+      }
 
       return buildActionResult({
         ok: false,
@@ -1126,4 +1140,29 @@ function isRecommendedModel(provider: AddModelsProviderId, modelId: string) {
 
 function isCodexModelTag(tag: string) {
   return /^(codex|openai-codex|chatgpt|app-server|codex-app-server)$/i.test(tag.trim());
+}
+
+function resolveProviderTokenAuthHandoff(
+  provider: AddModelsProviderId,
+  commandBin: string,
+  error: unknown
+) {
+  if (provider !== "openrouter" || !isProviderTokenPersistenceUnavailable(error)) {
+    return null;
+  }
+
+  const label = getModelProviderDescriptor(provider).shortLabel;
+
+  return {
+    command: formatOpenClawCommand(commandBin, ["models", "auth", "paste-token", "--provider", "openrouter"]),
+    continueMessage:
+      `OpenClaw does not expose native ${label} token persistence to AgentOS yet. Continue in Terminal to paste your ${label} API key, then return here and refresh this provider.`
+  };
+}
+
+function isProviderTokenPersistenceUnavailable(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+
+  return /Gateway-native provider token persistence is not available yet/i.test(message) ||
+    /Legacy OpenClaw provider file writes are disabled by default/i.test(message);
 }

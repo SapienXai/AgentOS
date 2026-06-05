@@ -359,7 +359,10 @@ export function AddModelsDialog({
       applyActionResult(
         providerId,
         result,
-        providerId === "openai-codex" ? "connecting" : result.models.length ? "discovery-success" : "idle"
+        providerId === "openai-codex" ? "connecting" : result.models.length ? "discovery-success" : "idle",
+        {
+          apiKey: ""
+        }
       );
 
       if (result.snapshot) {
@@ -978,6 +981,69 @@ export function AddModelsDialog({
                                   )}
                                 </Button>
                               </div>
+                              {activeDraft.manualCommand ? (
+                                <div className="mt-3 rounded-[16px] border border-cyan-300/15 bg-cyan-300/[0.07] p-3">
+                                  <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                      <p className="text-[11px] font-medium text-cyan-50">Finish setup in Terminal</p>
+                                      <p className="mt-1 max-w-[480px] text-[10px] leading-[0.98rem] text-cyan-100/80">
+                                        Open Terminal, paste the provider API key there, then return here and check discovery.
+                                      </p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      <Button
+                                        type="button"
+                                        variant="secondary"
+                                        size="sm"
+                                        className="h-7 rounded-full px-2.5 text-[10px]"
+                                        disabled={isOpeningTerminal}
+                                        onClick={() => {
+                                          void openTerminal(activeDraft.manualCommand || "");
+                                        }}
+                                      >
+                                        {isOpeningTerminal ? (
+                                          <>
+                                            <LoaderCircle className="mr-1.5 h-3 w-3 animate-spin" />
+                                            Opening...
+                                          </>
+                                        ) : (
+                                          <>
+                                            <SquareTerminal className="mr-1.5 h-3 w-3" />
+                                            Open Terminal
+                                          </>
+                                        )}
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 rounded-full px-2.5 text-[10px]"
+                                        onClick={() => {
+                                          void copyText(activeDraft.manualCommand || "");
+                                        }}
+                                      >
+                                        <Copy className="mr-1.5 h-3 w-3" />
+                                        Copy command
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 rounded-full px-2.5 text-[10px]"
+                                        onClick={() => {
+                                          void discoverProvider(activeProviderId);
+                                        }}
+                                      >
+                                        <RefreshCw className="mr-1.5 h-3 w-3" />
+                                        I&apos;ve connected it
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  <div className="mt-2.5 overflow-x-auto rounded-[14px] border border-white/10 bg-slate-950/60 px-3 py-2">
+                                    <code className="text-[10px] text-slate-200">{activeDraft.manualCommand}</code>
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
                           ) : null}
 

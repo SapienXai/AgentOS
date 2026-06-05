@@ -647,6 +647,12 @@ export type ModelsStatusPayload = {
         mode?: string;
       };
     }>;
+    runtimeAuthRoutes?: Array<{
+      provider?: string;
+      runtime?: string;
+      authProvider?: string;
+      status?: string;
+    }>;
     missingProvidersInUse?: string[];
     unusableProfiles?: unknown[];
     oauth?: {
