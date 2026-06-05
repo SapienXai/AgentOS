@@ -389,6 +389,7 @@ test("OpenClaw adapter queues the latest config mutation during Gateway config c
 test("OpenClaw adapter exposes catalog, config, agent turn, and probe methods", async () => {
   const { client, calls } = createMockGatewayClient();
   setOpenClawGatewayClientForTesting(client);
+  setConfigUpdatePacingForTesting({ mode: "respect-gateway", minimumIntervalMs: null });
 
   const adapter = getOpenClawAdapter();
   await adapter.getHealth({ timeoutMs: 0 });
