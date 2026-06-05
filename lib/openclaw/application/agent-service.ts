@@ -95,11 +95,12 @@ export async function createAgent(input: AgentCreateInput) {
   }
 
   const requestedModelId = normalizeOptionalValue(input.modelId);
-  const agentModelId =
-    requestedModelId ??
+  const fallbackModelId =
     resolveSnapshotDefaultAgentModelId(snapshot) ??
     resolveWorkspaceAgentModelId(snapshot, resolvedWorkspaceId) ??
     resolveRecommendedAgentModelId(snapshot);
+  const modelSelection = resolveAgentCreateModelSelection(snapshot, requestedModelId, fallbackModelId);
+  const agentModelId = modelSelection.modelId;
 
   const readinessError = resolveAgentCreationReadinessError(snapshot, agentModelId);
 
@@ -133,7 +134,7 @@ export async function createAgent(input: AgentCreateInput) {
   const setupAgentId =
     snapshot.agents.find((entry) => entry.workspaceId === resolvedWorkspaceId && entry.policy.preset === "setup")?.id ?? null;
   const agentDir = buildWorkspaceAgentStatePath(resolvedWorkspacePath, agentId);
-  const syncWarnings: string[] = [];
+  const syncWarnings: string[] = [...modelSelection.warnings];
 
   await getOpenClawAdapter().addAgent({
     id: agentId,
@@ -621,6 +622,31 @@ function resolveRecommendedAgentModelId(snapshot: MissionControlSnapshot) {
   return snapshot.models
     .map((model) => normalizeOptionalValue(model.id))
     .find((modelId) => modelId && isSnapshotModelUsable(snapshot, modelId));
+}
+
+export function resolveAgentCreateModelSelection(
+  snapshot: MissionControlSnapshot,
+  requestedModelId: string | undefined,
+  fallbackModelId: string | undefined
+) {
+  let modelId = requestedModelId ?? fallbackModelId;
+  const warnings: string[] = [];
+
+  if (!requestedModelId || !fallbackModelId || fallbackModelId === requestedModelId) {
+    return { modelId, warnings };
+  }
+
+  const requestedReadinessError = resolveAgentCreationReadinessError(snapshot, requestedModelId);
+  const fallbackReadinessError = resolveAgentCreationReadinessError(snapshot, fallbackModelId);
+
+  if (requestedReadinessError && !fallbackReadinessError) {
+    modelId = fallbackModelId;
+    warnings.push(
+      `Requested model ${requestedModelId} is not ready. AgentOS created the agent with ${fallbackModelId}; configure ${requestedModelId} before assigning it.`
+    );
+  }
+
+  return { modelId, warnings };
 }
 
 function isSnapshotModelUsable(snapshot: MissionControlSnapshot, modelId: string) {

@@ -32,6 +32,7 @@ import { WorkspaceChannelsDialog } from "@/components/mission-control/workspace-
 import { WorkspaceContextFilesDialog } from "@/components/mission-control/workspace-context-files-dialog";
 import { WorkspaceWizardDialog } from "@/components/mission-control/workspace-wizard/workspace-wizard-dialog";
 import { resolveSuggestedAgentModelId } from "@/components/mission-control/create-agent-dialog.utils";
+import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
 import dynamic from "next/dynamic";
 import { toast } from "@/components/ui/sonner";
 import { useMissionControlData } from "@/hooks/use-mission-control-data";
@@ -245,6 +246,8 @@ export function MissionControlShell({
   const [taskAbortMessage, setTaskAbortMessage] = useState<string | null>(null);
   const missionDispatchAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const [recentCreatedAgentId, setRecentCreatedAgentId] = useState<string | null>(null);
+  const [pendingCreatedAgents, setPendingCreatedAgents] = useState<PendingAgentProjection[]>([]);
+  const [agentCreationWarnings, setAgentCreationWarnings] = useState<Record<string, string>>({});
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -265,6 +268,7 @@ export function MissionControlShell({
   const [launchpadWorkspaceCreateTarget, setLaunchpadWorkspaceCreateTarget] =
     useState<WorkspaceCreateResult | null>(null);
   const recentCreatedAgentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const agentCreationWarningTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [gatewayDraft, setGatewayDraft] = useState(() => resolveGatewayDraft(initialSnapshot));
   const [workspaceRootDraft, setWorkspaceRootDraft] = useState(() => resolveWorkspaceRootDraft(initialSnapshot));
   const [openClawBinarySelectionDraft, setOpenClawBinarySelectionDraft] = useState<OpenClawBinarySelection>(
@@ -530,6 +534,7 @@ export function MissionControlShell({
   );
 
   const handleCreatedAgentVisible = useCallback((agentId: string) => {
+    setPendingCreatedAgents((current) => current.filter((agent) => agent.id !== agentId));
     setRecentCreatedAgentId(agentId);
 
     if (recentCreatedAgentTimeoutRef.current) {
@@ -540,6 +545,59 @@ export function MissionControlShell({
       recentCreatedAgentTimeoutRef.current = null;
       setRecentCreatedAgentId(null);
     }, 2400);
+  }, []);
+
+  const handleAgentCreationPending = useCallback((agent: PendingAgentProjection) => {
+    setActiveWorkspaceId(agent.workspaceId);
+    selectNode(agent.id);
+    setPendingCreatedAgents((current) => [
+      ...current.filter((entry) => entry.id !== agent.id),
+      agent
+    ]);
+
+    if (agent.warning) {
+      setAgentCreationWarnings((current) => ({
+        ...current,
+        [agent.id]: agent.warning ?? ""
+      }));
+
+      const existingTimeout = agentCreationWarningTimeoutsRef.current.get(agent.id);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
+
+      const timeout = setTimeout(() => {
+        agentCreationWarningTimeoutsRef.current.delete(agent.id);
+        setAgentCreationWarnings((current) => {
+          const next = { ...current };
+          delete next[agent.id];
+          return next;
+        });
+      }, 12000);
+      agentCreationWarningTimeoutsRef.current.set(agent.id, timeout);
+    }
+  }, [selectNode]);
+
+  useEffect(() => {
+    if (pendingCreatedAgents.length === 0) {
+      return;
+    }
+
+    const liveAgentIds = new Set(uiSnapshot.agents.map((agent) => agent.id));
+    if (!pendingCreatedAgents.some((agent) => liveAgentIds.has(agent.id))) {
+      return;
+    }
+
+      setPendingCreatedAgents((current) => current.filter((agent) => !liveAgentIds.has(agent.id)));
+  }, [pendingCreatedAgents, uiSnapshot.agents]);
+
+  useEffect(() => {
+    const warningTimeouts = agentCreationWarningTimeoutsRef.current;
+
+    return () => {
+      warningTimeouts.forEach((timeout) => clearTimeout(timeout));
+      warningTimeouts.clear();
+    };
   }, []);
 
   const handleAgentModelPickerOpenChange = useCallback((open: boolean) => {
@@ -3231,6 +3289,7 @@ export function MissionControlShell({
             onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
             onEditWorkspace={openWorkspaceWizardForEdit}
             onSnapshotChange={setSnapshot}
+            onAgentCreationPending={handleAgentCreationPending}
             onAgentCreatedVisible={handleCreatedAgentVisible}
           />
         </div>
@@ -3288,6 +3347,7 @@ export function MissionControlShell({
             onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
             onEditWorkspace={openWorkspaceWizardForEdit}
             onSnapshotChange={setSnapshot}
+            onAgentCreationPending={handleAgentCreationPending}
             onAgentCreatedVisible={handleCreatedAgentVisible}
           />
         </div>
@@ -3327,6 +3387,8 @@ export function MissionControlShell({
         <div className="absolute inset-0 z-10">
           <MissionCanvasView
             snapshot={uiSnapshot}
+            pendingCreatedAgents={pendingCreatedAgents}
+            agentCreationWarnings={agentCreationWarnings}
             accountTargets={accountTargets}
             accountAccessRules={accountAccessRules}
             activeWorkspaceId={activeWorkspaceId}
@@ -3540,6 +3602,7 @@ export function MissionControlShell({
             onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
             onEditWorkspace={openWorkspaceWizardForEdit}
             onSnapshotChange={setSnapshot}
+            onAgentCreationPending={handleAgentCreationPending}
             onAgentCreatedVisible={handleCreatedAgentVisible}
           />
         </div>
@@ -3639,6 +3702,7 @@ export function MissionControlShell({
               openWorkspaceWizard("basic");
             }}
             onOpenWorkspaceChannels={openWorkspaceChannels}
+            onAgentCreationPending={handleAgentCreationPending}
             onAgentCreatedVisible={handleCreatedAgentVisible}
             onMissionDispatchStart={(event) => {
               missionDispatchAbortControllersRef.current.set(event.requestId, event.abortController);

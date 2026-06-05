@@ -95,7 +95,7 @@ function normalizeModelId(value: string | null | undefined) {
   return normalized && normalized !== "unassigned" ? normalized : null;
 }
 
-function isSnapshotModelUsable(
+export function isSnapshotModelUsable(
   snapshot: Pick<MissionControlSnapshot, "models">,
   modelId: string
 ) {

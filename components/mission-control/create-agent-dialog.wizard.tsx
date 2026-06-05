@@ -6,6 +6,7 @@ import { Bot, ChevronRight, FileText, LoaderCircle, Plus, Sparkles, type LucideI
 
 import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
 import { AgentPolicySelect, AgentPresetCard, FormField } from "@/components/mission-control/create-agent-dialog.parts";
+import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,6 +44,7 @@ import {
   applyAgentPreset,
   buildAgentDraft,
   buildUniqueAgentId,
+  isSnapshotModelUsable,
   resolveSuggestedAgentModelId,
   type AgentDraft
 } from "@/components/mission-control/create-agent-dialog.utils";
@@ -57,6 +59,7 @@ type CreateAgentDialogProps = {
   defaultWorkspaceId?: string | null;
   onRefresh: () => Promise<void>;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
+  onAgentCreationPending?: (agent: PendingAgentProjection) => void;
   onAgentCreated?: (agentId: string) => void;
   onAgentCreatedVisible?: (agentId: string) => void;
   trigger: ReactNode;
@@ -68,6 +71,7 @@ export function CreateAgentDialog({
   defaultWorkspaceId,
   onRefresh,
   onSnapshotChange,
+  onAgentCreationPending,
   onAgentCreated,
   onAgentCreatedVisible,
   trigger,
@@ -95,6 +99,10 @@ export function CreateAgentDialog({
   const selectedWorkspace = snapshot.workspaces.find((workspace) => workspace.id === draft.workspaceId) ?? null;
   const suggestedModelId = resolveSuggestedAgentModelId(snapshot, draft.workspaceId || initialWorkspaceId);
   const effectiveModelId = draft.modelId.trim() || suggestedModelId;
+  const selectedModelReadinessMessage =
+    draft.modelId.trim() && !isSnapshotModelUsable(snapshot, draft.modelId.trim())
+      ? `Model ${draft.modelId.trim()} is not ready. AgentOS will create the agent with a ready fallback when available and show a warning on the card.`
+      : null;
   const currentPresetMeta = getAgentPresetMeta(draft.policy.preset);
   const generatedAgentId = buildUniqueAgentId(
     snapshot.agents,
@@ -445,6 +453,26 @@ export function CreateAgentDialog({
           onRegistryChange: onSnapshotChange
         });
       }
+
+      const presetMeta = getAgentPresetMeta(draft.policy.preset);
+      onAgentCreationPending?.({
+        id: result.agentId,
+        workspaceId: draft.workspaceId,
+        workspacePath: selectedWorkspace.path,
+        name: draft.name.trim() || result.agentId,
+        modelId: effectiveModelId,
+        emoji: draft.emoji.trim() || presetMeta.defaultEmoji,
+        theme: draft.theme.trim() || presetMeta.defaultTheme,
+        policy: draft.policy,
+        heartbeat: {
+          enabled: draft.heartbeat.enabled,
+          every: draft.heartbeat.every
+        },
+        skills: presetMeta.skillIds,
+        tools: presetMeta.tools,
+        createdAt: Date.now(),
+        warning: result.warning ?? result.warnings?.[0] ?? null
+      });
 
       setCreateProgress("syncing");
       setCreatedAgentId(result.agentId);
@@ -907,12 +935,22 @@ export function CreateAgentDialog({
                                 ? `Use suggested model (${suggestedModelId})`
                                 : "Choose a model"}
                           </option>
-                          {snapshot.models.map((model) => (
-                            <option key={model.id} value={model.id}>
-                              {model.id}
-                            </option>
-                          ))}
+                          {snapshot.models.map((model) => {
+                            const modelReady = isSnapshotModelUsable(snapshot, model.id);
+
+                            return (
+                              <option key={model.id} value={model.id}>
+                                {model.id}
+                                {modelReady ? "" : " (not ready)"}
+                              </option>
+                            );
+                          })}
                         </select>
+                        {selectedModelReadinessMessage ? (
+                          <p className={cn("mt-2 text-[11px] leading-4", isLight ? "text-[#9b5f34]" : "text-amber-200/85")}>
+                            {selectedModelReadinessMessage}
+                          </p>
+                        ) : null}
                       </FormField>
 
                       <p className={cn("text-[10px] leading-4", isLight ? "text-[#9a8070]" : "text-slate-500")}>

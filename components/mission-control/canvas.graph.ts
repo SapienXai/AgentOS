@@ -19,6 +19,10 @@ import {
   toPersistedAgentPositionKey,
   toPersistedTaskPositionKey
 } from "@/components/mission-control/canvas.persistence";
+import {
+  buildPendingAgentRecord,
+  type PendingAgentProjection
+} from "@/components/mission-control/pending-agent-projection";
 import { getSurfaceCatalogEntry } from "@/lib/openclaw/surface-catalog";
 import { resolveAgentModelLabel } from "@/lib/openclaw/presenters";
 import type {
@@ -28,6 +32,19 @@ import type {
 } from "@/lib/agentos/contracts";
 import type { AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
 import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-types";
+
+const workspaceGroupWidth = 1060;
+const workspaceColumnGap = 1160;
+const workspaceMinHeight = 700;
+const workspaceHeaderOffsetY = 118;
+const workspaceContentBottomPadding = 112;
+const agentGridStartX = 52;
+const agentGridColumnGap = 318;
+const idleAgentGridColumns = 3;
+const idleAgentGridRowHeight = 340;
+const taskLaneStartX = 390;
+const taskCardLaneHeight = 420;
+const taskLaneBottomPadding = 44;
 
 export function buildCanvasGraph(
   snapshot: MissionControlSnapshot,
@@ -63,6 +80,8 @@ export function buildCanvasGraph(
   onInspectTask: TaskNodeData["onInspect"],
   onActiveTaskCardChange: TaskNodeData["onActiveCardChange"],
   onReviewTask: (task: WorkItemRecord) => void,
+  pendingCreatedAgents: PendingAgentProjection[],
+  agentCreationWarnings: Record<string, string>,
   persistedNodePositions: PersistedNodePositionMap
 ) {
   const safeHiddenRuntimeIds = Array.isArray(hiddenRuntimeIds) ? hiddenRuntimeIds : [];
@@ -91,13 +110,27 @@ export function buildCanvasGraph(
   const graphTasks: WorkItemRecord[] = [];
   let rowTopY = 42;
   let rowMaxHeight = 0;
+  const liveAgentIds = new Set(snapshot.agents.map((agent) => agent.id));
 
   visibleWorkspaces.forEach((workspace, workspaceIndex) => {
-    const workspaceAgents = isFocusMode
+    const liveWorkspaceAgents = isFocusMode
       ? snapshot.agents.filter(
           (agent) => agent.workspaceId === workspace.id && agent.id === focusedAgentId
         )
       : snapshot.agents.filter((agent) => agent.workspaceId === workspace.id);
+    const pendingWorkspaceAgents = isFocusMode
+      ? []
+      : pendingCreatedAgents
+          .filter((agent) => agent.workspaceId === workspace.id && !liveAgentIds.has(agent.id))
+          .sort((left, right) => left.createdAt - right.createdAt)
+          .map(buildPendingAgentRecord);
+    const pendingWorkspaceAgentIds = new Set(pendingWorkspaceAgents.map((agent) => agent.id));
+    const pendingWorkspaceAgentWarnings = new Map(
+      pendingCreatedAgents
+        .filter((agent) => agent.workspaceId === workspace.id && agent.warning)
+        .map((agent) => [agent.id, agent.warning ?? ""])
+    );
+    const workspaceAgents = [...liveWorkspaceAgents, ...pendingWorkspaceAgents];
     const workspaceTaskRecords = isFocusMode
       ? snapshot.tasks.filter(
           (task) =>
@@ -120,22 +153,42 @@ export function buildCanvasGraph(
         isTaskHidden(task, safeHiddenRuntimeIds, safeHiddenTaskKeys, safeLockedTaskKeys)
       );
     const workspaceColumn = workspaceIndex % 2;
-    const groupX = workspaceColumn * 1160 + 44;
+    const groupX = workspaceColumn * workspaceColumnGap + 44;
     const groupY = rowTopY;
-    const agentX = groupX + 52;
-    const taskX = groupX + 390;
-    let laneY = groupY + 118;
+    let laneY = groupY + workspaceHeaderOffsetY;
+    let idleAgentGridColumn = 0;
+
+    const flushIdleAgentGridRow = () => {
+      if (idleAgentGridColumn === 0) {
+        return;
+      }
+
+      laneY += idleAgentGridRowHeight;
+      idleAgentGridColumn = 0;
+    };
 
     workspaceAgents.forEach((agent, agentIndex) => {
       const agentTasks = workspaceTasks
         .filter((task) => resolveTaskOwnerId(task) === agent.id)
         .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
-      const agentY = laneY + agentIndex * 4;
+      const hasVisibleTaskLane = agentTasks.length > 0;
+
+      if (hasVisibleTaskLane) {
+        flushIdleAgentGridRow();
+      }
+
+      const agentX = hasVisibleTaskLane
+        ? groupX + agentGridStartX
+        : groupX + agentGridStartX + idleAgentGridColumn * agentGridColumnGap;
+      const agentY = laneY + (hasVisibleTaskLane ? agentIndex * 4 : 0);
+      const taskX = groupX + taskLaneStartX;
       const isComposerHighlightedAgent = isComposerActive && composerTargetAgentId === agent.id;
       const hasJustCreatedTask = agentTasks.some((task) => justCreatedTaskIds.includes(task.id));
       const isTaskFocusedAgent = selectedTaskAgentId === agent.id || hasJustCreatedTask;
       const activeTaskCount = agentTasks.filter((task) => isLiveTask(task)).length;
       const isAgentChatOpen = activeChatAgentId === agent.id;
+      const isPendingCreation = pendingWorkspaceAgentIds.has(agent.id);
+      const creationWarning = agentCreationWarnings[agent.id] ?? pendingWorkspaceAgentWarnings.get(agent.id) ?? null;
       const surfaceBadges = buildAgentSurfaceBadges(snapshot, workspace, agent);
       const accountBadges = buildAgentAccountBadges(accountTargets, accountAccessRules, workspace, agent);
       const connectedBadgeCount = surfaceBadges.length + accountBadges.length;
@@ -167,6 +220,8 @@ export function buildCanvasGraph(
           agent,
           emphasis: isFocusMode ? true : !activeWorkspaceId || activeWorkspaceId === workspace.id,
           focused: focusedAgentId === agent.id,
+          pendingCreation: isPendingCreation,
+          creationWarning,
           composerFocused: isComposerHighlightedAgent,
           taskFocused: isTaskFocusedAgent,
           creationPulse: recentCreatedAgentId === agent.id,
@@ -176,14 +231,14 @@ export function buildCanvasGraph(
           modelLabel,
           surfaceBadges,
           accountBadges,
-          onMessage: onMessageAgent,
-          onEdit: onEditAgent,
-          onDelete: onDeleteAgent,
-          onFocus: onFocusAgent,
-          onConfigureModel: onConfigureAgentModel,
-          onConfigureCapabilities: onConfigureAgentCapabilities,
-          onInspect: onInspectAgentDetail,
-          onOpenWorkspaceChannels
+          onMessage: isPendingCreation ? undefined : onMessageAgent,
+          onEdit: isPendingCreation ? undefined : onEditAgent,
+          onDelete: isPendingCreation ? undefined : onDeleteAgent,
+          onFocus: isPendingCreation ? undefined : onFocusAgent,
+          onConfigureModel: isPendingCreation ? undefined : onConfigureAgentModel,
+          onConfigureCapabilities: isPendingCreation ? undefined : onConfigureAgentCapabilities,
+          onInspect: isPendingCreation ? undefined : onInspectAgentDetail,
+          onOpenWorkspaceChannels: isPendingCreation ? undefined : onOpenWorkspaceChannels
         }
       });
 
@@ -294,11 +349,22 @@ export function buildCanvasGraph(
         });
       });
 
-      laneY += Math.max(420, agentTasks.length * 420 + 44);
+      if (hasVisibleTaskLane) {
+        laneY += Math.max(taskCardLaneHeight, agentTasks.length * taskCardLaneHeight + taskLaneBottomPadding);
+        return;
+      }
+
+      idleAgentGridColumn += 1;
+
+      if (idleAgentGridColumn >= idleAgentGridColumns) {
+        flushIdleAgentGridRow();
+      }
     });
 
+    flushIdleAgentGridRow();
+
     if (!isFocusMode) {
-      const workspaceHeight = Math.max(laneY - groupY + 112, 700);
+      const workspaceHeight = Math.max(laneY - groupY + workspaceContentBottomPadding, workspaceMinHeight);
 
       workspaceNodes.push({
         id: workspace.id,
@@ -307,7 +373,7 @@ export function buildCanvasGraph(
         position: { x: groupX, y: groupY },
         zIndex: 0,
         style: {
-          width: 1060,
+          width: workspaceGroupWidth,
           height: workspaceHeight
         },
         selectable: true,

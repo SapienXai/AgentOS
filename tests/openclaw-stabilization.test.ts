@@ -426,6 +426,18 @@ test("openclaw runtime failure message explains codex route rejection", () => {
     resolveOpenClawRuntimeFailureMessage("OpenAI Codex token refresh failed (401)"),
     "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai --set-default"
   );
+  assert.equal(
+    resolveOpenClawRuntimeFailureMessage("429 Provider returned error", {
+      modelId: "openrouter/google/gemma-4-26b-a4b-it:free"
+    }),
+    "OpenRouter returned HTTP 429 for the selected model. The API key is connected, but this model or account is currently rate limited or out of available credits. Wait and retry, add OpenRouter credits, or switch the agent to another model route."
+  );
+  assert.equal(
+    resolveOpenClawRuntimeFailureMessage("429 Provider returned error", {
+      modelId: "openai/gpt-5.5"
+    }),
+    null
+  );
 });
 
 test("codex auth handoff installs the provider plugin before login when needed", () => {

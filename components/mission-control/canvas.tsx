@@ -43,6 +43,7 @@ import type {
   SpringVelocity,
   TaskNodeData
 } from "@/components/mission-control/canvas-types";
+import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
 import { resolveRelativeTimeReferenceMs } from "@/lib/openclaw/presenters";
 import type { MissionControlSnapshot, WorkItemRecord } from "@/lib/agentos/contracts";
 import type { AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
@@ -51,6 +52,8 @@ import { cn } from "@/lib/utils";
 
 export function MissionCanvas({
   snapshot,
+  pendingCreatedAgents,
+  agentCreationWarnings,
   accountTargets,
   accountAccessRules,
   activeWorkspaceId,
@@ -88,6 +91,8 @@ export function MissionCanvas({
   className
 }: {
   snapshot: MissionControlSnapshot;
+  pendingCreatedAgents?: PendingAgentProjection[];
+  agentCreationWarnings?: Record<string, string>;
   accountTargets: AccountLoginTargetView[];
   accountAccessRules: AccountAccessRuleView[];
   activeWorkspaceId: string | null;
@@ -177,6 +182,8 @@ export function MissionCanvas({
     onInspectTask,
     onActiveTaskCardChange,
     onReviewTask,
+    pendingCreatedAgents ?? [],
+    agentCreationWarnings ?? {},
     emptyPersistedNodePositions
   );
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(initialGraph.nodes);
@@ -263,6 +270,8 @@ export function MissionCanvas({
       onInspectTask,
       onActiveTaskCardChange,
       onReviewTask,
+      pendingCreatedAgents ?? [],
+      agentCreationWarnings ?? {},
       persistedNodePositionsRef.current
     );
     const scopeChanged = lastCanvasScopeKeyRef.current !== canvasScopeKey;
@@ -310,6 +319,8 @@ export function MissionCanvas({
     onInspectTask,
     onActiveTaskCardChange,
     onReviewTask,
+    pendingCreatedAgents,
+    agentCreationWarnings,
     relativeTimeReferenceMs,
     canvasScopeKey,
     setEdges,

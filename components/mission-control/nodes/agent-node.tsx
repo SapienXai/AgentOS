@@ -169,6 +169,8 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   const chatUnreadCount = useAgentChatUnreadCount(data.agent.id, Boolean(data.chatOpen));
   const hasUnreadChat = chatUnreadCount > 0 && !data.chatOpen;
   const activeTaskCount = Math.max(0, Number(data.activeTaskCount ?? 0));
+  const isPendingCreation = Boolean(data.pendingCreation);
+  const creationWarning = typeof data.creationWarning === "string" ? data.creationWarning.trim() : "";
   const isAttentionActive = selected || data.composerFocused || data.taskFocused;
   const isCreationPulse = Boolean(data.creationPulse);
   const dotTone = resolveAgentStatusDotTone(data.agent.status);
@@ -252,6 +254,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
       className={cn(
         "agent-node relative isolate w-[272px] overflow-visible rounded-[24px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(18,20,26,0.96),rgba(9,11,15,0.96))] pt-0 pb-0 shadow-[0_20px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl",
         data.emphasis ? "opacity-100" : "opacity-72",
+        isPendingCreation && "border-cyan-200/22 shadow-[0_20px_54px_rgba(34,211,238,0.16),0_18px_46px_rgba(0,0,0,0.36)]",
         selected && AGENT_NODE_SELECTED_CLASSES,
         isCreationPulse && AGENT_NODE_CREATION_PULSE_CLASSES,
         isAttentionActive && AGENT_NODE_ATTENTION_CLASSES
@@ -275,6 +278,14 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
         <div className="pointer-events-none absolute inset-y-4 left-0 w-[3px] rounded-r-full bg-[linear-gradient(180deg,rgba(125,211,252,0.9),rgba(34,211,238,0.14))]" />
         <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-cyan-200/10" />
         <div className="pointer-events-none absolute right-2 top-2 h-10 w-10 rounded-full bg-cyan-300/10 blur-xl" />
+        {isPendingCreation ? (
+          <motion.div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-[-55%] w-[46%] bg-[linear-gradient(90deg,transparent,rgba(125,211,252,0.12),transparent)]"
+            animate={{ x: ["0%", "310%"] }}
+            transition={{ duration: 1.7, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+          />
+        ) : null}
       </div>
 
       {isAttentionActive ? (
@@ -418,7 +429,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               <div className="max-w-[80%]">
                 <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.22em] text-white/65">
                   <StatusDot tone={dotTone} pulse={data.agent.status === "engaged" || data.agent.status === "monitoring"} />
-                  Agent
+                  {isPendingCreation ? "Agent birth" : "Agent"}
                 </div>
                 <p className="mt-1 truncate font-display text-[1.08rem] leading-5 text-white">
                   <AnimatedAgentName label={agentLabel} />
@@ -430,8 +441,16 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
 
           <motion.button
             type="button"
-            aria-label={`Connect surfaces and accounts for ${agentLabel}`}
-            title={`Connect surfaces and accounts for ${agentLabel}`}
+            aria-label={
+              isPendingCreation
+                ? `${agentLabel} surfaces unavailable while provisioning`
+                : `Connect surfaces and accounts for ${agentLabel}`
+            }
+            title={
+              isPendingCreation
+                ? "Available after the agent syncs from OpenClaw"
+                : `Connect surfaces and accounts for ${agentLabel}`
+            }
             disabled={!canOpenWorkspaceChannels}
             initial={false}
             animate={
@@ -477,12 +496,19 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
             <button
               type="button"
               aria-label={`${agentLabel} actions`}
+              disabled={isPendingCreation}
               onClick={(event) => {
                 event.stopPropagation();
+                if (isPendingCreation) {
+                  return;
+                }
                 setMenuOpen((current) => !current);
               }}
               onPointerDown={(event) => event.stopPropagation()}
-              className="nodrag nopan inline-flex rounded-full border border-white/[0.08] bg-slate-950/60 p-1.5 text-slate-300 shadow-[0_10px_22px_rgba(0,0,0,0.22)] transition-colors hover:bg-slate-900/75 hover:text-white"
+              className={cn(
+                "nodrag nopan inline-flex rounded-full border border-white/[0.08] bg-slate-950/60 p-1.5 text-slate-300 shadow-[0_10px_22px_rgba(0,0,0,0.22)] transition-colors hover:bg-slate-900/75 hover:text-white",
+                isPendingCreation && "cursor-not-allowed text-slate-600 hover:bg-slate-950/60 hover:text-slate-600"
+              )}
             >
               <MoreHorizontal className="h-3.5 w-3.5" />
             </button>
@@ -522,7 +548,9 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
 
           <div className="px-3.5 pt-3.5 pb-3.5">
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <Badge variant={statusBadgeVariant}>{data.agent.status}</Badge>
+              <Badge variant={isPendingCreation ? "default" : statusBadgeVariant}>
+                {isPendingCreation ? "Provisioning" : data.agent.status}
+              </Badge>
               {data.taskFocused ? (
                 <Badge variant="default">Working now</Badge>
               ) : activeTaskCount > 0 ? (
@@ -530,20 +558,30 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                   {activeTaskCount} live task{activeTaskCount === 1 ? "" : "s"}
                 </Badge>
               ) : null}
+              {creationWarning ? <Badge variant="warning">Model warning</Badge> : null}
               <button
                 type="button"
                 aria-label={`Change model for ${agentLabel}`}
                 title={`Change model for ${agentLabel}`}
                 className="nodrag nopan group rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/35 focus-visible:ring-offset-0"
+                disabled={isPendingCreation || !data.onConfigureModel}
                 onClick={(event) => {
                   event.stopPropagation();
+                  if (isPendingCreation) {
+                    return;
+                  }
                   data.onConfigureModel?.(data.agent.id);
                 }}
                 onPointerDown={(event) => event.stopPropagation()}
               >
                 <Badge
                   variant="muted"
-                  className="max-w-[150px] truncate transition-colors group-hover:border-cyan-300/25 group-hover:bg-cyan-300/10 group-hover:text-cyan-100"
+                  className={cn(
+                    "max-w-[150px] truncate transition-colors",
+                    isPendingCreation
+                      ? "border-cyan-300/18 bg-cyan-300/8 text-cyan-100/82"
+                      : "group-hover:border-cyan-300/25 group-hover:bg-cyan-300/10 group-hover:text-cyan-100"
+                  )}
                 >
                   {modelBadgeLabel}
                 </Badge>
@@ -551,6 +589,11 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
             </div>
 
           <div className="mt-2.5">
+            {creationWarning ? (
+              <p className="mb-2 rounded-[14px] border border-amber-300/18 bg-amber-300/[0.07] px-2.5 py-2 text-[11px] leading-4 text-amber-100/90">
+                {creationWarning}
+              </p>
+            ) : null}
             <p className="line-clamp-2 text-[12px] leading-5 text-slate-300">{purposeLabel}</p>
             <p className="mt-2 truncate text-[9px] uppercase tracking-[0.18em] text-slate-500">{metaLabel}</p>
           </div>
@@ -560,19 +603,19 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               label="Skills"
               value={skillCount}
               ariaLabel={`Open skills for ${agentLabel}`}
-              onClick={() => configureAgentCapabilities("skills")}
+              onClick={isPendingCreation ? undefined : () => configureAgentCapabilities("skills")}
             />
             <AgentStatTile
               label="Tools"
               value={declaredToolCount}
               ariaLabel={`Open tools for ${agentLabel}`}
-              onClick={() => configureAgentCapabilities("tools")}
+              onClick={isPendingCreation ? undefined : () => configureAgentCapabilities("tools")}
             />
             <AgentStatTile
               label="Sessions"
               value={data.agent.sessionCount}
               ariaLabel={`Open sessions for ${agentLabel}`}
-              onClick={() => inspectAgentSection("sessions")}
+              onClick={isPendingCreation ? undefined : () => inspectAgentSection("sessions")}
             />
           </div>
 
@@ -587,11 +630,20 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               title={
                 hasUnreadChat
                   ? `${chatUnreadCount} unread message${chatUnreadCount === 1 ? "" : "s"}`
-                  : `Message ${agentLabel}`
+                  : isPendingCreation
+                    ? `${agentLabel} is still provisioning`
+                    : `Message ${agentLabel}`
               }
-              className="nodrag nopan relative inline-flex h-10 items-center justify-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.05] px-3.5 text-[12px] text-slate-200 transition-colors hover:bg-white/[0.08] hover:text-white"
+              disabled={isPendingCreation || !data.onMessage}
+              className={cn(
+                "nodrag nopan relative inline-flex h-10 items-center justify-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.05] px-3.5 text-[12px] text-slate-200 transition-colors hover:bg-white/[0.08] hover:text-white",
+                isPendingCreation && "cursor-not-allowed text-slate-500 hover:bg-white/[0.05] hover:text-slate-500"
+              )}
               onClick={(event) => {
                 event.stopPropagation();
+                if (isPendingCreation) {
+                  return;
+                }
                 data.onMessage?.(data.agent.id);
               }}
               onPointerDown={(event) => event.stopPropagation()}
@@ -610,20 +662,26 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
 
             <button
               type="button"
+              disabled={isPendingCreation || !data.onFocus}
               className={cn(
                 "nodrag nopan inline-flex h-10 items-center justify-center gap-1.5 rounded-full border px-3.5 text-[12px] transition-colors",
-                data.focused
+                isPendingCreation
+                  ? "cursor-not-allowed border-cyan-300/14 bg-cyan-300/[0.05] text-cyan-100/62 shadow-[0_10px_24px_rgba(34,211,238,0.08)]"
+                  : data.focused
                   ? "border-amber-200/45 bg-[linear-gradient(180deg,rgba(252,211,77,0.96),rgba(217,119,6,0.9))] text-slate-950 shadow-[0_12px_30px_rgba(245,158,11,0.38)]"
                   : "border-amber-300/20 bg-[linear-gradient(180deg,rgba(251,191,36,0.18),rgba(217,119,6,0.28))] text-amber-50 shadow-[0_10px_24px_rgba(245,158,11,0.18)] hover:border-amber-200/30 hover:text-white"
               )}
               onClick={(event) => {
                 event.stopPropagation();
+                if (isPendingCreation) {
+                  return;
+                }
                 data.onFocus?.(data.agent.id);
               }}
               onPointerDown={(event) => event.stopPropagation()}
             >
               <LocateFixed className="h-3.5 w-3.5" />
-              <span>{data.focused ? "Focused" : "Focus"}</span>
+              <span>{isPendingCreation ? "Syncing" : data.focused ? "Focused" : "Focus"}</span>
             </button>
           </div>
         </div>

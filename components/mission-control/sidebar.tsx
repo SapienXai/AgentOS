@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 
 import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
+import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
 import { RailTooltip } from "@/components/mission-control/rail-tooltip";
 import { StatusDot } from "@/components/mission-control/status-dot";
 import { Badge } from "@/components/ui/badge";
@@ -133,6 +134,7 @@ type MissionSidebarProps = {
   onOpenWorkspaceCreate: () => void;
   onEditWorkspace: (workspaceId: string) => void;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
+  onAgentCreationPending?: (agent: PendingAgentProjection) => void;
   onAgentCreatedVisible?: (agentId: string) => void;
   settingsMode?: boolean;
 };

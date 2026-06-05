@@ -133,12 +133,7 @@ export function clearMissionControlRuntimeHistoryCache() {
   clearRuntimeHistoryCache();
 }
 
-export function clearMissionControlCaches() {
-  missionControlCacheService.clear({ incrementGeneration: true });
-  runtimeDiagnosticsStateCache.clear();
-  gatewayStatusCache.clear();
-  statusPayloadCache.clear();
-  updateStatusPayloadCache.clear();
+function clearMissionControlPayloadCaches() {
   agentPayloadCache = null;
   agentConfigPayloadCache = null;
   modelsPayloadCache = null;
@@ -146,6 +141,15 @@ export function clearMissionControlCaches() {
   sessionsPayloadCache = null;
   runtimeSnapshotPayloadCache = null;
   presencePayloadCache = null;
+}
+
+export function clearMissionControlCaches() {
+  missionControlCacheService.clear({ incrementGeneration: true });
+  runtimeDiagnosticsStateCache.clear();
+  gatewayStatusCache.clear();
+  statusPayloadCache.clear();
+  updateStatusPayloadCache.clear();
+  clearMissionControlPayloadCaches();
   clearRuntimeHistoryCache();
 }
 
@@ -156,6 +160,10 @@ export function invalidateMissionControlSnapshotCache() {
 export async function getMissionControlSnapshot(
   options: { force?: boolean; includeHidden?: boolean; loadProfile?: SnapshotLoadProfile } = {}
 ) {
+  if (options.force) {
+    clearMissionControlPayloadCaches();
+  }
+
   return missionControlCacheService.getSnapshot(options);
 }
 

@@ -321,6 +321,7 @@ export function normalizeModelStatusPayload(authPayload: unknown, modelsPayload:
           }
         };
       }),
+      runtimeAuthRoutes: normalizeRuntimeAuthRoutes(auth.runtimeAuthRoutes),
       missingProvidersInUse: Array.isArray(auth.missingProvidersInUse)
         ? auth.missingProvidersInUse.filter((entry): entry is string => typeof entry === "string")
         : [],
@@ -337,6 +338,21 @@ export function normalizeModelStatusPayload(authPayload: unknown, modelsPayload:
       }
     }
   };
+}
+
+function normalizeRuntimeAuthRoutes(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((entry): entry is Record<string, unknown> => isObjectRecord(entry))
+    .map((entry) => ({
+      provider: readNonEmptyString(entry.provider) ?? undefined,
+      runtime: readNonEmptyString(entry.runtime) ?? undefined,
+      authProvider: readNonEmptyString(entry.authProvider) ?? undefined,
+      status: readNonEmptyString(entry.status) ?? undefined
+    }));
 }
 
 export function resolveDefaultModelFromStatus(auth: Record<string, unknown>, models: ModelsPayload["models"]) {

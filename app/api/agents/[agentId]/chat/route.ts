@@ -150,6 +150,7 @@ export async function POST(
       let latestTurnStatus: TranscriptTurn["status"] | null = null;
       let keepPolling = true;
       let streamStdoutBuffer = "";
+      let activeAgentModelId: string | null = null;
 
       const stopPolling = () => {
         keepPolling = false;
@@ -267,6 +268,7 @@ export async function POST(
           });
           return;
         }
+        activeAgentModelId = agent.modelId;
 
         const resolvedDefaultModelId = resolveReadyDefaultAgentModelId(snapshot);
         if (agent.modelId === "unassigned" && resolvedDefaultModelId) {
@@ -275,6 +277,7 @@ export async function POST(
             modelId: resolvedDefaultModelId
           });
           agent.modelId = resolvedDefaultModelId;
+          activeAgentModelId = agent.modelId;
         }
 
         const runtimePreflightError = resolveOpenClawRuntimePreflightError(snapshot);
@@ -433,7 +436,7 @@ export async function POST(
         const rawFailure = redactSecretText(stringifyCommandFailure(error) || redactErrorMessage(error, ""));
         const agentRegistryFailureMessage = resolveGatewayAgentRegistryFailureMessage(rawFailure, agentId);
         const failureMessage =
-          resolveOpenClawRuntimeFailureMessage(rawFailure) ||
+          resolveOpenClawRuntimeFailureMessage(rawFailure, { modelId: activeAgentModelId }) ||
           agentRegistryFailureMessage ||
           (error instanceof Error
             ? redactSecretText(error.message)

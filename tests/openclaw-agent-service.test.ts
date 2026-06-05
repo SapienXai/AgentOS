@@ -5,6 +5,7 @@ import {
   createAgent as createApplicationAgent,
   deleteAgent as deleteApplicationAgent,
   formatPostCreateAgentConfigSyncWarning,
+  resolveAgentCreateModelSelection,
   updateAgent as updateApplicationAgent
 } from "@/lib/openclaw/application/agent-service";
 import {
@@ -12,6 +13,7 @@ import {
   deleteAgent as deleteCompatibilityAgent,
   updateAgent as updateCompatibilityAgent
 } from "@/lib/openclaw/service";
+import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 
 async function readErrorMessage(action: () => Promise<unknown>) {
   try {
@@ -77,4 +79,47 @@ test("agent creation does not downgrade validation failures to sync warnings", (
     formatPostCreateAgentConfigSyncWarning(new Error("Refusing to write a redacted OpenClaw secret.")),
     null
   );
+});
+
+test("agent creation falls back when the requested model is not ready", () => {
+  const snapshot = {
+    diagnostics: {
+      installed: true,
+      rpcOk: true,
+      runtime: {
+        stateWritable: true,
+        sessionStoreWritable: true,
+        issues: []
+      },
+      modelReadiness: {
+        ready: true,
+        defaultModelReady: true,
+        defaultModel: "openai/gpt-5.5",
+        resolvedDefaultModel: "openai/gpt-5.5",
+        recommendedModelId: "openai/gpt-5.5",
+        totalModelCount: 2,
+        availableModelCount: 1,
+        issues: []
+      }
+    },
+    agents: [],
+    models: [
+      {
+        id: "openai/gpt-5.4-mini",
+        available: false,
+        missing: false
+      },
+      {
+        id: "openai/gpt-5.5",
+        available: true,
+        missing: false
+      }
+    ]
+  } as unknown as MissionControlSnapshot;
+
+  const selection = resolveAgentCreateModelSelection(snapshot, "openai/gpt-5.4-mini", "openai/gpt-5.5");
+
+  assert.equal(selection.modelId, "openai/gpt-5.5");
+  assert.equal(selection.warnings.length, 1);
+  assert.match(selection.warnings[0], /Requested model openai\/gpt-5\.4-mini is not ready/);
 });

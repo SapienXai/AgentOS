@@ -13,10 +13,12 @@ import {
 } from "@/lib/openclaw/client/native-ws-gateway-client";
 import { resolveConfiguredGatewaySecretFromLocalConfig } from "@/lib/openclaw/client/native-ws-gateway-auth";
 import type {
+  ModelsStatusPayload,
   OpenClawAddAgentInput,
   OpenClawCommandOptions,
   OpenClawGatewayClient
 } from "@/lib/openclaw/client/gateway-client";
+import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-normalization";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 
 type SentFrame = {
@@ -34,6 +36,7 @@ class FallbackGatewayClient implements OpenClawGatewayClient {
   failStatus = false;
   statusPayload: Record<string, unknown> = {};
   updateStatusPayload: Record<string, unknown> = {};
+  modelStatusPayload: ModelsStatusPayload = {};
 
   async getHealth() {
     this.calls.push({ method: "getHealth" });
@@ -60,7 +63,7 @@ class FallbackGatewayClient implements OpenClawGatewayClient {
 
   async getModelStatus() {
     this.calls.push({ method: "getModelStatus" });
-    return {};
+    return this.modelStatusPayload;
   }
 
   async getAgentModelStatus() {
@@ -1148,6 +1151,175 @@ test("native WS gateway client derives default model from configured model tags"
   assert.equal(status.resolvedDefault, "openai/gpt-5.4-mini");
   assert.deepEqual(status.allowed, ["openai/gpt-5.4-mini"]);
   assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway client preserves Codex runtime auth routes for readiness", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      const payload =
+        frame.method === "connect"
+          ? { protocol: 4 }
+          : frame.method === "models.authStatus"
+            ? {
+                defaultModel: "openai/gpt-5.4-mini",
+                resolvedDefault: "openai/gpt-5.4-mini",
+                providers: [],
+                runtimeAuthRoutes: [
+                  {
+                    provider: "openai",
+                    runtime: "codex",
+                    authProvider: "openai",
+                    status: "usable"
+                  }
+                ]
+              }
+            : {
+                models: [{
+                  id: "gpt-5.4-mini",
+                  provider: "openai",
+                  name: "gpt-5.4-mini"
+                }]
+              };
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  const [status, models] = await Promise.all([
+    client.getModelStatus(),
+    client.listModels()
+  ]);
+  const readiness = resolveModelReadiness(models.models, status);
+
+  assert.deepEqual(status.auth?.runtimeAuthRoutes, [
+    {
+      provider: "openai",
+      runtime: "codex",
+      authProvider: "openai",
+      status: "usable"
+    }
+  ]);
+  assert.equal(readiness.ready, true);
+  assert.equal(readiness.defaultModelReady, true);
+  assert.equal(
+    readiness.authProviders.find((provider) => provider.provider === "openai-codex")?.connected,
+    true
+  );
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway client recovers partial Codex model auth status through CLI", async () => {
+  const fallback = new FallbackGatewayClient();
+  fallback.modelStatusPayload = {
+    defaultModel: "openai/gpt-5.5",
+    resolvedDefault: "openai/gpt-5.5",
+    allowed: ["openai/gpt-5.5"],
+    auth: {
+      runtimeAuthRoutes: [
+        {
+          provider: "openai",
+          runtime: "codex",
+          authProvider: "openai",
+          status: "usable"
+        }
+      ],
+      providers: [
+        {
+          provider: "openai",
+          effective: {
+            kind: "profiles"
+          },
+          profiles: {
+            count: 2,
+            oauth: 2,
+            token: 0,
+            apiKey: 0
+          }
+        }
+      ],
+      oauth: {
+        providers: [
+          {
+            provider: "openai",
+            status: "ok",
+            profiles: [{ profileId: "openai:user@example.com", status: "static" }]
+          }
+        ]
+      },
+      missingProvidersInUse: [],
+      unusableProfiles: []
+    } as never
+  };
+  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      const payload =
+        frame.method === "connect"
+          ? { protocol: 4 }
+          : frame.method === "models.authStatus"
+            ? {
+                providers: [{
+                  provider: "openrouter",
+                  status: "ok",
+                  profiles: [{ profileId: "openrouter:manual", status: "static" }]
+                }]
+              }
+            : {
+                models: [{
+                  id: "gpt-5.5",
+                  provider: "openai",
+                  name: "gpt-5.5",
+                  tags: ["default", "configured"]
+                }]
+              };
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  const status = await client.getModelStatus();
+  const readiness = resolveModelReadiness(
+    [
+      {
+        key: "openai/gpt-5.5",
+        local: false,
+        available: true,
+        missing: false
+      }
+    ],
+    status
+  );
+
+  assert.deepEqual(status.auth?.runtimeAuthRoutes, [
+    {
+      provider: "openai",
+      runtime: "codex",
+      authProvider: "openai",
+      status: "usable"
+    }
+  ]);
+  assert.equal(readiness.ready, true);
+  assert.deepEqual(fallback.calls.map((call) => call.method), ["getModelStatus"]);
 });
 
 test("native WS gateway client reads agent model status through Gateway methods", async () => {

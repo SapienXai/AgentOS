@@ -213,7 +213,7 @@ export function resolveModelReadiness(models: ModelLike[], modelStatus?: ModelSt
   const defaultModelReady = Boolean(
     defaultModelId &&
       readyModels.some((model) => model.key === defaultModelId) &&
-      isModelProviderAuthenticated(defaultProvider, defaultModelId, models, authProviderMap, oauthProviderMap)
+      isModelProviderAuthenticated(defaultProvider, defaultModelId, models, authProviderMap, oauthProviderMap, modelStatus)
   );
   const recommendedModelId = defaultModelReady ? defaultModelId : readyModels[0]?.key ?? null;
   const authProviders = providerIds.map((provider) => {
@@ -367,7 +367,8 @@ function isModelProviderAuthenticated(
   modelId: string | null,
   models: ModelLike[],
   authProviderMap: Map<string, ModelAuthProvider & { provider: string }>,
-  oauthProviderMap: Map<string, ModelOauthProvider & { provider: string }>
+  oauthProviderMap: Map<string, ModelOauthProvider & { provider: string }>,
+  modelStatus?: ModelStatusLike
 ) {
   if (!provider) {
     return false;
@@ -378,14 +379,15 @@ function isModelProviderAuthenticated(
   }
 
   return resolveAuthProvidersForModel(provider, modelId).some((authProvider) =>
-    isAuthProviderConnected(authProvider, authProviderMap, oauthProviderMap)
+    isAuthProviderConnected(authProvider, authProviderMap, oauthProviderMap, modelStatus)
   );
 }
 
 function isAuthProviderConnected(
   provider: string,
   authProviderMap: Map<string, ModelAuthProvider & { provider: string }>,
-  oauthProviderMap: Map<string, ModelOauthProvider & { provider: string }>
+  oauthProviderMap: Map<string, ModelOauthProvider & { provider: string }>,
+  modelStatus?: ModelStatusLike
 ) {
   if (provider === "openai") {
     return isOpenAiApiAuthConnected(authProviderMap.get(provider));
@@ -394,7 +396,8 @@ function isAuthProviderConnected(
   if (provider === "openai-codex") {
     return isOpenAiCodexAuthConnected(
       authProviderMap.get(provider) ?? authProviderMap.get("openai"),
-      oauthProviderMap.get(provider) ?? oauthProviderMap.get("openai")
+      oauthProviderMap.get(provider) ?? oauthProviderMap.get("openai"),
+      modelStatus
     );
   }
 

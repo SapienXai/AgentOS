@@ -8,7 +8,12 @@ import {
   resolveOpenAiCodexProviderPluginRecoveryMessage
 } from "@/lib/openclaw/model-auth-errors";
 
-type SmokeTestFailureKind = "model-route" | "plugin-runtime" | "provider-auth" | "session-store-permission";
+type SmokeTestFailureKind =
+  | "model-route"
+  | "plugin-runtime"
+  | "provider-auth"
+  | "provider-rate-limit"
+  | "session-store-permission";
 
 type SmokeTestFailureClassification = {
   kind: SmokeTestFailureKind;
@@ -34,11 +39,24 @@ export function resolveOpenClawRuntimePreflightError(snapshot: Pick<MissionContr
   return null;
 }
 
-export function classifyOpenClawRuntimeSmokeTestFailure(output: string): SmokeTestFailureClassification | null {
+export function classifyOpenClawRuntimeSmokeTestFailure(
+  output: string,
+  options: {
+    modelId?: string | null;
+  } = {}
+): SmokeTestFailureClassification | null {
   const normalized = output.trim();
 
   if (!normalized) {
     return null;
+  }
+
+  if (isOpenRouterRateLimitFailure(normalized, options.modelId)) {
+    return {
+      kind: "provider-rate-limit",
+      detail:
+        "OpenRouter returned HTTP 429 for the selected model. The API key is connected, but this model or account is currently rate limited or out of available credits. Wait and retry, add OpenRouter credits, or switch the agent to another model route."
+    };
   }
 
   if (
@@ -119,12 +137,28 @@ export function buildOpenClawRuntimeSmokeTestRecoveryCommand(command: string, ou
   return `${command} doctor --fix && ${command} gateway restart && ${command} gateway status --deep`;
 }
 
-export function resolveOpenClawRuntimeFailureMessage(output: string) {
-  const classification = classifyOpenClawRuntimeSmokeTestFailure(output);
+export function resolveOpenClawRuntimeFailureMessage(
+  output: string,
+  options: {
+    modelId?: string | null;
+  } = {}
+) {
+  const classification = classifyOpenClawRuntimeSmokeTestFailure(output, options);
 
   if (!classification) {
     return null;
   }
 
   return classification.detail;
+}
+
+function isOpenRouterRateLimitFailure(output: string, modelId?: string | null) {
+  const modelProvider = modelId?.split("/", 1)[0]?.trim().toLowerCase();
+  const mentionsOpenRouter = /\bopenrouter\b/i.test(output) || modelProvider === "openrouter";
+
+  if (!mentionsOpenRouter) {
+    return false;
+  }
+
+  return /\b429\b|too many requests|rate limit(?:ed)?|quota|out of credits|insufficient credits/i.test(output);
 }

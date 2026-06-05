@@ -75,6 +75,7 @@ import {
   resolveNativeTimeoutMs,
   shouldUseCliFallback
 } from "@/lib/openclaw/client/native-ws-gateway-policy";
+import { isKnownOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
 import {
   CONNECT_METHOD,
   OPENCLAW_GATEWAY_PROTOCOL_RANGE,
@@ -144,6 +145,7 @@ import type {
   OpenClawLogsTailPayload,
   OpenClawModelAuthOrderSetInput,
   OpenClawModelScanPayload,
+  ModelsStatusPayload,
   OpenClawRuntimeEventSubscriptionInput,
   OpenClawRuntimeSnapshotInput,
   OpenClawRuntimeSnapshotPayload,
@@ -191,6 +193,47 @@ export function getRecentOpenClawGatewayFallbackDiagnostics() {
 export function clearOpenClawGatewayFallbackDiagnosticsForTesting() {
   clearGatewayFallbackDiagnosticsForTesting();
   clearCachedStatusUpdateRegistry();
+}
+
+function shouldRecoverPartialModelAuthStatusWithCli(status: ModelsStatusPayload) {
+  const allowed = status.allowed ?? [];
+  const hasOpenAiCodexRoute = allowed.some((modelId) => isKnownOpenAiCodexModelId(modelId));
+
+  if (!hasOpenAiCodexRoute) {
+    return false;
+  }
+
+  const authProviders = new Set(
+    (status.auth?.providers ?? [])
+      .map((entry) => entry.provider?.trim())
+      .filter((provider): provider is string => Boolean(provider))
+  );
+  const oauthProviders = new Set(
+    (status.auth?.oauth?.providers ?? [])
+      .map((entry) => entry.provider?.trim())
+      .filter((provider): provider is string => Boolean(provider))
+  );
+  const hasOpenAiCodexAuthRoute = (status.auth?.runtimeAuthRoutes ?? []).some((entry) => {
+    const provider = entry.provider?.trim().toLowerCase();
+    const runtime = entry.runtime?.trim().toLowerCase();
+    const authProvider = entry.authProvider?.trim().toLowerCase();
+    const routeProvider = provider === "openai" || provider === "codex" || provider === "openai-codex";
+    const codexRuntime = runtime === "codex" || runtime === "openai-codex" || runtime === "app-server" || runtime === "codex-app-server";
+    const openAiAuth = !authProvider || authProvider === "openai" || authProvider === "codex" || authProvider === "openai-codex";
+
+    return routeProvider && codexRuntime && openAiAuth;
+  });
+
+  if (hasOpenAiCodexAuthRoute) {
+    return false;
+  }
+
+  return !authProviders.has("openai") &&
+    !authProviders.has("codex") &&
+    !authProviders.has("openai-codex") &&
+    !oauthProviders.has("openai") &&
+    !oauthProviders.has("codex") &&
+    !oauthProviders.has("openai-codex");
 }
 
 export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
@@ -427,10 +470,25 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     clearGatewayFallbackDiagnostic("models.list");
     this.clearNativeFailure("models.authStatus");
     this.clearNativeFailure("models.list");
-    return normalizeModelStatusPayload(
+    const status = normalizeModelStatusPayload(
       authResult.status === "fulfilled" ? authResult.value : null,
       modelsResult.status === "fulfilled" ? modelsResult.value : null
     );
+
+    if (shouldRecoverPartialModelAuthStatusWithCli(status)) {
+      this.recordGatewayFallback(
+        "models.authStatus",
+        new Error("Native Gateway model auth status omitted Codex runtime auth details.")
+      );
+
+      try {
+        return await this.fallback.getModelStatus(options);
+      } catch {
+        return status;
+      }
+    }
+
+    return status;
   }
 
   async getAgentModelStatus(input: OpenClawAgentModelStatusInput, options: OpenClawCommandOptions = {}) {
@@ -477,6 +535,19 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
 
     if (isObjectRecord(authPayload)) {
       status.agentDir = readNonEmptyString(authPayload.agentDir) ?? status.agentDir;
+    }
+
+    if (shouldRecoverPartialModelAuthStatusWithCli(status)) {
+      this.recordGatewayFallback(
+        "models.authStatus",
+        new Error("Native Gateway agent model auth status omitted Codex runtime auth details.")
+      );
+
+      try {
+        return await this.fallback.getAgentModelStatus(input, options);
+      } catch {
+        return status;
+      }
     }
 
     return status;

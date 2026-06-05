@@ -15,6 +15,7 @@ import {
   isAddModelsProviderId
 } from "@/lib/openclaw/model-provider-registry";
 import {
+  isKnownOpenAiCodexModelId,
   modelRecordIdentityKey,
   normalizeOpenAiCodexModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
@@ -84,7 +85,7 @@ export function AgentModelPickerDialog({
           return leftUnavailable ? 1 : -1;
         }
 
-        const providerDelta = left.provider.localeCompare(right.provider);
+        const providerDelta = resolvePickerModelProvider(left).localeCompare(resolvePickerModelProvider(right));
         if (providerDelta !== 0) {
           return providerDelta;
         }
@@ -101,7 +102,9 @@ export function AgentModelPickerDialog({
           return true;
         }
 
-        const haystack = `${model.name} ${model.id} ${model.provider} ${model.input} ${model.tags.join(" ")}`.toLowerCase();
+        const haystack =
+          `${model.name} ${model.id} ${resolvePickerModelProvider(model)} ${model.provider} ${model.input} ${model.tags.join(" ")}`
+            .toLowerCase();
         return haystack.includes(query);
       });
   }, [modelOptions, search]);
@@ -221,7 +224,7 @@ export function AgentModelPickerDialog({
                 </Badge>
                 <p className="text-[11px] leading-5 text-slate-400">
                   {currentModel
-                    ? `${formatModelProviderLabel(currentModel.provider)} · ${formatContextWindow(currentModel.contextWindow)} ctx`
+                    ? `${formatPickerModelProviderLabel(currentModel)} · ${formatContextWindow(currentModel.contextWindow)} ctx`
                     : currentModelId
                       ? "Model metadata unavailable."
                       : "No model is assigned yet."}
@@ -303,7 +306,7 @@ export function AgentModelPickerDialog({
                               {formatModelLabel(model.id)}
                             </p>
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[9px] text-slate-400">
-                      <span>{formatModelProviderLabel(model.provider)}</span>
+                      <span>{formatPickerModelProviderLabel(model)}</span>
                       {model.input ? <span>{model.input}</span> : null}
                       {model.contextWindow ? <span>{Intl.NumberFormat().format(model.contextWindow)} ctx</span> : null}
                     </div>
@@ -342,7 +345,7 @@ export function AgentModelPickerDialog({
                 <p className="text-[11px] leading-5 text-slate-400">
                   {selectedModel
                     ? selectedModelSelectable
-                      ? `${formatModelProviderLabel(selectedModel.provider)} · ${formatContextWindow(selectedModel.contextWindow)} ctx`
+                      ? `${formatPickerModelProviderLabel(selectedModel)} · ${formatContextWindow(selectedModel.contextWindow)} ctx`
                       : resolveModelSetupHint(selectedModel)
                     : "Pick a model above, then save the assignment."
                   }
@@ -405,8 +408,9 @@ function isSelectableModel(model: AgentModelRecord) {
 }
 
 function resolveModelSetupHint(model: AgentModelRecord) {
-  const descriptor = isAddModelsProviderId(model.provider)
-    ? getModelProviderDescriptor(model.provider)
+  const provider = resolvePickerModelProvider(model);
+  const descriptor = isAddModelsProviderId(provider)
+    ? getModelProviderDescriptor(provider)
     : null;
 
   if (model.missing) {
@@ -438,6 +442,24 @@ function resolveModelSetupHint(model: AgentModelRecord) {
   }
 
   return "This model is not ready for assignment.";
+}
+
+function formatPickerModelProviderLabel(model: AgentModelRecord) {
+  return formatModelProviderLabel(resolvePickerModelProvider(model));
+}
+
+function resolvePickerModelProvider(model: AgentModelRecord) {
+  const canonicalModelId = normalizeOpenAiCodexModelId(model.id);
+
+  if (
+    model.provider === "codex" ||
+    model.provider === "openai-codex" ||
+    isKnownOpenAiCodexModelId(canonicalModelId)
+  ) {
+    return "openai-codex";
+  }
+
+  return model.provider;
 }
 
 function resolveModelStatusLabel(model: AgentModelRecord) {
@@ -523,13 +545,18 @@ function dedupeSnapshotModels(models: AgentModelRecord[]) {
 
   for (const model of models) {
     const canonicalId = normalizeOpenAiCodexModelId(model.id);
+    const provider = resolvePickerModelProvider(model);
     const normalizedModel = canonicalId === model.id
-      ? model
+      ? {
+          ...model,
+          provider
+        }
       : {
           ...model,
-          id: canonicalId
+          id: canonicalId,
+          provider
         };
-    const identityKey = modelRecordIdentityKey(model.id, model.provider);
+    const identityKey = modelRecordIdentityKey(model.id, provider);
     const existing = recordsByIdentity.get(identityKey);
 
     recordsByIdentity.set(

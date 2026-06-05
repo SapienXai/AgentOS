@@ -6,6 +6,7 @@ import {
   buildAgentDraft,
   buildScopedAgentId,
   buildUniqueAgentId,
+  isSnapshotModelUsable,
   resolveSuggestedAgentModelId
 } from "@/components/mission-control/create-agent-dialog.utils";
 import {
@@ -72,6 +73,43 @@ test("agent draft model helper prefers workspace and available recommended model
 
   assert.equal(resolveSuggestedAgentModelId(snapshot, "workspace"), "openai/gpt-5.4-mini");
   assert.equal(resolveSuggestedAgentModelId(snapshot, "other-workspace"), "openai/gpt-5.5");
+  assert.equal(isSnapshotModelUsable(snapshot, "openai/gpt-5.4-mini"), true);
+  assert.equal(isSnapshotModelUsable(snapshot, "openai/missing"), false);
+});
+
+test("agent draft model helper skips unavailable workspace models", () => {
+  const snapshot = {
+    agents: [
+      {
+        id: "main",
+        workspaceId: "workspace",
+        modelId: "openai/gpt-5.4-mini"
+      }
+    ],
+    diagnostics: {
+      modelReadiness: {
+        defaultModelReady: false,
+        defaultModel: null,
+        resolvedDefaultModel: null,
+        recommendedModelId: "openai/gpt-5.5"
+      }
+    },
+    models: [
+      {
+        id: "openai/gpt-5.4-mini",
+        available: false,
+        missing: false
+      },
+      {
+        id: "openai/gpt-5.5",
+        available: true,
+        missing: false
+      }
+    ]
+  } as unknown as MissionControlSnapshot;
+
+  assert.equal(resolveSuggestedAgentModelId(snapshot, "workspace"), "openai/gpt-5.5");
+  assert.equal(isSnapshotModelUsable(snapshot, "openai/gpt-5.4-mini"), false);
 });
 
 test("control plane helpers normalize snapshot and onboarding fallback", () => {

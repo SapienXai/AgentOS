@@ -47,6 +47,8 @@ export type AgentNodeData = Record<string, unknown> & {
   modelLabel: string;
   emphasis: boolean;
   focused?: boolean;
+  pendingCreation?: boolean;
+  creationWarning?: string | null;
   composerFocused?: boolean;
   taskFocused?: boolean;
   creationPulse?: boolean;

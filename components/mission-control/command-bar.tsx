@@ -13,6 +13,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
+import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
@@ -84,6 +85,7 @@ export function CommandBar({
   onMissionDispatchStart,
   onMissionDispatchFailure,
   onMissionResponse,
+  onAgentCreationPending,
   onAgentCreatedVisible
 }: {
   snapshot: MissionControlSnapshot;
@@ -101,6 +103,7 @@ export function CommandBar({
   onMissionDispatchStart: (event: MissionDispatchStart) => void;
   onMissionDispatchFailure: (requestId: string, message: string) => void;
   onMissionResponse: (result: MissionResponse, context: { requestId: string }) => void;
+  onAgentCreationPending?: (agent: PendingAgentProjection) => void;
   onAgentCreatedVisible?: (agentId: string) => void;
 }) {
   const [mission, setMission] = useState("");
@@ -699,6 +702,7 @@ export function CommandBar({
                         snapshot={snapshot}
                         defaultWorkspaceId={targetWorkspace.id}
                         onRefresh={onRefresh}
+                        onAgentCreationPending={onAgentCreationPending}
                         onAgentCreated={(agentId) => {
                           preferredCreatedAgentIdRef.current = agentId;
                           setTargetAgentId(agentId);
