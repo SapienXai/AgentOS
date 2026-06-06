@@ -189,6 +189,7 @@ export function buildGatewayDiagnostics(input: {
   compatibilitySmokeTest?: MissionControlSnapshot["diagnostics"]["compatibilitySmokeTest"];
   commandHistory?: OpenClawCommandDiagnostic[];
   transport?: MissionControlSnapshot["diagnostics"]["transport"];
+  eventBridge?: MissionControlSnapshot["diagnostics"]["eventBridge"];
   issues: string[];
   versionDiagnostics: ReturnType<typeof buildVersionDiagnostics>;
 }): MissionControlSnapshot["diagnostics"] {
@@ -250,6 +251,7 @@ export function buildGatewayDiagnostics(input: {
       (entry) => `${entry.operationLabel} (${entry.operation}): ${entry.kind}: ${entry.issue} Recovery: ${entry.recovery}`
     ),
     runtime: input.runtimeDiagnostics,
+    eventBridge: input.eventBridge,
     commandHistory: input.commandHistory,
     transport: input.transport,
     securityWarnings,

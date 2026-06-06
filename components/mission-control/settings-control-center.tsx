@@ -194,8 +194,8 @@ export function SettingsControlCenter(
     [latestCommands]
   );
   const transportSummary = useMemo(
-    () => resolveTransportDiagnosticsSummary(snapshot.diagnostics.transport, connectionState),
-    [connectionState, snapshot.diagnostics.transport]
+    () => resolveTransportDiagnosticsSummary(snapshot.diagnostics.transport, connectionState, snapshot.diagnostics.eventBridge),
+    [connectionState, snapshot.diagnostics.eventBridge, snapshot.diagnostics.transport]
   );
   const capabilityMatrix = snapshot.diagnostics.capabilityMatrix;
   const compatibilityReport = snapshot.diagnostics.compatibilityReport;
@@ -1807,14 +1807,42 @@ function TransportDiagnosticsPanel({
         />
       </div>
 
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Metric
+          label="Gateway event stream"
+          value={summary.eventBridgeLabel}
+          badge={summary.eventBridgeTone === "success" ? "Live" : summary.eventBridgeTone === "warning" ? "Degraded" : "Unknown"}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="Last Gateway event"
+          value={summary.eventBridgeLastEventLabel}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+      </div>
+
       {summary.lastNativeError ? (
         <div className="mt-3">
           <DiagnosticBlock title="Last native error" value={summary.lastNativeError} surfaceTheme={surfaceTheme} />
         </div>
       ) : null}
+      {summary.eventBridgeLastError ? (
+        <div className="mt-3">
+          <DiagnosticBlock title="Last event stream error" value={summary.eventBridgeLastError} surfaceTheme={surfaceTheme} />
+        </div>
+      ) : null}
       {summary.recovery ? (
         <p className={cn("mt-3 text-xs leading-5", surfaceTheme === "light" ? "text-[#52735e]" : "text-slate-400")}>
           Recovery: {summary.recovery}
+        </p>
+      ) : null}
+      {summary.eventBridgeRecovery ? (
+        <p className={cn("mt-2 text-xs leading-5", surfaceTheme === "light" ? "text-[#52735e]" : "text-slate-400")}>
+          Event stream recovery: {summary.eventBridgeRecovery}
         </p>
       ) : null}
     </div>

@@ -11,6 +11,11 @@ export type TransportDiagnosticsSummary = {
   protocolLabel: string;
   protocolRangeLabel: string;
   streamLabel: string;
+  eventBridgeLabel: string;
+  eventBridgeLastEventLabel: string;
+  eventBridgeLastError: string | null;
+  eventBridgeRecovery: string | null;
+  eventBridgeTone: TransportStatusTone;
   fallbackTotal: number;
   fallbackOperationCount: number;
   fallbackSummaryLabel: string;
@@ -23,10 +28,13 @@ export type TransportDiagnosticsSummary = {
 };
 
 type TransportDiagnostics = NonNullable<MissionControlSnapshot["diagnostics"]["transport"]>;
+type EventBridgeDiagnostics = MissionControlSnapshot["diagnostics"]["eventBridge"];
+type EventBridgeMode = NonNullable<EventBridgeDiagnostics>["mode"];
 
 export function resolveTransportDiagnosticsSummary(
   transport: TransportDiagnostics | undefined,
-  streamState: SnapshotStreamState
+  streamState: SnapshotStreamState,
+  eventBridge?: EventBridgeDiagnostics
 ): TransportDiagnosticsSummary {
   const fallbackTotal = sumFallbackCounts(transport?.fallbackCounts);
   const activeFallbackTotal = hasFallbackAfterLastConnected(
@@ -37,6 +45,7 @@ export function resolveTransportDiagnosticsSummary(
     : 0;
   const connectionLabel = formatTransportConnectionState(transport?.connectionState);
   const streamLabel = formatSnapshotStreamState(streamState);
+  const eventBridgeSummary = resolveEventBridgeDiagnosticsSummary(eventBridge);
 
   return {
     modeLabel: formatTransportMode(transport?.mode),
@@ -46,6 +55,11 @@ export function resolveTransportDiagnosticsSummary(
     protocolLabel: formatProtocolVersion(transport?.protocolVersion),
     protocolRangeLabel: formatProtocolRange(transport?.protocolRange),
     streamLabel,
+    eventBridgeLabel: eventBridgeSummary.label,
+    eventBridgeLastEventLabel: eventBridgeSummary.lastEventLabel,
+    eventBridgeLastError: eventBridgeSummary.lastError,
+    eventBridgeRecovery: eventBridgeSummary.recovery,
+    eventBridgeTone: eventBridgeSummary.tone,
     fallbackTotal,
     fallbackOperationCount: countFallbackOperations(transport?.fallbackCounts),
     fallbackSummaryLabel: formatFallbackSummary(transport?.fallbackTotal ?? fallbackTotal, transport?.fallbackCounts),
@@ -61,6 +75,17 @@ export function resolveTransportDiagnosticsSummary(
       streamState,
       fallbackTotal: activeFallbackTotal
     })
+  };
+}
+
+export function resolveEventBridgeDiagnosticsSummary(eventBridge: EventBridgeDiagnostics | undefined) {
+  const mode = eventBridge?.mode;
+  return {
+    label: formatEventBridgeMode(mode),
+    lastEventLabel: formatTransportTimestamp(eventBridge?.lastEventAt),
+    lastError: eventBridge?.lastError?.trim() || null,
+    recovery: eventBridge?.recovery?.trim() || null,
+    tone: resolveEventBridgeTone(mode)
   };
 }
 
@@ -234,6 +259,19 @@ function formatSnapshotStreamState(state: SnapshotStreamState) {
   }
 }
 
+function formatEventBridgeMode(mode: EventBridgeMode | undefined) {
+  switch (mode) {
+    case "live":
+      return "Gateway events: Live";
+    case "reconnecting":
+      return "Gateway events: Reconnecting";
+    case "polling":
+      return "Gateway events: Polling";
+    default:
+      return "Gateway events: Unknown";
+  }
+}
+
 function formatTransportTimestamp(value: string | null | undefined) {
   if (!value) {
     return "Not yet";
@@ -245,6 +283,18 @@ function formatTransportTimestamp(value: string | null | undefined) {
   }
 
   return date.toLocaleString();
+}
+
+function resolveEventBridgeTone(mode: EventBridgeMode | undefined): TransportStatusTone {
+  if (mode === "live") {
+    return "success";
+  }
+
+  if (mode === "reconnecting" || mode === "polling") {
+    return "warning";
+  }
+
+  return "neutral";
 }
 
 function resolveTransportStatusTone(input: {

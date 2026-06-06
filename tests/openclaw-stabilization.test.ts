@@ -81,6 +81,8 @@ import {
   applyTaskReviewStateToSnapshot,
   createTaskReviewResolution,
   resolveEffectiveTaskReviewStatus,
+  resolveTaskReviewFooterLabel,
+  resolveTaskReviewSummary,
   taskReviewContinuationGraceMs
 } from "@/components/mission-control/task-review-state";
 import { buildAgentChatPrompt } from "@/lib/openclaw/agent-chat-prompt";
@@ -3129,7 +3131,7 @@ test("continued task review state expires when no live activity follows", () => 
   const resolution = createTaskReviewResolution(
     task,
     "continued",
-    "Sent continuation",
+    "Accepted continuation",
     "2026-05-21T10:05:00.000Z"
   );
   const continuedTask = {
@@ -3148,6 +3150,8 @@ test("continued task review state expires when no live activity follows", () => 
     }),
     "continued"
   );
+  assert.equal(resolveTaskReviewFooterLabel("continued"), "continuation accepted");
+  assert.equal(resolveTaskReviewSummary("continued"), "OpenClaw accepted a continuation in the existing task session.");
   assert.equal(
     resolveEffectiveTaskReviewStatus(continuedTask, {
       nowMs: Date.parse("2026-05-21T10:05:00.000Z") + taskReviewContinuationGraceMs + 1

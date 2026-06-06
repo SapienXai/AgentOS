@@ -97,10 +97,45 @@ test("transport diagnostics summary handles missing transport data", () => {
   assert.equal(summary.connectionLabel, "Unknown");
   assert.equal(summary.protocolLabel, "Unknown");
   assert.equal(summary.streamLabel, "Connecting");
+  assert.equal(summary.eventBridgeLabel, "Gateway events: Unknown");
+  assert.equal(summary.eventBridgeLastEventLabel, "Not yet");
+  assert.equal(summary.eventBridgeLastError, null);
+  assert.equal(summary.eventBridgeRecovery, null);
+  assert.equal(summary.eventBridgeTone, "neutral");
   assert.equal(summary.fallbackTotal, 0);
   assert.equal(summary.lastConnectedLabel, "Not yet");
   assert.equal(summary.lastDisconnectedLabel, "Not yet");
   assert.equal(summary.statusTone, "neutral");
+});
+
+test("transport diagnostics summary surfaces degraded Gateway event stream state", () => {
+  const summary = resolveTransportDiagnosticsSummary(
+    createTransportDiagnostics({
+      mode: "native-ws",
+      gatewayMode: "native-ws",
+      statusLabel: "Native Gateway: OK",
+      connectionState: "connected",
+      protocolVersion: 4,
+      lastConnectedAt: "2026-05-16T10:00:00.000Z"
+    }),
+    "live",
+    {
+      mode: "polling",
+      connected: false,
+      reconnecting: false,
+      reconnectAttempt: 0,
+      message: "Gateway event bridge is polling.",
+      recovery: "Update OpenClaw to enable Gateway event streaming.",
+      lastEventAt: "2026-05-16T10:02:00.000Z",
+      lastError: "missionStream is unavailable"
+    }
+  );
+
+  assert.equal(summary.eventBridgeLabel, "Gateway events: Polling");
+  assert.notEqual(summary.eventBridgeLastEventLabel, "Not yet");
+  assert.equal(summary.eventBridgeLastError, "missionStream is unavailable");
+  assert.equal(summary.eventBridgeRecovery, "Update OpenClaw to enable Gateway event streaming.");
+  assert.equal(summary.eventBridgeTone, "warning");
 });
 
 test("transport diagnostics summary totals only positive finite fallback counts", () => {

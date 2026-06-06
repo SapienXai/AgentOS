@@ -86,6 +86,16 @@ test("gateway diagnostics carry fallback counts and recent fallback records", ()
       lastConnectedAt: "2026-05-16T09:59:00.000Z",
       lastDisconnectedAt: null
     },
+    eventBridge: {
+      mode: "polling",
+      connected: false,
+      reconnecting: false,
+      reconnectAttempt: 0,
+      lastEventAt: null,
+      lastError: "OpenClaw Gateway event stream failed.",
+      message: "OpenClaw event streaming is unavailable. AgentOS is refreshing task snapshots by polling.",
+      recovery: "Inspect Gateway event capabilities and compatibility diagnostics if live updates stay unavailable."
+    },
     issues: [],
     versionDiagnostics: {
       currentVersion: "9.9.9",
@@ -100,6 +110,8 @@ test("gateway diagnostics carry fallback counts and recent fallback records", ()
   assert.equal(diagnostics.gatewayFallbackDiagnostics?.[0]?.operation, "models.list");
   assert.equal(diagnostics.gatewayFallbackDiagnostics?.[0]?.operationLabel, "Models List");
   assert.match(diagnostics.gatewayFallbackReasons?.[0] ?? "", /Recovery: Update OpenClaw/);
+  assert.equal(diagnostics.eventBridge?.mode, "polling");
+  assert.match(diagnostics.eventBridge?.recovery ?? "", /Gateway event capabilities/);
 });
 
 test("gateway diagnostics surface pending device access instead of native timeout noise", () => {

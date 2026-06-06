@@ -95,6 +95,7 @@ import {
   createMissionControlWorkspaceBindings,
   hydrateMissionControlWorkspaceGraph
 } from "@/lib/openclaw/application/mission-control/workspace-hydration";
+import { buildWorkspaceContextDiagnosticIssues } from "@/lib/openclaw/application/mission-control/workspace-context-diagnostics";
 import {
   createSnapshotPair,
   MISSION_CONTROL_GATEWAY_STATUS_STALE_GRACE_MS,
@@ -433,6 +434,8 @@ async function loadMissionControlSnapshots({
       isWorkspaceHidden: (workspace) => Boolean(manifestByWorkspace.get(workspace.path)?.hidden)
     });
 
+    const tasks = buildTaskRecords(runtimes, agents);
+    const visibleTasks = buildTaskRecords(visibleRuntimes, visibleAgents);
     const runtimeDiagnostics = await runtimeDiagnosticsPromise;
     const diagnostics = await buildLiveMissionControlDiagnostics({
       profile,
@@ -444,6 +447,12 @@ async function loadMissionControlSnapshots({
       updateStatus: resolvedUpdateStatus.value,
       hasOpenClawSignal,
       runtimeDiagnostics,
+      workspaceContextIssues: buildWorkspaceContextDiagnosticIssues({
+        workspaces,
+        agents,
+        runtimes,
+        tasks
+      }),
       models,
       agents,
       modelStatus,
@@ -472,8 +481,6 @@ async function loadMissionControlSnapshots({
       }
     });
 
-    const tasks = buildTaskRecords(runtimes, agents);
-    const visibleTasks = buildTaskRecords(visibleRuntimes, visibleAgents);
     const generatedAt = new Date().toISOString();
     const sharedSnapshotFields = {
       generatedAt,

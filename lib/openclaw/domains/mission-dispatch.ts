@@ -27,6 +27,7 @@ type MissionDispatchRecord = {
   updatedAt: string;
   status: string;
   sessionId?: string | null;
+  workspaceId?: string | null;
   workspacePath?: string | null;
   outputDir?: string | null;
   outputDirRelative?: string | null;
@@ -154,10 +155,20 @@ export async function buildTaskIntegrityRecord(input: {
     ...matchingTranscriptTurns.flatMap((turn) => turn.items.map((item) => item.text))
   ]);
   const issues: TaskIntegrityRecord["issues"] = [];
+  const workspaceContextIssue = resolveWorkspaceContextIssue({
+    task,
+    runs: input.runs,
+    dispatchRecord,
+    snapshot
+  });
   const placeholderResponse = isPlaceholderMissionResponseText(finalResponseText);
   const expectsFileArtifact = missionRequestsFileArtifact(missionText);
   const expectsEmailAddress = missionRequestsEmailAddress(missionText);
   const expectsExternalLookup = missionNeedsExternalLookup(missionText);
+
+  if (workspaceContextIssue) {
+    issues.push(workspaceContextIssue);
+  }
 
   if (dispatchRecord?.outputDir && !outputDirInspection.exists) {
     issues.push({
@@ -337,6 +348,59 @@ async function readMissionDispatchTranscriptTurns(
 
 function resolveMissionDispatchIntegritySessionId(record: MissionDispatchRecord, runs: RuntimeRecord[]) {
   return resolveMissionDispatchTranscriptSessionIds(record, runs)[0] ?? null;
+}
+
+function resolveWorkspaceContextIssue(input: {
+  task: TaskRecord;
+  runs: RuntimeRecord[];
+  dispatchRecord: MissionDispatchRecord | null;
+  snapshot: MissionControlSnapshot;
+}): TaskIntegrityRecord["issues"][number] | null {
+  const workspaceIds = uniqueStrings([
+    input.task.workspaceId,
+    input.dispatchRecord?.workspaceId ?? undefined,
+    ...input.runs.map((runtime) => runtime.workspaceId),
+    input.task.primaryAgentId
+      ? input.snapshot.agents.find((agent) => agent.id === input.task.primaryAgentId)?.workspaceId
+      : undefined,
+    ...input.runs.map((runtime) =>
+      runtime.agentId ? input.snapshot.agents.find((agent) => agent.id === runtime.agentId)?.workspaceId : undefined
+    )
+  ].filter((value): value is string => Boolean(value?.trim())));
+
+  if (workspaceIds.length > 1) {
+    return {
+      id: "workspace-context-mismatch",
+      severity: "warning",
+      title: "Workspace context is inconsistent",
+      detail:
+        "This task references more than one workspace across task, runtime, dispatch, or agent metadata. Verify the linked workspace before continuing or reviewing the result."
+    };
+  }
+
+  const workspaceId = workspaceIds[0];
+
+  if (!workspaceId || input.snapshot.workspaces.length === 0) {
+    return null;
+  }
+
+  const workspaceExists = input.snapshot.workspaces.some((workspace) => workspace.id === workspaceId);
+
+  if (workspaceExists) {
+    return null;
+  }
+
+  return {
+    id: "missing-workspace-context",
+    severity: "warning",
+    title: "Workspace context is unavailable",
+    detail:
+      "This task references a workspace that is not present in the current OpenClaw snapshot. Refresh OpenClaw state before continuing or reviewing the result."
+  };
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
 }
 
 function resolveMissionDispatchTranscriptSessionIds(record: MissionDispatchRecord, runs: RuntimeRecord[]) {

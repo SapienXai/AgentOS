@@ -35,6 +35,7 @@ import { getRecentOpenClawGatewayFallbackDiagnostics } from "@/lib/openclaw/clie
 import { getOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import { filterActiveOpenClawGatewayFallbackDiagnostics } from "@/lib/openclaw/client/gateway-diagnostic-activity";
 import { isDeferredPayloadResult } from "@/lib/openclaw/client/payload-cache";
+import { getOpenClawEventBridgeStreamStatus } from "@/lib/openclaw/application/event-bridge-service";
 import { RuntimeDiagnosticsStateCache } from "@/lib/openclaw/state/runtime-diagnostics-cache";
 import {
   buildModelRecords,
@@ -89,6 +90,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
   updateStatus?: UpdateStatusPayload;
   hasOpenClawSignal: boolean;
   runtimeDiagnostics: MissionControlSnapshot["diagnostics"]["runtime"];
+  workspaceContextIssues?: string[];
   models: ModelsPayload["models"];
   agents: OpenClawAgent[];
   modelStatus?: ModelsStatusPayload;
@@ -171,12 +173,17 @@ export async function buildLiveMissionControlDiagnostics(input: {
     compatibilitySmokeTest: getLatestOpenClawCompatibilitySmokeTest(input.settings),
     commandHistory: getRecentOpenClawCommandDiagnostics(),
     transport,
+    eventBridge: getOpenClawEventBridgeStreamStatus(),
     versionDiagnostics,
     issues: buildDiagnosticIssues({
       payloadResults: input.payloadResults,
       gatewayStatusRejectedWithCachedValue: input.gatewayStatusRejectedWithCachedValue,
       payloadReuse: input.payloadReuse,
-      runtimeIssues: [...input.runtimeDiagnostics.issues, ...gatewayFallbackIssues]
+      runtimeIssues: [
+        ...input.runtimeDiagnostics.issues,
+        ...(input.workspaceContextIssues ?? []),
+        ...gatewayFallbackIssues
+      ]
     })
   });
 }

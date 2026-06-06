@@ -181,13 +181,13 @@ export function useTaskReviewWorkflow({
           throw new Error(payload?.error || "Unable to continue this task.");
         }
 
-        recordTaskReviewResolution(task, "continued", "Sent continuation");
+        recordTaskReviewResolution(task, "continued", "Accepted continuation");
         selectNode(task.id, "output");
         setIsInspectorOpen(true);
         closeTaskReview();
         void refreshSnapshot({ force: true });
-        toast.success("Task continuation sent.", {
-          description: "AgentOS will keep the follow-up attached to the existing task card."
+        toast.success("Task continuation accepted.", {
+          description: "OpenClaw accepted the continuation. AgentOS will track the follow-up until live output arrives."
         });
       } catch (error) {
         toast.error("Task continuation failed.", {

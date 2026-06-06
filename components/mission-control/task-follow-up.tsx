@@ -56,7 +56,7 @@ export function formatFollowUpDetail(followUp: SubmittedTaskFollowUp) {
     "Operator follow-up:",
     displayMessage,
     "",
-    `Sent ${formatFollowUpTimestamp(followUp.createdAt)}.`,
+    `Accepted for continuation ${formatFollowUpTimestamp(followUp.createdAt)}.`,
     followUp.runId
       ? `OpenClaw run ${followUp.runId} is being tracked for this follow-up.`
       : "Waiting for the agent result to appear in the task feed and latest result."
@@ -262,7 +262,7 @@ export function TaskFollowUpComposer({
         summary: continuation.summary
       };
       toast.success("Follow-up accepted.", {
-        description: "OpenClaw accepted the continuation; the task feed will show the captured result."
+        description: "OpenClaw accepted the continuation. AgentOS will track the follow-up until live output arrives."
       });
       await onSubmitted?.(followUp);
     } catch (error) {

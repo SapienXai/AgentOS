@@ -183,7 +183,7 @@ export function resolveTaskReviewFooterLabel(status: TaskReviewStatus) {
     case "accepted":
       return "review accepted";
     case "continued":
-      return "continuation sent";
+      return "continuation accepted";
     case "retried":
       return "retry drafted";
     case "dismissed":
@@ -196,7 +196,7 @@ export function resolveTaskReviewSummary(status: TaskReviewStatus) {
     case "accepted":
       return "An operator accepted the captured result. The original warning remains available for audit.";
     case "continued":
-      return "An operator sent a continuation in the existing task session.";
+      return "OpenClaw accepted a continuation in the existing task session.";
     case "retried":
       return "An operator drafted a retry from the original mission.";
     case "dismissed":
@@ -228,7 +228,7 @@ function resolveTaskReviewEventTitle(status: TaskReviewStatus) {
     case "accepted":
       return "Review accepted";
     case "continued":
-      return "Continuation sent";
+      return "Continuation accepted";
     case "retried":
       return "Retry drafted";
     case "dismissed":

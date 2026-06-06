@@ -300,6 +300,7 @@ export interface GatewayDiagnostics {
   gatewayFallbackReasons?: string[];
   compatibilitySmokeTest?: OpenClawCompatibilitySmokeReport | null;
   runtime: OpenClawRuntimeDiagnostics;
+  eventBridge?: OpenClawEventBridgeStreamStatus;
   commandHistory?: OpenClawCommandDiagnostic[];
   transport?: import("@/lib/openclaw/client/types").OpenClawGatewayClientDiagnostics;
   securityWarnings: string[];
