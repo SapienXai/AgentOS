@@ -920,7 +920,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     });
   }
 
-  approveDeviceAccess(
+  async approveDeviceAccess(
     input: OpenClawDeviceApproveInput = {},
     options: OpenClawCommandOptions = {}
   ): Promise<OpenClawDeviceApprovePayload> {
@@ -946,12 +946,32 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       });
     }
 
+    const params = input.scopes
+      ? {
+          requestId: input.requestId ?? undefined,
+          scopes: input.scopes
+        }
+      : {
+          requestId: input.requestId ?? undefined
+        };
+
+    try {
+      return await this.gatewayFirstCompatible(
+        "deviceApproval",
+        params,
+        options,
+        (payload) => parseObjectGatewayPayload<OpenClawDeviceApprovePayload>("device.pair.approve", payload),
+        () => this.fallback.approveDeviceAccess(input, options)
+      );
+    } catch (error) {
+      if (!input.scopes || !input.requestId || !isLegacyDeviceApprovalScopesParamError(error)) {
+        throw error;
+      }
+    }
+
     return this.gatewayFirstCompatible(
       "deviceApproval",
-      {
-        requestId: input.requestId ?? undefined,
-        scopes: input.scopes
-      },
+      { requestId: input.requestId },
       options,
       (payload) => parseObjectGatewayPayload<OpenClawDeviceApprovePayload>("device.pair.approve", payload),
       () => this.fallback.approveDeviceAccess(input, options)
@@ -2097,6 +2117,13 @@ function resolveGatewayMode(input: {
   }
 
   return "native-ws";
+}
+
+function isLegacyDeviceApprovalScopesParamError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+
+  return /invalid\s+device\.pair\.approve\s+params/i.test(message) &&
+    /unexpected property ['"]?scopes['"]?|unknown property ['"]?scopes['"]?|unrecognized .*scopes/i.test(message);
 }
 
 function resolveGatewayStatusLabel(mode: OpenClawGatewayClientDiagnostics["gatewayMode"]) {

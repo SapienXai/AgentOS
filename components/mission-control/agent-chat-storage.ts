@@ -112,6 +112,46 @@ export function writeAgentChatMessages(agentId: string, messages: AgentChatMessa
   }
 }
 
+export function mergeAgentChatMessagesForRehydration(
+  currentMessages: readonly AgentChatMessage[],
+  rehydratedMessages: readonly AgentChatMessage[]
+) {
+  const byId = new Map<string, AgentChatMessage>();
+  const byContent = new Map<string, AgentChatMessage>();
+
+  for (const message of [...currentMessages, ...rehydratedMessages]) {
+    if (!isAgentChatMessage(message)) {
+      continue;
+    }
+
+    const existingById = byId.get(message.id);
+    const nextById = existingById ? chooseRehydratedAgentChatMessage(existingById, message) : message;
+    byId.set(message.id, nextById);
+
+    const contentKey = createAgentChatContentKey(nextById);
+    if (!contentKey) {
+      continue;
+    }
+
+    const existingByContent = byContent.get(contentKey);
+    byContent.set(
+      contentKey,
+      existingByContent ? chooseRehydratedAgentChatMessage(existingByContent, nextById) : nextById
+    );
+  }
+
+  const withContentDedupe = new Map<string, AgentChatMessage>();
+  for (const message of byId.values()) {
+    const contentKey = createAgentChatContentKey(message);
+    const canonical = contentKey ? byContent.get(contentKey) : null;
+    withContentDedupe.set((canonical ?? message).id, canonical ?? message);
+  }
+
+  return [...withContentDedupe.values()]
+    .sort((left, right) => left.createdAt - right.createdAt)
+    .slice(-maxAgentChatMessages);
+}
+
 export function readAgentChatLastSeenAt(agentId: string): number | null {
   try {
     const raw = globalThis.localStorage?.getItem(getLastSeenStorageKey(agentId));
@@ -124,6 +164,41 @@ export function readAgentChatLastSeenAt(agentId: string): number | null {
   } catch {
     return null;
   }
+}
+
+function createAgentChatContentKey(message: AgentChatMessage) {
+  const text = message.text.replace(/\s+/g, " ").trim().toLowerCase();
+  return text ? `${message.role}:${text}` : null;
+}
+
+function chooseRehydratedAgentChatMessage(left: AgentChatMessage, right: AgentChatMessage) {
+  const createdAt = Math.min(left.createdAt, right.createdAt);
+  const statusDelta = scoreAgentChatStatus(right.status) - scoreAgentChatStatus(left.status);
+  if (statusDelta > 0) {
+    return { ...right, createdAt };
+  }
+
+  if (statusDelta < 0) {
+    return { ...left, createdAt };
+  }
+
+  return right.createdAt > left.createdAt ? { ...right, createdAt } : { ...left, createdAt };
+}
+
+function scoreAgentChatStatus(status: AgentChatStatus | undefined) {
+  if (status === "sent") {
+    return 3;
+  }
+
+  if (status === "sending") {
+    return 2;
+  }
+
+  if (status === "error") {
+    return 1;
+  }
+
+  return 0;
 }
 
 export function writeAgentChatLastSeenAt(agentId: string, lastSeenAt: number | null) {

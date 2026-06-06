@@ -1892,6 +1892,78 @@ test("native WS gateway client approves device access through Gateway before CLI
   assert.deepEqual(fallback.calls, []);
 });
 
+test("native WS gateway client retries device approval without scopes for older Gateway contracts", async () => {
+  const fallback = new FallbackGatewayClient();
+  let approveCalls = 0;
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      if (frame.method === "connect") {
+        socket.emitMessage({
+          type: "res",
+          id: frame.id,
+          ok: true,
+          payload: { protocol: 4 }
+        });
+        return;
+      }
+
+      if (frame.method === "device.pair.list") {
+        socket.emitMessage({
+          type: "res",
+          id: frame.id,
+          ok: true,
+          payload: { pending: [{ requestId: "latest-request", ts: 2 }] }
+        });
+        return;
+      }
+
+      approveCalls += 1;
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: approveCalls > 1,
+        payload: approveCalls > 1
+          ? {
+              requestId: "latest-request",
+              device: { deviceId: "device-1", approvedScopes: ["operator.read", "operator.write"] }
+            }
+          : undefined,
+        error: approveCalls > 1
+          ? undefined
+          : {
+              message: "INVALID_REQUEST: invalid device.pair.approve params: at root: unexpected property 'scopes'"
+            }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  assert.deepEqual(await client.approveDeviceAccess({
+    latest: true,
+    scopes: ["operator.read", "operator.write"]
+  }), {
+    requestId: "latest-request",
+    device: { deviceId: "device-1", approvedScopes: ["operator.read", "operator.write"] }
+  });
+  assert.deepEqual(sentFrames.map((frame) => frame.method), [
+    "connect",
+    "device.pair.list",
+    "device.pair.approve",
+    "device.pair.approve"
+  ]);
+  assert.deepEqual(sentFrames[2]?.params, {
+    requestId: "latest-request",
+    scopes: ["operator.read", "operator.write"]
+  });
+  assert.deepEqual(sentFrames[3]?.params, { requestId: "latest-request" });
+  assert.deepEqual(fallback.calls, []);
+});
+
 test("native WS gateway client mutates config through Gateway snapshots", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();

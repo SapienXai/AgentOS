@@ -498,13 +498,11 @@ export async function repairGatewayNativeDeviceAccess(
 ): Promise<GatewayNativeDeviceAccessRepairResult> {
   const readDeviceAuthToken = options.readDeviceAuthToken ?? readLocalOpenClawDeviceAuthToken;
   const requiredScopes = normalizeGatewayRepairScopes(options.requiredScopes);
+  const nativeProbe = options.nativeProbe ?? probeGatewayNativeStatusForDeviceAccessRepair;
   let probeSucceeded = false;
 
   try {
-    await (options.nativeProbe ?? (() =>
-      new NativeWsOpenClawGatewayClient().callNative("status", {}, {
-        timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
-      })))();
+    await nativeProbe();
     probeSucceeded = true;
   } catch {
     // A failed native probe is still useful here because OpenClaw records the
@@ -532,14 +530,22 @@ export async function repairGatewayNativeDeviceAccess(
     deviceToken = await syncLocalOpenClawDeviceAuthTokenFromPairing() ?? await readDeviceAuthToken();
 
     if (!deviceToken?.token || !hasGatewayDeviceAccessRequiredScopes(deviceToken.scopes, requiredScopes)) {
-      throw error;
-    }
+      if (!probeSucceeded) {
+        throw error;
+      }
 
-    result = {
-      ...result,
-      approved: true,
-      scopes: deviceToken.scopes
-    };
+      result = {
+        ...result,
+        approved: true,
+        scopes: requiredScopes
+      };
+    } else {
+      result = {
+        ...result,
+        approved: true,
+        scopes: deviceToken.scopes
+      };
+    }
   }
 
   if (!result.approved && probeSucceeded && hasGatewayDeviceAccessRequiredScopes(deviceToken?.scopes ?? [], requiredScopes)) {
@@ -558,9 +564,28 @@ export async function repairGatewayNativeDeviceAccess(
   }
 
   if (result.approved && !hasGatewayDeviceAccessRequiredScopes(deviceToken?.scopes ?? result.scopes, requiredScopes)) {
-    throw new Error(
-      "OpenClaw device access was approved, but the local CLI device token was not updated with the required operator scopes."
-    );
+    let nativeAccessVerified = probeSucceeded;
+
+    if (!nativeAccessVerified) {
+      try {
+        await nativeProbe();
+        nativeAccessVerified = true;
+      } catch {
+        nativeAccessVerified = false;
+      }
+    }
+
+    if (!nativeAccessVerified) {
+      throw new Error(
+        "OpenClaw device access was approved, but the local CLI device token was not updated with the required operator scopes."
+      );
+    }
+
+    result = {
+      ...result,
+      scopes: requiredScopes
+    };
+    approvalIssue ??= "OpenClaw approved native Gateway access, but the local CLI device token has not reported every requested operator scope yet.";
   }
 
   resetOpenClawGatewayClient("gateway device access repaired");
@@ -579,6 +604,18 @@ async function approveLatestOpenClawDeviceAccess(requiredScopes: string[]) {
     { latest: true, scopes: requiredScopes },
     { timeoutMs: GATEWAY_DEVICE_ACCESS_REPAIR_TIMEOUT_MS }
   );
+}
+
+async function probeGatewayNativeStatusForDeviceAccessRepair() {
+  const client = new NativeWsOpenClawGatewayClient();
+
+  try {
+    return await client.callNative("status", {}, {
+      timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
+    });
+  } finally {
+    client.close("gateway device access repair probe completed");
+  }
 }
 
 function updateEnvFileCredential(

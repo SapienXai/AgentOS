@@ -12,8 +12,10 @@ import {
   agentChatMessageStoragePrefix,
   agentChatStateEventName,
   markAgentChatAsSeen,
+  mergeAgentChatMessagesForRehydration,
   normalizeAgentChatMessagesForDisplay,
   readAgentChatMessages,
+  writeAgentChatMessages,
   type AgentChatMessage
 } from "@/components/mission-control/agent-chat-storage";
 import {
@@ -188,6 +190,7 @@ export function AgentChatDrawer({
   const listRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const isVisibleRef = useRef(isVisible);
+  const rehydratedAgentRef = useRef<string | null>(null);
   const agentLabel = formatAgentDisplayName(agent);
 
   useEffect(() => {
@@ -238,6 +241,51 @@ export function AgentChatDrawer({
       setRevealingAssistantId(runSnapshot.assistantMessageId);
     }
   }, [runSnapshot.assistantMessageId]);
+
+  useEffect(() => {
+    if (!isVisible || runSnapshot.isRunning || rehydratedAgentRef.current === agent.id) {
+      return;
+    }
+
+    rehydratedAgentRef.current = agent.id;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const response = await fetch(`/api/agents/${encodeURIComponent(agent.id)}/chat`, {
+          method: "GET",
+          cache: "no-store"
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json().catch(() => null)) as {
+          messages?: AgentChatMessage[];
+        } | null;
+
+        if (cancelled || !Array.isArray(payload?.messages) || payload.messages.length === 0) {
+          return;
+        }
+
+        const currentMessages = readAgentChatMessages(agent.id);
+        const mergedMessages = mergeAgentChatMessagesForRehydration(currentMessages, payload.messages);
+
+        if (agentChatMessagesEqual(currentMessages, mergedMessages)) {
+          return;
+        }
+
+        writeAgentChatMessages(agent.id, mergedMessages);
+      } catch {
+        // Rehydration is best-effort; local chat cache remains usable when OpenClaw history is unavailable.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [agent.id, isVisible, runSnapshot.isRunning]);
 
   useEffect(() => {
     const assistantId = runSnapshot.assistantMessageId ?? revealingAssistantId;
@@ -638,6 +686,27 @@ export function AgentChatDrawer({
 
 function readVisibleAgentChatMessages(agentId: string, runSnapshot: AgentChatRunSnapshot): ChatMessage[] {
   return normalizeAgentChatMessagesForDisplay(readAgentChatMessages(agentId), runSnapshot);
+}
+
+function agentChatMessagesEqual(left: readonly AgentChatMessage[], right: readonly AgentChatMessage[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((message, index) => {
+    const other = right[index];
+
+    return Boolean(
+      other &&
+        message.id === other.id &&
+        message.role === other.role &&
+        message.text === other.text &&
+        message.createdAt === other.createdAt &&
+        message.status === other.status &&
+        message.errorMessage === other.errorMessage &&
+        message.runId === other.runId
+    );
+  });
 }
 
 function resolveAssistantThinkingHint(statusMessage: string | null) {

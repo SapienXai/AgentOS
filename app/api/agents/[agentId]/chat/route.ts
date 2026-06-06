@@ -16,16 +16,24 @@ import {
   completedEmptyAgentChatResponseMessage,
   emptyAgentChatResponseMessage,
   extractAssistantTextFromAgentChatStreamLine,
+  extractAgentChatMessagesFromSessionHistory,
   extractLatestAssistantTextFromSessionHistory,
   isCompletedEmptyAgentChatResponse,
   sanitizeAgentChatReplyText,
   sanitizeAgentChatVisibleText
 } from "@/lib/openclaw/agent-chat-response";
-import { readLatestAgentChatTurn } from "@/lib/openclaw/domains/agent-chat-transcript";
+import {
+  readAgentChatTranscriptMessages,
+  readLatestAgentChatTurn
+} from "@/lib/openclaw/domains/agent-chat-transcript";
 import { extractMissionControlAction, type MissionControlAction } from "@/lib/openclaw/chat-actions";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { ensureOpenAiCodexAuthOrderForAgent } from "@/lib/openclaw/application/model-auth-service";
-import { recordAgentChatSession } from "@/lib/openclaw/domains/agent-chat-sessions";
+import {
+  readAgentChatSessionsForAgent,
+  recordAgentChatSession,
+  resolveAgentChatSessionId
+} from "@/lib/openclaw/domains/agent-chat-sessions";
 import { persistRuntimeSmokeTest } from "@/lib/openclaw/domains/control-plane-settings";
 import { openClawStateRootPath } from "@/lib/openclaw/state/paths";
 import { inspectOpenClawRuntimeState } from "@/lib/openclaw/state/runtime-state";
@@ -94,6 +102,73 @@ type AgentChatStreamEvent =
       message: string;
       response?: MissionResponse;
     };
+
+type RehydratedAgentChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  createdAt: number;
+  status: "sent";
+  runId?: string | null;
+};
+
+export async function GET(
+  _request: Request,
+  context: { params: Promise<{ agentId: string }> }
+) {
+  try {
+    const params = await Promise.resolve(context.params);
+    const agentId = params.agentId.trim();
+
+    if (!agentId) {
+      return NextResponse.json({ error: "Agent id is required." }, { status: 400 });
+    }
+
+    const snapshot = await getMissionControlSnapshot({ includeHidden: true });
+    const agent = snapshot.agents.find((entry) => entry.id === agentId) ?? null;
+
+    if (!agent) {
+      return NextResponse.json({ error: "Agent could not be found." }, { status: 404 });
+    }
+
+    const sessions = await readAgentChatSessionsForAgent({
+      agentId,
+      workspacePath: agent.workspacePath,
+      limit: 5
+    });
+    const messages: RehydratedAgentChatMessage[] = [];
+
+    for (const session of [...sessions].reverse()) {
+      const transcriptMessages = await readAgentChatTranscriptMessages(
+        agentId,
+        session.sessionId,
+        session.workspacePath ?? agent.workspacePath
+      );
+
+      if (transcriptMessages.length > 0) {
+        messages.push(...transcriptMessages);
+        continue;
+      }
+
+      const historyMessages = await readAgentChatHistoryMessages(agentId, session.sessionId);
+      messages.push(...historyMessages);
+    }
+
+    return NextResponse.json({
+      agentId,
+      sessionId: sessions[0]?.sessionId ?? null,
+      source: messages.length > 0 ? "openclaw-session" : "unavailable",
+      messages: dedupeRehydratedAgentChatMessages(messages).slice(-60)
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: redactErrorMessage(error, "OpenClaw chat history is unavailable.")
+      },
+      { status: 500 }
+    );
+  }
+}
 
 export async function POST(
   request: Request,
@@ -333,7 +408,10 @@ export async function POST(
           });
         }
 
-        const sessionId = globalThis.crypto.randomUUID();
+        const sessionId = await resolveAgentChatSessionId({
+          agentId,
+          workspacePath: agent.workspacePath
+        });
         await recordAgentChatSession({
           agentId,
           sessionId,
@@ -494,6 +572,67 @@ function isComposedAgentChatPrompt(value: string) {
     value.includes("## Discord coordination") ||
     value.includes("You are chatting directly with the operator inside AgentOS.")
   );
+}
+
+async function readAgentChatHistoryMessages(agentId: string, sessionId: string): Promise<RehydratedAgentChatMessage[]> {
+  try {
+    const history = await getOpenClawAdapter().getSessionHistory(
+      {
+        agentId,
+        sessionId,
+        limit: 60
+      },
+      { timeoutMs: 1500 }
+    );
+
+    return extractAgentChatMessagesFromSessionHistory(history).map((message, index) => ({
+      id: message.id ? `openclaw-history:${sessionId}:${message.id}` : `openclaw-history:${sessionId}:${index}`,
+      role: message.role,
+      text: message.text,
+      createdAt: normalizeAgentChatMessageTimestamp(message.timestamp, index),
+      status: "sent" as const,
+      runId: null
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function dedupeRehydratedAgentChatMessages(messages: RehydratedAgentChatMessage[]) {
+  const byKey = new Map<string, RehydratedAgentChatMessage>();
+
+  for (const message of messages) {
+    const text = message.text.replace(/\s+/g, " ").trim();
+    if (!text) {
+      continue;
+    }
+
+    const key = `${message.role}:${text.toLowerCase()}`;
+    const existing = byKey.get(key);
+    if (!existing || message.createdAt > existing.createdAt) {
+      byKey.set(key, {
+        ...message,
+        text
+      });
+    }
+  }
+
+  return [...byKey.values()].sort((left, right) => left.createdAt - right.createdAt);
+}
+
+function normalizeAgentChatMessageTimestamp(value: string | number | null, index: number) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  return Date.now() + index;
 }
 
 function resolveReadyDefaultAgentModelId(snapshot: ControlPlaneSnapshot) {

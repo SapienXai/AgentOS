@@ -311,6 +311,16 @@ test("settings device access repair stays behind the OpenClaw adapter", () => {
   assert.match(source, /getOpenClawAdapter\(\)\.approveDeviceAccess/);
 });
 
+test("dashboard gateway permission issues route to Settings repair flow", () => {
+  const source = readFileSync(path.join(rootDir, "components/operations/dashboard/dashboard-page-content.tsx"), "utf8");
+
+  assert.match(source, /const hasGatewayPermissionIssue = attentionItems\.some\(isGatewayPermissionIssue\)/);
+  assert.match(source, /operator-scope approval\|device access\|pairing-pending\|scope upgrade/);
+  assert.match(source, /Manage Gateway permissions/);
+  assert.match(source, /href="\/settings#gateway"/);
+  assert.doesNotMatch(source, /fetch\(["']\/api\/settings\/gateway/);
+});
+
 test("system onboarding repairs Gateway auth before runtime state verification", () => {
   const source = readFileSync(path.join(rootDir, "app/api/onboarding/route.ts"), "utf8");
   const repairIndex = source.indexOf("const repairedGatewayAuth = await repairGatewayAuthForSystemSetup");

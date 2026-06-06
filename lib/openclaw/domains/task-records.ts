@@ -10,9 +10,10 @@ export function buildTaskRecords(runtimes: RuntimeRecord[], agents: OpenClawAgen
   const agentNameById = new Map(agents.map((agent) => [agent.id, compactAgentName(agent)]));
   const agentWorkspaceIdById = new Map(agents.map((agent) => [agent.id, agent.workspaceId]));
   const dispatchIdBySessionKey = buildDispatchIdBySessionKey(taskRuntimes);
+  const nativeTaskIdByRuntimeLink = buildNativeTaskIdByRuntimeLink(taskRuntimes);
 
   for (const runtime of taskRuntimes) {
-    const groupKey = resolveTaskGroupKey(runtime, dispatchIdBySessionKey);
+    const groupKey = resolveTaskGroupKey(runtime, dispatchIdBySessionKey, nativeTaskIdByRuntimeLink);
     const group = groups.get(groupKey) ?? [];
     group.push(runtime);
     groups.set(groupKey, group);
@@ -71,6 +72,10 @@ export function buildTaskRecord(
   const primaryAgentName = primaryAgentId ? agentNameById.get(primaryAgentId) ?? null : null;
   const workspaceId = resolveTaskWorkspaceId(sortedRuntimes, primaryAgentId, agentIds, agentWorkspaceIdById);
   const latestRuntime = sortedRuntimes[0] ?? null;
+  const dispatchId = resolveDispatchId(sortedRuntimes);
+  const provenance = resolveTaskProvenance(sortedRuntimes, dispatchId);
+  const openClawTaskId = resolveOpenClawTaskId(sortedRuntimes);
+  const sessionKey = resolveTaskSessionKey(sortedRuntimes);
 
   return {
     id: createTaskRecordId(groupKey),
@@ -85,7 +90,7 @@ export function buildTaskRecord(
     primaryAgentId,
     primaryAgentName,
     primaryRuntimeId: primaryRuntime?.id,
-    dispatchId: resolveDispatchId(sortedRuntimes),
+    dispatchId,
     runtimeIds: sortedRuntimes.map((runtime) => runtime.id),
     agentIds,
     sessionIds,
@@ -102,6 +107,15 @@ export function buildTaskRecord(
       resultPreview,
       turnCount,
       sessionCount: sessionIds.length,
+      provenance,
+      source: provenance,
+      dispatchId: dispatchId ?? null,
+      openClawTaskId,
+      openClawSessionId: sessionIds[0] ?? null,
+      openClawSessionKey: sessionKey,
+      openClawRunId: runIds[0] ?? null,
+      primaryAgentId: primaryAgentId ?? null,
+      workspaceId: workspaceId ?? null,
       primaryRuntimeSource: primaryRuntime?.source ?? null,
       bootstrapStage:
         typeof primaryRuntime?.metadata.bootstrapStage === "string"
@@ -351,6 +365,26 @@ function buildDispatchIdBySessionKey(runtimes: RuntimeRecord[]) {
   return dispatchIdBySessionKey;
 }
 
+function buildNativeTaskIdByRuntimeLink(runtimes: RuntimeRecord[]) {
+  const taskIdByLink = new Map<string, string>();
+
+  for (const runtime of runtimes) {
+    const taskId = resolveNativeRuntimeTaskId(runtime);
+
+    if (!taskId) {
+      continue;
+    }
+
+    for (const link of resolveRuntimeTaskLinks(runtime)) {
+      if (!taskIdByLink.has(link)) {
+        taskIdByLink.set(link, taskId);
+      }
+    }
+  }
+
+  return taskIdByLink;
+}
+
 function resolveTaskGroupKey(
   runtime: RuntimeRecord,
   dispatchIdBySessionKey: Map<
@@ -359,9 +393,11 @@ function resolveTaskGroupKey(
       dispatchId: string;
       submittedAt: number | null;
     }>
-  >
+  >,
+  nativeTaskIdByRuntimeLink: Map<string, string>
 ) {
   const taskId = runtime.taskId?.trim();
+  const nativeTaskId = resolveLinkedNativeTaskId(runtime, nativeTaskIdByRuntimeLink);
   const dispatchId =
     typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
   const mission = resolveRuntimeMissionText(runtime);
@@ -377,6 +413,10 @@ function resolveTaskGroupKey(
         (left, right) =>
           (right.submittedAt ?? Number.NEGATIVE_INFINITY) - (left.submittedAt ?? Number.NEGATIVE_INFINITY)
       )[0]?.dispatchId ?? "";
+
+  if (nativeTaskId) {
+    return `task:${nativeTaskId}`;
+  }
 
   if (dispatchId) {
     return `dispatch:${dispatchId}`;
@@ -401,6 +441,44 @@ function resolveTaskGroupKey(
   return `runtime:${runtime.id}`;
 }
 
+function resolveLinkedNativeTaskId(runtime: RuntimeRecord, nativeTaskIdByRuntimeLink: Map<string, string>) {
+  return resolveRuntimeTaskLinks(runtime)
+    .map((link) => nativeTaskIdByRuntimeLink.get(link))
+    .find((value): value is string => Boolean(value)) ?? null;
+}
+
+function resolveRuntimeTaskLinks(runtime: RuntimeRecord) {
+  const links = new Set<string>();
+  const dispatchId =
+    typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
+  const agentId = runtime.agentId?.trim() || "unknown";
+  const sessionIds = normalizeRuntimeSessionReferences(runtime.sessionId);
+
+  if (dispatchId) {
+    links.add(`dispatch:${dispatchId}`);
+  }
+
+  if (runtime.runId?.trim()) {
+    links.add(`run:${runtime.runId.trim()}`);
+  }
+
+  for (const sessionId of sessionIds) {
+    links.add(`session:${agentId}:${sessionId}`);
+  }
+
+  return [...links];
+}
+
+function normalizeRuntimeSessionReferences(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const match = trimmed.match(/^agent:([^:]+):explicit:(.+)$/);
+  return match ? uniqueStrings([trimmed, match[2] ?? ""]) : [trimmed];
+}
+
 function resolveRuntimeMissionText(runtime: RuntimeRecord) {
   const mission =
     typeof runtime.metadata.mission === "string"
@@ -419,6 +497,7 @@ function resolveRuntimeMissionText(runtime: RuntimeRecord) {
 
 function scoreTaskRuntime(runtime: RuntimeRecord) {
   const hasMission = resolveRuntimeMissionText(runtime) ? 8 : 0;
+  const nativeTaskScore = isNativeTaskRuntime(runtime) ? 10 : 0;
   const dispatchScore = typeof runtime.metadata.dispatchId === "string" ? 6 : 0;
   const sourceScore = runtime.source === "turn" ? 6 : runtime.source === "session" ? 4 : 2;
   const statusScore =
@@ -434,7 +513,7 @@ function scoreTaskRuntime(runtime: RuntimeRecord) {
               ? 2
               : 1;
 
-  return hasMission + dispatchScore + sourceScore + statusScore;
+  return nativeTaskScore + hasMission + dispatchScore + sourceScore + statusScore;
 }
 
 function resolveTaskStatus(
@@ -518,6 +597,73 @@ function resolveDispatchId(runtimes: RuntimeRecord[]) {
   }
 
   return undefined;
+}
+
+function resolveTaskProvenance(runtimes: RuntimeRecord[], dispatchId: string | undefined) {
+  if (runtimes.some(isNativeTaskRuntime)) {
+    return "native-task";
+  }
+
+  if (dispatchId || runtimes.some(isDispatchDerivedRuntime)) {
+    return "dispatch-derived";
+  }
+
+  return "runtime-derived";
+}
+
+function resolveOpenClawTaskId(runtimes: RuntimeRecord[]) {
+  return runtimes
+    .map(resolveNativeRuntimeTaskId)
+    .find((value): value is string => Boolean(value)) ?? null;
+}
+
+function resolveNativeRuntimeTaskId(runtime: RuntimeRecord) {
+  if (!isNativeTaskRuntime(runtime)) {
+    return null;
+  }
+
+  const metadataTaskId =
+    typeof runtime.metadata.taskId === "string" ? runtime.metadata.taskId.trim() : "";
+  const taskId = runtime.taskId?.trim() || metadataTaskId || runtime.key.trim();
+
+  return taskId || null;
+}
+
+function resolveTaskSessionKey(runtimes: RuntimeRecord[]) {
+  for (const runtime of runtimes) {
+    const sessionKey =
+      typeof runtime.metadata.sessionKey === "string"
+        ? runtime.metadata.sessionKey.trim()
+        : runtime.key.trim().startsWith("agent:")
+          ? runtime.key.trim()
+          : "";
+
+    if (sessionKey) {
+      return sessionKey;
+    }
+  }
+
+  return null;
+}
+
+function isNativeTaskRuntime(runtime: RuntimeRecord) {
+  return runtime.metadata.gatewayObjectKind === "task" && Boolean(runtime.taskId?.trim());
+}
+
+function isDispatchDerivedRuntime(runtime: RuntimeRecord) {
+  const origin = typeof runtime.metadata.origin === "string" ? runtime.metadata.origin.trim() : "";
+  const dispatchId =
+    typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
+  const dispatchStatus =
+    typeof runtime.metadata.dispatchStatus === "string" ? runtime.metadata.dispatchStatus.trim() : "";
+
+  return Boolean(
+    origin === "mission-dispatch" ||
+      origin === "agentos-mission-dispatch" ||
+      dispatchId ||
+      dispatchStatus ||
+      typeof runtime.metadata.bootstrapStage === "string"
+  );
 }
 
 function resolveTaskRoutedMission(runtimes: RuntimeRecord[]) {

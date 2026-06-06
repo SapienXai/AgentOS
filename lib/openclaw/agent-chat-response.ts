@@ -9,6 +9,13 @@ export const emptyAgentChatResponseMessage =
 export const completedEmptyAgentChatResponseMessage =
   "OpenClaw completed the turn, but it did not return a chat reply. Workspace changes may already be applied; refresh state or ask the agent for a summary if you need details.";
 
+export type AgentChatHistoryMessage = {
+  id: string | null;
+  role: "user" | "assistant";
+  text: string;
+  timestamp: string | number | null;
+};
+
 export function sanitizeAgentChatReplyText(value: unknown) {
   if (typeof value !== "string") {
     return "";
@@ -61,6 +68,46 @@ export function extractLatestAssistantTextFromSessionHistory(payload: unknown) {
   }
 
   return null;
+}
+
+export function extractAgentChatMessagesFromSessionHistory(payload: unknown): AgentChatHistoryMessage[] {
+  return collectHistoryRecords(payload).flatMap((record, index) => {
+    const role = resolveHistoryRecordRole(record);
+
+    if (!role) {
+      return [];
+    }
+
+    const rawText = readMessageText(record);
+    const text = role === "user"
+      ? extractVisibleAgentChatOperatorText(rawText ?? "")
+      : sanitizeAgentChatVisibleText(rawText ?? "");
+
+    if (!text) {
+      return [];
+    }
+
+    return [{
+      id: readHistoryRecordId(record) ?? `history:${role}:${index}`,
+      role,
+      text,
+      timestamp: readHistoryRecordTimestamp(record)
+    }];
+  });
+}
+
+export function extractVisibleAgentChatOperatorText(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  if (!isInternalAgentChatPromptLeak(trimmed) && !/You are chatting directly with the operator inside AgentOS\./i.test(trimmed)) {
+    return trimmed;
+  }
+
+  const operatorMatch = [...trimmed.matchAll(/(?:^|\s)Operator:\s*([\s\S]*?)(?=\s(?:Agent|Assistant|Operator):|$)/gi)].at(-1);
+  return operatorMatch?.[1]?.trim() ?? "";
 }
 
 export function isCompletedEmptyAgentChatResponse(payload: { meta?: Record<string, unknown> } | null | undefined) {
@@ -165,6 +212,62 @@ function recordLooksAssistant(record: Record<string, unknown>) {
   ]
     .filter((value): value is string => typeof value === "string")
     .some((value) => /assistant|agent/i.test(value));
+}
+
+function recordLooksUser(record: Record<string, unknown>) {
+  return [
+    record.role,
+    record.type,
+    record.kind,
+    record.source,
+    record.speaker,
+    isRecord(record.author) ? record.author.role ?? record.author.type ?? record.author.name : null
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .some((value) => /user|operator|human/i.test(value));
+}
+
+function resolveHistoryRecordRole(record: Record<string, unknown>): AgentChatHistoryMessage["role"] | null {
+  if (recordLooksAssistant(record)) {
+    return "assistant";
+  }
+
+  if (recordLooksUser(record)) {
+    return "user";
+  }
+
+  const nestedMessage = isRecord(record.message) ? record.message : isRecord(record.content) ? record.content : null;
+
+  if (nestedMessage) {
+    if (recordLooksAssistant(nestedMessage)) {
+      return "assistant";
+    }
+
+    if (recordLooksUser(nestedMessage)) {
+      return "user";
+    }
+  }
+
+  return null;
+}
+
+function readHistoryRecordId(record: Record<string, unknown>) {
+  const value = record.id ?? record.messageId ?? record.turnId;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readHistoryRecordTimestamp(record: Record<string, unknown>) {
+  const value = record.timestamp ?? record.createdAt ?? record.updatedAt ?? record.ts;
+
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  return null;
 }
 
 function readMessageText(value: unknown): string | null {

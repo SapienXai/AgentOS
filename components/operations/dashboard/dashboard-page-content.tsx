@@ -80,6 +80,7 @@ export function DashboardPageContent({
   const enabledAccounts = rootSnapshot.channelAccounts.filter((account) => account.enabled);
   const connectedIntegrations = integrations.filter((integration) => integration.status === "connected");
   const attentionItems = buildAttentionItems(rootSnapshot);
+  const hasGatewayPermissionIssue = attentionItems.some(isGatewayPermissionIssue);
   const recentTasks = [...tasks]
     .sort((left, right) => (right.source?.updatedAt ?? 0) - (left.source?.updatedAt ?? 0))
     .slice(0, 6);
@@ -304,6 +305,19 @@ export function DashboardPageContent({
                         {item}
                       </div>
                     ))}
+                    {hasGatewayPermissionIssue ? (
+                      <Button
+                        asChild
+                        variant="secondary"
+                        size="sm"
+                        className="mt-3 w-full justify-between border-amber-300/25 bg-amber-300/[0.08] text-xs text-amber-50 hover:bg-amber-300/[0.13] hover:text-white"
+                      >
+                        <Link href="/settings#gateway">
+                          Manage Gateway permissions
+                          <Settings2 className="h-3.5 w-3.5" />
+                        </Link>
+                      </Button>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -519,6 +533,10 @@ function buildAttentionItems(snapshot: MissionControlSnapshot) {
     ...(snapshot.diagnostics.gatewayFallbackReasons ?? []),
     ...(snapshot.diagnostics.capabilityMatrix?.fallbackReasons ?? [])
   ].filter((item, index, items) => item.trim() && items.indexOf(item) === index);
+}
+
+function isGatewayPermissionIssue(item: string) {
+  return /operator-scope approval|device access|pairing-pending|scope upgrade/i.test(item);
 }
 
 function healthTone(health: MissionControlSnapshot["diagnostics"]["health"]): StatusTone {

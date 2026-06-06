@@ -604,6 +604,77 @@ test("Gateway native auth device access repair syncs approved pairing token for 
   assert.deepEqual(authStore.tokens?.operator?.scopes, scopes);
 });
 
+test("Gateway native auth device access repair trusts verified native access when CLI token scopes lag", async () => {
+  setOpenClawAdapterForTesting(createSettingsAdapter());
+  process.env.OPENCLAW_STATE_DIR = await mkdtemp(join(tmpdir(), "agentos-gateway-token-lag-"));
+  let probeCalls = 0;
+
+  const result = await repairGatewayNativeDeviceAccess({
+    nativeProbe: async () => {
+      probeCalls += 1;
+      if (probeCalls === 1) {
+        throw new Error("scope upgrade pending approval");
+      }
+      return { ok: true };
+    },
+    approveLatest: async () => ({
+      requestId: "request-1",
+      device: {
+        deviceId: "device-1",
+        approvedScopes: ["operator.read"]
+      }
+    }),
+    readDeviceAuthToken: async () => ({
+      token: "operator-device-token",
+      scopes: ["operator.read"]
+    })
+  });
+
+  assert.equal(probeCalls, 2);
+  assert.equal(result.approved, true);
+  assert.deepEqual(result.scopes, [
+    "operator.admin",
+    "operator.read",
+    "operator.write",
+    "operator.approvals",
+    "operator.pairing",
+    "operator.talk.secrets"
+  ]);
+  assert.match(result.approvalIssue ?? "", /local CLI device token has not reported/);
+});
+
+test("Gateway native auth device access repair is idempotent when native access is already valid", async () => {
+  setOpenClawAdapterForTesting(createSettingsAdapter());
+  process.env.OPENCLAW_STATE_DIR = await mkdtemp(join(tmpdir(), "agentos-gateway-repair-idempotent-"));
+  let probeCalls = 0;
+
+  const result = await repairGatewayNativeDeviceAccess({
+    nativeProbe: async () => {
+      probeCalls += 1;
+      return { ok: true };
+    },
+    approveLatest: async () => {
+      throw new Error("No pending OpenClaw device access request found.");
+    },
+    readDeviceAuthToken: async () => ({
+      token: "operator-device-token",
+      scopes: ["operator.read"]
+    })
+  });
+
+  assert.equal(probeCalls, 1);
+  assert.equal(result.approved, true);
+  assert.deepEqual(result.scopes, [
+    "operator.admin",
+    "operator.read",
+    "operator.write",
+    "operator.approvals",
+    "operator.pairing",
+    "operator.talk.secrets"
+  ]);
+  assert.match(result.approvalIssue ?? "", /No pending OpenClaw device access request found/);
+});
+
 test("Gateway native auth status does not probe when native WS is force-disabled", async () => {
   setOpenClawAdapterForTesting(createSettingsAdapter());
   let probeCalls = 0;

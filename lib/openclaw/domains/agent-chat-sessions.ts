@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import type { SessionsPayload } from "@/lib/openclaw/domains/session-catalog";
@@ -72,6 +73,56 @@ export async function recordAgentChatSession(input: {
 export async function readAgentChatSessionIndex() {
   const registry = await readAgentChatSessionRegistry();
   return new Map(registry.sessions.map((entry) => [createAgentChatSessionKey(entry.agentId, entry.sessionId), entry]));
+}
+
+export async function readAgentChatSessionsForAgent(input: {
+  agentId: string;
+  workspacePath?: string;
+  limit?: number;
+}) {
+  const agentId = input.agentId.trim();
+  if (!agentId) {
+    return [];
+  }
+
+  const workspacePath = input.workspacePath?.trim() || null;
+  const limit = Number.isFinite(input.limit) && input.limit && input.limit > 0 ? Math.floor(input.limit) : 20;
+  const registry = await readAgentChatSessionRegistry();
+
+  return selectReusableAgentChatSessions(registry.sessions, { agentId, workspacePath }).slice(0, limit);
+}
+
+export async function resolveAgentChatSessionId(input: {
+  agentId: string;
+  workspacePath?: string;
+}) {
+  const existingSession = (await readAgentChatSessionsForAgent({
+    agentId: input.agentId,
+    workspacePath: input.workspacePath,
+    limit: 1
+  }))[0];
+
+  return existingSession?.sessionId ?? randomUUID();
+}
+
+export function selectReusableAgentChatSessions(
+  sessions: readonly AgentChatSessionRecord[],
+  input: {
+    agentId: string;
+    workspacePath?: string | null;
+  }
+) {
+  const agentId = input.agentId.trim();
+  const workspacePath = input.workspacePath?.trim() || null;
+
+  if (!agentId) {
+    return [];
+  }
+
+  return sessions
+    .filter((entry) => entry.agentId === agentId)
+    .filter((entry) => !workspacePath || !entry.workspacePath || entry.workspacePath === workspacePath)
+    .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
 }
 
 export function annotateAgentChatSessions(

@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  extractAgentChatMessagesFromSessionHistory,
   extractAssistantTextFromAgentChatStreamLine,
+  extractVisibleAgentChatOperatorText,
   extractLatestAssistantTextFromSessionHistory,
   isCompletedEmptyAgentChatResponse,
   sanitizeAgentChatReplyText,
@@ -57,6 +59,70 @@ test("agent chat response helper reads latest assistant history without echoing 
   };
 
   assert.equal(extractLatestAssistantTextFromSessionHistory(history), "Latest answer.");
+});
+
+test("agent chat response helper extracts user and assistant messages from Gateway history", () => {
+  const messages = extractAgentChatMessagesFromSessionHistory({
+    messages: [
+      {
+        id: "user-1",
+        role: "user",
+        content: [
+          "You are chatting directly with the operator inside AgentOS. Reply conversationally, be concise, and ask a clarifying question when needed. Do not create tasks or mention task cards.",
+          "",
+          "Conversation so far:",
+          "Operator: Earlier message",
+          "Agent: Earlier reply",
+          "",
+          "Operator: What is the latest status?"
+        ].join("\n"),
+        timestamp: "2026-06-06T10:00:00.000Z"
+      },
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: [
+          {
+            type: "output_text",
+            text: "The latest status is ready."
+          }
+        ],
+        timestamp: "2026-06-06T10:00:01.000Z"
+      }
+    ]
+  });
+
+  assert.deepEqual(messages, [
+    {
+      id: "user-1",
+      role: "user",
+      text: "What is the latest status?",
+      timestamp: "2026-06-06T10:00:00.000Z"
+    },
+    {
+      id: "assistant-1",
+      role: "assistant",
+      text: "The latest status is ready.",
+      timestamp: "2026-06-06T10:00:01.000Z"
+    }
+  ]);
+});
+
+test("agent chat response helper extracts the visible operator text from composed prompts", () => {
+  assert.equal(
+    extractVisibleAgentChatOperatorText(
+      [
+        "You are chatting directly with the operator inside AgentOS. Reply conversationally, be concise, and ask a clarifying question when needed. Do not create tasks or mention task cards.",
+        "",
+        "Conversation so far:",
+        "Operator: Old question",
+        "Agent: Old answer",
+        "",
+        "Operator: New question"
+      ].join("\n")
+    ),
+    "New question"
+  );
 });
 
 test("agent chat response helper ignores histories without assistant text", () => {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  mergeAgentChatMessagesForRehydration,
   normalizeAgentChatMessagesForDisplay,
   resolveAgentChatLatestAssistantAt,
   resolveAgentChatUnreadCount,
@@ -86,6 +87,58 @@ test("agent chat display keeps only the active turn pending", () => {
       { id: "old-assistant", status: "error" },
       { id: "active-user", status: "sending" },
       { id: "active-assistant", status: "sending" }
+    ]
+  );
+});
+
+test("agent chat rehydration merges OpenClaw history without duplicating local messages", () => {
+  const currentMessages: AgentChatMessage[] = [
+    {
+      id: "local-user",
+      role: "user",
+      text: "Hello",
+      createdAt: 1,
+      status: "sent"
+    },
+    {
+      id: "local-assistant",
+      role: "assistant",
+      text: "Local reply",
+      createdAt: 2,
+      status: "sent"
+    }
+  ];
+  const rehydratedMessages: AgentChatMessage[] = [
+    {
+      id: "openclaw-user",
+      role: "user",
+      text: "Hello",
+      createdAt: 10,
+      status: "sent"
+    },
+    {
+      id: "openclaw-assistant",
+      role: "assistant",
+      text: "OpenClaw reply",
+      createdAt: 11,
+      status: "sent",
+      runId: "run-1"
+    }
+  ];
+
+  const merged = mergeAgentChatMessagesForRehydration(currentMessages, rehydratedMessages);
+
+  assert.deepEqual(
+    merged.map((message) => ({
+      role: message.role,
+      text: message.text,
+      status: message.status,
+      runId: message.runId
+    })),
+    [
+      { role: "user", text: "Hello", status: "sent", runId: undefined },
+      { role: "assistant", text: "Local reply", status: "sent", runId: undefined },
+      { role: "assistant", text: "OpenClaw reply", status: "sent", runId: "run-1" }
     ]
   );
 });

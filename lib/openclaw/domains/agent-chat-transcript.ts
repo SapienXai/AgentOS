@@ -1,6 +1,10 @@
 import { readFile } from "node:fs/promises";
 
 import {
+  extractVisibleAgentChatOperatorText,
+  sanitizeAgentChatVisibleText
+} from "@/lib/openclaw/agent-chat-response";
+import {
   extractTranscriptTurns,
   filterTranscriptTurnsForRuntime,
   resolveRuntimeTranscriptPath,
@@ -45,4 +49,68 @@ export async function readLatestAgentChatTurn(
   } catch {
     return null;
   }
+}
+
+export type AgentChatTranscriptMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  createdAt: number;
+  status: "sent";
+  runId?: string | null;
+};
+
+export async function readAgentChatTranscriptMessages(
+  agentId: string,
+  sessionId: string,
+  workspacePath?: string
+): Promise<AgentChatTranscriptMessage[]> {
+  const transcriptPath = await resolveRuntimeTranscriptPath(agentId, sessionId, workspacePath);
+
+  if (!transcriptPath) {
+    return [];
+  }
+
+  try {
+    const raw = await readFile(transcriptPath, "utf8");
+    const runtime = createTranscriptRuntime(agentId, sessionId);
+    const turns = filterTranscriptTurnsForRuntime(runtime, extractTranscriptTurns(raw, runtime, workspacePath));
+
+    return turns.flatMap((turn) => createAgentChatMessagesFromTurn(sessionId, turn));
+  } catch {
+    return [];
+  }
+}
+
+function createAgentChatMessagesFromTurn(sessionId: string, turn: TranscriptTurn): AgentChatTranscriptMessage[] {
+  const messages: AgentChatTranscriptMessage[] = [];
+  const userText = extractVisibleAgentChatOperatorText(turn.prompt);
+  const userCreatedAt = Date.parse(turn.timestamp);
+
+  if (userText) {
+    messages.push({
+      id: `openclaw:${sessionId}:${turn.id}:user`,
+      role: "user",
+      text: userText,
+      createdAt: Number.isNaN(userCreatedAt) ? Date.now() : userCreatedAt,
+      status: "sent",
+      runId: turn.runId ?? null
+    });
+  }
+
+  const assistantText = sanitizeAgentChatVisibleText(turn.finalText ?? "");
+  const assistantCreatedAt = Date.parse(turn.finalTimestamp ?? turn.updatedAt);
+
+  if (assistantText) {
+    messages.push({
+      id: `openclaw:${sessionId}:${turn.id}:assistant`,
+      role: "assistant",
+      text: assistantText,
+      createdAt: Number.isNaN(assistantCreatedAt) ? Date.now() : assistantCreatedAt,
+      status: "sent",
+      runId: turn.runId ?? null
+    });
+  }
+
+  return messages;
 }
