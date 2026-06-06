@@ -67,8 +67,9 @@ export function OperationsTopBar({
   onToggleTheme: () => void;
 }) {
   const version = snapshot.diagnostics.version ?? snapshot.diagnostics.latestVersion ?? "unknown";
-  const online = connectionState === "live" && snapshot.diagnostics.health === "healthy";
-  const label = online ? "Online" : connectionState === "retrying" ? "Retrying" : "Connecting";
+  const streamLive = connectionState === "live";
+  const online = streamLive && snapshot.diagnostics.health === "healthy";
+  const label = streamLive ? "Online" : connectionState === "retrying" ? "Retrying" : "Connecting";
   const ThemeIcon = surfaceTheme === "light" ? SunMedium : Moon;
 
   return (

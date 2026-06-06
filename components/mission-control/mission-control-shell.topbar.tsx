@@ -9,11 +9,9 @@ import {
   MissionControlShellSettingsPanel,
   type MissionControlShellSettingsPanelProps
 } from "@/components/mission-control/mission-control-shell.settings";
-import { resolveTransportDiagnosticsSummary } from "@/components/mission-control/settings-control-center.utils";
 import {
   resolveDiagnosticHealthBadgeClasses,
   resolveDiagnosticHealthDotClasses,
-  resolveGatewayModeBadgeClasses,
   type SurfaceTheme
 } from "@/components/mission-control/surface-visual-tones";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
@@ -94,7 +92,6 @@ export function CanvasTopBar({
   const health = snapshot.diagnostics.health;
   const isOffline = health === "offline";
   const healthLabel = formatHealthLabel(health);
-  const transportSummary = resolveTransportDiagnosticsSummary(snapshot.diagnostics.transport, settingsPanelProps.connectionState);
   const settingsChromeButtonStyles = settingsChromeButtonClassName(surfaceTheme);
   const settingsThemeSwitchTrackStyles = settingsThemeSwitchTrackClassName(surfaceTheme);
   const settingsThemeSwitchThumbStyles = settingsThemeSwitchThumbClassName(surfaceTheme);
@@ -192,16 +189,6 @@ export function CanvasTopBar({
               {healthLabel}
             </span>
           )}
-          <span
-            className={cn(
-              "hidden items-center gap-1.5 rounded-full border px-2 py-1 text-[9px] font-medium uppercase tracking-[0.18em] sm:inline-flex",
-              resolveGatewayModeBadgeClasses(transportSummary.statusTone, surfaceTheme)
-            )}
-            title={transportSummary.recovery || transportSummary.lastNativeError || transportSummary.statusLabel}
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-current" />
-            {transportSummary.gatewayModeLabel}
-          </span>
           <button
             type="button"
             role="switch"

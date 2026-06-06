@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  buildDiagnosticIssues,
   buildGatewayDiagnostics,
   buildVersionDiagnostics
 } from "@/lib/openclaw/adapter/diagnostics-adapter";
@@ -113,6 +114,119 @@ test("gateway diagnostics carry fallback counts and recent fallback records", ()
   assert.match(diagnostics.gatewayFallbackReasons?.[0] ?? "", /Recovery: Update OpenClaw/);
   assert.equal(diagnostics.eventBridge?.mode, "polling");
   assert.match(diagnostics.eventBridge?.recovery ?? "", /Gateway event capabilities/);
+});
+
+test("transient payload reuse stays visible without degrading Gateway health", () => {
+  const diagnostics = buildGatewayDiagnostics({
+    gatewayStatus: {
+      service: { loaded: true },
+      gateway: { port: 18789, probeUrl: "ws://127.0.0.1:18789" },
+      rpc: { ok: true }
+    },
+    status: { version: "9.9.9" },
+    configuredWorkspaceRoot: null,
+    workspaceRoot: "/tmp/workspace",
+    configuredGatewayUrl: null,
+    hasOpenClawSignal: true,
+    securityWarnings: [],
+    runtimeDiagnostics,
+    openClawBinarySelection,
+    modelReadiness,
+    eventBridge: {
+      mode: "live",
+      connected: true,
+      reconnecting: false,
+      reconnectAttempt: 0,
+      lastEventAt: "2026-05-16T10:00:00.000Z",
+      lastError: null,
+      message: null,
+      recovery: null
+    },
+    issues: buildDiagnosticIssues({
+      payloadResults: {},
+      gatewayStatusRejectedWithCachedValue: false,
+      payloadReuse: {
+        status: { reusedCachedValue: true },
+        updateStatus: { reusedCachedValue: true },
+        modelStatus: { reusedCachedValue: true }
+      },
+      runtimeIssues: []
+    }),
+    versionDiagnostics: {
+      currentVersion: "9.9.9",
+      latestVersion: undefined,
+      updateAvailable: undefined,
+      updateError: undefined,
+      updateInfo: "Up to date"
+    }
+  });
+
+  assert.equal(diagnostics.health, "healthy");
+  assert.equal(diagnostics.issues.length, 3);
+  assert.match(diagnostics.issues[0] ?? "", /Reusing the last successful payload/);
+});
+
+test("update availability fallback stays visible without degrading Gateway health", () => {
+  const diagnostics = buildGatewayDiagnostics({
+    gatewayStatus: {
+      service: { loaded: true },
+      gateway: { port: 18789, probeUrl: "ws://127.0.0.1:18789" },
+      rpc: { ok: true }
+    },
+    status: { version: "2026.6.1" },
+    configuredWorkspaceRoot: null,
+    workspaceRoot: "/tmp/workspace",
+    configuredGatewayUrl: null,
+    hasOpenClawSignal: true,
+    securityWarnings: [],
+    runtimeDiagnostics,
+    openClawBinarySelection,
+    modelReadiness,
+    transport: {
+      mode: "native-ws",
+      gatewayMode: "fallback-active",
+      statusLabel: "CLI fallback used",
+      recovery: "Update OpenClaw or report the incompatible Gateway response shape.",
+      connectionState: "connected",
+      protocolVersion: 4,
+      protocolRange: { min: 3, max: 4 },
+      fallbackCounts: { "update.status": 1 },
+      fallbackTotal: 1,
+      recentFallbackDiagnostics: [{
+        at: "2026-06-06T19:39:00.000Z",
+        operation: "update.status",
+        issue: "OpenClaw Gateway update.status did not include update availability details.",
+        kind: "malformed-response",
+        recovery: "Update OpenClaw or report the incompatible Gateway response shape."
+      }],
+      lastNativeError: "OpenClaw Gateway update.status did not include update availability details.",
+      lastNativeFailureAt: "2026-06-06T19:39:00.000Z",
+      lastConnectedAt: "2026-06-06T19:38:00.000Z",
+      lastDisconnectedAt: null
+    },
+    eventBridge: {
+      mode: "live",
+      connected: true,
+      reconnecting: false,
+      reconnectAttempt: 0,
+      lastEventAt: "2026-06-06T19:39:00.000Z",
+      lastError: null,
+      message: null,
+      recovery: null
+    },
+    issues: [],
+    versionDiagnostics: {
+      currentVersion: "2026.6.1",
+      latestVersion: undefined,
+      updateAvailable: undefined,
+      updateError: undefined,
+      updateInfo: "Update registry status is still loading."
+    }
+  });
+
+  assert.equal(diagnostics.health, "healthy");
+  assert.equal(diagnostics.gatewayFallbackDiagnostics?.[0]?.operation, "update.status");
+  assert.match(diagnostics.gatewayFallbackReasons?.[0] ?? "", /update availability details/);
 });
 
 test("gateway diagnostics surface pending device access instead of native timeout noise", () => {

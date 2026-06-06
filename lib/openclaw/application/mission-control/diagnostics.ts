@@ -31,9 +31,7 @@ import type {
   PresencePayload,
   StatusPayload
 } from "@/lib/openclaw/client/gateway-client";
-import { getRecentOpenClawGatewayFallbackDiagnostics } from "@/lib/openclaw/client/gateway-client";
 import { getOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
-import { filterActiveOpenClawGatewayFallbackDiagnostics } from "@/lib/openclaw/client/gateway-diagnostic-activity";
 import { isDeferredPayloadResult } from "@/lib/openclaw/client/payload-cache";
 import { getOpenClawEventBridgeStreamStatus } from "@/lib/openclaw/application/event-bridge-service";
 import { RuntimeDiagnosticsStateCache } from "@/lib/openclaw/state/runtime-diagnostics-cache";
@@ -149,12 +147,6 @@ export async function buildLiveMissionControlDiagnostics(input: {
   if (input.profile === "interactive" && !compatibilityReport) {
     warmOpenClawCompatibilityReport();
   }
-  const gatewayFallbackIssues = filterActiveOpenClawGatewayFallbackDiagnostics(
-    getRecentOpenClawGatewayFallbackDiagnostics(),
-    transport
-  ).map(
-    (entry) => `gateway.${entry.operation}: Gateway-first request fell back to CLI (${entry.kind}): ${entry.issue} Recovery: ${entry.recovery}`
-  );
 
   return buildGatewayDiagnostics({
     gatewayStatus: input.gatewayStatus,
@@ -181,8 +173,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
       payloadReuse: input.payloadReuse,
       runtimeIssues: [
         ...input.runtimeDiagnostics.issues,
-        ...(input.workspaceContextIssues ?? []),
-        ...gatewayFallbackIssues
+        ...(input.workspaceContextIssues ?? [])
       ]
     })
   });
