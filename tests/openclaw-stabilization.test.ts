@@ -57,6 +57,7 @@ import {
 import {
   buildModelRecords,
   inferFallbackModelMetadata,
+  mergeConfiguredModelsIntoModelsPayload,
   mergeModelStatusWithAgentConfigDefaults
 } from "@/lib/openclaw/adapter/model-adapter";
 import {
@@ -1641,6 +1642,59 @@ test("snapshot model records collapse Codex aliases to canonical routes", () => 
   assert.equal(records[0]?.id, "openai/gpt-5.5");
   assert.equal(records[0]?.provider, "openai-codex");
   assert.equal(records[0]?.usageCount, 1);
+});
+
+test("snapshot model records include configured Codex routes missing from live payloads", () => {
+  const models = mergeConfiguredModelsIntoModelsPayload([], ["openai/gpt-5.5"]);
+  const records = buildModelRecords(
+    models,
+    [],
+    {
+      auth: {
+        oauth: {
+          providers: [
+            {
+              provider: "openai-codex",
+              status: "ok",
+              profiles: [
+                {
+                  profileId: "openai-codex:user@example.com",
+                  status: "ok"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  );
+
+  assert.equal(records.length, 1);
+  assert.equal(records[0]?.id, "openai/gpt-5.5");
+  assert.equal(records[0]?.provider, "openai-codex");
+  assert.equal(records[0]?.available, true);
+  assert.equal(records[0]?.missing, false);
+});
+
+test("configured model merge does not duplicate live Codex model payloads", () => {
+  const models = mergeConfiguredModelsIntoModelsPayload(
+    [
+      {
+        key: "openai/gpt-5.5",
+        name: "GPT-5.5",
+        input: "text",
+        contextWindow: 272000,
+        local: false,
+        available: true,
+        missing: false,
+        tags: []
+      }
+    ],
+    ["openai-codex/gpt-5.5"]
+  );
+
+  assert.equal(models.length, 1);
+  assert.equal(models[0]?.key, "openai/gpt-5.5");
 });
 
 test("ChatGPT auth order repair prefers usable Codex OAuth profiles", () => {

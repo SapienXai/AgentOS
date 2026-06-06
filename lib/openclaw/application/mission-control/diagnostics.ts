@@ -38,7 +38,8 @@ import { isDeferredPayloadResult } from "@/lib/openclaw/client/payload-cache";
 import { RuntimeDiagnosticsStateCache } from "@/lib/openclaw/state/runtime-diagnostics-cache";
 import {
   buildModelRecords,
-  buildModelsPayloadFromFallbackSources
+  buildModelsPayloadFromFallbackSources,
+  mergeConfiguredModelsIntoModelsPayload
 } from "@/lib/openclaw/adapter/model-adapter";
 import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-normalization";
 import {
@@ -192,13 +193,23 @@ export function buildMissionControlModelRecords(input: {
   models: ModelsPayload["models"];
   agents: OpenClawAgent[];
   modelStatus?: ModelsStatusPayload;
+  configuredModelIds?: Iterable<string>;
 }) {
-  return buildModelRecords(input.models, input.agents, input.modelStatus);
+  return buildModelRecords(
+    mergeConfiguredModelsIntoModelsPayload(input.models, input.configuredModelIds ?? []),
+    input.agents,
+    input.modelStatus
+  );
 }
 
 export function buildFallbackModels(input: {
   agentConfig: AgentConfigPayload;
   modelStatus?: ModelsStatusPayload;
+  configuredModelIds?: Iterable<string>;
 }) {
-  return buildModelsPayloadFromFallbackSources(input.agentConfig, input.modelStatus);
+  return buildModelsPayloadFromFallbackSources(
+    input.agentConfig,
+    input.modelStatus,
+    input.configuredModelIds ?? []
+  );
 }

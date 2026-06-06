@@ -23,9 +23,11 @@ function uniqueStrings(values: string[]) {
 
 export function buildModelsPayloadFromFallbackSources(
   agentConfig: AgentConfigPayload,
-  modelStatus?: ModelsStatusPayload
+  modelStatus?: ModelsStatusPayload,
+  configuredModelIds: Iterable<string> = []
 ): ModelsPayload {
   const modelIds = uniqueStrings([
+    ...Array.from(configuredModelIds),
     ...agentConfig.map((entry) => entry.model ?? "").filter(Boolean),
     ...(modelStatus?.allowed ?? []).filter(Boolean),
     modelStatus?.resolvedDefault ?? "",
@@ -48,6 +50,38 @@ export function buildModelsPayloadFromFallbackSources(
       };
     })
   };
+}
+
+export function mergeConfiguredModelsIntoModelsPayload(
+  models: ModelsPayload["models"],
+  configuredModelIds: Iterable<string>
+): ModelsPayload["models"] {
+  const seenModelIds = new Set(models.map((model) => normalizeOpenAiCodexModelId(model.key).toLowerCase()));
+  const mergedModels = [...models];
+
+  for (const modelId of configuredModelIds) {
+    const normalizedModelId = normalizeOpenAiCodexModelId(modelId);
+
+    if (!normalizedModelId || seenModelIds.has(normalizedModelId.toLowerCase())) {
+      continue;
+    }
+
+    const fallbackMetadata = inferFallbackModelMetadata(normalizedModelId);
+
+    mergedModels.push({
+      key: normalizedModelId,
+      name: normalizedModelId,
+      input: "text",
+      contextWindow: fallbackMetadata.contextWindow,
+      local: fallbackMetadata.local,
+      available: true,
+      tags: [],
+      missing: false
+    });
+    seenModelIds.add(normalizedModelId.toLowerCase());
+  }
+
+  return mergedModels;
 }
 
 export function inferFallbackModelMetadata(modelId: string): {

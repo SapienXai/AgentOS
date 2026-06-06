@@ -11,7 +11,10 @@ import {
   type UpdateStatusPayload
 } from "@/lib/openclaw/adapter/gateway-payloads";
 import { GatewayStatusCache } from "@/lib/openclaw/client/gateway-status-cache";
-import { settleAgentConfigFromStateFile } from "@/lib/openclaw/state/agent-config-payload";
+import {
+  settleAgentConfigFromStateFile,
+  settleConfiguredModelIdsFromStateFile
+} from "@/lib/openclaw/state/agent-config-payload";
 import {
   openClawStateRootPath
 } from "@/lib/openclaw/state/paths";
@@ -217,6 +220,7 @@ async function loadMissionControlSnapshots({
     let updateStatusResult: PromiseSettledResult<UpdateStatusPayload> = createDeferredPayloadResult();
     let agentsResult: PromiseSettledResult<AgentPayload>;
     let agentConfigResult: PromiseSettledResult<AgentConfigPayload>;
+    let configuredModelIdsResult: PromiseSettledResult<string[]>;
     let modelsResult: PromiseSettledResult<ModelsPayload>;
     let modelStatusResult: PromiseSettledResult<ModelsStatusPayload>;
     let presenceResult: PromiseSettledResult<PresencePayload>;
@@ -238,13 +242,21 @@ async function loadMissionControlSnapshots({
         ? settleStatusPayloadFromOpenClaw(15_000)
         : Promise.resolve(createDeferredPayloadResult<StatusPayload>());
       const agentConfigPromise = settleAgentConfigFromStateFile(openClawStateRootPath);
+      const configuredModelIdsPromise = settleConfiguredModelIdsFromStateFile(openClawStateRootPath);
       const modelStatusPromise = shouldHydrateModelStatus
         ? settleModelStatusPayloadFromOpenClaw(15_000)
         : Promise.resolve(createDeferredPayloadResult<ModelsStatusPayload>());
-      [gatewayStatusResult, statusResult, agentConfigResult, modelStatusResult] = await Promise.all([
+      [
+        gatewayStatusResult,
+        statusResult,
+        agentConfigResult,
+        configuredModelIdsResult,
+        modelStatusResult
+      ] = await Promise.all([
         gatewayStatusPromise,
         statusPromise,
         agentConfigPromise,
+        configuredModelIdsPromise,
         modelStatusPromise
       ]);
       agentsResult = createDeferredPayloadResult();
@@ -254,10 +266,17 @@ async function loadMissionControlSnapshots({
         statusPayloadCache.scheduleRefresh(() => settleStatusPayloadFromOpenClaw(15_000));
       }
     } else {
-      [statusResult, gatewayStatusResult, agentConfigResult, modelStatusResult] = await Promise.all([
+      [
+        statusResult,
+        gatewayStatusResult,
+        agentConfigResult,
+        configuredModelIdsResult,
+        modelStatusResult
+      ] = await Promise.all([
         settleStatusPayloadFromOpenClaw(45_000),
         settleGatewayStatusPayloadFromOpenClaw(45_000),
         settleAgentConfigFromStateFile(openClawStateRootPath),
+        settleConfiguredModelIdsFromStateFile(openClawStateRootPath),
         settleModelStatusPayloadFromOpenClaw(45_000)
       ]);
       agentsResult = createDeferredPayloadResult();
@@ -296,6 +315,9 @@ async function loadMissionControlSnapshots({
       agentConfigPayloadCache = entry;
     });
     const agentConfig = resolvedAgentConfig.value ?? [];
+    const configuredModelIds = configuredModelIdsResult.status === "fulfilled"
+      ? configuredModelIdsResult.value
+      : [];
     if (isDeferredPayloadResult(agentsResult) && !systemProfile) {
       agentsResult = await settleAgentPayloadFromOpenClaw(agentConfig);
     }
@@ -343,7 +365,7 @@ async function loadMissionControlSnapshots({
       : updateStatusPayloadCache.resolve(updateStatusResult);
     const agentsList = resolvedAgents.value ?? buildAgentPayloadsFromConfig(agentConfig, openClawStateRootPath);
     const modelStatus = mergeModelStatusWithAgentConfigDefaults(resolvedModelStatus.value, agentConfig, agentsList);
-    const localModels = buildFallbackModels({ agentConfig, modelStatus });
+    const localModels = buildFallbackModels({ agentConfig, modelStatus, configuredModelIds });
     const models = resolvedModels.value?.models ?? localModels.models;
     const presence = resolvedPresence.value ?? [];
     const hasOpenClawSignal =
@@ -471,7 +493,7 @@ async function loadMissionControlSnapshots({
         ...sharedSnapshotFields,
         workspaces,
         agents,
-        models: buildMissionControlModelRecords({ models, agents, modelStatus }),
+        models: buildMissionControlModelRecords({ models, agents, modelStatus, configuredModelIds }),
         runtimes,
         tasks,
         relationships
@@ -480,7 +502,7 @@ async function loadMissionControlSnapshots({
         ...sharedSnapshotFields,
         workspaces: visibleWorkspaces,
         agents: visibleAgents,
-        models: buildMissionControlModelRecords({ models, agents: visibleAgents, modelStatus }),
+        models: buildMissionControlModelRecords({ models, agents: visibleAgents, modelStatus, configuredModelIds }),
         runtimes: visibleRuntimes,
         tasks: visibleTasks,
         relationships: visibleRelationships
