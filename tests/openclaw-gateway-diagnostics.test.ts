@@ -107,6 +107,7 @@ test("gateway diagnostics carry fallback counts and recent fallback records", ()
   });
 
   assert.equal(diagnostics.transport?.fallbackTotal, 1);
+  assert.equal(diagnostics.health, "degraded");
   assert.equal(diagnostics.gatewayFallbackDiagnostics?.[0]?.operation, "models.list");
   assert.equal(diagnostics.gatewayFallbackDiagnostics?.[0]?.operationLabel, "Models List");
   assert.match(diagnostics.gatewayFallbackReasons?.[0] ?? "", /Recovery: Update OpenClaw/);

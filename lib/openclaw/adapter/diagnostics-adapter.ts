@@ -220,7 +220,10 @@ export function buildGatewayDiagnostics(input: {
     health: resolveDiagnosticHealth({
       rpcOk: input.gatewayStatus?.rpc?.ok,
       warningCount: securityWarnings.length,
-      runtimeIssueCount: input.runtimeDiagnostics.issues.length,
+      runtimeIssueCount:
+        issues.length +
+        activeGatewayFallbackDiagnostics.length +
+        (input.eventBridge && input.eventBridge.mode !== "live" ? 1 : 0),
       hasOpenClawSignal: input.hasOpenClawSignal
     }),
     version: input.versionDiagnostics.currentVersion,
