@@ -74,7 +74,67 @@ test("compatibility report fails a required contract when live response shape dr
   assert.match(modelsContract?.suggestedRecovery ?? "", /response matches the contract/i);
 });
 
-function baseReportOptions(gateway: FakeOpenClawGateway) {
+test("compatibility report avoids scoped live probes that require runtime ids or extra scopes", async () => {
+  const gateway = createCompatibilityGateway([
+    ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
+    ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS
+  ]);
+  gateway.route("tools.catalog", (_frame, context) => {
+    context.respond({ groups: [{ id: "core", tools: [] }] });
+  });
+  gateway.route("chat.history", () => {
+    throw new Error("chat.history requires a sessionKey");
+  });
+  gateway.route("artifacts.list", () => {
+    throw new Error("artifacts.list requires a taskId");
+  });
+  gateway.route("exec.approval.list", () => {
+    throw new Error("exec.approval.list requires operator.approvals");
+  });
+
+  const report = await generateOpenClawCompatibilityReport({
+    ...baseReportOptions(gateway),
+    includeLiveShapeChecks: true
+  });
+
+  assert.equal(report.contracts.find((check) => check.operation === "tools")?.status, "ok");
+  assert.equal(report.contracts.find((check) => check.operation === "tools")?.responseShapeStatus, "valid");
+  assert.equal(report.contracts.find((check) => check.operation === "sessionHistory")?.responseShapeStatus, "not-checked");
+  assert.equal(report.contracts.find((check) => check.operation === "artifacts")?.responseShapeStatus, "not-checked");
+  assert.equal(report.contracts.find((check) => check.operation === "execApprovals")?.responseShapeStatus, "not-checked");
+  assert.equal(gateway.methods().includes("chat.history"), false);
+  assert.equal(gateway.methods().includes("artifacts.list"), false);
+  assert.equal(gateway.methods().includes("exec.approval.list"), false);
+});
+
+test("compatibility report degrades advertised scope-gated methods when operator scopes are missing", async () => {
+  const gateway = createCompatibilityGateway([
+    ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
+    ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS
+  ], { authScopes: ["operator.read", "operator.write"] });
+
+  const report = await generateOpenClawCompatibilityReport({
+    ...baseReportOptions(gateway, { authScopes: ["operator.read", "operator.write"] }),
+    includeLiveShapeChecks: true
+  });
+  const approvalsContract = report.contracts.find((check) => check.operation === "execApprovals");
+
+  assert.equal(approvalsContract?.status, "degraded");
+  assert.equal(approvalsContract?.supportedMethod, "exec.approval.list");
+  assert.equal(approvalsContract?.nativeGatewaySupported, false);
+  assert.deepEqual(approvalsContract?.requiredScopes, ["operator.approvals"]);
+  assert.deepEqual(approvalsContract?.missingScopes, ["operator.approvals"]);
+  assert.match(approvalsContract?.reason ?? "", /missing scope operator\.approvals/i);
+  assert.match(approvalsContract?.suggestedRecovery ?? "", /Repair local OpenClaw device access/i);
+  assert.equal(report.summary.degradedSurfaces.includes("Execution approvals"), true);
+});
+
+function baseReportOptions(
+  gateway: FakeOpenClawGateway,
+  options: { authScopes?: string[] } = {}
+) {
+  const authScopes = options.authScopes ?? ["operator.read", "operator.write", "operator.approvals"];
+
   return {
     target: {
       ...resolveOpenClawCompatibilityTarget({
@@ -95,7 +155,7 @@ function baseReportOptions(gateway: FakeOpenClawGateway) {
         capability: "protocol v4",
         auth: {
           role: "operator",
-          scopes: ["operator.read", "operator.write"],
+          scopes: authScopes,
           capability: "operator"
         }
       },
@@ -118,8 +178,9 @@ function baseReportOptions(gateway: FakeOpenClawGateway) {
 
 function createCompatibilityGateway(
   methods: string[],
-  options: { advertiseMethods?: boolean } = {}
+  options: { advertiseMethods?: boolean; authScopes?: string[] } = {}
 ) {
+  const authScopes = options.authScopes ?? ["operator.read", "operator.write", "operator.approvals"];
   const events = options.advertiseMethods === false
     ? []
     : ["chat", "agent", "session.message", "session.tool", "task", "task.updated", "task.completed"];
@@ -135,7 +196,7 @@ function createCompatibilityGateway(
         methods: options.advertiseMethods === false ? [] : methods,
         events
       },
-      auth: { role: "operator", scopes: ["operator.read", "operator.write"] }
+      auth: { role: "operator", scopes: authScopes }
     }
   });
 

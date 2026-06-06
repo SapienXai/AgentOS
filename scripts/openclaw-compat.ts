@@ -56,7 +56,7 @@ type GatewayFrame = {
 
 void main().catch((error: unknown) => {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
+  finishCliProcess(1);
 });
 
 async function main() {
@@ -69,6 +69,7 @@ async function main() {
   const failOnDegraded = options.failOnDegraded || (
     !options.allowDegraded && resolveDefaultFailOnDegraded(target)
   );
+  let finalExitCode = 0;
 
   if (target.aliasUsed && !options.jsonOnly) {
     process.stderr.write(`Warning: ${target.aliasUsed} is deprecated; use ${target.name}.\n`);
@@ -201,11 +202,21 @@ async function main() {
 
     if (exitDecision.exitCode !== 0) {
       process.stderr.write(`${exitDecision.reason}\n`);
-      process.exitCode = exitDecision.exitCode;
     }
+
+    finalExitCode = exitDecision.exitCode;
   } finally {
     await testGateway?.close();
   }
+
+  finishCliProcess(finalExitCode);
+}
+
+function finishCliProcess(exitCode: number) {
+  process.exitCode = exitCode;
+  setImmediate(() => {
+    process.exit(exitCode);
+  });
 }
 
 function parseArgs(args: string[]): CliOptions {
@@ -435,7 +446,7 @@ async function startCompatibilityTestGateway(target: OpenClawCompatibilityTarget
           protocol: 4,
           server: { version },
           features: { methods, events },
-          auth: { role: "operator", scopes: ["operator.read", "operator.write"] }
+          auth: { role: "operator", scopes: ["operator.read", "operator.write", "operator.approvals"] }
         });
         return;
       }
@@ -449,7 +460,23 @@ async function startCompatibilityTestGateway(target: OpenClawCompatibilityTarget
     });
   });
 
-  await new Promise<void>((resolve) => server.once("listening", resolve));
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      server.off("error", onError);
+      server.off("listening", onListening);
+    };
+    const onListening = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+
+    server.once("listening", onListening);
+    server.once("error", onError);
+  });
   const address = server.address();
   if (!address || typeof address === "string") {
     throw new Error("Unable to bind compatibility test gateway.");

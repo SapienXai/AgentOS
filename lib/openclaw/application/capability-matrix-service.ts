@@ -132,6 +132,13 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
 
     return methods.some((method) => methodSet.has(method)) ? "supported" : "unsupported";
   };
+  const supportAll = (...methods: string[]): OpenClawCapabilitySupport => {
+    if (methodSet.size === 0) {
+      return "unknown";
+    }
+
+    return methods.every((method) => methodSet.has(method)) ? "supported" : "unsupported";
+  };
   const unsupportedGatewayMethods = methodSet.size > 0
     ? OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS.filter((method) => !methodSet.has(method))
     : [];
@@ -222,7 +229,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
     (entry) => `${entry.operationLabel} (${entry.operation}): ${entry.kind}: ${entry.issue} Recovery: ${entry.recovery}`
   );
   const degradedFeatures = Object.entries(operations)
-    .filter(([, value]) => value.mode === "degraded" || value.mode === "cli-fallback")
+    .filter(([, value]) => value.mode === "degraded" || value.mode === "cli-fallback" || value.mode === "disabled")
     .map(([name, value]) => `${name}: ${value.reason}`);
   const aliasOperations = Object.entries(operations)
     .filter(([, value]) => value.compatibility === "alias" && value.supportedMethod)
@@ -263,10 +270,10 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
     approvals: support(...getOpenClawGatewayMethodCandidates("execApprovals"), "plugin.approval.list", "plugin.approval.resolve"),
     updates: support(...getOpenClawGatewayMethodCandidates("updates")),
     nativeMissionDispatch: support(...getOpenClawGatewayMethodCandidates("missionDispatch")),
-    nativeAgentLifecycle: support(
-      ...getOpenClawGatewayMethodCandidates("agentCreate"),
-      ...getOpenClawGatewayMethodCandidates("agentUpdate"),
-      ...getOpenClawGatewayMethodCandidates("agentDelete")
+    nativeAgentLifecycle: supportAll(
+      "agents.create",
+      "agents.update",
+      "agents.delete"
     ),
     eventBridge: support(...getOpenClawGatewayMethodCandidates("missionStream"), ...getOpenClawGatewayMethodCandidates("taskEvents")) === "supported" ||
       [
@@ -295,11 +302,11 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
       },
       methodContract,
       nativeOperationCount: Object.values(operations).filter((value) => value.mode === "gateway-native").length,
-      degradedOperationCount: Object.values(operations).filter((value) => value.mode === "degraded" || value.mode === "cli-fallback").length,
+      degradedOperationCount: Object.values(operations).filter((value) => value.mode === "degraded" || value.mode === "cli-fallback" || value.mode === "disabled").length,
       unknownOperationCount: Object.values(operations).filter((value) => value.mode === "unknown").length,
       aliasOperations,
       degradedOperations: Object.entries(operations)
-        .filter(([, value]) => value.mode === "degraded" || value.mode === "cli-fallback")
+        .filter(([, value]) => value.mode === "degraded" || value.mode === "cli-fallback" || value.mode === "disabled")
         .map(([name]) => name)
     },
     degradedFeatures,

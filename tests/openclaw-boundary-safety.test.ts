@@ -406,7 +406,7 @@ test("settings gateway card exposes method contract audit and readable fallback 
   assert.match(source, /\["Contract gaps", formatGatewayMethodContractGaps\(gatewayCompatibilityProfile\?\.methodContract, capabilityMatrix\?\.operations\)\]/);
   assert.match(source, /\["Native ops", formatGatewayOperationCounts\(gatewayCompatibilityProfile\)\]/);
   assert.match(source, /\["Alias ops", formatGatewayAliasOperations\(gatewayCompatibilityProfile\?\.aliasOperations, capabilityMatrix\?\.operations\)\]/);
-  assert.match(source, /\["Fallback ops", formatGatewayDegradedOperations\(gatewayCompatibilityProfile\?\.degradedOperations, capabilityMatrix\?\.operations\)\]/);
+  assert.match(source, /\["Limited ops", formatGatewayDegradedOperations\(gatewayCompatibilityProfile\?\.degradedOperations, capabilityMatrix\?\.operations\)\]/);
   assert.match(source, /formatGatewayOperationList/);
   assert.match(source, /Gateway fallback diagnostics/);
   assert.match(source, /diagnostic\.operationLabel/);

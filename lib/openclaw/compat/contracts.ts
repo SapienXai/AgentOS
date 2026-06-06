@@ -56,6 +56,10 @@ const operationSurfaceMap: Partial<Record<string, OpenClawCompatibilityCapabilit
   agentDelete: "sessions"
 };
 
+const operationRequiredScopes: Partial<Record<string, string[]>> = {
+  execApprovals: ["operator.approvals"]
+};
+
 const methodProbes: Record<string, ContractProbe> = {
   health: {
     params: {},
@@ -85,21 +89,16 @@ const methodProbes: Record<string, ContractProbe> = {
     params: { limit: 1 },
     validate: isObjectRecord
   },
-  "chat.history": {
-    params: { limit: 1 },
-    validate: isObjectRecord
-  },
   "tasks.list": {
     params: { limit: 1 },
     validate: (payload) => Array.isArray(readObject(payload)?.tasks)
   },
-  "artifacts.list": {
-    params: {},
-    validate: (payload) => Array.isArray(readObject(payload)?.artifacts)
-  },
   "tools.catalog": {
     params: {},
-    validate: (payload) => Array.isArray(readObject(payload)?.tools)
+    validate: (payload) => {
+      const record = readObject(payload);
+      return Array.isArray(record?.tools) || Array.isArray(record?.groups);
+    }
   },
   "tools.effective": {
     params: {},
@@ -111,10 +110,6 @@ const methodProbes: Record<string, ContractProbe> = {
   },
   "plugins.uiDescriptors": {
     params: {},
-    validate: isObjectRecord
-  },
-  "exec.approval.list": {
-    params: { status: "pending", limit: 1 },
     validate: isObjectRecord
   },
   "device.pair.list": {
@@ -189,7 +184,12 @@ async function checkOperationContract(
 ): Promise<OpenClawCompatibilityContractCheck> {
   const supportedMethod = operation.methods.find((method) => methodSet.has(method)) ?? null;
   const supportedEvent = operation.events?.find((event) => eventSet.has(event)) ?? null;
-  const nativeGatewaySupported = Boolean(supportedMethod || supportedEvent);
+  const advertisedNativeSupport = Boolean(supportedMethod || supportedEvent);
+  const requiredScopes = operationRequiredScopes[operation.id] ?? [];
+  const missingScopes = input.authScopes.length > 0 && advertisedNativeSupport
+    ? requiredScopes.filter((scope) => !input.authScopes.includes(scope))
+    : [];
+  const nativeGatewaySupported = advertisedNativeSupport && missingScopes.length === 0;
   const fallbackAllowed = operation.fallbackAllowed !== false;
   const cliFallbackAvailable = fallbackAllowed && input.cliFallbackAvailable;
   const baseline = operation.baseline ?? "optional";
@@ -229,6 +229,7 @@ async function checkOperationContract(
     operation,
     supportedMethod,
     supportedEvent,
+    missingScopes,
     nativeGatewaySupported,
     cliFallbackAvailable,
     responseShapeStatus,
@@ -246,13 +247,15 @@ async function checkOperationContract(
     events: operation.events ?? [],
     supportedMethod,
     supportedEvent,
+    requiredScopes,
+    missingScopes,
     nativeGatewaySupported,
     cliFallbackAvailable,
     responseShapeStatus,
     responseShapeValid,
     status,
     reason,
-    suggestedRecovery: resolveContractRecovery(status, operation.label, required, cliFallbackAvailable)
+    suggestedRecovery: resolveContractRecovery(status, operation.label, required, cliFallbackAvailable, missingScopes)
   };
 }
 
@@ -273,6 +276,7 @@ function resolveContractReason(input: {
   operation: OpenClawGatewayCompatibilityOperationDefinition;
   supportedMethod: string | null;
   supportedEvent: string | null;
+  missingScopes: string[];
   nativeGatewaySupported: boolean;
   cliFallbackAvailable: boolean;
   responseShapeStatus: OpenClawCompatibilityResponseShapeStatus;
@@ -281,6 +285,11 @@ function resolveContractReason(input: {
 }) {
   if (input.liveFailure) {
     return `${input.operation.label} advertised native support, but the live response check failed: ${input.liveFailure}`;
+  }
+
+  if (input.missingScopes.length > 0) {
+    const evidence = input.supportedMethod ?? input.supportedEvent ?? "capability metadata";
+    return `${input.operation.label} is advertised through ${evidence}, but the authenticated operator is missing ${formatScopeList(input.missingScopes)}.`;
   }
 
   if (input.nativeGatewaySupported) {
@@ -307,8 +316,13 @@ function resolveContractRecovery(
   status: OpenClawCompatibilityContractStatus,
   label: string,
   required: boolean,
-  cliFallbackAvailable: boolean
+  cliFallbackAvailable: boolean,
+  missingScopes: string[] = []
 ) {
+  if (missingScopes.length > 0) {
+    return `Repair local OpenClaw device access so AgentOS has ${formatScopeList(missingScopes)}, then rerun compatibility checks.`;
+  }
+
   switch (status) {
     case "ok":
       return "No recovery action required.";
@@ -323,6 +337,10 @@ function resolveContractRecovery(
     case "failed":
       return `Update OpenClaw or AgentOS so the ${label} Gateway response matches the contract, then rerun compatibility checks.`;
   }
+}
+
+function formatScopeList(scopes: string[]) {
+  return scopes.length === 1 ? `scope ${scopes[0]}` : `scopes ${scopes.join(", ")}`;
 }
 
 function readObject(value: unknown) {

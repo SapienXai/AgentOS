@@ -659,8 +659,8 @@ function createTaskCardOptimisticFeed(activeTaskCard: TaskCardInspectorContext):
     id: `follow-up-${activeTaskCard.cardNumber}-accepted`,
     kind: "user",
     timestamp: activeTaskCard.createdAt ?? new Date().toISOString(),
-    title: "Follow-up sent",
-    detail: activeTaskCard.message || "The follow-up was sent to the existing OpenClaw session.",
+    title: "Follow-up accepted",
+    detail: activeTaskCard.message || "OpenClaw accepted the follow-up for the existing session.",
     runtimeId: activeTaskCard.runId ?? undefined
   };
 }

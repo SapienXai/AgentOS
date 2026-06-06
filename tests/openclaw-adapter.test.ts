@@ -21,9 +21,10 @@ import {
   setOpenClawGatewayClientForTesting,
   setOpenClawGatewayClientProvider
 } from "@/lib/openclaw/client/gateway-client-factory";
-import type {
-  OpenClawCommandOptions,
-  OpenClawGatewayClient
+import {
+  CliOpenClawGatewayClient,
+  type OpenClawCommandOptions,
+  type OpenClawGatewayClient
 } from "@/lib/openclaw/client/gateway-client";
 
 type MockCall = {
@@ -351,6 +352,28 @@ test("OpenClaw gateway client factory supports a provider extension point", () =
   setOpenClawGatewayClientProvider(() => client);
 
   assert.equal(getOpenClawGatewayClient(), client);
+});
+
+test("OpenClaw adapter fails closed when agent update has no real client capability", async () => {
+  const { client } = createMockGatewayClient();
+  delete (client as Partial<OpenClawGatewayClient>).updateAgent;
+  const adapter = new GatewayBackedOpenClawAdapter(() => client);
+
+  await assert.rejects(
+    async () => adapter.updateAgent({ id: "agent-1", name: "Agent One" }),
+    /agent update is unavailable.*does not expose agents\.update.*real CLI fallback/i
+  );
+});
+
+test("CLI Gateway client does not fake successful agent updates", async () => {
+  const client: OpenClawGatewayClient = new CliOpenClawGatewayClient();
+  const updateAgent = client.updateAgent;
+  assert.ok(updateAgent);
+
+  await assert.rejects(
+    () => updateAgent({ id: "agent-1", name: "Agent One" }),
+    /agent update is unavailable.*safe agent update command/i
+  );
 });
 
 test("OpenClaw adapter queues the latest config mutation during Gateway config cooldown", async () => {

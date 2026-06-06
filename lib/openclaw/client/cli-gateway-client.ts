@@ -3,7 +3,8 @@ import "server-only";
 import {
   runOpenClaw,
   runOpenClawJson,
-  runOpenClawJsonStream
+  runOpenClawJsonStream,
+  type CommandResult
 } from "@/lib/openclaw/cli";
 import { stringifyCommandFailure } from "@/lib/openclaw/command-failure";
 import { containsRedactedOpenClawSecret } from "@/lib/openclaw/client/native-ws-gateway-utils";
@@ -86,7 +87,6 @@ import type {
   OpenClawToolsCatalogPayload,
   OpenClawToolsEffectiveInput,
   OpenClawToolsEffectivePayload,
-  OpenClawUpdateAgentInput,
   OpenClawUpdateStatusPayload,
   StatusPayload
 } from "@/lib/openclaw/client/types";
@@ -808,10 +808,10 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
     return runOpenClaw(args, options);
   }
 
-  async updateAgent(input: OpenClawUpdateAgentInput, options: OpenClawCommandOptions = {}) {
-    void input;
-    void options;
-    return { stdout: JSON.stringify({ ok: true, fallback: "application-config" }), stderr: "" };
+  async updateAgent(): Promise<CommandResult> {
+    throw new Error(
+      "OpenClaw agent update is unavailable: this OpenClaw CLI fallback does not expose a safe agent update command."
+    );
   }
 
   setAgentIdentity(input: OpenClawAgentIdentityInput, options: OpenClawCommandOptions = {}) {

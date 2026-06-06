@@ -1109,7 +1109,9 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       options,
       commandResultFromGatewayPayload,
       () => this.fallback.updateAgent?.(input, options) ??
-        Promise.resolve({ stdout: JSON.stringify({ ok: true, fallback: "application-config" }), stderr: "" })
+        Promise.reject(new Error(
+          "OpenClaw agent update is unavailable: agents.update is not supported and no real CLI fallback is available."
+        ))
     );
   }
 

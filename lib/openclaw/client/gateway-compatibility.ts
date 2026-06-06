@@ -59,7 +59,7 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   { id: "configPatch", label: "Config patch", methods: ["config.patch", "config.apply", "config.set"], baseline: "required" },
   { id: "sessionLifecycle", label: "Session lifecycle", methods: ["sessions.create", "sessions.patch", "sessions.steer"], baseline: "optional" },
   { id: "agentCreate", label: "Agent creation", methods: ["agents.create"], baseline: "required" },
-  { id: "agentUpdate", label: "Agent update", methods: ["agents.update"], baseline: "required" },
+  { id: "agentUpdate", label: "Agent update", methods: ["agents.update"], fallbackAllowed: false, baseline: "required" },
   { id: "agentIdentity", label: "Agent identity sync", methods: ["agents.identity.set", "agents.setIdentity", "agents.set-identity"], baseline: "experimental" },
   { id: "agentDelete", label: "Agent removal", methods: ["agents.delete"], baseline: "required" },
   { id: "missionDispatch", label: "Mission dispatch", methods: ["chat.send", "sessions.send"], baseline: "required" },

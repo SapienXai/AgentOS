@@ -3212,6 +3212,41 @@ test("native WS gateway client uses agents.update when supported", async () => {
   assert.deepEqual(fallback.calls, []);
 });
 
+test("native WS gateway client fails closed when agent update has no real fallback", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? {
+              protocol: 4,
+              features: {
+                methods: ["agents.list", "agents.create", "agents.delete"]
+              }
+            }
+          : { ok: true }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await assert.rejects(
+    () => client.updateAgent({ id: "agent-1", name: "Agent One", workspace: "/workspace", model: "openai/test" }),
+    /agent update is unavailable.*agents\.update is not supported.*no real CLI fallback/i
+  );
+
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect"]);
+  assert.deepEqual(fallback.calls, []);
+});
+
 test("native WS gateway client sets agent identity through Gateway before CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {

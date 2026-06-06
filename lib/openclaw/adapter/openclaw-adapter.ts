@@ -374,8 +374,15 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
   }
 
   updateAgent(input: OpenClawUpdateAgentInput, options: OpenClawCommandOptions = {}) {
-    return this.getClient().updateAgent?.(input, options) ??
-      Promise.resolve({ stdout: JSON.stringify({ ok: true, fallback: "application-config" }), stderr: "" });
+    const client = this.getClient();
+
+    if (!client.updateAgent) {
+      throw new Error(
+        "OpenClaw agent update is unavailable: the active Gateway client does not expose agents.update or a real CLI fallback."
+      );
+    }
+
+    return client.updateAgent(input, options);
   }
 
   setAgentIdentity(input: OpenClawAgentIdentityInput, options: OpenClawCommandOptions = {}) {

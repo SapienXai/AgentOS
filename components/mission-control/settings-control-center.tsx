@@ -689,7 +689,7 @@ export function SettingsControlCenter(
                       ["Contract gaps", formatGatewayMethodContractGaps(gatewayCompatibilityProfile?.methodContract, capabilityMatrix?.operations)],
                       ["Native ops", formatGatewayOperationCounts(gatewayCompatibilityProfile)],
                       ["Alias ops", formatGatewayAliasOperations(gatewayCompatibilityProfile?.aliasOperations, capabilityMatrix?.operations)],
-                      ["Fallback ops", formatGatewayDegradedOperations(gatewayCompatibilityProfile?.degradedOperations, capabilityMatrix?.operations)],
+                      ["Limited ops", formatGatewayDegradedOperations(gatewayCompatibilityProfile?.degradedOperations, capabilityMatrix?.operations)],
                       ["Native chat", formatCapabilitySupport(capabilityMatrix?.nativeMissionDispatch)],
                       ["Config patch", formatCapabilitySupport(capabilityMatrix?.configPatch)],
                       ["Events", formatCapabilitySupport(capabilityMatrix?.eventBridge)]
@@ -2243,7 +2243,7 @@ function formatGatewayOperationCounts(value?: GatewayCompatibilityProfile) {
     return "Unknown";
   }
 
-  return `${value.nativeOperationCount} native / ${value.degradedOperationCount} fallback`;
+  return `${value.nativeOperationCount} native / ${value.degradedOperationCount} limited`;
 }
 
 function formatGatewayMethodContractStatus(value?: GatewayMethodContractAudit) {

@@ -169,6 +169,7 @@ export async function generateOpenClawCompatibilityReport(
   const contracts = await checkOpenClawCompatibilityContracts({
     effectiveMethods: resolvedCapabilities.effectiveMethods,
     effectiveEvents: resolvedCapabilities.effectiveEvents,
+    authScopes: nativeDetection.authScopes,
     capabilitySource: resolvedCapabilities.source,
     cliFallbackAvailable: cliAvailable,
     cliForced: isCliGatewayClientForcedByEnv(),

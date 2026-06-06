@@ -185,7 +185,7 @@ export function DashboardPageContent({
                   tone={gatewaySummary.nativeOperationCount > 0 ? "success" : "muted"}
                   rows={[
                     ["Fallback ops", String(gatewaySummary.cliFallbackOperationCount)],
-                    ["Degraded ops", String(gatewaySummary.degradedOperationCount)],
+                    ["Limited ops", String(gatewaySummary.degradedOperationCount)],
                     ["Unsupported methods", String(gatewaySummary.unsupportedGatewayMethods)],
                     ["Protocol", rootSnapshot.diagnostics.capabilityMatrix?.gatewayProtocolVersion ?? "Unknown"]
                   ]}
@@ -491,7 +491,8 @@ function summarizeGateway(snapshot: MissionControlSnapshot) {
   const nativeOperationCount =
     compatibility?.nativeOperationCount ?? operations.filter((operation) => operation.mode === "gateway-native").length;
   const degradedOperationCount =
-    compatibility?.degradedOperationCount ?? operations.filter((operation) => operation.mode === "degraded").length;
+    compatibility?.degradedOperationCount ??
+    operations.filter((operation) => operation.mode === "degraded" || operation.mode === "cli-fallback" || operation.mode === "disabled").length;
   const cliFallbackOperationCount = operations.filter((operation) => operation.mode === "cli-fallback").length;
   const label = diagnostics.rpcOk ? "Native RPC" : diagnostics.loaded ? "Gateway Degraded" : diagnostics.installed ? "Installed" : "Unavailable";
 

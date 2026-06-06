@@ -82,6 +82,8 @@ export interface OpenClawCompatibilityContractCheck {
   events: string[];
   supportedMethod: string | null;
   supportedEvent: string | null;
+  requiredScopes: string[];
+  missingScopes: string[];
   nativeGatewaySupported: boolean;
   cliFallbackAvailable: boolean;
   responseShapeStatus: OpenClawCompatibilityResponseShapeStatus;
@@ -185,6 +187,7 @@ export interface OpenClawCompatibilityDetectionInput {
 export interface OpenClawCompatibilityContractInput {
   effectiveMethods: string[];
   effectiveEvents: string[];
+  authScopes: string[];
   capabilitySource: OpenClawCompatibilityMethodSource;
   cliFallbackAvailable: boolean;
   cliForced: boolean;

@@ -179,6 +179,25 @@ test("capability matrix reports Gateway compatibility aliases without degrading 
   assert.equal(matrix.compatibility?.methodContract.missingOperations.includes("modelAuthOrder"), false);
 });
 
+test("capability matrix marks agent update unavailable without a fake fallback", async () => {
+  setOpenClawAdapterForTesting(createContractAdapter());
+  setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({
+    protocolVersion: 4,
+    methods: ["agents.create", "agents.delete"]
+  }));
+
+  const matrix = await getOpenClawCapabilityMatrix({ force: true });
+
+  assert.equal(matrix.nativeAgentLifecycle, "unsupported");
+  assert.equal(matrix.operations?.agentCreate.mode, "gateway-native");
+  assert.equal(matrix.operations?.agentDelete.mode, "gateway-native");
+  assert.equal(matrix.operations?.agentUpdate.mode, "disabled");
+  assert.equal(matrix.operations?.agentUpdate.fallbackAllowed, false);
+  assert.match(matrix.operations?.agentUpdate.reason ?? "", /no safe fallback is available/i);
+  assert.equal(matrix.compatibility?.degradedOperations.includes("agentUpdate"), true);
+  assert.equal(matrix.degradedFeatures?.some((entry) => entry.startsWith("agentUpdate:")), true);
+});
+
 test("capability matrix tracks Phase 2 Gateway-native runtime surfaces", async () => {
   setOpenClawAdapterForTesting(createContractAdapter());
   setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({

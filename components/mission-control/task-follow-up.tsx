@@ -261,8 +261,8 @@ export function TaskFollowUpComposer({
         status: continuation.status,
         summary: continuation.summary
       };
-      toast.success("Follow-up sent.", {
-        description: "AgentOS will continue this task in the existing OpenClaw context."
+      toast.success("Follow-up accepted.", {
+        description: "OpenClaw accepted the continuation; the task feed will show the captured result."
       });
       await onSubmitted?.(followUp);
     } catch (error) {

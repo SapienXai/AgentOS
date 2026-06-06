@@ -352,10 +352,26 @@ function closeSocketForDisconnect(socket: WebSocketLike) {
     // A Node ws socket can emit "WebSocket was closed before the connection was established"
     // after cleanup removed the normal error listener. The stale socket is already detached.
   });
+  let cleanupCloseListener: (() => void) | null = null;
+  let terminateTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   const cleanupTimer = globalThis.setTimeout(() => {
     cleanupErrorListener?.();
     cleanupErrorListener = null;
-  }, 5_000);
+  }, 30_000);
+  const cleanupCloseListenerOnly = () => {
+    cleanupCloseListener?.();
+    cleanupCloseListener = null;
+    if (terminateTimer) {
+      globalThis.clearTimeout(terminateTimer);
+      terminateTimer = null;
+    }
+  };
+  const cleanupAllGuards = () => {
+    cleanupCloseListenerOnly();
+    cleanupErrorListener?.();
+    cleanupErrorListener = null;
+    globalThis.clearTimeout(cleanupTimer);
+  };
 
   if (
     typeof cleanupTimer === "object" &&
@@ -365,6 +381,7 @@ function closeSocketForDisconnect(socket: WebSocketLike) {
   ) {
     cleanupTimer.unref();
   }
+  cleanupCloseListener = addSocketListener(socket, "close", cleanupCloseListenerOnly);
 
   try {
     if (socket.readyState === 0 && typeof socket.terminate === "function") {
@@ -373,9 +390,22 @@ function closeSocketForDisconnect(socket: WebSocketLike) {
     }
 
     socket.close();
+    if (typeof socket.terminate === "function") {
+      terminateTimer = globalThis.setTimeout(() => {
+        if (socket.readyState !== 3) {
+          socket.terminate?.();
+        }
+      }, 1_000);
+      if (
+        typeof terminateTimer === "object" &&
+        terminateTimer &&
+        "unref" in terminateTimer &&
+        typeof terminateTimer.unref === "function"
+      ) {
+        terminateTimer.unref();
+      }
+    }
   } catch {
-    cleanupErrorListener?.();
-    cleanupErrorListener = null;
-    globalThis.clearTimeout(cleanupTimer);
+    cleanupAllGuards();
   }
 }

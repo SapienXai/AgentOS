@@ -1069,7 +1069,7 @@ function createFollowUpOptimisticFeed(followUp: SubmittedTaskFollowUp): TaskFeed
       id: `${followUp.id}:submitted`,
       kind: "user",
       timestamp: followUp.createdAt,
-      title: followUp.runId ? "Follow-up run started" : "Follow-up sent",
+      title: followUp.runId ? "Follow-up run started" : "Follow-up accepted",
       detail: followUp.runId
         ? `OpenClaw accepted this follow-up as run ${followUp.runId}. Waiting for live output.`
         : "OpenClaw accepted this follow-up. Waiting for the run to appear in the live feed.",
