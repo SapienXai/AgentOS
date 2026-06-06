@@ -212,6 +212,17 @@ export interface OpenClawGatewayFallbackDiagnosticRecord {
   recovery: string;
 }
 
+export interface OpenClawEventBridgeStreamStatus {
+  mode: "live" | "reconnecting" | "polling";
+  connected: boolean;
+  reconnecting: boolean;
+  reconnectAttempt: number;
+  lastEventAt: string | null;
+  lastError: string | null;
+  message: string | null;
+  recovery: string | null;
+}
+
 export interface OpenClawCapabilityMatrix {
   detectedAt: string;
   openClawVersion: string | null;
@@ -896,6 +907,7 @@ export type TaskDetailStreamEvent =
   | {
       type: "ready";
       ok: boolean;
+      eventBridge?: OpenClawEventBridgeStreamStatus;
     }
   | {
       type: "error";

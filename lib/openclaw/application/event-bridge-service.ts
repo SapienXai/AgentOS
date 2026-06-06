@@ -10,7 +10,8 @@ import type {
   OpenClawGatewayEventSubscription
 } from "@/lib/openclaw/client/gateway-client";
 import { normalizeOpenClawGatewayEventToRuntime } from "@/lib/openclaw/application/runtime-state-service";
-import type { RuntimeRecord } from "@/lib/openclaw/types";
+import type { OpenClawEventBridgeStreamStatus, RuntimeRecord } from "@/lib/openclaw/types";
+import { redactErrorMessage } from "@/lib/security/redaction";
 
 type GatewayEventFrame = OpenClawGatewayEventFrame;
 
@@ -39,6 +40,50 @@ export function getOpenClawEventBridgeStatus() {
     reconnectAttempt,
     lastEventAt,
     lastError
+  };
+}
+
+export function getOpenClawEventBridgeStreamStatus(): OpenClawEventBridgeStreamStatus {
+  const connected = Boolean(subscription);
+  const sanitizedLastError = lastError
+    ? redactErrorMessage(lastError, "OpenClaw Gateway event stream failed.")
+    : null;
+
+  if (connected) {
+    return {
+      mode: "live",
+      connected: true,
+      reconnecting: false,
+      reconnectAttempt,
+      lastEventAt,
+      lastError: sanitizedLastError,
+      message: null,
+      recovery: null
+    };
+  }
+
+  if (reconnecting) {
+    return {
+      mode: "reconnecting",
+      connected: false,
+      reconnecting: true,
+      reconnectAttempt,
+      lastEventAt,
+      lastError: sanitizedLastError,
+      message: "OpenClaw event streaming is reconnecting. AgentOS is refreshing task snapshots by polling until the stream returns.",
+      recovery: sanitizedLastError ?? "Wait for the Gateway event stream to reconnect, or inspect Gateway diagnostics if it stays degraded."
+    };
+  }
+
+  return {
+    mode: "polling",
+    connected: false,
+    reconnecting: false,
+    reconnectAttempt,
+    lastEventAt,
+    lastError: sanitizedLastError,
+    message: "OpenClaw event streaming is unavailable. AgentOS is refreshing task snapshots by polling.",
+    recovery: sanitizedLastError ?? "Inspect Gateway event capabilities and compatibility diagnostics if live updates stay unavailable."
   };
 }
 
@@ -100,11 +145,11 @@ async function startEventBridge() {
         onEvent: (frame) => {
           notifyBridgeEventSubscribers(frame);
           void persistGatewayEvent(frame).catch((error) => {
-            lastError = error instanceof Error ? error.message : String(error);
+            lastError = redactErrorMessage(error, "OpenClaw Gateway event persistence failed.");
           });
         },
         onError: (error) => {
-          lastError = error instanceof Error ? error.message : String(error);
+          lastError = redactErrorMessage(error, "OpenClaw Gateway event stream failed.");
         },
         onClose: () => {
           subscription = null;
@@ -118,7 +163,7 @@ async function startEventBridge() {
     reconnecting = false;
   } catch (error) {
     subscription = null;
-    lastError = error instanceof Error ? error.message : String(error);
+    lastError = redactErrorMessage(error, "OpenClaw Gateway event stream failed.");
     scheduleEventBridgeReconnect();
   }
 }
@@ -149,7 +194,7 @@ function notifyBridgeEventSubscribers(frame: GatewayEventFrame) {
     try {
       subscriber(frame);
     } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
+      lastError = redactErrorMessage(error, "OpenClaw Gateway event subscriber failed.");
     }
   }
 }

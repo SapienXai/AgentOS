@@ -1,5 +1,8 @@
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
-import { subscribeOpenClawEventBridgeEvents } from "@/lib/openclaw/application/event-bridge-service";
+import {
+  getOpenClawEventBridgeStreamStatus,
+  subscribeOpenClawEventBridgeEvents
+} from "@/lib/openclaw/application/event-bridge-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
@@ -116,7 +119,10 @@ export async function GET(request: Request) {
         void sendSnapshot();
       }, STREAM_RECONCILIATION_INTERVAL_MS);
 
-      sendEvent("ready", { ok: true });
+      sendEvent("ready", {
+        ok: true,
+        eventBridge: getOpenClawEventBridgeStreamStatus()
+      });
       void sendSnapshot();
     },
     cancel() {

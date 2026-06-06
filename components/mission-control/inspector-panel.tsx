@@ -146,7 +146,7 @@ function InspectorPanelContent({
     [isOptimisticTask, selectedTask]
   );
   const canStreamTaskDetail = Boolean(selectedTaskId) && (!isOptimisticTask || Boolean(selectedTaskDispatchId));
-  const { taskDetail, taskDetailError } = useInspectorTaskDetailStream({
+  const { taskDetail, taskDetailError, taskDetailNotice } = useInspectorTaskDetailStream({
     selectedTaskId,
     canStreamTaskDetail,
     selectedTaskDispatchId
@@ -165,6 +165,8 @@ function InspectorPanelContent({
       : null;
   const resolvedTaskDetailError =
     taskDetailError?.taskId === selectedTaskId ? taskDetailError.message : null;
+  const resolvedTaskDetailNotice =
+    taskDetailNotice?.taskId === selectedTaskId ? taskDetailNotice.message : null;
   const baseTaskDetail = resolvedTaskDetail ?? optimisticTaskDetail;
   const effectiveTaskDetail = filterTaskDetailForCard(baseTaskDetail, selectedTaskCard);
   const taskDetailLoading =
@@ -368,6 +370,7 @@ function InspectorPanelContent({
                           taskDetail={effectiveTaskDetail}
                           taskDetailLoading={taskDetailLoading}
                           taskDetailError={resolvedTaskDetailError}
+                          taskDetailNotice={resolvedTaskDetailNotice}
                           onAbortTask={onAbortTask}
                           onControlComplete={onRefresh}
                         />
@@ -413,6 +416,7 @@ function InspectorPanelContent({
                       taskDetail={effectiveTaskDetail}
                       taskDetailLoading={taskDetailLoading}
                       taskDetailError={resolvedTaskDetailError}
+                      taskDetailNotice={resolvedTaskDetailNotice}
                       onAbortTask={onAbortTask}
                       onControlComplete={onRefresh}
                     />
@@ -1492,6 +1496,7 @@ function TaskContent({
   taskDetail,
   taskDetailLoading,
   taskDetailError,
+  taskDetailNotice,
   onAbortTask,
   onControlComplete
 }: {
@@ -1501,6 +1506,7 @@ function TaskContent({
   taskDetail: TaskDetailRecord | null;
   taskDetailLoading: boolean;
   taskDetailError: string | null;
+  taskDetailNotice: string | null;
   onAbortTask?: (task: MissionControlSnapshot["tasks"][number]) => void;
   onControlComplete?: () => Promise<void> | void;
 }) {
@@ -1576,6 +1582,11 @@ function TaskContent({
         {taskDetailError ? (
           <p className="rounded-[12px] border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-[12px] leading-5 text-amber-100">
             {taskDetailError}
+          </p>
+        ) : null}
+        {taskDetailNotice ? (
+          <p className="rounded-[12px] border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-[12px] leading-5 text-amber-100">
+            {taskDetailNotice}
           </p>
         ) : null}
       </InfoCard>
@@ -2023,6 +2034,7 @@ function TaskFeedContent({
   taskDetail,
   taskDetailLoading,
   taskDetailError,
+  taskDetailNotice,
   onAbortTask,
   onControlComplete
 }: {
@@ -2031,6 +2043,7 @@ function TaskFeedContent({
   taskDetail: TaskDetailRecord | null;
   taskDetailLoading: boolean;
   taskDetailError: string | null;
+  taskDetailNotice: string | null;
   onAbortTask?: (task: MissionControlSnapshot["tasks"][number]) => void;
   onControlComplete?: () => Promise<void> | void;
 }) {
@@ -2074,6 +2087,11 @@ function TaskFeedContent({
       {taskDetailError ? (
         <p className="rounded-[12px] border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-[12px] leading-5 text-amber-100">
           {taskDetailError}
+        </p>
+      ) : null}
+      {taskDetailNotice ? (
+        <p className="rounded-[12px] border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-[12px] leading-5 text-amber-100">
+          {taskDetailNotice}
         </p>
       ) : null}
       {integrity.issues.length > 0 ? (

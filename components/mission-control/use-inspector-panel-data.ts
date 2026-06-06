@@ -68,6 +68,10 @@ export function useInspectorTaskDetailStream({
     taskId: string;
     message: string;
   } | null>(null);
+  const [taskDetailNotice, setTaskDetailNotice] = useState<{
+    taskId: string;
+    message: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!selectedTaskId || !canStreamTaskDetail) {
@@ -118,8 +122,28 @@ export function useInspectorTaskDetailStream({
       }
     };
 
+    const handleReady = (event: MessageEvent<string>) => {
+      try {
+        const payload = JSON.parse(event.data) as TaskDetailStreamEvent;
+
+        if (payload.type !== "ready") {
+          return;
+        }
+
+        const eventBridge = payload.eventBridge;
+        const message = eventBridge && eventBridge.mode !== "live"
+          ? [eventBridge.message, eventBridge.recovery].filter(Boolean).join(" ")
+          : null;
+
+        setTaskDetailNotice({ taskId: selectedTaskId, message });
+      } catch {
+        setTaskDetailNotice({ taskId: selectedTaskId, message: null });
+      }
+    };
+
     source.addEventListener("task", handleTask as EventListener);
     source.addEventListener("task-error", handleTaskError as EventListener);
+    source.addEventListener("ready", handleReady as EventListener);
     source.onerror = () => {
       setTaskDetailError((current) =>
         current?.taskId === selectedTaskId
@@ -134,12 +158,14 @@ export function useInspectorTaskDetailStream({
     return () => {
       source.removeEventListener("task", handleTask as EventListener);
       source.removeEventListener("task-error", handleTaskError as EventListener);
+      source.removeEventListener("ready", handleReady as EventListener);
       source.close();
     };
   }, [selectedTaskId, canStreamTaskDetail, selectedTaskDispatchId]);
 
   return {
     taskDetail,
-    taskDetailError
+    taskDetailError,
+    taskDetailNotice
   };
 }

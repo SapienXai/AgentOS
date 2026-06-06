@@ -1,6 +1,9 @@
 import { getTaskDetail } from "@/lib/agentos/control-plane";
 import type { TaskDetailRecord, TaskDetailStreamEvent } from "@/lib/agentos/contracts";
-import { subscribeOpenClawEventBridgeEvents } from "@/lib/openclaw/application/event-bridge-service";
+import {
+  getOpenClawEventBridgeStreamStatus,
+  subscribeOpenClawEventBridgeEvents
+} from "@/lib/openclaw/application/event-bridge-service";
 import type { OpenClawGatewayEventFrame } from "@/lib/openclaw/client/gateway-client";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
@@ -126,7 +129,11 @@ export async function GET(
       interval = setInterval(() => {
         void sendTask();
       }, 3000);
-      sendEvent("ready", { type: "ready", ok: true });
+      sendEvent("ready", {
+        type: "ready",
+        ok: true,
+        eventBridge: getOpenClawEventBridgeStreamStatus()
+      });
     },
     cancel() {
       closed = true;

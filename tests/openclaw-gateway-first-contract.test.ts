@@ -10,6 +10,7 @@ import {
 } from "@/lib/openclaw/application/capability-matrix-service";
 import {
   getOpenClawEventBridgeStatus,
+  getOpenClawEventBridgeStreamStatus,
   normalizeOpenClawGatewayEventToRuntime,
   resetOpenClawEventBridgeForTesting,
   setOpenClawEventBridgeReconnectPolicyForTesting,
@@ -573,6 +574,32 @@ test("Gateway event bridge reconnects after subscription close without duplicate
   await waitFor(() => subscribeCalls.length === 2);
   assert.equal(getOpenClawEventBridgeStatus().connected, true);
   assert.equal(getOpenClawEventBridgeStatus().reconnecting, false);
+});
+
+test("Gateway event bridge stream status exposes polling recovery without leaking subscription errors", async () => {
+  setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({
+    protocolVersion: 4,
+    methods: ["sessions.subscribe", "tasks.subscribe"],
+    events: ["session.message", "task.updated"]
+  }));
+  setOpenClawEventBridgeReconnectPolicyForTesting({ baseMs: 10, maxMs: 10 });
+  setOpenClawAdapterForTesting(createContractAdapter({
+    async subscribeRuntimeEvents() {
+      throw new Error("Gateway event stream rejected token=query-secret");
+    }
+  }));
+
+  startOpenClawEventBridge();
+  await waitFor(() => getOpenClawEventBridgeStatus().reconnecting || Boolean(getOpenClawEventBridgeStatus().lastError), 2_000);
+
+  const status = getOpenClawEventBridgeStreamStatus();
+
+  assert.equal(status.mode === "reconnecting" || status.mode === "polling", true);
+  assert.equal(status.connected, false);
+  assert.match(status.message ?? "", /refreshing task snapshots by polling/i);
+  assert.match(status.recovery ?? "", /OpenClaw Gateway event stream failed|\[redacted\]/i);
+  assert.doesNotMatch(status.lastError ?? "", /query-secret/);
+  assert.doesNotMatch(status.recovery ?? "", /query-secret/);
 });
 
 function createContractAdapter(overrides: Partial<OpenClawAdapter> = {}): OpenClawAdapter {

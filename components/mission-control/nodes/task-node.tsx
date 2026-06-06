@@ -121,7 +121,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       : optimisticFeed.length > 0 && isTaskFeedEvent(optimisticFeed[optimisticFeed.length - 1])
       ? optimisticFeed[optimisticFeed.length - 1]
       : null;
-  const { feed, detail, loading, error } = useTaskFeed(data.task.id, shouldStreamFeed, {
+  const { feed, detail, loading, error, streamNotice } = useTaskFeed(data.task.id, shouldStreamFeed, {
     dispatchId: data.task.dispatchId,
     optimisticFeed
   });
@@ -705,6 +705,11 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="pt-2.5">
+              {streamNotice ? (
+                <div className="mb-2 rounded-[12px] border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-[10px] leading-5 text-amber-100">
+                  {streamNotice}
+                </div>
+              ) : null}
               <ScrollArea className="h-[96px] w-full pr-3">
                 {loading && displayedFeed.length === 0 ? (
                   <div className="py-4 text-center text-[10px] text-slate-500">
