@@ -147,8 +147,8 @@ const sidebarSections: Array<{ id: SidebarSection; label: string }> = [
 ];
 
 const sidebarItems: SidebarItem[] = [
-  { label: "Dashboard", href: "/", icon: Inbox, section: "overview" },
-  { label: "Mission Control", href: "/mission-control", icon: Gauge, section: "overview" },
+  { label: "Mission Control", href: "/", icon: Gauge, section: "overview" },
+  { label: "Dashboard", href: "/dashboard", icon: Inbox, section: "overview" },
   { label: "Agents", href: "/agents", icon: Bot, section: "operations" },
   { label: "Tasks", href: "/tasks", icon: ClipboardList, section: "operations" },
   { label: "Files", href: "/files", icon: FileText, section: "operations" },
@@ -1264,12 +1264,12 @@ function CollapsedSidebar({
 }
 
 function isSidebarItemActive(item: SidebarItem, pathname: string, activeHash: string) {
-  if (item.label === "Dashboard") {
+  if (item.label === "Mission Control") {
     return pathname === "/" && !activeHash;
   }
 
-  if (item.label === "Mission Control") {
-    return pathname === "/mission-control";
+  if (item.label === "Dashboard") {
+    return pathname === "/dashboard";
   }
 
   if (item.href && !item.hash && item.href !== "/" && !item.href.startsWith("/settings")) {

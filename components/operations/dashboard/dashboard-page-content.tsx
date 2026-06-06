@@ -147,7 +147,7 @@ export function DashboardPageContent({
                 <QuickAction icon={KeyRound} label="Connect Account" href="/accounts" />
                 <QuickAction icon={BrainCircuit} label="Manage Models" href="/models" />
                 <QuickAction icon={Settings2} label="Open Settings" href="/settings" />
-                <QuickAction icon={Gauge} label="Mission Control" href="/mission-control" />
+                <QuickAction icon={Gauge} label="Mission Control" href="/" />
               </div>
             </SectionCard>
           </div>

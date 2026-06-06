@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetSt
 
 import { MissionSidebar } from "@/components/mission-control/sidebar";
 import { useMissionControlPreferences } from "@/components/mission-control/use-mission-control-preferences";
+import { WorkspaceWizardDialog } from "@/components/mission-control/workspace-wizard/workspace-wizard-dialog";
 import {
   buildWorkspaceSelectionStorageKey,
   resolveWorkspaceSelection,
@@ -43,6 +44,9 @@ export function OperationsShell({
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [loadedWorkspaceSelectionRoot, setLoadedWorkspaceSelectionRoot] = useState<string | null>(null);
+  const [isWorkspaceWizardOpen, setIsWorkspaceWizardOpen] = useState(false);
+  const [workspaceWizardInitialMode, setWorkspaceWizardInitialMode] = useState<"basic" | "advanced">("basic");
+  const [workspaceWizardEditId, setWorkspaceWizardEditId] = useState<string | null>(null);
   const activeWorkspace = useMemo(
     () =>
       activeWorkspaceId
@@ -106,6 +110,27 @@ export function OperationsShell({
     );
   }, [activeWorkspaceId, loadedWorkspaceSelectionRoot, snapshot.diagnostics.workspaceRoot]);
 
+  const openWorkspaceWizard = (mode: "basic" | "advanced" = "basic") => {
+    setWorkspaceWizardEditId(null);
+    setWorkspaceWizardInitialMode(mode);
+    setIsWorkspaceWizardOpen(true);
+  };
+
+  const openWorkspaceWizardForEdit = (workspaceId: string) => {
+    setWorkspaceWizardEditId(workspaceId);
+    setWorkspaceWizardInitialMode("advanced");
+    setIsWorkspaceWizardOpen(true);
+  };
+
+  const handleWorkspaceWizardOpenChange = (nextOpen: boolean) => {
+    setIsWorkspaceWizardOpen(nextOpen);
+
+    if (!nextOpen) {
+      setWorkspaceWizardEditId(null);
+      setWorkspaceWizardInitialMode("basic");
+    }
+  };
+
   return (
     <div
       className={cn(
@@ -162,8 +187,8 @@ export function OperationsShell({
           onConnectModelProvider={(provider) => toast.message(`Open ${provider} setup from Mission Control to connect it.`)}
           onOpenModelSetup={() => toast.message("Model setup opens from Mission Control.")}
           onOpenAddModels={() => toast.message("Add Models opens from Mission Control.")}
-          onOpenWorkspaceCreate={() => toast.message("Workspace creation opens from Mission Control.")}
-          onEditWorkspace={() => toast.message("Workspace editing opens from Mission Control.")}
+          onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
+          onEditWorkspace={openWorkspaceWizardForEdit}
           onSnapshotChange={setSnapshot}
           onAgentCreatedVisible={() => {}}
         />
@@ -216,8 +241,8 @@ export function OperationsShell({
           onConnectModelProvider={(provider) => toast.message(`Open ${provider} setup from Mission Control to connect it.`)}
           onOpenModelSetup={() => toast.message("Model setup opens from Mission Control.")}
           onOpenAddModels={() => toast.message("Add Models opens from Mission Control.")}
-          onOpenWorkspaceCreate={() => toast.message("Workspace creation opens from Mission Control.")}
-          onEditWorkspace={() => toast.message("Workspace editing opens from Mission Control.")}
+          onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
+          onEditWorkspace={openWorkspaceWizardForEdit}
           onSnapshotChange={setSnapshot}
           onAgentCreatedVisible={() => {}}
         />
@@ -246,6 +271,19 @@ export function OperationsShell({
           })}
         </div>
       </main>
+
+      <WorkspaceWizardDialog
+        key={workspaceWizardEditId ? `workspace-edit:${workspaceWizardEditId}` : "workspace-create"}
+        open={isWorkspaceWizardOpen}
+        onOpenChange={handleWorkspaceWizardOpenChange}
+        initialMode={workspaceWizardInitialMode}
+        workspaceEditId={workspaceWizardEditId}
+        surfaceTheme={surfaceTheme}
+        snapshot={snapshot}
+        onRefresh={refresh}
+        onWorkspaceCreated={setActiveWorkspaceId}
+        onWorkspaceUpdated={setActiveWorkspaceId}
+      />
     </div>
   );
 }
