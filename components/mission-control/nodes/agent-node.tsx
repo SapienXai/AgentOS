@@ -183,6 +183,9 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   const surfaceBadges = data.surfaceBadges ?? [];
   const accountBadges = data.accountBadges ?? [];
   const canOpenWorkspaceChannels = Boolean(data.onOpenWorkspaceChannels);
+  const canMessage = !isPendingCreation && Boolean(data.onMessage);
+  const isMessageActive = Boolean(data.chatOpen) || hasUnreadChat;
+  const canCreateTask = !isPendingCreation && Boolean(data.onCreateTask);
   const maxVisibleConnectionBadges = 4;
   const visibleSurfaceBadges = surfaceBadges.slice(0, maxVisibleConnectionBadges);
   const visibleAccountBadges = accountBadges.slice(
@@ -634,14 +637,18 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                     ? `${agentLabel} is still provisioning`
                     : `Message ${agentLabel}`
               }
-              disabled={isPendingCreation || !data.onMessage}
+              disabled={!canMessage}
               className={cn(
-                "nodrag nopan relative inline-flex h-10 items-center justify-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.05] px-3.5 text-[12px] text-slate-200 transition-colors hover:bg-white/[0.08] hover:text-white",
-                isPendingCreation && "cursor-not-allowed text-slate-500 hover:bg-white/[0.05] hover:text-slate-500"
+                "nodrag nopan relative inline-flex h-10 items-center justify-center gap-1.5 rounded-full border px-3.5 text-[12px] transition-colors",
+                !canMessage
+                  ? "cursor-not-allowed border-emerald-300/12 bg-emerald-300/[0.04] text-emerald-100/48 shadow-none hover:bg-emerald-300/[0.04] hover:text-emerald-100/48"
+                  : isMessageActive
+                  ? "border-emerald-200/45 bg-[linear-gradient(180deg,rgba(110,231,183,0.96),rgba(16,185,129,0.9))] text-slate-950 shadow-[0_12px_30px_rgba(16,185,129,0.34)]"
+                  : "border-emerald-300/20 bg-[linear-gradient(180deg,rgba(52,211,153,0.18),rgba(5,150,105,0.28))] text-emerald-50 shadow-[0_10px_24px_rgba(16,185,129,0.16)] hover:border-emerald-200/30 hover:text-white"
               )}
               onClick={(event) => {
                 event.stopPropagation();
-                if (isPendingCreation) {
+                if (!canMessage) {
                   return;
                 }
                 data.onMessage?.(data.agent.id);
@@ -693,14 +700,18 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                 ? `${agentLabel} is still provisioning`
                 : `Create a task for ${agentLabel}`
             }
-            disabled={isPendingCreation || !data.onCreateTask}
+            disabled={!canCreateTask}
             className={cn(
-              "nodrag nopan mt-2.5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border border-cyan-200/22 bg-[linear-gradient(180deg,rgba(125,211,252,0.2),rgba(14,116,144,0.34))] px-4 text-[12px] font-medium text-cyan-50 shadow-[0_14px_34px_rgba(34,211,238,0.18),inset_0_1px_0_rgba(255,255,255,0.08)] transition-colors hover:border-cyan-100/34 hover:bg-[linear-gradient(180deg,rgba(125,211,252,0.26),rgba(14,116,144,0.42))] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/45",
-              isPendingCreation && "cursor-not-allowed border-cyan-300/12 bg-cyan-300/[0.04] text-cyan-100/48 shadow-none hover:bg-cyan-300/[0.04] hover:text-cyan-100/48"
+              "nodrag nopan mt-2.5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border px-4 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200/45",
+              !canCreateTask
+                ? "cursor-not-allowed border-rose-300/12 bg-rose-300/[0.04] text-rose-100/48 shadow-none hover:bg-rose-300/[0.04] hover:text-rose-100/48"
+                : data.composerFocused
+                ? "border-rose-200/45 bg-[linear-gradient(180deg,rgba(251,113,133,0.96),rgba(190,18,60,0.9))] text-white shadow-[0_12px_30px_rgba(225,29,72,0.38)]"
+                : "border-rose-300/20 bg-[linear-gradient(180deg,rgba(244,63,94,0.18),rgba(190,18,60,0.3))] text-rose-50 shadow-[0_10px_24px_rgba(225,29,72,0.18)] hover:border-rose-200/30 hover:text-white"
             )}
             onClick={(event) => {
               event.stopPropagation();
-              if (isPendingCreation) {
+              if (!canCreateTask) {
                 return;
               }
               data.onCreateTask?.(data.agent.id);
