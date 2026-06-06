@@ -58,6 +58,7 @@ export type AgentNodeData = Record<string, unknown> & {
   surfaceBadges?: AgentSurfaceBadge[];
   accountBadges?: AgentAccountBadge[];
   onMessage?: (agentId: string) => void;
+  onCreateTask?: (agentId: string) => void;
   onEdit?: (agentId: string) => void;
   onDelete?: (agentId: string) => void;
   onFocus?: (agentId: string) => void;

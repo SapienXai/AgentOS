@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { Handle, Position, type Node as FlowNode, type NodeProps } from "@xyflow/react";
-import { ChevronDown, LocateFixed, MessageCircle, MoreHorizontal, Plus } from "lucide-react";
+import { ChevronDown, LocateFixed, MessageCircle, MoreHorizontal, Plus, SendHorizontal } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 
 import { AccountIcon } from "@/components/mission-control/account-icon";
@@ -684,6 +684,32 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               <span>{isPendingCreation ? "Syncing" : data.focused ? "Focused" : "Focus"}</span>
             </button>
           </div>
+
+          <button
+            type="button"
+            aria-label={`Create task for ${agentLabel}`}
+            title={
+              isPendingCreation
+                ? `${agentLabel} is still provisioning`
+                : `Create a task for ${agentLabel}`
+            }
+            disabled={isPendingCreation || !data.onCreateTask}
+            className={cn(
+              "nodrag nopan mt-2.5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border border-cyan-200/22 bg-[linear-gradient(180deg,rgba(125,211,252,0.2),rgba(14,116,144,0.34))] px-4 text-[12px] font-medium text-cyan-50 shadow-[0_14px_34px_rgba(34,211,238,0.18),inset_0_1px_0_rgba(255,255,255,0.08)] transition-colors hover:border-cyan-100/34 hover:bg-[linear-gradient(180deg,rgba(125,211,252,0.26),rgba(14,116,144,0.42))] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/45",
+              isPendingCreation && "cursor-not-allowed border-cyan-300/12 bg-cyan-300/[0.04] text-cyan-100/48 shadow-none hover:bg-cyan-300/[0.04] hover:text-cyan-100/48"
+            )}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (isPendingCreation) {
+                return;
+              }
+              data.onCreateTask?.(data.agent.id);
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <SendHorizontal className="h-3.5 w-3.5" />
+            <span>Create Task</span>
+          </button>
         </div>
 
         <div className="overflow-hidden rounded-b-[24px] border-t border-white/[0.08] bg-white/[0.03] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">

@@ -218,6 +218,7 @@ export function MissionControlShell({
   const [focusedAgentId, setFocusedAgentId] = useState<string | null>(null);
   const [composerTargetAgentId, setComposerTargetAgentId] = useState<string | null>(null);
   const [isComposerActive, setIsComposerActive] = useState(false);
+  const [isComposerVisible, setIsComposerVisible] = useState(false);
   const [composerViewportResetNonce, setComposerViewportResetNonce] = useState(0);
   const [activeInspectorTab, setActiveInspectorTab] = useState<InspectorTabId>("overview");
   const [activeTaskCardContext, setActiveTaskCardContext] = useState<TaskCardInspectorContext | null>(null);
@@ -351,7 +352,10 @@ export function MissionControlShell({
   } = useTaskReviewWorkflow({
     selectNode,
     setIsInspectorOpen,
-    setComposeIntent: (intent) => setComposeIntent(intent),
+    setComposeIntent: (intent) => {
+      setIsComposerVisible(true);
+      setComposeIntent(intent);
+    },
     setComposerTargetAgentId,
     setIsComposerActive,
     refreshSnapshot
@@ -643,6 +647,23 @@ export function MissionControlShell({
     [activeWorkspaceId, focusedAgentId, selectNode, selectedNodeId, uiSnapshot.agents]
   );
 
+  const handleCreateTaskAgent = useCallback(
+    (agentId: string) => {
+      const agent = uiSnapshot.agents.find((entry) => entry.id === agentId);
+
+      if (!agent) {
+        return;
+      }
+
+      setActiveWorkspaceId(agent.workspaceId);
+      setComposerTargetAgentId(agent.id);
+      setIsComposerVisible(true);
+      setIsComposerActive(true);
+      selectNode(agent.id);
+    },
+    [selectNode, uiSnapshot.agents]
+  );
+
   const handleCanvasNodePointerDownCapture = useCallback(() => {
     canvasNodeInteractionActiveRef.current = true;
   }, []);
@@ -651,6 +672,7 @@ export function MissionControlShell({
     (active: boolean) => {
       if (active) {
         pendingComposerBlurRef.current = false;
+        setIsComposerVisible(true);
         setIsComposerActive(true);
         return;
       }
@@ -661,6 +683,7 @@ export function MissionControlShell({
       }
 
       pendingComposerBlurRef.current = false;
+      setIsComposerVisible(false);
       setIsComposerActive(false);
     },
     []
@@ -684,6 +707,7 @@ export function MissionControlShell({
       }
 
       pendingComposerBlurRef.current = false;
+      setIsComposerVisible(false);
       setIsComposerActive(false);
       setComposerViewportResetNonce((current) => current + 1);
     };
@@ -3450,6 +3474,7 @@ export function MissionControlShell({
               });
             }}
             onFocusAgent={handleFocusAgent}
+            onCreateTaskAgent={handleCreateTaskAgent}
             onConfigureAgentModel={handleConfigureAgentModel}
             onConfigureAgentCapabilities={handleConfigureAgentCapabilities}
             onInspectAgentDetail={handleInspectAgentDetail}
@@ -3469,6 +3494,7 @@ export function MissionControlShell({
             }}
             onReplyTask={(task) => {
               const prompt = resolveTaskPrompt(task);
+              setIsComposerVisible(true);
               setComposeIntent({
                 id: `reply:${task.id}:${Date.now()}`,
                 mission: prompt,
@@ -3479,6 +3505,7 @@ export function MissionControlShell({
             }}
             onCopyTaskPrompt={async (task) => {
               const prompt = resolveTaskPrompt(task);
+              setIsComposerVisible(true);
               setComposeIntent({
                 id: `copy:${task.id}:${Date.now()}`,
                 mission: prompt,
@@ -3715,7 +3742,8 @@ export function MissionControlShell({
               </button>
             ) : null}
           </div>
-          <CommandBar
+          {isComposerVisible ? (
+            <CommandBar
             snapshot={uiSnapshot}
             surfaceTheme={surfaceTheme}
             activeWorkspaceId={activeWorkspaceId}
@@ -3846,7 +3874,8 @@ export function MissionControlShell({
                 setRecentDispatchId(result.dispatchId);
               }
             }}
-          />
+            />
+          ) : null}
         </div>
 
         <WorkspaceChannelsDialog

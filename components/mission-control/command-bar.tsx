@@ -251,6 +251,18 @@ export function CommandBar({
   }, [draftScopeKey, mission, thinking]);
 
   useEffect(() => {
+    if (!isComposerActive || isSubmitting) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      const nextText = textareaRef.current?.value ?? "";
+      textareaRef.current?.setSelectionRange(nextText.length, nextText.length);
+    });
+  }, [isComposerActive, isSubmitting, targetAgentId]);
+
+  useEffect(() => {
     onTargetAgentChange?.(effectiveTargetAgentId ?? null);
   }, [effectiveTargetAgentId, onTargetAgentChange]);
 

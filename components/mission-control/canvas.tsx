@@ -70,6 +70,7 @@ export function MissionCanvas({
   lockedTaskKeys,
   onToggleWorkspaceTaskCards,
   onMessageAgent,
+  onCreateTaskAgent,
   onEditAgent,
   onDeleteAgent,
   onFocusAgent,
@@ -109,6 +110,7 @@ export function MissionCanvas({
   lockedTaskKeys: string[];
   onToggleWorkspaceTaskCards: (workspaceId: string) => void;
   onMessageAgent?: (agentId: string) => void;
+  onCreateTaskAgent?: (agentId: string) => void;
   onEditAgent: (agentId: string) => void;
   onDeleteAgent: (agentId: string) => void;
   onFocusAgent: (agentId: string) => void;
@@ -166,6 +168,7 @@ export function MissionCanvas({
     lockedTaskKeys,
     onToggleWorkspaceTaskCards,
     onMessageAgent,
+    onCreateTaskAgent,
     onEditAgent,
     onDeleteAgent,
     onFocusAgent,
@@ -254,6 +257,7 @@ export function MissionCanvas({
       lockedTaskKeys,
       onToggleWorkspaceTaskCards,
       onMessageAgent,
+      onCreateTaskAgent,
       onEditAgent,
       onDeleteAgent,
       onFocusAgent,
@@ -303,6 +307,7 @@ export function MissionCanvas({
     lockedTaskKeys,
     onToggleWorkspaceTaskCards,
     onMessageAgent,
+    onCreateTaskAgent,
     onEditAgent,
     onDeleteAgent,
     onFocusAgent,
