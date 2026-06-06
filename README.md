@@ -243,6 +243,7 @@ The 0.6.8 release expects Node.js 24 or newer and the OpenClaw supported baselin
 - AgentOS uses OpenClaw Gateway-first transport by default. CLI fallback remains explicit and visible for install, recovery, Gateway process control, older or unsupported Gateway methods, malformed responses, scope limits, and unavailable native auth.
 - Accounts and browser profiles are an MVP bridge. AgentOS can read OpenClaw browser profiles, start or attach a reported profile, open a login target, and enforce AgentOS access rules before account-target task launch. OpenClaw does not yet expose typed browser-profile dispatch, verified website account identity, or a direct browser-profile parameter for mission dispatch, so AgentOS passes selected profile/session context to eligible browser-capable agents.
 - `requires_approval` account access rules are intentionally blocked until approval dispatch exists. They are persisted as policy state but cannot run a task yet.
+- For high-risk social account missions, use the [social account mission recipe](docs/social-account-mission-recipe.md) to keep browser-profile context, OpenClaw plugin actions, and operator confirmations explicit.
 - Surface repair is preview-first. Apply only after reviewing the dry-run audit, backup path, affected config paths, and restore instructions.
 - `agentos doctor --deep` is the release-readiness diagnostic for Gateway protocol, native auth, scopes, required methods, config access, schema/patch support, channel status, model readiness, fallback count, and the last native failure.
 - Package release checks are covered by `pnpm check:release` and `pnpm smoke:agentos-package`; use the clean-install smoke checklist before publishing or announcing a release.
@@ -292,7 +293,7 @@ AgentOS is local-first and is intended to bind to loopback by default. Packaged 
 - Gateway event bridge for supported OpenClaw chat, tool, log, session, and approval events.
 - Gateway diagnostics, capability matrix, native auth repair, and control actions.
 - Local-first settings for gateway endpoint and workspace root.
-- Accounts page for OpenClaw browser-profile login targets, with AgentOS-side access rules and clear browser-profile dispatch limitations.
+- Accounts page for OpenClaw browser-profile login targets, with AgentOS-side access rules, clear browser-profile dispatch limitations, and a [social account mission recipe](docs/social-account-mission-recipe.md).
 - Install paths through the release installer and package manager.
 
 ### What is coming next
