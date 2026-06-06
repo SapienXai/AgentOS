@@ -22,6 +22,7 @@ import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
 
 export type StatusTone = "success" | "info" | "warning" | "danger" | "muted" | "purple";
+export type OperationsSurfaceTheme = "dark" | "light";
 
 export const pageSurface =
   "border border-white/[0.08] bg-[linear-gradient(180deg,rgba(13,24,42,0.86),rgba(6,12,23,0.82))] shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_20px_64px_rgba(0,0,0,0.30)] backdrop-blur-xl";
@@ -62,7 +63,7 @@ export function OperationsTopBar({
 }: {
   snapshot: MissionControlSnapshot;
   connectionState: "connecting" | "live" | "retrying";
-  surfaceTheme: "dark" | "light";
+  surfaceTheme: OperationsSurfaceTheme;
   onRefresh: () => void;
   onToggleTheme: () => void;
 }) {
@@ -73,24 +74,41 @@ export function OperationsTopBar({
   const ThemeIcon = surfaceTheme === "light" ? SunMedium : Moon;
 
   return (
-    <div className="flex items-center justify-end gap-2 text-[0.58rem] font-semibold uppercase tracking-[0.22em] text-slate-400">
+    <div
+      className={cn(
+        "flex items-center justify-end gap-2 text-[0.58rem] font-semibold uppercase tracking-[0.22em]",
+        surfaceTheme === "light" ? "text-[#7a6252]" : "text-slate-400"
+      )}
+    >
       <span className="hidden sm:inline">OpenClaw</span>
-      <span className="hidden font-mono text-slate-500 sm:inline">v{version}</span>
+      <span className={cn("hidden font-mono sm:inline", surfaceTheme === "light" ? "text-[#8f725f]" : "text-slate-500")}>
+        v{version}
+      </span>
       <span
         className={cn(
           "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 tracking-[0.16em]",
-          online
-            ? "border-emerald-300/18 bg-emerald-400/10 text-emerald-200"
-            : "border-amber-300/18 bg-amber-400/10 text-amber-100"
+          surfaceTheme === "light"
+            ? online
+              ? "border-emerald-600/25 bg-emerald-50 text-emerald-700"
+              : "border-amber-600/25 bg-amber-50 text-amber-700"
+            : online
+              ? "border-emerald-300/18 bg-emerald-400/10 text-emerald-200"
+              : "border-amber-300/18 bg-amber-400/10 text-amber-100"
         )}
       >
-        <span className={cn("h-1.5 w-1.5 rounded-full", online ? "bg-emerald-400" : "bg-amber-300")} />
+        <span
+          className={cn(
+            "h-1.5 w-1.5 rounded-full",
+            online ? (surfaceTheme === "light" ? "bg-emerald-500" : "bg-emerald-400") : "bg-amber-400"
+          )}
+        />
         {label}
       </span>
-      <IconButton ariaLabel="Refresh status" icon={Clock3} onClick={onRefresh} />
+      <IconButton ariaLabel="Refresh status" icon={Clock3} surfaceTheme={surfaceTheme} onClick={onRefresh} />
       <IconButton
         ariaLabel={surfaceTheme === "light" ? "Switch to dark theme" : "Switch to light theme"}
         icon={ThemeIcon}
+        surfaceTheme={surfaceTheme}
         active={surfaceTheme === "light"}
         onClick={onToggleTheme}
       />
@@ -104,10 +122,12 @@ export function PageHeader({
   primaryAction,
   secondaryAction,
   actions,
-  children
+  children,
+  surfaceTheme = "dark"
 }: {
   title: string;
   subtitle: string;
+  surfaceTheme?: OperationsSurfaceTheme;
   primaryAction?: { label: string; icon?: LucideIcon; onClick?: () => void; disabled?: boolean; title?: string };
   secondaryAction?: { label: string; icon?: LucideIcon; onClick?: () => void };
   actions?: ReactNode;
@@ -117,19 +137,43 @@ export function PageHeader({
   const SecondaryIcon = secondaryAction?.icon;
 
   return (
-    <header className="border-b border-white/[0.07] pb-4">
+    <header className={cn("border-b pb-4", surfaceTheme === "light" ? "border-[#e3d1c2]" : "border-white/[0.07]")}>
       <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
         <div className="min-w-0">
-          <h1 className="font-display text-[1.48rem] font-semibold leading-tight tracking-normal text-white">
+          <h1
+            className={cn(
+              "font-display text-[1.48rem] font-semibold leading-tight tracking-normal",
+              surfaceTheme === "light" ? "text-[#2f251f]" : "text-white"
+            )}
+          >
             {title}
           </h1>
-          <p className="mt-1.5 max-w-3xl text-[0.78rem] leading-5 text-slate-300">{subtitle}</p>
+          <p className={cn("mt-1.5 max-w-3xl text-[0.78rem] leading-5", surfaceTheme === "light" ? "text-[#6d5647]" : "text-slate-300")}>
+            {subtitle}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {actions ?? (
             <>
               {secondaryAction ? (
-                <Button variant="secondary" size="sm" className="h-8 rounded-[10px] px-3 text-xs" onClick={secondaryAction.onClick}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className={cn(
+                    "h-8 rounded-[10px] px-3 text-xs",
+                    surfaceTheme === "light" && "border-[#e3d3c5] bg-white/85 !text-[#4c3a2e] hover:bg-[#fff8f2] hover:!text-[#4c3a2e]"
+                  )}
+                  style={
+                    surfaceTheme === "light"
+                      ? {
+                          backgroundColor: "rgba(255, 255, 255, 0.85)",
+                          borderColor: "#e3d3c5",
+                          color: "#4c3a2e"
+                        }
+                      : undefined
+                  }
+                  onClick={secondaryAction.onClick}
+                >
                   {SecondaryIcon ? <SecondaryIcon className="mr-1.5 h-3.5 w-3.5" /> : null}
                   {secondaryAction.label}
                 </Button>
@@ -137,7 +181,21 @@ export function PageHeader({
               {primaryAction ? (
                 <Button
                   size="sm"
-                  className="h-8 rounded-[10px] bg-blue-500 px-3 text-xs text-white shadow-blue-500/20 hover:bg-blue-400"
+                  className={cn(
+                    "h-8 rounded-[10px] px-3 text-xs text-white",
+                    surfaceTheme === "light"
+                      ? "bg-[#5c4437] shadow-[#5c4437]/18 hover:bg-[#4d382d]"
+                      : "bg-blue-500 shadow-blue-500/20 hover:bg-blue-400"
+                  )}
+                  style={
+                    surfaceTheme === "light"
+                      ? {
+                          backgroundColor: "#5c4437",
+                          boxShadow: "0 8px 18px rgba(92, 68, 55, 0.18)",
+                          color: "#ffffff"
+                        }
+                      : undefined
+                  }
                   onClick={primaryAction.onClick}
                   disabled={primaryAction.disabled}
                   title={primaryAction.title}
@@ -200,26 +258,54 @@ export function SearchToolbar({
   onSearchChange,
   searchPlaceholder,
   children,
-  right
+  right,
+  surfaceTheme = "dark"
 }: {
   search: string;
   onSearchChange: (value: string) => void;
   searchPlaceholder: string;
   children?: ReactNode;
   right?: ReactNode;
+  surfaceTheme?: OperationsSurfaceTheme;
 }) {
   return (
     <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+          <Search
+            className={cn(
+              "pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2",
+              surfaceTheme === "light" ? "text-[#8f725f]" : "text-slate-500"
+            )}
+          />
           <Input
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={searchPlaceholder}
-            className="h-8 rounded-[10px] border-white/[0.09] bg-slate-950/42 pl-8 pr-11 text-[0.74rem]"
+            className={cn(
+              "h-8 rounded-[10px] pl-8 pr-11 text-[0.74rem]",
+              surfaceTheme === "light"
+                ? "border-[#e3d3c5] bg-white/85 !text-[#3f2f24] placeholder:!text-[#8f725f]"
+                : "border-white/[0.09] bg-slate-950/42 text-white placeholder:text-slate-500"
+            )}
+            style={
+              surfaceTheme === "light"
+                ? {
+                    backgroundColor: "rgba(255, 255, 255, 0.85)",
+                    borderColor: "#e3d3c5",
+                    color: "#3f2f24"
+                  }
+                : undefined
+            }
           />
-          <span className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 font-mono text-[0.56rem] text-slate-500 sm:flex">
+          <span
+            className={cn(
+              "pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[0.56rem] sm:flex",
+              surfaceTheme === "light"
+                ? "border-[#e4d3c5] bg-[#fff8f2] text-[#8f725f]"
+                : "border-white/[0.08] bg-white/[0.04] text-slate-500"
+            )}
+          >
             <Command className="h-2.5 w-2.5" /> K
           </span>
         </div>
@@ -246,7 +332,8 @@ export function ToolbarButton({
   active,
   onClick,
   disabled,
-  title
+  title,
+  surfaceTheme = "dark"
 }: {
   icon?: LucideIcon;
   label: string;
@@ -255,6 +342,7 @@ export function ToolbarButton({
   onClick?: () => void;
   disabled?: boolean;
   title?: string;
+  surfaceTheme?: OperationsSurfaceTheme;
 }) {
   return (
     <button
@@ -262,18 +350,45 @@ export function ToolbarButton({
       onClick={onClick}
       disabled={disabled}
       title={title}
+      style={
+        surfaceTheme === "light"
+          ? disabled
+            ? {
+                backgroundColor: "#f7eee7",
+                borderColor: "#eadfd6",
+                color: "#b39a86"
+              }
+            : active
+              ? {
+                  backgroundColor: "#f4dfcf",
+                  borderColor: "rgba(200, 148, 111, 0.35)",
+                  color: "#6c432e"
+                }
+              : {
+                  backgroundColor: "rgba(255, 255, 255, 0.8)",
+                  borderColor: "#e3d3c5",
+                  color: "#4c3a2e"
+                }
+          : undefined
+      }
       className={cn(
         "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border px-2.5 text-[0.74rem] font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
-        disabled
-          ? "cursor-not-allowed border-white/[0.06] bg-white/[0.025] text-slate-600"
-          : active
-          ? "border-sky-300/30 bg-sky-400/14 text-sky-100"
-          : "border-white/[0.09] bg-white/[0.045] text-slate-300 hover:border-white/[0.14] hover:bg-white/[0.075] hover:text-white"
+        surfaceTheme === "light"
+          ? disabled
+            ? "cursor-not-allowed !border-[#eadfd6] !bg-[#f7eee7] !text-[#b39a86]"
+            : active
+              ? "!border-[#c8946f]/35 !bg-[#f4dfcf] !text-[#6c432e]"
+              : "!border-[#e3d3c5] !bg-white/80 !text-[#4c3a2e] hover:!border-[#d2b9a5] hover:!bg-[#fff8f2] hover:!text-[#2f251f]"
+          : disabled
+            ? "cursor-not-allowed border-white/[0.06] bg-white/[0.025] text-slate-600"
+            : active
+              ? "border-sky-300/30 bg-sky-400/14 text-sky-100"
+              : "border-white/[0.09] bg-white/[0.045] text-slate-300 hover:border-white/[0.14] hover:bg-white/[0.075] hover:text-white"
       )}
     >
       <Icon className="h-3.5 w-3.5" />
       {label}
-      {chevron ? <ChevronDown className="h-3 w-3 text-slate-500" /> : null}
+      {chevron ? <ChevronDown className={cn("h-3 w-3", surfaceTheme === "light" ? "text-[#9f8069]" : "text-slate-500")} /> : null}
     </button>
   );
 }
@@ -281,21 +396,29 @@ export function ToolbarButton({
 export function ViewToggle({
   value,
   onChange,
-  labels = ["Grid", "List"]
+  labels = ["Grid", "List"],
+  surfaceTheme = "dark"
 }: {
   value: "grid" | "list" | "board";
   onChange: (value: "grid" | "list") => void;
   labels?: [string, string];
+  surfaceTheme?: OperationsSurfaceTheme;
 }) {
   return (
-    <div className="inline-flex h-8 items-center rounded-[10px] border border-white/[0.09] bg-white/[0.045] p-0.5">
+    <div
+      className={cn(
+        "inline-flex h-8 items-center rounded-[10px] border p-0.5",
+        surfaceTheme === "light" ? "border-[#e3d3c5] bg-white/80" : "border-white/[0.09] bg-white/[0.045]"
+      )}
+    >
       <button
         type="button"
         aria-label={labels[0]}
         onClick={() => onChange("grid")}
         className={cn(
-          "inline-flex h-6 w-6 items-center justify-center rounded-[8px] text-slate-400 transition-colors hover:text-white",
-          (value === "grid" || value === "board") && "bg-sky-400/14 text-sky-200"
+          "inline-flex h-6 w-6 items-center justify-center rounded-[8px] transition-colors",
+          surfaceTheme === "light" ? "text-[#8f725f] hover:text-[#3f2f24]" : "text-slate-400 hover:text-white",
+          (value === "grid" || value === "board") && (surfaceTheme === "light" ? "bg-[#f4dfcf] text-[#6c432e]" : "bg-sky-400/14 text-sky-200")
         )}
       >
         <LayoutGrid className="h-3.5 w-3.5" />
@@ -305,8 +428,9 @@ export function ViewToggle({
         aria-label={labels[1]}
         onClick={() => onChange("list")}
         className={cn(
-          "inline-flex h-6 w-6 items-center justify-center rounded-[8px] text-slate-400 transition-colors hover:text-white",
-          value === "list" && "bg-sky-400/14 text-sky-200"
+          "inline-flex h-6 w-6 items-center justify-center rounded-[8px] transition-colors",
+          surfaceTheme === "light" ? "text-[#8f725f] hover:text-[#3f2f24]" : "text-slate-400 hover:text-white",
+          value === "list" && (surfaceTheme === "light" ? "bg-[#f4dfcf] text-[#6c432e]" : "bg-sky-400/14 text-sky-200")
         )}
       >
         <List className="h-3.5 w-3.5" />
@@ -320,28 +444,56 @@ export function FilterChip({
   count,
   active,
   tone = "info",
-  onClick
+  onClick,
+  surfaceTheme = "dark"
 }: {
   label: string;
   count?: number;
   active: boolean;
   tone?: StatusTone;
   onClick: () => void;
+  surfaceTheme?: OperationsSurfaceTheme;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      style={
+        surfaceTheme === "light"
+          ? active
+            ? {
+                backgroundColor: "#f4dfcf",
+                borderColor: "rgba(200, 148, 111, 0.35)",
+                color: "#5c4437"
+              }
+            : {
+                backgroundColor: "rgba(255, 255, 255, 0.76)",
+                borderColor: "#e3d3c5",
+                color: "#5f493b"
+              }
+          : undefined
+      }
       className={cn(
         "inline-flex h-7 items-center gap-1.5 rounded-[9px] border px-2.5 text-[0.72rem] font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
-        active
-          ? toneStyles[tone]
-          : "border-white/[0.08] bg-white/[0.035] text-slate-300 hover:bg-white/[0.07] hover:text-white"
+        surfaceTheme === "light"
+          ? active
+            ? "!border-[#c8946f]/35 !bg-[#f4dfcf] !text-[#5c4437]"
+            : "!border-[#e3d3c5] !bg-white/76 !text-[#5f493b] hover:!bg-[#fff8f2] hover:!text-[#2f251f]"
+          : active
+            ? toneStyles[tone]
+            : "border-white/[0.08] bg-white/[0.035] text-slate-300 hover:bg-white/[0.07] hover:text-white"
       )}
     >
       {label}
       {typeof count === "number" ? (
-        <span className="rounded-full bg-white/[0.08] px-1.5 py-0.5 text-[0.58rem] text-slate-300">{count}</span>
+        <span
+          className={cn(
+            "rounded-full px-1.5 py-0.5 text-[0.58rem]",
+            surfaceTheme === "light" ? "bg-[#ead8c9] text-[#5c4437]" : "bg-white/[0.08] text-slate-300"
+          )}
+        >
+          {count}
+        </span>
       ) : null}
     </button>
   );
@@ -499,7 +651,8 @@ export function IconButton({
   dot,
   onClick,
   disabled,
-  title
+  title,
+  surfaceTheme = "dark"
 }: {
   ariaLabel: string;
   icon: LucideIcon;
@@ -508,6 +661,7 @@ export function IconButton({
   onClick?: () => void;
   disabled?: boolean;
   title?: string;
+  surfaceTheme?: OperationsSurfaceTheme;
 }) {
   return (
     <button
@@ -518,11 +672,17 @@ export function IconButton({
       title={title}
       className={cn(
         "relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
-        disabled
-          ? "cursor-not-allowed border-white/[0.06] bg-white/[0.025] text-slate-600"
-          : active
-          ? "border-sky-300/30 bg-sky-400/14 text-sky-200"
-          : "border-white/[0.08] bg-white/[0.035] text-slate-400 hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white"
+        surfaceTheme === "light"
+          ? disabled
+            ? "cursor-not-allowed border-[#e6d7c9] bg-[#f6eee5] text-[#b39a86]"
+            : active
+              ? "border-[#c8946f]/35 bg-[#f4dfcf] text-[#6c432e]"
+              : "border-[#e4d3c5] bg-white/70 text-[#7b6251] hover:border-[#d2b9a5] hover:bg-[#fff8f2] hover:text-[#3f2f24]"
+          : disabled
+            ? "cursor-not-allowed border-white/[0.06] bg-white/[0.025] text-slate-600"
+            : active
+              ? "border-sky-300/30 bg-sky-400/14 text-sky-200"
+              : "border-white/[0.08] bg-white/[0.035] text-slate-400 hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white"
       )}
     >
       <Icon className="h-3.5 w-3.5" />

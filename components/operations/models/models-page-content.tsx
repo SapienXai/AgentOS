@@ -16,11 +16,13 @@ import { formatModelSortLabel, MetricMini, readClientError, sortModelViews, Unsu
 export function ModelsPageContent({
   snapshot,
   rootSnapshot,
+  surfaceTheme,
   refresh,
   setSnapshot
 }: {
   snapshot: MissionControlSnapshot;
   rootSnapshot: MissionControlSnapshot;
+  surfaceTheme: "dark" | "light";
   refresh: () => Promise<void>;
   setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
 }) {
@@ -105,6 +107,7 @@ export function ModelsPageContent({
         main={
           <>
           <PageHeader
+            surfaceTheme={surfaceTheme}
             title="Models"
             subtitle="Configure default models, providers, routing, and runtime preferences for your AI agents."
             actions={
@@ -112,14 +115,44 @@ export function ModelsPageContent({
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="h-8 rounded-[10px] px-3 text-xs"
+                  className={cn(
+                    "h-8 rounded-[10px] px-3 text-xs",
+                    surfaceTheme === "light" && "border-[#e3d3c5] bg-white/85 !text-[#4c3a2e] hover:bg-[#fff8f2] hover:!text-[#4c3a2e]"
+                  )}
+                  style={
+                    surfaceTheme === "light"
+                      ? {
+                          backgroundColor: "rgba(255, 255, 255, 0.85)",
+                          borderColor: "#e3d3c5",
+                          color: "#4c3a2e"
+                        }
+                      : undefined
+                  }
                   disabled
                   title="Model import is handled by the Add Models flow; there is no separate import backend."
                 >
                   <Import className="mr-1.5 h-3.5 w-3.5" />
                   Import Model
                 </Button>
-                <Button size="sm" className="h-8 rounded-[10px] bg-blue-500 px-3 text-xs text-white shadow-blue-500/20 hover:bg-blue-400" onClick={() => setIsAddModelsDialogOpen(true)}>
+                <Button
+                  size="sm"
+                  className={cn(
+                    "h-8 rounded-[10px] px-3 text-xs text-white",
+                    surfaceTheme === "light"
+                      ? "bg-[#5c4437] shadow-[#5c4437]/18 hover:bg-[#4d382d]"
+                      : "bg-blue-500 shadow-blue-500/20 hover:bg-blue-400"
+                  )}
+                  style={
+                    surfaceTheme === "light"
+                      ? {
+                          backgroundColor: "#5c4437",
+                          boxShadow: "0 8px 18px rgba(92, 68, 55, 0.18)",
+                          color: "#ffffff"
+                        }
+                      : undefined
+                  }
+                  onClick={() => setIsAddModelsDialogOpen(true)}
+                >
                   <Plus className="mr-1.5 h-3.5 w-3.5" />
                   Add Model
                 </Button>
@@ -131,10 +164,11 @@ export function ModelsPageContent({
             search={search}
             onSearchChange={setSearch}
             searchPlaceholder="Search models..."
+            surfaceTheme={surfaceTheme}
           >
-            <ToolbarButton icon={Database} label={provider} chevron onClick={() => setProvider((current) => providers[(providers.indexOf(current) + 1) % providers.length])} />
-            <ToolbarButton icon={Filter} label="Configured models" disabled title="Only configured models are exposed by the current model snapshot." />
-            <ToolbarButton icon={SlidersHorizontal} label={`Sort: ${formatModelSortLabel(sort)}`} chevron onClick={() => setSort((current) => sortModes[(sortModes.indexOf(current) + 1) % sortModes.length])} />
+            <ToolbarButton surfaceTheme={surfaceTheme} icon={Database} label={provider} chevron onClick={() => setProvider((current) => providers[(providers.indexOf(current) + 1) % providers.length])} />
+            <ToolbarButton surfaceTheme={surfaceTheme} icon={Filter} label="Configured models" disabled title="Only configured models are exposed by the current model snapshot." />
+            <ToolbarButton surfaceTheme={surfaceTheme} icon={SlidersHorizontal} label={`Sort: ${formatModelSortLabel(sort)}`} chevron onClick={() => setSort((current) => sortModes[(sortModes.indexOf(current) + 1) % sortModes.length])} />
           </SearchToolbar>
 
           <StatGrid columns={4}>

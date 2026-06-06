@@ -123,6 +123,7 @@ export function AgentsPageContent({
         main={
           <>
           <PageHeader
+            surfaceTheme={surfaceTheme}
             title="Agents"
             subtitle="Manage your AI workforce. Monitor health, configure capabilities, and run agents at scale."
             actions={
@@ -130,7 +131,19 @@ export function AgentsPageContent({
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="h-8 rounded-[10px] px-3 text-xs"
+                  className={cn(
+                    "h-8 rounded-[10px] px-3 text-xs",
+                    surfaceTheme === "light" && "border-[#e3d3c5] bg-white/85 !text-[#4c3a2e] hover:bg-[#fff8f2] hover:!text-[#4c3a2e]"
+                  )}
+                  style={
+                    surfaceTheme === "light"
+                      ? {
+                          backgroundColor: "rgba(255, 255, 255, 0.85)",
+                          borderColor: "#e3d3c5",
+                          color: "#4c3a2e"
+                        }
+                      : undefined
+                  }
                   disabled
                   title="Agent import requires a backend import contract."
                 >
@@ -146,7 +159,24 @@ export function AgentsPageContent({
                   onAgentCreatedVisible={setSelectedId}
                   surfaceTheme={surfaceTheme}
                   trigger={
-                    <Button size="sm" className="h-8 rounded-[10px] bg-blue-500 px-3 text-xs text-white shadow-blue-500/20 hover:bg-blue-400">
+                    <Button
+                      size="sm"
+                      className={cn(
+                        "h-8 rounded-[10px] px-3 text-xs text-white",
+                        surfaceTheme === "light"
+                          ? "bg-[#5c4437] shadow-[#5c4437]/18 hover:bg-[#4d382d]"
+                          : "bg-blue-500 shadow-blue-500/20 hover:bg-blue-400"
+                      )}
+                      style={
+                        surfaceTheme === "light"
+                          ? {
+                              backgroundColor: "#5c4437",
+                              boxShadow: "0 8px 18px rgba(92, 68, 55, 0.18)",
+                              color: "#ffffff"
+                            }
+                          : undefined
+                      }
+                    >
                       <Plus className="mr-1.5 h-3.5 w-3.5" />
                       Create Agent
                     </Button>
@@ -168,10 +198,11 @@ export function AgentsPageContent({
             search={search}
             onSearchChange={setSearch}
             searchPlaceholder="Search agents..."
-            right={<ViewToggle value={view} onChange={setView} />}
+            surfaceTheme={surfaceTheme}
+            right={<ViewToggle value={view} onChange={setView} surfaceTheme={surfaceTheme} />}
           >
-            <ToolbarButton icon={Filter} label={`Filter: ${agentFilterLabel(filter)}`} active={filter !== "all"} onClick={() => setFilter("all")} />
-            <ToolbarButton icon={SlidersHorizontal} label={`Sort: ${formatAgentSortLabel(sort)}`} chevron onClick={() => setSort((current) => sortModes[(sortModes.indexOf(current) + 1) % sortModes.length])} />
+            <ToolbarButton surfaceTheme={surfaceTheme} icon={Filter} label={`Filter: ${agentFilterLabel(filter)}`} active={filter !== "all"} onClick={() => setFilter("all")} />
+            <ToolbarButton surfaceTheme={surfaceTheme} icon={SlidersHorizontal} label={`Sort: ${formatAgentSortLabel(sort)}`} chevron onClick={() => setSort((current) => sortModes[(sortModes.indexOf(current) + 1) % sortModes.length])} />
           </SearchToolbar>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -182,6 +213,7 @@ export function AgentsPageContent({
                 count={filterCounts[id]}
                 active={filter === id}
                 tone={statusToneForAgentFilter(id)}
+                surfaceTheme={surfaceTheme}
                 onClick={() => setFilter(id)}
               />
             ))}

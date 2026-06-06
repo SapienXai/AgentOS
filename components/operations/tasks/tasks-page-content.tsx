@@ -37,10 +37,12 @@ type OperationTaskTab = {
 export function TasksPageContent({
   snapshot,
   activeWorkspaceId,
+  surfaceTheme,
   refresh
 }: {
   snapshot: MissionControlSnapshot;
   activeWorkspaceId: string | null;
+  surfaceTheme: "dark" | "light";
   refresh: () => Promise<void>;
 }) {
   const tasks = useMemo(
@@ -119,6 +121,7 @@ export function TasksPageContent({
       main={
         <>
           <PageHeader
+            surfaceTheme={surfaceTheme}
             title="Tasks"
             subtitle="Plan, monitor, and execute work across your agents. Track progress and manage approvals."
             actions={
@@ -126,14 +129,44 @@ export function TasksPageContent({
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="h-8 rounded-[10px] px-3 text-xs"
+                  className={cn(
+                    "h-8 rounded-[10px] px-3 text-xs",
+                    surfaceTheme === "light" && "border-[#e3d3c5] bg-white/85 !text-[#4c3a2e] hover:bg-[#fff8f2] hover:!text-[#4c3a2e]"
+                  )}
+                  style={
+                    surfaceTheme === "light"
+                      ? {
+                          backgroundColor: "rgba(255, 255, 255, 0.85)",
+                          borderColor: "#e3d3c5",
+                          color: "#4c3a2e"
+                        }
+                      : undefined
+                  }
                   disabled
                   title="Task import requires a backend import contract."
                 >
                   <FileInput className="mr-1.5 h-3.5 w-3.5" />
                   Import Tasks
                 </Button>
-                <Button size="sm" className="h-8 rounded-[10px] bg-blue-500 px-3 text-xs text-white shadow-blue-500/20 hover:bg-blue-400" onClick={() => setDispatchOpen(true)}>
+                <Button
+                  size="sm"
+                  className={cn(
+                    "h-8 rounded-[10px] px-3 text-xs text-white",
+                    surfaceTheme === "light"
+                      ? "bg-[#5c4437] shadow-[#5c4437]/18 hover:bg-[#4d382d]"
+                      : "bg-blue-500 shadow-blue-500/20 hover:bg-blue-400"
+                  )}
+                  style={
+                    surfaceTheme === "light"
+                      ? {
+                          backgroundColor: "#5c4437",
+                          boxShadow: "0 8px 18px rgba(92, 68, 55, 0.18)",
+                          color: "#ffffff"
+                        }
+                      : undefined
+                  }
+                  onClick={() => setDispatchOpen(true)}
+                >
                   <Plus className="mr-1.5 h-3.5 w-3.5" />
                   Create Task
                 </Button>
@@ -154,11 +187,12 @@ export function TasksPageContent({
             search={search}
             onSearchChange={setSearch}
             searchPlaceholder="Search tasks..."
-            right={<ViewToggle value={view === "board" ? "board" : "list"} labels={["Board", "List"]} onChange={(value) => setView(value === "grid" ? "board" : "list")} />}
+            surfaceTheme={surfaceTheme}
+            right={<ViewToggle value={view === "board" ? "board" : "list"} labels={["Board", "List"]} surfaceTheme={surfaceTheme} onChange={(value) => setView(value === "grid" ? "board" : "list")} />}
           >
-            <ToolbarButton icon={Filter} label={`Filter: ${formatTaskFilterLabel(filter)}`} active={filter !== "all"} onClick={() => setFilter("all")} />
-            <ToolbarButton icon={SlidersHorizontal} label={`Sort: ${formatTaskSortLabel(sort)}`} chevron onClick={() => setSort((current) => sortModes[(sortModes.indexOf(current) + 1) % sortModes.length])} />
-            <ToolbarButton icon={Layers3} label="Group: Status" active disabled title="The board is grouped by status." />
+            <ToolbarButton surfaceTheme={surfaceTheme} icon={Filter} label={`Filter: ${formatTaskFilterLabel(filter)}`} active={filter !== "all"} onClick={() => setFilter("all")} />
+            <ToolbarButton surfaceTheme={surfaceTheme} icon={SlidersHorizontal} label={`Sort: ${formatTaskSortLabel(sort)}`} chevron onClick={() => setSort((current) => sortModes[(sortModes.indexOf(current) + 1) % sortModes.length])} />
+            <ToolbarButton surfaceTheme={surfaceTheme} icon={Layers3} label="Group: Status" active disabled title="The board is grouped by status." />
           </SearchToolbar>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -169,6 +203,7 @@ export function TasksPageContent({
                 count={id === "all" ? tasks.length : statusCounts[id]}
                 active={filter === id}
                 tone={resolveTaskTone(id)}
+                surfaceTheme={surfaceTheme}
                 onClick={() => setFilter(id)}
               />
             ))}

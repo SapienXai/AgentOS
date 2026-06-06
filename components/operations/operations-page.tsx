@@ -30,6 +30,7 @@ export function OperationsPage({
               activeWorkspace={context.activeWorkspace}
               activeWorkspaceId={context.activeWorkspaceId}
               connectionState={context.connectionState}
+              surfaceTheme={context.surfaceTheme}
               refresh={context.refresh}
             />
           );
@@ -53,6 +54,7 @@ export function OperationsPage({
             <TasksPageContent
               snapshot={context.snapshot}
               activeWorkspaceId={context.activeWorkspaceId}
+              surfaceTheme={context.surfaceTheme}
               refresh={context.refresh}
             />
           );
@@ -63,6 +65,7 @@ export function OperationsPage({
             <FilesPageContent
               snapshot={context.snapshot}
               activeWorkspaceId={context.activeWorkspaceId}
+              surfaceTheme={context.surfaceTheme}
             />
           );
         }
@@ -73,6 +76,7 @@ export function OperationsPage({
               snapshot={context.snapshot}
               activeWorkspace={context.activeWorkspace}
               activeWorkspaceId={context.activeWorkspaceId}
+              surfaceTheme={context.surfaceTheme}
             />
           );
         }
@@ -82,6 +86,7 @@ export function OperationsPage({
             <ModelsPageContent
               snapshot={context.snapshot}
               rootSnapshot={context.rootSnapshot}
+              surfaceTheme={context.surfaceTheme}
               refresh={context.refresh}
               setSnapshot={context.setSnapshot}
             />
@@ -93,6 +98,7 @@ export function OperationsPage({
             snapshot={context.snapshot}
             rootSnapshot={context.rootSnapshot}
             activeWorkspaceId={context.activeWorkspaceId}
+            surfaceTheme={context.surfaceTheme}
             refresh={context.refresh}
             setSnapshot={context.setSnapshot}
           />

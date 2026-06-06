@@ -18,12 +18,14 @@ export function IntegrationsPageContent({
   snapshot,
   rootSnapshot,
   activeWorkspaceId,
+  surfaceTheme,
   refresh,
   setSnapshot
 }: {
   snapshot: MissionControlSnapshot;
   rootSnapshot: MissionControlSnapshot;
   activeWorkspaceId: string | null;
+  surfaceTheme: "dark" | "light";
   refresh: () => Promise<void>;
   setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
 }) {
@@ -363,6 +365,7 @@ export function IntegrationsPageContent({
         main={
           <>
             <PageHeader
+              surfaceTheme={surfaceTheme}
               title="Integrations"
               subtitle="Connect channels, tools, and external systems to extend AgentOS capabilities and power automations."
               secondaryAction={{ label: "Import Integration", icon: Import, onClick: () => setIsImportDialogOpen(true) }}
@@ -373,11 +376,12 @@ export function IntegrationsPageContent({
               search={search}
               onSearchChange={setSearch}
               searchPlaceholder="Search integrations..."
-              right={<ViewToggle value={view} onChange={setView} />}
+              surfaceTheme={surfaceTheme}
+              right={<ViewToggle value={view} onChange={setView} surfaceTheme={surfaceTheme} />}
             >
-              <ToolbarButton icon={Layers3} label={category} chevron onClick={() => setCategory((current) => categories[(categories.indexOf(current) + 1) % categories.length])} />
-              <ToolbarButton icon={SearchCheck} label={formatIntegrationStatusFilterLabel(status)} chevron onClick={() => setStatus((current) => statuses[(statuses.indexOf(current) + 1) % statuses.length])} />
-              <ToolbarButton icon={SlidersHorizontal} label={`Sort: ${formatIntegrationSortLabel(sort)}`} chevron onClick={() => setSort((current) => sorts[(sorts.indexOf(current) + 1) % sorts.length])} />
+              <ToolbarButton surfaceTheme={surfaceTheme} icon={Layers3} label={category} chevron onClick={() => setCategory((current) => categories[(categories.indexOf(current) + 1) % categories.length])} />
+              <ToolbarButton surfaceTheme={surfaceTheme} icon={SearchCheck} label={formatIntegrationStatusFilterLabel(status)} chevron onClick={() => setStatus((current) => statuses[(statuses.indexOf(current) + 1) % statuses.length])} />
+              <ToolbarButton surfaceTheme={surfaceTheme} icon={SlidersHorizontal} label={`Sort: ${formatIntegrationSortLabel(sort)}`} chevron onClick={() => setSort((current) => sorts[(sorts.indexOf(current) + 1) % sorts.length])} />
             </SearchToolbar>
 
             <StatGrid columns={5}>

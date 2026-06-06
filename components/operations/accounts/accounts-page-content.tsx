@@ -22,11 +22,13 @@ import { cn } from "@/lib/utils";
 export function AccountsPageContent({
   snapshot,
   activeWorkspace,
-  activeWorkspaceId
+  activeWorkspaceId,
+  surfaceTheme
 }: {
   snapshot: MissionControlSnapshot;
   activeWorkspace: WorkspaceRecord | null;
   activeWorkspaceId: string | null;
+  surfaceTheme: "dark" | "light";
 }) {
   const {
     profiles,
@@ -262,6 +264,7 @@ export function AccountsPageContent({
         main={
           <>
             <PageHeader
+              surfaceTheme={surfaceTheme}
               title="Accounts"
               subtitle="Manage real OpenClaw browser profiles used for reusable account sessions."
               primaryAction={{
@@ -316,8 +319,10 @@ export function AccountsPageContent({
               search={profileSearch}
               onSearchChange={setProfileSearch}
               searchPlaceholder="Search login targets and browser profiles..."
+              surfaceTheme={surfaceTheme}
             >
               <ToolbarButton
+                surfaceTheme={surfaceTheme}
                 icon={Filter}
                 label={`State: ${formatBrowserProfileStateFilter(statusFilter)}`}
                 active={statusFilter !== "all"}
@@ -325,6 +330,7 @@ export function AccountsPageContent({
                 onClick={() => setStatusFilter((current) => statusFilters[(statusFilters.indexOf(current) + 1) % statusFilters.length])}
               />
               <ToolbarButton
+                surfaceTheme={surfaceTheme}
                 icon={SlidersHorizontal}
                 label={`Driver: ${formatBrowserDriverFilter(driverFilter)}`}
                 active={driverFilter !== "all"}
@@ -332,6 +338,7 @@ export function AccountsPageContent({
                 onClick={() => setDriverFilter((current) => driverFilters[(driverFilters.indexOf(current) + 1) % driverFilters.length])}
               />
               <ToolbarButton
+                surfaceTheme={surfaceTheme}
                 icon={RefreshCw}
                 label={loading || targetsLoading || accessRulesLoading ? "Refreshing" : "Refresh"}
                 active={loading || targetsLoading || accessRulesLoading}
@@ -399,6 +406,7 @@ export function AccountsPageContent({
                   count={status === "all" ? usableProfiles.length : usableProfiles.filter((profile) => status === "running" ? profile.running : !profile.running).length}
                   active={statusFilter === status}
                   tone={status === "running" ? "success" : status === "stopped" ? "muted" : "info"}
+                  surfaceTheme={surfaceTheme}
                   onClick={() => setStatusFilter(status)}
                 />
               ))}
@@ -409,6 +417,7 @@ export function AccountsPageContent({
                   count={driver === "all" ? usableProfiles.length : usableProfiles.filter((profile) => profile.driver === driver).length}
                   active={driverFilter === driver}
                   tone={driver === "existing-session" ? "warning" : driver === "openclaw" ? "info" : "purple"}
+                  surfaceTheme={surfaceTheme}
                   onClick={() => setDriverFilter(driver)}
                 />
               ))}
