@@ -229,6 +229,9 @@ export function OperationsShell({
             snapshot={snapshot}
             connectionState={connectionState}
             surfaceTheme={surfaceTheme}
+            onRefresh={() => {
+              void refresh();
+            }}
             onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
           />
           {children({

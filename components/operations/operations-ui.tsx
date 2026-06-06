@@ -3,7 +3,6 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
-  Bell,
   ChevronDown,
   Clock3,
   Command,
@@ -58,11 +57,13 @@ export function OperationsTopBar({
   snapshot,
   connectionState,
   surfaceTheme,
+  onRefresh,
   onToggleTheme
 }: {
   snapshot: MissionControlSnapshot;
   connectionState: "connecting" | "live" | "retrying";
   surfaceTheme: "dark" | "light";
+  onRefresh: () => void;
   onToggleTheme: () => void;
 }) {
   const version = snapshot.diagnostics.version ?? snapshot.diagnostics.latestVersion ?? "unknown";
@@ -85,14 +86,13 @@ export function OperationsTopBar({
         <span className={cn("h-1.5 w-1.5 rounded-full", online ? "bg-emerald-400" : "bg-amber-300")} />
         {label}
       </span>
-      <IconButton ariaLabel="Refresh status" icon={Clock3} />
+      <IconButton ariaLabel="Refresh status" icon={Clock3} onClick={onRefresh} />
       <IconButton
         ariaLabel={surfaceTheme === "light" ? "Switch to dark theme" : "Switch to light theme"}
         icon={ThemeIcon}
         active={surfaceTheme === "light"}
         onClick={onToggleTheme}
       />
-      <IconButton ariaLabel="Notifications" icon={Bell} dot />
     </div>
   );
 }
