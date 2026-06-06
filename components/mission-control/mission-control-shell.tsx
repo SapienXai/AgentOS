@@ -3110,6 +3110,7 @@ export function MissionControlShell({
           discoveredModels={discoveredModels}
           onSelectedModelIdChange={setSelectedOnboardingModelId}
           onClearModelSwitchFeedback={() => setModelSwitchFeedback(initialModelSwitchFeedback)}
+          onSnapshotChange={setSnapshot}
           onRunSystemSetup={runOpenClawOnboarding}
           onRunModelSetDefault={runModelSetDefault}
           onOpenAddModels={openAddModelsDialog}
@@ -3902,6 +3903,7 @@ export function MissionControlShell({
             discoveredModels={discoveredModels}
             onSelectedModelIdChange={setSelectedOnboardingModelId}
             onClearModelSwitchFeedback={() => setModelSwitchFeedback(initialModelSwitchFeedback)}
+            onSnapshotChange={setSnapshot}
             onRunSystemSetup={runOpenClawOnboarding}
             onRunModelSetDefault={runModelSetDefault}
             onOpenAddModels={openAddModelsDialog}

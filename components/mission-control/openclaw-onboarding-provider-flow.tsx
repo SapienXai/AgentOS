@@ -65,12 +65,14 @@ export function OpenClawOnboardingProviderFlow({
   selectedModelId,
   onSelectedModelIdChange,
   onOpenAddModels,
+  onSnapshotChange,
   autoDiscover = true
 }: {
   snapshot: MissionControlSnapshot;
   selectedModelId: string;
   onSelectedModelIdChange: (value: string) => void;
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
+  onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
   autoDiscover?: boolean;
 }) {
   const [activeProviderId, setActiveProviderId] = useState<AddModelsProviderId>(() =>
@@ -243,6 +245,7 @@ export function OpenClawOnboardingProviderFlow({
       const nextState = shouldDiscover ? "discovering" : "idle";
 
       applyActionResult(providerId, result, nextState);
+      applySnapshotResult(result);
 
       if (shouldDiscover) {
         await discoverProvider(providerId, true);
@@ -289,6 +292,7 @@ export function OpenClawOnboardingProviderFlow({
           apiKey: ""
         }
       );
+      applySnapshotResult(result);
 
       if (shouldDiscover) {
         await discoverProvider(providerId, true);
@@ -328,11 +332,18 @@ export function OpenClawOnboardingProviderFlow({
           search: draft.search
         }
       );
+      applySnapshotResult(result);
     } catch (error) {
       updateDraft(providerId, {
         flowState: "error",
         errorMessage: error instanceof Error ? error.message : "Provider discovery failed."
       });
+    }
+  }
+
+  function applySnapshotResult(result: AddModelsProviderActionResult) {
+    if (result.snapshot) {
+      onSnapshotChange?.(result.snapshot);
     }
   }
 

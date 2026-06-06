@@ -635,6 +635,20 @@ test("onboarding provider flow skips discovery when provider models already exis
   assert.match(source, /shouldDiscover \? "discovering" : "idle"/);
 });
 
+test("onboarding provider flow applies discovery snapshots to the setup shell", () => {
+  const providerFlowSource = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding-provider-flow.tsx"), "utf8");
+  const stagesSource = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding.stages.tsx"), "utf8");
+  const onboardingSource = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding.tsx"), "utf8");
+  const shellSource = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
+
+  assert.match(providerFlowSource, /onSnapshotChange\?: \(snapshot: MissionControlSnapshot\) => void/);
+  assert.match(providerFlowSource, /function applySnapshotResult\(result: AddModelsProviderActionResult\)/);
+  assert.match(providerFlowSource, /if \(result\.snapshot\) \{[\s\S]*onSnapshotChange\?\.\(result\.snapshot\);[\s\S]*\}/);
+  assert.match(stagesSource, /onSnapshotChange=\{onSnapshotChange\}/);
+  assert.match(onboardingSource, /onSnapshotChange=\{onSnapshotChange\}/);
+  assert.match(shellSource, /onSnapshotChange=\{setSnapshot\}/);
+});
+
 test("onboarding runtime step only shows checking while setup is running", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding.stages.tsx"), "utf8");
 

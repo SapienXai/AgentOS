@@ -63,6 +63,7 @@ export function OpenClawOnboarding({
   discoveredModels,
   onSelectedModelIdChange,
   onClearModelSwitchFeedback,
+  onSnapshotChange,
   onRunSystemSetup,
   onRunModelSetDefault,
   onOpenAddModels,
@@ -93,6 +94,7 @@ export function OpenClawOnboarding({
   discoveredModels: DiscoveredModelCandidate[];
   onSelectedModelIdChange: (value: string) => void;
   onClearModelSwitchFeedback: () => void;
+  onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
   onRunSystemSetup: () => void;
   onRunModelSetDefault: (modelId?: string) => void;
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
@@ -197,17 +199,17 @@ export function OpenClawOnboarding({
       animate={{ opacity: 1, backdropFilter: "blur(12px)" }}
       exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
       className={cn(
-        "absolute inset-0 z-[80] pointer-events-auto flex items-center justify-center overflow-y-auto px-3 py-4 sm:px-4 sm:py-6",
+        "openclaw-onboarding-backdrop absolute inset-0 z-[80] pointer-events-auto isolate flex items-center justify-center overflow-hidden px-3 py-4 sm:px-4 sm:py-6",
         surfaceTheme === "light"
-          ? "bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.94),rgba(247,239,232,0.88)_46%,rgba(242,230,220,0.92))]"
-          : "bg-[radial-gradient(circle_at_top,rgba(17,24,39,0.9),rgba(3,7,18,0.92)_48%,rgba(2,6,23,0.96))]"
+          ? "openclaw-onboarding-backdrop--light bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.94),rgba(247,239,232,0.88)_46%,rgba(242,230,220,0.92))]"
+          : "openclaw-onboarding-backdrop--dark bg-[radial-gradient(circle_at_top,rgba(17,24,39,0.9),rgba(3,7,18,0.92)_48%,rgba(2,6,23,0.96))]"
       )}
     >
       <motion.div
         initial={{ opacity: 0, y: 18, scale: 0.985 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         className={cn(
-          "my-auto flex w-full flex-col overflow-hidden rounded-[16px] border shadow-[0_18px_46px_rgba(0,0,0,0.18)] backdrop-blur-2xl max-h-[min(80vh,640px)]",
+          "relative z-10 my-auto flex w-full min-h-0 max-h-[min(80vh,640px)] flex-col overflow-hidden rounded-[16px] border shadow-[0_18px_46px_rgba(0,0,0,0.18)] backdrop-blur-2xl",
           showLaunchpad && (isLaunchpadBuilding || launchpadCreateRunState === "error")
             ? "max-w-[640px]"
             : "max-w-[420px]",
@@ -216,291 +218,295 @@ export function OpenClawOnboarding({
             : "border-white/10 bg-[rgba(6,10,18,0.84)] text-slate-100"
         )}
       >
-        <div className="overflow-y-auto px-2.5 py-2.5 sm:px-3 sm:py-3">
-        <div className="flex items-center justify-between gap-2">
-          <span
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[8px] uppercase tracking-[0.18em]",
-              surfaceTheme === "light"
-                ? "border-[#d8c0b0] bg-[#f3e7dc] text-[#8d725f]"
-                : "border-white/10 bg-white/[0.06] text-slate-300"
-            )}
-          >
-            <Sparkles className="h-2 w-2" />
-            {topBadgeLabel}
-          </span>
-          <span
-            className={cn(
-              "rounded-full border px-1.5 py-0.5 text-[8px] uppercase tracking-[0.16em]",
-              stageBadgeClassName(stageRun.runState, onboardingModelReady, surfaceTheme)
-            )}
-          >
-            {stageBadgeLabel}
-          </span>
-        </div>
-
-        <div className="mt-3">
-          <p
-            className={cn(
-              "whitespace-nowrap text-[9px] leading-[1rem] tracking-[0.08em]",
-              surfaceTheme === "light" ? "text-[#33251c]" : "text-slate-100"
-            )}
-          >
-            {heroLine}
-          </p>
-        </div>
-
-        <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
-          {wizardSteps.map((step) => (
-            <button
-              type="button"
-              key={step.id}
-              onClick={() => onSelectStage(step.id as WizardStage)}
-              className={cn(
-                "rounded-[14px] border px-2.5 py-2 text-left transition-colors hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
-                surfaceTheme === "light"
-                  ? "focus-visible:ring-[#c8946f] focus-visible:ring-offset-[#fff7f1]"
-                  : "focus-visible:ring-white/70 focus-visible:ring-offset-[#060a12]",
-                stepContainerClassName(step.state, surfaceTheme)
-              )}
-              aria-pressed={stage === step.id}
-            >
-              <div className="flex items-center justify-between gap-1.5">
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={cn(
-                      "inline-flex h-5 w-5 items-center justify-center rounded-full border text-[9px] font-medium",
-                      stepIconClassName(step.state, surfaceTheme)
-                    )}
-                  >
-                    {step.state === "complete" ? <Check className="h-2.5 w-2.5" /> : step.order}
-                  </span>
-                  <div>
-                    <p className={cn("text-[11px]", surfaceTheme === "light" ? "text-[#3e2f24]" : "text-white")}>
-                      {step.label}
-                    </p>
-                    <p
-                      className={cn(
-                        "mt-0.5 text-[8px] leading-[0.85rem]",
-                        surfaceTheme === "light" ? "text-[#8f7664]" : "text-slate-500"
-                      )}
-                    >
-                      {step.description}
-                    </p>
-                  </div>
-                </div>
-                <span
-                  className={cn(
-                    "rounded-full px-1.5 py-0.5 text-[6px] uppercase tracking-[0.14em]",
-                    stepBadgeClassName(step.state, surfaceTheme)
-                  )}
-                >
-                  {step.state === "complete"
-                    ? "Ready"
-                    : step.state === "current"
-                      ? "Active"
-                      : "Pending"}
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {showLaunchpad ? (
-          <LaunchpadStage
-            surfaceTheme={surfaceTheme}
-            workspaceCount={workspaceCount}
-            agentCount={agentCount}
-            workspaceSetupReady={hasWorkspaceSetup}
-            defaultModelLabel={defaultModelLabel}
-            createProgress={launchpadCreateProgress}
-            createRunState={launchpadCreateRunState}
-          />
-        ) : stage === "system" ? (
-          <SystemStage
-            steps={systemSteps}
-            surfaceTheme={surfaceTheme}
-            statusCopy={stageStatusCopy}
-            showDetails={showDetails}
-            phaseLabel={phaseLabel}
-            run={stageRun}
-            gatewayAuthNeedsSetup={gatewayAuthNeedsSetup}
-            onOpenGatewayAuthSettings={onOpenGatewayAuthSettings}
-          />
-        ) : (
-          <ModelStage
-            snapshot={snapshot}
-            surfaceTheme={surfaceTheme}
-            statusCopy={stageStatusCopy}
-            showDetails={showDetails}
-            phaseLabel={phaseLabel}
-            run={stageRun}
-            modelPhase={modelPhase}
-            selectedModelId={selectedModelId}
-            modelSwitchFeedback={modelSwitchFeedback}
-            onSelectedModelIdChange={onSelectedModelIdChange}
-            onClearModelSwitchFeedback={onClearModelSwitchFeedback}
-            onOpenAddModels={onOpenAddModels}
-          />
-        )}
-
-        </div>
-
-        <div
-          className={cn(
-            "mt-auto flex flex-wrap items-center justify-between gap-1.5 border-t px-2.5 py-2 sm:px-3",
-            surfaceTheme === "light" ? "border-[#ebddd2]" : "border-white/8"
-          )}
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            {showLaunchpad ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="px-2.5 py-2.5 sm:px-3 sm:py-3">
+            <div className="flex items-center justify-between gap-2">
               <span
                 className={cn(
-                  "rounded-full border px-2 py-0.5 text-[8px] uppercase tracking-[0.16em]",
+                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[8px] uppercase tracking-[0.18em]",
                   surfaceTheme === "light"
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                    : "border-emerald-300/20 bg-emerald-300/10 text-emerald-200"
+                    ? "border-[#d8c0b0] bg-[#f3e7dc] text-[#8d725f]"
+                    : "border-white/10 bg-white/[0.06] text-slate-300"
                 )}
               >
-                {hasWorkspaces
-                  ? hasWorkspaceSetup
-                    ? "Setup complete"
-                    : launchpadCreateRunState === "error"
-                      ? "Needs attention"
-                      : "Syncing agent"
-                  : launchpadCreateRunState === "running"
-                    ? "Building workspace"
-                    : launchpadCreateRunState === "error"
-                      ? "Needs attention"
-                      : "Ready"}
+                <Sparkles className="h-2 w-2" />
+                {topBadgeLabel}
               </span>
-            ) : stage === "models" ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={onBackToSystem}
-                disabled={stageRun.runState === "running"}
-                className={ghostActionClassName(surfaceTheme)}
+              <span
+                className={cn(
+                  "rounded-full border px-1.5 py-0.5 text-[8px] uppercase tracking-[0.16em]",
+                  stageBadgeClassName(stageRun.runState, onboardingModelReady, surfaceTheme)
+                )}
               >
-                <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-                Back
-              </Button>
-            ) : null}
+                {stageBadgeLabel}
+              </span>
+            </div>
 
+            <div className="mt-3">
+              <p
+                className={cn(
+                  "whitespace-nowrap text-[9px] leading-[1rem] tracking-[0.08em]",
+                  surfaceTheme === "light" ? "text-[#33251c]" : "text-slate-100"
+                )}
+              >
+                {heroLine}
+              </p>
+            </div>
+
+            <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
+              {wizardSteps.map((step) => (
+                <button
+                  type="button"
+                  key={step.id}
+                  onClick={() => onSelectStage(step.id as WizardStage)}
+                  className={cn(
+                    "rounded-[14px] border px-2.5 py-2 text-left transition-colors hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+                    surfaceTheme === "light"
+                      ? "focus-visible:ring-[#c8946f] focus-visible:ring-offset-[#fff7f1]"
+                      : "focus-visible:ring-white/70 focus-visible:ring-offset-[#060a12]",
+                    stepContainerClassName(step.state, surfaceTheme)
+                  )}
+                  aria-pressed={stage === step.id}
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={cn(
+                          "inline-flex h-5 w-5 items-center justify-center rounded-full border text-[9px] font-medium",
+                          stepIconClassName(step.state, surfaceTheme)
+                        )}
+                      >
+                        {step.state === "complete" ? <Check className="h-2.5 w-2.5" /> : step.order}
+                      </span>
+                      <div>
+                        <p className={cn("text-[11px]", surfaceTheme === "light" ? "text-[#3e2f24]" : "text-white")}>
+                          {step.label}
+                        </p>
+                        <p
+                          className={cn(
+                            "mt-0.5 text-[8px] leading-[0.85rem]",
+                            surfaceTheme === "light" ? "text-[#8f7664]" : "text-slate-500"
+                          )}
+                        >
+                          {step.description}
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className={cn(
+                        "rounded-full px-1.5 py-0.5 text-[6px] uppercase tracking-[0.14em]",
+                        stepBadgeClassName(step.state, surfaceTheme)
+                      )}
+                    >
+                      {step.state === "complete"
+                        ? "Ready"
+                        : step.state === "current"
+                          ? "Active"
+                          : "Pending"}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2.5 pb-2.5 sm:px-3 sm:pb-3">
             {showLaunchpad ? (
-              <>
-                {hasWorkspaceSetup ? (
-                  <Button
-                    type="button"
-                    onClick={onEnterAgentOS}
-                    className={cn(
-                      "h-8 min-w-[156px] rounded-full px-3 text-[11px]",
-                      surfaceTheme === "light"
-                        ? "bg-[#c8946f] text-white shadow-[0_14px_34px_rgba(200,148,111,0.24)] hover:bg-[#b88461]"
-                        : "bg-white text-slate-950 hover:bg-white/92"
-                    )}
-                  >
-                    Enter AgentOS
-                    <ArrowRight className="ml-1.5 h-3 w-3" />
-                  </Button>
-                ) : isLaunchpadBuilding ? (
-                  <span
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[9px] uppercase tracking-[0.16em]",
-                      surfaceTheme === "light"
-                        ? "border-[#d8c0b0] bg-white/85 text-[#8d725f]"
-                        : "border-white/10 bg-white/[0.06] text-slate-300"
-                    )}
-                  >
-                    <LoaderCircle className="h-3 w-3 animate-spin" />
-                    Building workspace
-                  </span>
-                ) : (
-                  <Button
-                    type="button"
-                    onClick={onCreateWorkspace}
-                    className={cn(
-                      "h-8 min-w-[156px] rounded-full px-3 text-[11px]",
-                      surfaceTheme === "light"
-                        ? "bg-[#c8946f] text-white shadow-[0_14px_34px_rgba(200,148,111,0.24)] hover:bg-[#b88461]"
-                        : "bg-white text-slate-950 hover:bg-white/92"
-                    )}
-                  >
-                    {launchpadCreateRunState === "error" ? "Retry setup" : "Create Workspace"}
-                    <ArrowRight className="ml-1.5 h-3 w-3" />
-                  </Button>
-                )}
-              </>
+              <LaunchpadStage
+                surfaceTheme={surfaceTheme}
+                workspaceCount={workspaceCount}
+                agentCount={agentCount}
+                workspaceSetupReady={hasWorkspaceSetup}
+                defaultModelLabel={defaultModelLabel}
+                createProgress={launchpadCreateProgress}
+                createRunState={launchpadCreateRunState}
+              />
+            ) : stage === "system" ? (
+              <SystemStage
+                steps={systemSteps}
+                surfaceTheme={surfaceTheme}
+                statusCopy={stageStatusCopy}
+                showDetails={showDetails}
+                phaseLabel={phaseLabel}
+                run={stageRun}
+                gatewayAuthNeedsSetup={gatewayAuthNeedsSetup}
+                onOpenGatewayAuthSettings={onOpenGatewayAuthSettings}
+              />
             ) : (
-              <>
-                {stage === "models" && !onboardingModelReady ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => onOpenAddModels()}
-                    className={secondaryActionClassName(surfaceTheme)}
-                  >
-                    Open full Add Models
-                  </Button>
-                ) : null}
+              <ModelStage
+                snapshot={snapshot}
+                surfaceTheme={surfaceTheme}
+                statusCopy={stageStatusCopy}
+                showDetails={showDetails}
+                phaseLabel={phaseLabel}
+                run={stageRun}
+                modelPhase={modelPhase}
+                selectedModelId={selectedModelId}
+                modelSwitchFeedback={modelSwitchFeedback}
+                onSelectedModelIdChange={onSelectedModelIdChange}
+                onClearModelSwitchFeedback={onClearModelSwitchFeedback}
+                onOpenAddModels={onOpenAddModels}
+                onSnapshotChange={onSnapshotChange}
+              />
+            )}
+          </div>
 
+          <div
+            className={cn(
+              "mt-auto flex flex-wrap items-center justify-between gap-1.5 border-t px-2.5 py-2 sm:px-3",
+              surfaceTheme === "light" ? "border-[#ebddd2]" : "border-white/8"
+            )}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              {showLaunchpad ? (
+                <span
+                  className={cn(
+                    "rounded-full border px-2 py-0.5 text-[8px] uppercase tracking-[0.16em]",
+                    surfaceTheme === "light"
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                      : "border-emerald-300/20 bg-emerald-300/10 text-emerald-200"
+                  )}
+                >
+                  {hasWorkspaces
+                    ? hasWorkspaceSetup
+                      ? "Setup complete"
+                      : launchpadCreateRunState === "error"
+                        ? "Needs attention"
+                        : "Syncing agent"
+                    : launchpadCreateRunState === "running"
+                      ? "Building workspace"
+                      : launchpadCreateRunState === "error"
+                        ? "Needs attention"
+                        : "Ready"}
+                </span>
+              ) : stage === "models" ? (
                 <Button
                   type="button"
-                  onClick={() => {
-                    if (stage === "system") {
+                  variant="ghost"
+                  size="sm"
+                  onClick={onBackToSystem}
+                  disabled={stageRun.runState === "running"}
+                  className={ghostActionClassName(surfaceTheme)}
+                >
+                  <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+                  Back
+                </Button>
+              ) : null}
+
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {showLaunchpad ? (
+                <>
+                  {hasWorkspaceSetup ? (
+                    <Button
+                      type="button"
+                      onClick={onEnterAgentOS}
+                      className={cn(
+                        "h-8 min-w-[156px] rounded-full px-3 text-[11px]",
+                        surfaceTheme === "light"
+                          ? "bg-[#c8946f] text-white shadow-[0_14px_34px_rgba(200,148,111,0.24)] hover:bg-[#b88461]"
+                          : "bg-white text-slate-950 hover:bg-white/92"
+                      )}
+                    >
+                      Enter AgentOS
+                      <ArrowRight className="ml-1.5 h-3 w-3" />
+                    </Button>
+                  ) : isLaunchpadBuilding ? (
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[9px] uppercase tracking-[0.16em]",
+                        surfaceTheme === "light"
+                          ? "border-[#d8c0b0] bg-white/85 text-[#8d725f]"
+                          : "border-white/10 bg-white/[0.06] text-slate-300"
+                      )}
+                    >
+                      <LoaderCircle className="h-3 w-3 animate-spin" />
+                      Building workspace
+                    </span>
+                  ) : (
+                    <Button
+                      type="button"
+                      onClick={onCreateWorkspace}
+                      className={cn(
+                        "h-8 min-w-[156px] rounded-full px-3 text-[11px]",
+                        surfaceTheme === "light"
+                          ? "bg-[#c8946f] text-white shadow-[0_14px_34px_rgba(200,148,111,0.24)] hover:bg-[#b88461]"
+                          : "bg-white text-slate-950 hover:bg-white/92"
+                      )}
+                    >
+                      {launchpadCreateRunState === "error" ? "Retry setup" : "Create Workspace"}
+                      <ArrowRight className="ml-1.5 h-3 w-3" />
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <>
+                  {stage === "models" && !onboardingModelReady ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => onOpenAddModels()}
+                      className={secondaryActionClassName(surfaceTheme)}
+                    >
+                      Open full Add Models
+                    </Button>
+                  ) : null}
+
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      if (stage === "system") {
+                        if (primaryAction.kind === "dismiss") {
+                          onEnterAgentOS();
+                          return;
+                        }
+
+                        if (onboardingSystemReady) {
+                          onContinueToModels();
+                          return;
+                        }
+
+                        onRunSystemSetup();
+                        return;
+                      }
+
                       if (primaryAction.kind === "dismiss") {
                         onEnterAgentOS();
                         return;
                       }
 
-                      if (onboardingSystemReady) {
-                        onContinueToModels();
+                      if (primaryAction.kind === "set-default") {
+                        onRunModelSetDefault(selectedModelId || undefined);
                         return;
                       }
 
-                      onRunSystemSetup();
                       return;
-                    }
-
-                    if (primaryAction.kind === "dismiss") {
-                      onEnterAgentOS();
-                      return;
-                    }
-
-                    if (primaryAction.kind === "set-default") {
-                      onRunModelSetDefault(selectedModelId || undefined);
-                      return;
-                    }
-
-                    return;
-                  }}
-                  disabled={stageRun.runState === "running" || primaryAction.kind === "select-model"}
-                  className={cn(
-                    "h-8 min-w-[156px] rounded-full px-3 text-[11px]",
-                    surfaceTheme === "light"
-                      ? "bg-[#c8946f] text-white shadow-[0_14px_34px_rgba(200,148,111,0.24)] hover:bg-[#b88461]"
-                      : "bg-white text-slate-950 hover:bg-white/92"
-                  )}
-                >
-                  {stageRun.runState === "running" ? (
-                    <>
-                      <LoaderCircle className="mr-1.5 h-3 w-3 animate-spin" />
-                      Working...
-                    </>
-                  ) : (
-                    <>
-                      {primaryAction.label}
-                      <ArrowRight className="ml-1.5 h-3 w-3" />
-                    </>
-                  )}
-                </Button>
-              </>
-            )}
+                    }}
+                    disabled={stageRun.runState === "running" || primaryAction.kind === "select-model"}
+                    className={cn(
+                      "h-8 min-w-[156px] rounded-full px-3 text-[11px]",
+                      surfaceTheme === "light"
+                        ? "bg-[#c8946f] text-white shadow-[0_14px_34px_rgba(200,148,111,0.24)] hover:bg-[#b88461]"
+                        : "bg-white text-slate-950 hover:bg-white/92"
+                    )}
+                  >
+                    {stageRun.runState === "running" ? (
+                      <>
+                        <LoaderCircle className="mr-1.5 h-3 w-3 animate-spin" />
+                        Working...
+                      </>
+                    ) : (
+                      <>
+                        {primaryAction.label}
+                        <ArrowRight className="ml-1.5 h-3 w-3" />
+                      </>
+                    )}
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </motion.div>

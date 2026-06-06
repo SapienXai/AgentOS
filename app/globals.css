@@ -672,6 +672,103 @@
   height: 0;
 }
 
+@keyframes openclaw-onboarding-aurora {
+  0% {
+    transform: translate3d(-7%, -4%, 0) rotate(0deg) scale(1);
+  }
+
+  45% {
+    transform: translate3d(6%, 3%, 0) rotate(8deg) scale(1.06);
+  }
+
+  100% {
+    transform: translate3d(-2%, 6%, 0) rotate(-6deg) scale(1.03);
+  }
+}
+
+@keyframes openclaw-onboarding-sweep {
+  0% {
+    transform: translateX(-34%) skewX(-10deg);
+    opacity: 0.26;
+  }
+
+  50% {
+    opacity: 0.52;
+  }
+
+  100% {
+    transform: translateX(34%) skewX(-10deg);
+    opacity: 0.3;
+  }
+}
+
+.openclaw-onboarding-backdrop::before,
+.openclaw-onboarding-backdrop::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.openclaw-onboarding-backdrop::before {
+  inset: -24%;
+  background:
+    conic-gradient(
+      from 210deg at 52% 52%,
+      transparent 0deg,
+      rgba(34, 211, 238, 0.2) 58deg,
+      rgba(99, 102, 241, 0.14) 118deg,
+      transparent 178deg,
+      rgba(244, 114, 182, 0.12) 246deg,
+      rgba(14, 165, 233, 0.18) 306deg,
+      transparent 360deg
+    ),
+    linear-gradient(115deg, transparent 18%, rgba(125, 211, 252, 0.12) 42%, transparent 68%);
+  filter: blur(42px);
+  opacity: 0.9;
+  animation: openclaw-onboarding-aurora 16s ease-in-out infinite alternate;
+}
+
+.openclaw-onboarding-backdrop::after {
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.06) 45%, transparent 72%),
+    radial-gradient(ellipse at 50% 58%, transparent 0%, rgba(2, 6, 23, 0.1) 52%, rgba(2, 6, 23, 0.38) 100%);
+  mix-blend-mode: screen;
+  animation: openclaw-onboarding-sweep 12s ease-in-out infinite alternate;
+}
+
+.openclaw-onboarding-backdrop--dark::before {
+  opacity: 0.82;
+}
+
+.openclaw-onboarding-backdrop--dark::after {
+  opacity: 0.72;
+}
+
+.openclaw-onboarding-backdrop--light::before {
+  background:
+    conic-gradient(
+      from 210deg at 52% 52%,
+      transparent 0deg,
+      rgba(14, 165, 233, 0.14) 62deg,
+      rgba(200, 148, 111, 0.18) 128deg,
+      transparent 184deg,
+      rgba(244, 114, 182, 0.08) 246deg,
+      rgba(59, 130, 246, 0.1) 312deg,
+      transparent 360deg
+    ),
+    linear-gradient(115deg, transparent 18%, rgba(255, 255, 255, 0.32) 42%, transparent 68%);
+  opacity: 0.72;
+}
+
+.openclaw-onboarding-backdrop--light::after {
+  background:
+    linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.32) 45%, transparent 72%),
+    radial-gradient(ellipse at 50% 58%, transparent 0%, rgba(255, 249, 244, 0.12) 52%, rgba(229, 215, 204, 0.28) 100%);
+  opacity: 0.62;
+}
+
 @keyframes operation-progress-fill {
   from {
     width: 0%;
@@ -776,6 +873,11 @@
 
   .workspace-architect-card-enter,
   .workspace-architect-chip-enter {
+    animation: none !important;
+  }
+
+  .openclaw-onboarding-backdrop::before,
+  .openclaw-onboarding-backdrop::after {
     animation: none !important;
   }
 }

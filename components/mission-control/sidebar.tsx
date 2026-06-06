@@ -18,6 +18,7 @@ import {
   FileText,
   FolderKanban,
   Gauge,
+  Home,
   Inbox,
   KeyRound,
   Plug,
@@ -393,6 +394,8 @@ export function MissionSidebar({
           pathname={pathname}
           statusTone={statusTone}
           surfaceTheme={surfaceTheme}
+          workspaceLabel={activeWorkspaceId === null ? "All workspaces" : activeWorkspace?.name || "No workspace"}
+          workspaceDetail={activeWorkspaceId === null ? `${snapshot.workspaces.length} workspaces` : "Workspace"}
           onItemNavigate={handleNavigate}
           onExpandCollapsed={onExpandCollapsed ?? onToggleCollapsed}
         />
@@ -1150,6 +1153,8 @@ function CollapsedSidebar({
   pathname,
   statusTone,
   surfaceTheme,
+  workspaceLabel,
+  workspaceDetail,
   onItemNavigate,
   onExpandCollapsed
 }: {
@@ -1157,6 +1162,8 @@ function CollapsedSidebar({
   pathname: string;
   statusTone: string;
   surfaceTheme: "dark" | "light";
+  workspaceLabel: string;
+  workspaceDetail: string;
   onItemNavigate: (item: SidebarItem) => void;
   onExpandCollapsed: () => void;
 }) {
@@ -1179,7 +1186,23 @@ function CollapsedSidebar({
         />
       </button>
 
-      <nav aria-label="Primary" className="sidebar-scroll mt-5 flex min-h-0 w-12 flex-1 flex-col items-center gap-4 overflow-y-auto overscroll-contain">
+      <RailTooltip
+        label={`${workspaceLabel} - ${workspaceDetail}`}
+        side="right"
+        surfaceTheme={surfaceTheme}
+        panelCollapsed
+      >
+        <button
+          type="button"
+          onClick={onExpandCollapsed}
+          aria-label={`Expand workspace selector: ${workspaceLabel}`}
+          className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-white/[0.08] bg-cyan-300/[0.10] text-cyan-200 outline-none transition-all hover:border-cyan-200/24 hover:bg-cyan-300/[0.16] hover:text-cyan-50 focus-visible:ring-2 focus-visible:ring-cyan-300/40"
+        >
+          <Home className="h-4 w-4" />
+        </button>
+      </RailTooltip>
+
+      <nav aria-label="Primary" className="sidebar-scroll mt-6 flex min-h-0 w-12 flex-1 flex-col items-center gap-4 overflow-y-auto overscroll-contain">
         {sidebarSections.map((section) => (
           <div key={section.id} className="flex flex-col items-center gap-1.5">
             {sidebarItems

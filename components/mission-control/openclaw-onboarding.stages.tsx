@@ -259,7 +259,8 @@ export function ModelStage({
   modelSwitchFeedback,
   onSelectedModelIdChange,
   onClearModelSwitchFeedback,
-  onOpenAddModels
+  onOpenAddModels,
+  onSnapshotChange
 }: {
   snapshot: MissionControlSnapshot;
   surfaceTheme: SurfaceTheme;
@@ -273,6 +274,7 @@ export function ModelStage({
   onSelectedModelIdChange: (value: string) => void;
   onClearModelSwitchFeedback: () => void;
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
+  onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(true);
   const availableModels = useMemo(
@@ -353,6 +355,7 @@ export function ModelStage({
             selectedModelId={selectedModelId}
             onSelectedModelIdChange={onSelectedModelIdChange}
             onOpenAddModels={onOpenAddModels}
+            onSnapshotChange={onSnapshotChange}
             autoDiscover={!modelReady}
           />
 
