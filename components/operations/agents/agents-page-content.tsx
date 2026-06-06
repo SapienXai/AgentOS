@@ -8,13 +8,14 @@ import { AgentCapabilityEditorDialog } from "@/components/mission-control/agent-
 import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
 import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
 import { buildAgentViews, formatBigNumber, statusToneForAgentFilter, summarizeTokens, type AgentFilter, type AgentView } from "@/components/operations/operations-data";
-import { EmptyState, EntityIcon, FilterChip, InspectorPanelFrame, KeyValue, MiniBadge, MoreButton, OperationsPageLayout, PageHeader, SearchToolbar, SectionCard, StatCard, StatGrid, StatusBadge, ToolbarButton, ViewToggle, pageSurface } from "@/components/operations/operations-ui";
+import { EmptyState, EntityIcon, FilterChip, InspectorPanelFrame, KeyValue, MoreButton, OperationsPageLayout, PageHeader, SearchToolbar, SectionCard, StatCard, StatGrid, StatusBadge, ToolbarButton, ViewToggle, type StatusTone } from "@/components/operations/operations-ui";
 import { agentFilterLabel, formatAgentDisplayNameFromRecord, formatAgentSortLabel, MissionDispatchDialog, readClientError, sortAgentViews, toTitleCase } from "@/components/operations/operations-shared";
 
 export function AgentsPageContent({
@@ -227,6 +228,7 @@ export function AgentsPageContent({
                   agent={agent}
                   selected={selectedAgent?.id === agent.id}
                   list={view === "list"}
+                  surfaceTheme={surfaceTheme}
                   onSelect={() => setSelectedId(agent.id)}
                   onMessage={() => setChatAgentId(agent.id)}
                   onRunTask={() => setDispatchAgent(agent)}
@@ -313,6 +315,7 @@ function AgentCard({
   agent,
   selected,
   list,
+  surfaceTheme,
   onSelect,
   onMessage,
   onRunTask
@@ -320,10 +323,19 @@ function AgentCard({
   agent: AgentView;
   selected: boolean;
   list: boolean;
+  surfaceTheme: "dark" | "light";
   onSelect: () => void;
   onMessage: () => void;
   onRunTask: () => void;
 }) {
+  const Icon = agent.icon;
+  const heartbeatLabel = agent.source?.heartbeat.enabled
+    ? agent.source.heartbeat.every ?? "on"
+    : "off";
+  const roleLabel = agent.source?.policy.preset ? toTitleCase(agent.source.policy.preset) : agent.policyLabel;
+  const statusVariant = toAgentBadgeVariant(agent.statusTone);
+  const onlineLabel = agent.online ? "Online" : "Offline";
+
   return (
     <div
       role="button"
@@ -336,53 +348,150 @@ function AgentCard({
         }
       }}
       className={cn(
-        "group rounded-[12px] border p-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
-        pageSurface,
-        selected && "border-blue-400/70 bg-blue-500/[0.08] shadow-[0_0_0_1px_rgba(59,130,246,0.22),0_22px_64px_rgba(37,99,235,0.16)]"
+        "agent-node group relative isolate overflow-hidden rounded-[24px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(18,20,26,0.96),rgba(9,11,15,0.96))] text-left shadow-[0_20px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
+        list ? "md:grid md:grid-cols-[220px_minmax(0,1fr)]" : "",
+        surfaceTheme === "light" && "shadow-[0_18px_42px_rgba(92,68,55,0.18)]",
+        selected && "border-cyan-300/50 shadow-[0_0_0_1px_rgba(103,232,249,0.24),0_22px_64px_rgba(34,211,238,0.16)]"
       )}
     >
-      <div className={cn("flex gap-3", list ? "items-center" : "items-start")}>
-        <EntityIcon icon={agent.icon} label={agent.name} tone={agent.iconTone} size="lg" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <StatusBadge label={agent.statusLabel} tone={agent.statusTone} />
-              <h3 className="mt-1.5 truncate text-[0.88rem] font-semibold text-white">{agent.name}</h3>
-              <p className="mt-1 line-clamp-2 text-[0.72rem] leading-4 text-slate-300">{agent.purpose}</p>
-            </div>
-            {selected ? <CircleCheck className="h-4 w-4 shrink-0 text-blue-300" /> : null}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[24px]">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_10%,rgba(34,211,238,0.18),transparent_36%),radial-gradient(circle_at_84%_18%,rgba(16,185,129,0.08),transparent_28%)]" />
+        <div className="absolute inset-y-4 left-0 w-[3px] rounded-r-full bg-[linear-gradient(180deg,rgba(125,211,252,0.9),rgba(34,211,238,0.14))]" />
+        <div className="absolute right-2 top-2 h-10 w-10 rounded-full bg-cyan-300/10 blur-xl" />
+      </div>
+
+      <div className={cn("relative overflow-hidden border-b border-white/[0.12] bg-[linear-gradient(180deg,rgba(14,16,20,0.98),rgba(8,10,14,0.95))]", list ? "h-full min-h-[210px] rounded-l-[24px] md:rounded-r-none" : "h-[154px] rounded-t-[24px]")}>
+        <video
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center brightness-[0.88] contrast-[1.04] saturate-[0.92]"
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="metadata"
+          aria-hidden="true"
+        >
+          <source src="/assets/agent.mp4" type="video/mp4" />
+        </video>
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(3,4,7,0.42),rgba(3,4,7,0.88)),radial-gradient(circle_at_center,transparent_38%,rgba(3,4,7,0.34)_100%),radial-gradient(circle_at_20%_10%,rgba(34,211,238,0.08),transparent_34%),radial-gradient(circle_at_82%_18%,rgba(251,191,36,0.05),transparent_28%)]" />
+        <div className="absolute left-3 top-3 z-20 flex items-center gap-2">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border border-cyan-200/16 bg-slate-950/70 text-cyan-100 shadow-[0_12px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+            <Icon className="h-4 w-4" />
+          </span>
+          <Badge variant={statusVariant} className="max-w-[150px] truncate px-2 py-1 text-[9px]">
+            {agent.statusLabel}
+          </Badge>
+        </div>
+        {selected ? (
+          <span className="absolute right-3 top-3 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-cyan-200/28 bg-cyan-300/14 text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.24)]">
+            <CircleCheck className="h-3.5 w-3.5" />
+          </span>
+        ) : null}
+        <div className="absolute inset-x-0 bottom-0 z-20 p-3.5">
+          <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.22em] text-white/65">
+            <span className={cn("h-1.5 w-1.5 rounded-full", agent.online ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.42)]" : "bg-slate-500")} />
+            Agent
           </div>
-          <div className="mt-2.5 flex flex-wrap gap-1.5">
-            <MiniBadge>{agent.modelLabel}</MiniBadge>
-            <MiniBadge>Policy: {agent.policyLabel}</MiniBadge>
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-2 border-t border-white/[0.07] pt-2.5 text-[0.58rem] uppercase tracking-[0.11em] text-slate-500">
-            <span>Tools <b className="ml-1 text-slate-200">{agent.toolsCount}</b></span>
-            <span>Sessions <b className="ml-1 text-slate-200">{agent.sessionsCount}</b></span>
-            <span>Last active <b className="ml-1 normal-case tracking-normal text-slate-200">{agent.lastActiveLabel}</b></span>
-          </div>
-          <div className="mt-2.5 grid grid-cols-[1fr_1fr_auto] gap-2">
-            <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" onClick={(event) => { event.stopPropagation(); onMessage(); }}>
-              <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> Message
-            </Button>
-            <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" onClick={(event) => { event.stopPropagation(); onRunTask(); }}>
-              <Play className="mr-1.5 h-3.5 w-3.5" /> Run Task
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="h-8 rounded-[9px] px-2.5"
-              disabled
-              title="Following agents requires backend support."
-              onClick={(event) => event.stopPropagation()}
-            >
-              <Star className="h-3.5 w-3.5" />
-            </Button>
+          <h3 className="mt-1 truncate font-display text-[1.08rem] leading-5 text-white">{agent.name}</h3>
+          <p className="mt-0.5 truncate text-[10px] uppercase tracking-[0.16em] text-amber-200/90">{roleLabel}</p>
+        </div>
+      </div>
+
+      <div className="relative z-10 px-3.5 pb-3.5 pt-3.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge variant="muted" className="max-w-[170px] truncate px-2 py-1 text-[9px] normal-case tracking-normal">
+            {agent.modelLabel}
+          </Badge>
+          <Badge variant={agent.online ? "success" : "muted"} className="px-2 py-1 text-[9px] normal-case tracking-normal">
+            {onlineLabel}
+          </Badge>
+        </div>
+
+        <div className="mt-2.5">
+          <p className="line-clamp-2 min-h-10 text-[12px] leading-5 text-slate-300">{agent.purpose}</p>
+          <p className="mt-2 truncate text-[9px] uppercase tracking-[0.18em] text-slate-500">
+            Heartbeat {heartbeatLabel} · Last seen {agent.lastActiveLabel}
+          </p>
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <AgentCardStat label="Tools" value={agent.toolsCount} />
+          <AgentCardStat label="Sessions" value={agent.sessionsCount} />
+          <AgentCardStat label="Policy" value={agent.policyLabel} />
+        </div>
+
+        <div className="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-10 rounded-full border-white/[0.08] bg-white/[0.05] px-2 text-xs text-slate-200 hover:bg-white/[0.08] hover:text-white"
+            onClick={(event) => {
+              event.stopPropagation();
+              onMessage();
+            }}
+          >
+            <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> Message
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-10 rounded-full border-amber-300/20 bg-[linear-gradient(180deg,rgba(251,191,36,0.18),rgba(217,119,6,0.28))] px-2 text-xs text-amber-50 shadow-[0_10px_24px_rgba(245,158,11,0.18)] hover:border-amber-200/30 hover:bg-amber-400/20 hover:text-white"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRunTask();
+            }}
+          >
+            <Play className="mr-1.5 h-3.5 w-3.5" /> Run Task
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-10 rounded-full border-white/[0.08] bg-white/[0.05] px-3 text-slate-500"
+            disabled
+            title="Following agents requires backend support."
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Star className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+
+        <div className="mt-3 overflow-hidden rounded-b-[18px] border-t border-white/[0.08] bg-white/[0.03] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-300/75 shadow-[0_0_10px_rgba(34,211,238,0.35)]" />
+            <p className="truncate text-[8px] uppercase leading-none tracking-[0.22em] text-slate-500">Agent details</p>
+            <p className="ml-auto min-w-0 truncate text-[8px] leading-none text-slate-400">
+              {agent.toolsCount} tool{agent.toolsCount === 1 ? "" : "s"} · {agent.sessionsCount} session
+              {agent.sessionsCount === 1 ? "" : "s"}
+            </p>
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+function AgentCardStat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-[14px] border border-white/[0.08] bg-white/[0.04] px-2.5 py-2 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+      <p className="truncate text-[8px] uppercase tracking-[0.2em] text-slate-500">{label}</p>
+      <p className="mt-1 truncate text-[13px] font-semibold leading-none text-slate-100">{value}</p>
+    </div>
+  );
+}
+
+function toAgentBadgeVariant(tone: StatusTone): "default" | "muted" | "success" | "warning" | "danger" {
+  if (tone === "success") {
+    return "success";
+  }
+  if (tone === "warning") {
+    return "warning";
+  }
+  if (tone === "danger") {
+    return "danger";
+  }
+  if (tone === "muted") {
+    return "muted";
+  }
+  return "default";
 }
 
 function AgentInspector({
