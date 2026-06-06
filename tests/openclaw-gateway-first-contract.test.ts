@@ -194,8 +194,27 @@ test("capability matrix marks agent update unavailable without a fake fallback",
   assert.equal(matrix.operations?.agentUpdate.mode, "disabled");
   assert.equal(matrix.operations?.agentUpdate.fallbackAllowed, false);
   assert.match(matrix.operations?.agentUpdate.reason ?? "", /no safe fallback is available/i);
+  assert.match(matrix.operations?.agentUpdate.recovery ?? "", /unavailable until OpenClaw exposes/i);
   assert.equal(matrix.compatibility?.degradedOperations.includes("agentUpdate"), true);
-  assert.equal(matrix.degradedFeatures?.some((entry) => entry.startsWith("agentUpdate:")), true);
+  assert.equal(matrix.degradedFeatures?.some((entry) => /agentUpdate:.*Recovery:/i.test(entry)), true);
+});
+
+test("capability matrix carries explicit recovery guidance for degraded OpenClaw surfaces", async () => {
+  setOpenClawAdapterForTesting(createContractAdapter());
+  setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({
+    protocolVersion: 4,
+    methods: ["models.list", "models.authStatus", "channels.status"]
+  }));
+
+  const matrix = await getOpenClawCapabilityMatrix({ force: true });
+
+  assert.equal(matrix.operations?.modelScan.mode, "degraded");
+  assert.match(matrix.operations?.modelScan.recovery ?? "", /explicit model refresh.*native models\.scan/i);
+  assert.equal(matrix.operations?.taskAssign.mode, "disabled");
+  assert.match(matrix.operations?.taskAssign.recovery ?? "", /unavailable until OpenClaw exposes tasks\.assign/i);
+  assert.equal(matrix.operations?.channelProvisioning.mode, "degraded");
+  assert.match(matrix.operations?.channelProvisioning.recovery ?? "", /marked limited/i);
+  assert.equal(matrix.degradedFeatures?.some((entry) => /modelScan:.*Recovery:.*models\.scan/i.test(entry)), true);
 });
 
 test("capability matrix tracks Phase 2 Gateway-native runtime surfaces", async () => {

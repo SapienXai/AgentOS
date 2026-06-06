@@ -2,11 +2,11 @@ import type { MissionControlSnapshot } from "@/lib/openclaw/types";
 import { redactSecretText } from "@/lib/security/redaction";
 
 export function isOpenClawRuntimeStateReady(snapshot: MissionControlSnapshot) {
-  return snapshot.diagnostics.runtime.stateWritable && snapshot.diagnostics.runtime.sessionStoreWritable;
+  return Boolean(snapshot.diagnostics.runtime?.stateWritable && snapshot.diagnostics.runtime?.sessionStoreWritable);
 }
 
 export function isOpenClawOnboardingSystemReady(snapshot: MissionControlSnapshot) {
-  return snapshot.diagnostics.installed && snapshot.diagnostics.rpcOk;
+  return isOpenClawSystemReady(snapshot);
 }
 
 export function isOpenClawOnboardingModelReady(snapshot: MissionControlSnapshot) {

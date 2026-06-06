@@ -5,7 +5,9 @@ import { createErrorSnapshot } from "@/lib/openclaw/fallback";
 import { getRuntimeOutputForResolvedRuntime } from "@/lib/openclaw/domains/runtime-transcript";
 import { sanitizeGatewayDiagnosticText } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import {
+  isOpenClawOnboardingSystemReady,
   isOpenClawOnboardingModelReady,
+  isOpenClawSystemReady,
   resolveAgentCreationReadinessError,
   resolveMissionDispatchReadinessError,
   resolveWorkspaceCreationReadinessError
@@ -41,6 +43,24 @@ test("first-run write actions return actionable readiness failures before mutati
   assert.match(resolveWorkspaceCreationReadinessError(snapshot) ?? "", /blocked before any files are written/);
   assert.match(resolveAgentCreationReadinessError(snapshot) ?? "", /Agent creation is blocked/);
   assert.match(resolveMissionDispatchReadinessError(snapshot) ?? "", /Mission dispatch is blocked/);
+});
+
+test("onboarding system readiness waits for runtime write access after Gateway RPC", () => {
+  const snapshot = createErrorSnapshot("Runtime state is not writable.", {
+    installed: true,
+    loaded: true,
+    rpcOk: true
+  });
+
+  assert.equal(isOpenClawSystemReady(snapshot), false);
+  assert.equal(isOpenClawOnboardingSystemReady(snapshot), false);
+  assert.match(resolveWorkspaceCreationReadinessError(snapshot) ?? "", /runtime state is not writable/i);
+
+  snapshot.diagnostics.runtime.stateWritable = true;
+  snapshot.diagnostics.runtime.sessionStoreWritable = true;
+
+  assert.equal(isOpenClawSystemReady(snapshot), true);
+  assert.equal(isOpenClawOnboardingSystemReady(snapshot), true);
 });
 
 test("model readiness failures explain the next action for first workspace and agent creation", () => {

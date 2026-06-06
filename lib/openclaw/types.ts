@@ -152,6 +152,7 @@ export interface OpenClawCapabilityOperation {
   fallbackAllowed: boolean;
   baseline?: "required" | "optional" | "experimental";
   reason: string;
+  recovery?: string | null;
   preferredMethod?: string | null;
   supportedMethod?: string | null;
   aliasMethods?: string[];

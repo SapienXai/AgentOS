@@ -2327,7 +2327,12 @@ function formatGatewayOperationList(value: string[], operations?: GatewayCapabil
 
 function formatGatewayOperationEntry(entry: string, operations?: GatewayCapabilityOperations) {
   const [operationId, detail] = entry.split(/:\s*/, 2);
-  const label = operations?.[operationId]?.label ?? titleizeGatewayOperationId(operationId || entry);
+  const operation = operations?.[operationId];
+  const label = operation?.label ?? titleizeGatewayOperationId(operationId || entry);
+
+  if (!detail && operation?.recovery && operation.mode !== "gateway-native") {
+    return `${label}: ${operation.recovery}`;
+  }
 
   return detail ? `${label} via ${detail}` : label;
 }

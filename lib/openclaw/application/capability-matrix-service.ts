@@ -146,7 +146,8 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
     label: string,
     methods: string[],
     events: string[] = [],
-    fallbackAllowed = true
+    fallbackAllowed = true,
+    recovery: string | null = null
   ): OpenClawCapabilityOperation => {
     if (isCliGatewayClientForcedByEnv()) {
       return {
@@ -159,7 +160,8 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
         preferredMethod: methods[0] ?? null,
         supportedMethod: null,
         aliasMethods: methods.slice(1),
-        compatibility: "missing"
+        compatibility: "missing",
+        recovery: recovery ?? "Unset CLI-forced Gateway mode and rerun capability detection when native Gateway support is required."
       };
     }
 
@@ -174,7 +176,8 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
         preferredMethod: methods[0] ?? null,
         supportedMethod: null,
         aliasMethods: methods.slice(1),
-        compatibility: "unknown"
+        compatibility: "unknown",
+        recovery: recovery ?? "Rerun capability detection after Gateway metadata is available."
       };
     }
 
@@ -193,7 +196,8 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
         preferredMethod: methods[0] ?? null,
         supportedMethod,
         aliasMethods: methods.slice(1),
-        compatibility: supportedMethod && supportedMethod !== methods[0] ? "alias" : "preferred"
+        compatibility: supportedMethod && supportedMethod !== methods[0] ? "alias" : "preferred",
+        recovery: null
       };
     }
 
@@ -209,14 +213,23 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
       preferredMethod: methods[0] ?? null,
       supportedMethod: null,
       aliasMethods: methods.slice(1),
-      compatibility: "missing"
+      compatibility: "missing",
+      recovery: recovery ?? (fallbackAllowed
+        ? "Use explicit CLI fallback only as recovery, or update OpenClaw for native Gateway support."
+        : "Leave this capability unavailable until OpenClaw exposes a native Gateway method.")
     };
   };
   const operations = Object.fromEntries(
     OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS.map((definition) => [
       definition.id,
       {
-        ...operation(definition.label, definition.methods, definition.events ?? [], definition.fallbackAllowed ?? true),
+        ...operation(
+          definition.label,
+          definition.methods,
+          definition.events ?? [],
+          definition.fallbackAllowed ?? true,
+          definition.recovery ?? null
+        ),
         baseline: definition.baseline
       }
     ])
@@ -230,7 +243,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
   );
   const degradedFeatures = Object.entries(operations)
     .filter(([, value]) => value.mode === "degraded" || value.mode === "cli-fallback" || value.mode === "disabled")
-    .map(([name, value]) => `${name}: ${value.reason}`);
+    .map(([name, value]) => `${name}: ${value.reason}${value.recovery ? ` Recovery: ${value.recovery}` : ""}`);
   const aliasOperations = Object.entries(operations)
     .filter(([, value]) => value.compatibility === "alias" && value.supportedMethod)
     .map(([name, value]) => `${name}: ${value.supportedMethod}`);

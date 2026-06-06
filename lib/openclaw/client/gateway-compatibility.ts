@@ -46,21 +46,40 @@ export type OpenClawGatewayCompatibilityOperationDefinition = {
   methods: string[];
   events?: string[];
   fallbackAllowed?: boolean;
+  recovery?: string;
   baseline?: "required" | "optional" | "experimental";
 };
 
 export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibilityOperationDefinition[] = [
   { id: "health", label: "Gateway health", methods: ["health", "status"], baseline: "required" },
   { id: "models", label: "Models List", methods: ["models.list", "models.authStatus"], baseline: "required" },
-  { id: "modelAuthOrder", label: "Model auth order", methods: ["models.authOrder.set", "models.auth.order.set"], baseline: "experimental" },
-  { id: "modelScan", label: "Model scan", methods: ["models.scan"], baseline: "optional" },
+  {
+    id: "modelAuthOrder",
+    label: "Model auth order",
+    methods: ["models.authOrder.set", "models.auth.order.set"],
+    recovery: "Keep model selection explicit in AgentOS and update OpenClaw for native model auth order writes.",
+    baseline: "experimental"
+  },
+  {
+    id: "modelScan",
+    label: "Model scan",
+    methods: ["models.scan"],
+    recovery: "Use explicit model refresh/discovery fallback only as recovery and update OpenClaw for native models.scan.",
+    baseline: "optional"
+  },
   { id: "logsTail", label: "Gateway logs", methods: ["logs.tail"], baseline: "required" },
   { id: "configSchemaLookup", label: "Config schema lookup", methods: ["config.schema.lookup", "config.schema"], baseline: "required" },
   { id: "configPatch", label: "Config patch", methods: ["config.patch", "config.apply", "config.set"], baseline: "required" },
   { id: "sessionLifecycle", label: "Session lifecycle", methods: ["sessions.create", "sessions.patch", "sessions.steer"], baseline: "optional" },
   { id: "agentCreate", label: "Agent creation", methods: ["agents.create"], baseline: "required" },
   { id: "agentUpdate", label: "Agent update", methods: ["agents.update"], fallbackAllowed: false, baseline: "required" },
-  { id: "agentIdentity", label: "Agent identity sync", methods: ["agents.identity.set", "agents.setIdentity", "agents.set-identity"], baseline: "experimental" },
+  {
+    id: "agentIdentity",
+    label: "Agent identity sync",
+    methods: ["agents.identity.set", "agents.setIdentity", "agents.set-identity"],
+    recovery: "Continue with AgentOS config sync for native identity drift and update OpenClaw for agents.identity.set.",
+    baseline: "experimental"
+  },
   { id: "agentDelete", label: "Agent removal", methods: ["agents.delete"], baseline: "required" },
   { id: "missionDispatch", label: "Mission dispatch", methods: ["chat.send", "sessions.send"], baseline: "required" },
   {
@@ -80,7 +99,14 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     events: ["task", "task.updated", "task.completed"],
     baseline: "optional"
   },
-  { id: "taskAssign", label: "Task assignment", methods: ["tasks.assign"], fallbackAllowed: false, baseline: "experimental" },
+  {
+    id: "taskAssign",
+    label: "Task assignment",
+    methods: ["tasks.assign"],
+    fallbackAllowed: false,
+    recovery: "Leave task assignment unavailable until OpenClaw exposes tasks.assign.",
+    baseline: "experimental"
+  },
   { id: "taskCancel", label: "Task cancellation", methods: ["tasks.cancel"], baseline: "optional" },
   {
     id: "artifacts",
@@ -109,10 +135,34 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   { id: "cronRead", label: "Automation status", methods: ["cron.list", "cron.status"], baseline: "optional" },
   { id: "channels", label: "Channel status", methods: ["channels.status"], baseline: "required" },
   { id: "channelList", label: "Channel list", methods: ["channels.list", "channels.status"], baseline: "optional" },
-  { id: "channelLogs", label: "Channel logs", methods: ["channels.logs"], baseline: "experimental" },
-  { id: "channelProvisioning", label: "Channel provisioning", methods: ["channels.add", "channels.create", "channels.configure"], baseline: "experimental" },
-  { id: "channelRemoval", label: "Channel removal", methods: ["channels.remove", "channels.delete"], baseline: "experimental" },
-  { id: "gmailProvisioning", label: "Gmail webhook setup", methods: ["webhooks.gmail.setup", "gmail.setup"], baseline: "experimental" },
+  {
+    id: "channelLogs",
+    label: "Channel logs",
+    methods: ["channels.logs"],
+    recovery: "Use visible CLI fallback only for channel log recovery and update OpenClaw for native channels.logs.",
+    baseline: "experimental"
+  },
+  {
+    id: "channelProvisioning",
+    label: "Channel provisioning",
+    methods: ["channels.add", "channels.create", "channels.configure"],
+    recovery: "Keep provisioning marked limited unless a native channel creation method or explicit CLI fallback succeeds.",
+    baseline: "experimental"
+  },
+  {
+    id: "channelRemoval",
+    label: "Channel removal",
+    methods: ["channels.remove", "channels.delete"],
+    recovery: "Keep removal marked limited unless a native channel removal method or explicit CLI fallback succeeds.",
+    baseline: "experimental"
+  },
+  {
+    id: "gmailProvisioning",
+    label: "Gmail webhook setup",
+    methods: ["webhooks.gmail.setup", "gmail.setup"],
+    recovery: "Keep Gmail webhook setup unavailable or explicit CLI-only until OpenClaw exposes native webhook setup.",
+    baseline: "experimental"
+  },
   { id: "automationProvisioning", label: "Automation provisioning", methods: ["cron.add", "cron.create"], baseline: "experimental" },
   { id: "browserProfiles", label: "Browser profiles", methods: ["browser.request"], fallbackAllowed: false, baseline: "experimental" },
   { id: "skills", label: "Skill status", methods: ["skills.status"], baseline: "optional" },

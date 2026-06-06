@@ -133,7 +133,14 @@ test("control plane helpers normalize snapshot and onboarding fallback", () => {
   const onlineWithoutWorkspace = {
     workspaces: [],
     agents: [],
-    diagnostics: { installed: true, rpcOk: true }
+    diagnostics: {
+      installed: true,
+      rpcOk: true,
+      runtime: {
+        stateWritable: true,
+        sessionStoreWritable: true
+      }
+    }
   } as unknown as MissionControlSnapshot;
 
   assert.equal(resolveOnboardingAction(onlineWithoutWorkspace).label, "Continue setup");
@@ -296,6 +303,10 @@ test("onboarding launchpad requires confirmed setup or a workspace-backed model"
     diagnostics: {
       installed: true,
       rpcOk: true,
+      runtime: {
+        stateWritable: true,
+        sessionStoreWritable: true
+      },
       modelReadiness: {
         ready: false,
         resolvedDefaultModel: "openai/gpt-5.4",
