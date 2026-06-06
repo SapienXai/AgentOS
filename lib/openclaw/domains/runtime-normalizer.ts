@@ -58,6 +58,7 @@ export function mapSessionCatalogEntryToRuntime(
     ageMs: session.ageMs ?? null,
     agentId,
     workspaceId,
+    workspacePath,
     modelId,
     sessionId: session.sessionId,
     taskId,

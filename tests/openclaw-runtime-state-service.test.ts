@@ -55,6 +55,52 @@ test("runtime snapshot mapper converts Gateway sessions, tasks, and artifacts in
   assert.equal(runtimes[2].metadata.gatewayObjectKind, "artifact");
 });
 
+test("runtime snapshot mapper preserves workspace linkage without agent catalog fallback", () => {
+  const runtimes = mapOpenClawRuntimeSnapshotToRuntimes(
+    {
+      sessions: [{
+        key: "agent:missing-agent:task:task-1",
+        sessionId: "session-1",
+        agentId: "missing-agent",
+        workspacePath: "/tmp/runtime-only-workspace",
+        updatedAt: 1_700_000_000_000,
+        status: "running"
+      }],
+      tasks: [{
+        id: "task-1",
+        agentId: "missing-agent",
+        workspace: "/tmp/runtime-only-workspace",
+        title: "Continue runtime-only task",
+        status: "running",
+        updatedAt: 1_700_000_001_000
+      }],
+      artifacts: [{
+        id: "artifact-1",
+        taskId: "task-1",
+        workspacePath: "/tmp/runtime-only-workspace",
+        path: "deliverables/result.md",
+        updatedAt: 1_700_000_002_000
+      }]
+    },
+    {
+      agentConfig: [],
+      agentsList: [],
+      resolveWorkspaceId: (workspacePath) =>
+        workspacePath === "/tmp/runtime-only-workspace" ? "runtime-only-workspace" : "unexpected"
+    }
+  );
+
+  assert.equal(runtimes.length, 3);
+  assert.deepEqual(
+    runtimes.map((runtime) => runtime.workspaceId),
+    ["runtime-only-workspace", "runtime-only-workspace", "runtime-only-workspace"]
+  );
+  assert.deepEqual(
+    runtimes.map((runtime) => runtime.workspacePath),
+    ["/tmp/runtime-only-workspace", "/tmp/runtime-only-workspace", "/tmp/runtime-only-workspace"]
+  );
+});
+
 test("Gateway event normalizers preserve runtime-neutral task and artifact state", () => {
   const frame = {
     type: "event",
@@ -85,6 +131,24 @@ test("Gateway event normalizers preserve runtime-neutral task and artifact state
   assert.equal(event.source, "gateway");
   assert.equal(event.taskId, "task-1");
   assert.equal(event.receivedAt, "2026-05-18T10:00:00.000Z");
+});
+
+test("Gateway event normalizer preserves workspace path linkage", () => {
+  const runtime = normalizeOpenClawGatewayEventToRuntime({
+    type: "event",
+    event: "task.updated",
+    payload: {
+      agentId: "agent-1",
+      sessionId: "session-1",
+      taskId: "task-1",
+      workspacePath: "/tmp/runtime-only-workspace",
+      message: "Task is still running"
+    }
+  });
+
+  assert.ok(runtime);
+  assert.equal(runtime.workspaceId, "runtime-only-workspace");
+  assert.equal(runtime.workspacePath, "/tmp/runtime-only-workspace");
 });
 
 test("Gateway event normalizer preserves AgentOS direct chat origin metadata", () => {

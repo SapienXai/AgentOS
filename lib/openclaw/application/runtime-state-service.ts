@@ -13,6 +13,7 @@ import {
   type RuntimeAgentConfigInput,
   type RuntimeAgentInput
 } from "@/lib/openclaw/domains/runtime-normalizer";
+import { workspaceIdFromPath } from "@/lib/openclaw/domains/workspace-id";
 import type { SessionsPayload } from "@/lib/openclaw/domains/session-catalog";
 import type { RuntimeCreatedFile, RuntimeRecord } from "@/lib/openclaw/types";
 
@@ -76,6 +77,8 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
   const artifactId = readString(payload.artifactId) ?? readString(readNestedRecord(payload, "artifact")?.id);
   const timestamp = readTimestamp(payload.timestamp ?? payload.ts ?? payload.updatedAt);
   const status = normalizeStatus(readString(payload.status) ?? eventName);
+  const workspacePath = readWorkspacePath(payload);
+  const workspaceId = readString(payload.workspaceId) ?? (workspacePath ? workspaceIdFromPath(workspacePath) : null);
   const text =
     readString(payload.text) ??
     readString(payload.message) ??
@@ -102,7 +105,8 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
     updatedAt: timestamp,
     ageMs: timestamp ? Math.max(0, Date.now() - timestamp) : null,
     agentId: agentId ?? undefined,
-    workspaceId: readString(payload.workspaceId) ?? undefined,
+    workspaceId: workspaceId ?? undefined,
+    workspacePath: workspacePath ?? undefined,
     sessionId: sessionId ?? undefined,
     taskId: taskId ?? undefined,
     runId: runId ?? undefined,
@@ -138,8 +142,10 @@ function normalizeRuntimeEntry(entry: Record<string, unknown>, context: RuntimeS
 
   const timestamp = readTimestamp(entry.updatedAt ?? entry.timestamp ?? entry.ts);
   const agentId = readString(entry.agentId) ?? parseAgentIdFromSessionKey(key);
+  const workspacePath = readWorkspacePath(entry);
   const workspaceId =
     readString(entry.workspaceId) ??
+    resolveWorkspaceIdFromPath(workspacePath, context) ??
     resolveWorkspaceIdFromAgent(agentId, context);
 
   return [{
@@ -153,6 +159,7 @@ function normalizeRuntimeEntry(entry: Record<string, unknown>, context: RuntimeS
     ageMs: readNumber(entry.ageMs) ?? (timestamp ? Math.max(0, Date.now() - timestamp) : null),
     agentId: agentId ?? undefined,
     workspaceId: workspaceId ?? undefined,
+    workspacePath: workspacePath ?? undefined,
     modelId: readString(entry.modelId) ?? readString(entry.model) ?? undefined,
     sessionId: readString(entry.sessionId) ?? undefined,
     taskId: readString(entry.taskId) ?? undefined,
@@ -201,6 +208,11 @@ function normalizeSessionRuntime(entry: Record<string, unknown>, context: Runtim
     context.agentsList,
     { resolveWorkspaceId: context.resolveWorkspaceId }
   );
+  const workspacePath = readWorkspacePath(entry);
+  const workspaceId =
+    readString(entry.workspaceId) ??
+    resolveWorkspaceIdFromPath(workspacePath, context) ??
+    runtime.workspaceId;
 
   return [{
     ...runtime,
@@ -208,6 +220,8 @@ function normalizeSessionRuntime(entry: Record<string, unknown>, context: Runtim
     title: readString(entry.title) ?? runtime.title,
     subtitle: readString(entry.summary) ?? readString(entry.message) ?? runtime.subtitle,
     status: normalizeStatus(readString(entry.status) ?? runtime.status),
+    workspaceId: workspaceId ?? undefined,
+    workspacePath: workspacePath ?? runtime.workspacePath,
     toolNames: normalizeToolNames(entry) ?? runtime.toolNames,
     metadata: {
       ...runtime.metadata,
@@ -227,9 +241,10 @@ function normalizeTaskRuntime(entry: Record<string, unknown>, context: RuntimeSn
   }
 
   const timestamp = readTimestamp(entry.updatedAt ?? entry.timestamp ?? entry.ts ?? entry.createdAt);
+  const workspacePath = readWorkspacePath(entry);
   const workspaceId =
     readString(entry.workspaceId) ??
-    resolveWorkspaceIdFromPath(readString(entry.workspace), context) ??
+    resolveWorkspaceIdFromPath(workspacePath, context) ??
     resolveWorkspaceIdFromAgent(agentId, context);
   const mission = readString(entry.mission) ?? readString(entry.prompt) ?? readString(entry.title);
   const createdFiles = normalizeCreatedFiles(readRecordArray(entry.artifacts));
@@ -245,6 +260,7 @@ function normalizeTaskRuntime(entry: Record<string, unknown>, context: RuntimeSn
     ageMs: readNumber(entry.ageMs) ?? (timestamp ? Math.max(0, Date.now() - timestamp) : null),
     agentId: agentId ?? undefined,
     workspaceId: workspaceId ?? undefined,
+    workspacePath: workspacePath ?? undefined,
     modelId: readString(entry.model) ?? readString(entry.modelId) ?? undefined,
     sessionId: readString(entry.sessionId) ?? undefined,
     taskId: taskId ?? undefined,
@@ -275,6 +291,7 @@ function normalizeArtifactRuntime(entry: Record<string, unknown>, context: Runti
   const timestamp = readTimestamp(entry.updatedAt ?? entry.timestamp ?? entry.ts ?? entry.createdAt);
   const createdFiles = normalizeCreatedFiles([entry]);
   const displayName = readString(entry.path) ?? readString(entry.name) ?? artifactId ?? "artifact";
+  const workspacePath = readWorkspacePath(entry);
 
   return [{
     id: readString(entry.runtimeId) ?? `runtime:gateway-artifact:${hashRuntimeIdentity(artifactId, taskId, sessionId)}`,
@@ -288,9 +305,10 @@ function normalizeArtifactRuntime(entry: Record<string, unknown>, context: Runti
     agentId: agentId ?? undefined,
     workspaceId:
       readString(entry.workspaceId) ??
-      resolveWorkspaceIdFromPath(readString(entry.workspace), context) ??
+      resolveWorkspaceIdFromPath(workspacePath, context) ??
       resolveWorkspaceIdFromAgent(agentId, context) ??
       undefined,
+    workspacePath: workspacePath ?? undefined,
     sessionId: sessionId ?? undefined,
     taskId: taskId ?? undefined,
     runId: readString(entry.runId) ?? undefined,
@@ -411,6 +429,10 @@ function resolveWorkspaceIdFromAgent(agentId: string | null, context: RuntimeSna
 
 function resolveWorkspaceIdFromPath(workspacePath: string | null | undefined, context: RuntimeSnapshotMappingContext) {
   return workspacePath ? context.resolveWorkspaceId?.(workspacePath) : null;
+}
+
+function readWorkspacePath(entry: Record<string, unknown>) {
+  return readString(entry.workspacePath) ?? readString(entry.workspace);
 }
 
 function readRecordArray(value: unknown) {

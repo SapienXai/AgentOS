@@ -195,6 +195,8 @@ export async function hydrateMissionControlWorkspaceGraph(input: {
     relationships.push(...entry.relationships);
   }
 
+  attachRuntimeWorkspaceSignals(workspaceByPath, input.runtimes, input.bindings.resolveWorkspaceId);
+
   const agentsByWorkspace = new Map<string, OpenClawAgent[]>();
   for (const agent of agents) {
     const list = agentsByWorkspace.get(agent.workspaceId) ?? [];
@@ -243,6 +245,61 @@ function ensureWorkspace(
 
   const workspace = createEmptyWorkspace(workspacePath, resolveWorkspaceId);
 
+  store.set(workspaceId, workspace);
+  return workspace;
+}
+
+function attachRuntimeWorkspaceSignals(
+  store: Map<string, WorkspaceProject>,
+  runtimes: RuntimeRecord[],
+  resolveWorkspaceId: (workspacePath: string) => string
+) {
+  const runtimeSessionIdsByWorkspaceId = new Map<string, Set<string>>();
+
+  for (const runtime of runtimes) {
+    const workspacePath = runtime.workspacePath?.trim();
+
+    if (!workspacePath) {
+      continue;
+    }
+
+    const workspace = ensureWorkspaceForRuntime(store, runtime, workspacePath, resolveWorkspaceId);
+    workspace.activeRuntimeIds.push(runtime.id);
+
+    if (runtime.modelId) {
+      workspace.modelIds.push(runtime.modelId);
+    }
+
+    if (runtime.sessionId && workspace.agentIds.length === 0) {
+      const sessionIds = runtimeSessionIdsByWorkspaceId.get(workspace.id) ?? new Set<string>();
+      sessionIds.add(runtime.sessionId);
+      runtimeSessionIdsByWorkspaceId.set(workspace.id, sessionIds);
+    }
+  }
+
+  for (const [workspaceId, sessionIds] of runtimeSessionIdsByWorkspaceId) {
+    const workspace = store.get(workspaceId);
+
+    if (workspace && workspace.agentIds.length === 0) {
+      workspace.totalSessions = sessionIds.size;
+    }
+  }
+}
+
+function ensureWorkspaceForRuntime(
+  store: Map<string, WorkspaceProject>,
+  runtime: RuntimeRecord,
+  workspacePath: string,
+  resolveWorkspaceId: (workspacePath: string) => string
+) {
+  const workspaceId = runtime.workspaceId?.trim() || resolveWorkspaceId(workspacePath);
+  const existing = store.get(workspaceId);
+
+  if (existing) {
+    return existing;
+  }
+
+  const workspace = createEmptyWorkspace(workspacePath, () => workspaceId);
   store.set(workspaceId, workspace);
   return workspace;
 }

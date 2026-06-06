@@ -13,7 +13,8 @@ import {
   mergeMissionControlRuntimeHistory
 } from "@/lib/openclaw/application/mission-control/runtime-reconciliation";
 import {
-  createMissionControlWorkspaceBindings
+  createMissionControlWorkspaceBindings,
+  hydrateMissionControlWorkspaceGraph
 } from "@/lib/openclaw/application/mission-control/workspace-hydration";
 import type { RuntimeRecord } from "@/lib/openclaw/types";
 
@@ -128,6 +129,46 @@ test("workspace bindings keep workspace, agent, and resolver shape stable", () =
   assert.deepEqual(bindings.activeAgentIdsByWorkspacePath.get("/tmp/acme"), ["agent-1", "agent-2"]);
   assert.equal(bindings.resolveWorkspaceId("/tmp/acme"), "acme");
   assert.deepEqual(bindings.workspaceBoundAgents.map((agent) => agent.id), ["agent-1", "agent-2"]);
+});
+
+test("workspace hydration keeps runtime-only workspace context visible during rehydrate", async () => {
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-runtime-only-workspace-"));
+  tempRoots.push(workspaceRoot);
+  await mkdir(path.join(workspaceRoot, ".openclaw"), { recursive: true });
+
+  const bindings = createMissionControlWorkspaceBindings([]);
+  const hydrated = await hydrateMissionControlWorkspaceGraph({
+    bindings,
+    agentConfig: [],
+    sessions: [],
+    hasOpenClawSignal: true,
+    runtimes: [{
+      id: "runtime-1",
+      source: "turn",
+      key: "task-1",
+      title: "Gateway task",
+      subtitle: "OpenClaw task update",
+      status: "running",
+      updatedAt: 1_700_000_000_000,
+      ageMs: null,
+      agentId: "missing-agent",
+      workspaceId: "runtime-only-workspace",
+      workspacePath: workspaceRoot,
+      modelId: "openai/test",
+      sessionId: "session-1",
+      taskId: "task-1",
+      metadata: {
+        origin: "openclaw-runtime-snapshot"
+      }
+    }]
+  });
+
+  assert.equal(hydrated.workspaces.length, 1);
+  assert.equal(hydrated.workspaces[0].id, "runtime-only-workspace");
+  assert.equal(hydrated.workspaces[0].path, workspaceRoot);
+  assert.deepEqual(hydrated.workspaces[0].activeRuntimeIds, ["runtime-1"]);
+  assert.deepEqual(hydrated.workspaces[0].modelIds, ["openai/test"]);
+  assert.equal(hydrated.workspaces[0].totalSessions, 1);
 });
 
 function createRuntimeRecord(

@@ -615,6 +615,7 @@ export interface RuntimeRecord {
   ageMs: number | null;
   agentId?: string;
   workspaceId?: string;
+  workspacePath?: string;
   modelId?: string;
   sessionId?: string;
   taskId?: string;
