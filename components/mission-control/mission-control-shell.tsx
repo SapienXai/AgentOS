@@ -1040,16 +1040,19 @@ export function MissionControlShell({
       return;
     }
 
-    if (
-      !selectedOnboardingModelId.trim() &&
-      hydratedOnboardingModelIdRef.current !== preferredModelId
-    ) {
-      hydratedOnboardingModelIdRef.current = preferredModelId;
-      setSelectedOnboardingModelId(preferredModelId);
-    }
+    const previousHydratedModelId = hydratedOnboardingModelIdRef.current;
+    hydratedOnboardingModelIdRef.current = preferredModelId;
+    setSelectedOnboardingModelId((currentModelId) => {
+      const normalizedCurrentModelId = currentModelId.trim();
+
+      if (!normalizedCurrentModelId || normalizedCurrentModelId === previousHydratedModelId) {
+        return preferredModelId;
+      }
+
+      return currentModelId;
+    });
   }, [
-    snapshot,
-    selectedOnboardingModelId
+    snapshot
   ]);
 
   useEffect(() => {
@@ -1177,17 +1180,31 @@ export function MissionControlShell({
     });
   };
 
-  const hydrateOnboardingModelSelection = useCallback((nextSnapshot: MissionControlSnapshot) => {
+  const hydrateOnboardingModelSelection = useCallback((
+    nextSnapshot: MissionControlSnapshot,
+    options: { force?: boolean } = {}
+  ) => {
     const preferredModelId = resolveInitialOnboardingModelId(nextSnapshot);
 
     if (!preferredModelId) {
       return;
     }
 
+    const previousHydratedModelId = hydratedOnboardingModelIdRef.current;
     hydratedOnboardingModelIdRef.current = preferredModelId;
-    setSelectedOnboardingModelId((currentModelId) =>
-      currentModelId.trim() ? currentModelId : preferredModelId
-    );
+    setSelectedOnboardingModelId((currentModelId) => {
+      const normalizedCurrentModelId = currentModelId.trim();
+
+      if (
+        options.force ||
+        !normalizedCurrentModelId ||
+        normalizedCurrentModelId === previousHydratedModelId
+      ) {
+        return preferredModelId;
+      }
+
+      return currentModelId;
+    });
   }, []);
 
   const refreshOnboardingModelSnapshot = useCallback(async (fallbackSnapshot?: MissionControlSnapshot | null) => {
@@ -1990,6 +2007,9 @@ export function MissionControlShell({
 
               if (event.snapshot) {
                 setSnapshot(event.snapshot);
+                if (event.ok && payload.intent === "set-default") {
+                  hydrateOnboardingModelSelection(event.snapshot, { force: true });
+                }
               }
 
               if (event.ok) {
@@ -2048,6 +2068,9 @@ export function MissionControlShell({
 
           if (event.snapshot) {
             setSnapshot(event.snapshot);
+            if (event.ok && payload.intent === "set-default") {
+              hydrateOnboardingModelSelection(event.snapshot, { force: true });
+            }
           }
 
           if (event.ok) {
@@ -2409,6 +2432,10 @@ export function MissionControlShell({
     setIsOnboardingDismissed(false);
     setShowOnboardingReadyState(stage === undefined && shouldShowLaunchpadReadyState);
     setIsOnboardingForcedOpen(true);
+
+    if (resolvedStage === "models") {
+      hydrateOnboardingModelSelection(snapshot, { force: true });
+    }
   };
 
   const openGatewayAuthSettings = () => {

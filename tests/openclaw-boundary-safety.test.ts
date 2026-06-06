@@ -649,6 +649,15 @@ test("onboarding provider flow applies discovery snapshots to the setup shell", 
   assert.match(shellSource, /onSnapshotChange=\{setSnapshot\}/);
 });
 
+test("setup wizard rehydrates the verified default model when reopened", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
+
+  assert.match(source, /options: \{ force\?: boolean \} = \{\}/);
+  assert.match(source, /options\.force \|\|[\s\S]*!normalizedCurrentModelId \|\|[\s\S]*normalizedCurrentModelId === previousHydratedModelId/);
+  assert.match(source, /if \(resolvedStage === "models"\) \{[\s\S]*hydrateOnboardingModelSelection\(snapshot, \{ force: true \}\);[\s\S]*\}/);
+  assert.match(source, /if \(event\.ok && payload\.intent === "set-default"\) \{[\s\S]*hydrateOnboardingModelSelection\(event\.snapshot, \{ force: true \}\);[\s\S]*\}/);
+});
+
 test("onboarding runtime step only shows checking while setup is running", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding.stages.tsx"), "utf8");
 
