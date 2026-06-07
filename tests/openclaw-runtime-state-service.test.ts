@@ -22,6 +22,7 @@ test("runtime snapshot mapper converts Gateway sessions, tasks, and artifacts in
       tasks: [{
         id: "task-1",
         agentId: "agent-1",
+        sessionKey: "agent:agent-1:explicit:session-1",
         title: "Ship runtime state",
         mission: "Ship runtime state",
         status: "queued",
@@ -47,8 +48,12 @@ test("runtime snapshot mapper converts Gateway sessions, tasks, and artifacts in
   assert.equal(runtimes[0].metadata.origin, "openclaw-runtime-snapshot");
   assert.equal(runtimes[0].workspaceId, "workspace-1");
   assert.equal(runtimes[1].taskId, "task-1");
+  assert.equal(runtimes[1].sessionId, "session-1");
   assert.equal(runtimes[1].metadata.gatewayObjectKind, "task");
-  assert.deepEqual((runtimes[1].metadata as Record<string, unknown>).createdFiles, [{
+  const taskMetadata = runtimes[1].metadata as Record<string, unknown>;
+  assert.equal(taskMetadata.openClawSessionId, "session-1");
+  assert.equal(taskMetadata.openClawSessionKey, "agent:agent-1:explicit:session-1");
+  assert.deepEqual(taskMetadata.createdFiles, [{
     path: "deliverables/runtime.md",
     displayPath: "runtime.md"
   }]);

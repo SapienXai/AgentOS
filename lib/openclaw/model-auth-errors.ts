@@ -65,11 +65,13 @@ export function resolveOpenAiCodexAuthHandoff(
   pluginReady: boolean,
   options?: {
     force?: boolean;
+    intent?: "setup" | "refresh" | "switch-account";
   }
 ) {
+  const actionLabel = resolveOpenAiCodexAuthActionLabel(options);
+
   if (pluginReady) {
     const command = buildOpenAiCodexAuthLoginCommand(commandBin, options);
-    const actionLabel = options?.force ? "refresh the Codex app-server setup" : "finish the Codex app-server setup";
 
     return {
       command,
@@ -82,7 +84,6 @@ export function resolveOpenAiCodexAuthHandoff(
   }
 
   const command = buildOpenAiCodexAuthRepairCommand(commandBin, options);
-  const actionLabel = options?.force ? "refresh the Codex app-server setup" : "finish the Codex app-server setup";
 
   return {
     command,
@@ -91,7 +92,22 @@ export function resolveOpenAiCodexAuthHandoff(
       `Continue in terminal to install the Codex provider plugin, then ${actionLabel}.`,
     verificationMessage:
       `The model was saved. Install the Codex provider plugin, then ${actionLabel}.`
-  };
+    };
+}
+
+function resolveOpenAiCodexAuthActionLabel(options?: {
+  force?: boolean;
+  intent?: "setup" | "refresh" | "switch-account";
+}) {
+  if (options?.intent === "switch-account") {
+    return "switch the ChatGPT account for Codex app-server";
+  }
+
+  if (options?.intent === "refresh" || options?.force) {
+    return "refresh the Codex app-server setup";
+  }
+
+  return "finish the Codex app-server setup";
 }
 
 export function resolveOpenAiCodexProviderPluginRecoveryMessage(command: string) {

@@ -283,6 +283,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const displayedArtifactCount = activeFollowUp
     ? activeFollowUpOutputs.reduce((sum, output) => sum + output.createdFiles.length, 0)
     : displayTask.artifactCount;
+  const provenanceLabel = formatTaskProvenanceLabel(displayTask.metadata.provenance);
   const feedButtonCount = String(displayedFeed.length);
   const feedPanelId = `task-feed-${data.task.id}`;
   const visualTone = resolveTaskNodeVisualTone(displayedToneInput);
@@ -351,6 +352,11 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     );
   };
   const taskMetrics: TaskMetricItem[] = [
+    {
+      icon: ClipboardList,
+      label: "Source",
+      value: provenanceLabel
+    },
     {
       icon: Users,
       label: "Sessions",
@@ -974,6 +980,22 @@ function readTaskTurnCount(task: TaskFlowNode["data"]["task"]) {
   return typeof metadataCount === "number" && Number.isFinite(metadataCount)
     ? metadataCount
     : task.runtimeCount;
+}
+
+function formatTaskProvenanceLabel(value: unknown) {
+  if (value === "native-task") {
+    return "native";
+  }
+
+  if (value === "dispatch-derived") {
+    return "dispatch";
+  }
+
+  if (value === "runtime-derived") {
+    return "runtime";
+  }
+
+  return "unknown";
 }
 
 function formatElapsedFromIso(value: string | null, referenceTimeMs: number) {

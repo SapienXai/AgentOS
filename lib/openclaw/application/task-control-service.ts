@@ -1,11 +1,14 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import { getOpenClawAdapter, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
   getMissionControlSnapshot,
   invalidateMissionControlSnapshotCache
 } from "@/lib/openclaw/application/mission-control-service";
 import { getTaskDetail } from "@/lib/openclaw/application/runtime-service";
+import { resolveTaskFollowUpContext } from "@/lib/openclaw/domains/task-follow-up";
 import type { MissionControlSnapshot, TaskDetailRecord } from "@/lib/openclaw/types";
 
 export type RunningTaskControlAction = "steer" | "inject" | "continue";
@@ -14,6 +17,7 @@ export interface RunningTaskControlInput {
   action: RunningTaskControlAction;
   message: string;
   dispatchId?: string | null;
+  idempotencyKey?: string | null;
 }
 
 export interface RunningTaskControlResult {
@@ -29,6 +33,9 @@ export interface RunningTaskControlTarget {
   sessionId: string | null;
   sessionKey: string | null;
   runId: string | null;
+  openClawTaskId: string | null;
+  provenance: string | null;
+  confidence: "high" | "medium" | "none";
 }
 
 type TaskControlAdapter = Pick<OpenClawAdapter, "steerSession" | "injectChat"> &
@@ -58,7 +65,7 @@ export async function controlRunningTaskSession(
   const adapter = deps.adapter ?? getOpenClawAdapter();
 
   if (input.action === "continue") {
-    const result = await continueTaskSession(taskDetail, target, message, adapter, deps);
+    const result = await continueTaskSession(taskDetail, target, message, input, adapter, deps);
 
     (deps.invalidateMissionControlSnapshotCache ?? invalidateMissionControlSnapshotCache)();
 
@@ -113,6 +120,7 @@ async function continueTaskSession(
   taskDetail: TaskDetailRecord,
   target: RunningTaskControlTarget,
   message: string,
+  input: RunningTaskControlInput,
   adapter: TaskControlAdapter,
   deps: TaskControlDeps
 ) {
@@ -124,11 +132,21 @@ async function continueTaskSession(
     throw new Error("Task continuation requires OpenClaw mission dispatch support.");
   }
 
+  if (!target.sessionKey && !target.sessionId) {
+    throw new Error("Task continuation requires an existing OpenClaw session context.");
+  }
+
   const snapshot = await (deps.getMissionControlSnapshot ?? getMissionControlSnapshot)({
     includeHidden: true
   }).catch(() => null);
   const dispatchId = taskDetail.task.dispatchId ?? null;
   const sessionId = target.sessionId ?? target.sessionKey ?? undefined;
+  const idempotencyKey = resolveContinuationIdempotencyKey({
+    taskId: taskDetail.task.id,
+    dispatchId,
+    inputKey: input.idempotencyKey,
+    message
+  });
   const result = await adapter.runAgentTurn(
     {
       agentId: target.agentId,
@@ -138,7 +156,7 @@ async function continueTaskSession(
       timeoutSeconds: 45,
       workspace: resolveTaskWorkspacePath(taskDetail, snapshot),
       dispatchId,
-      idempotencyKey: dispatchId ? `${dispatchId}:continue:${Date.now()}` : undefined
+      idempotencyKey
     },
     { timeoutMs: 60_000 }
   );
@@ -149,21 +167,33 @@ async function continueTaskSession(
 function resolveRunningTaskControlTarget(taskDetail: TaskDetailRecord): RunningTaskControlTarget {
   const task = taskDetail.task;
   const activeRun = taskDetail.runs.find((run) => isControllableStatus(run.status)) ?? taskDetail.runs[0] ?? null;
+  const followUpContext = resolveTaskFollowUpContext(task);
   const agentId =
+    followUpContext.agentId ||
     activeRun?.agentId?.trim() ||
     task.primaryAgentId?.trim() ||
     firstNonEmpty(task.agentIds) ||
     null;
   const sessionId =
-    activeRun?.sessionId?.trim() ||
-    firstNonEmpty(task.sessionIds) ||
+    followUpContext.sessionId ||
+    readMetadataString(activeRun?.metadata, "openClawSessionId") ||
+    readMetadataString(activeRun?.metadata, "sessionId") ||
+    readMetadataString(activeRun?.metadata, "gatewaySessionId") ||
+    normalizeSessionId(activeRun?.sessionId) ||
+    normalizeSessionId(firstNonEmpty(task.sessionIds)) ||
     readMetadataString(task.metadata, "sessionId") ||
     readMetadataString(task.metadata, "gatewaySessionId") ||
     readMetadataString(task.metadata, "openClawSessionId") ||
     null;
   const explicitSessionKey =
+    followUpContext.sessionKey ||
+    readMetadataString(task.metadata, "continuationSessionKey") ||
+    readMetadataString(task.metadata, "openClawSessionKey") ||
     readMetadataString(task.metadata, "sessionKey") ||
     readMetadataString(task.metadata, "gatewaySessionKey") ||
+    readMetadataString(activeRun?.metadata, "openClawSessionKey") ||
+    readMetadataString(activeRun?.metadata, "sessionKey") ||
+    readMetadataString(activeRun?.metadata, "gatewaySessionKey") ||
     (activeRun?.key.trim().startsWith("agent:") ? activeRun.key.trim() : null);
   const sessionKey = explicitSessionKey ?? resolveSessionKey(agentId, sessionId);
   const runId = activeRun?.runId?.trim() || firstNonEmpty(task.runIds) || null;
@@ -172,7 +202,10 @@ function resolveRunningTaskControlTarget(taskDetail: TaskDetailRecord): RunningT
     agentId,
     sessionId,
     sessionKey,
-    runId
+    runId,
+    openClawTaskId: followUpContext.openClawTaskId,
+    provenance: followUpContext.provenance,
+    confidence: followUpContext.confidence
   };
 }
 
@@ -223,7 +256,47 @@ function firstNonEmpty(values: string[]) {
   return values.find((value) => value.trim().length > 0)?.trim() ?? null;
 }
 
-function readMetadataString(metadata: Record<string, unknown>, key: string) {
+function readMetadataString(metadata: Record<string, unknown> | null | undefined, key: string) {
+  if (!metadata) {
+    return null;
+  }
+
   const value = metadata[key];
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeSessionId(value: string | null | undefined) {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const explicitSessionId = extractExplicitSessionId(normalized);
+  return explicitSessionId ?? normalized;
+}
+
+function extractExplicitSessionId(value: string) {
+  const marker = ":explicit:";
+  const markerIndex = value.indexOf(marker);
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  return value.slice(markerIndex + marker.length).trim() || null;
+}
+
+function resolveContinuationIdempotencyKey(input: {
+  taskId: string;
+  dispatchId: string | null;
+  inputKey?: string | null;
+  message: string;
+}) {
+  const normalizedInputKey = input.inputKey?.trim();
+  if (normalizedInputKey) {
+    return normalizedInputKey;
+  }
+
+  const stableSource = `${input.taskId}\n${input.dispatchId ?? ""}\n${input.message}`;
+  const digest = createHash("sha256").update(stableSource).digest("hex").slice(0, 20);
+  return `${input.dispatchId || input.taskId}:continue:${digest}`;
 }

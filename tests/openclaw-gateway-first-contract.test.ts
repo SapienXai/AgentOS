@@ -501,6 +501,87 @@ test("task continuation runs a new turn on the existing dispatch session", async
   assert.match(call.idempotencyKey ?? "", /^dispatch-1:continue:/);
 });
 
+test("task continuation preserves a stable caller idempotency key", async () => {
+  const calls: Array<{ idempotencyKey?: string | null; sessionId?: string }> = [];
+  const taskDetail = createRunningTaskDetail();
+  taskDetail.task.status = "completed";
+  taskDetail.task.liveRunCount = 0;
+  taskDetail.task.dispatchId = "dispatch-1";
+  taskDetail.runs[0]!.status = "completed";
+
+  await controlRunningTaskSession(
+    "task-1",
+    {
+      action: "continue",
+      message: "Continue from here",
+      dispatchId: "dispatch-1",
+      idempotencyKey: "dispatch-1:continue:stable-follow-up"
+    },
+    {
+      adapter: {
+        async steerSession() {
+          throw new Error("unexpected steer");
+        },
+        async injectChat() {
+          throw new Error("unexpected inject");
+        },
+        async runAgentTurn(input) {
+          calls.push(input);
+          return { runId: "run-2", status: "running" };
+        }
+      },
+      getTaskDetail: async () => taskDetail,
+      getMissionControlSnapshot: async () => createSnapshot(),
+      invalidateMissionControlSnapshotCache: () => {}
+    }
+  );
+
+  assert.equal(calls[0]?.sessionId, "session-1");
+  assert.equal(calls[0]?.idempotencyKey, "dispatch-1:continue:stable-follow-up");
+});
+
+test("task continuation rejects dispatch-only context without a session", async () => {
+  let called = false;
+  const taskDetail = createRunningTaskDetail();
+  taskDetail.task.status = "completed";
+  taskDetail.task.liveRunCount = 0;
+  taskDetail.task.dispatchId = "dispatch-1";
+  taskDetail.task.sessionIds = [];
+  taskDetail.task.metadata = {
+    dispatchId: "dispatch-1",
+    provenance: "dispatch-derived"
+  };
+  taskDetail.runs[0]!.status = "completed";
+  taskDetail.runs[0]!.sessionId = undefined;
+  taskDetail.runs[0]!.key = "runtime-1";
+
+  await assert.rejects(
+    () => controlRunningTaskSession(
+      "task-1",
+      { action: "continue", message: "Continue from here", dispatchId: "dispatch-1" },
+      {
+        adapter: {
+          async steerSession() {
+            throw new Error("unexpected steer");
+          },
+          async injectChat() {
+            throw new Error("unexpected inject");
+          },
+          async runAgentTurn() {
+            called = true;
+            return { runId: "run-2", status: "running" };
+          }
+        },
+        getTaskDetail: async () => taskDetail,
+        getMissionControlSnapshot: async () => createSnapshot(),
+        invalidateMissionControlSnapshotCache: () => {}
+      }
+    ),
+    /existing OpenClaw session context/
+  );
+  assert.equal(called, false);
+});
+
 test("Gateway event bridge normalizes chat, tool, session, and approval events into runtimes", () => {
   const runtime = normalizeOpenClawGatewayEventToRuntime({
     type: "event",

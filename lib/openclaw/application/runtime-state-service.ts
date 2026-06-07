@@ -240,6 +240,17 @@ function normalizeTaskRuntime(entry: Record<string, unknown>, context: RuntimeSn
     return [];
   }
 
+  const rawSessionKey =
+    readString(entry.sessionKey) ??
+    readString(entry.openClawSessionKey) ??
+    readString(entry.gatewaySessionKey) ??
+    readAgentSessionKey(entry.key);
+  const rawSessionId =
+    readString(entry.sessionId) ??
+    readString(entry.openClawSessionId) ??
+    readString(entry.gatewaySessionId) ??
+    extractExplicitSessionId(rawSessionKey);
+  const sessionKey = rawSessionKey ?? (rawSessionId && agentId ? `agent:${agentId}:explicit:${rawSessionId}` : null);
   const timestamp = readTimestamp(entry.updatedAt ?? entry.timestamp ?? entry.ts ?? entry.createdAt);
   const workspacePath = readWorkspacePath(entry);
   const workspaceId =
@@ -262,7 +273,7 @@ function normalizeTaskRuntime(entry: Record<string, unknown>, context: RuntimeSn
     workspaceId: workspaceId ?? undefined,
     workspacePath: workspacePath ?? undefined,
     modelId: readString(entry.model) ?? readString(entry.modelId) ?? undefined,
-    sessionId: readString(entry.sessionId) ?? undefined,
+    sessionId: rawSessionId ?? sessionKey ?? undefined,
     taskId: taskId ?? undefined,
     runId: readString(entry.runId) ?? undefined,
     toolNames: normalizeToolNames(entry),
@@ -272,6 +283,10 @@ function normalizeTaskRuntime(entry: Record<string, unknown>, context: RuntimeSn
       gatewayObjectKind: "task",
       taskId: taskId ?? null,
       mission,
+      sessionId: rawSessionId ?? null,
+      sessionKey,
+      openClawSessionId: rawSessionId ?? null,
+      openClawSessionKey: sessionKey,
       dispatchId: readString(entry.dispatchId) ?? null,
       createdFiles
     }
@@ -484,6 +499,25 @@ function parseAgentIdFromSessionKey(sessionKey: string | null) {
 
   const [, agentId] = sessionKey.split(":");
   return agentId || null;
+}
+
+function readAgentSessionKey(value: unknown) {
+  const normalized = readString(value);
+  return normalized?.startsWith("agent:") ? normalized : null;
+}
+
+function extractExplicitSessionId(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const marker = ":explicit:";
+  const markerIndex = value.indexOf(marker);
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  return value.slice(markerIndex + marker.length).trim() || null;
 }
 
 function hashRuntimeIdentity(...values: Array<string | null | undefined>) {

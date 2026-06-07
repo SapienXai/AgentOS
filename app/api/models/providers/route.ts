@@ -102,6 +102,10 @@ const requestSchema = z.discriminatedUnion("action", [
     force: z.boolean().optional()
   }),
   z.object({
+    action: z.literal("switch-account"),
+    provider: providerIdSchema
+  }),
+  z.object({
     action: z.literal("discover"),
     provider: providerIdSchema
   }),
@@ -300,6 +304,39 @@ async function handleProviderAction(
       snapshot,
       connection: statusContext.connection,
       models: [],
+      docsUrl: addModelsDocsUrl
+    });
+  }
+
+  if (input.action === "switch-account") {
+    const statusContext = await readProviderConnectionContext(input.provider);
+
+    if (input.provider !== "openai-codex") {
+      return buildActionResult({
+        ok: false,
+        action: input.action,
+        provider: input.provider,
+        message: `${getModelProviderDescriptor(input.provider).shortLabel} account switching is not available in OpenClaw yet.`,
+        connection: statusContext.connection,
+        models: [],
+        docsUrl: addModelsDocsUrl
+      });
+    }
+
+    const codexPluginReady = await readOpenClawCodexPluginReady().catch(() => false);
+    const authHandoff = resolveOpenAiCodexAuthHandoff(commandBin, codexPluginReady, {
+      force: true,
+      intent: "switch-account"
+    });
+
+    return buildActionResult({
+      ok: true,
+      action: input.action,
+      provider: input.provider,
+      message: authHandoff.continueMessage,
+      connection: statusContext.connection,
+      models: [],
+      manualCommand: authHandoff.command,
       docsUrl: addModelsDocsUrl
     });
   }

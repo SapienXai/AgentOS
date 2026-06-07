@@ -76,6 +76,8 @@ export function buildTaskRecord(
   const provenance = resolveTaskProvenance(sortedRuntimes, dispatchId);
   const openClawTaskId = resolveOpenClawTaskId(sortedRuntimes);
   const sessionKey = resolveTaskSessionKey(sortedRuntimes);
+  const sessionId = resolveTaskSessionId(sortedRuntimes, sessionIds, sessionKey);
+  const continuationConfidence = resolveTaskContinuationConfidence(provenance, sessionKey, sessionId);
 
   return {
     id: createTaskRecordId(groupKey),
@@ -111,9 +113,14 @@ export function buildTaskRecord(
       source: provenance,
       dispatchId: dispatchId ?? null,
       openClawTaskId,
-      openClawSessionId: sessionIds[0] ?? null,
+      openClawSessionId: sessionId,
       openClawSessionKey: sessionKey,
       openClawRunId: runIds[0] ?? null,
+      continuationAvailable: Boolean(primaryAgentId && (sessionKey || sessionId)),
+      continuationConfidence,
+      continuationSessionId: sessionId,
+      continuationSessionKey: sessionKey,
+      continuationSource: provenance,
       primaryAgentId: primaryAgentId ?? null,
       workspaceId: workspaceId ?? null,
       primaryRuntimeSource: primaryRuntime?.source ?? null,
@@ -632,8 +639,12 @@ function resolveNativeRuntimeTaskId(runtime: RuntimeRecord) {
 function resolveTaskSessionKey(runtimes: RuntimeRecord[]) {
   for (const runtime of runtimes) {
     const sessionKey =
-      typeof runtime.metadata.sessionKey === "string"
+      typeof runtime.metadata.openClawSessionKey === "string"
+        ? runtime.metadata.openClawSessionKey.trim()
+        : typeof runtime.metadata.sessionKey === "string"
         ? runtime.metadata.sessionKey.trim()
+        : typeof runtime.metadata.gatewaySessionKey === "string"
+          ? runtime.metadata.gatewaySessionKey.trim()
         : runtime.key.trim().startsWith("agent:")
           ? runtime.key.trim()
           : "";
@@ -644,6 +655,59 @@ function resolveTaskSessionKey(runtimes: RuntimeRecord[]) {
   }
 
   return null;
+}
+
+function resolveTaskSessionId(runtimes: RuntimeRecord[], sessionIds: string[], sessionKey: string | null) {
+  for (const runtime of runtimes) {
+    const metadataSessionId =
+      typeof runtime.metadata.openClawSessionId === "string"
+        ? runtime.metadata.openClawSessionId.trim()
+        : typeof runtime.metadata.sessionId === "string"
+          ? runtime.metadata.sessionId.trim()
+          : typeof runtime.metadata.gatewaySessionId === "string"
+            ? runtime.metadata.gatewaySessionId.trim()
+            : "";
+
+    if (metadataSessionId) {
+      return extractExplicitSessionId(metadataSessionId) ?? metadataSessionId;
+    }
+  }
+
+  for (const sessionId of sessionIds) {
+    const normalized = extractExplicitSessionId(sessionId) ?? sessionId.trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return extractExplicitSessionId(sessionKey) ?? null;
+}
+
+function resolveTaskContinuationConfidence(
+  provenance: "native-task" | "dispatch-derived" | "runtime-derived",
+  sessionKey: string | null,
+  sessionId: string | null
+) {
+  if (!sessionKey && !sessionId) {
+    return "none";
+  }
+
+  return provenance === "runtime-derived" ? "medium" : "high";
+}
+
+function extractExplicitSessionId(value: string | null | undefined) {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const marker = ":explicit:";
+  const markerIndex = normalized.indexOf(marker);
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  return normalized.slice(markerIndex + marker.length).trim() || null;
 }
 
 function isNativeTaskRuntime(runtime: RuntimeRecord) {

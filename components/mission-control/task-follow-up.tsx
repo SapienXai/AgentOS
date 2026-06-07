@@ -268,13 +268,15 @@ export function TaskFollowUpComposer({
         createdFiles,
         outputSummary
       });
+      const followUpKey = createFollowUpIdempotencyKey(task);
       const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/control`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "continue",
           message: prompt,
-          dispatchId: task.dispatchId ?? null
+          dispatchId: task.dispatchId ?? null,
+          idempotencyKey: followUpKey
         })
       });
       const payload = (await response.json().catch(() => null)) as TaskControlApiResponse | null;
@@ -286,7 +288,7 @@ export function TaskFollowUpComposer({
       const continuation = readTaskControlContinuation(payload);
       setMessage("");
       const followUp = {
-        id: `follow-up:${task.id}:${Date.now()}`,
+        id: `follow-up:${task.id}:${followUpKey}`,
         message: trimmedMessage,
         prompt,
         createdAt: new Date().toISOString(),
@@ -375,9 +377,16 @@ export function TaskFollowUpComposer({
       </div>
       {availability.reason ? (
         <p className="mt-1.5 px-1 text-[10px] leading-4 text-amber-700 dark:text-amber-200/80">{availability.reason}</p>
+      ) : availability.warning ? (
+        <p className="mt-1.5 px-1 text-[10px] leading-4 text-amber-700 dark:text-amber-200/80">{availability.warning}</p>
       ) : null}
     </div>
   );
+}
+
+function createFollowUpIdempotencyKey(task: TaskRecord) {
+  const nonce = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${task.dispatchId || task.id}:continue:${nonce}`;
 }
 
 function metricPillClassName(

@@ -445,8 +445,12 @@ test("openclaw runtime failure message explains codex route rejection", () => {
 
 test("codex auth handoff installs the provider plugin before login when needed", () => {
   const ready = resolveOpenAiCodexAuthHandoff("/Users/example/.openclaw/bin/openclaw", true);
-  const switchAccount = resolveOpenAiCodexAuthHandoff("/Users/example/.openclaw/bin/openclaw", true, {
+  const refresh = resolveOpenAiCodexAuthHandoff("/Users/example/.openclaw/bin/openclaw", true, {
     force: true
+  });
+  const switchAccount = resolveOpenAiCodexAuthHandoff("/Users/example/.openclaw/bin/openclaw", true, {
+    force: true,
+    intent: "switch-account"
   });
   const missing = resolveOpenAiCodexAuthHandoff("/Users/example/.openclaw/bin/openclaw", false);
 
@@ -459,10 +463,15 @@ test("codex auth handoff installs the provider plugin before login when needed",
     "Continue in terminal to finish the Codex app-server setup. After auth completes, return here and refresh setup."
   );
   assert.equal(
+    refresh.command,
+    "/Users/example/.openclaw/bin/openclaw models auth login --provider openai --force --set-default"
+  );
+  assert.match(refresh.continueMessage, /refresh the Codex app-server setup/);
+  assert.equal(
     switchAccount.command,
     "/Users/example/.openclaw/bin/openclaw models auth login --provider openai --force --set-default"
   );
-  assert.match(switchAccount.continueMessage, /refresh the Codex app-server setup/);
+  assert.match(switchAccount.continueMessage, /switch the ChatGPT account for Codex app-server/);
   assert.match(missing.command, /plugins install --force @openclaw\/codex/);
   assert.match(missing.command, /doctor --fix/);
   assert.match(missing.command, /gateway restart/);

@@ -1039,7 +1039,13 @@ export interface AddModelsEmptyState {
   commands?: string[];
 }
 
-export type AddModelsProviderAction = "status" | "connect" | "discover" | "add-models" | "set-default";
+export type AddModelsProviderAction =
+  | "status"
+  | "connect"
+  | "switch-account"
+  | "discover"
+  | "add-models"
+  | "set-default";
 
 export type AddModelsProviderActionRequest =
   | {
@@ -1053,6 +1059,10 @@ export type AddModelsProviderActionRequest =
       apiKey?: string;
       endpoint?: string;
       force?: boolean;
+    }
+  | {
+      action: "switch-account";
+      provider: AddModelsProviderId;
     }
   | {
       action: "discover";

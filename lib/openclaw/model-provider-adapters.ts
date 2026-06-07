@@ -16,6 +16,7 @@ export type ModelProviderAdapter = {
   descriptor: ModelProviderDescriptor;
   getConnectionStatus: () => Promise<AddModelsProviderActionResult>;
   connect: (input?: { apiKey?: string; endpoint?: string; force?: boolean }) => Promise<AddModelsProviderActionResult>;
+  switchAccount: () => Promise<AddModelsProviderActionResult>;
   discoverModels: () => Promise<AddModelsProviderActionResult>;
   addModels: (modelIds: string[]) => Promise<AddModelsProviderActionResult>;
 };
@@ -72,6 +73,11 @@ function createModelProviderAdapter(providerId: AddModelsProviderId): ModelProvi
         apiKey: input?.apiKey?.trim() ? input.apiKey.trim() : undefined,
         endpoint: input?.endpoint?.trim() ? input.endpoint.trim() : undefined,
         force: input?.force === true ? true : undefined
+      }),
+    switchAccount: () =>
+      runProviderAction({
+        action: "switch-account",
+        provider: providerId
       }),
     discoverModels: () =>
       runProviderAction({

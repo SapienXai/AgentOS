@@ -8,6 +8,17 @@ This pass audited AgentOS against the current OpenClaw Gateway-first architectur
 
 AgentOS remains the human operating layer. OpenClaw remains the source of truth for gateway state, agents, sessions, models, channels, skills, config, approvals, and runtime execution.
 
+## Session And Task Contract
+
+AgentOS must keep these OpenClaw identity boundaries intact:
+
+- Agent card chat is direct OpenClaw session chat. It may use an AgentOS session index to rehydrate the drawer, but OpenClaw session history remains the runtime source of truth.
+- Mission and task cards represent OpenClaw task state when a native task id is available. When a native task id is missing, task cards are explicitly `dispatch-derived` or `runtime-derived` UI projections, not replacement OpenClaw tasks.
+- Task follow-up means continuing the existing task's resolved OpenClaw session context with a new turn. A follow-up must never silently fall back to an agent default session or create a new session just because a dispatch id exists.
+- Follow-up availability requires an agent id and a resolvable `sessionKey` or `sessionId`. `dispatchId` alone is tracking context, not continuation authority.
+- Native task identity wins over dispatch/runtime duplicates. Runtime, transcript, artifact, token, and file signals enrich a task card but do not override native task identity.
+- CLI fallback remains explicit and observable. It must not hide missing native session/task context or fake a successful OpenClaw-backed follow-up.
+
 ## Surfaces Checked
 
 Sources checked:

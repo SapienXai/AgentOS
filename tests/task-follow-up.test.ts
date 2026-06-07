@@ -27,34 +27,62 @@ test("task follow-up prompt includes operator message, original mission, and lat
 });
 
 test("task follow-up availability allows completed tasks with existing context", () => {
-  assert.deepEqual(
-    resolveTaskFollowUpAvailability(createTaskRecord({ status: "completed" })),
-    { available: true, reason: null }
-  );
+  const availability = resolveTaskFollowUpAvailability(createTaskRecord({ status: "completed" }));
+
+  assert.equal(availability.available, true);
+  assert.equal(availability.reason, null);
+  assert.equal(availability.context.agentId, "agent-1");
+  assert.equal(availability.context.sessionId, "session-1");
+  assert.equal(availability.context.sessionKey, "agent:agent-1:explicit:session-1");
 });
 
 test("task follow-up availability rejects tasks without agent or session context", () => {
-  assert.deepEqual(
-    resolveTaskFollowUpAvailability(createTaskRecord({
-      agentIds: [],
-      primaryAgentId: undefined
-    })),
-    {
-      available: false,
-      reason: "This task does not expose an OpenClaw agent to continue."
-    }
-  );
+  const missingAgent = resolveTaskFollowUpAvailability(createTaskRecord({
+    agentIds: [],
+    primaryAgentId: undefined
+  }));
 
-  assert.deepEqual(
-    resolveTaskFollowUpAvailability(createTaskRecord({
-      dispatchId: undefined,
-      sessionIds: []
-    })),
-    {
-      available: false,
-      reason: "This task does not expose an OpenClaw session or dispatch to continue."
+  assert.equal(missingAgent.available, false);
+  assert.equal(missingAgent.reason, "This task does not expose an OpenClaw agent to continue.");
+
+  const missingSession = resolveTaskFollowUpAvailability(createTaskRecord({
+    dispatchId: "dispatch-1",
+    sessionIds: []
+  }));
+
+  assert.equal(missingSession.available, false);
+  assert.equal(missingSession.reason, "This task does not expose an OpenClaw session to continue.");
+});
+
+test("task follow-up availability can use native task session metadata", () => {
+  const availability = resolveTaskFollowUpAvailability(createTaskRecord({
+    sessionIds: [],
+    metadata: {
+      provenance: "native-task",
+      openClawTaskId: "task-native-1",
+      openClawSessionKey: "agent:agent-1:explicit:session-native"
     }
-  );
+  }));
+
+  assert.equal(availability.available, true);
+  assert.equal(availability.context.openClawTaskId, "task-native-1");
+  assert.equal(availability.context.sessionId, "session-native");
+  assert.equal(availability.context.sessionKey, "agent:agent-1:explicit:session-native");
+  assert.equal(availability.context.confidence, "high");
+});
+
+test("task follow-up availability warns for runtime-derived continuation context", () => {
+  const availability = resolveTaskFollowUpAvailability(createTaskRecord({
+    dispatchId: undefined,
+    metadata: {
+      provenance: "runtime-derived"
+    }
+  }));
+
+  assert.equal(availability.available, true);
+  assert.equal(availability.context.provenance, "runtime-derived");
+  assert.equal(availability.context.confidence, "medium");
+  assert.match(availability.warning ?? "", /runtime-derived/);
 });
 
 function createTaskRecord(overrides: Partial<TaskRecord> = {}): TaskRecord {

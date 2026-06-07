@@ -376,6 +376,34 @@ export function AddModelsDialog({
     }
   }
 
+  async function switchProviderAccount(providerId: AddModelsProviderId) {
+    const adapter = getModelProviderAdapter(providerId);
+
+    updateDraft(providerId, {
+      flowState: "connecting",
+      errorMessage: null,
+      statusMessage: "Preparing ChatGPT account switch..."
+    });
+
+    try {
+      const result = await adapter.switchAccount();
+
+      applyActionResult(providerId, result, "connecting");
+
+      if (result.snapshot) {
+        onSnapshotChange(result.snapshot);
+      }
+    } catch (error) {
+      const actionResult = readProviderActionErrorResult(error);
+      updateDraft(providerId, {
+        flowState: "auth-error",
+        errorMessage: error instanceof Error ? error.message : "Provider account switch failed.",
+        manualCommand: actionResult?.manualCommand ?? null,
+        docsUrl: actionResult?.docsUrl ?? null
+      });
+    }
+  }
+
   async function discoverProvider(providerId: AddModelsProviderId, force = false) {
     const adapter = getModelProviderAdapter(providerId);
     const draft = resolveDraft(providerDrafts[providerId]);
@@ -857,6 +885,11 @@ export function AddModelsDialog({
                                   className="h-8 rounded-full px-3 text-[10px]"
                                   disabled={activeDraft.flowState === "connecting" && !activeDraft.manualCommand}
                                   onClick={() => {
+                                    if (activeConnection?.connected) {
+                                      void runStatus(activeProviderId);
+                                      return;
+                                    }
+
                                     void connectProvider(activeProviderId);
                                   }}
                                 >
@@ -866,7 +899,7 @@ export function AddModelsDialog({
                                       Connecting...
                                     </>
                                   ) : (
-                                    activeConnection?.connected ? "Refresh setup" : "Connect ChatGPT"
+                                    activeConnection?.connected ? "Refresh status" : "Connect ChatGPT"
                                   )}
                                 </Button>
                                 <Button
@@ -875,10 +908,15 @@ export function AddModelsDialog({
                                   className="h-8 rounded-full px-3 text-[10px]"
                                   disabled={activeDraft.flowState === "connecting" && !activeDraft.manualCommand}
                                   onClick={() => {
+                                    if (activeConnection?.connected) {
+                                      void switchProviderAccount(activeProviderId);
+                                      return;
+                                    }
+
                                     void connectProvider(activeProviderId, { force: true });
                                   }}
                                 >
-                                  Refresh app-server
+                                  {activeConnection?.connected ? "Switch account" : "Refresh setup"}
                                 </Button>
                               </div>
 

@@ -51,7 +51,10 @@ test("mission dispatch task cards expose dispatch-derived provenance", () => {
   assert.equal(records[0]?.metadata.dispatchId, "dispatch-1");
   assert.equal(records[0]?.metadata.openClawTaskId, null);
   assert.equal(records[0]?.metadata.openClawSessionId, "session-1");
+  assert.equal(records[0]?.metadata.openClawSessionKey, "agent:agent-1:explicit:session-1");
   assert.equal(records[0]?.metadata.openClawRunId, "run-1");
+  assert.equal(records[0]?.metadata.continuationAvailable, true);
+  assert.equal(records[0]?.metadata.continuationConfidence, "high");
 });
 
 test("native task records are canonical over dispatch-derived duplicates", () => {
@@ -83,6 +86,7 @@ test("native task records are canonical over dispatch-derived duplicates", () =>
           origin: "openclaw-runtime-snapshot",
           gatewayObjectKind: "task",
           taskId: "openclaw-task-1",
+          sessionKey: "agent:agent-1:explicit:session-1",
           dispatchId: "dispatch-1",
           mission: "Ship the release notes."
         }
@@ -97,7 +101,11 @@ test("native task records are canonical over dispatch-derived duplicates", () =>
   assert.equal(records[0]?.dispatchId, "dispatch-1");
   assert.equal(records[0]?.metadata.provenance, "native-task");
   assert.equal(records[0]?.metadata.openClawTaskId, "openclaw-task-1");
+  assert.equal(records[0]?.metadata.openClawSessionId, "session-1");
+  assert.equal(records[0]?.metadata.openClawSessionKey, "agent:agent-1:explicit:session-1");
   assert.equal(records[0]?.metadata.openClawRunId, "run-1");
+  assert.equal(records[0]?.metadata.continuationAvailable, true);
+  assert.equal(records[0]?.metadata.continuationConfidence, "high");
   assert.deepEqual(records[0]?.runtimeIds, ["runtime-native-task", "runtime-dispatch"]);
 });
 
@@ -122,6 +130,8 @@ test("runtime-only task cards expose runtime-derived provenance", () => {
   assert.equal(records[0]?.metadata.openClawTaskId, null);
   assert.equal(records[0]?.metadata.openClawSessionId, "session-1");
   assert.equal(records[0]?.metadata.openClawRunId, "run-1");
+  assert.equal(records[0]?.metadata.continuationAvailable, true);
+  assert.equal(records[0]?.metadata.continuationConfidence, "medium");
 });
 
 function createAgent(overrides: Partial<OpenClawAgent> = {}): OpenClawAgent {
