@@ -435,7 +435,7 @@ function TaskCard({
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                    Task / <span className="text-[hsl(var(--status-success-foreground))]">{task.agentName}</span>
+                    Task / <span className="text-emerald-700 dark:text-[hsl(var(--status-success-foreground))]">{task.agentName}</span>
                   </span>
                   <span className="mt-1 block truncate text-[0.68rem] text-muted-foreground">{task.category}</span>
                 </span>
@@ -600,14 +600,14 @@ function TaskCardTabs({
                 className={cn(
                   "flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border transition-colors",
                   active
-                    ? "border-emerald-200/24 bg-emerald-300/[0.12] text-emerald-100"
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-200/24 dark:bg-emerald-300/[0.12] dark:text-emerald-100"
                     : "border-border bg-muted/35 text-muted-foreground group-hover/tab:text-foreground"
                 )}
               >
                 <Icon className="h-4 w-4" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className={cn("flex items-center gap-1.5 text-[10px] font-semibold", active ? "text-[hsl(var(--status-success-foreground))]" : "text-muted-foreground")}>
+                <span className={cn("flex items-center gap-1.5 text-[10px] font-semibold", active ? "text-emerald-700 dark:text-[hsl(var(--status-success-foreground))]" : "text-muted-foreground")}>
                   <span className="truncate">{tab.label}</span>
                   <span className={cn("h-1 w-1 shrink-0 rounded-full", taskCardTabStatusDotClassName(tab.statusLabel))} />
                 </span>

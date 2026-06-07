@@ -83,15 +83,15 @@ export function TaskMetricRow({
         const Icon = metric.icon;
         const content = (
           <>
-            <Icon className={cn("h-3.5 w-3.5 shrink-0", metric.highlighted ? "text-emerald-200" : "text-slate-400")} />
+            <Icon className={cn("h-3.5 w-3.5 shrink-0", metric.highlighted ? "text-emerald-700 dark:text-emerald-200" : "text-muted-foreground dark:text-slate-400")} />
             <span>{metric.label}</span>
             {metric.value !== undefined ? (
               <span
                 className={cn(
                   "ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 font-mono text-[10px]",
                   metric.highlighted
-                    ? "bg-emerald-300/12 text-emerald-100"
-                    : "bg-white/[0.06] text-slate-200"
+                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-300/12 dark:text-emerald-100"
+                    : "bg-muted text-foreground dark:bg-white/[0.06] dark:text-slate-200"
                 )}
               >
                 {metric.value}
@@ -106,7 +106,7 @@ export function TaskMetricRow({
             type="button"
             className={cn(
               metricPillClassName(metric, compact),
-              "transition-colors hover:border-cyan-200/24 hover:bg-white/[0.06] hover:text-slate-100"
+              "transition-colors hover:border-primary/20 hover:bg-accent/60 hover:text-foreground dark:hover:border-cyan-200/24 dark:hover:bg-white/[0.06] dark:hover:text-slate-100"
             )}
             onClick={(event) => {
               event.stopPropagation();
@@ -146,7 +146,7 @@ export function ExpandableTaskResult({
   return (
     <section
       className={cn(
-        "rounded-[16px] border border-white/[0.08] bg-slate-950/28 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]",
+        "rounded-[16px] border border-border bg-card px-3 py-2.5 shadow-[inset_0_1px_0_hsl(var(--border)/0.35)] dark:border-white/[0.08] dark:bg-slate-950/28 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]",
         className
       )}
       onClick={(event) => event.stopPropagation()}
@@ -160,20 +160,20 @@ export function ExpandableTaskResult({
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-300 shadow-[0_0_10px_rgba(52,211,153,0.6)]" />
-          <span className="truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+          <span className="truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground dark:text-slate-400">
             {title}
           </span>
         </span>
         <ChevronDown
           className={cn(
-            "h-4 w-4 shrink-0 text-slate-400 transition-transform",
+            "h-4 w-4 shrink-0 text-muted-foreground transition-transform dark:text-slate-400",
             expanded && "rotate-180"
           )}
         />
       </button>
       <p
         className={cn(
-          "mt-2 whitespace-pre-wrap text-slate-200/90",
+          "mt-2 whitespace-pre-wrap text-foreground/85 dark:text-slate-200/90",
           compact ? "text-[11.5px] leading-5" : "text-sm leading-6",
           expanded ? "max-h-56 overflow-y-auto pr-2" : "line-clamp-2"
         )}
@@ -277,8 +277,8 @@ export function TaskFollowUpComposer({
   return (
     <div
       className={cn(
-        "rounded-[16px] border border-cyan-200/14 bg-slate-950/36 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
-        expanded && "border-cyan-200/24 bg-slate-950/46",
+        "rounded-[16px] border border-border bg-card p-2 shadow-[inset_0_1px_0_hsl(var(--border)/0.35)] dark:border-cyan-200/14 dark:bg-slate-950/36 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
+        expanded && "border-primary/20 bg-accent/50 dark:border-cyan-200/24 dark:bg-slate-950/46",
         className
       )}
       onClick={(event) => event.stopPropagation()}
@@ -286,10 +286,10 @@ export function TaskFollowUpComposer({
     >
       <div className="flex items-end gap-2">
         <div className={cn(
-          "flex min-h-11 flex-1 items-start gap-2 rounded-[13px] border border-white/[0.07] bg-black/18 px-2.5 py-2 transition-[min-height,border-color,background-color] duration-200",
-          expanded && "min-h-14 border-cyan-200/20 bg-black/24"
+          "flex min-h-11 flex-1 items-start gap-2 rounded-[13px] border border-border bg-background/60 px-2.5 py-2 transition-[min-height,border-color,background-color] duration-200 dark:border-white/[0.07] dark:bg-black/18",
+          expanded && "min-h-14 border-primary/20 bg-background dark:border-cyan-200/20 dark:bg-black/24"
         )}>
-          <MessageSquare className={cn("mt-1 h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200", expanded && "scale-110 text-cyan-100")} />
+          <MessageSquare className={cn("mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 dark:text-slate-400", expanded && "scale-110 text-primary dark:text-cyan-100")} />
           <Textarea
             ref={textareaRef}
             value={message}
@@ -297,7 +297,7 @@ export function TaskFollowUpComposer({
             disabled={submitting || !availability.available}
             placeholder="Ask a follow-up..."
             className={cn(
-              "min-h-8 resize-none border-0 bg-transparent p-0 font-medium text-slate-100 caret-emerald-200 shadow-none placeholder:font-medium placeholder:text-slate-400 focus-visible:ring-0",
+              "min-h-8 resize-none border-0 bg-transparent p-0 font-medium text-foreground caret-primary shadow-none placeholder:font-medium placeholder:text-muted-foreground focus-visible:ring-0 dark:text-slate-100 dark:caret-emerald-200 dark:placeholder:text-slate-400",
               compact ? "text-base leading-7" : "text-[16px] leading-7",
               expanded && "text-[17px]"
             )}
@@ -319,7 +319,7 @@ export function TaskFollowUpComposer({
           disabled={disabled}
           title={disabledReason ?? "Send follow-up"}
           className={cn(
-            "h-11 w-11 shrink-0 rounded-[13px] border border-cyan-200/16 bg-slate-800 text-emerald-200 shadow-[0_0_24px_rgba(45,212,191,0.08)] hover:bg-slate-700 hover:text-emerald-100",
+            "h-11 w-11 shrink-0 rounded-[13px] border border-primary/20 bg-primary text-primary-foreground shadow-[0_10px_24px_hsl(var(--primary)/0.16)] hover:bg-primary/90 dark:border-cyan-200/16 dark:bg-slate-800 dark:text-emerald-200 dark:shadow-[0_0_24px_rgba(45,212,191,0.08)] dark:hover:bg-slate-700 dark:hover:text-emerald-100",
             disabled && "opacity-55"
           )}
           onClick={() => void submitFollowUp()}
@@ -328,7 +328,7 @@ export function TaskFollowUpComposer({
         </Button>
       </div>
       {availability.reason ? (
-        <p className="mt-1.5 px-1 text-[10px] leading-4 text-amber-200/80">{availability.reason}</p>
+        <p className="mt-1.5 px-1 text-[10px] leading-4 text-amber-700 dark:text-amber-200/80">{availability.reason}</p>
       ) : null}
     </div>
   );
@@ -339,9 +339,9 @@ function metricPillClassName(metric: TaskMetricItem, compact: boolean) {
     "inline-flex min-w-0 items-center gap-1.5 rounded-full border font-medium",
     compact ? "px-2 py-1 text-[10px]" : "px-3 py-1.5 text-xs",
     metric.highlighted
-      ? "border-emerald-300/18 bg-emerald-300/[0.07] text-emerald-100"
-      : "border-white/[0.08] bg-white/[0.03] text-slate-300",
-    metric.active && "border-cyan-200/25 bg-cyan-300/[0.08] text-cyan-100"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-300/18 dark:bg-emerald-300/[0.07] dark:text-emerald-100"
+      : "border-border bg-muted/45 text-muted-foreground dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-slate-300",
+    metric.active && "border-primary/25 bg-primary/10 text-primary dark:border-cyan-200/25 dark:bg-cyan-300/[0.08] dark:text-cyan-100"
   );
 }
 

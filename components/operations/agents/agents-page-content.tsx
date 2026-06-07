@@ -370,7 +370,13 @@ function AgentCard({
           <Badge variant="muted" className="max-w-[170px] truncate px-2 py-1 text-[9px] normal-case tracking-normal">
             {agent.modelLabel}
           </Badge>
-          <Badge variant={agent.online ? "success" : "muted"} className="px-2 py-1 text-[9px] normal-case tracking-normal">
+          <Badge
+            variant={agent.online ? "success" : "muted"}
+            className={cn(
+              "px-2 py-1 text-[9px] normal-case tracking-normal",
+              agent.online && "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-100"
+            )}
+          >
             {onlineLabel}
           </Badge>
         </div>
@@ -403,7 +409,10 @@ function AgentCard({
           <Button
             variant="secondary"
             size="sm"
-            className="h-10 rounded-full border-amber-300/20 bg-[linear-gradient(180deg,rgba(251,191,36,0.18),rgba(217,119,6,0.28))] px-2 text-xs text-amber-50 shadow-[0_10px_24px_rgba(245,158,11,0.18)] hover:border-amber-200/30 hover:bg-amber-400/20 hover:text-white"
+            className={cn(
+              "h-10 rounded-full border-primary/20 bg-primary/10 px-2 text-xs text-primary shadow-[0_10px_24px_rgba(245,158,11,0.18)] hover:border-primary/30 hover:bg-primary/15 hover:text-primary",
+              "dark:border-amber-300/20 dark:bg-[linear-gradient(180deg,rgba(251,191,36,0.18),rgba(217,119,6,0.28))] dark:text-amber-50 dark:hover:border-amber-200/30 dark:hover:bg-amber-400/20 dark:hover:text-white"
+            )}
             onClick={(event) => {
               event.stopPropagation();
               onRunTask();
@@ -440,9 +449,9 @@ function AgentCard({
 
 function AgentCardStat({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-[14px] border border-border bg-muted/35 px-2.5 py-2 text-center shadow-[inset_0_1px_0_hsl(var(--border)/0.35)]">
+    <div className="rounded-[14px] border border-border bg-muted/45 px-2.5 py-2 text-center shadow-[inset_0_1px_0_hsl(var(--border)/0.35)] dark:bg-muted/35">
       <p className="truncate text-[8px] uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
-      <p className="mt-1 truncate text-[13px] font-semibold leading-none text-slate-100">{value}</p>
+      <p className="mt-1 truncate text-[13px] font-semibold leading-none text-foreground dark:text-slate-100">{value}</p>
     </div>
   );
 }

@@ -145,7 +145,7 @@ export function DashboardPageContent({
               </div>
             </SectionCard>
             <SectionCard title="Quick Actions">
-              <div className="grid gap-2 p-3 sm:grid-cols-2">
+              <div className="grid grid-cols-3 gap-2 p-3">
                 <QuickAction icon={Plus} label="Create Task" onClick={() => setDispatchOpen(true)} />
                 <QuickAction icon={Bot} label="Add Agent" href="/agents" />
                 <QuickAction icon={KeyRound} label="Connect Account" href="/accounts" />
@@ -383,14 +383,14 @@ function QuickAction({
 
   if (href) {
     return (
-      <Button asChild variant="secondary" size="sm" className="h-8 justify-start rounded-[10px] px-2.5 text-xs">
+      <Button asChild variant="secondary" size="sm" className="h-8 w-full min-w-0 justify-start rounded-[10px] px-2.5 text-xs">
         <Link href={href}>{content}</Link>
       </Button>
     );
   }
 
   return (
-    <Button variant="secondary" size="sm" className="h-8 justify-start rounded-[10px] px-2.5 text-xs" onClick={onClick}>
+    <Button variant="secondary" size="sm" className="h-8 w-full min-w-0 justify-start rounded-[10px] px-2.5 text-xs" onClick={onClick}>
       {content}
     </Button>
   );
