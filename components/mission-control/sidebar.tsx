@@ -158,6 +158,8 @@ const sidebarItems: SidebarItem[] = [
   { label: "Diagnostics", href: "/settings#diagnostics", hash: "diagnostics", icon: TerminalSquare, section: "system" }
 ];
 
+const agentOsLogoSrc = "/assets/logo.webp";
+
 export function MissionSidebar({
   snapshot,
   surfaceTheme,
@@ -887,13 +889,14 @@ function SidebarBrand({ onToggleCollapsed }: { onToggleCollapsed: () => void }) 
       >
         <span className="relative flex h-9 w-9 shrink-0 items-center justify-center">
           <Image
-            src="/assets/logo.webp"
+            src={agentOsLogoSrc}
             alt=""
             width={36}
             height={36}
             aria-hidden="true"
             className="h-full w-full object-contain"
             priority
+            unoptimized
           />
         </span>
         <span className="truncate py-0.5 font-display text-[1.15rem] font-semibold leading-[1.25] text-foreground">
@@ -1175,13 +1178,14 @@ function CollapsedSidebar({
         className="flex h-10 w-10 items-center justify-center transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         <Image
-          src="/assets/logo.webp"
+          src={agentOsLogoSrc}
           alt=""
           width={40}
           height={40}
           aria-hidden="true"
           className="h-full w-full object-contain"
           priority
+          unoptimized
         />
       </button>
 

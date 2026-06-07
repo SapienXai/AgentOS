@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 
 import { Toaster } from "@/components/ui/sonner";
 
@@ -74,7 +75,11 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body>
-        <script dangerouslySetInnerHTML={{ __html: agentOsApiAuthBootstrap }} />
+        <Script
+          id="agentos-api-auth-bootstrap"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: agentOsApiAuthBootstrap }}
+        />
         {children}
         <Toaster theme="dark" richColors closeButton />
       </body>
