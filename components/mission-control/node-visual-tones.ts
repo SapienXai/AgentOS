@@ -61,10 +61,10 @@ export const TASK_NODE_SELECTED_CLASSES =
 
 export const TASK_NODE_REVIEW_ACTION_CLASSES = {
   button:
-    "nodrag nopan mt-3 flex w-full items-center justify-between gap-3 rounded-[13px] border border-amber-300/24 bg-amber-300/[0.1] px-3 py-2.5 text-left text-amber-50 shadow-[0_10px_24px_rgba(245,158,11,0.12)] transition-colors hover:border-amber-200/38 hover:bg-amber-300/[0.14]",
-  chevron: "h-3.5 w-3.5 -rotate-90 text-amber-100/70",
-  detail: "block truncate text-[11px] text-amber-100/72",
-  icon: "flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] border border-amber-200/20 bg-amber-200/10"
+    "nodrag nopan mt-2 flex w-full items-center justify-between gap-2.5 rounded-[11px] border border-amber-300/22 bg-amber-300/[0.09] px-2.5 py-2 text-left text-amber-50 shadow-[0_8px_18px_rgba(245,158,11,0.1)] transition-colors hover:border-amber-200/34 hover:bg-amber-300/[0.13]",
+  chevron: "h-3 w-3 -rotate-90 text-amber-100/70",
+  detail: "block truncate text-[10px] text-amber-100/72",
+  icon: "flex h-6 w-6 shrink-0 items-center justify-center rounded-[8px] border border-amber-200/20 bg-amber-200/10"
 } as const;
 
 export const RUNTIME_NODE_SELECTED_CLASSES =

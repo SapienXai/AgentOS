@@ -434,17 +434,17 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           : undefined
       }
       className={cn(
-        "dark group relative w-[720px] max-w-[calc(100vw-32px)] overflow-visible rounded-[24px] border bg-[linear-gradient(180deg,rgba(12,19,33,0.98),rgba(5,10,20,0.98))] p-2.5 shadow-[0_24px_70px_rgba(0,0,0,0.38)] backdrop-blur-xl transition-[border-color,box-shadow,opacity,transform] duration-200 transform-gpu origin-center",
+        "dark group relative w-[620px] max-w-[calc(100vw-32px)] origin-center transform-gpu overflow-visible rounded-[20px] border bg-[linear-gradient(180deg,rgba(12,19,33,0.97),rgba(5,10,20,0.97))] p-2 shadow-[0_18px_52px_rgba(0,0,0,0.34)] backdrop-blur-xl transition-[border-color,box-shadow,opacity,transform] duration-200",
         visualTone.outer,
         data.emphasis ? "opacity-100" : "opacity-72",
         selected && TASK_NODE_SELECTED_CLASSES,
-        composerExpanded && "z-30 scale-[1.03] shadow-[0_30px_92px_rgba(0,0,0,0.5)]"
+        composerExpanded && "z-30 scale-[1.015] shadow-[0_24px_70px_rgba(0,0,0,0.46)]"
       )}
     >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[18px]">
-        <div className={cn("absolute inset-y-3 left-0 w-1 rounded-r-full", visualTone.rail)} />
+      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[20px]">
+        <div className={cn("absolute inset-y-3 left-0 w-0.5 rounded-r-full", visualTone.rail)} />
         <div className={cn("absolute inset-x-0 top-0 h-px", visualTone.topLine)} />
-        <div className={cn("absolute -right-10 -top-10 h-28 w-28 rounded-full blur-3xl", visualTone.glow)} />
+        <div className={cn("absolute -right-8 -top-8 h-24 w-24 rounded-full blur-3xl", visualTone.glow)} />
         <div className="absolute inset-x-3 bottom-0 h-px bg-white/[0.04]" />
       </div>
 
@@ -461,7 +461,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
 
       {isPendingCreation ? (
         <motion.div
-          className="pointer-events-none absolute inset-[-14px] rounded-[22px] border border-cyan-200/16"
+          className="pointer-events-none absolute inset-[-10px] rounded-[20px] border border-cyan-200/16"
           animate={{ opacity: [0.18, 0.42, 0.18], scale: [0.985, 1.02, 0.985] }}
           transition={{ duration: 1.8, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
         />
@@ -474,18 +474,18 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
         className={cn("!h-2.5 !w-2.5 !border-0", visualTone.handle)}
       />
 
-      <div className="relative z-20 rounded-[20px] border border-white/[0.06] bg-[linear-gradient(180deg,rgba(11,19,34,0.72),rgba(5,10,20,0.72))] px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="relative z-20 rounded-[16px] border border-white/[0.06] bg-[linear-gradient(180deg,rgba(11,19,34,0.68),rgba(5,10,20,0.68))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
         <div className="min-w-0">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start justify-between gap-2.5">
             <div className="min-w-0">
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2">
                 <span
                   className={cn(
-                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border shadow-[0_0_18px_rgba(45,212,191,0.09)]",
+                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border shadow-[0_0_14px_rgba(45,212,191,0.08)]",
                     visualTone.icon
                   )}
                 >
-                  <ClipboardList className="h-[18px] w-[18px]" />
+                  <ClipboardList className="h-4 w-4" />
                 </span>
                 <span
                   className={cn(
@@ -499,11 +499,11 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                 </span>
                 {data.locked ? <Lock className="h-3.5 w-3.5 text-slate-500" /> : null}
               </div>
-              <p className="mt-1 truncate text-[11px] leading-4 text-slate-500">{activityLabel}</p>
+              <p className="mt-0.5 truncate text-[10px] leading-4 text-slate-500">{activityLabel}</p>
             </div>
 
             <div className="nodrag nopan relative flex shrink-0 items-center gap-1.5" ref={menuRef}>
-              <Badge variant={badgeVariant} className="max-w-[150px] truncate px-3 py-1.5 text-[11px]">
+              <Badge variant={badgeVariant} className="max-w-[132px] truncate rounded-[8px] px-2 py-1 text-[9px]">
                 {badgeLabel}
               </Badge>
               <button
@@ -514,9 +514,9 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                   setMenuOpen((current) => !current);
                 }}
                 onPointerDown={(event) => event.stopPropagation()}
-                className="nodrag nopan inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.04] text-slate-300 transition-colors hover:border-white/[0.14] hover:bg-white/[0.08] hover:text-white"
+                className="nodrag nopan inline-flex h-7 w-7 items-center justify-center rounded-[10px] border border-white/[0.08] bg-white/[0.04] text-slate-300 transition-colors hover:border-white/[0.14] hover:bg-white/[0.08] hover:text-white"
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="h-3.5 w-3.5" />
               </button>
 
               {menuOpen ? (
@@ -591,7 +591,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           <button
             type="button"
             aria-expanded={titleExpanded}
-            className="nodrag nopan group mt-3 flex w-full items-start gap-2 text-left"
+            className="nodrag nopan group mt-2.5 flex w-full items-start gap-2 text-left"
             onClick={(event) => {
               event.stopPropagation();
               setTitleExpanded((current) => !current);
@@ -600,41 +600,42 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           >
             <h3
               className={cn(
-                "min-w-0 flex-1 font-display text-[1.48rem] font-semibold leading-[1.08] text-white md:text-[1.55rem]",
+                "min-w-0 flex-1 font-display text-[1.16rem] font-semibold leading-[1.16] text-white md:text-[1.22rem]",
                 !titleExpanded && "line-clamp-2"
               )}
             >
               {displayPromptText}
             </h3>
-            <span className="mt-1.5 shrink-0 rounded-full border border-white/[0.08] bg-white/[0.04] p-1 text-slate-400 transition-colors group-hover:border-cyan-200/20 group-hover:text-slate-100">
-              <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", titleExpanded && "rotate-180")} />
+            <span className="mt-0.5 shrink-0 rounded-[9px] border border-white/[0.08] bg-white/[0.04] p-1 text-slate-400 transition-colors group-hover:border-cyan-200/20 group-hover:text-slate-100">
+              <ChevronDown className={cn("h-3 w-3 transition-transform", titleExpanded && "rotate-180")} />
             </span>
           </button>
 
-          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {displayTask.warningCount > 0 && !hasReviewResolution ? (
-              <Badge variant="warning">
+              <Badge variant="warning" className="rounded-[8px] px-2 py-1 text-[9px]">
                 {displayTask.warningCount} review{displayTask.warningCount === 1 ? "" : "s"}
               </Badge>
             ) : null}
             {isJustCreated ? (
-              <Badge variant="default" className={FRESH_NODE_BADGE_CLASSES}>
+              <Badge variant="default" className={cn(FRESH_NODE_BADGE_CLASSES, "rounded-[8px] px-2 py-1 text-[9px]")}>
                 <Sparkles className="h-3 w-3" />
                 new
               </Badge>
             ) : null}
-            <span className={cn("text-[10px] uppercase tracking-[0.16em]", tone)}>
+            <span className={cn("text-[9px] uppercase tracking-[0.14em]", tone)}>
               {footerLabel}
             </span>
           </div>
 
-          <TaskMetricRow metrics={taskMetrics} compact surface="dark" className="mt-3" />
+          <TaskMetricRow metrics={taskMetrics} compact surface="dark" density="dense" className="mt-2" />
 
           <ExpandableTaskResult
             title={displayResultTitle}
             result={displayResultText}
             compact
-            className={cn("mt-3", visualTone.resultBorder)}
+            density="dense"
+            className={cn("mt-2", visualTone.resultBorder)}
           />
 
           {completedNeedsReview && data.onReviewTask ? (
@@ -668,12 +669,12 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       </div>
 
         {expanded ? (
-          <div className="mt-2.5 rounded-[16px] border border-white/[0.07] bg-white/[0.025] px-2.5 py-1.5 pb-2.5">
+          <div className="mt-2 rounded-[13px] border border-white/[0.07] bg-white/[0.025] px-2 py-1.5 pb-2">
             <button
               type="button"
               aria-expanded={expanded}
               aria-controls={feedPanelId}
-              className="nodrag nopan group flex w-full items-start justify-between gap-3 rounded-[10px] border border-transparent px-1 py-1 text-left transition-colors hover:bg-white/[0.035]"
+              className="nodrag nopan group flex w-full items-start justify-between gap-2.5 rounded-[9px] border border-transparent px-1 py-1 text-left transition-colors hover:bg-white/[0.035]"
               onClick={(event) => {
                 event.stopPropagation();
                 setExpanded((current) => !current);
@@ -687,10 +688,10 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                   ) : null}
                   <span>Live feed</span>
                 </p>
-                <p className="mt-1 truncate text-[10.5px] text-slate-300">{activityLabel}</p>
+                <p className="mt-0.5 truncate text-[10px] text-slate-300">{activityLabel}</p>
                 <p className="mt-1 truncate text-[10px] text-slate-500">{activitySummary}</p>
               </div>
-              <div className="mt-0.5 shrink-0 rounded-full border border-white/[0.08] bg-white/[0.035] p-1 text-slate-400 transition-colors group-hover:border-white/[0.12] group-hover:text-slate-200">
+              <div className="mt-0.5 shrink-0 rounded-[8px] border border-white/[0.08] bg-white/[0.035] p-1 text-slate-400 transition-colors group-hover:border-white/[0.12] group-hover:text-slate-200">
                 <ChevronUp className="h-3 w-3" />
               </div>
             </button>
@@ -710,7 +711,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                   {streamNotice}
                 </div>
               ) : null}
-              <ScrollArea className="h-[96px] w-full pr-3">
+              <ScrollArea className="h-[84px] w-full pr-3">
                 {loading && displayedFeed.length === 0 ? (
                   <div className="py-4 text-center text-[10px] text-slate-500">
                     Connecting to feed...
@@ -767,10 +768,11 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
         createdFiles={detail?.createdFiles}
         outputSummary={activitySummary}
         compact
+        density="dense"
         expanded={composerExpanded}
         onExpandRequest={() => setComposerExpanded(true)}
         textareaRef={composerInputRef}
-        className="nodrag nopan mt-2.5"
+        className="nodrag nopan mt-2"
         onSubmitted={(followUp) => {
           const nextIndex = followUps.length;
           setLocalFollowUps((current) => mergeTaskFollowUps(current, [followUp]));
@@ -808,9 +810,8 @@ function TaskWorkspaceTabs({
 
   return (
     <div
-      className="nodrag nopan relative z-20 mb-2 flex items-end gap-2 pb-px"
+      className="relative z-20 mb-1.5 flex items-end gap-1.5 pb-px"
       onClick={(event) => event.stopPropagation()}
-      onPointerDown={(event) => event.stopPropagation()}
     >
       <div
         role="tablist"
@@ -834,8 +835,8 @@ function TaskWorkspaceTabs({
               tabIndex={active ? 0 : -1}
               title={`${tab.label}: ${tab.title}`}
               className={cn(
-                "group/tab relative flex h-[64px] items-center gap-3 rounded-t-[18px] border px-3 text-left outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-cyan-200/45",
-                tabs.length <= 7 ? "min-w-0 w-full" : "min-w-[178px] max-w-[260px] shrink-0",
+                "group/tab relative flex h-[50px] cursor-grab items-center gap-2 rounded-t-[14px] border px-2.5 text-left outline-none transition-all duration-200 active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-cyan-200/45",
+                tabs.length <= 7 ? "min-w-0 w-full" : "min-w-[150px] max-w-[220px] shrink-0",
                 active
                   ? "border-cyan-200/28 bg-cyan-300/[0.09] text-white shadow-[0_-10px_34px_rgba(45,212,191,0.13)]"
                   : "border-white/[0.075] bg-white/[0.025] text-slate-300 hover:border-cyan-200/16 hover:bg-white/[0.045]"
@@ -864,23 +865,23 @@ function TaskWorkspaceTabs({
             >
               <span
                 className={cn(
-                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border transition-colors",
+                  "flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] border transition-colors",
                   active
                     ? "border-emerald-200/24 bg-emerald-300/[0.12] text-emerald-100"
                     : "border-white/[0.08] bg-white/[0.035] text-slate-400 group-hover/tab:text-slate-200"
                 )}
               >
-                <Icon className="h-[18px] w-[18px]" />
+                <Icon className="h-3.5 w-3.5" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className={cn("flex items-center gap-1.5 text-[11px] font-semibold", active ? "text-emerald-200" : "text-slate-400")}>
+                <span className={cn("flex items-center gap-1.5 text-[10px] font-semibold", active ? "text-emerald-200" : "text-slate-400")}>
                   {tab.hasLiveActivity ? (
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.75)] motion-safe:animate-pulse" />
                   ) : null}
                   <span className="truncate">{tab.label}</span>
                   <span className={cn("h-1 w-1 rounded-full", tabStatusDotClassName(tab.statusLabel))} />
                 </span>
-                <span className="mt-1 block truncate text-[11px] font-semibold leading-4 text-slate-100">
+                <span className="mt-0.5 block truncate text-[10px] font-semibold leading-4 text-slate-100">
                   {tab.title}
                 </span>
               </span>
@@ -898,10 +899,11 @@ function TaskWorkspaceTabs({
         type="button"
         aria-label="Focus follow-up composer"
         title="Focus follow-up composer"
-        className="mb-1 inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] border border-white/[0.08] bg-white/[0.045] text-slate-200 shadow-[0_10px_24px_rgba(0,0,0,0.18)] outline-none transition-all duration-200 hover:border-cyan-200/22 hover:bg-cyan-300/[0.08] hover:text-cyan-100 focus-visible:ring-2 focus-visible:ring-cyan-200/45"
+        className="nodrag nopan mb-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-white/[0.08] bg-white/[0.045] text-slate-200 shadow-[0_8px_18px_rgba(0,0,0,0.16)] outline-none transition-all duration-200 hover:border-cyan-200/22 hover:bg-cyan-300/[0.08] hover:text-cyan-100 focus-visible:ring-2 focus-visible:ring-cyan-200/45"
         onClick={onAdd}
+        onPointerDown={(event) => event.stopPropagation()}
       >
-        <Plus className="h-5 w-5" />
+        <Plus className="h-4 w-4" />
       </button>
     </div>
   );

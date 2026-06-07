@@ -39,16 +39,16 @@ export function AccountsSurfaceSection({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-3.5">
+      <section className="rounded-2xl border border-border bg-card p-3.5 shadow-sm dark:border-white/10 dark:bg-white/[0.025] dark:shadow-none">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-medium text-white">Accounts</p>
+              <p className="text-sm font-medium text-foreground dark:text-white">Accounts</p>
               <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
                 {accountTargets.length} target{accountTargets.length === 1 ? "" : "s"}
               </Badge>
             </div>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
+            <p className="mt-1 text-xs leading-5 text-muted-foreground dark:text-slate-500">
               Attach saved browser-profile account targets to an agent. AgentOS enforces these bindings before account-target task launch.
             </p>
           </div>
@@ -74,14 +74,14 @@ export function AccountsSurfaceSection({
         </div>
 
         <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+          <div className="rounded-xl border border-border/80 bg-muted/30 p-3 dark:border-white/8 dark:bg-white/[0.02]">
             <FormField label="Agent" htmlFor="account-agent">
               <select
                 id="account-agent"
                 value={selectedAgentId}
                 disabled={isSaving || workspaceAgents.length === 0}
                 onChange={(event) => onSelectedAgentIdChange(event.target.value)}
-                className="flex h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white"
               >
                 <option value="">Select agent</option>
                 {workspaceAgents.map((agent) => (
@@ -91,9 +91,9 @@ export function AccountsSurfaceSection({
                 ))}
               </select>
             </FormField>
-            <div className="mt-3 rounded-xl border border-white/8 bg-black/15 px-3 py-2">
-              <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">Browser capability</p>
-              <p className="mt-1 text-xs text-slate-300">
+            <div className="mt-3 rounded-xl border border-border/80 bg-background px-3 py-2 dark:border-white/8 dark:bg-black/15">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500">Browser capability</p>
+              <p className="mt-1 text-xs text-foreground/80 dark:text-slate-300">
                 {selectedAgent
                   ? selectedAgentCanUseBrowser
                     ? "This agent has browser-capable tools."
@@ -103,25 +103,25 @@ export function AccountsSurfaceSection({
             </div>
           </div>
 
-          <div className="rounded-xl border border-amber-300/15 bg-amber-400/[0.06] p-3">
-            <p className="text-xs font-medium text-amber-50">OpenClaw limitation</p>
-            <p className="mt-1 text-[11px] leading-5 text-amber-100/75">
+          <div className="rounded-xl border border-amber-300/35 bg-amber-50 p-3 dark:border-amber-300/15 dark:bg-amber-400/[0.06]">
+            <p className="text-xs font-medium text-amber-950 dark:text-amber-50">OpenClaw limitation</p>
+            <p className="mt-1 text-[11px] leading-5 text-amber-900/80 dark:text-amber-100/75">
               OpenClaw does not expose a direct browser-profile dispatch parameter to AgentOS yet. These bindings are real AgentOS access rules and are shown on the canvas, but task launch still passes the selected profile as account context.
             </p>
           </div>
         </div>
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-3.5">
+      <section className="rounded-2xl border border-border bg-card p-3.5 shadow-sm dark:border-white/10 dark:bg-white/[0.025] dark:shadow-none">
         <div className="flex items-center justify-between gap-3">
-          <p className="min-w-0 truncate text-sm font-medium text-white">Workspace account targets</p>
+          <p className="min-w-0 truncate text-sm font-medium text-foreground dark:text-white">Workspace account targets</p>
           <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
             {selectedAgent ? formatAgentDisplayName(selectedAgent) : "No agent"}
           </Badge>
         </div>
 
         {accountTargets.length === 0 ? (
-          <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-3 py-3 text-sm leading-5 text-slate-500">
+          <div className="mt-3 rounded-xl border border-dashed border-border bg-muted/30 px-3 py-3 text-sm leading-5 text-muted-foreground dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-500">
             No account targets are connected for this workspace. Use the Accounts page Connect Account flow to open a real OpenClaw browser login target first.
           </div>
         ) : (
@@ -141,7 +141,7 @@ export function AccountsSurfaceSection({
               return (
                 <div
                   key={target.id}
-                  className="flex flex-col gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-3 rounded-xl border border-border/80 bg-muted/30 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between dark:border-white/8 dark:bg-white/[0.02]"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <AccountIcon
@@ -152,24 +152,24 @@ export function AccountsSurfaceSection({
                     />
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-medium text-white">{target.serviceName}</p>
+                        <p className="truncate text-sm font-medium text-foreground dark:text-white">{target.serviceName}</p>
                         <Badge
                           variant="muted"
                           className={cn(
                             "h-5 rounded-full px-2 text-[10px]",
                             linked
-                              ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-100"
-                              : "border-white/10 bg-white/[0.04] text-slate-300"
+                              ? "border-emerald-300/45 bg-emerald-50 text-emerald-700 dark:border-emerald-300/25 dark:bg-emerald-400/10 dark:text-emerald-100"
+                              : "border-border bg-muted text-muted-foreground dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300"
                           )}
                         >
                           {linked ? "Linked to agent" : "Not linked"}
                         </Badge>
                       </div>
-                      <p className="mt-1 truncate text-[11px] text-slate-500">
+                      <p className="mt-1 truncate text-[11px] text-muted-foreground dark:text-slate-500">
                         {target.primaryDomain} · profile {target.browserProfileName}
                       </p>
                       {linkedAgents.length > 0 ? (
-                        <p className="mt-1 text-[11px] leading-4 text-slate-500">
+                        <p className="mt-1 text-[11px] leading-4 text-muted-foreground dark:text-slate-500">
                           Linked agents: {formatLinkedAccountAgents(linkedAgents)}
                         </p>
                       ) : null}
@@ -212,7 +212,7 @@ function FormField({
 }) {
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={htmlFor} className="text-[10px] uppercase tracking-[0.16em] text-slate-400">
+      <Label htmlFor={htmlFor} className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-400">
         {label}
       </Label>
       {children}

@@ -174,22 +174,22 @@ export function getSurfaceRuntimeBadgeClass(
   gatewayBlocked: boolean
 ) {
   if (gatewayBlocked && !runtimeStatus) {
-    return "border-amber-300/25 bg-amber-400/10 text-amber-100";
+    return "border-amber-300/45 bg-amber-100 text-amber-800 dark:border-amber-300/25 dark:bg-amber-400/10 dark:text-amber-100";
   }
 
   switch (runtimeStatus?.status) {
     case "connected":
     case "running":
     case "linked":
-      return "border-emerald-300/25 bg-emerald-400/10 text-emerald-100";
+      return "border-emerald-300/45 bg-emerald-50 text-emerald-700 dark:border-emerald-300/25 dark:bg-emerald-400/10 dark:text-emerald-100";
     case "configured":
-      return "border-cyan-300/25 bg-cyan-400/10 text-cyan-100";
+      return "border-cyan-300/45 bg-cyan-50 text-cyan-700 dark:border-cyan-300/25 dark:bg-cyan-400/10 dark:text-cyan-100";
     case "disabled":
-      return "border-slate-300/15 bg-slate-400/10 text-slate-300";
+      return "border-border bg-muted text-muted-foreground dark:border-slate-300/15 dark:bg-slate-400/10 dark:text-slate-300";
     case "failed":
-      return "border-rose-300/25 bg-rose-400/10 text-rose-100";
+      return "border-rose-300/45 bg-rose-50 text-rose-700 dark:border-rose-300/25 dark:bg-rose-400/10 dark:text-rose-100";
     default:
-      return "border-white/10 bg-white/[0.04] text-slate-300";
+      return "border-border bg-muted text-muted-foreground dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300";
   }
 }
 

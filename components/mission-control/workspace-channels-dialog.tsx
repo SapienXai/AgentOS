@@ -1038,7 +1038,7 @@ export function WorkspaceChannelsDialog({
         <label
           key={field.key}
           htmlFor={fieldId}
-          className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5 transition-colors hover:bg-white/[0.04]"
+          className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/80 bg-muted/30 px-3 py-2.5 transition-colors hover:bg-muted/50 dark:border-white/8 dark:bg-white/[0.02] dark:hover:bg-white/[0.04]"
         >
           <input
             id={fieldId}
@@ -1051,11 +1051,11 @@ export function WorkspaceChannelsDialog({
                 [field.key]: event.target.checked
               }))
             }
-            className="mt-0.5 h-4 w-4 rounded border-white/20 bg-white/5 text-cyan-400 focus:ring-cyan-400/60"
+            className="mt-0.5 h-4 w-4 rounded border-border bg-background text-cyan-600 focus:ring-cyan-500/60 dark:border-white/20 dark:bg-white/5 dark:text-cyan-400 dark:focus:ring-cyan-400/60"
           />
           <div className="min-w-0">
-            <p className="text-sm font-medium text-white">{field.label}</p>
-            {field.helpText ? <p className="mt-1 text-[11px] leading-4 text-slate-500">{field.helpText}</p> : null}
+            <p className="text-sm font-medium text-foreground dark:text-white">{field.label}</p>
+            {field.helpText ? <p className="mt-1 text-[11px] leading-4 text-muted-foreground dark:text-slate-500">{field.helpText}</p> : null}
           </div>
         </label>
       );
@@ -1073,7 +1073,7 @@ export function WorkspaceChannelsDialog({
                 [field.key]: event.target.value
               }))
             }
-            className="flex h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none"
+            className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
             disabled={isSaving}
           >
             <option value="">Select one</option>
@@ -1113,7 +1113,7 @@ export function WorkspaceChannelsDialog({
             className="h-10 rounded-xl px-3"
           />
         )}
-        {field.helpText ? <p className="text-[11px] leading-4 text-slate-500">{field.helpText}</p> : null}
+        {field.helpText ? <p className="text-[11px] leading-4 text-muted-foreground dark:text-slate-500">{field.helpText}</p> : null}
       </FormField>
     );
   };
@@ -1121,11 +1121,11 @@ export function WorkspaceChannelsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-1rem)] max-w-5xl flex-col overflow-hidden rounded-[22px] p-0"
+        className="flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-1rem)] max-w-5xl flex-col overflow-hidden rounded-[22px] border-border bg-popover p-0 text-popover-foreground dark:border-white/10 dark:bg-slate-950 dark:text-white"
         closeClassName="right-3 top-3"
       >
         <div className="flex min-h-0 flex-1 flex-col">
-        <DialogHeader className="border-b border-white/10 px-4 py-3 pr-12 sm:px-5">
+        <DialogHeader className="border-b border-border px-4 py-3 pr-12 sm:px-5 dark:border-white/10">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <DialogTitle className="text-lg">Workspace surfaces</DialogTitle>
@@ -1133,7 +1133,7 @@ export function WorkspaceChannelsDialog({
                 Manage accounts, owners, and routes for this workspace.
               </DialogDescription>
             </div>
-            <div className="flex items-center gap-2 text-[10px] text-slate-400">
+            <div className="flex items-center gap-2 text-[10px] text-muted-foreground dark:text-slate-400">
               <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
                 {workspaceSurfaces.length} linked
               </Badge>
@@ -1148,8 +1148,8 @@ export function WorkspaceChannelsDialog({
         </DialogHeader>
 
         {isSaving && savingMessage ? (
-          <div className="mx-4 mt-4 rounded-2xl border border-cyan-300/20 bg-cyan-400/[0.08] px-3 py-2 sm:mx-6">
-            <div className="flex items-center gap-2 text-[11px] text-cyan-50">
+          <div className="mx-4 mt-4 rounded-2xl border border-cyan-300/35 bg-cyan-50 px-3 py-2 sm:mx-6 dark:border-cyan-300/20 dark:bg-cyan-400/[0.08]">
+            <div className="flex items-center gap-2 text-[11px] text-cyan-900 dark:text-cyan-50">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               <span>{savingMessage}</span>
             </div>
@@ -1157,18 +1157,18 @@ export function WorkspaceChannelsDialog({
         ) : null}
 
         {surfaceGatewayAccess.blocked ? (
-          <div className="mx-4 mt-4 rounded-2xl border border-amber-300/25 bg-amber-400/[0.08] px-3 py-3 sm:mx-6">
+          <div className="mx-4 mt-4 rounded-2xl border border-amber-300/40 bg-amber-50 px-3 py-3 sm:mx-6 dark:border-amber-300/25 dark:bg-amber-400/[0.08]">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex min-w-0 gap-3">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" />
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-200" />
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-amber-50">Gateway access blocked</p>
-                  <p className="mt-1 text-xs leading-5 text-amber-100/80">
+                  <p className="text-sm font-medium text-amber-950 dark:text-amber-50">Gateway access blocked</p>
+                  <p className="mt-1 text-xs leading-5 text-amber-900/80 dark:text-amber-100/80">
                     {surfaceGatewayAccess.issue ??
                       "OpenClaw Gateway pairing or scope approval is blocking live channel status."}
                   </p>
                   {surfaceGatewayAccess.missingScopes.length > 0 ? (
-                    <p className="mt-1 text-[11px] text-amber-100/70">
+                    <p className="mt-1 text-[11px] text-amber-900/70 dark:text-amber-100/70">
                       Missing scopes: {surfaceGatewayAccess.missingScopes.join(", ")}
                     </p>
                   ) : null}
@@ -1202,8 +1202,8 @@ export function WorkspaceChannelsDialog({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
         <div className="grid min-h-0 gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
-          <aside className="h-fit rounded-2xl border border-white/10 bg-white/[0.025] p-2.5 sm:sticky sm:top-0">
-            <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/8 bg-black/15 p-1">
+          <aside className="h-fit rounded-2xl border border-border bg-card p-2.5 shadow-sm sm:sticky sm:top-0 dark:border-white/10 dark:bg-white/[0.025] dark:shadow-none">
+            <div className="grid grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/40 p-1 dark:border-white/8 dark:bg-black/15">
               {(["surfaces", "accounts"] as WorkspaceDialogSection[]).map((section) => (
                 <button
                   key={section}
@@ -1212,8 +1212,8 @@ export function WorkspaceChannelsDialog({
                   className={cn(
                     "rounded-lg px-2 py-1.5 text-[11px] font-medium transition-colors",
                     activeSection === section
-                      ? "bg-cyan-300/14 text-cyan-50"
-                      : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
+                      ? "bg-primary/10 text-primary dark:bg-cyan-300/14 dark:text-cyan-50"
+                      : "text-muted-foreground hover:bg-background hover:text-foreground dark:text-slate-400 dark:hover:bg-white/[0.04] dark:hover:text-slate-200"
                   )}
                 >
                   {section === "surfaces" ? "Surfaces" : "Accounts"}
@@ -1250,15 +1250,15 @@ export function WorkspaceChannelsDialog({
                     className={cn(
                       "flex w-full items-center justify-between gap-3 rounded-xl border px-2.5 py-2 text-left transition-colors",
                       activeProvider === provider
-                        ? "border-cyan-300/35 bg-cyan-400/[0.08]"
-                        : "border-white/8 bg-white/[0.02] hover:bg-white/[0.04]"
+                        ? "border-primary/25 bg-primary/10 dark:border-cyan-300/35 dark:bg-cyan-400/[0.08]"
+                        : "border-border/80 bg-muted/30 hover:bg-muted/50 dark:border-white/8 dark:bg-white/[0.02] dark:hover:bg-white/[0.04]"
                     )}
                   >
                     <div className="flex min-w-0 items-center gap-2.5">
                       <SurfaceIcon provider={provider} className="h-8 w-8 shrink-0" />
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-white">{entry.label}</p>
-                        <p className="mt-0.5 truncate text-[10px] text-slate-500">
+                        <p className="truncate text-sm font-medium text-foreground dark:text-white">{entry.label}</p>
+                        <p className="mt-0.5 truncate text-[10px] text-muted-foreground dark:text-slate-500">
                           {Math.max(providerAccountCount, providerRuntimeCount)} account
                           {Math.max(providerAccountCount, providerRuntimeCount) === 1 ? "" : "s"} ·{" "}
                           {formatSurfaceRuntimeSource(snapshot.surfaceRuntime.source)}
@@ -1274,12 +1274,12 @@ export function WorkspaceChannelsDialog({
                 </div>
               </>
             ) : (
-              <div className="mt-2.5 space-y-2 rounded-xl border border-white/8 bg-white/[0.02] p-2.5">
+              <div className="mt-2.5 space-y-2 rounded-xl border border-border/80 bg-muted/30 p-2.5 dark:border-white/8 dark:bg-white/[0.02]">
                 <div className="flex items-center gap-2">
-                  <KeyRound className="h-3.5 w-3.5 text-amber-200" />
-                  <p className="text-xs font-medium text-white">Workspace accounts</p>
+                  <KeyRound className="h-3.5 w-3.5 text-amber-600 dark:text-amber-200" />
+                  <p className="text-xs font-medium text-foreground dark:text-white">Workspace accounts</p>
                 </div>
-                <p className="text-[11px] leading-4 text-slate-500">
+                <p className="text-[11px] leading-4 text-muted-foreground dark:text-slate-500">
                   Grant saved browser-profile account targets to workspace agents.
                 </p>
                 <Badge variant="muted" className="h-5 w-fit rounded-full px-2 text-[10px]">
@@ -1308,16 +1308,16 @@ export function WorkspaceChannelsDialog({
             ) : (
               <>
             {workspaceDriftIssues.length > 0 ? (
-              <section className="rounded-2xl border border-amber-300/20 bg-amber-400/[0.06] p-3.5">
+              <section className="rounded-2xl border border-amber-300/35 bg-amber-50 p-3.5 dark:border-amber-300/20 dark:bg-amber-400/[0.06]">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-medium text-amber-50">OpenClaw binding drift</p>
+                      <p className="text-sm font-medium text-amber-950 dark:text-amber-50">OpenClaw binding drift</p>
                       <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
                         {workspaceDriftIssues.length} issue{workspaceDriftIssues.length === 1 ? "" : "s"}
                       </Badge>
                     </div>
-                    <p className="mt-1 text-xs leading-5 text-amber-100/75">
+                    <p className="mt-1 text-xs leading-5 text-amber-900/80 dark:text-amber-100/75">
                       AgentOS registry and OpenClaw runtime bindings differ for this workspace.
                     </p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1342,7 +1342,7 @@ export function WorkspaceChannelsDialog({
 
                 <div className="mt-3 space-y-2">
                   {workspaceDriftIssues.slice(0, 4).map((issue) => (
-                    <div key={issue.id} className="rounded-xl border border-white/8 bg-black/15 px-3 py-2">
+                    <div key={issue.id} className="rounded-xl border border-amber-300/30 bg-white px-3 py-2 dark:border-white/8 dark:bg-black/15">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
                           {formatSurfaceProviderLabelFromCatalog(issue.provider, surfaceCatalogByProvider)}
@@ -1350,15 +1350,15 @@ export function WorkspaceChannelsDialog({
                         <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
                           {formatSurfaceDriftKind(issue.kind)}
                         </Badge>
-                        <p className="min-w-0 flex-1 truncate text-xs font-medium text-white">{issue.title}</p>
+                        <p className="min-w-0 flex-1 truncate text-xs font-medium text-foreground dark:text-white">{issue.title}</p>
                       </div>
-                      <p className="mt-1 text-[11px] leading-4 text-amber-100/75">
+                      <p className="mt-1 text-[11px] leading-4 text-amber-900/80 dark:text-amber-100/75">
                         {formatSurfaceDriftIssueDetail(issue, resolveAgentDisplayName)}
                       </p>
                     </div>
                   ))}
                   {workspaceDriftIssues.length > 4 ? (
-                    <p className="text-[11px] text-amber-100/65">
+                    <p className="text-[11px] text-amber-900/70 dark:text-amber-100/65">
                       {workspaceDriftIssues.length - 4} more drift issue
                       {workspaceDriftIssues.length - 4 === 1 ? "" : "s"} hidden.
                     </p>
@@ -1367,9 +1367,9 @@ export function WorkspaceChannelsDialog({
               </section>
             ) : null}
 
-            <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-3.5">
+            <section className="rounded-2xl border border-border bg-card p-3.5 shadow-sm dark:border-white/10 dark:bg-white/[0.025] dark:shadow-none">
               <div className="flex items-center justify-between gap-3">
-                <p className="min-w-0 truncate text-sm font-medium text-white">{currentCatalogEntry.label} surfaces</p>
+                <p className="min-w-0 truncate text-sm font-medium text-foreground dark:text-white">{currentCatalogEntry.label} surfaces</p>
                 <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
                   {providerWorkspaceSurfaces.length} linked
                 </Badge>
@@ -1436,14 +1436,14 @@ export function WorkspaceChannelsDialog({
                     return (
                       <div
                         key={surface.id}
-                        className="rounded-2xl border border-white/8 bg-white/[0.02] p-3"
+                        className="rounded-2xl border border-border/80 bg-muted/30 p-3 dark:border-white/8 dark:bg-white/[0.02]"
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="flex min-w-0 items-center gap-3">
                             <SurfaceIcon provider={surface.type} className="h-9 w-9 shrink-0" />
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
-                                <p className="truncate text-sm font-medium text-white">{surface.name}</p>
+                                <p className="truncate text-sm font-medium text-foreground dark:text-white">{surface.name}</p>
                                 <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
                                   {formatSurfaceKindLabel(currentCatalogEntry.kind)}
                                 </Badge>
@@ -1457,12 +1457,12 @@ export function WorkspaceChannelsDialog({
                                   {formatSurfaceAccountStatus(runtimeStatus, surfaceGatewayAccess.blocked)}
                                 </Badge>
                                 {surfaceDriftIssues.length > 0 ? (
-                                  <Badge className="h-5 rounded-full border-amber-300/25 bg-amber-400/10 px-2 text-[10px] text-amber-100">
+                                  <Badge className="h-5 rounded-full border-amber-300/40 bg-amber-100 px-2 text-[10px] text-amber-800 dark:border-amber-300/25 dark:bg-amber-400/10 dark:text-amber-100">
                                     Drift
                                   </Badge>
                                 ) : null}
                               </div>
-                              <p className="mt-1 truncate text-[11px] text-slate-500">
+                              <p className="mt-1 truncate text-[11px] text-muted-foreground dark:text-slate-500">
                                 {surface.type}:{surface.id} · {formatSurfaceRuntimeSource(runtimeStatus?.source ?? snapshot.surfaceRuntime.source)}
                               </p>
                             </div>
@@ -1507,7 +1507,7 @@ export function WorkspaceChannelsDialog({
                           </div>
                         </div>
 
-                        <div className="mt-3 grid gap-2 text-[11px] text-slate-400 sm:grid-cols-4">
+                        <div className="mt-3 grid gap-2 text-[11px] text-muted-foreground dark:text-slate-400 sm:grid-cols-4">
                           <SurfaceMetric label="Primary" value={resolveAgentDisplayName(surface.primaryAgentId)} />
                           <SurfaceMetric label="Assistants" value={String(assistantIds.length)} />
                           <SurfaceMetric label="Routes" value={String(currentAssignments.length)} />
@@ -1525,7 +1525,7 @@ export function WorkspaceChannelsDialog({
                                 value={surface.primaryAgentId ?? ""}
                                 disabled={isSaving}
                                 onChange={(event) => void handlePrimaryChange(surface.id, event.target.value)}
-                                className="flex h-9 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white outline-none"
+                                className="flex h-9 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
                               >
                                 <option value="">Select agent</option>
                                 {surface.primaryAgentId && !primaryAgentIsInWorkspace ? (
@@ -1540,7 +1540,7 @@ export function WorkspaceChannelsDialog({
                                 ))}
                               </select>
                             </FormField>
-                            <p className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                            <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground dark:text-slate-500">
                               <UserRound className="h-3 w-3" />
                               {resolveAgentDisplayName(surface.primaryAgentId)}
                             </p>
@@ -1548,10 +1548,10 @@ export function WorkspaceChannelsDialog({
 
                           <div className="space-y-2">
                             <div className="space-y-1">
-                              <p className="text-[10px] uppercase tracking-[0.16em] text-slate-400">
+                              <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-400">
                                 Assistants available for routes
                               </p>
-                              <p className="text-[11px] leading-4 text-slate-500">
+                              <p className="text-[11px] leading-4 text-muted-foreground dark:text-slate-500">
                                 Add an agent to the surface, then optionally assign it to a route.
                               </p>
                             </div>
@@ -1563,15 +1563,15 @@ export function WorkspaceChannelsDialog({
                                     type="button"
                                     disabled={isSaving}
                                     onClick={() => void handleRemoveAssistant(surface.id, agentId)}
-                                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-slate-200 transition-colors hover:bg-white/[0.08]"
+                                    className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-foreground transition-colors hover:bg-muted dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200 dark:hover:bg-white/[0.08]"
                                   >
                                     <span>{resolveAgentDisplayName(agentId, agentId)}</span>
-                                    <span className="text-slate-500">remove</span>
+                                    <span className="text-muted-foreground dark:text-slate-500">remove</span>
                                   </button>
                                 ))}
                               </div>
                             ) : (
-                              <p className="text-[11px] text-slate-400">No assistant agents attached yet.</p>
+                              <p className="text-[11px] text-muted-foreground dark:text-slate-400">No assistant agents attached yet.</p>
                             )}
 
                             {availableAssistantAgents.length > 0 ? (
@@ -1587,7 +1587,7 @@ export function WorkspaceChannelsDialog({
                                         [surface.id]: event.target.value
                                       }))
                                     }
-                                    className="flex h-9 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white outline-none"
+                                    className="flex h-9 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
                                   >
                                     <option value="">Select assistant</option>
                                     {availableAssistantAgents.map((agent) => (
@@ -1606,7 +1606,7 @@ export function WorkspaceChannelsDialog({
                                         [surface.id]: event.target.value
                                       }))
                                     }
-                                    className="flex h-9 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                                    className="flex h-9 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white"
                                   >
                                     <option value="">
                                       {routeOptions.length > 0 ? "No route yet" : "No discovered routes"}
@@ -1634,13 +1634,13 @@ export function WorkspaceChannelsDialog({
                         </div>
 
                         {currentCatalogEntry.supportsRouteDiscovery ? (
-                          <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.025] p-3">
+                          <div className="mt-3 rounded-2xl border border-border/80 bg-background p-3 dark:border-white/8 dark:bg-white/[0.025]">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div className="min-w-0">
-                                <p className="text-sm font-medium text-white">
+                                <p className="text-sm font-medium text-foreground dark:text-white">
                                   {getSurfaceCatalogEntry(surface.type).label} routes
                                 </p>
-                                <p className="mt-0.5 text-[11px] text-slate-500">Unassigned routes use the primary agent.</p>
+                                <p className="mt-0.5 text-[11px] text-muted-foreground dark:text-slate-500">Unassigned routes use the primary agent.</p>
                               </div>
                               <Button
                                 type="button"
@@ -1685,12 +1685,12 @@ export function WorkspaceChannelsDialog({
                                   return (
                                     <div
                                       key={`${surface.id}:${route.routeId}`}
-                                      className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5"
+                                      className="rounded-xl border border-border/80 bg-muted/30 px-3 py-2.5 dark:border-white/8 dark:bg-white/[0.02]"
                                     >
                                       <div className="flex items-start gap-3">
                                         <input
                                           type="checkbox"
-                                          className="mt-0.5 h-4 w-4 rounded border-white/15 bg-white/5 accent-cyan-300"
+                                          className="mt-0.5 h-4 w-4 rounded border-border bg-background accent-cyan-600 dark:border-white/15 dark:bg-white/5 dark:accent-cyan-300"
                                           checked={enabled}
                                           disabled={isSaving}
                                           onChange={() => void updateSurfaceAssignments(surface.id, nextAssignments)}
@@ -1699,19 +1699,19 @@ export function WorkspaceChannelsDialog({
                                           <div className="flex flex-wrap items-center justify-between gap-2">
                                             <div className="min-w-0">
                                               <div className="flex flex-wrap items-center gap-2">
-                                                <p className="truncate text-sm font-medium text-white">
+                                                <p className="truncate text-sm font-medium text-foreground dark:text-white">
                                                   {route.title ?? route.routeId}
                                                 </p>
                                                 <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
                                                   {route.kind}
                                                 </Badge>
                                               </div>
-                                              <p className="mt-1 truncate text-[11px] text-slate-500">
+                                              <p className="mt-1 truncate text-[11px] text-muted-foreground dark:text-slate-500">
                                                 {route.subtitle ?? route.routeId}
                                                 {route.lastSeen ? ` · seen ${formatSurfaceTimestamp(route.lastSeen)}` : ""}
                                               </p>
                                               {externalOwners.length > 0 ? (
-                                                <p className="mt-1 text-[11px] leading-4 text-amber-100/75">
+                                                <p className="mt-1 text-[11px] leading-4 text-amber-800 dark:text-amber-100/75">
                                                   Also routed in{" "}
                                                   {externalOwners
                                                     .map((owner) => `${owner.workspaceName} by ${owner.ownerName}`)
@@ -1720,7 +1720,7 @@ export function WorkspaceChannelsDialog({
                                               ) : null}
                                             </div>
                                             <div className="min-w-[190px] space-y-1">
-                                              <p className="px-1 text-[9px] uppercase tracking-[0.14em] text-slate-500">
+                                              <p className="px-1 text-[9px] uppercase tracking-[0.14em] text-muted-foreground dark:text-slate-500">
                                                 Route owner
                                               </p>
                                               <select
@@ -1740,7 +1740,7 @@ export function WorkspaceChannelsDialog({
                                                     )
                                                   )
                                                 }
-                                                className="flex h-8 w-full rounded-full border border-white/10 bg-white/5 px-3 text-[11px] text-white outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                                                className="flex h-8 w-full rounded-full border border-input bg-background px-3 text-[11px] text-foreground outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white"
                                               >
                                                 <option value="">Primary fallback</option>
                                                 {workspaceAgents.map((agent) => (
@@ -1758,7 +1758,7 @@ export function WorkspaceChannelsDialog({
                                 })}
                               </div>
                             ) : (
-                              <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-3 py-3 text-[11px] text-slate-500">
+                              <div className="mt-3 rounded-xl border border-dashed border-border bg-muted/30 px-3 py-3 text-[11px] text-muted-foreground dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-500">
                                 {getEmptyRouteDiscoveryCopy(surface.type)}
                               </div>
                             )}
@@ -1769,15 +1769,15 @@ export function WorkspaceChannelsDialog({
                   })}
                 </div>
               ) : (
-                <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-3 py-3 text-sm text-slate-500">
+                <div className="mt-3 rounded-xl border border-dashed border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-500">
                   No {currentCatalogEntry.label} surfaces are linked to this workspace yet.
                 </div>
               )}
             </section>
 
-            <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-3.5">
+            <section className="rounded-2xl border border-border bg-card p-3.5 shadow-sm dark:border-white/10 dark:bg-white/[0.025] dark:shadow-none">
               <div className="flex items-center justify-between gap-3">
-                <p className="min-w-0 truncate text-sm font-medium text-white">Connect {currentCatalogEntry.label}</p>
+                <p className="min-w-0 truncate text-sm font-medium text-foreground dark:text-white">Connect {currentCatalogEntry.label}</p>
                 <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
                   {providerAccounts.length} available
                 </Badge>
@@ -1785,7 +1785,7 @@ export function WorkspaceChannelsDialog({
 
               <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
                 <div className="space-y-2">
-                  <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">Existing accounts</p>
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500">Existing accounts</p>
                   {providerAccounts.length > 0 ? (
                     providerAccounts.map((account) => {
                       const linked = isLinkedAccountId(account.id);
@@ -1793,13 +1793,13 @@ export function WorkspaceChannelsDialog({
                       return (
                         <div
                           key={account.id}
-                          className="flex flex-col gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                          className="flex flex-col gap-3 rounded-xl border border-border/80 bg-muted/30 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between dark:border-white/8 dark:bg-white/[0.02]"
                         >
                           <div className="flex min-w-0 items-center gap-3">
                             <SurfaceIcon provider={account.type} className="h-8 w-8 shrink-0" />
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
-                                <p className="truncate text-sm font-medium text-white">{account.name}</p>
+                                <p className="truncate text-sm font-medium text-foreground dark:text-white">{account.name}</p>
                                 <Badge
                                   variant="muted"
                                   className={cn(
@@ -1810,7 +1810,7 @@ export function WorkspaceChannelsDialog({
                                   {formatSurfaceAccountStatus(runtimeStatus, surfaceGatewayAccess.blocked)}
                                 </Badge>
                               </div>
-                              <p className="mt-1 truncate text-[11px] text-slate-500">
+                              <p className="mt-1 truncate text-[11px] text-muted-foreground dark:text-slate-500">
                                 {account.id} · {formatSurfaceRuntimeSource(runtimeStatus?.source ?? snapshot.surfaceRuntime.source)}
                               </p>
                             </div>
@@ -1834,15 +1834,15 @@ export function WorkspaceChannelsDialog({
                       );
                     })
                   ) : (
-                    <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-3 py-3 text-sm text-slate-500">
+                    <div className="rounded-xl border border-dashed border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-500">
                       No {currentCatalogEntry.label} accounts found.
                     </div>
                   )}
                 </div>
 
-                <div className="space-y-3 rounded-xl border border-white/8 bg-white/[0.02] p-3">
+                <div className="space-y-3 rounded-xl border border-border/80 bg-muted/30 p-3 dark:border-white/8 dark:bg-white/[0.02]">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-white">Provision</p>
+                    <p className="text-sm font-medium text-foreground dark:text-white">Provision</p>
                     <Badge variant="muted" className="h-5 rounded-full px-2 text-[10px]">
                       {currentCatalogEntry.supportsProvisioning ? "AgentOS" : "OpenClaw"}
                     </Badge>
@@ -1867,8 +1867,8 @@ export function WorkspaceChannelsDialog({
                       ) : null}
 
                       {advancedProvisionFields.length > 0 ? (
-                        <details className="rounded-xl border border-white/8 bg-white/[0.015] p-3">
-                          <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                        <details className="rounded-xl border border-border/80 bg-background p-3 dark:border-white/8 dark:bg-white/[0.015]">
+                          <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500">
                             Advanced settings
                           </summary>
                           <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -1878,8 +1878,8 @@ export function WorkspaceChannelsDialog({
                       ) : null}
 
                       {provisionPreviewConfig && provisionPreviewPath ? (
-                        <details className="rounded-xl border border-cyan-300/15 bg-cyan-400/[0.04] p-3">
-                          <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.16em] text-cyan-100">
+                        <details className="rounded-xl border border-cyan-300/30 bg-cyan-50 p-3 dark:border-cyan-300/15 dark:bg-cyan-400/[0.04]">
+                          <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.16em] text-cyan-800 dark:text-cyan-100">
                             Config preview
                           </summary>
                           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1888,9 +1888,9 @@ export function WorkspaceChannelsDialog({
                             </Badge>
                           </div>
                           {currentCatalogEntry.provider === "gmail" ? (
-                            <p className="mt-2 text-[11px] leading-5 text-cyan-100/70">Includes Gmail hook enablement.</p>
+                            <p className="mt-2 text-[11px] leading-5 text-cyan-800/75 dark:text-cyan-100/70">Includes Gmail hook enablement.</p>
                           ) : null}
-                          <pre className="mt-3 max-h-52 overflow-auto rounded-xl border border-white/10 bg-slate-950/80 p-3 text-[11px] leading-5 text-slate-100">
+                          <pre className="mt-3 max-h-52 overflow-auto rounded-xl border border-border bg-slate-950 p-3 text-[11px] leading-5 text-slate-100 dark:border-white/10 dark:bg-slate-950/80">
                             {JSON.stringify(provisionPreviewConfig, null, 2)}
                           </pre>
                         </details>
@@ -1901,7 +1901,7 @@ export function WorkspaceChannelsDialog({
                           id="surface-primary-agent"
                           value={newPrimaryAgentId}
                           onChange={(event) => setNewPrimaryAgentId(event.target.value)}
-                          className="flex h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none"
+                          className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
                         >
                           <option value="">Select agent</option>
                           {workspaceAgents.map((agent) => (
@@ -1929,7 +1929,7 @@ export function WorkspaceChannelsDialog({
                       </Button>
                     </>
                   ) : (
-                    <div className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-3 text-sm leading-5 text-slate-400">
+                    <div className="rounded-xl border border-border/80 bg-background px-3 py-3 text-sm leading-5 text-muted-foreground dark:border-white/8 dark:bg-white/[0.02] dark:text-slate-400">
                       Provisioning is not exposed for this OpenClaw provider in AgentOS. Existing OpenClaw accounts can
                       still be attached, monitored, and routed from this workspace.
                     </div>
@@ -1944,7 +1944,7 @@ export function WorkspaceChannelsDialog({
 
         </div>
 
-        <DialogFooter className="border-t border-white/10 px-4 py-3 sm:px-5">
+        <DialogFooter className="border-t border-border px-4 py-3 sm:px-5 dark:border-white/10">
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             Close
           </Button>
@@ -1962,14 +1962,14 @@ export function WorkspaceChannelsDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="rounded-[20px] border border-rose-500/25 bg-rose-500/[0.08] p-4">
+          <div className="rounded-[20px] border border-rose-300/40 bg-rose-50 p-4 dark:border-rose-500/25 dark:bg-rose-500/[0.08]">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-200" />
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-700 dark:text-rose-200" />
               <div className="min-w-0">
-                <p className="text-sm font-medium text-rose-50">
+                <p className="text-sm font-medium text-rose-950 dark:text-rose-50">
                   Type {deleteTarget?.name ?? "the account name"} to confirm deletion.
                 </p>
-                <p className="mt-1 text-xs leading-5 text-rose-100/80">
+                <p className="mt-1 text-xs leading-5 text-rose-900/80 dark:text-rose-100/80">
                   This action removes the account overlay everywhere and may delete the underlying OpenClaw provider
                   account if the provider supports it.
                 </p>
@@ -2023,12 +2023,12 @@ export function WorkspaceChannelsDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="rounded-[20px] border border-amber-300/25 bg-amber-400/[0.08] p-4">
+          <div className="rounded-[20px] border border-amber-300/40 bg-amber-50 p-4 dark:border-amber-300/25 dark:bg-amber-400/[0.08]">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" />
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-200" />
               <div className="min-w-0">
-                <p className="text-sm font-medium text-amber-50">Operator confirmation required</p>
-                <p className="mt-1 text-xs leading-5 text-amber-100/80">
+                <p className="text-sm font-medium text-amber-950 dark:text-amber-50">Operator confirmation required</p>
+                <p className="mt-1 text-xs leading-5 text-amber-900/80 dark:text-amber-100/80">
                   AgentOS will write a redacted backup snapshot before changing only the approved OpenClaw config
                   paths shown here.
                 </p>
@@ -2041,15 +2041,15 @@ export function WorkspaceChannelsDialog({
             <SurfaceMetric label="Bindings removed" value={String(repairPreview?.removedBindingCount ?? 0)} />
           </div>
 
-          <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
-            <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">Preview audit</p>
-            <p className="mt-1 break-all font-mono text-[11px] leading-5 text-slate-200">
+          <div className="rounded-xl border border-border/80 bg-muted/30 p-3 dark:border-white/8 dark:bg-white/[0.02]">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500">Preview audit</p>
+            <p className="mt-1 break-all font-mono text-[11px] leading-5 text-foreground dark:text-slate-200">
               {repairPreview?.auditId ?? "unknown"}
             </p>
           </div>
 
-          <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
-            <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">Approved config paths</p>
+          <div className="rounded-xl border border-border/80 bg-muted/30 p-3 dark:border-white/8 dark:bg-white/[0.02]">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500">Approved config paths</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {repairPreviewConfigPaths.length > 0 ? (
                 repairPreviewConfigPaths.map((configPath) => (
@@ -2097,7 +2097,7 @@ function FormField({
 }) {
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={htmlFor} className="text-[10px] uppercase tracking-[0.16em] text-slate-400">
+      <Label htmlFor={htmlFor} className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-400">
         {label}
       </Label>
       {children}
@@ -2107,9 +2107,9 @@ function FormField({
 
 function SurfaceMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-white/8 bg-white/[0.018] px-3 py-2">
-      <p className="truncate text-[9px] uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className="mt-1 truncate text-[11px] text-slate-200">{value}</p>
+    <div className="rounded-xl border border-border/80 bg-background px-3 py-2 dark:border-white/8 dark:bg-white/[0.018]">
+      <p className="truncate text-[9px] uppercase tracking-[0.14em] text-muted-foreground dark:text-slate-500">{label}</p>
+      <p className="mt-1 truncate text-[11px] text-foreground dark:text-slate-200">{value}</p>
     </div>
   );
 }

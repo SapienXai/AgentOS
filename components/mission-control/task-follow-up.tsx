@@ -72,24 +72,28 @@ export function TaskMetricRow({
   metrics,
   className,
   compact = false,
-  surface = "auto"
+  surface = "auto",
+  density = "default"
 }: {
   metrics: TaskMetricItem[];
   className?: string;
   compact?: boolean;
   surface?: "auto" | "dark";
+  density?: "default" | "dense";
 }) {
   const forceDark = surface === "dark";
+  const dense = density === "dense";
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-2.5", className)}>
+    <div className={cn("flex flex-wrap items-center", dense ? "gap-1.5" : "gap-2.5", className)}>
       {metrics.map((metric, index) => {
         const Icon = metric.icon;
         const content = (
           <>
             <Icon
               className={cn(
-                "h-3.5 w-3.5 shrink-0",
+                "shrink-0",
+                dense ? "h-3 w-3" : "h-3.5 w-3.5",
                 forceDark
                   ? metric.highlighted
                     ? "text-emerald-200"
@@ -103,7 +107,10 @@ export function TaskMetricRow({
             {metric.value !== undefined ? (
               <span
                 className={cn(
-                  "ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 font-mono text-[10px]",
+                  "ml-0.5 inline-flex items-center justify-center font-mono",
+                  dense
+                    ? "min-w-4 rounded-[6px] px-1 py-0.5 text-[9px]"
+                    : "min-w-5 rounded-full px-1.5 py-0.5 text-[10px]",
                   forceDark
                     ? metric.highlighted
                       ? "bg-emerald-300/[0.12] text-emerald-100"
@@ -124,7 +131,7 @@ export function TaskMetricRow({
             key={`${metric.label}-${index}`}
             type="button"
             className={cn(
-              metricPillClassName(metric, compact, surface),
+              metricPillClassName(metric, compact, surface, density),
               forceDark
                 ? "transition-colors hover:border-cyan-200/24 hover:bg-white/[0.06] hover:text-slate-100"
                 : "transition-colors hover:border-primary/20 hover:bg-accent/60 hover:text-foreground dark:hover:border-cyan-200/24 dark:hover:bg-white/[0.06] dark:hover:text-slate-100"
@@ -138,7 +145,7 @@ export function TaskMetricRow({
             {content}
           </button>
         ) : (
-          <span key={`${metric.label}-${index}`} className={metricPillClassName(metric, compact, surface)}>
+          <span key={`${metric.label}-${index}`} className={metricPillClassName(metric, compact, surface, density)}>
             {content}
           </span>
         );
@@ -152,22 +159,26 @@ export function ExpandableTaskResult({
   result,
   emptyText = "No result has been captured for this task yet.",
   className,
-  compact = false
+  compact = false,
+  density = "default"
 }: {
   title?: string;
   result: string | null | undefined;
   emptyText?: string;
   className?: string;
   compact?: boolean;
+  density?: "default" | "dense";
 }) {
   const [expanded, setExpanded] = useState(false);
   const normalizedResult = result?.trim() || emptyText;
   const preview = compactMissionText(normalizedResult, compact ? 150 : 260) || normalizedResult;
+  const dense = density === "dense";
 
   return (
     <section
       className={cn(
-        "rounded-[16px] border border-border bg-card px-3 py-2.5 shadow-[inset_0_1px_0_hsl(var(--border)/0.35)] dark:border-white/[0.08] dark:bg-slate-950/28 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]",
+        "border border-border bg-card shadow-[inset_0_1px_0_hsl(var(--border)/0.35)] dark:border-white/[0.08] dark:bg-slate-950/28 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]",
+        dense ? "rounded-[12px] px-2.5 py-2" : "rounded-[16px] px-3 py-2.5",
         className
       )}
       onClick={(event) => event.stopPropagation()}
@@ -176,7 +187,7 @@ export function ExpandableTaskResult({
       <button
         type="button"
         aria-expanded={expanded}
-        className="flex w-full items-center justify-between gap-3 text-left"
+        className={cn("flex w-full items-center justify-between text-left", dense ? "gap-2" : "gap-3")}
         onClick={() => setExpanded((current) => !current)}
       >
         <span className="flex min-w-0 items-center gap-2">
@@ -187,7 +198,8 @@ export function ExpandableTaskResult({
         </span>
         <ChevronDown
           className={cn(
-            "h-4 w-4 shrink-0 text-muted-foreground transition-transform dark:text-slate-400",
+            "shrink-0 text-muted-foreground transition-transform dark:text-slate-400",
+            dense ? "h-3.5 w-3.5" : "h-4 w-4",
             expanded && "rotate-180"
           )}
         />
@@ -195,7 +207,7 @@ export function ExpandableTaskResult({
       <p
         className={cn(
           "mt-2 whitespace-pre-wrap text-foreground/85 dark:text-slate-200/90",
-          compact ? "text-[11.5px] leading-5" : "text-sm leading-6",
+          dense ? "text-[11px] leading-[18px]" : compact ? "text-[11.5px] leading-5" : "text-sm leading-6",
           expanded ? "max-h-56 overflow-y-auto pr-2" : "line-clamp-2"
         )}
       >
@@ -215,7 +227,8 @@ export function TaskFollowUpComposer({
   textareaRef,
   expanded = false,
   className,
-  compact = false
+  compact = false,
+  density = "default"
 }: {
   task: TaskRecord;
   latestResult?: string | null;
@@ -227,6 +240,7 @@ export function TaskFollowUpComposer({
   expanded?: boolean;
   className?: string;
   compact?: boolean;
+  density?: "default" | "dense";
 }) {
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -237,6 +251,7 @@ export function TaskFollowUpComposer({
     (submitting ? "Follow-up is being sent." : null) ||
     (!trimmedMessage ? "Enter a follow-up before sending." : null);
   const disabled = Boolean(disabledReason);
+  const dense = density === "dense";
 
   const submitFollowUp = async () => {
     if (disabled || submitting) {
@@ -298,19 +313,28 @@ export function TaskFollowUpComposer({
   return (
     <div
       className={cn(
-        "rounded-[16px] border border-border bg-card p-2 shadow-[inset_0_1px_0_hsl(var(--border)/0.35)] dark:border-cyan-200/14 dark:bg-slate-950/36 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
+        "border border-border bg-card shadow-[inset_0_1px_0_hsl(var(--border)/0.35)] dark:border-cyan-200/14 dark:bg-slate-950/36 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
+        dense ? "rounded-[12px] p-1.5" : "rounded-[16px] p-2",
         expanded && "border-primary/20 bg-accent/50 dark:border-cyan-200/24 dark:bg-slate-950/46",
         className
       )}
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <div className="flex items-end gap-2">
+      <div className={cn("flex items-end", dense ? "gap-1.5" : "gap-2")}>
         <div className={cn(
-          "flex min-h-11 flex-1 items-start gap-2 rounded-[13px] border border-border bg-background/60 px-2.5 py-2 transition-[min-height,border-color,background-color] duration-200 dark:border-white/[0.07] dark:bg-black/18",
-          expanded && "min-h-14 border-primary/20 bg-background dark:border-cyan-200/20 dark:bg-black/24"
+          "flex flex-1 items-start gap-2 border border-border bg-background/60 transition-[min-height,border-color,background-color] duration-200 dark:border-white/[0.07] dark:bg-black/18",
+          dense ? "min-h-9 rounded-[10px] px-2 py-1.5" : "min-h-11 rounded-[13px] px-2.5 py-2",
+          expanded && (dense ? "min-h-12" : "min-h-14"),
+          expanded && "border-primary/20 bg-background dark:border-cyan-200/20 dark:bg-black/24"
         )}>
-          <MessageSquare className={cn("mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 dark:text-slate-400", expanded && "scale-110 text-primary dark:text-cyan-100")} />
+          <MessageSquare
+            className={cn(
+              "mt-1 shrink-0 text-muted-foreground transition-transform duration-200 dark:text-slate-400",
+              dense ? "h-3.5 w-3.5" : "h-4 w-4",
+              expanded && "scale-110 text-primary dark:text-cyan-100"
+            )}
+          />
           <Textarea
             ref={textareaRef}
             value={message}
@@ -319,8 +343,8 @@ export function TaskFollowUpComposer({
             placeholder="Ask a follow-up..."
             className={cn(
               "min-h-8 resize-none border-0 bg-transparent p-0 font-medium text-foreground caret-primary shadow-none placeholder:font-medium placeholder:text-muted-foreground focus-visible:ring-0 dark:text-slate-100 dark:caret-emerald-200 dark:placeholder:text-slate-400",
-              compact ? "text-base leading-7" : "text-[16px] leading-7",
-              expanded && "text-[17px]"
+              dense ? "text-[13px] leading-5" : compact ? "text-base leading-7" : "text-[16px] leading-7",
+              expanded && (dense ? "text-sm leading-6" : "text-[17px]")
             )}
             rows={expanded ? 3 : compact ? 1 : 2}
             title={availability.reason ?? undefined}
@@ -340,7 +364,8 @@ export function TaskFollowUpComposer({
           disabled={disabled}
           title={disabledReason ?? "Send follow-up"}
           className={cn(
-            "h-11 w-11 shrink-0 rounded-[13px] border border-primary/20 bg-primary text-primary-foreground shadow-[0_10px_24px_hsl(var(--primary)/0.16)] hover:bg-primary/90 dark:border-cyan-200/16 dark:bg-slate-800 dark:text-emerald-200 dark:shadow-[0_0_24px_rgba(45,212,191,0.08)] dark:hover:bg-slate-700 dark:hover:text-emerald-100",
+            "shrink-0 border border-primary/20 bg-primary text-primary-foreground shadow-[0_10px_24px_hsl(var(--primary)/0.16)] hover:bg-primary/90 dark:border-cyan-200/16 dark:bg-slate-800 dark:text-emerald-200 dark:shadow-[0_0_24px_rgba(45,212,191,0.08)] dark:hover:bg-slate-700 dark:hover:text-emerald-100",
+            dense ? "h-9 w-9 rounded-[10px]" : "h-11 w-11 rounded-[13px]",
             disabled && "opacity-55"
           )}
           onClick={() => void submitFollowUp()}
@@ -355,11 +380,19 @@ export function TaskFollowUpComposer({
   );
 }
 
-function metricPillClassName(metric: TaskMetricItem, compact: boolean, surface: "auto" | "dark") {
+function metricPillClassName(
+  metric: TaskMetricItem,
+  compact: boolean,
+  surface: "auto" | "dark",
+  density: "default" | "dense" = "default"
+) {
+  const dense = density === "dense";
+
   if (surface === "dark") {
     return cn(
-      "inline-flex min-w-0 items-center gap-1.5 rounded-full border font-medium",
-      compact ? "px-2 py-1 text-[10px]" : "px-3 py-1.5 text-xs",
+      "inline-flex min-w-0 items-center border font-medium",
+      dense ? "gap-1 rounded-[9px] px-1.5 py-0.5 text-[9px]" : "gap-1.5 rounded-full",
+      !dense && (compact ? "px-2 py-1 text-[10px]" : "px-3 py-1.5 text-xs"),
       metric.highlighted
         ? "border-emerald-300/[0.18] bg-emerald-300/[0.07] text-emerald-100"
         : "border-white/[0.08] bg-white/[0.03] text-slate-300",
@@ -368,8 +401,9 @@ function metricPillClassName(metric: TaskMetricItem, compact: boolean, surface: 
   }
 
   return cn(
-    "inline-flex min-w-0 items-center gap-1.5 rounded-full border font-medium",
-    compact ? "px-2 py-1 text-[10px]" : "px-3 py-1.5 text-xs",
+    "inline-flex min-w-0 items-center border font-medium",
+    dense ? "gap-1 rounded-[9px] px-1.5 py-0.5 text-[9px]" : "gap-1.5 rounded-full",
+    !dense && (compact ? "px-2 py-1 text-[10px]" : "px-3 py-1.5 text-xs"),
     metric.highlighted
       ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-300/18 dark:bg-emerald-300/[0.07] dark:text-emerald-100"
       : "border-border bg-muted/45 text-muted-foreground dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-slate-300",
