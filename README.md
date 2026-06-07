@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="public/assets/screenshots/0.jpeg" alt="AgentOS control-plane interface" width="100%" />
+  <img src="public/assets/screenshots/hero.jpeg" alt="AgentOS control-plane interface" width="100%" />
 
 # AgentOS | Control Plane
 
