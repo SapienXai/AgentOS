@@ -3601,7 +3601,7 @@ export function MissionControlShell({
         className={cn(
           "pointer-events-none absolute top-0 z-40 hidden lg:block",
           isSidebarOpen ? "lg:left-[316px]" : "lg:left-[80px]",
-          isInspectorOpen ? "lg:right-[426px]" : "lg:right-[84px]"
+          isInspectorOpen ? "lg:right-[572px]" : "lg:right-[76px]"
         )}
       >
         <MissionControlCanvasTopBar
@@ -3681,8 +3681,8 @@ export function MissionControlShell({
           className={cn(
             "pointer-events-auto absolute right-0 top-0 z-30 h-[100dvh] overflow-visible mission-ease-smooth transition-[width] duration-500",
             isInspectorOpen
-              ? "w-[calc(100vw-112px)] max-w-[300px] lg:w-[394px] lg:max-w-none"
-              : "w-[60px]"
+              ? "w-[calc(100vw-80px)] max-w-[540px] lg:w-[540px] lg:max-w-none"
+              : "w-[52px]"
           )}
         >
           <InspectorPanel

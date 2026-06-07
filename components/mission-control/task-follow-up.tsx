@@ -71,27 +71,46 @@ function isFollowUpTimeoutStatus(status: string | null | undefined) {
 export function TaskMetricRow({
   metrics,
   className,
-  compact = false
+  compact = false,
+  surface = "auto"
 }: {
   metrics: TaskMetricItem[];
   className?: string;
   compact?: boolean;
+  surface?: "auto" | "dark";
 }) {
+  const forceDark = surface === "dark";
+
   return (
     <div className={cn("flex flex-wrap items-center gap-2.5", className)}>
       {metrics.map((metric, index) => {
         const Icon = metric.icon;
         const content = (
           <>
-            <Icon className={cn("h-3.5 w-3.5 shrink-0", metric.highlighted ? "text-emerald-700 dark:text-emerald-200" : "text-muted-foreground dark:text-slate-400")} />
+            <Icon
+              className={cn(
+                "h-3.5 w-3.5 shrink-0",
+                forceDark
+                  ? metric.highlighted
+                    ? "text-emerald-200"
+                    : "text-slate-400"
+                  : metric.highlighted
+                    ? "text-emerald-700 dark:text-emerald-200"
+                    : "text-muted-foreground dark:text-slate-400"
+              )}
+            />
             <span>{metric.label}</span>
             {metric.value !== undefined ? (
               <span
                 className={cn(
                   "ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 font-mono text-[10px]",
-                  metric.highlighted
-                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-300/12 dark:text-emerald-100"
-                    : "bg-muted text-foreground dark:bg-white/[0.06] dark:text-slate-200"
+                  forceDark
+                    ? metric.highlighted
+                      ? "bg-emerald-300/[0.12] text-emerald-100"
+                      : "bg-white/[0.06] text-slate-200"
+                    : metric.highlighted
+                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-300/12 dark:text-emerald-100"
+                      : "bg-muted text-foreground dark:bg-white/[0.06] dark:text-slate-200"
                 )}
               >
                 {metric.value}
@@ -105,8 +124,10 @@ export function TaskMetricRow({
             key={`${metric.label}-${index}`}
             type="button"
             className={cn(
-              metricPillClassName(metric, compact),
-              "transition-colors hover:border-primary/20 hover:bg-accent/60 hover:text-foreground dark:hover:border-cyan-200/24 dark:hover:bg-white/[0.06] dark:hover:text-slate-100"
+              metricPillClassName(metric, compact, surface),
+              forceDark
+                ? "transition-colors hover:border-cyan-200/24 hover:bg-white/[0.06] hover:text-slate-100"
+                : "transition-colors hover:border-primary/20 hover:bg-accent/60 hover:text-foreground dark:hover:border-cyan-200/24 dark:hover:bg-white/[0.06] dark:hover:text-slate-100"
             )}
             onClick={(event) => {
               event.stopPropagation();
@@ -117,7 +138,7 @@ export function TaskMetricRow({
             {content}
           </button>
         ) : (
-          <span key={`${metric.label}-${index}`} className={metricPillClassName(metric, compact)}>
+          <span key={`${metric.label}-${index}`} className={metricPillClassName(metric, compact, surface)}>
             {content}
           </span>
         );
@@ -334,7 +355,18 @@ export function TaskFollowUpComposer({
   );
 }
 
-function metricPillClassName(metric: TaskMetricItem, compact: boolean) {
+function metricPillClassName(metric: TaskMetricItem, compact: boolean, surface: "auto" | "dark") {
+  if (surface === "dark") {
+    return cn(
+      "inline-flex min-w-0 items-center gap-1.5 rounded-full border font-medium",
+      compact ? "px-2 py-1 text-[10px]" : "px-3 py-1.5 text-xs",
+      metric.highlighted
+        ? "border-emerald-300/[0.18] bg-emerald-300/[0.07] text-emerald-100"
+        : "border-white/[0.08] bg-white/[0.03] text-slate-300",
+      metric.active && "border-cyan-200/25 bg-cyan-300/[0.08] text-cyan-100"
+    );
+  }
+
   return cn(
     "inline-flex min-w-0 items-center gap-1.5 rounded-full border font-medium",
     compact ? "px-2 py-1 text-[10px]" : "px-3 py-1.5 text-xs",

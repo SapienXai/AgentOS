@@ -434,7 +434,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           : undefined
       }
       className={cn(
-        "group relative w-[720px] max-w-[calc(100vw-32px)] overflow-visible rounded-[24px] border bg-[linear-gradient(180deg,rgba(12,19,33,0.98),rgba(5,10,20,0.98))] p-2.5 shadow-[0_24px_70px_rgba(0,0,0,0.38)] backdrop-blur-xl transition-[border-color,box-shadow,opacity,transform] duration-200 transform-gpu origin-center",
+        "dark group relative w-[720px] max-w-[calc(100vw-32px)] overflow-visible rounded-[24px] border bg-[linear-gradient(180deg,rgba(12,19,33,0.98),rgba(5,10,20,0.98))] p-2.5 shadow-[0_24px_70px_rgba(0,0,0,0.38)] backdrop-blur-xl transition-[border-color,box-shadow,opacity,transform] duration-200 transform-gpu origin-center",
         visualTone.outer,
         data.emphasis ? "opacity-100" : "opacity-72",
         selected && TASK_NODE_SELECTED_CLASSES,
@@ -628,7 +628,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
             </span>
           </div>
 
-          <TaskMetricRow metrics={taskMetrics} compact className="mt-3" />
+          <TaskMetricRow metrics={taskMetrics} compact surface="dark" className="mt-3" />
 
           <ExpandableTaskResult
             title={displayResultTitle}

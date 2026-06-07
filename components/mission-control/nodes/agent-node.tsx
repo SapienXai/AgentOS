@@ -38,8 +38,7 @@ import {
 } from "@/lib/openclaw/agent-presets";
 import {
   formatAgentDisplayName,
-  formatModelLabel,
-  formatRelativeTime
+  formatModelLabel
 } from "@/lib/openclaw/presenters";
 import { cn } from "@/lib/utils";
 
@@ -86,6 +85,9 @@ const agentNameGlyphVariants = {
     }
   }
 } as const;
+
+const agentHeaderChipClassName =
+  "h-5 rounded-[7px] px-2 py-0 text-[8px] leading-none tracking-[0.13em]";
 
 function AnimatedAgentName({ label }: { label: string }) {
   return (
@@ -174,6 +176,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   const isAttentionActive = selected || data.composerFocused || data.taskFocused;
   const isCreationPulse = Boolean(data.creationPulse);
   const dotTone = resolveAgentStatusDotTone(data.agent.status);
+  const statusBadgeVariant = resolveAgentStatusBadgeVariant(data.agent.status);
   const presetMeta = getAgentPresetMeta(data.agent.policy.preset);
   const declaredSkills = data.agent.skills;
   const declaredTools = data.agent.tools.filter((tool) => tool !== "fs.workspaceOnly");
@@ -212,8 +215,8 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
 
     inspectAgentSection(focus);
   };
-  const statusBadgeVariant = resolveAgentStatusBadgeVariant(data.agent.status);
   const modelBadgeLabel = data.modelLabel || formatModelLabel(data.agent.modelId);
+  const statusLabel = isPendingCreation ? "Provisioning" : data.agent.status;
   const themeLabel = data.agent.identity.theme ?? formatAgentPresetLabel(data.agent.policy.preset);
   const skillCount = effectiveSkills.length;
   const heartbeatLabel = data.agent.heartbeat.enabled
@@ -224,18 +227,13 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
     : null;
   const currentActionLabel = typeof data.agent.currentAction === "string" ? data.agent.currentAction.trim() : "";
   const purposeLabel = data.agent.profile?.purpose?.trim() || currentActionLabel || "OpenClaw operator";
-  const lastSeenLabel = data.agent.lastActiveAt
-    ? formatRelativeTime(data.agent.lastActiveAt, data.relativeTimeReferenceMs)
-    : "never";
-  const metaLabel = `${formatAgentFileAccessLabel(data.agent.policy.fileAccess)} · Heartbeat ${
-    data.agent.heartbeat.enabled ? heartbeatLabel ?? "on" : "off"
-  } · Last seen ${lastSeenLabel}`;
   const visibleSkills = effectiveSkills.slice(0, 4);
   const visibleDeclaredTools = effectiveTools.slice(0, 3);
   const visibleObservedTools = observedTools.slice(0, 3);
   const remainingSkills = Math.max(effectiveSkills.length - visibleSkills.length, 0);
   const remainingDeclaredTools = Math.max(effectiveTools.length - visibleDeclaredTools.length, 0);
   const remainingObservedTools = Math.max(observedToolCount - visibleObservedTools.length, 0);
+  const showLiveTaskChip = activeTaskCount > 0 && !data.taskFocused;
 
   useEffect(() => {
     if (!menuOpen) {
@@ -255,7 +253,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   return (
     <div
       className={cn(
-        "agent-node relative isolate w-[272px] overflow-visible rounded-[24px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(18,20,26,0.96),rgba(9,11,15,0.96))] pt-0 pb-0 shadow-[0_20px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl",
+        "agent-node dark relative isolate w-[272px] overflow-visible rounded-[24px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(18,20,26,0.96),rgba(9,11,15,0.96))] pt-0 pb-0 shadow-[0_20px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl",
         data.emphasis ? "opacity-100" : "opacity-72",
         isPendingCreation && "border-cyan-200/22 shadow-[0_20px_54px_rgba(34,211,238,0.16),0_18px_46px_rgba(0,0,0,0.36)]",
         selected && AGENT_NODE_SELECTED_CLASSES,
@@ -437,7 +435,9 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                 <p className="mt-1 truncate font-display text-[1.08rem] leading-5 text-white">
                   <AnimatedAgentName label={agentLabel} />
                 </p>
-                <p className="mt-0.5 truncate text-[10px] uppercase tracking-[0.16em] text-amber-200/90">{themeLabel}</p>
+                <p className="mt-0.5 truncate text-[10px] uppercase tracking-[0.16em] text-amber-200/90">
+                  {themeLabel}
+                </p>
               </div>
             </div>
           </div>
@@ -551,23 +551,38 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
 
           <div className="px-3.5 pt-3.5 pb-3.5">
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <Badge variant={isPendingCreation ? "default" : statusBadgeVariant}>
-                {isPendingCreation ? "Provisioning" : data.agent.status}
+              <Badge
+                variant={isPendingCreation ? "default" : statusBadgeVariant}
+                className={agentHeaderChipClassName}
+              >
+                {statusLabel}
               </Badge>
               {data.taskFocused ? (
-                <Badge variant="default">Working now</Badge>
-              ) : activeTaskCount > 0 ? (
-                <Badge variant="success">
+                <Badge variant="default" className={agentHeaderChipClassName}>
+                  Working now
+                </Badge>
+              ) : null}
+              {showLiveTaskChip ? (
+                <Badge variant="success" className={agentHeaderChipClassName}>
                   {activeTaskCount} live task{activeTaskCount === 1 ? "" : "s"}
                 </Badge>
               ) : null}
-              {creationWarning ? <Badge variant="warning">Model warning</Badge> : null}
+              {creationWarning ? (
+                <Badge variant="warning" className={agentHeaderChipClassName}>
+                  Model warning
+                </Badge>
+              ) : null}
               <button
                 type="button"
                 aria-label={`Change model for ${agentLabel}`}
                 title={`Change model for ${agentLabel}`}
-                className="nodrag nopan group rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/35 focus-visible:ring-offset-0"
                 disabled={isPendingCreation || !data.onConfigureModel}
+                className={cn(
+                  "nodrag nopan inline-flex h-5 max-w-[142px] items-center rounded-[7px] border border-white/[0.08] bg-white/[0.055] px-2 text-[8px] font-medium uppercase leading-none tracking-[0.13em] text-slate-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/35",
+                  isPendingCreation || !data.onConfigureModel
+                    ? "cursor-default"
+                    : "hover:border-cyan-200/18 hover:bg-cyan-300/[0.08] hover:text-cyan-100"
+                )}
                 onClick={(event) => {
                   event.stopPropagation();
                   if (isPendingCreation) {
@@ -577,17 +592,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                 }}
                 onPointerDown={(event) => event.stopPropagation()}
               >
-                <Badge
-                  variant="muted"
-                  className={cn(
-                    "max-w-[150px] truncate transition-colors",
-                    isPendingCreation
-                      ? "border-cyan-300/18 bg-cyan-300/8 text-cyan-100/82"
-                      : "group-hover:border-cyan-300/25 group-hover:bg-cyan-300/10 group-hover:text-cyan-100"
-                  )}
-                >
-                  {modelBadgeLabel}
-                </Badge>
+                <span className="min-w-0 truncate">{modelBadgeLabel}</span>
               </button>
             </div>
 
@@ -598,7 +603,6 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               </p>
             ) : null}
             <p className="line-clamp-2 text-[12px] leading-5 text-slate-300">{purposeLabel}</p>
-            <p className="mt-2 truncate text-[9px] uppercase tracking-[0.18em] text-slate-500">{metaLabel}</p>
           </div>
 
           <div className="mt-3 grid grid-cols-3 gap-2">
@@ -639,7 +643,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               }
               disabled={!canMessage}
               className={cn(
-                "nodrag nopan relative inline-flex h-10 items-center justify-center gap-1.5 rounded-full border px-3.5 text-[12px] transition-colors",
+                "nodrag nopan relative inline-flex h-10 items-center justify-center gap-1.5 rounded-[11px] border px-3.5 text-[12px] transition-colors",
                 !canMessage
                   ? "cursor-not-allowed border-emerald-300/12 bg-emerald-300/[0.04] text-emerald-100/48 shadow-none hover:bg-emerald-300/[0.04] hover:text-emerald-100/48"
                   : isMessageActive
@@ -671,7 +675,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               type="button"
               disabled={isPendingCreation || !data.onFocus}
               className={cn(
-                "nodrag nopan inline-flex h-10 items-center justify-center gap-1.5 rounded-full border px-3.5 text-[12px] transition-colors",
+                "nodrag nopan inline-flex h-10 items-center justify-center gap-1.5 rounded-[11px] border px-3.5 text-[12px] transition-colors",
                 isPendingCreation
                   ? "cursor-not-allowed border-cyan-300/14 bg-cyan-300/[0.05] text-cyan-100/62 shadow-[0_10px_24px_rgba(34,211,238,0.08)]"
                   : data.focused
@@ -702,7 +706,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
             }
             disabled={!canCreateTask}
             className={cn(
-              "nodrag nopan mt-2.5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border px-4 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200/45",
+              "nodrag nopan mt-2.5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-[12px] border px-4 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200/45",
               !canCreateTask
                 ? "cursor-not-allowed border-rose-300/12 bg-rose-300/[0.04] text-rose-100/48 shadow-none hover:bg-rose-300/[0.04] hover:text-rose-100/48"
                 : data.composerFocused

@@ -14,7 +14,8 @@ import {
   MessageSquareText,
   Radar,
   Pencil,
-  TerminalSquare
+  TerminalSquare,
+  X
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
@@ -185,7 +186,7 @@ function InspectorPanelContent({
         ? "overview"
         : activeTab;
   const isChatView = visibleActiveTab === "chat" && Boolean(selectedAgent);
-  const outputTabLabel = selectedTask ? "Feed" : "Output";
+  const outputTabLabel = selectedTask ? "Activity" : "Output";
   const selectedLabel =
     selectedWorkspace?.name ||
     (selectedAgent ? formatAgentDisplayName(selectedAgent) : null) ||
@@ -211,7 +212,7 @@ function InspectorPanelContent({
   const navItems = useMemo(
     () =>
       [
-        { id: "overview", label: "Overview", icon: Eye, enabled: true },
+        { id: "overview", label: "Inspect", icon: Eye, enabled: true },
         { id: "chat", label: "Chat", icon: MessageSquareText, enabled: showChatTab },
         { id: "output", label: outputTabLabel, icon: TerminalSquare, enabled: showOutputTab },
         { id: "files", label: "Files", icon: FolderGit2, enabled: showFilesTab },
@@ -221,11 +222,11 @@ function InspectorPanelContent({
   );
 
   return (
-    <div className="panel-surface panel-glow flex h-full flex-row-reverse overflow-hidden rounded-none border border-r-0 border-white/[0.08] bg-[#04070e]/88 shadow-[0_28px_90px_rgba(0,0,0,0.42)] backdrop-blur-2xl">
+    <div className="panel-surface panel-glow flex h-full flex-row-reverse overflow-hidden rounded-l-[28px] border border-r-0 border-sky-100/[0.09] bg-[radial-gradient(circle_at_22%_0%,rgba(125,211,252,0.07),transparent_34%),radial-gradient(circle_at_100%_18%,rgba(250,0,63,0.07),transparent_30%),linear-gradient(180deg,rgba(5,11,22,0.96),rgba(2,7,16,0.99))] shadow-[0_30px_90px_rgba(0,0,0,0.52)] backdrop-blur-2xl">
       <div
         className={cn(
-          "flex h-full shrink-0 flex-col items-center bg-[linear-gradient(180deg,rgba(7,10,18,0.98),rgba(3,6,12,0.98))] px-1.5 py-2",
-          collapsed ? "w-full" : "w-[60px] border-l border-white/[0.08]"
+          "flex h-full shrink-0 flex-col items-center bg-[linear-gradient(180deg,rgba(4,10,20,0.92),rgba(2,6,13,0.98))] px-1.5 py-4",
+          collapsed ? "w-full rounded-l-[28px]" : "w-[60px] border-l border-sky-100/[0.09]"
         )}
       >
         <RailTooltip
@@ -238,13 +239,13 @@ function InspectorPanelContent({
             type="button"
             aria-label={collapsed ? "Expand inspector" : "Collapse inspector"}
             onClick={onToggleCollapsed}
-            className="flex h-9 w-9 items-center justify-center rounded-[8px] border border-cyan-300/18 bg-cyan-400/[0.1] shadow-[0_8px_18px_rgba(34,211,238,0.14)] transition-all hover:border-cyan-200/24 hover:bg-cyan-400/[0.14]"
+            className="flex h-10 w-10 items-center justify-center rounded-[13px] border border-sky-100/[0.11] bg-white/[0.035] shadow-[0_10px_24px_rgba(0,0,0,0.18)] transition-all hover:border-sky-100/[0.18] hover:bg-sky-200/[0.06]"
           >
-            <TerminalSquare className="h-3.5 w-3.5 text-cyan-200" />
+            <TerminalSquare className="h-4 w-4 text-sky-200/80" />
           </button>
         </RailTooltip>
 
-        <div className="mt-3.5 flex flex-1 flex-col items-center gap-1">
+        <div className="mt-4 flex flex-1 flex-col items-center gap-2">
           {navItems.map((item) => (
             <InspectorRailButton
               key={item.id}
@@ -270,10 +271,10 @@ function InspectorPanelContent({
           ))}
         </div>
 
-        <div className="mt-1.5 flex flex-col items-center gap-0.5">
+        <div className="mt-3 flex flex-col items-center gap-1">
           <Badge
             variant="muted"
-            className="h-4 min-w-[28px] rounded-full px-1 py-0 text-[8px] leading-none tracking-[0.12em]"
+            className="h-5 min-w-[34px] rounded-full px-1.5 py-0 text-[8px] leading-none tracking-[0.14em]"
           >
             {selectedEntity ? "live" : "idle"}
           </Badge>
@@ -286,29 +287,29 @@ function InspectorPanelContent({
       </div>
 
       {!collapsed ? (
-        <div className="min-w-0 flex-1 bg-[linear-gradient(180deg,rgba(6,10,18,0.96),rgba(3,6,14,0.98))]">
+        <div className="min-w-0 flex-1 bg-[linear-gradient(180deg,rgba(5,12,24,0.86),rgba(3,8,17,0.96))]">
           <div
             className={cn(
               "mission-scroll flex h-full min-h-0 flex-col overscroll-contain",
               isChatView ? "overflow-hidden" : "overflow-y-auto"
             )}
           >
-            <div className="shrink-0 border-b border-white/[0.08] px-3 pb-2 pt-3">
-              <div className="flex items-start justify-between gap-3">
+            <div className="shrink-0 px-5 pb-4 pt-5">
+              <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
-                  <p className="text-[9px] font-medium uppercase tracking-[0.24em] text-slate-500">Inspector</p>
-                  <div className="mt-1 flex min-w-0 items-center gap-1.5">
-                    <h2 className="min-w-0 truncate font-display text-[1.02rem] leading-5 text-white">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.34em] text-sky-200/65">Inspect</p>
+                  <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
+                    <h2 className="min-w-0 max-w-full truncate font-display text-[1.65rem] leading-[1.1] text-white">
                       {selectedLabel}
                     </h2>
                     <Badge
                       variant="muted"
-                      className="shrink-0 h-4 px-1.5 py-0 text-[8px] leading-none tracking-[0.1em]"
+                      className="shrink-0 h-6 rounded-full border-sky-100/[0.1] bg-white/[0.045] px-2.5 py-0 text-[9px] leading-none tracking-[0.16em] text-slate-100"
                     >
                       {selectedDetail}
                     </Badge>
                   </div>
-                  <p className="mt-1 truncate text-[11px] leading-4 text-slate-400">
+                  <p className="mt-2 line-clamp-2 text-[13px] leading-5 text-slate-300/90">
                     {selectedTask
                       ? `${selectedTask.runtimeCount} runs · ${selectedTask.liveRunCount} live · ${formatRelativeTime(selectedTask.updatedAt, relativeTimeReferenceMs)}`
                       : selectedRuntime
@@ -323,12 +324,17 @@ function InspectorPanelContent({
                   </p>
                 </div>
 
-                <div className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-none border border-white/10 bg-white/[0.04] text-cyan-200 sm:flex">
-                  <TerminalSquare className="h-3.5 w-3.5" />
-                </div>
+                <button
+                  type="button"
+                  aria-label="Close inspector"
+                  onClick={onToggleCollapsed}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] border border-white/[0.09] bg-white/[0.045] text-slate-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-all hover:border-sky-100/[0.16] hover:bg-white/[0.07] hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
 
-              <div className="mt-2 flex flex-nowrap gap-1 overflow-x-auto pb-0.5">
+              <div className="mt-5 flex flex-nowrap gap-1 overflow-x-auto rounded-[18px] border border-sky-100/[0.08] bg-[linear-gradient(180deg,rgba(10,20,37,0.82),rgba(7,15,29,0.74))] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                 {navItems
                   .filter((item) => item.enabled)
                   .map((item) => (
@@ -342,7 +348,7 @@ function InspectorPanelContent({
               </div>
             </div>
 
-            <div className={cn("flex-1 p-3", isChatView && "min-h-0 overflow-hidden")}>
+            <div className={cn("flex-1 px-5 pb-5 pt-0", isChatView && "min-h-0 overflow-hidden")}>
               <AnimatePresence mode="wait">
                 <motion.div
                   key={selectedNodeId || "overview"}
@@ -445,7 +451,7 @@ function InspectorPanelContent({
                   ) : null}
 
                   {visibleActiveTab === "raw" ? (
-                    <pre className="overflow-x-auto rounded-[18px] border border-white/[0.08] bg-slate-950/[0.72] p-3 text-[11px] leading-5 text-slate-300">
+                    <pre className="overflow-x-auto rounded-[22px] border border-sky-100/[0.08] bg-slate-950/[0.62] p-4 text-[11px] leading-5 text-slate-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                       {JSON.stringify(
                         selectedTask && effectiveTaskDetail
                           ? effectiveTaskDetail
@@ -462,10 +468,10 @@ function InspectorPanelContent({
             </div>
 
             {isChatView ? null : (
-              <div className="shrink-0 border-t border-white/[0.08] p-3">
-                <div className="rounded-[22px] border border-cyan-300/10 bg-[linear-gradient(180deg,rgba(7,22,31,0.95),rgba(5,13,22,0.95))] p-3.5 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
+              <div className="shrink-0 px-5 pb-5 pt-0">
+                <div className="rounded-[22px] border border-sky-100/[0.08] bg-[linear-gradient(180deg,rgba(8,20,34,0.78),rgba(5,13,24,0.78))] p-4 shadow-[0_16px_42px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.04)]">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-full border border-cyan-300/15 bg-cyan-400/[0.12] text-cyan-200">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-[14px] border border-sky-100/[0.1] bg-white/[0.045] text-sky-200/75">
                       <Radar className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
@@ -1157,7 +1163,7 @@ function AgentContent({
             className={cn(
               "scroll-mt-4 rounded-[14px] border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 transition-all",
               focusSection === "skills" &&
-                "border-cyan-300/25 bg-cyan-400/[0.05] shadow-[0_0_0_1px_rgba(34,211,238,0.08)]"
+                "border-sky-100/[0.18] bg-sky-200/[0.035] shadow-[0_0_0_1px_rgba(125,211,252,0.05)]"
             )}
           >
             <div className="mb-2 flex items-center justify-between gap-2">
@@ -1177,7 +1183,7 @@ function AgentContent({
             className={cn(
               "scroll-mt-4 rounded-[14px] border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 transition-all",
               focusSection === "tools" &&
-                "border-cyan-300/25 bg-cyan-400/[0.05] shadow-[0_0_0_1px_rgba(34,211,238,0.08)]"
+                "border-sky-100/[0.18] bg-sky-200/[0.035] shadow-[0_0_0_1px_rgba(125,211,252,0.05)]"
             )}
           >
             <div className="mb-2 flex items-center justify-between gap-2">
@@ -1272,7 +1278,7 @@ function AgentContent({
           value={String(activeRuntimes.length)}
           className={cn(
             focusSection === "sessions" &&
-              "border-cyan-300/25 bg-[linear-gradient(180deg,rgba(12,25,37,0.92),rgba(8,13,24,0.88))] shadow-[0_0_0_1px_rgba(34,211,238,0.08)]"
+              "border-sky-100/[0.18] bg-[linear-gradient(180deg,rgba(12,25,37,0.9),rgba(8,13,24,0.86))] shadow-[0_0_0_1px_rgba(125,211,252,0.05)]"
           )}
         >
           <p>{agent.sessionCount} recorded sessions overall.</p>
@@ -1306,7 +1312,7 @@ function AgentContent({
                     key={runtime.id}
                     className={cn(
                       "overflow-hidden rounded-[14px] border bg-[linear-gradient(180deg,rgba(11,18,32,0.86),rgba(8,13,24,0.82))] transition-all",
-                      isExpanded ? "border-cyan-300/22 shadow-[0_0_0_1px_rgba(34,211,238,0.08)]" : "border-white/[0.08]"
+                      isExpanded ? "border-sky-100/[0.16] shadow-[0_0_0_1px_rgba(125,211,252,0.05)]" : "border-white/[0.08]"
                     )}
                   >
                     <button
@@ -1926,14 +1932,15 @@ function RunningTaskControlBar({
   };
 
   return (
-    <div className="rounded-[14px] border border-cyan-300/12 bg-cyan-400/[0.05] p-2.5">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="rounded-[20px] border border-sky-100/[0.08] bg-[linear-gradient(180deg,rgba(8,20,34,0.72),rgba(5,13,25,0.7))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-sky-200/60">Quick actions</p>
+      <div className="grid gap-2 sm:grid-cols-3">
         <Button
           type="button"
           variant="destructive"
           size="sm"
           disabled={!canAbortTask}
-          className="h-8 gap-1.5 rounded-[10px] px-2.5 text-[11px]"
+          className="h-11 justify-start gap-2 rounded-[14px] border border-rose-400/25 bg-rose-500/10 px-3 text-[12px] text-rose-100 hover:bg-rose-500/16 disabled:opacity-50"
           onClick={() => {
             if (!canAbortTask) {
               return;
@@ -1949,7 +1956,12 @@ function RunningTaskControlBar({
           type="button"
           variant={mode === "steer" ? "default" : "secondary"}
           size="sm"
-          className="h-8 gap-1.5 rounded-[10px] px-2.5 text-[11px]"
+          className={cn(
+            "h-11 justify-start gap-2 rounded-[14px] border px-3 text-[12px]",
+            mode === "steer"
+              ? "border-sky-100/[0.18] bg-sky-200/[0.12] text-sky-50 shadow-[0_0_18px_rgba(125,211,252,0.1)]"
+              : "border-sky-100/[0.08] bg-white/[0.045] text-slate-100 hover:bg-white/[0.08]"
+          )}
           onClick={() => openMode("steer")}
         >
           <Pencil className="h-3.5 w-3.5" />
@@ -1959,7 +1971,12 @@ function RunningTaskControlBar({
           type="button"
           variant={mode === "inject" ? "default" : "secondary"}
           size="sm"
-          className="h-8 gap-1.5 rounded-[10px] px-2.5 text-[11px]"
+          className={cn(
+            "h-11 justify-start gap-2 rounded-[14px] border px-3 text-[12px]",
+            mode === "inject"
+              ? "border-sky-100/[0.18] bg-sky-200/[0.12] text-sky-50 shadow-[0_0_18px_rgba(125,211,252,0.1)]"
+              : "border-sky-100/[0.08] bg-white/[0.045] text-slate-100 hover:bg-white/[0.08]"
+          )}
           onClick={() => openMode("inject")}
         >
           <MessageSquareText className="h-3.5 w-3.5" />
@@ -1968,7 +1985,7 @@ function RunningTaskControlBar({
       </div>
 
       {mode ? (
-        <div className="mt-2.5 space-y-2">
+        <div className="mt-3 space-y-2.5">
           <Textarea
             value={message}
             disabled={Boolean(pendingMode)}
@@ -1979,7 +1996,7 @@ function RunningTaskControlBar({
                 ? "Focus on tests"
                 : "Inject this note/reference into the running session"
             }
-            className="min-h-[76px] rounded-[12px] px-3 py-2 text-[12px] leading-5"
+            className="min-h-[86px] rounded-[14px] border-sky-100/[0.08] bg-slate-950/40 px-3 py-2.5 text-[12px] leading-5 text-slate-100 placeholder:text-slate-500"
             onChange={(event) => setMessage(event.target.value)}
           />
           {mode === "steer" ? (
@@ -1989,7 +2006,7 @@ function RunningTaskControlBar({
                   key={suggestion}
                   type="button"
                   disabled={Boolean(pendingMode)}
-                  className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-[10px] text-slate-300 transition-colors hover:border-cyan-300/25 hover:text-cyan-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-full border border-sky-100/[0.08] bg-white/[0.04] px-2.5 py-1 text-[10px] text-slate-300 transition-colors hover:border-sky-100/[0.16] hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                   onClick={() => setMessage(suggestion)}
                 >
                   {suggestion}
@@ -2787,15 +2804,15 @@ function InspectorRailButton({
         tabIndex={disabled ? -1 : 0}
         onClick={onClick}
         className={cn(
-          "inline-flex h-8 w-8 items-center justify-center rounded-[8px] border transition-all",
+          "inline-flex h-10 w-10 items-center justify-center rounded-[13px] border shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all",
           disabled
-            ? "border-white/5 bg-white/[0.02] text-slate-600"
+            ? "border-white/[0.05] bg-white/[0.02] text-slate-600"
             : active
-              ? "border-cyan-300/18 bg-cyan-400 text-slate-950 shadow-[0_10px_22px_rgba(96,165,250,0.28)]"
-              : "border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/15 hover:bg-white/[0.08] hover:text-white"
+              ? "border-sky-100/[0.2] bg-sky-200/[0.1] text-sky-100 shadow-[0_0_18px_rgba(125,211,252,0.12),inset_0_1px_0_rgba(255,255,255,0.08)]"
+              : "border-white/[0.09] bg-white/[0.03] text-slate-500 hover:border-sky-100/[0.14] hover:bg-white/[0.055] hover:text-slate-100"
         )}
       >
-        <Icon className="h-3 w-3" />
+        <Icon className="h-3.5 w-3.5" />
       </button>
     </RailTooltip>
   );
@@ -2815,10 +2832,10 @@ function InspectorTabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center rounded-full border px-2.5 py-1.5 text-[10px] uppercase tracking-[0.14em] whitespace-nowrap transition-all",
+        "inline-flex min-w-[86px] flex-1 items-center justify-center rounded-[14px] border px-3 py-2.5 text-[11px] whitespace-nowrap transition-all",
         active
-          ? "border-cyan-300/20 bg-cyan-400 text-slate-950 shadow-[0_10px_24px_rgba(96,165,250,0.28)]"
-          : "border-white/[0.08] bg-white/[0.03] text-slate-300 hover:bg-white/[0.07] hover:text-white"
+          ? "border-transparent bg-transparent text-sky-100 shadow-[inset_0_-2px_0_rgba(125,211,252,0.62)]"
+          : "border-transparent bg-transparent text-slate-400 hover:bg-white/[0.035] hover:text-slate-100"
       )}
     >
       {label}
@@ -2844,23 +2861,25 @@ function InfoCard({
   return (
     <section
       className={cn(
-        "rounded-[18px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(12,19,34,0.86),rgba(8,13,24,0.82))] p-3 transition-all",
+        "rounded-[22px] border border-sky-100/[0.08] bg-[linear-gradient(180deg,rgba(8,17,32,0.82),rgba(5,12,25,0.78))] p-4 shadow-[0_16px_44px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.04)] transition-all",
         className
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">{title}</p>
+        <div className="min-w-0 space-y-1.5">
           <div className="flex min-w-0 items-center gap-2">
-            <p className="min-w-0 font-display text-[1rem] text-white">{value}</p>
+            <Icon className="h-3.5 w-3.5 shrink-0 text-sky-200/65" />
+            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.28em] text-slate-300/75">{title}</p>
+          </div>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Badge variant="muted" className="max-w-full truncate rounded-full bg-white/[0.055] px-2.5 py-1 text-[10px] tracking-[0.16em] text-slate-100">
+              {value}
+            </Badge>
             {actions ? <div className="shrink-0">{actions}</div> : null}
           </div>
         </div>
-        <div className="rounded-[14px] border border-white/[0.08] bg-white/5 p-2 text-slate-300">
-          <Icon className="h-3.5 w-3.5" />
-        </div>
       </div>
-      <div className="mt-3 space-y-1.5 text-[12.5px] leading-5 text-slate-300">{children}</div>
+      <div className="mt-4 space-y-3 text-[13px] leading-5 text-slate-300">{children}</div>
     </section>
   );
 }
@@ -2877,8 +2896,8 @@ function TaskTextPanel({
   subtle?: boolean;
 }) {
   return (
-    <div className="rounded-[14px] border border-white/[0.08] bg-white/[0.03] px-3 py-2.5">
-      <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{label}</p>
+    <div className="rounded-[18px] border border-sky-100/[0.08] bg-slate-950/[0.25] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">{label}</p>
       <div className="mt-2">
         <InteractiveContent
           text={text}
@@ -2917,15 +2936,15 @@ function InspectorCreatedFileList({
             disabled={!canReveal}
             onClick={() => void revealLocalFile(file.path, basePath)}
             className={cn(
-              "w-full rounded-[14px] border border-cyan-300/12 bg-[linear-gradient(180deg,rgba(11,18,32,0.86),rgba(8,13,24,0.82))] px-3 py-2 text-left transition-all",
+              "w-full rounded-[16px] border border-sky-100/[0.08] bg-[linear-gradient(180deg,rgba(9,18,34,0.74),rgba(7,14,27,0.66))] px-3 py-2.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition-all",
               canReveal
-                ? "hover:border-cyan-300/28 hover:bg-cyan-400/[0.08]"
+                ? "hover:border-sky-100/[0.16] hover:bg-white/[0.055]"
                 : "cursor-not-allowed opacity-60"
             )}
           >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="truncate font-mono text-[12px] text-cyan-100">{file.displayPath}</p>
+                <p className="truncate font-mono text-[12px] text-sky-100/85">{file.displayPath}</p>
                 <p className="truncate text-[11px] text-slate-400">{compactPath(file.path)}</p>
               </div>
               <Badge variant="muted">{canReveal ? "reveal" : "relative"}</Badge>
@@ -2943,14 +2962,14 @@ function InspectorMetricGrid({
   items: Array<{ label: string; value: string }>;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
       {items.map((item) => (
         <div
           key={item.label}
-          className="rounded-[14px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(11,18,32,0.86),rgba(8,13,24,0.82))] px-3 py-2"
+          className="rounded-[18px] border border-sky-100/[0.08] bg-[linear-gradient(180deg,rgba(9,18,34,0.7),rgba(6,13,26,0.68))] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
         >
-          <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
-          <p className="mt-1 text-[13px] text-white">{item.value}</p>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{item.label}</p>
+          <p className="mt-1.5 truncate font-display text-[1.05rem] leading-none text-white">{item.value}</p>
         </div>
       ))}
     </div>
@@ -3017,7 +3036,7 @@ function InspectorBulletList({
       {items.map((item) => (
         <div
           key={item}
-          className="rounded-[14px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(11,18,32,0.86),rgba(8,13,24,0.82))] px-3 py-2"
+          className="rounded-[16px] border border-sky-100/[0.08] bg-[linear-gradient(180deg,rgba(9,18,34,0.72),rgba(6,13,26,0.68))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
         >
           <p className="text-[12px] leading-5 text-slate-200">{item}</p>
         </div>
