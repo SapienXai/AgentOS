@@ -129,19 +129,7 @@ export function TasksPageContent({
                 <Button
                   variant="secondary"
                   size="sm"
-                  className={cn(
-                    "h-8 rounded-[10px] px-3 text-xs",
-                    surfaceTheme === "light" && "border-[#e3d3c5] bg-white/85 !text-[#4c3a2e] hover:bg-[#fff8f2] hover:!text-[#4c3a2e]"
-                  )}
-                  style={
-                    surfaceTheme === "light"
-                      ? {
-                          backgroundColor: "rgba(255, 255, 255, 0.85)",
-                          borderColor: "#e3d3c5",
-                          color: "#4c3a2e"
-                        }
-                      : undefined
-                  }
+                  className="h-8 rounded-lg px-3 text-xs"
                   disabled
                   title="Task import requires a backend import contract."
                 >
@@ -150,21 +138,7 @@ export function TasksPageContent({
                 </Button>
                 <Button
                   size="sm"
-                  className={cn(
-                    "h-8 rounded-[10px] px-3 text-xs text-white",
-                    surfaceTheme === "light"
-                      ? "bg-[#5c4437] shadow-[#5c4437]/18 hover:bg-[#4d382d]"
-                      : "bg-blue-500 shadow-blue-500/20 hover:bg-blue-400"
-                  )}
-                  style={
-                    surfaceTheme === "light"
-                      ? {
-                          backgroundColor: "#5c4437",
-                          boxShadow: "0 8px 18px rgba(92, 68, 55, 0.18)",
-                          color: "#ffffff"
-                        }
-                      : undefined
-                  }
+                  className="h-8 rounded-lg px-3 text-xs"
                   onClick={() => setDispatchOpen(true)}
                 >
                   <Plus className="mr-1.5 h-3.5 w-3.5" />
@@ -304,13 +278,13 @@ function TaskColumn({
     <section className={cn("rounded-[12px] p-2.5", pageSurface)}>
       <div className="flex items-center justify-between gap-2 px-1 pb-2.5">
         <div className="flex items-center gap-2">
-          <Icon className="h-3.5 w-3.5 text-blue-300" />
-          <h2 className="text-[0.66rem] font-bold uppercase tracking-[0.13em] text-blue-200">
+          <Icon className="h-3.5 w-3.5 text-primary" />
+          <h2 className="text-[0.66rem] font-bold uppercase tracking-[0.13em] text-primary">
             {formatTaskFilterLabel(status)}
           </h2>
-          <span className="rounded-full bg-white/[0.08] px-1.5 py-0.5 text-[0.62rem] text-slate-400">{tasks.length}</span>
+          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[0.62rem] text-muted-foreground">{tasks.length}</span>
         </div>
-        <button className="text-slate-500" type="button" disabled title="Use Create Task to submit a mission through the supported dispatch flow.">
+        <button className="text-muted-foreground" type="button" disabled title="Use Create Task to submit a mission through the supported dispatch flow.">
           <Plus className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -330,7 +304,7 @@ function TaskColumn({
           type="button"
           disabled
           title="Inline column creation is disabled; use Create Task to submit a mission through the supported dispatch flow."
-          className="rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-xs text-slate-500"
+          className="rounded-[10px] border border-border bg-muted/35 px-3 py-2.5 text-xs text-muted-foreground"
         >
           <Plus className="mr-1.5 inline h-3.5 w-3.5" /> Add Task
         </button>
@@ -437,12 +411,12 @@ function TaskCard({
         }
       }}
       className={cn(
-        "relative overflow-hidden rounded-[20px] border bg-[linear-gradient(180deg,rgba(12,19,33,0.96),rgba(5,10,20,0.96))] p-2.5 text-left shadow-[0_18px_50px_rgba(0,0,0,0.24)] transition-[transform,box-shadow,border-color,background-color] hover:border-cyan-200/22 hover:bg-white/[0.055] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40 transform-gpu origin-center",
-        selected ? "border-cyan-300/45 shadow-[0_0_0_1px_rgba(34,211,238,0.16),0_18px_50px_rgba(0,0,0,0.32)]" : "border-white/[0.08]",
+        "relative origin-center transform-gpu overflow-hidden rounded-lg border bg-card p-2.5 text-left shadow-card transition-[transform,box-shadow,border-color,background-color] hover:border-primary/20 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        selected ? "border-primary/50 shadow-[0_0_0_1px_hsl(var(--primary)/0.12),0_18px_50px_hsl(var(--primary)/0.10)]" : "border-border",
         composerExpanded && "z-30 scale-[1.03] shadow-[0_28px_90px_rgba(0,0,0,0.42)]"
       )}
     >
-      <div className="pointer-events-none absolute inset-y-5 left-0 w-1 rounded-r-full bg-cyan-300/45" />
+      <div className="pointer-events-none absolute inset-y-5 left-0 w-1 rounded-r-full bg-primary/50" />
       <TaskCardTabs
         activeTabId={activeTabId}
         tabs={tabs}
@@ -452,18 +426,18 @@ function TaskCard({
         }}
         onSelect={(tab) => selectTaskTab(tab.index)}
       />
-      <div className="min-w-0 rounded-[16px] border border-white/[0.06] bg-white/[0.025] p-3.5">
+      <div className="min-w-0 rounded-[16px] border border-border bg-muted/25 p-3.5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border border-cyan-200/18 bg-cyan-300/[0.06] text-cyan-200 shadow-[0_0_18px_rgba(45,212,191,0.09)]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary shadow-[0_0_18px_hsl(var(--primary)/0.08)]">
                   <ClipboardList className="h-[18px] w-[18px]" />
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    Task / <span className="text-emerald-300">{task.agentName}</span>
+                  <span className="block truncate text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Task / <span className="text-[hsl(var(--status-success-foreground))]">{task.agentName}</span>
                   </span>
-                  <span className="mt-1 block truncate text-[0.68rem] text-slate-500">{task.category}</span>
+                  <span className="mt-1 block truncate text-[0.68rem] text-muted-foreground">{task.category}</span>
                 </span>
               </div>
             </div>
@@ -485,13 +459,13 @@ function TaskCard({
           >
             <h3
               className={cn(
-                "min-w-0 flex-1 font-display text-[1.45rem] font-semibold leading-tight text-white",
+                "min-w-0 flex-1 font-display text-[1.45rem] font-semibold leading-tight text-foreground",
                 !titleExpanded && "line-clamp-2"
               )}
             >
               {displayTitle}
             </h3>
-            <span className="mt-1 shrink-0 rounded-full border border-white/[0.08] bg-white/[0.04] p-1 text-slate-400 transition-colors group-hover:border-cyan-200/20 group-hover:text-slate-100">
+            <span className="mt-1 shrink-0 rounded-full border border-border bg-card/75 p-1 text-muted-foreground transition-colors group-hover:border-primary/20 group-hover:text-foreground">
               <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", titleExpanded && "rotate-180")} />
             </span>
           </button>
@@ -500,7 +474,7 @@ function TaskCard({
 
           {task.status === "running" ? (
             <div className="mt-3">
-              <div className="mb-1 flex justify-between text-[0.68rem] text-slate-400">
+              <div className="mb-1 flex justify-between text-[0.68rem] text-muted-foreground">
                 <span>{task.progress}%</span>
                 <span>{task.tokenLabel}</span>
               </div>
@@ -511,7 +485,7 @@ function TaskCard({
           <ExpandableTaskResult title={displayResultTitle} result={displayResultText} compact className="mt-3" />
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <span className="text-[0.68rem] text-slate-500">{task.dueLabel}</span>
+            <span className="text-[0.68rem] text-muted-foreground">{task.dueLabel}</span>
             <Button
               variant="secondary"
               size="sm"
@@ -594,11 +568,11 @@ function TaskCardTabs({
               tabIndex={active ? 0 : -1}
               title={`${tab.label}: ${tab.title}`}
               className={cn(
-                "group/tab relative flex h-[50px] items-center gap-2 rounded-t-[15px] border px-2.5 text-left outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-cyan-200/45",
+                "group/tab relative flex h-[50px] items-center gap-2 rounded-t-lg border px-2.5 text-left outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-ring/50",
                 tabs.length <= 7 ? "min-w-0 w-full" : "min-w-[148px] max-w-[220px] shrink-0",
                 active
-                  ? "border-cyan-200/26 bg-cyan-300/[0.09] text-white shadow-[0_-8px_24px_rgba(45,212,191,0.12)]"
-                  : "border-white/[0.075] bg-white/[0.025] text-slate-300 hover:border-cyan-200/16 hover:bg-white/[0.045]"
+                  ? "border-primary/25 bg-primary/10 text-foreground shadow-[0_-8px_24px_hsl(var(--primary)/0.10)]"
+                  : "border-border bg-card/75 text-muted-foreground hover:border-primary/20 hover:bg-accent/50"
               )}
               onClick={() => onSelect(tab)}
               onKeyDown={(event) => {
@@ -627,24 +601,24 @@ function TaskCardTabs({
                   "flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border transition-colors",
                   active
                     ? "border-emerald-200/24 bg-emerald-300/[0.12] text-emerald-100"
-                    : "border-white/[0.08] bg-white/[0.035] text-slate-400 group-hover/tab:text-slate-200"
+                    : "border-border bg-muted/35 text-muted-foreground group-hover/tab:text-foreground"
                 )}
               >
                 <Icon className="h-4 w-4" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className={cn("flex items-center gap-1.5 text-[10px] font-semibold", active ? "text-emerald-200" : "text-slate-400")}>
+                <span className={cn("flex items-center gap-1.5 text-[10px] font-semibold", active ? "text-[hsl(var(--status-success-foreground))]" : "text-muted-foreground")}>
                   <span className="truncate">{tab.label}</span>
                   <span className={cn("h-1 w-1 shrink-0 rounded-full", taskCardTabStatusDotClassName(tab.statusLabel))} />
                 </span>
-                <span className="mt-0.5 block truncate text-[10px] font-semibold leading-4 text-slate-100">
+                <span className="mt-0.5 block truncate text-[10px] font-semibold leading-4 text-foreground">
                   {tab.title}
                 </span>
               </span>
               <span
                 className={cn(
                   "absolute inset-x-2.5 bottom-0 h-0.5 rounded-full transition-all duration-200",
-                  active ? "bg-emerald-300 shadow-[0_0_14px_rgba(52,211,153,0.75)]" : "bg-transparent"
+                  active ? "bg-[hsl(var(--status-success))] shadow-[0_0_14px_hsl(var(--status-success)/0.30)]" : "bg-transparent"
                 )}
               />
             </button>
@@ -655,7 +629,7 @@ function TaskCardTabs({
         type="button"
         aria-label="Focus follow-up composer"
         title="Focus follow-up composer"
-        className="mb-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] border border-white/[0.08] bg-white/[0.045] text-slate-200 outline-none transition-all duration-200 hover:border-cyan-200/22 hover:bg-cyan-300/[0.08] hover:text-cyan-100 focus-visible:ring-2 focus-visible:ring-cyan-200/45"
+        className="mb-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-card/75 text-muted-foreground outline-none transition-all duration-200 hover:border-primary/20 hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50"
         onClick={onAdd}
       >
         <Plus className="h-[18px] w-[18px]" />
@@ -670,7 +644,7 @@ function taskCardTabStatusDotClassName(statusLabel: string) {
       return "bg-emerald-300";
     case "running":
     case "queued":
-      return "bg-cyan-300";
+      return "bg-primary";
     case "stalled":
       return "bg-amber-300";
     case "cancelled":
@@ -714,40 +688,40 @@ function TaskInspector({
         : task.progress;
   return (
     <InspectorPanelFrame title="Task Details">
-      <h2 className="text-base font-semibold text-white">{displayTitle}</h2>
+      <h2 className="text-base font-semibold text-foreground">{displayTitle}</h2>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <StatusBadge label={displayStatusLabel} tone={displayStatusTone} />
-        {activeFollowUp ? <span className="rounded-full bg-cyan-300/10 px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-cyan-100">Follow-up</span> : null}
-        <span className="font-mono text-[0.68rem] text-slate-500">ID: {task.id.slice(0, 18)}</span>
+        {activeFollowUp ? <span className="rounded-full bg-primary/10 px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-primary">Follow-up</span> : null}
+        <span className="font-mono text-[0.68rem] text-muted-foreground">ID: {task.id.slice(0, 18)}</span>
       </div>
       <SectionCard title="Assigned Agent" className="mt-3">
         <div className="flex items-center justify-between gap-2 p-2.5">
           <div className="min-w-0">
-            <p className="truncate text-xs font-semibold text-white">{task.agentName}</p>
-            <p className="mt-1 text-[0.68rem] text-slate-400">{task.category} work item</p>
+            <p className="truncate text-xs font-semibold text-foreground">{task.agentName}</p>
+            <p className="mt-1 text-[0.68rem] text-muted-foreground">{task.category} work item</p>
           </div>
           <Button variant="secondary" size="sm" className="h-7 rounded-[8px] px-2 text-[0.7rem]" disabled title="Task-to-agent messaging is not exposed from this inspector. Use the Agents page chat for direct messages.">Message</Button>
         </div>
       </SectionCard>
       <div className="mt-3 space-y-3">
         <div>
-          <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-slate-500">Objective</p>
-          <p className="mt-1.5 text-xs leading-5 text-slate-300">{displayObjective}</p>
+          <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Objective</p>
+          <p className="mt-1.5 text-xs leading-5 text-foreground/80">{displayObjective}</p>
         </div>
         <div>
-          <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-slate-500">Description</p>
-          <p className="mt-1.5 whitespace-pre-wrap text-xs leading-5 text-slate-300">{displayDescription}</p>
+          <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Description</p>
+          <p className="mt-1.5 whitespace-pre-wrap text-xs leading-5 text-foreground/80">{displayDescription}</p>
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 rounded-[10px] border border-white/[0.08] bg-white/[0.03] p-2.5">
+      <div className="mt-3 grid grid-cols-3 gap-2 rounded-[10px] border border-border bg-muted/35 p-2.5">
         <MetricMini label="Status" value={displayStatusLabel} />
         <MetricMini label="Priority" value={task.priority} />
         <MetricMini label="Due" value={task.dueLabel} />
       </div>
       <div className="mt-3">
         <div className="mb-1.5 flex justify-between text-xs">
-          <span className="text-slate-400">Progress</span>
-          <span className="text-blue-300">{displayProgress}%</span>
+          <span className="text-muted-foreground">Progress</span>
+          <span className="text-primary">{displayProgress}%</span>
         </div>
         <ProgressBar value={displayProgress} />
       </div>
@@ -764,14 +738,14 @@ function TaskInspector({
           }}
         />
       ) : null}
-      <div className="mt-4 rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3">
+      <div className="mt-4 rounded-[10px] border border-border bg-muted/35 px-3">
         <KeyValue label="Task Key" value={task.source?.key ?? "Not reported"} />
         <KeyValue label="Approvals" value={task.status === "approval" ? "Review required by task warnings" : "Not reported"} />
         <KeyValue label="Outputs / Files" value={`${task.artifactCount} files`} />
         <KeyValue label="Warnings" value={`${task.warningCount} warnings`} />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <Button size="sm" className="h-8 rounded-[9px] bg-blue-500 text-xs text-white hover:bg-blue-400" disabled title="Task details are already shown in this inspector.">Open</Button>
+        <Button size="sm" className="h-8 rounded-[9px] bg-primary text-xs text-white hover:bg-primary/90" disabled title="Task details are already shown in this inspector.">Open</Button>
         <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" disabled title="Pause is not exposed by the current task API.">Pause</Button>
         <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" disabled title="Retry/run-again requires a supported replay contract for the original mission.">Run Again</Button>
         <Button variant="destructive" size="sm" className="h-8 rounded-[9px] text-xs" disabled={!cancelEnabled} title={cancelEnabled ? "Cancel this task through the supported abort action." : "This task status cannot be cancelled."} onClick={onAbort}>Cancel</Button>
@@ -942,11 +916,11 @@ function RecentTasksPanel({ tasks }: { tasks: TaskView[] }) {
       {tasks.length === 0 ? (
         <EmptyState title="No task activity" description="No task records were reported in the current AgentOS snapshot." />
       ) : (
-      <div className="divide-y divide-white/[0.06] px-3">
+      <div className="divide-y divide-border px-3">
         {tasks.map((task) => (
           <div key={task.id} className="flex items-center justify-between gap-2 py-2.5 text-[0.68rem]">
-            <span className="min-w-0 truncate text-slate-300">{task.title}</span>
-            <span className="shrink-0 text-slate-500">{task.statusLabel}</span>
+            <span className="min-w-0 truncate text-foreground/80">{task.title}</span>
+            <span className="shrink-0 text-muted-foreground">{task.statusLabel}</span>
           </div>
         ))}
       </div>

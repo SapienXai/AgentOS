@@ -25,33 +25,33 @@ export type StatusTone = "success" | "info" | "warning" | "danger" | "muted" | "
 export type OperationsSurfaceTheme = "dark" | "light";
 
 export const pageSurface =
-  "border border-white/[0.08] bg-[linear-gradient(180deg,rgba(13,24,42,0.86),rgba(6,12,23,0.82))] shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_20px_64px_rgba(0,0,0,0.30)] backdrop-blur-xl";
+  "border border-border bg-card/95 text-card-foreground shadow-card backdrop-blur-xl";
 
 const toneStyles: Record<StatusTone, string> = {
-  success: "border-emerald-400/25 bg-emerald-400/10 text-emerald-200",
-  info: "border-sky-400/25 bg-sky-400/10 text-sky-200",
-  warning: "border-amber-400/25 bg-amber-400/10 text-amber-100",
-  danger: "border-rose-400/30 bg-rose-400/10 text-rose-100",
-  muted: "border-white/10 bg-white/[0.06] text-slate-300",
-  purple: "border-violet-400/25 bg-violet-400/10 text-violet-200"
+  success: "border-[hsl(var(--status-success)/0.25)] bg-[hsl(var(--status-success)/0.10)] text-[hsl(var(--status-success-foreground))]",
+  info: "border-primary/25 bg-primary/10 text-primary",
+  warning: "border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.10)] text-[hsl(var(--status-warning-foreground))]",
+  danger: "border-[hsl(var(--status-danger)/0.28)] bg-[hsl(var(--status-danger)/0.10)] text-[hsl(var(--status-danger-foreground))]",
+  muted: "border-border bg-muted text-muted-foreground",
+  purple: "border-[hsl(var(--status-purple)/0.25)] bg-[hsl(var(--status-purple)/0.10)] text-[hsl(var(--status-purple-foreground))]"
 };
 
 const dotStyles: Record<StatusTone, string> = {
-  success: "bg-emerald-400",
-  info: "bg-sky-400",
-  warning: "bg-amber-300",
-  danger: "bg-rose-400",
-  muted: "bg-slate-400",
-  purple: "bg-violet-400"
+  success: "bg-[hsl(var(--status-success))]",
+  info: "bg-primary",
+  warning: "bg-[hsl(var(--status-warning))]",
+  danger: "bg-[hsl(var(--status-danger))]",
+  muted: "bg-[hsl(var(--status-muted))]",
+  purple: "bg-[hsl(var(--status-purple))]"
 };
 
 const iconToneStyles: Record<StatusTone, string> = {
-  success: "border-emerald-300/20 bg-emerald-400/10 text-emerald-200 shadow-emerald-500/10",
-  info: "border-sky-300/20 bg-sky-400/10 text-sky-200 shadow-sky-500/10",
-  warning: "border-amber-300/20 bg-amber-400/10 text-amber-100 shadow-amber-500/10",
-  danger: "border-rose-300/20 bg-rose-400/10 text-rose-100 shadow-rose-500/10",
-  muted: "border-white/10 bg-white/[0.065] text-slate-200 shadow-black/20",
-  purple: "border-violet-300/20 bg-violet-400/10 text-violet-200 shadow-violet-500/10"
+  success: "border-[hsl(var(--status-success)/0.20)] bg-[hsl(var(--status-success)/0.10)] text-[hsl(var(--status-success-foreground))]",
+  info: "border-primary/20 bg-primary/10 text-primary",
+  warning: "border-[hsl(var(--status-warning)/0.20)] bg-[hsl(var(--status-warning)/0.10)] text-[hsl(var(--status-warning-foreground))]",
+  danger: "border-[hsl(var(--status-danger)/0.22)] bg-[hsl(var(--status-danger)/0.10)] text-[hsl(var(--status-danger-foreground))]",
+  muted: "border-border bg-muted text-muted-foreground",
+  purple: "border-[hsl(var(--status-purple)/0.20)] bg-[hsl(var(--status-purple)/0.10)] text-[hsl(var(--status-purple-foreground))]"
 };
 
 export function OperationsTopBar({
@@ -74,33 +74,19 @@ export function OperationsTopBar({
   const ThemeIcon = surfaceTheme === "light" ? SunMedium : Moon;
 
   return (
-    <div
-      className={cn(
-        "flex items-center justify-end gap-2 text-[0.58rem] font-semibold uppercase tracking-[0.22em]",
-        surfaceTheme === "light" ? "text-[#7a6252]" : "text-slate-400"
-      )}
-    >
+    <div className="flex items-center justify-end gap-2 text-[0.58rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
       <span className="hidden sm:inline">OpenClaw</span>
-      <span className={cn("hidden font-mono sm:inline", surfaceTheme === "light" ? "text-[#8f725f]" : "text-slate-500")}>
+      <span className="hidden font-mono text-muted-foreground/80 sm:inline">
         v{version}
       </span>
       <span
         className={cn(
           "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 tracking-[0.16em]",
-          surfaceTheme === "light"
-            ? online
-              ? "border-emerald-600/25 bg-emerald-50 text-emerald-700"
-              : "border-amber-600/25 bg-amber-50 text-amber-700"
-            : online
-              ? "border-emerald-300/18 bg-emerald-400/10 text-emerald-200"
-              : "border-amber-300/18 bg-amber-400/10 text-amber-100"
+          online ? toneStyles.success : toneStyles.warning
         )}
       >
         <span
-          className={cn(
-            "h-1.5 w-1.5 rounded-full",
-            online ? (surfaceTheme === "light" ? "bg-emerald-500" : "bg-emerald-400") : "bg-amber-400"
-          )}
+          className={cn("h-1.5 w-1.5 rounded-full", online ? dotStyles.success : dotStyles.warning)}
         />
         {label}
       </span>
@@ -122,8 +108,7 @@ export function PageHeader({
   primaryAction,
   secondaryAction,
   actions,
-  children,
-  surfaceTheme = "dark"
+  children
 }: {
   title: string;
   subtitle: string;
@@ -137,18 +122,15 @@ export function PageHeader({
   const SecondaryIcon = secondaryAction?.icon;
 
   return (
-    <header className={cn("border-b pb-4", surfaceTheme === "light" ? "border-[#e3d1c2]" : "border-white/[0.07]")}>
+    <header className="border-b border-border pb-4">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
         <div className="min-w-0">
           <h1
-            className={cn(
-              "font-display text-[1.48rem] font-semibold leading-tight tracking-normal",
-              surfaceTheme === "light" ? "text-[#2f251f]" : "text-white"
-            )}
+            className="font-display text-[1.48rem] font-semibold leading-tight tracking-normal text-foreground"
           >
             {title}
           </h1>
-          <p className={cn("mt-1.5 max-w-3xl text-[0.78rem] leading-5", surfaceTheme === "light" ? "text-[#6d5647]" : "text-slate-300")}>
+          <p className="mt-1.5 max-w-3xl text-[0.78rem] leading-5 text-muted-foreground">
             {subtitle}
           </p>
         </div>
@@ -159,19 +141,7 @@ export function PageHeader({
                 <Button
                   variant="secondary"
                   size="sm"
-                  className={cn(
-                    "h-8 rounded-[10px] px-3 text-xs",
-                    surfaceTheme === "light" && "border-[#e3d3c5] bg-white/85 !text-[#4c3a2e] hover:bg-[#fff8f2] hover:!text-[#4c3a2e]"
-                  )}
-                  style={
-                    surfaceTheme === "light"
-                      ? {
-                          backgroundColor: "rgba(255, 255, 255, 0.85)",
-                          borderColor: "#e3d3c5",
-                          color: "#4c3a2e"
-                        }
-                      : undefined
-                  }
+                  className="h-8 rounded-lg px-3 text-xs"
                   onClick={secondaryAction.onClick}
                 >
                   {SecondaryIcon ? <SecondaryIcon className="mr-1.5 h-3.5 w-3.5" /> : null}
@@ -181,21 +151,7 @@ export function PageHeader({
               {primaryAction ? (
                 <Button
                   size="sm"
-                  className={cn(
-                    "h-8 rounded-[10px] px-3 text-xs text-white",
-                    surfaceTheme === "light"
-                      ? "bg-[#5c4437] shadow-[#5c4437]/18 hover:bg-[#4d382d]"
-                      : "bg-blue-500 shadow-blue-500/20 hover:bg-blue-400"
-                  )}
-                  style={
-                    surfaceTheme === "light"
-                      ? {
-                          backgroundColor: "#5c4437",
-                          boxShadow: "0 8px 18px rgba(92, 68, 55, 0.18)",
-                          color: "#ffffff"
-                        }
-                      : undefined
-                  }
+                  className="h-8 rounded-lg px-3 text-xs"
                   onClick={primaryAction.onClick}
                   disabled={primaryAction.disabled}
                   title={primaryAction.title}
@@ -227,16 +183,16 @@ export function StatCard({
   tone?: StatusTone;
 }) {
   return (
-    <div className={cn("flex min-h-[72px] items-center gap-3 rounded-[12px] p-3", pageSurface)}>
-      <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] border shadow-lg", iconToneStyles[tone])}>
+    <div className={cn("flex min-h-[72px] items-center gap-3 rounded-lg p-3", pageSurface)}>
+      <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border shadow-sm", iconToneStyles[tone])}>
         <Icon className="h-4 w-4" />
       </span>
       <span className="min-w-0">
-        <span className="block text-[0.55rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+        <span className="block text-[0.55rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           {label}
         </span>
-        <span className="mt-1 block truncate text-[1.05rem] font-semibold leading-none text-white">{value}</span>
-        <span className="mt-1 block truncate text-[0.63rem] text-slate-400">{detail}</span>
+        <span className="mt-1 block truncate text-[1.05rem] font-semibold leading-none text-foreground">{value}</span>
+        <span className="mt-1 block truncate text-[0.63rem] text-muted-foreground">{detail}</span>
       </span>
     </div>
   );
@@ -258,8 +214,7 @@ export function SearchToolbar({
   onSearchChange,
   searchPlaceholder,
   children,
-  right,
-  surfaceTheme = "dark"
+  right
 }: {
   search: string;
   onSearchChange: (value: string) => void;
@@ -273,38 +228,16 @@ export function SearchToolbar({
       <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative min-w-[220px] flex-1">
           <Search
-            className={cn(
-              "pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2",
-              surfaceTheme === "light" ? "text-[#8f725f]" : "text-slate-500"
-            )}
+            className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
           />
           <Input
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={searchPlaceholder}
-            className={cn(
-              "h-8 rounded-[10px] pl-8 pr-11 text-[0.74rem]",
-              surfaceTheme === "light"
-                ? "border-[#e3d3c5] bg-white/85 !text-[#3f2f24] placeholder:!text-[#8f725f]"
-                : "border-white/[0.09] bg-slate-950/42 text-white placeholder:text-slate-500"
-            )}
-            style={
-              surfaceTheme === "light"
-                ? {
-                    backgroundColor: "rgba(255, 255, 255, 0.85)",
-                    borderColor: "#e3d3c5",
-                    color: "#3f2f24"
-                  }
-                : undefined
-            }
+            className="h-8 rounded-lg bg-card/80 pl-8 pr-11 text-[0.74rem]"
           />
           <span
-            className={cn(
-              "pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[0.56rem] sm:flex",
-              surfaceTheme === "light"
-                ? "border-[#e4d3c5] bg-[#fff8f2] text-[#8f725f]"
-                : "border-white/[0.08] bg-white/[0.04] text-slate-500"
-            )}
+            className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 items-center gap-1 rounded-md border border-border bg-muted px-1.5 py-0.5 font-mono text-[0.56rem] text-muted-foreground sm:flex"
           >
             <Command className="h-2.5 w-2.5" /> K
           </span>
@@ -332,8 +265,7 @@ export function ToolbarButton({
   active,
   onClick,
   disabled,
-  title,
-  surfaceTheme = "dark"
+  title
 }: {
   icon?: LucideIcon;
   label: string;
@@ -350,45 +282,18 @@ export function ToolbarButton({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      style={
-        surfaceTheme === "light"
-          ? disabled
-            ? {
-                backgroundColor: "#f7eee7",
-                borderColor: "#eadfd6",
-                color: "#b39a86"
-              }
-            : active
-              ? {
-                  backgroundColor: "#f4dfcf",
-                  borderColor: "rgba(200, 148, 111, 0.35)",
-                  color: "#6c432e"
-                }
-              : {
-                  backgroundColor: "rgba(255, 255, 255, 0.8)",
-                  borderColor: "#e3d3c5",
-                  color: "#4c3a2e"
-                }
-          : undefined
-      }
       className={cn(
-        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border px-2.5 text-[0.74rem] font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
-        surfaceTheme === "light"
-          ? disabled
-            ? "cursor-not-allowed !border-[#eadfd6] !bg-[#f7eee7] !text-[#b39a86]"
-            : active
-              ? "!border-[#c8946f]/35 !bg-[#f4dfcf] !text-[#6c432e]"
-              : "!border-[#e3d3c5] !bg-white/80 !text-[#4c3a2e] hover:!border-[#d2b9a5] hover:!bg-[#fff8f2] hover:!text-[#2f251f]"
-          : disabled
-            ? "cursor-not-allowed border-white/[0.06] bg-white/[0.025] text-slate-600"
-            : active
-              ? "border-sky-300/30 bg-sky-400/14 text-sky-100"
-              : "border-white/[0.09] bg-white/[0.045] text-slate-300 hover:border-white/[0.14] hover:bg-white/[0.075] hover:text-white"
+        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[0.74rem] font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        disabled
+          ? "cursor-not-allowed border-border bg-muted/75 text-muted-foreground/60"
+          : active
+            ? "border-primary/30 bg-primary/10 text-primary shadow-[0_0_0_1px_hsl(var(--primary)/0.06)]"
+            : "border-border bg-card/75 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       )}
     >
       <Icon className="h-3.5 w-3.5" />
       {label}
-      {chevron ? <ChevronDown className={cn("h-3 w-3", surfaceTheme === "light" ? "text-[#9f8069]" : "text-slate-500")} /> : null}
+      {chevron ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : null}
     </button>
   );
 }
@@ -396,8 +301,7 @@ export function ToolbarButton({
 export function ViewToggle({
   value,
   onChange,
-  labels = ["Grid", "List"],
-  surfaceTheme = "dark"
+  labels = ["Grid", "List"]
 }: {
   value: "grid" | "list" | "board";
   onChange: (value: "grid" | "list") => void;
@@ -406,19 +310,15 @@ export function ViewToggle({
 }) {
   return (
     <div
-      className={cn(
-        "inline-flex h-8 items-center rounded-[10px] border p-0.5",
-        surfaceTheme === "light" ? "border-[#e3d3c5] bg-white/80" : "border-white/[0.09] bg-white/[0.045]"
-      )}
+      className="inline-flex h-8 items-center rounded-lg border border-border bg-card/75 p-0.5"
     >
       <button
         type="button"
         aria-label={labels[0]}
         onClick={() => onChange("grid")}
         className={cn(
-          "inline-flex h-6 w-6 items-center justify-center rounded-[8px] transition-colors",
-          surfaceTheme === "light" ? "text-[#8f725f] hover:text-[#3f2f24]" : "text-slate-400 hover:text-white",
-          (value === "grid" || value === "board") && (surfaceTheme === "light" ? "bg-[#f4dfcf] text-[#6c432e]" : "bg-sky-400/14 text-sky-200")
+          "inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground",
+          (value === "grid" || value === "board") && "bg-primary/10 text-primary"
         )}
       >
         <LayoutGrid className="h-3.5 w-3.5" />
@@ -428,9 +328,8 @@ export function ViewToggle({
         aria-label={labels[1]}
         onClick={() => onChange("list")}
         className={cn(
-          "inline-flex h-6 w-6 items-center justify-center rounded-[8px] transition-colors",
-          surfaceTheme === "light" ? "text-[#8f725f] hover:text-[#3f2f24]" : "text-slate-400 hover:text-white",
-          value === "list" && (surfaceTheme === "light" ? "bg-[#f4dfcf] text-[#6c432e]" : "bg-sky-400/14 text-sky-200")
+          "inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground",
+          value === "list" && "bg-primary/10 text-primary"
         )}
       >
         <List className="h-3.5 w-3.5" />
@@ -444,8 +343,7 @@ export function FilterChip({
   count,
   active,
   tone = "info",
-  onClick,
-  surfaceTheme = "dark"
+  onClick
 }: {
   label: string;
   count?: number;
@@ -458,39 +356,15 @@ export function FilterChip({
     <button
       type="button"
       onClick={onClick}
-      style={
-        surfaceTheme === "light"
-          ? active
-            ? {
-                backgroundColor: "#f4dfcf",
-                borderColor: "rgba(200, 148, 111, 0.35)",
-                color: "#5c4437"
-              }
-            : {
-                backgroundColor: "rgba(255, 255, 255, 0.76)",
-                borderColor: "#e3d3c5",
-                color: "#5f493b"
-              }
-          : undefined
-      }
       className={cn(
-        "inline-flex h-7 items-center gap-1.5 rounded-[9px] border px-2.5 text-[0.72rem] font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
-        surfaceTheme === "light"
-          ? active
-            ? "!border-[#c8946f]/35 !bg-[#f4dfcf] !text-[#5c4437]"
-            : "!border-[#e3d3c5] !bg-white/76 !text-[#5f493b] hover:!bg-[#fff8f2] hover:!text-[#2f251f]"
-          : active
-            ? toneStyles[tone]
-            : "border-white/[0.08] bg-white/[0.035] text-slate-300 hover:bg-white/[0.07] hover:text-white"
+        "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[0.72rem] font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        active ? toneStyles[tone] : "border-border bg-card/75 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       )}
     >
       {label}
       {typeof count === "number" ? (
         <span
-          className={cn(
-            "rounded-full px-1.5 py-0.5 text-[0.58rem]",
-            surfaceTheme === "light" ? "bg-[#ead8c9] text-[#5c4437]" : "bg-white/[0.08] text-slate-300"
-          )}
+          className="rounded-full bg-muted px-1.5 py-0.5 text-[0.58rem] text-muted-foreground"
         >
           {count}
         </span>
@@ -511,10 +385,10 @@ export function SectionCard({
   className?: string;
 }) {
   return (
-    <section className={cn("rounded-[12px]", pageSurface, className)}>
+    <section className={cn("rounded-lg", pageSurface, className)}>
       {title || action ? (
-        <div className="flex min-h-10 items-center justify-between gap-2 border-b border-white/[0.07] px-3 py-2">
-          {title ? <h2 className="text-[0.82rem] font-semibold text-white">{title}</h2> : <span />}
+        <div className="flex min-h-10 items-center justify-between gap-2 border-b border-border px-3 py-2">
+          {title ? <h2 className="text-[0.82rem] font-semibold text-foreground">{title}</h2> : <span />}
           {action}
         </div>
       ) : null}
@@ -537,14 +411,14 @@ export function InspectorPanelFrame({
   return (
     <aside
       className={cn(
-        "sticky top-4 hidden max-h-[calc(100dvh-32px)] min-h-[calc(100dvh-32px)] overflow-hidden rounded-[12px] xl:block",
+        "sticky top-4 hidden max-h-[calc(100dvh-32px)] min-h-[calc(100dvh-32px)] overflow-hidden rounded-lg xl:block",
         pageSurface,
         className
       )}
     >
       {title ? (
-        <div className="flex h-10 items-center justify-between border-b border-white/[0.08] px-3">
-          <h2 className="text-xs font-semibold text-white">{title}</h2>
+        <div className="flex h-10 items-center justify-between border-b border-border px-3">
+          <h2 className="text-xs font-semibold text-foreground">{title}</h2>
           {onClose ? <IconButton ariaLabel="Close details" icon={MoreHorizontal} onClick={onClose} /> : null}
         </div>
       ) : null}
@@ -609,9 +483,9 @@ export function EntityIcon({
 
 export function KeyValue({ label, value, action }: { label: string; value: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-2 border-b border-white/[0.07] py-2 last:border-b-0">
-      <span className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</span>
-      <span className="min-w-0 text-right text-[0.74rem] font-medium text-slate-100">
+    <div className="flex items-start justify-between gap-2 border-b border-border py-2 last:border-b-0">
+      <span className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</span>
+      <span className="min-w-0 text-right text-[0.74rem] font-medium text-foreground">
         {value}
         {action ? <span className="ml-2">{action}</span> : null}
       </span>
@@ -630,15 +504,15 @@ export function ProgressBar({
 }) {
   const fillClass: Record<StatusTone, string> = {
     success: "bg-emerald-400",
-    info: "bg-blue-400",
+    info: "bg-primary",
     warning: "bg-amber-300",
-    danger: "bg-rose-400",
+    danger: "bg-[hsl(var(--status-danger))]",
     muted: "bg-slate-400",
     purple: "bg-violet-400"
   };
 
   return (
-    <div className={cn("h-1.5 overflow-hidden rounded-full bg-white/[0.08]", className)}>
+    <div className={cn("h-1.5 overflow-hidden rounded-full bg-muted", className)}>
       <div className={cn("h-full rounded-full", fillClass[tone])} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
     </div>
   );
@@ -651,8 +525,7 @@ export function IconButton({
   dot,
   onClick,
   disabled,
-  title,
-  surfaceTheme = "dark"
+  title
 }: {
   ariaLabel: string;
   icon: LucideIcon;
@@ -671,22 +544,16 @@ export function IconButton({
       disabled={disabled}
       title={title}
       className={cn(
-        "relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
-        surfaceTheme === "light"
-          ? disabled
-            ? "cursor-not-allowed border-[#e6d7c9] bg-[#f6eee5] text-[#b39a86]"
-            : active
-              ? "border-[#c8946f]/35 bg-[#f4dfcf] text-[#6c432e]"
-              : "border-[#e4d3c5] bg-white/70 text-[#7b6251] hover:border-[#d2b9a5] hover:bg-[#fff8f2] hover:text-[#3f2f24]"
-          : disabled
-            ? "cursor-not-allowed border-white/[0.06] bg-white/[0.025] text-slate-600"
-            : active
-              ? "border-sky-300/30 bg-sky-400/14 text-sky-200"
-              : "border-white/[0.08] bg-white/[0.035] text-slate-400 hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white"
+        "relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        disabled
+          ? "cursor-not-allowed border-border bg-muted/75 text-muted-foreground/60"
+          : active
+            ? "border-primary/30 bg-primary/10 text-primary"
+            : "border-border bg-card/75 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       )}
     >
       <Icon className="h-3.5 w-3.5" />
-      {dot ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400" /> : null}
+      {dot ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[hsl(var(--status-success))]" /> : null}
     </button>
   );
 }
@@ -703,13 +570,13 @@ export function EmptyState({
   description: string;
 }) {
   return (
-    <div className="flex min-h-[170px] flex-col items-center justify-center rounded-[12px] border border-dashed border-white/[0.10] bg-white/[0.025] p-6 text-center">
-      <p className="text-xs font-semibold text-white">{title}</p>
-      <p className="mt-2 max-w-md text-xs leading-5 text-slate-400">{description}</p>
+    <div className="flex min-h-[170px] flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/50 p-6 text-center">
+      <p className="text-xs font-semibold text-foreground">{title}</p>
+      <p className="mt-2 max-w-md text-xs leading-5 text-muted-foreground">{description}</p>
     </div>
   );
 }
 
 export function MiniBadge({ children }: { children: ReactNode }) {
-  return <Badge variant="muted" className="border-white/[0.08] bg-white/[0.055] px-1.5 py-0 text-[0.56rem] tracking-normal text-slate-300">{children}</Badge>;
+  return <Badge variant="muted" className="px-1.5 py-0 text-[0.56rem] tracking-normal">{children}</Badge>;
 }

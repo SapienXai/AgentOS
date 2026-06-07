@@ -96,18 +96,18 @@ export function formatIntegrationSortLabel(sort: IntegrationSortMode) {
 
 export function statusIconClassName(status: IntegrationStatus) {
   if (status === "connected") {
-    return "text-emerald-300";
+    return "text-[hsl(var(--status-success-foreground))]";
   }
 
   if (status === "failed") {
-    return "text-red-300";
+    return "text-[hsl(var(--status-danger-foreground))]";
   }
 
   if (status === "pending-setup" || status === "missing-credentials" || status === "needs-authentication") {
-    return "text-amber-300";
+    return "text-[hsl(var(--status-warning-foreground))]";
   }
 
-  return "text-slate-400";
+  return "text-muted-foreground";
 }
 
 export function formatManagedBy(value: IntegrationView["managedBy"]) {
@@ -130,8 +130,8 @@ export function readClientError(error: unknown) {
 export function MetricMini({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
-      <p className="truncate text-[0.56rem] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className="mt-1 truncate text-xs font-semibold text-white">{value}</p>
+      <p className="truncate text-[0.56rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+      <p className="mt-1 truncate text-xs font-semibold text-foreground">{value}</p>
     </div>
   );
 }
@@ -150,15 +150,15 @@ export function MetricTile({
   tone: "info" | "success" | "purple";
 }) {
   return (
-    <div className="rounded-[10px] border border-white/[0.08] bg-white/[0.03] p-2.5">
+    <div className="rounded-[10px] border border-border bg-muted/35 p-2.5">
       <div className="flex items-center gap-2.5">
         <EntityIcon icon={Icon} label={label} tone={tone} />
         <span className="min-w-0">
-          <span className="block text-base font-semibold text-white">{value}</span>
-          <span className="block truncate text-[0.68rem] text-slate-400">{label}</span>
+          <span className="block text-base font-semibold text-foreground">{value}</span>
+          <span className="block truncate text-[0.68rem] text-muted-foreground">{label}</span>
         </span>
       </div>
-      <p className="mt-1.5 text-[0.68rem] text-slate-500">{detail}</p>
+      <p className="mt-1.5 text-[0.68rem] text-muted-foreground">{detail}</p>
     </div>
   );
 }
@@ -173,9 +173,9 @@ export function UnsupportedPanel({
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-[12px] border border-white/[0.08] bg-white/[0.03] p-3", className)}>
-      <p className="text-xs font-semibold text-white">{title}</p>
-      <p className="mt-2 text-xs leading-5 text-slate-400">{description}</p>
+    <div className={cn("rounded-[12px] border border-border bg-muted/35 p-3", className)}>
+      <p className="text-xs font-semibold text-foreground">{title}</p>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">{description}</p>
     </div>
   );
 }
@@ -243,19 +243,19 @@ export function MissionDispatchDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl rounded-[18px] border-white/[0.10] bg-[#08111f]/95 p-4">
+      <DialogContent className="max-w-xl rounded-[18px] p-4">
         <DialogHeader>
           <DialogTitle>{agent ? `Run task with ${agent.name}` : "Create Task"}</DialogTitle>
           <DialogDescription>
             Submits through the existing AgentOS mission dispatch flow.
           </DialogDescription>
         </DialogHeader>
-        {error ? <div className="rounded-[10px] border border-rose-300/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-100">{error}</div> : null}
+        {error ? <div className="rounded-[10px] border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div> : null}
         <Textarea
           value={mission}
           onChange={(event) => setMission(event.target.value)}
           placeholder="Describe the task to run..."
-          className="min-h-36 rounded-[12px] border-white/[0.10] bg-slate-950/50 text-sm text-slate-100"
+          className="min-h-36 rounded-[12px] text-sm"
         />
         <DialogFooter>
           <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => onOpenChange(false)}>
@@ -263,7 +263,7 @@ export function MissionDispatchDialog({
           </Button>
           <Button
             size="sm"
-            className="h-8 rounded-[9px] bg-blue-500 text-xs text-white hover:bg-blue-400"
+            className="h-8 rounded-[9px] bg-primary text-xs text-white hover:bg-primary/90"
             disabled={submitting || !mission.trim()}
             onClick={() => void submitMission()}
           >

@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BrainCircuit, Check, Database, FilePlus2, FileText, Filter, Folder, HardDrive, Import, ListFilter, Plus, SlidersHorizontal, SquareArrowOutUpRight, Upload } from "lucide-react";
+import { BrainCircuit, Check, Database, Eye, FilePlus2, FileText, Filter, Folder, FolderOpen, HardDrive, Import, ListFilter, Plus, SlidersHorizontal, SquareArrowOutUpRight, Upload, type LucideIcon } from "lucide-react";
 
 import { WorkspaceContextFilesDialog } from "@/components/mission-control/workspace-context-files-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type { WorkspaceManagedFile, WorkspaceManagedFileListResponse, WorkspaceManagedFileReadResponse } from "@/lib/openclaw/workspace-file-types";
@@ -159,19 +160,7 @@ export function FilesPageContent({
                 <Button
                   variant="secondary"
                   size="sm"
-                  className={cn(
-                    "h-8 rounded-[10px] px-3 text-xs",
-                    surfaceTheme === "light" && "border-[#e3d3c5] bg-white/85 !text-[#4c3a2e] hover:bg-[#fff8f2] hover:!text-[#4c3a2e]"
-                  )}
-                  style={
-                    surfaceTheme === "light"
-                      ? {
-                          backgroundColor: "rgba(255, 255, 255, 0.85)",
-                          borderColor: "#e3d3c5",
-                          color: "#4c3a2e"
-                        }
-                      : undefined
-                  }
+                  className="h-8 rounded-lg px-3 text-xs"
                   disabled
                   title="Runtime artifact import is not exposed by the current workspace file API."
                 >
@@ -181,19 +170,7 @@ export function FilesPageContent({
                 <Button
                   variant="secondary"
                   size="sm"
-                  className={cn(
-                    "h-8 rounded-[10px] px-3 text-xs",
-                    surfaceTheme === "light" && "border-[#e3d3c5] bg-white/85 !text-[#4c3a2e] hover:bg-[#fff8f2] hover:!text-[#4c3a2e]"
-                  )}
-                  style={
-                    surfaceTheme === "light"
-                      ? {
-                          backgroundColor: "rgba(255, 255, 255, 0.85)",
-                          borderColor: "#e3d3c5",
-                          color: "#4c3a2e"
-                        }
-                      : undefined
-                  }
+                  className="h-8 rounded-lg px-3 text-xs"
                   disabled
                   title="Uploads are not exposed by the current workspace file API."
                 >
@@ -202,21 +179,7 @@ export function FilesPageContent({
                 </Button>
                 <Button
                   size="sm"
-                  className={cn(
-                    "h-8 rounded-[10px] px-3 text-xs text-white",
-                    surfaceTheme === "light"
-                      ? "bg-[#5c4437] shadow-[#5c4437]/18 hover:bg-[#4d382d]"
-                      : "bg-blue-500 shadow-blue-500/20 hover:bg-blue-400"
-                  )}
-                  style={
-                    surfaceTheme === "light"
-                      ? {
-                          backgroundColor: "#5c4437",
-                          boxShadow: "0 8px 18px rgba(92, 68, 55, 0.18)",
-                          color: "#ffffff"
-                        }
-                      : undefined
-                  }
+                  className="h-8 rounded-lg px-3 text-xs"
                   disabled={!activeWorkspaceId}
                   title={activeWorkspaceId ? "Open the existing workspace file reader/editor." : "Select a workspace to open workspace files."}
                   onClick={() => setWorkspaceFilesOpen(true)}
@@ -249,11 +212,11 @@ export function FilesPageContent({
           </SearchToolbar>
 
           {fileError ? (
-            <div className="rounded-[10px] border border-amber-300/20 bg-amber-400/10 px-3 py-2.5 text-xs text-amber-100">{fileError}</div>
+            <div className="rounded-[10px] border border-[hsl(var(--status-warning)/0.24)] bg-[hsl(var(--status-warning)/0.10)] px-3 py-2.5 text-xs text-[hsl(var(--status-warning-foreground))]">{fileError}</div>
           ) : null}
 
           <div className="grid gap-2.5 xl:grid-cols-[180px_minmax(0,1fr)]">
-            <SectionCard title="Collections" action={<button className="text-slate-500" disabled title="Custom collections are not exposed by the workspace file API."><Plus className="h-3.5 w-3.5" /></button>}>
+            <SectionCard title="Collections" action={<button className="text-muted-foreground" disabled title="Custom collections are not exposed by the workspace file API."><Plus className="h-3.5 w-3.5" /></button>}>
               <div className="flex flex-col gap-1 p-2.5">
                 {collectionItems.map((item) => {
                   const Icon = fileCollectionIcons[item] ?? Folder;
@@ -263,19 +226,19 @@ export function FilesPageContent({
                       type="button"
                       key={item}
                       onClick={() => setCollection(item)}
-                      className={cn("flex items-center justify-between gap-2 rounded-[9px] px-2.5 py-2 text-left text-xs transition-colors", collection === item ? "bg-blue-500/[0.14] text-blue-200" : "text-slate-300 hover:bg-white/[0.05] hover:text-white")}
+                      className={cn("flex items-center justify-between gap-2 rounded-[9px] px-2.5 py-2 text-left text-xs transition-colors", collection === item ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}
                     >
                       <span className="flex min-w-0 items-center gap-2">
                         <Icon className="h-3.5 w-3.5 shrink-0" />
                         <span className="truncate">{item}</span>
                       </span>
-                      <span className="text-[0.68rem] text-slate-500">{count}</span>
+                      <span className="text-[0.68rem] text-muted-foreground">{count}</span>
                     </button>
                   );
                 })}
               </div>
-              <div className="mt-auto border-t border-white/[0.07] p-3">
-                <div className="mb-2 flex items-center justify-between text-[0.68rem] text-slate-400">
+              <div className="mt-auto border-t border-border p-3">
+                <div className="mb-2 flex items-center justify-between text-[0.68rem] text-muted-foreground">
                   <span>Storage</span>
                   <span>{fileViews.some((file) => file.sizeBytes != null) ? "Reported" : "Unknown"}</span>
                 </div>
@@ -286,7 +249,7 @@ export function FilesPageContent({
 
             <SectionCard title={`Files (${fileViews.length})`}>
               {isLoadingFiles ? (
-                <div className="p-6 text-center text-xs text-slate-400">Loading workspace files...</div>
+                <div className="p-6 text-center text-xs text-muted-foreground">Loading workspace files...</div>
               ) : filteredFiles.length === 0 ? (
                 <EmptyState title="No files found" description={fileViews.length === 0 ? "No managed workspace files were returned by the current workspace file API." : "Clear search or collection filters to inspect another file set."} />
               ) : view === "list" ? (
@@ -294,12 +257,12 @@ export function FilesPageContent({
               ) : (
                 <div className="grid gap-2.5 p-3 lg:grid-cols-2 2xl:grid-cols-3">
                   {filteredFiles.map((file) => (
-                    <button key={file.id} type="button" onClick={() => setSelectedFileId(file.id)} className={cn("rounded-[10px] border p-3 text-left hover:bg-white/[0.05]", file.id === selectedFile?.id ? "border-blue-400/60 bg-blue-500/[0.08]" : "border-white/[0.08] bg-white/[0.03]")}>
+                    <button key={file.id} type="button" onClick={() => setSelectedFileId(file.id)} className={cn("rounded-[10px] border p-3 text-left hover:bg-muted/60", file.id === selectedFile?.id ? "border-primary/60 bg-primary/10" : "border-border bg-card")}>
                       <div className="flex items-start gap-2.5">
                         <EntityIcon icon={file.icon} label={file.name} tone={file.iconTone} />
                         <span className="min-w-0">
-                          <span className="block truncate text-xs font-semibold text-white">{file.name}</span>
-                          <span className="mt-1 block truncate text-[0.68rem] text-slate-500">{file.path}</span>
+                          <span className="block truncate text-xs font-semibold text-foreground">{file.name}</span>
+                          <span className="mt-1 block truncate text-[0.68rem] text-muted-foreground">{file.path}</span>
                         </span>
                       </div>
                       <div className="mt-2.5 flex flex-wrap gap-1.5">{file.tags.map((tag) => <MiniBadge key={tag}>{tag}</MiniBadge>)}</div>
@@ -307,7 +270,7 @@ export function FilesPageContent({
                   ))}
                 </div>
               )}
-              <div className="flex items-center justify-between border-t border-white/[0.07] px-3 py-2.5 text-[0.68rem] text-slate-400">
+              <div className="flex items-center justify-between border-t border-border px-3 py-2.5 text-[0.68rem] text-muted-foreground">
                 <span>Showing {filteredFiles.length} of {fileViews.length} files</span>
                 <span>Workspace managed files only</span>
               </div>
@@ -351,12 +314,11 @@ function FilesTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[700px] text-left text-[0.72rem]">
-        <thead className="border-b border-white/[0.07] text-[0.56rem] uppercase tracking-[0.14em] text-slate-500">
+      <table className="w-full min-w-[660px] text-left text-[0.72rem]">
+        <thead className="border-b border-border text-[0.56rem] uppercase tracking-[0.14em] text-muted-foreground">
           <tr>
-            <th className="w-8 px-3 py-2.5"><span className="block h-3.5 w-3.5 rounded border border-white/[0.14]" /></th>
+            <th className="w-8 px-3 py-2.5"><span className="block h-3.5 w-3.5 rounded border border-border" /></th>
             <th className="px-2 py-2.5 font-semibold">Name</th>
-            <th className="px-2 py-2.5 font-semibold">Type</th>
             <th className="px-2 py-2.5 font-semibold">Last Updated</th>
             <th className="px-2 py-2.5 font-semibold">Owner / Agent</th>
             <th className="px-2 py-2.5 font-semibold">Size</th>
@@ -364,56 +326,43 @@ function FilesTable({
             <th className="px-3 py-2.5 font-semibold">Actions</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-white/[0.06] text-slate-300">
+        <tbody className="divide-y divide-border text-foreground/80">
           {files.map((file) => (
             <tr
               key={file.id}
               onClick={() => onSelect(file.id)}
-              className={cn("cursor-pointer hover:bg-white/[0.035]", file.id === selectedId && "bg-blue-500/[0.10] outline outline-1 outline-blue-400/50")}
+              className={cn("cursor-pointer hover:bg-muted/50", file.id === selectedId && "bg-primary/10 outline outline-1 outline-primary/45")}
             >
-              <td className="px-3 py-2.5"><span className={cn("flex h-3.5 w-3.5 items-center justify-center rounded border", file.id === selectedId ? "border-blue-400 bg-blue-500 text-white" : "border-white/[0.14]")}><Check className="h-2.5 w-2.5" /></span></td>
+              <td className="px-3 py-2.5"><span className={cn("flex h-3.5 w-3.5 items-center justify-center rounded border", file.id === selectedId ? "border-primary bg-primary text-primary-foreground" : "border-border")}><Check className="h-2.5 w-2.5" /></span></td>
               <td className="px-2 py-2.5">
                 <div className="flex items-center gap-2.5">
                   <EntityIcon icon={file.icon} label={file.name} tone={file.iconTone} size="sm" />
                   <span className="min-w-0">
-                    <span className="block truncate font-semibold text-white">{file.name}</span>
-                    <span className="mt-0.5 block truncate text-[0.66rem] text-slate-500">{file.workspaceName} · {file.path}</span>
+                    <span className="block truncate font-semibold text-foreground">{file.name}</span>
+                    <span className="mt-0.5 block truncate text-[0.66rem] text-muted-foreground">{file.workspaceName} · {file.path}</span>
                   </span>
                 </div>
               </td>
-              <td className="px-2 py-2.5"><MiniBadge>{file.type}</MiniBadge></td>
               <td className="px-2 py-2.5">{file.updatedLabel}</td>
               <td className="px-2 py-2.5"><span className="line-clamp-2 max-w-24">{file.owner}</span></td>
               <td className="px-2 py-2.5">{file.sizeLabel}</td>
               <td className="px-2 py-2.5"><div className="flex max-w-28 flex-wrap gap-1">{file.tags.slice(0, 2).map((tag) => <MiniBadge key={tag}>{tag}</MiniBadge>)}</div></td>
               <td className="px-3 py-2.5">
                 <div className="flex items-center gap-1.5">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="h-7 rounded-[8px] px-2 text-[0.7rem]"
+                  <FileActionButton
+                    label="Preview"
                     disabled={!file.source?.exists}
-                    title={file.source?.exists ? "Read this managed workspace file." : "File is not created yet."}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onPreview(file);
-                    }}
-                  >
-                    Preview
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="h-7 rounded-[8px] px-2 text-[0.7rem]"
+                    disabledLabel="File is not created yet."
+                    icon={Eye}
+                    onClick={() => onPreview(file)}
+                  />
+                  <FileActionButton
+                    label="Reveal in Finder"
                     disabled={!file.workspacePath}
-                    title={file.workspacePath ? "Reveal this file in Finder." : "Reveal requires a workspace path."}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onReveal(file);
-                    }}
-                  >
-                    Reveal
-                  </Button>
+                    disabledLabel="Reveal requires a workspace path."
+                    icon={FolderOpen}
+                    onClick={() => onReveal(file)}
+                  />
                 </div>
               </td>
             </tr>
@@ -421,6 +370,50 @@ function FilesTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function FileActionButton({
+  label,
+  disabled,
+  disabledLabel,
+  icon: Icon,
+  onClick
+}: {
+  label: string;
+  disabled: boolean;
+  disabledLabel: string;
+  icon: LucideIcon;
+  onClick: () => void;
+}) {
+  const tooltipLabel = disabled ? disabledLabel : label;
+
+  return (
+    <TooltipProvider delayDuration={120}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">
+            <Button
+              variant="secondary"
+              size="icon"
+              className="h-7 w-7 rounded-[8px]"
+              disabled={disabled}
+              title={tooltipLabel}
+              aria-label={tooltipLabel}
+              onClick={(event) => {
+                event.stopPropagation();
+                onClick();
+              }}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="px-2.5 py-1.5 text-[0.68rem]">
+          {tooltipLabel}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -439,20 +432,20 @@ function FileInspector({
         <div className="flex min-w-0 items-center gap-2.5">
           <EntityIcon icon={file.icon} label={file.name} tone={file.iconTone} size="lg" />
           <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold text-white">{file.name}</h2>
+            <h2 className="truncate text-base font-semibold text-foreground">{file.name}</h2>
             <div className="mt-1.5 flex gap-1.5"><MiniBadge>{file.type}</MiniBadge><MiniBadge>{file.sizeLabel}</MiniBadge></div>
           </div>
         </div>
         <MoreButton />
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2">
-        <Button size="sm" className="h-8 rounded-[9px] bg-blue-500 px-2 text-xs text-white hover:bg-blue-400" onClick={onReveal}><SquareArrowOutUpRight className="mr-1.5 h-3.5 w-3.5" />Open</Button>
+        <Button size="sm" className="h-8 rounded-[9px] bg-primary px-2 text-xs text-primary-foreground hover:bg-primary/90" onClick={onReveal}><SquareArrowOutUpRight className="mr-1.5 h-3.5 w-3.5" />Open</Button>
         <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" disabled={!file.source?.exists} title={file.source?.exists ? "Read this managed workspace file." : "File is not created yet."} onClick={onPreview}>Preview</Button>
         <Button variant="secondary" size="sm" className="h-8 rounded-[9px] px-2 text-xs" disabled title="Additional file actions require backend support.">More</Button>
       </div>
-      <div className="mt-3 border-b border-white/[0.08] px-3 py-2.5 text-xs text-blue-200">Details</div>
+      <div className="mt-3 border-b border-border px-3 py-2.5 text-xs text-primary">Details</div>
       <>
-          <div className="mt-3 rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3">
+          <div className="mt-3 rounded-[10px] border border-border bg-muted/35 px-3">
             <KeyValue label="File Path" value={file.path} />
             <KeyValue label="Type" value={file.type} />
             <KeyValue label="Size" value={file.sizeLabel} />
@@ -462,12 +455,12 @@ function FileInspector({
             <KeyValue label="Workspace API" value={file.source ? "Managed file" : "Not reported"} />
           </div>
           <div className="mt-3">
-            <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-slate-500">Tags</p>
+            <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Tags</p>
             <div className="mt-1.5 flex flex-wrap gap-1.5">{file.tags.map((tag) => <MiniBadge key={tag}>{tag}</MiniBadge>)}</div>
           </div>
           <div className="mt-3">
-            <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-slate-500">Description</p>
-            <p className="mt-1.5 text-xs leading-5 text-slate-300">{file.source?.description ?? "Workspace context file managed by AgentOS and OpenClaw."}</p>
+            <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Description</p>
+            <p className="mt-1.5 text-xs leading-5 text-foreground/80">{file.source?.description ?? "Workspace context file managed by AgentOS and OpenClaw."}</p>
           </div>
         </>
       <SectionCard title="Quick Actions" className="mt-4">
@@ -583,7 +576,7 @@ function FilePreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(82dvh,780px)] max-w-4xl flex-col rounded-[18px] border-white/[0.10] bg-[#08111f]/95 p-4">
+      <DialogContent className="flex h-[min(82dvh,780px)] max-w-4xl flex-col rounded-[18px] p-4">
         <DialogHeader>
           <DialogTitle>{file?.name ?? "Workspace File"}</DialogTitle>
           <DialogDescription>
@@ -591,14 +584,14 @@ function FilePreviewDialog({
           </DialogDescription>
         </DialogHeader>
         {error ? (
-          <div className="rounded-[10px] border border-rose-300/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-100">{error}</div>
+          <div className="rounded-[10px] border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div>
         ) : null}
         <Textarea
           value={content}
           onChange={(event) => setContent(event.target.value)}
           readOnly={loading || saving || !file?.source?.editable}
           placeholder={loading ? "Loading workspace file..." : "File content"}
-          className="min-h-0 flex-1 resize-none rounded-[12px] border-white/[0.10] bg-slate-950/50 font-mono text-xs leading-5 text-slate-100"
+          className="min-h-0 flex-1 resize-none rounded-[12px] font-mono text-xs leading-5"
         />
         <DialogFooter>
           <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => onOpenChange(false)}>
@@ -606,7 +599,7 @@ function FilePreviewDialog({
           </Button>
           <Button
             size="sm"
-            className="h-8 rounded-[9px] bg-blue-500 text-xs text-white hover:bg-blue-400"
+            className="h-8 rounded-[9px] bg-primary text-xs text-white hover:bg-primary/90"
             disabled={!canSave}
             title={file?.source?.editable ? "Save this managed workspace file." : "This managed file is read-only."}
             onClick={() => void saveFile()}

@@ -16,7 +16,6 @@ import {
   ClipboardList,
   Cpu,
   FileText,
-  FolderKanban,
   Gauge,
   Home,
   Inbox,
@@ -400,12 +399,12 @@ export function MissionSidebar({
           onExpandCollapsed={onExpandCollapsed ?? onToggleCollapsed}
         />
       ) : (
-        <aside className="relative flex h-full w-full flex-col overflow-hidden border-r border-white/[0.08] bg-[radial-gradient(circle_at_18%_0%,rgba(56,102,170,0.20),transparent_34%),linear-gradient(180deg,rgba(18,26,41,0.98)_0%,rgba(10,16,27,0.98)_48%,rgba(5,10,18,0.99)_100%)] text-slate-100 shadow-[18px_0_60px_rgba(0,0,0,0.34)]">
+        <aside className="relative flex h-full w-full flex-col overflow-hidden border-r border-border bg-card text-card-foreground shadow-panel">
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.055),transparent_38%),radial-gradient(circle_at_55%_0%,rgba(59,130,246,0.10),transparent_30%)]"
+            className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,hsl(var(--foreground)/0.035),transparent_38%),radial-gradient(circle_at_55%_0%,hsl(var(--primary)/0.10),transparent_30%)]"
           />
-          <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-px bg-white/[0.08]" />
+          <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-px bg-border" />
 
           <div className="relative flex h-full min-h-0 flex-col px-4 py-5">
             <SidebarBrand onToggleCollapsed={onToggleCollapsed} />
@@ -483,9 +482,9 @@ export function MissionSidebar({
                 />
               </div>
 
-              <div className="rounded-[18px] border border-white/10 bg-white/[0.03] px-3.5 py-3">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Agent id</p>
-                <p className="mt-1.5 break-all font-mono text-xs text-slate-300">{agentDeleteTarget.id}</p>
+              <div className="rounded-lg border border-border bg-muted/50 px-3.5 py-3">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Agent id</p>
+                <p className="mt-1.5 break-all font-mono text-xs text-foreground">{agentDeleteTarget.id}</p>
               </div>
 
               <FormField
@@ -540,7 +539,7 @@ export function MissionSidebar({
           {editDraft ? (
             <div className="flex flex-col gap-5">
               <div className="flex flex-col gap-3">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Agent preset</p>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Agent preset</p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {AGENT_PRESET_OPTIONS.map((option) => (
                     <AgentPresetCard
@@ -606,7 +605,7 @@ export function MissionSidebar({
                         : current
                     )
                   }
-                  className="flex h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40"
+                  className="flex h-11 w-full rounded-lg border border-input bg-card px-4 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
                   <option value="">Use OpenClaw default</option>
                   {snapshot.models.map((model) => (
@@ -691,11 +690,11 @@ export function MissionSidebar({
                 }
               />
 
-              <div className="rounded-[20px] border border-white/10 bg-white/[0.03] p-4">
+              <div className="rounded-lg border border-border bg-muted/40 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-medium text-white">Advanced policy</p>
-                    <p className="mt-1 text-xs leading-5 text-slate-400">
+                    <p className="text-sm font-medium text-foreground">Advanced policy</p>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
                       Override how this agent handles missing tools, installs, file scope, and network usage.
                     </p>
                   </div>
@@ -711,11 +710,11 @@ export function MissionSidebar({
                 </div>
 
                 {showEditAgentHeartbeatControls ? (
-                  <div className="mt-4 rounded-[18px] border border-white/10 bg-slate-950/40 p-4">
+                  <div className="mt-4 rounded-lg border border-border bg-card/75 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-sm font-medium text-white">Heartbeat</p>
-                        <p className="mt-1 text-xs leading-5 text-slate-400">
+                        <p className="text-sm font-medium text-foreground">Heartbeat</p>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
                           Use this only for periodic watch or triage agents. Leave it off for normal task execution.
                         </p>
                       </div>
@@ -766,7 +765,7 @@ export function MissionSidebar({
                                   : current
                               )
                             }
-                            className="flex h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40"
+                            className="flex h-11 w-full rounded-lg border border-input bg-card px-4 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                           >
                             {AGENT_HEARTBEAT_INTERVAL_OPTIONS.map((option) => (
                               <option key={option.value} value={option.value}>
@@ -883,22 +882,22 @@ function SidebarBrand({ onToggleCollapsed }: { onToggleCollapsed: () => void }) 
     <div className="flex items-center justify-between gap-3">
       <Link
         href="/"
-        className="group flex min-w-0 items-center gap-3 rounded-[16px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-cyan-300/40"
+        className="group flex min-w-0 items-center gap-3 rounded-lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50"
         aria-label="AgentOS Mission Control"
       >
-        <span className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-[11px] border border-cyan-200/18 bg-white/[0.06] shadow-[0_12px_28px_rgba(0,0,0,0.24)]">
+        <span className="relative flex h-9 w-9 shrink-0 items-center justify-center">
           <Image
             src="/assets/logo.webp"
             alt=""
             width={36}
             height={36}
             aria-hidden="true"
-            className="h-full w-full object-cover"
+            className="h-full w-full object-contain"
             priority
           />
         </span>
-        <span className="truncate py-0.5 font-display text-[1.15rem] font-semibold leading-[1.25] text-white">
-          AgentOS
+        <span className="truncate py-0.5 font-display text-[1.15rem] font-semibold leading-[1.25] text-foreground">
+          Agent<span className="text-primary">OS</span>
         </span>
       </Link>
 
@@ -906,7 +905,7 @@ function SidebarBrand({ onToggleCollapsed }: { onToggleCollapsed: () => void }) 
         type="button"
         onClick={onToggleCollapsed}
         aria-label="Collapse sidebar"
-        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-white/[0.08] bg-white/[0.04] text-slate-400 transition-all hover:border-cyan-300/24 hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40"
+        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-card/75 text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         <ChevronLeft className="h-4 w-4" />
       </button>
@@ -967,16 +966,16 @@ function WorkspaceSwitcher({
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={() => setOpen((current) => !current)}
-        className="group flex w-full items-center gap-3 rounded-[16px] border border-white/[0.09] bg-[linear-gradient(180deg,rgba(255,255,255,0.075),rgba(255,255,255,0.035))] px-3 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_14px_30px_rgba(0,0,0,0.20)] transition-all hover:border-cyan-200/20 hover:bg-white/[0.075] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40"
+        className="group flex w-full items-center gap-3 rounded-lg border border-border bg-card/75 px-3 py-3 text-left shadow-card transition-all hover:border-primary/25 hover:bg-accent/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border border-cyan-200/16 bg-cyan-300/[0.10] text-cyan-200">
-          <FolderKanban className="h-4 w-4" />
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
+          <Home className="h-4 w-4" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[0.95rem] font-semibold leading-5 text-white">
+          <span className="block truncate text-[0.95rem] font-semibold leading-5 text-foreground">
             {activeWorkspaceId === null ? "All workspaces" : workspace?.name || "No workspace"}
           </span>
-          <span className="mt-0.5 flex items-center gap-1.5 text-[0.63rem] font-semibold uppercase leading-none tracking-[0.22em] text-slate-500">
+          <span className="mt-0.5 flex items-center gap-1.5 text-[0.63rem] font-semibold uppercase leading-none tracking-[0.22em] text-muted-foreground">
             <StatusDot tone={statusTone} pulse={statusTone === "bg-emerald-400"} className="h-2 w-2" />
             {activeWorkspaceId === null ? `${snapshot.workspaces.length} workspaces` : "Workspace"}
           </span>
@@ -984,18 +983,18 @@ function WorkspaceSwitcher({
         <span className="flex flex-col items-end gap-1">
           <ChevronDown
             className={cn(
-              "h-4 w-4 text-slate-400 transition-transform group-hover:text-slate-200",
+              "h-4 w-4 text-muted-foreground transition-transform group-hover:text-foreground",
               open && "rotate-180"
             )}
           />
-          <span className="text-[0.6rem] font-medium text-slate-500">{statusLabel}</span>
+          <span className="text-[0.6rem] font-medium text-muted-foreground">{statusLabel}</span>
         </span>
       </button>
 
       {open ? (
         <div
           role="menu"
-          className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 rounded-[16px] border border-white/[0.10] bg-slate-950/96 p-1.5 shadow-[0_24px_56px_rgba(0,0,0,0.42)] backdrop-blur-xl"
+          className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-panel backdrop-blur-xl"
         >
           <WorkspaceMenuButton
             label="All workspaces"
@@ -1018,7 +1017,7 @@ function WorkspaceSwitcher({
               }}
             />
           ))}
-          <div className="mt-1 border-t border-white/[0.08] pt-1">
+          <div className="mt-1 border-t border-border pt-1">
             <button
               type="button"
               role="menuitem"
@@ -1026,14 +1025,14 @@ function WorkspaceSwitcher({
                 onOpenWorkspaceCreate();
                 setOpen(false);
               }}
-              className="flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-left text-cyan-100 transition-colors hover:bg-cyan-300/[0.10] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40"
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] border border-cyan-300/20 bg-cyan-300/[0.12] text-cyan-200">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
                 <Plus className="h-3.5 w-3.5" />
               </span>
               <span className="min-w-0">
                 <span className="block truncate text-[0.82rem] font-medium">Create Workspace</span>
-                <span className="mt-0.5 block text-[0.67rem] text-slate-500">Start a new workspace</span>
+                <span className="mt-0.5 block text-[0.67rem] text-muted-foreground">Start a new workspace</span>
               </span>
             </button>
           </div>
@@ -1060,17 +1059,17 @@ function WorkspaceMenuButton({
       role="menuitem"
       onClick={onClick}
       className={cn(
-        "flex w-full items-center justify-between gap-3 rounded-[12px] px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
+        "flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
         selected
-          ? "bg-cyan-400/[0.12] text-cyan-50"
-          : "text-slate-300 hover:bg-white/[0.06] hover:text-white"
+          ? "bg-primary/10 text-primary"
+          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       )}
     >
       <span className="min-w-0">
         <span className="block truncate text-[0.82rem] font-medium">{label}</span>
-        <span className="mt-0.5 block text-[0.67rem] text-slate-500">{detail}</span>
+        <span className="mt-0.5 block text-[0.67rem] text-muted-foreground">{detail}</span>
       </span>
-      {selected ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-cyan-300" /> : null}
+      {selected ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-primary" /> : null}
     </button>
   );
 }
@@ -1090,7 +1089,7 @@ function SidebarSectionGroup({
     <section className="flex flex-col gap-2" aria-labelledby={`sidebar-${section.id}`}>
       <h2
         id={`sidebar-${section.id}`}
-        className="px-2 text-[0.64rem] font-semibold uppercase leading-none tracking-[0.22em] text-slate-500"
+        className="px-2 text-[0.64rem] font-semibold uppercase leading-none tracking-[0.22em] text-muted-foreground"
       >
         {section.label}
       </h2>
@@ -1128,19 +1127,19 @@ function SidebarNavItem({
       aria-current={active ? "page" : undefined}
       onClick={onNavigate}
       className={cn(
-        "group relative flex h-10 items-center gap-3 rounded-[12px] border px-3 text-[0.84rem] font-medium outline-none transition-all focus-visible:ring-2 focus-visible:ring-cyan-300/40",
+        "group relative flex h-10 items-center gap-3 rounded-lg border px-3 text-[0.84rem] font-medium outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring/50",
         active
-          ? "border-blue-300/28 bg-[linear-gradient(90deg,rgba(37,99,235,0.34),rgba(14,165,233,0.16))] text-cyan-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_28px_rgba(37,99,235,0.16)]"
-          : "border-transparent text-slate-300 hover:border-white/[0.08] hover:bg-white/[0.055] hover:text-white"
+          ? "border-primary/30 bg-primary/10 text-primary shadow-[0_0_0_1px_hsl(var(--primary)/0.05),0_12px_28px_hsl(var(--primary)/0.08)]"
+          : "border-transparent text-muted-foreground hover:border-border hover:bg-accent hover:text-accent-foreground"
       )}
     >
       {active ? (
-        <span className="absolute left-0 top-2 h-6 w-1 rounded-r-full bg-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.36)]" />
+        <span className="absolute left-0 top-2 h-6 w-1 rounded-r-full bg-primary shadow-[0_0_14px_hsl(var(--primary)/0.24)]" />
       ) : null}
-      <Icon className={cn("h-[1.05rem] w-[1.05rem] shrink-0", active ? "text-cyan-200" : "text-slate-400 group-hover:text-slate-200")} />
+      <Icon className={cn("h-[1.05rem] w-[1.05rem] shrink-0", active ? "text-primary" : "text-muted-foreground group-hover:text-accent-foreground")} />
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       {typeof item.badge === "number" ? (
-        <Badge className="ml-auto flex h-5 min-w-5 justify-center border-white/[0.08] bg-white/[0.08] px-1.5 py-0 text-[0.64rem] tracking-normal text-slate-200">
+        <Badge className="ml-auto flex h-5 min-w-5 justify-center px-1.5 py-0 text-[0.64rem] tracking-normal">
           {item.badge}
         </Badge>
       ) : null}
@@ -1168,12 +1167,12 @@ function CollapsedSidebar({
   onExpandCollapsed: () => void;
 }) {
   return (
-    <aside className="relative flex h-full w-full flex-col items-center overflow-hidden border-r border-white/[0.08] bg-[linear-gradient(180deg,rgba(15,23,38,0.98),rgba(6,10,18,0.99))] px-1 py-4 text-slate-100 shadow-[14px_0_44px_rgba(0,0,0,0.32)]">
+    <aside className="relative flex h-full w-full flex-col items-center overflow-hidden border-r border-border bg-card px-1 py-4 text-card-foreground shadow-panel">
       <button
         type="button"
         onClick={onExpandCollapsed}
         aria-label="Expand sidebar"
-        className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-[13px] border border-cyan-200/18 bg-white/[0.06] shadow-[0_12px_26px_rgba(0,0,0,0.26)] transition-colors hover:border-cyan-200/28 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40"
+        className="flex h-10 w-10 items-center justify-center transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         <Image
           src="/assets/logo.webp"
@@ -1181,7 +1180,7 @@ function CollapsedSidebar({
           width={40}
           height={40}
           aria-hidden="true"
-          className="h-full w-full object-cover"
+          className="h-full w-full object-contain"
           priority
         />
       </button>
@@ -1196,7 +1195,7 @@ function CollapsedSidebar({
           type="button"
           onClick={onExpandCollapsed}
           aria-label={`Expand workspace selector: ${workspaceLabel}`}
-          className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-white/[0.08] bg-cyan-300/[0.10] text-cyan-200 outline-none transition-all hover:border-cyan-200/24 hover:bg-cyan-300/[0.16] hover:text-cyan-50 focus-visible:ring-2 focus-visible:ring-cyan-300/40"
+          className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary outline-none transition-all hover:border-primary/30 hover:bg-primary/15 focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           <Home className="h-4 w-4" />
         </button>
@@ -1228,15 +1227,15 @@ function CollapsedSidebar({
                         onItemNavigate(item);
                       }}
                       className={cn(
-                        "relative inline-flex h-10 w-10 items-center justify-center rounded-[12px] border outline-none transition-all focus-visible:ring-2 focus-visible:ring-cyan-300/40",
+                        "relative inline-flex h-10 w-10 items-center justify-center rounded-lg border outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring/50",
                         active
-                          ? "border-blue-300/28 bg-cyan-300 text-slate-950 shadow-[0_14px_30px_rgba(56,189,248,0.24)]"
-                          : "border-white/[0.08] bg-white/[0.035] text-slate-400 hover:border-white/[0.14] hover:bg-white/[0.08] hover:text-white"
+                          ? "border-primary/30 bg-primary text-primary-foreground shadow-[0_14px_30px_hsl(var(--primary)/0.20)]"
+                          : "border-border bg-card/75 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                       )}
                     >
                       <Icon className="h-4 w-4" />
                       {typeof item.badge === "number" ? (
-                        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-slate-950 bg-slate-200 px-1 text-[0.58rem] font-bold leading-none text-slate-950 shadow-[0_4px_10px_rgba(0,0,0,0.24)]">
+                        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-card bg-primary px-1 text-[0.58rem] font-bold leading-none text-primary-foreground shadow-card">
                           {item.badge}
                         </span>
                       ) : null}
@@ -1254,7 +1253,7 @@ function CollapsedSidebar({
           type="button"
           onClick={onExpandCollapsed}
           aria-label="Expand sidebar"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-[11px] border border-white/[0.08] bg-white/[0.04] text-slate-400 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card/75 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           <ChevronRight className="h-4 w-4" />
         </button>
@@ -1321,7 +1320,7 @@ function FormField({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <Label htmlFor={htmlFor} className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
+      <Label htmlFor={htmlFor} className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
         {label}
       </Label>
       {children}
@@ -1347,14 +1346,14 @@ function AgentPresetCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-[20px] border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
-        active ? "border-cyan-300/30 bg-cyan-400/10" : "border-white/10 bg-white/[0.03]"
+        "rounded-lg border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        active ? "border-primary/30 bg-primary/10" : "border-border bg-muted/40"
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium text-white">{label}</p>
-          <p className="text-xs leading-5 text-slate-400">{description}</p>
+          <p className="text-sm font-medium text-foreground">{label}</p>
+          <p className="text-xs leading-5 text-muted-foreground">{description}</p>
         </div>
         <Badge variant={badgeVariant}>{active ? "selected" : "preset"}</Badge>
       </div>
@@ -1366,11 +1365,11 @@ function AgentPolicySummary({ policy }: { policy: AgentPolicy }) {
   const presetMeta = getAgentPresetMeta(policy.preset);
 
   return (
-    <div className="rounded-[20px] border border-white/10 bg-slate-950/50 p-4">
+    <div className="rounded-lg border border-border bg-muted/40 p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-white">{presetMeta.label}</p>
-          <p className="mt-1 text-xs leading-5 text-slate-400">{presetMeta.description}</p>
+          <p className="text-sm font-medium text-foreground">{presetMeta.label}</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{presetMeta.description}</p>
         </div>
         <Badge variant={presetMeta.badgeVariant}>{presetMeta.label}</Badge>
       </div>
@@ -1403,7 +1402,7 @@ function AgentPolicySelect<T extends string>({
         id={htmlFor}
         value={value}
         onChange={(event) => onChange(event.target.value as T)}
-        className="flex h-11 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40"
+        className="flex h-11 w-full rounded-lg border border-input bg-card px-4 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -1428,11 +1427,11 @@ function DeleteMetric({
     <div
       className={cn(
         "rounded-[18px] border px-3.5 py-3",
-        danger ? "border-amber-300/20 bg-amber-400/[0.08]" : "border-white/10 bg-white/[0.03]"
+        danger ? "border-amber-300/20 bg-amber-400/[0.08]" : "border-border bg-muted/40"
       )}
     >
-      <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{label}</p>
-      <p className={cn("mt-1.5 font-display text-lg", danger ? "text-amber-100" : "text-white")}>{value}</p>
+      <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
+      <p className={cn("mt-1.5 font-display text-lg", danger ? "text-amber-100" : "text-foreground")}>{value}</p>
     </div>
   );
 }

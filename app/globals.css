@@ -7,31 +7,94 @@
     --font-display: "Futura", "Avenir Next", sans-serif;
     --font-body: "Avenir Next", "Helvetica Neue", sans-serif;
     --font-mono: "SF Mono", "Menlo", monospace;
-    --background: 220 24% 8%;
-    --foreground: 210 20% 96%;
-    --card: 222 24% 11%;
-    --card-foreground: 210 20% 97%;
-    --popover: 222 24% 11%;
-    --popover-foreground: 210 20% 97%;
-    --primary: 194 86% 62%;
-    --primary-foreground: 220 28% 10%;
-    --secondary: 220 19% 17%;
-    --secondary-foreground: 210 24% 96%;
-    --muted: 220 16% 16%;
-    --muted-foreground: 217 14% 67%;
-    --accent: 212 24% 20%;
-    --accent-foreground: 210 24% 96%;
+    --background: 220 27% 97%;
+    --foreground: 224 30% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 30% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 30% 10%;
+    --primary: 345 100% 49%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 18% 94%;
+    --secondary-foreground: 224 24% 18%;
+    --muted: 220 18% 94%;
+    --muted-foreground: 220 10% 42%;
+    --accent: 345 100% 96%;
+    --accent-foreground: 345 92% 43%;
+    --destructive: 0 74% 52%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 17% 88%;
+    --input: 220 17% 88%;
+    --ring: 345 100% 49%;
+    --radius: 0.875rem;
+    --chart-cyan: 194 76% 44%;
+    --chart-blue: 221 72% 52%;
+    --chart-amber: 38 91% 52%;
+    --chart-emerald: 153 64% 42%;
+    --chart-rose: 345 100% 49%;
+    --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 16px 42px rgba(15, 23, 42, 0.08);
+    --shadow-panel: 0 18px 54px rgba(15, 23, 42, 0.10);
+    --shadow-glow: 0 0 0 1px rgba(250, 0, 63, 0.06), 0 24px 80px rgba(15, 23, 42, 0.10);
+    --surface-panel: linear-gradient(180deg, hsl(0 0% 100% / 0.94), hsl(220 27% 98% / 0.90));
+    --surface-panel-border: hsl(var(--border) / 0.92);
+    --surface-panel-muted: hsl(220 18% 96% / 0.86);
+    --status-success: 153 64% 40%;
+    --status-success-foreground: 153 70% 28%;
+    --status-info: 345 100% 49%;
+    --status-info-foreground: 345 92% 43%;
+    --status-warning: 38 91% 48%;
+    --status-warning-foreground: 34 85% 34%;
+    --status-danger: 0 74% 52%;
+    --status-danger-foreground: 0 72% 44%;
+    --status-muted: 220 10% 48%;
+    --status-muted-foreground: 220 10% 42%;
+    --status-purple: 264 58% 54%;
+    --status-purple-foreground: 264 48% 42%;
+  }
+
+  .dark {
+    --background: 222 36% 6%;
+    --foreground: 215 24% 94%;
+    --card: 222 28% 10%;
+    --card-foreground: 215 24% 96%;
+    --popover: 222 28% 10%;
+    --popover-foreground: 215 24% 96%;
+    --primary: 345 100% 49%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 20% 15%;
+    --secondary-foreground: 215 22% 94%;
+    --muted: 222 20% 15%;
+    --muted-foreground: 218 13% 66%;
+    --accent: 345 94% 13%;
+    --accent-foreground: 345 100% 68%;
     --destructive: 0 73% 57%;
     --destructive-foreground: 0 0% 98%;
-    --border: 220 15% 22%;
-    --input: 220 15% 22%;
-    --ring: 194 86% 62%;
-    --radius: 1.125rem;
-    --chart-cyan: 188 91% 56%;
-    --chart-blue: 213 86% 64%;
+    --border: 220 18% 19%;
+    --input: 220 18% 19%;
+    --ring: 345 100% 49%;
+    --chart-cyan: 190 83% 55%;
+    --chart-blue: 216 86% 63%;
     --chart-amber: 38 92% 60%;
     --chart-emerald: 153 71% 49%;
-    --chart-rose: 347 77% 62%;
+    --chart-rose: 345 100% 49%;
+    --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.035) inset, 0 18px 54px rgba(0, 0, 0, 0.28);
+    --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 22px 70px rgba(0, 0, 0, 0.34);
+    --shadow-glow: 0 0 0 1px rgba(250, 0, 63, 0.10), 0 24px 80px rgba(0, 0, 0, 0.42);
+    --surface-panel: linear-gradient(180deg, hsl(222 28% 12% / 0.92), hsl(222 36% 8% / 0.88));
+    --surface-panel-border: hsl(var(--border) / 0.92);
+    --surface-panel-muted: hsl(222 22% 14% / 0.82);
+    --status-success: 153 71% 49%;
+    --status-success-foreground: 153 72% 72%;
+    --status-info: 345 100% 49%;
+    --status-info-foreground: 345 100% 70%;
+    --status-warning: 38 92% 60%;
+    --status-warning-foreground: 38 100% 78%;
+    --status-danger: 0 73% 57%;
+    --status-danger-foreground: 0 90% 78%;
+    --status-muted: 218 13% 66%;
+    --status-muted-foreground: 218 13% 74%;
+    --status-purple: 264 70% 64%;
+    --status-purple-foreground: 264 82% 82%;
   }
 
   * {
@@ -45,10 +108,9 @@
   body {
     @apply min-h-screen bg-background font-sans text-foreground antialiased;
     background-image:
-      radial-gradient(circle at 22% 18%, rgba(53, 118, 255, 0.2), transparent 28%),
-      radial-gradient(circle at 78% 18%, rgba(38, 88, 190, 0.16), transparent 24%),
-      radial-gradient(circle at 50% 50%, rgba(9, 29, 68, 0.45), transparent 56%),
-      linear-gradient(180deg, #020611 0%, #051224 52%, #030813 100%);
+      radial-gradient(circle at 22% 18%, hsl(var(--primary) / 0.08), transparent 28%),
+      radial-gradient(circle at 78% 18%, hsl(222 60% 40% / 0.10), transparent 24%),
+      linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--background)) 100%);
   }
 
   pre,
@@ -60,19 +122,13 @@
 @layer utilities {
   .panel-surface {
     @apply border backdrop-blur-xl;
-    border-color: rgba(255, 255, 255, 0.08);
-    background:
-      linear-gradient(180deg, rgba(12, 19, 34, 0.82), rgba(8, 13, 24, 0.82)),
-      rgba(4, 9, 18, 0.64);
-    box-shadow:
-      0 0 0 1px rgba(255, 255, 255, 0.02),
-      0 24px 90px rgba(0, 0, 0, 0.38);
+    border-color: var(--surface-panel-border);
+    background: var(--surface-panel);
+    box-shadow: var(--shadow-panel);
   }
 
   .panel-glow {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.05),
-      0 18px 58px rgba(0, 0, 0, 0.34);
+    box-shadow: var(--shadow-card);
   }
 
   .mission-ease-smooth {
@@ -114,13 +170,52 @@
 }
 
 .mission-shell--light {
-  background: linear-gradient(180deg, #fdfaf6 0%, #f8f5f0 48%, #e5d7cc 100%);
+  --background: 220 27% 97%;
+  --foreground: 224 30% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 224 30% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 224 30% 10%;
+  --primary: 345 100% 49%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 18% 94%;
+  --secondary-foreground: 224 24% 18%;
+  --muted: 220 18% 94%;
+  --muted-foreground: 220 10% 42%;
+  --accent: 345 100% 96%;
+  --accent-foreground: 345 92% 43%;
+  --destructive: 0 74% 52%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 17% 88%;
+  --input: 220 17% 88%;
+  --ring: 345 100% 49%;
+  --chart-rose: 345 100% 49%;
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 16px 42px rgba(15, 23, 42, 0.08);
+  --shadow-panel: 0 18px 54px rgba(15, 23, 42, 0.10);
+  --shadow-glow: 0 0 0 1px rgba(250, 0, 63, 0.06), 0 24px 80px rgba(15, 23, 42, 0.10);
+  --surface-panel: linear-gradient(180deg, hsl(0 0% 100% / 0.96), hsl(220 27% 98% / 0.92));
+  --surface-panel-border: hsl(var(--border) / 0.92);
+  --surface-panel-muted: hsl(220 18% 96% / 0.86);
+  --status-success: 153 64% 40%;
+  --status-success-foreground: 153 70% 28%;
+  --status-info: 345 100% 49%;
+  --status-info-foreground: 345 92% 43%;
+  --status-warning: 38 91% 48%;
+  --status-warning-foreground: 34 85% 34%;
+  --status-danger: 0 74% 52%;
+  --status-danger-foreground: 0 72% 44%;
+  --status-muted: 220 10% 48%;
+  --status-muted-foreground: 220 10% 42%;
+  --status-purple: 264 58% 54%;
+  --status-purple-foreground: 264 48% 42%;
+  color: hsl(var(--foreground));
+  background: linear-gradient(180deg, hsl(220 33% 98%) 0%, hsl(220 24% 96%) 54%, hsl(220 22% 94%) 100%);
 }
 
 .mission-shell--light::before {
   background-image:
-    radial-gradient(circle, rgba(148, 112, 88, 0.16) 1px, transparent 1.65px);
-  opacity: 0.26;
+    radial-gradient(circle, rgba(250, 0, 63, 0.08) 1px, transparent 1.65px);
+  opacity: 0.18;
   mask-image: radial-gradient(circle at center, black 44%, transparent 100%);
 }
 

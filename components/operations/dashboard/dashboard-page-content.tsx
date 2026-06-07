@@ -99,19 +99,7 @@ export function DashboardPageContent({
               <Button
                 variant="secondary"
                 size="sm"
-                className={cn(
-                  "h-8 rounded-[10px] px-3 text-xs",
-                  surfaceTheme === "light" && "border-[#e3d3c5] bg-white/85 !text-[#4c3a2e] hover:bg-[#fff8f2] hover:!text-[#4c3a2e]"
-                )}
-                style={
-                  surfaceTheme === "light"
-                    ? {
-                        backgroundColor: "rgba(255, 255, 255, 0.85)",
-                        borderColor: "#e3d3c5",
-                        color: "#4c3a2e"
-                      }
-                    : undefined
-                }
+                className="h-8 rounded-lg px-3 text-xs"
                 onClick={() => void refresh()}
               >
                 <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
@@ -119,21 +107,7 @@ export function DashboardPageContent({
               </Button>
               <Button
                 size="sm"
-                className={cn(
-                  "h-8 rounded-[10px] px-3 text-xs text-white",
-                  surfaceTheme === "light"
-                    ? "bg-[#5c4437] shadow-[#5c4437]/18 hover:bg-[#4d382d]"
-                    : "bg-blue-500 shadow-blue-500/20 hover:bg-blue-400"
-                )}
-                style={
-                  surfaceTheme === "light"
-                    ? {
-                        backgroundColor: "#5c4437",
-                        boxShadow: "0 8px 18px rgba(92, 68, 55, 0.18)",
-                        color: "#ffffff"
-                      }
-                    : undefined
-                }
+                className="h-8 rounded-lg px-3 text-xs"
                 onClick={() => setDispatchOpen(true)}
               >
                 <Plus className="mr-1.5 h-3.5 w-3.5" />
@@ -255,7 +229,7 @@ export function DashboardPageContent({
                   <EmptyState title="No task activity" description="No OpenClaw task records are available for this workspace yet." />
                 </div>
               ) : (
-                <div className="divide-y divide-white/[0.07]">
+                <div className="divide-y divide-border">
                   {recentTasks.map((task) => (
                     <TaskActivityRow key={task.id} task={task} referenceMs={referenceMs} />
                   ))}
@@ -267,11 +241,11 @@ export function DashboardPageContent({
           <div className="flex min-w-0 flex-col gap-3">
             <SectionCard title="Models">
               <div className="p-3">
-                <div className="rounded-[10px] border border-white/[0.08] bg-white/[0.035] p-3">
+                <div className="rounded-lg border border-border bg-muted/40 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-slate-500">Default Model</p>
-                      <p className="mt-1 truncate text-sm font-semibold text-white">
+                      <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Default Model</p>
+                      <p className="mt-1 truncate text-sm font-semibold text-foreground">
                         {modelReadiness.resolvedDefaultModel ?? modelReadiness.defaultModel ?? "Not configured"}
                       </p>
                     </div>
@@ -290,7 +264,7 @@ export function DashboardPageContent({
                     ))}
                   </div>
                 ) : (
-                  <p className="mt-3 text-xs leading-5 text-slate-400">No model records are available in the snapshot.</p>
+                  <p className="mt-3 text-xs leading-5 text-muted-foreground">No model records are available in the snapshot.</p>
                 )}
               </div>
             </SectionCard>
@@ -302,12 +276,12 @@ export function DashboardPageContent({
                   <MiniMetric label="Connected" value={String(connectedIntegrations.length)} detail={`${integrations.length} tracked`} />
                 </div>
                 {rootSnapshot.channelAccounts.length === 0 ? (
-                  <p className="mt-3 text-xs leading-5 text-slate-400">No channel accounts are reported by OpenClaw yet.</p>
+                  <p className="mt-3 text-xs leading-5 text-muted-foreground">No channel accounts are reported by OpenClaw yet.</p>
                 ) : (
                   <div className="mt-3 space-y-2">
                     {rootSnapshot.channelAccounts.slice(0, 4).map((account) => (
-                      <div key={account.id} className="flex items-center justify-between gap-2 rounded-[9px] border border-white/[0.08] bg-white/[0.035] px-2.5 py-2">
-                        <span className="min-w-0 truncate text-xs font-medium text-slate-100">{account.name}</span>
+                      <div key={account.id} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-2.5 py-2">
+                        <span className="min-w-0 truncate text-xs font-medium text-foreground">{account.name}</span>
                         <StatusBadge label={account.enabled ? "Enabled" : "Disabled"} tone={account.enabled ? "success" : "muted"} />
                       </div>
                     ))}
@@ -318,10 +292,10 @@ export function DashboardPageContent({
 
             <SectionCard title="System Health">
               <div className="p-3">
-                <div className="mb-3 flex items-center justify-between gap-3 rounded-[10px] border border-white/[0.08] bg-white/[0.035] p-3">
+                <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 p-3">
                   <div>
-                    <p className="text-xs font-semibold text-white">AgentOS stream</p>
-                    <p className="mt-1 text-xs text-slate-400">{connectionState}</p>
+                    <p className="text-xs font-semibold text-foreground">AgentOS stream</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{connectionState}</p>
                   </div>
                   <StatusBadge label={rootSnapshot.diagnostics.health} tone={healthTone(rootSnapshot.diagnostics.health)} />
                 </div>
@@ -330,7 +304,7 @@ export function DashboardPageContent({
                 ) : (
                   <div className="space-y-2">
                     {attentionItems.slice(0, 6).map((item) => (
-                      <div key={item} className="rounded-[9px] border border-amber-300/15 bg-amber-300/[0.06] px-2.5 py-2 text-xs leading-5 text-amber-50">
+                      <div key={item} className="rounded-[9px] border border-[hsl(var(--status-warning)/0.24)] bg-[hsl(var(--status-warning)/0.10)] px-2.5 py-2 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]">
                         {item}
                       </div>
                     ))}
@@ -339,7 +313,7 @@ export function DashboardPageContent({
                         asChild
                         variant="secondary"
                         size="sm"
-                        className="mt-3 w-full justify-between border-amber-300/25 bg-amber-300/[0.08] text-xs text-amber-50 hover:bg-amber-300/[0.13] hover:text-white"
+                        className="mt-3 w-full justify-between border-[hsl(var(--status-warning)/0.28)] bg-[hsl(var(--status-warning)/0.10)] text-xs text-[hsl(var(--status-warning-foreground))] hover:bg-[hsl(var(--status-warning)/0.14)] hover:text-[hsl(var(--status-warning-foreground))]"
                       >
                         <Link href="/settings#gateway">
                           Manage Gateway permissions
@@ -378,13 +352,13 @@ function WorkspaceSignal({
   tone?: StatusTone;
 }) {
   return (
-    <div className="min-w-0 rounded-[10px] border border-white/[0.08] bg-white/[0.035] p-3">
-      <p className="text-[0.56rem] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
+    <div className="min-w-0 rounded-lg border border-border bg-muted/40 p-3">
+      <p className="text-[0.56rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
       <div className="mt-1.5 flex items-center gap-2">
         <span className={cn("h-2 w-2 shrink-0 rounded-full", dotClass(tone))} />
-        <p className="truncate text-sm font-semibold text-white">{value}</p>
+        <p className="truncate text-sm font-semibold text-foreground">{value}</p>
       </div>
-      <p className="mt-1 truncate text-[0.68rem] text-slate-400">{detail}</p>
+      <p className="mt-1 truncate text-[0.68rem] text-muted-foreground">{detail}</p>
     </div>
   );
 }
@@ -436,13 +410,13 @@ function StatusPanel({
   rows: Array<[string, string]>;
 }) {
   return (
-    <div className="rounded-[10px] border border-white/[0.08] bg-white/[0.035] p-3">
+    <div className="rounded-lg border border-border bg-muted/40 p-3">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <EntityIcon icon={icon} label={title} tone={tone} size="sm" />
           <div className="min-w-0">
-            <p className="truncate text-xs font-semibold text-white">{title}</p>
-            <p className="mt-0.5 truncate text-[0.68rem] text-slate-400">{status}</p>
+            <p className="truncate text-xs font-semibold text-foreground">{title}</p>
+            <p className="mt-0.5 truncate text-[0.68rem] text-muted-foreground">{status}</p>
           </div>
         </div>
         <StatusBadge label={status} tone={tone} />
@@ -458,14 +432,14 @@ function StatusPanel({
 
 function AgentSummaryRow({ agent }: { agent: AgentView }) {
   return (
-    <div className="flex min-w-0 items-center gap-3 rounded-[10px] border border-white/[0.08] bg-white/[0.035] p-3">
+    <div className="flex min-w-0 items-center gap-3 rounded-lg border border-border bg-muted/40 p-3">
       <EntityIcon icon={agent.icon} label={agent.name} tone={agent.iconTone} size="sm" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-xs font-semibold text-white">{agent.name}</p>
+          <p className="truncate text-xs font-semibold text-foreground">{agent.name}</p>
           <StatusBadge label={agent.statusLabel} tone={agent.statusTone} />
         </div>
-        <p className="mt-1 truncate text-[0.7rem] text-slate-400">{agent.purpose}</p>
+        <p className="mt-1 truncate text-[0.7rem] text-muted-foreground">{agent.purpose}</p>
       </div>
     </div>
   );
@@ -483,10 +457,10 @@ function TaskActivityRow({ task, referenceMs }: { task: TaskView; referenceMs: n
       <EntityIcon icon={Icon} label={task.statusLabel} tone={task.statusTone} size="sm" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-3">
-          <p className="truncate text-xs font-semibold text-white">{task.title}</p>
+          <p className="truncate text-xs font-semibold text-foreground">{task.title}</p>
           <StatusBadge label={task.statusLabel} tone={task.statusTone} />
         </div>
-        <p className="mt-1 truncate text-[0.7rem] text-slate-400">
+        <p className="mt-1 truncate text-[0.7rem] text-muted-foreground">
           {task.agentName} / {formatRelativeTime(task.source?.updatedAt ?? null, referenceMs)} / {tokenLabel}
         </p>
       </div>
@@ -496,10 +470,10 @@ function TaskActivityRow({ task, referenceMs }: { task: TaskView; referenceMs: n
 
 function MiniMetric({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
-    <div className="min-w-0 rounded-[9px] border border-white/[0.08] bg-white/[0.035] p-2.5">
-      <p className="text-[0.56rem] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className="mt-1 truncate text-sm font-semibold text-white">{value}</p>
-      {detail ? <p className="mt-0.5 truncate text-[0.66rem] text-slate-400">{detail}</p> : null}
+    <div className="min-w-0 rounded-lg border border-border bg-muted/40 p-2.5">
+      <p className="text-[0.56rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+      <p className="mt-1 truncate text-sm font-semibold text-foreground">{value}</p>
+      {detail ? <p className="mt-0.5 truncate text-[0.66rem] text-muted-foreground">{detail}</p> : null}
     </div>
   );
 }
@@ -601,5 +575,5 @@ function dotClass(tone: StatusTone) {
     return "bg-slate-400";
   }
 
-  return "bg-sky-400";
+  return "bg-primary";
 }

@@ -115,19 +115,7 @@ export function ModelsPageContent({
                 <Button
                   variant="secondary"
                   size="sm"
-                  className={cn(
-                    "h-8 rounded-[10px] px-3 text-xs",
-                    surfaceTheme === "light" && "border-[#e3d3c5] bg-white/85 !text-[#4c3a2e] hover:bg-[#fff8f2] hover:!text-[#4c3a2e]"
-                  )}
-                  style={
-                    surfaceTheme === "light"
-                      ? {
-                          backgroundColor: "rgba(255, 255, 255, 0.85)",
-                          borderColor: "#e3d3c5",
-                          color: "#4c3a2e"
-                        }
-                      : undefined
-                  }
+                  className="h-8 rounded-lg px-3 text-xs"
                   disabled
                   title="Model import is handled by the Add Models flow; there is no separate import backend."
                 >
@@ -136,21 +124,7 @@ export function ModelsPageContent({
                 </Button>
                 <Button
                   size="sm"
-                  className={cn(
-                    "h-8 rounded-[10px] px-3 text-xs text-white",
-                    surfaceTheme === "light"
-                      ? "bg-[#5c4437] shadow-[#5c4437]/18 hover:bg-[#4d382d]"
-                      : "bg-blue-500 shadow-blue-500/20 hover:bg-blue-400"
-                  )}
-                  style={
-                    surfaceTheme === "light"
-                      ? {
-                          backgroundColor: "#5c4437",
-                          boxShadow: "0 8px 18px rgba(92, 68, 55, 0.18)",
-                          color: "#ffffff"
-                        }
-                      : undefined
-                  }
+                  className="h-8 rounded-lg px-3 text-xs"
                   onClick={() => setIsAddModelsDialogOpen(true)}
                 >
                   <Plus className="mr-1.5 h-3.5 w-3.5" />
@@ -188,7 +162,7 @@ export function ModelsPageContent({
 
           <div className="grid gap-2.5 xl:grid-cols-[0.9fr_1.6fr]">
             <SectionCard title="Default Route">
-              <div className="divide-y divide-white/[0.07] px-3">
+              <div className="divide-y divide-border px-3">
                 <KeyValue label="Configured default" value={defaultModelId ?? "Not configured"} />
                 <KeyValue label="Readiness" value={snapshot.diagnostics.modelReadiness.ready ? "Ready" : "Needs setup"} />
                 <KeyValue label="Available models" value={String(snapshot.diagnostics.modelReadiness.availableModelCount)} />
@@ -251,20 +225,20 @@ function ModelsTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[900px] text-left text-xs">
-        <thead className="border-b border-white/[0.07] text-[0.56rem] uppercase tracking-[0.14em] text-slate-500">
+        <thead className="border-b border-border text-[0.56rem] uppercase tracking-[0.14em] text-muted-foreground">
           <tr>
             {["Model / Provider", "Status", "Context Window", "Role", "Usage", "Actions"].map((header) => (
               <th key={header} className="px-3 py-2.5 font-semibold">{header}</th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-white/[0.06] text-slate-300">
+        <tbody className="divide-y divide-border text-foreground/80">
           {models.map((model) => (
-            <tr key={model.id} onClick={() => onSelect(model.id)} className={cn("cursor-pointer hover:bg-white/[0.035]", model.id === selectedId && "bg-blue-500/[0.10] outline outline-1 outline-blue-400/50")}>
+            <tr key={model.id} onClick={() => onSelect(model.id)} className={cn("cursor-pointer hover:bg-muted/50", model.id === selectedId && "bg-primary/10 outline outline-1 outline-primary/45")}>
               <td className="px-3 py-2.5">
                 <div className="flex items-center gap-2.5">
                   <EntityIcon icon={BrainCircuit} label={model.name} tone={model.statusTone} size="sm" />
-                  <span><span className="block font-semibold text-white">{model.name}</span><span className="text-[0.66rem] text-slate-500">{model.provider}</span></span>
+                  <span><span className="block font-semibold text-foreground">{model.name}</span><span className="text-[0.66rem] text-muted-foreground">{model.provider}</span></span>
                 </div>
               </td>
               <td className="px-3 py-2.5"><StatusBadge label={model.statusLabel} tone={model.statusTone} /></td>
@@ -316,35 +290,35 @@ function ModelInspector({
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <h2 className="text-base font-semibold text-white">{model.name}</h2>
-              <p className="mt-1 text-xs text-slate-300">{model.provider}</p>
+              <h2 className="text-base font-semibold text-foreground">{model.name}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{model.provider}</p>
             </div>
             <StatusBadge label={model.statusLabel} tone={model.statusTone} />
           </div>
-          <p className="mt-2.5 text-xs leading-5 text-slate-300">Configured model route reported by AgentOS/OpenClaw.</p>
+          <p className="mt-2.5 text-xs leading-5 text-foreground/80">Configured model route reported by AgentOS/OpenClaw.</p>
         </div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <Button
           size="sm"
-          className="col-span-2 h-8 rounded-[9px] bg-blue-500 text-xs text-white hover:bg-blue-400"
+          className="col-span-2 h-8 rounded-[9px] bg-primary text-xs text-white hover:bg-primary/90"
           disabled={settingDefault || model.role === "Primary" || model.statusTone === "danger"}
           title={model.role === "Primary" ? "This model is already the default." : model.statusTone === "danger" ? "Unavailable models cannot be selected as default." : "Set this configured model as the AgentOS default."}
           onClick={onSetDefault}
         >
           {settingDefault ? "Saving..." : "Set as Default"}
         </Button>
-        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs text-violet-200" disabled title="Fallback routing is not exposed by the current model provider API.">Set as Fallback</Button>
+        <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" disabled title="Fallback routing is not exposed by the current model provider API.">Set as Fallback</Button>
         <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={onOpenAddModels}>Add Models</Button>
         <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" disabled title="Model removal/disable is not exposed by the current model provider API.">Disable</Button>
       </div>
-      <div className="mt-3 flex border-b border-white/[0.08]">
+      <div className="mt-3 flex border-b border-border">
         {(["Details", "Capabilities", "Performance"] as const).map((item) => (
-          <button key={item} type="button" onClick={() => onTabChange(item)} className={cn("border-b-2 px-3 py-2.5 text-xs", tab === item ? "border-blue-400 text-blue-200" : "border-transparent text-slate-400 hover:text-white")}>{item}</button>
+          <button key={item} type="button" onClick={() => onTabChange(item)} className={cn("border-b-2 px-3 py-2.5 text-xs", tab === item ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}>{item}</button>
         ))}
       </div>
       {tab === "Details" ? (
-        <div className="mt-3 rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3">
+        <div className="mt-3 rounded-[10px] border border-border bg-muted/35 px-3">
           <KeyValue label="Provider" value={model.provider} />
           <KeyValue label="API Status" value={model.statusLabel} />
           <KeyValue label="Model ID" value={model.id} />

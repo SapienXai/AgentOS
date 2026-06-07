@@ -65,8 +65,9 @@ const config: Config = {
         mono: ["var(--font-mono)"]
       },
       boxShadow: {
-        glow: "0 0 0 1px rgba(255,255,255,0.06), 0 24px 80px rgba(0,0,0,0.45)",
-        panel: "0 16px 48px rgba(0,0,0,0.38)"
+        glow: "var(--shadow-glow)",
+        panel: "var(--shadow-panel)",
+        card: "var(--shadow-card)"
       },
       backgroundImage: {
         "mission-grid":

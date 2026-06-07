@@ -60,6 +60,20 @@ export function OperationsShell({
   );
 
   useEffect(() => {
+    const root = document.documentElement;
+    const hadDarkClass = root.classList.contains("dark");
+    const previousColorScheme = root.style.colorScheme;
+
+    root.classList.toggle("dark", surfaceTheme !== "light");
+    root.style.colorScheme = surfaceTheme === "light" ? "light" : "dark";
+
+    return () => {
+      root.classList.toggle("dark", hadDarkClass);
+      root.style.colorScheme = previousColorScheme;
+    };
+  }, [surfaceTheme]);
+
+  useEffect(() => {
     const workspaceRoot = snapshot.diagnostics.workspaceRoot;
 
     if (loadedWorkspaceSelectionRoot === workspaceRoot) {
@@ -134,7 +148,7 @@ export function OperationsShell({
   return (
     <div
       className={cn(
-        "mission-shell relative min-h-screen overflow-hidden bg-[#030814] text-slate-100",
+        "mission-shell relative min-h-screen overflow-hidden bg-background text-foreground",
         surfaceTheme === "light" && "mission-shell--light"
       )}
     >
@@ -142,13 +156,13 @@ export function OperationsShell({
         <div aria-hidden="true" className="mission-canvas-pattern absolute inset-0 z-0 opacity-60" />
         <div
           aria-hidden="true"
-          className="absolute inset-0 z-10 bg-[radial-gradient(circle_at_54%_0%,rgba(37,99,235,0.16),transparent_32%),linear-gradient(180deg,rgba(2,6,17,0.12),rgba(2,6,17,0.58))]"
+          className="absolute inset-0 z-10 bg-[radial-gradient(circle_at_54%_0%,hsl(var(--primary)/0.10),transparent_32%),linear-gradient(180deg,hsl(var(--background)/0.10),hsl(var(--background)/0.58))]"
         />
       </div>
 
       <div
         className={cn(
-          "fixed left-0 top-0 z-30 hidden h-[100dvh] overflow-hidden bg-[#050a12] shadow-[18px_0_60px_rgba(0,0,0,0.36)] transition-[width] duration-200 ease-out lg:block",
+          "fixed left-0 top-0 z-30 hidden h-[100dvh] overflow-hidden bg-card shadow-panel transition-[width] duration-200 ease-out lg:block",
           sidebarExpanded ? "w-[256px]" : "w-[72px]"
         )}
         onMouseEnter={() => setSidebarExpanded(true)}
@@ -205,7 +219,7 @@ export function OperationsShell({
 
       <div
         className={cn(
-          "fixed left-0 top-0 z-50 h-[100dvh] overflow-hidden bg-[#050a12] shadow-[18px_0_60px_rgba(0,0,0,0.42)] transition-[width] duration-200 ease-out lg:hidden",
+          "fixed left-0 top-0 z-50 h-[100dvh] overflow-hidden bg-card shadow-panel transition-[width] duration-200 ease-out lg:hidden",
           mobileSidebarOpen ? "w-[min(86vw,292px)]" : "w-[56px]"
         )}
         onClickCapture={(event) => {
@@ -248,7 +262,7 @@ export function OperationsShell({
         />
       </div>
 
-      <main className={cn("relative z-20 min-h-screen pb-4 pl-[68px] pr-3 pt-4 sm:pl-[76px] sm:pr-5 lg:pl-[92px] lg:pr-4")}>
+      <main className={cn("operations-content relative z-20 min-h-screen pb-4 pl-[68px] pr-3 pt-4 sm:pl-[76px] sm:pr-5 lg:pl-[92px] lg:pr-4")}>
         <div className="mx-auto flex w-full max-w-[1880px] flex-col gap-3">
           <OperationsTopBar
             snapshot={snapshot}

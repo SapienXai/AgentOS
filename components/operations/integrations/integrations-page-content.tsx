@@ -401,7 +401,7 @@ export function IntegrationsPageContent({
               <div className="space-y-3">
                 {Array.from(new Set(filteredIntegrations.map((integration) => integration.category))).map((section) => (
                   <section key={section}>
-                    <h2 className="mb-2 text-[0.62rem] font-bold uppercase tracking-[0.16em] text-slate-500">{section} ({filteredIntegrations.filter((integration) => integration.category === section).length})</h2>
+                    <h2 className="mb-2 text-[0.62rem] font-bold uppercase tracking-[0.16em] text-muted-foreground">{section} ({filteredIntegrations.filter((integration) => integration.category === section).length})</h2>
                     <div className={cn(view === "grid" ? "grid gap-2.5 lg:grid-cols-2 min-[1400px]:grid-cols-3" : "flex flex-col gap-2.5")}>
                       {filteredIntegrations.filter((integration) => integration.category === section).map((integration) => (
                         <IntegrationCard
@@ -505,9 +505,9 @@ function IntegrationCard({
         }
       }}
       className={cn(
-        "rounded-[12px] border p-3 text-left transition-all hover:bg-white/[0.055] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
+        "rounded-lg border p-3 text-left transition-all hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
         pageSurface,
-        selected && "border-blue-400/70 bg-blue-500/[0.08]"
+        selected && "border-primary/60 bg-primary/10"
       )}
     >
       <div className={cn("flex gap-3", list ? "items-center" : "items-start")}>
@@ -515,9 +515,9 @@ function IntegrationCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <h3 className="truncate text-[0.88rem] font-semibold text-white">{integration.name}</h3>
-              <p className="mt-1 truncate text-[0.68rem] text-slate-400">{integration.connectionHealth.label}</p>
-              <p className="mt-1 text-[0.68rem] text-slate-400">Linked: {integration.linkedAgentCount} agents</p>
+              <h3 className="truncate text-[0.88rem] font-semibold text-foreground">{integration.name}</h3>
+              <p className="mt-1 truncate text-[0.68rem] text-muted-foreground">{integration.connectionHealth.label}</p>
+              <p className="mt-1 text-[0.68rem] text-muted-foreground">Linked: {integration.linkedAgentCount} agents</p>
             </div>
             <StatusBadge label={integration.statusLabel} tone={integration.statusTone} />
           </div>
@@ -588,13 +588,13 @@ function IntegrationInspector({
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <h2 className="text-base font-semibold text-white">{integration.name}</h2>
+              <h2 className="text-base font-semibold text-foreground">{integration.name}</h2>
               <StatusBadge label={integration.statusLabel} tone={integration.statusTone} className="mt-1.5" />
             </div>
             <MoreButton />
           </div>
           <MiniBadge>{integration.category}</MiniBadge>
-          <p className="mt-2.5 text-xs leading-5 text-slate-300">{integration.description}</p>
+          <p className="mt-2.5 text-xs leading-5 text-foreground/80">{integration.description}</p>
         </div>
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2">
@@ -636,51 +636,51 @@ function IntegrationInspector({
           <KeyValue label="Uptime" value={integration.uptimeLabel} />
           <KeyValue label="Rate limit" value={integration.rateLimitLabel} />
           <KeyValue label="Source" value={integration.sourceMethods.join(", ")} />
-          <p className="border-t border-white/[0.07] py-2 text-xs leading-5 text-slate-400">{integration.connectionHealth.detail}</p>
+          <p className="border-t border-border py-2 text-xs leading-5 text-muted-foreground">{integration.connectionHealth.detail}</p>
           <ProgressBar value={integration.status === "connected" ? 84 : integration.status === "failed" ? 8 : 28} tone={integration.statusTone} />
         </div>
       </SectionCard>
       <SectionCard title="Scopes / Permissions" className="mt-3">
-        <div className="space-y-1.5 p-3 text-xs text-slate-300">
+        <div className="space-y-1.5 p-3 text-xs text-foreground/80">
           {integration.permissions.map((scope) => (
-            <div key={scope} className="flex items-center gap-1.5"><CircleCheck className="h-3.5 w-3.5 text-emerald-300" />{scope}</div>
+            <div key={scope} className="flex items-center gap-1.5"><CircleCheck className="h-3.5 w-3.5 text-[hsl(var(--status-success-foreground))]" />{scope}</div>
           ))}
         </div>
       </SectionCard>
       <SectionCard title={`Linked Agents (${integration.linkedAgentCount})`} className="mt-3">
-        <div className="divide-y divide-white/[0.07] px-3">
+        <div className="divide-y divide-border px-3">
           {integration.linkedAgents.length > 0 ? integration.linkedAgents.map((agent) => (
             <div key={agent.id} className="py-2.5 text-xs">
               <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-slate-200">{agent.name}</span>
-                <span className="shrink-0 text-slate-500">{agent.workspaceName}</span>
+                <span className="truncate text-foreground/80">{agent.name}</span>
+                <span className="shrink-0 text-muted-foreground">{agent.workspaceName}</span>
               </div>
-              <p className="mt-1 truncate text-[0.66rem] text-slate-500">{agent.reason}</p>
+              <p className="mt-1 truncate text-[0.66rem] text-muted-foreground">{agent.reason}</p>
             </div>
           )) : (
-            <div className="py-3 text-xs text-slate-500">
+            <div className="py-3 text-xs text-muted-foreground">
               {integration.managedBy === "unsupported" ? "Linkage unavailable until this connector exists." : "No linked agents found in the current workspace snapshot."}
             </div>
           )}
         </div>
       </SectionCard>
       <SectionCard title="Setup Notes" className="mt-3">
-        <div className="space-y-2 p-3 text-xs leading-5 text-slate-300">
+        <div className="space-y-2 p-3 text-xs leading-5 text-foreground/80">
           <KeyValue label="Managed by" value={formatManagedBy(integration.managedBy)} />
           <KeyValue label="Provider type" value={integration.providerType} />
           <KeyValue label="Accounts" value={integration.accountIds.length ? integration.accountIds.join(", ") : "None"} />
           <KeyValue label="Channels" value={integration.channelIds.length ? integration.channelIds.join(", ") : "None"} />
           <KeyValue label="Models" value={integration.modelIds.length ? integration.modelIds.join(", ") : "None"} />
-          {integration.errorMessage ? <p className="rounded-[9px] border border-red-400/20 bg-red-500/10 p-2 text-red-200">{integration.errorMessage}</p> : null}
+          {integration.errorMessage ? <p className="rounded-[9px] border border-destructive/20 bg-destructive/10 p-2 text-destructive">{integration.errorMessage}</p> : null}
           {integration.missingConfiguration.length > 0 ? (
             <div>
-              <p className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Required setup</p>
+              <p className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Required setup</p>
               <div className="mt-1 flex flex-wrap gap-1.5">
                 {integration.missingConfiguration.map((item) => <MiniBadge key={item}>{item}</MiniBadge>)}
               </div>
             </div>
           ) : null}
-          <div className="rounded-[9px] border border-white/[0.07] bg-white/[0.03] p-2 text-slate-400">
+          <div className="rounded-[9px] border border-border bg-muted/35 p-2 text-muted-foreground">
             <p>Configure: {integration.actionSupport.configure.reason}</p>
             <p>Reconnect: {integration.actionSupport.reconnect.reason}</p>
             <p>Disable: {integration.actionSupport.disable.reason}</p>
@@ -703,26 +703,26 @@ function AutomationImpactSummary({ integrations }: { integrations: IntegrationVi
         <MetricTile icon={Sparkles} label="Triggers fired" value="-" detail="OpenClaw metric unavailable" tone="success" />
         <MetricTile icon={BellRing} label="Actions executed" value="-" detail="OpenClaw metric unavailable" tone="purple" />
         <MetricTile icon={ShieldCheck} label="Success rate" value="-" detail="OpenClaw metric unavailable" tone="success" />
-        <div className="rounded-[10px] border border-white/[0.08] bg-white/[0.03] p-2.5">
-          <p className="mb-2.5 text-[0.58rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Top linked integrations</p>
+        <div className="rounded-[10px] border border-border bg-muted/35 p-2.5">
+          <p className="mb-2.5 text-[0.58rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Top linked integrations</p>
           {linked.slice(0, 3).map((integration) => (
             <div key={integration.id} className="mb-2 grid grid-cols-[80px_1fr_auto] items-center gap-2 text-[0.68rem]">
-              <span className="truncate text-slate-300">{integration.name}</span>
+              <span className="truncate text-foreground/80">{integration.name}</span>
               <ProgressBar value={Math.min(100, 20 + integration.linkedAgentCount * 18)} />
-              <span className="text-slate-500">{integration.linkedAgentCount} agents</span>
+              <span className="text-muted-foreground">{integration.linkedAgentCount} agents</span>
             </div>
           ))}
-          {linked.length === 0 ? <p className="text-[0.68rem] text-slate-500">No linked integrations found in the current snapshot.</p> : null}
+          {linked.length === 0 ? <p className="text-[0.68rem] text-muted-foreground">No linked integrations found in the current snapshot.</p> : null}
         </div>
-        <div className="rounded-[10px] border border-white/[0.08] bg-white/[0.03] p-2.5">
-          <p className="mb-2.5 text-[0.58rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Recently observed</p>
+        <div className="rounded-[10px] border border-border bg-muted/35 p-2.5">
+          <p className="mb-2.5 text-[0.58rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Recently observed</p>
           {connected.slice(0, 3).map((integration) => (
             <div key={integration.id} className="flex justify-between gap-2 py-1 text-[0.68rem]">
-              <span className="text-slate-300">{integration.name}</span>
-              <span className="text-slate-500">{integration.lastSyncLabel}</span>
+              <span className="text-foreground/80">{integration.name}</span>
+              <span className="text-muted-foreground">{integration.lastSyncLabel}</span>
             </div>
           ))}
-          {connected.length === 0 ? <p className="text-[0.68rem] text-slate-500">No verified connected integrations yet.</p> : null}
+          {connected.length === 0 ? <p className="text-[0.68rem] text-muted-foreground">No verified connected integrations yet.</p> : null}
         </div>
       </div>
     </SectionCard>
@@ -742,7 +742,7 @@ function IntegrationAddDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl rounded-[18px] border-white/[0.10] bg-[#08111f]/95 p-4">
+      <DialogContent className="max-w-3xl rounded-[18px] p-4">
         <DialogHeader>
           <DialogTitle>Add Integration</DialogTitle>
           <DialogDescription>
@@ -756,7 +756,7 @@ function IntegrationAddDialog({
               type="button"
               onClick={() => onSelect(integration)}
               className={cn(
-                "rounded-[12px] border p-3 text-left transition hover:bg-white/[0.06]",
+                "rounded-[12px] border p-3 text-left transition hover:bg-muted/60",
                 pageSurface,
                 !integration.actionSupport.configure.supported && "opacity-70"
               )}
@@ -765,11 +765,11 @@ function IntegrationAddDialog({
                 <EntityIcon icon={integration.icon} label={integration.name} tone={integration.iconTone} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <h3 className="truncate text-sm font-semibold text-white">{integration.name}</h3>
+                    <h3 className="truncate text-sm font-semibold text-foreground">{integration.name}</h3>
                     <StatusBadge label={integration.statusLabel} tone={integration.statusTone} />
                   </div>
-                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-400">{integration.description}</p>
-                  <p className="mt-2 text-[0.68rem] text-slate-500">{integration.actionSupport.configure.reason}</p>
+                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{integration.description}</p>
+                  <p className="mt-2 text-[0.68rem] text-muted-foreground">{integration.actionSupport.configure.reason}</p>
                 </div>
               </div>
             </button>
@@ -793,18 +793,18 @@ function IntegrationImportDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl rounded-[18px] border-white/[0.10] bg-[#08111f]/95 p-4">
+      <DialogContent className="max-w-xl rounded-[18px] p-4">
         <DialogHeader>
           <DialogTitle>Import Integration</DialogTitle>
           <DialogDescription>
             Secure bulk import is not available because this codebase does not expose a credential import contract or secret store handoff.
           </DialogDescription>
         </DialogHeader>
-        <div className="rounded-[12px] border border-amber-300/20 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
+        <div className="rounded-[12px] border border-[hsl(var(--status-warning)/0.24)] bg-[hsl(var(--status-warning)/0.10)] p-3 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]">
           Importing tokens, OAuth secrets, bot credentials, or webhook secrets from the browser would expose sensitive values. Use the existing setup flows so OpenClaw handles credentials through its supported config paths.
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
-          <Button className="h-9 rounded-[9px] bg-blue-500 text-white hover:bg-blue-400" onClick={onOpenSurfaceSetup}>
+          <Button className="h-9 rounded-[9px] bg-primary text-white hover:bg-primary/90" onClick={onOpenSurfaceSetup}>
             Open Surface Setup
           </Button>
           <Button variant="secondary" className="h-9 rounded-[9px]" onClick={onOpenModelSetup}>

@@ -240,6 +240,21 @@ export function MissionControlShell({
     safeLockedTaskKeys,
     clearPreferenceState
   } = useMissionControlPreferences();
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const hadDarkClass = root.classList.contains("dark");
+    const previousColorScheme = root.style.colorScheme;
+
+    root.classList.toggle("dark", surfaceTheme !== "light");
+    root.style.colorScheme = surfaceTheme === "light" ? "light" : "dark";
+
+    return () => {
+      root.classList.toggle("dark", hadDarkClass);
+      root.style.colorScheme = previousColorScheme;
+    };
+  }, [surfaceTheme]);
+
   const [agentActionRequest, setAgentActionRequest] = useState<AgentActionRequest | null>(null);
   const [capabilityEditorRequest, setCapabilityEditorRequest] = useState<CapabilityEditorRequest | null>(null);
   const [taskAbortRequest, setTaskAbortRequest] = useState<WorkItemRecord | null>(null);

@@ -292,25 +292,25 @@ export function AccountsPageContent({
               <StatCard label="Gateway State" value={error ? "Blocked" : loading ? "Checking" : "Ready"} detail={error ? "OpenClaw browser unavailable" : "Real browser profile API"} icon={Gauge} tone={error ? "warning" : "success"} />
             </StatGrid>
 
-            <div className="rounded-[12px] border border-cyan-300/18 bg-cyan-400/10 px-3 py-2.5 text-xs leading-5 text-cyan-100">
+            <div className="rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-xs leading-5 text-foreground">
               AgentOS does not store raw passwords. Sessions are stored in OpenClaw browser profiles.
             </div>
 
             {hiddenUnavailableProfiles.length > 0 ? (
-              <div className="rounded-[12px] border border-amber-300/20 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-100">
+              <div className="rounded-[12px] border border-[hsl(var(--status-warning)/0.24)] bg-[hsl(var(--status-warning)/0.10)] px-3 py-2.5 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]">
                 {hiddenUnavailableProfiles.length} OpenClaw browser profile{hiddenUnavailableProfiles.length === 1 ? "" : "s"} reported by Gateway are hidden because they are not attached or usable for account login yet.
               </div>
             ) : null}
 
             <SectionCard title="Browser Profile Access">
-              <div className="grid gap-3 p-3 text-xs leading-5 text-slate-300 lg:grid-cols-2">
+              <div className="grid gap-3 p-3 text-xs leading-5 text-foreground/80 lg:grid-cols-2">
                 <div>
-                  <p className="font-semibold text-white">What works here</p>
-                  <p className="mt-1 text-slate-400">AgentOS reads OpenClaw browser profiles, starts a profile, opens a login URL, and records the workspace login target after that browser action succeeds.</p>
+                  <p className="font-semibold text-foreground">What works here</p>
+                  <p className="mt-1 text-muted-foreground">AgentOS reads OpenClaw browser profiles, starts a profile, opens a login URL, and records the workspace login target after that browser action succeeds.</p>
                 </div>
                 <div>
-                  <p className="font-semibold text-white">What is not exposed yet</p>
-                  <p className="mt-1 text-slate-400">OpenClaw does not expose verified website account identities or a direct browser-profile dispatch parameter to AgentOS. Agent access is enforced by AgentOS before account-target task launch.</p>
+                  <p className="font-semibold text-foreground">What is not exposed yet</p>
+                  <p className="mt-1 text-muted-foreground">OpenClaw does not expose verified website account identities or a direct browser-profile dispatch parameter to AgentOS. Agent access is enforced by AgentOS before account-target task launch.</p>
                 </div>
               </div>
             </SectionCard>
@@ -356,8 +356,8 @@ export function AccountsPageContent({
                   <div className="flex min-w-0 items-start gap-3">
                     <EntityIcon icon={AlertTriangle} label="Login targets unavailable" tone="warning" />
                     <div className="min-w-0">
-                      <h2 className="text-sm font-semibold text-white">Account login targets are unavailable</h2>
-                      <p className="mt-1 text-xs leading-5 text-slate-400">{targetsError ?? accessRulesError}</p>
+                      <h2 className="text-sm font-semibold text-foreground">Account login targets are unavailable</h2>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{targetsError ?? accessRulesError}</p>
                     </div>
                   </div>
                   <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => {
@@ -368,7 +368,7 @@ export function AccountsPageContent({
                   </Button>
                 </div>
               ) : targetsLoading || accessRulesLoading ? (
-                <div className="p-4 text-xs text-slate-400">Loading login targets...</div>
+                <div className="p-4 text-xs text-muted-foreground">Loading login targets...</div>
               ) : filteredLoginTargets.length === 0 ? (
                 <div className="p-4">
                   <EmptyState
@@ -429,8 +429,8 @@ export function AccountsPageContent({
                   <div className="flex min-w-0 items-start gap-3">
                     <EntityIcon icon={AlertTriangle} label="OpenClaw browser unavailable" tone="warning" />
                     <div className="min-w-0">
-                      <h2 className="text-sm font-semibold text-white">OpenClaw browser profiles are unavailable</h2>
-                      <p className="mt-1 text-xs leading-5 text-slate-400">{error}</p>
+                      <h2 className="text-sm font-semibold text-foreground">OpenClaw browser profiles are unavailable</h2>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{error}</p>
                     </div>
                   </div>
                   <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => void loadProfiles()}>
@@ -508,13 +508,13 @@ function BrowserProfileCard({
         <div className="flex min-w-0 items-start gap-3">
           <EntityIcon icon={Chrome} label={profile.name} tone="info" />
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-white">{profile.name}</h2>
-            <p className="mt-1 truncate text-[0.7rem] text-slate-400">{profile.driverLabel}</p>
+            <h2 className="truncate text-sm font-semibold text-foreground">{profile.name}</h2>
+            <p className="mt-1 truncate text-[0.7rem] text-muted-foreground">{profile.driverLabel}</p>
           </div>
         </div>
         <StatusBadge label={profile.statusLabel} tone={profile.statusTone} />
       </div>
-      <div className="grid gap-2 border-t border-white/[0.07] p-3 sm:grid-cols-2">
+      <div className="grid gap-2 border-t border-border p-3 sm:grid-cols-2">
         <KeyValue label="Transport" value={profile.transportLabel} />
         <KeyValue label="Tabs" value={String(profile.tabCount)} />
         <KeyValue label="Default" value={profile.isDefault ? "Yes" : "No"} />
@@ -523,11 +523,11 @@ function BrowserProfileCard({
         <KeyValue label="CDP URL" value={profile.cdpUrl ?? "Not reported"} />
       </div>
       {profile.missingFromConfig || profile.reconcileReason ? (
-        <div className="border-t border-white/[0.07] px-3 py-2 text-[0.68rem] leading-5 text-amber-100">
+        <div className="border-t border-border px-3 py-2 text-[0.68rem] leading-5 text-[hsl(var(--status-warning-foreground))]">
           {profile.reconcileReason ?? "This profile was reported by OpenClaw but is missing from config."}
         </div>
       ) : null}
-      <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.07] p-3">
+      <div className="flex flex-wrap items-center gap-2 border-t border-border p-3">
         <Button
           variant="secondary"
           size="sm"
@@ -578,18 +578,18 @@ function LoginTargetCard({
   });
 
   return (
-    <div className="rounded-[12px] border border-white/[0.08] bg-white/[0.035]">
+    <div className="rounded-[12px] border border-border bg-card">
       <div className="flex items-start justify-between gap-3 p-3">
         <div className="flex min-w-0 items-start gap-3">
           <EntityIcon icon={KeyRound} label={target.serviceName} tone="warning" />
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-white">{target.serviceName}</h2>
-            <p className="mt-1 truncate text-[0.7rem] text-slate-400">{target.primaryDomain}</p>
+            <h2 className="truncate text-sm font-semibold text-foreground">{target.serviceName}</h2>
+            <p className="mt-1 truncate text-[0.7rem] text-muted-foreground">{target.primaryDomain}</p>
           </div>
         </div>
         <StatusBadge label={target.statusLabel} tone={target.statusTone} />
       </div>
-      <div className="grid gap-2 border-t border-white/[0.07] p-3 sm:grid-cols-2">
+      <div className="grid gap-2 border-t border-border p-3 sm:grid-cols-2">
         <KeyValue label="Browser profile" value={target.browserProfileName} />
         <KeyValue label="Workspace" value={target.workspaceName} />
         <KeyValue label="Last opened" value={formatAccountTimestamp(target.lastOpenedAt)} />
@@ -597,19 +597,19 @@ function LoginTargetCard({
         <KeyValue label="Login URL" value={target.loginUrl} />
         <KeyValue label="Source" value="Connect Account" />
       </div>
-      <div className="border-t border-white/[0.07] px-3 py-2 text-[0.68rem] leading-5 text-slate-400">
+      <div className="border-t border-border px-3 py-2 text-[0.68rem] leading-5 text-muted-foreground">
         AgentOS records that this login target was opened in the selected browser profile. Website account identity is not verified by OpenClaw.
       </div>
-      <div className="border-t border-white/[0.07] px-3 py-2">
+      <div className="border-t border-border px-3 py-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-slate-500">Agent Access</p>
+          <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Agent Access</p>
           <div className="flex flex-wrap gap-1.5">
             <MiniBadge>{runnableRules.length} runnable</MiniBadge>
             {approvalRules.length > 0 ? <MiniBadge>{approvalRules.length} approval-blocked</MiniBadge> : null}
           </div>
         </div>
         {runnableRules.length === 0 && approvalRules.length === 0 ? (
-          <p className="mt-2 text-[0.68rem] leading-5 text-slate-500">
+          <p className="mt-2 text-[0.68rem] leading-5 text-muted-foreground">
             No agent can use this account target until access is granted.
           </p>
         ) : (
@@ -621,11 +621,11 @@ function LoginTargetCard({
             {approvalRules.length > 0 ? <MiniBadge>Approval required until dispatch support exists</MiniBadge> : null}
           </div>
         )}
-        <p className="mt-2 text-[0.66rem] leading-5 text-slate-500">
+        <p className="mt-2 text-[0.66rem] leading-5 text-muted-foreground">
           AgentOS blocks account-target dispatch for agents without access. OpenClaw does not expose a direct browser-profile dispatch parameter yet.
         </p>
       </div>
-      <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.07] p-3">
+      <div className="flex flex-wrap items-center gap-2 border-t border-border p-3">
         <Button
           variant="secondary"
           size="sm"
@@ -769,7 +769,7 @@ function ManageAccountAccessDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {target ? (
-        <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto rounded-[18px] border-white/[0.10] bg-[#08111f]/95 p-4">
+        <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto rounded-[18px] p-4">
           <DialogHeader>
             <DialogTitle>Manage Account Access</DialogTitle>
             <DialogDescription>
@@ -777,7 +777,7 @@ function ManageAccountAccessDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="rounded-[10px] border border-cyan-300/18 bg-cyan-400/10 px-3 py-2 text-xs leading-5 text-cyan-100">
+          <div className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs leading-5 text-foreground">
             AgentOS enforces this before account-target task launch. Requires approval rules stay blocked until approval dispatch exists.
           </div>
 
@@ -793,19 +793,19 @@ function ManageAccountAccessDialog({
           {sortedAgents.length === 0 ? (
             <EmptyState title="No workspace agents" description="Create an agent in this workspace before granting account access." />
           ) : (
-            <div className="rounded-[12px] border border-white/[0.08] bg-white/[0.03]">
+            <div className="rounded-[12px] border border-border bg-muted/25">
               {sortedAgents.map((agent) => {
                 const canUseBrowser = agentHasBrowserAccess(agent);
                 const agentDraft = draft[agent.id] ?? { permission: "no_access" as AccountAccessPermission, notes: "" };
 
                 return (
-                  <div key={agent.id} className="grid gap-3 border-b border-white/[0.07] p-3 last:border-b-0 md:grid-cols-[minmax(0,1fr)_180px]">
+                  <div key={agent.id} className="grid gap-3 border-b border-border p-3 last:border-b-0 md:grid-cols-[minmax(0,1fr)_180px]">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-white">{agent.name}</p>
+                        <p className="truncate text-sm font-semibold text-foreground">{agent.name}</p>
                         <MiniBadge>{canUseBrowser ? "Browser-capable" : "Browser tools missing"}</MiniBadge>
                       </div>
-                      <p className="mt-1 text-[0.68rem] leading-5 text-slate-500">
+                      <p className="mt-1 text-[0.68rem] leading-5 text-muted-foreground">
                         {canUseBrowser
                           ? "This agent can be granted account-target task access."
                           : "Enable browser/chrome tools before this agent can use account sessions."}
@@ -824,7 +824,7 @@ function ManageAccountAccessDialog({
                           }));
                         }}
                         placeholder="Optional policy note"
-                        className="mt-2 h-8 rounded-[9px] bg-slate-950/50 text-xs"
+                        className="mt-2 h-8 rounded-[9px] text-xs"
                       />
                     </div>
                     <div className="flex flex-col gap-1.5">
@@ -843,7 +843,7 @@ function ManageAccountAccessDialog({
                             }
                           }));
                         }}
-                        className="h-9 rounded-[10px] border border-white/[0.10] bg-slate-950/50 px-3 text-xs text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className="h-9 rounded-[10px] border border-input bg-card px-3 text-xs text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <option value="no_access">No access</option>
                         <option value="use_browser_profile">Can use profile</option>
@@ -856,13 +856,13 @@ function ManageAccountAccessDialog({
             </div>
           )}
 
-          {error ? <div className="rounded-[10px] border border-rose-300/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-100">{error}</div> : null}
+          {error ? <div className="rounded-[10px] border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div> : null}
 
           <DialogFooter>
             <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button size="sm" className="h-8 rounded-[9px] bg-blue-500 text-xs text-white hover:bg-blue-400" disabled={saving || sortedAgents.length === 0} onClick={() => void save()}>
+            <Button size="sm" className="h-8 rounded-[9px] bg-primary text-xs text-white hover:bg-primary/90" disabled={saving || sortedAgents.length === 0} onClick={() => void save()}>
               {saving ? "Saving..." : "Save access"}
             </Button>
           </DialogFooter>
@@ -956,7 +956,7 @@ function AccountTargetMissionDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {target ? (
-        <DialogContent className="max-w-xl rounded-[18px] border-white/[0.10] bg-[#08111f]/95 p-4">
+        <DialogContent className="max-w-xl rounded-[18px] p-4">
           <DialogHeader>
             <DialogTitle>Run Task With Account</DialogTitle>
             <DialogDescription>
@@ -973,7 +973,7 @@ function AccountTargetMissionDialog({
             </div>
           </SectionCard>
 
-          <div className="rounded-[10px] border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100">
+          <div className="rounded-[10px] border border-[hsl(var(--status-warning)/0.24)] bg-[hsl(var(--status-warning)/0.10)] px-3 py-2 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]">
             OpenClaw does not expose a direct browser-profile dispatch parameter yet. AgentOS blocks unauthorized agents and includes the selected profile/session as task context.
           </div>
 
@@ -987,7 +987,7 @@ function AccountTargetMissionDialog({
                   id={`account-task-agent-${target.id}`}
                   value={selectedAgentId}
                   onChange={(event) => setSelectedAgentId(event.target.value)}
-                  className="h-9 rounded-[10px] border border-white/[0.10] bg-slate-950/50 px-3 text-xs text-white"
+                  className="h-9 rounded-[10px] border border-input bg-card px-3 text-xs text-foreground"
                 >
                   {allowedAgents.map((agent) => (
                     <option key={agent.id} value={agent.id}>{agent.name}</option>
@@ -998,12 +998,12 @@ function AccountTargetMissionDialog({
                 value={mission}
                 onChange={(event) => setMission(event.target.value)}
                 placeholder={`Describe what the agent should do using ${target.serviceName}...`}
-                className="min-h-32 rounded-[12px] border-white/[0.10] bg-slate-950/50 text-sm text-slate-100"
+                className="min-h-32 rounded-[12px] text-sm"
               />
             </>
           )}
 
-          {error ? <div className="rounded-[10px] border border-rose-300/20 bg-rose-400/10 px-3 py-2 text-xs text-rose-100">{error}</div> : null}
+          {error ? <div className="rounded-[10px] border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div> : null}
 
           <DialogFooter>
             <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => onOpenChange(false)}>
@@ -1011,7 +1011,7 @@ function AccountTargetMissionDialog({
             </Button>
             <Button
               size="sm"
-              className="h-8 rounded-[9px] bg-blue-500 text-xs text-white hover:bg-blue-400"
+              className="h-8 rounded-[9px] bg-primary text-xs text-white hover:bg-primary/90"
               disabled={submitting || allowedAgents.length === 0 || !selectedAgentId || !mission.trim()}
               onClick={() => void submit()}
             >
@@ -1123,15 +1123,15 @@ function ConnectAccountWizardContent({
   };
 
   return (
-    <DialogContent className="max-h-[92vh] w-[calc(100vw-2rem)] max-w-3xl overflow-y-auto rounded-[18px] border-white/[0.10] bg-[#08111f]/95 p-4">
-      <div className="border-b border-white/[0.08] p-4">
+    <DialogContent className="max-h-[92vh] w-[calc(100vw-2rem)] max-w-3xl overflow-y-auto rounded-[18px] p-4">
+      <div className="border-b border-border p-4">
         <DialogHeader>
           <DialogTitle>Connect Account</DialogTitle>
           <DialogDescription>
             Open a login flow in a real OpenClaw browser profile for this workspace.
           </DialogDescription>
         </DialogHeader>
-        <div className="mt-3 rounded-[10px] border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100">
+        <div className="mt-3 rounded-[10px] border border-[hsl(var(--status-warning)/0.24)] bg-[hsl(var(--status-warning)/0.10)] px-3 py-2 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]">
           AgentOS does not store raw passwords. Use manual login inside the assigned browser profile or connect through supported integrations.
         </div>
       </div>
@@ -1141,9 +1141,9 @@ function ConnectAccountWizardContent({
           title="Login Target"
           description="Type one website or choose a shortcut. AgentOS opens that URL in the selected OpenClaw browser profile."
         />
-        <div className="min-w-0 max-w-full rounded-[22px] border border-white/[0.08] bg-white/[0.035] p-3 shadow-[0_20px_48px_rgba(0,0,0,0.24)]">
-          <div className="flex h-12 items-center gap-3 rounded-full border border-white/[0.10] bg-slate-950/70 px-4 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_18px_40px_rgba(15,23,42,0.25)]">
-            <Search className="h-4 w-4 shrink-0 text-slate-400" />
+        <div className="min-w-0 max-w-full rounded-[22px] border border-border bg-muted/25 p-3 shadow-card">
+          <div className="flex h-12 items-center gap-3 rounded-full border border-input bg-card px-4 shadow-sm">
+            <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
             <Input
               id="connect-website-url"
               value={websiteInput}
@@ -1155,14 +1155,14 @@ function ConnectAccountWizardContent({
                 }
               }}
               placeholder="Search or type a website URL"
-              className="h-10 min-w-0 border-0 bg-transparent px-0 text-sm text-white shadow-none outline-none placeholder:text-slate-500 focus-visible:ring-0"
+              className="h-10 min-w-0 border-0 bg-transparent px-0 text-sm text-foreground shadow-none outline-none placeholder:text-muted-foreground focus-visible:ring-0"
             />
             {resolvedWebsite ? (
               <AccountIcon
                 serviceId={resolvedWebsite.serviceId}
                 serviceName={resolvedWebsite.serviceName}
                 primaryDomain={resolvedWebsite.primaryDomain}
-                className="h-7 w-7 shrink-0 border-white/10 bg-slate-950/40 shadow-none"
+                className="h-7 w-7 shrink-0 border-border bg-card shadow-none"
               />
             ) : null}
           </div>
@@ -1205,7 +1205,7 @@ function ConnectAccountWizardContent({
         {mode === "existing" ? (
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="connect-existing-profile">Existing browser profile</Label>
-            <select id="connect-existing-profile" value={existingProfileName} onChange={(event) => setExistingProfileName(event.target.value)} className="h-9 rounded-[10px] border border-white/[0.10] bg-slate-950/50 px-3 text-xs text-white">
+            <select id="connect-existing-profile" value={existingProfileName} onChange={(event) => setExistingProfileName(event.target.value)} className="h-9 rounded-[10px] border border-input bg-card px-3 text-xs text-foreground">
               <option value="">Select a browser profile</option>
               {profiles.map((profile) => (
                 <option key={profile.name} value={profile.name}>{profile.name} ({profile.driverLabel})</option>
@@ -1215,7 +1215,7 @@ function ConnectAccountWizardContent({
         ) : null}
 
         {mode === "signed-in-chrome" ? (
-          <div className="rounded-[12px] border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100">
+          <div className="rounded-[12px] border border-[hsl(var(--status-warning)/0.24)] bg-[hsl(var(--status-warning)/0.10)] px-3 py-2 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]">
             {signedInChromeReady
               ? "Signed-in Chrome is attached through OpenClaw. Use it only when existing cookies matter and the operator is present."
               : "Signed-in Chrome is not attached through OpenClaw yet. Start or attach the user profile from Browser Profiles after launching Chrome with remote debugging, or use the managed openclaw profile."}
@@ -1236,12 +1236,12 @@ function ConnectAccountWizardContent({
         <ValidationMessage message={validationMessage} />
       </div>
 
-      <DialogFooter className="border-t border-white/[0.08] p-4">
+      <DialogFooter className="border-t border-border p-4">
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[0.7rem] text-slate-500">{validationMessage ?? "Ready to open a real OpenClaw browser login flow."}</p>
+          <p className="text-[0.7rem] text-muted-foreground">{validationMessage ?? "Ready to open a real OpenClaw browser login flow."}</p>
           <div className="flex items-center justify-end gap-2">
             <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={onCancel}>Cancel</Button>
-            <Button size="sm" className="h-8 rounded-[9px] bg-blue-500 text-xs text-white hover:bg-blue-400" disabled={Boolean(validationMessage) || submitting} onClick={() => void submit()}>
+            <Button size="sm" className="h-8 rounded-[9px] bg-primary text-xs text-white hover:bg-primary/90" disabled={Boolean(validationMessage) || submitting} onClick={() => void submit()}>
               {submitting ? "Opening..." : "Connect Account"}
             </Button>
           </div>
@@ -1268,11 +1268,11 @@ function ProfileModeOption({
       onClick={onClick}
       className={cn(
         "rounded-[12px] border p-3 text-left",
-        active ? "border-blue-300/45 bg-blue-400/12" : "border-white/[0.08] bg-white/[0.035]"
+        active ? "border-primary/40 bg-primary/10" : "border-border bg-muted/25"
       )}
     >
-      <p className="text-xs font-semibold text-white">{title}</p>
-      <p className="mt-1 text-[0.68rem] leading-5 text-slate-500">{description}</p>
+      <p className="text-xs font-semibold text-foreground">{title}</p>
+      <p className="mt-1 text-[0.68rem] leading-5 text-muted-foreground">{description}</p>
     </button>
   );
 }
@@ -1293,8 +1293,8 @@ function WebsiteShortcutButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "group flex w-[76px] shrink-0 flex-col items-center gap-2 rounded-[14px] border border-transparent px-2 py-2 text-center transition hover:border-blue-300/24 hover:bg-blue-400/10",
-        active && "border-blue-300/35 bg-blue-400/12"
+        "group flex w-[76px] shrink-0 flex-col items-center gap-2 rounded-[14px] border border-transparent px-2 py-2 text-center transition hover:border-primary/25 hover:bg-primary/10",
+        active && "border-primary/40 bg-primary/10"
       )}
       title={example.loginUrl}
     >
@@ -1302,9 +1302,9 @@ function WebsiteShortcutButton({
         serviceId={example.id}
         serviceName={example.service}
         primaryDomain={primaryDomain}
-        className="h-11 w-11 border-white/12 bg-white/[0.04] shadow-[0_10px_22px_rgba(0,0,0,0.18)] transition group-hover:border-blue-200/28"
+        className="h-11 w-11 border-border bg-card/75 shadow-card transition group-hover:border-primary/30"
       />
-      <span className="w-full truncate text-[0.68rem] font-medium text-slate-300">{example.label}</span>
+      <span className="w-full truncate text-[0.68rem] font-medium text-foreground/80">{example.label}</span>
     </button>
   );
 }
@@ -1312,8 +1312,8 @@ function WebsiteShortcutButton({
 function WizardSectionTitle({ title, description }: { title: string; description: string }) {
   return (
     <div>
-      <h3 className="text-sm font-semibold text-white">{title}</h3>
-      <p className="mt-1 text-xs leading-5 text-slate-400">{description}</p>
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
     </div>
   );
 }
@@ -1324,7 +1324,7 @@ function ValidationMessage({ message }: { message: string | null }) {
   }
 
   return (
-    <div className="rounded-[10px] border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+    <div className="rounded-[10px] border border-[hsl(var(--status-warning)/0.24)] bg-[hsl(var(--status-warning)/0.10)] px-3 py-2 text-xs text-[hsl(var(--status-warning-foreground))]">
       {message}
     </div>
   );

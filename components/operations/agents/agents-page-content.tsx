@@ -132,19 +132,7 @@ export function AgentsPageContent({
                 <Button
                   variant="secondary"
                   size="sm"
-                  className={cn(
-                    "h-8 rounded-[10px] px-3 text-xs",
-                    surfaceTheme === "light" && "border-[#e3d3c5] bg-white/85 !text-[#4c3a2e] hover:bg-[#fff8f2] hover:!text-[#4c3a2e]"
-                  )}
-                  style={
-                    surfaceTheme === "light"
-                      ? {
-                          backgroundColor: "rgba(255, 255, 255, 0.85)",
-                          borderColor: "#e3d3c5",
-                          color: "#4c3a2e"
-                        }
-                      : undefined
-                  }
+                  className="h-8 rounded-lg px-3 text-xs"
                   disabled
                   title="Agent import requires a backend import contract."
                 >
@@ -162,21 +150,7 @@ export function AgentsPageContent({
                   trigger={
                     <Button
                       size="sm"
-                      className={cn(
-                        "h-8 rounded-[10px] px-3 text-xs text-white",
-                        surfaceTheme === "light"
-                          ? "bg-[#5c4437] shadow-[#5c4437]/18 hover:bg-[#4d382d]"
-                          : "bg-blue-500 shadow-blue-500/20 hover:bg-blue-400"
-                      )}
-                      style={
-                        surfaceTheme === "light"
-                          ? {
-                              backgroundColor: "#5c4437",
-                              boxShadow: "0 8px 18px rgba(92, 68, 55, 0.18)",
-                              color: "#ffffff"
-                            }
-                          : undefined
-                      }
+                      className="h-8 rounded-lg px-3 text-xs"
                     >
                       <Plus className="mr-1.5 h-3.5 w-3.5" />
                       Create Agent
@@ -228,7 +202,6 @@ export function AgentsPageContent({
                   agent={agent}
                   selected={selectedAgent?.id === agent.id}
                   list={view === "list"}
-                  surfaceTheme={surfaceTheme}
                   onSelect={() => setSelectedId(agent.id)}
                   onMessage={() => setChatAgentId(agent.id)}
                   onRunTask={() => setDispatchAgent(agent)}
@@ -256,7 +229,7 @@ export function AgentsPageContent({
       ) : null}
     />
       <Dialog open={Boolean(chatAgent)} onOpenChange={(open) => setChatAgentId(open ? chatAgentId : null)}>
-        <DialogContent className="flex h-[min(82dvh,760px)] max-w-3xl flex-col rounded-[18px] border-white/[0.10] bg-[#08111f]/95 p-4">
+        <DialogContent className="flex h-[min(82dvh,760px)] max-w-3xl flex-col rounded-[18px] p-4">
           <DialogHeader>
             <DialogTitle>{chatAgent ? `Message ${formatAgentDisplayNameFromRecord(chatAgent)}` : "Agent Chat"}</DialogTitle>
             <DialogDescription>
@@ -315,7 +288,6 @@ function AgentCard({
   agent,
   selected,
   list,
-  surfaceTheme,
   onSelect,
   onMessage,
   onRunTask
@@ -323,7 +295,6 @@ function AgentCard({
   agent: AgentView;
   selected: boolean;
   list: boolean;
-  surfaceTheme: "dark" | "light";
   onSelect: () => void;
   onMessage: () => void;
   onRunTask: () => void;
@@ -348,16 +319,14 @@ function AgentCard({
         }
       }}
       className={cn(
-        "agent-node group relative isolate overflow-hidden rounded-[24px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(18,20,26,0.96),rgba(9,11,15,0.96))] text-left shadow-[0_20px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
+        "agent-node group relative isolate overflow-hidden rounded-lg border border-border bg-card text-left shadow-card backdrop-blur-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
         list ? "md:grid md:grid-cols-[220px_minmax(0,1fr)]" : "",
-        surfaceTheme === "light" && "shadow-[0_18px_42px_rgba(92,68,55,0.18)]",
-        selected && "border-cyan-300/50 shadow-[0_0_0_1px_rgba(103,232,249,0.24),0_22px_64px_rgba(34,211,238,0.16)]"
+        selected && "border-primary/50 shadow-[0_0_0_1px_hsl(var(--primary)/0.12),0_22px_64px_hsl(var(--primary)/0.12)]"
       )}
     >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[24px]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_10%,rgba(34,211,238,0.18),transparent_36%),radial-gradient(circle_at_84%_18%,rgba(16,185,129,0.08),transparent_28%)]" />
-        <div className="absolute inset-y-4 left-0 w-[3px] rounded-r-full bg-[linear-gradient(180deg,rgba(125,211,252,0.9),rgba(34,211,238,0.14))]" />
-        <div className="absolute right-2 top-2 h-10 w-10 rounded-full bg-cyan-300/10 blur-xl" />
+      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_10%,hsl(var(--primary)/0.12),transparent_36%),radial-gradient(circle_at_84%_18%,hsl(var(--status-success)/0.07),transparent_28%)]" />
+        <div className="absolute inset-y-4 left-0 w-[3px] rounded-r-full bg-[linear-gradient(180deg,hsl(var(--primary)/0.86),hsl(var(--primary)/0.12))]" />
       </div>
 
       <div className={cn("relative overflow-hidden border-b border-white/[0.12] bg-[linear-gradient(180deg,rgba(14,16,20,0.98),rgba(8,10,14,0.95))]", list ? "h-full min-h-[210px] rounded-l-[24px] md:rounded-r-none" : "h-[154px] rounded-t-[24px]")}>
@@ -372,9 +341,9 @@ function AgentCard({
         >
           <source src="/assets/agent.mp4" type="video/mp4" />
         </video>
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(3,4,7,0.42),rgba(3,4,7,0.88)),radial-gradient(circle_at_center,transparent_38%,rgba(3,4,7,0.34)_100%),radial-gradient(circle_at_20%_10%,rgba(34,211,238,0.08),transparent_34%),radial-gradient(circle_at_82%_18%,rgba(251,191,36,0.05),transparent_28%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(3,4,7,0.42),rgba(3,4,7,0.88)),radial-gradient(circle_at_center,transparent_38%,rgba(3,4,7,0.34)_100%),radial-gradient(circle_at_20%_10%,hsl(var(--primary)/0.08),transparent_34%),radial-gradient(circle_at_82%_18%,rgba(251,191,36,0.05),transparent_28%)]" />
         <div className="absolute left-3 top-3 z-20 flex items-center gap-2">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border border-cyan-200/16 bg-slate-950/70 text-cyan-100 shadow-[0_12px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-slate-950/70 text-primary shadow-[0_12px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl">
             <Icon className="h-4 w-4" />
           </span>
           <Badge variant={statusVariant} className="max-w-[150px] truncate px-2 py-1 text-[9px]">
@@ -382,7 +351,7 @@ function AgentCard({
           </Badge>
         </div>
         {selected ? (
-          <span className="absolute right-3 top-3 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-cyan-200/28 bg-cyan-300/14 text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.24)]">
+          <span className="absolute right-3 top-3 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-primary/30 bg-primary/15 text-primary shadow-[0_0_16px_hsl(var(--primary)/0.20)]">
             <CircleCheck className="h-3.5 w-3.5" />
           </span>
         ) : null}
@@ -407,8 +376,8 @@ function AgentCard({
         </div>
 
         <div className="mt-2.5">
-          <p className="line-clamp-2 min-h-10 text-[12px] leading-5 text-slate-300">{agent.purpose}</p>
-          <p className="mt-2 truncate text-[9px] uppercase tracking-[0.18em] text-slate-500">
+          <p className="line-clamp-2 min-h-10 text-[12px] leading-5 text-foreground/80">{agent.purpose}</p>
+          <p className="mt-2 truncate text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
             Heartbeat {heartbeatLabel} · Last seen {agent.lastActiveLabel}
           </p>
         </div>
@@ -423,7 +392,7 @@ function AgentCard({
           <Button
             variant="secondary"
             size="sm"
-            className="h-10 rounded-full border-white/[0.08] bg-white/[0.05] px-2 text-xs text-slate-200 hover:bg-white/[0.08] hover:text-white"
+            className="h-10 rounded-full border-border bg-muted/35 px-2 text-xs text-foreground hover:bg-muted/60"
             onClick={(event) => {
               event.stopPropagation();
               onMessage();
@@ -445,7 +414,7 @@ function AgentCard({
           <Button
             variant="secondary"
             size="sm"
-            className="h-10 rounded-full border-white/[0.08] bg-white/[0.05] px-3 text-slate-500"
+            className="h-10 rounded-full border-border bg-muted/35 px-3 text-muted-foreground"
             disabled
             title="Following agents requires backend support."
             onClick={(event) => event.stopPropagation()}
@@ -454,11 +423,11 @@ function AgentCard({
           </Button>
         </div>
 
-        <div className="mt-3 overflow-hidden rounded-b-[18px] border-t border-white/[0.08] bg-white/[0.03] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <div className="mt-3 overflow-hidden rounded-b-[18px] border-t border-border bg-muted/35 px-2.5 py-2 shadow-[inset_0_1px_0_hsl(var(--border)/0.35)]">
           <div className="flex min-w-0 items-center gap-1.5">
-            <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-300/75 shadow-[0_0_10px_rgba(34,211,238,0.35)]" />
-            <p className="truncate text-[8px] uppercase leading-none tracking-[0.22em] text-slate-500">Agent details</p>
-            <p className="ml-auto min-w-0 truncate text-[8px] leading-none text-slate-400">
+            <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary/75 shadow-[0_0_10px_hsl(var(--primary)/0.25)]" />
+            <p className="truncate text-[8px] uppercase leading-none tracking-[0.22em] text-muted-foreground">Agent details</p>
+            <p className="ml-auto min-w-0 truncate text-[8px] leading-none text-muted-foreground">
               {agent.toolsCount} tool{agent.toolsCount === 1 ? "" : "s"} · {agent.sessionsCount} session
               {agent.sessionsCount === 1 ? "" : "s"}
             </p>
@@ -471,8 +440,8 @@ function AgentCard({
 
 function AgentCardStat({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-[14px] border border-white/[0.08] bg-white/[0.04] px-2.5 py-2 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
-      <p className="truncate text-[8px] uppercase tracking-[0.2em] text-slate-500">{label}</p>
+    <div className="rounded-[14px] border border-border bg-muted/35 px-2.5 py-2 text-center shadow-[inset_0_1px_0_hsl(var(--border)/0.35)]">
+      <p className="truncate text-[8px] uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
       <p className="mt-1 truncate text-[13px] font-semibold leading-none text-slate-100">{value}</p>
     </div>
   );
@@ -519,17 +488,17 @@ function AgentInspector({
         <EntityIcon icon={agent.icon} label={agent.name} tone={agent.iconTone} size="lg" />
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <h2 className="text-base font-semibold leading-tight text-white">{agent.name}</h2>
+            <h2 className="text-base font-semibold leading-tight text-foreground">{agent.name}</h2>
             <MoreButton />
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             <StatusBadge label={agent.statusLabel} tone={agent.statusTone} />
-            <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className={cn("h-1.5 w-1.5 rounded-full", agent.online ? "bg-emerald-400" : "bg-slate-500")} />
               {agent.online ? "Online" : "Offline"}
             </span>
           </div>
-          <p className="mt-2.5 text-xs leading-5 text-slate-300">{agent.purpose}</p>
+          <p className="mt-2.5 text-xs leading-5 text-foreground/80">{agent.purpose}</p>
         </div>
       </div>
 
@@ -546,12 +515,12 @@ function AgentInspector({
         </Button>
       </div>
 
-      <div className="mt-4 rounded-[10px] border border-white/[0.08] bg-white/[0.03] px-3">
+      <div className="mt-4 rounded-[10px] border border-border bg-muted/35 px-3">
         <KeyValue label="Role" value={agent.source?.policy.preset ? toTitleCase(agent.source.policy.preset) : agent.policyLabel} />
-        <KeyValue label="Policy Mode" value={agent.policyLabel} action={<button className="text-blue-300" onClick={onManagePolicy}>Manage</button>} />
+        <KeyValue label="Policy Mode" value={agent.policyLabel} action={<button className="text-primary" onClick={onManagePolicy}>Manage</button>} />
         <KeyValue label="Workspace Scope" value={`${agent.workspaceName} (Full Access)`} />
-        <KeyValue label="Default Model" value={agent.modelLabel} action={<button className="text-blue-300" onClick={onChangeModel}>Change</button>} />
-        <KeyValue label="Tools Enabled" value={`${agent.toolsCount} tools`} action={<button className="text-blue-300" onClick={onManageTools}>Manage</button>} />
+        <KeyValue label="Default Model" value={agent.modelLabel} action={<button className="text-primary" onClick={onChangeModel}>Change</button>} />
+        <KeyValue label="Tools Enabled" value={`${agent.toolsCount} tools`} action={<button className="text-primary" onClick={onManageTools}>Manage</button>} />
       </div>
 
       <SectionCard title="Runtime Summary" className="mt-3">
@@ -565,9 +534,9 @@ function AgentInspector({
       </SectionCard>
 
       <SectionCard title="Backend Support" className="mt-3">
-        <div className="space-y-2 p-3 text-xs leading-5 text-slate-300">
+        <div className="space-y-2 p-3 text-xs leading-5 text-foreground/80">
           <p>Message, model changes, capability management, mission dispatch, and delete are connected to existing AgentOS/OpenClaw APIs.</p>
-          <p className="text-slate-500">Follow/import actions are disabled because this codebase does not expose persistence or import contracts for them.</p>
+          <p className="text-muted-foreground">Follow/import actions are disabled because this codebase does not expose persistence or import contracts for them.</p>
         </div>
       </SectionCard>
       <Button
@@ -603,7 +572,7 @@ function RecentAgentActivity({ snapshot, agents }: { snapshot: MissionControlSna
       ) : (
       <div className="overflow-x-auto">
         <table className="w-full min-w-[680px] text-left text-xs">
-          <thead className="border-b border-white/[0.07] text-[0.58rem] uppercase tracking-[0.14em] text-slate-500">
+          <thead className="border-b border-border text-[0.58rem] uppercase tracking-[0.14em] text-muted-foreground">
             <tr>
               <th className="px-3 py-2.5 font-semibold">Agent</th>
               <th className="px-3 py-2.5 font-semibold">Event</th>
@@ -612,10 +581,10 @@ function RecentAgentActivity({ snapshot, agents }: { snapshot: MissionControlSna
               <th className="px-3 py-2.5 font-semibold">Time</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/[0.06] text-slate-300">
+          <tbody className="divide-y divide-border text-foreground/80">
             {rows.map((row, index) => (
-              <tr key={`${row.agent}-${row.task}-${index}`} className="hover:bg-white/[0.025]">
-                <td className="px-3 py-2.5 text-white">{row.agent}</td>
+              <tr key={`${row.agent}-${row.task}-${index}`} className="hover:bg-muted/50">
+                <td className="px-3 py-2.5 text-foreground">{row.agent}</td>
                 <td className="px-3 py-2.5">{row.event}</td>
                 <td className="px-3 py-2.5"><StatusBadge label={row.status} tone={row.status === "completed" ? "success" : row.status === "running" ? "info" : "warning"} /></td>
                 <td className="px-3 py-2.5">{row.task}</td>

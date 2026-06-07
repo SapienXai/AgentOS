@@ -458,7 +458,7 @@ export function SettingsControlCenter(
     <main
       className={cn(
         "relative z-10 min-h-screen",
-        surfaceTheme === "light" ? "text-[#2c211a]" : "text-slate-100"
+        surfaceTheme === "light" ? "text-foreground" : "text-slate-100"
       )}
     >
         <section
@@ -472,10 +472,10 @@ export function SettingsControlCenter(
               <nav
                 aria-label="Settings sections"
                 className={cn(
-                  "flex flex-wrap gap-2 rounded-[22px] border p-2 shadow-[0_18px_44px_rgba(0,0,0,0.16)] backdrop-blur-xl",
+                  "flex flex-wrap gap-2 rounded-[22px] border p-2 backdrop-blur-xl",
                   surfaceTheme === "light"
-                    ? "border-[#dfd0c2]/90 bg-[#fffaf3]/80"
-                    : "border-white/[0.08] bg-[#0d1624]/88"
+                    ? "border-border bg-card/88 shadow-card"
+                    : "border-border bg-card/88 shadow-[0_18px_44px_rgba(0,0,0,0.16)]"
                 )}
               >
                 {settingsSections.map((section) => {
@@ -493,14 +493,18 @@ export function SettingsControlCenter(
                         scrollSettingsToTop();
                       }}
                       className={cn(
-                        "inline-flex h-10 items-center gap-2 rounded-[14px] border px-3 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40",
+                        "inline-flex h-10 items-center gap-2 rounded-[14px] border px-3 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
                         active && !section.destructive
-                          ? "border-cyan-300/26 bg-cyan-300/[0.14] text-cyan-50 shadow-[0_10px_26px_rgba(34,211,238,0.12)]"
+                          ? surfaceTheme === "light"
+                            ? "border-primary/35 bg-primary/10 text-primary shadow-[0_10px_26px_hsl(var(--primary)/0.10)]"
+                            : "border-primary/35 bg-primary/12 text-primary shadow-[0_10px_26px_hsl(var(--primary)/0.14)]"
                           : active && section.destructive
-                            ? "border-rose-300/28 bg-rose-300/[0.14] text-rose-50 shadow-[0_10px_26px_rgba(244,63,94,0.12)]"
+                            ? surfaceTheme === "light"
+                              ? "border-destructive/35 bg-destructive/10 text-destructive shadow-[0_10px_26px_hsl(var(--destructive)/0.10)]"
+                              : "border-destructive/35 bg-destructive/12 text-destructive shadow-[0_10px_26px_hsl(var(--destructive)/0.14)]"
                             : surfaceTheme === "light"
-                              ? "border-[#e2d1c4] bg-white/72 text-[#6b5546] hover:bg-[#fffdf9] hover:text-[#2f251f]"
-                              : "border-white/[0.08] bg-white/[0.035] text-slate-300 hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white"
+                              ? "border-border bg-card/75 text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                              : "border-border bg-white/[0.035] text-muted-foreground hover:border-primary/20 hover:bg-white/[0.07] hover:text-foreground"
                       )}
                     >
                       <Icon className="h-3.5 w-3.5 shrink-0" />
@@ -518,7 +522,7 @@ export function SettingsControlCenter(
                   className={cn(
                     "panel-surface panel-glow min-h-full overflow-hidden rounded-[22px] p-4",
                     surfaceTheme === "light"
-                      ? "border-white/[0.08] bg-[linear-gradient(180deg,rgba(12,19,32,0.98),rgba(6,10,18,0.97))] text-white"
+                      ? "border-border bg-card/95 text-foreground shadow-card"
                       : "border-white/[0.08] bg-[linear-gradient(180deg,rgba(16,24,38,0.98),rgba(7,11,18,0.96))] text-slate-100"
                   )}
                 >
@@ -527,8 +531,8 @@ export function SettingsControlCenter(
                       className={cn(
                         "flex h-10 w-10 shrink-0 items-center justify-center rounded-full border",
                         surfaceTheme === "light"
-                          ? "border-white/10 bg-white/[0.04] text-emerald-200"
-                          : "border-cyan-300/15 bg-cyan-300/10 text-cyan-200"
+                          ? "border-primary/15 bg-primary/10 text-primary"
+                          : "border-primary/15 bg-primary/10 text-primary"
                       )}
                     >
                       <Activity className="h-4 w-4" />
@@ -538,7 +542,7 @@ export function SettingsControlCenter(
                       <p
                         className={cn(
                           "mt-0.5 text-xs leading-5",
-                          surfaceTheme === "light" ? "text-white/54" : "text-slate-400"
+                          surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400"
                         )}
                       >
                         Source of truth for runtime and control state.
@@ -551,14 +555,14 @@ export function SettingsControlCenter(
                       label="Current version"
                       value={`v${snapshot.diagnostics.version || "unknown"}`}
                       surfaceTheme={surfaceTheme}
-                      dark
+                      dark={surfaceTheme === "dark"}
                     />
                     <Metric
                       label="Latest available"
                       value={snapshot.diagnostics.latestVersion ? `v${snapshot.diagnostics.latestVersion}` : "Unknown"}
                       badge={hasUpdateAvailable ? "Update" : "Stable"}
                       surfaceTheme={surfaceTheme}
-                      dark
+                      dark={surfaceTheme === "dark"}
                     />
                   </div>
 
@@ -606,24 +610,29 @@ export function SettingsControlCenter(
                     isUpdateRunning={updateRunState === "running"}
                   />
 
-                  <div className="mt-5 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2">
+                  <div className={cn("mt-5 grid gap-3 border-t pt-4 sm:grid-cols-2", surfaceTheme === "light" ? "border-border" : "border-white/10")}>
                     <Metric
                       label="Detected install"
                       value={installSummary.label || "Unknown"}
                       surfaceTheme={surfaceTheme}
-                      dark
+                      dark={surfaceTheme === "dark"}
                       compact
                     />
                     <Metric
                       label="Resolved path"
                       value={shortPath(openClawBinarySelection.resolvedPath || "openclaw", 26)}
                       surfaceTheme={surfaceTheme}
-                      dark
+                      dark={surfaceTheme === "dark"}
                       compact
                     />
                   </div>
 
-                  <div className="mt-4 rounded-[18px] border border-white/10 bg-white/[0.035] p-3.5">
+                  <div
+                    className={cn(
+                      "mt-4 rounded-[18px] border p-3.5",
+                      surfaceTheme === "light" ? "border-border bg-muted/45" : "border-white/10 bg-white/[0.035]"
+                    )}
+                  >
                     <Label className={labelClassName(surfaceTheme)}>OpenClaw binary mode</Label>
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       {binaryModes.map((mode) => (
@@ -634,9 +643,11 @@ export function SettingsControlCenter(
                           className={cn(
                             "h-9 rounded-full border px-3 text-xs transition-colors",
                             openClawBinarySelection.mode === mode.value
-                              ? "border-emerald-300 bg-emerald-300/14 text-emerald-100"
+                              ? surfaceTheme === "light"
+                                ? "border-primary/35 bg-primary/10 text-primary"
+                                : "border-primary/30 bg-primary/12 text-primary"
                               : surfaceTheme === "light"
-                                ? "border-white/10 bg-white/[0.03] text-white/70 hover:bg-white/[0.08]"
+                                ? "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
                                 : "border-white/10 bg-[#121d2d] text-slate-200 hover:bg-[#182538]"
                           )}
                         >
@@ -714,12 +725,12 @@ export function SettingsControlCenter(
                     <div className={cn("mt-4 rounded-[18px] border p-3.5", insetPanelClassName(surfaceTheme))}>
                       <p className={labelClassName(surfaceTheme)}>Native Gateway diagnostic</p>
                       {transportSummary.lastNativeError ? (
-                        <p className={cn("mt-2 text-xs leading-5", surfaceTheme === "light" ? "text-[#6b5546]" : "text-slate-300")}>
+                        <p className={cn("mt-2 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-300")}>
                           Last native error: {transportSummary.lastNativeError}
                         </p>
                       ) : null}
                       {transportSummary.recovery ? (
-                        <p className={cn("mt-1 text-xs leading-5", surfaceTheme === "light" ? "text-[#52735e]" : "text-slate-400")}>
+                        <p className={cn("mt-1 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
                           Recovery: {transportSummary.recovery}
                         </p>
                       ) : null}
@@ -873,7 +884,7 @@ export function SettingsControlCenter(
                               ? "text-red-700"
                               : "text-rose-300"
                             : surfaceTheme === "light"
-                              ? "text-[#52735e]"
+                              ? "text-muted-foreground"
                               : "text-slate-400"
                         )}
                       >
@@ -991,12 +1002,12 @@ export function SettingsControlCenter(
                     className={cn(
                       "mt-4 rounded-[18px] p-3.5",
                       surfaceTheme === "light"
-                        ? "border border-[#eadbcf] bg-[#fbf4ec]/78"
+                        ? "border border-border bg-muted/45"
                         : "border border-white/[0.08] bg-[#101a2a]/92"
                     )}
                   >
                     <p className={labelClassName(surfaceTheme)}>Current root</p>
-                    <p className={cn("mt-2 break-all text-sm", surfaceTheme === "light" ? "text-[#4f3e34]" : "text-slate-200")}>
+                    <p className={cn("mt-2 break-all text-sm", surfaceTheme === "light" ? "text-foreground" : "text-slate-200")}>
                       {shortPath(snapshot.diagnostics.workspaceRoot, 56)}
                     </p>
                   </div>
@@ -1015,7 +1026,7 @@ export function SettingsControlCenter(
                       className={cn(
                         "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs",
                         surfaceTheme === "light"
-                          ? "border-[#e2d1c4] bg-white text-[#7b6353]"
+                          ? "border-border bg-card text-muted-foreground"
                           : "border-white/[0.08] bg-[#101a2a]/92 text-slate-300"
                       )}
                     >
@@ -1036,7 +1047,7 @@ export function SettingsControlCenter(
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <p className={labelClassName(surfaceTheme)}>Gateway fallback diagnostics</p>
-                          <span className={cn("text-[11px]", surfaceTheme === "light" ? "text-[#8a7464]" : "text-slate-400")}>
+                          <span className={cn("text-[11px]", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
                             {gatewayFallbackDiagnostics.length} recent
                           </span>
                         </div>
@@ -1044,23 +1055,23 @@ export function SettingsControlCenter(
                           {gatewayFallbackDiagnostics.map((diagnostic) => (
                             <div key={`${diagnostic.at}-${diagnostic.operation}`} className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-[#3b2d24]" : "text-slate-100")}>
+                                <span className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
                                   {diagnostic.operationLabel}
                                 </span>
-                                <code className={cn("rounded-full px-2 py-0.5 text-[10px]", surfaceTheme === "light" ? "bg-[#f3e5d8] text-[#7b6353]" : "bg-white/[0.06] text-slate-300")}>
+                                <code className={cn("rounded-full px-2 py-0.5 text-[10px]", surfaceTheme === "light" ? "bg-muted text-muted-foreground" : "bg-white/[0.06] text-slate-300")}>
                                   {diagnostic.operation}
                                 </code>
                                 <span className={cn("text-[11px]", surfaceTheme === "light" ? "text-amber-700" : "text-amber-200")}>
                                   {formatGatewayFallbackDiagnosticKind(diagnostic.kind)}
                                 </span>
-                                <span className={cn("text-[11px]", surfaceTheme === "light" ? "text-[#8a7464]" : "text-slate-500")}>
+                                <span className={cn("text-[11px]", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-500")}>
                                   {formatTimestamp(diagnostic.at)}
                                 </span>
                               </div>
-                              <p className={cn("mt-1 text-xs", surfaceTheme === "light" ? "text-[#7b6353]" : "text-slate-400")}>
+                              <p className={cn("mt-1 text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
                                 Reason: {diagnostic.issue}
                               </p>
-                              <p className={cn("mt-0.5 text-xs", surfaceTheme === "light" ? "text-[#8a7464]" : "text-slate-500")}>
+                              <p className={cn("mt-0.5 text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-500")}>
                                 Recovery: {diagnostic.recovery || resolveGatewayFallbackRecovery(diagnostic.kind)}
                               </p>
                             </div>
@@ -1075,12 +1086,12 @@ export function SettingsControlCenter(
                           className={cn(
                             "group rounded-[16px] border",
                             surfaceTheme === "light"
-                              ? "border-[#e7d8ca] bg-[#fffdf9]"
+                              ? "border-border bg-card"
                               : "border-white/[0.08] bg-[#101a2a]/92"
                           )}
                         >
                           <summary className="flex cursor-pointer list-none items-center gap-3 px-3.5 py-2.5">
-                            <code className={cn("min-w-0 flex-1 truncate font-mono text-[11px]", surfaceTheme === "light" ? "text-[#3b2d24]" : "text-slate-200")}>
+                            <code className={cn("min-w-0 flex-1 truncate font-mono text-[11px]", surfaceTheme === "light" ? "text-foreground" : "text-slate-200")}>
                               {command.command} {command.args.join(" ")}
                             </code>
                             <span
@@ -1093,22 +1104,22 @@ export function SettingsControlCenter(
                             >
                               {command.status}
                             </span>
-                            <span className={cn("hidden text-xs sm:inline", surfaceTheme === "light" ? "text-[#9a8271]" : "text-slate-400")}>
+                            <span className={cn("hidden text-xs sm:inline", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
                               {command.durationMs} ms
                             </span>
-                            <ChevronDown className={cn("h-4 w-4 transition-transform group-open:rotate-180", surfaceTheme === "light" ? "text-[#9a8271]" : "text-slate-400")} />
+                            <ChevronDown className={cn("h-4 w-4 transition-transform group-open:rotate-180", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")} />
                           </summary>
                           <div
                             className={cn(
                               "border-t p-3.5",
-                              surfaceTheme === "light" ? "border-[#eadbcf]" : "border-white/[0.08]"
+                              surfaceTheme === "light" ? "border-border" : "border-white/[0.08]"
                             )}
                           >
                             <div className="grid gap-3 sm:grid-cols-2">
                               <DiagnosticBlock title="stdout" value={command.stdoutPreview} surfaceTheme={surfaceTheme} />
                               <DiagnosticBlock title="stderr" value={command.stderrPreview} surfaceTheme={surfaceTheme} />
                             </div>
-                            <p className={cn("mt-3 text-xs", surfaceTheme === "light" ? "text-[#8a7464]" : "text-slate-400")}>
+                            <p className={cn("mt-3 text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
                               Exit code: {command.exitCode ?? "n/a"} | Started: {formatTimestamp(command.startedAt)}
                             </p>
                           </div>
@@ -1172,12 +1183,12 @@ export function SettingsControlCenter(
                     className={cn(
                       "mt-4 rounded-[18px] p-3.5",
                       surfaceTheme === "light"
-                        ? "border border-[#eadbcf] bg-[#fbf4ec]/78"
+                        ? "border border-border bg-muted/45"
                         : "border border-white/[0.08] bg-[#101a2a]/92"
                     )}
                   >
                     <p className={labelClassName(surfaceTheme)}>Install root</p>
-                    <p className={cn("mt-2 break-all text-sm", surfaceTheme === "light" ? "text-[#4f3e34]" : "text-slate-200")}>
+                    <p className={cn("mt-2 break-all text-sm", surfaceTheme === "light" ? "text-foreground" : "text-slate-200")}>
                       {shortPath(snapshot.diagnostics.updateRoot || installSummary.root || "Not detected", 80)}
                     </p>
                   </div>
@@ -1185,14 +1196,14 @@ export function SettingsControlCenter(
                     className={cn(
                       "mt-4 rounded-[18px] p-3.5",
                       surfaceTheme === "light"
-                        ? "border border-[#eadbcf] bg-[#fbf4ec]/78"
+                        ? "border border-border bg-muted/45"
                         : "border border-white/[0.08] bg-[#101a2a]/92"
                     )}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className={labelClassName(surfaceTheme)}>Config update pacing</p>
-                        <p className={cn("mt-1 text-xs leading-5", surfaceTheme === "light" ? "text-[#7b6353]" : "text-slate-400")}>
+                        <p className={cn("mt-1 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
                           Controls how often AgentOS attempts OpenClaw config updates. It does not change the OpenClaw Gateway rate limit.
                         </p>
                       </div>
@@ -1407,13 +1418,13 @@ function Metric({
   const cardToneIsDark = dark || surfaceTheme === "dark";
   return (
     <div>
-      <p className={cn("text-[11px]", cardToneIsDark ? "text-white/54" : "text-[#8a7464]")}>{label}</p>
+      <p className={cn("text-[11px]", cardToneIsDark ? "text-slate-400" : "text-muted-foreground")}>{label}</p>
       <div className="mt-1.5 flex items-center gap-2">
         <p
           className={cn(
             "min-w-0 truncate font-medium",
             compact ? "text-sm" : "text-[1.05rem]",
-            cardToneIsDark ? "text-white" : "text-[#2f251f]"
+            cardToneIsDark ? "text-white" : "text-foreground"
           )}
           title={value}
         >
@@ -1450,11 +1461,11 @@ function InfoRows({
     <div className={cn("overflow-hidden rounded-[18px] border", infoRowsShellClassName(surfaceTheme))}>
       {rows.map(([label, value], index) => (
         <div key={label} className={cn("flex items-center justify-between gap-3 px-3.5 py-2.5 last:border-b-0", infoRowBorderClassName(surfaceTheme))}>
-          <span className={cn("text-sm", cardToneIsDark ? "text-slate-400" : "text-[#8a7464]")}>{label}</span>
+          <span className={cn("text-sm", cardToneIsDark ? "text-slate-400" : "text-muted-foreground")}>{label}</span>
           <span
             className={cn(
               "min-w-0 truncate text-right text-sm",
-              cardToneIsDark ? "text-slate-100" : "text-[#352820]",
+              cardToneIsDark ? "text-slate-100" : "text-foreground",
               successIndex === index
                 ? cardToneIsDark
                   ? "rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2 py-1 text-xs text-emerald-100"
@@ -1489,7 +1500,7 @@ function DiagnosticBlock({
           "mt-2 max-h-40 overflow-auto rounded-[14px] border p-3 text-xs",
           cardToneIsDark
             ? "border-white/[0.08] bg-[#0d1624]/92 text-slate-200"
-            : "border-[#eadbcf] bg-[#fbf4ec] text-[#4b3a30]"
+            : "border-border bg-muted/55 text-foreground"
         )}
       >
         {value || "No output"}
@@ -1574,12 +1585,12 @@ function CompatibilityPanel({
         <div className="min-w-0">
           <p className={labelClassName(surfaceTheme)}>Compatibility</p>
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
-            <p className={cn("font-medium", surfaceTheme === "light" ? "text-[#2f251f]" : "text-slate-100")}>
+            <p className={cn("font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
               {statusLabel}
             </p>
             <span className={transportTonePillClassName(statusTone, surfaceTheme)}>{safeLabel}</span>
           </div>
-          <p className={cn("mt-1 text-xs", surfaceTheme === "light" ? "text-[#8a7464]" : "text-slate-400")}>
+          <p className={cn("mt-1 text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
             Report: {compatibilityReport ? formatTimestamp(compatibilityReport.generatedAt) : "Not available"}
             {report ? ` / Smoke: ${formatTimestamp(report.checkedAt)}` : ""}
           </p>
@@ -1622,7 +1633,7 @@ function CompatibilityPanel({
         className={cn(
           "mt-3 rounded-[16px] border p-3 text-xs leading-5",
           surfaceTheme === "light"
-            ? "border-[#eadbcf] bg-[#fffdf9] text-[#5a4638]"
+            ? "border-border bg-muted/45 text-foreground"
             : "border-white/[0.08] bg-[#0d1624] text-slate-300"
         )}
       >
@@ -1643,7 +1654,7 @@ function CompatibilityPanel({
               className={cn(
                 "rounded-[16px] border p-3",
                 surfaceTheme === "light"
-                  ? "border-[#eadbcf] bg-[#fffdf9]"
+                  ? "border-border bg-card"
                   : "border-white/[0.08] bg-[#101a2a]/92"
               )}
             >
@@ -1651,14 +1662,14 @@ function CompatibilityPanel({
                 <span className={transportTonePillClassName(contractStatusTone(check.status), surfaceTheme)}>
                   {formatContractStatus(check.status)}
                 </span>
-                <p className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-[#3b2d24]" : "text-slate-100")}>
+                <p className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
                   {check.label}
                 </p>
               </div>
-              <p className={cn("mt-2 text-xs leading-5", surfaceTheme === "light" ? "text-[#6b5546]" : "text-slate-300")}>
+              <p className={cn("mt-2 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-300")}>
                 {check.reason}
               </p>
-              <p className={cn("mt-1 text-xs leading-5", surfaceTheme === "light" ? "text-[#52735e]" : "text-slate-400")}>
+              <p className={cn("mt-1 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
                 Recovery: {check.suggestedRecovery}
               </p>
             </div>
@@ -1674,7 +1685,7 @@ function CompatibilityPanel({
               className={cn(
                 "group rounded-[16px] border",
                 surfaceTheme === "light"
-                  ? "border-[#e7d8ca] bg-[#fffdf9]"
+                  ? "border-border bg-card"
                   : "border-white/[0.08] bg-[#101a2a]/92"
               )}
             >
@@ -1683,26 +1694,26 @@ function CompatibilityPanel({
                   {formatSmokeCheckStatus(check.status)}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className={cn("truncate text-sm font-medium", surfaceTheme === "light" ? "text-[#3b2d24]" : "text-slate-100")}>
+                  <p className={cn("truncate text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
                     {check.label}
                   </p>
-                  <p className={cn("mt-0.5 truncate text-xs", surfaceTheme === "light" ? "text-[#8a7464]" : "text-slate-400")}>
+                  <p className={cn("mt-0.5 truncate text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
                     {check.summary}
                   </p>
                 </div>
-                <span className={cn("hidden text-xs sm:inline", surfaceTheme === "light" ? "text-[#9a8271]" : "text-slate-400")}>
+                <span className={cn("hidden text-xs sm:inline", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
                   {check.durationMs} ms
                 </span>
-                <ChevronDown className={cn("h-4 w-4 transition-transform group-open:rotate-180", surfaceTheme === "light" ? "text-[#9a8271]" : "text-slate-400")} />
+                <ChevronDown className={cn("h-4 w-4 transition-transform group-open:rotate-180", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")} />
               </summary>
               <div
                 className={cn(
                   "border-t p-3.5",
-                  surfaceTheme === "light" ? "border-[#eadbcf]" : "border-white/[0.08]"
+                  surfaceTheme === "light" ? "border-border" : "border-white/[0.08]"
                 )}
               >
                 {check.recovery ? (
-                  <p className={cn("mb-3 text-xs leading-5", surfaceTheme === "light" ? "text-[#6b5546]" : "text-slate-300")}>
+                  <p className={cn("mb-3 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-300")}>
                     Recovery: {check.recovery}
                   </p>
                 ) : null}
@@ -1739,20 +1750,20 @@ function TransportDiagnosticsPanel({
         <div className="min-w-0">
           <p className={labelClassName(surfaceTheme)}>Gateway Transport</p>
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
-            <p className={cn("font-medium", surfaceTheme === "light" ? "text-[#2f251f]" : "text-slate-100")}>
+            <p className={cn("font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
               {summary.statusLabel}
             </p>
             <span className={transportTonePillClassName(summary.statusTone, surfaceTheme)}>
               {summary.gatewayModeLabel}
             </span>
           </div>
-          <p className={cn("mt-1 text-xs", surfaceTheme === "light" ? "text-[#8a7464]" : "text-slate-400")}>
+          <p className={cn("mt-1 text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
             {summary.connectionLabel} / {summary.modeLabel}
           </p>
         </div>
         <div className="text-left sm:text-right">
           <p className={labelClassName(surfaceTheme)}>Snapshot stream</p>
-          <p className={cn("mt-1.5 text-sm", surfaceTheme === "light" ? "text-[#4f3e34]" : "text-slate-200")}>
+          <p className={cn("mt-1.5 text-sm", surfaceTheme === "light" ? "text-foreground" : "text-slate-200")}>
             {summary.streamLabel}
           </p>
         </div>
@@ -1836,12 +1847,12 @@ function TransportDiagnosticsPanel({
         </div>
       ) : null}
       {summary.recovery ? (
-        <p className={cn("mt-3 text-xs leading-5", surfaceTheme === "light" ? "text-[#52735e]" : "text-slate-400")}>
+        <p className={cn("mt-3 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
           Recovery: {summary.recovery}
         </p>
       ) : null}
       {summary.eventBridgeRecovery ? (
-        <p className={cn("mt-2 text-xs leading-5", surfaceTheme === "light" ? "text-[#52735e]" : "text-slate-400")}>
+        <p className={cn("mt-2 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
           Event stream recovery: {summary.eventBridgeRecovery}
         </p>
       ) : null}
@@ -1882,7 +1893,7 @@ function transportTonePillClassName(tone: TransportStatusTone, surfaceTheme: Sur
   return cn(
     base,
     surfaceTheme === "light"
-      ? "border-[#e2d1c4] bg-white text-[#7b6353]"
+      ? "border-border bg-card text-muted-foreground"
       : "border-white/[0.08] bg-[#101a2a]/92 text-slate-300"
   );
 }
@@ -1901,14 +1912,14 @@ function EmptyState({
       className={cn(
         "rounded-[18px] border border-dashed p-4 text-center",
         surfaceTheme === "light"
-          ? "border-[#decfc2] bg-[#fbf4ec]/60"
+          ? "border-border bg-muted/45"
           : "border-white/[0.08] bg-[#0d1624]/60"
       )}
     >
-      <p className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-[#5f493b]" : "text-slate-100")}>
+      <p className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
         {title}
       </p>
-      <p className={cn("mt-1 text-xs", surfaceTheme === "light" ? "text-[#8a7464]" : "text-slate-400")}>{detail}</p>
+      <p className={cn("mt-1 text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>{detail}</p>
     </div>
   );
 }
@@ -1983,7 +1994,7 @@ function UpdateRegistryPanel({
           <p className={cn("text-[10px] uppercase tracking-[0.18em]", mutedTextClassName(surfaceTheme))}>Update status</p>
           <div className="mt-1 flex items-center gap-2">
             {isBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin text-emerald-400" /> : null}
-            <p className={cn("font-medium", surfaceTheme === "light" ? "text-[#2f251f]" : "text-slate-100")}>{statusLabel}</p>
+            <p className={cn("font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>{statusLabel}</p>
             <span className={cn("rounded-full border px-2 py-0.5 text-[9px] uppercase tracking-[0.12em]", statusToneClass)}>
               {hasUpdateAvailable ? "Ready" : isBusy ? "Working" : updateError ? "Attention" : "Stable"}
             </span>
@@ -1991,7 +2002,7 @@ function UpdateRegistryPanel({
         </div>
         <div className="text-right">
           <p className={cn("text-[10px] uppercase tracking-[0.18em]", mutedTextClassName(surfaceTheme))}>Last checked</p>
-          <p className={cn("mt-1 text-[11px]", surfaceTheme === "light" ? "text-[#6b5546]" : "text-slate-300")}>
+          <p className={cn("mt-1 text-[11px]", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-300")}>
             {lastCheckedAt ? new Date(lastCheckedAt).toLocaleTimeString() : "Not yet"}
           </p>
         </div>
@@ -2034,7 +2045,7 @@ function UpdateRegistryPanel({
         className={cn(
           "mt-3 rounded-[18px] border p-3 text-[11px] leading-5",
           surfaceTheme === "light"
-            ? "border-[#eadbcf] bg-[#fffdf9] text-[#5a4638]"
+            ? "border-border bg-card text-foreground"
             : "border-white/[0.08] bg-[#0d1624] text-slate-300"
         )}
       >
@@ -2499,18 +2510,18 @@ function resolveHashSettingsSection(): SettingsSectionId {
 
 function cardClassName(surfaceTheme: SurfaceTheme) {
   return surfaceTheme === "light"
-    ? "border-[#dfd0c2]/90 bg-[#fffaf3]/80 text-[#2d211b]"
-    : "border-white/[0.08] bg-[#0d1624]/96 text-slate-100 shadow-[0_20px_54px_rgba(0,0,0,0.26)]";
+    ? "border-border bg-card/92 text-card-foreground shadow-card"
+    : "border-border bg-card/96 text-card-foreground shadow-[0_20px_54px_rgba(0,0,0,0.26)]";
 }
 
 function cardIconClassName(surfaceTheme: SurfaceTheme) {
   return surfaceTheme === "light"
-    ? "flex h-10 w-10 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700"
-    : "flex h-10 w-10 items-center justify-center rounded-full border border-cyan-300/15 bg-cyan-300/10 text-cyan-200";
+    ? "flex h-10 w-10 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-primary"
+    : "flex h-10 w-10 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-primary";
 }
 
 function labelClassName(surfaceTheme: SurfaceTheme) {
-  return cn("text-[10px] uppercase tracking-[0.18em]", surfaceTheme === "light" ? "text-[#9a8271]" : "text-slate-400");
+  return cn("text-[10px] uppercase tracking-[0.18em]", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400");
 }
 
 function inputClassName(surfaceTheme: SurfaceTheme, extraClassName?: string) {
@@ -2518,8 +2529,8 @@ function inputClassName(surfaceTheme: SurfaceTheme, extraClassName?: string) {
     "h-10 rounded-[16px] px-3 text-sm outline-none",
     extraClassName,
     surfaceTheme === "light"
-      ? "border-[#e2d1c4] bg-[#fffdf9] text-[#2d211b] placeholder:text-[#ad9889]"
-      : "border-white/10 bg-[#0f1826] text-slate-100 placeholder:text-slate-500"
+      ? "border-input bg-card text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-ring/25"
+      : "border-input bg-[#0f1826] text-foreground placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30"
   );
 }
 
@@ -2527,8 +2538,8 @@ function copyButtonClassName(surfaceTheme: SurfaceTheme) {
   return cn(
     "flex h-10 w-10 shrink-0 items-center justify-center rounded-[16px] border",
     surfaceTheme === "light"
-      ? "border-[#e2d1c4] bg-white text-[#7b6353]"
-      : "border-white/10 bg-[#121d2d] text-slate-200 hover:bg-[#182538]"
+      ? "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
+      : "border-border bg-[#121d2d] text-slate-200 hover:bg-[#182538]"
   );
 }
 
@@ -2537,10 +2548,10 @@ function secondaryButtonClassName(surfaceTheme: SurfaceTheme, extraClassName?: s
     "h-9 rounded-full px-3 text-xs",
     extraClassName,
     surfaceTheme === "light"
-      ? "border-[#d7c4b6] bg-white text-[#6b5546] hover:bg-[#f4e9de]"
+      ? "border-border bg-card text-secondary-foreground hover:bg-muted hover:text-foreground"
       : mode === "gateway-contrast"
-        ? "border-emerald-300/15 bg-[#0f1826] text-slate-100 hover:bg-[#182538]"
-        : "border-white/10 bg-[#121d2d] text-slate-200 hover:bg-[#182538]"
+        ? "border-primary/15 bg-[#0f1826] text-foreground hover:bg-[#182538]"
+        : "border-border bg-[#121d2d] text-slate-200 hover:bg-[#182538]"
   );
 }
 
@@ -2549,30 +2560,30 @@ function segmentedButtonClassName(surfaceTheme: SurfaceTheme, active: boolean) {
     "h-9 rounded-full border px-3 text-xs transition-colors",
     active
       ? surfaceTheme === "light"
-        ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-        : "border-cyan-300/24 bg-cyan-300/[0.12] text-cyan-100"
+        ? "border-primary/35 bg-primary/10 text-primary"
+        : "border-primary/30 bg-primary/12 text-primary"
       : surfaceTheme === "light"
-        ? "border-[#e2d1c4] bg-white text-[#6b5546] hover:bg-[#f4e9de]"
-        : "border-white/10 bg-[#121d2d] text-slate-200 hover:bg-[#182538]"
+        ? "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
+        : "border-border bg-[#121d2d] text-slate-200 hover:bg-[#182538]"
   );
 }
 
 function insetPanelClassName(surfaceTheme: SurfaceTheme) {
   return surfaceTheme === "light"
-    ? "border-[#eadbcf] bg-[#f9f1e8]/80"
-    : "border-white/[0.08] bg-[#101a2a]/92";
+    ? "border-border bg-muted/45"
+    : "border-border bg-[#101a2a]/92";
 }
 
 function mutedTextClassName(surfaceTheme: SurfaceTheme) {
-  return surfaceTheme === "light" ? "text-[#8c7564]" : "text-slate-400";
+  return surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400";
 }
 
 function infoRowsShellClassName(surfaceTheme: SurfaceTheme) {
   return surfaceTheme === "light"
-    ? "border-[#eadbcf] bg-[#fffdf9]"
-    : "border-white/[0.08] bg-[#0f1826]";
+    ? "border-border bg-card"
+    : "border-border bg-[#0f1826]";
 }
 
 function infoRowBorderClassName(surfaceTheme: SurfaceTheme) {
-  return surfaceTheme === "light" ? "border-b border-[#eadbcf]" : "border-b border-white/[0.08]";
+  return surfaceTheme === "light" ? "border-b border-border" : "border-b border-border";
 }
