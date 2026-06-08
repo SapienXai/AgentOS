@@ -30,6 +30,7 @@ import { ChannelBindingPicker } from "@/components/mission-control/channel-bindi
 import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
 import { RailTooltip } from "@/components/mission-control/rail-tooltip";
 import { StatusDot } from "@/components/mission-control/status-dot";
+import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -172,7 +173,9 @@ export function MissionSidebar({
   onSelectWorkspace,
   onRefresh,
   onOpenWorkspaceCreate,
-  onSnapshotChange
+  onSnapshotChange,
+  onAgentCreationPending,
+  onAgentCreatedVisible
 }: MissionSidebarProps) {
   const pathname = usePathname();
   const [activeHash, setActiveHash] = useState("");
@@ -397,6 +400,12 @@ export function MissionSidebar({
           surfaceTheme={surfaceTheme}
           workspaceLabel={activeWorkspaceId === null ? "All workspaces" : activeWorkspace?.name || "No workspace"}
           workspaceDetail={activeWorkspaceId === null ? `${snapshot.workspaces.length} workspaces` : "Workspace"}
+          snapshot={snapshot}
+          activeWorkspaceId={activeWorkspace?.id ?? null}
+          onRefresh={onRefresh}
+          onSnapshotChange={onSnapshotChange}
+          onAgentCreationPending={onAgentCreationPending}
+          onAgentCreatedVisible={onAgentCreatedVisible}
           onItemNavigate={handleNavigate}
           onExpandCollapsed={onExpandCollapsed ?? onToggleCollapsed}
         />
@@ -419,6 +428,16 @@ export function MissionSidebar({
               statusTone={statusTone}
               onSelectWorkspace={onSelectWorkspace}
               onOpenWorkspaceCreate={onOpenWorkspaceCreate}
+            />
+
+            <SidebarCreateAgentAction
+              snapshot={snapshot}
+              activeWorkspaceId={activeWorkspace?.id ?? null}
+              surfaceTheme={surfaceTheme}
+              onRefresh={onRefresh}
+              onSnapshotChange={onSnapshotChange}
+              onAgentCreationPending={onAgentCreationPending}
+              onAgentCreatedVisible={onAgentCreatedVisible}
             />
 
             <nav aria-label="Primary" className="sidebar-scroll mt-6 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
@@ -916,6 +935,62 @@ function SidebarBrand({ onToggleCollapsed }: { onToggleCollapsed: () => void }) 
   );
 }
 
+function SidebarCreateAgentAction({
+  snapshot,
+  activeWorkspaceId,
+  surfaceTheme,
+  collapsed = false,
+  onRefresh,
+  onSnapshotChange,
+  onAgentCreationPending,
+  onAgentCreatedVisible
+}: {
+  snapshot: MissionControlSnapshot;
+  activeWorkspaceId: string | null;
+  surfaceTheme: "dark" | "light";
+  collapsed?: boolean;
+  onRefresh: () => Promise<void>;
+  onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
+  onAgentCreationPending?: (agent: PendingAgentProjection) => void;
+  onAgentCreatedVisible?: (agentId: string) => void;
+}) {
+  const hasWorkspace = Boolean(activeWorkspaceId);
+
+  return (
+    <CreateAgentDialog
+      snapshot={snapshot}
+      defaultWorkspaceId={activeWorkspaceId ?? undefined}
+      onRefresh={onRefresh}
+      onSnapshotChange={onSnapshotChange}
+      onAgentCreationPending={onAgentCreationPending}
+      onAgentCreatedVisible={onAgentCreatedVisible}
+      surfaceTheme={surfaceTheme}
+      trigger={
+        collapsed ? (
+          <button
+            type="button"
+            disabled={!hasWorkspace}
+            aria-label="New Agent"
+            title={hasWorkspace ? "New Agent" : "Create a workspace first"}
+            className="mt-3 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card/75 text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={!hasWorkspace}
+            className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-primary px-3.5 text-[0.84rem] font-semibold text-primary-foreground shadow-[0_12px_26px_hsl(var(--primary)/0.18)] transition-all hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Plus className="h-[18px] w-[18px]" />
+            <span>New Agent</span>
+          </button>
+        )
+      }
+    />
+  );
+}
+
 function WorkspaceSwitcher({
   activeWorkspaceId,
   snapshot,
@@ -1157,6 +1232,12 @@ function CollapsedSidebar({
   surfaceTheme,
   workspaceLabel,
   workspaceDetail,
+  snapshot,
+  activeWorkspaceId,
+  onRefresh,
+  onSnapshotChange,
+  onAgentCreationPending,
+  onAgentCreatedVisible,
   onItemNavigate,
   onExpandCollapsed
 }: {
@@ -1166,6 +1247,12 @@ function CollapsedSidebar({
   surfaceTheme: "dark" | "light";
   workspaceLabel: string;
   workspaceDetail: string;
+  snapshot: MissionControlSnapshot;
+  activeWorkspaceId: string | null;
+  onRefresh: () => Promise<void>;
+  onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
+  onAgentCreationPending?: (agent: PendingAgentProjection) => void;
+  onAgentCreatedVisible?: (agentId: string) => void;
   onItemNavigate: (item: SidebarItem) => void;
   onExpandCollapsed: () => void;
 }) {
@@ -1203,6 +1290,19 @@ function CollapsedSidebar({
         >
           <Home className="h-4 w-4" />
         </button>
+      </RailTooltip>
+
+      <RailTooltip label="New Agent" side="right" surfaceTheme={surfaceTheme} panelCollapsed>
+        <SidebarCreateAgentAction
+          snapshot={snapshot}
+          activeWorkspaceId={activeWorkspaceId}
+          surfaceTheme={surfaceTheme}
+          collapsed
+          onRefresh={onRefresh}
+          onSnapshotChange={onSnapshotChange}
+          onAgentCreationPending={onAgentCreationPending}
+          onAgentCreatedVisible={onAgentCreatedVisible}
+        />
       </RailTooltip>
 
       <nav aria-label="Primary" className="sidebar-scroll mt-6 flex min-h-0 w-12 flex-1 flex-col items-center gap-4 overflow-y-auto overscroll-contain">

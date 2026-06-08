@@ -162,8 +162,10 @@ export function OperationsShell({
 
       <div
         className={cn(
-          "fixed left-0 top-0 z-30 hidden h-[100dvh] overflow-hidden bg-card shadow-panel transition-[width] duration-200 ease-out lg:block",
-          sidebarExpanded ? "w-[256px]" : "w-[72px]"
+          "pointer-events-auto fixed left-0 top-0 z-30 hidden h-[100dvh] overflow-visible mission-ease-smooth transition-[width] duration-500 lg:block",
+          sidebarExpanded
+            ? "w-[calc(100vw-96px)] max-w-[292px] lg:w-[292px] lg:max-w-none"
+            : "w-[56px]"
         )}
         onMouseEnter={() => setSidebarExpanded(true)}
         onMouseLeave={() => setSidebarExpanded(false)}
@@ -219,7 +221,7 @@ export function OperationsShell({
 
       <div
         className={cn(
-          "fixed left-0 top-0 z-50 h-[100dvh] overflow-hidden bg-card shadow-panel transition-[width] duration-200 ease-out lg:hidden",
+          "pointer-events-auto fixed left-0 top-0 z-50 h-[100dvh] overflow-hidden mission-ease-smooth bg-[#050a12] shadow-[18px_0_60px_rgba(0,0,0,0.42)] transition-[width] duration-300 lg:hidden",
           mobileSidebarOpen ? "w-[min(86vw,292px)]" : "w-[56px]"
         )}
         onClickCapture={(event) => {
@@ -262,7 +264,12 @@ export function OperationsShell({
         />
       </div>
 
-      <main className={cn("operations-content relative z-20 min-h-screen pb-4 pl-[68px] pr-3 pt-4 sm:pl-[76px] sm:pr-5 lg:pl-[92px] lg:pr-4")}>
+      <main
+        className={cn(
+          "operations-content mission-ease-smooth relative z-20 min-h-screen pb-4 pl-[68px] pr-3 pt-4 transition-[padding] duration-500 sm:pl-[76px] sm:pr-5 lg:pr-4",
+          sidebarExpanded ? "lg:pl-[316px]" : "lg:pl-[80px]"
+        )}
+      >
         <div className="mx-auto flex w-full max-w-[1880px] flex-col gap-3">
           <OperationsTopBar
             snapshot={snapshot}
