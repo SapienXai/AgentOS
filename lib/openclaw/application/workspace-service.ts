@@ -25,6 +25,7 @@ import {
   formatPostCreateAgentConfigSyncWarning,
   updateAgent
 } from "@/lib/openclaw/application/agent-service";
+import { disconnectWorkspaceChannel } from "@/lib/openclaw/application/channel-service";
 import {
   clearRuntimeHistoryCache
 } from "@/lib/openclaw/application/runtime-service";
@@ -460,9 +461,19 @@ export async function deleteWorkspaceProject(input: WorkspaceDeleteInput) {
 
   const workspaceAgents = snapshot.agents.filter((agent) => agent.workspaceId === workspace.id);
   const runtimeCount = snapshot.runtimes.filter((runtime) => runtime.workspaceId === workspace.id).length;
+  const workspaceChannelIds = snapshot.channelRegistry.channels
+    .filter((channel) => channel.workspaces.some((binding) => binding.workspaceId === workspace.id))
+    .map((channel) => channel.id);
 
   for (const agent of workspaceAgents) {
     await getOpenClawAdapter().deleteAgent(agent.id);
+  }
+
+  for (const channelId of workspaceChannelIds) {
+    await disconnectWorkspaceChannel({
+      workspaceId: workspace.id,
+      channelId
+    });
   }
 
   try {

@@ -9,7 +9,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
   Bot,
-  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -20,10 +19,12 @@ import {
   Home,
   Inbox,
   KeyRound,
+  Pencil,
   Plug,
   Plus,
   Settings2,
-  TerminalSquare
+  TerminalSquare,
+  Trash2
 } from "lucide-react";
 
 import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
@@ -173,6 +174,7 @@ export function MissionSidebar({
   onSelectWorkspace,
   onRefresh,
   onOpenWorkspaceCreate,
+  onEditWorkspace,
   onSnapshotChange,
   onAgentCreationPending,
   onAgentCreatedVisible
@@ -428,6 +430,8 @@ export function MissionSidebar({
               statusTone={statusTone}
               onSelectWorkspace={onSelectWorkspace}
               onOpenWorkspaceCreate={onOpenWorkspaceCreate}
+              onEditWorkspace={onEditWorkspace}
+              onRefresh={onRefresh}
             />
 
             <SidebarCreateAgentAction
@@ -998,7 +1002,9 @@ function WorkspaceSwitcher({
   statusLabel,
   statusTone,
   onSelectWorkspace,
-  onOpenWorkspaceCreate
+  onOpenWorkspaceCreate,
+  onEditWorkspace,
+  onRefresh
 }: {
   activeWorkspaceId: string | null;
   snapshot: MissionControlSnapshot;
@@ -1007,24 +1013,34 @@ function WorkspaceSwitcher({
   statusTone: string;
   onSelectWorkspace: (workspaceId: string | null) => void;
   onOpenWorkspaceCreate: () => void;
+  onEditWorkspace: (workspaceId: string) => void;
+  onRefresh: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const [workspaceActionsOpenForId, setWorkspaceActionsOpenForId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MissionControlSnapshot["workspaces"][number] | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
+  const deleteImpact = deleteTarget ? getWorkspaceDeleteImpact(snapshot, deleteTarget) : null;
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) {
+      setWorkspaceActionsOpenForId(null);
       return;
     }
 
     const handlePointerDown = (event: PointerEvent) => {
       if (!menuRef.current?.contains(event.target as Node)) {
         setOpen(false);
+        setWorkspaceActionsOpenForId(null);
       }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpen(false);
+        setWorkspaceActionsOpenForId(null);
       }
     };
 
@@ -1036,6 +1052,68 @@ function WorkspaceSwitcher({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [open]);
+
+  const requestDeleteWorkspace = (workspaceId: string) => {
+    const target = snapshot.workspaces.find((entry) => entry.id === workspaceId) ?? null;
+
+    if (!target) {
+      return;
+    }
+
+    setDeleteTarget(target);
+    setDeleteConfirmText("");
+    setWorkspaceActionsOpenForId(null);
+    setOpen(false);
+  };
+
+  const submitDeleteWorkspace = async () => {
+    if (!deleteTarget || deleteConfirmText.trim() !== deleteTarget.id) {
+      return;
+    }
+
+    setIsDeletingWorkspace(true);
+
+    try {
+      const response = await fetch("/api/workspaces", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          workspaceId: deleteTarget.id
+        })
+      });
+      const result = (await response.json()) as { error?: string };
+
+      if (!response.ok || result.error) {
+        throw new Error(result.error || "OpenClaw could not delete the workspace.");
+      }
+
+      const remainingWorkspaces = snapshot.workspaces.filter((entry) => entry.id !== deleteTarget.id);
+      const deletedWorkspaceIndex = snapshot.workspaces.findIndex((entry) => entry.id === deleteTarget.id);
+      const nextWorkspace =
+        remainingWorkspaces[
+          Math.min(Math.max(deletedWorkspaceIndex, 0), Math.max(remainingWorkspaces.length - 1, 0))
+        ] ?? null;
+
+      if (activeWorkspaceId === deleteTarget.id) {
+        onSelectWorkspace(nextWorkspace?.id ?? null);
+      }
+
+      setDeleteTarget(null);
+      setDeleteConfirmText("");
+      toast.success("Workspace deleted.", {
+        description: deleteTarget.name
+      });
+      void onRefresh().catch(() => {});
+    } catch (error) {
+      toast.error("Workspace deletion failed.", {
+        description: error instanceof Error ? error.message : "Unknown workspace error."
+      });
+    } finally {
+      setIsDeletingWorkspace(false);
+    }
+  };
 
   return (
     <div className="relative mt-5" ref={menuRef}>
@@ -1081,18 +1159,28 @@ function WorkspaceSwitcher({
             onClick={() => {
               onSelectWorkspace(null);
               setOpen(false);
+              setWorkspaceActionsOpenForId(null);
             }}
           />
           {snapshot.workspaces.map((entry) => (
-            <WorkspaceMenuButton
+            <WorkspaceMenuRow
               key={entry.id}
               label={entry.name}
               detail={`${entry.agentIds.length} agents`}
               selected={entry.id === activeWorkspaceId}
+              actionsOpen={workspaceActionsOpenForId === entry.id}
               onClick={() => {
                 onSelectWorkspace(entry.id);
                 setOpen(false);
+                setWorkspaceActionsOpenForId(null);
               }}
+              onToggleActions={() => setWorkspaceActionsOpenForId((current) => (current === entry.id ? null : entry.id))}
+              onEdit={() => {
+                onEditWorkspace(entry.id);
+                setOpen(false);
+                setWorkspaceActionsOpenForId(null);
+              }}
+              onDelete={() => requestDeleteWorkspace(entry.id)}
             />
           ))}
           <div className="mt-1 border-t border-border pt-1">
@@ -1102,6 +1190,7 @@ function WorkspaceSwitcher({
               onClick={() => {
                 onOpenWorkspaceCreate();
                 setOpen(false);
+                setWorkspaceActionsOpenForId(null);
               }}
               className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >
@@ -1116,6 +1205,161 @@ function WorkspaceSwitcher({
           </div>
         </div>
       ) : null}
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(nextOpen) => {
+          if (nextOpen) {
+            return;
+          }
+
+          setDeleteTarget(null);
+          setDeleteConfirmText("");
+        }}
+      >
+        <DialogContent className="max-w-[min(920px,calc(100vw-1.5rem))] p-0">
+          <div className="flex max-h-[min(86vh,760px)] flex-col overflow-hidden">
+            <div className="border-b border-border/60 px-5 pt-5">
+              <DialogHeader className="space-y-1.5">
+                <DialogTitle>Delete workspace</DialogTitle>
+                <DialogDescription>
+                  This removes the workspace from OpenClaw. Workspace-scoped agents, runtime references, and the
+                  folder under this workspace path are cleaned up.
+                </DialogDescription>
+              </DialogHeader>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              {deleteTarget ? (
+                <div className="flex flex-col gap-4">
+                  <div className="rounded-2xl border border-rose-300/70 bg-rose-50 px-3.5 py-3 shadow-sm dark:border-rose-400/20 dark:bg-rose-500/[0.08]">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 rounded-full border border-rose-300/70 bg-rose-100 p-1.5 text-rose-700 dark:border-rose-300/20 dark:bg-rose-400/10 dark:text-rose-200">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="flex flex-1 flex-col gap-2">
+                        <p className="text-sm font-semibold text-rose-950 dark:text-rose-50">
+                          This action cannot be undone.
+                        </p>
+                        <p className="text-sm leading-6 text-rose-900/90 dark:text-rose-100/80">
+                          OpenClaw will remove {deleteTarget.name}, delete its registered agents, and clean the
+                          workspace folder at this path.
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          <Badge
+                            variant="secondary"
+                            className="bg-rose-100 px-2 py-0.5 text-[11px] text-rose-900 hover:bg-rose-100 dark:bg-rose-400/10 dark:text-rose-100"
+                          >
+                            {deleteImpact?.agents.length ?? 0} agents
+                          </Badge>
+                          <Badge
+                            variant="secondary"
+                            className="bg-rose-100 px-2 py-0.5 text-[11px] text-rose-900 hover:bg-rose-100 dark:bg-rose-400/10 dark:text-rose-100"
+                          >
+                            {deleteImpact?.tasks.length ?? 0} tasks
+                          </Badge>
+                          <Badge
+                            variant="secondary"
+                            className="bg-rose-100 px-2 py-0.5 text-[11px] text-rose-900 hover:bg-rose-100 dark:bg-rose-400/10 dark:text-rose-100"
+                          >
+                            {deleteImpact?.sessions.length ?? 0} sessions
+                          </Badge>
+                          <Badge
+                            variant="secondary"
+                            className="bg-rose-100 px-2 py-0.5 text-[11px] text-rose-900 hover:bg-rose-100 dark:bg-rose-400/10 dark:text-rose-100"
+                          >
+                            {deleteImpact?.files.length ?? 0} files
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <WorkspaceDeleteListCard
+                      title="Agents"
+                      count={deleteImpact?.agents.length ?? 0}
+                      emptyLabel="No agents are registered to this workspace."
+                      items={(deleteImpact?.agents ?? []).map((agent) => ({
+                        label: agent.name,
+                        detail: agent.id
+                      }))}
+                    />
+
+                    <WorkspaceDeleteListCard
+                      title="Tasks"
+                      count={deleteImpact?.tasks.length ?? 0}
+                      emptyLabel="No tasks are linked to this workspace."
+                      items={(deleteImpact?.tasks ?? []).map((task) => ({
+                        label: task.title,
+                        detail: task.id
+                      }))}
+                    />
+
+                    <WorkspaceDeleteListCard
+                      title="Sessions"
+                      count={deleteImpact?.sessions.length ?? 0}
+                      emptyLabel="No sessions are currently tied to this workspace."
+                      items={(deleteImpact?.sessions ?? []).map((session) => ({
+                        label: session.label,
+                        detail: session.detail
+                      }))}
+                    />
+
+                    <WorkspaceDeleteListCard
+                      title="Files"
+                      count={deleteImpact?.files.length ?? 0}
+                      emptyLabel="No managed files were detected in this workspace."
+                      items={(deleteImpact?.files ?? []).map((file) => ({
+                        label: file.label,
+                        detail: file.detail
+                      }))}
+                    />
+                  </div>
+
+                  <div className="rounded-2xl border border-border/80 bg-card/90 px-3.5 py-3 shadow-sm">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Workspace path</p>
+                    <p className="mt-1 break-all font-mono text-[11px] text-foreground">{deleteTarget.path}</p>
+                  </div>
+
+                  <FormField label={`Type ${deleteTarget.id} to confirm`} htmlFor="delete-workspace-confirm">
+                    <Input
+                      id="delete-workspace-confirm"
+                      value={deleteConfirmText}
+                      onChange={(event) => setDeleteConfirmText(event.target.value)}
+                      placeholder={deleteTarget.id}
+                    />
+                  </FormField>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="border-t border-border/60 px-5 py-4">
+              <DialogFooter className="sm:justify-end">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setDeleteTarget(null);
+                    setDeleteConfirmText("");
+                  }}
+                  disabled={isDeletingWorkspace}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    void submitDeleteWorkspace();
+                  }}
+                  disabled={isDeletingWorkspace || !deleteTarget || deleteConfirmText.trim() !== deleteTarget.id}
+                >
+                  {isDeletingWorkspace ? "Deleting..." : "Delete workspace"}
+                </Button>
+              </DialogFooter>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1124,11 +1368,117 @@ function WorkspaceMenuButton({
   label,
   detail,
   selected,
-  onClick
+  onClick,
+  className,
+  endAdornment,
+  onEndAdornmentClick
 }: {
   label: string;
   detail: string;
   selected: boolean;
+  onClick: () => void;
+  className?: string;
+  endAdornment?: ReactNode;
+  onEndAdornmentClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={(event) => {
+        if (onEndAdornmentClick) {
+          const target = event.target as HTMLElement | null;
+          if (target?.closest('[data-workspace-actions-trigger="true"]')) {
+            event.preventDefault();
+            event.stopPropagation();
+            onEndAdornmentClick();
+            return;
+          }
+        }
+
+        onClick();
+      }}
+      className={cn(
+        "flex w-full min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        selected
+          ? "bg-primary/10 text-primary"
+          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+        className
+      )}
+    >
+      <span className="min-w-0">
+        <span className="block truncate text-[0.82rem] font-medium">{label}</span>
+        <span className="mt-0.5 block text-[0.67rem] text-muted-foreground">{detail}</span>
+      </span>
+      {endAdornment ? (
+        <span
+          data-workspace-actions-trigger="true"
+          className={cn(
+            "ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors",
+            selected ? "text-primary hover:bg-primary/10" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          )}
+        >
+          {endAdornment}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+function WorkspaceMenuRow({
+  label,
+  detail,
+  selected,
+  actionsOpen,
+  onClick,
+  onToggleActions,
+  onEdit,
+  onDelete
+}: {
+  label: string;
+  detail: string;
+  selected: boolean;
+  actionsOpen: boolean;
+  onClick: () => void;
+  onToggleActions: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="relative">
+      <WorkspaceMenuButton
+        label={label}
+        detail={detail}
+        selected={selected}
+        onClick={onClick}
+        onEndAdornmentClick={onToggleActions}
+        endAdornment={<Settings2 className="h-4 w-4" />}
+      />
+
+      {actionsOpen ? (
+        <div
+          role="menu"
+          className="absolute right-0 top-[calc(100%-2px)] z-50 min-w-[152px] rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-panel backdrop-blur-xl"
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <WorkspaceActionButton icon={Pencil} label="Edit workspace" onClick={onEdit} />
+          <WorkspaceActionButton icon={Trash2} label="Delete workspace" destructive onClick={onDelete} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function WorkspaceActionButton({
+  icon: Icon,
+  label,
+  destructive = false,
+  onClick
+}: {
+  icon: LucideIcon;
+  label: string;
+  destructive?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -1137,19 +1487,178 @@ function WorkspaceMenuButton({
       role="menuitem"
       onClick={onClick}
       className={cn(
-        "flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-        selected
-          ? "bg-primary/10 text-primary"
+        "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        destructive
+          ? "text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-300 dark:hover:bg-rose-400/10 dark:hover:text-rose-100"
           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       )}
     >
-      <span className="min-w-0">
-        <span className="block truncate text-[0.82rem] font-medium">{label}</span>
-        <span className="mt-0.5 block text-[0.67rem] text-muted-foreground">{detail}</span>
-      </span>
-      {selected ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-primary" /> : null}
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <span>{label}</span>
     </button>
   );
+}
+
+function WorkspaceDeleteListCard({
+  title,
+  count,
+  emptyLabel,
+  items
+}: {
+  title: string;
+  count: number;
+  emptyLabel: string;
+  items: Array<{
+    label: string;
+    detail: string;
+  }>;
+}) {
+  const previewItems = items.slice(0, 2);
+  const overflowCount = Math.max(items.length - previewItems.length, 0);
+  const detailText =
+    previewItems.length > 0
+      ? "Preview of items linked to this workspace."
+      : emptyLabel;
+
+  return (
+    <section className="rounded-2xl border border-border/80 bg-card/90 px-3.5 py-3 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{detailText}</p>
+        </div>
+        <Badge variant="secondary" className="shrink-0 bg-muted px-2 py-0.5 text-[11px] text-foreground hover:bg-muted">
+          {count}
+        </Badge>
+      </div>
+
+      <div className="mt-2.5 flex flex-col gap-1.5">
+        {previewItems.length > 0 ? (
+          previewItems.map((item) => (
+            <div
+              key={`${title}:${item.detail}:${item.label}`}
+              className="rounded-xl border border-border/70 bg-background px-2.5 py-2"
+            >
+              <p className="text-[13px] font-medium leading-5 text-foreground">{item.label}</p>
+              <p className="mt-0.5 break-all text-[10px] leading-4 text-muted-foreground">{item.detail}</p>
+            </div>
+          ))
+        ) : (
+          <div className="rounded-xl border border-dashed border-border/70 bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground">
+            {emptyLabel}
+          </div>
+        )}
+
+        {overflowCount > 0 ? (
+          <p className="text-[11px] text-muted-foreground">+{overflowCount} more</p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+}
+
+function getWorkspaceDeleteImpact(
+  snapshot: MissionControlSnapshot,
+  workspace: MissionControlSnapshot["workspaces"][number]
+) {
+  const agents = snapshot.agents
+    .filter((agent) => agent.workspaceId === workspace.id)
+    .slice()
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const tasks = snapshot.tasks
+    .filter((task) => task.workspaceId === workspace.id)
+    .slice()
+    .sort((left, right) => {
+      const leftUpdatedAt = left.updatedAt ?? 0;
+      const rightUpdatedAt = right.updatedAt ?? 0;
+
+      if (leftUpdatedAt !== rightUpdatedAt) {
+        return rightUpdatedAt - leftUpdatedAt;
+      }
+
+      return left.title.localeCompare(right.title);
+    });
+  const runtimes = snapshot.runtimes
+    .filter((runtime) => runtime.workspaceId === workspace.id)
+    .slice()
+    .sort((left, right) => {
+      const leftUpdatedAt = left.updatedAt ?? 0;
+      const rightUpdatedAt = right.updatedAt ?? 0;
+
+      if (leftUpdatedAt !== rightUpdatedAt) {
+        return rightUpdatedAt - leftUpdatedAt;
+      }
+
+      return left.title.localeCompare(right.title);
+    });
+  const sessions = uniqueStrings(
+    runtimes.map((runtime) => runtime.sessionId?.trim() || runtime.id.trim()).filter(Boolean)
+  ).map((sessionId) => {
+    const runtime = runtimes.find((entry) => (entry.sessionId?.trim() || entry.id.trim()) === sessionId) ?? null;
+
+    return {
+      label: sessionId,
+      detail: runtime ? runtime.title : "Workspace session"
+    };
+  });
+  const files = collectWorkspaceDeleteFiles(workspace);
+
+  return {
+    agents,
+    tasks,
+    runtimes,
+    sessions,
+    files
+  };
+}
+
+function collectWorkspaceDeleteFiles(workspace: MissionControlSnapshot["workspaces"][number]) {
+  const groups: Array<{
+    label: string;
+    items: Array<{ id: string; label: string; present: boolean }>;
+  }> = [
+    {
+      label: "Core files",
+      items: workspace.bootstrap.coreFiles
+    },
+    {
+      label: "Optional files",
+      items: workspace.bootstrap.optionalFiles
+    },
+    {
+      label: "Context files",
+      items: workspace.bootstrap.contextFiles ?? []
+    },
+    {
+      label: "Folders",
+      items: workspace.bootstrap.folders
+    },
+    {
+      label: "Project shell",
+      items: workspace.bootstrap.projectShell
+    }
+  ];
+
+  return groups
+    .flatMap((group) =>
+      group.items
+        .filter((item) => item.present)
+        .map((item) => ({
+          label: `${group.label}: ${item.label}`,
+          detail: item.id
+        }))
+    )
+    .sort((left, right) => left.label.localeCompare(right.label));
 }
 
 function SidebarSectionGroup({
