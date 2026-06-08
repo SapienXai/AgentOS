@@ -159,6 +159,7 @@ type ModelOnboardingRunOptions = {
   forceOpen?: boolean;
   verifyProvider?: AddModelsProviderId;
 };
+type InspectorScopeShortcut = "workspace" | "agent" | "tasks";
 type InspectorTabId = "overview" | "chat" | "output" | "files" | "raw";
 
 const modelAuthTerminalAutoOpenCooldownMs = 2 * 60 * 1000;
@@ -381,6 +382,136 @@ export function MissionControlShell({
     const mergedSnapshot = mergeSnapshotWithOptimisticTasks(snapshot, optimisticMissionTasks);
     return applyTaskReviewStateToSnapshot(mergedSnapshot, taskReviewState);
   }, [snapshot, optimisticMissionTasks, taskReviewState]);
+  const selectedWorkspace = selectedNodeId
+    ? uiSnapshot.workspaces.find((workspace) => workspace.id === selectedNodeId) ?? null
+    : null;
+  const selectedAgent = selectedNodeId
+    ? uiSnapshot.agents.find((agent) => agent.id === selectedNodeId) ?? null
+    : null;
+  const selectedTask = selectedNodeId
+    ? uiSnapshot.tasks.find((task) => task.id === selectedNodeId) ?? null
+    : null;
+  const selectedRuntime = selectedNodeId
+    ? uiSnapshot.runtimes.find((runtime) => runtime.id === selectedNodeId) ?? null
+    : null;
+  const selectedRuntimeTask = selectedRuntime?.taskId
+    ? uiSnapshot.tasks.find((task) => task.id === selectedRuntime.taskId) ?? null
+    : null;
+  const activeTaskCardTaskId = activeTaskCardContext?.taskId ?? null;
+  const selectInspectorScope = useCallback(
+    (scope: InspectorScopeShortcut) => {
+      const findWorkspace = (workspaceId: string | null) => {
+        if (!workspaceId) {
+          return null;
+        }
+
+        return uiSnapshot.workspaces.find((workspace) => workspace.id === workspaceId) ?? null;
+      };
+      const findAgent = (agentId: string | null) => {
+        if (!agentId) {
+          return null;
+        }
+
+        return uiSnapshot.agents.find((agent) => agent.id === agentId) ?? null;
+      };
+      const findTask = (taskId: string | null) => {
+        if (!taskId) {
+          return null;
+        }
+
+        return uiSnapshot.tasks.find((task) => task.id === taskId) ?? null;
+      };
+      const sortTasksByFreshness = (tasks: typeof uiSnapshot.tasks) =>
+        [...tasks].sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
+      const workspaceIdForSelection =
+        selectedWorkspace?.id ??
+        selectedTask?.workspaceId ??
+        selectedRuntime?.workspaceId ??
+        selectedAgent?.workspaceId ??
+        activeWorkspaceId ??
+        uiSnapshot.workspaces[0]?.id ??
+        null;
+
+      if (scope === "workspace") {
+        const workspace =
+          findWorkspace(workspaceIdForSelection) ??
+          findWorkspace(selectedRuntime?.workspaceId ?? null) ??
+          findWorkspace(selectedAgent?.workspaceId ?? null) ??
+          findWorkspace(selectedTask?.workspaceId ?? null) ??
+          uiSnapshot.workspaces[0] ??
+          null;
+
+        if (!workspace) {
+          return;
+        }
+
+        setActiveWorkspaceId(workspace.id);
+        selectNode(workspace.id);
+        setIsInspectorOpen(true);
+        return;
+      }
+
+      if (scope === "agent") {
+        const targetAgent =
+          selectedAgent ??
+          findAgent(selectedTask?.primaryAgentId ?? null) ??
+          findAgent(selectedTask?.agentIds[0] ?? null) ??
+          findAgent(selectedRuntime?.agentId ?? null) ??
+          findAgent(focusedAgentId) ??
+          uiSnapshot.agents.find((agent) => agent.workspaceId === workspaceIdForSelection) ??
+          uiSnapshot.agents[0] ??
+          null;
+
+        if (!targetAgent) {
+          return;
+        }
+
+        setActiveWorkspaceId(targetAgent.workspaceId);
+        selectNode(targetAgent.id);
+        setIsInspectorOpen(true);
+        return;
+      }
+
+      const scopedTasks = sortTasksByFreshness(
+        uiSnapshot.tasks.filter((task) =>
+          workspaceIdForSelection ? resolveTaskWorkspaceId(task, uiSnapshot.agents) === workspaceIdForSelection : true
+        )
+      );
+      const targetTask =
+        selectedTask ??
+        selectedRuntimeTask ??
+        findTask(activeTaskCardTaskId) ??
+        scopedTasks[0] ??
+        sortTasksByFreshness(uiSnapshot.tasks)[0] ??
+        null;
+
+      if (!targetTask) {
+        return;
+      }
+
+      const taskWorkspaceId =
+        resolveTaskWorkspaceId(targetTask, uiSnapshot.agents) ?? targetTask.workspaceId ?? workspaceIdForSelection;
+
+      if (taskWorkspaceId) {
+        setActiveWorkspaceId(taskWorkspaceId);
+      }
+
+      selectNode(targetTask.id);
+      setIsInspectorOpen(true);
+    },
+    [
+      activeTaskCardTaskId,
+      activeWorkspaceId,
+      focusedAgentId,
+      selectNode,
+      selectedAgent,
+      selectedRuntime,
+      selectedRuntimeTask,
+      selectedTask,
+      selectedWorkspace,
+      uiSnapshot
+    ]
+  );
   const activeTaskReviewTask = useMemo(() => {
     if (!taskReviewRequest) {
       return null;
@@ -3601,7 +3732,7 @@ export function MissionControlShell({
         className={cn(
           "pointer-events-none absolute top-0 z-40 hidden lg:block",
           isSidebarOpen ? "lg:left-[316px]" : "lg:left-[80px]",
-          isInspectorOpen ? "lg:right-[572px]" : "lg:right-[76px]"
+          isInspectorOpen ? "lg:right-[492px]" : "lg:right-[76px]"
         )}
       >
         <MissionControlCanvasTopBar
@@ -3681,7 +3812,7 @@ export function MissionControlShell({
           className={cn(
             "pointer-events-auto absolute right-0 top-0 z-30 h-[100dvh] overflow-visible mission-ease-smooth transition-[width] duration-500",
             isInspectorOpen
-              ? "w-[calc(100vw-80px)] max-w-[540px] lg:w-[540px] lg:max-w-none"
+              ? "w-[calc(100vw-80px)] max-w-[460px] lg:w-[460px] lg:max-w-none"
               : "w-[52px]"
           )}
         >
@@ -3700,6 +3831,7 @@ export function MissionControlShell({
             }}
             collapsed={!isInspectorOpen}
             onToggleCollapsed={() => setIsInspectorOpen((current) => !current)}
+            onSelectScope={selectInspectorScope}
             activeTab={activeInspectorTab}
             onActiveTabChange={setActiveInspectorTab}
             onAbortTask={(task) => {
