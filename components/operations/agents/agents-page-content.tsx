@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import { Activity, Bot, CircleCheck, Clock3, Import, MessageSquare, Play, Plus, ShieldCheck, SlidersHorizontal, Sparkles, Star, Filter } from "lucide-react";
+import { Activity, Bot, CircleCheck, Clock3, Chrome, Filter, Folder, Globe2, Import, MessageSquare, Play, Plus, Plug, ShieldCheck, SlidersHorizontal, Sparkles, Star, Terminal } from "lucide-react";
 
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
+import { AccountIcon } from "@/components/mission-control/account-icon";
 import { AgentCapabilityEditorDialog } from "@/components/mission-control/agent-capability-editor-dialog";
 import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
 import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
@@ -12,9 +13,20 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/sonner";
+import { useAccountsData } from "@/components/operations/accounts/use-accounts-data";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
+import type { AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
+import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-types";
 import { cn } from "@/lib/utils";
-import { buildAgentViews, formatBigNumber, statusToneForAgentFilter, summarizeTokens, type AgentFilter, type AgentView } from "@/components/operations/operations-data";
+import type { LucideIcon } from "lucide-react";
+import {
+  buildAgentViews,
+  formatBigNumber,
+  statusToneForAgentFilter,
+  summarizeTokens,
+  type AgentFilter,
+  type AgentView
+} from "@/components/operations/operations-data";
 import { EmptyState, EntityIcon, FilterChip, InspectorPanelFrame, KeyValue, MoreButton, OperationsPageLayout, PageHeader, SearchToolbar, SectionCard, StatCard, StatGrid, StatusBadge, ToolbarButton, ViewToggle, type StatusTone } from "@/components/operations/operations-ui";
 import { agentFilterLabel, formatAgentDisplayNameFromRecord, formatAgentSortLabel, MissionDispatchDialog, readClientError, sortAgentViews, toTitleCase } from "@/components/operations/operations-shared";
 
@@ -37,6 +49,7 @@ export function AgentsPageContent({
     () => buildAgentViews(snapshot),
     [snapshot]
   );
+  const { loginTargets, accessRules } = useAccountsData(activeWorkspaceId);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<AgentFilter>("all");
   const [sort, setSort] = useState<"last-active" | "name" | "status" | "workspace">("last-active");
@@ -200,6 +213,7 @@ export function AgentsPageContent({
                 <AgentCard
                   key={agent.id}
                   agent={agent}
+                  connectionBadges={resolveAgentConnectionBadges(agent, loginTargets, accessRules)}
                   selected={selectedAgent?.id === agent.id}
                   list={view === "list"}
                   onSelect={() => setSelectedId(agent.id)}
@@ -286,6 +300,7 @@ export function AgentsPageContent({
 
 function AgentCard({
   agent,
+  connectionBadges,
   selected,
   list,
   onSelect,
@@ -293,6 +308,7 @@ function AgentCard({
   onRunTask
 }: {
   agent: AgentView;
+  connectionBadges: AgentConnectionBadge[];
   selected: boolean;
   list: boolean;
   onSelect: () => void;
@@ -342,11 +358,14 @@ function AgentCard({
           <source src="/assets/agent.mp4" type="video/mp4" />
         </video>
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(3,4,7,0.42),rgba(3,4,7,0.88)),radial-gradient(circle_at_center,transparent_38%,rgba(3,4,7,0.34)_100%),radial-gradient(circle_at_20%_10%,hsl(var(--primary)/0.08),transparent_34%),radial-gradient(circle_at_82%_18%,rgba(251,191,36,0.05),transparent_28%)]" />
-        <div className="absolute left-3 top-3 z-20 flex items-center gap-2">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-slate-950/70 text-primary shadow-[0_12px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-            <Icon className="h-4 w-4" />
-          </span>
-          <Badge variant={statusVariant} className="max-w-[150px] truncate px-2 py-1 text-[9px]">
+        <div className="absolute left-3 top-3 z-20 flex flex-col gap-1.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-slate-950/70 text-primary shadow-[0_12px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+              <Icon className="h-4 w-4" />
+            </span>
+            <AgentConnectionIconRow badges={connectionBadges} />
+          </div>
+          <Badge variant={statusVariant} className="w-fit max-w-[150px] truncate px-2 py-1 text-[9px]">
             {agent.statusLabel}
           </Badge>
         </div>
@@ -445,6 +464,176 @@ function AgentCard({
       </div>
     </div>
   );
+}
+
+function AgentConnectionIconRow({
+  badges
+}: {
+  badges: AgentConnectionBadge[];
+}) {
+  if (badges.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {badges.map((badge) => (
+        <span
+          key={badge.key}
+          className="inline-flex items-center gap-1 rounded-full border border-white/12 bg-slate-950/62 px-1.5 py-1 shadow-[0_10px_20px_rgba(0,0,0,0.24)] backdrop-blur-xl"
+          title={badge.title}
+          aria-label={badge.title}
+        >
+          {badge.kind === "account" ? (
+            <AccountIcon
+              serviceId={badge.serviceId}
+              serviceName={badge.label}
+              primaryDomain={badge.primaryDomain}
+              className="h-5 w-5 border-white/10 bg-slate-950/60 shadow-none"
+            />
+          ) : (
+            <EntityIcon icon={badge.icon} label={badge.label} tone={badge.tone} size="sm" />
+          )}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+type AgentConnectionBadge = {
+  key: string;
+  kind: "integration" | "account";
+  title: string;
+  label: string;
+  icon?: LucideIcon;
+  tone: "success" | "info" | "warning" | "danger" | "muted" | "purple";
+  serviceId?: string;
+  primaryDomain?: string;
+};
+
+function resolveAgentConnectionBadges(
+  agent: AgentView,
+  loginTargets: AccountLoginTargetView[],
+  accessRules: AccountAccessRuleView[]
+) {
+  const source = agent.source;
+  if (!source) {
+    return [];
+  }
+
+  const toolNames = new Set([...(source.tools ?? []), ...(source.observedTools ?? [])].map((tool) => tool.toLowerCase()));
+  const badges: AgentConnectionBadge[] = [];
+
+  if (toolNames.has("gateway")) {
+    badges.push({
+      key: "integration:gateway",
+      kind: "integration",
+      title: "Gateway",
+      label: "Gateway",
+      icon: Plug,
+      tone: "info"
+    });
+  }
+
+  if (toolNames.has("browser")) {
+    badges.push({
+      key: "integration:browser",
+      kind: "integration",
+      title: "Browser",
+      label: "Browser",
+      icon: Chrome,
+      tone: "warning"
+    });
+  }
+
+  if (toolNames.has("exec") || toolNames.has("process")) {
+    badges.push({
+      key: "integration:runtime",
+      kind: "integration",
+      title: "Runtime",
+      label: "Runtime",
+      icon: Terminal,
+      tone: "muted"
+    });
+  }
+
+  if (toolNames.has("read") || toolNames.has("write") || toolNames.has("fs.workspaceonly")) {
+    badges.push({
+      key: "integration:workspace",
+      kind: "integration",
+      title: "Workspace files",
+      label: "Workspace",
+      icon: Folder,
+      tone: "success"
+    });
+  }
+
+  if (toolNames.has("web_search") || toolNames.has("web_fetch")) {
+    badges.push({
+      key: "integration:web",
+      kind: "integration",
+      title: "Web",
+      label: "Web",
+      icon: Globe2,
+      tone: "purple"
+    });
+  }
+
+  for (const badge of buildAgentAccountBadges(agent, loginTargets, accessRules).slice(0, 4)) {
+    badges.push({
+      key: `account:${badge.id}`,
+      kind: "account",
+      title: `${badge.serviceName} · ${badge.browserProfileName}`,
+      label: badge.serviceName,
+      serviceId: badge.serviceId,
+      primaryDomain: badge.primaryDomain,
+      tone: "warning"
+    });
+  }
+
+  return badges.slice(0, 5);
+}
+
+function buildAgentAccountBadges(
+  agent: AgentView,
+  loginTargets: AccountLoginTargetView[],
+  accessRules: AccountAccessRuleView[]
+) {
+  const targetsById = new Map(loginTargets.map((target) => [target.id, target]));
+  const summaries = new Map<
+    string,
+    {
+      id: string;
+      serviceId: string;
+      serviceName: string;
+      primaryDomain: string;
+      browserProfileName: string;
+    }
+  >();
+
+  for (const rule of accessRules) {
+    if (rule.agentId !== agent.id || rule.permission !== "use_browser_profile") {
+      continue;
+    }
+
+    const target = targetsById.get(rule.targetId);
+    if (!target) {
+      continue;
+    }
+
+    const key = `${target.serviceId}:${target.primaryDomain}:${target.browserProfileName}`;
+    if (!summaries.has(key)) {
+      summaries.set(key, {
+        id: target.id,
+        serviceId: target.serviceId,
+        serviceName: target.serviceName,
+        primaryDomain: target.primaryDomain,
+        browserProfileName: target.browserProfileName
+      });
+    }
+  }
+
+  return Array.from(summaries.values()).sort((left, right) => left.serviceName.localeCompare(right.serviceName));
 }
 
 function AgentCardStat({ label, value }: { label: string; value: number | string }) {

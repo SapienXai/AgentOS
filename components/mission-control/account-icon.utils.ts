@@ -10,7 +10,10 @@ const accountIconKeys: Record<string, string> = {
   gmail: "siGmail",
   "mail.google.com": "siGmail",
   "accounts.google.com": "siGmail",
+  linkedin: "siLinkedin",
+  "linkedin.com": "siLinkedin",
   "x-twitter": "siX",
+  x: "siX",
   "x.com": "siX",
   "twitter.com": "siX",
   github: "siGithub",
@@ -18,6 +21,7 @@ const accountIconKeys: Record<string, string> = {
   discord: "siDiscord",
   "discord.com": "siDiscord",
   telegram: "siTelegram",
+  "telegram.org": "siTelegram",
   "web.telegram.org": "siTelegram"
 };
 

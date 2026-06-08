@@ -36,7 +36,7 @@ export function AccountIcon({
   const faviconSourcesKey = faviconSources.join("\u0000");
   const iconKey = resolveAccountIconKey({ serviceId, primaryDomain, serviceName });
   const icon = iconKey ? simpleIconMap[iconKey] : undefined;
-  const preferBrandIcon = iconKey === "siGmail";
+  const preferBrandIcon = Boolean(iconKey);
   const fallbackLabel = (serviceName || primaryDomain || serviceId || "Account").trim().slice(0, 1).toUpperCase();
   const fallbackIcon = icon ? (
     <svg

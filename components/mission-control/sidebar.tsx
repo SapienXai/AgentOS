@@ -1247,25 +1247,25 @@ function WorkspaceSwitcher({
                         </p>
                         <div className="flex flex-wrap gap-1.5">
                           <Badge
-                            variant="secondary"
+                            variant="muted"
                             className="bg-rose-100 px-2 py-0.5 text-[11px] text-rose-900 hover:bg-rose-100 dark:bg-rose-400/10 dark:text-rose-100"
                           >
                             {deleteImpact?.agents.length ?? 0} agents
                           </Badge>
                           <Badge
-                            variant="secondary"
+                            variant="muted"
                             className="bg-rose-100 px-2 py-0.5 text-[11px] text-rose-900 hover:bg-rose-100 dark:bg-rose-400/10 dark:text-rose-100"
                           >
                             {deleteImpact?.tasks.length ?? 0} tasks
                           </Badge>
                           <Badge
-                            variant="secondary"
+                            variant="muted"
                             className="bg-rose-100 px-2 py-0.5 text-[11px] text-rose-900 hover:bg-rose-100 dark:bg-rose-400/10 dark:text-rose-100"
                           >
                             {deleteImpact?.sessions.length ?? 0} sessions
                           </Badge>
                           <Badge
-                            variant="secondary"
+                            variant="muted"
                             className="bg-rose-100 px-2 py-0.5 text-[11px] text-rose-900 hover:bg-rose-100 dark:bg-rose-400/10 dark:text-rose-100"
                           >
                             {deleteImpact?.files.length ?? 0} files
@@ -1527,7 +1527,7 @@ function WorkspaceDeleteListCard({
           <h3 className="text-sm font-semibold text-foreground">{title}</h3>
           <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{detailText}</p>
         </div>
-        <Badge variant="secondary" className="shrink-0 bg-muted px-2 py-0.5 text-[11px] text-foreground hover:bg-muted">
+        <Badge variant="muted" className="shrink-0 bg-muted px-2 py-0.5 text-[11px] text-foreground hover:bg-muted">
           {count}
         </Badge>
       </div>
