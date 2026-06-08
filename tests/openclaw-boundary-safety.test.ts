@@ -554,12 +554,18 @@ test("mission shell opens the sidebar on hover and closes it on exit", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
 
   assert.match(source, /const \[isSidebarOpen, setIsSidebarOpen\] = useState\(false\);/);
+  assert.match(source, /function shouldKeepSidebarOpenForPortal\(target: EventTarget \| null\)/);
+  assert.match(source, /target\.closest\('\[role="dialog"\], \[data-radix-popper-content-wrapper\]'\)/);
+  assert.match(source, /document\.querySelector\('\[role="dialog"\]'\)/);
   assert.match(source, /onMouseEnter=\{\(\) => setIsSidebarOpen\(true\)\}/);
-  assert.match(source, /onMouseLeave=\{\(\) => setIsSidebarOpen\(false\)\}/);
+  assert.match(
+    source,
+    /onMouseLeave=\{\(event\) => \{\s*if \(shouldKeepSidebarOpenForPortal\(event\.relatedTarget\)\) \{\s*return;\s*\}\s*setIsSidebarOpen\(false\);/
+  );
   assert.match(source, /onFocusCapture=\{\(\) => setIsSidebarOpen\(true\)\}/);
   assert.match(
     source,
-    /onBlurCapture=\{\(event\) => \{\s*if \(!event\.currentTarget\.contains\(event\.relatedTarget as Node \| null\)\) \{\s*setIsSidebarOpen\(false\);/
+    /onBlurCapture=\{\(event\) => \{\s*if \(shouldKeepSidebarOpenForPortal\(event\.relatedTarget\)\) \{\s*return;\s*\}\s*if \(!event\.currentTarget\.contains\(event\.relatedTarget as Node \| null\)\) \{\s*setIsSidebarOpen\(false\);/
   );
   assert.doesNotMatch(source, /sidebarOpenStorageKey/);
 });
