@@ -1075,7 +1075,11 @@ function ConnectAccountWizardContent({
   onCancel: () => void;
   onSubmit: (input: ConnectBrowserProfileInput) => Promise<void>;
 }) {
-  const defaultExistingProfileName = profiles.find((profile) => profile.name === "openclaw")?.name ?? profiles[0]?.name ?? "";
+  const usableProfiles = useMemo(() => profiles.filter(isUsableAccountBrowserProfile), [profiles]);
+  const defaultExistingProfileName = useMemo(
+    () => usableProfiles.find((profile) => profile.name === "openclaw")?.name ?? usableProfiles[0]?.name ?? "",
+    [usableProfiles]
+  );
   const signedInChromeProfile = profiles.find((profile) => profile.name === "user") ?? null;
   const hasSignedInChromeProfile = Boolean(signedInChromeProfile);
   const signedInChromeReady = signedInChromeProfile?.running === true;
@@ -1100,6 +1104,21 @@ function ConnectAccountWizardContent({
     hasSignedInChromeProfile,
     signedInChromeReady
   });
+
+  useEffect(() => {
+    if (mode !== "existing" || !defaultExistingProfileName) {
+      return;
+    }
+
+    setExistingProfileName((currentProfileName) => {
+      const trimmedProfileName = currentProfileName.trim();
+      const currentProfileIsAvailable = trimmedProfileName
+        ? usableProfiles.some((profile) => profile.name === trimmedProfileName)
+        : false;
+
+      return currentProfileIsAvailable ? currentProfileName : defaultExistingProfileName;
+    });
+  }, [defaultExistingProfileName, mode, usableProfiles]);
 
   const submit = async () => {
     if (validationMessage || !workspace || !resolvedWebsite) {
