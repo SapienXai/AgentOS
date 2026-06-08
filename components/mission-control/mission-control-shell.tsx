@@ -162,6 +162,14 @@ type ModelOnboardingRunOptions = {
 type InspectorScopeShortcut = "workspace" | "agent" | "tasks";
 type InspectorTabId = "overview" | "chat" | "output" | "files" | "raw";
 
+function shouldKeepSidebarOpenForPortal(target: EventTarget | null) {
+  if (target instanceof Element && target.closest('[role="dialog"], [data-radix-popper-content-wrapper]')) {
+    return true;
+  }
+
+  return typeof document !== "undefined" && Boolean(document.querySelector('[role="dialog"]'));
+}
+
 const modelAuthTerminalAutoOpenCooldownMs = 2 * 60 * 1000;
 const modelAuthStatusPollDelaysMs = [4_000, 8_000, 15_000, 30_000, 45_000, 60_000];
 const launchpadWorkspaceHandoffPollDelaysMs = [0, 800, 1_200, 1_800, 2_600, 3_600, 5_000, 6_500];
@@ -3446,9 +3454,19 @@ export function MissionControlShell({
               : "w-[56px]"
           )}
           onMouseEnter={() => setIsSidebarOpen(true)}
-          onMouseLeave={() => setIsSidebarOpen(false)}
+          onMouseLeave={(event) => {
+            if (shouldKeepSidebarOpenForPortal(event.relatedTarget)) {
+              return;
+            }
+
+            setIsSidebarOpen(false);
+          }}
           onFocusCapture={() => setIsSidebarOpen(true)}
           onBlurCapture={(event) => {
+            if (shouldKeepSidebarOpenForPortal(event.relatedTarget)) {
+              return;
+            }
+
             if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
               setIsSidebarOpen(false);
             }
@@ -3763,9 +3781,19 @@ export function MissionControlShell({
               : "w-[56px]"
           )}
           onMouseEnter={() => setIsSidebarOpen(true)}
-          onMouseLeave={() => setIsSidebarOpen(false)}
+          onMouseLeave={(event) => {
+            if (shouldKeepSidebarOpenForPortal(event.relatedTarget)) {
+              return;
+            }
+
+            setIsSidebarOpen(false);
+          }}
           onFocusCapture={() => setIsSidebarOpen(true)}
           onBlurCapture={(event) => {
+            if (shouldKeepSidebarOpenForPortal(event.relatedTarget)) {
+              return;
+            }
+
             if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
               setIsSidebarOpen(false);
             }
