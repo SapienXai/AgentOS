@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { Handle, Position, type Node as FlowNode, type NodeProps } from "@xyflow/react";
-import { ChevronDown, LocateFixed, MessageCircle, MoreHorizontal, Plus, SendHorizontal } from "lucide-react";
+import { ChevronDown, KeyRound, Layers3, LocateFixed, MessageCircle, MoreHorizontal, Plus, SendHorizontal, Sparkles, Wrench } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 
 import { AccountIcon } from "@/components/mission-control/account-icon";
@@ -18,6 +18,7 @@ import {
 import { StatusDot } from "@/components/mission-control/status-dot";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   agentChatLastSeenStoragePrefix,
   agentChatMessageStoragePrefix,
@@ -116,6 +117,88 @@ function AnimatedAgentName({ label }: { label: string }) {
   );
 }
 
+function AgentConnectionTooltip({
+  label,
+  icon,
+  children
+}: {
+  label: string;
+  icon: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent
+        side="top"
+        align="start"
+        sideOffset={8}
+        className="max-w-[260px] rounded-[12px] border border-slate-200/90 bg-white px-3 py-2 text-slate-950 shadow-[0_18px_44px_rgba(15,23,42,0.2)]"
+      >
+        <div className="flex items-center gap-2">
+          <span className="shrink-0">{icon}</span>
+          <span className="min-w-0 text-[11px] font-medium leading-4 text-slate-800">{label}</span>
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ConnectionMenuButton({
+  icon,
+  label,
+  description,
+  disabled,
+  onClick
+}: {
+  icon: ReactNode;
+  label: string;
+  description: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (disabled) {
+          return;
+        }
+
+        onClick();
+      }}
+      className={cn(
+        "relative z-10 flex w-full items-center gap-3 rounded-[15px] px-3 py-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-200/50",
+        disabled
+          ? "cursor-not-allowed text-slate-500"
+          : "text-white hover:bg-white/[0.075] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border shadow-[0_10px_22px_rgba(0,0,0,0.24)]",
+          disabled
+            ? "border-slate-700/60 bg-slate-900/70 text-slate-500"
+            : "border-violet-200/20 bg-white/[0.08] text-amber-100"
+        )}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className={cn("block text-[13px] font-semibold leading-4", disabled ? "text-slate-500" : "text-white")}>
+          {label}
+        </span>
+        <span className={cn("block text-[9.5px] uppercase leading-3 tracking-[0.17em]", disabled ? "text-slate-600" : "text-violet-100/70")}>
+          {description}
+        </span>
+      </span>
+    </button>
+  );
+}
+
 function useAgentChatUnreadCount(agentId: string, chatOpen: boolean) {
   return useSyncExternalStore(
     (onStoreChange) => {
@@ -164,9 +247,12 @@ function useAgentChatUnreadCount(agentId: string, chatOpen: boolean) {
 
 export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [connectionMenuOpen, setConnectionMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const connectionMenuRef = useRef<HTMLDivElement | null>(null);
   const drawerPanelId = `agent-drawer-${data.agent.id}`;
+  const connectionMenuPanelId = `agent-connections-${data.agent.id}`;
   const agentLabel = formatAgentDisplayName(data.agent);
   const chatUnreadCount = useAgentChatUnreadCount(data.agent.id, Boolean(data.chatOpen));
   const hasUnreadChat = chatUnreadCount > 0 && !data.chatOpen;
@@ -186,6 +272,9 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   const surfaceBadges = data.surfaceBadges ?? [];
   const accountBadges = data.accountBadges ?? [];
   const canOpenWorkspaceChannels = Boolean(data.onOpenWorkspaceChannels);
+  const canOpenAccounts = !isPendingCreation && Boolean(data.onOpenAccounts);
+  const canConfigureCapabilities = !isPendingCreation && Boolean(data.onConfigureCapabilities);
+  const canOpenConnectionMenu = canOpenWorkspaceChannels || canOpenAccounts || canConfigureCapabilities;
   const canMessage = !isPendingCreation && Boolean(data.onMessage);
   const isMessageActive = Boolean(data.chatOpen) || hasUnreadChat;
   const canCreateTask = !isPendingCreation && Boolean(data.onCreateTask);
@@ -249,6 +338,21 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!connectionMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!connectionMenuRef.current?.contains(event.target as Node)) {
+        setConnectionMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [connectionMenuOpen]);
 
   return (
     <div
@@ -388,43 +492,67 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               className="pointer-events-none absolute -bottom-2 right-5 h-12 w-12 rounded-full bg-cyan-300/14 blur-2xl"
             />
 
-            <div className="absolute left-11 top-2 z-50 flex max-w-[calc(100%-88px)] items-center gap-1.5">
-              {visibleSurfaceBadges.map((surfaceBadge) => (
-                <span
-                  key={`surface:${surfaceBadge.provider}`}
-                  title={surfaceBadge.roleLabel}
-                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
-                >
-                  <SurfaceIcon provider={surfaceBadge.provider} className="h-7 w-7 border-white/12 bg-slate-950/72" />
-                </span>
-              ))}
+            <TooltipProvider delayDuration={120}>
+              <div className="absolute left-11 top-2 z-50 flex max-w-[calc(100%-88px)] items-center gap-1.5">
+                {visibleSurfaceBadges.map((surfaceBadge) => (
+                  <AgentConnectionTooltip
+                    key={`surface:${surfaceBadge.provider}`}
+                    label={surfaceBadge.roleLabel}
+                    icon={
+                      <SurfaceIcon
+                        provider={surfaceBadge.provider}
+                        className="h-6 w-6 border-slate-800/20 bg-slate-950 text-white shadow-[0_8px_18px_rgba(15,23,42,0.18)]"
+                      />
+                    }
+                  >
+                    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full">
+                      <SurfaceIcon provider={surfaceBadge.provider} className="h-7 w-7 border-white/12 bg-slate-950/72" />
+                    </span>
+                  </AgentConnectionTooltip>
+                ))}
 
-              {visibleAccountBadges.map((accountBadge) => (
-                <span
-                  key={`account:${accountBadge.id}`}
-                  title={accountBadge.roleLabel}
-                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
-                >
-                  <AccountIcon
-                    serviceId={accountBadge.serviceId}
-                    serviceName={accountBadge.serviceName}
-                    primaryDomain={accountBadge.primaryDomain}
-                    className="h-7 w-7 border-amber-200/18 bg-slate-950/72"
-                  />
-                </span>
-              ))}
+                {visibleAccountBadges.map((accountBadge) => (
+                  <AgentConnectionTooltip
+                    key={`account:${accountBadge.id}`}
+                    label={accountBadge.roleLabel}
+                    icon={
+                      <AccountIcon
+                        serviceId={accountBadge.serviceId}
+                        serviceName={accountBadge.serviceName}
+                        primaryDomain={accountBadge.primaryDomain}
+                        className="h-6 w-6 border-slate-800/20 bg-slate-950 text-white shadow-[0_8px_18px_rgba(15,23,42,0.18)]"
+                      />
+                    }
+                  >
+                    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full">
+                      <AccountIcon
+                        serviceId={accountBadge.serviceId}
+                        serviceName={accountBadge.serviceName}
+                        primaryDomain={accountBadge.primaryDomain}
+                        className="h-7 w-7 border-amber-200/18 bg-slate-950/72"
+                      />
+                    </span>
+                  </AgentConnectionTooltip>
+                ))}
 
-              {hiddenConnectionBadgeCount > 0 ? (
-                <span
-                  title={`${hiddenConnectionBadgeCount} more connected surface or account badge${
-                    hiddenConnectionBadgeCount === 1 ? "" : "s"
-                  }`}
-                  className="inline-flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-slate-950/72 px-2 text-[10px] font-semibold text-slate-200 shadow-[0_10px_24px_rgba(0,0,0,0.32)] backdrop-blur-xl"
-                >
-                  +{hiddenConnectionBadgeCount}
-                </span>
-              ) : null}
-            </div>
+                {hiddenConnectionBadgeCount > 0 ? (
+                  <AgentConnectionTooltip
+                    label={`${hiddenConnectionBadgeCount} more connected integration or account badge${
+                      hiddenConnectionBadgeCount === 1 ? "" : "s"
+                    }`}
+                    icon={
+                      <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-slate-200/90 bg-white px-1.5 text-[10px] font-semibold text-slate-950 shadow-[0_8px_18px_rgba(15,23,42,0.12)]">
+                        +{hiddenConnectionBadgeCount}
+                      </span>
+                    }
+                  >
+                    <span className="inline-flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-slate-950/72 px-2 text-[10px] font-semibold text-slate-200 shadow-[0_10px_24px_rgba(0,0,0,0.32)] backdrop-blur-xl">
+                      +{hiddenConnectionBadgeCount}
+                    </span>
+                  </AgentConnectionTooltip>
+                ) : null}
+              </div>
+            </TooltipProvider>
 
             <div className="absolute inset-x-0 bottom-0 z-30 p-3.5">
               <div className="max-w-[80%]">
@@ -442,58 +570,171 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
             </div>
           </div>
 
-          <motion.button
-            type="button"
-            aria-label={
-              isPendingCreation
-                ? `${agentLabel} surfaces unavailable while provisioning`
-                : `Connect surfaces and accounts for ${agentLabel}`
-            }
-            title={
-              isPendingCreation
-                ? "Available after the agent syncs from OpenClaw"
-                : `Connect surfaces and accounts for ${agentLabel}`
-            }
-            disabled={!canOpenWorkspaceChannels}
-            initial={false}
-            animate={
-              canOpenWorkspaceChannels
-                ? {
-                    scale: [1, 1.08, 1],
-                    y: [0, -0.5, 0]
-                  }
-                : { scale: 1, y: 0 }
-            }
-            transition={{ duration: 2.8, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
-            className={cn(
-              "nodrag nopan absolute left-[-2px] top-[-10px] z-[90] inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-visible rounded-full border border-violet-200/55 bg-[radial-gradient(circle_at_36%_24%,rgba(216,180,254,0.58),rgba(168,85,247,0.34)_36%,rgba(24,13,43,0.94)_80%)] text-violet-50 shadow-[0_0_0_1px_rgba(196,181,253,0.24),0_0_26px_rgba(168,85,247,0.54),0_14px_30px_rgba(0,0,0,0.42)] backdrop-blur-xl transition-colors hover:border-violet-200/75 hover:text-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-200/60",
-              !canOpenWorkspaceChannels &&
-                "cursor-not-allowed border-slate-500/20 bg-slate-950/72 text-slate-500 shadow-[0_10px_24px_rgba(0,0,0,0.32)]"
-            )}
-            onClick={(event) => {
-              event.stopPropagation();
-              data.onOpenWorkspaceChannels?.(data.agent.workspaceId, data.agent.id);
-            }}
+          <div
+            ref={connectionMenuRef}
+            className="nodrag nopan absolute left-[-2px] top-[-10px] z-[90]"
+            onClick={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
           >
-            {canOpenWorkspaceChannels ? (
-              <>
-                <motion.span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-[-10px] rounded-full bg-violet-400/28 blur-md"
-                  animate={{ opacity: [0.34, 0.86, 0.34], scale: [0.86, 1.18, 0.86] }}
-                  transition={{ duration: 2.4, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
-                />
-                <motion.span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-[-4px] rounded-full border border-fuchsia-200/36"
-                  animate={{ opacity: [0, 0.88, 0], scale: [0.82, 1.38, 0.82] }}
-                  transition={{ duration: 2.15, repeat: Number.POSITIVE_INFINITY, ease: "easeOut" }}
-                />
-              </>
-            ) : null}
-            <Plus className="relative z-10 h-4 w-4 drop-shadow-[0_0_8px_rgba(216,180,254,0.92)]" />
-          </motion.button>
+            <motion.button
+              type="button"
+              aria-label={
+                isPendingCreation
+                  ? `${agentLabel} connections unavailable while provisioning`
+                  : `Open connection menu for ${agentLabel}`
+              }
+              aria-expanded={connectionMenuOpen}
+              aria-controls={connectionMenuPanelId}
+              title={
+                isPendingCreation
+                  ? "Available after the agent syncs from OpenClaw"
+                  : `Connect integrations and accounts for ${agentLabel}`
+              }
+              disabled={!canOpenConnectionMenu}
+              initial={false}
+              animate={
+                canOpenConnectionMenu
+                  ? {
+                      scale: connectionMenuOpen ? 1.08 : [1, 1.08, 1],
+                      y: connectionMenuOpen ? -1 : [0, -0.5, 0],
+                      rotate: connectionMenuOpen ? 45 : 0
+                    }
+                  : { scale: 1, y: 0, rotate: 0 }
+              }
+              transition={
+                connectionMenuOpen
+                  ? { duration: 0.24, ease: [0.22, 1, 0.36, 1] }
+                  : { duration: 2.8, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }
+              }
+              className={cn(
+                "relative inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-visible rounded-full border border-violet-200/55 bg-[radial-gradient(circle_at_36%_24%,rgba(216,180,254,0.58),rgba(168,85,247,0.34)_36%,rgba(24,13,43,0.94)_80%)] text-violet-50 shadow-[0_0_0_1px_rgba(196,181,253,0.24),0_0_26px_rgba(168,85,247,0.54),0_14px_30px_rgba(0,0,0,0.42)] backdrop-blur-xl transition-colors hover:border-violet-200/75 hover:text-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-200/60",
+                !canOpenConnectionMenu &&
+                  "cursor-not-allowed border-slate-500/20 bg-slate-950/72 text-slate-500 shadow-[0_10px_24px_rgba(0,0,0,0.32)]"
+              )}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (!canOpenConnectionMenu) {
+                  return;
+                }
+
+                setConnectionMenuOpen((current) => !current);
+              }}
+            >
+              {canOpenConnectionMenu ? (
+                <>
+                  <motion.span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-[-10px] rounded-full bg-violet-400/28 blur-md"
+                    animate={{ opacity: [0.34, 0.86, 0.34], scale: [0.86, 1.18, 0.86] }}
+                    transition={{ duration: 2.4, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+                  />
+                  <motion.span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-[-4px] rounded-full border border-fuchsia-200/36"
+                    animate={{ opacity: [0, 0.88, 0], scale: [0.82, 1.38, 0.82] }}
+                    transition={{ duration: 2.15, repeat: Number.POSITIVE_INFINITY, ease: "easeOut" }}
+                  />
+                </>
+              ) : null}
+              <Plus className="relative z-10 h-4 w-4 drop-shadow-[0_0_8px_rgba(216,180,254,0.92)]" />
+            </motion.button>
+
+            <AnimatePresence>
+              {connectionMenuOpen ? (
+                <motion.div
+                  id={connectionMenuPanelId}
+                  role="menu"
+                  aria-label={`${agentLabel} connections`}
+                  initial={{ opacity: 0, x: -12, y: 18, scale: 0.9, filter: "blur(8px)" }}
+                  animate={{ opacity: 1, x: 0, y: 0, scale: 1, filter: "blur(0px)" }}
+                  exit={{ opacity: 0, x: -10, y: 14, scale: 0.92, filter: "blur(6px)" }}
+                  transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                  className="absolute left-[88px] top-[-150px] min-w-[220px]"
+                >
+                  <motion.svg
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-[-90px] top-[86px] h-24 w-40 overflow-visible"
+                    viewBox="0 0 160 96"
+                    initial={{ pathLength: 0, opacity: 0 }}
+                    animate={{ pathLength: 1, opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.32, ease: "easeOut" }}
+                  >
+                    <motion.path
+                      d="M18 80 C18 24 54 8 112 8"
+                      fill="none"
+                      stroke="rgba(250,204,21,0.20)"
+                      strokeWidth="12"
+                      strokeLinecap="round"
+                    />
+                    <motion.path
+                      d="M18 80 C18 24 54 8 112 8"
+                      fill="none"
+                      stroke="rgba(245,158,11,0.36)"
+                      strokeWidth="7"
+                      strokeLinecap="round"
+                    />
+                    <motion.path
+                      d="M18 80 C18 24 54 8 112 8"
+                      fill="none"
+                      stroke="rgba(253,224,71,0.88)"
+                      strokeWidth="2.8"
+                      strokeLinecap="round"
+                      strokeDasharray="8 10"
+                      animate={{ strokeDashoffset: [0, -36], opacity: [0.72, 1, 0.72] }}
+                      transition={{ strokeDashoffset: { duration: 1.35, repeat: Number.POSITIVE_INFINITY, ease: "linear" }, opacity: { duration: 1.8, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" } }}
+                    />
+                    <circle cx="18" cy="80" r="4.5" fill="rgba(253,224,71,0.95)" />
+                    <circle cx="112" cy="8" r="4" fill="rgba(216,180,254,0.95)" />
+                  </motion.svg>
+
+                  <div className="relative overflow-hidden rounded-[18px] border border-violet-200/20 bg-[linear-gradient(135deg,rgba(18,20,30,0.98),rgba(37,22,53,0.96)_58%,rgba(9,12,20,0.98))] p-1.5 shadow-[0_22px_55px_rgba(8,10,18,0.46),0_0_34px_rgba(168,85,247,0.24)] backdrop-blur-2xl">
+                    <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(250,204,21,0.18),transparent_34%),radial-gradient(circle_at_94%_16%,rgba(168,85,247,0.28),transparent_36%)]" />
+                    <ConnectionMenuButton
+                      icon={<Sparkles className="h-[17px] w-[17px]" />}
+                      label="Add Skill"
+                      description="Edit skills"
+                      disabled={!canConfigureCapabilities}
+                      onClick={() => {
+                        configureAgentCapabilities("skills");
+                        setConnectionMenuOpen(false);
+                      }}
+                    />
+                    <ConnectionMenuButton
+                      icon={<Wrench className="h-[17px] w-[17px]" />}
+                      label="Add Tool"
+                      description="Edit tools"
+                      disabled={!canConfigureCapabilities}
+                      onClick={() => {
+                        configureAgentCapabilities("tools");
+                        setConnectionMenuOpen(false);
+                      }}
+                    />
+                    <ConnectionMenuButton
+                      icon={<Layers3 className="h-[17px] w-[17px]" />}
+                      label="Integrations"
+                      description="Workspace routes"
+                      disabled={!canOpenWorkspaceChannels}
+                      onClick={() => {
+                        data.onOpenWorkspaceChannels?.(data.agent.workspaceId, data.agent.id);
+                        setConnectionMenuOpen(false);
+                      }}
+                    />
+                    <ConnectionMenuButton
+                      icon={<KeyRound className="h-[17px] w-[17px]" />}
+                      label="Accounts"
+                      description="Login targets"
+                      disabled={!canOpenAccounts}
+                      onClick={() => {
+                        data.onOpenAccounts?.(data.agent.workspaceId, data.agent.id);
+                        setConnectionMenuOpen(false);
+                      }}
+                    />
+                  </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </div>
 
           <div className="absolute right-2 top-2 z-40" ref={menuRef}>
             <button

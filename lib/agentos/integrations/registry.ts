@@ -92,8 +92,8 @@ function openClawSurfaceDescriptor(input: {
     configure: {
       supported: catalogEntry.supportsProvisioning,
       reason: catalogEntry.supportsProvisioning
-        ? "Managed by the existing AgentOS workspace surface setup flow."
-        : "OpenClaw does not expose provisioning fields for this surface yet."
+        ? "Managed by the existing AgentOS workspace integration setup flow."
+        : "OpenClaw does not expose provisioning fields for this integration yet."
     },
     reconnect: {
       supported: true,
@@ -101,7 +101,7 @@ function openClawSurfaceDescriptor(input: {
     },
     disable: {
       supported: true,
-      reason: "Can disconnect the workspace surface binding through the existing workspace channels API."
+      reason: "Can disconnect the workspace integration binding through the existing workspace channels API."
     },
     docsUrl: null
   } satisfies IntegrationDescriptor;

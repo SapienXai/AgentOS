@@ -296,8 +296,8 @@ test("surface reconcile dry-run skips OpenClaw config writes and provider side e
   assert.match(source, /if \(!dryRun\) \{\s+invalidateSnapshotCache\(\);/);
   assert.match(source, /writeSurfaceReconcileAudit/);
   assert.match(route, /surfaceReconcileApplyConfirmation = "apply-surface-reconcile"/);
-  assert.match(route, /Surface repair apply requires explicit confirmation/);
-  assert.match(route, /Surface repair apply requires a dry-run preview audit id/);
+  assert.match(route, /Integration repair apply requires explicit confirmation/);
+  assert.match(route, /Integration repair apply requires a dry-run preview audit id/);
   assert.doesNotMatch(dialog, /window\.confirm/);
   assert.match(dialog, /Apply OpenClaw binding repair/);
   assert.match(dialog, /handleApplySurfaceRepairPreview/);

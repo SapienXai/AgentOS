@@ -72,6 +72,7 @@ export function buildCanvasGraph(
   onConfigureAgentCapabilities: ((agentId: string, focus: "skills" | "tools") => void) | undefined,
   onInspectAgentDetail: ((agentId: string, focus: AgentDetailFocus) => void) | undefined,
   onOpenWorkspaceChannels: ((workspaceId?: string, agentId?: string) => void) | undefined,
+  onOpenAccounts: ((workspaceId?: string, agentId?: string) => void) | undefined,
   onOpenWorkspaceFiles: ((workspaceId: string) => void) | undefined,
   onReplyTask: (task: WorkItemRecord) => void,
   onCopyTaskPrompt: (task: WorkItemRecord) => void,
@@ -240,7 +241,8 @@ export function buildCanvasGraph(
           onConfigureModel: isPendingCreation ? undefined : onConfigureAgentModel,
           onConfigureCapabilities: isPendingCreation ? undefined : onConfigureAgentCapabilities,
           onInspect: isPendingCreation ? undefined : onInspectAgentDetail,
-          onOpenWorkspaceChannels: isPendingCreation ? undefined : onOpenWorkspaceChannels
+          onOpenWorkspaceChannels: isPendingCreation ? undefined : onOpenWorkspaceChannels,
+          onOpenAccounts: isPendingCreation ? undefined : onOpenAccounts
         }
       });
 
@@ -628,7 +630,7 @@ export function buildAgentSurfaceBadges(
 
       if (summary.primaryCount > 0) {
         roleParts.push(
-          `Primary on ${summary.primaryCount} ${summary.primaryCount === 1 ? "surface" : "surfaces"}`
+          `Primary on ${summary.primaryCount} ${summary.primaryCount === 1 ? "integration" : "integrations"}`
         );
       }
 
@@ -638,7 +640,7 @@ export function buildAgentSurfaceBadges(
 
       if (summary.assistantCount > 0) {
         roleParts.push(
-          `Assistant on ${summary.assistantCount} ${summary.assistantCount === 1 ? "surface" : "surfaces"}`
+          `Assistant on ${summary.assistantCount} ${summary.assistantCount === 1 ? "integration" : "integrations"}`
         );
       }
 

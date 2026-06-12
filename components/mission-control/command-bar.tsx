@@ -737,7 +737,7 @@ export function CommandBar({
                           onClick={() => onOpenWorkspaceChannels()}
                           className="inline-flex h-8 items-center rounded-full border border-cyan-300/18 bg-cyan-400/[0.1] px-3 text-[12px] text-cyan-50 transition-all hover:border-cyan-300/28 hover:bg-cyan-400/[0.14] hover:text-white"
                         >
-                          Manage Surfaces
+                          Manage Integrations
                         </button>
                       ) : null}
                     </motion.div>

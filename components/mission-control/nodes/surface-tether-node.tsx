@@ -17,7 +17,7 @@ export function SurfaceTetherNode({ data, selected }: NodeProps<SurfaceTetherFlo
   const isAddSurface = data.variant === "add";
   const isAccount = data.variant === "account";
   const tooltipLabel = isAddSurface
-    ? data.actionLabel ?? "Add a workspace surface"
+    ? data.actionLabel ?? "Add a workspace integration"
     : isAccount
       ? data.roleLabel || `${data.label} account access`
     : data.roleLabel || `${data.label} connection`;
@@ -158,21 +158,26 @@ export function SurfaceTetherNode({ data, selected }: NodeProps<SurfaceTetherFlo
             </motion.div>
           </motion.button>
         </TooltipTrigger>
-        <TooltipContent side="right" align="center" sideOffset={12} className="max-w-[280px]">
-          <div className="space-y-2">
+        <TooltipContent
+          side="right"
+          align="center"
+          sideOffset={12}
+          className="max-w-[280px] rounded-[12px] border border-slate-200/90 bg-white px-3 py-2 text-slate-950 shadow-[0_18px_44px_rgba(15,23,42,0.2)]"
+        >
+          <div className="space-y-1.5">
             <div className="flex items-center gap-2">
               <span
                 className={cn("h-2.5 w-2.5 rounded-full", isAddSurface ? "bg-cyan-100 shadow-[0_0_12px_rgba(103,232,249,0.9)]" : roleDotClass)}
                 aria-hidden="true"
               />
-              <p className="text-[11px] uppercase tracking-[0.22em] text-white/75">{data.label}</p>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">{data.label}</p>
             </div>
             <div className="space-y-1">
-              <p className="text-[12px] leading-5 text-white">{tooltipLabel}</p>
+              <p className="text-[12px] leading-5 text-slate-900">{tooltipLabel}</p>
             </div>
             {isAddSurface ? null : surfaceSummary ? (
-              <p className="text-[11px] leading-4 text-slate-400">
-                {isAccount ? "Related accounts" : "Related surfaces"}: {surfaceSummary}
+              <p className="text-[11px] leading-4 text-slate-600">
+                {isAccount ? "Related accounts" : "Related integrations"}: {surfaceSummary}
               </p>
             ) : null}
           </div>

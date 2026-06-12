@@ -129,7 +129,7 @@ export function useWorkspaceAccountAccess({
                 agentId: selectedAccountAgent.id,
                 agentName: formatAgentDisplayName(selectedAccountAgent),
                 permission: "use_browser_profile" as const,
-                notes: `Granted from Workspace Surfaces for ${target.serviceName}.`
+                notes: `Granted from Workspace Integrations for ${target.serviceName}.`
               }])
         ];
         const response = await fetch("/api/accounts/access-rules", {

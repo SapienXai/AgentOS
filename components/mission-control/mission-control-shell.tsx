@@ -29,10 +29,13 @@ import {
 } from "@/components/mission-control/use-mission-control-preferences";
 import { useTaskReviewWorkflow } from "@/components/mission-control/use-task-review-workflow";
 import { WorkspaceChannelsDialog } from "@/components/mission-control/workspace-channels-dialog";
+import type { WorkspaceDialogSection } from "@/components/mission-control/workspace-channels-dialog";
 import { WorkspaceContextFilesDialog } from "@/components/mission-control/workspace-context-files-dialog";
 import { WorkspaceWizardDialog } from "@/components/mission-control/workspace-wizard/workspace-wizard-dialog";
 import { resolveSuggestedAgentModelId } from "@/components/mission-control/create-agent-dialog.utils";
 import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
+import { ConnectAccountWizard } from "@/components/operations/accounts/accounts-page-content";
+import type { ConnectBrowserProfileInput } from "@/components/operations/accounts/accounts-page-content";
 import dynamic from "next/dynamic";
 import { toast } from "@/components/ui/sonner";
 import { useMissionControlData } from "@/hooks/use-mission-control-data";
@@ -111,6 +114,11 @@ import type {
   AccountLoginTargetsResponse,
   AccountLoginTargetView
 } from "@/lib/agentos/account-login-target-types";
+import type {
+  OpenClawBrowserProfileMutationResponse,
+  OpenClawBrowserProfilesResponse,
+  OpenClawBrowserProfileView
+} from "@/lib/openclaw/browser-profile-types";
 import {
   getModelProviderDescriptor,
   normalizeAddModelsProviderId
@@ -193,6 +201,10 @@ function areOpenClawBinarySelectionsEqual(
     left.label === right.label &&
     left.detail === right.detail
   );
+}
+
+function readBrowserProfileError(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 function isMissingTranscriptActivityMessage(value: string | null | undefined) {
@@ -339,6 +351,9 @@ export function MissionControlShell({
   const [workspaceWizardEditId, setWorkspaceWizardEditId] = useState<string | null>(null);
   const [isWorkspaceChannelsOpen, setIsWorkspaceChannelsOpen] = useState(false);
   const [workspaceChannelsInitialAgentId, setWorkspaceChannelsInitialAgentId] = useState<string | null>(null);
+  const [workspaceChannelsInitialSection, setWorkspaceChannelsInitialSection] = useState<WorkspaceDialogSection>("surfaces");
+  const [isConnectAccountDialogOpen, setIsConnectAccountDialogOpen] = useState(false);
+  const [accountBrowserProfiles, setAccountBrowserProfiles] = useState<OpenClawBrowserProfileView[]>([]);
   const [accountTargets, setAccountTargets] = useState<AccountLoginTargetView[]>([]);
   const [accountAccessRules, setAccountAccessRules] = useState<AccountAccessRuleView[]>([]);
   const [workspaceFilesDialogId, setWorkspaceFilesDialogId] = useState<string | null>(null);
@@ -393,6 +408,12 @@ export function MissionControlShell({
   const selectedWorkspace = selectedNodeId
     ? uiSnapshot.workspaces.find((workspace) => workspace.id === selectedNodeId) ?? null
     : null;
+  const activeWorkspaceForDialogs = useMemo(
+    () =>
+      uiSnapshot.workspaces.find((workspace) => workspace.id === (activeWorkspaceId ?? uiSnapshot.workspaces[0]?.id ?? null)) ??
+      null,
+    [activeWorkspaceId, uiSnapshot.workspaces]
+  );
   const selectedAgent = selectedNodeId
     ? uiSnapshot.agents.find((agent) => agent.id === selectedNodeId) ?? null
     : null;
@@ -929,19 +950,105 @@ export function MissionControlShell({
     }
   }, []);
 
+  const loadAccountBrowserProfiles = useCallback(async () => {
+    try {
+      const response = await fetch("/api/accounts/browser-profiles", { cache: "no-store" });
+      const payload = await response.json().catch(() => null) as OpenClawBrowserProfilesResponse | null;
+
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error ?? "Unable to read OpenClaw browser profiles.");
+      }
+
+      setAccountBrowserProfiles(payload.profiles);
+    } catch (error) {
+      setAccountBrowserProfiles([]);
+      toast.error("Unable to read OpenClaw browser profiles.", {
+        description: readBrowserProfileError(error, "OpenClaw did not return browser profiles.")
+      });
+    }
+  }, []);
+
   useEffect(() => {
     void loadAccountBindings();
   }, [loadAccountBindings]);
 
-  const openWorkspaceChannels = useCallback((workspaceId?: string, agentId?: string) => {
+  const openWorkspaceChannels = useCallback((workspaceId?: string, agentId?: string, section: WorkspaceDialogSection = "surfaces") => {
     if (workspaceId) {
       openWorkspaceOnCanvas(workspaceId);
     }
 
     setWorkspaceChannelsInitialAgentId(agentId ?? null);
+    setWorkspaceChannelsInitialSection(section);
     setIsWorkspaceChannelsOpen(true);
     void loadAccountBindings();
   }, [loadAccountBindings, openWorkspaceOnCanvas]);
+
+  const openAccountsConnect = useCallback((workspaceId?: string, agentId?: string) => {
+    openWorkspaceChannels(workspaceId, agentId, "accounts");
+  }, [openWorkspaceChannels]);
+
+  const openConnectAccountDialog = useCallback(() => {
+    setIsConnectAccountDialogOpen(true);
+    void loadAccountBrowserProfiles();
+  }, [loadAccountBrowserProfiles]);
+
+  const connectAccount = useCallback(async (input: ConnectBrowserProfileInput) => {
+    const workspace = activeWorkspaceForDialogs;
+
+    if (!workspace) {
+      toast.error("Select a workspace before connecting an account.");
+      return;
+    }
+
+    try {
+      const profileResponse = await fetch("/api/accounts/browser-profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "open-login",
+          profileName: input.profileName,
+          loginUrl: input.loginUrl,
+          label: input.label
+        })
+      });
+      const profilePayload = await profileResponse.json().catch(() => null) as OpenClawBrowserProfileMutationResponse | null;
+
+      if (!profileResponse.ok || !profilePayload?.ok) {
+        throw new Error(profilePayload?.error ?? "Unable to open the login URL in OpenClaw.");
+      }
+
+      const targetResponse = await fetch("/api/accounts/login-targets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+          workspacePath: workspace.path ?? null,
+          serviceId: input.serviceId,
+          serviceName: input.serviceName,
+          primaryDomain: input.primaryDomain,
+          loginUrl: input.loginUrl,
+          browserProfileName: input.profileName
+        })
+      });
+      const targetPayload = await targetResponse.json().catch(() => null) as AccountLoginTargetsResponse | null;
+
+      if (!targetResponse.ok || !targetPayload?.ok) {
+        throw new Error(targetPayload?.error ?? "Unable to save account login target.");
+      }
+
+      setAccountTargets(targetPayload.targets);
+      toast.success("Login browser opened.", {
+        description: "Complete the login in the OpenClaw browser profile. AgentOS saved only the login target."
+      });
+      setIsConnectAccountDialogOpen(false);
+      await Promise.all([loadAccountBindings(), loadAccountBrowserProfiles()]);
+    } catch (error) {
+      toast.error("Connect Account did not complete.", {
+        description: readBrowserProfileError(error, "Unable to open the login browser.")
+      });
+    }
+  }, [activeWorkspaceForDialogs, loadAccountBindings, loadAccountBrowserProfiles]);
 
   const openWorkspaceFiles = useCallback(
     (workspaceId: string) => {
@@ -3643,6 +3750,7 @@ export function MissionControlShell({
             onConfigureAgentCapabilities={handleConfigureAgentCapabilities}
             onInspectAgentDetail={handleInspectAgentDetail}
             onOpenWorkspaceChannels={openWorkspaceChannels}
+            onOpenAccounts={openAccountsConnect}
             onOpenWorkspaceFiles={openWorkspaceFiles}
             onMessageAgent={(agentId) => {
               const agent = uiSnapshot.agents.find((entry) => entry.id === agentId);
@@ -4059,17 +4167,27 @@ export function MissionControlShell({
           accountTargets={accountTargets}
           accountAccessRules={accountAccessRules}
           initialAgentId={workspaceChannelsInitialAgentId}
+          initialSection={workspaceChannelsInitialSection}
           open={isWorkspaceChannelsOpen}
           onOpenChange={(open) => {
             setIsWorkspaceChannelsOpen(open);
             if (!open) {
               setWorkspaceChannelsInitialAgentId(null);
+              setWorkspaceChannelsInitialSection("surfaces");
             }
           }}
           onRefresh={refresh}
           onSnapshotChange={setSnapshot}
           onAccountAccessRulesChange={setAccountAccessRules}
           onAccountTargetsChange={setAccountTargets}
+          onConnectAccount={openConnectAccountDialog}
+        />
+        <ConnectAccountWizard
+          open={isConnectAccountDialogOpen}
+          workspace={activeWorkspaceForDialogs}
+          onOpenChange={setIsConnectAccountDialogOpen}
+          onSubmit={connectAccount}
+          profiles={accountBrowserProfiles}
         />
 
         <WorkspaceContextFilesDialog

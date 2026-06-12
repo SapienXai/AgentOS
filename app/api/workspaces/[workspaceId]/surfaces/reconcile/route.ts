@@ -32,10 +32,10 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
     const input = await measureTiming(timings, "request.parse", async () => reconcileSchema.parse(body));
     const dryRun = input.dryRun === true;
     if (!dryRun && input.confirm !== surfaceReconcileApplyConfirmation) {
-      throw new Error("Surface repair apply requires explicit confirmation.");
+      throw new Error("Integration repair apply requires explicit confirmation.");
     }
     if (!dryRun && !input.previewAuditId?.trim()) {
-      throw new Error("Surface repair apply requires a dry-run preview audit id.");
+      throw new Error("Integration repair apply requires a dry-run preview audit id.");
     }
     const repair = await measureTiming(timings, "surface.reconcile", () =>
       reconcileWorkspaceSurfaceBindings(
@@ -76,7 +76,7 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
 }
 
 function formatReconcileError(error: unknown) {
-  const message = redactErrorMessage(error, "Unable to reconcile OpenClaw surface bindings.");
+  const message = redactErrorMessage(error, "Unable to reconcile OpenClaw integration bindings.");
   return isGatewayConfigRateLimitMessage(message)
     ? formatGatewayConfigRateLimitMessage(message, "binding repair")
     : message;

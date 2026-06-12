@@ -50,9 +50,9 @@ export function ChannelBindingPicker({
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className={cn("text-[13px] font-medium", isLight ? "text-[#3f2f24]" : "text-white")}>Surface participation</p>
+            <p className={cn("text-[13px] font-medium", isLight ? "text-[#3f2f24]" : "text-white")}>Integration participation</p>
             <p className={cn("mt-1 text-[11px] leading-4", isLight ? "text-[#7b6657]" : "text-slate-400")}>
-              Connect workspace surfaces first. Primary agents own the surface; selected agents assist behind the scenes.
+              Connect workspace integrations first. Primary agents own the integration; selected agents assist behind the scenes.
             </p>
           </div>
         </div>
@@ -71,9 +71,9 @@ export function ChannelBindingPicker({
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className={cn("text-[13px] font-medium", isLight ? "text-[#3f2f24]" : "text-white")}>Surface participation</p>
+          <p className={cn("text-[13px] font-medium", isLight ? "text-[#3f2f24]" : "text-white")}>Integration participation</p>
           <p className={cn("mt-1 text-[11px] leading-4", isLight ? "text-[#7b6657]" : "text-slate-400")}>
-            Primary agents own the surface. Selected surfaces let this agent assist the owner internally.
+            Primary agents own the integration. Selected integrations let this agent assist the owner internally.
           </p>
         </div>
       </div>
@@ -88,7 +88,7 @@ export function ChannelBindingPicker({
           )}
         >
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          <span>Applying surface changes...</span>
+          <span>Applying integration changes...</span>
         </div>
       ) : null}
 

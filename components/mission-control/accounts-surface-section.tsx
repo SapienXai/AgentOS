@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactNode } from "react";
-import Link from "next/link";
 import { KeyRound, Link2, RefreshCw } from "lucide-react";
 
 import { AccountIcon } from "@/components/mission-control/account-icon";
@@ -23,7 +22,8 @@ export function AccountsSurfaceSection({
   accountRulesByTargetId,
   isSaving,
   onToggleAccountAccess,
-  onRefreshAccounts
+  onRefreshAccounts,
+  onConnectAccount
 }: {
   workspaceAgents: MissionControlSnapshot["agents"];
   selectedAgentId: string;
@@ -33,6 +33,7 @@ export function AccountsSurfaceSection({
   isSaving: boolean;
   onToggleAccountAccess: (target: AccountLoginTargetView, linked: boolean) => void;
   onRefreshAccounts: () => void;
+  onConnectAccount: () => void;
 }) {
   const selectedAgent = workspaceAgents.find((agent) => agent.id === selectedAgentId) ?? null;
   const selectedAgentCanUseBrowser = selectedAgent ? agentHasBrowserAccess(selectedAgent) : false;
@@ -53,11 +54,9 @@ export function AccountsSurfaceSection({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
-            <Button asChild type="button" variant="default" size="sm" className="h-8 rounded-full px-3 text-[11px]">
-              <Link href="/accounts?connect=1">
-                <KeyRound className="mr-1.5 h-3.5 w-3.5" />
-                Connect Account
-              </Link>
+            <Button type="button" variant="default" size="sm" className="h-8 rounded-full px-3 text-[11px]" onClick={onConnectAccount}>
+              <KeyRound className="mr-1.5 h-3.5 w-3.5" />
+              Connect Account
             </Button>
             <Button
               type="button"
@@ -122,7 +121,7 @@ export function AccountsSurfaceSection({
 
         {accountTargets.length === 0 ? (
           <div className="mt-3 rounded-xl border border-dashed border-border bg-muted/30 px-3 py-3 text-sm leading-5 text-muted-foreground dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-500">
-            No account targets are connected for this workspace. Use the Accounts page Connect Account flow to open a real OpenClaw browser login target first.
+            No account targets are connected for this workspace. Use Connect Account to open a real OpenClaw browser login target first.
           </div>
         ) : (
           <div className="mt-3 space-y-2.5">

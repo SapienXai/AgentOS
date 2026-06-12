@@ -66,6 +66,7 @@ export type AgentNodeData = Record<string, unknown> & {
   onConfigureCapabilities?: (agentId: string, focus: "skills" | "tools") => void;
   onInspect?: (agentId: string, focus: AgentDetailFocus) => void;
   onOpenWorkspaceChannels?: (workspaceId?: string, agentId?: string) => void;
+  onOpenAccounts?: (workspaceId?: string, agentId?: string) => void;
 };
 
 export type SurfaceTetherNodeData = Record<string, unknown> & {

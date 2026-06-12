@@ -115,8 +115,8 @@ export function IntegrationsPageContent({
 
   const openSurfaceSetup = (surfaceProvider: IntegrationView["surfaceProvider"] | null = null) => {
     if (!activeWorkspaceId) {
-      toast.error("Select a workspace before configuring workspace surfaces.", {
-        description: "All Workspaces is read-only for surface setup. Pick a workspace from the sidebar first."
+      toast.error("Select a workspace before configuring workspace integrations.", {
+        description: "All Workspaces is read-only for integration setup. Pick a workspace from the sidebar first."
       });
       return;
     }
@@ -304,7 +304,7 @@ export function IntegrationsPageContent({
     }
 
     if (!activeWorkspaceId) {
-      toast.error("Select a workspace before disabling a surface.", {
+      toast.error("Select a workspace before disabling an integration.", {
         description: "All Workspaces cannot safely remove a workspace-specific binding."
       });
       return;
@@ -312,7 +312,7 @@ export function IntegrationsPageContent({
 
     if (integration.channelIds.length === 0) {
       toast.message("No workspace binding found.", {
-        description: "There is no AgentOS workspace surface binding to disconnect."
+        description: "There is no AgentOS workspace integration binding to disconnect."
       });
       return;
     }
@@ -343,7 +343,7 @@ export function IntegrationsPageContent({
           statusTone: "muted",
           connectionHealth: {
             label: "Disconnected from workspace",
-            detail: "The workspace surface binding was removed through the channels API."
+            detail: "The workspace integration binding was removed through the channels API."
           },
           lastSyncLabel: "Updated just now",
           sourceMethods: ["/api/workspaces/[workspaceId]/channels DELETE"]
@@ -580,7 +580,7 @@ function IntegrationInspector({
   const StatusIcon = integrationStatusIcons[integration.status];
   const disableReason = activeWorkspaceId
     ? integration.actionSupport.disable.reason
-    : "Select a workspace before disabling workspace-specific surface bindings.";
+    : "Select a workspace before disabling workspace-specific integration bindings.";
   return (
     <InspectorPanelFrame>
       <div className="flex items-start gap-3">
@@ -805,7 +805,7 @@ function IntegrationImportDialog({
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <Button className="h-9 rounded-[9px] bg-primary text-white hover:bg-primary/90" onClick={onOpenSurfaceSetup}>
-            Open Surface Setup
+            Open Integration Setup
           </Button>
           <Button variant="secondary" className="h-9 rounded-[9px]" onClick={onOpenModelSetup}>
             Open Model Setup

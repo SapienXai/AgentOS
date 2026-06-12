@@ -105,7 +105,7 @@ export const OPENCLAW_SURFACE_CATALOG: SurfaceCatalogEntry[] = [
     provider: "googlechat",
     label: "Google Chat",
     kind: "chat",
-    description: "Spaces and enterprise chat surfaces backed by OpenClaw.",
+    description: "Spaces and enterprise chat integrations backed by OpenClaw.",
     iconKey: "siGooglechat",
     accentColor: "#34A853",
     supportsProvisioning: true,

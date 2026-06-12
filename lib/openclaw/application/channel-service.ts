@@ -1106,11 +1106,11 @@ function createSurfaceReconcileBackupId() {
 
 async function readSurfaceReconcilePreviewAudit(auditId: string | null): Promise<SurfaceReconcilePreviewAudit> {
   if (!auditId) {
-    throw new Error("Surface repair requires a dry-run preview audit id before applying changes.");
+    throw new Error("Integration repair requires a dry-run preview audit id before applying changes.");
   }
 
   if (!/^surface-reconcile-\d{4}-\d{2}-\d{2}T[0-9-]+Z-[a-z0-9]{6}$/.test(auditId)) {
-    throw new Error("Surface repair preview audit id is invalid.");
+    throw new Error("Integration repair preview audit id is invalid.");
   }
 
   const previewAuditPath = path.join(missionControlRootPath, "surface-reconcile", `${auditId}.json`);
@@ -1119,18 +1119,18 @@ async function readSurfaceReconcilePreviewAudit(auditId: string | null): Promise
   try {
     raw = await readFile(previewAuditPath, "utf8");
   } catch {
-    throw new Error("Surface repair preview audit was not found. Run a dry-run preview before applying repair.");
+    throw new Error("Integration repair preview audit was not found. Run a dry-run preview before applying repair.");
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error("Surface repair preview audit is unreadable. Run a new dry-run preview before applying repair.");
+    throw new Error("Integration repair preview audit is unreadable. Run a new dry-run preview before applying repair.");
   }
 
   if (!isObjectRecord(parsed)) {
-    throw new Error("Surface repair preview audit is invalid. Run a new dry-run preview before applying repair.");
+    throw new Error("Integration repair preview audit is invalid. Run a new dry-run preview before applying repair.");
   }
 
   const parsedAuditId = typeof parsed.id === "string" ? normalizeOptionalValue(parsed.id) : null;
@@ -1141,11 +1141,11 @@ async function readSurfaceReconcilePreviewAudit(auditId: string | null): Promise
     : [];
 
   if (parsedAuditId !== auditId) {
-    throw new Error("Surface repair preview audit id does not match the requested preview.");
+    throw new Error("Integration repair preview audit id does not match the requested preview.");
   }
 
   if (!scope || !createdAt) {
-    throw new Error("Surface repair preview audit is missing required metadata. Run a new dry-run preview before applying repair.");
+    throw new Error("Integration repair preview audit is missing required metadata. Run a new dry-run preview before applying repair.");
   }
 
   assertApprovedSurfaceRepairConfigPaths(plannedConfigPaths);
@@ -1167,7 +1167,7 @@ function assertApprovedSurfaceRepairConfigPaths(paths: string[]) {
   const unsupportedPath = paths.find((entry) => !approvedSurfaceRepairConfigPaths.has(entry));
 
   if (unsupportedPath) {
-    throw new Error(`Surface repair is not allowed to write OpenClaw config path ${unsupportedPath}.`);
+    throw new Error(`Integration repair is not allowed to write OpenClaw config path ${unsupportedPath}.`);
   }
 }
 
@@ -1363,19 +1363,19 @@ function flattenSurfaceConfigRepairPatch(patch: OpenClawConfigPatch): Array<{ pa
     if (key === "channels" && isObjectRecord(value)) {
       const telegram = isObjectRecord(value.telegram) ? value.telegram : null;
       if (!telegram) {
-        throw new Error("Surface repair only supports managed channels.telegram config paths.");
+        throw new Error("Integration repair only supports managed channels.telegram config paths.");
       }
 
       for (const [telegramKey, telegramValue] of Object.entries(telegram)) {
         if (!["enabled", "defaultAccount", "groups"].includes(telegramKey)) {
-          throw new Error(`Surface repair does not support channels.telegram.${telegramKey} config writes.`);
+          throw new Error(`Integration repair does not support channels.telegram.${telegramKey} config writes.`);
         }
         writes.push({ path: `channels.telegram.${telegramKey}`, value: telegramValue });
       }
       continue;
     }
 
-    throw new Error(`Surface repair does not support ${key} config writes.`);
+    throw new Error(`Integration repair does not support ${key} config writes.`);
   }
 
   return writes;

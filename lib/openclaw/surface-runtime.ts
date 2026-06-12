@@ -422,7 +422,7 @@ export function buildSurfaceDriftSnapshot(input: {
     summary.extraBindings += 1;
     issues.push(buildDriftIssue("extra-binding", binding, {
       severity: "warning",
-      detail: "OpenClaw has a managed binding that is no longer represented by the AgentOS workspace surface registry.",
+      detail: "OpenClaw has a managed binding that is no longer represented by the AgentOS workspace integration registry.",
       ...resolveWorkspaceContextForBinding(input.registry, binding, input.workspaceId)
     }));
   }
@@ -436,7 +436,7 @@ export function buildSurfaceDriftSnapshot(input: {
       summary.accountMissing += 1;
       issues.push(buildChannelDriftIssue("account-missing", channel, {
         severity: "error",
-        detail: "AgentOS has a workspace surface binding, but OpenClaw did not return a matching configured account.",
+        detail: "AgentOS has a workspace integration binding, but OpenClaw did not return a matching configured account.",
         workspaceId: input.workspaceId ?? null
       }));
     }
@@ -544,27 +544,27 @@ export function validateSurfaceReconcilePreviewForApply(input: {
   const nowMs = input.nowMs ?? Date.now();
 
   if (input.preview.dryRun !== true) {
-    throw new Error("Surface repair preview audit is not a dry-run preview.");
+    throw new Error("Integration repair preview audit is not a dry-run preview.");
   }
 
   if (input.preview.applied !== false) {
-    throw new Error("Surface repair preview audit was already applied.");
+    throw new Error("Integration repair preview audit was already applied.");
   }
 
   if (input.preview.scope !== input.scope) {
-    throw new Error("Surface repair preview scope does not match this apply request.");
+    throw new Error("Integration repair preview scope does not match this apply request.");
   }
 
   if ((input.preview.workspaceId ?? null) !== (input.workspaceId ?? null)) {
-    throw new Error("Surface repair preview workspace does not match this apply request.");
+    throw new Error("Integration repair preview workspace does not match this apply request.");
   }
 
   if (!Number.isFinite(createdAtMs) || nowMs - createdAtMs > input.previewMaxAgeMs) {
-    throw new Error("Surface repair preview is stale. Run a new dry-run preview before applying repair.");
+    throw new Error("Integration repair preview is stale. Run a new dry-run preview before applying repair.");
   }
 
   if (!stringArraysEqual(input.preview.plannedConfigPaths, input.plannedConfigPaths)) {
-    throw new Error("Surface repair planned config paths changed since preview. Run a new dry-run preview.");
+    throw new Error("Integration repair planned config paths changed since preview. Run a new dry-run preview.");
   }
 
   if (Array.isArray(input.preview.previousBindings) && !configValuesEqual(input.preview.previousBindings, input.currentBindings)) {
@@ -572,7 +572,7 @@ export function validateSurfaceReconcilePreviewForApply(input: {
   }
 
   if (Array.isArray(input.preview.nextBindings) && !configValuesEqual(input.preview.nextBindings, input.nextBindings)) {
-    throw new Error("Surface repair target bindings changed since preview. Run a new dry-run preview.");
+    throw new Error("Integration repair target bindings changed since preview. Run a new dry-run preview.");
   }
 }
 

@@ -109,7 +109,7 @@ type GatewayAuthStatusResult = {
 };
 
 const SURFACE_KIND_ORDER: MissionControlSurfaceKind[] = ["chat", "inbox", "trigger"];
-type WorkspaceDialogSection = "surfaces" | "accounts";
+export type WorkspaceDialogSection = "surfaces" | "accounts";
 
 export function WorkspaceChannelsDialog({
   snapshot,
@@ -117,19 +117,22 @@ export function WorkspaceChannelsDialog({
   accountTargets = [],
   accountAccessRules = [],
   initialAgentId = null,
+  initialSection = "surfaces",
   open,
   initialProvider = null,
   onOpenChange,
   onRefresh,
   onSnapshotChange,
   onAccountAccessRulesChange,
-  onAccountTargetsChange
+  onAccountTargetsChange,
+  onConnectAccount
 }: {
   snapshot: MissionControlSnapshot;
   workspaceId: string | null;
   accountTargets?: AccountLoginTargetView[];
   accountAccessRules?: AccountAccessRuleView[];
   initialAgentId?: string | null;
+  initialSection?: WorkspaceDialogSection;
   open: boolean;
   initialProvider?: MissionControlSurfaceProvider | null;
   onOpenChange: (open: boolean) => void;
@@ -137,6 +140,7 @@ export function WorkspaceChannelsDialog({
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
   onAccountAccessRulesChange?: (rules: AccountAccessRuleView[]) => void;
   onAccountTargetsChange?: (targets: AccountLoginTargetView[]) => void;
+  onConnectAccount?: () => void;
 }) {
   const workspace = useMemo(
     () => snapshot.workspaces.find((entry) => entry.id === workspaceId) ?? null,
@@ -195,6 +199,14 @@ export function WorkspaceChannelsDialog({
     setIsSaving(false);
     setSavingMessage(null);
   }, []);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    setActiveSection(initialSection);
+  }, [initialSection, open]);
 
   useEffect(() => {
     if (!open || !initialProvider) {
@@ -474,7 +486,7 @@ export function WorkspaceChannelsDialog({
 
     const result = (await response.json()) as ChannelMutationResult;
     if (!response.ok || result.error) {
-      throw new Error(result.error || "OpenClaw could not update this surface right now.");
+      throw new Error(result.error || "OpenClaw could not update this integration right now.");
     }
 
     return result;
@@ -495,7 +507,7 @@ export function WorkspaceChannelsDialog({
 
     const result = (await response.json()) as ChannelMutationResult;
     if (!response.ok || result.error) {
-      throw new Error(result.error || "OpenClaw could not update this surface right now.");
+      throw new Error(result.error || "OpenClaw could not update this integration right now.");
     }
 
     return result;
@@ -516,7 +528,7 @@ export function WorkspaceChannelsDialog({
 
     const result = (await response.json()) as ChannelMutationResult;
     if (!response.ok || result.error) {
-      throw new Error(result.error || "OpenClaw could not update this surface right now.");
+      throw new Error(result.error || "OpenClaw could not update this integration right now.");
     }
 
     return result;
@@ -586,7 +598,7 @@ export function WorkspaceChannelsDialog({
       }
 
       toast.success(`${action.label} repaired.`, {
-        description: "Retrying the surface operation."
+        description: "Retrying the integration operation."
       });
       await onRefresh().catch(() => undefined);
       await retry();
@@ -609,7 +621,7 @@ export function WorkspaceChannelsDialog({
 
     if (isGatewayConfigRateLimitMessage(message) && retry) {
       toast.error(title, {
-        description: formatGatewayConfigRateLimitMessage(message, "the surface operation"),
+        description: formatGatewayConfigRateLimitMessage(message, "the integration operation"),
         duration: 12_000,
         action: {
           label: "Retry",
@@ -672,7 +684,7 @@ export function WorkspaceChannelsDialog({
       toast.success(`${getSurfaceCatalogEntry(activeProvider).label} connected to this workspace.`);
       void onRefresh().catch(() => {});
     } catch (error) {
-      await showSurfaceMutationError("Surface connection failed.", error, () => handleAttachExisting(account));
+      await showSurfaceMutationError("Integration connection failed.", error, () => handleAttachExisting(account));
     } finally {
       endSaving();
     }
@@ -684,7 +696,7 @@ export function WorkspaceChannelsDialog({
     }
 
     if (!getProvisionDraftText(provisionDraft, "name").trim()) {
-      toast.error("A surface name is required.");
+      toast.error("An integration name is required.");
       return;
     }
 
@@ -721,7 +733,7 @@ export function WorkspaceChannelsDialog({
       toast.success(`${currentCatalogEntry.label} provisioned and connected.`);
       void onRefresh().catch(() => {});
     } catch (error) {
-      await showSurfaceMutationError("Surface provisioning failed.", error, handleProvisionSurface);
+      await showSurfaceMutationError("Integration provisioning failed.", error, handleProvisionSurface);
     } finally {
       endSaving();
     }
@@ -757,8 +769,8 @@ export function WorkspaceChannelsDialog({
       toast.success("Owner agent updated.");
       void onRefresh().catch(() => {});
     } catch (error) {
-      toast.error("Surface update failed.", {
-        description: error instanceof Error ? error.message : "Unknown surface error."
+      toast.error("Integration update failed.", {
+        description: error instanceof Error ? error.message : "Unknown integration error."
       });
     } finally {
       endSaving();
@@ -766,16 +778,16 @@ export function WorkspaceChannelsDialog({
   };
 
   const handleDisconnectSurface = async (surfaceId: string) => {
-    beginSaving("Disconnecting surface from workspace...");
+    beginSaving("Disconnecting integration from workspace...");
 
     try {
       const result = await deleteWorkspaceSurface({ channelId: surfaceId });
       applyRegistryUpdate(result);
-      toast.success("Surface disconnected from this workspace.");
+      toast.success("Integration disconnected from this workspace.");
       void onRefresh().catch(() => {});
     } catch (error) {
-      toast.error("Surface disconnect failed.", {
-        description: error instanceof Error ? error.message : "Unknown surface error."
+      toast.error("Integration disconnect failed.", {
+        description: error instanceof Error ? error.message : "Unknown integration error."
       });
     } finally {
       endSaving();
@@ -806,7 +818,7 @@ export function WorkspaceChannelsDialog({
         const workspaceBinding = surface?.workspaces.find((entry) => entry.workspaceId === workspace.id) ?? null;
 
         if (!surface || !workspaceBinding) {
-          throw new Error("Surface route binding was not found.");
+          throw new Error("Integration route binding was not found.");
         }
 
         const currentAssignments = (workspaceBinding.groupAssignments ?? []).filter(
@@ -852,7 +864,7 @@ export function WorkspaceChannelsDialog({
       void onRefresh().catch(() => {});
     } catch (error) {
       toast.error("Assistant update failed.", {
-        description: error instanceof Error ? error.message : "Unknown surface error."
+        description: error instanceof Error ? error.message : "Unknown integration error."
       });
     } finally {
       endSaving();
@@ -873,7 +885,7 @@ export function WorkspaceChannelsDialog({
       void onRefresh().catch(() => {});
     } catch (error) {
       toast.error("Assistant update failed.", {
-        description: error instanceof Error ? error.message : "Unknown surface error."
+        description: error instanceof Error ? error.message : "Unknown integration error."
       });
     } finally {
       endSaving();
@@ -884,7 +896,7 @@ export function WorkspaceChannelsDialog({
     surfaceId: string,
     nextAssignments: WorkspaceChannelGroupAssignment[]
   ) => {
-    beginSaving("Updating surface routes...");
+    beginSaving("Updating integration routes...");
 
     try {
       const result = await patchWorkspaceSurface({
@@ -895,8 +907,8 @@ export function WorkspaceChannelsDialog({
       applyRegistryUpdate(result);
       void onRefresh().catch(() => {});
     } catch (error) {
-      toast.error("Surface route update failed.", {
-        description: error instanceof Error ? error.message : "Unknown surface routing error."
+      toast.error("Integration route update failed.", {
+        description: error instanceof Error ? error.message : "Unknown integration routing error."
       });
     } finally {
       endSaving();
@@ -922,11 +934,11 @@ export function WorkspaceChannelsDialog({
       }
       setDeleteTarget(null);
       setDeleteConfirmText("");
-      toast.success("Surface account deleted everywhere.");
+      toast.success("Integration account deleted everywhere.");
       void onRefresh().catch(() => {});
     } catch (error) {
-      toast.error("Surface deletion failed.", {
-        description: error instanceof Error ? error.message : "Unknown surface error."
+      toast.error("Integration deletion failed.", {
+        description: error instanceof Error ? error.message : "Unknown integration error."
       });
     } finally {
       endSaving();
@@ -1128,7 +1140,7 @@ export function WorkspaceChannelsDialog({
         <DialogHeader className="border-b border-border px-4 py-3 pr-12 sm:px-5 dark:border-white/10">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <DialogTitle className="text-lg">Workspace surfaces</DialogTitle>
+              <DialogTitle className="text-lg">Workspace integrations</DialogTitle>
               <DialogDescription className="mt-1 text-xs">
                 Manage accounts, owners, and routes for this workspace.
               </DialogDescription>
@@ -1216,7 +1228,7 @@ export function WorkspaceChannelsDialog({
                       : "text-muted-foreground hover:bg-background hover:text-foreground dark:text-slate-400 dark:hover:bg-white/[0.04] dark:hover:text-slate-200"
                   )}
                 >
-                  {section === "surfaces" ? "Surfaces" : "Accounts"}
+                  {section === "surfaces" ? "Integrations" : "Accounts"}
                 </button>
               ))}
             </div>
@@ -1304,6 +1316,7 @@ export function WorkspaceChannelsDialog({
                     description: error instanceof Error ? error.message : "Unknown account refresh error."
                   });
                 })}
+                onConnectAccount={() => onConnectAccount?.()}
               />
             ) : (
               <>
@@ -1369,7 +1382,7 @@ export function WorkspaceChannelsDialog({
 
             <section className="rounded-2xl border border-border bg-card p-3.5 shadow-sm dark:border-white/10 dark:bg-white/[0.025] dark:shadow-none">
               <div className="flex items-center justify-between gap-3">
-                <p className="min-w-0 truncate text-sm font-medium text-foreground dark:text-white">{currentCatalogEntry.label} surfaces</p>
+                <p className="min-w-0 truncate text-sm font-medium text-foreground dark:text-white">{currentCatalogEntry.label} integrations</p>
                 <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
                   {providerWorkspaceSurfaces.length} linked
                 </Badge>
@@ -1552,7 +1565,7 @@ export function WorkspaceChannelsDialog({
                                 Assistants available for routes
                               </p>
                               <p className="text-[11px] leading-4 text-muted-foreground dark:text-slate-500">
-                                Add an agent to the surface, then optionally assign it to a route.
+                                Add an agent to the integration, then optionally assign it to a route.
                               </p>
                             </div>
                             {assistantIds.length > 0 ? (
@@ -1770,7 +1783,7 @@ export function WorkspaceChannelsDialog({
                 </div>
               ) : (
                 <div className="mt-3 rounded-xl border border-dashed border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-500">
-                  No {currentCatalogEntry.label} surfaces are linked to this workspace yet.
+                  No {currentCatalogEntry.label} integrations are linked to this workspace yet.
                 </div>
               )}
             </section>
@@ -1850,14 +1863,14 @@ export function WorkspaceChannelsDialog({
 
                   {currentCatalogEntry.supportsProvisioning ? (
                     <>
-                      <FormField label="Surface name" htmlFor="surface-name">
+                      <FormField label="Integration name" htmlFor="surface-name">
                         <Input
                           id="surface-name"
                           value={getProvisionDraftText(provisionDraft, "name")}
                           onChange={(event) =>
                             setProvisionDraft((current) => ({ ...current, name: event.target.value }))
                           }
-                          placeholder={`${currentCatalogEntry.label} workspace surface`}
+                          placeholder={`${currentCatalogEntry.label} workspace integration`}
                           className="h-10 rounded-xl px-3"
                         />
                       </FormField>

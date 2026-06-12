@@ -64,7 +64,7 @@ export function agentHasBrowserAccess(agent: MissionControlSnapshot["agents"][nu
 }
 
 export function readSurfaceErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Unknown surface error.";
+  return error instanceof Error ? error.message : "Unknown integration error.";
 }
 
 export function isGatewayRecoveryCandidate(message: string) {
@@ -314,14 +314,14 @@ export function buildSurfaceRouteOptions(
 
 export function getEmptyRouteDiscoveryCopy(provider: MissionControlSurfaceProvider) {
   if (provider === "telegram") {
-    return "No Telegram groups found yet. Send one message in the target group, then refresh surface discovery.";
+    return "No Telegram groups found yet. Send one message in the target group, then refresh integration discovery.";
   }
 
   if (provider === "discord") {
-    return "No Discord surfaces were discovered yet. Send one message in the target server, then refresh surface discovery.";
+    return "No Discord integrations were discovered yet. Send one message in the target server, then refresh integration discovery.";
   }
 
-  return "No surfaces were discovered yet for this provider.";
+  return "No integrations were discovered yet for this provider.";
 }
 
 export function formatSurfaceKindLabel(kind: MissionControlSurfaceKind) {

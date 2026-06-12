@@ -1024,7 +1024,7 @@ function AccountTargetMissionDialog({
   );
 }
 
-type ConnectBrowserProfileInput = {
+export type ConnectBrowserProfileInput = {
   mode: ConnectBrowserProfileMode;
   profileName: string;
   loginUrl: string;
@@ -1036,7 +1036,7 @@ type ConnectBrowserProfileInput = {
 
 type ConnectBrowserProfileMode = "existing" | "signed-in-chrome";
 
-function ConnectAccountWizard({
+export function ConnectAccountWizard({
   open,
   workspace,
   onOpenChange,

@@ -166,7 +166,7 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
 
     return NextResponse.json(
       {
-        error: formatChannelMutationError(error, "Unable to create channel.", "surface provisioning"),
+        error: formatChannelMutationError(error, "Unable to create channel.", "integration provisioning"),
         timings: summary
       },
       { status: 400 }
@@ -232,7 +232,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ works
   } catch (error) {
     return NextResponse.json(
       {
-        error: formatChannelMutationError(error, "Unable to update channel.", "surface update")
+        error: formatChannelMutationError(error, "Unable to update channel.", "integration update")
       },
       { status: 400 }
     );
@@ -277,7 +277,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ work
 
     return NextResponse.json(
       {
-        error: formatChannelMutationError(error, "Unable to delete channel.", "surface deletion"),
+        error: formatChannelMutationError(error, "Unable to delete channel.", "integration deletion"),
         timings: summary
       },
       { status: 400 }
