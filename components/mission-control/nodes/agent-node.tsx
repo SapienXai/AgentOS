@@ -589,7 +589,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
             onClick={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
           >
-            <motion.button
+            <button
               type="button"
               aria-label={
                 isPendingCreation
@@ -604,21 +604,6 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                   : `Connect integrations and accounts for ${agentLabel}`
               }
               disabled={!canOpenConnectionMenu}
-              initial={false}
-              animate={
-                canOpenConnectionMenu
-                  ? {
-                      scale: connectionMenuOpen ? 1.08 : [1, 1.08, 1],
-                      y: connectionMenuOpen ? -1 : [0, -0.5, 0],
-                      rotate: connectionMenuOpen ? 45 : 0
-                    }
-                  : { scale: 1, y: 0, rotate: 0 }
-              }
-              transition={
-                connectionMenuOpen
-                  ? { duration: 0.24, ease: [0.22, 1, 0.36, 1] }
-                  : { duration: 2.8, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }
-              }
               className={cn(
                 "relative inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-visible rounded-full border border-violet-200/55 bg-[radial-gradient(circle_at_36%_24%,rgba(216,180,254,0.58),rgba(168,85,247,0.34)_36%,rgba(24,13,43,0.94)_80%)] text-violet-50 shadow-[0_0_0_1px_rgba(196,181,253,0.24),0_0_26px_rgba(168,85,247,0.54),0_14px_30px_rgba(0,0,0,0.42)] backdrop-blur-xl transition-colors hover:border-violet-200/75 hover:text-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-200/60",
                 !canOpenConnectionMenu &&
@@ -649,8 +634,21 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                   />
                 </>
               ) : null}
-              <Plus className="relative z-10 h-4 w-4 drop-shadow-[0_0_8px_rgba(216,180,254,0.92)]" />
-            </motion.button>
+              <motion.span
+                aria-hidden="true"
+                className="relative z-10 inline-flex h-[17px] w-[17px] items-center justify-center"
+                initial={false}
+                animate={canOpenConnectionMenu ? (connectionMenuOpen ? { scale: 1.08 } : { scale: [1, 1, 1.16, 1] }) : { scale: 1 }}
+                transition={
+                  connectionMenuOpen
+                    ? { duration: 0.18, ease: [0.22, 1, 0.36, 1] }
+                    : { duration: 2.15, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut", times: [0, 0.7, 0.8, 1] }
+                }
+                style={{ transformOrigin: "center" }}
+              >
+                <Plus className="h-[17px] w-[17px] drop-shadow-[0_0_8px_rgba(216,180,254,0.92)]" strokeWidth={3.1} />
+              </motion.span>
+            </button>
 
             <AnimatePresence>
               {connectionMenuOpen ? (
