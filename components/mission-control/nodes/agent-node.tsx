@@ -3,7 +3,7 @@
 import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { Handle, Position, type Node as FlowNode, type NodeProps } from "@xyflow/react";
-import { ChevronDown, KeyRound, Layers3, LocateFixed, MessageCircle, MoreHorizontal, Plus, SendHorizontal, Sparkles, Wrench } from "lucide-react";
+import { BrainCircuit, ChevronDown, KeyRound, Layers3, LocateFixed, MessageCircle, MoreHorizontal, Plus, SendHorizontal, Sparkles, Wrench } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 
 import { AccountIcon } from "@/components/mission-control/account-icon";
@@ -274,7 +274,8 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   const canOpenWorkspaceChannels = Boolean(data.onOpenWorkspaceChannels);
   const canOpenAccounts = !isPendingCreation && Boolean(data.onOpenAccounts);
   const canConfigureCapabilities = !isPendingCreation && Boolean(data.onConfigureCapabilities);
-  const canOpenConnectionMenu = canOpenWorkspaceChannels || canOpenAccounts || canConfigureCapabilities;
+  const canOpenContextEngine = !isPendingCreation && Boolean(data.onOpenContextEngine);
+  const canOpenConnectionMenu = canOpenWorkspaceChannels || canOpenAccounts || canConfigureCapabilities || canOpenContextEngine;
   const canMessage = !isPendingCreation && Boolean(data.onMessage);
   const isMessageActive = Boolean(data.chatOpen) || hasUnreadChat;
   const canCreateTask = !isPendingCreation && Boolean(data.onCreateTask);
@@ -707,6 +708,16 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                       disabled={!canConfigureCapabilities}
                       onClick={() => {
                         configureAgentCapabilities("tools");
+                        setConnectionMenuOpen(false);
+                      }}
+                    />
+                    <ConnectionMenuButton
+                      icon={<BrainCircuit className="h-[17px] w-[17px]" />}
+                      label="Context Engine"
+                      description="Files & policy"
+                      disabled={!canOpenContextEngine}
+                      onClick={() => {
+                        data.onOpenContextEngine?.(data.agent.id);
                         setConnectionMenuOpen(false);
                       }}
                     />

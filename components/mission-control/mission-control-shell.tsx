@@ -10,6 +10,7 @@ import { AddModelsDialog } from "@/components/mission-control/add-models/add-mod
 import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
 import { AgentCapabilityEditorDialog } from "@/components/mission-control/agent-capability-editor-dialog";
 import { CommandBar } from "@/components/mission-control/command-bar";
+import { ContextEngineDialog } from "@/components/mission-control/context-engine-dialog";
 import { InspectorPanel } from "@/components/mission-control/inspector-panel";
 import { MissionControlShellDialogs } from "@/components/mission-control/mission-control-shell.dialogs";
 import { OpenClawOnboarding } from "@/components/mission-control/openclaw-onboarding";
@@ -357,6 +358,7 @@ export function MissionControlShell({
   const [accountTargets, setAccountTargets] = useState<AccountLoginTargetView[]>([]);
   const [accountAccessRules, setAccountAccessRules] = useState<AccountAccessRuleView[]>([]);
   const [workspaceFilesDialogId, setWorkspaceFilesDialogId] = useState<string | null>(null);
+  const [contextEngineAgentId, setContextEngineAgentId] = useState<string | null>(null);
   const [isAddModelsDialogOpen, setIsAddModelsDialogOpen] = useState(false);
   const [initialAddModelsProvider, setInitialAddModelsProvider] = useState<AddModelsProviderId | null>(null);
   const [agentModelRequest, setAgentModelRequest] = useState<AgentModelRequest | null>(null);
@@ -1061,6 +1063,26 @@ export function MissionControlShell({
   const handleWorkspaceFilesOpenChange = useCallback((nextOpen: boolean) => {
     if (!nextOpen) {
       setWorkspaceFilesDialogId(null);
+    }
+  }, []);
+
+  const openAgentContextEngine = useCallback(
+    (agentId: string) => {
+      const agent = snapshot.agents.find((entry) => entry.id === agentId);
+
+      if (agent) {
+        openWorkspaceOnCanvas(agent.workspaceId);
+      }
+
+      selectNode(agentId);
+      setContextEngineAgentId(agentId);
+    },
+    [openWorkspaceOnCanvas, selectNode, snapshot.agents]
+  );
+
+  const handleContextEngineOpenChange = useCallback((nextOpen: boolean) => {
+    if (!nextOpen) {
+      setContextEngineAgentId(null);
     }
   }, []);
 
@@ -3748,6 +3770,7 @@ export function MissionControlShell({
             onCreateTaskAgent={handleCreateTaskAgent}
             onConfigureAgentModel={handleConfigureAgentModel}
             onConfigureAgentCapabilities={handleConfigureAgentCapabilities}
+            onOpenAgentContextEngine={openAgentContextEngine}
             onInspectAgentDetail={handleInspectAgentDetail}
             onOpenWorkspaceChannels={openWorkspaceChannels}
             onOpenAccounts={openAccountsConnect}
@@ -4195,6 +4218,12 @@ export function MissionControlShell({
           workspaceId={workspaceFilesDialogId}
           open={workspaceFilesDialogId !== null}
           onOpenChange={handleWorkspaceFilesOpenChange}
+        />
+
+        <ContextEngineDialog
+          agentId={contextEngineAgentId}
+          open={contextEngineAgentId !== null}
+          onOpenChange={handleContextEngineOpenChange}
         />
 
         <TaskReviewDialog

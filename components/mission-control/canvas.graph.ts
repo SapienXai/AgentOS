@@ -70,6 +70,7 @@ export function buildCanvasGraph(
   onFocusAgent: (agentId: string) => void,
   onConfigureAgentModel: ((agentId: string) => void) | undefined,
   onConfigureAgentCapabilities: ((agentId: string, focus: "skills" | "tools") => void) | undefined,
+  onOpenAgentContextEngine: ((agentId: string) => void) | undefined,
   onInspectAgentDetail: ((agentId: string, focus: AgentDetailFocus) => void) | undefined,
   onOpenWorkspaceChannels: ((workspaceId?: string, agentId?: string) => void) | undefined,
   onOpenAccounts: ((workspaceId?: string, agentId?: string) => void) | undefined,
@@ -240,6 +241,7 @@ export function buildCanvasGraph(
           onFocus: isPendingCreation ? undefined : onFocusAgent,
           onConfigureModel: isPendingCreation ? undefined : onConfigureAgentModel,
           onConfigureCapabilities: isPendingCreation ? undefined : onConfigureAgentCapabilities,
+          onOpenContextEngine: isPendingCreation ? undefined : onOpenAgentContextEngine,
           onInspect: isPendingCreation ? undefined : onInspectAgentDetail,
           onOpenWorkspaceChannels: isPendingCreation ? undefined : onOpenWorkspaceChannels,
           onOpenAccounts: isPendingCreation ? undefined : onOpenAccounts
