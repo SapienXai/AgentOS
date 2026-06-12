@@ -295,6 +295,7 @@ export function reconcileTaskRecordWithDispatchRecord(task: TaskRecord, record: 
       dispatchRunnerStartedAt: record.runner.startedAt,
       dispatchHeartbeatAt: record.runner.lastHeartbeatAt,
       dispatchObservedAt: record.observation.observedAt,
+      dispatchError: record.error,
       outputDir: record.outputDir,
       outputDirRelative: record.outputDirRelative
     }

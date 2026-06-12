@@ -404,8 +404,48 @@ test("running task steering resolves a native Gateway session key", async () => 
 
   assert.equal(response.ok, true);
   assert.equal(response.target.sessionKey, "agent:agent-1:explicit:session-1");
+  assert.deepEqual(response.transport, {
+    requestedMethod: "sessions.steer",
+    actualMethod: "sessions.steer",
+    fallback: "none",
+    reason: null
+  });
   assert.deepEqual(calls, [{
     key: "agent:agent-1:explicit:session-1",
+    sessionId: null,
+    message: "Focus on tests"
+  }]);
+});
+
+test("running task steering falls back to chat injection when sessions.steer is unsupported", async () => {
+  const calls: Array<{ sessionKey?: string | null; sessionId?: string | null; message: string }> = [];
+  const taskDetail = createRunningTaskDetail();
+
+  const response = await controlRunningTaskSession(
+    "task-1",
+    { action: "steer", message: "Focus on tests" },
+    {
+      adapter: {
+        async steerSession() {
+          throw new Error('OpenClaw Gateway does not advertise method "sessions.steer".');
+        },
+        async injectChat(input) {
+          calls.push(input);
+          return { ok: true };
+        }
+      },
+      getTaskDetail: async () => taskDetail,
+      invalidateMissionControlSnapshotCache: () => {}
+    }
+  );
+
+  assert.equal(response.ok, true);
+  assert.equal(response.transport?.requestedMethod, "sessions.steer");
+  assert.equal(response.transport?.actualMethod, "chat.inject");
+  assert.equal(response.transport?.fallback, "gateway-compatibility");
+  assert.match(response.transport?.reason ?? "", /does not advertise method "sessions\.steer"/);
+  assert.deepEqual(calls, [{
+    sessionKey: "agent:agent-1:explicit:session-1",
     sessionId: null,
     message: "Focus on tests"
   }]);

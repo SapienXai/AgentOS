@@ -149,6 +149,12 @@ export function buildTaskRecord(
         typeof primaryRuntime?.metadata.dispatchObservedAt === "string"
           ? primaryRuntime.metadata.dispatchObservedAt
           : null,
+      dispatchError:
+        typeof primaryRuntime?.metadata.dispatchError === "string"
+          ? primaryRuntime.metadata.dispatchError
+          : typeof primaryRuntime?.metadata.error === "string"
+            ? primaryRuntime.metadata.error
+            : null,
       outputDir:
         typeof primaryRuntime?.metadata.outputDir === "string" ? primaryRuntime.metadata.outputDir : null,
       outputDirRelative:

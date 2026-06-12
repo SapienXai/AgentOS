@@ -45,6 +45,7 @@ import {
   hasTaskRuntimeOutputEvidence,
   isWaitingForOutputCopy,
   readTaskResultPreview,
+  resolveTaskDispatchIssueDetail,
   resolveTaskBadgeLabel
 } from "@/components/mission-control/task-node-status";
 import {
@@ -143,6 +144,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     [localFollowUps, persistedFollowUps]
   );
   const integrity = detail?.integrity ?? null;
+  const dispatchIssueDetail = resolveTaskDispatchIssueDetail(displayTask, integrity);
   const bootstrapStage =
     typeof displayTask.metadata.bootstrapStage === "string" ? displayTask.metadata.bootstrapStage : null;
   const dispatchSubmittedAt =
@@ -633,6 +635,10 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
               {footerLabel}
             </span>
           </div>
+
+          {dispatchIssueDetail ? (
+            <p className="mt-1 text-[10px] leading-4 text-amber-100/90">{dispatchIssueDetail}</p>
+          ) : null}
 
           <TaskMetricRow metrics={taskMetrics} compact surface="dark" density="dense" className="mt-2" />
 

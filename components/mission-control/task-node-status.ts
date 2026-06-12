@@ -67,6 +67,26 @@ export function hasTaskRuntimeOutputEvidence(task: WorkItemRecord, feed: TaskFee
   );
 }
 
+export function resolveTaskDispatchIssueDetail(
+  task: WorkItemRecord,
+  integrity?: { issues?: Array<{ id: string; detail?: string | null }> } | null
+) {
+  const dispatchIssueDetail = integrity?.issues?.find((issue) => issue.id === "dispatch-stalled")?.detail?.trim();
+
+  if (dispatchIssueDetail) {
+    return dispatchIssueDetail;
+  }
+
+  if (task.status !== "stalled") {
+    return null;
+  }
+
+  const dispatchError =
+    typeof task.metadata.dispatchError === "string" ? task.metadata.dispatchError.trim() : "";
+
+  return dispatchError || null;
+}
+
 export function isWaitingForOutputCopy(value: string) {
   return (
     /No transcript file was found for this runtime session/i.test(value) ||

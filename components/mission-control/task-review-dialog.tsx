@@ -22,6 +22,7 @@ import {
   resolveTaskReviewBadgeLabel,
   resolveTaskReviewSummary
 } from "@/components/mission-control/task-review-state";
+import { resolveTaskDispatchIssueDetail } from "@/components/mission-control/task-node-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -96,11 +97,13 @@ export function TaskReviewDialog({
   const capturedOutput = currentTask ? readCapturedTaskOutput(currentTask, integrity?.finalResponseText) : "";
   const originalPrompt = currentTask ? readTaskPromptText(currentTask) : "";
   const issue = integrity?.issues.find((entry) => entry.id === "partial-final-response") ?? integrity?.issues[0] ?? null;
+  const dispatchIssueDetail = currentTask ? resolveTaskDispatchIssueDetail(currentTask, integrity) : null;
   const isVerified = integrity?.status === "verified" && !issue;
   const statusLabel = reviewStatus ? resolveTaskReviewBadgeLabel(reviewStatus) : isVerified ? "verified" : "needs review";
   const issueSummary = reviewStatus
     ? resolveTaskReviewSummary(reviewStatus)
-    : issue?.detail ||
+    : dispatchIssueDetail ||
+      issue?.detail ||
       (isVerified
         ? "AgentOS recovered a matching completed response and no review issues remain."
         : "The captured task evidence needs an operator decision before AgentOS treats the result as handled.");

@@ -31,6 +31,7 @@ import {
   resolveTaskReviewBadgeLabel,
   resolveTaskReviewSummary
 } from "@/components/mission-control/task-review-state";
+import { resolveTaskDispatchIssueDetail } from "@/components/mission-control/task-node-status";
 import {
   useInspectorRuntimeOutput,
   useInspectorTaskDetailStream
@@ -1716,6 +1717,7 @@ function TaskIntegrityCard({
   const isOptimisticPending = Boolean(task.metadata.optimistic) && !isAborted && task.status !== "stalled";
   const missingFinalResponseIssue = integrity.issues.find((issue) => issue.id === "missing-final-response");
   const partialFinalResponseIssue = integrity.issues.find((issue) => issue.id === "partial-final-response");
+  const dispatchIssueDetail = resolveTaskDispatchIssueDetail(task, integrity);
   const hasPartialRuntimeEvidence = Boolean(
     integrity.finalResponseText ||
       integrity.outputFileCount > 0 ||
@@ -1734,6 +1736,8 @@ function TaskIntegrityCard({
       ? resolveTaskReviewSummary(reviewStatus)
       : isAborted
       ? "This task was aborted by an operator. Captured evidence may be incomplete."
+      : dispatchIssueDetail
+        ? dispatchIssueDetail
       : isOptimisticPending
         ? "OpenClaw accepted this task. Session, tool, and file evidence will appear here as soon as the first runtime reports in."
         : missingFinalResponseIssue
@@ -1934,7 +1938,11 @@ function RunningTaskControlBar({
         throw new Error(readControlError(payload) || "Unable to update the running task.");
       }
 
-      toast.success(mode === "steer" ? "Steer request sent." : "Context added to session.");
+      const transportNotice = readControlTransportNotice(payload);
+      toast.success(
+        transportNotice?.title ?? (mode === "steer" ? "Steer request sent." : "Context added to session."),
+        transportNotice?.description ? { description: transportNotice.description } : undefined
+      );
       setMode(null);
       setMessage("");
       void onControlComplete?.();
@@ -2530,6 +2538,39 @@ function readControlError(payload: unknown) {
     : typeof record.message === "string"
       ? record.message
       : null;
+}
+
+function readControlTransportNotice(payload: unknown) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const result = (payload as Record<string, unknown>).result;
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+
+  const transport = (result as Record<string, unknown>).transport;
+  if (!transport || typeof transport !== "object") {
+    return null;
+  }
+
+  const record = transport as Record<string, unknown>;
+  const fallback = typeof record.fallback === "string" ? record.fallback : "";
+  const requestedMethod = typeof record.requestedMethod === "string" ? record.requestedMethod : null;
+  const actualMethod = typeof record.actualMethod === "string" ? record.actualMethod : null;
+  const reason = typeof record.reason === "string" ? record.reason : null;
+
+  if (fallback !== "gateway-compatibility" || !requestedMethod || !actualMethod) {
+    return null;
+  }
+
+  return {
+    title: `Sent via ${actualMethod}.`,
+    description: reason
+      ? `${requestedMethod} was unavailable, so AgentOS used Gateway compatibility fallback. ${reason}`
+      : `${requestedMethod} was unavailable, so AgentOS used Gateway compatibility fallback.`
+  };
 }
 
 function RuntimeContent({

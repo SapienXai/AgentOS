@@ -316,6 +316,7 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
       dispatchRunnerStartedAt: record.runner.startedAt,
       dispatchHeartbeatAt: record.runner.lastHeartbeatAt,
       dispatchObservedAt: record.observation.observedAt,
+      dispatchError: record.error,
       mission: record.mission,
       routedMission: record.routedMission,
       outputDir: record.outputDir,
@@ -372,6 +373,7 @@ export function buildMissionDispatchTranscriptRuntime(
       dispatchRunnerStartedAt: record.runner.startedAt,
       dispatchHeartbeatAt: record.runner.lastHeartbeatAt,
       dispatchObservedAt: record.observation.observedAt,
+      dispatchError: record.error,
       recoveredFromObservation: true,
       ...(integrityWarning ? { warnings: [integrityWarning], warningSummary: integrityWarning } : {})
     }
@@ -422,6 +424,7 @@ export function createMissionDispatchRuntime(
       dispatchRunnerStartedAt: record.runner.startedAt,
       dispatchHeartbeatAt: record.runner.lastHeartbeatAt,
       dispatchObservedAt: record.observation.observedAt,
+      dispatchError: record.error,
       ...(integrityWarning ? { warnings: [integrityWarning], warningSummary: integrityWarning } : {})
     }
   };

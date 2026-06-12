@@ -38,6 +38,43 @@ test("task integrity warns when referenced workspace is missing from the snapsho
   assert.equal(integrity.issues.some((issue) => issue.id === "missing-workspace-context"), true);
 });
 
+test("task integrity preserves the OpenClaw dispatch stall error", async () => {
+  const integrity = await buildTaskIntegrityRecord({
+    task: createTask({ status: "stalled" }),
+    runs: [createRuntime({ status: "stalled" })],
+    outputs: [],
+    createdFiles: [],
+    dispatchRecord: {
+      id: "dispatch-1",
+      agentId: "agent-1",
+      mission: "Check runtime context",
+      routedMission: "Check runtime context",
+      submittedAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:01:00.000Z",
+      status: "stalled",
+      error: "OpenClaw Gateway wait timed out during gateway_draining.",
+      observation: {},
+      runner: {
+        pid: 1234,
+        childPid: null,
+        startedAt: "2026-06-01T00:00:10.000Z",
+        finishedAt: "2026-06-01T00:01:00.000Z",
+        lastHeartbeatAt: "2026-06-01T00:00:20.000Z"
+      }
+    } as never,
+    snapshot: createSnapshot({
+      workspaces: ["workspace-1"],
+      agents: [{ id: "agent-1", workspaceId: "workspace-1" }]
+    })
+  });
+
+  assert.equal(integrity.status, "warning");
+  assert.equal(
+    integrity.issues.some((issue) => issue.id === "dispatch-stalled" && issue.detail === "OpenClaw Gateway wait timed out during gateway_draining."),
+    true
+  );
+});
+
 function createTask(overrides: Partial<TaskRecord> = {}): TaskRecord {
   return {
     id: "task-1",

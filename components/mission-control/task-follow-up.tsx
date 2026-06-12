@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import {
   buildTaskFollowUpPrompt,
+  normalizeTaskFollowUpSessionId,
   resolveTaskFollowUpAvailability
 } from "@/lib/openclaw/domains/task-follow-up";
 import {
@@ -453,7 +454,9 @@ function readTaskControlContinuation(payload: TaskControlApiResponse | null) {
   return {
     taskId: readString(control?.taskId),
     runId: readString(result.runId) ?? readString(control?.target?.runId),
-    sessionId: readString(result.sessionId) ?? readString(control?.target?.sessionId) ?? readString(control?.target?.sessionKey),
+    sessionId: normalizeTaskFollowUpSessionId(
+      readString(result.sessionId) ?? readString(control?.target?.sessionId) ?? readString(control?.target?.sessionKey)
+    ),
     status: readString(result.status),
     summary: readString(result.summary) ?? readPayloadSummary(result)
   };

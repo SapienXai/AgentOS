@@ -9,6 +9,7 @@ import {
 } from "@/lib/openclaw/application/mission-control-service";
 import { getTaskDetail } from "@/lib/openclaw/application/runtime-service";
 import { resolveTaskFollowUpContext } from "@/lib/openclaw/domains/task-follow-up";
+import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type { MissionControlSnapshot, TaskDetailRecord } from "@/lib/openclaw/types";
 
 export type RunningTaskControlAction = "steer" | "inject" | "continue";
@@ -26,6 +27,14 @@ export interface RunningTaskControlResult {
   taskId: string;
   target: RunningTaskControlTarget;
   result: Record<string, unknown>;
+  transport?: RunningTaskControlTransport;
+}
+
+export interface RunningTaskControlTransport {
+  requestedMethod: string;
+  actualMethod: string;
+  fallback: "none" | "gateway-compatibility";
+  reason?: string | null;
 }
 
 export interface RunningTaskControlTarget {
@@ -86,24 +95,25 @@ export async function controlRunningTaskSession(
     throw new Error("Task does not expose an active OpenClaw session.");
   }
 
-  const result =
+  const control =
     input.action === "steer"
-      ? await adapter.steerSession(
-          {
-            key: target.sessionKey,
-            sessionId: target.sessionKey ? null : target.sessionId,
-            message
-          },
-          { timeoutMs: 10000 }
-        )
-      : await adapter.injectChat(
-          {
-            sessionKey: target.sessionKey,
-            sessionId: target.sessionKey ? null : target.sessionId,
-            message
-          },
-          { timeoutMs: 10000 }
-        );
+      ? await steerSessionWithCompatibilityFallback(adapter, target, message)
+      : {
+          result: await adapter.injectChat(
+            {
+              sessionKey: target.sessionKey,
+              sessionId: target.sessionKey ? null : target.sessionId,
+              message
+            },
+            { timeoutMs: 10000 }
+          ),
+          transport: {
+            requestedMethod: "chat.inject",
+            actualMethod: "chat.inject",
+            fallback: "none" as const,
+            reason: null
+          }
+        };
 
   (deps.invalidateMissionControlSnapshotCache ?? invalidateMissionControlSnapshotCache)();
 
@@ -112,8 +122,64 @@ export async function controlRunningTaskSession(
     action: input.action,
     taskId: taskDetail.task.id,
     target,
-    result
+    result: control.result,
+    transport: control.transport
   };
+}
+
+async function steerSessionWithCompatibilityFallback(
+  adapter: TaskControlAdapter,
+  target: RunningTaskControlTarget,
+  message: string
+) {
+  try {
+    const result = await adapter.steerSession(
+      {
+        key: target.sessionKey,
+        sessionId: target.sessionKey ? null : target.sessionId,
+        message
+      },
+      { timeoutMs: 10000 }
+    );
+
+    return {
+      result,
+      transport: {
+        requestedMethod: "sessions.steer",
+        actualMethod: "sessions.steer",
+        fallback: "none" as const,
+        reason: null
+      }
+    };
+  } catch (error) {
+    const normalized = normalizeClientError(error);
+    if (!shouldFallbackSteerToInject(normalized)) {
+      throw error;
+    }
+
+    if (!adapter.injectChat) {
+      throw error;
+    }
+
+    const result = await adapter.injectChat(
+      {
+        sessionKey: target.sessionKey,
+        sessionId: target.sessionKey ? null : target.sessionId,
+        message
+      },
+      { timeoutMs: 10000 }
+    );
+
+    return {
+      result,
+      transport: {
+        requestedMethod: "sessions.steer",
+        actualMethod: "chat.inject",
+        fallback: "gateway-compatibility" as const,
+        reason: normalized.message
+      }
+    };
+  }
 }
 
 async function continueTaskSession(
@@ -299,4 +365,11 @@ function resolveContinuationIdempotencyKey(input: {
   const stableSource = `${input.taskId}\n${input.dispatchId ?? ""}\n${input.message}`;
   const digest = createHash("sha256").update(stableSource).digest("hex").slice(0, 20);
   return `${input.dispatchId || input.taskId}:continue:${digest}`;
+}
+
+function shouldFallbackSteerToInject(normalized: ReturnType<typeof normalizeClientError>) {
+  return (
+    /sessions\.steer/i.test(normalized.message) &&
+    (normalized.kind === "unsupported" || /does not advertise method/i.test(normalized.message))
+  );
 }

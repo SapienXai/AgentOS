@@ -156,6 +156,15 @@ export function buildTaskFollowUpPrompt(input: TaskFollowUpPromptInput) {
   );
 }
 
+export function normalizeTaskFollowUpSessionId(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return extractExplicitSessionId(trimmed) ?? trimmed;
+}
+
 function isTaskFollowUpStatus(status: string) {
   return status === "queued" || status === "running" || status === "stalled" || status === "completed";
 }

@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   hasTaskRuntimeOutputEvidence,
   readTaskResultPreview,
+  resolveTaskDispatchIssueDetail,
   resolveTaskBadgeLabel
 } from "@/components/mission-control/task-node-status";
 import type { TaskFeedEvent, WorkItemRecord } from "@/lib/agentos/contracts";
@@ -72,6 +73,40 @@ test("runtime-observed tasks without output evidence stay on waiting output inst
     resolveTaskBadgeLabel("runtime-observed", task.status, true, false, false),
     "waiting output"
   );
+});
+
+test("dispatch stall details prefer the OpenClaw integrity error over generic review text", () => {
+  const task = createTask({
+    status: "stalled",
+    subtitle: "AgentOS recovered partial evidence, but this result still needs operator review."
+  });
+
+  const detail = resolveTaskDispatchIssueDetail(task, {
+    issues: [
+      {
+        id: "dispatch-stalled",
+        detail: "OpenClaw Gateway wait timed out during gateway_draining."
+      }
+    ]
+  });
+
+  assert.equal(detail, "OpenClaw Gateway wait timed out during gateway_draining.");
+});
+
+test("dispatch stall details use dispatch metadata without treating generic subtitles as errors", () => {
+  const task = createTask({
+    status: "stalled",
+    subtitle: "AgentOS recovered partial evidence, but this result still needs operator review.",
+    metadata: {
+      dispatchError: "OpenClaw Gateway wait timed out during gateway_draining."
+    }
+  });
+
+  assert.equal(resolveTaskDispatchIssueDetail(task), "OpenClaw Gateway wait timed out during gateway_draining.");
+  assert.equal(resolveTaskDispatchIssueDetail(createTask({
+    status: "stalled",
+    subtitle: "AgentOS recovered partial evidence, but this result still needs operator review."
+  })), null);
 });
 
 function createTask(overrides: Partial<WorkItemRecord> = {}): WorkItemRecord {

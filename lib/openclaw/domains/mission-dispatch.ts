@@ -215,6 +215,15 @@ export async function buildTaskIntegrityRecord(input: {
     });
   }
 
+  if (task.status === "stalled" && dispatchRecord?.error) {
+    issues.push({
+      id: "dispatch-stalled",
+      severity: "warning",
+      title: "OpenClaw dispatch stalled",
+      detail: dispatchRecord.error
+    });
+  }
+
   if (sessionMismatch && dispatchRecord?.agentId) {
     issues.push({
       id: "session-mismatch",
