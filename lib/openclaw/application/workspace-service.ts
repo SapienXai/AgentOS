@@ -168,7 +168,10 @@ export async function createWorkspaceProject(
     percent: 72,
     detail: "Checking current OpenClaw snapshot and agent ids."
   });
-  assertWorkspaceBootstrapAgentIdsAvailableFromProvisioning(snapshot, normalized.slug, enabledAgents);
+  assertWorkspaceBootstrapAgentIdsAvailableFromProvisioning(snapshot, normalized.slug, enabledAgents, {
+    workspaceId: resolveWorkspaceIdForSnapshotPath(snapshot.workspaces, targetDir),
+    workspacePath: targetDir
+  });
   await progress.completeStep(
     "validate",
     `Workspace input and ${enabledAgents.length} agent configuration${enabledAgents.length === 1 ? "" : "s"} are ready.`

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import { afterEach, test } from "node:test";
 
 import {
@@ -50,6 +51,13 @@ import {
   workspaceIdFromPath,
   workspacePathMatchesId
 } from "@/lib/openclaw/domains/workspace-id";
+import {
+  assertWorkspaceBootstrapAgentIdsAvailable
+} from "@/lib/openclaw/domains/agent-provisioning";
+import type {
+  MissionControlSnapshot,
+  WorkspaceAgentBlueprintInput
+} from "@/lib/openclaw/types";
 
 async function readErrorMessage(action: () => Promise<unknown>) {
   try {
@@ -128,6 +136,41 @@ test("workspace creation does not downgrade validation failures to sync warnings
   );
 });
 
+test("workspace bootstrap allows existing agent ids inside the target workspace", () => {
+  const workspacePath = "/tmp/AgentOS Workspace";
+  const snapshot = createWorkspaceBootstrapValidationSnapshot({
+    workspaceId: "agentos-workspace",
+    workspacePath,
+    agentWorkspaceId: "agentos-workspace",
+    agentWorkspacePath: workspacePath
+  });
+
+  assert.doesNotThrow(() =>
+    assertWorkspaceBootstrapAgentIdsAvailable(snapshot, "agentos-workspace", [createWorkspaceBuilderAgentInput()], {
+      workspaceId: "agentos-workspace",
+      workspacePath
+    })
+  );
+});
+
+test("workspace bootstrap still rejects existing agent ids from another workspace", () => {
+  const snapshot = createWorkspaceBootstrapValidationSnapshot({
+    workspaceId: "agentos-workspace",
+    workspacePath: "/tmp/AgentOS Workspace",
+    agentWorkspaceId: "other-workspace",
+    agentWorkspacePath: "/tmp/Other Workspace"
+  });
+
+  assert.throws(
+    () =>
+      assertWorkspaceBootstrapAgentIdsAvailable(snapshot, "agentos-workspace", [createWorkspaceBuilderAgentInput()], {
+        workspaceId: "agentos-workspace",
+        workspacePath: "/tmp/AgentOS Workspace"
+      }),
+    /already exists in workspace "Other Workspace"/
+  );
+});
+
 test("workspace ids match snapshot slugs while accepting legacy hash aliases", () => {
   const workspacePath = "/tmp/AgentOS Consistency Probe";
   const currentId = workspaceIdFromPath(workspacePath);
@@ -201,3 +244,39 @@ test("service workspace document render helpers delegate to domain renderers", (
   assert.equal(renderCompatibilityDeliverablesMarkdown(), renderDomainDeliverablesMarkdown());
   assert.equal(renderCompatibilityTemplateSpecificDoc("ux"), renderDomainTemplateSpecificDoc("ux"));
 });
+
+function createWorkspaceBuilderAgentInput(): WorkspaceAgentBlueprintInput {
+  return {
+    id: "builder",
+    name: "Workspace Builder",
+    role: "Builder",
+    enabled: true
+  };
+}
+
+function createWorkspaceBootstrapValidationSnapshot(input: {
+  workspaceId: string;
+  workspacePath: string;
+  agentWorkspaceId: string;
+  agentWorkspacePath: string;
+}): MissionControlSnapshot {
+  return {
+    workspaces: [
+      {
+        id: input.workspaceId,
+        name: path.basename(input.workspacePath),
+        path: input.workspacePath,
+        agentIds: ["agentos-workspace-builder"]
+      }
+    ],
+    agents: [
+      {
+        id: "agentos-workspace-builder",
+        name: "Workspace Builder",
+        identityName: "Workspace Builder",
+        workspaceId: input.agentWorkspaceId,
+        workspacePath: input.agentWorkspacePath
+      }
+    ]
+  } as MissionControlSnapshot;
+}

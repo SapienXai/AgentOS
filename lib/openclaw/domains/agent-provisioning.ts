@@ -135,7 +135,11 @@ export function createWorkspaceAgentId(workspaceSlug: string, agentKey: string) 
 export function assertWorkspaceBootstrapAgentIdsAvailable(
   snapshot: MissionControlSnapshot,
   workspaceSlug: string,
-  agents: WorkspaceAgentBlueprintInput[]
+  agents: WorkspaceAgentBlueprintInput[],
+  options: {
+    workspaceId?: string | null;
+    workspacePath?: string | null;
+  } = {}
 ) {
   const finalAgentIds = agents.map((agent) => createWorkspaceAgentId(workspaceSlug, agent.id));
   const duplicateFinalIds = findDuplicateStrings(finalAgentIds);
@@ -151,10 +155,30 @@ export function assertWorkspaceBootstrapAgentIdsAvailable(
       continue;
     }
 
+    if (agentBelongsToBootstrapTarget(existingAgent, options)) {
+      continue;
+    }
+
     throw new Error(
       `Workspace bootstrap would create agent id "${agentId}", but it already exists in workspace "${describeAgentWorkspace(snapshot, existingAgent)}". Rename the workspace or adjust the agent ids.`
     );
   }
+}
+
+function agentBelongsToBootstrapTarget(
+  agent: Pick<OpenClawAgent, "workspaceId" | "workspacePath">,
+  options: {
+    workspaceId?: string | null;
+    workspacePath?: string | null;
+  }
+) {
+  const workspaceId = normalizeOptionalValue(options.workspaceId);
+  if (workspaceId && agent.workspaceId === workspaceId) {
+    return true;
+  }
+
+  const workspacePath = normalizeOptionalValue(options.workspacePath);
+  return Boolean(workspacePath && path.resolve(agent.workspacePath) === path.resolve(workspacePath));
 }
 
 export async function createBootstrappedWorkspaceAgent(params: {
