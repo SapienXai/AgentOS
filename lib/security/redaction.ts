@@ -108,15 +108,19 @@ function redactValue(value: unknown, forceScalarRedaction: boolean, seen: WeakSe
   const output: Record<string, unknown> = {};
 
   for (const [key, entry] of Object.entries(value)) {
-    const sensitive = isSensitiveKey(key);
+    const sensitive = isSensitiveKey(key) && !isSafeTokenTelemetryValue(key, entry);
     output[key] = redactValue(entry, forceScalarRedaction || sensitive, seen);
   }
 
   return output;
 }
 
+function isSafeTokenTelemetryValue(key: string, value: unknown) {
+  return normalizeKey(key) === "tokens" && (typeof value === "number" || value === null);
+}
+
 function isSensitiveKey(key: string) {
-  const normalized = key.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+  const normalized = normalizeKey(key);
 
   if (!normalized || normalized === "tokenusage") {
     return false;
@@ -127,4 +131,8 @@ function isSensitiveKey(key: string) {
   }
 
   return sensitiveKeySuffixes.some((suffix) => normalized.endsWith(suffix));
+}
+
+function normalizeKey(key: string) {
+  return key.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
 }

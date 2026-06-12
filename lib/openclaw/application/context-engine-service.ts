@@ -336,13 +336,27 @@ function buildContextBudget(
   limit: number | null
 ): ContextEngineBudget {
   const systemTokens = charsToTokens(runtimeReport.systemPromptChars);
-  const projectTokens = sumKnownTokens(
+  const fileProjectTokens = sumKnownTokens(
     files
-      .filter((file) => file.enabled && isProjectContextFile(file))
+      .filter((file) => file.enabled && isProjectBudgetFile(file))
       .map((file) => file.injectedTokens)
   );
-  const skillsTokens = charsToTokens(runtimeReport.skillsPromptChars) ?? estimateCollectionTokens(policy.effectiveSkills, 80);
-  const toolsTokens = charsToTokens(runtimeReport.toolsSchemaChars) ?? estimateCollectionTokens(policy.effectiveTools, 160);
+  const reportedProjectTokens = charsToTokens(runtimeReport.projectContextChars);
+  const projectTokens = reportedProjectTokens ?? fileProjectTokens;
+  const fileSkillsTokens = sumKnownTokens(
+    files
+      .filter((file) => file.enabled && isSkillBudgetFile(file))
+      .map((file) => file.injectedTokens)
+  );
+  const fileToolsTokens = sumKnownTokens(
+    files
+      .filter((file) => file.enabled && isToolBudgetFile(file))
+      .map((file) => file.injectedTokens)
+  );
+  const estimatedSkillTokens = estimateCollectionTokens(policy.effectiveSkills, 80);
+  const estimatedToolTokens = estimateCollectionTokens(policy.effectiveTools, 160);
+  const skillsTokens = charsToTokens(runtimeReport.skillsPromptChars) ?? sumKnownTokens([fileSkillsTokens, estimatedSkillTokens]);
+  const toolsTokens = charsToTokens(runtimeReport.toolsSchemaChars) ?? sumKnownTokens([fileToolsTokens, estimatedToolTokens]);
   const knownWithoutHistory = sumKnownTokens([systemTokens, projectTokens, skillsTokens, toolsTokens]);
   const historyTokens =
     typeof runtimeReport.totalTokens === "number" && knownWithoutHistory !== null
@@ -351,9 +365,9 @@ function buildContextBudget(
   const attachmentsTokens = null;
   const items: ContextEngineBudgetItem[] = [
     { id: "system", label: "System Prompt", tokens: systemTokens, source: systemTokens == null ? "unknown" : runtimeReport.status === "exact" ? "reported" : "estimated" },
-    { id: "project", label: "Project Context", tokens: projectTokens, source: projectTokens == null ? "unknown" : "estimated" },
-    { id: "skills", label: "Skills", tokens: skillsTokens, source: runtimeReport.skillsPromptChars == null ? "estimated" : "reported" },
-    { id: "tools", label: "Tools", tokens: toolsTokens, source: runtimeReport.toolsSchemaChars == null ? "estimated" : "reported" },
+    { id: "project", label: "Project Context", tokens: projectTokens, source: reportedProjectTokens == null ? projectTokens == null ? "unknown" : "estimated" : "reported" },
+    { id: "skills", label: "Skills", tokens: skillsTokens, source: runtimeReport.skillsPromptChars == null ? skillsTokens == null ? "unknown" : "estimated" : "reported" },
+    { id: "tools", label: "Tools", tokens: toolsTokens, source: runtimeReport.toolsSchemaChars == null ? toolsTokens == null ? "unknown" : "estimated" : "reported" },
     { id: "history", label: "History", tokens: historyTokens, source: historyTokens == null ? "unknown" : "reported" },
     { id: "attachments", label: "Attachments", tokens: attachmentsTokens, source: "unknown" }
   ];
@@ -793,6 +807,21 @@ function sortRuntimeByRecency(left: RuntimeRecord, right: RuntimeRecord) {
 
 function isProjectContextFile(file: ContextEngineFile) {
   return file.owner === "workspace-global" || file.owner === "agent-profile" || file.owner === "agent-policy" || file.owner === "memory";
+}
+
+function isProjectBudgetFile(file: ContextEngineFile) {
+  return (
+    (file.owner === "workspace-global" || file.owner === "agent-profile" || file.owner === "memory") &&
+    !isToolBudgetFile(file)
+  );
+}
+
+function isSkillBudgetFile(file: ContextEngineFile) {
+  return file.owner === "workspace-skill" || file.owner === "agent-policy";
+}
+
+function isToolBudgetFile(file: ContextEngineFile) {
+  return file.path === "TOOLS.md";
 }
 
 function charsToTokens(value: number | null | undefined) {

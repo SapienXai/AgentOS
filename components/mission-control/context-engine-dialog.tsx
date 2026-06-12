@@ -747,6 +747,9 @@ function ContextBudgetCard({ snapshot }: { snapshot: ContextEngineSnapshot | nul
 function BudgetPill({ item }: { item: ContextEngineBudgetItem }) {
   const Icon = budgetIcons[item.id];
   const tone = resolveBudgetTone(item.id);
+  const valueLabel = formatBudgetItemValue(item);
+  const sourceLabel = formatBudgetItemSource(item);
+  const hasTokenValue = typeof item.tokens === "number";
 
   return (
     <div className="rounded-[7px] border border-white/[0.1] bg-slate-950/36 px-2 py-1">
@@ -754,9 +757,17 @@ function BudgetPill({ item }: { item: ContextEngineBudgetItem }) {
         <Icon className={cn("h-3 w-3 shrink-0", tone)} />
         <p className="truncate text-[10px] leading-3 text-slate-300">{item.label}</p>
       </div>
-      <p className="mt-0.5 truncate text-center text-[11px] font-semibold leading-4 text-white">{formatTokenValue(item.tokens)}</p>
-      {item.source !== "reported" ? (
-        <p className="truncate text-center text-[7px] uppercase tracking-[0.1em] text-slate-500">{item.source}</p>
+      <p
+        className={cn(
+          "mt-0.5 truncate text-center font-semibold leading-4",
+          hasTokenValue ? "text-[11px] text-white" : "text-[10px] text-slate-300"
+        )}
+        title={valueLabel}
+      >
+        {valueLabel}
+      </p>
+      {sourceLabel ? (
+        <p className="truncate text-center text-[7px] uppercase tracking-[0.1em] text-slate-500">{sourceLabel}</p>
       ) : null}
     </div>
   );
@@ -1502,6 +1513,30 @@ function formatContextUsage(snapshot: ContextEngineSnapshot | null) {
 
 function formatTokenValue(value: number | null | undefined) {
   return typeof value === "number" ? formatTokens(value) : "-";
+}
+
+function formatBudgetItemValue(item: ContextEngineBudgetItem) {
+  if (typeof item.tokens === "number") {
+    return formatTokens(item.tokens);
+  }
+
+  if (item.id === "project") {
+    return "No files";
+  }
+
+  if (item.id === "attachments") {
+    return "Not exposed";
+  }
+
+  return "Not reported";
+}
+
+function formatBudgetItemSource(item: ContextEngineBudgetItem) {
+  if (typeof item.tokens !== "number") {
+    return item.source === "unknown" ? "unavailable" : item.source;
+  }
+
+  return item.source === "reported" ? null : item.source;
 }
 
 function sumKnownTokens(values: Array<number | null | undefined>) {

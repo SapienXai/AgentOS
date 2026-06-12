@@ -158,6 +158,19 @@ test("secret redaction handles nested objects, arrays, and diagnostic text", () 
     tokenUsage: {
       total: 42
     },
+    budget: {
+      tokens: 128,
+      nested: {
+        tokens: null
+      }
+    },
+    authStore: {
+      tokens: {
+        operator: {
+          token: "nested-secret-token"
+        }
+      }
+    },
     nested: [
       {
         privateKey: "top-secret-private-key",
@@ -167,9 +180,11 @@ test("secret redaction handles nested objects, arrays, and diagnostic text", () 
   });
   const serialized = JSON.stringify(redacted);
 
-  assert.doesNotMatch(serialized, /top-secret|bearer-secret|sk-secret|query-secret|json-secret|client-secret/);
+  assert.doesNotMatch(serialized, /top-secret|nested-secret|bearer-secret|sk-secret|query-secret|json-secret|client-secret/);
   assert.match(serialized, new RegExp(REDACTED_SECRET_VALUE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.deepEqual(redacted.tokenUsage, { total: 42 });
+  assert.deepEqual(redacted.budget, { tokens: 128, nested: { tokens: null } });
+  assert.deepEqual(redacted.authStore, { tokens: { operator: { token: REDACTED_SECRET_VALUE } } });
 });
 
 test("OpenClaw command diagnostics redact sensitive config values", () => {
