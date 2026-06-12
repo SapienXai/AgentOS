@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { afterEach, test } from "node:test";
 
 import { controlGateway } from "@/lib/openclaw/application/gateway-service";
@@ -8,6 +10,7 @@ import {
   setOpenClawAdapterForTesting
 } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
+  getConfigUpdatePacingSnapshot,
   resetConfigUpdatePacingForTesting,
   setConfigUpdatePacingForTesting
 } from "@/lib/openclaw/application/config-pacing-service";
@@ -36,6 +39,8 @@ type MockCall = {
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+const configPacingQueuePath = path.join(process.cwd(), ".mission-control", "config-pacing-queue.json");
 
 function createMockGatewayClient(overrides: Partial<OpenClawGatewayClient> = {}) {
   const calls: MockCall[] = [];
@@ -297,7 +302,7 @@ afterEach(() => {
   setOpenClawGatewayClientProvider(null);
   setOpenClawGatewayClientForTesting(null);
   setOpenClawAdapterForTesting(null);
-  resetConfigUpdatePacingForTesting();
+  resetConfigUpdatePacingForTesting({ clearPersistentQueue: true });
 });
 
 test("OpenClaw adapter status slice uses the injected gateway client", async () => {
@@ -407,6 +412,69 @@ test("OpenClaw adapter queues the latest config mutation during Gateway config c
   assert.deepEqual(appliedValues, [
     { model: "openai/gpt-5.5" }
   ]);
+});
+
+test("OpenClaw adapter persists pending config mutations and resumes retry after restart", async () => {
+  setConfigUpdatePacingForTesting({ mode: "respect-gateway", minimumIntervalMs: null });
+  let attempt = 0;
+  const adapter = new GatewayBackedOpenClawAdapter(() => ({
+    async setConfig() {
+      attempt += 1;
+      throw new Error(
+        "UNAVAILABLE: rate limit exceeded for config.patch; retry after 0.05s Gateway-native operation failed; CLI fallback disabled for this operation."
+      );
+    }
+  } as unknown as OpenClawGatewayClient));
+
+  await adapter.setConfig("agents.defaults", { model: "openai/gpt-5" }, { timeoutMs: 5 });
+  const queued = await adapter.setConfig("agents.defaults", { model: "openai/gpt-5.5" }, { timeoutMs: 6 });
+
+  assert.equal(queued.metadata?.pending, true);
+  assert.equal(attempt, 1);
+
+  const persisted = JSON.parse(await readFile(configPacingQueuePath, "utf8"));
+  assert.equal(persisted.version, 1);
+  assert.equal(persisted.queuedMutations.length, 1);
+  assert.equal(persisted.queuedMutations[0].path, "agents.defaults");
+  assert.deepEqual(persisted.queuedMutations[0].value, { model: "openai/gpt-5.5" });
+  assert.deepEqual(persisted.queuedMutations[0].options, { timeoutMs: 6 });
+  assert.equal((await stat(configPacingQueuePath)).mode & 0o777, 0o600);
+
+  resetConfigUpdatePacingForTesting();
+
+  const appliedValues: unknown[] = [];
+  const { client } = createMockGatewayClient({
+    async setConfig(_path: string, value: unknown, options?: OpenClawCommandOptions & { strictJson?: boolean }) {
+      appliedValues.push({ value, options });
+      return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+    }
+  });
+  setOpenClawGatewayClientForTesting(client);
+
+  const restoredSnapshot = await getConfigUpdatePacingSnapshot();
+  assert.equal(restoredSnapshot.queueDurability, "persistent");
+  assert.equal(restoredSnapshot.pending, true);
+  assert.deepEqual(restoredSnapshot.pendingPaths, ["agents.defaults"]);
+  assert.ok(restoredSnapshot.pendingSince);
+
+  await delay(90);
+
+  assert.deepEqual(appliedValues, [
+    { value: { model: "openai/gpt-5.5" }, options: { timeoutMs: 6 } }
+  ]);
+  assert.equal((await getConfigUpdatePacingSnapshot()).pending, false);
+});
+
+test("OpenClaw adapter falls back safely when the persistent config queue is corrupt", async () => {
+  await mkdir(path.dirname(configPacingQueuePath), { recursive: true });
+  await writeFile(configPacingQueuePath, "{invalid", { encoding: "utf8", mode: 0o600 });
+
+  const snapshot = await getConfigUpdatePacingSnapshot();
+
+  assert.equal(snapshot.queueDurability, "persistent");
+  assert.equal(snapshot.pending, false);
+  assert.deepEqual(snapshot.pendingPaths, []);
+  assert.match(snapshot.lastIssue ?? "", /could not read the durable config pacing queue/i);
 });
 
 test("OpenClaw adapter exposes catalog, config, agent turn, and probe methods", async () => {

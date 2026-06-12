@@ -356,6 +356,7 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
       path,
       operation: "set",
       value,
+      options,
       execute: () => this.getClient().setConfig(path, value, options)
     });
   }
@@ -365,6 +366,7 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
       path,
       operation: "unset",
       value: null,
+      options,
       execute: () => this.getClient().unsetConfig(path, options)
     });
   }

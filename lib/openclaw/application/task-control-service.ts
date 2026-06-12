@@ -27,6 +27,7 @@ export interface RunningTaskControlResult {
   taskId: string;
   target: RunningTaskControlTarget;
   result: Record<string, unknown>;
+  warning?: string | null;
   transport?: RunningTaskControlTransport;
 }
 
@@ -75,6 +76,7 @@ export async function controlRunningTaskSession(
 
   if (input.action === "continue") {
     const result = await continueTaskSession(taskDetail, target, message, input, adapter, deps);
+    const warning = resolveContinuationWarning(target);
 
     (deps.invalidateMissionControlSnapshotCache ?? invalidateMissionControlSnapshotCache)();
 
@@ -83,7 +85,8 @@ export async function controlRunningTaskSession(
       action: input.action,
       taskId: taskDetail.task.id,
       target,
-      result
+      result,
+      warning
     };
   }
 
@@ -190,6 +193,10 @@ async function continueTaskSession(
   adapter: TaskControlAdapter,
   deps: TaskControlDeps
 ) {
+  if (target.confidence === "none") {
+    throw new Error("Task continuation is disabled because AgentOS could not resolve a trusted OpenClaw session context.");
+  }
+
   if (!target.agentId) {
     throw new Error("Task does not expose an OpenClaw agent.");
   }
@@ -228,6 +235,12 @@ async function continueTaskSession(
   );
 
   return result as Record<string, unknown>;
+}
+
+function resolveContinuationWarning(target: RunningTaskControlTarget) {
+  return target.confidence === "medium"
+    ? "AgentOS resolved this continuation from runtime-derived OpenClaw session metadata. Verify the target session if the task context looks unexpected."
+    : null;
 }
 
 function resolveRunningTaskControlTarget(taskDetail: TaskDetailRecord): RunningTaskControlTarget {

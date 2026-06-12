@@ -1266,8 +1266,11 @@ export function SettingsControlCenter(
                       rows={[
                         ["Current mode", formatConfigUpdatePacingMode(configUpdatePacing.settings.mode)],
                         ["Minimum local interval", formatConfigUpdatePacingInterval(configUpdatePacing.settings.minimumIntervalMs)],
+                        ["Queue durability", configUpdatePacing.queueDurability === "persistent" ? "Persistent AgentOS sidecar queue" : "Volatile memory"],
                         ["Pending paths", configUpdatePacing.pendingPaths.length ? configUpdatePacing.pendingPaths.join(", ") : "None"],
+                        ["Pending since", configUpdatePacing.pendingSince ? formatTimestamp(configUpdatePacing.pendingSince) : "None"],
                         ["Retry countdown", configUpdatePacingRetryMs !== null ? formatConfigUpdatePacingInterval(configUpdatePacingRetryMs) : "None"],
+                        ["Last update", configUpdatePacing.lastUpdatedAt ? formatTimestamp(configUpdatePacing.lastUpdatedAt) : "None"],
                         ["CLI fallback", "Disabled for Gateway config cooldown recovery"]
                       ]}
                     />

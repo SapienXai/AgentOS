@@ -301,7 +301,8 @@ export function TaskFollowUpComposer({
         summary: continuation.summary
       };
       toast.success("Follow-up accepted.", {
-        description: "OpenClaw accepted the continuation. AgentOS will track the follow-up until live output arrives."
+        description: continuation.warning ||
+          "OpenClaw accepted the continuation. AgentOS will track the follow-up until live output arrives."
       });
       await onSubmitted?.(followUp);
     } catch (error) {
@@ -438,6 +439,7 @@ type TaskControlApiResponse = {
   error?: string;
   result?: {
     taskId?: string;
+    warning?: string | null;
     target?: {
       sessionId?: string | null;
       sessionKey?: string | null;
@@ -453,6 +455,7 @@ function readTaskControlContinuation(payload: TaskControlApiResponse | null) {
 
   return {
     taskId: readString(control?.taskId),
+    warning: readString(control?.warning),
     runId: readString(result.runId) ?? readString(control?.target?.runId),
     sessionId: normalizeTaskFollowUpSessionId(
       readString(result.sessionId) ?? readString(control?.target?.sessionId) ?? readString(control?.target?.sessionKey)

@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 
 import {
   classifyContextEngineFileOwner,
   decorateContextEngineFile,
   filterContextEngineFilesForAgent,
-  normalizeOpenClawContextReport
+  normalizeOpenClawContextReport,
+  readContextEngineConfigurationForTesting,
+  resolveContextEngineConfigPathForTesting,
+  writeContextEngineConfigurationForTesting
 } from "@/lib/openclaw/application/context-engine-service";
 import type { WorkspaceManagedFile } from "@/lib/openclaw/workspace-file-types";
 
@@ -49,8 +55,11 @@ test("decorateContextEngineFile marks runtime-included files without claiming un
 
   assert.equal(decorated.ownerLabel, "Workspace global");
   assert.equal(decorated.runtimeIncluded, true);
+  assert.equal(decorated.runtimeInclusionSource, "openclaw-report");
+  assert.equal(decorated.preferenceSource, "default");
   assert.equal(decorated.runtimeTokenEstimate, 42);
   assert.equal(unrelated.runtimeIncluded, false);
+  assert.equal(unrelated.runtimeInclusionSource, "unreported");
 
   const otherAgentProfile = decorateContextEngineFile(file("agents/agent-2/PROFILE.md", "identity"), "agent-1");
   assert.equal(otherAgentProfile.ownerLabel, "Agent profile");
@@ -62,6 +71,10 @@ test("decorateContextEngineFile applies saved include and exclude configuration"
     version: 1,
     agentId: "agent-1",
     workspaceId: "workspace-1",
+    source: "agentos-sidecar",
+    storagePath: ".openclaw/context-engine.json",
+    persistenceStatus: "loaded",
+    persistenceWarning: null,
     updatedAt: "2026-06-12T00:00:00.000Z",
     files: [
       {
@@ -83,6 +96,10 @@ test("decorateContextEngineFile applies saved include and exclude configuration"
       version: 1,
       agentId: "agent-1",
       workspaceId: "workspace-1",
+      source: "agentos-sidecar",
+      storagePath: ".openclaw/context-engine.json",
+      persistenceStatus: "loaded",
+      persistenceWarning: null,
       updatedAt: "2026-06-12T00:00:00.000Z",
       files: [
         {
@@ -95,11 +112,56 @@ test("decorateContextEngineFile applies saved include and exclude configuration"
 
   assert.equal(included.enabled, false);
   assert.equal(included.savedEnabled, false);
+  assert.equal(included.preferenceSource, "agentos-sidecar");
   assert.equal(included.status, "disabled");
   assert.equal(included.injectedTokens, 0);
   assert.equal(missing.enabled, false);
   assert.equal(missing.status, "missing");
   assert.equal(missing.canToggle, false);
+});
+
+test("Context Engine sidecar configuration writes atomically with owner-only permissions", async () => {
+  const workspacePath = await mkdtemp(path.join(os.tmpdir(), "agentos-context-engine-"));
+
+  await writeContextEngineConfigurationForTesting(workspacePath, "agent-1", [
+    { path: "AGENTS.md", enabled: false },
+    { path: "agents/agent-1/PROFILE.md", enabled: true }
+  ]);
+
+  const configPath = resolveContextEngineConfigPathForTesting(workspacePath);
+  const persisted = JSON.parse(await readFile(configPath, "utf8"));
+  const configuration = await readContextEngineConfigurationForTesting(workspacePath, "workspace-1", "agent-1");
+
+  assert.equal((await stat(configPath)).mode & 0o777, 0o600);
+  assert.equal(persisted.version, 1);
+  assert.deepEqual(Object.keys(persisted.agents["agent-1"].files).sort(), [
+    "AGENTS.md",
+    "agents/agent-1/PROFILE.md"
+  ]);
+  assert.equal(configuration.source, "agentos-sidecar");
+  assert.equal(configuration.storagePath, ".openclaw/context-engine.json");
+  assert.equal(configuration.persistenceStatus, "loaded");
+  assert.equal(configuration.persistenceWarning, null);
+  assert.deepEqual(configuration.files, [
+    { path: "AGENTS.md", enabled: false },
+    { path: "agents/agent-1/PROFILE.md", enabled: true }
+  ]);
+});
+
+test("Context Engine corrupt sidecar configuration falls back with a visible warning", async () => {
+  const workspacePath = await mkdtemp(path.join(os.tmpdir(), "agentos-context-engine-"));
+  const configPath = resolveContextEngineConfigPathForTesting(workspacePath);
+
+  await mkdir(path.dirname(configPath), { recursive: true });
+  await writeFile(configPath, "{invalid", { encoding: "utf8", mode: 0o600 });
+
+  const configuration = await readContextEngineConfigurationForTesting(workspacePath, "workspace-1", "agent-1");
+
+  assert.equal(configuration.source, "agentos-sidecar");
+  assert.equal(configuration.persistenceStatus, "recovered");
+  assert.match(configuration.persistenceWarning ?? "", /could not read the saved Context Engine preferences/i);
+  assert.deepEqual(configuration.files, []);
+  assert.equal(configuration.updatedAt, null);
 });
 
 test("filterContextEngineFilesForAgent keeps only selected agent profile and policy files", () => {

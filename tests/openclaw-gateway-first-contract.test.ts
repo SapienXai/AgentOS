@@ -580,6 +580,83 @@ test("task continuation preserves a stable caller idempotency key", async () => 
   assert.equal(calls[0]?.idempotencyKey, "dispatch-1:continue:stable-follow-up");
 });
 
+test("task continuation returns a warning for medium-confidence session context", async () => {
+  const taskDetail = createRunningTaskDetail();
+  taskDetail.task.status = "completed";
+  taskDetail.task.liveRunCount = 0;
+  taskDetail.task.dispatchId = "dispatch-1";
+  taskDetail.task.metadata = {
+    dispatchId: "dispatch-1",
+    provenance: "runtime-derived"
+  };
+  taskDetail.runs[0]!.status = "completed";
+
+  const response = await controlRunningTaskSession(
+    "task-1",
+    { action: "continue", message: "Continue from here", dispatchId: "dispatch-1" },
+    {
+      adapter: {
+        async steerSession() {
+          throw new Error("unexpected steer");
+        },
+        async injectChat() {
+          throw new Error("unexpected inject");
+        },
+        async runAgentTurn() {
+          return { runId: "run-2", status: "running" };
+        }
+      },
+      getTaskDetail: async () => taskDetail,
+      getMissionControlSnapshot: async () => createSnapshot(),
+      invalidateMissionControlSnapshotCache: () => {}
+    }
+  );
+
+  assert.equal(response.target.confidence, "medium");
+  assert.match(response.warning ?? "", /runtime-derived OpenClaw session metadata/);
+});
+
+test("task continuation rejects none-confidence session context", async () => {
+  let called = false;
+  const taskDetail = createRunningTaskDetail();
+  taskDetail.task.status = "completed";
+  taskDetail.task.liveRunCount = 0;
+  taskDetail.task.dispatchId = "dispatch-1";
+  taskDetail.task.metadata = {
+    dispatchId: "dispatch-1",
+    continuationConfidence: "none",
+    continuationSessionId: "session-1",
+    primaryAgentId: "agent-1"
+  };
+  taskDetail.runs[0]!.status = "completed";
+
+  await assert.rejects(
+    () => controlRunningTaskSession(
+      "task-1",
+      { action: "continue", message: "Continue from here", dispatchId: "dispatch-1" },
+      {
+        adapter: {
+          async steerSession() {
+            throw new Error("unexpected steer");
+          },
+          async injectChat() {
+            throw new Error("unexpected inject");
+          },
+          async runAgentTurn() {
+            called = true;
+            return { runId: "run-2", status: "running" };
+          }
+        },
+        getTaskDetail: async () => taskDetail,
+        getMissionControlSnapshot: async () => createSnapshot(),
+        invalidateMissionControlSnapshotCache: () => {}
+      }
+    ),
+    /continuation is disabled/
+  );
+  assert.equal(called, false);
+});
+
 test("task continuation rejects dispatch-only context without a session", async () => {
   let called = false;
   const taskDetail = createRunningTaskDetail();
@@ -617,7 +694,7 @@ test("task continuation rejects dispatch-only context without a session", async 
         invalidateMissionControlSnapshotCache: () => {}
       }
     ),
-    /existing OpenClaw session context/
+    /continuation is disabled/
   );
   assert.equal(called, false);
 });
@@ -1034,9 +1111,11 @@ function createSnapshot(): MissionControlSnapshot {
       },
       configUpdatePacing: {
         settings: { mode: "respect-gateway", minimumIntervalMs: null },
+        queueDurability: "persistent",
         pending: false,
         pendingCount: 0,
         pendingPaths: [],
+        pendingSince: null,
         cooldownUntil: null,
         retryAfterMs: null,
         lastIssue: null,

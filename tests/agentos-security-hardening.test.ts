@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { NextRequest } from "next/server";
 
 import { evaluateAgentOsApiRequest } from "@/lib/security/api-auth";
 import { evaluateLocalOperatorRequest } from "@/lib/security/local-operator";
@@ -15,8 +16,39 @@ import { normalizeGatewayRemoteUrl } from "@/lib/openclaw/domains/control-plane-
 import { assertSafeWorkspaceCloneRepoUrl } from "@/lib/openclaw/domains/workspace-bootstrap";
 import { sanitizeOpenClawCommandArgsForDiagnostics } from "@/lib/openclaw/cli";
 import { isOpenClawTerminalCommand } from "@/lib/openclaw/terminal-command";
+import { proxy } from "@/proxy";
 
 const rootDir = process.cwd();
+
+async function withProcessEnv(
+  env: Partial<Record<"AGENTOS_API_TOKEN" | "NODE_ENV", string | undefined>>,
+  callback: () => Promise<void> | void
+) {
+  const previous = {
+    AGENTOS_API_TOKEN: process.env.AGENTOS_API_TOKEN,
+    NODE_ENV: process.env.NODE_ENV
+  };
+
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+
+  try {
+    await callback();
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
 
 test("local same-origin mutation requests are allowed", () => {
   const decision = evaluateLocalOperatorRequest({
@@ -339,6 +371,71 @@ test("API middleware centrally covers mutation routes including Gateway auth", (
 
   assert.match(middlewareSource, /matcher:\s*\["\/api\/:path\*"\]/);
   assert.match(middlewareSource, /evaluateAgentOsApiRequest/);
+});
+
+test("API proxy protects snapshot reads with bearer auth in production-like env", async () => {
+  await withProcessEnv({ AGENTOS_API_TOKEN: "local-secret", NODE_ENV: "production" }, async () => {
+    const missingToken = proxy(new NextRequest("http://localhost:3000/api/snapshot", {
+      headers: {
+        host: "localhost:3000"
+      }
+    }));
+    const missingTokenBody = await missingToken.json();
+
+    assert.equal(missingToken.status, 401);
+    assert.equal(missingTokenBody.code, "api-auth-required");
+
+    const authorized = proxy(new NextRequest("http://localhost:3000/api/snapshot", {
+      headers: {
+        authorization: "Bearer local-secret",
+        host: "localhost:3000"
+      }
+    }));
+
+    assert.equal(authorized.status, 200);
+  });
+});
+
+test("API proxy protects mutation routes with bearer auth in production-like env", async () => {
+  await withProcessEnv({ AGENTOS_API_TOKEN: "local-secret", NODE_ENV: "production" }, async () => {
+    const missingToken = proxy(new NextRequest("http://localhost:3000/api/mission", {
+      method: "POST",
+      headers: {
+        host: "localhost:3000",
+        origin: "http://localhost:3000"
+      }
+    }));
+    const missingTokenBody = await missingToken.json();
+
+    assert.equal(missingToken.status, 401);
+    assert.equal(missingTokenBody.code, "api-auth-required");
+
+    const authorized = proxy(new NextRequest("http://localhost:3000/api/settings/gateway", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer local-secret",
+        host: "localhost:3000",
+        origin: "http://localhost:3000"
+      }
+    }));
+
+    assert.equal(authorized.status, 200);
+  });
+});
+
+test("API proxy blocks remote clients under local development fallback", async () => {
+  await withProcessEnv({ AGENTOS_API_TOKEN: undefined, NODE_ENV: "development" }, async () => {
+    const response = proxy(new NextRequest("http://localhost:3000/api/snapshot", {
+      headers: {
+        host: "localhost:3000",
+        "x-forwarded-for": "203.0.113.10"
+      }
+    }));
+    const body = await response.json();
+
+    assert.equal(response.status, 403);
+    assert.equal(body.code, "unsafe-local-api");
+  });
 });
 
 test("packaged launcher provisions API tokens outside source config", () => {

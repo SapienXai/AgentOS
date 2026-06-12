@@ -236,7 +236,7 @@ In practice, that means:
 
 AgentOS is Gateway-first on top of OpenClaw. Use `agentos doctor` and the in-app diagnostics panel to confirm the installed OpenClaw version, Gateway protocol range, native auth state, model readiness, and fallback activity before dispatching real missions.
 
-The 0.7.1 release expects Node.js 24 or newer and the OpenClaw supported baseline from `lib/openclaw/versions.ts`. If compatibility is degraded, update OpenClaw, repair Gateway token/device access, restart the Gateway, and re-run `agentos doctor --deep`.
+The 0.7.2 release expects Node.js 24 or newer and the OpenClaw supported baseline from `lib/openclaw/versions.ts`. If compatibility is degraded, update OpenClaw, repair Gateway token/device access, restart the Gateway, and re-run `agentos doctor --deep`.
 
 ### Current Compatibility Notes
 
@@ -438,13 +438,13 @@ Install a specific published version:
 macOS / Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.7.1 bash
+curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.7.2 bash
 ```
 
 Windows PowerShell:
 
 ```powershell
-$env:AGENTOS_VERSION='0.7.1'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
+$env:AGENTOS_VERSION='0.7.2'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
 ```
 
 Package manager install:
@@ -501,8 +501,8 @@ Push a tag in the format below to build platform-specific release assets on GitH
 ```bash
 pnpm check:release
 pnpm smoke:agentos-package
-git tag agentos-v0.7.1
-git push origin agentos-v0.7.1
+git tag agentos-v0.7.2
+git push origin agentos-v0.7.2
 ```
 
 `packages/agentos/package.json` is the published CLI/package version source. The root package is private and may keep a separate workspace app version.

@@ -39,10 +39,11 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
+import { applyContextEngineDraftState, useContextEngineDraft } from "@/components/mission-control/use-context-engine-draft";
+import { useContextEngineLoader } from "@/components/mission-control/use-context-engine-loader";
 import type {
   ContextEngineBudgetItem,
   ContextEngineFile,
-  ContextEngineFileReadResponse,
   ContextEngineFileStatus,
   ContextEngineSaveInput,
   ContextEngineSnapshot,
@@ -106,7 +107,6 @@ export function ContextEngineDialog({
   const [activeTab, setActiveTab] = useState<ContextEngineTab>("project");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<ContextEngineFile | null>(null);
-  const [draftEnabledByPath, setDraftEnabledByPath] = useState<Record<string, boolean>>({});
   const [content, setContent] = useState("");
   const [savedContent, setSavedContent] = useState("");
   const [inspectorMode, setInspectorMode] = useState<InspectorMode>("preview");
@@ -117,22 +117,28 @@ export function ContextEngineDialog({
   const [isSavingFile, setIsSavingFile] = useState(false);
   const [isSavingContext, setIsSavingContext] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const displayFiles = useMemo(
-    () => (engineSnapshot ? applyDraftFileState(engineSnapshot.files, draftEnabledByPath) : []),
-    [draftEnabledByPath, engineSnapshot]
-  );
+  const {
+    draftEnabledByPath,
+    setDraftEnabledByPath,
+    displayFiles,
+    hasContextChanges,
+    replaceDraftFromFiles,
+    toggleDraftFile
+  } = useContextEngineDraft(engineSnapshot?.files ?? []);
+  const {
+    loadSnapshot,
+    loadFile,
+    saveConfiguration,
+    saveFile: saveContextFile
+  } = useContextEngineLoader(agentId);
   const projectFiles = useMemo(
     () => displayFiles.filter((file) => isProjectContextFile(file)),
     [displayFiles]
   );
-  const activeFile = selectedFile
-    ? applyDraftFileState([selectedFile], draftEnabledByPath)[0]
+  const selectedFileForPath = selectedFile?.path === selectedPath ? selectedFile : null;
+  const activeFile = selectedFileForPath
+    ? applyContextEngineDraftState([selectedFileForPath], draftEnabledByPath)[0]
     : displayFiles.find((file) => file.path === selectedPath) ?? null;
-  const hasContextChanges = useMemo(
-    () => displayFiles.some((file) => file.enabled !== file.savedEnabled),
-    [displayFiles]
-  );
   const hasUnsavedFileChanges = content !== savedContent;
   const canEditActiveFile = Boolean(activeFile?.editable && !isLoadingFile);
   const createableMissingFile = projectFiles.find((file) => !file.exists && file.createable) ?? null;
@@ -149,17 +155,10 @@ export function ContextEngineDialog({
     setError(null);
 
     try {
-      const response = await fetch(`/api/agents/${encodeURIComponent(agentId)}/context`, {
-        cache: "no-store"
-      });
-      const result = (await response.json()) as ContextEngineSnapshot & { error?: string };
-
-      if (!response.ok || result.error) {
-        throw new Error(result.error || "Context Engine snapshot could not be loaded.");
-      }
+      const result = await loadSnapshot();
 
       setEngineSnapshot(result);
-      setDraftEnabledByPath(Object.fromEntries(result.files.map((file) => [file.path, file.enabled])));
+      replaceDraftFromFiles(result.files);
       setSelectedPath((current) => {
         if (current && result.files.some((file) => file.path === current)) {
           return current;
@@ -177,14 +176,14 @@ export function ContextEngineDialog({
     } finally {
       setIsLoadingSnapshot(false);
     }
-  }, [agentId]);
+  }, [agentId, loadSnapshot, replaceDraftFromFiles]);
 
   useEffect(() => {
     if (!open || !agentId) {
       setEngineSnapshot(null);
       setSelectedPath(null);
       setSelectedFile(null);
-      setDraftEnabledByPath({});
+      replaceDraftFromFiles([]);
       setContent("");
       setSavedContent("");
       setError(null);
@@ -196,7 +195,7 @@ export function ContextEngineDialog({
     }
 
     void refreshSnapshot();
-  }, [agentId, open, refreshSnapshot]);
+  }, [agentId, open, refreshSnapshot, replaceDraftFromFiles]);
 
   useEffect(() => {
     if (!open || !agentId || !selectedPath) {
@@ -204,20 +203,15 @@ export function ContextEngineDialog({
     }
 
     let cancelled = false;
+    setSelectedFile(null);
+    setContent("");
+    setSavedContent("");
     setIsLoadingFile(true);
     setError(null);
 
     void (async () => {
       try {
-        const response = await fetch(
-          `/api/agents/${encodeURIComponent(agentId)}/context/file?path=${encodeURIComponent(selectedPath)}`,
-          { cache: "no-store" }
-        );
-        const result = (await response.json()) as ContextEngineFileReadResponse & { error?: string };
-
-        if (!response.ok || result.error) {
-          throw new Error(result.error || "Context file could not be loaded.");
-        }
+        const result = await loadFile(selectedPath);
 
         if (cancelled) {
           return;
@@ -254,7 +248,7 @@ export function ContextEngineDialog({
     return () => {
       cancelled = true;
     };
-  }, [agentId, open, selectedPath]);
+  }, [agentId, loadFile, open, selectedPath]);
 
   const saveContext = useCallback(
     async (nextDraft?: Record<string, boolean>) => {
@@ -274,21 +268,10 @@ export function ContextEngineDialog({
       setError(null);
 
       try {
-        const response = await fetch(`/api/agents/${encodeURIComponent(agentId)}/context`, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(payload)
-        });
-        const result = (await response.json()) as ContextEngineSnapshot & { error?: string };
-
-        if (!response.ok || result.error) {
-          throw new Error(result.error || "Context configuration could not be saved.");
-        }
+        const result = await saveConfiguration(payload);
 
         setEngineSnapshot(result);
-        setDraftEnabledByPath(Object.fromEntries(result.files.map((file) => [file.path, file.enabled])));
+        replaceDraftFromFiles(result.files);
         setSelectedFile((current) => {
           if (!current) {
             return current;
@@ -299,7 +282,7 @@ export function ContextEngineDialog({
         toast.success("Context configuration saved.", {
           description: result.capabilities.nativeFileToggles.supported
             ? "OpenClaw native context configuration was updated."
-            : "AgentOS saved the context configuration for this agent."
+            : "AgentOS saved sidecar context preferences for this agent. OpenClaw runtime reports still determine what was actually injected."
         });
       } catch (saveError) {
         const message = saveError instanceof Error ? saveError.message : "Context configuration could not be saved.";
@@ -311,7 +294,7 @@ export function ContextEngineDialog({
         setIsSavingContext(false);
       }
     },
-    [agentId, draftEnabledByPath, engineSnapshot]
+    [agentId, draftEnabledByPath, engineSnapshot, replaceDraftFromFiles, saveConfiguration]
   );
 
   const saveFile = useCallback(async () => {
@@ -323,21 +306,10 @@ export function ContextEngineDialog({
     setError(null);
 
     try {
-      const response = await fetch(`/api/agents/${encodeURIComponent(agentId)}/context/file`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          path: activeFile.path,
-          content
-        })
+      const result = await saveContextFile({
+        path: activeFile.path,
+        content
       });
-      const result = (await response.json()) as ContextEngineFileReadResponse & { error?: string };
-
-      if (!response.ok || result.error) {
-        throw new Error(result.error || "Context file could not be saved.");
-      }
 
       setSelectedFile(result.file);
       setEngineSnapshot((current) =>
@@ -368,29 +340,18 @@ export function ContextEngineDialog({
     } finally {
       setIsSavingFile(false);
     }
-  }, [activeFile, agentId, canEditActiveFile, content]);
+  }, [activeFile, agentId, canEditActiveFile, content, saveContextFile, setDraftEnabledByPath]);
 
   const resetDraft = useCallback(() => {
     if (!engineSnapshot) {
       return;
     }
 
-    setDraftEnabledByPath(Object.fromEntries(engineSnapshot.files.map((file) => [file.path, file.savedEnabled])));
+    replaceDraftFromFiles(engineSnapshot.files, "saved");
     toast.message("Context reset.", {
       description: "Restored the last saved Context Engine configuration."
     });
-  }, [engineSnapshot]);
-
-  const toggleFile = useCallback((file: ContextEngineFile) => {
-    if (!file.canToggle) {
-      return;
-    }
-
-    setDraftEnabledByPath((current) => ({
-      ...current,
-      [file.path]: !Boolean(current[file.path] ?? file.enabled)
-    }));
-  }, []);
+  }, [engineSnapshot, replaceDraftFromFiles]);
 
   const excludeActiveFile = useCallback(() => {
     if (!activeFile?.canToggle) {
@@ -403,7 +364,7 @@ export function ContextEngineDialog({
     };
     setDraftEnabledByPath(nextDraft);
     void saveContext(nextDraft);
-  }, [activeFile, draftEnabledByPath, saveContext]);
+  }, [activeFile, draftEnabledByPath, saveContext, setDraftEnabledByPath]);
 
   const openCreateFlow = useCallback(() => {
     if (!createableMissingFile) {
@@ -443,6 +404,11 @@ export function ContextEngineDialog({
                   <HeaderChip icon={<Sparkles className="h-3 w-3" />} value={engineSnapshot?.model.label ?? "Unknown model"} tone="violet" />
                   <HeaderChip icon={<Grid2X2 className="h-3 w-3" />} value={engineSnapshot?.model.contextWindow ? `${formatContextWindow(engineSnapshot.model.contextWindow)} window` : "Unknown window"} tone="blue" />
                   <HeaderChip icon={<Clock3 className="h-3 w-3" />} value={formatContextUsage(engineSnapshot)} tone={engineSnapshot?.budget.usedPercent == null ? "muted" : "amber"} />
+                  <HeaderChip
+                    icon={<FileText className="h-3 w-3" />}
+                    value={formatConfigurationPersistence(engineSnapshot)}
+                    tone={engineSnapshot?.configuration.persistenceStatus === "recovered" ? "amber" : "muted"}
+                  />
                 </div>
               </div>
             </div>
@@ -523,7 +489,7 @@ export function ContextEngineDialog({
                   setInspectorMode("preview");
                   setActionMenuPath(null);
                 }}
-                onToggleFile={toggleFile}
+                onToggleFile={toggleDraftFile}
                 onActionMenuChange={setActionMenuPath}
                 onAddFile={openCreateFlow}
                 onEdit={() => setInspectorMode("edit")}
@@ -998,6 +964,12 @@ function SelectedFileInspector({
               <CompactInspectorItem label="Injected">
                 <InspectorValue value={file.injectedTokens == null ? "Unknown" : formatTokenValue(file.injectedTokens)} source={file.tokenSource} compact />
               </CompactInspectorItem>
+              <CompactInspectorItem label="Preference">
+                <span className="text-white">{formatPreferenceSource(file)}</span>
+              </CompactInspectorItem>
+              <CompactInspectorItem label="Runtime">
+                <span className="text-white">{formatRuntimeInclusionSource(file)}</span>
+              </CompactInspectorItem>
             </div>
             {file.statusReason ? (
               <p className="mt-1.5 rounded-[8px] border border-amber-300/16 bg-amber-400/[0.07] px-2 py-1 text-[10px] leading-[14px] text-amber-100/85">
@@ -1028,6 +1000,8 @@ function SelectedFileInspector({
                 )}
                 placeholder={isLoadingFile ? "Loading context file..." : "Write context file content"}
               />
+            ) : isLoadingFile && !content && !savedContent ? (
+              <LoadingFilePreview />
             ) : (
               <CodePreview content={buildInjectedPreviewContent(file, content || savedContent)} />
             )}
@@ -1189,6 +1163,12 @@ function ExpandedFileEditorDialog({
                   <CompactInspectorItem label="Updated">
                     <span className="text-white">{formatRelativeTime(file.lastUpdatedAt)}</span>
                   </CompactInspectorItem>
+                  <CompactInspectorItem label="Preference">
+                    <span className="text-white">{formatPreferenceSource(file)}</span>
+                  </CompactInspectorItem>
+                  <CompactInspectorItem label="Runtime source">
+                    <span className="text-white">{formatRuntimeInclusionSource(file)}</span>
+                  </CompactInspectorItem>
                   <CompactInspectorItem label="Editable">
                     <span className={file.editable ? "text-emerald-200" : "text-slate-400"}>
                       {file.editable ? "Yes" : "Read only"}
@@ -1236,6 +1216,8 @@ function ExpandedFileEditorDialog({
                 )}
                 placeholder={isLoadingFile ? "Loading context file..." : "Write context file content"}
               />
+            ) : isLoadingFile && !content && !savedContent ? (
+              <LoadingFilePreview className="min-h-0 flex-1" />
             ) : (
               <CodePreview
                 content={previewContent}
@@ -1331,8 +1313,18 @@ function SecondaryTabPanel({
           <OverviewMetric label="Workspace" value={snapshot?.workspace.name ?? "Unknown"} detail={snapshot?.workspace.path ? compactPath(snapshot.workspace.path) : undefined} />
           <OverviewMetric label="Model" value={snapshot?.model.label ?? "Unknown"} detail={snapshot?.model.provider ?? undefined} />
           <OverviewMetric label="Runtime report" value={snapshot?.runtimeReport.status === "exact" ? "Exact" : "Degraded"} detail={snapshot?.runtimeReport.source.replace(/-/g, " ")} />
+          <OverviewMetric
+            label="Preferences"
+            value={formatConfigurationPersistence(snapshot)}
+            detail={snapshot?.configuration.storagePath}
+          />
         </div>
-        <DiagnosticsList diagnostics={snapshot?.diagnostics ?? []} />
+        <DiagnosticsList
+          diagnostics={[
+            ...(snapshot?.configuration.persistenceWarning ? [snapshot.configuration.persistenceWarning] : []),
+            ...(snapshot?.diagnostics ?? [])
+          ]}
+        />
       </InfoPanel>
     );
   }
@@ -1483,6 +1475,20 @@ function ActionMenuButton({
       {icon}
       {label}
     </button>
+  );
+}
+
+function LoadingFilePreview({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        "flex min-h-[104px] flex-1 items-center justify-center gap-2 rounded-[8px] border border-white/[0.1] bg-slate-950/62 p-2.5 text-[11px] leading-4 text-slate-400",
+        className
+      )}
+    >
+      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      Loading context file
+    </div>
   );
 }
 
@@ -1671,33 +1677,6 @@ function InspectorValue({
   );
 }
 
-function applyDraftFileState(files: ContextEngineFile[], draftEnabledByPath: Record<string, boolean>) {
-  return files.map((file) => {
-    const enabled = Boolean(draftEnabledByPath[file.path] ?? file.enabled);
-    const status = resolveDraftStatus(file, enabled);
-
-    return {
-      ...file,
-      enabled,
-      status,
-      injectedTokens: enabled ? file.injectedTokens : 0,
-      statusReason: status === "disabled" ? "This file is excluded in the unsaved Context Engine draft." : file.statusReason
-    };
-  });
-}
-
-function resolveDraftStatus(file: ContextEngineFile, enabled: boolean): ContextEngineFileStatus {
-  if (!file.exists) {
-    return "missing";
-  }
-
-  if (!enabled) {
-    return "disabled";
-  }
-
-  return file.status === "disabled" ? "enabled" : file.status;
-}
-
 function chooseInitialFilePath(files: ContextEngineFile[]) {
   return (
     files.find((file) => file.path === "AGENTS.md")?.path ??
@@ -1773,6 +1752,30 @@ function formatContextUsage(snapshot: ContextEngineSnapshot | null) {
   }
 
   return `${snapshot.budget.usedPercent}% context used`;
+}
+
+function formatConfigurationPersistence(snapshot: ContextEngineSnapshot | null) {
+  if (!snapshot) {
+    return "Preferences unknown";
+  }
+
+  switch (snapshot.configuration.persistenceStatus) {
+    case "loaded":
+      return "AgentOS preferences loaded";
+    case "recovered":
+      return "Preferences recovered";
+    case "missing":
+    default:
+      return "Default preferences";
+  }
+}
+
+function formatPreferenceSource(file: ContextEngineFile) {
+  return file.preferenceSource === "agentos-sidecar" ? "AgentOS sidecar" : "Default";
+}
+
+function formatRuntimeInclusionSource(file: ContextEngineFile) {
+  return file.runtimeInclusionSource === "openclaw-report" ? "OpenClaw reported" : "Not reported";
 }
 
 function formatTokenValue(value: number | null | undefined) {

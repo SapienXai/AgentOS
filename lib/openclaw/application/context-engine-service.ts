@@ -1,6 +1,6 @@
 import "server-only";
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getMissionControlSnapshot } from "@/lib/openclaw/application/mission-control-service";
@@ -50,6 +50,12 @@ type StoredContextEngineConfig = {
 type StoredAgentContextConfig = {
   files?: Record<string, { enabled?: boolean }>;
   updatedAt?: string | null;
+};
+
+type StoredContextEngineConfigRead = {
+  config: StoredContextEngineConfig;
+  status: ContextEngineConfiguration["persistenceStatus"];
+  warning: string | null;
 };
 
 export async function getAgentContextEngineSnapshot(agentId: string): Promise<ContextEngineSnapshot> {
@@ -213,7 +219,9 @@ export function decorateContextEngineFile(
     tokenSource,
     lastUpdatedAt: null,
     runtimeIncluded: Boolean(runtimeFile),
-    runtimeTokenEstimate: runtimeFile?.tokens ?? null
+    runtimeTokenEstimate: runtimeFile?.tokens ?? null,
+    preferenceSource: configuredEnabled === undefined ? "default" : "agentos-sidecar",
+    runtimeInclusionSource: runtimeFile ? "openclaw-report" : "unreported"
   };
 }
 
@@ -562,12 +570,17 @@ async function readContextEngineConfiguration(
   agentId: string
 ): Promise<ContextEngineConfiguration> {
   const stored = await readStoredContextEngineConfig(workspacePath);
-  const agentConfig = stored.agents?.[agentId] ?? {};
+  const storedConfig = stored.config;
+  const agentConfig = storedConfig.agents?.[agentId] ?? {};
 
   return {
     version: 1,
     agentId,
     workspaceId,
+    source: "agentos-sidecar",
+    storagePath: ".openclaw/context-engine.json",
+    persistenceStatus: stored.status,
+    persistenceWarning: stored.warning,
     files: Object.entries(agentConfig.files ?? {}).flatMap(([filePath, value]) =>
       typeof value.enabled === "boolean"
         ? [
@@ -589,7 +602,7 @@ async function writeContextEngineConfiguration(
 ) {
   const stored = await readStoredContextEngineConfig(workspacePath);
   const nextAgents = {
-    ...(stored.agents ?? {})
+    ...(stored.config.agents ?? {})
   };
   const now = new Date().toISOString();
 
@@ -604,26 +617,76 @@ async function writeContextEngineConfiguration(
   });
 }
 
-async function readStoredContextEngineConfig(workspacePath: string): Promise<StoredContextEngineConfig> {
+async function readStoredContextEngineConfig(workspacePath: string): Promise<StoredContextEngineConfigRead> {
+  const configPath = resolveContextEngineConfigPath(workspacePath);
+
   try {
-    const raw = await readFile(resolveContextEngineConfigPath(workspacePath), "utf8");
+    const raw = await readFile(configPath, "utf8");
     const parsed = JSON.parse(raw);
 
-    return readObject(parsed) ? normalizeStoredContextEngineConfig(parsed) : { version: 1, agents: {} };
-  } catch {
-    return { version: 1, agents: {} };
+    if (!readObject(parsed)) {
+      return {
+        config: { version: 1, agents: {} },
+        status: "recovered",
+        warning: "AgentOS could not read the saved Context Engine preferences, so it is using defaults until the next save."
+      };
+    }
+
+    return {
+      config: normalizeStoredContextEngineConfig(parsed),
+      status: "loaded",
+      warning: null
+    };
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return {
+        config: { version: 1, agents: {} },
+        status: "missing",
+        warning: null
+      };
+    }
+
+    return {
+      config: { version: 1, agents: {} },
+      status: "recovered",
+      warning: "AgentOS could not read the saved Context Engine preferences, so it is using defaults until the next save."
+    };
   }
 }
 
 async function writeStoredContextEngineConfig(workspacePath: string, config: StoredContextEngineConfig) {
   const configPath = resolveContextEngineConfigPath(workspacePath);
+  const tempPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
 
-  await mkdir(path.dirname(configPath), { recursive: true });
-  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  await mkdir(path.dirname(configPath), { recursive: true, mode: 0o700 });
+  await writeFile(tempPath, `${JSON.stringify(config, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  await chmod(tempPath, 0o600).catch(() => undefined);
+  await rename(tempPath, configPath);
+  await chmod(configPath, 0o600).catch(() => undefined);
 }
 
 function resolveContextEngineConfigPath(workspacePath: string) {
   return path.join(workspacePath, ".openclaw", "context-engine.json");
+}
+
+export function resolveContextEngineConfigPathForTesting(workspacePath: string) {
+  return resolveContextEngineConfigPath(workspacePath);
+}
+
+export function readContextEngineConfigurationForTesting(
+  workspacePath: string,
+  workspaceId: string,
+  agentId: string
+) {
+  return readContextEngineConfiguration(workspacePath, workspaceId, agentId);
+}
+
+export function writeContextEngineConfigurationForTesting(
+  workspacePath: string,
+  agentId: string,
+  files: Array<{ path: string; enabled: boolean }>
+) {
+  return writeContextEngineConfiguration(workspacePath, agentId, files);
 }
 
 function normalizeStoredContextEngineConfig(value: Record<string, unknown>): StoredContextEngineConfig {
@@ -655,6 +718,10 @@ function normalizeStoredContextEngineConfig(value: Record<string, unknown>): Sto
     version: 1,
     agents: normalizedAgents
   };
+}
+
+function isFileNotFoundError(error: unknown) {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
 }
 
 async function findLatestOpenClawContextReport(agentId: string): Promise<RuntimeReportCandidate | null> {

@@ -2,6 +2,8 @@ import type { AgentPolicy, OpenClawAgent, WorkspaceProject } from "@/lib/opencla
 import type { WorkspaceManagedFile, WorkspaceManagedFileReadResponse } from "@/lib/openclaw/workspace-file-types";
 
 export type ContextEngineTokenSource = "reported" | "estimated" | "unknown";
+export type ContextEnginePreferenceSource = "agentos-sidecar" | "default";
+export type ContextEngineRuntimeInclusionSource = "openclaw-report" | "unreported";
 
 export type ContextEngineFileStatus = "enabled" | "disabled" | "missing" | "truncated" | "error";
 
@@ -31,6 +33,8 @@ export type ContextEngineFile = WorkspaceManagedFile & {
   lastUpdatedAt: number | null;
   runtimeIncluded?: boolean;
   runtimeTokenEstimate?: number | null;
+  preferenceSource: ContextEnginePreferenceSource;
+  runtimeInclusionSource: ContextEngineRuntimeInclusionSource;
 };
 
 export type ContextEngineRuntimeReportSource =
@@ -134,6 +138,10 @@ export type ContextEngineConfiguration = {
   version: 1;
   agentId: string;
   workspaceId: string;
+  source: "agentos-sidecar";
+  storagePath: ".openclaw/context-engine.json";
+  persistenceStatus: "loaded" | "missing" | "recovered";
+  persistenceWarning: string | null;
   files: Array<{
     path: string;
     enabled: boolean;

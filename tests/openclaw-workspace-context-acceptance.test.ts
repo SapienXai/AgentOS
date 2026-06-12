@@ -403,9 +403,11 @@ function createSnapshot(input: {
       },
       configUpdatePacing: {
         settings: { mode: "respect-gateway", minimumIntervalMs: null },
+        queueDurability: "persistent",
         pending: false,
         pendingCount: 0,
         pendingPaths: [],
+        pendingSince: null,
         cooldownUntil: null,
         retryAfterMs: null,
         lastIssue: null,
