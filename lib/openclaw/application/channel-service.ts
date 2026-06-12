@@ -1417,7 +1417,7 @@ function parseCommandResultJson(result: OpenClawConfigCommandResult): Record<str
 }
 
 function readConfigMutationAppliedVia(value: unknown): SurfaceConfigRepairMutation["appliedVia"] {
-  return value === "config.patch" || value === "config.apply" || value === "config.set"
+  return value === "config.patch" || value === "config.apply" || value === "config.set" || value === "noop"
     ? value
     : "cli";
 }

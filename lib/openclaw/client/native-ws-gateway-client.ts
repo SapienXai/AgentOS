@@ -34,7 +34,6 @@ import {
   buildChatHistoryParams,
   buildChatInjectParams,
   buildNativeSessionCreateParams,
-  buildNativeSessionPatchParams,
   buildRuntimeSnapshotArtifactListInput,
   buildSessionHistoryParams,
   buildSessionPreviewParams,
@@ -592,7 +591,6 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       "sessions.describe",
       {
         ...buildSessionReferenceParams(input),
-        includeMessages: input.includeMessages,
         limit: input.limit
       },
       options,
@@ -1440,19 +1438,6 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       }
     }
 
-    try {
-      await this.callNative<unknown>(
-        "sessions.patch",
-        buildNativeSessionPatchParams(input, sessionKey),
-        options,
-        { safety: "mutation" }
-      );
-      clearGatewayFallbackDiagnostic("sessions.patch");
-    } catch (error) {
-      if (!shouldIgnoreNativeSessionPreparationError(error)) {
-        throw error;
-      }
-    }
   }
 
   private async waitForAgentTurnNative(
@@ -1866,6 +1851,32 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         await this.callNative<unknown>("config.get", {}, options, { safety: "read" })
       );
       const config = cloneJsonObject(isObjectRecord(snapshot.config) ? snapshot.config : {});
+      const currentValue = readConfigPath(config, path);
+
+      if (
+        (operation === "config.unset" && currentValue === undefined) ||
+        (operation === "config.set" && jsonValuesEqual(currentValue, value))
+      ) {
+        const configMutation: OpenClawConfigMutationMetadata = {
+          path,
+          reloadKind: "none",
+          restartRequired: false,
+          hotReloaded: false,
+          appliedVia: "noop",
+          ...(typeof snapshot.hash === "string" && snapshot.hash.trim() ? { baseHash: snapshot.hash } : {})
+        };
+
+        return commandResultFromGatewayPayload(
+          {
+            ok: true,
+            configMutation
+          },
+          {
+            openClawConfig: configMutation
+          }
+        );
+      }
+
       mutate(config);
       const schemaLookupPayload = await this.callNative<unknown>("config.schema.lookup", { path }, options, { safety: "read" })
         .catch(() => this.callNative<unknown>("config.schema", {}, options, { safety: "read" }))
@@ -1993,6 +2004,10 @@ function hasFallbackAfterLastConnected(
   }
 
   return diagnostics.some((entry) => isDiagnosticAtOrAfter(entry.at, lastConnectedAt));
+}
+
+function jsonValuesEqual(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function isGatewayAgentNotFoundError(error: unknown, agentId: string) {

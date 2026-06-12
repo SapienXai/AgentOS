@@ -422,7 +422,6 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
       "sessions.describe",
       {
         ...buildSessionReferenceParams(input),
-        includeMessages: input.includeMessages,
         limit: input.limit
       },
       options

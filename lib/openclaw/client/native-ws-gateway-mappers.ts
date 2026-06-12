@@ -199,20 +199,6 @@ export function buildNativeSessionCreateParams(input: OpenClawAgentTurnInput, se
   };
 }
 
-export function buildNativeSessionPatchParams(input: OpenClawAgentTurnInput, sessionKey: string) {
-  return {
-    key: sessionKey,
-    metadata: {
-      agentId: input.agentId,
-      sessionId: input.sessionId ?? undefined,
-      workspace: input.workspace ?? undefined,
-      dispatchId: input.dispatchId ?? undefined,
-      local: input.local ?? undefined,
-      origin: input.dispatchId ? "agentos-mission-dispatch" : "agentos-direct-chat"
-    }
-  };
-}
-
 export function normalizeGatewayTurnEvent(
   frame: GatewayEventFrame,
   sessionKey: string,

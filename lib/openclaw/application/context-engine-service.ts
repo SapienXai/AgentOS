@@ -733,9 +733,7 @@ function buildDescribeSessionInput(agentId: string, sessionKey: string | null, s
   return {
     agentId,
     ...(sessionKey ? { key: sessionKey, sessionKey } : {}),
-    ...(sessionId ? { sessionId } : {}),
-    includeMessages: false,
-    limit: 0
+    ...(sessionId ? { sessionId } : {})
   };
 }
 

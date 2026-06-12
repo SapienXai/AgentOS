@@ -17,7 +17,7 @@ export type OpenClawConfigMutationMetadata = {
   reloadKind: OpenClawConfigReloadKind;
   restartRequired: boolean;
   hotReloaded: boolean;
-  appliedVia: "config.patch" | "config.apply" | "config.set";
+  appliedVia: "config.patch" | "config.apply" | "config.set" | "noop";
   baseHash?: string;
 };
 
@@ -412,7 +412,6 @@ export interface OpenClawSessionReferenceInput {
 }
 
 export interface OpenClawDescribeSessionInput extends OpenClawSessionReferenceInput {
-  includeMessages?: boolean;
   limit?: number;
 }
 

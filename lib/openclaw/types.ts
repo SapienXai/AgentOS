@@ -547,7 +547,7 @@ export interface SurfaceBindingRepairRestorePlan {
 
 export interface SurfaceConfigRepairMutation {
   path: string;
-  appliedVia: "config.patch" | "config.apply" | "config.set" | "cli";
+  appliedVia: "config.patch" | "config.apply" | "config.set" | "cli" | "noop";
   baseHash?: string;
   reloadKind?: string;
   restartRequired?: boolean;

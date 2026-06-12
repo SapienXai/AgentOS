@@ -163,16 +163,13 @@ test("chat.send unsupported responses fall through to sessions.send without CLI 
   assert.deepEqual(fallback.calls, []);
 });
 
-test("session preparation keeps sessions.create and sessions.patch before chat.send", async () => {
+test("session preparation creates explicit sessions without patching unsupported metadata", async () => {
   const { client, fallback, gateway } = createNativeGatewayTestClient({
     gatewayOptions: {
       methods: ["sessions.create", "sessions.patch", "chat.send"]
     }
   });
   gateway.route("sessions.create", (_frame, context) => {
-    context.respond({ ok: true });
-  });
-  gateway.route("sessions.patch", (_frame, context) => {
     context.respond({ ok: true });
   });
   gateway.route("chat.send", (_frame, context) => {
@@ -187,21 +184,12 @@ test("session preparation keeps sessions.create and sessions.patch before chat.s
     dispatchId: "dispatch-1"
   });
 
-  assert.deepEqual(gateway.methods(), ["connect", "sessions.create", "sessions.patch", "chat.send"]);
+  assert.deepEqual(gateway.methods(), ["connect", "sessions.create", "chat.send"]);
   assert.deepEqual(gateway.sentFrames[1]?.params, {
     key: "agent:agent-1:explicit:session-1",
     agentId: "agent-1"
   });
-  assert.deepEqual(gateway.sentFrames[2]?.params, {
-    key: "agent:agent-1:explicit:session-1",
-    metadata: {
-      agentId: "agent-1",
-      sessionId: "session-1",
-      workspace: "/workspace",
-      dispatchId: "dispatch-1",
-      origin: "agentos-mission-dispatch"
-    }
-  });
+  assert.equal(gateway.sentFrames.some((frame) => frame.method === "sessions.patch"), false);
   assert.deepEqual(fallback.calls, []);
 });
 

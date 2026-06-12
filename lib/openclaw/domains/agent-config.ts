@@ -172,9 +172,10 @@ export async function upsertAgentConfigEntry(
 ) {
   const configList = await measureTiming(timings, "agent-config.read", () => readAgentConfigList(snapshot));
   const existingIndex = configList.findIndex((entry) => entry.id === agentId);
+  const existingEntry = existingIndex >= 0 ? configList[existingIndex] : null;
   const nextEntry: MutableAgentConfigEntry =
-    existingIndex >= 0
-      ? { ...configList[existingIndex] }
+    existingEntry
+      ? { ...existingEntry }
       : {
           id: agentId,
           workspace: workspacePath
@@ -247,6 +248,10 @@ export async function upsertAgentConfigEntry(
     configList[existingIndex] = nextEntry;
   } else {
     configList.push(nextEntry);
+  }
+
+  if (existingEntry && jsonValuesEqual(existingEntry, nextEntry)) {
+    return nextEntry;
   }
 
   await measureTiming(timings, "agent-config.write", () => writeAgentConfigList(configList));
@@ -413,4 +418,8 @@ function buildAgentConfigListFromSnapshot(snapshot: MissionControlSnapshot) {
 function isMissingAgentConfigListError(error: unknown) {
   const message = extractErrorMessage(error);
   return /Config path not found:\s*agents\.list|Config path not found:\s*agents\.list/i.test(message);
+}
+
+function jsonValuesEqual(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
