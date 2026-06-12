@@ -605,7 +605,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               }
               disabled={!canOpenConnectionMenu}
               className={cn(
-                "relative inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-visible rounded-full border border-violet-200/55 bg-[radial-gradient(circle_at_36%_24%,rgba(216,180,254,0.58),rgba(168,85,247,0.34)_36%,rgba(24,13,43,0.94)_80%)] text-violet-50 shadow-[0_0_0_1px_rgba(196,181,253,0.24),0_0_26px_rgba(168,85,247,0.54),0_14px_30px_rgba(0,0,0,0.42)] backdrop-blur-xl transition-colors hover:border-violet-200/75 hover:text-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-200/60",
+                "relative inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-visible rounded-full border border-primary/65 bg-[radial-gradient(circle_at_36%_24%,rgba(255,115,142,0.68),rgba(250,0,62,0.44)_38%,rgba(48,9,20,0.96)_82%)] text-primary-foreground shadow-[0_0_0_1px_rgba(250,0,62,0.34),0_0_30px_rgba(250,0,62,0.66),0_14px_30px_rgba(0,0,0,0.42)] backdrop-blur-xl transition-colors hover:border-primary/85 hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/75",
                 !canOpenConnectionMenu &&
                   "cursor-not-allowed border-slate-500/20 bg-slate-950/72 text-slate-500 shadow-[0_10px_24px_rgba(0,0,0,0.32)]"
               )}
@@ -622,14 +622,14 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                 <>
                   <motion.span
                     aria-hidden="true"
-                    className="pointer-events-none absolute inset-[-10px] rounded-full bg-violet-400/28 blur-md"
-                    animate={{ opacity: [0.34, 0.86, 0.34], scale: [0.86, 1.18, 0.86] }}
+                    className="pointer-events-none absolute inset-[-10px] rounded-full bg-[hsl(var(--primary)/0.46)] blur-md"
+                    animate={{ opacity: [0.42, 0.92, 0.42], scale: [0.86, 1.18, 0.86] }}
                     transition={{ duration: 2.4, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
                   />
                   <motion.span
                     aria-hidden="true"
-                    className="pointer-events-none absolute inset-[-4px] rounded-full border border-fuchsia-200/36"
-                    animate={{ opacity: [0, 0.88, 0], scale: [0.82, 1.38, 0.82] }}
+                    className="pointer-events-none absolute inset-[-4px] rounded-full border border-primary/60"
+                    animate={{ opacity: [0, 1, 0], scale: [0.82, 1.42, 0.82] }}
                     transition={{ duration: 2.15, repeat: Number.POSITIVE_INFINITY, ease: "easeOut" }}
                   />
                 </>
@@ -646,7 +646,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                 }
                 style={{ transformOrigin: "center" }}
               >
-                <Plus className="h-[17px] w-[17px] drop-shadow-[0_0_8px_rgba(216,180,254,0.92)]" strokeWidth={3.1} />
+                <Plus className="h-[17px] w-[17px] drop-shadow-[0_0_9px_rgba(255,140,164,0.96)]" strokeWidth={3.1} />
               </motion.span>
             </button>
 
