@@ -14,6 +14,7 @@
     "build:agentos-package": "pnpm check:release && node packages/agentos/scripts/run-prepack.mjs",
     "pack:agentos": "pnpm check:release && npm pack ./packages/agentos --pack-destination /tmp --cache /tmp/agentos-npm-cache",
     "smoke:agentos-package": "node packages/agentos/scripts/smoke-package.mjs",
+    "smoke:mission-control": "node scripts/mission-control-browser-smoke.mjs",
     "smoke:runtime-golden": "node scripts/openclaw-runtime-golden-smoke.mjs",
     "start": "next start",
     "lint": "eslint .",

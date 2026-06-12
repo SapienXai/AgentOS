@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 
 import {
@@ -26,6 +28,8 @@ import {
 import { resolveInitialOnboardingModelId } from "@/components/mission-control/openclaw-onboarding.utils";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import type { MissionControlSnapshot, OperationProgressSnapshot } from "@/lib/agentos/contracts";
+
+const rootDir = process.cwd();
 
 test("agent draft helpers keep create flows stable", () => {
   const draft = buildAgentDraft("workspace-1", {
@@ -512,4 +516,33 @@ test("workspace selection hydration waits for real snapshots", () => {
   assert.equal(shouldDeferWorkspaceSelectionHydration(loadingSnapshot), true);
   assert.equal(shouldDeferWorkspaceSelectionHydration(fallbackSnapshot), false);
   assert.equal(shouldDeferWorkspaceSelectionHydration(liveSnapshot), false);
+});
+
+test("Mission Control shell delegates operator workflow state to focused hooks", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
+  const hookFiles = [
+    "use-mission-control-selection",
+    "use-mission-control-agent-actions",
+    "use-mission-control-workspace-actions",
+    "use-mission-control-task-actions"
+  ];
+
+  for (const hookFile of hookFiles) {
+    assert.match(source, new RegExp(`@/components/mission-control/${hookFile}`));
+  }
+
+  assert.doesNotMatch(source, /const \[focusedAgentId, setFocusedAgentId\] = useState/);
+  assert.doesNotMatch(source, /const \[workspaceFilesDialogId, setWorkspaceFilesDialogId\] = useState/);
+  assert.doesNotMatch(source, /const \[taskAbortRequest, setTaskAbortRequest\] = useState/);
+});
+
+test("Inspector uses focused panel modules for task, agent, and runtime truth", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/inspector-panel.tsx"), "utf8");
+
+  assert.match(source, /inspector\/task-panel/);
+  assert.match(source, /inspector\/overview-panel/);
+  assert.match(source, /inspector\/agent-panel/);
+  assert.match(source, /inspector\/runtime-panel/);
+  assert.match(source, /buildInspectorTaskSessionView/);
+  assert.match(source, /resolvePollingFallbackNotice/);
 });

@@ -28,19 +28,20 @@ import {
   missionControlPreferenceStorageKeys,
   useMissionControlPreferences
 } from "@/components/mission-control/use-mission-control-preferences";
+import { useMissionControlSelection } from "@/components/mission-control/use-mission-control-selection";
+import { useMissionControlAgentActions } from "@/components/mission-control/use-mission-control-agent-actions";
+import { useMissionControlTaskActions } from "@/components/mission-control/use-mission-control-task-actions";
+import { useMissionControlWorkspaceActions } from "@/components/mission-control/use-mission-control-workspace-actions";
 import { useTaskReviewWorkflow } from "@/components/mission-control/use-task-review-workflow";
 import { WorkspaceChannelsDialog } from "@/components/mission-control/workspace-channels-dialog";
-import type { WorkspaceDialogSection } from "@/components/mission-control/workspace-channels-dialog";
 import { WorkspaceContextFilesDialog } from "@/components/mission-control/workspace-context-files-dialog";
 import { WorkspaceWizardDialog } from "@/components/mission-control/workspace-wizard/workspace-wizard-dialog";
 import { resolveSuggestedAgentModelId } from "@/components/mission-control/create-agent-dialog.utils";
 import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
 import { ConnectAccountWizard } from "@/components/operations/accounts/accounts-page-content";
-import type { ConnectBrowserProfileInput } from "@/components/operations/accounts/accounts-page-content";
 import dynamic from "next/dynamic";
 import { toast } from "@/components/ui/sonner";
 import { useMissionControlData } from "@/hooks/use-mission-control-data";
-import type { AgentDetailFocus, TaskCardInspectorContext } from "@/components/mission-control/canvas-types";
 import { resolveTaskWorkspaceId } from "@/components/mission-control/canvas.graph";
 import type { OptimisticMissionTask } from "@/components/mission-control/mission-control-shell.utils";
 import {
@@ -54,7 +55,6 @@ import {
   buildLaunchpadWorkspaceHandoffProgress,
   hasAgentOSWorkspaceSetup,
   isDirectChatRuntime,
-  isTaskAbortable,
   isTaskHiddenByPreferences,
   mergeSnapshotWithOptimisticTasks,
   resolveLaunchpadWorkspaceSetupReadiness,
@@ -107,19 +107,6 @@ import type {
   WorkspaceCreateStreamEvent,
   WorkItemRecord
 } from "@/lib/agentos/contracts";
-import type {
-  AccountAccessRulesResponse,
-  AccountAccessRuleView
-} from "@/lib/agentos/account-access-policy-types";
-import type {
-  AccountLoginTargetsResponse,
-  AccountLoginTargetView
-} from "@/lib/agentos/account-login-target-types";
-import type {
-  OpenClawBrowserProfileMutationResponse,
-  OpenClawBrowserProfilesResponse,
-  OpenClawBrowserProfileView
-} from "@/lib/openclaw/browser-profile-types";
 import {
   getModelProviderDescriptor,
   normalizeAddModelsProviderId
@@ -142,23 +129,7 @@ type ComposeIntent = {
   sourceLabel?: string;
 };
 
-type AgentActionRequest = {
-  requestId: string;
-  kind: "edit" | "delete";
-  agentId: string;
-};
-type CapabilityEditorRequest = {
-  requestId: string;
-  agentId: string;
-  focus: "skills" | "tools";
-};
-type AgentModelRequest = {
-  requestId: string;
-  agentId: string;
-};
-
 type UpdateRunState = "idle" | "running" | "success" | "error";
-type TaskAbortState = "idle" | "running" | "error";
 type ResetPreviewState = "idle" | "loading" | "ready" | "error";
 type OnboardingWizardStage = "system" | "models";
 type GatewayControlAction = "start" | "stop" | "restart";
@@ -169,8 +140,6 @@ type ModelOnboardingRunOptions = {
   verifyProvider?: AddModelsProviderId;
 };
 type InspectorScopeShortcut = "workspace" | "agent" | "tasks";
-type InspectorTabId = "overview" | "chat" | "output" | "files" | "raw";
-
 function shouldKeepSidebarOpenForPortal(target: EventTarget | null) {
   if (target instanceof Element && target.closest('[role="dialog"], [data-radix-popper-content-wrapper]')) {
     return true;
@@ -204,10 +173,6 @@ function areOpenClawBinarySelectionsEqual(
   );
 }
 
-function readBrowserProfileError(error: unknown, fallback: string) {
-  return error instanceof Error && error.message ? error.message : fallback;
-}
-
 function isMissingTranscriptActivityMessage(value: string | null | undefined) {
   return (
     typeof value === "string" &&
@@ -230,23 +195,23 @@ export function MissionControlShell({
   mode?: "mission" | "settings";
 }) {
   const { snapshot, connectionState, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
-    initialSnapshot.workspaces[0]?.id ?? null
-  );
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
-    initialSnapshot.workspaces[0]?.id ?? null
-  );
-  const [selectedAgentDetailFocus, setSelectedAgentDetailFocus] = useState<AgentDetailFocus | null>(null);
-  const [focusedAgentId, setFocusedAgentId] = useState<string | null>(null);
+  const {
+    activeWorkspaceId,
+    setActiveWorkspaceId,
+    selectedNodeId,
+    setSelectedNodeId,
+    selectedAgentDetailFocus,
+    activeInspectorTab,
+    setActiveInspectorTab,
+    activeTaskCardContext,
+    setActiveTaskCardContext,
+    selectNode
+  } = useMissionControlSelection(initialSnapshot.workspaces[0]?.id ?? null);
   const [composerTargetAgentId, setComposerTargetAgentId] = useState<string | null>(null);
   const [isComposerActive, setIsComposerActive] = useState(false);
   const [isComposerVisible, setIsComposerVisible] = useState(false);
   const [composerViewportResetNonce, setComposerViewportResetNonce] = useState(0);
-  const [activeInspectorTab, setActiveInspectorTab] = useState<InspectorTabId>("overview");
-  const [activeTaskCardContext, setActiveTaskCardContext] = useState<TaskCardInspectorContext | null>(null);
   const [lastMission, setLastMission] = useState<MissionResponse | null>(null);
-  const [recentDispatchId, setRecentDispatchId] = useState<string | null>(null);
-  const [optimisticMissionTasks, setOptimisticMissionTasks] = useState<OptimisticMissionTask[]>([]);
   const [composeIntent, setComposeIntent] = useState<ComposeIntent | null>(null);
   const {
     surfaceTheme,
@@ -277,11 +242,6 @@ export function MissionControlShell({
     };
   }, [surfaceTheme]);
 
-  const [agentActionRequest, setAgentActionRequest] = useState<AgentActionRequest | null>(null);
-  const [capabilityEditorRequest, setCapabilityEditorRequest] = useState<CapabilityEditorRequest | null>(null);
-  const [taskAbortRequest, setTaskAbortRequest] = useState<WorkItemRecord | null>(null);
-  const [taskAbortRunState, setTaskAbortRunState] = useState<TaskAbortState>("idle");
-  const [taskAbortMessage, setTaskAbortMessage] = useState<string | null>(null);
   const missionDispatchAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const [recentCreatedAgentId, setRecentCreatedAgentId] = useState<string | null>(null);
   const [pendingCreatedAgents, setPendingCreatedAgents] = useState<PendingAgentProjection[]>([]);
@@ -347,21 +307,8 @@ export function MissionControlShell({
   const [hasSeenMissionReady, setHasSeenMissionReady] = useState(false);
   const [gatewayControlAction, setGatewayControlAction] = useState<GatewayControlAction | null>(null);
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
-  const [isWorkspaceWizardOpen, setIsWorkspaceWizardOpen] = useState(false);
-  const [workspaceWizardInitialMode, setWorkspaceWizardInitialMode] = useState<"basic" | "advanced">("basic");
-  const [workspaceWizardEditId, setWorkspaceWizardEditId] = useState<string | null>(null);
-  const [isWorkspaceChannelsOpen, setIsWorkspaceChannelsOpen] = useState(false);
-  const [workspaceChannelsInitialAgentId, setWorkspaceChannelsInitialAgentId] = useState<string | null>(null);
-  const [workspaceChannelsInitialSection, setWorkspaceChannelsInitialSection] = useState<WorkspaceDialogSection>("surfaces");
-  const [isConnectAccountDialogOpen, setIsConnectAccountDialogOpen] = useState(false);
-  const [accountBrowserProfiles, setAccountBrowserProfiles] = useState<OpenClawBrowserProfileView[]>([]);
-  const [accountTargets, setAccountTargets] = useState<AccountLoginTargetView[]>([]);
-  const [accountAccessRules, setAccountAccessRules] = useState<AccountAccessRuleView[]>([]);
-  const [workspaceFilesDialogId, setWorkspaceFilesDialogId] = useState<string | null>(null);
-  const [contextEngineAgentId, setContextEngineAgentId] = useState<string | null>(null);
   const [isAddModelsDialogOpen, setIsAddModelsDialogOpen] = useState(false);
   const [initialAddModelsProvider, setInitialAddModelsProvider] = useState<AddModelsProviderId | null>(null);
-  const [agentModelRequest, setAgentModelRequest] = useState<AgentModelRequest | null>(null);
   const [pendingWorkspaceOpenId, setPendingWorkspaceOpenId] = useState<string | null>(null);
   const [loadedWorkspaceSelectionRoot, setLoadedWorkspaceSelectionRoot] = useState<string | null>(null);
   const fallbackSnapshotRecoveryKeyRef = useRef<string | null>(null);
@@ -370,15 +317,26 @@ export function MissionControlShell({
   const modelAuthTerminalAutoOpenRef = useRef<{ command: string; openedAt: number } | null>(null);
   const modelAuthStatusPollRunRef = useRef(0);
   const updateOperationToastIdRef = useRef<string | number | null>(null);
-  const selectNode = useCallback(
-    (nodeId: string | null, tab: InspectorTabId = "overview", agentDetailFocus: AgentDetailFocus | null = null) => {
-      setSelectedNodeId(nodeId);
-      setActiveInspectorTab(tab);
-      setSelectedAgentDetailFocus(agentDetailFocus);
-      setActiveTaskCardContext((current) => (current?.taskId === nodeId ? current : null));
-    },
-    []
-  );
+  const {
+    recentDispatchId,
+    setRecentDispatchId,
+    optimisticMissionTasks,
+    setOptimisticMissionTasks,
+    taskAbortRequest,
+    setTaskAbortRequest,
+    taskAbortRunState,
+    setTaskAbortRunState,
+    taskAbortMessage,
+    setTaskAbortMessage,
+    requestTaskAbort,
+    inspectTask,
+    updateActiveTaskCard
+  } = useMissionControlTaskActions({
+    selectedNodeId,
+    setActiveTaskCardContext,
+    selectNode,
+    setIsInspectorOpen
+  });
   const {
     taskReviewRequest,
     taskReviewState,
@@ -428,6 +386,29 @@ export function MissionControlShell({
   const selectedRuntimeTask = selectedRuntime?.taskId
     ? uiSnapshot.tasks.find((task) => task.id === selectedRuntime.taskId) ?? null
     : null;
+  const {
+    focusedAgentId,
+    setFocusedAgentId,
+    agentActionRequest,
+    setAgentActionRequest,
+    capabilityEditorRequest,
+    setCapabilityEditorRequest,
+    agentModelRequest,
+    setAgentModelRequest,
+    contextEngineAgentId,
+    handleFocusAgent,
+    handleInspectAgentDetail,
+    handleConfigureAgentCapabilities,
+    handleConfigureAgentModel,
+    openAgentContextEngine,
+    handleContextEngineOpenChange
+  } = useMissionControlAgentActions({
+    agents: uiSnapshot.agents,
+    selectNode,
+    setActiveWorkspaceId,
+    setIsInspectorOpen,
+    onClearComposerTarget: () => setComposerTargetAgentId(null)
+  });
   const activeTaskCardTaskId = activeTaskCardContext?.taskId ?? null;
   const selectInspectorScope = useCallback(
     (scope: InspectorScopeShortcut) => {
@@ -539,6 +520,7 @@ export function MissionControlShell({
       selectedRuntime,
       selectedRuntimeTask,
       selectedTask,
+      setActiveWorkspaceId,
       selectedWorkspace,
       uiSnapshot
     ]
@@ -566,8 +548,39 @@ export function MissionControlShell({
       setActiveWorkspaceId(workspaceId);
       selectNode(workspaceId);
     },
-    [selectNode]
+    [selectNode, setActiveWorkspaceId, setFocusedAgentId]
   );
+  const {
+    isWorkspaceWizardOpen,
+    workspaceWizardInitialMode,
+    workspaceWizardEditId,
+    openWorkspaceWizard,
+    openWorkspaceWizardForEdit,
+    handleWorkspaceWizardOpenChange,
+    isWorkspaceChannelsOpen,
+    setIsWorkspaceChannelsOpen,
+    workspaceChannelsInitialAgentId,
+    setWorkspaceChannelsInitialAgentId,
+    workspaceChannelsInitialSection,
+    setWorkspaceChannelsInitialSection,
+    openWorkspaceChannels,
+    openAccountsConnect,
+    isConnectAccountDialogOpen,
+    setIsConnectAccountDialogOpen,
+    accountBrowserProfiles,
+    accountTargets,
+    setAccountTargets,
+    accountAccessRules,
+    setAccountAccessRules,
+    openConnectAccountDialog,
+    connectAccount,
+    workspaceFilesDialogId,
+    openWorkspaceFiles,
+    handleWorkspaceFilesOpenChange
+  } = useMissionControlWorkspaceActions({
+    activeWorkspace: activeWorkspaceForDialogs,
+    openWorkspaceOnCanvas
+  });
   const settingsRef = useRef<HTMLDivElement | null>(null);
   const canvasNodeInteractionActiveRef = useRef(false);
   const pendingComposerBlurRef = useRef(false);
@@ -647,73 +660,6 @@ export function MissionControlShell({
     ]
   );
 
-  const handleFocusAgent = useCallback(
-    (agentId: string) => {
-      const agent = uiSnapshot.agents.find((entry) => entry.id === agentId);
-
-      if (!agent) {
-        return;
-      }
-
-      setFocusedAgentId((current) => (current === agentId ? null : agentId));
-      setActiveWorkspaceId(agent.workspaceId);
-      selectNode(agentId);
-    },
-    [selectNode, uiSnapshot.agents]
-  );
-
-  const handleInspectAgentDetail = useCallback(
-    (agentId: string, focus: AgentDetailFocus) => {
-      const agent = uiSnapshot.agents.find((entry) => entry.id === agentId);
-
-      if (!agent) {
-        return;
-      }
-
-      setActiveWorkspaceId(agent.workspaceId);
-      setIsInspectorOpen(true);
-      selectNode(agent.id, "overview", focus);
-    },
-    [selectNode, uiSnapshot.agents]
-  );
-
-  const handleConfigureAgentCapabilities = useCallback(
-    (agentId: string, focus: "skills" | "tools") => {
-      const agent = uiSnapshot.agents.find((entry) => entry.id === agentId);
-
-      if (!agent) {
-        return;
-      }
-
-      setActiveWorkspaceId(agent.workspaceId);
-      selectNode(agent.id);
-      setCapabilityEditorRequest({
-        requestId: `capabilities:${agentId}:${focus}:${Date.now()}`,
-        agentId,
-        focus
-      });
-    },
-    [selectNode, uiSnapshot.agents]
-  );
-
-  const handleConfigureAgentModel = useCallback(
-    (agentId: string) => {
-      const agent = uiSnapshot.agents.find((entry) => entry.id === agentId);
-
-      if (!agent) {
-        return;
-      }
-
-      setActiveWorkspaceId(agent.workspaceId);
-      selectNode(agent.id);
-      setAgentModelRequest({
-        requestId: `model:${agentId}:${Date.now()}`,
-        agentId
-      });
-    },
-    [selectNode, uiSnapshot.agents]
-  );
-
   const handleCreatedAgentVisible = useCallback((agentId: string) => {
     setPendingCreatedAgents((current) => current.filter((agent) => agent.id !== agentId));
     setRecentCreatedAgentId(agentId);
@@ -757,7 +703,7 @@ export function MissionControlShell({
       }, 12000);
       agentCreationWarningTimeoutsRef.current.set(agent.id, timeout);
     }
-  }, [selectNode]);
+  }, [selectNode, setActiveWorkspaceId]);
 
   useEffect(() => {
     if (pendingCreatedAgents.length === 0) {
@@ -787,7 +733,7 @@ export function MissionControlShell({
     }
 
     setAgentModelRequest(null);
-  }, []);
+  }, [setAgentModelRequest]);
 
   const handleCapabilityEditorOpenChange = useCallback((open: boolean) => {
     if (open) {
@@ -795,7 +741,7 @@ export function MissionControlShell({
     }
 
     setCapabilityEditorRequest(null);
-  }, []);
+  }, [setCapabilityEditorRequest]);
 
   const handleComposerTargetAgentSelect = useCallback(
     (agentId: string) => {
@@ -821,7 +767,7 @@ export function MissionControlShell({
       setActiveWorkspaceId(agent.workspaceId);
       selectNode(agentId);
     },
-    [activeWorkspaceId, focusedAgentId, selectNode, selectedNodeId, uiSnapshot.agents]
+    [activeWorkspaceId, focusedAgentId, selectNode, selectedNodeId, setActiveWorkspaceId, setFocusedAgentId, uiSnapshot.agents]
   );
 
   const handleCreateTaskAgent = useCallback(
@@ -838,7 +784,7 @@ export function MissionControlShell({
       setIsComposerActive(true);
       selectNode(agent.id);
     },
-    [selectNode, uiSnapshot.agents]
+    [selectNode, setActiveWorkspaceId, uiSnapshot.agents]
   );
 
   const handleCanvasNodePointerDownCapture = useCallback(() => {
@@ -869,7 +815,7 @@ export function MissionControlShell({
   const handleResetFocus = useCallback(() => {
     setFocusedAgentId(null);
     selectNode(activeWorkspaceId ?? uiSnapshot.workspaces[0]?.id ?? null);
-  }, [activeWorkspaceId, selectNode, uiSnapshot.workspaces]);
+  }, [activeWorkspaceId, selectNode, setFocusedAgentId, uiSnapshot.workspaces]);
 
   useEffect(() => {
     const handlePointerUp = () => {
@@ -909,183 +855,6 @@ export function MissionControlShell({
     };
   }, []);
 
-  const openWorkspaceWizard = useCallback((mode: "basic" | "advanced" = "basic") => {
-    setWorkspaceWizardEditId(null);
-    setWorkspaceWizardInitialMode(mode);
-    setIsWorkspaceWizardOpen(true);
-  }, []);
-
-  const openWorkspaceWizardForEdit = useCallback((workspaceId: string) => {
-    setWorkspaceWizardEditId(workspaceId);
-    setWorkspaceWizardInitialMode("advanced");
-    setIsWorkspaceWizardOpen(true);
-  }, []);
-
-  const handleWorkspaceWizardOpenChange = useCallback((nextOpen: boolean) => {
-    setIsWorkspaceWizardOpen(nextOpen);
-
-    if (!nextOpen) {
-      setWorkspaceWizardEditId(null);
-      setWorkspaceWizardInitialMode("basic");
-    }
-  }, []);
-
-  const loadAccountBindings = useCallback(async () => {
-    try {
-      const [targetsResponse, rulesResponse] = await Promise.all([
-        fetch("/api/accounts/login-targets", { cache: "no-store" }),
-        fetch("/api/accounts/access-rules", { cache: "no-store" })
-      ]);
-      const targetsPayload = await targetsResponse.json().catch(() => null) as AccountLoginTargetsResponse | null;
-      const rulesPayload = await rulesResponse.json().catch(() => null) as AccountAccessRulesResponse | null;
-
-      if (targetsResponse.ok && targetsPayload?.ok) {
-        setAccountTargets(targetsPayload.targets);
-      }
-
-      if (rulesResponse.ok && rulesPayload?.ok) {
-        setAccountAccessRules(rulesPayload.rules);
-      }
-    } catch {
-      setAccountTargets([]);
-      setAccountAccessRules([]);
-    }
-  }, []);
-
-  const loadAccountBrowserProfiles = useCallback(async () => {
-    try {
-      const response = await fetch("/api/accounts/browser-profiles", { cache: "no-store" });
-      const payload = await response.json().catch(() => null) as OpenClawBrowserProfilesResponse | null;
-
-      if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.error ?? "Unable to read OpenClaw browser profiles.");
-      }
-
-      setAccountBrowserProfiles(payload.profiles);
-    } catch (error) {
-      setAccountBrowserProfiles([]);
-      toast.error("Unable to read OpenClaw browser profiles.", {
-        description: readBrowserProfileError(error, "OpenClaw did not return browser profiles.")
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadAccountBindings();
-  }, [loadAccountBindings]);
-
-  const openWorkspaceChannels = useCallback((workspaceId?: string, agentId?: string, section: WorkspaceDialogSection = "surfaces") => {
-    if (workspaceId) {
-      openWorkspaceOnCanvas(workspaceId);
-    }
-
-    setWorkspaceChannelsInitialAgentId(agentId ?? null);
-    setWorkspaceChannelsInitialSection(section);
-    setIsWorkspaceChannelsOpen(true);
-    void loadAccountBindings();
-  }, [loadAccountBindings, openWorkspaceOnCanvas]);
-
-  const openAccountsConnect = useCallback((workspaceId?: string, agentId?: string) => {
-    openWorkspaceChannels(workspaceId, agentId, "accounts");
-  }, [openWorkspaceChannels]);
-
-  const openConnectAccountDialog = useCallback(() => {
-    setIsConnectAccountDialogOpen(true);
-    void loadAccountBrowserProfiles();
-  }, [loadAccountBrowserProfiles]);
-
-  const connectAccount = useCallback(async (input: ConnectBrowserProfileInput) => {
-    const workspace = activeWorkspaceForDialogs;
-
-    if (!workspace) {
-      toast.error("Select a workspace before connecting an account.");
-      return;
-    }
-
-    try {
-      const profileResponse = await fetch("/api/accounts/browser-profiles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "open-login",
-          profileName: input.profileName,
-          loginUrl: input.loginUrl,
-          label: input.label
-        })
-      });
-      const profilePayload = await profileResponse.json().catch(() => null) as OpenClawBrowserProfileMutationResponse | null;
-
-      if (!profileResponse.ok || !profilePayload?.ok) {
-        throw new Error(profilePayload?.error ?? "Unable to open the login URL in OpenClaw.");
-      }
-
-      const targetResponse = await fetch("/api/accounts/login-targets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workspaceId: workspace.id,
-          workspaceName: workspace.name,
-          workspacePath: workspace.path ?? null,
-          serviceId: input.serviceId,
-          serviceName: input.serviceName,
-          primaryDomain: input.primaryDomain,
-          loginUrl: input.loginUrl,
-          browserProfileName: input.profileName
-        })
-      });
-      const targetPayload = await targetResponse.json().catch(() => null) as AccountLoginTargetsResponse | null;
-
-      if (!targetResponse.ok || !targetPayload?.ok) {
-        throw new Error(targetPayload?.error ?? "Unable to save account login target.");
-      }
-
-      setAccountTargets(targetPayload.targets);
-      toast.success("Login browser opened.", {
-        description: "Complete the login in the OpenClaw browser profile. AgentOS saved only the login target."
-      });
-      setIsConnectAccountDialogOpen(false);
-      await Promise.all([loadAccountBindings(), loadAccountBrowserProfiles()]);
-    } catch (error) {
-      toast.error("Connect Account did not complete.", {
-        description: readBrowserProfileError(error, "Unable to open the login browser.")
-      });
-    }
-  }, [activeWorkspaceForDialogs, loadAccountBindings, loadAccountBrowserProfiles]);
-
-  const openWorkspaceFiles = useCallback(
-    (workspaceId: string) => {
-      openWorkspaceOnCanvas(workspaceId);
-      setWorkspaceFilesDialogId(workspaceId);
-    },
-    [openWorkspaceOnCanvas]
-  );
-
-  const handleWorkspaceFilesOpenChange = useCallback((nextOpen: boolean) => {
-    if (!nextOpen) {
-      setWorkspaceFilesDialogId(null);
-    }
-  }, []);
-
-  const openAgentContextEngine = useCallback(
-    (agentId: string) => {
-      const agent = snapshot.agents.find((entry) => entry.id === agentId);
-
-      if (agent) {
-        openWorkspaceOnCanvas(agent.workspaceId);
-      }
-
-      selectNode(agentId);
-      setContextEngineAgentId(agentId);
-    },
-    [openWorkspaceOnCanvas, selectNode, snapshot.agents]
-  );
-
-  const handleContextEngineOpenChange = useCallback((nextOpen: boolean) => {
-    if (!nextOpen) {
-      setContextEngineAgentId(null);
-    }
-  }, []);
-
   useEffect(() => {
     if (!activeWorkspaceId) {
       return;
@@ -1113,6 +882,7 @@ export function MissionControlShell({
   }, [
     activeWorkspaceId,
     pendingWorkspaceOpenId,
+    setActiveWorkspaceId,
     snapshot
   ]);
 
@@ -1152,7 +922,14 @@ export function MissionControlShell({
     if (nextSelectedTask.workspaceId) {
       setActiveWorkspaceId(nextSelectedTask.workspaceId);
     }
-  }, [optimisticMissionTasks, selectedNodeId, snapshot.tasks]);
+  }, [
+    optimisticMissionTasks,
+    selectedNodeId,
+    setActiveWorkspaceId,
+    setOptimisticMissionTasks,
+    setSelectedNodeId,
+    snapshot.tasks
+  ]);
 
   useEffect(() => {
     if (!selectedNodeId) {
@@ -1279,7 +1056,7 @@ export function MissionControlShell({
     if (!focusedAgentExists) {
       setFocusedAgentId(null);
     }
-  }, [focusedAgentId, uiSnapshot.agents]);
+  }, [focusedAgentId, setFocusedAgentId, uiSnapshot.agents]);
 
   useEffect(() => {
     if (!recentDispatchId) {
@@ -1293,7 +1070,7 @@ export function MissionControlShell({
       setIsInspectorOpen(true);
       setRecentDispatchId(null);
     }
-  }, [recentDispatchId, snapshot.tasks, selectNode]);
+  }, [recentDispatchId, setRecentDispatchId, snapshot.tasks, selectNode]);
 
   useEffect(() => {
     setOptimisticMissionTasks((current) =>
@@ -1317,7 +1094,7 @@ export function MissionControlShell({
         return matchedTask.status === "running" || matchedTask.status === "queued";
       })
     );
-  }, [snapshot.tasks]);
+  }, [setOptimisticMissionTasks, snapshot.tasks]);
 
   useEffect(() => {
     if (isSettingsOpen || isSavingGateway || isSavingWorkspaceRoot) {
@@ -1630,7 +1407,16 @@ export function MissionControlShell({
         description: message
       });
     }
-  }, [optimisticMissionTasks, refresh, taskAbortRequest, taskAbortRunState]);
+  }, [
+    optimisticMissionTasks,
+    refresh,
+    setOptimisticMissionTasks,
+    setTaskAbortMessage,
+    setTaskAbortRequest,
+    setTaskAbortRunState,
+    taskAbortRequest,
+    taskAbortRunState
+  ]);
 
   const applyDiscoveredModels = (nextDiscoveredModels: DiscoveredModelCandidate[] | undefined) => {
     if (!nextDiscoveredModels) {
@@ -3849,25 +3635,9 @@ export function MissionControlShell({
                 return [...safeCurrent, task.key];
               });
             }}
-            onAbortTask={(task) => {
-              if (!isTaskAbortable(task)) {
-                return;
-              }
-
-              setTaskAbortRequest(task);
-              setTaskAbortRunState("idle");
-              setTaskAbortMessage(null);
-            }}
-            onInspectTask={(task, target, activeCard) => {
-              setActiveTaskCardContext(activeCard ?? null);
-              selectNode(task.id, target);
-              setIsInspectorOpen(true);
-            }}
-            onActiveTaskCardChange={(task, activeCard) => {
-              if (selectedNodeId === task.id) {
-                setActiveTaskCardContext(activeCard);
-              }
-            }}
+            onAbortTask={requestTaskAbort}
+            onInspectTask={inspectTask}
+            onActiveTaskCardChange={updateActiveTaskCard}
             onReviewTask={openTaskReview}
             onSelectNode={(nodeId) => {
               selectNode(nodeId);
@@ -3993,15 +3763,7 @@ export function MissionControlShell({
             onSelectScope={selectInspectorScope}
             activeTab={activeInspectorTab}
             onActiveTabChange={setActiveInspectorTab}
-            onAbortTask={(task) => {
-              if (!isTaskAbortable(task)) {
-                return;
-              }
-
-              setTaskAbortRequest(task);
-              setTaskAbortRunState("idle");
-              setTaskAbortMessage(null);
-            }}
+            onAbortTask={requestTaskAbort}
           />
         </div>
 

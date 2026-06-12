@@ -24,6 +24,16 @@ import { toast } from "sonner";
 import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
 import { InteractiveContent } from "@/components/mission-control/interactive-content";
 import { RailTooltip } from "@/components/mission-control/rail-tooltip";
+import { AgentRuntimeSummaryPanel } from "@/components/mission-control/inspector/agent-panel";
+import { OverviewGatewaySummaryPanel } from "@/components/mission-control/inspector/overview-panel";
+import { RuntimeEvidencePanel } from "@/components/mission-control/inspector/runtime-panel";
+import { TaskSessionTruthPanel } from "@/components/mission-control/inspector/task-panel";
+import {
+  buildInspectorAgentRuntimeView,
+  buildInspectorRuntimeEvidenceView,
+  buildInspectorTaskSessionView,
+  resolvePollingFallbackNotice
+} from "@/components/mission-control/inspector/inspector-utils";
 import {
   readTaskReviewAction,
   readTaskReviewReviewedAt,
@@ -769,6 +779,8 @@ function GatewayOverview({
 
   return (
     <>
+      <OverviewGatewaySummaryPanel snapshot={snapshot} />
+
       <InfoCard icon={Radar} title="Gateway health" value={snapshot.diagnostics.health}>
         <p>{snapshot.diagnostics.gatewayUrl}</p>
         <p>{snapshot.diagnostics.dashboardUrl}</p>
@@ -1097,6 +1109,7 @@ function AgentContent({
   const activeRuntimes = snapshot.runtimes
     .filter((runtime) => agent?.activeRuntimeIds.includes(runtime.id))
     .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
+  const runtimeView = buildInspectorAgentRuntimeView({ snapshot, agentId });
   const [expandedActivityId, setExpandedActivityId] = useState<string | null>(null);
   const createdFiles = dedupeCreatedFiles(activeRuntimes.flatMap(extractCreatedFilesFromRuntime)).slice(0, 8);
 
@@ -1278,6 +1291,14 @@ function AgentContent({
         <p>{agent.currentAction}</p>
         <p>Last active {formatRelativeTime(agent.lastActiveAt, relativeTimeReferenceMs)}</p>
         <p>{agent.heartbeat.enabled ? `Heartbeat ${agent.heartbeat.every}` : "Heartbeat disabled"}</p>
+        <InspectorMetricGrid
+          items={[
+            { label: "Active runtimes", value: String(runtimeView.activeRuntimeIds.length) },
+            { label: "Sessions", value: String(runtimeView.activeSessionIds.length) },
+            { label: "Runs", value: String(runtimeView.activeRunIds.length) },
+            { label: "Recorded", value: String(runtimeView.recordedSessionCount) }
+          ]}
+        />
         <div className="flex flex-wrap gap-2">
           <Badge variant={agent.heartbeat.enabled ? "success" : "muted"}>
             {agent.heartbeat.enabled ? "heartbeat on" : "heartbeat off"}
@@ -1287,6 +1308,8 @@ function AgentContent({
           ) : null}
         </div>
       </InfoCard>
+
+      <AgentRuntimeSummaryPanel view={runtimeView} />
 
       <div ref={sessionsSectionRef} className="scroll-mt-4">
         <InfoCard
@@ -1563,6 +1586,8 @@ function TaskContent({
   const turnCount = readTaskSummaryCount(selectedTask.metadata.turnCount, runs.length);
   const runnerLogs = readTaskRunnerLogEvents(taskDetail?.liveFeed ?? []);
   const runnerLogFile = readTaskRunnerLogFile(runnerLogs);
+  const sessionView = buildInspectorTaskSessionView({ snapshot, task: selectedTask, taskDetail });
+  const pollingFallback = resolvePollingFallbackNotice(snapshot.diagnostics.eventBridge);
 
   return (
     <>
@@ -1613,6 +1638,8 @@ function TaskContent({
           </p>
         ) : null}
       </InfoCard>
+
+      <TaskSessionTruthPanel view={sessionView} pollingFallback={pollingFallback} />
 
       <TaskIntegrityCard
         task={selectedTask}
@@ -2592,6 +2619,7 @@ function RuntimeContent({
   const runtimeWarnings = runtimeOutput?.warnings ?? (runtime ? extractWarningsFromRuntime(runtime) : []);
   const runtimeWarningSummary = runtimeOutput?.warningSummary ?? runtimeWarnings[0] ?? null;
   const runtimeBasePath = runtime ? snapshot.workspaces.find((entry) => entry.id === runtime.workspaceId)?.path : undefined;
+  const runtimeEvidenceView = runtime ? buildInspectorRuntimeEvidenceView({ runtime, output: runtimeOutput }) : null;
 
   if (!runtime) {
     return null;
@@ -2605,6 +2633,7 @@ function RuntimeContent({
         {runtime.taskId ? <p>Task {shortId(runtime.taskId, 12)}</p> : null}
         {runtime.runId ? <p>Run {shortId(runtime.runId, 12)}</p> : null}
       </InfoCard>
+      {runtimeEvidenceView ? <RuntimeEvidencePanel view={runtimeEvidenceView} /> : null}
       <InfoCard icon={Radar} title="Activity" value={formatRelativeTime(runtime.updatedAt, relativeTimeReferenceMs)}>
         <p>{runtime.subtitle}</p>
         <p>{formatTokens(runtime.tokenUsage?.total)} tokens</p>

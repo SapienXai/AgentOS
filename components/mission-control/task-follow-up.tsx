@@ -377,6 +377,21 @@ export function TaskFollowUpComposer({
           {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
       </div>
+      <div
+        data-testid="task-follow-up-confidence"
+        data-confidence={availability.context.confidence}
+        className={cn(
+          "mt-1.5 flex flex-wrap items-center justify-between gap-1.5 px-1 text-[10px] leading-4",
+          availability.context.confidence === "high"
+            ? "text-emerald-700 dark:text-emerald-200/80"
+            : availability.context.confidence === "medium"
+              ? "text-amber-700 dark:text-amber-200/80"
+              : "text-rose-700 dark:text-rose-200/80"
+        )}
+      >
+        <span>Session confidence</span>
+        <span className="font-mono uppercase tracking-[0.16em]">{formatFollowUpConfidence(availability.context.confidence)}</span>
+      </div>
       {availability.reason ? (
         <p className="mt-1.5 px-1 text-[10px] leading-4 text-amber-700 dark:text-amber-200/80">{availability.reason}</p>
       ) : availability.warning ? (
@@ -389,6 +404,17 @@ export function TaskFollowUpComposer({
 function createFollowUpIdempotencyKey(task: TaskRecord) {
   const nonce = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${task.dispatchId || task.id}:continue:${nonce}`;
+}
+
+function formatFollowUpConfidence(confidence: ReturnType<typeof resolveTaskFollowUpAvailability>["context"]["confidence"]) {
+  switch (confidence) {
+    case "high":
+      return "high";
+    case "medium":
+      return "medium warning";
+    case "none":
+      return "none disabled";
+  }
 }
 
 function metricPillClassName(
