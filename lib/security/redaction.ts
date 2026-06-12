@@ -93,7 +93,9 @@ function redactValue(value: unknown, forceScalarRedaction: boolean, seen: WeakSe
     }
 
     seen.add(value);
-    return value.map((entry) => redactValue(entry, forceScalarRedaction, seen));
+    const output = value.map((entry) => redactValue(entry, forceScalarRedaction, seen));
+    seen.delete(value);
+    return output;
   }
 
   if (typeof value !== "object") {
@@ -112,6 +114,7 @@ function redactValue(value: unknown, forceScalarRedaction: boolean, seen: WeakSe
     output[key] = redactValue(entry, forceScalarRedaction || sensitive, seen);
   }
 
+  seen.delete(value);
   return output;
 }
 

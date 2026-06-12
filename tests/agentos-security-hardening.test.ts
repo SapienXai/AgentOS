@@ -187,6 +187,37 @@ test("secret redaction handles nested objects, arrays, and diagnostic text", () 
   assert.deepEqual(redacted.authStore, { tokens: { operator: { token: REDACTED_SECRET_VALUE } } });
 });
 
+test("secret redaction preserves repeated safe references while cutting cycles", () => {
+  const tools = ["browser", "web_search"];
+  const skills = ["project-browser"];
+  const circularObject: Record<string, unknown> = { label: "root" };
+  circularObject.self = circularObject;
+  const circularArray: unknown[] = ["first"];
+  circularArray.push(circularArray);
+
+  const redacted = redactSecrets({
+    policy: {
+      declaredTools: tools,
+      effectiveTools: tools,
+      declaredSkills: skills,
+      effectiveSkills: skills
+    },
+    repeated: {
+      tools
+    },
+    circularObject,
+    circularArray
+  });
+
+  assert.deepEqual(redacted.policy.declaredTools, tools);
+  assert.deepEqual(redacted.policy.effectiveTools, tools);
+  assert.deepEqual(redacted.policy.declaredSkills, skills);
+  assert.deepEqual(redacted.policy.effectiveSkills, skills);
+  assert.deepEqual(redacted.repeated.tools, tools);
+  assert.deepEqual(redacted.circularObject, { label: "root", self: {} });
+  assert.deepEqual(redacted.circularArray, ["first", []]);
+});
+
 test("OpenClaw command diagnostics redact sensitive config values", () => {
   assert.deepEqual(
     sanitizeOpenClawCommandArgsForDiagnostics([
