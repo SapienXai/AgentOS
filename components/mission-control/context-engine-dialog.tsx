@@ -414,57 +414,57 @@ export function ContextEngineDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         overlayClassName="bg-black/78 backdrop-blur-lg"
-        closeClassName="right-6 top-6 h-10 w-10 text-slate-300 hover:bg-white/[0.06] hover:text-white"
-        className="grid h-[min(calc(100vh-48px),980px)] max-h-[calc(100vh-48px)] w-[min(94vw,1320px)] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-[20px] border border-violet-300/28 bg-[radial-gradient(circle_at_10%_0%,rgba(124,58,237,0.16),transparent_28%),linear-gradient(135deg,rgba(16,20,31,0.98),rgba(8,11,19,0.98)_62%,rgba(13,15,25,0.98))] p-0 text-slate-100 shadow-[0_0_0_1px_rgba(167,139,250,0.14),0_32px_110px_rgba(0,0,0,0.72)]"
+        closeClassName="right-3 top-3 h-7 w-7 text-slate-300 hover:bg-white/[0.06] hover:text-white"
+        className="grid h-[min(calc(100vh-72px),760px)] max-h-[calc(100vh-72px)] w-[min(90vw,1060px)] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-2xl border border-violet-300/28 bg-[radial-gradient(circle_at_10%_0%,rgba(124,58,237,0.16),transparent_28%),linear-gradient(135deg,rgba(16,20,31,0.98),rgba(8,11,19,0.98)_62%,rgba(13,15,25,0.98))] p-0 text-slate-100 shadow-[0_0_0_1px_rgba(167,139,250,0.14),0_24px_80px_rgba(0,0,0,0.68)]"
       >
-        <DialogHeader className="relative border-b border-white/[0.06] px-10 pb-5 pt-8">
-          <div className="flex items-start justify-between gap-8 pr-14">
-            <div className="flex min-w-0 items-start gap-5">
-              <div className="relative mt-1 flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-violet-500/15 text-violet-200 shadow-[0_0_40px_rgba(124,58,237,0.34)]">
-                <Hexagon className="h-12 w-12 fill-violet-500/55 stroke-violet-300" />
-                <span className="absolute h-2.5 w-2.5 rounded-full bg-violet-200 shadow-[0_0_18px_rgba(196,181,253,0.8)]" />
+        <DialogHeader className="relative space-y-0 border-b border-white/[0.06] px-6 pb-2 pt-3">
+          <div className="flex items-start justify-between gap-5 pr-9">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-violet-500/15 text-violet-200 shadow-[0_0_20px_rgba(124,58,237,0.3)]">
+                <Hexagon className="h-6 w-6 fill-violet-500/55 stroke-violet-300" />
+                <span className="absolute h-1.5 w-1.5 rounded-full bg-violet-200 shadow-[0_0_12px_rgba(196,181,253,0.8)]" />
               </div>
               <div className="min-w-0">
-                <DialogTitle className="font-display text-[1.65rem] font-semibold leading-8 text-white">
+                <DialogTitle className="font-display text-[17px] font-semibold leading-5 text-white">
                   Context Engine
                 </DialogTitle>
-                <DialogDescription className="mt-1 text-base text-slate-300/78">
-                  Control what this agent sees
-                </DialogDescription>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <HeaderChip icon={<Sparkles className="h-3.5 w-3.5" />} value={engineSnapshot?.model.label ?? "Unknown model"} tone="violet" />
-                  <HeaderChip icon={<Grid2X2 className="h-3.5 w-3.5" />} value={engineSnapshot?.model.contextWindow ? `${formatContextWindow(engineSnapshot.model.contextWindow)} window` : "Unknown window"} tone="blue" />
-                  <HeaderChip icon={<Clock3 className="h-3.5 w-3.5" />} value={formatContextUsage(engineSnapshot)} tone={engineSnapshot?.budget.usedPercent == null ? "muted" : "amber"} />
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <DialogDescription className="text-xs text-slate-300/78">
+                    Control what this agent sees
+                  </DialogDescription>
+                  <HeaderChip icon={<Sparkles className="h-3 w-3" />} value={engineSnapshot?.model.label ?? "Unknown model"} tone="violet" />
+                  <HeaderChip icon={<Grid2X2 className="h-3 w-3" />} value={engineSnapshot?.model.contextWindow ? `${formatContextWindow(engineSnapshot.model.contextWindow)} window` : "Unknown window"} tone="blue" />
+                  <HeaderChip icon={<Clock3 className="h-3 w-3" />} value={formatContextUsage(engineSnapshot)} tone={engineSnapshot?.budget.usedPercent == null ? "muted" : "amber"} />
                 </div>
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-3">
+            <div className="flex shrink-0 items-center gap-2">
               <TopActionButton
-                icon={<Eye className="h-4 w-4" />}
+                icon={<Eye className="h-3.5 w-3.5" />}
                 label="Preview"
                 onClick={() => setActiveTab("preview")}
               />
               <TopActionButton
-                icon={<Grid2X2 className="h-4 w-4" />}
+                icon={<Grid2X2 className="h-3.5 w-3.5" />}
                 label="Compact"
                 disabled
                 title={engineSnapshot?.capabilities.compaction.reason ?? "OpenClaw compaction is not available."}
               />
               <Button
                 type="button"
-                className="h-12 rounded-[10px] border border-violet-200/35 bg-[linear-gradient(180deg,rgba(139,92,246,0.98),rgba(109,40,217,0.96))] px-5 text-[15px] text-white shadow-[0_14px_34px_rgba(124,58,237,0.38)] hover:bg-violet-500"
+                className="h-8 rounded-[8px] border border-violet-200/35 bg-[linear-gradient(180deg,rgba(139,92,246,0.98),rgba(109,40,217,0.96))] px-3 text-xs text-white shadow-[0_8px_20px_rgba(124,58,237,0.32)] hover:bg-violet-500"
                 disabled={!engineSnapshot || isSavingContext || !hasContextChanges}
                 onClick={() => void saveContext()}
               >
-                {isSavingContext ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                {isSavingContext ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1.5 h-3.5 w-3.5" />}
                 Save
               </Button>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="grid min-h-0 grid-cols-[230px_minmax(0,1fr)] gap-5 overflow-y-auto px-5 py-5">
-          <aside className="min-h-[620px] rounded-[10px] border border-white/[0.09] bg-black/18 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <div className="grid min-h-0 grid-cols-[180px_minmax(0,1fr)] gap-4 overflow-y-auto px-4 py-3">
+          <aside className="min-h-[465px] rounded-[10px] border border-white/[0.09] bg-black/18 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <nav className="space-y-1">
               {tabItems.map((item) => {
                 const Icon = item.icon;
@@ -475,15 +475,15 @@ export function ContextEngineDialog({
                     key={item.id}
                     type="button"
                     className={cn(
-                      "group relative flex h-[64px] w-full items-center gap-3 px-5 text-left text-[15px] transition-colors",
+                      "group relative flex h-12 w-full items-center gap-2.5 px-4 text-left text-sm transition-colors",
                       selected
                         ? "bg-violet-500/18 text-violet-100"
                         : "text-slate-300 hover:bg-white/[0.045] hover:text-white"
                     )}
                     onClick={() => setActiveTab(item.id)}
                   >
-                    {selected ? <span className="absolute left-0 top-2 h-12 w-1 rounded-r-full bg-violet-400 shadow-[0_0_20px_rgba(167,139,250,0.7)]" /> : null}
-                    <Icon className={cn("h-5 w-5", selected ? "text-violet-200" : "text-slate-400 group-hover:text-slate-200")} />
+                    {selected ? <span className="absolute left-0 top-1.5 h-9 w-1 rounded-r-full bg-violet-400 shadow-[0_0_18px_rgba(167,139,250,0.65)]" /> : null}
+                    <Icon className={cn("h-[18px] w-[18px]", selected ? "text-violet-200" : "text-slate-400 group-hover:text-slate-200")} />
                     <span>{item.label}</span>
                   </button>
                 );
@@ -491,7 +491,7 @@ export function ContextEngineDialog({
             </nav>
           </aside>
 
-          <main className="h-full min-h-[620px]">
+          <main className="h-full min-h-[465px]">
             {activeTab === "project" ? (
               <ProjectContextTab
                 snapshot={engineSnapshot}
@@ -536,25 +536,25 @@ export function ContextEngineDialog({
           </main>
         </div>
 
-        <DialogFooter className="border-t border-white/[0.07] px-5 py-3">
-          <div className="flex w-full items-center justify-between rounded-[10px] border border-white/[0.055] bg-white/[0.025] px-4 py-3">
+        <DialogFooter className="gap-0 border-t border-white/[0.07] px-4 py-1.5">
+          <div className="flex w-full items-center justify-between rounded-[8px] bg-white/[0.018] px-1.5 py-1">
             <Button
               type="button"
               variant="secondary"
-              className="h-12 rounded-[9px] border-white/10 bg-white/[0.055] px-5 text-slate-300 hover:bg-white/[0.09] hover:text-white"
+              className="h-7 rounded-[7px] border-white/10 bg-white/[0.05] px-2.5 text-[11px] text-slate-300 hover:bg-white/[0.09] hover:text-white"
               disabled={!engineSnapshot || !hasContextChanges || isSavingContext}
               onClick={resetDraft}
             >
-              <RotateCcw className="mr-2 h-4 w-4" />
+              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
               Reset
             </Button>
             <Button
               type="button"
-              className="h-12 rounded-[10px] border border-violet-200/35 bg-[linear-gradient(180deg,rgba(139,92,246,0.98),rgba(109,40,217,0.96))] px-7 text-base text-white shadow-[0_14px_34px_rgba(124,58,237,0.36)] hover:bg-violet-500"
+              className="h-7 rounded-[7px] border border-violet-200/35 bg-[linear-gradient(180deg,rgba(139,92,246,0.98),rgba(109,40,217,0.96))] px-3 text-[11px] text-white shadow-[0_6px_16px_rgba(124,58,237,0.28)] hover:bg-violet-500"
               disabled={!engineSnapshot || isSavingContext || !hasContextChanges}
               onClick={() => void saveContext()}
             >
-              {isSavingContext ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              {isSavingContext ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1.5 h-3.5 w-3.5" />}
               Save Context
             </Button>
           </div>
@@ -620,35 +620,34 @@ function ProjectContextTab({
   onSaveFile: () => void;
 }) {
   return (
-    <div className="grid h-full min-h-0 grid-rows-[210px_minmax(0,1fr)] gap-4">
+    <div className="grid h-full min-h-0 grid-rows-[96px_minmax(0,1fr)] gap-3">
       <ContextBudgetCard snapshot={snapshot} />
-      <div className="grid min-h-0 grid-cols-[minmax(0,1.2fr)_minmax(360px,0.95fr)] gap-4">
+      <div className="grid min-h-0 grid-cols-[minmax(0,1.22fr)_minmax(285px,0.95fr)] gap-3">
         <section className="min-h-0 rounded-[10px] border border-white/[0.1] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-          <div className="flex items-start justify-between gap-4 border-b border-white/[0.07] px-5 py-4">
+          <div className="flex items-start justify-between gap-3 border-b border-white/[0.07] px-4 py-3">
             <div>
-              <h3 className="text-[17px] font-semibold text-white">B. Project Context Files</h3>
-              <p className="mt-0.5 text-sm text-slate-400">Files injected into the agent context</p>
+              <h3 className="text-[15px] font-semibold text-white">B. Project Context Files</h3>
+              <p className="mt-0.5 text-xs text-slate-400">Files injected into the agent context</p>
             </div>
             <Button
               type="button"
               variant="secondary"
-              className="h-10 rounded-[9px] border-white/10 bg-white/[0.055] px-4 text-sm text-slate-100 hover:bg-white/[0.09]"
+              className="h-8 rounded-[8px] border-white/10 bg-white/[0.055] px-3 text-xs text-slate-100 hover:bg-white/[0.09]"
               disabled={!createableMissingFile}
               title={createableMissingFile ? `Create ${createableMissingFile.path}` : "No createable missing context files."}
               onClick={onAddFile}
             >
-              <Plus className="mr-2 h-4 w-4" />
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
               Add File
             </Button>
           </div>
-          <div className="grid grid-cols-[minmax(190px,1fr)_130px_118px_92px_42px] border-b border-white/[0.07] px-4 py-3 text-[13px] text-slate-400">
+          <div className="grid grid-cols-[minmax(150px,1fr)_105px_132px_32px] border-b border-white/[0.07] px-3 py-2 text-[11px] text-slate-400">
             <span>File</span>
             <span>Tokens</span>
-            <span>Status</span>
-            <span>Enabled</span>
+            <span>State</span>
             <span />
           </div>
-          <ScrollArea className="h-[calc(100%-146px)]">
+          <ScrollArea className="h-[calc(100%-112px)]">
             {isLoadingSnapshot && files.length === 0 ? (
               <div className="flex h-40 items-center justify-center gap-2 text-sm text-slate-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -688,9 +687,9 @@ function ProjectContextTab({
               </div>
             )}
           </ScrollArea>
-          <div className="flex items-center justify-end gap-4 border-t border-white/[0.07] px-5 py-4 text-sm text-slate-400">
+          <div className="flex items-center justify-end gap-3 border-t border-white/[0.07] px-4 py-3 text-xs text-slate-400">
             <span>Total</span>
-            <span className="text-base font-semibold text-white">{formatTokenValue(enabledProjectTokenTotal)} tokens</span>
+            <span className="text-sm font-semibold text-white">{formatTokenValue(enabledProjectTokenTotal)} tokens</span>
           </div>
         </section>
 
@@ -723,20 +722,20 @@ function ContextBudgetCard({ snapshot }: { snapshot: ContextEngineSnapshot | nul
   const percent = budget?.usedPercent ?? 0;
 
   return (
-    <section className="rounded-[10px] border border-white/[0.1] bg-white/[0.035] px-7 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="flex items-center justify-between gap-4">
-        <h3 className="text-[17px] font-semibold text-white">A. Context Budget</h3>
-        <p className="text-[15px] font-medium text-slate-100">
-          {usedLabel} / {limitLabel} tokens
-        </p>
+    <section className="rounded-[9px] border border-white/[0.1] bg-white/[0.035] px-4 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="grid grid-cols-[max-content_minmax(220px,1fr)] items-center gap-4">
+        <h3 className="whitespace-nowrap text-[13px] font-semibold text-white">A. Context Budget</h3>
+        <div className="relative h-5 overflow-hidden rounded-full border border-white/[0.07] bg-slate-800/80">
+          <div
+            className="h-full rounded-full bg-[linear-gradient(90deg,#8b5cf6,#c084fc,#fb7185,#fb923c)] transition-[width]"
+            style={{ width: `${Math.max(3, Math.min(100, percent))}%` }}
+          />
+          <span className="absolute inset-0 flex items-center justify-center px-3 text-[11px] font-semibold leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]">
+            {usedLabel} / {limitLabel} tokens
+          </span>
+        </div>
       </div>
-      <div className="mt-4 h-[18px] overflow-hidden rounded-[5px] bg-slate-800/80">
-        <div
-          className="h-full rounded-[5px] bg-[linear-gradient(90deg,#8b5cf6,#c084fc,#fb7185,#fb923c)] transition-[width]"
-          style={{ width: `${Math.max(3, Math.min(100, percent))}%` }}
-        />
-      </div>
-      <div className="mt-5 grid grid-cols-6 gap-4">
+      <div className="mt-2 grid grid-cols-6 gap-2">
         {(budget?.items ?? defaultBudgetItems()).map((item) => (
           <BudgetPill key={item.id} item={item} />
         ))}
@@ -750,14 +749,14 @@ function BudgetPill({ item }: { item: ContextEngineBudgetItem }) {
   const tone = resolveBudgetTone(item.id);
 
   return (
-    <div className="rounded-[10px] border border-white/[0.1] bg-slate-950/36 px-4 py-3">
-      <div className="flex items-center gap-3">
-        <Icon className={cn("h-6 w-6", tone)} />
-        <p className="min-h-10 text-[14px] leading-5 text-slate-300">{item.label}</p>
+    <div className="rounded-[7px] border border-white/[0.1] bg-slate-950/36 px-2 py-1">
+      <div className="flex items-center gap-1.5">
+        <Icon className={cn("h-3 w-3 shrink-0", tone)} />
+        <p className="truncate text-[10px] leading-3 text-slate-300">{item.label}</p>
       </div>
-      <p className="mt-2 text-center text-[16px] font-semibold text-white">{formatTokenValue(item.tokens)}</p>
+      <p className="mt-0.5 truncate text-center text-[11px] font-semibold leading-4 text-white">{formatTokenValue(item.tokens)}</p>
       {item.source !== "reported" ? (
-        <p className="mt-1 text-center text-[9px] uppercase tracking-[0.14em] text-slate-500">{item.source}</p>
+        <p className="truncate text-center text-[7px] uppercase tracking-[0.1em] text-slate-500">{item.source}</p>
       ) : null}
     </div>
   );
@@ -787,45 +786,23 @@ function ContextFileRow({
   return (
     <div
       className={cn(
-        "relative grid min-h-[56px] grid-cols-[minmax(190px,1fr)_130px_118px_92px_42px] items-center px-4 text-sm transition-colors",
+        "relative grid min-h-11 grid-cols-[minmax(150px,1fr)_105px_132px_32px] items-center px-3 text-xs transition-colors",
         selected ? "bg-violet-500/16 shadow-[inset_3px_0_0_rgba(139,92,246,0.95)]" : "hover:bg-white/[0.035]"
       )}
       onClick={onSelect}
     >
-      <div className="flex min-w-0 items-center gap-3">
-        <FileText className="h-5 w-5 shrink-0 text-slate-300" />
+      <div className="flex min-w-0 items-center gap-2">
+        <FileText className="h-4 w-4 shrink-0 text-slate-300" />
         <div className="min-w-0">
           <p className="truncate font-medium text-white">{file.label}</p>
           <p className="truncate font-mono text-[10px] text-slate-500">{file.path}</p>
         </div>
       </div>
       <span className="text-slate-300">{file.rawTokens == null ? "-" : `${formatTokenValue(file.rawTokens)} tokens`}</span>
-      <StatusBadge status={file.status} />
+      <ContextFileStateControl file={file} onToggle={onToggle} />
       <button
         type="button"
-        role="switch"
-        aria-checked={file.enabled}
-        disabled={!file.canToggle}
-        title={file.canToggle ? "Toggle context inclusion" : file.statusReason ?? "This file cannot be toggled."}
-        className={cn(
-          "relative h-6 w-11 rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-55",
-          file.enabled ? "border-violet-300/35 bg-violet-500 shadow-[0_0_18px_rgba(139,92,246,0.35)]" : "border-slate-600 bg-slate-700"
-        )}
-        onClick={(event) => {
-          event.stopPropagation();
-          onToggle();
-        }}
-      >
-        <span
-          className={cn(
-            "absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-white shadow transition-transform",
-            file.enabled ? "translate-x-[19px]" : "translate-x-[2px]"
-          )}
-        />
-      </button>
-      <button
-        type="button"
-        className="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/[0.08] hover:text-white"
+        className="relative flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/[0.08] hover:text-white"
         onClick={(event) => {
           event.stopPropagation();
           onActionMenu();
@@ -836,7 +813,7 @@ function ContextFileRow({
       </button>
       {actionMenuOpen ? (
         <div
-          className="absolute right-3 top-10 z-20 w-44 rounded-[10px] border border-white/[0.1] bg-slate-950 p-1.5 shadow-[0_20px_44px_rgba(0,0,0,0.45)]"
+          className="absolute right-2 top-9 z-20 w-40 rounded-[10px] border border-white/[0.1] bg-slate-950 p-1.5 shadow-[0_20px_44px_rgba(0,0,0,0.45)]"
           onClick={(event) => event.stopPropagation()}
         >
           <ActionMenuButton label="Preview" icon={<Eye className="h-4 w-4" />} onClick={onPreview} />
@@ -845,6 +822,57 @@ function ContextFileRow({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function ContextFileStateControl({ file, onToggle }: { file: ContextEngineFile; onToggle: () => void }) {
+  if (file.status === "missing") {
+    return (
+      <span
+        className="inline-flex h-7 w-fit items-center rounded-full border border-rose-300/24 bg-rose-500/12 px-2.5 text-[11px] font-medium text-rose-200"
+        title={file.statusReason ?? "This context file is missing."}
+      >
+        Missing
+      </span>
+    );
+  }
+
+  const enabled = file.enabled;
+
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      disabled={!file.canToggle}
+      title={file.canToggle ? "Toggle context inclusion" : file.statusReason ?? "This file cannot be toggled."}
+      aria-label={`Context file state: ${enabled ? "Enabled" : "Disabled"}`}
+      className={cn(
+        "inline-flex w-[64px] flex-col items-start justify-center gap-0.5 rounded-[7px] px-1 py-0.5 text-[10px] font-medium leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+        enabled
+          ? "text-emerald-200 hover:bg-emerald-500/8"
+          : "text-slate-300 hover:bg-slate-500/8"
+      )}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+    >
+      <span
+        className={cn(
+          "relative h-4 w-8 rounded-full border transition-colors",
+          enabled ? "border-emerald-300/35 bg-emerald-500" : "border-slate-500/45 bg-slate-700"
+        )}
+      >
+        <span
+          className={cn(
+            "absolute left-0.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white shadow transition-transform",
+            enabled ? "translate-x-0" : "translate-x-4"
+          )}
+        />
+      </span>
+      <span>{enabled ? "Enabled" : "Disabled"}</span>
+    </button>
   );
 }
 
@@ -883,47 +911,49 @@ function SelectedFileInspector({
 }) {
   return (
     <section className="min-h-0 rounded-[10px] border border-white/[0.1] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="border-b border-white/[0.07] px-5 py-4">
-        <h3 className="text-[17px] font-semibold text-white">C. Selected File</h3>
+      <div className="border-b border-white/[0.07] px-3 py-2">
+        <h3 className="text-[13px] font-semibold text-white">C. Selected File</h3>
       </div>
       {!file ? (
         <EmptyState title="No file selected" detail="Select a context file to inspect the exact source and preview." />
       ) : (
-        <div className="flex h-[calc(100%-57px)] min-h-0 flex-col">
-          <div className="px-5 py-4">
-            <div className="flex items-center gap-3">
-              <FileText className="h-7 w-7 text-slate-200" />
+        <div className="flex h-[calc(100%-37px)] min-h-0 flex-col">
+          <div className="px-3 py-2">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-slate-200" />
               <div className="min-w-0">
-                <h4 className="truncate text-xl font-semibold text-white">{file.label}</h4>
-                <p className="truncate font-mono text-[11px] text-slate-500">{file.path}</p>
+                <h4 className="truncate text-sm font-semibold leading-4 text-white">{file.label}</h4>
+                <p className="truncate font-mono text-[9px] leading-3 text-slate-500">{file.path}</p>
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-[150px_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-              <InspectorLabel label="Status:" />
-              <StatusBadge status={file.status} />
-              <InspectorLabel label="Raw tokens:" />
-              <InspectorValue value={file.rawTokens == null ? "Unknown" : formatTokenValue(file.rawTokens)} source={file.tokenSource} />
-              <InspectorLabel label="Injected tokens:" />
-              <InspectorValue value={file.injectedTokens == null ? "Unknown" : formatTokenValue(file.injectedTokens)} source={file.tokenSource} />
-              <InspectorLabel label="Scope:" />
-              <span className="capitalize text-white">{file.scope}</span>
-              <InspectorLabel label="Last updated:" />
-              <span className="text-slate-300">{file.lastUpdatedAt ? new Date(file.lastUpdatedAt).toLocaleString() : "Unknown"}</span>
+            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] leading-4">
+              <CompactInspectorItem label="Status">
+                <StatusBadge status={file.status} compact />
+              </CompactInspectorItem>
+              <CompactInspectorItem label="Scope">
+                <span className="capitalize text-white">{file.scope}</span>
+              </CompactInspectorItem>
+              <CompactInspectorItem label="Raw">
+                <InspectorValue value={file.rawTokens == null ? "Unknown" : formatTokenValue(file.rawTokens)} source={file.tokenSource} compact />
+              </CompactInspectorItem>
+              <CompactInspectorItem label="Injected">
+                <InspectorValue value={file.injectedTokens == null ? "Unknown" : formatTokenValue(file.injectedTokens)} source={file.tokenSource} compact />
+              </CompactInspectorItem>
             </div>
             {file.statusReason ? (
-              <p className="mt-3 rounded-[10px] border border-amber-300/16 bg-amber-400/[0.07] px-3 py-2 text-xs leading-5 text-amber-100/85">
+              <p className="mt-1.5 rounded-[8px] border border-amber-300/16 bg-amber-400/[0.07] px-2 py-1 text-[10px] leading-[14px] text-amber-100/85">
                 {file.statusReason}
               </p>
             ) : null}
           </div>
 
-          <div className="min-h-0 flex-1 border-t border-white/[0.07] px-5 py-4">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm text-slate-400">{inspectorMode === "edit" ? "Edit" : "Preview"}</p>
-              {isLoadingFile ? <Loader2 className="h-4 w-4 animate-spin text-slate-500" /> : null}
+          <div className="flex min-h-0 flex-1 flex-col border-t border-white/[0.07] px-3 py-2">
+            <div className="mb-1.5 flex items-center justify-between">
+              <p className="text-[11px] text-slate-400">{inspectorMode === "edit" ? "Edit" : "Preview"}</p>
+              {isLoadingFile ? <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" /> : null}
             </div>
             {error ? (
-              <p className="mb-3 rounded-[10px] border border-rose-300/18 bg-rose-400/[0.08] px-3 py-2 text-xs text-rose-100">
+              <p className="mb-1.5 rounded-[8px] border border-rose-300/18 bg-rose-400/[0.08] px-2 py-1 text-[10px] text-rose-100">
                 {error}
               </p>
             ) : null}
@@ -933,7 +963,7 @@ function SelectedFileInspector({
                 onChange={(event) => onContentChange(event.target.value)}
                 disabled={!canEditActiveFile}
                 spellCheck={false}
-                className="h-[210px] resize-none rounded-[8px] border-white/[0.1] bg-slate-950/62 font-mono text-xs leading-5 text-slate-100 focus-visible:ring-violet-300/35"
+                className="min-h-[104px] flex-1 resize-none rounded-[8px] border-white/[0.1] bg-slate-950/62 font-mono text-[11px] leading-4 text-slate-100 focus-visible:ring-violet-300/35"
                 placeholder={isLoadingFile ? "Loading context file..." : "Write context file content"}
               />
             ) : (
@@ -941,35 +971,35 @@ function SelectedFileInspector({
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-3 border-t border-white/[0.07] px-5 py-4">
+          <div className="grid grid-cols-3 gap-1.5 border-t border-white/[0.07] px-3 py-2">
             {inspectorMode === "edit" ? (
               <>
                 <Button
                   type="button"
                   variant="secondary"
-                  className="h-11 rounded-[9px] border-white/10 bg-white/[0.055] text-slate-200 hover:bg-white/[0.09]"
+                  className="h-7 min-w-0 rounded-[7px] border-white/10 bg-white/[0.055] px-2 text-[11px] text-slate-200 hover:bg-white/[0.09]"
                   disabled={!hasUnsavedFileChanges || isSavingFile}
                   onClick={onRevertFile}
                 >
-                  <RotateCcw className="mr-2 h-4 w-4" />
+                  <RotateCcw className="mr-1 h-3 w-3" />
                   Revert
                 </Button>
                 <Button
                   type="button"
                   variant="secondary"
-                  className="h-11 rounded-[9px] border-white/10 bg-white/[0.055] text-slate-200 hover:bg-white/[0.09]"
+                  className="h-7 min-w-0 rounded-[7px] border-white/10 bg-white/[0.055] px-2 text-[11px] text-slate-200 hover:bg-white/[0.09]"
                   onClick={onPreview}
                 >
-                  <Eye className="mr-2 h-4 w-4" />
+                  <Eye className="mr-1 h-3 w-3" />
                   Preview
                 </Button>
                 <Button
                   type="button"
-                  className="h-11 rounded-[9px] bg-violet-500 text-white hover:bg-violet-400"
+                  className="h-7 min-w-0 rounded-[7px] bg-violet-500 px-2 text-[11px] text-white hover:bg-violet-400"
                   disabled={!hasUnsavedFileChanges || !canEditActiveFile || isSavingFile}
                   onClick={onSaveFile}
                 >
-                  {isSavingFile ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                  {isSavingFile ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Save className="mr-1 h-3 w-3" />}
                   Save File
                 </Button>
               </>
@@ -978,30 +1008,30 @@ function SelectedFileInspector({
                 <Button
                   type="button"
                   variant="secondary"
-                  className="h-11 rounded-[9px] border-white/10 bg-white/[0.055] text-slate-200 hover:bg-white/[0.09]"
+                  className="h-7 min-w-0 rounded-[7px] border-white/10 bg-white/[0.055] px-2 text-[11px] text-slate-200 hover:bg-white/[0.09]"
                   disabled={!file.editable}
                   onClick={onEdit}
                 >
-                  <Pencil className="mr-2 h-4 w-4" />
+                  <Pencil className="mr-1 h-3 w-3" />
                   Edit
                 </Button>
                 <Button
                   type="button"
                   variant="secondary"
-                  className="h-11 rounded-[9px] border-white/10 bg-white/[0.055] text-slate-200 hover:bg-white/[0.09]"
+                  className="h-7 min-w-0 rounded-[7px] border-white/10 bg-white/[0.055] px-2 text-[11px] text-slate-200 hover:bg-white/[0.09]"
                   onClick={onPreview}
                 >
-                  <Eye className="mr-2 h-4 w-4" />
+                  <Eye className="mr-1 h-3 w-3" />
                   Preview
                 </Button>
                 <Button
                   type="button"
                   variant="destructive"
-                  className="h-11 rounded-[9px] border border-rose-300/25 bg-rose-500/15 text-rose-200 hover:bg-rose-500/22"
+                  className="h-7 min-w-0 rounded-[7px] border border-rose-300/25 bg-rose-500/15 px-2 text-[11px] text-rose-200 hover:bg-rose-500/22"
                   disabled={!file.canToggle || !file.enabled}
                   onClick={onExclude}
                 >
-                  <Ban className="mr-2 h-4 w-4" />
+                  <Ban className="mr-1 h-3 w-3" />
                   Exclude
                 </Button>
               </>
@@ -1079,19 +1109,19 @@ function SecondaryTabPanel({
 
   return (
     <InfoPanel title="Preview" subtitle="What AgentOS can verify about the next model context.">
-      <div className="grid grid-cols-[1.1fr_0.9fr] gap-4">
-        <div className="rounded-[10px] border border-white/[0.08] bg-slate-950/42 p-4">
-          <p className="text-sm font-medium text-white">System prompt</p>
-          <p className="mt-2 text-sm leading-6 text-slate-300">{snapshot?.preview.systemPromptSummary ?? "No preview is available."}</p>
-          <div className="mt-5">
-            <p className="text-sm font-medium text-white">Active project context files</p>
+      <div className="grid grid-cols-[1.1fr_0.9fr] gap-3">
+        <div className="rounded-[9px] border border-white/[0.08] bg-slate-950/42 p-3">
+          <p className="text-xs font-medium text-white">System prompt</p>
+          <p className="mt-1.5 text-xs leading-5 text-slate-300">{snapshot?.preview.systemPromptSummary ?? "No preview is available."}</p>
+          <div className="mt-4">
+            <p className="text-xs font-medium text-white">Active project context files</p>
             <FileSummaryList files={files.filter((file) => file.enabled)} empty="No files are enabled in the saved context plan." />
           </div>
         </div>
-        <div className="rounded-[10px] border border-white/[0.08] bg-slate-950/42 p-4">
-          <p className="text-sm font-medium text-white">Token estimate</p>
-          <p className="mt-3 text-3xl font-semibold text-white">{formatTokenValue(snapshot?.preview.totalTokens ?? null)}</p>
-          <p className="mt-2 text-sm text-slate-400">{snapshot?.preview.status === "exact" ? "From OpenClaw context report" : "Estimated by AgentOS from available metadata"}</p>
+        <div className="rounded-[9px] border border-white/[0.08] bg-slate-950/42 p-3">
+          <p className="text-xs font-medium text-white">Token estimate</p>
+          <p className="mt-2 text-2xl font-semibold text-white">{formatTokenValue(snapshot?.preview.totalTokens ?? null)}</p>
+          <p className="mt-1.5 text-xs text-slate-400">{snapshot?.preview.status === "exact" ? "From OpenClaw context report" : "Estimated by AgentOS from available metadata"}</p>
           <DiagnosticsList diagnostics={snapshot?.preview.diagnostics ?? []} />
         </div>
       </div>
@@ -1111,7 +1141,7 @@ function HeaderChip({
   return (
     <span
       className={cn(
-        "inline-flex h-8 items-center gap-2 rounded-[8px] border bg-white/[0.035] px-3 text-xs font-medium",
+        "inline-flex h-5 items-center gap-1 rounded-[6px] border bg-white/[0.035] px-2 text-[10px] font-medium",
         tone === "violet" && "border-violet-300/18 text-violet-200",
         tone === "blue" && "border-blue-300/18 text-blue-200",
         tone === "amber" && "border-amber-300/18 text-amber-200",
@@ -1141,21 +1171,27 @@ function TopActionButton({
     <Button
       type="button"
       variant="secondary"
-      className="h-12 rounded-[10px] border-white/10 bg-white/[0.045] px-5 text-[15px] text-slate-100 hover:bg-white/[0.08]"
+      className="h-8 rounded-[8px] border-white/10 bg-white/[0.045] px-3 text-xs text-slate-100 hover:bg-white/[0.08]"
       disabled={disabled}
       title={title}
       onClick={onClick}
     >
-      <span className="mr-2">{icon}</span>
+      <span className="mr-1.5">{icon}</span>
       {label}
     </Button>
   );
 }
 
-function StatusBadge({ status }: { status: ContextEngineFileStatus }) {
+function StatusBadge({ status, compact = false }: { status: ContextEngineFileStatus; compact?: boolean }) {
   return (
-    <span className={cn("inline-flex w-fit items-center gap-1.5 rounded-[6px] border px-2 py-1 text-xs font-medium capitalize", statusTone[status])}>
-      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+    <span
+      className={cn(
+        "inline-flex w-fit items-center gap-1.5 rounded-[6px] border font-medium capitalize",
+        compact ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-1 text-xs",
+        statusTone[status]
+      )}
+    >
+      <span className={cn("rounded-full bg-current", compact ? "h-1 w-1" : "h-1.5 w-1.5")} />
       {status}
     </span>
   );
@@ -1194,9 +1230,9 @@ function CodePreview({ content }: { content: string }) {
   const lines = (content || "No preview content is available.").split("\n").slice(0, 12);
 
   return (
-    <div className="h-[210px] overflow-hidden rounded-[8px] border border-white/[0.1] bg-slate-950/62 p-3 font-mono text-xs leading-5 text-slate-300">
+    <div className="min-h-[104px] flex-1 overflow-hidden rounded-[8px] border border-white/[0.1] bg-slate-950/62 p-2.5 font-mono text-[11px] leading-4 text-slate-300">
       {lines.map((line, index) => (
-        <div key={`${index}:${line}`} className="grid grid-cols-[2rem_minmax(0,1fr)] gap-3">
+        <div key={`${index}:${line}`} className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2">
           <span className="select-none text-right text-slate-600">{index + 1}</span>
           <span className={cn("truncate", index === 0 && "text-violet-200")}>{line || " "}</span>
         </div>
@@ -1215,10 +1251,10 @@ function InfoPanel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="h-full rounded-[10px] border border-white/[0.1] bg-white/[0.035] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <h3 className="text-xl font-semibold text-white">{title}</h3>
-      <p className="mt-1 text-sm text-slate-400">{subtitle}</p>
-      <div className="mt-6">{children}</div>
+    <section className="h-full rounded-[10px] border border-white/[0.1] bg-white/[0.035] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <h3 className="text-base font-semibold text-white">{title}</h3>
+      <p className="mt-1 text-xs text-slate-400">{subtitle}</p>
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
@@ -1233,9 +1269,9 @@ function OverviewMetric({
   detail?: string;
 }) {
   return (
-    <div className="rounded-[10px] border border-white/[0.08] bg-slate-950/42 p-4">
-      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-2 truncate text-lg font-semibold text-white">{value}</p>
+    <div className="rounded-[9px] border border-white/[0.08] bg-slate-950/42 p-3">
+      <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className="mt-1.5 truncate text-base font-semibold text-white">{value}</p>
       {detail ? <p className="mt-1 truncate text-xs text-slate-500">{detail}</p> : null}
     </div>
   );
@@ -1253,7 +1289,7 @@ function TwoColumnList({
   rightValues: string[];
 }) {
   return (
-    <div className="grid grid-cols-2 gap-4">
+    <div className="grid grid-cols-2 gap-3">
       <CapabilityList title={leftTitle} values={leftValues} />
       <CapabilityList title={rightTitle} values={rightValues} />
     </div>
@@ -1262,9 +1298,9 @@ function TwoColumnList({
 
 function CapabilityList({ title, values }: { title: string; values: string[] }) {
   return (
-    <div className="rounded-[10px] border border-white/[0.08] bg-slate-950/42 p-4">
-      <p className="text-sm font-medium text-white">{title}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
+    <div className="rounded-[9px] border border-white/[0.08] bg-slate-950/42 p-3">
+      <p className="text-xs font-medium text-white">{title}</p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
         {values.length > 0 ? (
           values.map((value) => (
             <Badge key={value} className="rounded-[7px] border-white/[0.08] bg-white/[0.055] text-[10px] text-slate-300">
@@ -1272,7 +1308,7 @@ function CapabilityList({ title, values }: { title: string; values: string[] }) 
             </Badge>
           ))
         ) : (
-          <span className="text-sm text-slate-500">No values available.</span>
+          <span className="text-xs text-slate-500">No values available.</span>
         )}
       </div>
     </div>
@@ -1281,13 +1317,13 @@ function CapabilityList({ title, values }: { title: string; values: string[] }) 
 
 function FileSummaryList({ files, empty }: { files: ContextEngineFile[]; empty: string }) {
   if (files.length === 0) {
-    return <p className="mt-3 rounded-[10px] border border-white/[0.08] bg-slate-950/42 p-4 text-sm text-slate-500">{empty}</p>;
+    return <p className="mt-2 rounded-[9px] border border-white/[0.08] bg-slate-950/42 p-3 text-xs text-slate-500">{empty}</p>;
   }
 
   return (
-    <div className="mt-3 divide-y divide-white/[0.06] rounded-[10px] border border-white/[0.08] bg-slate-950/42">
+    <div className="mt-2 divide-y divide-white/[0.06] rounded-[9px] border border-white/[0.08] bg-slate-950/42">
       {files.map((file) => (
-        <div key={file.path} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+        <div key={file.path} className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
           <span className="truncate text-slate-200">{file.path}</span>
           <span className="shrink-0 text-slate-500">{formatTokenValue(file.injectedTokens)} tokens</span>
         </div>
@@ -1302,9 +1338,9 @@ function DiagnosticsList({ diagnostics }: { diagnostics: string[] }) {
   }
 
   return (
-    <div className="mt-5 space-y-2">
+    <div className="mt-4 space-y-1.5">
       {diagnostics.slice(0, 4).map((diagnostic) => (
-        <p key={diagnostic} className="rounded-[10px] border border-amber-300/16 bg-amber-400/[0.07] px-3 py-2 text-xs leading-5 text-amber-100/82">
+        <p key={diagnostic} className="rounded-[9px] border border-amber-300/16 bg-amber-400/[0.07] px-2.5 py-1.5 text-[11px] leading-4 text-amber-100/82">
           {diagnostic}
         </p>
       ))}
@@ -1330,15 +1366,32 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
   );
 }
 
-function InspectorLabel({ label }: { label: string }) {
-  return <span className="text-slate-400">{label}</span>;
+function CompactInspectorItem({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="grid min-w-0 grid-cols-[52px_minmax(0,1fr)] items-center gap-1">
+      <span className="text-slate-500">{label}</span>
+      <span className="min-w-0 truncate">{children}</span>
+    </div>
+  );
 }
 
-function InspectorValue({ value, source }: { value: string; source: ContextEngineTokenSource }) {
+function InspectorValue({
+  value,
+  source,
+  compact = false
+}: {
+  value: string;
+  source: ContextEngineTokenSource;
+  compact?: boolean;
+}) {
   return (
     <span className="text-white">
       {value}
-      {source !== "reported" ? <span className="ml-2 text-[10px] uppercase tracking-[0.12em] text-slate-500">{source}</span> : null}
+      {source !== "reported" ? (
+        <span className={cn("uppercase text-slate-500", compact ? "ml-1 text-[8px] tracking-[0.08em]" : "ml-2 text-[10px] tracking-[0.12em]")}>
+          {source}
+        </span>
+      ) : null}
     </span>
   );
 }
