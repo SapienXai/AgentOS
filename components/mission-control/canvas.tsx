@@ -8,7 +8,7 @@ import {
   useNodesState
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   arePersistedNodePositionsEqual,
@@ -148,12 +148,24 @@ export function MissionCanvas({
   const lastComposerViewportResetNonceRef = useRef(composerViewportResetNonce);
   const relativeTimeReferenceMs = resolveRelativeTimeReferenceMs(snapshot.generatedAt);
   const [justCreatedTaskIds, setJustCreatedTaskIds] = useState<string[]>([]);
+  const [elevatedAgentMenuId, setElevatedAgentMenuId] = useState<string | null>(null);
   const [focusTaskAnchor, setFocusTaskAnchor] = useState<FocusTaskAnchor | null>(null);
   const canvasScopeKey = focusedAgentId
     ? `focus:${focusedAgentId}`
     : activeWorkspaceId
       ? `workspace:${activeWorkspaceId}`
       : "all";
+
+  const handleAgentConnectionMenuOpenChange = useCallback((agentId: string, open: boolean) => {
+    setElevatedAgentMenuId((current) => {
+      if (open) {
+        return agentId;
+      }
+
+      return current === agentId ? null : current;
+    });
+  }, []);
+
   const initialGraph = buildCanvasGraph(
     snapshot,
     accountTargets,
@@ -179,6 +191,7 @@ export function MissionCanvas({
     onConfigureAgentModel,
     onConfigureAgentCapabilities,
     onOpenAgentContextEngine,
+    handleAgentConnectionMenuOpenChange,
     onInspectAgentDetail,
     onOpenWorkspaceChannels,
     onOpenAccounts,
@@ -270,6 +283,7 @@ export function MissionCanvas({
       onConfigureAgentModel,
       onConfigureAgentCapabilities,
       onOpenAgentContextEngine,
+      handleAgentConnectionMenuOpenChange,
       onInspectAgentDetail,
       onOpenWorkspaceChannels,
       onOpenAccounts,
@@ -322,6 +336,7 @@ export function MissionCanvas({
     onConfigureAgentModel,
     onConfigureAgentCapabilities,
     onOpenAgentContextEngine,
+    handleAgentConnectionMenuOpenChange,
     onInspectAgentDetail,
     onOpenWorkspaceChannels,
     onOpenAccounts,
@@ -350,7 +365,8 @@ export function MissionCanvas({
           node,
           selectedNodeId,
           composerTargetAgentId,
-          isComposerActive
+          isComposerActive,
+          elevatedAgentMenuId
         );
 
         if (Boolean(node.selected) === nextSelected && node.zIndex === nextZIndex) {
@@ -364,7 +380,7 @@ export function MissionCanvas({
         };
       })
     );
-  }, [selectedNodeId, composerTargetAgentId, isComposerActive, setNodes]);
+  }, [selectedNodeId, composerTargetAgentId, isComposerActive, elevatedAgentMenuId, setNodes]);
 
   useEffect(() => {
     let frameId = 0;

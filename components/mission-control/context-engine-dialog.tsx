@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Ban,
+  Bot,
   Clock3,
   Eye,
   FileText,
@@ -12,6 +13,7 @@ import {
   History,
   Home,
   Loader2,
+  Maximize2,
   MoreVertical,
   Paperclip,
   Pencil,
@@ -50,6 +52,7 @@ import {
   compactPath,
   formatAgentDisplayName,
   formatContextWindow,
+  formatRelativeTime,
   formatTokens
 } from "@/lib/openclaw/presenters";
 import { cn } from "@/lib/utils";
@@ -87,6 +90,9 @@ const budgetIcons: Record<ContextEngineBudgetItem["id"], typeof TerminalSquare> 
   attachments: Paperclip
 };
 
+const contextEditorTextareaClassName =
+  "!border-white/[0.12] !bg-slate-950/90 !text-slate-100 caret-violet-200 placeholder:!text-slate-500 selection:bg-violet-500/35 disabled:!text-slate-400 disabled:!opacity-70";
+
 export function ContextEngineDialog({
   agentId,
   open,
@@ -104,6 +110,7 @@ export function ContextEngineDialog({
   const [content, setContent] = useState("");
   const [savedContent, setSavedContent] = useState("");
   const [inspectorMode, setInspectorMode] = useState<InspectorMode>("preview");
+  const [expandedFileOpen, setExpandedFileOpen] = useState(false);
   const [actionMenuPath, setActionMenuPath] = useState<string | null>(null);
   const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
@@ -183,6 +190,7 @@ export function ContextEngineDialog({
       setError(null);
       setActiveTab("project");
       setInspectorMode("preview");
+      setExpandedFileOpen(false);
       setActionMenuPath(null);
       return;
     }
@@ -520,6 +528,9 @@ export function ContextEngineDialog({
                 onAddFile={openCreateFlow}
                 onEdit={() => setInspectorMode("edit")}
                 onPreview={() => setInspectorMode("preview")}
+                expandedFileOpen={expandedFileOpen}
+                onExpandedFileOpenChange={setExpandedFileOpen}
+                onOpenExpandedFile={() => setExpandedFileOpen(true)}
                 onExclude={excludeActiveFile}
                 onContentChange={setContent}
                 onRevertFile={() => setContent(savedContent)}
@@ -587,6 +598,9 @@ function ProjectContextTab({
   onAddFile,
   onEdit,
   onPreview,
+  expandedFileOpen,
+  onExpandedFileOpenChange,
+  onOpenExpandedFile,
   onExclude,
   onContentChange,
   onRevertFile,
@@ -614,6 +628,9 @@ function ProjectContextTab({
   onAddFile: () => void;
   onEdit: () => void;
   onPreview: () => void;
+  expandedFileOpen: boolean;
+  onExpandedFileOpenChange: (open: boolean) => void;
+  onOpenExpandedFile: () => void;
   onExclude: () => void;
   onContentChange: (content: string) => void;
   onRevertFile: () => void;
@@ -694,6 +711,25 @@ function ProjectContextTab({
         </section>
 
         <SelectedFileInspector
+          file={activeFile}
+          content={content}
+          savedContent={savedContent}
+          inspectorMode={inspectorMode}
+          error={error}
+          isLoadingFile={isLoadingFile}
+          isSavingFile={isSavingFile}
+          hasUnsavedFileChanges={hasUnsavedFileChanges}
+          canEditActiveFile={canEditActiveFile}
+          onEdit={onEdit}
+          onOpenExpandedFile={onOpenExpandedFile}
+          onExclude={onExclude}
+          onContentChange={onContentChange}
+          onRevertFile={onRevertFile}
+          onSaveFile={onSaveFile}
+        />
+        <ExpandedFileEditorDialog
+          open={expandedFileOpen}
+          onOpenChange={onExpandedFileOpenChange}
           file={activeFile}
           content={content}
           savedContent={savedContent}
@@ -803,7 +839,7 @@ function ContextFileRow({
       onClick={onSelect}
     >
       <div className="flex min-w-0 items-center gap-2">
-        <FileText className="h-4 w-4 shrink-0 text-slate-300" />
+        <ContextFileListIcon file={file} />
         <div className="min-w-0">
           <p className="truncate font-medium text-white">{file.label}</p>
           <p className="truncate font-mono text-[10px] text-slate-500">{file.path}</p>
@@ -834,6 +870,18 @@ function ContextFileRow({
       ) : null}
     </div>
   );
+}
+
+function ContextFileListIcon({ file }: { file: ContextEngineFile }) {
+  if (file.scope === "agent") {
+    return <Bot className="h-4 w-4 shrink-0 text-violet-200" />;
+  }
+
+  if (file.scope === "workspace") {
+    return <Home className="h-4 w-4 shrink-0 text-sky-200" />;
+  }
+
+  return <FileText className="h-4 w-4 shrink-0 text-slate-300" />;
 }
 
 function ContextFileStateControl({ file, onToggle }: { file: ContextEngineFile; onToggle: () => void }) {
@@ -898,7 +946,7 @@ function SelectedFileInspector({
   hasUnsavedFileChanges,
   canEditActiveFile,
   onEdit,
-  onPreview,
+  onOpenExpandedFile,
   onExclude,
   onContentChange,
   onRevertFile,
@@ -914,7 +962,7 @@ function SelectedFileInspector({
   hasUnsavedFileChanges: boolean;
   canEditActiveFile: boolean;
   onEdit: () => void;
-  onPreview: () => void;
+  onOpenExpandedFile: () => void;
   onExclude: () => void;
   onContentChange: (content: string) => void;
   onRevertFile: () => void;
@@ -974,7 +1022,10 @@ function SelectedFileInspector({
                 onChange={(event) => onContentChange(event.target.value)}
                 disabled={!canEditActiveFile}
                 spellCheck={false}
-                className="min-h-[104px] flex-1 resize-none rounded-[8px] border-white/[0.1] bg-slate-950/62 font-mono text-[11px] leading-4 text-slate-100 focus-visible:ring-violet-300/35"
+                className={cn(
+                  "min-h-[104px] flex-1 resize-none rounded-[8px] font-mono text-[11px] leading-4 focus-visible:ring-violet-300/35",
+                  contextEditorTextareaClassName
+                )}
                 placeholder={isLoadingFile ? "Loading context file..." : "Write context file content"}
               />
             ) : (
@@ -999,10 +1050,10 @@ function SelectedFileInspector({
                   type="button"
                   variant="secondary"
                   className="h-7 min-w-0 rounded-[7px] border-white/10 bg-white/[0.055] px-2 text-[11px] text-slate-200 hover:bg-white/[0.09]"
-                  onClick={onPreview}
+                  onClick={onOpenExpandedFile}
                 >
-                  <Eye className="mr-1 h-3 w-3" />
-                  Preview
+                  <Maximize2 className="mr-1 h-3 w-3" />
+                  Open
                 </Button>
                 <Button
                   type="button"
@@ -1030,9 +1081,9 @@ function SelectedFileInspector({
                   type="button"
                   variant="secondary"
                   className="h-7 min-w-0 rounded-[7px] border-white/10 bg-white/[0.055] px-2 text-[11px] text-slate-200 hover:bg-white/[0.09]"
-                  onClick={onPreview}
+                  onClick={onOpenExpandedFile}
                 >
-                  <Eye className="mr-1 h-3 w-3" />
+                  <Maximize2 className="mr-1 h-3 w-3" />
                   Preview
                 </Button>
                 <Button
@@ -1051,6 +1102,204 @@ function SelectedFileInspector({
         </div>
       )}
     </section>
+  );
+}
+
+function ExpandedFileEditorDialog({
+  open,
+  onOpenChange,
+  file,
+  content,
+  savedContent,
+  inspectorMode,
+  error,
+  isLoadingFile,
+  isSavingFile,
+  hasUnsavedFileChanges,
+  canEditActiveFile,
+  onEdit,
+  onPreview,
+  onExclude,
+  onContentChange,
+  onRevertFile,
+  onSaveFile
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  file: ContextEngineFile | null;
+  content: string;
+  savedContent: string;
+  inspectorMode: InspectorMode;
+  error: string | null;
+  isLoadingFile: boolean;
+  isSavingFile: boolean;
+  hasUnsavedFileChanges: boolean;
+  canEditActiveFile: boolean;
+  onEdit: () => void;
+  onPreview: () => void;
+  onExclude: () => void;
+  onContentChange: (content: string) => void;
+  onRevertFile: () => void;
+  onSaveFile: () => void;
+}) {
+  const previewContent = file ? buildInjectedPreviewContent(file, content || savedContent) : "";
+
+  return (
+    <Dialog open={open && Boolean(file)} onOpenChange={onOpenChange}>
+      <DialogContent
+        overlayClassName="bg-black/70 backdrop-blur-md"
+        closeClassName="right-3 top-3 h-7 w-7 text-slate-300 hover:bg-white/[0.06] hover:text-white"
+        className="grid h-[min(calc(100vh-56px),820px)] max-h-[calc(100vh-56px)] w-[min(calc(100vw-40px),1120px)] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-[14px] border border-violet-300/22 bg-[linear-gradient(135deg,rgba(13,17,28,0.99),rgba(7,10,18,0.99))] p-0 text-slate-100 shadow-[0_24px_90px_rgba(0,0,0,0.72)]"
+      >
+        <DialogHeader className="space-y-0 border-b border-white/[0.07] px-4 py-3 pr-12">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <FileText className="h-4 w-4 shrink-0 text-violet-200" />
+              <div className="min-w-0">
+                <DialogTitle className="truncate text-sm font-semibold leading-5 text-white">
+                  {file?.label ?? "Context file"}
+                </DialogTitle>
+                <DialogDescription className="truncate font-mono text-[10px] leading-4 text-slate-500">
+                  {file?.path ?? "No file selected"}
+                </DialogDescription>
+              </div>
+            </div>
+            {file ? (
+              <div className="flex shrink-0 items-center gap-2">
+                <StatusBadge status={file.status} compact />
+                <span className="rounded-full border border-white/[0.08] bg-white/[0.035] px-2 py-1 text-[10px] capitalize text-slate-300">
+                  {file.scope}
+                </span>
+              </div>
+            ) : null}
+          </div>
+        </DialogHeader>
+
+        <div className="grid min-h-0 grid-cols-[220px_minmax(0,1fr)] gap-0">
+          <aside className="border-r border-white/[0.07] bg-white/[0.025] p-4">
+            {file ? (
+              <div className="space-y-3">
+                <div className="grid gap-2 text-[11px] leading-4">
+                  <CompactInspectorItem label="Raw tokens">
+                    <InspectorValue value={file.rawTokens == null ? "Unknown" : formatTokenValue(file.rawTokens)} source={file.tokenSource} compact />
+                  </CompactInspectorItem>
+                  <CompactInspectorItem label="Injected">
+                    <InspectorValue value={file.injectedTokens == null ? "Unknown" : formatTokenValue(file.injectedTokens)} source={file.tokenSource} compact />
+                  </CompactInspectorItem>
+                  <CompactInspectorItem label="Updated">
+                    <span className="text-white">{formatRelativeTime(file.lastUpdatedAt)}</span>
+                  </CompactInspectorItem>
+                  <CompactInspectorItem label="Editable">
+                    <span className={file.editable ? "text-emerald-200" : "text-slate-400"}>
+                      {file.editable ? "Yes" : "Read only"}
+                    </span>
+                  </CompactInspectorItem>
+                </div>
+                {file.statusReason ? (
+                  <p className="rounded-[8px] border border-amber-300/16 bg-amber-400/[0.07] px-2 py-1.5 text-[10px] leading-[15px] text-amber-100/85">
+                    {file.statusReason}
+                  </p>
+                ) : null}
+                {hasUnsavedFileChanges ? (
+                  <p className="rounded-[8px] border border-violet-300/18 bg-violet-400/[0.08] px-2 py-1.5 text-[10px] leading-[15px] text-violet-100">
+                    Unsaved file edits are only written when Save File succeeds.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </aside>
+
+          <section className="flex min-h-0 flex-col p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium text-white">{inspectorMode === "edit" ? "Edit file" : "Preview injected content"}</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  {inspectorMode === "edit" ? "Changes use the same safe file validation as the compact inspector." : "Preview includes the metadata wrapper AgentOS shows for this context file."}
+                </p>
+              </div>
+              {isLoadingFile ? <Loader2 className="h-4 w-4 animate-spin text-slate-500" /> : null}
+            </div>
+            {error ? (
+              <p className="mb-3 rounded-[8px] border border-rose-300/18 bg-rose-400/[0.08] px-2.5 py-2 text-[11px] text-rose-100">
+                {error}
+              </p>
+            ) : null}
+            {inspectorMode === "edit" ? (
+              <Textarea
+                value={content}
+                onChange={(event) => onContentChange(event.target.value)}
+                disabled={!canEditActiveFile}
+                spellCheck={false}
+                className={cn(
+                  "min-h-0 flex-1 resize-none rounded-[9px] p-3 font-mono text-xs leading-5 focus-visible:ring-violet-300/35",
+                  contextEditorTextareaClassName
+                )}
+                placeholder={isLoadingFile ? "Loading context file..." : "Write context file content"}
+              />
+            ) : (
+              <CodePreview
+                content={previewContent}
+                className="min-h-0 flex-1 p-3 text-xs leading-5"
+                lineLimit={Number.POSITIVE_INFINITY}
+              />
+            )}
+          </section>
+        </div>
+
+        <DialogFooter className="border-t border-white/[0.07] px-4 py-3">
+          <div className="flex w-full items-center justify-between gap-3">
+            <div className="min-w-0 text-[11px] text-slate-500">
+              {file ? (
+                <span className="truncate">
+                  {hasUnsavedFileChanges ? "Unsaved changes" : "No unsaved changes"} · {file.enabled ? "Enabled" : "Disabled"}
+                </span>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-8 rounded-[8px] border-white/10 bg-white/[0.055] px-3 text-xs text-slate-200 hover:bg-white/[0.09]"
+                disabled={!hasUnsavedFileChanges || isSavingFile}
+                onClick={onRevertFile}
+              >
+                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                Revert
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-8 rounded-[8px] border-white/10 bg-white/[0.055] px-3 text-xs text-slate-200 hover:bg-white/[0.09]"
+                disabled={inspectorMode === "preview" && !file?.editable}
+                onClick={inspectorMode === "edit" ? onPreview : onEdit}
+              >
+                {inspectorMode === "edit" ? <Eye className="mr-1.5 h-3.5 w-3.5" /> : <Pencil className="mr-1.5 h-3.5 w-3.5" />}
+                {inspectorMode === "edit" ? "Preview" : "Edit"}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                className="h-8 rounded-[8px] border border-rose-300/25 bg-rose-500/15 px-3 text-xs text-rose-200 hover:bg-rose-500/22"
+                disabled={!file?.canToggle || !file.enabled}
+                onClick={onExclude}
+              >
+                <Ban className="mr-1.5 h-3.5 w-3.5" />
+                Exclude
+              </Button>
+              <Button
+                type="button"
+                className="h-8 rounded-[8px] bg-violet-500 px-3 text-xs text-white hover:bg-violet-400"
+                disabled={!hasUnsavedFileChanges || !canEditActiveFile || isSavingFile}
+                onClick={onSaveFile}
+              >
+                {isSavingFile ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1.5 h-3.5 w-3.5" />}
+                Save File
+              </Button>
+            </div>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1237,15 +1486,30 @@ function ActionMenuButton({
   );
 }
 
-function CodePreview({ content }: { content: string }) {
-  const lines = (content || "No preview content is available.").split("\n").slice(0, 12);
+function CodePreview({
+  content,
+  className,
+  lineLimit = 12
+}: {
+  content: string;
+  className?: string;
+  lineLimit?: number;
+}) {
+  const lines = (content || "No preview content is available.").split("\n").slice(0, lineLimit);
 
   return (
-    <div className="min-h-[104px] flex-1 overflow-hidden rounded-[8px] border border-white/[0.1] bg-slate-950/62 p-2.5 font-mono text-[11px] leading-4 text-slate-300">
+    <div
+      className={cn(
+        "min-h-[104px] flex-1 overflow-auto rounded-[8px] border border-white/[0.1] bg-slate-950/62 p-2.5 font-mono text-[11px] leading-4 text-slate-300",
+        className
+      )}
+    >
       {lines.map((line, index) => (
         <div key={`${index}:${line}`} className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2">
           <span className="select-none text-right text-slate-600">{index + 1}</span>
-          <span className={cn("truncate", index === 0 && "text-violet-200")}>{line || " "}</span>
+          <span className={cn(lineLimit <= 12 ? "truncate" : "whitespace-pre-wrap break-words", index === 0 && "text-violet-200")}>
+            {line || " "}
+          </span>
         </div>
       ))}
     </div>

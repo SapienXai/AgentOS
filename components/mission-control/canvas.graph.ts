@@ -71,6 +71,7 @@ export function buildCanvasGraph(
   onConfigureAgentModel: ((agentId: string) => void) | undefined,
   onConfigureAgentCapabilities: ((agentId: string, focus: "skills" | "tools") => void) | undefined,
   onOpenAgentContextEngine: ((agentId: string) => void) | undefined,
+  onAgentConnectionMenuOpenChange: ((agentId: string, open: boolean) => void) | undefined,
   onInspectAgentDetail: ((agentId: string, focus: AgentDetailFocus) => void) | undefined,
   onOpenWorkspaceChannels: ((workspaceId?: string, agentId?: string) => void) | undefined,
   onOpenAccounts: ((workspaceId?: string, agentId?: string) => void) | undefined,
@@ -242,6 +243,7 @@ export function buildCanvasGraph(
           onConfigureModel: isPendingCreation ? undefined : onConfigureAgentModel,
           onConfigureCapabilities: isPendingCreation ? undefined : onConfigureAgentCapabilities,
           onOpenContextEngine: isPendingCreation ? undefined : onOpenAgentContextEngine,
+          onConnectionMenuOpenChange: isPendingCreation ? undefined : onAgentConnectionMenuOpenChange,
           onInspect: isPendingCreation ? undefined : onInspectAgentDetail,
           onOpenWorkspaceChannels: isPendingCreation ? undefined : onOpenWorkspaceChannels,
           onOpenAccounts: isPendingCreation ? undefined : onOpenAccounts

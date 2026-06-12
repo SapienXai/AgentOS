@@ -38,13 +38,18 @@ export function resolveNodeZIndex(
   node: CanvasNode,
   selectedNodeId: string | null,
   composerTargetAgentId: string | null,
-  isComposerActive: boolean
+  isComposerActive: boolean,
+  elevatedAgentMenuId: string | null = null
 ) {
   if (node.type === "workspace") {
     return 0;
   }
 
   if (node.type === "agent") {
+    if (elevatedAgentMenuId === node.id) {
+      return 160;
+    }
+
     if (isComposerActive && composerTargetAgentId === node.id && selectedNodeId === node.id) {
       return 65;
     }
@@ -73,6 +78,10 @@ export function resolveNodeZIndex(
   }
 
   if (node.type === "surface-module") {
+    if (elevatedAgentMenuId === node.data.agent.id) {
+      return 150;
+    }
+
     if (node.data.variant === "add") {
       if (isComposerActive && composerTargetAgentId === node.data.agent.id && selectedNodeId === node.id) {
         return 65;

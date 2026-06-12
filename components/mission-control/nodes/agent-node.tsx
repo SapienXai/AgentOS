@@ -253,6 +253,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   const connectionMenuRef = useRef<HTMLDivElement | null>(null);
   const drawerPanelId = `agent-drawer-${data.agent.id}`;
   const connectionMenuPanelId = `agent-connections-${data.agent.id}`;
+  const onConnectionMenuOpenChange = data.onConnectionMenuOpenChange;
   const agentLabel = formatAgentDisplayName(data.agent);
   const chatUnreadCount = useAgentChatUnreadCount(data.agent.id, Boolean(data.chatOpen));
   const hasUnreadChat = chatUnreadCount > 0 && !data.chatOpen;
@@ -355,6 +356,16 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [connectionMenuOpen]);
 
+  useEffect(() => {
+    onConnectionMenuOpenChange?.(data.agent.id, connectionMenuOpen);
+
+    return () => {
+      if (connectionMenuOpen) {
+        onConnectionMenuOpenChange?.(data.agent.id, false);
+      }
+    };
+  }, [connectionMenuOpen, data.agent.id, onConnectionMenuOpenChange]);
+
   return (
     <div
       className={cn(
@@ -363,7 +374,8 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
         isPendingCreation && "border-cyan-200/22 shadow-[0_20px_54px_rgba(34,211,238,0.16),0_18px_46px_rgba(0,0,0,0.36)]",
         selected && AGENT_NODE_SELECTED_CLASSES,
         isCreationPulse && AGENT_NODE_CREATION_PULSE_CLASSES,
-        isAttentionActive && AGENT_NODE_ATTENTION_CLASSES
+        isAttentionActive && AGENT_NODE_ATTENTION_CLASSES,
+        connectionMenuOpen && "z-[160]"
       )}
     >
       {isCreationPulse ? (
@@ -650,7 +662,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                   animate={{ opacity: 1, x: 0, y: 0, scale: 1, filter: "blur(0px)" }}
                   exit={{ opacity: 0, x: -10, y: 14, scale: 0.92, filter: "blur(6px)" }}
                   transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-                  className="absolute left-[88px] top-[-150px] min-w-[220px]"
+                  className="absolute left-[88px] top-[-150px] z-[160] min-w-[220px] isolate"
                 >
                   <motion.svg
                     aria-hidden="true"
@@ -692,6 +704,16 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                   <div className="relative overflow-hidden rounded-[18px] border border-violet-200/20 bg-[linear-gradient(135deg,rgba(18,20,30,0.98),rgba(37,22,53,0.96)_58%,rgba(9,12,20,0.98))] p-1.5 shadow-[0_22px_55px_rgba(8,10,18,0.46),0_0_34px_rgba(168,85,247,0.24)] backdrop-blur-2xl">
                     <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(250,204,21,0.18),transparent_34%),radial-gradient(circle_at_94%_16%,rgba(168,85,247,0.28),transparent_36%)]" />
                     <ConnectionMenuButton
+                      icon={<BrainCircuit className="h-[17px] w-[17px]" />}
+                      label="Context Engine"
+                      description="Files & policy"
+                      disabled={!canOpenContextEngine}
+                      onClick={() => {
+                        data.onOpenContextEngine?.(data.agent.id);
+                        setConnectionMenuOpen(false);
+                      }}
+                    />
+                    <ConnectionMenuButton
                       icon={<Sparkles className="h-[17px] w-[17px]" />}
                       label="Add Skill"
                       description="Edit skills"
@@ -708,16 +730,6 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                       disabled={!canConfigureCapabilities}
                       onClick={() => {
                         configureAgentCapabilities("tools");
-                        setConnectionMenuOpen(false);
-                      }}
-                    />
-                    <ConnectionMenuButton
-                      icon={<BrainCircuit className="h-[17px] w-[17px]" />}
-                      label="Context Engine"
-                      description="Files & policy"
-                      disabled={!canOpenContextEngine}
-                      onClick={() => {
-                        data.onOpenContextEngine?.(data.agent.id);
                         setConnectionMenuOpen(false);
                       }}
                     />
