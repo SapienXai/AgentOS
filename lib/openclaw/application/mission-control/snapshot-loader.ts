@@ -61,6 +61,7 @@ import {
   type StatusPayload
 } from "@/lib/openclaw/client/gateway-client";
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
+import { buildAgentInboxItems } from "@/lib/openclaw/domains/agent-inbox";
 import {
   type SessionsPayload
 } from "@/lib/openclaw/domains/session-catalog";
@@ -436,6 +437,8 @@ async function loadMissionControlSnapshots({
 
     const tasks = buildTaskRecords(runtimes, agents);
     const visibleTasks = buildTaskRecords(visibleRuntimes, visibleAgents);
+    const agentInbox = buildAgentInboxItems(tasks, runtimes, agents);
+    const visibleAgentInbox = buildAgentInboxItems(visibleTasks, visibleRuntimes, visibleAgents);
     const runtimeDiagnostics = await runtimeDiagnosticsPromise;
     const diagnostics = await buildLiveMissionControlDiagnostics({
       profile,
@@ -503,6 +506,7 @@ async function loadMissionControlSnapshots({
         models: buildMissionControlModelRecords({ models, agents, modelStatus, configuredModelIds }),
         runtimes,
         tasks,
+        agentInbox,
         relationships
       },
       visible: {
@@ -512,6 +516,7 @@ async function loadMissionControlSnapshots({
         models: buildMissionControlModelRecords({ models, agents: visibleAgents, modelStatus, configuredModelIds }),
         runtimes: visibleRuntimes,
         tasks: visibleTasks,
+        agentInbox: visibleAgentInbox,
         relationships: visibleRelationships
       }
     };

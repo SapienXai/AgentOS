@@ -22,10 +22,13 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import {
   agentChatLastSeenStoragePrefix,
   agentChatMessageStoragePrefix,
+  agentInboxLastSeenStoragePrefix,
   agentChatStateEventName,
   readAgentChatLastSeenAt,
   readAgentChatMessages,
-  resolveAgentChatUnreadCount
+  readAgentInboxLastSeenAt,
+  resolveAgentChatUnreadCount,
+  resolveAgentInboxUnreadCount
 } from "@/components/mission-control/agent-chat-storage";
 import { SurfaceIcon } from "@/components/mission-control/surface-icon";
 import {
@@ -37,6 +40,7 @@ import {
   formatCapabilityLabel,
   getAgentPresetMeta
 } from "@/lib/openclaw/agent-presets";
+import { defaultHeartbeatForPreset } from "@/lib/openclaw/agent-heartbeat";
 import {
   formatAgentDisplayName,
   formatModelLabel
@@ -44,6 +48,146 @@ import {
 import { cn } from "@/lib/utils";
 
 type AgentFlowNode = FlowNode<AgentNodeData, "agent">;
+type CrossAgentMessageSettings = {
+  enabled: boolean;
+  sessionsVisibility: "self" | "tree" | "agent" | "all";
+  agentToAgentEnabled: boolean;
+  allow: string[];
+  source: "openclaw-config";
+};
+const crossAgentSettingsStorageKey = "agentos:cross-agent-message-settings";
+const crossAgentSettingsEventName = "agentos:cross-agent-message-settings";
+let cachedCrossAgentSettings: CrossAgentMessageSettings | null = null;
+
+function readCachedCrossAgentSettings() {
+  if (cachedCrossAgentSettings) {
+    return cachedCrossAgentSettings;
+  }
+
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(crossAgentSettingsStorageKey) || "null") as unknown;
+    const normalized = normalizeCrossAgentSettings(parsed);
+    cachedCrossAgentSettings = normalized;
+    return normalized;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedCrossAgentSettings(settings: CrossAgentMessageSettings | null) {
+  cachedCrossAgentSettings = settings;
+
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (settings) {
+    window.localStorage.setItem(crossAgentSettingsStorageKey, JSON.stringify(settings));
+  } else {
+    window.localStorage.removeItem(crossAgentSettingsStorageKey);
+  }
+
+  window.dispatchEvent(new CustomEvent(crossAgentSettingsEventName, { detail: settings }));
+}
+
+function normalizeCrossAgentSettings(value: unknown): CrossAgentMessageSettings | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const candidate = value as Partial<CrossAgentMessageSettings>;
+
+  if (
+    typeof candidate.enabled !== "boolean" ||
+    !isCrossAgentSessionsVisibility(candidate.sessionsVisibility) ||
+    typeof candidate.agentToAgentEnabled !== "boolean" ||
+    !Array.isArray(candidate.allow)
+  ) {
+    return null;
+  }
+
+  return {
+    enabled: candidate.enabled,
+    sessionsVisibility: candidate.sessionsVisibility,
+    agentToAgentEnabled: candidate.agentToAgentEnabled,
+    allow: candidate.allow.filter((entry): entry is string => typeof entry === "string"),
+    source: "openclaw-config"
+  };
+}
+
+function isCrossAgentSessionsVisibility(value: unknown): value is CrossAgentMessageSettings["sessionsVisibility"] {
+  return value === "self" || value === "tree" || value === "agent" || value === "all";
+}
+
+function isCrossAgentTargetEnabled(settings: CrossAgentMessageSettings | null, agentId: string) {
+  return Boolean(
+    settings?.agentToAgentEnabled &&
+      settings.sessionsVisibility === "all" &&
+      (settings.allow.includes("*") || settings.allow.includes(agentId))
+  );
+}
+
+function resolveOptimisticCrossAgentSettings(input: {
+  current: CrossAgentMessageSettings | null;
+  enabled: boolean;
+  knownTargetAgentIds: string[];
+  targetAgentId: string;
+}): CrossAgentMessageSettings {
+  const current = input.current ?? {
+    enabled: false,
+    sessionsVisibility: "tree" as const,
+    agentToAgentEnabled: false,
+    allow: [],
+    source: "openclaw-config" as const
+  };
+  const nextAllow = resolveOptimisticCrossAgentAllow({
+    allow: current.allow,
+    enabled: input.enabled,
+    knownTargetAgentIds: input.knownTargetAgentIds,
+    targetAgentId: input.targetAgentId,
+    wildcardActive: current.agentToAgentEnabled && current.sessionsVisibility === "all"
+  });
+  const hasAllowedTargets = nextAllow.length > 0;
+
+  return {
+    enabled: hasAllowedTargets,
+    sessionsVisibility: hasAllowedTargets ? "all" : "tree",
+    agentToAgentEnabled: hasAllowedTargets,
+    allow: nextAllow,
+    source: "openclaw-config"
+  };
+}
+
+function resolveOptimisticCrossAgentAllow(input: {
+  allow: string[];
+  enabled: boolean;
+  knownTargetAgentIds: string[];
+  targetAgentId: string;
+  wildcardActive: boolean;
+}) {
+  const knownTargetAgentIds = Array.from(
+    new Set(input.knownTargetAgentIds.filter((agentId) => agentId !== input.targetAgentId && agentId !== "*"))
+  );
+  const explicitAllow = input.allow.filter((agentId) => agentId !== "*");
+
+  if (input.enabled) {
+    if (input.wildcardActive && input.allow.includes("*")) {
+      return ["*"];
+    }
+
+    return Array.from(new Set([...explicitAllow, input.targetAgentId])).sort();
+  }
+
+  if (input.wildcardActive && input.allow.includes("*")) {
+    return knownTargetAgentIds.sort();
+  }
+
+  return explicitAllow.filter((agentId) => agentId !== input.targetAgentId).sort();
+}
 const agentNameVariants = {
   hidden: {
     opacity: 0
@@ -199,7 +343,11 @@ function ConnectionMenuButton({
   );
 }
 
-function useAgentChatUnreadCount(agentId: string, chatOpen: boolean) {
+function useAgentNotificationUnreadCount(
+  agentId: string,
+  chatOpen: boolean,
+  inboxItems: NonNullable<AgentNodeData["agentInboxItems"]>
+) {
   return useSyncExternalStore(
     (onStoreChange) => {
       if (chatOpen) {
@@ -218,7 +366,8 @@ function useAgentChatUnreadCount(agentId: string, chatOpen: boolean) {
         if (
           event.key &&
           (event.key.startsWith(agentChatMessageStoragePrefix) ||
-            event.key.startsWith(agentChatLastSeenStoragePrefix))
+            event.key.startsWith(agentChatLastSeenStoragePrefix) ||
+            event.key.startsWith(agentInboxLastSeenStoragePrefix))
         ) {
           onStoreChange();
         }
@@ -239,7 +388,9 @@ function useAgentChatUnreadCount(agentId: string, chatOpen: boolean) {
 
       const messages = readAgentChatMessages(agentId);
       const lastSeenAt = readAgentChatLastSeenAt(agentId);
-      return resolveAgentChatUnreadCount(messages, lastSeenAt);
+      const inboxLastSeenAt = readAgentInboxLastSeenAt(agentId);
+      return resolveAgentChatUnreadCount(messages, lastSeenAt) +
+        resolveAgentInboxUnreadCount(inboxItems, inboxLastSeenAt);
     },
     () => 0
   );
@@ -249,13 +400,27 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [connectionMenuOpen, setConnectionMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [heartbeatOverrideEnabled, setHeartbeatOverrideEnabled] = useState<boolean | null>(null);
+  const [heartbeatTogglePending, setHeartbeatTogglePending] = useState(false);
+  const [heartbeatToggleError, setHeartbeatToggleError] = useState<string | null>(null);
+  const cachedInitialCrossAgentSettings = readCachedCrossAgentSettings();
+  const [crossAgentSettings, setCrossAgentSettings] = useState<CrossAgentMessageSettings | null>(() =>
+    cachedInitialCrossAgentSettings
+  );
+  const [crossAgentSettingsLoading, setCrossAgentSettingsLoading] = useState(false);
+  const [crossAgentSettingsLoaded, setCrossAgentSettingsLoaded] = useState(Boolean(cachedInitialCrossAgentSettings));
+  const [crossAgentTogglePending, setCrossAgentTogglePending] = useState(false);
+  const [crossAgentSettingsError, setCrossAgentSettingsError] = useState<string | null>(null);
+  const crossAgentMutationInFlightRef = useRef(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const connectionMenuRef = useRef<HTMLDivElement | null>(null);
   const drawerPanelId = `agent-drawer-${data.agent.id}`;
   const connectionMenuPanelId = `agent-connections-${data.agent.id}`;
   const onConnectionMenuOpenChange = data.onConnectionMenuOpenChange;
   const agentLabel = formatAgentDisplayName(data.agent);
-  const chatUnreadCount = useAgentChatUnreadCount(data.agent.id, Boolean(data.chatOpen));
+  const inboxItems = data.agentInboxItems ?? [];
+  const crossAgentTargetIds = data.crossAgentTargetIds?.length ? data.crossAgentTargetIds : [data.agent.id];
+  const chatUnreadCount = useAgentNotificationUnreadCount(data.agent.id, Boolean(data.chatOpen), inboxItems);
   const hasUnreadChat = chatUnreadCount > 0 && !data.chatOpen;
   const activeTaskCount = Math.max(0, Number(data.activeTaskCount ?? 0));
   const isPendingCreation = Boolean(data.pendingCreation);
@@ -316,6 +481,35 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
         ? `${Math.round(data.agent.heartbeat.everyMs / 1000)}s`
         : null)
     : null;
+  const heartbeatEnabled = heartbeatOverrideEnabled ?? data.agent.heartbeat.enabled;
+  const heartbeatStateLabel = heartbeatEnabled ? "On" : "Off";
+  const heartbeatSwitchDetail = heartbeatToggleError ??
+    (heartbeatEnabled
+      ? heartbeatLabel
+        ? `Runs every ${heartbeatLabel}`
+        : "Recurring check-ins enabled"
+      : "Recurring check-ins disabled");
+  const crossAgentEnabled = isCrossAgentTargetEnabled(crossAgentSettings, data.agent.id);
+  const crossAgentAllowLabel = crossAgentSettings?.allow.includes("*")
+    ? "All agents can participate"
+    : crossAgentEnabled
+      ? "This agent can send and receive"
+      : crossAgentSettings?.allow.length
+        ? `${crossAgentSettings.allow.length} other participant${crossAgentSettings.allow.length === 1 ? "" : "s"} allowed`
+        : "No participants allowed";
+  const crossAgentStateLabel = crossAgentSettings
+    ? crossAgentEnabled
+      ? "On"
+      : "Off"
+    : "Unknown";
+  const crossAgentSwitchDetail = crossAgentSettingsError ??
+    (crossAgentSettingsLoading
+      ? crossAgentSettings
+        ? `Refreshing OpenClaw tool policy · currently ${crossAgentStateLabel}`
+        : "Reading OpenClaw tool policy"
+      : crossAgentSettings
+        ? `Confirmed ${crossAgentStateLabel} for this agent · sessions ${crossAgentSettings.sessionsVisibility} · ${crossAgentAllowLabel} · sender and receiver must both be On`
+        : "Status unknown; click to allow this agent as a cross-agent participant");
   const currentActionLabel = typeof data.agent.currentAction === "string" ? data.agent.currentAction.trim() : "";
   const purposeLabel = data.agent.profile?.purpose?.trim() || currentActionLabel || "OpenClaw operator";
   const visibleSkills = effectiveSkills.slice(0, 4);
@@ -355,6 +549,200 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
     window.addEventListener("pointerdown", handlePointerDown);
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [connectionMenuOpen]);
+
+  useEffect(() => {
+    if (heartbeatOverrideEnabled !== null && data.agent.heartbeat.enabled === heartbeatOverrideEnabled) {
+      setHeartbeatOverrideEnabled(null);
+    }
+  }, [data.agent.heartbeat.enabled, heartbeatOverrideEnabled]);
+
+  useEffect(() => {
+    setHeartbeatOverrideEnabled(null);
+    setHeartbeatToggleError(null);
+  }, [data.agent.id]);
+
+  useEffect(() => {
+    const handleCrossAgentSettings = (event: Event) => {
+      const detail = (event as CustomEvent<CrossAgentMessageSettings | null>).detail;
+      setCrossAgentSettings(normalizeCrossAgentSettings(detail));
+      setCrossAgentSettingsLoaded(Boolean(detail));
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === crossAgentSettingsStorageKey) {
+        let nextSettings: CrossAgentMessageSettings | null = null;
+        try {
+          nextSettings = normalizeCrossAgentSettings(
+            event.newValue ? JSON.parse(event.newValue) as unknown : null
+          );
+        } catch {
+          nextSettings = null;
+        }
+        cachedCrossAgentSettings = nextSettings;
+        setCrossAgentSettings(nextSettings);
+        setCrossAgentSettingsLoaded(Boolean(nextSettings));
+      }
+    };
+
+    window.addEventListener(crossAgentSettingsEventName, handleCrossAgentSettings as EventListener);
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener(crossAgentSettingsEventName, handleCrossAgentSettings as EventListener);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!drawerOpen || crossAgentSettingsLoaded || crossAgentSettingsLoading) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadCrossAgentSettings() {
+      setCrossAgentSettingsLoading(true);
+      setCrossAgentSettingsError(null);
+
+      try {
+        const response = await fetch("/api/settings/cross-agent-message", {
+          method: "GET",
+          headers: {
+            Accept: "application/json"
+          }
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          settings?: CrossAgentMessageSettings;
+          error?: string;
+        };
+
+        if (!response.ok || !payload.settings) {
+          throw new Error(payload.error || "Unable to inspect cross-agent message settings.");
+        }
+
+        if (!cancelled && !crossAgentMutationInFlightRef.current) {
+          setCrossAgentSettings(payload.settings);
+          setCrossAgentSettingsLoaded(true);
+          writeCachedCrossAgentSettings(payload.settings);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setCrossAgentSettingsError(error instanceof Error ? error.message : "Unable to inspect cross-agent message settings.");
+          setCrossAgentSettingsLoaded(true);
+        }
+      } finally {
+        if (!cancelled) {
+          setCrossAgentSettingsLoading(false);
+        }
+      }
+    }
+
+    void loadCrossAgentSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [crossAgentSettingsLoaded, crossAgentSettingsLoading, drawerOpen]);
+
+  const toggleHeartbeat = async () => {
+    if (heartbeatTogglePending || isPendingCreation) {
+      return;
+    }
+
+    const nextEnabled = !heartbeatEnabled;
+    const previousOverride = heartbeatOverrideEnabled;
+    setHeartbeatTogglePending(true);
+    setHeartbeatToggleError(null);
+    setHeartbeatOverrideEnabled(nextEnabled);
+
+    try {
+      const response = await fetch("/api/agents", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          id: data.agent.id,
+          workspaceId: data.agent.workspaceId,
+          heartbeat: nextEnabled
+            ? {
+                enabled: true,
+                every: data.agent.heartbeat.every ?? defaultHeartbeatForPreset(data.agent.policy.preset).every
+              }
+            : {
+                enabled: false
+              }
+        })
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || "Unable to update heartbeat.");
+      }
+
+      await data.onRefresh?.();
+    } catch (error) {
+      setHeartbeatOverrideEnabled(previousOverride);
+      setHeartbeatToggleError(error instanceof Error ? error.message : "Unable to update heartbeat.");
+    } finally {
+      setHeartbeatTogglePending(false);
+    }
+  };
+
+  const toggleCrossAgentMessage = async () => {
+    if (crossAgentTogglePending || isPendingCreation) {
+      return;
+    }
+
+    const nextEnabled = !crossAgentEnabled;
+    const previousSettings = crossAgentSettings;
+    const optimisticSettings = resolveOptimisticCrossAgentSettings({
+      current: crossAgentSettings,
+      enabled: nextEnabled,
+      knownTargetAgentIds: crossAgentTargetIds,
+      targetAgentId: data.agent.id
+    });
+    setCrossAgentTogglePending(true);
+    crossAgentMutationInFlightRef.current = true;
+    setCrossAgentSettingsError(null);
+    setCrossAgentSettings(optimisticSettings);
+    setCrossAgentSettingsLoaded(true);
+    writeCachedCrossAgentSettings(optimisticSettings);
+
+    try {
+      const response = await fetch("/api/settings/cross-agent-message", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          enabled: nextEnabled,
+          targetAgentId: data.agent.id,
+          knownTargetAgentIds: crossAgentTargetIds
+        })
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        settings?: CrossAgentMessageSettings;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.settings) {
+        throw new Error(payload.error || "Unable to update cross-agent message settings.");
+      }
+
+      setCrossAgentSettings(payload.settings);
+      setCrossAgentSettingsLoaded(true);
+      writeCachedCrossAgentSettings(payload.settings);
+      await data.onRefresh?.();
+    } catch (error) {
+      setCrossAgentSettings(previousSettings);
+      writeCachedCrossAgentSettings(previousSettings);
+      setCrossAgentSettingsError(error instanceof Error ? error.message : "Unable to update cross-agent message settings.");
+    } finally {
+      crossAgentMutationInFlightRef.current = false;
+      setCrossAgentTogglePending(false);
+    }
+  };
 
   useEffect(() => {
     onConnectionMenuOpenChange?.(data.agent.id, connectionMenuOpen);
@@ -1134,9 +1522,22 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                         </div>
                       </div>
 
-                      <AgentDrawerRow
+                      <AgentDrawerSwitch
                         label="Heartbeat"
-                        value={data.agent.heartbeat.enabled ? (heartbeatLabel ? `On · ${heartbeatLabel}` : "On") : "Off"}
+                        statusLabel={heartbeatStateLabel}
+                        checked={heartbeatEnabled}
+                        pending={heartbeatTogglePending}
+                        detail={heartbeatSwitchDetail}
+                        onToggle={toggleHeartbeat}
+                      />
+
+                      <AgentDrawerSwitch
+                        label="Cross-agent Participant"
+                        statusLabel={crossAgentStateLabel}
+                        checked={crossAgentEnabled}
+                        pending={crossAgentTogglePending}
+                        detail={crossAgentSwitchDetail}
+                        onToggle={toggleCrossAgentMessage}
                       />
                     </div>
                   </ScrollArea>
@@ -1192,17 +1593,79 @@ function AgentStatTile({
   );
 }
 
-function AgentDrawerRow({
+function AgentDrawerSwitch({
   label,
-  value
+  statusLabel,
+  checked,
+  pending,
+  pendingLabel = "Updating...",
+  detail,
+  onToggle
 }: {
   label: string;
-  value: string;
+  statusLabel: string;
+  checked: boolean;
+  pending?: boolean;
+  pendingLabel?: string;
+  detail: string;
+  onToggle: () => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-2 rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5">
-      <span className="shrink-0 text-[8px] uppercase tracking-[0.18em] text-slate-500">{label}</span>
-      <span className="min-w-0 text-right text-[9px] leading-4 text-slate-100">{value}</span>
+    <div className="rounded-[12px] border border-white/[0.06] bg-white/[0.02] px-2.5 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="min-w-0 text-[8px] uppercase tracking-[0.18em] text-slate-500">{label}</span>
+          <span
+            className={cn(
+              "shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold leading-none",
+              statusLabel === "On"
+                ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-100"
+                : statusLabel === "Off"
+                  ? "border-slate-600/60 bg-slate-900/70 text-slate-300"
+                  : "border-amber-300/30 bg-amber-400/10 text-amber-100"
+            )}
+          >
+            {statusLabel}
+          </span>
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={checked}
+          aria-label={`Toggle ${label}`}
+          disabled={pending}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (!pending) {
+              onToggle();
+            }
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          className={cn(
+            "nodrag nopan relative h-5 w-9 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/40",
+            checked
+              ? "border-emerald-300/40 bg-emerald-400/80"
+              : "border-slate-600/70 bg-slate-900/90",
+            pending && "cursor-wait opacity-70"
+          )}
+        >
+          <span
+            aria-hidden="true"
+            className={cn(
+              "absolute left-0 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] transition-transform",
+              checked ? "translate-x-[18px]" : "translate-x-[3px]"
+            )}
+          />
+        </button>
+      </div>
+      <p
+        className={cn(
+          "mt-1 text-[9px] leading-3",
+          /unable|failed|error/i.test(detail) ? "text-rose-200" : "text-slate-400"
+        )}
+      >
+        {pending ? pendingLabel : detail}
+      </p>
     </div>
   );
 }

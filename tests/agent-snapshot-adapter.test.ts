@@ -73,3 +73,41 @@ test("snapshot agent entry prefers saved customization over raw runtime metadata
   assert.equal(entry.agent.identity.theme, "violet");
   assert.equal(entry.agent.policy.preset, "custom");
 });
+
+test("snapshot agent entry falls back to configured heartbeat when live heartbeat status is absent", () => {
+  const entry = buildSnapshotAgentEntry({
+    rawAgent: {
+      id: "heartbeat-agent",
+      name: "Heartbeat Agent",
+      workspace: "/workspace",
+      agentDir: "/workspace/.openclaw/agents/heartbeat-agent/agent",
+      model: "openai/gpt-5.5"
+    },
+    configured: {
+      id: "heartbeat-agent",
+      workspace: "/workspace",
+      name: "Heartbeat Agent",
+      model: "openai/gpt-5.5",
+      heartbeat: {
+        every: "30m"
+      }
+    },
+    identityOverrides: null,
+    workspaceId: "workspace",
+    sessionList: [],
+    heartbeat: null,
+    manifestAgent: null,
+    agentRuntimes: [],
+    gatewayRpcOk: true,
+    profile: {
+      purpose: null,
+      operatingInstructions: [],
+      responseStyle: [],
+      outputPreference: null,
+      sourceFiles: []
+    }
+  });
+
+  assert.equal(entry.agent.heartbeat.enabled, true);
+  assert.equal(entry.agent.heartbeat.every, "30m");
+});

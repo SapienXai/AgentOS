@@ -101,6 +101,7 @@ function createTransientSnapshot(
     models: [],
     runtimes: [],
     tasks: [],
+    agentInbox: [],
     relationships: [],
     missionPresets: [],
     channelRegistry: {
@@ -427,6 +428,7 @@ export function createFallbackSnapshot(reason: string): MissionControlSnapshot {
         }
       }
     ],
+    agentInbox: [],
     relationships: [
       {
         id: "edge-demo-planner-model",

@@ -467,6 +467,7 @@ function createSnapshot(input: {
     models: [],
     runtimes: [],
     tasks: [],
+    agentInbox: [],
     relationships: [],
     missionPresets: [],
     channelRegistry: {

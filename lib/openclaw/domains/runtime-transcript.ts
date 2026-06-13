@@ -109,7 +109,7 @@ export async function mapSessionToRuntimes<
 ) {
   const runtime = mapRuntime(session, agentConfig, agentsList);
 
-  if (!session.key?.endsWith(":main") || !session.agentId || !session.sessionId) {
+  if (!shouldInspectSessionTranscript(session) || !session.agentId || !session.sessionId) {
     return [runtime];
   }
 
@@ -127,9 +127,12 @@ export async function mapSessionToRuntimes<
 
   try {
     const raw = await readFile(transcriptPath, "utf8");
-    const turns = extractTranscriptTurns(raw, runtime, agent?.workspace || config?.workspace).filter(
+    const allTurns = extractTranscriptTurns(raw, runtime, agent?.workspace || config?.workspace).filter(
       (turn) => !isHeartbeatTurn(turn.prompt)
     );
+    const turns = session.key?.includes(":explicit:")
+      ? allTurns.filter(isAgentToAgentTranscriptTurn)
+      : allTurns;
     const observedToolNames = collectTranscriptToolNames(turns);
 
     if (turns.length === 0) {
@@ -349,6 +352,10 @@ export function extractTranscriptTurns(raw: string, runtime: RuntimeRecord, work
       currentTurn.items.push(item);
       currentTurn.updatedAt = item.timestamp;
       currentTurn.errorMessage ||= errorMessage;
+
+      if (role === "toolResult" && entry.message.isError === true) {
+        currentTurn.errorMessage ||= summarizeText(errorMessage || item.text || `${entry.message.toolName || "Tool"} failed.`, 200);
+      }
 
       if (warningMessage && !currentTurn.warnings.includes(warningMessage)) {
         currentTurn.warnings.push(warningMessage);
@@ -646,15 +653,32 @@ function createTurnRuntime(
   toolNames: string[] = turn.toolNames
 ): RuntimeRecord {
   const updatedAt = Date.parse(turn.updatedAt);
-  const title = formatTurnTitle(turn.prompt, runtime.agentId);
+  const interSessionMessage = parseInterSessionPrompt(turn.prompt);
+  const usedAgentToAgentTool = toolNames.includes("sessions_send");
+  const title = interSessionMessage
+    ? `Message from ${prettifyAgentName(interSessionMessage.sourceAgentId ?? undefined)}`
+    : usedAgentToAgentTool
+      ? "Agent-to-agent message"
+      : formatTurnTitle(turn.prompt, runtime.agentId);
   const subtitle =
-    turn.warningSummary
+    turn.errorMessage
+      ? summarizeText(turn.errorMessage, 90)
+      : turn.warningSummary
       ? summarizeText(`Completed with fallback: ${turn.warningSummary}`, 90)
       : turn.finalText
         ? summarizeText(turn.finalText, 90)
+        : interSessionMessage
+          ? "Inter-agent message received; waiting for reply."
+          : usedAgentToAgentTool
+            ? "Agent-to-agent message sent; waiting for result."
         : turn.status === "stalled"
           ? "Waiting for output"
           : "Main session run";
+  const resultPreview =
+    turn.errorMessage ||
+    turn.finalText ||
+    interSessionMessage?.messagePreview ||
+    (usedAgentToAgentTool ? "Agent-to-agent message sent; waiting for result." : null);
 
   return {
     id: `runtime:${runtime.sessionId}:${turn.id}`,
@@ -677,11 +701,31 @@ function createTurnRuntime(
       ...runtime.metadata,
       turnId: turn.id,
       turnPrompt: turn.prompt,
-      stage: "main.turn",
+      stage: interSessionMessage || usedAgentToAgentTool ? "agent-message.turn" : "main.turn",
       historical: turn.status !== "running",
       createdFiles: turn.createdFiles,
       warnings: turn.warnings,
-      warningSummary: turn.warningSummary
+      warningSummary: turn.warningSummary,
+      ...(resultPreview ? { resultPreview } : {}),
+      ...(turn.finalText ? { handoffResult: turn.finalText } : {}),
+      ...(interSessionMessage
+        ? {
+            interSessionMessage: true,
+            notifyOperator: true,
+            operatorVisible: true,
+            sourceAgentId: interSessionMessage.sourceAgentId,
+            sourceSessionKey: interSessionMessage.sourceSessionKey,
+            sourceTool: interSessionMessage.sourceTool,
+            sourceChannel: interSessionMessage.sourceChannel
+          }
+        : {}),
+      ...(usedAgentToAgentTool
+        ? {
+            agentToAgentMessage: true,
+            notifyOperator: true,
+            operatorVisible: true
+          }
+        : {})
     }
   };
 }
@@ -776,6 +820,41 @@ function normalizeTranscriptPrompt(text: string) {
     .replace(/^\[[^\]]+\]\s*/i, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function shouldInspectSessionTranscript(session: RuntimeSessionEntry) {
+  return Boolean(
+    session.key?.endsWith(":main") ||
+    session.key?.includes(":explicit:")
+  );
+}
+
+function isAgentToAgentTranscriptTurn(turn: TranscriptTurn) {
+  return Boolean(parseInterSessionPrompt(turn.prompt) || turn.toolNames.includes("sessions_send"));
+}
+
+function parseInterSessionPrompt(prompt: string) {
+  const sourceSessionKey = prompt.match(/\bsourceSession=([^\s]+)/)?.[1]?.trim() ?? null;
+  const sourceTool = prompt.match(/\bsourceTool=([^\s]+)/)?.[1]?.trim() ?? null;
+
+  if (!sourceSessionKey && sourceTool !== "sessions_send") {
+    return null;
+  }
+
+  const sourceAgentId = sourceSessionKey?.match(/^agent:([^:]+)/)?.[1] ?? null;
+  const sourceChannel = prompt.match(/\bsourceChannel=([^\s]+)/)?.[1]?.trim() ?? null;
+  const messagePreview = prompt
+    .replace(/^sourceSession=[^\s]+(?:\s+[A-Za-z]+=[^\s]+)*\s*/i, "")
+    .replace(/^This content was routed by OpenClaw\s*/i, "")
+    .trim();
+
+  return {
+    sourceAgentId,
+    sourceSessionKey,
+    sourceTool,
+    sourceChannel,
+    messagePreview: messagePreview ? summarizeText(messagePreview, 180) : null
+  };
 }
 
 function formatTurnTitle(prompt: string, agentId?: string) {

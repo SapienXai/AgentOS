@@ -165,7 +165,15 @@ export async function hydrateMissionControlWorkspaceGraph(input: {
       const agentRuntimes = input.runtimes
         .filter((runtime) => runtime.agentId === rawAgent.id)
         .sort(sortRuntimesByUpdatedAtDesc);
-      const heartbeat = heartbeatByAgent.get(rawAgent.id);
+      const heartbeat = heartbeatByAgent.get(rawAgent.id) ?? (
+        configured?.heartbeat?.every
+          ? {
+              enabled: true,
+              every: configured.heartbeat.every,
+              everyMs: null
+            }
+          : null
+      );
       return buildSnapshotAgentEntry({
         rawAgent,
         configured,

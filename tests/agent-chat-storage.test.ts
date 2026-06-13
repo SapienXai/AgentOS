@@ -6,6 +6,7 @@ import {
   normalizeAgentChatMessagesForDisplay,
   resolveAgentChatLatestAssistantAt,
   resolveAgentChatUnreadCount,
+  resolveAgentInboxUnreadCount,
   type AgentChatMessage
 } from "@/components/mission-control/agent-chat-storage";
 
@@ -37,6 +38,21 @@ test("agent chat unread counts only completed assistant replies", () => {
   assert.equal(resolveAgentChatUnreadCount(messages, null), 1);
   assert.equal(resolveAgentChatUnreadCount(messages, 1), 1);
   assert.equal(resolveAgentChatUnreadCount(messages, 3), 0);
+});
+
+test("agent inbox unread counts OpenClaw-derived results after last seen", () => {
+  assert.equal(
+    resolveAgentInboxUnreadCount(
+      [
+        { updatedAt: 10 },
+        { updatedAt: 20 },
+        { updatedAt: null }
+      ],
+      10
+    ),
+    1
+  );
+  assert.equal(resolveAgentInboxUnreadCount([{ updatedAt: 10 }], null), 1);
 });
 
 test("agent chat display keeps only the active turn pending", () => {

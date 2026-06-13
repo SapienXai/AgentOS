@@ -77,6 +77,7 @@ export function MissionCanvas({
   onConfigureAgentModel,
   onConfigureAgentCapabilities,
   onOpenAgentContextEngine,
+  onRefresh,
   onInspectAgentDetail,
   onOpenWorkspaceChannels,
   onOpenAccounts,
@@ -119,6 +120,7 @@ export function MissionCanvas({
   onConfigureAgentModel?: (agentId: string) => void;
   onConfigureAgentCapabilities?: (agentId: string, focus: "skills" | "tools") => void;
   onOpenAgentContextEngine?: (agentId: string) => void;
+  onRefresh?: () => Promise<void> | void;
   onInspectAgentDetail?: (agentId: string, focus: AgentDetailFocus) => void;
   onOpenWorkspaceChannels?: (workspaceId?: string, agentId?: string) => void;
   onOpenAccounts?: (workspaceId?: string, agentId?: string) => void;
@@ -191,6 +193,7 @@ export function MissionCanvas({
     onConfigureAgentModel,
     onConfigureAgentCapabilities,
     onOpenAgentContextEngine,
+    onRefresh,
     handleAgentConnectionMenuOpenChange,
     onInspectAgentDetail,
     onOpenWorkspaceChannels,
@@ -283,6 +286,7 @@ export function MissionCanvas({
       onConfigureAgentModel,
       onConfigureAgentCapabilities,
       onOpenAgentContextEngine,
+      onRefresh,
       handleAgentConnectionMenuOpenChange,
       onInspectAgentDetail,
       onOpenWorkspaceChannels,
@@ -336,6 +340,7 @@ export function MissionCanvas({
     onConfigureAgentModel,
     onConfigureAgentCapabilities,
     onOpenAgentContextEngine,
+    onRefresh,
     handleAgentConnectionMenuOpenChange,
     onInspectAgentDetail,
     onOpenWorkspaceChannels,

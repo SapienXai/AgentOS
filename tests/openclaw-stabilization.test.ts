@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -38,6 +38,7 @@ import {
   mergeRuntimeHistory as mergeRuntimeHistoryRecords
 } from "@/lib/openclaw/domains/runtime-history";
 import {
+  mapSessionToRuntimes,
   parseRuntimeOutput
 } from "@/lib/openclaw/domains/runtime-transcript";
 import { mapSessionCatalogEntryToRuntime } from "@/lib/openclaw/domains/runtime-normalizer";
@@ -2001,6 +2002,61 @@ test("session runtime mapping derives agent id from Gateway session keys", () =>
   assert.equal(runtime.tokenUsage?.total, 42);
 });
 
+test("explicit inter-session transcripts produce agent message runtimes", async () => {
+  const workspacePath = await mkdtemp(path.join(os.tmpdir(), "agentos-inter-session-"));
+  const sessionsDir = path.join(workspacePath, ".openclaw", "agents", "agent-b", "sessions");
+  await mkdir(sessionsDir, { recursive: true });
+  await writeFile(
+    path.join(sessionsDir, "target-session.jsonl"),
+    [
+      JSON.stringify({
+        type: "message",
+        id: "turn-1",
+        timestamp: "2026-04-13T00:00:00.000Z",
+        message: {
+          role: "user",
+          timestamp: "2026-04-13T00:00:00.000Z",
+          content:
+            "[Inter-session message] sourceSession=agent:agent-a:explicit:source-session sourceChannel=webchat sourceTool=sessions_send isUser=false\nPlease inspect the workspace and report back."
+        }
+      })
+    ].join("\n"),
+    "utf8"
+  );
+
+  const runtimes = await mapSessionToRuntimes(
+    {
+      agentId: "agent-b",
+      key: "agent:agent-b:explicit:target-session",
+      sessionId: "target-session",
+      updatedAt: Date.parse("2026-04-13T00:00:00.000Z"),
+      ageMs: 0
+    },
+    [
+      {
+        id: "agent-b",
+        workspace: workspacePath
+      }
+    ],
+    [
+      {
+        id: "agent-b",
+        workspace: workspacePath
+      }
+    ],
+    (session) => mapSessionCatalogEntryToRuntime(session, [{ id: "agent-b", workspace: workspacePath }], [{ id: "agent-b", workspace: workspacePath }])
+  );
+
+  assert.equal(runtimes.length, 1);
+  assert.equal(runtimes[0].agentId, "agent-b");
+  assert.equal(runtimes[0].status, "running");
+  assert.equal(runtimes[0].title, "Message from Agent A");
+  assert.equal(runtimes[0].metadata.interSessionMessage, true);
+  assert.equal(runtimes[0].metadata.sourceAgentId, "agent-a");
+  assert.equal(runtimes[0].metadata.sourceTool, "sessions_send");
+  assert.equal(runtimes[0].metadata.resultPreview, "Please inspect the workspace and report back.");
+});
+
 test("channel registry normalization trims ids and dedupes workspace bindings", () => {
   const registry = {
     version: 1,
@@ -3545,6 +3601,46 @@ test("runtime history keeps current dispatch runtime outside recent agent limit"
   const nextResult = mergeRuntimeHistoryRecords(recentRuntimes, result.cache);
 
   assert.equal(nextResult.runtimes.some((runtime) => runtime.id === dispatchRuntime.id), false);
+});
+
+test("runtime history keeps operator-visible agent messages outside recent agent limit", () => {
+  const base = Date.parse("2026-04-13T00:00:00.000Z");
+  const recentRuntimes = Array.from({ length: 9 }, (_, index) => ({
+    id: `runtime:recent-message-${index}`,
+    source: "session",
+    key: `agent:agent-1:explicit:recent-message-${index}`,
+    title: "Agent session",
+    subtitle: "main session",
+    status: "running",
+    updatedAt: base + 10_000 + index,
+    ageMs: 0,
+    agentId: "agent-1",
+    workspaceId: "workspace-1",
+    sessionId: `recent-message-${index}`,
+    metadata: {}
+  })) as unknown as RuntimeRecord[];
+  const agentMessageRuntime = {
+    id: "runtime:agent-message-1",
+    source: "turn",
+    key: "agent:agent-1:main:turn:message-1",
+    title: "Message from Agent Two",
+    subtitle: "Agent message received.",
+    status: "completed",
+    updatedAt: base,
+    ageMs: 0,
+    agentId: "agent-1",
+    workspaceId: "workspace-1",
+    sessionId: "session-1",
+    metadata: {
+      interSessionMessage: true,
+      sourceAgentId: "agent-2"
+    }
+  } as unknown as RuntimeRecord;
+
+  const result = mergeRuntimeHistoryRecords([...recentRuntimes, agentMessageRuntime], new Map());
+
+  assert.ok(result.runtimes.some((runtime) => runtime.id === agentMessageRuntime.id));
+  assert.equal(result.runtimes.filter((runtime) => runtime.agentId === "agent-1").length, 9);
 });
 
 test("task cards use explicit runtime origin before direct-chat heuristics", () => {

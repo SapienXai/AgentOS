@@ -71,6 +71,7 @@ export function buildCanvasGraph(
   onConfigureAgentModel: ((agentId: string) => void) | undefined,
   onConfigureAgentCapabilities: ((agentId: string, focus: "skills" | "tools") => void) | undefined,
   onOpenAgentContextEngine: ((agentId: string) => void) | undefined,
+  onRefresh: (() => Promise<void> | void) | undefined,
   onAgentConnectionMenuOpenChange: ((agentId: string, open: boolean) => void) | undefined,
   onInspectAgentDetail: ((agentId: string, focus: AgentDetailFocus) => void) | undefined,
   onOpenWorkspaceChannels: ((workspaceId?: string, agentId?: string) => void) | undefined,
@@ -115,6 +116,7 @@ export function buildCanvasGraph(
   let rowTopY = 42;
   let rowMaxHeight = 0;
   const liveAgentIds = new Set(snapshot.agents.map((agent) => agent.id));
+  const crossAgentTargetIds = snapshot.agents.map((agent) => agent.id);
 
   visibleWorkspaces.forEach((workspace, workspaceIndex) => {
     const liveWorkspaceAgents = isFocusMode
@@ -191,6 +193,7 @@ export function buildCanvasGraph(
       const isTaskFocusedAgent = selectedTaskAgentId === agent.id || hasJustCreatedTask;
       const activeTaskCount = agentTasks.filter((task) => isLiveTask(task)).length;
       const isAgentChatOpen = activeChatAgentId === agent.id;
+      const agentInboxItems = (snapshot.agentInbox ?? []).filter((item) => item.agentId === agent.id);
       const isPendingCreation = pendingWorkspaceAgentIds.has(agent.id);
       const creationWarning = agentCreationWarnings[agent.id] ?? pendingWorkspaceAgentWarnings.get(agent.id) ?? null;
       const surfaceBadges = buildAgentSurfaceBadges(snapshot, workspace, agent);
@@ -231,6 +234,8 @@ export function buildCanvasGraph(
           creationPulse: recentCreatedAgentId === agent.id,
           activeTaskCount,
           chatOpen: isAgentChatOpen,
+          agentInboxItems,
+          crossAgentTargetIds,
           relativeTimeReferenceMs,
           modelLabel,
           surfaceBadges,
@@ -243,6 +248,7 @@ export function buildCanvasGraph(
           onConfigureModel: isPendingCreation ? undefined : onConfigureAgentModel,
           onConfigureCapabilities: isPendingCreation ? undefined : onConfigureAgentCapabilities,
           onOpenContextEngine: isPendingCreation ? undefined : onOpenAgentContextEngine,
+          onRefresh: isPendingCreation ? undefined : onRefresh,
           onConnectionMenuOpenChange: isPendingCreation ? undefined : onAgentConnectionMenuOpenChange,
           onInspect: isPendingCreation ? undefined : onInspectAgentDetail,
           onOpenWorkspaceChannels: isPendingCreation ? undefined : onOpenWorkspaceChannels,

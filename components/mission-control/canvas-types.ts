@@ -3,6 +3,7 @@ import type { Edge, Node } from "@xyflow/react";
 import type {
   MissionControlSurfaceProvider,
   ModelRecord,
+  AgentInboxRecord,
   AgentRecord,
   RuntimeActivityRecord,
   WorkItemRecord,
@@ -54,6 +55,8 @@ export type AgentNodeData = Record<string, unknown> & {
   creationPulse?: boolean;
   activeTaskCount?: number;
   chatOpen?: boolean;
+  agentInboxItems?: AgentInboxRecord[];
+  crossAgentTargetIds?: string[];
   relativeTimeReferenceMs: number;
   surfaceBadges?: AgentSurfaceBadge[];
   accountBadges?: AgentAccountBadge[];
@@ -65,6 +68,7 @@ export type AgentNodeData = Record<string, unknown> & {
   onConfigureModel?: (agentId: string) => void;
   onConfigureCapabilities?: (agentId: string, focus: "skills" | "tools") => void;
   onOpenContextEngine?: (agentId: string) => void;
+  onRefresh?: () => Promise<void> | void;
   onConnectionMenuOpenChange?: (agentId: string, open: boolean) => void;
   onInspect?: (agentId: string, focus: AgentDetailFocus) => void;
   onOpenWorkspaceChannels?: (workspaceId?: string, agentId?: string) => void;

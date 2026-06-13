@@ -1207,6 +1207,7 @@ function createSnapshot(): MissionControlSnapshot {
     models: [],
     runtimes: [],
     tasks: [],
+    agentInbox: [],
     relationships: [],
     missionPresets: [],
     channelRegistry: {

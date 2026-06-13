@@ -53,6 +53,9 @@ const GATEWAY_AUTH_TOKEN_CONFIG_KEY = "gateway.auth.token";
 const GATEWAY_AUTH_RESTART_SETTLE_MS = 1_250;
 const GATEWAY_AUTH_RESTART_VERIFY_DELAYS_MS = [0, 500, 1_000, 1_500, 2_500, 3_500];
 const GATEWAY_DEVICE_ACCESS_REPAIR_TIMEOUT_MS = 10_000;
+const SESSION_TOOLS_VISIBILITY_CONFIG_KEY = "tools.sessions.visibility";
+const AGENT_TO_AGENT_ENABLED_CONFIG_KEY = "tools.agentToAgent.enabled";
+const AGENT_TO_AGENT_ALLOW_CONFIG_KEY = "tools.agentToAgent.allow";
 const GATEWAY_DEVICE_ACCESS_REQUIRED_SCOPES = [
   "operator.admin",
   "operator.read",
@@ -97,6 +100,20 @@ type GatewayConfigCommandResult = {
   metadata?: Record<string, unknown>;
 };
 
+export type CrossAgentMessageSettings = {
+  enabled: boolean;
+  sessionsVisibility: "self" | "tree" | "agent" | "all";
+  agentToAgentEnabled: boolean;
+  allow: string[];
+  source: "openclaw-config";
+};
+
+type CrossAgentMessageSettingsUpdateInput = {
+  enabled: boolean;
+  targetAgentId?: string | null;
+  knownTargetAgentIds?: string[];
+};
+
 function invalidateSettingsSnapshot() {
   invalidateMissionControlSnapshotCache();
   clearMissionControlRuntimeHistoryCache();
@@ -133,6 +150,74 @@ export async function updateWorkspaceRoot(input: { workspaceRoot?: string | null
   invalidateSettingsSnapshot();
 
   return getMissionControlSnapshot({ force: true });
+}
+
+export async function getCrossAgentMessageSettings(): Promise<CrossAgentMessageSettings> {
+  const adapter = getOpenClawAdapter();
+  const [
+    sessionsVisibility,
+    agentToAgentEnabled,
+    allow
+  ] = await Promise.all([
+    adapter.getConfig<unknown>(SESSION_TOOLS_VISIBILITY_CONFIG_KEY, { timeoutMs: 5_000 }),
+    adapter.getConfig<unknown>(AGENT_TO_AGENT_ENABLED_CONFIG_KEY, { timeoutMs: 5_000 }),
+    adapter.getConfig<unknown>(AGENT_TO_AGENT_ALLOW_CONFIG_KEY, { timeoutMs: 5_000 })
+  ]);
+  const normalizedVisibility = normalizeSessionToolsVisibility(sessionsVisibility);
+  const normalizedAgentToAgentEnabled = agentToAgentEnabled === true;
+  const normalizedAllow = normalizeAgentToAgentAllow(allow);
+
+  return {
+    enabled: normalizedVisibility === "all" && normalizedAgentToAgentEnabled && normalizedAllow.length > 0,
+    sessionsVisibility: normalizedVisibility,
+    agentToAgentEnabled: normalizedAgentToAgentEnabled,
+    allow: normalizedAllow,
+    source: "openclaw-config"
+  };
+}
+
+export async function updateCrossAgentMessageSettings(input: CrossAgentMessageSettingsUpdateInput): Promise<CrossAgentMessageSettings> {
+  const adapter = getOpenClawAdapter();
+  const targetAgentId = readOptionalString(input.targetAgentId);
+
+  if (targetAgentId) {
+    const current = await getCrossAgentMessageSettings();
+    const knownTargetAgentIds = normalizeAgentToAgentAllow(input.knownTargetAgentIds).filter((agentId) => agentId !== "*");
+    const nextAllow = resolveTargetAgentAllowList({
+      allow: current.allow,
+      enabled: input.enabled,
+      knownTargetAgentIds,
+      targetAgentId,
+      wildcardActive: current.agentToAgentEnabled && current.sessionsVisibility === "all"
+    });
+
+    if (nextAllow.length > 0) {
+      await adapter.setConfig(SESSION_TOOLS_VISIBILITY_CONFIG_KEY, "all", { timeoutMs: 10_000 });
+      await adapter.setConfig(AGENT_TO_AGENT_ALLOW_CONFIG_KEY, nextAllow, { strictJson: true, timeoutMs: 10_000 });
+      await adapter.setConfig(AGENT_TO_AGENT_ENABLED_CONFIG_KEY, true, { strictJson: true, timeoutMs: 10_000 });
+    } else {
+      await adapter.setConfig(AGENT_TO_AGENT_ENABLED_CONFIG_KEY, false, { strictJson: true, timeoutMs: 10_000 });
+      await adapter.setConfig(AGENT_TO_AGENT_ALLOW_CONFIG_KEY, [], { strictJson: true, timeoutMs: 10_000 });
+      await adapter.setConfig(SESSION_TOOLS_VISIBILITY_CONFIG_KEY, "tree", { timeoutMs: 10_000 });
+    }
+
+    invalidateSettingsSnapshot();
+
+    return getCrossAgentMessageSettings();
+  }
+
+  if (input.enabled) {
+    await adapter.setConfig(SESSION_TOOLS_VISIBILITY_CONFIG_KEY, "all", { timeoutMs: 10_000 });
+    await adapter.setConfig(AGENT_TO_AGENT_ALLOW_CONFIG_KEY, ["*"], { strictJson: true, timeoutMs: 10_000 });
+    await adapter.setConfig(AGENT_TO_AGENT_ENABLED_CONFIG_KEY, true, { strictJson: true, timeoutMs: 10_000 });
+  } else {
+    await adapter.setConfig(AGENT_TO_AGENT_ENABLED_CONFIG_KEY, false, { strictJson: true, timeoutMs: 10_000 });
+    await adapter.setConfig(SESSION_TOOLS_VISIBILITY_CONFIG_KEY, "tree", { timeoutMs: 10_000 });
+  }
+
+  invalidateSettingsSnapshot();
+
+  return getCrossAgentMessageSettings();
 }
 
 export async function getGatewayNativeAuthStatus(
@@ -1063,6 +1148,39 @@ function hasGatewayDeviceAccessRequiredScopes(scopes: string[], requiredScopes =
 
 function readOptionalString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normalizeSessionToolsVisibility(value: unknown): CrossAgentMessageSettings["sessionsVisibility"] {
+  return value === "self" || value === "agent" || value === "all" ? value : "tree";
+}
+
+function normalizeAgentToAgentAllow(value: unknown) {
+  return Array.from(new Set(readStringArray(value).map((entry) => entry.trim()).filter(Boolean)));
+}
+
+function resolveTargetAgentAllowList(input: {
+  allow: string[];
+  enabled: boolean;
+  knownTargetAgentIds: string[];
+  targetAgentId: string;
+  wildcardActive: boolean;
+}) {
+  const knownTargetAgentIds = Array.from(new Set(input.knownTargetAgentIds.filter((agentId) => agentId !== input.targetAgentId)));
+  const explicitAllow = input.allow.filter((agentId) => agentId !== "*");
+
+  if (input.enabled) {
+    if (input.wildcardActive && input.allow.includes("*")) {
+      return ["*"];
+    }
+
+    return Array.from(new Set([...explicitAllow, input.targetAgentId])).sort();
+  }
+
+  if (input.wildcardActive && input.allow.includes("*")) {
+    return knownTargetAgentIds.sort();
+  }
+
+  return explicitAllow.filter((agentId) => agentId !== input.targetAgentId).sort();
 }
 
 function readStringArray(value: unknown) {

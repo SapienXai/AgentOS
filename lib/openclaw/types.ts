@@ -701,6 +701,24 @@ export interface TaskRecord {
   metadata: Record<string, unknown>;
 }
 
+export interface AgentInboxItem {
+  id: string;
+  agentId: string;
+  workspaceId?: string;
+  kind: "handoff-result" | "handoff-update";
+  status: RuntimeStatus;
+  title: string;
+  summary: string;
+  sourceAgentId?: string;
+  sourceAgentName?: string | null;
+  taskId?: string;
+  runtimeId?: string;
+  sessionId?: string;
+  runId?: string;
+  updatedAt: number | null;
+  provenance: "openclaw-task" | "openclaw-runtime";
+}
+
 export type TaskFeedEventKind = "status" | "assistant" | "tool" | "artifact" | "warning" | "user";
 
 export interface TaskFeedEvent {
@@ -776,6 +794,7 @@ export interface MissionControlSnapshot {
   models: ModelRecord[];
   runtimes: RuntimeRecord[];
   tasks: TaskRecord[];
+  agentInbox: AgentInboxItem[];
   relationships: RelationshipRecord[];
   missionPresets: string[];
   channelRegistry: ChannelRegistry;

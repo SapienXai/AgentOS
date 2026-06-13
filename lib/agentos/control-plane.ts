@@ -22,9 +22,11 @@ import {
 } from "@/lib/openclaw/application/runtime-service";
 import {
   generateGatewayNativeAuthToken,
+  getCrossAgentMessageSettings,
   getGatewayNativeAuthStatus,
   repairGatewayNativeDeviceAccess,
   saveGatewayNativeAuthCredential,
+  updateCrossAgentMessageSettings,
   updateGatewayRemoteUrl,
   updateWorkspaceRoot
 } from "@/lib/openclaw/application/settings-service";
@@ -76,6 +78,7 @@ export {
   ensureOpenClawRuntimeSmokeTest,
   ensureOpenClawRuntimeStateAccess,
   generateGatewayNativeAuthToken,
+  getCrossAgentMessageSettings,
   getChannelRegistry,
   getGatewayNativeAuthStatus,
   getRuntimeOutput,
@@ -88,6 +91,7 @@ export {
   setWorkspaceChannelPrimary,
   submitMission,
   updateAgent,
+  updateCrossAgentMessageSettings,
   updateGatewayRemoteUrl,
   updateWorkspaceProject,
   updateWorkspaceRoot,

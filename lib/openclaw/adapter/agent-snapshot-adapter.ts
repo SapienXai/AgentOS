@@ -84,6 +84,15 @@ export function buildSnapshotAgentEntry(input: {
   const observedToolNames = unique(agentRuntimes.flatMap((runtime) => runtime.toolNames ?? []));
   const activeRuntimeIds = agentRuntimes.map((runtime) => runtime.id);
   const latestRuntime = agentRuntimes[0];
+  const heartbeat = input.heartbeat ?? (
+    input.configured?.heartbeat?.every
+      ? {
+          enabled: true,
+          every: input.configured.heartbeat.every,
+          everyMs: null
+        }
+      : null
+  );
   const lastActiveAt =
     input.sessionList
       .map((entry) => entry.updatedAt ?? 0)
@@ -92,7 +101,7 @@ export function buildSnapshotAgentEntry(input: {
   const statusValue = resolveAgentStatus({
     rpcOk: input.gatewayRpcOk,
     activeRuntime: latestRuntime,
-    heartbeatEnabled: Boolean(input.heartbeat?.enabled),
+    heartbeatEnabled: Boolean(heartbeat?.enabled),
     lastActiveAt
   });
 
@@ -114,14 +123,14 @@ export function buildSnapshotAgentEntry(input: {
     lastActiveAt,
     currentAction: resolveAgentAction({
       runtime: latestRuntime,
-      heartbeatEvery: input.heartbeat?.every ?? null,
+      heartbeatEvery: heartbeat?.every ?? null,
       status: statusValue
     }),
     activeRuntimeIds,
     heartbeat: {
-      enabled: Boolean(input.heartbeat?.enabled),
-      every: input.heartbeat?.every ?? null,
-      everyMs: input.heartbeat?.everyMs ?? null
+      enabled: Boolean(heartbeat?.enabled),
+      every: heartbeat?.every ?? null,
+      everyMs: heartbeat?.everyMs ?? null
     },
     identity: {
       emoji:

@@ -78,6 +78,10 @@ function pruneRuntimeHistory(runtimes: RuntimeRecord[]) {
       }
     }
 
+    for (const runtime of sorted.filter(isOperatorVisibleAgentMessage).slice(0, 8)) {
+      retained.set(runtime.id, runtime);
+    }
+
     return Array.from(retained.values()).sort(sortRuntimesByUpdatedAtDesc);
   });
 }
@@ -87,5 +91,13 @@ function isCurrentDispatchRuntime(runtime: RuntimeRecord) {
     typeof runtime.metadata.dispatchId === "string" &&
     runtime.metadata.dispatchId.trim().length > 0 &&
     runtime.metadata.historical !== true
+  );
+}
+
+function isOperatorVisibleAgentMessage(runtime: RuntimeRecord) {
+  return (
+    runtime.metadata.interSessionMessage === true ||
+    runtime.metadata.agentToAgentMessage === true ||
+    runtime.toolNames?.includes("sessions_send") === true
   );
 }

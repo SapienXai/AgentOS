@@ -1,0 +1,1254 @@
+{
+  "report": {
+    "generatedAt": "2026-06-13T19:38:46.126Z",
+    "target": {
+      "name": "simulated-stable",
+      "kind": "simulated",
+      "label": "Simulated OpenClaw 2026.6.1 stable Gateway",
+      "aliasUsed": null,
+      "version": "2026.6.1",
+      "gatewayUrl": null,
+      "runtimeStartedBy": "script",
+      "isRealRuntime": false,
+      "isSimulatedRuntime": true
+    },
+    "targetName": "simulated-stable",
+    "targetKind": "simulated",
+    "targetAliasUsed": null,
+    "gatewayUrl": null,
+    "openClawVersionSource": "assumed",
+    "runtimeStartedBy": "script",
+    "isRealRuntime": false,
+    "isSimulatedRuntime": true,
+    "status": "compatible",
+    "statusReason": "OpenClaw compatibility checks are compatible with AgentOS' supported baseline.",
+    "recovery": "No recovery action required.",
+    "openClaw": {
+      "installedVersion": "2026.6.1",
+      "versionSource": "assumed",
+      "recommendedVersion": "2026.6.1",
+      "supportedBaselineVersion": "2026.6.1",
+      "testedVersions": [
+        "2026.6.1"
+      ]
+    },
+    "gateway": {
+      "health": "healthy",
+      "healthReason": "Gateway status reports RPC ready.",
+      "protocolVersion": "4",
+      "protocolStatus": "compatible",
+      "protocolRange": {
+        "min": 3,
+        "max": 4
+      },
+      "authMode": null,
+      "authRole": "operator",
+      "authScopes": [
+        "operator.approvals",
+        "operator.read",
+        "operator.write"
+      ],
+      "capabilitySource": "gateway-advertised",
+      "advertisedMethodCount": 69,
+      "effectiveMethodCount": 69,
+      "advertisedEventCount": 7
+    },
+    "fallback": {
+      "cliAvailable": true,
+      "cliForced": false,
+      "operationCount": 34,
+      "activeFallbackCount": 0,
+      "diagnostics": []
+    },
+    "capabilities": [
+      {
+        "id": "gatewayHealth",
+        "label": "Gateway health",
+        "status": "supported",
+        "source": "gateway-advertised",
+        "methods": [
+          "health",
+          "logs.tail",
+          "status"
+        ],
+        "events": [],
+        "supportedMethods": [
+          "health",
+          "logs.tail",
+          "status"
+        ],
+        "supportedEvents": [],
+        "reason": "Gateway health is available via Gateway capability metadata (health, logs.tail, status)."
+      },
+      {
+        "id": "sessions",
+        "label": "Sessions",
+        "status": "supported",
+        "source": "gateway-advertised",
+        "methods": [
+          "sessions.create",
+          "sessions.describe",
+          "sessions.get",
+          "sessions.list",
+          "sessions.patch",
+          "sessions.preview",
+          "sessions.steer",
+          "sessions.subscribe"
+        ],
+        "events": [
+          "session.message",
+          "session.tool",
+          "sessions.changed"
+        ],
+        "supportedMethods": [
+          "sessions.create",
+          "sessions.describe",
+          "sessions.get",
+          "sessions.list",
+          "sessions.patch",
+          "sessions.preview",
+          "sessions.steer",
+          "sessions.subscribe"
+        ],
+        "supportedEvents": [
+          "session.message",
+          "session.tool"
+        ],
+        "reason": "Sessions is available via Gateway capability metadata (sessions.create, sessions.describe, sessions.get, sessions.list)."
+      },
+      {
+        "id": "chat",
+        "label": "Chat",
+        "status": "supported",
+        "source": "gateway-advertised",
+        "methods": [
+          "chat.abort",
+          "chat.history",
+          "chat.inject",
+          "chat.send",
+          "sessions.send"
+        ],
+        "events": [
+          "agent",
+          "chat",
+          "session.message",
+          "session.tool"
+        ],
+        "supportedMethods": [
+          "chat.abort",
+          "chat.history",
+          "chat.inject",
+          "chat.send"
+        ],
+        "supportedEvents": [
+          "agent",
+          "chat",
+          "session.message",
+          "session.tool"
+        ],
+        "reason": "Chat is available via Gateway capability metadata (chat.abort, chat.history, chat.inject, chat.send)."
+      },
+      {
+        "id": "models",
+        "label": "Models",
+        "status": "supported",
+        "source": "gateway-advertised",
+        "methods": [
+          "models.auth.order.set",
+          "models.authOrder.set",
+          "models.authStatus",
+          "models.list",
+          "models.scan"
+        ],
+        "events": [],
+        "supportedMethods": [
+          "models.authStatus",
+          "models.list",
+          "models.scan"
+        ],
+        "supportedEvents": [],
+        "reason": "Models is available via Gateway capability metadata (models.authStatus, models.list, models.scan)."
+      },
+      {
+        "id": "authProfiles",
+        "label": "Auth profiles",
+        "status": "supported",
+        "source": "gateway-advertised",
+        "methods": [
+          "models.auth.order.set",
+          "models.authOrder.set",
+          "models.authStatus"
+        ],
+        "events": [],
+        "supportedMethods": [
+          "models.authStatus"
+        ],
+        "supportedEvents": [],
+        "reason": "Auth profiles is available via Gateway capability metadata (models.authStatus)."
+      },
+      {
+        "id": "accountsBrowserProfiles",
+        "label": "Accounts/browser profiles",
+        "status": "supported",
+        "source": "gateway-advertised",
+        "methods": [
+          "browser.request",
+          "channels.list",
+          "channels.status"
+        ],
+        "events": [],
+        "supportedMethods": [
+          "channels.list",
+          "channels.status"
+        ],
+        "supportedEvents": [],
+        "reason": "Accounts/browser profiles is available via Gateway capability metadata (channels.list, channels.status)."
+      },
+      {
+        "id": "tasks",
+        "label": "Tasks",
+        "status": "supported",
+        "source": "gateway-advertised",
+        "methods": [
+          "tasks.assign",
+          "tasks.cancel",
+          "tasks.get",
+          "tasks.list",
+          "tasks.subscribe"
+        ],
+        "events": [
+          "task",
+          "task.completed",
+          "task.updated"
+        ],
+        "supportedMethods": [
+          "tasks.cancel",
+          "tasks.get",
+          "tasks.list",
+          "tasks.subscribe"
+        ],
+        "supportedEvents": [
+          "task",
+          "task.completed",
+          "task.updated"
+        ],
+        "reason": "Tasks is available via Gateway capability metadata (tasks.cancel, tasks.get, tasks.list, tasks.subscribe)."
+      },
+      {
+        "id": "config",
+        "label": "Config",
+        "status": "supported",
+        "source": "gateway-advertised",
+        "methods": [
+          "config.apply",
+          "config.get",
+          "config.patch",
+          "config.schema",
+          "config.schema.lookup",
+          "config.set"
+        ],
+        "events": [],
+        "supportedMethods": [
+          "config.apply",
+          "config.get",
+          "config.patch",
+          "config.schema",
+          "config.schema.lookup",
+          "config.set"
+        ],
+        "supportedEvents": [],
+        "reason": "Config is available via Gateway capability metadata (config.apply, config.get, config.patch, config.schema)."
+      },
+      {
+        "id": "transcripts",
+        "label": "Transcripts",
+        "status": "supported",
+        "source": "gateway-advertised",
+        "methods": [
+          "chat.history",
+          "sessions.describe",
+          "sessions.get",
+          "sessions.messages.subscribe",
+          "sessions.preview"
+        ],
+        "events": [
+          "session.message",
+          "session.tool"
+        ],
+        "supportedMethods": [
+          "chat.history",
+          "sessions.describe",
+          "sessions.get",
+          "sessions.messages.subscribe",
+          "sessions.preview"
+        ],
+        "supportedEvents": [
+          "session.message",
+          "session.tool"
+        ],
+        "reason": "Transcripts is available via Gateway capability metadata (chat.history, sessions.describe, sessions.get, sessions.messages.subscribe)."
+      },
+      {
+        "id": "cliFallback",
+        "label": "CLI fallback availability",
+        "status": "supported",
+        "source": "cli-probe",
+        "methods": [],
+        "events": [],
+        "supportedMethods": [],
+        "supportedEvents": [],
+        "reason": "OpenClaw CLI is available for explicit recovery fallback operations."
+      }
+    ],
+    "contracts": [
+      {
+        "operation": "health",
+        "label": "Gateway health",
+        "surface": "gatewayHealth",
+        "required": true,
+        "baseline": "required",
+        "methods": [
+          "health",
+          "status"
+        ],
+        "events": [],
+        "supportedMethod": "health",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "valid",
+        "responseShapeValid": true,
+        "status": "ok",
+        "reason": "Gateway health is native through health and the response shape matched AgentOS' contract.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "models",
+        "label": "Models List",
+        "surface": "models",
+        "required": true,
+        "baseline": "required",
+        "methods": [
+          "models.list",
+          "models.authStatus"
+        ],
+        "events": [],
+        "supportedMethod": "models.list",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "valid",
+        "responseShapeValid": true,
+        "status": "ok",
+        "reason": "Models List is native through models.list and the response shape matched AgentOS' contract.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "modelAuthOrder",
+        "label": "Model auth order",
+        "surface": "authProfiles",
+        "required": false,
+        "baseline": "experimental",
+        "methods": [
+          "models.authOrder.set",
+          "models.auth.order.set"
+        ],
+        "events": [],
+        "supportedMethod": null,
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": false,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "degraded",
+        "reason": "Model auth order is not native in the gateway-advertised capability set; AgentOS can use explicit CLI fallback for recovery.",
+        "suggestedRecovery": "Update OpenClaw for native Model auth order support; CLI fallback remains an explicit recovery path."
+      },
+      {
+        "operation": "modelScan",
+        "label": "Model scan",
+        "surface": "models",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "models.scan"
+        ],
+        "events": [],
+        "supportedMethod": "models.scan",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Model scan is native through models.scan; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "logsTail",
+        "label": "Gateway logs",
+        "surface": "gatewayHealth",
+        "required": true,
+        "baseline": "required",
+        "methods": [
+          "logs.tail"
+        ],
+        "events": [],
+        "supportedMethod": "logs.tail",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "valid",
+        "responseShapeValid": true,
+        "status": "ok",
+        "reason": "Gateway logs is native through logs.tail and the response shape matched AgentOS' contract.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "configSchemaLookup",
+        "label": "Config schema lookup",
+        "surface": "config",
+        "required": true,
+        "baseline": "required",
+        "methods": [
+          "config.schema.lookup",
+          "config.schema"
+        ],
+        "events": [],
+        "supportedMethod": "config.schema.lookup",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "valid",
+        "responseShapeValid": true,
+        "status": "ok",
+        "reason": "Config schema lookup is native through config.schema.lookup and the response shape matched AgentOS' contract.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "configPatch",
+        "label": "Config patch",
+        "surface": "config",
+        "required": true,
+        "baseline": "required",
+        "methods": [
+          "config.patch",
+          "config.apply",
+          "config.set"
+        ],
+        "events": [],
+        "supportedMethod": "config.patch",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Config patch is native through config.patch; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "sessionLifecycle",
+        "label": "Session lifecycle",
+        "surface": "sessions",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "sessions.create",
+          "sessions.patch",
+          "sessions.steer"
+        ],
+        "events": [],
+        "supportedMethod": "sessions.create",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Session lifecycle is native through sessions.create; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "agentCreate",
+        "label": "Agent creation",
+        "surface": "sessions",
+        "required": true,
+        "baseline": "required",
+        "methods": [
+          "agents.create"
+        ],
+        "events": [],
+        "supportedMethod": "agents.create",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Agent creation is native through agents.create; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "agentUpdate",
+        "label": "Agent update",
+        "surface": "sessions",
+        "required": true,
+        "baseline": "required",
+        "methods": [
+          "agents.update"
+        ],
+        "events": [],
+        "supportedMethod": "agents.update",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": false,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Agent update is native through agents.update; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "agentIdentity",
+        "label": "Agent identity sync",
+        "surface": "sessions",
+        "required": false,
+        "baseline": "experimental",
+        "methods": [
+          "agents.identity.set",
+          "agents.setIdentity",
+          "agents.set-identity"
+        ],
+        "events": [],
+        "supportedMethod": null,
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": false,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "degraded",
+        "reason": "Agent identity sync is not native in the gateway-advertised capability set; AgentOS can use explicit CLI fallback for recovery.",
+        "suggestedRecovery": "Update OpenClaw for native Agent identity sync support; CLI fallback remains an explicit recovery path."
+      },
+      {
+        "operation": "agentDelete",
+        "label": "Agent removal",
+        "surface": "sessions",
+        "required": true,
+        "baseline": "required",
+        "methods": [
+          "agents.delete"
+        ],
+        "events": [],
+        "supportedMethod": "agents.delete",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Agent removal is native through agents.delete; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "missionDispatch",
+        "label": "Mission dispatch",
+        "surface": "chat",
+        "required": true,
+        "baseline": "required",
+        "methods": [
+          "chat.send",
+          "sessions.send"
+        ],
+        "events": [],
+        "supportedMethod": "chat.send",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Mission dispatch is native through chat.send; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "missionStream",
+        "label": "Mission event stream",
+        "surface": "chat",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "sessions.subscribe",
+          "sessions.messages.subscribe"
+        ],
+        "events": [
+          "chat",
+          "agent",
+          "session.message",
+          "session.tool"
+        ],
+        "supportedMethod": "sessions.subscribe",
+        "supportedEvent": "chat",
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Mission event stream is native through sessions.subscribe; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "chatControl",
+        "label": "Chat control",
+        "surface": "chat",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "chat.abort",
+          "chat.inject"
+        ],
+        "events": [],
+        "supportedMethod": "chat.abort",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Chat control is native through chat.abort; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "agentWait",
+        "label": "Agent wait",
+        "surface": "sessions",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "agent.wait"
+        ],
+        "events": [],
+        "supportedMethod": "agent.wait",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Agent wait is native through agent.wait; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "sessionHistory",
+        "label": "Session history",
+        "surface": "transcripts",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "chat.history",
+          "sessions.preview",
+          "sessions.get",
+          "sessions.describe"
+        ],
+        "events": [],
+        "supportedMethod": "chat.history",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Session history is native through chat.history; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "taskEvents",
+        "label": "Task events",
+        "surface": "tasks",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "tasks.subscribe",
+          "tasks.get",
+          "tasks.list"
+        ],
+        "events": [
+          "task",
+          "task.updated",
+          "task.completed"
+        ],
+        "supportedMethod": "tasks.subscribe",
+        "supportedEvent": "task",
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Task events is native through tasks.subscribe; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "taskAssign",
+        "label": "Task assignment",
+        "surface": "tasks",
+        "required": false,
+        "baseline": "experimental",
+        "methods": [
+          "tasks.assign"
+        ],
+        "events": [],
+        "supportedMethod": null,
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": false,
+        "cliFallbackAvailable": false,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "unsupported",
+        "reason": "Task assignment is not native in the gateway-advertised capability set and no safe CLI fallback is available.",
+        "suggestedRecovery": "Update OpenClaw if Task assignment is required for this AgentOS surface."
+      },
+      {
+        "operation": "taskCancel",
+        "label": "Task cancellation",
+        "surface": "tasks",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "tasks.cancel"
+        ],
+        "events": [],
+        "supportedMethod": "tasks.cancel",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Task cancellation is native through tasks.cancel; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "artifacts",
+        "label": "Artifact sync",
+        "surface": "tasks",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "artifacts.list",
+          "artifacts.get",
+          "artifacts.download"
+        ],
+        "events": [
+          "artifact",
+          "artifact.updated"
+        ],
+        "supportedMethod": "artifacts.list",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Artifact sync is native through artifacts.list; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "runtimeSnapshot",
+        "label": "Runtime snapshot",
+        "surface": "sessions",
+        "required": true,
+        "baseline": "required",
+        "methods": [
+          "sessions.list",
+          "tasks.list"
+        ],
+        "events": [],
+        "supportedMethod": "sessions.list",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "valid",
+        "responseShapeValid": true,
+        "status": "ok",
+        "reason": "Runtime snapshot is native through sessions.list and the response shape matched AgentOS' contract.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "tools",
+        "label": "Tool catalog",
+        "surface": "tasks",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "tools.catalog",
+          "tools.effective",
+          "tools.invoke"
+        ],
+        "events": [],
+        "supportedMethod": "tools.catalog",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": false,
+        "responseShapeStatus": "valid",
+        "responseShapeValid": true,
+        "status": "ok",
+        "reason": "Tool catalog is native through tools.catalog and the response shape matched AgentOS' contract.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "plugins",
+        "label": "Plugin catalog",
+        "surface": "config",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "plugins.uiDescriptors",
+          "plugins.list"
+        ],
+        "events": [],
+        "supportedMethod": "plugins.uiDescriptors",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "valid",
+        "responseShapeValid": true,
+        "status": "ok",
+        "reason": "Plugin catalog is native through plugins.uiDescriptors and the response shape matched AgentOS' contract.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "execApprovals",
+        "label": "Execution approvals",
+        "surface": "tasks",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "exec.approval.list",
+          "exec.approval.get",
+          "exec.approval.resolve",
+          "exec.approvals.get",
+          "exec.approvals.set"
+        ],
+        "events": [],
+        "supportedMethod": "exec.approval.list",
+        "supportedEvent": null,
+        "requiredScopes": [
+          "operator.approvals"
+        ],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Execution approvals is native through exec.approval.list; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "devicePairList",
+        "label": "Device pairing list",
+        "surface": "config",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "device.pair.list",
+          "devices.list",
+          "gateway.devices.list"
+        ],
+        "events": [],
+        "supportedMethod": "device.pair.list",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "valid",
+        "responseShapeValid": true,
+        "status": "ok",
+        "reason": "Device pairing list is native through device.pair.list and the response shape matched AgentOS' contract.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "deviceApproval",
+        "label": "Device access repair",
+        "surface": "config",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "device.pair.approve",
+          "devices.approve",
+          "gateway.devices.approve"
+        ],
+        "events": [],
+        "supportedMethod": "device.pair.approve",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "ok",
+        "reason": "Device access repair is native through device.pair.approve; response shape was not checked in this report.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "cronRead",
+        "label": "Automation status",
+        "surface": "tasks",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "cron.list",
+          "cron.status"
+        ],
+        "events": [],
+        "supportedMethod": "cron.list",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "valid",
+        "responseShapeValid": true,
+        "status": "ok",
+        "reason": "Automation status is native through cron.list and the response shape matched AgentOS' contract.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "channels",
+        "label": "Channel status",
+        "surface": "accountsBrowserProfiles",
+        "required": true,
+        "baseline": "required",
+        "methods": [
+          "channels.status"
+        ],
+        "events": [],
+        "supportedMethod": "channels.status",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "valid",
+        "responseShapeValid": true,
+        "status": "ok",
+        "reason": "Channel status is native through channels.status and the response shape matched AgentOS' contract.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "channelList",
+        "label": "Channel list",
+        "surface": "accountsBrowserProfiles",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "channels.list",
+          "channels.status"
+        ],
+        "events": [],
+        "supportedMethod": "channels.list",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "valid",
+        "responseShapeValid": true,
+        "status": "ok",
+        "reason": "Channel list is native through channels.list and the response shape matched AgentOS' contract.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "channelLogs",
+        "label": "Channel logs",
+        "surface": "accountsBrowserProfiles",
+        "required": false,
+        "baseline": "experimental",
+        "methods": [
+          "channels.logs"
+        ],
+        "events": [],
+        "supportedMethod": null,
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": false,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "degraded",
+        "reason": "Channel logs is not native in the gateway-advertised capability set; AgentOS can use explicit CLI fallback for recovery.",
+        "suggestedRecovery": "Update OpenClaw for native Channel logs support; CLI fallback remains an explicit recovery path."
+      },
+      {
+        "operation": "channelProvisioning",
+        "label": "Channel provisioning",
+        "surface": "accountsBrowserProfiles",
+        "required": false,
+        "baseline": "experimental",
+        "methods": [
+          "channels.add",
+          "channels.create",
+          "channels.configure"
+        ],
+        "events": [],
+        "supportedMethod": null,
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": false,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "degraded",
+        "reason": "Channel provisioning is not native in the gateway-advertised capability set; AgentOS can use explicit CLI fallback for recovery.",
+        "suggestedRecovery": "Update OpenClaw for native Channel provisioning support; CLI fallback remains an explicit recovery path."
+      },
+      {
+        "operation": "channelRemoval",
+        "label": "Channel removal",
+        "surface": "accountsBrowserProfiles",
+        "required": false,
+        "baseline": "experimental",
+        "methods": [
+          "channels.remove",
+          "channels.delete"
+        ],
+        "events": [],
+        "supportedMethod": null,
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": false,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "degraded",
+        "reason": "Channel removal is not native in the gateway-advertised capability set; AgentOS can use explicit CLI fallback for recovery.",
+        "suggestedRecovery": "Update OpenClaw for native Channel removal support; CLI fallback remains an explicit recovery path."
+      },
+      {
+        "operation": "gmailProvisioning",
+        "label": "Gmail webhook setup",
+        "surface": "accountsBrowserProfiles",
+        "required": false,
+        "baseline": "experimental",
+        "methods": [
+          "webhooks.gmail.setup",
+          "gmail.setup"
+        ],
+        "events": [],
+        "supportedMethod": null,
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": false,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "degraded",
+        "reason": "Gmail webhook setup is not native in the gateway-advertised capability set; AgentOS can use explicit CLI fallback for recovery.",
+        "suggestedRecovery": "Update OpenClaw for native Gmail webhook setup support; CLI fallback remains an explicit recovery path."
+      },
+      {
+        "operation": "automationProvisioning",
+        "label": "Automation provisioning",
+        "surface": "tasks",
+        "required": false,
+        "baseline": "experimental",
+        "methods": [
+          "cron.add",
+          "cron.create"
+        ],
+        "events": [],
+        "supportedMethod": null,
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": false,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "degraded",
+        "reason": "Automation provisioning is not native in the gateway-advertised capability set; AgentOS can use explicit CLI fallback for recovery.",
+        "suggestedRecovery": "Update OpenClaw for native Automation provisioning support; CLI fallback remains an explicit recovery path."
+      },
+      {
+        "operation": "browserProfiles",
+        "label": "Browser profiles",
+        "surface": "accountsBrowserProfiles",
+        "required": false,
+        "baseline": "experimental",
+        "methods": [
+          "browser.request"
+        ],
+        "events": [],
+        "supportedMethod": null,
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": false,
+        "cliFallbackAvailable": false,
+        "responseShapeStatus": "not-checked",
+        "responseShapeValid": null,
+        "status": "unsupported",
+        "reason": "Browser profiles is not native in the gateway-advertised capability set and no safe CLI fallback is available.",
+        "suggestedRecovery": "Update OpenClaw if Browser profiles is required for this AgentOS surface."
+      },
+      {
+        "operation": "skills",
+        "label": "Skill status",
+        "surface": "config",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "skills.status"
+        ],
+        "events": [],
+        "supportedMethod": "skills.status",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "valid",
+        "responseShapeValid": true,
+        "status": "ok",
+        "reason": "Skill status is native through skills.status and the response shape matched AgentOS' contract.",
+        "suggestedRecovery": "No recovery action required."
+      },
+      {
+        "operation": "updates",
+        "label": "Update status",
+        "surface": "gatewayHealth",
+        "required": false,
+        "baseline": "optional",
+        "methods": [
+          "update.status",
+          "update.run",
+          "status"
+        ],
+        "events": [],
+        "supportedMethod": "update.status",
+        "supportedEvent": null,
+        "requiredScopes": [],
+        "missingScopes": [],
+        "nativeGatewaySupported": true,
+        "cliFallbackAvailable": true,
+        "responseShapeStatus": "valid",
+        "responseShapeValid": true,
+        "status": "ok",
+        "reason": "Update status is native through update.status and the response shape matched AgentOS' contract.",
+        "suggestedRecovery": "No recovery action required."
+      }
+    ],
+    "summary": {
+      "nativeGatewayCoveragePercent": 76,
+      "nativeGatewayCoverageLabel": "29/38 operations",
+      "cliFallbackOperationCount": 7,
+      "activeCliFallbackCount": 0,
+      "degradedSurfaces": [
+        "Agent identity sync",
+        "Automation provisioning",
+        "Channel logs",
+        "Channel provisioning",
+        "Channel removal",
+        "Gmail webhook setup",
+        "Model auth order"
+      ],
+      "unsupportedSurfaces": [
+        "Browser profiles",
+        "Task assignment"
+      ],
+      "failedSurfaces": [],
+      "supportedOpenClawVersion": "2026.6.1",
+      "testedOpenClawVersions": [
+        "2026.6.1"
+      ],
+      "unsupportedOperationCount": 2,
+      "degradedOperationCount": 7,
+      "failedOperationCount": 0,
+      "targetName": "simulated-stable",
+      "targetKind": "simulated",
+      "isRealRuntime": false,
+      "isSimulatedRuntime": true
+    },
+    "diagnostics": []
+  },
+  "releaseSummary": {
+    "targetName": "simulated-stable",
+    "targetKind": "simulated",
+    "isRealRuntime": false,
+    "isSimulatedRuntime": true,
+    "nativeGatewayCoveragePercent": 76,
+    "cliFallbackCount": 7,
+    "degradedSurfaces": [
+      "Agent identity sync",
+      "Automation provisioning",
+      "Channel logs",
+      "Channel provisioning",
+      "Channel removal",
+      "Gmail webhook setup",
+      "Model auth order"
+    ],
+    "unsupportedSurfaces": [
+      "Browser profiles",
+      "Task assignment"
+    ],
+    "supportedOpenClawVersion": "2026.6.1",
+    "testedOpenClawVersions": [
+      "2026.6.1"
+    ]
+  }
+}

@@ -13,6 +13,7 @@ export type AgentChatMessage = {
 
 export const agentChatMessageStoragePrefix = "mission-control-agent-chat:v1";
 export const agentChatLastSeenStoragePrefix = "mission-control-agent-chat-seen:v1";
+export const agentInboxLastSeenStoragePrefix = "mission-control-agent-inbox-seen:v1";
 export const agentChatStateEventName = "mission-control-agent-chat-state-change";
 export const maxAgentChatMessages = 60;
 
@@ -28,6 +29,10 @@ function getChatStorageKey(agentId: string) {
 
 function getLastSeenStorageKey(agentId: string) {
   return `${agentChatLastSeenStoragePrefix}:${agentId}`;
+}
+
+function getInboxLastSeenStorageKey(agentId: string) {
+  return `${agentInboxLastSeenStoragePrefix}:${agentId}`;
 }
 
 function isAgentChatMessage(candidate: unknown): candidate is AgentChatMessage {
@@ -166,6 +171,20 @@ export function readAgentChatLastSeenAt(agentId: string): number | null {
   }
 }
 
+export function readAgentInboxLastSeenAt(agentId: string): number | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(getInboxLastSeenStorageKey(agentId));
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function createAgentChatContentKey(message: AgentChatMessage) {
   const text = message.text.replace(/\s+/g, " ").trim().toLowerCase();
   return text ? `${message.role}:${text}` : null;
@@ -259,9 +278,65 @@ export function resolveAgentChatUnreadCount(messages: AgentChatMessage[], lastSe
   }, 0);
 }
 
+export function resolveAgentInboxUnreadCount(
+  inboxItems: readonly { updatedAt: number | null }[],
+  lastSeenAt: number | null
+) {
+  if (inboxItems.length === 0) {
+    return 0;
+  }
+
+  const seenAt = typeof lastSeenAt === "number" && Number.isFinite(lastSeenAt) ? lastSeenAt : null;
+
+  return inboxItems.reduce((count, item) => {
+    if (typeof item.updatedAt !== "number" || !Number.isFinite(item.updatedAt)) {
+      return count;
+    }
+
+    if (seenAt !== null && item.updatedAt <= seenAt) {
+      return count;
+    }
+
+    return count + 1;
+  }, 0);
+}
+
 export function markAgentChatAsSeen(agentId: string, messages?: AgentChatMessage[]) {
   const latestAssistantAt = resolveAgentChatLatestAssistantAt(messages ?? readAgentChatMessages(agentId));
   writeAgentChatLastSeenAt(agentId, latestAssistantAt);
+}
+
+export function markAgentInboxAsSeen(agentId: string, inboxItems: readonly { updatedAt: number | null }[]) {
+  const latestInboxAt = inboxItems.reduce((latest, item) => {
+    if (typeof item.updatedAt !== "number" || !Number.isFinite(item.updatedAt)) {
+      return latest;
+    }
+
+    return latest === null || item.updatedAt > latest ? item.updatedAt : latest;
+  }, null as number | null);
+  writeAgentInboxLastSeenAt(agentId, latestInboxAt);
+}
+
+function writeAgentInboxLastSeenAt(agentId: string, lastSeenAt: number | null) {
+  try {
+    const key = getInboxLastSeenStorageKey(agentId);
+    const nextValue = typeof lastSeenAt === "number" && Number.isFinite(lastSeenAt) ? String(lastSeenAt) : null;
+    const currentValue = globalThis.localStorage?.getItem(key) ?? null;
+
+    if (currentValue === nextValue) {
+      return;
+    }
+
+    if (nextValue !== null) {
+      globalThis.localStorage?.setItem(key, nextValue);
+    } else {
+      globalThis.localStorage?.removeItem(key);
+    }
+
+    dispatchAgentChatStateChange(agentId);
+  } catch {
+    // Ignore storage failures.
+  }
 }
 
 export function dispatchAgentChatStateChange(agentId: string) {

@@ -12,6 +12,7 @@ import {
   agentChatMessageStoragePrefix,
   agentChatStateEventName,
   markAgentChatAsSeen,
+  markAgentInboxAsSeen,
   mergeAgentChatMessagesForRehydration,
   normalizeAgentChatMessagesForDisplay,
   readAgentChatMessages,
@@ -166,6 +167,7 @@ function AssistantThinkingActivity({
 
 export function AgentChatDrawer({
   agent,
+  snapshot,
   surfaceTheme,
   isVisible,
   onRefresh,
@@ -192,6 +194,7 @@ export function AgentChatDrawer({
   const isVisibleRef = useRef(isVisible);
   const rehydratedAgentRef = useRef<string | null>(null);
   const agentLabel = formatAgentDisplayName(agent);
+  const inboxItems = snapshot.agentInbox.filter((item) => item.agentId === agent.id);
 
   useEffect(() => {
     isVisibleRef.current = isVisible;
@@ -343,7 +346,8 @@ export function AgentChatDrawer({
     }
 
     markAgentChatAsSeen(agent.id, messages);
-  }, [agent.id, messages, isVisible]);
+    markAgentInboxAsSeen(agent.id, inboxItems);
+  }, [agent.id, messages, inboxItems, isVisible]);
 
   useEffect(() => {
     if (!isVisible) {
@@ -475,6 +479,13 @@ export function AgentChatDrawer({
         )}
       >
         <div className="space-y-2.5">
+          {inboxItems.map((item) => (
+            <AgentInboxItemBubble
+              key={item.id}
+              item={item}
+              surfaceTheme={surfaceTheme}
+            />
+          ))}
           {uiMessages.map((entry) => {
             const isUser = entry.role === "user";
             const isSystem = entry.role === "system";
@@ -686,6 +697,56 @@ export function AgentChatDrawer({
 
 function readVisibleAgentChatMessages(agentId: string, runSnapshot: AgentChatRunSnapshot): ChatMessage[] {
   return normalizeAgentChatMessagesForDisplay(readAgentChatMessages(agentId), runSnapshot);
+}
+
+function AgentInboxItemBubble({
+  item,
+  surfaceTheme
+}: {
+  item: MissionControlSnapshot["agentInbox"][number];
+  surfaceTheme: "dark" | "light";
+}) {
+  const sourceLabel = item.sourceAgentName || item.sourceAgentId || "OpenClaw";
+  const provenanceLabel = item.provenance === "openclaw-task" ? "OpenClaw task" : "OpenClaw runtime";
+  const reference = item.taskId || item.runtimeId || item.sessionId || item.runId || null;
+
+  return (
+    <div className="flex justify-start">
+      <div
+        className={cn(
+          "min-w-0 max-w-[92%] rounded-[18px] border px-3 py-2 text-[13px] leading-5 shadow-[0_14px_34px_rgba(0,0,0,0.14)]",
+          surfaceTheme === "light"
+            ? "border-emerald-200 bg-emerald-50 text-[#304238]"
+            : "border-emerald-300/18 bg-[linear-gradient(180deg,rgba(16,185,129,0.12),rgba(6,95,70,0.08))] text-emerald-50"
+        )}
+      >
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span
+            className={cn(
+              "rounded-full border px-2 py-0.5 text-[9px] uppercase tracking-[0.18em]",
+              surfaceTheme === "light"
+                ? "border-emerald-300 bg-white/70 text-emerald-800"
+                : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
+            )}
+          >
+            Handoff result
+          </span>
+          <span className={cn("text-[10px]", surfaceTheme === "light" ? "text-emerald-800/70" : "text-emerald-100/70")}>
+            {sourceLabel} · {provenanceLabel}
+          </span>
+        </div>
+        <p className="mt-1.5 text-[12px] font-medium">{item.title}</p>
+        <p className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-5 [overflow-wrap:anywhere]">
+          {item.summary}
+        </p>
+        {reference ? (
+          <p className={cn("mt-1.5 font-mono text-[9px]", surfaceTheme === "light" ? "text-emerald-900/55" : "text-emerald-100/45")}>
+            {reference}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 function agentChatMessagesEqual(left: readonly AgentChatMessage[], right: readonly AgentChatMessage[]) {

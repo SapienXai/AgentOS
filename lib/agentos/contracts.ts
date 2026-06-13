@@ -2,6 +2,7 @@ import type {
   ChannelAccountRecord,
   ChannelRegistry,
   GatewayDiagnostics,
+  AgentInboxItem,
   MissionControlSnapshot,
   OpenClawAgent,
   RuntimeRecord,
@@ -14,6 +15,7 @@ import type {
 export type ControlPlaneSnapshot = MissionControlSnapshot;
 export type ControlPlaneDiagnostics = GatewayDiagnostics;
 export type AgentRecord = OpenClawAgent;
+export type AgentInboxRecord = AgentInboxItem;
 export type WorkspaceRecord = WorkspaceProject;
 export type RuntimeActivityRecord = RuntimeRecord;
 export type WorkItemRecord = TaskRecord;

@@ -3558,6 +3558,9 @@ export function MissionControlShell({
             onConfigureAgentModel={handleConfigureAgentModel}
             onConfigureAgentCapabilities={handleConfigureAgentCapabilities}
             onOpenAgentContextEngine={openAgentContextEngine}
+            onRefresh={async () => {
+              await refreshSnapshot({ force: true });
+            }}
             onInspectAgentDetail={handleInspectAgentDetail}
             onOpenWorkspaceChannels={openWorkspaceChannels}
             onOpenAccounts={openAccountsConnect}

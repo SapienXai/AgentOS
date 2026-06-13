@@ -1,0 +1,12 @@
+OpenClaw Compatibility:
+- Tested target: simulated-stable
+- Target kind: simulated gateway
+- Note: This is not a real OpenClaw runtime smoke test.
+- OpenClaw version: v2026.6.1 (assumed)
+- Overall status: compatible
+- Native Gateway coverage: 76% (29/38 operations)
+- CLI fallback operations: 7
+- Degraded surfaces: Agent identity sync, Automation provisioning, Channel logs, Channel provisioning, Channel removal, Gmail webhook setup, Model auth order
+- Unsupported operations: Browser profiles, Task assignment
+- Supported OpenClaw version: v2026.6.1
+- Tested OpenClaw versions: v2026.6.1

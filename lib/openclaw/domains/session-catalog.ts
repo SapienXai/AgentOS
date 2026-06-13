@@ -7,7 +7,7 @@ export type AgentConfigSessionCatalogInput = Array<{
 }>;
 
 export type SessionsPayload = {
-  sessions: Array<{
+  sessions: Array<Record<string, unknown> & {
     agentId?: string;
     key?: string;
     sessionId?: string;
