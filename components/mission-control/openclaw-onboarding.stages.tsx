@@ -687,6 +687,7 @@ export function LaunchpadStage({
   agentCount,
   workspaceSetupReady,
   operationalReady,
+  canEnterAgentOS,
   runtimeSmokeStatus,
   runtimeSmokeDetail,
   defaultModelLabel,
@@ -698,6 +699,7 @@ export function LaunchpadStage({
   agentCount: number;
   workspaceSetupReady: boolean;
   operationalReady: boolean;
+  canEnterAgentOS: boolean;
   runtimeSmokeStatus: MissionControlSnapshot["diagnostics"]["runtime"]["smokeTest"]["status"];
   runtimeSmokeDetail: string | null | undefined;
   defaultModelLabel: string;
@@ -826,10 +828,13 @@ export function LaunchpadStage({
             )}
           >
             {hasWorkspaces
-              ? operationalReady
+              ? canEnterAgentOS
                 ? "Open AgentOS to inspect the live graph, or create another workspace if you want a separate mission lane."
-                : "Finish model setup until AgentOS verifies a real OpenClaw runtime smoke test before entering the canvas."
+                : "Finish system, model, and workspace setup before entering the canvas."
               : "Create the first workspace now. That is the shortest path from a ready system to a real mission."}
+            {canEnterAgentOS && !operationalReady
+              ? " Runtime smoke has not passed yet, so mission dispatch remains guarded until OpenClaw verifies a real agent turn."
+              : ""}
           </p>
         </div>
       )}

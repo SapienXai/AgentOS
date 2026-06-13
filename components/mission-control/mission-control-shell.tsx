@@ -294,6 +294,8 @@ export function MissionControlShell({
   const [updateResultMessage, setUpdateResultMessage] = useState<string | null>(null);
   const [updateLog, setUpdateLog] = useState("");
   const [updateManualCommand, setUpdateManualCommand] = useState<string | null>(null);
+  const [updateTargetVersion, setUpdateTargetVersion] = useState<string | null>(null);
+  const [updateMode, setUpdateMode] = useState<"recommended" | "candidate" | "advanced">("recommended");
   const [onboardingRunState, setOnboardingRunState] = useState<UpdateRunState>("idle");
   const [onboardingPhase, setOnboardingPhase] = useState<OpenClawOnboardingPhase | null>(null);
   const [onboardingStatusMessage, setOnboardingStatusMessage] = useState<string | null>(null);
@@ -1214,6 +1216,8 @@ export function MissionControlShell({
     setUpdateResultMessage(null);
     setUpdateLog("");
     setUpdateManualCommand(null);
+    setUpdateTargetVersion(null);
+    setUpdateMode("recommended");
   };
 
   const resetOnboardingProgressState = () => {
@@ -1467,7 +1471,7 @@ export function MissionControlShell({
     };
   }, [isSettingsOpen]);
 
-  const runOpenClawUpdate = async () => {
+  const runOpenClawUpdate = async (action: "update" | "rollback" = "update") => {
     if (updateRunState === "running") {
       setIsUpdateDialogOpen(true);
       return;
@@ -1525,11 +1529,11 @@ export function MissionControlShell({
 
     setIsUpdateDialogOpen(true);
     setUpdateRunState("running");
-    setUpdateStatusMessage("Starting OpenClaw update...");
+    setUpdateStatusMessage(action === "rollback" ? "Starting OpenClaw rollback..." : "Starting OpenClaw update...");
     setUpdateResultMessage(null);
     setUpdateLog("");
     setUpdateManualCommand(null);
-    updateUpdateToast("Starting OpenClaw update...");
+    updateUpdateToast(action === "rollback" ? "Starting OpenClaw rollback..." : "Starting OpenClaw update...");
 
     try {
       const response = await fetch("/api/update", {
@@ -1538,7 +1542,14 @@ export function MissionControlShell({
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          confirmed: true
+          action,
+          confirmed: true,
+          ...(action === "update"
+            ? {
+                targetVersion: updateTargetVersion ?? snapshot.diagnostics.updateCompatibility?.recommendedVersion,
+                mode: updateMode
+              }
+            : {})
         })
       });
 
@@ -3174,11 +3185,20 @@ export function MissionControlShell({
     onRunModelRefresh: runModelRefresh,
     onRunModelSetDefault: runModelSetDefault,
     onOpenAddModels: openAddModelsDialog,
-    onOpenUpdateDialog: () => {
+    onOpenUpdateDialog: (targetVersion, mode = "recommended") => {
+      if (updateRunState === "idle") {
+        resetUpdateDialogState();
+      }
+      setUpdateTargetVersion(targetVersion ?? null);
+      setUpdateMode(mode);
+      setIsUpdateDialogOpen(true);
+    },
+    onRollbackOpenClaw: () => {
       if (updateRunState === "idle") {
         resetUpdateDialogState();
       }
       setIsUpdateDialogOpen(true);
+      void runOpenClawUpdate("rollback");
     },
     onOpenResetDialog: (target) => {
       void openResetDialog(target);

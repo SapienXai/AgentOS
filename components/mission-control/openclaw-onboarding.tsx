@@ -119,6 +119,7 @@ export function OpenClawOnboarding({
       showReadyState ||
       isOpenClawOnboardingModelReady(snapshot)
     );
+  const canEnterAgentOS = hasWorkspaceSetup && onboardingSystemReady && onboardingModelReady;
   const showLaunchpad = onboardingModelReady && (
     showReadyState ||
     !hasWorkspaceSetup ||
@@ -320,6 +321,7 @@ export function OpenClawOnboarding({
                 agentCount={agentCount}
                 workspaceSetupReady={hasWorkspaceSetup}
                 operationalReady={operationalReady}
+                canEnterAgentOS={canEnterAgentOS}
                 runtimeSmokeStatus={snapshot.diagnostics.runtime.smokeTest.status}
                 runtimeSmokeDetail={snapshot.diagnostics.runtime.smokeTest.error || snapshot.diagnostics.runtime.smokeTest.summary}
                 defaultModelLabel={defaultModelLabel}
@@ -407,8 +409,8 @@ export function OpenClawOnboarding({
                     <Button
                       type="button"
                       onClick={onEnterAgentOS}
-                      disabled={!operationalReady}
-                      title={operationalReady ? "Open AgentOS." : "Run model setup until AgentOS verifies a real OpenClaw runtime smoke test."}
+                      disabled={!canEnterAgentOS}
+                      title={canEnterAgentOS ? "Open AgentOS." : "Finish system, model, and workspace setup before entering AgentOS."}
                       className={cn(
                         "h-8 min-w-[156px] rounded-full px-3 text-[11px]",
                         surfaceTheme === "light"

@@ -6,6 +6,7 @@ import {
   buildSecurityWarnings,
   buildVersionDiagnostics
 } from "@/lib/openclaw/adapter/diagnostics-adapter";
+import { resolveAgentOsVersion } from "@/lib/agentos/version";
 import { buildRuntimeDiagnosticsFromState } from "@/lib/openclaw/adapter/runtime-diagnostics-adapter";
 import {
   getCachedOpenClawCapabilityMatrix,
@@ -167,6 +168,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
     transport,
     eventBridge: getOpenClawEventBridgeStreamStatus(),
     versionDiagnostics,
+    agentOsVersion: await resolveAgentOsVersion(),
     issues: buildDiagnosticIssues({
       payloadResults: input.payloadResults,
       gatewayStatusRejectedWithCachedValue: input.gatewayStatusRejectedWithCachedValue,

@@ -62,7 +62,8 @@ export type MissionControlShellSettingsPanelProps = {
   onRunModelRefresh: () => Promise<void>;
   onRunModelSetDefault: (modelId?: string) => Promise<void>;
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
-  onOpenUpdateDialog: () => void;
+  onOpenUpdateDialog: (targetVersion?: string, mode?: "recommended" | "candidate" | "advanced") => void;
+  onRollbackOpenClaw: () => void;
   onOpenResetDialog: (target: ResetTarget) => void;
   openClawBinarySelection: OpenClawBinarySelection;
   isSavingOpenClawBinary: boolean;
@@ -89,14 +90,15 @@ export function MissionControlShellSettingsPanel({
   const [isRepairingGatewayAccess, setIsRepairingGatewayAccess] = useState(false);
   const isUpdateRunning = updateRunState === "running";
   const isOpenClawReady = isOpenClawOnboardingModelReady(snapshot);
-  const hasUpdateAvailable = Boolean(snapshot.diagnostics.updateAvailable && snapshot.diagnostics.latestVersion);
+  const recommendedVersion = snapshot.diagnostics.updateCompatibility?.recommendedVersion ?? snapshot.diagnostics.latestVersion;
+  const hasUpdateAvailable = Boolean(snapshot.diagnostics.updateAvailable && recommendedVersion);
   const isUpdateRegistryLoading = Boolean(
     snapshot.diagnostics.version && !snapshot.diagnostics.latestVersion && !snapshot.diagnostics.updateError
   );
   const updateStatusText = isCheckingForUpdates
     ? "Checking update registry..."
     : hasUpdateAvailable
-      ? `Latest v${snapshot.diagnostics.latestVersion}`
+      ? `Recommended v${recommendedVersion}`
       : snapshot.diagnostics.updateError
         ? "Check failed"
         : isUpdateRegistryLoading
@@ -216,12 +218,12 @@ export function MissionControlShellSettingsPanel({
                 <Button
                   type="button"
                   size="sm"
-                  onClick={onOpenUpdateDialog}
+                  onClick={() => onOpenUpdateDialog(recommendedVersion, "recommended")}
                   disabled={isUpdateRunning}
                   className="rounded-full bg-emerald-600 px-2.5 text-[11px] text-white shadow-[0_12px_24px_rgba(16,185,129,0.24)] hover:bg-emerald-500"
                 >
                   <ArrowUpRight className="h-3 w-3" />
-                  Update
+                  Update recommended
                 </Button>
               ) : null}
             </div>

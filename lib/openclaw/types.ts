@@ -278,6 +278,7 @@ export interface GatewayDiagnostics {
   latestVersion?: string;
   updateAvailable?: boolean;
   updateError?: string;
+  updateCompatibility?: OpenClawUpdateCompatibilitySnapshot;
   updateRoot?: string;
   updateInstallKind?: string;
   updatePackageManager?: string;
@@ -305,6 +306,42 @@ export interface GatewayDiagnostics {
   transport?: import("@/lib/openclaw/client/types").OpenClawGatewayClientDiagnostics;
   securityWarnings: string[];
   issues: string[];
+}
+
+export type OpenClawUpdateCompatibilityStatus = "certified" | "candidate" | "blocked" | "unknown";
+export type OpenClawUpdateCompatibilityMode = "recommended" | "candidate" | "advanced";
+
+export interface OpenClawUpdateCompatibilityVersion {
+  version: string;
+  status: OpenClawUpdateCompatibilityStatus;
+  minRequiredAgentOsVersion: string | null;
+  notes: string | null;
+  reason: string | null;
+}
+
+export interface OpenClawUpdateDecision {
+  version: string;
+  status: OpenClawUpdateCompatibilityStatus;
+  allowed: boolean;
+  defaultVisible: boolean;
+  requiresExplicitOptIn: boolean;
+  requiresAgentOsUpdate: boolean;
+  minRequiredAgentOsVersion: string | null;
+  reason: string;
+  notes: string | null;
+}
+
+export interface OpenClawUpdateCompatibilitySnapshot {
+  manifestSource: "local-fallback" | "remote" | "override";
+  agentOsVersion: string;
+  currentVersion: string | null;
+  recommendedVersion: string;
+  recommendedDecision: OpenClawUpdateDecision;
+  latestDecision: OpenClawUpdateDecision | null;
+  certifiedVersions: OpenClawUpdateCompatibilityVersion[];
+  candidateVersions: OpenClawUpdateCompatibilityVersion[];
+  blockedVersions: OpenClawUpdateCompatibilityVersion[];
+  unknownVersions: OpenClawUpdateCompatibilityVersion[];
 }
 
 export interface OpenClawCommandDiagnostic {
@@ -900,7 +937,7 @@ export interface MissionAbortResponse {
 export type OpenClawUpdateStreamEvent =
   | {
       type: "status";
-      phase: "starting" | "refreshing";
+      phase: "preflight" | "starting" | "refreshing" | "rollback";
       message: string;
     }
   | {

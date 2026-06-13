@@ -12,6 +12,7 @@ import {
   Copy,
   Folder,
   KeyRound,
+  ListChecks,
   LoaderCircle,
   PackageCheck,
   RefreshCw,
@@ -28,9 +29,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { MissionControlShellSettingsPanelProps } from "@/components/mission-control/mission-control-shell.settings";
 import {
+  buildOpenClawCapabilityRows,
   formatGatewayFallbackDiagnosticKind,
   resolveTransportDiagnosticsSummary,
   resolveGatewayFallbackRecovery,
+  summarizeOpenClawCapabilityRows,
+  type OpenClawCapabilityMatrixRow,
+  type OpenClawCapabilityMatrixSummary,
   type TransportDiagnosticsSummary,
   type TransportStatusTone
 } from "@/components/mission-control/settings-control-center.utils";
@@ -71,6 +76,7 @@ type CompatibilityReport = NonNullable<
 type SettingsSectionId =
   | "openclaw"
   | "gateway"
+  | "capabilities"
   | "models"
   | "workspace"
   | "agents"
@@ -88,6 +94,7 @@ type SettingsSection = {
 const settingsSections: SettingsSection[] = [
   { id: "openclaw", label: "OpenClaw", icon: Activity },
   { id: "gateway", label: "Gateway", icon: ShieldCheck },
+  { id: "capabilities", label: "Capabilities", icon: ListChecks },
   { id: "models", label: "Models", icon: Box },
   { id: "workspace", label: "Workspace", icon: Folder },
   { id: "agents", label: "Agents", icon: Bot },
@@ -127,6 +134,7 @@ export function SettingsControlCenter(
     onRunModelSetDefault,
     onOpenAddModels,
     onOpenUpdateDialog,
+    onRollbackOpenClaw,
     onOpenResetDialog,
     onOpenClawBinarySelectionModeChange,
     onOpenClawBinarySelectionPathChange,
@@ -162,12 +170,14 @@ export function SettingsControlCenter(
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => resolveInitialSettingsSection());
   const [settingsHashHydrated, setSettingsHashHydrated] = useState(false);
   const renderedActiveSection = settingsHashHydrated ? activeSection : resolveInitialSettingsSection();
-  const hasUpdateAvailable = Boolean(snapshot.diagnostics.updateAvailable && snapshot.diagnostics.latestVersion);
+  const updateCompatibility = snapshot.diagnostics.updateCompatibility;
+  const recommendedVersion = updateCompatibility?.recommendedVersion ?? snapshot.diagnostics.latestVersion ?? null;
+  const hasUpdateAvailable = Boolean(snapshot.diagnostics.updateAvailable && recommendedVersion);
   const isUpdateRegistryLoading = Boolean(
-    snapshot.diagnostics.version && !snapshot.diagnostics.latestVersion && !snapshot.diagnostics.updateError
+    snapshot.diagnostics.version && !recommendedVersion && !snapshot.diagnostics.updateError
   );
   const currentVersion = snapshot.diagnostics.version || "unknown";
-  const latestVersion = snapshot.diagnostics.latestVersion || null;
+  const latestVersion = recommendedVersion;
   const updateInfo = snapshot.diagnostics.updateInfo?.trim() || null;
   const updateError = snapshot.diagnostics.updateError?.trim() || null;
   const defaultModel =
@@ -200,6 +210,14 @@ export function SettingsControlCenter(
   const capabilityMatrix = snapshot.diagnostics.capabilityMatrix;
   const compatibilityReport = snapshot.diagnostics.compatibilityReport;
   const gatewayCompatibilityProfile = capabilityMatrix?.compatibility;
+  const capabilityRows = useMemo(
+    () => buildOpenClawCapabilityRows(snapshot.diagnostics),
+    [snapshot.diagnostics]
+  );
+  const capabilitySummary = useMemo(
+    () => summarizeOpenClawCapabilityRows(snapshot.diagnostics, capabilityRows),
+    [capabilityRows, snapshot.diagnostics]
+  );
   const gatewayFallbackDiagnostics = (
     snapshot.diagnostics.gatewayFallbackDiagnostics?.length
       ? snapshot.diagnostics.gatewayFallbackDiagnostics
@@ -558,9 +576,9 @@ export function SettingsControlCenter(
                       dark={surfaceTheme === "dark"}
                     />
                     <Metric
-                      label="Latest available"
-                      value={snapshot.diagnostics.latestVersion ? `v${snapshot.diagnostics.latestVersion}` : "Unknown"}
-                      badge={hasUpdateAvailable ? "Update" : "Stable"}
+                      label="Recommended"
+                      value={recommendedVersion ? `v${recommendedVersion}` : "Unknown"}
+                      badge={updateCompatibility?.recommendedDecision.status ?? (hasUpdateAvailable ? "Update" : "Stable")}
                       surfaceTheme={surfaceTheme}
                       dark={surfaceTheme === "dark"}
                     />
@@ -569,12 +587,12 @@ export function SettingsControlCenter(
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Button
                       type="button"
-                      onClick={onOpenUpdateDialog}
+                      onClick={() => onOpenUpdateDialog(recommendedVersion ?? undefined, "recommended")}
                       disabled={!hasUpdateAvailable || updateRunState === "running"}
                       className="h-9 rounded-full bg-emerald-600 px-4 text-xs text-white hover:bg-emerald-500"
                     >
                       {updateRunState === "running" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="h-3.5 w-3.5" />}
-                      Update now
+                      Update to recommended
                     </Button>
                     <Button
                       type="button"
@@ -595,6 +613,16 @@ export function SettingsControlCenter(
                       <Wrench className="h-3.5 w-3.5" />
                       Open wizard
                     </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={onRollbackOpenClaw}
+                      disabled={updateRunState === "running"}
+                      className={secondaryButtonClassName(surfaceTheme, "px-4")}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Rollback to last working OpenClaw
+                    </Button>
                   </div>
 
                   <UpdateRegistryPanel
@@ -608,6 +636,8 @@ export function SettingsControlCenter(
                     updateError={updateError}
                     lastCheckedAt={lastCheckedAt}
                     isUpdateRunning={updateRunState === "running"}
+                    updateCompatibility={updateCompatibility}
+                    onTryPreviewVersion={(version) => onOpenUpdateDialog(version, "candidate")}
                   />
 
                   <div className={cn("mt-5 grid gap-3 border-t pt-4 sm:grid-cols-2", surfaceTheme === "light" ? "border-border" : "border-white/10")}>
@@ -892,6 +922,18 @@ export function SettingsControlCenter(
                       </p>
                     ) : null}
                   </div>
+                </Card>
+              </section>
+              ) : null}
+
+              {renderedActiveSection === "capabilities" ? (
+              <section id="capabilities" className="scroll-mt-24">
+                <Card title="OpenClaw Capability Matrix" icon={ListChecks} surfaceTheme={surfaceTheme}>
+                  <CapabilityMatrixPanel
+                    rows={capabilityRows}
+                    summary={capabilitySummary}
+                    surfaceTheme={surfaceTheme}
+                  />
                 </Card>
               </section>
               ) : null}
@@ -1512,6 +1554,202 @@ function DiagnosticBlock({
   );
 }
 
+function CapabilityMatrixPanel({
+  rows,
+  summary,
+  surfaceTheme
+}: {
+  rows: OpenClawCapabilityMatrixRow[];
+  summary: OpenClawCapabilityMatrixSummary;
+  surfaceTheme: SurfaceTheme;
+}) {
+  const rowsByStatus = {
+    native: rows.filter((row) => row.status === "gateway-native"),
+    fallback: rows.filter((row) => row.status === "cli-fallback" || row.fallbackCount > 0),
+    missing: rows.filter((row) => row.status === "missing" || row.missingRequiredMethods.length > 0),
+    degraded: rows.filter((row) => row.status === "degraded" || row.status === "unknown"),
+    disabled: rows.filter((row) => row.status === "disabled")
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Metric
+          label="OpenClaw"
+          value={summary.openClawVersionLabel}
+          badge={`Recommended ${summary.recommendedVersionLabel}`}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="AgentOS compatibility"
+          value={summary.agentOsCompatibilityLabel}
+          badge={summary.gatewayProtocolLabel}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="Native operations"
+          value={`${summary.nativeOperationCount}/${summary.totalOperationCount}`}
+          badge={summary.cliFallbackOperationCount > 0 ? `${summary.cliFallbackOperationCount} fallback` : "No fallback"}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="Required gaps"
+          value={String(summary.missingRequiredOperationCount)}
+          badge={summary.unknownOrDegradedOperationCount > 0 ? `${summary.unknownOrDegradedOperationCount} unknown/degraded` : "Clear"}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Metric
+          label="CLI fallback calls"
+          value={String(summary.fallbackTotal)}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="Disabled operations"
+          value={String(summary.disabledOperationCount)}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="Last native failure"
+          value={summary.lastNativeFailure || "None"}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+      </div>
+
+      <InfoRows
+        surfaceTheme={surfaceTheme}
+        rows={[
+          ["Native", `${rowsByStatus.native.length} operations`],
+          ["CLI fallback", `${rowsByStatus.fallback.length} operations`],
+          ["Missing required/native", `${rowsByStatus.missing.length} operations`],
+          ["Unknown/degraded", `${rowsByStatus.degraded.length} operations`],
+          ["Disabled", `${rowsByStatus.disabled.length} operations`]
+        ]}
+      />
+
+      {rows.length > 0 ? (
+        <div className="space-y-2">
+          {rows.map((row) => (
+            <details
+              key={row.id}
+              className={cn(
+                "group rounded-[18px] border",
+                surfaceTheme === "light"
+                  ? "border-border bg-card"
+                  : "border-white/[0.08] bg-[#101a2a]/92"
+              )}
+            >
+              <summary className="grid cursor-pointer list-none gap-3 px-3.5 py-3 sm:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,0.8fr)_auto] sm:items-center">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={transportTonePillClassName(row.tone, surfaceTheme)}>
+                      {row.statusLabel}
+                    </span>
+                    <span className={baselinePillClassName(row.baseline, surfaceTheme)}>
+                      {formatCapabilityBaseline(row.baseline)}
+                    </span>
+                  </div>
+                  <p className={cn("mt-2 truncate text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+                    {row.label}
+                  </p>
+                  <code className={cn("mt-1 block truncate text-[11px]", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
+                    {row.id}
+                  </code>
+                </div>
+                <div className="min-w-0">
+                  <p className={labelClassName(surfaceTheme)}>Native coverage</p>
+                  <p className={cn("mt-1 truncate text-xs", surfaceTheme === "light" ? "text-foreground" : "text-slate-200")}>
+                    {row.methodCoverageLabel}
+                  </p>
+                </div>
+                <div className="min-w-0">
+                  <p className={labelClassName(surfaceTheme)}>CLI fallback</p>
+                  <p className={cn("mt-1 truncate text-xs", row.fallbackCount > 0 ? surfaceTheme === "light" ? "text-amber-700" : "text-amber-200" : mutedTextClassName(surfaceTheme))}>
+                    {row.fallbackAllowed ? `${row.fallbackCount} calls` : "Not allowed"}
+                  </p>
+                </div>
+                <ChevronDown className={cn("h-4 w-4 transition-transform group-open:rotate-180", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")} />
+              </summary>
+              <div className={cn("border-t p-3.5", surfaceTheme === "light" ? "border-border" : "border-white/[0.08]")}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <CapabilityDetail label="Preferred method" value={row.preferredMethod || "Unknown"} surfaceTheme={surfaceTheme} />
+                  <CapabilityDetail label="Supported method" value={row.supportedMethod || "Unknown"} surfaceTheme={surfaceTheme} />
+                  <CapabilityDetail label="Alias methods" value={row.aliasMethods.length ? row.aliasMethods.join(", ") : "None"} surfaceTheme={surfaceTheme} />
+                  <CapabilityDetail label="Gateway events" value={row.events.length ? row.events.join(", ") : "None"} surfaceTheme={surfaceTheme} />
+                  <CapabilityDetail label="Compatibility" value={formatCapabilityCompatibility(row.compatibility)} surfaceTheme={surfaceTheme} />
+                  <CapabilityDetail label="Fallback issue" value={row.fallbackIssue || "None"} surfaceTheme={surfaceTheme} />
+                </div>
+
+                {row.missingMethods.length > 0 ? (
+                  <div className={cn("mt-3 rounded-[16px] border p-3 text-xs leading-5", surfaceTheme === "light" ? "border-red-200 bg-red-50 text-red-800" : "border-rose-300/20 bg-rose-300/10 text-rose-100")}>
+                    Missing methods: {row.missingMethods.join(", ")}
+                    {row.missingRequiredMethods.length > 0 ? ` / Required: ${row.missingRequiredMethods.join(", ")}` : ""}
+                  </div>
+                ) : null}
+
+                <div className="mt-3 grid gap-2">
+                  <p className={cn("text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-300")}>
+                    Reason: {row.reason}
+                  </p>
+                  <p className={cn("text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
+                    Recovery: {row.recovery || row.fallbackRecovery || "No recovery suggestion reported."}
+                  </p>
+                  {row.fallbackKind ? (
+                    <p className={cn("text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-500")}>
+                      Last fallback kind: {formatGatewayFallbackDiagnosticKind(row.fallbackKind)}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          title="No OpenClaw capability matrix"
+          detail="AgentOS has not received Gateway capability diagnostics yet. Start or repair the OpenClaw Gateway, then refresh diagnostics."
+          surfaceTheme={surfaceTheme}
+        />
+      )}
+    </div>
+  );
+}
+
+function CapabilityDetail({
+  label,
+  value,
+  surfaceTheme
+}: {
+  label: string;
+  value: string;
+  surfaceTheme: SurfaceTheme;
+}) {
+  return (
+    <div className={cn("rounded-[16px] border p-3", insetPanelClassName(surfaceTheme))}>
+      <p className={labelClassName(surfaceTheme)}>{label}</p>
+      <p className={cn("mt-1.5 break-words text-xs leading-5", surfaceTheme === "light" ? "text-foreground" : "text-slate-200")}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
 function CompatibilityPanel({
   compatibilityReport,
   report,
@@ -1901,6 +2139,66 @@ function transportTonePillClassName(tone: TransportStatusTone, surfaceTheme: Sur
   );
 }
 
+function baselinePillClassName(
+  baseline: OpenClawCapabilityMatrixRow["baseline"],
+  surfaceTheme: SurfaceTheme
+) {
+  const base = "inline-flex shrink-0 items-center rounded-full border px-2 py-1 text-[9px] uppercase tracking-[0.12em]";
+
+  if (baseline === "required") {
+    return cn(
+      base,
+      surfaceTheme === "light"
+        ? "border-sky-200 bg-sky-50 text-sky-700"
+        : "border-sky-300/20 bg-sky-300/10 text-sky-100"
+    );
+  }
+
+  if (baseline === "experimental") {
+    return cn(
+      base,
+      surfaceTheme === "light"
+        ? "border-violet-200 bg-violet-50 text-violet-700"
+        : "border-violet-300/20 bg-violet-300/10 text-violet-100"
+    );
+  }
+
+  return cn(
+    base,
+    surfaceTheme === "light"
+      ? "border-border bg-card text-muted-foreground"
+      : "border-white/[0.08] bg-[#101a2a]/92 text-slate-300"
+  );
+}
+
+function formatCapabilityBaseline(value: OpenClawCapabilityMatrixRow["baseline"]) {
+  switch (value) {
+    case "required":
+      return "Required";
+    case "optional":
+      return "Optional";
+    case "experimental":
+      return "Experimental";
+    case "unknown":
+    default:
+      return "Unknown";
+  }
+}
+
+function formatCapabilityCompatibility(value: OpenClawCapabilityMatrixRow["compatibility"]) {
+  switch (value) {
+    case "preferred":
+      return "Preferred native method";
+    case "alias":
+      return "Compatible alias";
+    case "missing":
+      return "Missing native method";
+    case "unknown":
+    default:
+      return "Unknown";
+  }
+}
+
 function EmptyState({
   title,
   detail,
@@ -1937,7 +2235,9 @@ function UpdateRegistryPanel({
   updateInfo,
   updateError,
   lastCheckedAt,
-  isUpdateRunning
+  isUpdateRunning,
+  updateCompatibility,
+  onTryPreviewVersion
 }: {
   surfaceTheme: SurfaceTheme;
   isCheckingForUpdates: boolean;
@@ -1949,6 +2249,8 @@ function UpdateRegistryPanel({
   updateError: string | null;
   lastCheckedAt: number | null;
   isUpdateRunning: boolean;
+  updateCompatibility: MissionControlShellSettingsPanelProps["snapshot"]["diagnostics"]["updateCompatibility"];
+  onTryPreviewVersion: (version: string) => void;
 }) {
   const isBusy = isCheckingForUpdates || isUpdateRunning;
   const statusLabel = isCheckingForUpdates
@@ -1956,7 +2258,7 @@ function UpdateRegistryPanel({
     : isUpdateRunning
       ? "Updating"
       : hasUpdateAvailable
-        ? "Update available"
+        ? "Recommended update"
         : updateError
           ? "Check failed"
           : isUpdateRegistryLoading
@@ -1983,7 +2285,7 @@ function UpdateRegistryPanel({
     : isUpdateRunning
       ? "Installing the selected OpenClaw update."
       : hasUpdateAvailable
-        ? "A newer release is available and ready to install."
+        ? "The certified recommended OpenClaw release is ready to install."
         : updateError
           ? "OpenClaw returned an error while checking updates."
           : isUpdateRegistryLoading
@@ -2035,7 +2337,7 @@ function UpdateRegistryPanel({
           compact
         />
         <Metric
-          label="Latest available"
+          label="Recommended"
           value={latestVersion ? `v${latestVersion}` : "Unknown"}
           badge={hasUpdateAvailable ? "Ready" : updateError ? "Error" : isBusy || isUpdateRegistryLoading ? "Loading" : "Stable"}
           surfaceTheme={surfaceTheme}
@@ -2055,6 +2357,12 @@ function UpdateRegistryPanel({
         <p className={cn("text-[10px] uppercase tracking-[0.18em]", mutedTextClassName(surfaceTheme))}>Details</p>
         <p className="mt-1.5">{detailLabel}</p>
         {updateInfo ? <p className="mt-1.5 opacity-90">{updateInfo}</p> : null}
+        {updateCompatibility ? (
+          <p className="mt-1.5 opacity-90">
+            Manifest source: {formatManifestSource(updateCompatibility.manifestSource)}. Recommended status:{" "}
+            {formatUpdateCompatibilityStatus(updateCompatibility.recommendedDecision.status)}.
+          </p>
+        ) : null}
         {updateError ? (
           <p className={cn("mt-1.5", surfaceTheme === "light" ? "text-rose-700" : "text-rose-200")}>{updateError}</p>
         ) : null}
@@ -2066,6 +2374,84 @@ function UpdateRegistryPanel({
             </span>
           </div>
         ) : null}
+      </div>
+
+      {updateCompatibility ? (
+        <div className="mt-3 grid gap-2">
+          <CompatibilityVersionRows
+            label="Certified"
+            versions={updateCompatibility.certifiedVersions}
+            surfaceTheme={surfaceTheme}
+          />
+          <CompatibilityVersionRows
+            label="Preview"
+            versions={updateCompatibility.candidateVersions}
+            surfaceTheme={surfaceTheme}
+            actionLabel="Try preview version"
+            onAction={onTryPreviewVersion}
+            disabled={isBusy}
+          />
+          <CompatibilityVersionRows
+            label="Blocked"
+            versions={updateCompatibility.blockedVersions}
+            surfaceTheme={surfaceTheme}
+            blocked
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CompatibilityVersionRows({
+  label,
+  versions,
+  surfaceTheme,
+  actionLabel,
+  onAction,
+  disabled = false,
+  blocked = false
+}: {
+  label: string;
+  versions: NonNullable<MissionControlShellSettingsPanelProps["snapshot"]["diagnostics"]["updateCompatibility"]>["certifiedVersions"];
+  surfaceTheme: SurfaceTheme;
+  actionLabel?: string;
+  onAction?: (version: string) => void;
+  disabled?: boolean;
+  blocked?: boolean;
+}) {
+  if (versions.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={cn("rounded-[16px] border p-3", insetPanelClassName(surfaceTheme))}>
+      <p className={cn("text-[10px] uppercase tracking-[0.18em]", mutedTextClassName(surfaceTheme))}>{label}</p>
+      <div className="mt-2 grid gap-2">
+        {versions.map((entry) => (
+          <div key={`${label}:${entry.version}`} className="flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className={cn("font-mono text-[11px]", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+                v{entry.version}
+              </p>
+              <p className={cn("mt-0.5 text-[11px] leading-4", blocked ? "text-rose-300" : mutedTextClassName(surfaceTheme))}>
+                {entry.reason || entry.notes || formatUpdateCompatibilityStatus(entry.status)}
+              </p>
+            </div>
+            {actionLabel && onAction ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => onAction(entry.version)}
+                disabled={disabled}
+                className={secondaryButtonClassName(surfaceTheme, "px-3")}
+              >
+                {actionLabel}
+              </Button>
+            ) : null}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -2129,6 +2515,33 @@ function formatCompatibilityReportStatus(value: CompatibilityReport["status"]) {
     case "unknown":
     default:
       return "Unknown";
+  }
+}
+
+function formatUpdateCompatibilityStatus(value: string) {
+  switch (value) {
+    case "certified":
+      return "Certified";
+    case "candidate":
+      return "Preview";
+    case "blocked":
+      return "Blocked";
+    case "unknown":
+    default:
+      return "Unknown";
+  }
+}
+
+function formatManifestSource(value: string) {
+  switch (value) {
+    case "local-fallback":
+      return "Local fallback";
+    case "remote":
+      return "Remote";
+    case "override":
+      return "Override";
+    default:
+      return value;
   }
 }
 
@@ -2493,6 +2906,8 @@ function resolveHashSettingsSection(): SettingsSectionId {
   switch (window.location.hash.replace(/^#/, "")) {
     case "gateway":
       return "gateway";
+    case "capabilities":
+      return "capabilities";
     case "models":
       return "models";
     case "workspace":

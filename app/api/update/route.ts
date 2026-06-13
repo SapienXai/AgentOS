@@ -10,6 +10,7 @@ import {
   ensureOpenClawRuntimeSmokeTest,
   getMissionControlSnapshot
 } from "@/lib/agentos/control-plane";
+import { resolveAgentOsVersion } from "@/lib/agentos/version";
 import type { OpenClawUpdateStreamEvent } from "@/lib/agentos/contracts";
 import type { MissionControlSnapshot } from "@/lib/openclaw/types";
 import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
@@ -23,13 +24,23 @@ import {
   classifyOpenClawRuntimeSmokeTestFailure
 } from "@/lib/openclaw/runtime-compatibility";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
+import { resolveOpenClawUpdateDecision } from "@/lib/openclaw/update-compatibility";
+import {
+  createOpenClawRollbackSnapshot,
+  readOpenClawRollbackSnapshot,
+  restoreOpenClawRollbackConfigSnapshot,
+  type OpenClawRollbackSnapshot
+} from "@/lib/openclaw/update-rollback";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const updateSchema = z.object({
-  confirmed: z.literal(true)
+  action: z.enum(["update", "rollback"]).default("update"),
+  confirmed: z.literal(true),
+  targetVersion: z.string().trim().optional(),
+  mode: z.enum(["recommended", "candidate", "advanced"]).default("recommended")
 });
 
 const updateTimeoutMs = 10 * 60 * 1000;
@@ -39,8 +50,6 @@ const gatewayReadyInitialDelayMs = 5 * 1000;
 const gatewayReadyProbeIntervalMs = 3 * 1000;
 const runtimeSmokeTestSkippedMessage =
   "OpenClaw updated, but no agent was available for a live turn smoke test. Skipping compatibility gate.";
-const recommendedUpdateArgs = ["update", "--tag", OPENCLAW_RECOMMENDED_VERSION, "--yes"] as const;
-
 type UpdateVerification = {
   ok: boolean;
   message: string;
@@ -54,9 +63,16 @@ type CommandResult = {
   errorMessage?: string;
 };
 
+type UpdatePreflightResult = {
+  ok: boolean;
+  message: string;
+};
+
 export async function POST(request: Request) {
+  let updateRequest: z.infer<typeof updateSchema>;
+
   try {
-    updateSchema.parse(await request.json());
+    updateRequest = updateSchema.parse(await request.json());
   } catch (error) {
     return NextResponse.json(
       {
@@ -67,8 +83,25 @@ export async function POST(request: Request) {
   }
 
   const snapshot = await getMissionControlSnapshot({ force: true });
+  const agentOsVersion = await resolveAgentOsVersion();
+  const targetVersion = normalizeVersion(updateRequest.targetVersion) || OPENCLAW_RECOMMENDED_VERSION;
+  const updateDecision = resolveOpenClawUpdateDecision({
+    agentOsVersion,
+    targetVersion,
+    mode: updateRequest.mode
+  });
 
-  if (!snapshot.diagnostics.installed) {
+  if (updateRequest.action === "update" && !updateDecision.allowed) {
+    return NextResponse.json(
+      {
+        error: updateDecision.reason,
+        decision: updateDecision
+      },
+      { status: 400 }
+    );
+  }
+
+  if (updateRequest.action === "update" && !snapshot.diagnostics.installed) {
     return NextResponse.json(
       {
         error: snapshot.diagnostics.issues[0] || "OpenClaw is unavailable."
@@ -124,11 +157,55 @@ export async function POST(request: Request) {
       return;
     }
 
-    if (isRecommendedOpenClawInstalled(snapshot)) {
+    if (updateRequest.action === "rollback") {
+      const rollbackSnapshot = await readOpenClawRollbackSnapshot();
+
+      if (!rollbackSnapshot) {
+        await send({
+          type: "done",
+          ok: false,
+          message: "No previous working OpenClaw rollback snapshot is available.",
+          exitCode: null,
+          stdout,
+          stderr
+        });
+        await closeWriter();
+        return;
+      }
+
+      await send({
+        type: "status",
+        phase: "rollback",
+        message: `Rolling back OpenClaw to v${rollbackSnapshot.version}...`
+      });
+
+      const rollback = await runRollbackOpenClaw(openClawBin, rollbackSnapshot, send);
+      stdout += rollback.stdout;
+      stderr += rollback.stderr;
+      resetOpenClawBinCache();
+      clearMissionControlCaches();
+
+      const nextSnapshot = await getMissionControlSnapshot({ force: true }).catch(() => undefined);
+      await send({
+        type: "done",
+        ok: rollback.ok,
+        message: rollback.ok
+          ? `OpenClaw rollback completed. Restored v${rollbackSnapshot.version}.`
+          : rollback.message,
+        exitCode: rollback.exitCode,
+        stdout,
+        stderr,
+        snapshot: nextSnapshot
+      });
+      await closeWriter();
+      return;
+    }
+
+    if (isTargetOpenClawInstalled(snapshot, targetVersion)) {
       await send({
         type: "done",
         ok: true,
-        message: `OpenClaw is already at the recommended version: v${OPENCLAW_RECOMMENDED_VERSION}.`,
+        message: `OpenClaw is already at the selected compatible version: v${targetVersion}.`,
         exitCode: 0,
         stdout,
         stderr,
@@ -138,7 +215,44 @@ export async function POST(request: Request) {
       return;
     }
 
-    const child = spawn(openClawBin, [...recommendedUpdateArgs], {
+    const preflight = await runOpenClawUpdatePreflight({
+      snapshot,
+      targetVersion,
+      decision: updateDecision
+    });
+
+    await send({
+      type: "status",
+      phase: "preflight",
+      message: preflight.message
+    });
+
+    if (!preflight.ok) {
+      await send({
+        type: "done",
+        ok: false,
+        message: preflight.message,
+        exitCode: null,
+        stdout,
+        stderr,
+        snapshot
+      });
+      await closeWriter();
+      return;
+    }
+
+    const rollbackSnapshot = await createOpenClawRollbackSnapshot({
+      version: normalizeVersion(snapshot.diagnostics.version) || targetVersion,
+      binaryPath: openClawBin
+    });
+    await send({
+      type: "status",
+      phase: "preflight",
+      message: `Saved OpenClaw rollback snapshot for v${rollbackSnapshot.version}.`
+    });
+
+    const updateArgs = buildOpenClawUpdateArgs(targetVersion);
+    const child = spawn(openClawBin, updateArgs, {
       cwd: process.cwd(),
       env: process.env
     });
@@ -151,7 +265,7 @@ export async function POST(request: Request) {
     await send({
       type: "status",
       phase: "starting",
-      message: `Running openclaw update --tag ${OPENCLAW_RECOMMENDED_VERSION}...`
+      message: `Running openclaw update --tag ${targetVersion}...`
     });
 
     child.stdout.on("data", (chunk: Buffer | string) => {
@@ -211,7 +325,7 @@ export async function POST(request: Request) {
         }
 
         if (code !== 0) {
-          const failureCommand = formatOpenClawCommand(openClawBin, [...recommendedUpdateArgs]);
+          const failureCommand = formatOpenClawCommand(openClawBin, updateArgs);
           const failureOutput = [stdout, stderr].filter(Boolean).join("\n");
           const needsInteractiveTty =
             /downgrade confirmation required/i.test(failureOutput) ||
@@ -282,18 +396,43 @@ export async function POST(request: Request) {
           clearMissionControlCaches();
           const nextSnapshot = await getMissionControlSnapshot({ force: true });
           const verifiedSnapshot = preserveKnownUpdateTarget(snapshot, nextSnapshot);
-          const verification = verifyOpenClawUpdate(snapshot, verifiedSnapshot);
+          const verification = verifyOpenClawUpdate(snapshot, verifiedSnapshot, targetVersion);
 
           if (!verification.ok) {
+            const rollback = await runRollbackOpenClaw(openClawBin, rollbackSnapshot, send);
+            stdout += rollback.stdout;
+            stderr += rollback.stderr;
+
             await send({
               type: "done",
               ok: false,
-              message: verification.message,
-              exitCode: code,
+              message: `${verification.message} ${rollback.ok ? "Rolled back to the previous working OpenClaw version." : rollback.message}`,
+              exitCode: rollback.exitCode ?? code,
               stdout,
               stderr,
               snapshot: verifiedSnapshot,
-              manualCommand: formatOpenClawCommand(openClawBin, [...recommendedUpdateArgs])
+              manualCommand: rollback.ok ? undefined : formatOpenClawCommand(openClawBin, updateArgs)
+            });
+            await closeWriter();
+            return;
+          }
+
+          const compatibilityVerification = verifyOpenClawPostUpdateCompatibility(verifiedSnapshot);
+
+          if (!compatibilityVerification.ok) {
+            const rollback = await runRollbackOpenClaw(openClawBin, rollbackSnapshot, send);
+            stdout += rollback.stdout;
+            stderr += rollback.stderr;
+
+            await send({
+              type: "done",
+              ok: false,
+              message: `${compatibilityVerification.message} ${rollback.ok ? "Rolled back to the previous working OpenClaw version." : rollback.message}`,
+              exitCode: rollback.exitCode ?? code,
+              stdout,
+              stderr,
+              snapshot: verifiedSnapshot,
+              manualCommand: rollback.ok ? undefined : formatOpenClawCommand(openClawBin, updateArgs)
             });
             await closeWriter();
             return;
@@ -311,20 +450,25 @@ export async function POST(request: Request) {
 
           if (smokeTest.status === "failed") {
             const classification = classifyOpenClawRuntimeSmokeTestFailure(smokeTestOutput);
+            const rollback = await runRollbackOpenClaw(openClawBin, rollbackSnapshot, send);
+            stdout += rollback.stdout;
+            stderr += rollback.stderr;
 
             await send({
               type: "done",
               ok: false,
               message: classification
-                ? `OpenClaw updated, but ${classification.detail}`
-                : `OpenClaw updated, but the live runtime smoke test failed. ${smokeTestOutput}`.trim(),
-              exitCode: code,
+                ? `OpenClaw updated, but ${classification.detail} ${rollback.ok ? "Rolled back to the previous working OpenClaw version." : rollback.message}`
+                : `OpenClaw updated, but the live runtime smoke test failed. ${smokeTestOutput} ${rollback.ok ? "Rolled back to the previous working OpenClaw version." : rollback.message}`.trim(),
+              exitCode: rollback.exitCode ?? code,
               stdout,
               stderr: stderr
                 ? `${stderr}\n${smokeTestOutput || "Runtime smoke test failed."}`
                 : smokeTestOutput || "Runtime smoke test failed.",
               snapshot: finalSnapshot,
-              manualCommand: buildOpenClawRuntimeSmokeTestRecoveryCommand(formatOpenClawCommand(openClawBin, []), smokeTestOutput)
+              manualCommand: rollback.ok
+                ? undefined
+                : buildOpenClawRuntimeSmokeTestRecoveryCommand(formatOpenClawCommand(openClawBin, []), smokeTestOutput)
             });
             await closeWriter();
             return;
@@ -566,16 +710,17 @@ async function runRecoveryCommand(
 
 function verifyOpenClawUpdate(
   beforeSnapshot: MissionControlSnapshot,
-  afterSnapshot: MissionControlSnapshot
+  afterSnapshot: MissionControlSnapshot,
+  targetVersion: string
 ): UpdateVerification {
   const beforeVersion = normalizeVersion(beforeSnapshot.diagnostics.version);
   const afterVersion = normalizeVersion(afterSnapshot.diagnostics.version);
-  const recommendedVersion = normalizeVersion(OPENCLAW_RECOMMENDED_VERSION);
+  const expectedVersion = normalizeVersion(targetVersion);
 
-  if (!afterVersion || !recommendedVersion || compareVersionStrings(afterVersion, recommendedVersion) !== 0) {
+  if (!afterVersion || !expectedVersion || compareVersionStrings(afterVersion, expectedVersion) !== 0) {
     return {
       ok: false,
-      message: `OpenClaw update command finished, but the installed version is ${formatVersion(afterVersion)}. Expected ${formatVersion(recommendedVersion)}.`
+      message: `OpenClaw update command finished, but the installed version is ${formatVersion(afterVersion)}. Expected ${formatVersion(expectedVersion)}.`
     };
   }
 
@@ -589,11 +734,137 @@ function verifyOpenClawUpdate(
   };
 }
 
-function isRecommendedOpenClawInstalled(snapshot: MissionControlSnapshot) {
-  const version = normalizeVersion(snapshot.diagnostics.version);
-  const recommendedVersion = normalizeVersion(OPENCLAW_RECOMMENDED_VERSION);
+function verifyOpenClawPostUpdateCompatibility(snapshot: MissionControlSnapshot): UpdateVerification {
+  const issues: string[] = [];
+  const contract = snapshot.diagnostics.capabilityMatrix?.compatibility?.methodContract;
+  const configPatch = snapshot.diagnostics.capabilityMatrix?.configPatch;
 
-  return Boolean(version && recommendedVersion && compareVersionStrings(version, recommendedVersion) === 0);
+  if (!snapshot.diagnostics.loaded || !snapshot.diagnostics.rpcOk) {
+    issues.push("Gateway did not report loaded RPC readiness.");
+  }
+
+  if (contract?.status === "drift" && (contract.missingRequiredMethods?.length ?? contract.missingMethodCount ?? 0) > 0) {
+    issues.push("Required native Gateway methods are missing.");
+  }
+
+  if (configPatch !== "supported") {
+    issues.push("Gateway config schema/patch support is not available.");
+  }
+
+  if (snapshot.diagnostics.modelReadiness.ready === false && snapshot.diagnostics.modelReadiness.issues.length > 0) {
+    issues.push(`Model readiness could not be confirmed: ${snapshot.diagnostics.modelReadiness.issues[0]}`);
+  }
+
+  if (snapshot.diagnostics.compatibilityReport?.status === "incompatible") {
+    issues.push("OpenClaw compatibility report is incompatible.");
+  }
+
+  if (issues.length > 0) {
+    const fallbackCount = snapshot.diagnostics.transport?.fallbackTotal ?? 0;
+    const lastNativeFailure =
+      snapshot.diagnostics.transport?.lastNativeError ||
+      snapshot.diagnostics.gatewayFallbackDiagnostics?.[0]?.issue ||
+      "No native failure detail was reported.";
+
+    return {
+      ok: false,
+      message: `${issues.join(" ")} Fallback count: ${fallbackCount}. Last native failure: ${lastNativeFailure}`
+    };
+  }
+
+  return {
+    ok: true,
+    message: "Post-update OpenClaw compatibility checks passed."
+  };
+}
+
+function isTargetOpenClawInstalled(snapshot: MissionControlSnapshot, targetVersion: string) {
+  const version = normalizeVersion(snapshot.diagnostics.version);
+  const normalizedTargetVersion = normalizeVersion(targetVersion);
+
+  return Boolean(version && normalizedTargetVersion && compareVersionStrings(version, normalizedTargetVersion) === 0);
+}
+
+function buildOpenClawUpdateArgs(targetVersion: string) {
+  return ["update", "--tag", targetVersion, "--yes"];
+}
+
+async function runOpenClawUpdatePreflight(input: {
+  snapshot: MissionControlSnapshot;
+  targetVersion: string;
+  decision: ReturnType<typeof resolveOpenClawUpdateDecision>;
+}): Promise<UpdatePreflightResult> {
+  const currentVersion = normalizeVersion(input.snapshot.diagnostics.version);
+  const compatibilityStatus = input.snapshot.diagnostics.compatibilityReport?.status ?? "unknown";
+  const fallbackCount = input.snapshot.diagnostics.transport?.fallbackTotal ?? 0;
+  const lastNativeFailure =
+    input.snapshot.diagnostics.transport?.lastNativeError ||
+    input.snapshot.diagnostics.gatewayFallbackDiagnostics?.[0]?.issue ||
+    "none";
+
+  if (!currentVersion) {
+    return {
+      ok: false,
+      message: "OpenClaw update preflight failed because the current installed version could not be detected."
+    };
+  }
+
+  if (!input.snapshot.diagnostics.loaded || !input.snapshot.diagnostics.rpcOk) {
+    return {
+      ok: false,
+      message: "OpenClaw update preflight failed because the Gateway is not ready. Run diagnostics or repair Gateway access first."
+    };
+  }
+
+  if (input.decision.status === "candidate" && compatibilityStatus === "incompatible") {
+    return {
+      ok: false,
+      message: "Preview update preflight failed because current OpenClaw compatibility diagnostics are incompatible."
+    };
+  }
+
+  return {
+    ok: true,
+    message: `Preflight passed for OpenClaw v${input.targetVersion}. Current v${currentVersion}; compatibility ${compatibilityStatus}; fallback count ${fallbackCount}; last native failure ${lastNativeFailure}.`
+  };
+}
+
+async function runRollbackOpenClaw(
+  openClawBin: string,
+  rollbackSnapshot: OpenClawRollbackSnapshot,
+  send: (event: OpenClawUpdateStreamEvent) => Promise<unknown>
+) {
+  await send({
+    type: "status",
+    phase: "rollback",
+    message: `Restoring previous OpenClaw version v${rollbackSnapshot.version}...`
+  });
+
+  const rollbackResult = await runRecoveryCommand(openClawBin, buildOpenClawUpdateArgs(rollbackSnapshot.version), send, {
+    timeoutMs: updateTimeoutMs
+  });
+
+  if (rollbackResult.errorMessage || rollbackResult.timedOut || rollbackResult.code !== 0) {
+    return {
+      ok: false,
+      message: "Automatic OpenClaw rollback failed. Use the manual update command from the details panel.",
+      exitCode: rollbackResult.code,
+      stdout: rollbackResult.stdout,
+      stderr: rollbackResult.stderr || rollbackResult.errorMessage || "Rollback command failed."
+    };
+  }
+
+  const configRestore = await restoreOpenClawRollbackConfigSnapshot(rollbackSnapshot);
+
+  return {
+    ok: true,
+    message: `Rolled back OpenClaw to v${rollbackSnapshot.version}.`,
+    exitCode: 0,
+    stdout: rollbackResult.stdout
+      ? `${rollbackResult.stdout}\n${configRestore.message}\n`
+      : `${configRestore.message}\n`,
+    stderr: rollbackResult.stderr
+  };
 }
 
 function preserveKnownUpdateTarget(

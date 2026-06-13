@@ -11,6 +11,7 @@ import {
 } from "@/lib/openclaw/service";
 
 const snapshotResponseKeys = [
+  "agentInbox",
   "agents",
   "channelAccounts",
   "channelRegistry",

@@ -586,10 +586,12 @@ test("settings control center exposes hash navigation for subpages", () => {
   assert.match(source, /type SettingsSectionId =[\s\S]*?\| "diagnostics"[\s\S]*?\| "advanced"/);
   assert.match(source, /const settingsSections: SettingsSection\[] = \[/);
   assert.match(source, /\{ id: "gateway", label: "Gateway", icon: ShieldCheck \}/);
+  assert.match(source, /\{ id: "capabilities", label: "Capabilities", icon: ListChecks \}/);
   assert.match(source, /\{ id: "diagnostics", label: "Diagnostics", icon: TerminalSquare \}/);
   assert.match(source, /aria-label="Settings sections"/);
   assert.match(source, /href=\{`\/settings#\$\{section\.id\}`\}/);
   assert.match(source, /onClick=\{\(\) => \{[\s\S]*?setActiveSection\(section\.id\);[\s\S]*?scrollSettingsToTop\(\);[\s\S]*?\}\}/);
+  assert.match(source, /case "capabilities":\s*return "capabilities";/);
   assert.match(source, /case "diagnostics":\s*return "diagnostics";/);
   assert.doesNotMatch(source, /id: "billing"/);
   assert.doesNotMatch(source, /id: "audit-logs"/);
@@ -643,6 +645,16 @@ test("diagnostics command stats count the visible recent command window", () => 
   assert.match(source, /failed: latestCommands\.filter\(\(command\) => command\.status !== "ok"\)\.length/);
 });
 
+test("settings capability matrix uses diagnostics presenters without direct OpenClaw calls", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/settings-control-center.tsx"), "utf8");
+
+  assert.match(source, /buildOpenClawCapabilityRows\(snapshot\.diagnostics\)/);
+  assert.match(source, /summarizeOpenClawCapabilityRows\(snapshot\.diagnostics, capabilityRows\)/);
+  assert.match(source, /<CapabilityMatrixPanel[\s\S]*rows=\{capabilityRows\}[\s\S]*summary=\{capabilitySummary\}/);
+  assert.doesNotMatch(source, /from "@\/lib\/openclaw\/client/);
+  assert.doesNotMatch(source, /openclaw gateway/);
+});
+
 test("onboarding provider flow skips discovery when provider models already exist", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding-provider-flow.tsx"), "utf8");
 
@@ -680,6 +692,19 @@ test("onboarding runtime step only shows checking while setup is running", () =>
   assert.match(source, /const isChecking = step\.state === "current" && run\.runState === "running";/);
   assert.match(source, /isRuntimeStep[\s\S]*\? "Needs verification"/);
   assert.doesNotMatch(source, /run\.runState === "running" \|\| isRuntimeStep/);
+});
+
+test("onboarding launchpad does not block canvas entry on runtime smoke alone", () => {
+  const onboardingSource = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding.tsx"), "utf8");
+  const stagesSource = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding.stages.tsx"), "utf8");
+
+  assert.match(
+    onboardingSource,
+    /const canEnterAgentOS = hasWorkspaceSetup && onboardingSystemReady && onboardingModelReady;/
+  );
+  assert.match(onboardingSource, /disabled=\{!canEnterAgentOS\}/);
+  assert.doesNotMatch(onboardingSource, /disabled=\{!operationalReady\}/);
+  assert.match(stagesSource, /mission dispatch remains guarded until OpenClaw verifies a real agent turn/);
 });
 
 test("onboarding refreshes full model snapshot before entering model setup", () => {

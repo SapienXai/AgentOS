@@ -20,6 +20,10 @@ import type {
   OpenClawCapabilityMatrix,
   OpenClawCommandDiagnostic
 } from "@/lib/openclaw/types";
+import {
+  resolveOpenClawUpdateCompatibilitySnapshot,
+  shouldShowDefaultOpenClawUpdate
+} from "@/lib/openclaw/update-compatibility";
 
 type PayloadReuseState = {
   reusedCachedValue: boolean;
@@ -192,6 +196,7 @@ export function buildGatewayDiagnostics(input: {
   eventBridge?: MissionControlSnapshot["diagnostics"]["eventBridge"];
   issues: string[];
   versionDiagnostics: ReturnType<typeof buildVersionDiagnostics>;
+  agentOsVersion?: string;
 }): MissionControlSnapshot["diagnostics"] {
   const gatewayFallbackDiagnostics = (input.transport?.recentFallbackDiagnostics ?? []).map((entry) => ({
     ...entry,
@@ -212,6 +217,15 @@ export function buildGatewayDiagnostics(input: {
       ...input.issues.filter((issue) => !isNativeTimeoutNoiseDuringDeviceAccessRepair(issue))
     ]
     : input.issues;
+  const updateCompatibility = resolveOpenClawUpdateCompatibilitySnapshot({
+    agentOsVersion: input.agentOsVersion ?? "0.7.2",
+    currentVersion: input.versionDiagnostics.currentVersion,
+    latestVersion: input.versionDiagnostics.latestVersion
+  });
+  const updateAvailable = shouldShowDefaultOpenClawUpdate({
+    currentVersion: input.versionDiagnostics.currentVersion,
+    decision: updateCompatibility.recommendedDecision
+  });
 
   return {
     installed: true,
@@ -227,9 +241,10 @@ export function buildGatewayDiagnostics(input: {
       hasOpenClawSignal: input.hasOpenClawSignal
     }),
     version: input.versionDiagnostics.currentVersion,
-    latestVersion: input.versionDiagnostics.latestVersion,
-    updateAvailable: input.versionDiagnostics.updateAvailable,
+    latestVersion: updateCompatibility.recommendedVersion,
+    updateAvailable,
     updateError: input.versionDiagnostics.updateError,
+    updateCompatibility,
     updateRoot: normalizeOptionalValue(input.status?.update?.root ?? undefined),
     updateInstallKind: normalizeOptionalValue(input.status?.update?.installKind ?? undefined),
     updatePackageManager: normalizeOptionalValue(input.status?.update?.packageManager ?? undefined),
