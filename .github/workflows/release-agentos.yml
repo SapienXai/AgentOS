@@ -42,6 +42,48 @@ jobs:
           pnpm build
           pnpm check:release
 
+      - name: Run Mission Control browser smoke
+        shell: bash
+        env:
+          AGENTOS_SMOKE_BASE_URL: http://127.0.0.1:3000
+          AGENTOS_SMOKE_ALLOW_DATA_BLOCKED: "1"
+          AGENTOS_SMOKE_JSON_OUTPUT: .smoke/mission-control-smoke.json
+        run: |
+          mkdir -p .smoke
+          pnpm start > .smoke/agentos-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+
+          node <<'EOF'
+          const baseUrl = process.env.AGENTOS_SMOKE_BASE_URL;
+          const deadline = Date.now() + 60_000;
+
+          while (Date.now() < deadline) {
+            try {
+              const response = await fetch(`${baseUrl}/api/snapshot?force=true`);
+              if (response.ok || response.status === 401) {
+                process.exit(0);
+              }
+            } catch {
+              // Retry until the server accepts connections.
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 1_000));
+          }
+
+          console.error(`AgentOS server did not become reachable at ${baseUrl}.`);
+          process.exit(1);
+          EOF
+
+          pnpm smoke:mission-control
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: mission-control-release-smoke
+          path: .smoke/*
+          if-no-files-found: warn
+
       - id: package
         shell: bash
         run: |
@@ -199,6 +241,48 @@ jobs:
         shell: bash
         run: |
           cat > release-notes.md <<EOF
+          ## Highlights
+
+          - AgentOS release assets were built from the tagged source.
+          - Installer assets and package smoke checks are included for supported platforms.
+
+          ## OpenClaw compatibility impact
+
+          - OpenClaw supported baseline comes from \`lib/openclaw/versions.ts\`.
+          - Run \`agentos doctor --deep\` after upgrading to confirm local Gateway protocol, auth, scopes, native coverage, and fallback activity.
+
+          ## Security impact
+
+          - No release credentials are included in assets.
+          - Packaged AgentOS continues to use local API token authentication.
+
+          ## Validation
+
+          - \`pnpm lint\`
+          - \`pnpm typegen\`
+          - \`pnpm typecheck\`
+          - \`pnpm test\`
+          - \`pnpm build\`
+          - \`pnpm check:release\`
+          - \`pnpm smoke:mission-control\`
+          - \`packages/agentos/scripts/smoke-package.mjs\` for each release asset platform
+
+          ## Smoke status
+
+          - Mission Control browser smoke output is uploaded as the \`mission-control-release-smoke\` workflow artifact.
+          - Runtime golden-path smoke remains opt-in because it dispatches a real OpenClaw task: \`AGENTOS_RUNTIME_SMOKE=1 pnpm smoke:runtime-golden\`.
+
+          ## Known limitations
+
+          - Mission Control browser smoke may report blocked data checks when CI has no real OpenClaw agents, tasks, or context files.
+          - Runtime golden-path smoke can be blocked by missing local OpenClaw auth, model credentials, or writable runtime state.
+          - Account-target browser-profile dispatch remains an MVP bridge until OpenClaw exposes typed browser-profile dispatch.
+
+          ## Upgrade notes
+
+          - Requires Node.js 24 or newer.
+          - Use the installer commands below or the attached tarball for your platform.
+
           ## Install
 
           macOS / Linux:

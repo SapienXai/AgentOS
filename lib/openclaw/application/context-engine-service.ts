@@ -27,6 +27,8 @@ import type {
   ContextEngineBudgetItem,
   ContextEngineCapabilities,
   ContextEngineConfiguration,
+  ContextEngineEffectiveContext,
+  ContextEngineEffectiveContextSection,
   ContextEngineRuntimeFile,
   ContextEngineRuntimeReport,
   ContextEngineRuntimeReportSource,
@@ -90,6 +92,7 @@ export async function getAgentContextEngineSnapshot(agentId: string): Promise<Co
   const budget = buildContextBudget(files, runtimeReport, policy, model?.contextWindow ?? null);
   const capabilities = buildContextEngineCapabilities();
   const preview = buildContextPreview(files, runtimeReport, policy, budget);
+  const effectiveContext = buildEffectiveContextForTesting(files, runtimeReport, policy, preview, configuration);
 
   return {
     agent,
@@ -107,6 +110,7 @@ export async function getAgentContextEngineSnapshot(agentId: string): Promise<Co
     policy,
     runtimeReport,
     preview,
+    effectiveContext,
     configuration,
     capabilities,
     diagnostics: [
@@ -434,6 +438,137 @@ function buildContextPreview(
     totalTokens: budget.usedTokens,
     diagnostics: runtimeReport.diagnostics
   };
+}
+
+export function buildEffectiveContextForTesting(
+  files: ContextEngineFile[],
+  runtimeReport: ContextEngineRuntimeReport,
+  policy: ContextEnginePolicySnapshot,
+  preview: ContextEngineSnapshot["preview"],
+  configuration: ContextEngineConfiguration
+): ContextEngineEffectiveContext {
+  const enabledFiles = files.filter((file) => file.enabled);
+  const disabledFiles = files.filter((file) => !file.enabled && file.preferenceSource === "agentos-sidecar");
+  const issueFiles = files.filter((file) => file.status === "missing" || file.status === "truncated" || file.status === "error");
+  const memoryFiles = files.filter((file) => file.owner === "memory");
+  const openClawRuntimeItems = runtimeReport.injectedFiles.map((file) =>
+    [
+      file.path,
+      typeof file.tokens === "number" ? `${file.tokens.toLocaleString()} tokens` : null,
+      file.truncated ? "truncated" : null
+    ].filter(Boolean).join(" / ")
+  );
+  const sections: ContextEngineEffectiveContextSection[] = [
+    {
+      id: "system",
+      label: "System prompt",
+      source: preview.source,
+      status: preview.status,
+      detail: preview.systemPromptSummary,
+      items: []
+    },
+    {
+      id: "openclaw-runtime",
+      label: "OpenClaw-reported runtime context",
+      source: runtimeReport.status === "exact" ? "openclaw-report" : "agentos-estimate",
+      status: runtimeReport.status === "exact" ? "exact" : "estimated",
+      detail: runtimeReport.sessionId || runtimeReport.sessionKey
+        ? "Latest session context was normalized from OpenClaw runtime/session data."
+        : "No OpenClaw runtime context report is available for this agent yet.",
+      items: openClawRuntimeItems
+    },
+    {
+      id: "agentos-sidecar",
+      label: "AgentOS sidecar preferences",
+      source: "agentos-sidecar",
+      status: "estimated",
+      detail: `Preferences are stored in ${configuration.storagePath}; they do not change OpenClaw runtime state directly.`,
+      items: configuration.files.map((entry) => `${entry.enabled ? "include" : "exclude"} ${entry.path}`)
+    },
+    {
+      id: "enabled-files",
+      label: "Enabled files",
+      source: "agentos-estimate",
+      status: "estimated",
+      detail: "Files AgentOS expects to be available for project context based on saved preferences and workspace file state.",
+      items: enabledFiles.map(formatEffectiveContextFile)
+    },
+    {
+      id: "disabled-files",
+      label: "Disabled files",
+      source: "agentos-sidecar",
+      status: "estimated",
+      detail: "Files explicitly excluded by AgentOS sidecar preferences.",
+      items: disabledFiles.map(formatEffectiveContextFile)
+    },
+    {
+      id: "file-issues",
+      label: "Missing, truncated, or errored files",
+      source: "agentos-estimate",
+      status: issueFiles.length > 0 ? "estimated" : "exact",
+      detail: issueFiles.length > 0
+        ? "These files need operator attention before they can be treated as reliable context."
+        : "No missing, truncated, or errored context files are visible.",
+      items: issueFiles.map(formatEffectiveContextFile)
+    },
+    {
+      id: "skills-tools",
+      label: "Skills and tools",
+      source: runtimeReport.skillsPromptChars != null || runtimeReport.toolsSchemaChars != null ? "openclaw-report" : "agentos-estimate",
+      status: runtimeReport.skillsPromptChars != null || runtimeReport.toolsSchemaChars != null ? "exact" : "estimated",
+      detail: "Declared and effective agent capabilities visible to AgentOS.",
+      items: [
+        ...policy.effectiveSkills.map((skill) => `skill ${skill}`),
+        ...policy.effectiveTools.map((tool) => `tool ${tool}`)
+      ]
+    },
+    {
+      id: "memory",
+      label: "Memory",
+      source: "agentos-estimate",
+      status: "estimated",
+      detail: "Durable memory files visible in the selected workspace.",
+      items: memoryFiles.map(formatEffectiveContextFile)
+    },
+    {
+      id: "history",
+      label: "History",
+      source: runtimeReport.sessionId || runtimeReport.sessionKey ? "openclaw-report" : "agentos-estimate",
+      status: runtimeReport.sessionId || runtimeReport.sessionKey
+        ? runtimeReport.status === "exact" ? "exact" : "estimated"
+        : "unavailable",
+      detail: preview.historySummary,
+      items: []
+    },
+    {
+      id: "attachments",
+      label: "Attachments",
+      source: "unsupported",
+      status: "unavailable",
+      detail: preview.attachmentsSummary,
+      items: []
+    }
+  ];
+
+  return {
+    status: preview.status,
+    source: preview.source,
+    sections,
+    diagnostics: [
+      ...preview.diagnostics,
+      "Effective Context separates OpenClaw-reported runtime context from AgentOS sidecar preferences and estimates."
+    ]
+  };
+}
+
+function formatEffectiveContextFile(file: ContextEngineFile) {
+  return [
+    file.path,
+    file.status,
+    file.preferenceSource,
+    file.runtimeIncluded ? "runtime-reported" : null,
+    typeof file.injectedTokens === "number" ? `${file.injectedTokens.toLocaleString()} tokens` : null
+  ].filter(Boolean).join(" / ");
 }
 
 function buildContextEngineCapabilities(): ContextEngineCapabilities {

@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowUpRight,
   CheckCircle2,
+  Info,
   KeyRound,
   LoaderCircle,
   Plus,
@@ -17,6 +18,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { resolveTransportDiagnosticsSummary } from "@/components/mission-control/settings-control-center.utils";
 import type { OpenClawInstallSummary } from "@/components/mission-control/mission-control-shell.utils";
 import type {
@@ -174,8 +176,8 @@ export function MissionControlShellSettingsPanel({
               OpenClaw
             </p>
             <div className="mt-0.5 flex items-center gap-1.5">
-              <span className="font-display text-[1rem]">{formatHealthLabel(snapshot.diagnostics.health)}</span>
-              <StatusPill health={snapshot.diagnostics.health} surfaceTheme={surfaceTheme} />
+              <span className="font-display text-[1rem]">{formatSnapshotHealthLabel(snapshot)}</span>
+              <StatusPill snapshot={snapshot} surfaceTheme={surfaceTheme} />
             </div>
           </div>
           <div className="text-right">
@@ -356,12 +358,15 @@ export function MissionControlShellSettingsPanel({
 }
 
 function StatusPill({
-  health,
+  snapshot,
   surfaceTheme
 }: {
-  health: MissionControlSnapshot["diagnostics"]["health"];
+  snapshot: MissionControlSnapshot;
   surfaceTheme: SurfaceTheme;
 }) {
+  const isCliFallbackActive = snapshot.diagnostics.transport?.gatewayMode === "fallback-active";
+  const health = isCliFallbackActive ? "healthy" : snapshot.diagnostics.health;
+
   return (
     <span
       className={cn(
@@ -380,8 +385,40 @@ function StatusPill({
       )}
     >
       <span className="h-1.5 w-1.5 rounded-full bg-current" />
-      {formatHealthLabel(health)}
+      {isCliFallbackActive ? "Online" : formatHealthLabel(health)}
+      {isCliFallbackActive ? <CliFallbackInfoTooltip surfaceTheme={surfaceTheme} /> : null}
     </span>
+  );
+}
+
+function CliFallbackInfoTooltip({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
+  return (
+    <TooltipProvider delayDuration={120}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            tabIndex={0}
+            aria-label="CLI fallback active"
+            className="inline-flex h-4 w-4 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/50"
+          >
+            <Info className="h-3 w-3 opacity-75" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent
+          side="bottom"
+          align="center"
+          sideOffset={8}
+          className={cn(
+            "rounded-[10px] px-2.5 py-1.5 text-[10px] font-medium leading-none tracking-[0.12em] whitespace-nowrap shadow-[0_16px_40px_rgba(0,0,0,0.32)]",
+            surfaceTheme === "light"
+              ? "border border-slate-200/80 bg-white/96 text-slate-900 shadow-[0_16px_40px_rgba(15,23,42,0.18)]"
+              : "border border-white/10 bg-slate-950/92 text-slate-100"
+          )}
+        >
+          CLI fallback active
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -456,6 +493,25 @@ function resolveGatewayLabel(snapshot: MissionControlSnapshot) {
   const locality = diagnostics.bindMode === "remote" || diagnostics.configuredGatewayUrl ? "Remote" : "Local";
   const state = diagnostics.rpcOk || diagnostics.loaded ? "Online" : "Offline";
   return `${locality} / ${state}`;
+}
+
+function formatSnapshotHealthLabel(snapshot: MissionControlSnapshot) {
+  const { diagnostics } = snapshot;
+  if (diagnostics.health === "degraded") {
+    if (diagnostics.transport?.gatewayMode === "fallback-active") {
+      return "Online";
+    }
+
+    if (diagnostics.eventBridge?.mode === "reconnecting") {
+      return "Reconnecting";
+    }
+
+    if (diagnostics.eventBridge?.mode === "polling") {
+      return "Polling fallback";
+    }
+  }
+
+  return formatHealthLabel(diagnostics.health);
 }
 
 function formatHealthLabel(health: MissionControlSnapshot["diagnostics"]["health"]) {

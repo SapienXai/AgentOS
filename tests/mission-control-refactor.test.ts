@@ -524,7 +524,8 @@ test("Mission Control shell delegates operator workflow state to focused hooks",
     "use-mission-control-selection",
     "use-mission-control-agent-actions",
     "use-mission-control-workspace-actions",
-    "use-mission-control-task-actions"
+    "use-mission-control-task-actions",
+    "use-mission-control-reset-state"
   ];
 
   for (const hookFile of hookFiles) {
@@ -534,6 +535,9 @@ test("Mission Control shell delegates operator workflow state to focused hooks",
   assert.doesNotMatch(source, /const \[focusedAgentId, setFocusedAgentId\] = useState/);
   assert.doesNotMatch(source, /const \[workspaceFilesDialogId, setWorkspaceFilesDialogId\] = useState/);
   assert.doesNotMatch(source, /const \[taskAbortRequest, setTaskAbortRequest\] = useState/);
+  assert.doesNotMatch(source, /const \[resetDialogTarget, setResetDialogTarget\] = useState/);
+  assert.doesNotMatch(source, /const \[resetPreviewState, setResetPreviewState\] = useState/);
+  assert.doesNotMatch(source, /const \[resetRunState, setResetRunState\] = useState/);
 });
 
 test("Inspector uses focused panel modules for task, agent, and runtime truth", () => {

@@ -43,6 +43,7 @@ import { applyContextEngineDraftState, useContextEngineDraft } from "@/component
 import { useContextEngineLoader } from "@/components/mission-control/use-context-engine-loader";
 import type {
   ContextEngineBudgetItem,
+  ContextEngineEffectiveContextSection,
   ContextEngineFile,
   ContextEngineFileStatus,
   ContextEngineSaveInput,
@@ -71,7 +72,7 @@ const tabItems: Array<{
   { id: "skills", label: "Skills & Tools", icon: Wrench },
   { id: "memory", label: "Memory & History", icon: History },
   { id: "attachments", label: "Attachments", icon: Paperclip },
-  { id: "preview", label: "Preview", icon: Eye }
+  { id: "preview", label: "Effective Context", icon: Eye }
 ];
 
 const statusTone: Record<ContextEngineFileStatus, string> = {
@@ -415,7 +416,7 @@ export function ContextEngineDialog({
             <div className="flex shrink-0 items-center gap-2">
               <TopActionButton
                 icon={<Eye className="h-3.5 w-3.5" />}
-                label="Preview"
+                label="Effective Context"
                 onClick={() => setActiveTab("preview")}
               />
               <TopActionButton
@@ -1360,25 +1361,77 @@ function SecondaryTabPanel({
   }
 
   return (
-    <InfoPanel title="Preview" subtitle="What AgentOS can verify about the next model context.">
-      <div className="grid grid-cols-[1.1fr_0.9fr] gap-3">
-        <div className="rounded-[9px] border border-white/[0.08] bg-slate-950/42 p-3">
-          <p className="text-xs font-medium text-white">System prompt</p>
-          <p className="mt-1.5 text-xs leading-5 text-slate-300">{snapshot?.preview.systemPromptSummary ?? "No preview is available."}</p>
-          <div className="mt-4">
-            <p className="text-xs font-medium text-white">Active project context files</p>
-            <FileSummaryList files={files.filter((file) => file.enabled)} empty="No files are enabled in the saved context plan." />
-          </div>
+    <InfoPanel title="Effective Context" subtitle="What AgentOS can verify about the next model context, grouped by source of truth.">
+      <div className="grid gap-3 xl:grid-cols-[1fr_280px]">
+        <div className="grid gap-2 md:grid-cols-2">
+          {(snapshot?.effectiveContext.sections ?? []).map((section) => (
+            <EffectiveContextSectionCard key={section.id} section={section} />
+          ))}
         </div>
         <div className="rounded-[9px] border border-white/[0.08] bg-slate-950/42 p-3">
-          <p className="text-xs font-medium text-white">Token estimate</p>
+          <p className="text-xs font-medium text-white">Effective context total</p>
           <p className="mt-2 text-2xl font-semibold text-white">{formatTokenValue(snapshot?.preview.totalTokens ?? null)}</p>
-          <p className="mt-1.5 text-xs text-slate-400">{snapshot?.preview.status === "exact" ? "From OpenClaw context report" : "Estimated by AgentOS from available metadata"}</p>
-          <DiagnosticsList diagnostics={snapshot?.preview.diagnostics ?? []} />
+          <p className="mt-1.5 text-xs text-slate-400">
+            {snapshot?.effectiveContext.status === "exact" ? "Exact OpenClaw context report" : "Estimated by AgentOS from available metadata"}
+          </p>
+          <DiagnosticsList diagnostics={snapshot?.effectiveContext.diagnostics ?? []} />
         </div>
       </div>
     </InfoPanel>
   );
+}
+
+function EffectiveContextSectionCard({ section }: { section: ContextEngineEffectiveContextSection }) {
+  return (
+    <div className="min-w-0 rounded-[9px] border border-white/[0.08] bg-slate-950/42 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-medium text-white">{section.label}</p>
+          <p className="mt-1 text-[10px] uppercase tracking-[0.14em] text-slate-500">{formatEffectiveContextSource(section.source)}</p>
+        </div>
+        <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[9px] uppercase tracking-[0.12em]", effectiveContextStatusClassName(section.status))}>
+          {section.status}
+        </span>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-slate-300">{section.detail}</p>
+      {section.items.length > 0 ? (
+        <ul className="mt-2 max-h-28 space-y-1 overflow-y-auto pr-1">
+          {section.items.slice(0, 8).map((item) => (
+            <li key={item} className="truncate rounded-[7px] border border-white/[0.06] bg-white/[0.03] px-2 py-1 font-mono text-[10px] text-slate-300" title={item}>
+              {item}
+            </li>
+          ))}
+          {section.items.length > 8 ? (
+            <li className="px-2 text-[10px] text-slate-500">+{section.items.length - 8} more</li>
+          ) : null}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function formatEffectiveContextSource(source: ContextEngineEffectiveContextSection["source"]) {
+  switch (source) {
+    case "openclaw-report":
+      return "OpenClaw report";
+    case "agentos-sidecar":
+      return "AgentOS sidecar";
+    case "agentos-estimate":
+      return "AgentOS estimate";
+    case "unsupported":
+      return "Unsupported";
+  }
+}
+
+function effectiveContextStatusClassName(status: ContextEngineEffectiveContextSection["status"]) {
+  switch (status) {
+    case "exact":
+      return "border-emerald-300/25 bg-emerald-400/10 text-emerald-200";
+    case "estimated":
+      return "border-amber-300/25 bg-amber-400/10 text-amber-200";
+    case "unavailable":
+      return "border-slate-500/25 bg-slate-700/40 text-slate-300";
+  }
 }
 
 function HeaderChip({

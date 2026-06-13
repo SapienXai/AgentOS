@@ -13,6 +13,8 @@ const AGENTOS_PACKAGE_DIR = "packages/agentos";
 const AGENTOS_PACKAGE_JSON = `${AGENTOS_PACKAGE_DIR}/package.json`;
 const AGENTOS_BIN_ENTRY = "bin/agentos.js";
 const CHECK_SCRIPT = `${AGENTOS_PACKAGE_DIR}/scripts/check-release-consistency.mjs`;
+const MISSION_CONTROL_SMOKE_SCRIPT = "scripts/mission-control-browser-smoke.mjs";
+const RELEASE_NOTES_TEMPLATE = "docs/release-notes-agentos-template.md";
 const RELEASE_TAG_PREFIX = "agentos-v";
 const INSTALL_COMMAND = "curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | bash";
 const WINDOWS_INSTALL_COMMAND = "iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex";
@@ -46,6 +48,7 @@ export function checkReleaseConsistency(options = {}) {
   const packageReadme = readText(context, `${AGENTOS_PACKAGE_DIR}/README.md`);
   const security = readText(context, "SECURITY.md");
   const cleanInstallChecklist = readText(context, "docs/agentos-clean-install-smoke-checklist.md");
+  const releaseNotesTemplate = readText(context, RELEASE_NOTES_TEMPLATE);
   const installSh = readText(context, "install.sh");
   const installPs1 = readText(context, "install.ps1");
   const ciWorkflow = readText(context, ".github/workflows/ci.yml");
@@ -54,6 +57,7 @@ export function checkReleaseConsistency(options = {}) {
   const prepareBundle = readText(context, `${AGENTOS_PACKAGE_DIR}/scripts/prepare-bundle.mjs`);
   const runPrepack = readText(context, `${AGENTOS_PACKAGE_DIR}/scripts/run-prepack.mjs`);
   const smokePackage = readText(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`);
+  const missionControlSmoke = readText(context, MISSION_CONTROL_SMOKE_SCRIPT);
   const openClawVersions = readText(context, OPENCLAW_VERSIONS_FILE);
 
   if (!rootPackage || !agentosPackage) {
@@ -67,11 +71,33 @@ export function checkReleaseConsistency(options = {}) {
   validateInstallers(context, installSh, installPs1);
   validateReadmes(context, readme, packageReadme, agentosPackage);
   validateSecurityDocs(context, security, cleanInstallChecklist);
-  validateBuildScripts(context, rootPackage, agentosPackage, prepareBundle, runPrepack, smokePackage);
+  validateReleaseNotesTemplate(context, releaseNotesTemplate);
+  validateBuildScripts(context, rootPackage, agentosPackage, prepareBundle, runPrepack, smokePackage, missionControlSmoke);
   validateCiWorkflow(context, ciWorkflow);
   validateReleaseWorkflow(context, workflow, agentosPackage);
 
   return buildResult(context, agentosPackage);
+}
+
+function validateReleaseNotesTemplate(context, releaseNotesTemplate) {
+  if (!releaseNotesTemplate) {
+    return;
+  }
+
+  for (const heading of [
+    "## Highlights",
+    "## OpenClaw Compatibility Impact",
+    "## Security Impact",
+    "## Validation",
+    "## Smoke Status",
+    "## Known Limitations",
+    "## Upgrade Notes"
+  ]) {
+    expectIncludes(context, RELEASE_NOTES_TEMPLATE, releaseNotesTemplate, heading);
+  }
+
+  expectIncludes(context, RELEASE_NOTES_TEMPLATE, releaseNotesTemplate, "pnpm smoke:mission-control");
+  expectIncludes(context, RELEASE_NOTES_TEMPLATE, releaseNotesTemplate, "agentos doctor --deep");
 }
 
 export function formatReleaseConsistencyResult(result) {
@@ -323,7 +349,7 @@ function validateSecurityDocs(context, security, cleanInstallChecklist) {
   }
 }
 
-function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundle, runPrepack, smokePackage) {
+function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundle, runPrepack, smokePackage, missionControlSmoke) {
   expectEqual(
     context,
     "package.json",
@@ -359,6 +385,14 @@ function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundl
     rootPackage.scripts?.["smoke:agentos-package"],
     `node ${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`
   );
+  expectEqual(
+    context,
+    "package.json",
+    "scripts.smoke:mission-control",
+    rootPackage.scripts?.["smoke:mission-control"],
+    `node ${MISSION_CONTROL_SMOKE_SCRIPT}`
+  );
+  expectFileExists(context, MISSION_CONTROL_SMOKE_SCRIPT);
   expectFileExists(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`);
   expectEqual(
     context,
@@ -395,6 +429,15 @@ function validateBuildScripts(context, rootPackage, agentosPackage, prepareBundl
     expectIncludes(context, `${AGENTOS_PACKAGE_DIR}/scripts/smoke-package.mjs`, smokePackage, "\"bundle\", \"server.js\"");
   }
 
+  if (missionControlSmoke) {
+    expectIncludes(context, MISSION_CONTROL_SMOKE_SCRIPT, missionControlSmoke, "AGENTOS_SMOKE_JSON_OUTPUT");
+    expectIncludes(context, MISSION_CONTROL_SMOKE_SCRIPT, missionControlSmoke, "AGENTOS_SMOKE_ALLOW_DATA_BLOCKED");
+    expectIncludes(context, MISSION_CONTROL_SMOKE_SCRIPT, missionControlSmoke, "\"PASS\"");
+    expectIncludes(context, MISSION_CONTROL_SMOKE_SCRIPT, missionControlSmoke, "\"FAIL\"");
+    expectIncludes(context, MISSION_CONTROL_SMOKE_SCRIPT, missionControlSmoke, "\"SKIP\"");
+    expectIncludes(context, MISSION_CONTROL_SMOKE_SCRIPT, missionControlSmoke, "\"BLOCKED\"");
+  }
+
   if (agentosPackage.bin?.agentos !== AGENTOS_BIN_ENTRY) {
     addIssue(context, AGENTOS_PACKAGE_JSON, `bin.agentos must target ${AGENTOS_BIN_ENTRY} before build, pack, or publish.`);
   }
@@ -417,6 +460,14 @@ function validateCiWorkflow(context, workflow) {
   expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm test");
   expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm build");
   expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm check:release");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "mission-control-browser-smoke");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm start > .smoke/agentos-server.log");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "AGENTOS_SMOKE_BASE_URL: http://127.0.0.1:3000");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, 'AGENTOS_SMOKE_ALLOW_DATA_BLOCKED: "1"');
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "AGENTOS_SMOKE_JSON_OUTPUT: .smoke/mission-control-smoke.json");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "pnpm smoke:mission-control");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "actions/upload-artifact@v6");
+  expectIncludes(context, ".github/workflows/ci.yml", workflow, "mission-control-browser-smoke");
 }
 
 function validateReleaseWorkflow(context, workflow, agentosPackage) {
@@ -432,6 +483,10 @@ function validateReleaseWorkflow(context, workflow, agentosPackage) {
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm test");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm build");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm check:release");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "Run Mission Control browser smoke");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm start > .smoke/agentos-server.log");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "pnpm smoke:mission-control");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "mission-control-release-smoke");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "Smoke AgentOS CLI package");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "packages/agentos/scripts/smoke-package.mjs --tarball");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "require('./packages/agentos/package.json').version");
@@ -441,6 +496,13 @@ function validateReleaseWorkflow(context, workflow, agentosPackage) {
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "install.ps1");
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, `node-version: ${REQUIRED_NODE_MAJOR}`);
   expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "${{ needs.validate-release.outputs.version }}");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "## Highlights");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "## OpenClaw compatibility impact");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "## Security impact");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "## Validation");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "## Smoke status");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "## Known limitations");
+  expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, "## Upgrade notes");
 
   for (const asset of RELEASE_ASSETS) {
     expectIncludes(context, ".github/workflows/release-agentos.yml", workflow, asset);

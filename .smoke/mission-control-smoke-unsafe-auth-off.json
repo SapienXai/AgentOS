@@ -1,0 +1,84 @@
+{
+  "baseUrl": "http://127.0.0.1:3001",
+  "missionControlPath": "/",
+  "allowDataBlocked": true,
+  "generatedAt": "2026-06-13T15:25:58.402Z",
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "Mission Control page loads",
+      "status": "PASS",
+      "detail": "path=/; status=200"
+    },
+    {
+      "name": "Mission Control returns browser HTML",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Snapshot API loads",
+      "status": "PASS",
+      "detail": "status=200"
+    },
+    {
+      "name": "Snapshot has workspaces",
+      "status": "PASS",
+      "detail": "6 workspace(s)"
+    },
+    {
+      "name": "Snapshot has agents",
+      "status": "PASS",
+      "detail": "13 agent(s)"
+    },
+    {
+      "name": "Agent inspector exposes session count",
+      "status": "PASS",
+      "detail": "agent=main"
+    },
+    {
+      "name": "Agent inspector exposes runtime ids",
+      "status": "PASS",
+      "detail": "8 active runtime(s)"
+    },
+    {
+      "name": "Context Engine snapshot loads",
+      "status": "PASS",
+      "detail": "agent=main; status=200"
+    },
+    {
+      "name": "Context Engine exposes file list",
+      "status": "PASS",
+      "detail": "15 file(s)"
+    },
+    {
+      "name": "Context Engine selected file loads",
+      "status": "PASS",
+      "detail": "path=AGENTS.md; status=200"
+    },
+    {
+      "name": "Context Engine selected file has content",
+      "status": "PASS",
+      "detail": "8859 char(s)"
+    },
+    {
+      "name": "Task inspector exposes task id",
+      "status": "PASS",
+      "detail": "task=task:87d678914fdc"
+    },
+    {
+      "name": "Task inspector exposes session/run provenance",
+      "status": "PASS",
+      "detail": "sessions=3; runs=1; runtimes=6; dispatch=dispatch-23349eca-901d-4551-9e2e-c15215574134"
+    },
+    {
+      "name": "Follow-up confidence states",
+      "status": "PASS",
+      "detail": "high"
+    },
+    {
+      "name": "Polling fallback notice",
+      "status": "SKIP",
+      "detail": "Gateway event stream is live."
+    }
+  ]
+}

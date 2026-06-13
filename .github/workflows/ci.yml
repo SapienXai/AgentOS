@@ -85,3 +85,66 @@ jobs:
           name: openclaw-compat-${{ matrix.channel }}
           path: .compat/openclaw-${{ matrix.channel }}.json
           if-no-files-found: warn
+
+  mission-control-browser-smoke:
+    runs-on: ubuntu-latest
+    needs: quality-gates
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build AgentOS
+        run: pnpm build
+
+      - name: Run Mission Control browser smoke
+        shell: bash
+        env:
+          AGENTOS_SMOKE_BASE_URL: http://127.0.0.1:3000
+          AGENTOS_SMOKE_ALLOW_DATA_BLOCKED: "1"
+          AGENTOS_SMOKE_JSON_OUTPUT: .smoke/mission-control-smoke.json
+        run: |
+          mkdir -p .smoke
+          pnpm start > .smoke/agentos-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+
+          node <<'EOF'
+          const baseUrl = process.env.AGENTOS_SMOKE_BASE_URL;
+          const deadline = Date.now() + 60_000;
+
+          while (Date.now() < deadline) {
+            try {
+              const response = await fetch(`${baseUrl}/api/snapshot?force=true`);
+              if (response.ok || response.status === 401) {
+                process.exit(0);
+              }
+            } catch {
+              // Retry until the server accepts connections.
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 1_000));
+          }
+
+          console.error(`AgentOS server did not become reachable at ${baseUrl}.`);
+          process.exit(1);
+          EOF
+
+          pnpm smoke:mission-control
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: mission-control-browser-smoke
+          path: .smoke/*
+          if-no-files-found: warn

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createErrorSnapshot } from "@/lib/openclaw/fallback";
+import { createErrorSnapshot, createFallbackSnapshot } from "@/lib/openclaw/fallback";
 import { getRuntimeOutputForResolvedRuntime } from "@/lib/openclaw/domains/runtime-transcript";
 import { sanitizeGatewayDiagnosticText } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import {
@@ -30,6 +30,20 @@ test("OpenClaw missing snapshot does not present fake live workspaces, models, a
   assert.deepEqual(snapshot.models, []);
   assert.deepEqual(snapshot.runtimes, []);
   assert.deepEqual(snapshot.tasks, []);
+});
+
+test("fallback demo snapshot remains explicitly offline and non-live", () => {
+  const snapshot = createFallbackSnapshot("OpenClaw snapshot unavailable.");
+
+  assert.equal(snapshot.mode, "fallback");
+  assert.equal(snapshot.diagnostics.installed, false);
+  assert.equal(snapshot.diagnostics.loaded, false);
+  assert.equal(snapshot.diagnostics.rpcOk, false);
+  assert.equal(snapshot.diagnostics.health, "offline");
+  assert.ok(snapshot.workspaces.every((workspace) => workspace.id.includes("demo")));
+  assert.ok(snapshot.agents.every((agent) => agent.id.includes("demo")));
+  assert.ok(snapshot.runtimes.every((runtime) => runtime.id.includes("demo")));
+  assert.ok(snapshot.tasks.every((task) => task.id.includes("demo") || task.key.includes("demo")));
 });
 
 test("first-run write actions return actionable readiness failures before mutation", () => {

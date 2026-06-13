@@ -21,11 +21,15 @@ import { proxy } from "@/proxy";
 const rootDir = process.cwd();
 
 async function withProcessEnv(
-  env: Partial<Record<"AGENTOS_API_TOKEN" | "NODE_ENV", string | undefined>>,
+  env: Partial<
+    Record<"AGENTOS_API_TOKEN" | "AGENTOS_PACKAGE_RUNTIME" | "AGENTOS_UNSAFE_DISABLE_API_AUTH" | "NODE_ENV", string | undefined>
+  >,
   callback: () => Promise<void> | void
 ) {
   const previous = {
     AGENTOS_API_TOKEN: process.env.AGENTOS_API_TOKEN,
+    AGENTOS_PACKAGE_RUNTIME: process.env.AGENTOS_PACKAGE_RUNTIME,
+    AGENTOS_UNSAFE_DISABLE_API_AUTH: process.env.AGENTOS_UNSAFE_DISABLE_API_AUTH,
     NODE_ENV: process.env.NODE_ENV
   };
 
@@ -148,6 +152,62 @@ test("API auth blocks safe reads when a bearer token is configured", () => {
   });
 
   assert.deepEqual(authorized, { ok: true });
+});
+
+test("explicit repository auth opt-out allows local API calls without a token", () => {
+  const decision = evaluateAgentOsApiRequest({
+    method: "POST",
+    url: "http://localhost:3000/api/mission",
+    headers: new Headers({
+      host: "localhost:3000",
+      origin: "http://localhost:3000"
+    }),
+    env: {
+      AGENTOS_API_TOKEN: "local-secret",
+      AGENTOS_UNSAFE_DISABLE_API_AUTH: "1",
+      NODE_ENV: "production"
+    }
+  });
+
+  assert.deepEqual(decision, { ok: true });
+});
+
+test("explicit repository auth opt-out still blocks forwarded remote clients", () => {
+  const decision = evaluateAgentOsApiRequest({
+    method: "POST",
+    url: "http://localhost:3000/api/mission",
+    headers: new Headers({
+      host: "localhost:3000",
+      origin: "http://localhost:3000",
+      "x-forwarded-for": "203.0.113.10"
+    }),
+    env: {
+      AGENTOS_UNSAFE_DISABLE_API_AUTH: "1",
+      NODE_ENV: "production"
+    }
+  });
+
+  assert.equal(decision.ok, false);
+  assert.equal(decision.ok ? null : decision.code, "unsafe-local-api");
+});
+
+test("packaged runtime ignores explicit repository auth opt-out", () => {
+  const missing = evaluateAgentOsApiRequest({
+    method: "GET",
+    url: "http://localhost:3000/api/snapshot",
+    headers: new Headers({
+      host: "localhost:3000"
+    }),
+    env: {
+      AGENTOS_API_TOKEN: "local-secret",
+      AGENTOS_PACKAGE_RUNTIME: "1",
+      AGENTOS_UNSAFE_DISABLE_API_AUTH: "1",
+      NODE_ENV: "production"
+    }
+  });
+
+  assert.equal(missing.ok, false);
+  assert.equal(missing.ok ? null : missing.code, "api-auth-required");
 });
 
 test("API auth development fallback blocks non-local read routes", () => {

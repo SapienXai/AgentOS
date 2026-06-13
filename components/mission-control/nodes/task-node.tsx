@@ -52,6 +52,7 @@ import {
   ExpandableTaskResult,
   TaskFollowUpComposer,
   TaskMetricRow,
+  buildTaskFollowUpConfidenceMetric,
   formatFollowUpDetail,
   type SubmittedTaskFollowUp,
   type TaskMetricItem
@@ -359,6 +360,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       label: "Source",
       value: provenanceLabel
     },
+    buildTaskFollowUpConfidenceMetric(displayTask),
     {
       icon: Users,
       label: "Sessions",

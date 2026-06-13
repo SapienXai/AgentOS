@@ -5,6 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 
 import {
+  buildEffectiveContextForTesting,
   classifyContextEngineFileOwner,
   decorateContextEngineFile,
   filterContextEngineFilesForAgent,
@@ -13,6 +14,12 @@ import {
   resolveContextEngineConfigPathForTesting,
   writeContextEngineConfigurationForTesting
 } from "@/lib/openclaw/application/context-engine-service";
+import type {
+  ContextEngineBudget,
+  ContextEnginePolicySnapshot,
+  ContextEnginePreview,
+  ContextEngineRuntimeReport
+} from "@/lib/openclaw/context-engine-types";
 import type { WorkspaceManagedFile } from "@/lib/openclaw/workspace-file-types";
 
 function file(path: string, category: WorkspaceManagedFile["category"]): WorkspaceManagedFile {
@@ -118,6 +125,88 @@ test("decorateContextEngineFile applies saved include and exclude configuration"
   assert.equal(missing.enabled, false);
   assert.equal(missing.status, "missing");
   assert.equal(missing.canToggle, false);
+});
+
+test("Effective Context separates OpenClaw reports from AgentOS sidecar preferences", () => {
+  const configuration = {
+    version: 1 as const,
+    agentId: "agent-1",
+    workspaceId: "workspace-1",
+    source: "agentos-sidecar" as const,
+    storagePath: ".openclaw/context-engine.json" as const,
+    persistenceStatus: "loaded" as const,
+    persistenceWarning: null,
+    updatedAt: "2026-06-12T00:00:00.000Z",
+    files: [
+      { path: "AGENTS.md", enabled: true },
+      { path: "SOUL.md", enabled: false }
+    ]
+  };
+  const files = [
+    decorateContextEngineFile(file("AGENTS.md", "context"), "agent-1", [{ path: "AGENTS.md", tokens: 40 }], configuration),
+    decorateContextEngineFile(file("SOUL.md", "context"), "agent-1", [], configuration)
+  ];
+  const runtimeReport: ContextEngineRuntimeReport = {
+    source: "openclaw-session-report",
+    status: "exact",
+    sessionId: "session-1",
+    sessionKey: "agent:agent-1:explicit:session-1",
+    updatedAt: 1710000000,
+    model: "openai/gpt-5",
+    systemPromptChars: 1000,
+    projectContextChars: 500,
+    toolsSchemaChars: null,
+    skillsPromptChars: null,
+    totalTokens: 250,
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    injectedFiles: [{ path: "AGENTS.md", tokens: 40 }],
+    truncation: { occurred: false, notes: [] },
+    diagnostics: ["OpenClaw context report source: test."]
+  };
+  const policy: ContextEnginePolicySnapshot = {
+    preset: "worker",
+    missingToolBehavior: "ask-setup",
+    installScope: "workspace",
+    fileAccess: "workspace-only",
+    networkAccess: "restricted",
+    declaredSkills: [],
+    effectiveSkills: ["reviewer"],
+    declaredTools: [],
+    effectiveTools: ["shell"],
+    observedTools: [],
+    heartbeatEnabled: true
+  };
+  const budget: ContextEngineBudget = {
+    limit: 1000,
+    usedTokens: 250,
+    usedSource: "reported",
+    usedPercent: 25,
+    items: [],
+    diagnostics: []
+  };
+  const preview: ContextEnginePreview = {
+    source: "openclaw-report",
+    status: "exact",
+    systemPromptSummary: "OpenClaw reported 1,000 system prompt characters.",
+    activeFiles: [],
+    skills: policy.effectiveSkills,
+    tools: policy.effectiveTools,
+    historySummary: "Recent session context is represented by the latest OpenClaw session report when available.",
+    attachmentsSummary: "Attachment context is not exposed by the current OpenClaw gateway methods.",
+    totalTokens: budget.usedTokens,
+    diagnostics: runtimeReport.diagnostics
+  };
+
+  const effective = buildEffectiveContextForTesting(files, runtimeReport, policy, preview, configuration);
+
+  assert.equal(effective.status, "exact");
+  assert.equal(effective.sections.find((section) => section.id === "openclaw-runtime")?.source, "openclaw-report");
+  assert.match(effective.sections.find((section) => section.id === "openclaw-runtime")?.items.join("\n") ?? "", /AGENTS\.md/);
+  assert.equal(effective.sections.find((section) => section.id === "agentos-sidecar")?.source, "agentos-sidecar");
+  assert.match(effective.sections.find((section) => section.id === "agentos-sidecar")?.items.join("\n") ?? "", /exclude SOUL\.md/);
+  assert.equal(effective.sections.find((section) => section.id === "attachments")?.status, "unavailable");
 });
 
 test("Context Engine sidecar configuration writes atomically with owner-only permissions", async () => {

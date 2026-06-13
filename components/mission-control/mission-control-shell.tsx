@@ -30,6 +30,7 @@ import {
 } from "@/components/mission-control/use-mission-control-preferences";
 import { useMissionControlSelection } from "@/components/mission-control/use-mission-control-selection";
 import { useMissionControlAgentActions } from "@/components/mission-control/use-mission-control-agent-actions";
+import { useMissionControlResetState } from "@/components/mission-control/use-mission-control-reset-state";
 import { useMissionControlTaskActions } from "@/components/mission-control/use-mission-control-task-actions";
 import { useMissionControlWorkspaceActions } from "@/components/mission-control/use-mission-control-workspace-actions";
 import { useTaskReviewWorkflow } from "@/components/mission-control/use-task-review-workflow";
@@ -130,7 +131,6 @@ type ComposeIntent = {
 };
 
 type UpdateRunState = "idle" | "running" | "success" | "error";
-type ResetPreviewState = "idle" | "loading" | "ready" | "error";
 type OnboardingWizardStage = "system" | "models";
 type GatewayControlAction = "start" | "stop" | "restart";
 type ModelOnboardingIntent = "auto" | "refresh" | "discover" | "set-default" | "login-provider";
@@ -250,16 +250,29 @@ export function MissionControlShell({
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
-  const [resetDialogTarget, setResetDialogTarget] = useState<ResetTarget | null>(null);
-  const [resetPreviewState, setResetPreviewState] = useState<ResetPreviewState>("idle");
-  const [resetPreview, setResetPreview] = useState<ResetPreview | null>(null);
-  const [resetPreviewError, setResetPreviewError] = useState<string | null>(null);
-  const [resetRunState, setResetRunState] = useState<UpdateRunState>("idle");
-  const [resetStatusMessage, setResetStatusMessage] = useState<string | null>(null);
-  const [resetResultMessage, setResetResultMessage] = useState<string | null>(null);
-  const [resetBackgroundLogPath, setResetBackgroundLogPath] = useState<string | null>(null);
-  const [resetLog, setResetLog] = useState("");
-  const [resetConfirmText, setResetConfirmText] = useState("");
+  const {
+    resetDialogTarget,
+    setResetDialogTarget,
+    resetPreviewState,
+    setResetPreviewState,
+    resetPreview,
+    setResetPreview,
+    resetPreviewError,
+    setResetPreviewError,
+    resetRunState,
+    setResetRunState,
+    resetStatusMessage,
+    setResetStatusMessage,
+    resetResultMessage,
+    setResetResultMessage,
+    resetBackgroundLogPath,
+    setResetBackgroundLogPath,
+    resetLog,
+    setResetLog,
+    resetConfirmText,
+    setResetConfirmText,
+    resetResetDialogState
+  } = useMissionControlResetState();
   const [launchpadWorkspaceCreateRunState, setLaunchpadWorkspaceCreateRunState] = useState<UpdateRunState>("idle");
   const [launchpadWorkspaceCreateProgress, setLaunchpadWorkspaceCreateProgress] =
     useState<OperationProgressSnapshot | null>(null);
@@ -2903,18 +2916,6 @@ export function MissionControlShell({
 
     clearPreferenceState();
     clearTaskReviewState();
-  };
-
-  const resetResetDialogState = () => {
-    setResetPreviewState("idle");
-    setResetPreview(null);
-    setResetPreviewError(null);
-    setResetRunState("idle");
-    setResetStatusMessage(null);
-    setResetResultMessage(null);
-    setResetBackgroundLogPath(null);
-    setResetLog("");
-    setResetConfirmText("");
   };
 
   const loadResetPreview = async (target: ResetTarget) => {

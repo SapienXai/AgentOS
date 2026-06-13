@@ -686,6 +686,9 @@ export function LaunchpadStage({
   workspaceCount,
   agentCount,
   workspaceSetupReady,
+  operationalReady,
+  runtimeSmokeStatus,
+  runtimeSmokeDetail,
   defaultModelLabel,
   createProgress,
   createRunState
@@ -694,6 +697,9 @@ export function LaunchpadStage({
   workspaceCount: number;
   agentCount: number;
   workspaceSetupReady: boolean;
+  operationalReady: boolean;
+  runtimeSmokeStatus: MissionControlSnapshot["diagnostics"]["runtime"]["smokeTest"]["status"];
+  runtimeSmokeDetail: string | null | undefined;
   defaultModelLabel: string;
   createProgress: OperationProgressSnapshot | null;
   createRunState: "idle" | "running" | "success" | "error";
@@ -715,6 +721,7 @@ export function LaunchpadStage({
   const modelMetricDetail = workspaceSetupReady
     ? "Usable model route selected"
     : "Detected on this machine, not yet confirmed by a workspace.";
+  const runtimeSmokeMetric = resolveRuntimeSmokeMetric(runtimeSmokeStatus, runtimeSmokeDetail);
 
   return (
     <>
@@ -782,8 +789,8 @@ export function LaunchpadStage({
             <LaunchpadMetric
               surfaceTheme={surfaceTheme}
               label="Runtime"
-              value="Smoke test passed"
-              detail="A live agent turn was verified"
+              value={runtimeSmokeMetric.value}
+              detail={runtimeSmokeMetric.detail}
             />
             <LaunchpadMetric
               surfaceTheme={surfaceTheme}
@@ -819,13 +826,43 @@ export function LaunchpadStage({
             )}
           >
             {hasWorkspaces
-              ? "Open AgentOS to inspect the live graph, or create another workspace if you want a separate mission lane."
+              ? operationalReady
+                ? "Open AgentOS to inspect the live graph, or create another workspace if you want a separate mission lane."
+                : "Finish model setup until AgentOS verifies a real OpenClaw runtime smoke test before entering the canvas."
               : "Create the first workspace now. That is the shortest path from a ready system to a real mission."}
           </p>
         </div>
       )}
     </>
   );
+}
+
+function resolveRuntimeSmokeMetric(
+  status: MissionControlSnapshot["diagnostics"]["runtime"]["smokeTest"]["status"],
+  detail: string | null | undefined
+) {
+  switch (status) {
+    case "passed":
+      return {
+        value: "Smoke test passed",
+        detail: detail?.trim() || "A live agent turn was verified"
+      };
+    case "failed":
+      return {
+        value: "Smoke test failed",
+        detail: detail?.trim() || "A real OpenClaw agent turn could not be verified"
+      };
+    case "not-run":
+      return {
+        value: "Not verified",
+        detail: "Run model setup to verify a real OpenClaw agent turn"
+      };
+    default:
+      return {
+        value: status,
+        detail: detail?.trim() || "Runtime smoke status is reported by OpenClaw diagnostics"
+      };
+  }
 }
 
 function LaunchpadBuildScene({

@@ -14,6 +14,7 @@ import {
   ExpandableTaskResult,
   TaskFollowUpComposer,
   TaskMetricRow,
+  buildTaskFollowUpConfidenceMetric,
   formatFollowUpDetail,
   type SubmittedTaskFollowUp,
   type TaskMetricItem
@@ -761,6 +762,7 @@ function buildTaskMetrics(task: TaskView): TaskMetricItem[] {
   const feedCount = source?.updateCount ?? source?.runtimeCount ?? 0;
 
   return [
+    ...(source ? [buildTaskFollowUpConfidenceMetric(source)] : []),
     {
       icon: Users,
       label: "Sessions",

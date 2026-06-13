@@ -78,6 +78,7 @@ export function DashboardPageContent({
   const readyAgents = agents.filter((agent) => agent.status === "ready");
   const tokenTotal = summarizeSnapshotTokens(snapshot);
   const gatewaySummary = summarizeGateway(rootSnapshot);
+  const compatibilityReport = rootSnapshot.diagnostics.compatibilityReport ?? null;
   const modelReadiness = rootSnapshot.diagnostics.modelReadiness;
   const enabledAccounts = rootSnapshot.channelAccounts.filter((account) => account.enabled);
   const connectedIntegrations = integrations.filter((integration) => integration.status === "connected");
@@ -169,7 +170,7 @@ export function DashboardPageContent({
         <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="flex min-w-0 flex-col gap-3">
             <SectionCard title="OpenClaw Runtime">
-              <div className="grid gap-3 p-3 lg:grid-cols-3">
+              <div className="grid gap-3 p-3 lg:grid-cols-4">
                 <StatusPanel
                   icon={TerminalSquare}
                   title="Gateway"
@@ -185,7 +186,7 @@ export function DashboardPageContent({
                 <StatusPanel
                   icon={Cpu}
                   title="Native Coverage"
-                  status={`${gatewaySummary.nativeOperationCount} native`}
+                  status={gatewaySummary.nativeCoverageLabel}
                   tone={gatewaySummary.nativeOperationCount > 0 ? "success" : "muted"}
                   rows={[
                     ["Fallback ops", String(gatewaySummary.cliFallbackOperationCount)],
@@ -204,6 +205,21 @@ export function DashboardPageContent({
                     ["Last reason", gatewaySummary.lastFallbackReason ?? "None"],
                     ["Transport", rootSnapshot.diagnostics.transport?.mode ?? "Unknown"],
                     ["Smoke test", rootSnapshot.diagnostics.compatibilitySmokeTest?.status ?? "Not run"]
+                  ]}
+                />
+                <StatusPanel
+                  icon={ShieldCheck}
+                  title="Compatibility"
+                  status={compatibilityReport ? formatCompatibilityStatus(compatibilityReport.status) : "Unknown"}
+                  tone={compatibilityReport ? compatibilityStatusTone(compatibilityReport.status) : "muted"}
+                  rows={[
+                    ["Installed", compatibilityReport?.openClaw.installedVersion ?? gatewaySummary.installedVersionLabel],
+                    ["Recommended", compatibilityReport?.openClaw.recommendedVersion ?? "Unknown"],
+                    ["Coverage", compatibilityReport?.summary.nativeGatewayCoverageLabel ?? gatewaySummary.nativeCoverageLabel],
+                    ["Unsupported", formatSurfaceList(compatibilityReport?.summary.unsupportedSurfaces)],
+                    ["Degraded", formatSurfaceList(compatibilityReport?.summary.degradedSurfaces)],
+                    ["Report", compatibilityReport?.generatedAt ? formatRelativeTime(Date.parse(compatibilityReport.generatedAt), referenceMs) : "Not reported"],
+                    ["Recovery", compatibilityReport?.recovery || "No recovery action reported"]
                   ]}
                 />
               </div>
@@ -503,20 +519,28 @@ function summarizeGateway(snapshot: MissionControlSnapshot) {
   const diagnostics = snapshot.diagnostics;
   const operations = Object.values(diagnostics.capabilityMatrix?.operations ?? {});
   const compatibility = diagnostics.capabilityMatrix?.compatibility;
+  const compatibilityReport = diagnostics.compatibilityReport;
   const fallbackDiagnostics = diagnostics.gatewayFallbackDiagnostics ?? diagnostics.capabilityMatrix?.fallbackDiagnostics ?? [];
   const fallbackReasons = diagnostics.gatewayFallbackReasons ?? diagnostics.capabilityMatrix?.fallbackReasons ?? [];
   const nativeOperationCount =
-    compatibility?.nativeOperationCount ?? operations.filter((operation) => operation.mode === "gateway-native").length;
+    compatibilityReport?.summary.nativeGatewayCoveragePercent != null
+      ? compatibilityReport.contracts.filter((contract) => contract.nativeGatewaySupported).length
+      : compatibility?.nativeOperationCount ?? operations.filter((operation) => operation.mode === "gateway-native").length;
   const degradedOperationCount =
+    compatibilityReport?.summary.degradedOperationCount ??
     compatibility?.degradedOperationCount ??
     operations.filter((operation) => operation.mode === "degraded" || operation.mode === "cli-fallback" || operation.mode === "disabled").length;
-  const cliFallbackOperationCount = operations.filter((operation) => operation.mode === "cli-fallback").length;
+  const cliFallbackOperationCount =
+    compatibilityReport?.summary.cliFallbackOperationCount ??
+    operations.filter((operation) => operation.mode === "cli-fallback").length;
   const label = diagnostics.rpcOk ? "Native RPC" : diagnostics.loaded ? "Gateway Degraded" : diagnostics.installed ? "Installed" : "Unavailable";
 
   return {
     label,
     detail: diagnostics.version ? `OpenClaw v${diagnostics.version}` : diagnostics.installed ? "Version unknown" : "OpenClaw not installed",
+    installedVersionLabel: diagnostics.version ? `v${diagnostics.version}` : diagnostics.installed ? "Version unknown" : "Not installed",
     tone: diagnostics.rpcOk && diagnostics.health === "healthy" ? "success" as const : diagnostics.installed ? "warning" as const : "danger" as const,
+    nativeCoverageLabel: compatibilityReport?.summary.nativeGatewayCoverageLabel ?? `${nativeOperationCount} native`,
     nativeOperationCount,
     degradedOperationCount,
     cliFallbackOperationCount,
@@ -527,12 +551,48 @@ function summarizeGateway(snapshot: MissionControlSnapshot) {
   };
 }
 
+function formatCompatibilityStatus(status: NonNullable<MissionControlSnapshot["diagnostics"]["compatibilityReport"]>["status"]) {
+  switch (status) {
+    case "compatible":
+      return "Compatible";
+    case "degraded":
+      return "Degraded";
+    case "incompatible":
+      return "Incompatible";
+    case "unknown":
+      return "Unknown";
+  }
+}
+
+function compatibilityStatusTone(status: NonNullable<MissionControlSnapshot["diagnostics"]["compatibilityReport"]>["status"]): StatusTone {
+  switch (status) {
+    case "compatible":
+      return "success";
+    case "degraded":
+      return "warning";
+    case "incompatible":
+      return "danger";
+    case "unknown":
+      return "muted";
+  }
+}
+
+function formatSurfaceList(values: string[] | null | undefined) {
+  if (!values || values.length === 0) {
+    return "None";
+  }
+
+  return values.slice(0, 3).join(", ") + (values.length > 3 ? ` +${values.length - 3}` : "");
+}
+
 function buildAttentionItems(snapshot: MissionControlSnapshot) {
   return [
     ...snapshot.diagnostics.securityWarnings,
     ...snapshot.diagnostics.issues,
     ...snapshot.diagnostics.runtime.issues,
     ...(snapshot.diagnostics.capabilityMatrix?.diagnostics ?? []),
+    snapshot.diagnostics.eventBridge?.message ?? "",
+    snapshot.diagnostics.eventBridge?.recovery ?? "",
     ...(snapshot.diagnostics.gatewayFallbackReasons ?? []),
     ...(snapshot.diagnostics.capabilityMatrix?.fallbackReasons ?? [])
   ].filter((item, index, items) => item.trim() && items.indexOf(item) === index);

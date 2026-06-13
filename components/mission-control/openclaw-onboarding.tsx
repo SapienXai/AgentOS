@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 
 import { Button } from "@/components/ui/button";
 import {
+  isOpenClawMissionReady,
   isOpenClawOnboardingModelReady,
   isOpenClawOnboardingSystemReady
 } from "@/lib/openclaw/readiness";
@@ -110,6 +111,7 @@ export function OpenClawOnboarding({
   const onboardingSystemReady =
     systemReady ?? (systemRun.runState === "success" || isOpenClawOnboardingSystemReady(snapshot));
   const hasWorkspaceSetup = hasAgentOSWorkspaceSetup(snapshot);
+  const operationalReady = isOpenClawMissionReady(snapshot);
   const onboardingModelReady =
     modelReady ??
     (
@@ -317,6 +319,9 @@ export function OpenClawOnboarding({
                 workspaceCount={workspaceCount}
                 agentCount={agentCount}
                 workspaceSetupReady={hasWorkspaceSetup}
+                operationalReady={operationalReady}
+                runtimeSmokeStatus={snapshot.diagnostics.runtime.smokeTest.status}
+                runtimeSmokeDetail={snapshot.diagnostics.runtime.smokeTest.error || snapshot.diagnostics.runtime.smokeTest.summary}
                 defaultModelLabel={defaultModelLabel}
                 createProgress={launchpadCreateProgress}
                 createRunState={launchpadCreateRunState}
@@ -402,6 +407,8 @@ export function OpenClawOnboarding({
                     <Button
                       type="button"
                       onClick={onEnterAgentOS}
+                      disabled={!operationalReady}
+                      title={operationalReady ? "Open AgentOS." : "Run model setup until AgentOS verifies a real OpenClaw runtime smoke test."}
                       className={cn(
                         "h-8 min-w-[156px] rounded-full px-3 text-[11px]",
                         surfaceTheme === "light"

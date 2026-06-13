@@ -56,6 +56,7 @@ export type SendAgentChatMessageOptions = {
 };
 
 const activeAgentChatRuns = new Map<string, ActiveAgentChatRun>();
+const agentChatWaitHeartbeatMs = [15_000, 45_000, 90_000];
 
 export function getAgentChatRunSnapshot(agentId: string): AgentChatRunSnapshot {
   const run = activeAgentChatRuns.get(agentId);
@@ -191,6 +192,19 @@ async function runAgentChatTurn({
 }) {
   let latestAssistantText = "";
   let assistantTextReceived = false;
+  const startedAt = Date.now();
+  let heartbeatIndex = 0;
+  const heartbeatTimer = globalThis.setInterval(() => {
+    const threshold = agentChatWaitHeartbeatMs[heartbeatIndex];
+
+    if (!threshold || Date.now() - startedAt < threshold) {
+      return;
+    }
+
+    heartbeatIndex += 1;
+    run.statusMessage = resolveAgentChatWaitStatusMessage(threshold, assistantTextReceived);
+    dispatchAgentChatStateChange(agentId);
+  }, 1000);
 
   try {
     const response = await fetch(`/api/agents/${encodeURIComponent(agentId)}/chat`, {
@@ -333,6 +347,7 @@ async function runAgentChatTurn({
 
     onError?.(message);
   } finally {
+    globalThis.clearInterval(heartbeatTimer);
     activeAgentChatRuns.delete(agentId);
     dispatchAgentChatStateChange(agentId);
   }
@@ -363,6 +378,22 @@ function recoverDirectIdentityText(text: string, agentName: string, operatorMess
 
 function normalizeAgentChatText(value: string) {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function resolveAgentChatWaitStatusMessage(thresholdMs: number, assistantTextReceived: boolean) {
+  if (assistantTextReceived) {
+    return "Reply text arrived; waiting for OpenClaw final confirmation...";
+  }
+
+  if (thresholdMs >= 90_000) {
+    return "Still waiting for OpenClaw final confirmation. The agent may be doing work before a reply is available.";
+  }
+
+  if (thresholdMs >= 45_000) {
+    return "OpenClaw is still working. AgentOS has not received reply text yet.";
+  }
+
+  return "Still waiting for OpenClaw to start the reply...";
 }
 
 function readRenamedAgent(meta: MissionResponse["meta"]) {

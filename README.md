@@ -541,6 +541,62 @@ pnpm check:release
 pnpm smoke:agentos-package
 ```
 
+Mission Control browser smoke exercises the running AgentOS server. This manual
+token setup is for contributors running `pnpm start` directly from the repository.
+End users should start packaged AgentOS with `agentos start`; the launcher generates
+the local API token, starts the server with that token, and opens an authenticated
+local URL automatically.
+
+For manual repository smoke runs, API routes require the same API token on both the
+server and the smoke client. Add a local-only token to `.env.local`:
+
+```env
+AGENTOS_API_TOKEN=<long-random-local-token>
+```
+
+Generate a suitable local token with:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Then start AgentOS with the local environment loaded:
+
+```bash
+set -a
+source .env.local
+set +a
+pnpm start
+```
+
+In a second terminal, run the smoke against that server:
+
+```bash
+set -a
+source .env.local
+set +a
+AGENTOS_SMOKE_BASE_URL=http://127.0.0.1:3000 \
+AGENTOS_SMOKE_ALLOW_DATA_BLOCKED=1 \
+AGENTOS_SMOKE_JSON_OUTPUT=.smoke/mission-control-smoke.json \
+pnpm smoke:mission-control
+```
+
+`AGENTOS_SMOKE_ALLOW_DATA_BLOCKED=1` allows missing real agent/task/context data to
+remain an explicit `BLOCKED` smoke artifact. Server, API, or authentication failures
+still fail the smoke instead of producing a fake pass.
+
+For contributor-only local testing where token auth gets in the way, you can opt out
+for the repository server with:
+
+```env
+AGENTOS_UNSAFE_DISABLE_API_AUTH=1
+```
+
+This opt-out is intentionally named unsafe. Use it only on a trusted local machine,
+do not use it for packaged AgentOS, and do not expose that server beyond localhost.
+Packaged AgentOS ignores this repository opt-out and keeps launcher-managed API token
+authentication.
+
 For a real local release rehearsal, run the clean-install smoke checklist in
 [`docs/agentos-clean-install-smoke-checklist.md`](docs/agentos-clean-install-smoke-checklist.md).
 

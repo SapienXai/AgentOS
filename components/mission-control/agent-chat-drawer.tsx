@@ -712,6 +712,14 @@ function agentChatMessagesEqual(left: readonly AgentChatMessage[], right: readon
 function resolveAssistantThinkingHint(statusMessage: string | null) {
   const normalizedStatus = statusMessage?.toLowerCase() ?? "";
 
+  if (normalizedStatus.includes("final confirmation")) {
+    return "Waiting for OpenClaw to confirm the turn is complete.";
+  }
+
+  if (normalizedStatus.includes("still working") || normalizedStatus.includes("start the reply")) {
+    return "OpenClaw is still running the direct chat turn.";
+  }
+
   if (normalizedStatus.includes("finalizing") || normalizedStatus.includes("drafting")) {
     return "Shaping the reply before it appears here.";
   }
@@ -730,6 +738,14 @@ function resolveAssistantThinkingPreview(statusMessage: string | null) {
     return ["Shaping the reply", "Preparing the final wording"];
   }
 
+  if (hint.includes("confirm")) {
+    return ["Reply signal received", "Waiting for final confirmation"];
+  }
+
+  if (hint.includes("still running")) {
+    return ["OpenClaw is still working", "Waiting for reply text"];
+  }
+
   if (hint.includes("Checking")) {
     return ["Reading your message", "Checking recent context"];
   }
@@ -739,6 +755,22 @@ function resolveAssistantThinkingPreview(statusMessage: string | null) {
 
 function resolveAssistantThinkingDetails(statusMessage: string | null) {
   const normalizedStatus = statusMessage?.toLowerCase() ?? "";
+
+  if (normalizedStatus.includes("final confirmation")) {
+    return [
+      "AgentOS has not received the final turn-complete confirmation from OpenClaw yet.",
+      "If reply text already arrived, AgentOS is waiting to verify that the turn was saved.",
+      "If this later fails, refresh state or ask the agent for a summary of any completed work."
+    ];
+  }
+
+  if (normalizedStatus.includes("still working") || normalizedStatus.includes("start the reply")) {
+    return [
+      "OpenClaw accepted the direct chat turn and is still working.",
+      "AgentOS has not received assistant reply text yet.",
+      "Long waits usually mean the runtime is busy, the model is slow, or the Gateway has not exposed the reply."
+    ];
+  }
 
   if (normalizedStatus.includes("finalizing") || normalizedStatus.includes("drafting")) {
     return [

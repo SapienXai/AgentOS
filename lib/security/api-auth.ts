@@ -3,6 +3,7 @@ import { evaluateLocalOperatorRequest } from "@/lib/security/local-operator";
 export const AGENTOS_API_TOKEN_ENV = "AGENTOS_API_TOKEN";
 export const AGENTOS_API_TOKEN_COOKIE = "agentos_api_token";
 export const AGENTOS_API_TOKEN_FRAGMENT_KEY = "agentos_token";
+export const AGENTOS_UNSAFE_DISABLE_API_AUTH_ENV = "AGENTOS_UNSAFE_DISABLE_API_AUTH";
 
 export type ApiAuthDecision =
   | {
@@ -23,6 +24,25 @@ export function evaluateAgentOsApiRequest(input: {
 }): ApiAuthDecision {
   const env = input.env ?? process.env;
   const configuredToken = env[AGENTOS_API_TOKEN_ENV]?.trim();
+  const unsafeDisableAuth = env[AGENTOS_UNSAFE_DISABLE_API_AUTH_ENV]?.trim() === "1";
+
+  if (unsafeDisableAuth && env.AGENTOS_PACKAGE_RUNTIME !== "1") {
+    const localDecision = evaluateLocalOperatorRequest({
+      method: input.method,
+      url: input.url,
+      headers: input.headers,
+      allowSafeMethods: false
+    });
+
+    return localDecision.ok
+      ? { ok: true }
+      : {
+          ok: false,
+          status: localDecision.status,
+          code: "unsafe-local-api",
+          message: localDecision.message
+        };
+  }
 
   if (configuredToken) {
     const providedToken = readBearerToken(input.headers) ?? readApiTokenCookie(input.headers);

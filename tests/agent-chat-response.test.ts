@@ -6,7 +6,9 @@ import {
   extractAssistantTextFromAgentChatStreamLine,
   extractVisibleAgentChatOperatorText,
   extractLatestAssistantTextFromSessionHistory,
+  incompleteAgentChatConfirmationMessage,
   isCompletedEmptyAgentChatResponse,
+  resolveAgentChatRuntimeFailureMessage,
   sanitizeAgentChatReplyText,
   sanitizeAgentChatVisibleText
 } from "@/lib/openclaw/agent-chat-response";
@@ -198,4 +200,14 @@ test("agent chat response helper detects completed turns without assistant text"
     }),
     false
   );
+});
+
+test("agent chat response helper explains missing final turn confirmation", () => {
+  assert.equal(
+    resolveAgentChatRuntimeFailureMessage(
+      "Error: Codex stopped before confirming the turn was complete. The response may be incomplete; retry if needed."
+    ),
+    incompleteAgentChatConfirmationMessage
+  );
+  assert.equal(resolveAgentChatRuntimeFailureMessage("model provider returned rate limit"), null);
 });

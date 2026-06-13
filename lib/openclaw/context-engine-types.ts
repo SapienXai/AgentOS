@@ -122,6 +122,32 @@ export type ContextEnginePreview = {
   diagnostics: string[];
 };
 
+export type ContextEngineEffectiveContextSection = {
+  id:
+    | "system"
+    | "openclaw-runtime"
+    | "agentos-sidecar"
+    | "enabled-files"
+    | "disabled-files"
+    | "file-issues"
+    | "skills-tools"
+    | "memory"
+    | "history"
+    | "attachments";
+  label: string;
+  source: "openclaw-report" | "agentos-sidecar" | "agentos-estimate" | "unsupported";
+  status: "exact" | "estimated" | "unavailable";
+  detail: string;
+  items: string[];
+};
+
+export type ContextEngineEffectiveContext = {
+  status: "exact" | "estimated" | "unavailable";
+  source: "openclaw-report" | "agentos-estimate";
+  sections: ContextEngineEffectiveContextSection[];
+  diagnostics: string[];
+};
+
 export type ContextEngineCapabilities = {
   compaction: {
     supported: boolean;
@@ -165,6 +191,7 @@ export type ContextEngineSnapshot = {
   policy: ContextEnginePolicySnapshot;
   runtimeReport: ContextEngineRuntimeReport;
   preview: ContextEnginePreview;
+  effectiveContext: ContextEngineEffectiveContext;
   configuration: ContextEngineConfiguration;
   capabilities: ContextEngineCapabilities;
   diagnostics: string[];

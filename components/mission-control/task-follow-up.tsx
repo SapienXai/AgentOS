@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import {
   buildTaskFollowUpPrompt,
+  formatTaskFollowUpConfidenceLabel,
   normalizeTaskFollowUpSessionId,
   resolveTaskFollowUpAvailability
 } from "@/lib/openclaw/domains/task-follow-up";
@@ -62,6 +63,19 @@ export function formatFollowUpDetail(followUp: SubmittedTaskFollowUp) {
       ? `OpenClaw run ${followUp.runId} is being tracked for this follow-up.`
       : "Waiting for the agent result to appear in the task feed and latest result."
   ].join("\n");
+}
+
+export function buildTaskFollowUpConfidenceMetric(task: TaskRecord): TaskMetricItem {
+  const availability = resolveTaskFollowUpAvailability(task);
+  const confidence = availability.context.confidence;
+
+  return {
+    icon: MessageSquare,
+    label: "Confidence",
+    value: formatTaskFollowUpConfidenceLabel(confidence),
+    highlighted: confidence === "high",
+    active: confidence === "medium"
+  };
 }
 
 function isFollowUpTimeoutStatus(status: string | null | undefined) {
@@ -390,7 +404,7 @@ export function TaskFollowUpComposer({
         )}
       >
         <span>Session confidence</span>
-        <span className="font-mono uppercase tracking-[0.16em]">{formatFollowUpConfidence(availability.context.confidence)}</span>
+        <span className="font-mono uppercase tracking-[0.16em]">{formatTaskFollowUpConfidenceLabel(availability.context.confidence)}</span>
       </div>
       {availability.reason ? (
         <p className="mt-1.5 px-1 text-[10px] leading-4 text-amber-700 dark:text-amber-200/80">{availability.reason}</p>
@@ -404,17 +418,6 @@ export function TaskFollowUpComposer({
 function createFollowUpIdempotencyKey(task: TaskRecord) {
   const nonce = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${task.dispatchId || task.id}:continue:${nonce}`;
-}
-
-function formatFollowUpConfidence(confidence: ReturnType<typeof resolveTaskFollowUpAvailability>["context"]["confidence"]) {
-  switch (confidence) {
-    case "high":
-      return "high";
-    case "medium":
-      return "medium warning";
-    case "none":
-      return "none disabled";
-  }
 }
 
 function metricPillClassName(

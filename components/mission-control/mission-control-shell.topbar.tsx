@@ -2,7 +2,7 @@
 
 import type { MutableRefObject } from "react";
 
-import { ArrowUpCircle, MoonStar, Settings2, SunMedium } from "lucide-react";
+import { ArrowUpCircle, Info, MoonStar, Settings2, SunMedium } from "lucide-react";
 import { motion } from "motion/react";
 
 import {
@@ -14,6 +14,7 @@ import {
   resolveDiagnosticHealthDotClasses,
   type SurfaceTheme
 } from "@/components/mission-control/surface-visual-tones";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
 
@@ -91,7 +92,9 @@ export function CanvasTopBar({
   const { onOpenSetupWizard } = settingsPanelProps;
   const health = snapshot.diagnostics.health;
   const isOffline = health === "offline";
-  const healthLabel = formatHealthLabel(health);
+  const healthLabel = formatHealthLabel(snapshot);
+  const isCliFallbackActive = snapshot.diagnostics.transport?.gatewayMode === "fallback-active";
+  const displayHealth = isCliFallbackActive ? "healthy" : health;
   const settingsChromeButtonStyles = settingsChromeButtonClassName(surfaceTheme);
   const settingsThemeSwitchTrackStyles = settingsThemeSwitchTrackClassName(surfaceTheme);
   const settingsThemeSwitchThumbStyles = settingsThemeSwitchThumbClassName(surfaceTheme);
@@ -136,7 +139,7 @@ export function CanvasTopBar({
               transition={{ type: "spring", stiffness: 420, damping: 28 }}
               className={cn(
                 "group relative inline-flex cursor-pointer select-none items-center gap-2 overflow-hidden rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.22em] transition-[background-color,border-color,color,box-shadow,transform] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
-                resolveDiagnosticHealthBadgeClasses(health, surfaceTheme),
+                resolveDiagnosticHealthBadgeClasses(displayHealth, surfaceTheme),
                 surfaceTheme === "light"
                   ? "shadow-[0_10px_24px_rgba(244,63,94,0.12)] hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800"
                   : "shadow-[0_10px_24px_rgba(244,63,94,0.18)] hover:border-rose-300/40 hover:bg-rose-300/15 hover:text-rose-100"
@@ -157,7 +160,7 @@ export function CanvasTopBar({
                 aria-hidden="true"
                 className={cn(
                   "relative z-10 h-2 w-2 rounded-full shadow-[0_0_12px_currentColor]",
-                  resolveDiagnosticHealthDotClasses(health)
+                  resolveDiagnosticHealthDotClasses(displayHealth)
                 )}
               />
               <span className="relative z-10 inline-flex items-center gap-1.5">
@@ -179,14 +182,15 @@ export function CanvasTopBar({
             <span
               className={cn(
                 "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.22em]",
-                resolveDiagnosticHealthBadgeClasses(health, surfaceTheme)
+                resolveDiagnosticHealthBadgeClasses(displayHealth, surfaceTheme)
               )}
             >
               <span
                 aria-hidden="true"
-                className={cn("h-2 w-2 rounded-full shadow-[0_0_12px_currentColor]", resolveDiagnosticHealthDotClasses(health))}
+                className={cn("h-2 w-2 rounded-full shadow-[0_0_12px_currentColor]", resolveDiagnosticHealthDotClasses(displayHealth))}
               />
               {healthLabel}
+              {isCliFallbackActive ? <CliFallbackInfoTooltip surfaceTheme={surfaceTheme} /> : null}
             </span>
           )}
           <button
@@ -219,7 +223,54 @@ export function CanvasTopBar({
   );
 }
 
-function formatHealthLabel(health: MissionControlSnapshot["diagnostics"]["health"]) {
+function CliFallbackInfoTooltip({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
+  return (
+    <TooltipProvider delayDuration={120}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            tabIndex={0}
+            aria-label="CLI fallback active"
+            className="inline-flex h-4 w-4 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/50"
+          >
+            <Info className="h-3 w-3 opacity-75" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent
+          side="bottom"
+          align="center"
+          sideOffset={8}
+          className={cn(
+            "rounded-[10px] px-2.5 py-1.5 text-[10px] font-medium leading-none tracking-[0.12em] whitespace-nowrap shadow-[0_16px_40px_rgba(0,0,0,0.32)]",
+            surfaceTheme === "light"
+              ? "border border-slate-200/80 bg-white/96 text-slate-900 shadow-[0_16px_40px_rgba(15,23,42,0.18)]"
+              : "border border-white/10 bg-slate-950/92 text-slate-100"
+          )}
+        >
+          CLI fallback active
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+function formatHealthLabel(snapshot: MissionControlSnapshot) {
+  const { diagnostics } = snapshot;
+  if (diagnostics.health === "degraded") {
+    if (diagnostics.transport?.gatewayMode === "fallback-active") {
+      return "Online";
+    }
+
+    if (diagnostics.eventBridge?.mode === "reconnecting") {
+      return "Reconnecting";
+    }
+
+    if (diagnostics.eventBridge?.mode === "polling") {
+      return "Polling";
+    }
+  }
+
+  const health = diagnostics.health;
   switch (health) {
     case "healthy":
       return "Online";

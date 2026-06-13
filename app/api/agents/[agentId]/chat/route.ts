@@ -19,6 +19,7 @@ import {
   extractAgentChatMessagesFromSessionHistory,
   extractLatestAssistantTextFromSessionHistory,
   isCompletedEmptyAgentChatResponse,
+  resolveAgentChatRuntimeFailureMessage,
   sanitizeAgentChatReplyText,
   sanitizeAgentChatVisibleText
 } from "@/lib/openclaw/agent-chat-response";
@@ -516,6 +517,7 @@ export async function POST(
         const failureMessage =
           resolveOpenClawRuntimeFailureMessage(rawFailure, { modelId: activeAgentModelId }) ||
           agentRegistryFailureMessage ||
+          resolveAgentChatRuntimeFailureMessage(rawFailure) ||
           (error instanceof Error
             ? redactSecretText(error.message)
             : "OpenClaw could not send the message right now. Please try again.");

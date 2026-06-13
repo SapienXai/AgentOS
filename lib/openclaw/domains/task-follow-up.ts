@@ -165,6 +165,17 @@ export function normalizeTaskFollowUpSessionId(value: string | null | undefined)
   return extractExplicitSessionId(trimmed) ?? trimmed;
 }
 
+export function formatTaskFollowUpConfidenceLabel(confidence: TaskFollowUpContext["confidence"]) {
+  switch (confidence) {
+    case "high":
+      return "high";
+    case "medium":
+      return "medium warning";
+    case "none":
+      return "none disabled";
+  }
+}
+
 function isTaskFollowUpStatus(status: string) {
   return status === "queued" || status === "running" || status === "stalled" || status === "completed";
 }

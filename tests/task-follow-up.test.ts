@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildTaskFollowUpPrompt,
+  formatTaskFollowUpConfidenceLabel,
   normalizeTaskFollowUpSessionId,
   resolveTaskFollowUpAvailability
 } from "@/lib/openclaw/domains/task-follow-up";
@@ -90,6 +91,12 @@ test("task follow-up session ids normalize explicit session keys into plain sess
   assert.equal(normalizeTaskFollowUpSessionId("agent:agent-1:explicit:session-1"), "session-1");
   assert.equal(normalizeTaskFollowUpSessionId(" session-plain "), "session-plain");
   assert.equal(normalizeTaskFollowUpSessionId(""), null);
+});
+
+test("task follow-up confidence labels are stable for card and composer UX", () => {
+  assert.equal(formatTaskFollowUpConfidenceLabel("high"), "high");
+  assert.equal(formatTaskFollowUpConfidenceLabel("medium"), "medium warning");
+  assert.equal(formatTaskFollowUpConfidenceLabel("none"), "none disabled");
 });
 
 function createTaskRecord(overrides: Partial<TaskRecord> = {}): TaskRecord {

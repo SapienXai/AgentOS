@@ -1,11 +1,21 @@
 #!/usr/bin/env node
 
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
 const baseUrl = (process.env.AGENTOS_SMOKE_BASE_URL || "http://127.0.0.1:3000").replace(/\/+$/, "");
 const requestTimeoutMs = Number.parseInt(process.env.AGENTOS_SMOKE_TIMEOUT_MS || "15000", 10);
 const missionControlPath = process.env.AGENTOS_MISSION_CONTROL_PATH?.trim() || "/";
 const expectedAgentId = process.env.AGENTOS_MISSION_CONTROL_SMOKE_AGENT_ID?.trim() || null;
 const expectPollingFallback = process.env.AGENTOS_SMOKE_EXPECT_POLLING_FALLBACK === "1";
-const accessToken = process.env.AGENTOS_ACCESS_TOKEN?.trim() || process.env.AGENTOS_AUTH_TOKEN?.trim() || null;
+const accessToken =
+  process.env.AGENTOS_SMOKE_API_TOKEN?.trim() ||
+  process.env.AGENTOS_API_TOKEN?.trim() ||
+  process.env.AGENTOS_ACCESS_TOKEN?.trim() ||
+  process.env.AGENTOS_AUTH_TOKEN?.trim() ||
+  null;
+const jsonOutputPath = process.env.AGENTOS_SMOKE_JSON_OUTPUT?.trim() || null;
+const allowDataBlocked = process.env.AGENTOS_SMOKE_ALLOW_DATA_BLOCKED === "1";
 
 const checks = [];
 
@@ -64,6 +74,15 @@ function skip(name, detail) {
 
 function blocked(name, detail) {
   record(name, "BLOCKED", detail);
+}
+
+function isDataBlockedCheck(check) {
+  return check.status === "BLOCKED" &&
+    (
+      check.name === "Agent inspector smoke" ||
+      check.name === "Task inspector provenance" ||
+      check.name === "Follow-up confidence states"
+    );
 }
 
 try {
@@ -156,10 +175,26 @@ try {
 
 const failed = checks.filter((check) => check.status === "FAIL");
 const blockedChecks = checks.filter((check) => check.status === "BLOCKED");
+const requiredBlockedChecks = allowDataBlocked
+  ? blockedChecks.filter((check) => !isDataBlockedCheck(check))
+  : blockedChecks;
+const result = {
+  baseUrl,
+  missionControlPath,
+  allowDataBlocked,
+  generatedAt: new Date().toISOString(),
+  status: failed.length > 0 ? "FAIL" : requiredBlockedChecks.length > 0 ? "BLOCKED" : "PASS",
+  checks
+};
+
+if (jsonOutputPath) {
+  mkdirSync(path.dirname(jsonOutputPath), { recursive: true });
+  writeFileSync(jsonOutputPath, `${JSON.stringify(result, null, 2)}\n`);
+}
 
 if (failed.length > 0) {
   process.exitCode = 1;
-} else if (blockedChecks.length > 0) {
+} else if (requiredBlockedChecks.length > 0) {
   process.exitCode = 2;
 } else {
   console.log("PASS Mission Control smoke completed.");

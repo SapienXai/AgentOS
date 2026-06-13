@@ -244,6 +244,7 @@ export function normalizeGatewayTurnEvent(
     readNonEmptyString(payload.detail);
   const done = /final|complete|completed|aborted|abort|error|failed|stalled/i.test(state ?? "");
   const isError = /error|failed|stalled/i.test(state ?? "");
+  const summary = text ?? resolveGatewayTurnFailureSummary(payload, state);
 
   if (done && !text && !isError) {
     return null;
@@ -255,10 +256,41 @@ export function normalizeGatewayTurnEvent(
     payload: {
       runId: eventRunId ?? runId ?? undefined,
       status: isError ? "stalled" : done ? "completed" : "running",
-      summary: text ?? "OpenClaw Gateway stream failed.",
+      summary,
       payloads: text ? [{ text, mediaUrl: null }] : []
     }
   };
+}
+
+function resolveGatewayTurnFailureSummary(payload: Record<string, unknown>, state: string | null) {
+  const explicitReason =
+    readGatewayMessageText(payload.error) ??
+    readGatewayMessageText(payload.failure) ??
+    readGatewayMessageText(payload.reason) ??
+    readGatewayMessageText(payload.cause) ??
+    readGatewayMessageText(payload.diagnostic) ??
+    readGatewayMessageText(payload.diagnostics) ??
+    readNonEmptyString(payload.errorMessage) ??
+    readNonEmptyString(payload.message) ??
+    readNonEmptyString(payload.stopReason);
+
+  if (explicitReason) {
+    return `OpenClaw Gateway ended the chat stream without assistant text: ${explicitReason}`;
+  }
+
+  if (state && /aborted|abort/i.test(state)) {
+    return "OpenClaw Gateway ended the chat stream before assistant text was available. Status: aborted.";
+  }
+
+  if (state && /stalled/i.test(state)) {
+    return "OpenClaw Gateway reported the chat stream stalled before assistant text was available.";
+  }
+
+  if (state && /error|failed/i.test(state)) {
+    return "OpenClaw Gateway reported the chat stream failed before assistant text was available.";
+  }
+
+  return "OpenClaw Gateway ended the chat stream before assistant text was available.";
 }
 
 function readGatewayMessageRole(value: unknown): string | null {

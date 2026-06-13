@@ -4,10 +4,13 @@ import {
 } from "@/lib/openclaw/chat-actions";
 
 export const emptyAgentChatResponseMessage =
-  "OpenClaw completed the turn, but AgentOS could not find assistant response text in the Gateway stream, session history, or transcript. Retry the message; if it repeats, inspect Gateway diagnostics.";
+  "OpenClaw finished the chat turn, but AgentOS could not find assistant text in the Gateway stream, session history, or transcript. This means the runtime did not expose a reply back to AgentOS, even if workspace changes were already applied. Refresh state, ask the agent for a summary, or inspect Gateway diagnostics if it repeats.";
 
 export const completedEmptyAgentChatResponseMessage =
-  "OpenClaw completed the turn, but it did not return a chat reply. Workspace changes may already be applied; refresh state or ask the agent for a summary if you need details.";
+  "OpenClaw marked the chat turn completed, but did not expose a chat reply to AgentOS. AgentOS checked the Gateway stream, session history, and transcript. Workspace changes may already be applied; refresh state or ask the agent for a summary if you need details.";
+
+export const incompleteAgentChatConfirmationMessage =
+  "OpenClaw/Codex stopped before AgentOS received the final turn-complete confirmation. This is a runtime confirmation problem, not a normal assistant reply. AgentOS cannot verify whether the final reply was saved; retry the message, refresh state, or ask the agent for a summary if the workspace changed.";
 
 export type AgentChatHistoryMessage = {
   id: string | null;
@@ -115,6 +118,24 @@ export function isCompletedEmptyAgentChatResponse(payload: { meta?: Record<strin
     payload?.meta?.emptyAgentChatResponse === true &&
     payload.meta.emptyAgentChatStatus === "completed"
   );
+}
+
+export function resolveAgentChatRuntimeFailureMessage(rawFailure: string) {
+  const normalizedFailure = rawFailure.replace(/\s+/g, " ").trim();
+
+  if (!normalizedFailure) {
+    return null;
+  }
+
+  if (
+    /stopped before confirming (?:the )?turn was complete/i.test(normalizedFailure) ||
+    /before confirming (?:the )?turn[- ]complete confirmation/i.test(normalizedFailure) ||
+    /completed without returning a response/i.test(normalizedFailure)
+  ) {
+    return incompleteAgentChatConfirmationMessage;
+  }
+
+  return null;
 }
 
 function stripTrailingMissionControlActionBlock(value: string) {
