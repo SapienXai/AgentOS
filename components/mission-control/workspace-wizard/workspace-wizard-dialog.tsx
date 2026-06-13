@@ -12,20 +12,18 @@ import {
   WorkspaceWizardDocumentEditor
 } from "@/components/mission-control/workspace-wizard/workspace-wizard-document-editor";
 import { WorkspaceWizardDraftPane } from "@/components/mission-control/workspace-wizard/workspace-wizard-draft-pane";
-import { WorkspaceWizardHeader } from "@/components/mission-control/workspace-wizard/workspace-wizard-header";
 import { WizardComposer } from "@/components/mission-control/workspace-wizard/wizard-composer";
 import {
   type WizardMessageRecord,
   WizardMessageList
 } from "@/components/mission-control/workspace-wizard/wizard-message-list";
+import {
+  MissionControlDialogChip,
+  MissionControlDialogShell,
+  missionControlDialogButtonClassName
+} from "@/components/mission-control/mission-control-dialog-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWorkspaceWizardDraft, type WorkspaceWizardMode } from "@/hooks/use-workspace-wizard-draft";
@@ -98,7 +96,9 @@ export function WorkspaceWizardDialog({
   const [basicStep, setBasicStep] = useState<WorkspaceCreateStep>("intake");
   const [blueprintEditorFocus, setBlueprintEditorFocus] = useState<WorkspaceBlueprintEditorFocus>("workspace.name");
   const [documentEditorPath, setDocumentEditorPath] = useState("AGENTS.md");
-  const isLight = surfaceTheme === "light";
+  const effectiveSurfaceTheme: SurfaceTheme = "dark";
+  const isLight = false;
+  void surfaceTheme;
   const editingWorkspace = isEditingWorkspace
     ? snapshot.workspaces.find((workspace) => workspace.id === workspaceEditId) ?? null
     : null;
@@ -307,20 +307,85 @@ export function WorkspaceWizardDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent
-        className={
-          isLight
-            ? "h-[92vh] max-w-[min(1380px,96vw)] gap-0 overflow-hidden border-[#e7dfd4] bg-[#fcfaf6] p-0 text-[#161411] shadow-[0_40px_140px_rgba(16,12,8,0.45)]"
-            : "h-[92vh] max-w-[min(1380px,96vw)] gap-0 overflow-hidden border-white/10 bg-[rgba(4,8,15,0.96)] p-0 text-white shadow-[0_40px_140px_rgba(0,0,0,0.58)]"
-        }
-      >
-        <DialogTitle className="sr-only">{isEditingWorkspace ? "Edit workspace" : "Create workspace"}</DialogTitle>
-        <DialogDescription className="sr-only">
-          {isEditingWorkspace
-            ? "Edit the existing workspace blueprint, documents, and agents using Architect."
-            : "Create a workspace in Basic or Advanced mode using the Architect wizard."}
-        </DialogDescription>
+    <MissionControlDialogShell
+      open={open}
+      onOpenChange={handleOpenChange}
+      title={isEditingWorkspace ? "Edit workspace" : "Create workspace"}
+      description={
+        isEditingWorkspace
+          ? "Edit the existing workspace blueprint with Architect."
+          : "Create a workspace in Basic or Advanced mode."
+      }
+      icon={Bot}
+      chips={headerBadges.map((badge) => (
+        <MissionControlDialogChip
+          key={badge.id}
+          tone={badge.tone === "success" ? "emerald" : badge.tone === "warning" ? "amber" : "muted"}
+        >
+          {badge.label}
+        </MissionControlDialogChip>
+      ))}
+      headerActions={
+        <div className="flex flex-wrap items-center gap-2">
+          {!isEditingWorkspace ? (
+            <div className="inline-flex rounded-[8px] border border-white/10 bg-white/[0.04] p-0.5">
+              {(["basic", "advanced"] as WorkspaceWizardMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => {
+                    void wizard.switchMode(mode);
+                  }}
+                  className={cn(
+                    "inline-flex h-7 min-w-[72px] items-center justify-center rounded-[7px] px-2.5 text-[11px] capitalize transition-colors",
+                    wizard.mode === mode
+                      ? "bg-violet-500/18 text-violet-100 shadow-[inset_0_0_0_1px_rgba(167,139,250,0.18)]"
+                      : "text-slate-400 hover:text-slate-100"
+                  )}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {!isEditingWorkspace ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className={missionControlDialogButtonClassName("secondary")}
+              onClick={() => {
+                setComposerValue("");
+                setIsMobileBlueprintOpen(false);
+                setIsBlueprintEditorOpen(false);
+                setIsDocumentEditorOpen(false);
+                setBasicStep("intake");
+                void wizard.startFreshDraft();
+              }}
+            >
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              New draft
+            </Button>
+          ) : null}
+        </div>
+      }
+      bodyClassName="p-0 overflow-hidden"
+      footer={
+        <WorkspaceWizardFooterActions
+          wizardMode={wizard.mode}
+          basicStep={basicStep}
+          isEditingWorkspace={isEditingWorkspace}
+          wizard={wizard}
+          hasPrimaryActionDraft={hasPrimaryActionDraft}
+          hasDraftToCreate={hasDraftToCreate}
+          onOpenMobileBlueprint={() => setIsMobileBlueprintOpen(true)}
+          onCreateWorkspace={handleCreateWorkspace}
+          onDeployWorkspace={handleDeployWorkspace}
+          onBasicStepBack={handleBasicStepBack}
+          onBasicStepPrimary={handleBasicStepPrimary}
+        />
+      }
+    >
         <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
           <div
             className={
@@ -329,31 +394,7 @@ export function WorkspaceWizardDialog({
                 : "pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.14),transparent_28%),radial-gradient(circle_at_80%_18%,rgba(56,189,248,0.12),transparent_24%),linear-gradient(180deg,rgba(9,15,27,0.98),rgba(4,8,15,0.96)_28%,rgba(2,6,13,0.98)_100%)]"
             }
           />
-          <WorkspaceWizardHeader
-            surfaceTheme={surfaceTheme}
-            mode={wizard.mode}
-            onModeChange={(mode) => {
-              void wizard.switchMode(mode);
-            }}
-            onNewDraft={
-              isEditingWorkspace
-                ? undefined
-                : () => {
-                    setComposerValue("");
-                    setIsMobileBlueprintOpen(false);
-                    setIsBlueprintEditorOpen(false);
-                    setIsDocumentEditorOpen(false);
-                    setBasicStep("intake");
-                    void wizard.startFreshDraft();
-                  }
-            }
-            title={isEditingWorkspace ? "Edit workspace" : "Create workspace"}
-            showModeToggle={!isEditingWorkspace}
-            showNewDraft={!isEditingWorkspace}
-            badges={headerBadges}
-          />
-
-          <div className="relative z-[1] grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr),390px] xl:grid-cols-[minmax(0,1fr),420px]">
+          <div className="relative z-[1] grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr),310px] xl:grid-cols-[minmax(0,1fr),320px]">
           <div
             className={
               isLight
@@ -367,7 +408,7 @@ export function WorkspaceWizardDialog({
                     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
                       {showResumeBanner ? (
                         <ResumeDraftBanner
-                          surfaceTheme={surfaceTheme}
+                          surfaceTheme={effectiveSurfaceTheme}
                           isBusy={isArchitectBusy}
                           onResume={() => {
                             void wizard.resumeStoredDraft();
@@ -376,10 +417,10 @@ export function WorkspaceWizardDialog({
                         />
                       ) : null}
 
-                      {wizard.isPlanLoading ? <LoadingGreeting surfaceTheme={surfaceTheme} /> : <BasicGreeting surfaceTheme={surfaceTheme} />}
+                      {wizard.isPlanLoading ? <LoadingGreeting surfaceTheme={effectiveSurfaceTheme} /> : <BasicGreeting surfaceTheme={effectiveSurfaceTheme} />}
 
                       <WorkspaceWizardBasicFlow
-                        surfaceTheme={surfaceTheme}
+                        surfaceTheme={effectiveSurfaceTheme}
                         step={basicStep}
                         isBusy={isArchitectBusy}
                         basicDraft={wizard.basicDraft}
@@ -422,7 +463,7 @@ export function WorkspaceWizardDialog({
 
                   <div className="min-h-0 flex-1">
                     <WizardMessageList
-                      surfaceTheme={surfaceTheme}
+                      surfaceTheme={effectiveSurfaceTheme}
                       messages={activeMessages}
                       architectMessageId={architectMessageId}
                       architectPlan={wizard.plan}
@@ -430,18 +471,18 @@ export function WorkspaceWizardDialog({
                       typingLabel="Architect is shaping the next pass..."
                       emptyState={
                         wizard.isPlanLoading && activeMessages.length === 0 ? (
-                          <LoadingGreeting surfaceTheme={surfaceTheme} />
+                          <LoadingGreeting surfaceTheme={effectiveSurfaceTheme} />
                         ) : activeMessages.length === 0 && wizard.mode === "basic" ? (
-                          <BasicGreeting surfaceTheme={surfaceTheme} />
+                          <BasicGreeting surfaceTheme={effectiveSurfaceTheme} />
                         ) : activeMessages.length === 0 ? (
-                          <AdvancedGreeting surfaceTheme={surfaceTheme} />
+                          <AdvancedGreeting surfaceTheme={effectiveSurfaceTheme} />
                         ) : null
                       }
                       auxiliary={
                         <>
                           {showResumeBanner ? (
                             <ResumeDraftBanner
-                              surfaceTheme={surfaceTheme}
+                              surfaceTheme={effectiveSurfaceTheme}
                               isBusy={isArchitectBusy}
                               onResume={() => {
                                 void wizard.resumeStoredDraft();
@@ -472,7 +513,7 @@ export function WorkspaceWizardDialog({
                   >
                     <div className="mx-auto w-full max-w-3xl">
                       <WizardComposer
-                        surfaceTheme={surfaceTheme}
+                        surfaceTheme={effectiveSurfaceTheme}
                         value={composerValue}
                         onChange={setComposerValue}
                         onSubmit={async () => {
@@ -536,7 +577,7 @@ export function WorkspaceWizardDialog({
 
             <WorkspaceWizardDraftPane
               className="hidden lg:block"
-              surfaceTheme={surfaceTheme}
+              surfaceTheme={effectiveSurfaceTheme}
               workspaceMode={isEditingWorkspace ? "edit" : "create"}
               mode={wizard.mode}
               snapshot={snapshot}
@@ -615,7 +656,7 @@ export function WorkspaceWizardDialog({
 
               <WorkspaceWizardDraftPane
                 className="min-h-0 flex-1 border-t-0 lg:hidden"
-              surfaceTheme={surfaceTheme}
+              surfaceTheme={effectiveSurfaceTheme}
               workspaceMode={isEditingWorkspace ? "edit" : "create"}
               mode={wizard.mode}
               snapshot={snapshot}
@@ -648,7 +689,7 @@ export function WorkspaceWizardDialog({
             <WorkspaceWizardBlueprintEditor
               key={`${wizard.plan.id}:${blueprintEditorFocus}`}
               open={isBlueprintEditorOpen}
-              surfaceTheme={surfaceTheme}
+              surfaceTheme={effectiveSurfaceTheme}
               plan={wizard.plan}
               busy={wizard.isSaving}
               focus={blueprintEditorFocus}
@@ -661,7 +702,7 @@ export function WorkspaceWizardDialog({
             <WorkspaceWizardDocumentEditor
               key={`${wizard.plan.id}:${documentEditorPath}`}
               open={isDocumentEditorOpen}
-              surfaceTheme={surfaceTheme}
+              surfaceTheme={effectiveSurfaceTheme}
               plan={wizard.plan}
               path={documentEditorPath}
               busy={wizard.isSaving}
@@ -672,178 +713,164 @@ export function WorkspaceWizardDialog({
             />
           ) : null}
 
-          <div
-            className={
-              isLight
-                ? "relative z-[1] border-t border-[#e7dfd4] bg-white/90 px-4 py-3 backdrop-blur-sm md:px-5"
-                : "relative z-[1] border-t border-white/10 bg-[rgba(4,8,15,0.88)] px-4 py-3 backdrop-blur-sm md:px-5"
-            }
-          >
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <p className={isLight ? "text-[13px] text-[#776f65]" : "text-[13px] text-slate-300"}>
-                {wizard.mode === "basic"
-                  ? basicStep === "intake"
-                    ? "Step 1 of 3. Capture the mission and source first."
-                    : basicStep === "shape"
-                      ? "Step 2 of 3. Pick the template and default shape."
-                      : "Step 3 of 3. Review the draft before creating."
-                  : "Chat and blueprint stay synced as you refine the plan."}
-              </p>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className={
-                    isLight
-                      ? "rounded-full border-[#dfd8ce] bg-[#f7f2eb] text-[#403934] hover:bg-[#f1ebe3] lg:hidden"
-                      : "rounded-full border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08] lg:hidden"
-                  }
-                  onClick={() => setIsMobileBlueprintOpen(true)}
-                >
-                  <Columns2 className="mr-2 h-4 w-4" />
-                  View blueprint
-                </Button>
-
-                {isEditingWorkspace ? (
-                  <>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className={
-                        isLight
-                          ? "rounded-full border-[#dfd8ce] bg-[#f7f2eb] text-[#403934] hover:bg-[#f1ebe3]"
-                          : "rounded-full border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]"
-                      }
-                      onClick={() => void wizard.savePlan()}
-                      disabled={!wizard.plan || wizard.isSaving || wizard.isPlanLoading}
-                    >
-                      {wizard.isSaving ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      Save draft
-                    </Button>
-                    <Button
-                      size="sm"
-                      className={
-                        isLight
-                          ? "rounded-full bg-[#161514] text-white hover:bg-[#26231f]"
-                          : "rounded-full bg-cyan-300 text-slate-950 hover:bg-cyan-200"
-                      }
-                      onClick={() => void handleCreateWorkspace()}
-                      disabled={!hasPrimaryActionDraft || wizard.isPlanLoading || wizard.isSending || wizard.isSaving || wizard.isApplyingWorkspaceChanges}
-                    >
-                      {wizard.isApplyingWorkspaceChanges ? (
-                        <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Sparkles className="mr-2 h-4 w-4" />
-                      )}
-                      Apply changes
-                    </Button>
-                  </>
-                ) : wizard.mode === "basic" ? (
-                  <>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className={
-                        isLight
-                          ? "rounded-full border-[#dfd8ce] bg-[#f7f2eb] text-[#403934] hover:bg-[#f1ebe3]"
-                          : "rounded-full border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]"
-                      }
-                      onClick={
-                        basicStep === "intake"
-                          ? () => {
-                              void wizard.switchMode("advanced");
-                            }
-                          : handleBasicStepBack
-                      }
-                      disabled={wizard.isCreating || wizard.isSending || wizard.isPlanLoading}
-                    >
-                      {basicStep === "intake" ? "Advanced details" : "Back"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      className={
-                        isLight
-                          ? "rounded-full bg-[#161514] text-white hover:bg-[#26231f]"
-                          : "rounded-full bg-cyan-300 text-slate-950 hover:bg-cyan-200"
-                      }
-                      onClick={handleBasicStepPrimary}
-                      disabled={
-                        wizard.isCreating ||
-                        wizard.isSending ||
-                        wizard.isPlanLoading ||
-                        (basicStep === "review" && !hasDraftToCreate)
-                      }
-                    >
-                      {basicStep === "review" ? (
-                        wizard.isCreating ? (
-                          <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Sparkles className="mr-2 h-4 w-4" />
-                        )
-                      ) : (
-                        <ChevronRight className="mr-2 h-4 w-4" />
-                      )}
-                      {basicStep === "intake" ? "Continue" : basicStep === "shape" ? "Review draft" : "Create workspace"}
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className={
-                        isLight
-                          ? "rounded-full border-[#dfd8ce] bg-[#f7f2eb] text-[#403934] hover:bg-[#f1ebe3]"
-                          : "rounded-full border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]"
-                      }
-                      onClick={() => void wizard.savePlan()}
-                      disabled={!wizard.plan || wizard.isSaving || wizard.isPlanLoading}
-                    >
-                      {wizard.isSaving ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      Save draft
-                    </Button>
-                    {!wizard.plan?.intake.reviewRequested ? (
-                      <Button
-                        size="sm"
-                        className={
-                          isLight
-                            ? "rounded-full bg-[#161514] text-white hover:bg-[#26231f]"
-                            : "rounded-full bg-cyan-300 text-slate-950 hover:bg-cyan-200"
-                        }
-                        onClick={() => wizard.requestReview()}
-                        disabled={!wizard.plan || wizard.isSending || wizard.isDeploying}
-                      >
-                        Review blueprint
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        className={
-                          isLight
-                            ? "rounded-full bg-[#161514] text-white hover:bg-[#26231f]"
-                            : "rounded-full bg-cyan-300 text-slate-950 hover:bg-cyan-200"
-                        }
-                        onClick={() => void handleDeployWorkspace()}
-                        disabled={
-                          !wizard.plan ||
-                          wizard.plan.deploy.blockers.length > 0 ||
-                          wizard.isDeploying ||
-                          wizard.isPlanLoading
-                        }
-                      >
-                        {wizard.isDeploying ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
-                        Deploy workspace
-                      </Button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+    </MissionControlDialogShell>
+  );
+}
+
+type WorkspaceWizardController = ReturnType<typeof useWorkspaceWizardDraft>;
+
+function WorkspaceWizardFooterActions({
+  wizardMode,
+  basicStep,
+  isEditingWorkspace,
+  wizard,
+  hasPrimaryActionDraft,
+  hasDraftToCreate,
+  onOpenMobileBlueprint,
+  onCreateWorkspace,
+  onDeployWorkspace,
+  onBasicStepBack,
+  onBasicStepPrimary
+}: {
+  wizardMode: WorkspaceWizardMode;
+  basicStep: WorkspaceCreateStep;
+  isEditingWorkspace: boolean;
+  wizard: WorkspaceWizardController;
+  hasPrimaryActionDraft: boolean;
+  hasDraftToCreate: boolean;
+  onOpenMobileBlueprint: () => void;
+  onCreateWorkspace: () => Promise<void>;
+  onDeployWorkspace: () => Promise<void>;
+  onBasicStepBack: () => void;
+  onBasicStepPrimary: () => void;
+}) {
+  const statusLabel =
+    wizardMode === "basic"
+      ? basicStep === "intake"
+        ? "Step 1 of 3. Capture the mission and source first."
+        : basicStep === "shape"
+          ? "Step 2 of 3. Pick the template and default shape."
+          : "Step 3 of 3. Review the draft before creating."
+      : "Chat and blueprint stay synced as you refine the plan.";
+
+  return (
+    <>
+      <p className="min-w-0 truncate pr-3 text-[11px] text-slate-400">{statusLabel}</p>
+
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          className={cn(missionControlDialogButtonClassName("secondary"), "lg:hidden")}
+          onClick={onOpenMobileBlueprint}
+        >
+          <Columns2 className="mr-1.5 h-3.5 w-3.5" />
+          View blueprint
+        </Button>
+
+        {isEditingWorkspace ? (
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              className={missionControlDialogButtonClassName("secondary")}
+              onClick={() => void wizard.savePlan()}
+              disabled={!wizard.plan || wizard.isSaving || wizard.isPlanLoading}
+            >
+              {wizard.isSaving ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+              Save draft
+            </Button>
+            <Button
+              size="sm"
+              className={missionControlDialogButtonClassName("primary")}
+              onClick={() => void onCreateWorkspace()}
+              disabled={!hasPrimaryActionDraft || wizard.isPlanLoading || wizard.isSending || wizard.isSaving || wizard.isApplyingWorkspaceChanges}
+            >
+              {wizard.isApplyingWorkspaceChanges ? (
+                <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              Apply changes
+            </Button>
+          </>
+        ) : wizardMode === "basic" ? (
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              className={missionControlDialogButtonClassName("secondary")}
+              onClick={
+                basicStep === "intake"
+                  ? () => {
+                      void wizard.switchMode("advanced");
+                    }
+                  : onBasicStepBack
+              }
+              disabled={wizard.isCreating || wizard.isSending || wizard.isPlanLoading}
+            >
+              {basicStep === "intake" ? "Advanced details" : "Back"}
+            </Button>
+            <Button
+              size="sm"
+              className={missionControlDialogButtonClassName("primary")}
+              onClick={onBasicStepPrimary}
+              disabled={
+                wizard.isCreating ||
+                wizard.isSending ||
+                wizard.isPlanLoading ||
+                (basicStep === "review" && !hasDraftToCreate)
+              }
+            >
+              {basicStep === "review" ? (
+                wizard.isCreating ? (
+                  <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                )
+              ) : (
+                <ChevronRight className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {basicStep === "intake" ? "Continue" : basicStep === "shape" ? "Review draft" : "Create workspace"}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              className={missionControlDialogButtonClassName("secondary")}
+              onClick={() => void wizard.savePlan()}
+              disabled={!wizard.plan || wizard.isSaving || wizard.isPlanLoading}
+            >
+              {wizard.isSaving ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+              Save draft
+            </Button>
+            {!wizard.plan?.intake.reviewRequested ? (
+              <Button
+                size="sm"
+                className={missionControlDialogButtonClassName("primary")}
+                onClick={() => wizard.requestReview()}
+                disabled={!wizard.plan || wizard.isSending || wizard.isDeploying}
+              >
+                Review blueprint
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                className={missionControlDialogButtonClassName("primary")}
+                onClick={() => void onDeployWorkspace()}
+                disabled={!wizard.plan || wizard.plan.deploy.blockers.length > 0 || wizard.isDeploying || wizard.isPlanLoading}
+              >
+                {wizard.isDeploying ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Bot className="mr-1.5 h-3.5 w-3.5" />}
+                Deploy workspace
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+    </>
   );
 }
 

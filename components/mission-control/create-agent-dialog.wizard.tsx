@@ -6,18 +6,16 @@ import { Bot, ChevronRight, FileText, LoaderCircle, Plus, Sparkles, type LucideI
 
 import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
 import { AgentPolicySelect, AgentPresetCard, FormField } from "@/components/mission-control/create-agent-dialog.parts";
+import {
+  MissionControlDialogChip,
+  MissionControlDialogShell,
+  missionControlDialogButtonClassName,
+  missionControlDialogControlClassName,
+  missionControlDialogPanelClassName
+} from "@/components/mission-control/mission-control-dialog-shell";
 import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogTitle,
-  DialogTrigger
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
 import {
@@ -77,7 +75,9 @@ export function CreateAgentDialog({
   trigger,
   surfaceTheme = "dark"
 }: CreateAgentDialogProps) {
-  const isLight = surfaceTheme === "light";
+  const effectiveSurfaceTheme: SurfaceTheme = "dark";
+  const isLight = false;
+  void surfaceTheme;
   const initialWorkspaceId = defaultWorkspaceId ?? snapshot.workspaces[0]?.id ?? "";
   const [isMounted, setIsMounted] = useState(false);
   const [showAdvancedIdentity, setShowAdvancedIdentity] = useState(false);
@@ -511,145 +511,100 @@ export function CreateAgentDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent
-        overlayClassName={isLight ? "bg-[#eadfd4]/72 backdrop-blur-[18px]" : undefined}
-        closeClassName="hidden"
-        className={cn(
-          "flex h-[min(84dvh,800px)] w-[calc(100vw-10px)] max-w-[920px] flex-col overflow-hidden p-0 sm:w-[min(920px,calc(100vw-20px))]",
-          isLight
-            ? "border-[#dfd2c5] bg-[linear-gradient(180deg,rgba(255,252,248,0.99),rgba(247,239,231,0.99))] text-[#3f2f24] shadow-[0_36px_120px_rgba(161,125,101,0.18)]"
-            : "border-white/10 bg-[linear-gradient(180deg,rgba(12,18,29,0.98),rgba(7,11,18,0.98))] text-slate-50 shadow-[0_36px_120px_rgba(0,0,0,0.48)]"
-        )}
-        style={isLight ? { colorScheme: "light" } : undefined}
-      >
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div
-            className={cn(
-              "shrink-0 border-b px-4 py-2.5 pr-10",
-              isLight
-                ? "border-[#e5d8cb] bg-[linear-gradient(180deg,rgba(255,252,248,0.98),rgba(244,235,224,0.96))]"
-                : "border-white/10 bg-[linear-gradient(180deg,rgba(14,20,34,0.98),rgba(9,13,24,0.99))]"
-            )}
-          >
-            <DialogDescription className="sr-only">
-              Create a new OpenClaw agent by choosing a starter mode, editing profile and policy, and saving the workspace agent.
-            </DialogDescription>
-            {stage === "start" ? (
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <DialogTitle className={cn("text-[18px] font-medium sm:text-[20px]", isLight ? "text-[#37291f]" : "text-white")}>
-                    Create New Agent
-                  </DialogTitle>
-                  <p className={cn("mt-1 text-[12px] leading-4", isLight ? "text-[#9a8574]" : "text-slate-500")}>
-                    Choose a starting point.
-                  </p>
-                </div>
+    <MissionControlDialogShell
+      open={open}
+      onOpenChange={handleOpenChange}
+      trigger={trigger}
+      title="Create New Agent"
+      description={stage === "start" ? "Choose a starting point." : getWizardStageHint(startPoint, stage)}
+      icon={Bot}
+      chips={
+        <MissionControlDialogChip tone={stage === "details" ? "violet" : "muted"}>
+          Step {activeStepIndex + 1} / {stepLabels.length} · {stepLabels[activeStepIndex] ?? "Start"}
+        </MissionControlDialogChip>
+      }
+      headerActions={
+        stage !== "start" ? (
+          <WizardStepper labels={stepLabels} activeIndex={activeStepIndex} surfaceTheme={effectiveSurfaceTheme} onStepClick={handleStepClick} />
+        ) : null
+      }
+      bodyClassName="px-4 py-3.5"
+      footer={
+        <div className="flex w-full flex-col gap-2">
+          {createProgressMessage ? (
+            <div className="inline-flex items-start gap-2 rounded-[8px] border border-white/10 bg-white/[0.04] px-3 py-2 text-[11px] leading-4 text-slate-300">
+              <LoaderCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" />
+              <span>{createProgressMessage}</span>
+            </div>
+          ) : null}
 
-                <div className="flex items-center gap-2">
-                  <div
-                    className={cn(
-                      "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px]",
-                      isLight
-                        ? "border-[#e2d3c2] bg-[#f5ece1] text-[#7e6554]"
-                        : "border-white/10 bg-white/[0.04] text-slate-300"
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-medium",
-                        isLight ? "bg-[#eadccf] text-[#6f5646]" : "bg-white/10 text-slate-200"
-                      )}
-                    >
-                      1
-                    </span>
-                    <span>Start</span>
-                  </div>
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => handleOpenChange(false)}
+              disabled={isSaving}
+              className={missionControlDialogButtonClassName("secondary")}
+            >
+              Cancel
+            </Button>
 
-                  <DialogClose asChild>
-                    <button
-                      type="button"
-                      aria-label="Close dialog"
-                      className={cn(
-                        "inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors",
-                        isLight
-                          ? "border-[#e2d3c2] bg-[#f5ece1] text-[#7b6657] hover:bg-[#f2e8df] hover:text-[#3f2f24]"
-                          : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08] hover:text-white"
-                      )}
-                    >
-                      <svg
-                        aria-hidden="true"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="h-4 w-4"
-                      >
-                        <path d="M18 6 6 18" />
-                        <path d="m6 6 12 12" />
-                      </svg>
-                    </button>
-                  </DialogClose>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center justify-between gap-4">
-                  <DialogTitle className={cn("text-[15px] font-medium sm:text-[17px]", isLight ? "text-[#37291f]" : "text-white")}>
-                    Create New Agent
-                  </DialogTitle>
-                  <div className="flex items-center gap-2">
-                    <WizardStepper labels={stepLabels} activeIndex={activeStepIndex} surfaceTheme={surfaceTheme} onStepClick={handleStepClick} />
-                    <DialogClose asChild>
-                      <button
-                        type="button"
-                        aria-label="Close dialog"
-                        className={cn(
-                          "inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors",
-                          isLight
-                            ? "border-[#e2d3c2] bg-[#f5ece1] text-[#7b6657] hover:bg-[#f2e8df] hover:text-[#3f2f24]"
-                            : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08] hover:text-white"
-                        )}
-                      >
-                        <svg
-                          aria-hidden="true"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="h-4 w-4"
-                        >
-                          <path d="M18 6 6 18" />
-                          <path d="m6 6 12 12" />
-                        </svg>
-                      </button>
-                    </DialogClose>
-                  </div>
-                </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+              {stage !== "start" ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleBack}
+                  disabled={isSaving}
+                  className={missionControlDialogButtonClassName("secondary")}
+                >
+                  Back
+                </Button>
+              ) : null}
 
-                <p className={cn("mt-1.5 max-w-[520px] text-[10px] leading-4", isLight ? "text-[#8c7664]" : "text-slate-500")}>
-                  {getWizardStageHint(startPoint, stage)}
-                </p>
-              </>
-            )}
+              <Button
+                type="button"
+                size="sm"
+                onClick={handlePrimaryAction}
+                disabled={!canAdvanceFromCurrentStage}
+                className={missionControlDialogButtonClassName("primary")}
+              >
+                {stage === "details" ? (
+                  isSaving ? (
+                    <>
+                      <LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" />
+                      {createProgress === "syncing" ? "Syncing canvas..." : "Creating..."}
+                    </>
+                  ) : (
+                    "Create agent"
+                  )
+                ) : stage === "start" ? (
+                  startPoint === "empty" ? (
+                    "Continue"
+                  ) : (
+                    "Next"
+                  )
+                ) : (
+                  "Next"
+                )}
+              </Button>
+            </div>
           </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3.5">
+        </div>
+      }
+    >
             {stage === "start" ? (
-              <div className="mx-auto flex h-full w-full max-w-[804px] flex-col items-center justify-center space-y-3 py-6">
-                <div className="grid w-full gap-4 md:grid-cols-3 md:justify-items-center lg:gap-5">
+              <div className="mx-auto flex w-full max-w-[840px] flex-col gap-3 pt-8 md:pt-12">
+                <div className="grid w-full gap-3 md:grid-cols-3 lg:gap-3.5">
                   <StartPointCard
                     icon={Plus}
                     title="Empty / Custom"
                     description="Start from scratch."
                     helper="Fastest if you know the shape."
                     selected={startPoint === "empty"}
-                    surfaceTheme={surfaceTheme}
+                    surfaceTheme={effectiveSurfaceTheme}
                     onSelect={() => handleStartPointSelect("empty")}
                   />
                   <StartPointCard
@@ -658,7 +613,7 @@ export function CreateAgentDialog({
                     description="Use a role template."
                     helper="Good for common worker roles."
                     selected={startPoint === "preset"}
-                    surfaceTheme={surfaceTheme}
+                    surfaceTheme={effectiveSurfaceTheme}
                     onSelect={() => handleStartPointSelect("preset")}
                   />
                   <StartPointCard
@@ -667,7 +622,7 @@ export function CreateAgentDialog({
                     description="Clone an existing agent."
                     helper="Best when a baseline already exists."
                     selected={startPoint === "import"}
-                    surfaceTheme={surfaceTheme}
+                    surfaceTheme={effectiveSurfaceTheme}
                     onSelect={() => handleStartPointSelect("import")}
                   />
                 </div>
@@ -681,7 +636,7 @@ export function CreateAgentDialog({
                 <PanelCard
                   title="Browse presets"
                   description="Choose the role that fits the first job."
-                  surfaceTheme={surfaceTheme}
+                  surfaceTheme={effectiveSurfaceTheme}
                   className="min-w-0"
                 >
                   <div className="mt-3.5 grid gap-3 sm:grid-cols-2 xl:grid-cols-2">
@@ -690,7 +645,7 @@ export function CreateAgentDialog({
                         key={option.value}
                         preset={option.value}
                         active={selectedPreset === option.value}
-                        surfaceTheme={surfaceTheme}
+                        surfaceTheme={effectiveSurfaceTheme}
                         onClick={() => handlePresetSelect(option.value)}
                       />
                     ))}
@@ -700,7 +655,7 @@ export function CreateAgentDialog({
                 <PanelCard
                   title="Selected preset"
                   description="This seeds the draft before details."
-                  surfaceTheme={surfaceTheme}
+                  surfaceTheme={effectiveSurfaceTheme}
                   className="xl:sticky xl:top-4 xl:self-start xl:h-fit"
                 >
                   <div className="space-y-2.5">
@@ -735,7 +690,7 @@ export function CreateAgentDialog({
                       </Badge>
                     </div>
 
-                    <AgentRootContextNotice surfaceTheme={surfaceTheme} />
+                    <AgentRootContextNotice surfaceTheme={effectiveSurfaceTheme} />
 
                     <div
                       className={cn(
@@ -755,7 +710,7 @@ export function CreateAgentDialog({
                 <PanelCard
                   title="Import an existing agent"
                   description="Select an agent to clone."
-                  surfaceTheme={surfaceTheme}
+                  surfaceTheme={effectiveSurfaceTheme}
                   className="min-w-0"
                 >
                   <div className="mt-3.5 space-y-3">
@@ -764,7 +719,7 @@ export function CreateAgentDialog({
                         value={importSearch}
                         onChange={(event) => setImportSearch(event.target.value)}
                         placeholder="Search by name, id, workspace, preset, or model"
-                        className={getCreateAgentControlClassName(surfaceTheme)}
+                        className={getCreateAgentControlClassName(effectiveSurfaceTheme)}
                       />
                     </div>
 
@@ -779,7 +734,7 @@ export function CreateAgentDialog({
                               agent.workspaceId
                             }
                             selected={selectedImportAgentId === agent.id}
-                            surfaceTheme={surfaceTheme}
+                            surfaceTheme={effectiveSurfaceTheme}
                             onSelect={() => handleImportAgentSelect(agent.id)}
                           />
                         ))
@@ -800,7 +755,7 @@ export function CreateAgentDialog({
                 <PanelCard
                   title="Import summary"
                   description="The selected agent seeds the draft."
-                  surfaceTheme={surfaceTheme}
+                  surfaceTheme={effectiveSurfaceTheme}
                   className="xl:sticky xl:top-4 xl:self-start xl:h-fit"
                 >
                   {selectedImportAgent ? (
@@ -836,7 +791,7 @@ export function CreateAgentDialog({
                         </Badge>
                       </div>
 
-                      <AgentRootContextNotice surfaceTheme={surfaceTheme} />
+                      <AgentRootContextNotice surfaceTheme={effectiveSurfaceTheme} />
 
                       <div
                         className={cn(
@@ -860,7 +815,7 @@ export function CreateAgentDialog({
                         Choose an existing agent on the left. Its configuration will be cloned into the new draft.
                       </div>
 
-                      <AgentRootContextNotice surfaceTheme={surfaceTheme} />
+                      <AgentRootContextNotice surfaceTheme={effectiveSurfaceTheme} />
                     </div>
                   )}
                 </PanelCard>
@@ -871,10 +826,10 @@ export function CreateAgentDialog({
                   <PanelCard
                     title="Core details"
                     description="Name, workspace, and model."
-                    surfaceTheme={surfaceTheme}
+                    surfaceTheme={effectiveSurfaceTheme}
                   >
                     <div className="grid gap-3.5 sm:grid-cols-2">
-                      <FormField label="Display name" htmlFor="create-agent-name" surfaceTheme={surfaceTheme}>
+                      <FormField label="Display name" htmlFor="create-agent-name" surfaceTheme={effectiveSurfaceTheme}>
                         <Input
                           id="create-agent-name"
                           ref={nameInputRef}
@@ -886,11 +841,11 @@ export function CreateAgentDialog({
                             }))
                           }
                           placeholder={currentPresetMeta.defaultName}
-                          className={getCreateAgentControlClassName(surfaceTheme)}
+                          className={getCreateAgentControlClassName(effectiveSurfaceTheme)}
                         />
                       </FormField>
 
-                      <FormField label="Workspace" htmlFor="create-agent-workspace" surfaceTheme={surfaceTheme}>
+                      <FormField label="Workspace" htmlFor="create-agent-workspace" surfaceTheme={effectiveSurfaceTheme}>
                         <select
                           id="create-agent-workspace"
                           value={draft.workspaceId}
@@ -905,7 +860,7 @@ export function CreateAgentDialog({
                             }))
                           }
                           style={isLight ? { colorScheme: "light" } : undefined}
-                          className={getCreateAgentControlClassName(surfaceTheme)}
+                          className={getCreateAgentControlClassName(effectiveSurfaceTheme)}
                         >
                           {snapshot.workspaces.map((workspace) => (
                             <option key={workspace.id} value={workspace.id}>
@@ -915,7 +870,7 @@ export function CreateAgentDialog({
                         </select>
                       </FormField>
 
-                      <FormField label="Model" htmlFor="create-agent-model" surfaceTheme={surfaceTheme}>
+                      <FormField label="Model" htmlFor="create-agent-model" surfaceTheme={effectiveSurfaceTheme}>
                         <select
                           id="create-agent-model"
                           value={draft.modelId}
@@ -926,7 +881,7 @@ export function CreateAgentDialog({
                             }))
                           }
                           style={isLight ? { colorScheme: "light" } : undefined}
-                          className={getCreateAgentControlClassName(surfaceTheme)}
+                          className={getCreateAgentControlClassName(effectiveSurfaceTheme)}
                         >
                           <option value="">
                             {snapshot.diagnostics.modelReadiness.defaultModelReady
@@ -962,10 +917,10 @@ export function CreateAgentDialog({
                   <PanelCard
                     title="Visual identity"
                     description="Emoji and display customization."
-                    surfaceTheme={surfaceTheme}
+                    surfaceTheme={effectiveSurfaceTheme}
                   >
                     <div className="space-y-3.5">
-                      <FormField label="Emoji" htmlFor="create-agent-emoji" surfaceTheme={surfaceTheme}>
+                      <FormField label="Emoji" htmlFor="create-agent-emoji" surfaceTheme={effectiveSurfaceTheme}>
                         <div className="relative">
                           <span
                             aria-hidden="true"
@@ -983,7 +938,7 @@ export function CreateAgentDialog({
                               }))
                             }
                             placeholder={currentPresetMeta.defaultEmoji}
-                            className={cn(getCreateAgentControlClassName(surfaceTheme), "pl-9")}
+                            className={cn(getCreateAgentControlClassName(effectiveSurfaceTheme), "pl-9")}
                           />
                         </div>
                       </FormField>
@@ -1004,7 +959,7 @@ export function CreateAgentDialog({
 
                       {showAdvancedIdentity ? (
                         <div className="grid gap-3.5 sm:grid-cols-2">
-                          <FormField label="Theme" htmlFor="create-agent-theme" surfaceTheme={surfaceTheme}>
+                          <FormField label="Theme" htmlFor="create-agent-theme" surfaceTheme={effectiveSurfaceTheme}>
                             <Input
                               id="create-agent-theme"
                               value={draft.theme}
@@ -1015,11 +970,11 @@ export function CreateAgentDialog({
                                 }))
                               }
                               placeholder={currentPresetMeta.defaultTheme}
-                              className={getCreateAgentControlClassName(surfaceTheme)}
+                              className={getCreateAgentControlClassName(effectiveSurfaceTheme)}
                             />
                           </FormField>
 
-                          <FormField label="Avatar URL" htmlFor="create-agent-avatar" surfaceTheme={surfaceTheme}>
+                          <FormField label="Avatar URL" htmlFor="create-agent-avatar" surfaceTheme={effectiveSurfaceTheme}>
                             <Input
                               id="create-agent-avatar"
                               value={draft.avatar}
@@ -1030,7 +985,7 @@ export function CreateAgentDialog({
                                 }))
                               }
                               placeholder="https://example.com/avatar.png"
-                              className={getCreateAgentControlClassName(surfaceTheme)}
+                              className={getCreateAgentControlClassName(effectiveSurfaceTheme)}
                             />
                           </FormField>
                         </div>
@@ -1043,7 +998,7 @@ export function CreateAgentDialog({
                     workspaceId={draft.workspaceId}
                     channelIds={draft.channelIds}
                     isSaving={isSaving}
-                    surfaceTheme={surfaceTheme}
+                    surfaceTheme={effectiveSurfaceTheme}
                     onChange={(channelIds) =>
                       setDraft((current) => ({
                         ...current,
@@ -1055,7 +1010,7 @@ export function CreateAgentDialog({
                   <PanelCard
                     title="Heartbeat and policy"
                     description="Only override what you need."
-                    surfaceTheme={surfaceTheme}
+                    surfaceTheme={effectiveSurfaceTheme}
                   >
                     <div className="space-y-3.5">
                       <div className="flex items-start justify-between gap-3">
@@ -1103,7 +1058,7 @@ export function CreateAgentDialog({
                       </div>
 
                       {draft.heartbeat.enabled ? (
-                        <FormField label="Interval" htmlFor="create-agent-heartbeat-every" surfaceTheme={surfaceTheme}>
+                        <FormField label="Interval" htmlFor="create-agent-heartbeat-every" surfaceTheme={effectiveSurfaceTheme}>
                           <select
                             id="create-agent-heartbeat-every"
                             value={draft.heartbeat.every}
@@ -1117,7 +1072,7 @@ export function CreateAgentDialog({
                               }))
                             }
                             style={isLight ? { colorScheme: "light" } : undefined}
-                            className={getCreateAgentControlClassName(surfaceTheme)}
+                            className={getCreateAgentControlClassName(effectiveSurfaceTheme)}
                           >
                             {AGENT_HEARTBEAT_INTERVAL_OPTIONS.map((option) => (
                               <option key={option.value} value={option.value}>
@@ -1134,7 +1089,7 @@ export function CreateAgentDialog({
                           htmlFor="create-agent-missing-tools"
                           value={draft.policy.missingToolBehavior}
                           options={AGENT_MISSING_TOOL_BEHAVIOR_OPTIONS}
-                          surfaceTheme={surfaceTheme}
+                          surfaceTheme={effectiveSurfaceTheme}
                           onChange={(value) =>
                             setDraft((current) => ({
                               ...current,
@@ -1150,7 +1105,7 @@ export function CreateAgentDialog({
                           htmlFor="create-agent-install-scope"
                           value={draft.policy.installScope}
                           options={AGENT_INSTALL_SCOPE_OPTIONS}
-                          surfaceTheme={surfaceTheme}
+                          surfaceTheme={effectiveSurfaceTheme}
                           onChange={(value) =>
                             setDraft((current) => ({
                               ...current,
@@ -1166,7 +1121,7 @@ export function CreateAgentDialog({
                           htmlFor="create-agent-file-access"
                           value={draft.policy.fileAccess}
                           options={AGENT_FILE_ACCESS_OPTIONS}
-                          surfaceTheme={surfaceTheme}
+                          surfaceTheme={effectiveSurfaceTheme}
                           onChange={(value) =>
                             setDraft((current) => ({
                               ...current,
@@ -1182,7 +1137,7 @@ export function CreateAgentDialog({
                           htmlFor="create-agent-network-access"
                           value={draft.policy.networkAccess}
                           options={AGENT_NETWORK_ACCESS_OPTIONS}
-                          surfaceTheme={surfaceTheme}
+                          surfaceTheme={effectiveSurfaceTheme}
                           onChange={(value) =>
                             setDraft((current) => ({
                               ...current,
@@ -1202,7 +1157,7 @@ export function CreateAgentDialog({
                   <PanelCard
                     title="Summary"
                     description="Review the draft before creating."
-                    surfaceTheme={surfaceTheme}
+                    surfaceTheme={effectiveSurfaceTheme}
                     className="xl:sticky xl:top-4 xl:self-start xl:h-fit"
                   >
                     <div className="space-y-2.5">
@@ -1243,7 +1198,7 @@ export function CreateAgentDialog({
                         </Badge>
                       </div>
 
-                      <AgentRootContextNotice surfaceTheme={surfaceTheme} />
+                      <AgentRootContextNotice surfaceTheme={effectiveSurfaceTheme} />
 
                       <div
                         className={cn(
@@ -1270,92 +1225,7 @@ export function CreateAgentDialog({
                 </div>
               </div>
       )}
-          </div>
-
-          <DialogFooter
-            className={cn(
-              "shrink-0 border-t px-6 py-4",
-              isLight ? "border-[#e5d8cb] bg-[#faf6f1]" : "border-white/10 bg-transparent"
-            )}
-          >
-            <div className="flex w-full flex-col gap-3">
-              {createProgressMessage ? (
-                <div
-                  className={cn(
-                    "inline-flex items-start gap-2 rounded-2xl border px-3 py-2 text-[11px] leading-4",
-                    isLight
-                      ? "border-[#ddcfbf] bg-white text-[#6e5646]"
-                      : "border-white/10 bg-white/[0.04] text-slate-300"
-                  )}
-                >
-                  <LoaderCircle className="mt-0.5 h-3.5 w-3.5 animate-spin shrink-0" />
-                  <span>{createProgressMessage}</span>
-                </div>
-              ) : null}
-
-              <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => handleOpenChange(false)}
-                  disabled={isSaving}
-                  className={isLight ? "border-[#d8c7b8] bg-white text-[#4d392f] hover:bg-[#f5efe9]" : undefined}
-                >
-                  Cancel
-                </Button>
-
-                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
-                  {stage !== "start" ? (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={handleBack}
-                      disabled={isSaving}
-                      className={isLight ? "border-[#d8c7b8] bg-white text-[#4d392f] hover:bg-[#f5efe9]" : undefined}
-                    >
-                      Back
-                    </Button>
-                  ) : null}
-
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={handlePrimaryAction}
-                    disabled={!canAdvanceFromCurrentStage}
-                    className={
-                      isLight
-                        ? "bg-[#c89e73] text-white shadow-[0_10px_26px_rgba(161,125,101,0.22)] hover:bg-[#b47f53]"
-                        : undefined
-                    }
-                  >
-                    {stage === "details" ? (
-                      isSaving ? (
-                        <>
-                          <LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" />
-                          {createProgress === "syncing" ? "Syncing canvas..." : "Creating..."}
-                        </>
-                      ) : (
-                        "Create agent"
-                      )
-                    ) : stage === "start" ? (
-                      startPoint === "empty" ? (
-                        "Continue"
-                      ) : (
-                        "Next"
-                      )
-                    ) : (
-                      "Next"
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </DialogFooter>
-        </div>
-      </DialogContent>
-    </Dialog>
+    </MissionControlDialogShell>
   );
 }
 
@@ -1474,14 +1344,8 @@ function getWizardStageHint(startPoint: StartPoint | null, stage: WizardStage) {
 }
 
 function getCreateAgentControlClassName(surfaceTheme: SurfaceTheme) {
-  const isLight = surfaceTheme === "light";
-
-  return cn(
-    "flex h-10 w-full rounded-2xl border px-3.5 py-2 text-[13px] outline-none transition-colors",
-    isLight
-      ? "border-[#dccfc3] bg-white text-[#3f2f24] placeholder:text-[#9b8573] focus:border-[#c89e73] focus:ring-2 focus:ring-[#c89e73]/15"
-      : "border-white/10 bg-white/5 text-white placeholder:text-slate-500 focus:border-cyan-300/30 focus:ring-2 focus:ring-cyan-300/15"
-  );
+  void surfaceTheme;
+  return missionControlDialogControlClassName();
 }
 
 function WizardStepper({
@@ -1579,15 +1443,7 @@ function PanelCard({
   const isLight = surfaceTheme === "light";
 
   return (
-    <section
-      className={cn(
-        "rounded-[22px] border p-3.5",
-        isLight
-          ? "border-[#e2d5c9] bg-white/92 shadow-[0_14px_34px_rgba(161,125,101,0.08)]"
-          : "border-white/10 bg-white/[0.03] shadow-[0_14px_34px_rgba(0,0,0,0.18)]",
-        className
-      )}
-    >
+    <section className={missionControlDialogPanelClassName(cn("p-3.5", className))}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className={cn("text-[13px] font-medium", isLight ? "text-[#3f2f24]" : "text-white")}>{title}</p>
@@ -1626,7 +1482,7 @@ function StartPointCard({
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "flex w-full min-h-[272px] flex-col rounded-[28px] border p-3.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 md:max-w-[248px]",
+        "flex min-h-[220px] w-full flex-col rounded-[10px] border p-3.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 md:max-w-[248px]",
         isLight
           ? "focus-visible:ring-[#c89e73]/30"
           : "focus-visible:ring-cyan-300/40",

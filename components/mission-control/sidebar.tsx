@@ -28,6 +28,13 @@ import {
 } from "lucide-react";
 
 import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
+import {
+  MissionControlDialogChip,
+  MissionControlDialogShell,
+  missionControlDialogButtonClassName,
+  missionControlDialogControlClassName,
+  missionControlDialogPanelClassName
+} from "@/components/mission-control/mission-control-dialog-shell";
 import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
 import { RailTooltip } from "@/components/mission-control/rail-tooltip";
 import { StatusDot } from "@/components/mission-control/status-dot";
@@ -552,39 +559,75 @@ export function MissionSidebar({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isEditAgentOpen} onOpenChange={handleEditAgentOpenChange}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Edit OpenClaw agent</DialogTitle>
-            <DialogDescription>
-              Update the selected agent identity, preset, and operating policy.
-            </DialogDescription>
-          </DialogHeader>
+      <MissionControlDialogShell
+        open={isEditAgentOpen}
+        onOpenChange={handleEditAgentOpenChange}
+        title="Edit OpenClaw agent"
+        description="Update identity, preset, model, and operating policy."
+        icon={Bot}
+        chips={
+          editDraft ? (
+            <>
+              <MissionControlDialogChip tone="violet">{getAgentPresetMeta(editDraft.policy.preset).label}</MissionControlDialogChip>
+              <MissionControlDialogChip tone="muted">
+                {snapshot.workspaces.find((workspace) => workspace.id === editDraft.workspaceId)?.name || editDraft.workspaceId}
+              </MissionControlDialogChip>
+            </>
+          ) : null
+        }
+        bodyClassName="px-4 py-3"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleEditAgentOpenChange(false)}
+              className={missionControlDialogButtonClassName("secondary")}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={submitEditAgent}
+              disabled={isSavingAgent || !editDraft}
+              className={missionControlDialogButtonClassName("primary")}
+            >
+              {isSavingAgent ? "Saving..." : "Save changes"}
+            </Button>
+          </>
+        }
+      >
 
           {editDraft ? (
-            <div className="flex flex-col gap-5">
-              <div className="flex flex-col gap-3">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Agent preset</p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {AGENT_PRESET_OPTIONS.map((option) => (
-                    <AgentPresetCard
-                      key={option.value}
-                      label={option.label}
-                      description={option.description}
-                      active={editDraft.policy.preset === option.value}
-                      badgeVariant={getAgentPresetMeta(option.value).badgeVariant}
-                      onClick={() =>
-                        setEditDraft((current) => (current ? applyAgentPreset(current, option.value) : current))
-                      }
-                    />
-                  ))}
+            <div className="grid min-h-0 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+              <aside className={missionControlDialogPanelClassName("h-fit p-3.5")}>
+                <div className="flex flex-col gap-3">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Agent preset</p>
+                  <div className="grid gap-2">
+                    {AGENT_PRESET_OPTIONS.map((option) => (
+                      <AgentPresetCard
+                        key={option.value}
+                        label={option.label}
+                        description={option.description}
+                        active={editDraft.policy.preset === option.value}
+                        badgeVariant={getAgentPresetMeta(option.value).badgeVariant}
+                        onClick={() =>
+                          setEditDraft((current) => (current ? applyAgentPreset(current, option.value) : current))
+                        }
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              <AgentPolicySummary policy={editDraft.policy} />
+                <div className="mt-3">
+                  <AgentPolicySummary policy={editDraft.policy} />
+                </div>
+              </aside>
+
+              <div className="min-w-0 space-y-3">
 
               <FormField label="Agent id" htmlFor="edit-agent-id">
-                <Input id="edit-agent-id" value={editDraft.id} disabled />
+                <Input id="edit-agent-id" value={editDraft.id} disabled className={missionControlDialogControlClassName()} />
               </FormField>
 
               <FormField label="Display name" htmlFor="edit-agent-name">
@@ -602,6 +645,7 @@ export function MissionSidebar({
                     )
                   }
                   placeholder={getAgentPresetMeta(editDraft.policy.preset).defaultName}
+                  className={missionControlDialogControlClassName()}
                 />
               </FormField>
 
@@ -613,6 +657,7 @@ export function MissionSidebar({
                     editDraft.workspaceId
                   }
                   disabled
+                  className={missionControlDialogControlClassName()}
                 />
               </FormField>
 
@@ -630,7 +675,7 @@ export function MissionSidebar({
                         : current
                     )
                   }
-                  className="flex h-11 w-full rounded-lg border border-input bg-card px-4 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  className={missionControlDialogControlClassName()}
                 >
                   <option value="">Use OpenClaw default</option>
                   {snapshot.models.map((model) => (
@@ -657,6 +702,7 @@ export function MissionSidebar({
                       )
                     }
                     placeholder={getAgentPresetMeta(editDraft.policy.preset).defaultEmoji}
+                    className={missionControlDialogControlClassName()}
                   />
                 </FormField>
                 <FormField label="Theme" htmlFor="edit-agent-theme">
@@ -674,6 +720,7 @@ export function MissionSidebar({
                       )
                     }
                     placeholder={getAgentPresetMeta(editDraft.policy.preset).defaultTheme}
+                    className={missionControlDialogControlClassName()}
                   />
                 </FormField>
               </div>
@@ -693,6 +740,7 @@ export function MissionSidebar({
                     )
                   }
                   placeholder="https://example.com/avatar.png"
+                  className={missionControlDialogControlClassName()}
                 />
               </FormField>
 
@@ -715,11 +763,11 @@ export function MissionSidebar({
                 }
               />
 
-              <div className="rounded-lg border border-border bg-muted/40 p-4">
+              <div className={missionControlDialogPanelClassName("p-3.5")}>
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-medium text-foreground">Advanced policy</p>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    <p className="text-sm font-medium text-white">Advanced policy</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">
                       Override how this agent handles missing tools, installs, file scope, and network usage.
                     </p>
                   </div>
@@ -727,7 +775,7 @@ export function MissionSidebar({
                     type="button"
                     variant="secondary"
                     size="sm"
-                    className="h-8 rounded-full px-3 text-[11px]"
+                    className={missionControlDialogButtonClassName("secondary")}
                     onClick={() => setIsEditAgentAdvancedOpen((current) => !current)}
                   >
                     {isEditAgentAdvancedOpen ? "Hide" : "Show"}
@@ -735,11 +783,11 @@ export function MissionSidebar({
                 </div>
 
                 {showEditAgentHeartbeatControls ? (
-                  <div className="mt-4 rounded-lg border border-border bg-card/75 p-4">
+                  <div className={missionControlDialogPanelClassName("mt-4 p-3.5")}>
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-sm font-medium text-foreground">Heartbeat</p>
-                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        <p className="text-sm font-medium text-white">Heartbeat</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-400">
                           Use this only for periodic watch or triage agents. Leave it off for normal task execution.
                         </p>
                       </div>
@@ -747,7 +795,7 @@ export function MissionSidebar({
                         type="button"
                         variant={editDraft.heartbeat.enabled ? "default" : "secondary"}
                         size="sm"
-                        className="h-8 rounded-full px-3 text-[11px]"
+                        className={missionControlDialogButtonClassName(editDraft.heartbeat.enabled ? "primary" : "secondary")}
                         onClick={() =>
                           setEditDraft((current) =>
                             current
@@ -790,7 +838,7 @@ export function MissionSidebar({
                                   : current
                               )
                             }
-                            className="flex h-11 w-full rounded-lg border border-input bg-card px-4 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                            className={missionControlDialogControlClassName()}
                           >
                             {AGENT_HEARTBEAT_INTERVAL_OPTIONS.map((option) => (
                               <option key={option.value} value={option.value}>
@@ -886,18 +934,9 @@ export function MissionSidebar({
                 ) : null}
               </div>
             </div>
+            </div>
           ) : null}
-
-          <DialogFooter>
-            <Button variant="secondary" onClick={() => handleEditAgentOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button onClick={submitEditAgent} disabled={isSavingAgent || !editDraft}>
-              {isSavingAgent ? "Saving..." : "Save changes"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </MissionControlDialogShell>
     </>
   );
 }
@@ -1932,8 +1971,8 @@ function FormField({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-2">
-      <Label htmlFor={htmlFor} className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={htmlFor} className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
         {label}
       </Label>
       {children}
@@ -1959,14 +1998,16 @@ function AgentPresetCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-lg border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-        active ? "border-primary/30 bg-primary/10" : "border-border bg-muted/40"
+        "rounded-[8px] border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/35",
+        active
+          ? "border-violet-300/32 bg-violet-500/14 text-violet-50"
+          : "border-white/10 bg-white/[0.035] text-slate-200 hover:border-white/16 hover:bg-white/[0.055]"
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium text-foreground">{label}</p>
-          <p className="text-xs leading-5 text-muted-foreground">{description}</p>
+          <p className="text-[12px] font-medium text-white">{label}</p>
+          <p className="text-[11px] leading-4 text-slate-400">{description}</p>
         </div>
         <Badge variant={badgeVariant}>{active ? "selected" : "preset"}</Badge>
       </div>
@@ -1978,15 +2019,15 @@ function AgentPolicySummary({ policy }: { policy: AgentPolicy }) {
   const presetMeta = getAgentPresetMeta(policy.preset);
 
   return (
-    <div className="rounded-lg border border-border bg-muted/40 p-4">
+    <div className={missionControlDialogPanelClassName("p-3")}>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-foreground">{presetMeta.label}</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{presetMeta.description}</p>
+          <p className="text-[12px] font-medium text-white">{presetMeta.label}</p>
+          <p className="mt-1 text-[11px] leading-4 text-slate-400">{presetMeta.description}</p>
         </div>
         <Badge variant={presetMeta.badgeVariant}>{presetMeta.label}</Badge>
       </div>
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         <Badge variant="muted">{formatAgentMissingToolBehaviorLabel(policy.missingToolBehavior)}</Badge>
         <Badge variant="muted">{formatAgentInstallScopeLabel(policy.installScope)}</Badge>
         <Badge variant="muted">{formatAgentFileAccessLabel(policy.fileAccess)}</Badge>
@@ -2015,7 +2056,7 @@ function AgentPolicySelect<T extends string>({
         id={htmlFor}
         value={value}
         onChange={(event) => onChange(event.target.value as T)}
-        className="flex h-11 w-full rounded-lg border border-input bg-card px-4 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        className={missionControlDialogControlClassName()}
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
