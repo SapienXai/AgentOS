@@ -9,6 +9,7 @@ import {
   Box,
   Check,
   ChevronDown,
+  ChevronRight,
   Copy,
   Folder,
   KeyRound,
@@ -102,6 +103,32 @@ const settingsSections: SettingsSection[] = [
   { id: "advanced", label: "Advanced", icon: Settings2 },
   { id: "danger-zone", label: "Danger Zone", icon: AlertTriangle, destructive: true }
 ];
+
+const settingsSectionDescriptions: Record<SettingsSectionId, string> = {
+  openclaw: "Source-of-truth runtime state, update flow, and local binary selection.",
+  gateway: "Connection state, auth repair, endpoint control, and native transport health.",
+  capabilities: "Native coverage, fallback surface, and protocol contract detail.",
+  models: "Default model, provider readiness, and model set management.",
+  workspace: "Workspace root, project defaults, and local workspace context.",
+  agents: "Agent inventory, runtime coverage, and operator handoff visibility.",
+  diagnostics: "Transport health, CLI activity, and compatibility evidence.",
+  advanced: "Update pacing, install metadata, and low-level control settings.",
+  "danger-zone": "Destructive recovery actions that require deliberate confirmation."
+};
+
+const relatedSettingsSections: Record<SettingsSectionId, SettingsSectionId[]> = {
+  openclaw: ["gateway", "diagnostics", "advanced"],
+  gateway: ["openclaw", "capabilities", "diagnostics"],
+  capabilities: ["gateway", "diagnostics", "advanced"],
+  models: ["gateway", "workspace", "agents"],
+  workspace: ["models", "agents", "diagnostics"],
+  agents: ["workspace", "models", "diagnostics"],
+  diagnostics: ["gateway", "capabilities", "advanced"],
+  advanced: ["diagnostics", "openclaw", "danger-zone"],
+  "danger-zone": ["advanced", "diagnostics", "openclaw"]
+};
+
+const sidebarSettingsSections = settingsSections.filter((section) => section.id !== "diagnostics");
 
 export function SettingsControlCenter(
   props: MissionControlShellSettingsPanelProps & { sidebarOpen?: boolean }
@@ -293,7 +320,6 @@ export function SettingsControlCenter(
     const syncActiveSectionFromHash = () => {
       setActiveSection(resolveHashSettingsSection());
       setSettingsHashHydrated(true);
-      scrollSettingsToTop();
     };
 
     window.addEventListener("hashchange", syncActiveSectionFromHash);
@@ -303,10 +329,6 @@ export function SettingsControlCenter(
       window.removeEventListener("hashchange", syncActiveSectionFromHash);
     };
   }, []);
-
-  useEffect(() => {
-    scrollSettingsToTop();
-  }, [activeSection]);
 
   const saveGatewayAuthCredential = async () => {
     const credential = gatewayAuthCredential.trim();
@@ -471,6 +493,16 @@ export function SettingsControlCenter(
   const configUpdatePacingRetryMs = configUpdatePacing.cooldownUntil
     ? Math.max(0, Date.parse(configUpdatePacing.cooldownUntil) - Date.now() + configUpdatePacingTick * 0)
     : null;
+  const activeSectionConfig = settingsSections.find((section) => section.id === renderedActiveSection) ?? settingsSections[0];
+  const activeSectionLabel = activeSectionConfig.label;
+  const activeSectionDescription = settingsSectionDescriptions[renderedActiveSection];
+  const relatedSectionIds = relatedSettingsSections[renderedActiveSection];
+  const settingsOverviewRows = [
+    ["OpenClaw", snapshot.diagnostics.version ? `v${snapshot.diagnostics.version}` : "Unknown"],
+    ["Gateway", transportSummary.statusLabel],
+    ["Model", selectedOrDefaultModelId || "Not selected"],
+    ["Workspace", compactPath(workspaceRootDraft || snapshot.diagnostics.workspaceRoot || "Not configured")],
+  ] as Array<[string, string]>;
 
   return (
     <main
@@ -485,60 +517,151 @@ export function SettingsControlCenter(
             sidebarOpen ? "lg:ml-[316px]" : "lg:ml-[80px]"
           )}
         >
-          <div className="mx-auto max-w-[1160px] 2xl:max-w-[1240px]">
-            <div className="flex flex-col">
-              <nav
-                aria-label="Settings sections"
-                className={cn(
-                  "flex flex-wrap gap-2 rounded-[22px] border p-2 backdrop-blur-xl",
-                  surfaceTheme === "light"
-                    ? "border-border bg-card/88 shadow-card"
-                    : "border-border bg-card/88 shadow-[0_18px_44px_rgba(0,0,0,0.16)]"
-                )}
-              >
-                {settingsSections.map((section) => {
-                  const active = renderedActiveSection === section.id;
-                  const Icon = section.icon;
+          <div className="mx-auto max-w-[1520px] space-y-5">
+            <section className={cn("rounded-[14px] border p-2 backdrop-blur-xl", cardClassName(surfaceTheme))}>
+              <div className="flex flex-col gap-1.5 xl:flex-row xl:items-start xl:justify-between">
+                <div className="min-w-0">
+                  <p className={cn("text-[10px] uppercase tracking-[0.2em]", mutedTextClassName(surfaceTheme))}>Settings</p>
+                  <h1 className={cn("mt-0.5 font-display text-[1.25rem] leading-tight sm:text-[1.55rem]", surfaceTheme === "light" ? "text-[#1f1712]" : "text-slate-50")}>
+                    Refined control panel
+                  </h1>
+                  <p className={cn("mt-0.5 max-w-lg text-[11px] leading-4", mutedTextClassName(surfaceTheme))}>
+                    Configure OpenClaw, Gateway access, models, workspace defaults, and diagnostics from one structured surface.
+                  </p>
+                </div>
+                <div className="grid gap-1 sm:grid-cols-2 xl:min-w-[0] xl:grid-cols-4">
+                  <SummaryTile
+                    label="OpenClaw"
+                    value={snapshot.diagnostics.version ? `v${snapshot.diagnostics.version}` : "Unknown"}
+                    detail={recommendedVersion ? `Recommended ${formatVersionValue(recommendedVersion)}` : "Recommended release unavailable"}
+                    surfaceTheme={surfaceTheme}
+                    accent
+                    compact
+                  />
+                  <SummaryTile
+                    label="Gateway"
+                    value={transportSummary.statusLabel}
+                    detail={transportSummary.protocolLabel}
+                    surfaceTheme={surfaceTheme}
+                    compact
+                  />
+                  <SummaryTile
+                    label="Model"
+                    value={selectedOrDefaultModelId || "Not selected"}
+                    detail={modelProvider}
+                    surfaceTheme={surfaceTheme}
+                    compact
+                  />
+                  <SummaryTile
+                    label="Workspace"
+                    value={compactPath(workspaceRootDraft || snapshot.diagnostics.workspaceRoot || "Not configured")}
+                    detail={`${snapshot.workspaces.length} workspace${snapshot.workspaces.length === 1 ? "" : "s"}`}
+                    surfaceTheme={surfaceTheme}
+                    compact
+                  />
+                </div>
+              </div>
+            </section>
 
-                  return (
-                    <Link
-                      key={section.id}
-                      href={`/settings#${section.id}`}
-                      scroll={false}
-                      aria-current={active ? "page" : undefined}
-                      onClick={() => {
-                        setActiveSection(section.id);
-                        scrollSettingsToTop();
-                      }}
+            <section className="rounded-[18px] border p-4 backdrop-blur-xl">
+              <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
+              <aside className="space-y-4 xl:sticky xl:top-[92px] xl:self-start">
+                <Card
+                  title="Sections"
+                  icon={Settings2}
+                  surfaceTheme={surfaceTheme}
+                  action={<span className={cn("rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.18em]", mutedTextClassName(surfaceTheme))}>8</span>}
+                >
+                  <nav aria-label="Settings sections" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                    {sidebarSettingsSections.map((section, index) => {
+                      const active = renderedActiveSection === section.id;
+                      const Icon = section.icon;
+
+                      return (
+                        <Link
+                          key={section.id}
+                          href={`/settings#${section.id}`}
+                          scroll={false}
+                          aria-current={active ? "page" : undefined}
+                          onClick={() => {
+                            setActiveSection(section.id);
+                          }}
+                          className={cn(
+                            "flex min-h-12 items-center justify-between gap-3 rounded-[16px] border px-3 py-2 text-left text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
+                            active
+                              ? section.destructive
+                                ? "border-destructive/35 bg-destructive/8 text-destructive shadow-[0_10px_22px_rgba(239,68,68,0.08)]"
+                                : "border-primary/30 bg-primary/8 text-primary shadow-[0_10px_22px_rgba(239,68,68,0.08)]"
+                              : surfaceTheme === "light"
+                                ? "border-border bg-card/72 text-foreground/80 hover:border-primary/20 hover:bg-muted/55"
+                                : "border-border bg-white/[0.035] text-slate-200/80 hover:border-primary/20 hover:bg-white/[0.06]"
+                          )}
+                        >
+                          <span className="flex min-w-0 items-center gap-3">
+                            <span
+                              className={cn(
+                                "flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] border",
+                                active
+                                  ? section.destructive
+                                    ? "border-destructive/20 bg-destructive/10 text-destructive"
+                                    : "border-primary/15 bg-primary/10 text-primary"
+                                  : surfaceTheme === "light"
+                                    ? "border-border bg-card text-muted-foreground"
+                                    : "border-border bg-[#101a2a] text-slate-300"
+                              )}
+                            >
+                              <Icon className="h-3.5 w-3.5" />
+                            </span>
+                            <span className="min-w-0 truncate">{section.label}</span>
+                          </span>
+                          <span className={cn("shrink-0 text-[10px] uppercase tracking-[0.18em]", active ? "text-current" : mutedTextClassName(surfaceTheme))}>
+                            {String(index + 1).padStart(2, "0")}
+                          </span>
+                        </Link>
+                      );
+                    })}
+                  </nav>
+                </Card>
+
+                <Card title="Active surface" icon={activeSectionConfig.icon} surfaceTheme={surfaceTheme}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className={labelClassName(surfaceTheme)}>Current section</p>
+                      <h2 className={cn("mt-2 font-display text-lg", surfaceTheme === "light" ? "text-[#2d211b]" : "text-slate-100")}>
+                        {activeSectionLabel}
+                      </h2>
+                    </div>
+                    <span
                       className={cn(
-                        "inline-flex h-10 items-center gap-2 rounded-[14px] border px-3 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
-                        active && !section.destructive
+                        "rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]",
+                        activeSectionConfig.destructive
                           ? surfaceTheme === "light"
-                            ? "border-primary/35 bg-primary/10 text-primary shadow-[0_10px_26px_hsl(var(--primary)/0.10)]"
-                            : "border-primary/35 bg-primary/12 text-primary shadow-[0_10px_26px_hsl(var(--primary)/0.14)]"
-                          : active && section.destructive
-                            ? surfaceTheme === "light"
-                              ? "border-destructive/35 bg-destructive/10 text-destructive shadow-[0_10px_26px_hsl(var(--destructive)/0.10)]"
-                              : "border-destructive/35 bg-destructive/12 text-destructive shadow-[0_10px_26px_hsl(var(--destructive)/0.14)]"
-                            : surfaceTheme === "light"
-                              ? "border-border bg-card/75 text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                              : "border-border bg-white/[0.035] text-muted-foreground hover:border-primary/20 hover:bg-white/[0.07] hover:text-foreground"
+                            ? "border-destructive/20 bg-destructive/8 text-destructive"
+                            : "border-destructive/20 bg-destructive/10 text-destructive"
+                          : surfaceTheme === "light"
+                            ? "border-primary/20 bg-primary/8 text-primary"
+                            : "border-primary/20 bg-primary/10 text-primary"
                       )}
                     >
-                      <Icon className="h-3.5 w-3.5 shrink-0" />
-                      <span>{section.label}</span>
-                    </Link>
-                  );
-                })}
-              </nav>
-            </div>
+                      {activeSectionConfig.destructive ? "Destructive" : "Focused"}
+                    </span>
+                  </div>
+                  <p className={cn("mt-2 text-sm leading-6", mutedTextClassName(surfaceTheme))}>{activeSectionDescription}</p>
+                  <InfoRows
+                    surfaceTheme={surfaceTheme}
+                    rows={settingsOverviewRows.slice(0, 3)}
+                    successIndex={1}
+                  />
+                </Card>
+              </aside>
 
-            <div className="mt-5 flex flex-col gap-4">
+              <div className="min-w-0 space-y-4">
+                <div className="mt-5 flex flex-col gap-4">
               {renderedActiveSection === "openclaw" ? (
               <section id="openclaw" className="scroll-mt-24">
                 <div
                   className={cn(
-                    "panel-surface panel-glow min-h-full overflow-hidden rounded-[22px] p-4",
+                    "panel-surface panel-glow min-h-full overflow-hidden rounded-[18px] p-4",
                     surfaceTheme === "light"
                       ? "border-border bg-card/95 text-foreground shadow-card"
                       : "border-white/[0.08] bg-[linear-gradient(180deg,rgba(16,24,38,0.98),rgba(7,11,18,0.96))] text-slate-100"
@@ -589,7 +712,7 @@ export function SettingsControlCenter(
                       type="button"
                       onClick={() => onOpenUpdateDialog(recommendedVersion ?? undefined, "recommended")}
                       disabled={!hasUpdateAvailable || updateRunState === "running"}
-                      className="h-9 rounded-full bg-emerald-600 px-4 text-xs text-white hover:bg-emerald-500"
+                      className="h-9 rounded-full bg-primary px-4 text-xs text-primary-foreground hover:bg-primary/90"
                     >
                       {updateRunState === "running" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="h-3.5 w-3.5" />}
                       Update to recommended
@@ -782,7 +905,7 @@ export function SettingsControlCenter(
                         type="button"
                         onClick={() => void onSaveGatewaySettings(gatewayDraft.trim() || null)}
                         disabled={isSavingGateway}
-                        className="h-9 rounded-full bg-emerald-600 text-xs text-white hover:bg-emerald-500"
+                        className="h-9 rounded-full bg-primary text-xs text-primary-foreground hover:bg-primary/90"
                       >
                         {isSavingGateway ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                         Save endpoint
@@ -889,7 +1012,7 @@ export function SettingsControlCenter(
                         type="button"
                         onClick={() => void saveGatewayAuthCredential()}
                         disabled={isSavingGatewayAuthCredential}
-                        className="h-9 rounded-full bg-emerald-600 text-xs text-white hover:bg-emerald-500"
+                        className="h-9 rounded-full bg-primary text-xs text-primary-foreground hover:bg-primary/90"
                       >
                         {isSavingGatewayAuthCredential ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                         Save credential
@@ -969,7 +1092,7 @@ export function SettingsControlCenter(
                       type="button"
                       onClick={() => void onRunModelSetDefault(selectedOrDefaultModelId)}
                       disabled={!selectedOrDefaultModelId || modelOnboardingRunState === "running"}
-                      className="h-9 rounded-full bg-emerald-600 text-xs text-white hover:bg-emerald-500"
+                      className="h-9 rounded-full bg-primary text-xs text-primary-foreground hover:bg-primary/90"
                     >
                       {modelOnboardingRunState === "running" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                       Use selected
@@ -1024,7 +1147,7 @@ export function SettingsControlCenter(
                       type="button"
                       onClick={() => void onSaveWorkspaceRootSettings(workspaceRootDraft.trim() || null)}
                       disabled={isSavingWorkspaceRoot}
-                      className="h-9 rounded-full bg-emerald-600 text-xs text-white hover:bg-emerald-500"
+                      className="h-9 rounded-full bg-primary text-xs text-primary-foreground hover:bg-primary/90"
                     >
                       {isSavingWorkspaceRoot ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                       Save
@@ -1346,7 +1469,7 @@ export function SettingsControlCenter(
               <section id="danger-zone" className="scroll-mt-24">
                 <div
                   className={cn(
-                    "rounded-[22px] p-4 shadow-[0_18px_44px_rgba(185,28,28,0.06)]",
+                    "rounded-[18px] p-4 shadow-[0_18px_44px_rgba(185,28,28,0.06)]",
                     surfaceTheme === "light"
                       ? "border border-red-200 bg-red-50/58"
                       : "border border-rose-400/20 bg-rose-500/[0.08]"
@@ -1402,6 +1525,77 @@ export function SettingsControlCenter(
                 </div>
               </section>
               ) : null}
+              </div>
+            </div>
+          </div>
+          </section>
+            <div className="grid gap-4 xl:grid-cols-3">
+              <Card title="Context" icon={activeSectionConfig.icon} surfaceTheme={surfaceTheme}>
+                <InfoRows
+                  surfaceTheme={surfaceTheme}
+                  rows={[
+                    ["Active section", activeSectionLabel],
+                    ["Focus", activeSectionConfig.destructive ? "Recovery / confirmation" : "Operational settings"],
+                    ["Related", relatedSectionIds.map((id) => settingsSections.find((section) => section.id === id)?.label ?? id).join(" · ")],
+                  ]}
+                />
+              </Card>
+
+              <Card title="Related sections" icon={ChevronRight} surfaceTheme={surfaceTheme}>
+                <div className="grid gap-2">
+                  {relatedSectionIds.map((sectionId) => {
+                    const section = settingsSections.find((entry) => entry.id === sectionId);
+                    if (!section) {
+                      return null;
+                    }
+
+                    const Icon = section.icon;
+                    const active = renderedActiveSection === section.id;
+
+                    return (
+                      <Link
+                        key={section.id}
+                        href={`/settings#${section.id}`}
+                        scroll={false}
+                        aria-current={active ? "page" : undefined}
+                        onClick={() => {
+                          setActiveSection(section.id);
+                        }}
+                        className={cn(
+                          "flex items-center justify-between gap-3 rounded-[16px] border px-3 py-2 text-sm transition-colors",
+                          active
+                            ? surfaceTheme === "light"
+                              ? "border-primary/25 bg-primary/8 text-primary"
+                              : "border-primary/25 bg-primary/10 text-primary"
+                            : surfaceTheme === "light"
+                              ? "border-border bg-card/70 text-foreground hover:bg-muted/55"
+                              : "border-border bg-white/[0.035] text-slate-200 hover:bg-white/[0.06]"
+                        )}
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] border", active ? "border-primary/15 bg-primary/10 text-primary" : "border-border bg-transparent text-current/80")}>
+                            <Icon className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="min-w-0 truncate">{section.label}</span>
+                        </span>
+                        <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                      </Link>
+                    );
+                  })}
+                </div>
+              </Card>
+
+              <Card title="Snapshot" icon={Activity} surfaceTheme={surfaceTheme}>
+                <InfoRows
+                  surfaceTheme={surfaceTheme}
+                  rows={[
+                    ["OpenClaw", snapshot.diagnostics.version ? `v${snapshot.diagnostics.version}` : "Unknown"],
+                    ["Transport", transportSummary.statusLabel],
+                    ["Fallback", `${transportSummary.fallbackTotal} operations`],
+                    ["Compatibility", compatibilityReport ? formatCompatibilityReportStatus(compatibilityReport.status) : "Unknown"]
+                  ]}
+                />
+              </Card>
             </div>
           </div>
         </section>
@@ -1425,7 +1619,7 @@ function Card({
   return (
     <div
       className={cn(
-        "min-h-full rounded-[22px] p-4 shadow-[0_20px_54px_rgba(101,74,54,0.07)] backdrop-blur-xl",
+        "min-h-full rounded-[18px] p-4 shadow-[0_16px_40px_rgba(101,74,54,0.07)] backdrop-blur-xl",
         cardClassName(surfaceTheme)
       )}
     >
@@ -1441,6 +1635,53 @@ function Card({
         {action}
       </div>
       <div className="mt-4">{children}</div>
+    </div>
+  );
+}
+
+function SummaryTile({
+  label,
+  value,
+  detail,
+  surfaceTheme,
+  accent = false,
+  compact = false
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  surfaceTheme: SurfaceTheme;
+  accent?: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        compact ? "rounded-[14px] border p-2.5" : "rounded-[18px] border p-3.5",
+        surfaceTheme === "light"
+          ? accent
+            ? "border-primary/20 bg-primary/8"
+            : "border-border bg-card/86"
+          : accent
+            ? "border-primary/20 bg-primary/10"
+            : "border-border bg-[#0f1826]"
+      )}
+    >
+      <p className={cn(compact ? "text-[9px] uppercase tracking-[0.16em]" : "text-[10px] uppercase tracking-[0.18em]", mutedTextClassName(surfaceTheme))}>
+        {label}
+      </p>
+      <p
+        className={cn(
+          compact ? "mt-1 truncate text-xs font-medium leading-4" : "mt-2 truncate text-sm font-medium",
+          surfaceTheme === "light" ? "text-[#1f1712]" : "text-slate-100"
+        )}
+        title={value}
+      >
+        {value}
+      </p>
+      {detail ? (
+        <p className={cn(compact ? "mt-0.5 text-[10px] leading-4" : "mt-1 text-[11px] leading-4", mutedTextClassName(surfaceTheme))}>{detail}</p>
+      ) : null}
     </div>
   );
 }
@@ -2884,16 +3125,6 @@ function copyToClipboard(value: string) {
   void navigator.clipboard.writeText(value);
 }
 
-function scrollSettingsToTop() {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.requestAnimationFrame(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-  });
-}
-
 function resolveInitialSettingsSection(): SettingsSectionId {
   return "openclaw";
 }
@@ -2934,8 +3165,8 @@ function cardClassName(surfaceTheme: SurfaceTheme) {
 
 function cardIconClassName(surfaceTheme: SurfaceTheme) {
   return surfaceTheme === "light"
-    ? "flex h-10 w-10 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-primary"
-    : "flex h-10 w-10 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-primary";
+    ? "flex h-10 w-10 items-center justify-center rounded-[14px] border border-primary/15 bg-primary/10 text-primary"
+    : "flex h-10 w-10 items-center justify-center rounded-[14px] border border-primary/15 bg-primary/10 text-primary";
 }
 
 function labelClassName(surfaceTheme: SurfaceTheme) {
