@@ -43,6 +43,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  RuntimeGatewayInlineWarning,
+  RuntimeInboxPanel
+} from "@/components/runtime/runtime-inbox";
 import type {
   GatewayNativeAuthCredentialKind,
   GatewayNativeAuthStatus
@@ -128,8 +132,6 @@ const relatedSettingsSections: Record<SettingsSectionId, SettingsSectionId[]> = 
   "danger-zone": ["advanced", "diagnostics", "openclaw"]
 };
 
-const sidebarSettingsSections = settingsSections.filter((section) => section.id !== "diagnostics");
-
 export function SettingsControlCenter(
   props: MissionControlShellSettingsPanelProps & { sidebarOpen?: boolean }
 ) {
@@ -163,6 +165,7 @@ export function SettingsControlCenter(
     onOpenUpdateDialog,
     onRollbackOpenClaw,
     onOpenResetDialog,
+    onSnapshotChange,
     onOpenClawBinarySelectionModeChange,
     onOpenClawBinarySelectionPathChange,
     onSaveOpenClawBinarySettings,
@@ -503,6 +506,13 @@ export function SettingsControlCenter(
     ["Model", selectedOrDefaultModelId || "Not selected"],
     ["Workspace", compactPath(workspaceRootDraft || snapshot.diagnostics.workspaceRoot || "Not configured")],
   ] as Array<[string, string]>;
+  const scrollSettingsToTop = () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   return (
     <main
@@ -570,10 +580,10 @@ export function SettingsControlCenter(
                   title="Sections"
                   icon={Settings2}
                   surfaceTheme={surfaceTheme}
-                  action={<span className={cn("rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.18em]", mutedTextClassName(surfaceTheme))}>8</span>}
+                  action={<span className={cn("rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.18em]", mutedTextClassName(surfaceTheme))}>9</span>}
                 >
                   <nav aria-label="Settings sections" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                    {sidebarSettingsSections.map((section, index) => {
+                    {settingsSections.map((section, index) => {
                       const active = renderedActiveSection === section.id;
                       const Icon = section.icon;
 
@@ -585,6 +595,7 @@ export function SettingsControlCenter(
                           aria-current={active ? "page" : undefined}
                           onClick={() => {
                             setActiveSection(section.id);
+                            scrollSettingsToTop();
                           }}
                           className={cn(
                             "flex min-h-12 items-center justify-between gap-3 rounded-[16px] border px-3 py-2 text-left text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
@@ -859,6 +870,15 @@ export function SettingsControlCenter(
                       ["Events", formatCapabilitySupport(capabilityMatrix?.eventBridge)]
                     ]}
                     successIndex={1}
+                  />
+
+                  <RuntimeGatewayInlineWarning
+                    snapshot={snapshot}
+                    surfaceTheme={surfaceTheme}
+                    onSnapshotChange={onSnapshotChange}
+                    onRefresh={async () => {
+                      await refreshGatewayAuthStatus();
+                    }}
                   />
 
                   <CompatibilityPanel
@@ -1202,6 +1222,12 @@ export function SettingsControlCenter(
                   }
                 >
                   <div className="space-y-2">
+                    <RuntimeInboxPanel
+                      snapshot={snapshot}
+                      surfaceTheme={surfaceTheme}
+                      variant="full"
+                      onSnapshotChange={onSnapshotChange}
+                    />
                     <TransportDiagnosticsPanel summary={transportSummary} surfaceTheme={surfaceTheme} />
                     {gatewayFallbackDiagnostics.length ? (
                       <div
@@ -1560,6 +1586,7 @@ export function SettingsControlCenter(
                         aria-current={active ? "page" : undefined}
                         onClick={() => {
                           setActiveSection(section.id);
+                          scrollSettingsToTop();
                         }}
                         className={cn(
                           "flex items-center justify-between gap-3 rounded-[16px] border px-3 py-2 text-sm transition-colors",

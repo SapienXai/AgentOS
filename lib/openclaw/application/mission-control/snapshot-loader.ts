@@ -5,6 +5,7 @@ import { detectOpenClaw } from "@/lib/openclaw/cli";
 import { probeLocalGatewayStatus } from "@/lib/openclaw/client/local-gateway-probe";
 import {
   settleGatewayStatusPayloadFromOpenClaw,
+  settleDeviceAccessPayloadFromOpenClaw,
   settleModelStatusPayloadFromOpenClaw,
   settleStatusPayloadFromOpenClaw,
   settleUpdateStatusPayloadFromOpenClaw,
@@ -56,6 +57,7 @@ import {
   type GatewayStatusPayload,
   type ModelsPayload,
   type ModelsStatusPayload,
+  type OpenClawDeviceListPayload,
   type OpenClawRuntimeSnapshotPayload,
   type PresencePayload,
   type StatusPayload
@@ -225,6 +227,7 @@ async function loadMissionControlSnapshots({
     let configuredModelIdsResult: PromiseSettledResult<string[]>;
     let modelsResult: PromiseSettledResult<ModelsPayload>;
     let modelStatusResult: PromiseSettledResult<ModelsStatusPayload>;
+    let deviceAccessResult: PromiseSettledResult<OpenClawDeviceListPayload>;
     let presenceResult: PromiseSettledResult<PresencePayload>;
 
     const statusCacheNeedsRefresh = statusPayloadCache.shouldRefresh();
@@ -248,18 +251,23 @@ async function loadMissionControlSnapshots({
       const modelStatusPromise = shouldHydrateModelStatus
         ? settleModelStatusPayloadFromOpenClaw(15_000)
         : Promise.resolve(createDeferredPayloadResult<ModelsStatusPayload>());
+      const deviceAccessPromise = systemProfile
+        ? Promise.resolve(createDeferredPayloadResult<OpenClawDeviceListPayload>())
+        : settleDeviceAccessPayloadFromOpenClaw(5_000);
       [
         gatewayStatusResult,
         statusResult,
         agentConfigResult,
         configuredModelIdsResult,
-        modelStatusResult
+        modelStatusResult,
+        deviceAccessResult
       ] = await Promise.all([
         gatewayStatusPromise,
         statusPromise,
         agentConfigPromise,
         configuredModelIdsPromise,
-        modelStatusPromise
+        modelStatusPromise,
+        deviceAccessPromise
       ]);
       agentsResult = createDeferredPayloadResult();
       modelsResult = createDeferredPayloadResult();
@@ -273,13 +281,15 @@ async function loadMissionControlSnapshots({
         gatewayStatusResult,
         agentConfigResult,
         configuredModelIdsResult,
-        modelStatusResult
+        modelStatusResult,
+        deviceAccessResult
       ] = await Promise.all([
         settleStatusPayloadFromOpenClaw(45_000),
         settleGatewayStatusPayloadFromOpenClaw(45_000),
         settleAgentConfigFromStateFile(openClawStateRootPath),
         settleConfiguredModelIdsFromStateFile(openClawStateRootPath),
-        settleModelStatusPayloadFromOpenClaw(45_000)
+        settleModelStatusPayloadFromOpenClaw(45_000),
+        settleDeviceAccessPayloadFromOpenClaw(10_000)
       ]);
       agentsResult = createDeferredPayloadResult();
       modelsResult = createDeferredPayloadResult();
@@ -380,6 +390,7 @@ async function loadMissionControlSnapshots({
       sessionsResult.status === "fulfilled" ||
       runtimeSnapshotResult.status === "fulfilled" ||
       updateStatusResult.status === "fulfilled" ||
+      deviceAccessResult.status === "fulfilled" ||
       presenceResult.status === "fulfilled";
     const runtimeDiagnosticsPromise = buildMissionControlRuntimeDiagnostics(
       agentsList.map((agent) => ({
@@ -459,10 +470,12 @@ async function loadMissionControlSnapshots({
       models,
       agents,
       modelStatus,
+      deviceAccess: deviceAccessResult.status === "fulfilled" ? deviceAccessResult.value : undefined,
       payloadResults: {
         gatewayStatus: gatewayStatusResult,
         status: statusResult,
         updateStatus: updateStatusResult,
+        deviceAccess: deviceAccessResult,
         agents: agentsResult,
         agentConfig: agentConfigResult,
         models: modelsResult,

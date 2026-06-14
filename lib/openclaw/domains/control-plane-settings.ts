@@ -7,6 +7,7 @@ import type {
   OpenClawRuntimeSmokeTest,
   OpenClawSmokeTestCheck
 } from "@/lib/agentos/contracts";
+import type { RuntimeIssueState } from "@/lib/openclaw/runtime-issues";
 import {
   buildOpenAiCodexAuthLoginCommand,
   isOpenAiCodexAuthFailure,
@@ -40,6 +41,7 @@ export type ConfigUpdatePacingSettings = {
 export type MissionControlSettings = {
   workspaceRoot?: string;
   configUpdatePacing?: ConfigUpdatePacingSettings;
+  runtimeIssues?: Record<string, RuntimeIssueState>;
   runtimePreflight?: {
     smokeTests?: Record<string, RuntimeSmokeTestCacheEntry>;
   };
@@ -135,16 +137,46 @@ export async function readMissionControlSettings(): Promise<MissionControlSettin
     );
     const compatibilitySmokeTest = normalizeCompatibilitySmokeTest(parsed.compatibilitySmokeTest);
     const configUpdatePacing = normalizeConfigUpdatePacingSettings(parsed.configUpdatePacing);
+    const runtimeIssues = normalizeRuntimeIssueState(parsed.runtimeIssues);
 
     return {
       ...(workspaceRoot ? { workspaceRoot } : {}),
       ...(configUpdatePacing ? { configUpdatePacing } : {}),
+      ...(runtimeIssues ? { runtimeIssues } : {}),
       ...(runtimePreflight ? { runtimePreflight } : {}),
       ...(compatibilitySmokeTest ? { compatibilitySmokeTest } : {})
     };
   } catch {
     return {};
   }
+}
+
+export async function updateRuntimeIssueState(
+  issueId: string,
+  updater: (current: RuntimeIssueState | undefined) => RuntimeIssueState | null
+) {
+  const id = issueId.trim();
+  if (!id) {
+    throw new Error("Runtime issue id is required.");
+  }
+
+  const settings = await readMissionControlSettings();
+  const currentIssues = settings.runtimeIssues ?? {};
+  const nextIssue = updater(currentIssues[id]);
+  const nextIssues = { ...currentIssues };
+
+  if (nextIssue) {
+    nextIssues[id] = nextIssue;
+  } else {
+    delete nextIssues[id];
+  }
+
+  await writeMissionControlSettings({
+    ...settings,
+    runtimeIssues: Object.keys(nextIssues).length > 0 ? nextIssues : undefined
+  });
+
+  return nextIssue;
 }
 
 export function normalizeConfigUpdatePacingSettings(value: unknown): ConfigUpdatePacingSettings | undefined {
@@ -228,6 +260,76 @@ function normalizeConfigUpdatePacingMode(value: unknown): ConfigUpdatePacingMode
   return value === "fast-local-testing" || value === "custom" || value === "respect-gateway"
     ? value
     : defaultConfigUpdatePacingMode;
+}
+
+function normalizeRuntimeIssueState(value: unknown): Record<string, RuntimeIssueState> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const output: Record<string, RuntimeIssueState> = {};
+  for (const [id, entry] of Object.entries(value)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+
+    const record = entry as Record<string, unknown>;
+    const status = normalizeRuntimeIssueStatus(record.status);
+    if (!status) {
+      continue;
+    }
+
+    output[id] = {
+      id,
+      status,
+      type: normalizeString(record.type),
+      source: normalizeString(record.source),
+      severity: normalizeString(record.severity),
+      title: normalizeString(record.title),
+      message: normalizeString(record.message),
+      requestId: normalizeString(record.requestId),
+      requestedScopes: normalizeStringArray(record.requestedScopes),
+      approvedScopes: normalizeStringArray(record.approvedScopes),
+      command: normalizeString(record.command),
+      recoveryCommand: normalizeString(record.recoveryCommand),
+      fallbackCommand: normalizeString(record.fallbackCommand),
+      inspectCommand: normalizeString(record.inspectCommand),
+      createdAt: normalizeString(record.createdAt),
+      updatedAt: normalizeString(record.updatedAt),
+      resolvedAt: normalizeString(record.resolvedAt),
+      dismissedAt: normalizeString(record.dismissedAt),
+      rawOutput: normalizeString(record.rawOutput),
+      errorMessage: normalizeString(record.errorMessage)
+    } as RuntimeIssueState;
+  }
+
+  return Object.keys(output).length > 0 ? output : undefined;
+}
+
+function normalizeRuntimeIssueStatus(value: unknown): RuntimeIssueState["status"] | null {
+  return value === "open" ||
+    value === "resolving" ||
+    value === "resolved" ||
+    value === "dismissed" ||
+    value === "failed"
+    ? value
+    : null;
+}
+
+function normalizeString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const values = value
+    .map((entry) => normalizeString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+
+  return values.length > 0 ? values : undefined;
 }
 
 function normalizeConfigUpdatePacingIntervalMs(value: unknown) {

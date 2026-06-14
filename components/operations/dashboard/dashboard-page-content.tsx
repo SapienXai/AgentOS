@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -23,6 +23,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { RuntimeIssuesCard } from "@/components/runtime/runtime-inbox";
 import type { MissionControlSnapshot, WorkspaceRecord } from "@/lib/agentos/contracts";
 import { compactPath, formatRelativeTime, formatTokens, resolveRelativeTimeReferenceMs } from "@/lib/openclaw/presenters";
 import {
@@ -57,7 +58,8 @@ export function DashboardPageContent({
   activeWorkspaceId,
   connectionState,
   surfaceTheme,
-  refresh
+  refresh,
+  setSnapshot
 }: {
   snapshot: MissionControlSnapshot;
   rootSnapshot: MissionControlSnapshot;
@@ -66,6 +68,7 @@ export function DashboardPageContent({
   connectionState: "connecting" | "live" | "retrying";
   surfaceTheme: "dark" | "light";
   refresh: () => Promise<void>;
+  setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
 }) {
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const agents = useMemo(() => buildAgentViews(snapshot), [snapshot]);
@@ -339,6 +342,17 @@ export function DashboardPageContent({
                     ) : null}
                   </div>
                 )}
+              </div>
+            </SectionCard>
+
+            <SectionCard title="Runtime Issues">
+              <div className="p-3">
+                <RuntimeIssuesCard
+                  snapshot={rootSnapshot}
+                  surfaceTheme={surfaceTheme}
+                  onSnapshotChange={setSnapshot}
+                  onRefresh={refresh}
+                />
               </div>
             </SectionCard>
           </div>

@@ -1,5 +1,6 @@
 import type { OpenClawCompatibilityReport } from "@/lib/openclaw/compat/types";
 import type { ConfigUpdatePacingSnapshot } from "@/lib/openclaw/config-pacing-types";
+import type { RuntimeIssue } from "@/lib/openclaw/runtime-issues";
 
 export type DiagnosticHealth = "healthy" | "degraded" | "offline";
 export type OpenClawBinarySelectionMode = "auto" | "local-prefix" | "global-path" | "custom";
@@ -304,6 +305,7 @@ export interface GatewayDiagnostics {
   eventBridge?: OpenClawEventBridgeStreamStatus;
   commandHistory?: OpenClawCommandDiagnostic[];
   transport?: import("@/lib/openclaw/client/types").OpenClawGatewayClientDiagnostics;
+  runtimeIssues: RuntimeIssue[];
   securityWarnings: string[];
   issues: string[];
 }

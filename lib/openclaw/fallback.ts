@@ -91,6 +91,7 @@ function createTransientSnapshot(
         },
         issues: [reason]
       },
+      runtimeIssues: [],
       securityWarnings: [],
       issues: [reason]
     },
@@ -205,6 +206,7 @@ export function createFallbackSnapshot(reason: string): MissionControlSnapshot {
         },
         issues: [reason]
       },
+      runtimeIssues: [],
       securityWarnings: [],
       issues: [reason]
     },

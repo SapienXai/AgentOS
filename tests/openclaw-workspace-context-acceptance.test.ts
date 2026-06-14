@@ -428,6 +428,7 @@ function createSnapshot(input: {
         },
         issues: []
       },
+      runtimeIssues: [],
       securityWarnings: [],
       issues: []
     },

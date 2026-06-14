@@ -21,6 +21,11 @@ import {
   touchOpenClawRuntimeStateAccess
 } from "@/lib/openclaw/application/runtime-service";
 import {
+  approveRuntimeIssue,
+  dismissRuntimeIssue,
+  inspectRuntimeIssueDevices
+} from "@/lib/openclaw/application/runtime-issue-service";
+import {
   generateGatewayNativeAuthToken,
   getCrossAgentMessageSettings,
   getGatewayNativeAuthStatus,
@@ -61,6 +66,7 @@ export const getMissionControlSnapshot = getControlPlaneSnapshot;
 
 export {
   abortMissionTask,
+  approveRuntimeIssue,
   bindWorkspaceChannelAgent,
   clearMissionControlCaches,
   controlRunningTaskSession,
@@ -72,6 +78,7 @@ export {
   deleteWorkspaceChannelEverywhere,
   deleteWorkspaceProject,
   disconnectWorkspaceChannel,
+  dismissRuntimeIssue,
   discoverDiscordRoutes,
   discoverSurfaceRoutes,
   discoverTelegramGroups,
@@ -83,6 +90,7 @@ export {
   getGatewayNativeAuthStatus,
   getRuntimeOutput,
   getTaskDetail,
+  inspectRuntimeIssueDevices,
   readWorkspaceEditSeed,
   reconcileWorkspaceSurfaceBindings,
   repairGatewayNativeDeviceAccess,

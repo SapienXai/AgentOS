@@ -18,6 +18,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { RuntimeIssueIndicator } from "@/components/runtime/runtime-inbox";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
 
@@ -59,13 +60,15 @@ export function OperationsTopBar({
   connectionState,
   surfaceTheme,
   onRefresh,
-  onToggleTheme
+  onToggleTheme,
+  onSnapshotChange
 }: {
   snapshot: MissionControlSnapshot;
   connectionState: "connecting" | "live" | "retrying";
   surfaceTheme: OperationsSurfaceTheme;
   onRefresh: () => void;
   onToggleTheme: () => void;
+  onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
 }) {
   const version = snapshot.diagnostics.version ?? snapshot.diagnostics.latestVersion ?? "unknown";
   const streamLive = connectionState === "live";
@@ -90,6 +93,12 @@ export function OperationsTopBar({
         />
         {label}
       </span>
+      <RuntimeIssueIndicator
+        snapshot={snapshot}
+        surfaceTheme={surfaceTheme}
+        onSnapshotChange={onSnapshotChange}
+        onRefresh={onRefresh}
+      />
       <IconButton ariaLabel="Refresh status" icon={Clock3} surfaceTheme={surfaceTheme} onClick={onRefresh} />
       <IconButton
         ariaLabel={surfaceTheme === "light" ? "Switch to dark theme" : "Switch to light theme"}

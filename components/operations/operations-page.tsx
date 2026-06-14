@@ -32,6 +32,7 @@ export function OperationsPage({
               connectionState={context.connectionState}
               surfaceTheme={context.surfaceTheme}
               refresh={context.refresh}
+              setSnapshot={context.setSnapshot}
             />
           );
         }

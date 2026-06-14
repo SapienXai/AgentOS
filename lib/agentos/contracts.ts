@@ -57,6 +57,14 @@ export type RuntimeSnapshotRecord = {
 };
 
 export type {
+  RuntimeIssue,
+  RuntimeIssueSeverity,
+  RuntimeIssueSource,
+  RuntimeIssueStatus,
+  RuntimeIssueType
+} from "@/lib/openclaw/runtime-issues";
+
+export type {
   AddModelsCatalogModel,
   AddModelsEmptyState,
   AddModelsFlowState,

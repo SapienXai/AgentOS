@@ -173,6 +173,7 @@ export interface OpenClawAdapter {
     action: "start" | "stop" | "restart",
     options?: OpenClawGatewayControlOptions
   ): Promise<Record<string, unknown>>;
+  listDeviceAccess?(options?: OpenClawCommandOptions): Promise<import("@/lib/openclaw/client/types").OpenClawDeviceListPayload>;
   approveDeviceAccess(input?: OpenClawDeviceApproveInput, options?: OpenClawCommandOptions): Promise<OpenClawDeviceApprovePayload>;
   call<TPayload>(
     method: string,
@@ -444,6 +445,15 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
 
   controlGateway(action: "start" | "stop" | "restart", options: OpenClawCommandOptions & { force?: boolean } = {}) {
     return this.getClient().controlGateway(action, options);
+  }
+
+  listDeviceAccess(options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (client.listDeviceAccess) {
+      return client.listDeviceAccess(options);
+    }
+
+    return client.call<import("@/lib/openclaw/client/types").OpenClawDeviceListPayload>("device.pair.list", {}, options);
   }
 
   approveDeviceAccess(input: OpenClawDeviceApproveInput = {}, options: OpenClawCommandOptions = {}) {

@@ -9,6 +9,7 @@ import {
   MissionControlShellSettingsPanel,
   type MissionControlShellSettingsPanelProps
 } from "@/components/mission-control/mission-control-shell.settings";
+import { RuntimeIssueIndicator } from "@/components/runtime/runtime-inbox";
 import {
   resolveDiagnosticHealthBadgeClasses,
   resolveDiagnosticHealthDotClasses,
@@ -23,6 +24,8 @@ type CanvasTopBarProps = MissionControlShellSettingsPanelProps & {
   isSettingsOpen: boolean;
   onToggleTheme: () => void;
   onToggleSettings: () => void;
+  onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
+  onRefresh?: () => Promise<void> | void;
 };
 
 export function CanvasTitlePill({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
@@ -86,6 +89,8 @@ export function CanvasTopBar({
   isSettingsOpen,
   onToggleTheme,
   onToggleSettings,
+  onSnapshotChange,
+  onRefresh,
   ...settingsPanelProps
 }: CanvasTopBarProps) {
   const { snapshot, surfaceTheme } = settingsPanelProps;
@@ -193,6 +198,12 @@ export function CanvasTopBar({
               {isCliFallbackActive ? <CliFallbackInfoTooltip surfaceTheme={surfaceTheme} /> : null}
             </span>
           )}
+          <RuntimeIssueIndicator
+            snapshot={snapshot}
+            surfaceTheme={surfaceTheme}
+            onSnapshotChange={onSnapshotChange}
+            onRefresh={onRefresh}
+          />
           <button
             type="button"
             role="switch"

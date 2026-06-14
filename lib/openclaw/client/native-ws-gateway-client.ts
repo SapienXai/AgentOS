@@ -127,6 +127,7 @@ import type {
   OpenClawDescribeSessionInput,
   OpenClawDeviceApproveInput,
   OpenClawDeviceApprovePayload,
+  OpenClawDeviceListPayload,
   OpenClawExecApprovalListInput,
   OpenClawExecApprovalListPayload,
   OpenClawExecApprovalResolveInput,
@@ -916,6 +917,16 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     return this.fallback.controlGateway(action, options).finally(() => {
       this.close(`gateway.${action}.completed`);
     });
+  }
+
+  listDeviceAccess(options: OpenClawCommandOptions = {}): Promise<OpenClawDeviceListPayload> {
+    return this.gatewayFirstCompatible(
+      "devicePairList",
+      {},
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawDeviceListPayload>("device.pair.list", payload),
+      () => this.fallback.listDeviceAccess?.(options) ?? this.fallback.call<OpenClawDeviceListPayload>("device.pair.list", {}, options)
+    );
   }
 
   async approveDeviceAccess(

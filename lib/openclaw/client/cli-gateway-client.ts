@@ -45,6 +45,7 @@ import type {
   OpenClawDescribeSessionInput,
   OpenClawDeviceApproveInput,
   OpenClawDeviceApprovePayload,
+  OpenClawDeviceListPayload,
   OpenClawExecApprovalListInput,
   OpenClawExecApprovalListPayload,
   OpenClawExecApprovalResolveInput,
@@ -692,6 +693,10 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
     args.push("--json");
 
     return runOpenClawJson<Record<string, unknown>>(args, options);
+  }
+
+  listDeviceAccess(options: OpenClawCommandOptions = {}): Promise<OpenClawDeviceListPayload> {
+    return runOpenClawJson<OpenClawDeviceListPayload>(["devices", "list", "--json"], options);
   }
 
   async approveDeviceAccess(

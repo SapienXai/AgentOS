@@ -65,6 +65,7 @@ export type MissionControlShellSettingsPanelProps = {
   onOpenUpdateDialog: (targetVersion?: string, mode?: "recommended" | "candidate" | "advanced") => void;
   onRollbackOpenClaw: () => void;
   onOpenResetDialog: (target: ResetTarget) => void;
+  onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
   openClawBinarySelection: OpenClawBinarySelection;
   isSavingOpenClawBinary: boolean;
   onOpenClawBinarySelectionModeChange: (value: OpenClawBinarySelection["mode"]) => void;

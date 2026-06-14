@@ -278,6 +278,7 @@ export function OperationsShell({
             onRefresh={() => {
               void refresh();
             }}
+            onSnapshotChange={setSnapshot}
             onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
           />
           {children({

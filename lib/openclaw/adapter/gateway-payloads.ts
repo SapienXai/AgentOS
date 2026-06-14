@@ -4,6 +4,7 @@ import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import type {
   GatewayStatusPayload,
   ModelsStatusPayload,
+  OpenClawDeviceListPayload,
   OpenClawUpdateStatusPayload,
   StatusPayload
 } from "@/lib/openclaw/client/gateway-client";
@@ -55,6 +56,29 @@ export async function settleGatewayStatusPayloadFromOpenClaw(
 ): Promise<PromiseSettledResult<GatewayStatusPayload>> {
   try {
     const value = await adapter.getGatewayStatus({ timeoutMs });
+
+    return {
+      status: "fulfilled",
+      value
+    };
+  } catch (error) {
+    return {
+      status: "rejected",
+      reason: error
+    };
+  }
+}
+
+export async function settleDeviceAccessPayloadFromOpenClaw(
+  timeoutMs = 5_000,
+  adapter: OpenClawAdapter = getOpenClawAdapter()
+): Promise<PromiseSettledResult<OpenClawDeviceListPayload>> {
+  try {
+    if (!adapter.listDeviceAccess) {
+      throw new Error("OpenClaw device access listing is unavailable in the current adapter.");
+    }
+
+    const value = await adapter.listDeviceAccess({ timeoutMs });
 
     return {
       status: "fulfilled",

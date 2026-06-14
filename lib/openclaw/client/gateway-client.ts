@@ -42,6 +42,7 @@ export type {
   OpenClawDescribeSessionInput,
   OpenClawDeviceApproveInput,
   OpenClawDeviceApprovePayload,
+  OpenClawDeviceListPayload,
   OpenClawExecApprovalListInput,
   OpenClawExecApprovalListPayload,
   OpenClawExecApprovalResolveInput,

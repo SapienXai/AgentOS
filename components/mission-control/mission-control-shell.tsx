@@ -3203,6 +3203,7 @@ export function MissionControlShell({
     onOpenResetDialog: (target) => {
       void openResetDialog(target);
     },
+    onSnapshotChange: setSnapshot,
     openClawBinarySelection: openClawBinarySelectionDraft,
     isSavingOpenClawBinary,
     onOpenClawBinarySelectionModeChange: handleOpenClawBinarySelectionModeChange,
@@ -3519,6 +3520,8 @@ export function MissionControlShell({
               setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))
             }
             onToggleSettings={() => setIsSettingsOpen((current) => !current)}
+            onSnapshotChange={setSnapshot}
+            onRefresh={refresh}
             {...settingsPanelProps}
           />
         </div>
@@ -3685,6 +3688,8 @@ export function MissionControlShell({
             setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))
           }
           onToggleSettings={() => setIsSettingsOpen((current) => !current)}
+          onSnapshotChange={setSnapshot}
+          onRefresh={refresh}
           {...settingsPanelProps}
         />
       </div>

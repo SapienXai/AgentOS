@@ -1136,6 +1136,7 @@ function createSnapshot(): MissionControlSnapshot {
         },
         issues: []
       },
+      runtimeIssues: [],
       securityWarnings: [],
       issues: []
     },

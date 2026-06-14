@@ -29,6 +29,7 @@ import type {
   GatewayStatusPayload,
   ModelsPayload,
   ModelsStatusPayload,
+  OpenClawDeviceListPayload,
   PresencePayload,
   StatusPayload
 } from "@/lib/openclaw/client/gateway-client";
@@ -93,10 +94,12 @@ export async function buildLiveMissionControlDiagnostics(input: {
   models: ModelsPayload["models"];
   agents: OpenClawAgent[];
   modelStatus?: ModelsStatusPayload;
+  deviceAccess?: OpenClawDeviceListPayload;
   payloadResults: {
     gatewayStatus: PromiseSettledResult<GatewayStatusPayload>;
     status: PromiseSettledResult<StatusPayload>;
     updateStatus: PromiseSettledResult<UpdateStatusPayload>;
+    deviceAccess: PromiseSettledResult<OpenClawDeviceListPayload>;
     agents: PromiseSettledResult<AgentPayload>;
     agentConfig: PromiseSettledResult<AgentConfigPayload>;
     models: PromiseSettledResult<ModelsPayload>;
@@ -152,6 +155,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
   return buildGatewayDiagnostics({
     gatewayStatus: input.gatewayStatus,
     status: input.status,
+    deviceAccess: input.deviceAccess,
     configuredWorkspaceRoot: input.configuredWorkspaceRoot,
     workspaceRoot: resolveWorkspaceRoot(input.configuredWorkspaceRoot),
     configuredGatewayUrl: input.configuredGatewayUrl,
@@ -167,6 +171,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
     commandHistory: getRecentOpenClawCommandDiagnostics(),
     transport,
     eventBridge: getOpenClawEventBridgeStreamStatus(),
+    runtimeIssueStates: input.settings.runtimeIssues,
     versionDiagnostics,
     agentOsVersion: await resolveAgentOsVersion(),
     issues: buildDiagnosticIssues({

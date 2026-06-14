@@ -217,6 +217,10 @@ export type OpenClawDeviceApprovePayload = Record<string, unknown> & {
   };
 };
 
+export type OpenClawDeviceListPayload = Record<string, unknown> & {
+  pending?: unknown[];
+};
+
 export type StatusPayload = {
   runtimeVersion?: string;
   version?: string;
@@ -233,6 +237,14 @@ export type StatusPayload = {
       latestVersion?: string | null;
       error?: string | null;
     };
+  };
+  gateway?: {
+    mode?: string;
+    url?: string;
+    urlSource?: string;
+    reachable?: boolean;
+    error?: string | null;
+    authWarning?: string | null;
   };
   securityAudit?: {
     findings?: Array<{ severity?: string; title?: string; detail?: string }>;
@@ -900,6 +912,7 @@ export interface OpenClawGatewayClient {
     action: "start" | "stop" | "restart",
     options?: OpenClawGatewayControlOptions
   ): Promise<Record<string, unknown>>;
+  listDeviceAccess?(options?: OpenClawCommandOptions): Promise<OpenClawDeviceListPayload>;
   approveDeviceAccess(input?: OpenClawDeviceApproveInput, options?: OpenClawCommandOptions): Promise<OpenClawDeviceApprovePayload>;
   call<TPayload>(
     method: string,

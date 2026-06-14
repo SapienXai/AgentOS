@@ -1,5 +1,6 @@
 import type {
   GatewayStatusPayload,
+  OpenClawDeviceListPayload,
   StatusPayload
 } from "@/lib/openclaw/client/gateway-client";
 import { isDeferredPayloadResult } from "@/lib/openclaw/client/payload-cache";
@@ -20,6 +21,10 @@ import type {
   OpenClawCapabilityMatrix,
   OpenClawCommandDiagnostic
 } from "@/lib/openclaw/types";
+import {
+  buildRuntimeIssues,
+  type RuntimeIssueState
+} from "@/lib/openclaw/runtime-issues";
 import {
   resolveOpenClawUpdateCompatibilitySnapshot,
   shouldShowDefaultOpenClawUpdate
@@ -179,6 +184,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function buildGatewayDiagnostics(input: {
   gatewayStatus: GatewayStatusPayload | undefined;
   status: StatusPayload | undefined;
+  deviceAccess?: OpenClawDeviceListPayload;
   configuredWorkspaceRoot: string | null;
   workspaceRoot: string;
   configuredGatewayUrl?: string | null;
@@ -194,6 +200,7 @@ export function buildGatewayDiagnostics(input: {
   commandHistory?: OpenClawCommandDiagnostic[];
   transport?: MissionControlSnapshot["diagnostics"]["transport"];
   eventBridge?: MissionControlSnapshot["diagnostics"]["eventBridge"];
+  runtimeIssueStates?: Record<string, RuntimeIssueState>;
   issues: string[];
   versionDiagnostics: ReturnType<typeof buildVersionDiagnostics>;
   agentOsVersion?: string;
@@ -217,6 +224,35 @@ export function buildGatewayDiagnostics(input: {
       ...input.issues.filter((issue) => !isNativeTimeoutNoiseDuringDeviceAccessRepair(issue))
     ]
     : input.issues;
+  const runtimeIssues = buildRuntimeIssues({
+    status: input.status,
+    deviceAccess: input.deviceAccess,
+    gatewayStatus: input.gatewayStatus,
+    diagnostics: {
+      installed: true,
+      loaded: Boolean(input.gatewayStatus?.service?.loaded),
+      rpcOk: Boolean(input.gatewayStatus?.rpc?.ok),
+      health: resolveDiagnosticHealth({
+        rpcOk: input.gatewayStatus?.rpc?.ok,
+        warningCount: securityWarnings.length,
+        runtimeIssueCount:
+          issues.filter((issue) => !isTransientRefreshIssue(issue)).length +
+          activeGatewayFallbackDiagnostics.filter((entry) => !isNonBlockingUpdateAvailabilityFallback(entry)).length +
+          (input.eventBridge && input.eventBridge.mode !== "live" ? 1 : 0),
+        hasOpenClawSignal: input.hasOpenClawSignal
+      }),
+      transport: input.transport,
+      gatewayFallbackDiagnostics,
+      gatewayFallbackReasons: activeGatewayFallbackDiagnostics.map(
+        (entry) => `${entry.operationLabel} (${entry.operation}): ${entry.kind}: ${entry.issue} Recovery: ${entry.recovery}`
+      ),
+      issues
+    },
+    issues,
+    runtimeIssues: input.runtimeDiagnostics.issues,
+    modelReadinessIssues: input.modelReadiness.issues,
+    states: input.runtimeIssueStates
+  });
   const updateCompatibility = resolveOpenClawUpdateCompatibilitySnapshot({
     agentOsVersion: input.agentOsVersion ?? "0.7.2",
     currentVersion: input.versionDiagnostics.currentVersion,
@@ -272,6 +308,7 @@ export function buildGatewayDiagnostics(input: {
     eventBridge: input.eventBridge,
     commandHistory: input.commandHistory,
     transport: input.transport,
+    runtimeIssues,
     securityWarnings,
     issues
   };
