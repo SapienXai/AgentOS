@@ -45,6 +45,7 @@ let cachedCompatibilityReport: {
   includeLiveShapeChecks: boolean;
   value: OpenClawCompatibilityReport;
 } | null = null;
+let compatibilityReportRefreshPromise: Promise<OpenClawCompatibilityReport> | null = null;
 
 export type OpenClawCompatibilityReportOptions = {
   force?: boolean;
@@ -75,16 +76,30 @@ type NativeCapabilityDetection = {
 
 export function clearOpenClawCompatibilityReportCacheForTesting() {
   cachedCompatibilityReport = null;
+  compatibilityReportRefreshPromise = null;
 }
 
 export function getCachedOpenClawCompatibilityReport() {
-  return cachedCompatibilityReport && Date.now() - cachedCompatibilityReport.capturedAt < compatibilityReportCacheTtlMs
-    ? cachedCompatibilityReport.value
-    : null;
+  if (!cachedCompatibilityReport) {
+    return null;
+  }
+
+  if (Date.now() - cachedCompatibilityReport.capturedAt >= compatibilityReportCacheTtlMs) {
+    warmOpenClawCompatibilityReport();
+  }
+
+  return cachedCompatibilityReport.value;
 }
 
 export function warmOpenClawCompatibilityReport() {
-  void getOpenClawCompatibilityReport().catch(() => {});
+  if (!compatibilityReportRefreshPromise) {
+    compatibilityReportRefreshPromise = getOpenClawCompatibilityReport({ force: true })
+      .finally(() => {
+        compatibilityReportRefreshPromise = null;
+      });
+  }
+
+  void compatibilityReportRefreshPromise.catch(() => {});
 }
 
 export async function getOpenClawCompatibilityReport(

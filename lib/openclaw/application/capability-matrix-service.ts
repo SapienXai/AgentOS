@@ -32,10 +32,12 @@ let cachedCapabilityMatrix: {
   capturedAt: number;
   value: OpenClawCapabilityMatrix;
 } | null = null;
+let capabilityMatrixRefreshPromise: Promise<OpenClawCapabilityMatrix> | null = null;
 let nativeCapabilityCallerForTesting: ((method: string) => Promise<unknown>) | null = null;
 
 export function clearOpenClawCapabilityMatrixCacheForTesting() {
   cachedCapabilityMatrix = null;
+  capabilityMatrixRefreshPromise = null;
   nativeCapabilityCallerForTesting = null;
 }
 
@@ -61,13 +63,26 @@ export async function getOpenClawCapabilityMatrix(options: { force?: boolean } =
 }
 
 export function getCachedOpenClawCapabilityMatrix() {
-  return cachedCapabilityMatrix && Date.now() - cachedCapabilityMatrix.capturedAt < capabilityCacheTtlMs
-    ? cachedCapabilityMatrix.value
-    : null;
+  if (!cachedCapabilityMatrix) {
+    return null;
+  }
+
+  if (Date.now() - cachedCapabilityMatrix.capturedAt >= capabilityCacheTtlMs) {
+    warmOpenClawCapabilityMatrix();
+  }
+
+  return cachedCapabilityMatrix.value;
 }
 
 export function warmOpenClawCapabilityMatrix() {
-  void getOpenClawCapabilityMatrix().catch(() => {});
+  if (!capabilityMatrixRefreshPromise) {
+    capabilityMatrixRefreshPromise = getOpenClawCapabilityMatrix({ force: true })
+      .finally(() => {
+        capabilityMatrixRefreshPromise = null;
+      });
+  }
+
+  void capabilityMatrixRefreshPromise.catch(() => {});
 }
 
 async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatrix> {

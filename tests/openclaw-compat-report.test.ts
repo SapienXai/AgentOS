@@ -3,7 +3,9 @@ import { afterEach, test } from "node:test";
 
 import {
   clearOpenClawCompatibilityReportCacheForTesting,
-  generateOpenClawCompatibilityReport
+  generateOpenClawCompatibilityReport,
+  getCachedOpenClawCompatibilityReport,
+  getOpenClawCompatibilityReport
 } from "@/lib/openclaw/compat";
 import { resolveOpenClawCompatibilityTarget } from "@/lib/openclaw/compat/targets";
 import {
@@ -37,6 +39,32 @@ test("compatibility report marks the stable advertised Gateway contract compatib
   assert.equal(report.contracts.find((check) => check.operation === "models")?.status, "ok");
   assert.equal(report.contracts.find((check) => check.operation === "models")?.responseShapeStatus, "valid");
   assert.ok(report.summary.nativeGatewayCoveragePercent > 50);
+});
+
+test("compatibility report cache keeps stale data while refresh warms", async () => {
+  const gateway = createCompatibilityGateway([
+    ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
+    ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS
+  ]);
+  const originalNow = Date.now;
+  let now = 1_000_000;
+  Date.now = () => now;
+
+  try {
+    const report = await getOpenClawCompatibilityReport({
+      ...baseReportOptions(gateway),
+      force: true,
+      includeLiveShapeChecks: false
+    });
+    now += 120_000;
+
+    const stale = getCachedOpenClawCompatibilityReport();
+
+    assert.equal(stale?.generatedAt, report.generatedAt);
+    assert.equal(stale?.status, "compatible");
+  } finally {
+    Date.now = originalNow;
+  }
 });
 
 test("compatibility report uses version safe defaults when Gateway omits method metadata", async () => {

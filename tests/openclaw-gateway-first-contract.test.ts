@@ -5,6 +5,7 @@ import { afterEach, test } from "node:test";
 
 import {
   clearOpenClawCapabilityMatrixCacheForTesting,
+  getCachedOpenClawCapabilityMatrix,
   getOpenClawCapabilityMatrix,
   setOpenClawCapabilityMatrixNativeCallerForTesting
 } from "@/lib/openclaw/application/capability-matrix-service";
@@ -115,6 +116,31 @@ test("capability matrix detects advertised Gateway-first methods", async () => {
   assert.equal(matrix.compatibility?.methodContract.baselineVersion, OPENCLAW_GATEWAY_BASELINE_VERSION);
   assert.ok(matrix.compatibility?.methodContract.missingOperations.includes("runtimeSnapshot"));
   assert.equal(matrix.compatibility?.methodContract.missingOperations.includes("agentIdentity"), false);
+});
+
+test("capability matrix cache keeps stale data while refresh warms", async () => {
+  const originalNow = Date.now;
+  let now = 1_000_000;
+  Date.now = () => now;
+  setOpenClawAdapterForTesting(createContractAdapter());
+  setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({
+    protocolVersion: 4,
+    auth: { mode: "device", role: "operator", scopes: ["operator.read"] },
+    methods: [...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS],
+    events: []
+  }));
+
+  try {
+    const matrix = await getOpenClawCapabilityMatrix({ force: true });
+    now += 120_000;
+
+    const stale = getCachedOpenClawCapabilityMatrix();
+
+    assert.equal(stale?.detectedAt, matrix.detectedAt);
+    assert.equal(stale?.gatewayProtocolVersion, "4");
+  } finally {
+    Date.now = originalNow;
+  }
 });
 
 test("capability matrix reports fully advertised Gateway method contract without claiming live verification", async () => {
