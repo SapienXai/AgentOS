@@ -238,6 +238,31 @@ AgentOS is Gateway-first on top of OpenClaw. Use `agentos doctor` and the in-app
 
 The 0.7.2 release expects Node.js 24 or newer and the OpenClaw supported baseline from `lib/openclaw/versions.ts`. If compatibility is degraded, update OpenClaw, repair Gateway token/device access, restart the Gateway, and re-run `agentos doctor --deep`.
 
+### Safe OpenClaw Updates
+
+AgentOS does not treat the latest detected OpenClaw version as automatically safe. The Settings -> OpenClaw Update Center prefers the compatibility manifest's certified/recommended version and classifies each target as:
+
+- `certified`: allowed through the normal update path after preflight.
+- `candidate`: visible, but requires explicit operator opt-in.
+- `unknown`: hidden from the normal path and only allowed through advanced risk acceptance.
+- `blocked`: disabled with the manifest reason or required AgentOS upgrade.
+
+Run preflight before applying an update. Preflight does not mutate the active OpenClaw install; it checks the current installed version, recommended baseline, target manifest decision, required AgentOS version, Gateway reachability, protocol compatibility, native method coverage, fallback/degraded/unsupported surfaces, config patch support, model readiness, pending scope issues, Runtime Inbox issues, and rollback metadata. It returns safe checks, warnings, blockers, unknowns, and an exact recommended next action.
+
+The "Test target safely" action is intentionally conservative. Until OpenClaw exposes a stable non-mutating staged target installer/probe command, AgentOS only probes the active binary and compatibility decision, reports that limitation, and never replaces the active OpenClaw binary during the probe.
+
+When an update is applied, AgentOS creates rollback metadata before mutation, including the previous OpenClaw version, binary path, config hash/config snapshot when readable, the compatibility decision, and the preflight summary. Postflight immediately rechecks version, Gateway readiness, compatibility, capability matrix, model readiness, config support, and runtime smoke status. Failed postflight creates a Runtime Inbox issue and triggers rollback where possible. Rollback restores the previous known version/config snapshot and must validate before AgentOS reports success.
+
+Useful local checks:
+
+```bash
+agentos doctor --deep
+pnpm openclaw:compat
+AGENTOS_RUNTIME_SMOKE=1 pnpm smoke:runtime-golden
+```
+
+`AGENTOS_RUNTIME_SMOKE=1 pnpm smoke:runtime-golden` dispatches real OpenClaw work and should only run on a local operator machine with Gateway auth, scopes, model credentials, and runtime state ready.
+
 ### Current Compatibility Notes
 
 - AgentOS uses OpenClaw Gateway-first transport by default. CLI fallback remains explicit and visible for install, recovery, Gateway process control, older or unsupported Gateway methods, malformed responses, scope limits, and unavailable native auth.

@@ -127,3 +127,30 @@ test("runtime issue detector preserves dismissed active issues without duplicati
   assert.equal(issues[0]?.id, id);
   assert.equal(issues[0]?.status, "dismissed");
 });
+
+test("runtime issue detector restores failed OpenClaw update issues from state", () => {
+  const id = "openclaw_postflight_failed:openclaw_cli:2026.6.1";
+  const issues = buildRuntimeIssues({
+    states: {
+      [id]: {
+        id,
+        type: "openclaw_postflight_failed",
+        source: "openclaw_cli",
+        severity: "blocked",
+        title: "OpenClaw postflight failed",
+        message: "Gateway did not become healthy after update.",
+        status: "failed",
+        createdAt: "2026-06-14T09:00:00.000Z",
+        updatedAt: "2026-06-14T09:01:00.000Z",
+        rawOutput: "token=[redacted]"
+      }
+    },
+    now: new Date("2026-06-14T10:00:00.000Z")
+  });
+
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.type, "openclaw_postflight_failed");
+  assert.equal(issues[0]?.source, "openclaw_cli");
+  assert.equal(issues[0]?.severity, "blocked");
+  assert.equal(issues[0]?.status, "failed");
+});

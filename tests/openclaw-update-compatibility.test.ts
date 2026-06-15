@@ -10,6 +10,8 @@ import {
   shouldShowDefaultOpenClawUpdate,
   type OpenClawCompatibilityManifest
 } from "@/lib/openclaw/update-compatibility";
+import { buildOpenClawUpdatePreflightReport } from "@/lib/openclaw/update-safety";
+import type { MissionControlSnapshot } from "@/lib/openclaw/types";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 
 const manifest: OpenClawCompatibilityManifest = {
@@ -134,3 +136,193 @@ test("failed post-update smoke triggers rollback in the update route", () => {
   assert.match(routeSource, /runRollbackOpenClaw\(openClawBin, rollbackSnapshot, send\)/);
   assert.match(routeSource, /Rolled back to the previous working OpenClaw version/);
 });
+
+test("preflight report blocks update when Gateway is not ready", () => {
+  const decision = resolveOpenClawUpdateDecision({
+    manifest,
+    agentOsVersion: "0.7.2",
+    targetVersion: "2026.6.1",
+    mode: "recommended"
+  });
+  const report = buildOpenClawUpdatePreflightReport({
+    snapshot: createUpdateSafetySnapshot({
+      loaded: false,
+      rpcOk: false
+    }),
+    targetVersion: "2026.6.1",
+    decision,
+    rollbackSnapshotAvailable: false,
+    generatedAt: new Date("2026-06-14T10:00:00.000Z")
+  });
+
+  assert.equal(report.canAttemptUpdate, false);
+  assert.equal(report.blockers.some((check) => check.id === "gateway-reachability"), true);
+  assert.match(report.recommendedNextAction, /Do not update yet/);
+});
+
+test("candidate preflight remains attemptable only with explicit opt-in warning", () => {
+  const decision = resolveOpenClawUpdateDecision({
+    manifest,
+    agentOsVersion: "0.7.2",
+    targetVersion: "2026.7.0",
+    mode: "candidate"
+  });
+  const report = buildOpenClawUpdatePreflightReport({
+    snapshot: createUpdateSafetySnapshot({}),
+    targetVersion: "2026.7.0",
+    decision,
+    rollbackSnapshotAvailable: true,
+    generatedAt: new Date("2026-06-14T10:00:00.000Z")
+  });
+
+  assert.equal(report.canAttemptUpdate, true);
+  assert.equal(report.requiresExplicitConfirmation, true);
+  assert.equal(report.warnings.some((check) => check.id === "manifest-decision"), true);
+});
+
+test("update route exposes non-mutating preflight and probe actions", () => {
+  const routeSource = readFileSync(path.join(process.cwd(), "app/api/update/route.ts"), "utf8");
+
+  assert.match(routeSource, /z\.enum\(\["preflight", "probe", "update", "rollback"\]\)/);
+  assert.match(routeSource, /buildOpenClawUpdatePreflightReport/);
+  assert.match(routeSource, /runOpenClawShadowProbe/);
+  assert.match(routeSource, /recordOpenClawUpdateRuntimeIssue/);
+  assert.match(routeSource, /redactSecrets\(\{ report \}\)/);
+});
+
+test("rollback snapshot records compatibility summary and config hash", () => {
+  const source = readFileSync(path.join(process.cwd(), "lib/openclaw/update-rollback.ts"), "utf8");
+
+  assert.match(source, /configHash/);
+  assert.match(source, /createHash\("sha256"\)/);
+  assert.match(source, /compatibilitySummary/);
+  assert.match(source, /decision: input\.decision/);
+});
+
+function createUpdateSafetySnapshot(input: {
+  loaded?: boolean;
+  rpcOk?: boolean;
+}): MissionControlSnapshot {
+  return {
+    diagnostics: {
+      installed: true,
+      loaded: input.loaded ?? true,
+      rpcOk: input.rpcOk ?? true,
+      health: "healthy",
+      version: "2026.4.2",
+      latestVersion: "2026.6.1",
+      workspaceRoot: "/tmp/agentos",
+      configuredWorkspaceRoot: null,
+      dashboardUrl: "http://127.0.0.1:3000",
+      gatewayUrl: "ws://127.0.0.1:18789",
+      configuredGatewayUrl: null,
+      openClawBinarySelection: {
+        mode: "auto",
+        path: null,
+        resolvedPath: "openclaw",
+        source: "auto",
+        issue: null
+      },
+      modelReadiness: {
+        ready: true,
+        issues: [],
+        defaultModel: "gpt-5",
+        resolvedDefaultModel: "gpt-5",
+        preferredLoginProvider: null,
+        availableModelCount: 1,
+        totalModelCount: 1
+      },
+      capabilityMatrix: {
+        detectedAt: "2026-06-14T10:00:00.000Z",
+        openClawVersion: "2026.4.2",
+        gatewayProtocolVersion: "1",
+        authMode: "local-token",
+        supportedMethods: [],
+        configSchema: "supported",
+        configPatch: "supported",
+        chatEvents: "supported",
+        missionDispatch: "supported",
+        taskFeed: "supported",
+        configRead: "supported",
+        diagnosticsRead: "supported",
+        nativeMissionDispatch: "supported",
+        nativeAgentLifecycle: "supported",
+        eventBridge: "supported",
+        compatibility: {
+          protocol: {
+            status: "compatible",
+            connectedVersion: 1,
+            requestedRange: { min: 1, max: 1 },
+            reason: "ok"
+          },
+          methodContract: {
+            status: "ok",
+            requiredMethodCount: 0,
+            supportedRequiredMethodCount: 0,
+            missingRequiredMethods: [],
+            missingMethodCount: 0
+          },
+          nativeOperationCount: 0,
+          cliFallbackOperationCount: 0,
+          unsupportedOperationCount: 0,
+          degradedOperations: [],
+          aliasOperations: []
+        },
+        degradedFeatures: [],
+        fallbackDiagnostics: [],
+        fallbackReasons: [],
+        unsupportedGatewayMethods: [],
+        diagnostics: []
+      },
+      compatibilityReport: null,
+      configUpdatePacing: {
+        settings: {
+          mode: "respect-gateway",
+          minimumIntervalMs: null
+        },
+        effectiveMinimumIntervalMs: 10_000,
+        staleCacheAllowed: true,
+        cacheState: "fresh",
+        cooldownUntil: null,
+        lastRefreshAt: null,
+        nextRefreshAt: null,
+        reason: "ok"
+      },
+      runtime: {
+        status: "unknown",
+        sessions: [],
+        tasks: [],
+        artifacts: [],
+        approvals: []
+      },
+      transport: {
+        mode: "native-ws",
+        gatewayMode: "healthy",
+        statusLabel: "Connected",
+        recovery: null,
+        connectionState: "connected",
+        protocolVersion: 1,
+        protocolRange: { min: 1, max: 1 },
+        fallbackCounts: {},
+        fallbackTotal: 0,
+        recentFallbackDiagnostics: [],
+        lastNativeError: null,
+        lastNativeFailureAt: null,
+        lastConnectedAt: "2026-06-14T10:00:00.000Z",
+        lastDisconnectedAt: null
+      },
+      runtimeIssues: [],
+      securityWarnings: [],
+      issues: []
+    },
+    mode: "live",
+    generatedAt: "2026-06-14T10:00:00.000Z",
+    workspaces: [],
+    agents: [],
+    tasks: [],
+    taskGraph: { nodes: [], edges: [] },
+    channels: [],
+    accounts: [],
+    models: []
+  } as unknown as MissionControlSnapshot;
+}

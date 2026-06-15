@@ -7,6 +7,9 @@ export type RuntimeIssueType =
   | "gateway_unreachable"
   | "rate_limit"
   | "plugin_compatibility"
+  | "openclaw_update_failed"
+  | "openclaw_postflight_failed"
+  | "openclaw_rollback_needed"
   | "unknown_runtime_action";
 
 export type RuntimeIssueSource =
@@ -96,6 +99,9 @@ const defaultIssueTypes: RuntimeIssueType[] = [
   "rate_limit",
   "model_auth_required",
   "plugin_compatibility",
+  "openclaw_update_failed",
+  "openclaw_postflight_failed",
+  "openclaw_rollback_needed",
   "unknown_runtime_action"
 ];
 

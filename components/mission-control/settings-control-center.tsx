@@ -52,6 +52,12 @@ import type {
   GatewayNativeAuthStatus
 } from "@/lib/openclaw/gateway-auth";
 import { compactPath } from "@/lib/openclaw/presenters";
+import type {
+  OpenClawShadowProbeReport,
+  OpenClawUpdateCompatibilityMode,
+  OpenClawUpdateDecision,
+  OpenClawUpdateSafetyReport
+} from "@/lib/openclaw/types";
 import { cn } from "@/lib/utils";
 
 const binaryModes: Array<{
@@ -187,6 +193,11 @@ export function SettingsControlCenter(
   );
   const [compatibilitySmokeError, setCompatibilitySmokeError] = useState<string | null>(null);
   const [isRunningCompatibilitySmoke, setIsRunningCompatibilitySmoke] = useState(false);
+  const [updateSafetyReport, setUpdateSafetyReport] = useState<OpenClawUpdateSafetyReport | null>(null);
+  const [shadowProbeReport, setShadowProbeReport] = useState<OpenClawShadowProbeReport | null>(null);
+  const [updateSafetyError, setUpdateSafetyError] = useState<string | null>(null);
+  const [isRunningUpdatePreflight, setIsRunningUpdatePreflight] = useState(false);
+  const [isRunningShadowProbe, setIsRunningShadowProbe] = useState(false);
   const [configUpdatePacing, setConfigUpdatePacing] = useState(() => snapshot.diagnostics.configUpdatePacing);
   const [configUpdatePacingMode, setConfigUpdatePacingMode] = useState(
     () => snapshot.diagnostics.configUpdatePacing.settings.mode
@@ -201,14 +212,39 @@ export function SettingsControlCenter(
   const [settingsHashHydrated, setSettingsHashHydrated] = useState(false);
   const renderedActiveSection = settingsHashHydrated ? activeSection : resolveInitialSettingsSection();
   const updateCompatibility = snapshot.diagnostics.updateCompatibility;
-  const recommendedVersion = updateCompatibility?.recommendedVersion ?? snapshot.diagnostics.latestVersion ?? null;
-  const hasUpdateAvailable = Boolean(snapshot.diagnostics.updateAvailable && recommendedVersion);
+  const currentVersion = snapshot.diagnostics.version || "unknown";
+  const updateInfo = snapshot.diagnostics.updateInfo?.trim() || null;
+  const latestVersion =
+    updateCompatibility?.latestDecision?.version ??
+    resolveLatestVersionFromUpdateInfo(updateInfo) ??
+    snapshot.diagnostics.latestVersion ??
+    null;
+  const recommendedVersion = updateCompatibility?.recommendedVersion ?? null;
+  const normalizedCurrentVersion = normalizeUpdateVersion(currentVersion);
+  const normalizedRecommendedVersion = normalizeUpdateVersion(recommendedVersion);
+  const normalizedLatestVersion = normalizeUpdateVersion(latestVersion);
+  const hasCertifiedUpdateAvailable = Boolean(
+    updateCompatibility?.recommendedDecision.allowed &&
+      normalizedRecommendedVersion &&
+      normalizedRecommendedVersion !== normalizedCurrentVersion
+  );
+  const hasRegistryUpdateAvailable = Boolean(
+    normalizedLatestVersion &&
+      normalizedLatestVersion !== normalizedCurrentVersion
+  );
+  const defaultUpdateTargetVersion =
+    hasCertifiedUpdateAvailable && recommendedVersion
+      ? recommendedVersion
+      : hasRegistryUpdateAvailable && latestVersion
+        ? latestVersion
+        : recommendedVersion ?? latestVersion ?? undefined;
+  const defaultUpdateMode =
+    hasCertifiedUpdateAvailable
+      ? "recommended"
+      : resolveUpdateDecisionMode(updateCompatibility?.latestDecision);
   const isUpdateRegistryLoading = Boolean(
     snapshot.diagnostics.version && !recommendedVersion && !snapshot.diagnostics.updateError
   );
-  const currentVersion = snapshot.diagnostics.version || "unknown";
-  const latestVersion = recommendedVersion;
-  const updateInfo = snapshot.diagnostics.updateInfo?.trim() || null;
   const updateError = snapshot.diagnostics.updateError?.trim() || null;
   const defaultModel =
     snapshot.diagnostics.modelReadiness.resolvedDefaultModel ||
@@ -258,6 +294,78 @@ export function SettingsControlCenter(
       ? "Authenticated"
       : formatGatewayAuthIssue(gatewayAuthStatus.native.kind)
     : "Unknown";
+
+  const runUpdatePreflight = async (
+    targetVersion = defaultUpdateTargetVersion,
+    mode: OpenClawUpdateCompatibilityMode = defaultUpdateMode
+  ) => {
+    setIsRunningUpdatePreflight(true);
+    setUpdateSafetyError(null);
+    setUpdateSafetyReport(null);
+
+    try {
+      const response = await fetch("/api/update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        cache: "no-store",
+        body: JSON.stringify({
+          action: "preflight",
+          targetVersion,
+          mode
+        })
+      });
+
+      if (!response.ok) {
+        const result = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(result?.error || "OpenClaw update preflight failed.");
+      }
+
+      const result = (await response.json()) as { report: OpenClawUpdateSafetyReport };
+      setUpdateSafetyReport(result.report);
+    } catch (error) {
+      setUpdateSafetyError(error instanceof Error ? error.message : "Unable to run OpenClaw update preflight.");
+    } finally {
+      setIsRunningUpdatePreflight(false);
+    }
+  };
+
+  const runShadowProbe = async (
+    targetVersion = defaultUpdateTargetVersion,
+    mode: OpenClawUpdateCompatibilityMode = defaultUpdateMode
+  ) => {
+    setIsRunningShadowProbe(true);
+    setUpdateSafetyError(null);
+    setShadowProbeReport(null);
+
+    try {
+      const response = await fetch("/api/update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        cache: "no-store",
+        body: JSON.stringify({
+          action: "probe",
+          targetVersion,
+          mode
+        })
+      });
+
+      if (!response.ok) {
+        const result = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(result?.error || "OpenClaw shadow probe failed.");
+      }
+
+      const result = (await response.json()) as { report: OpenClawShadowProbeReport };
+      setShadowProbeReport(result.report);
+    } catch (error) {
+      setUpdateSafetyError(error instanceof Error ? error.message : "Unable to test OpenClaw target safely.");
+    } finally {
+      setIsRunningShadowProbe(false);
+    }
+  };
 
   useEffect(() => {
     const snapshotReport = snapshot.diagnostics.compatibilitySmokeTest;
@@ -712,21 +820,62 @@ export function SettingsControlCenter(
                     <Metric
                       label="Recommended"
                       value={recommendedVersion ? `v${recommendedVersion}` : "Unknown"}
-                      badge={updateCompatibility?.recommendedDecision.status ?? (hasUpdateAvailable ? "Update" : "Stable")}
+                      badge={updateCompatibility?.recommendedDecision.status ?? (hasRegistryUpdateAvailable ? "Update" : "Stable")}
                       surfaceTheme={surfaceTheme}
                       dark={surfaceTheme === "dark"}
+                    />
+                  </div>
+
+                  <div className={cn("mt-4 rounded-[18px] border p-3.5", insetPanelClassName(surfaceTheme))}>
+                    <p className={labelClassName(surfaceTheme)}>Current OpenClaw state</p>
+                    <InfoRows
+                      surfaceTheme={surfaceTheme}
+                      rows={[
+                        ["Latest detected", latestVersion ? `v${latestVersion}` : "Unknown"],
+                        ["Gateway reachability", snapshot.diagnostics.loaded && snapshot.diagnostics.rpcOk ? "Reachable" : "Not ready"],
+                        ["Native Gateway protocol", transportSummary.protocolLabel],
+                        ["Auth/scopes", nativeAuthLabel],
+                        ["Model readiness", snapshot.diagnostics.modelReadiness.ready ? "Ready" : snapshot.diagnostics.modelReadiness.issues[0] ?? "Unknown"],
+                        ["Native Gateway coverage", compatibilityReport ? `${compatibilityReport.summary.nativeGatewayCoveragePercent}% (${compatibilityReport.summary.nativeGatewayCoverageLabel})` : "Unknown"],
+                        ["CLI fallback count", String(transportSummary.fallbackTotal)],
+                        ["Runtime issues", `${snapshot.diagnostics.runtimeIssues.length} visible`]
+                      ]}
                     />
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Button
                       type="button"
+                      variant="secondary"
+                      onClick={() => void runUpdatePreflight(defaultUpdateTargetVersion, defaultUpdateMode)}
+                      disabled={!defaultUpdateTargetVersion || isRunningUpdatePreflight || updateRunState === "running"}
+                      className={secondaryButtonClassName(surfaceTheme, "px-4")}
+                    >
+                      {isRunningUpdatePreflight ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ListChecks className="h-3.5 w-3.5" />}
+                      Run preflight
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => void runShadowProbe(defaultUpdateTargetVersion, defaultUpdateMode)}
+                      disabled={!defaultUpdateTargetVersion || isRunningShadowProbe || updateRunState === "running"}
+                      className={secondaryButtonClassName(surfaceTheme, "px-4")}
+                    >
+                      {isRunningShadowProbe ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                      Test target safely
+                    </Button>
+                    <Button
+                      type="button"
                       onClick={() => onOpenUpdateDialog(recommendedVersion ?? undefined, "recommended")}
-                      disabled={!hasUpdateAvailable || updateRunState === "running"}
+                      disabled={
+                        !hasCertifiedUpdateAvailable ||
+                        updateRunState === "running" ||
+                        Boolean(updateSafetyReport && !updateSafetyReport.canAttemptUpdate)
+                      }
                       className="h-9 rounded-full bg-primary px-4 text-xs text-primary-foreground hover:bg-primary/90"
                     >
                       {updateRunState === "running" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="h-3.5 w-3.5" />}
-                      Update to recommended
+                      Update to certified
                     </Button>
                     <Button
                       type="button"
@@ -757,15 +906,42 @@ export function SettingsControlCenter(
                       <RotateCcw className="h-3.5 w-3.5" />
                       Rollback to last working OpenClaw
                     </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        window.location.hash = "diagnostics";
+                        setActiveSection("diagnostics");
+                      }}
+                      className={secondaryButtonClassName(surfaceTheme, "px-4")}
+                    >
+                      <TerminalSquare className="h-3.5 w-3.5" />
+                      Open Runtime Inbox
+                    </Button>
                   </div>
+
+                  {updateSafetyError ? (
+                    <p className={cn("mt-3 text-xs leading-5", surfaceTheme === "light" ? "text-rose-700" : "text-rose-200")}>
+                      {updateSafetyError}
+                    </p>
+                  ) : null}
+
+                  <UpdateSafetyPanel
+                    report={updateSafetyReport}
+                    shadowProbeReport={shadowProbeReport}
+                    surfaceTheme={surfaceTheme}
+                  />
 
                   <UpdateRegistryPanel
                     surfaceTheme={surfaceTheme}
                     isCheckingForUpdates={isCheckingForUpdates}
                     isUpdateRegistryLoading={isUpdateRegistryLoading}
-                    hasUpdateAvailable={hasUpdateAvailable}
+                    hasCertifiedUpdateAvailable={hasCertifiedUpdateAvailable}
+                    hasRegistryUpdateAvailable={hasRegistryUpdateAvailable}
                     currentVersion={currentVersion}
+                    recommendedVersion={recommendedVersion}
                     latestVersion={latestVersion}
+                    latestDecision={updateCompatibility?.latestDecision ?? null}
                     updateInfo={updateInfo}
                     updateError={updateError}
                     lastCheckedAt={lastCheckedAt}
@@ -2497,9 +2673,12 @@ function UpdateRegistryPanel({
   surfaceTheme,
   isCheckingForUpdates,
   isUpdateRegistryLoading,
-  hasUpdateAvailable,
+  hasCertifiedUpdateAvailable,
+  hasRegistryUpdateAvailable,
   currentVersion,
+  recommendedVersion,
   latestVersion,
+  latestDecision,
   updateInfo,
   updateError,
   lastCheckedAt,
@@ -2510,9 +2689,12 @@ function UpdateRegistryPanel({
   surfaceTheme: SurfaceTheme;
   isCheckingForUpdates: boolean;
   isUpdateRegistryLoading: boolean;
-  hasUpdateAvailable: boolean;
+  hasCertifiedUpdateAvailable: boolean;
+  hasRegistryUpdateAvailable: boolean;
   currentVersion: string;
+  recommendedVersion: string | null;
   latestVersion: string | null;
+  latestDecision: OpenClawUpdateDecision | null;
   updateInfo: string | null;
   updateError: string | null;
   lastCheckedAt: number | null;
@@ -2525,17 +2707,23 @@ function UpdateRegistryPanel({
     ? "Checking registry"
     : isUpdateRunning
       ? "Updating"
-      : hasUpdateAvailable
-        ? "Recommended update"
+      : hasCertifiedUpdateAvailable
+        ? "Certified update"
+        : hasRegistryUpdateAvailable
+          ? "Latest needs review"
         : updateError
           ? "Check failed"
           : isUpdateRegistryLoading
             ? "Registry loading"
             : "Up to date";
-  const statusToneClass = hasUpdateAvailable
+  const statusToneClass = hasCertifiedUpdateAvailable
     ? surfaceTheme === "light"
       ? "border-emerald-300 bg-emerald-50 text-emerald-700"
       : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
+    : hasRegistryUpdateAvailable
+      ? surfaceTheme === "light"
+        ? "border-amber-300 bg-amber-50 text-amber-700"
+        : "border-amber-300/20 bg-amber-300/10 text-amber-100"
     : updateError
       ? surfaceTheme === "light"
         ? "border-rose-300 bg-rose-50 text-rose-700"
@@ -2552,8 +2740,10 @@ function UpdateRegistryPanel({
     ? "Refreshing OpenClaw update registry..."
     : isUpdateRunning
       ? "Installing the selected OpenClaw update."
-      : hasUpdateAvailable
-        ? "The certified recommended OpenClaw release is ready to install."
+      : hasCertifiedUpdateAvailable
+        ? "A certified recommended OpenClaw release is ready to install."
+        : hasRegistryUpdateAvailable
+          ? "OpenClaw reports a newer latest release, but AgentOS must classify it before it can be applied safely."
         : updateError
           ? "OpenClaw returned an error while checking updates."
           : isUpdateRegistryLoading
@@ -2569,7 +2759,7 @@ function UpdateRegistryPanel({
             {isBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin text-emerald-400" /> : null}
             <p className={cn("font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>{statusLabel}</p>
             <span className={cn("rounded-full border px-2 py-0.5 text-[9px] uppercase tracking-[0.12em]", statusToneClass)}>
-              {hasUpdateAvailable ? "Ready" : isBusy ? "Working" : updateError ? "Attention" : "Stable"}
+              {hasCertifiedUpdateAvailable ? "Certified" : hasRegistryUpdateAvailable ? "Review" : isBusy ? "Working" : updateError ? "Attention" : "Stable"}
             </span>
           </div>
         </div>
@@ -2587,8 +2777,10 @@ function UpdateRegistryPanel({
             "h-full rounded-full transition-all",
             isBusy
               ? "w-1/2 animate-pulse bg-emerald-400/80"
-              : hasUpdateAvailable
+              : hasCertifiedUpdateAvailable
                 ? "w-full bg-emerald-500"
+                : hasRegistryUpdateAvailable
+                  ? "w-4/5 bg-amber-400"
                 : updateError
                   ? "w-2/3 bg-rose-400"
                   : "w-5/6 bg-slate-400/70"
@@ -2596,7 +2788,7 @@ function UpdateRegistryPanel({
         />
       </div>
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
         <Metric
           label="Current version"
           value={`v${currentVersion}`}
@@ -2606,8 +2798,16 @@ function UpdateRegistryPanel({
         />
         <Metric
           label="Recommended"
+          value={recommendedVersion ? `v${recommendedVersion}` : "Unknown"}
+          badge={hasCertifiedUpdateAvailable ? "Ready" : updateError ? "Error" : isBusy || isUpdateRegistryLoading ? "Loading" : "Stable"}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="Latest detected"
           value={latestVersion ? `v${latestVersion}` : "Unknown"}
-          badge={hasUpdateAvailable ? "Ready" : updateError ? "Error" : isBusy || isUpdateRegistryLoading ? "Loading" : "Stable"}
+          badge={latestDecision ? formatUpdateCompatibilityStatus(latestDecision.status) : hasRegistryUpdateAvailable ? "Review" : "Stable"}
           surfaceTheme={surfaceTheme}
           dark={surfaceTheme === "dark"}
           compact
@@ -2631,14 +2831,21 @@ function UpdateRegistryPanel({
             {formatUpdateCompatibilityStatus(updateCompatibility.recommendedDecision.status)}.
           </p>
         ) : null}
+        {latestDecision ? (
+          <p className="mt-1.5 opacity-90">
+            Latest detected status: {formatUpdateCompatibilityStatus(latestDecision.status)}. {latestDecision.reason}
+          </p>
+        ) : null}
         {updateError ? (
           <p className={cn("mt-1.5", surfaceTheme === "light" ? "text-rose-700" : "text-rose-200")}>{updateError}</p>
         ) : null}
-        {hasUpdateAvailable ? (
+        {hasRegistryUpdateAvailable ? (
           <div className="mt-2 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.16em]">
-            <span className={cn("rounded-full border px-2 py-1", statusToneClass)}>Update ready</span>
+            <span className={cn("rounded-full border px-2 py-1", statusToneClass)}>
+              {hasCertifiedUpdateAvailable ? "Certified update ready" : "Latest requires review"}
+            </span>
             <span className={cn("rounded-full border px-2 py-1", mutedTextClassName(surfaceTheme))}>
-              Review before install
+              {latestVersion ? `Latest v${latestVersion}` : "Latest unknown"}
             </span>
           </div>
         ) : null}
@@ -2725,6 +2932,168 @@ function CompatibilityVersionRows({
   );
 }
 
+function UpdateSafetyPanel({
+  report,
+  shadowProbeReport,
+  surfaceTheme
+}: {
+  report: OpenClawUpdateSafetyReport | null;
+  shadowProbeReport: OpenClawShadowProbeReport | null;
+  surfaceTheme: SurfaceTheme;
+}) {
+  if (!report && !shadowProbeReport) {
+    return null;
+  }
+
+  return (
+    <div className="mt-4 grid gap-3">
+      {report ? (
+        <div className={cn("min-w-0 rounded-[18px] border p-3.5", insetPanelClassName(surfaceTheme))}>
+          <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+            <div className="min-w-0">
+              <p className={labelClassName(surfaceTheme)}>Preflight result</p>
+              <h3 className={cn("mt-1 max-w-full break-words text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+                OpenClaw v{report.targetVersion} preflight
+              </h3>
+            </div>
+            <span
+              className={cn(
+                "inline-flex max-w-full justify-self-start rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] sm:justify-self-end",
+                report.canAttemptUpdate
+                  ? surfaceTheme === "light"
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                    : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
+                  : surfaceTheme === "light"
+                    ? "border-rose-300 bg-rose-50 text-rose-700"
+                    : "border-rose-300/20 bg-rose-300/10 text-rose-100"
+              )}
+            >
+              {formatUpdateCompatibilityStatus(report.decision.status)}
+            </span>
+          </div>
+          <InfoRows
+            surfaceTheme={surfaceTheme}
+            rows={[
+              ["Installed now", report.currentVersion ? `v${report.currentVersion}` : "Unknown"],
+              ["Target gate", report.canAttemptUpdate ? "Can be attempted" : "Blocked"],
+              ["Recommended action", report.recommendedNextAction],
+              ["Gateway", report.summary.gatewayReachable ? "Reachable" : "Not ready"],
+              ["Protocol", report.summary.gatewayProtocol],
+              ["Native auth", report.summary.nativeAuth],
+              ["Model readiness", report.summary.modelReadiness],
+              ["Native coverage", report.summary.nativeGatewayCoverage],
+              ["CLI fallback count", String(report.summary.cliFallbackCount)],
+              ["Rollback metadata", report.rollbackSnapshotAvailable ? "Available" : "Will be created before mutation"]
+            ]}
+          />
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            <UpdateSafetyCheckGroup title="Blockers" checks={report.blockers} surfaceTheme={surfaceTheme} tone="blocked" />
+            <UpdateSafetyCheckGroup title="Warnings" checks={report.warnings} surfaceTheme={surfaceTheme} tone="warning" />
+            <UpdateSafetyCheckGroup title="Unknowns" checks={report.unknowns} surfaceTheme={surfaceTheme} tone="unknown" />
+            <UpdateSafetyCheckGroup title="Safe checks" checks={report.safeChecks} surfaceTheme={surfaceTheme} tone="safe" />
+          </div>
+        </div>
+      ) : null}
+
+      {shadowProbeReport ? (
+        <div className={cn("min-w-0 rounded-[18px] border p-3.5", insetPanelClassName(surfaceTheme))}>
+          <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+            <div className="min-w-0">
+              <p className={labelClassName(surfaceTheme)}>Shadow probe</p>
+              <h3 className={cn("mt-1 max-w-full break-words text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+                Target v{shadowProbeReport.targetVersion}
+              </h3>
+            </div>
+            <span className={cn("inline-flex max-w-full justify-self-start rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] sm:justify-self-end", mutedTextClassName(surfaceTheme))}>
+              {shadowProbeReport.supported ? "Staged" : "Limited"}
+            </span>
+          </div>
+          {shadowProbeReport.limitation ? (
+            <p className={cn("mt-2 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-300")}>
+              {shadowProbeReport.limitation}
+            </p>
+          ) : null}
+          <InfoRows
+            surfaceTheme={surfaceTheme}
+            rows={[
+              ["Mutation safety", shadowProbeReport.mutationSafe ? "No active binary change" : "Unknown"],
+              ["Current binary version", shadowProbeReport.currentBinaryVersion ?? "Unknown"],
+              ["Probe command", shadowProbeReport.command ?? "Not available"],
+              ["Next action", shadowProbeReport.recommendedNextAction]
+            ]}
+          />
+          <div className="mt-3 grid gap-2">
+            {shadowProbeReport.checks.map((check) => (
+              <UpdateSafetyCheckRow key={check.id} check={check} surfaceTheme={surfaceTheme} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function UpdateSafetyCheckGroup({
+  title,
+  checks,
+  surfaceTheme,
+  tone
+}: {
+  title: string;
+  checks: OpenClawUpdateSafetyReport["safeChecks"];
+  surfaceTheme: SurfaceTheme;
+  tone: "safe" | "warning" | "blocked" | "unknown";
+}) {
+  if (checks.length === 0) {
+    return (
+      <div className={cn("rounded-[14px] border p-3", insetPanelClassName(surfaceTheme))}>
+        <p className={labelClassName(surfaceTheme)}>{title}</p>
+        <p className={cn("mt-1 text-xs", mutedTextClassName(surfaceTheme))}>None</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("rounded-[14px] border p-3", insetPanelClassName(surfaceTheme))}>
+      <p className={labelClassName(surfaceTheme)}>{title}</p>
+      <div className="mt-2 grid gap-2">
+        {checks.map((check) => (
+          <UpdateSafetyCheckRow key={`${tone}:${check.id}`} check={check} surfaceTheme={surfaceTheme} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function UpdateSafetyCheckRow({
+  check,
+  surfaceTheme
+}: {
+  check: OpenClawUpdateSafetyReport["safeChecks"][number];
+  surfaceTheme: SurfaceTheme;
+}) {
+  const toneClass =
+    check.status === "safe"
+      ? surfaceTheme === "light"
+        ? "bg-emerald-500"
+        : "bg-emerald-300"
+      : check.status === "blocker"
+        ? "bg-rose-500"
+        : check.status === "warning"
+          ? "bg-amber-500"
+          : "bg-slate-400";
+
+  return (
+    <div className="grid grid-cols-[8px_1fr] gap-2">
+      <span className={cn("mt-1.5 h-2 w-2 rounded-full", toneClass)} />
+      <div className="min-w-0">
+        <p className={cn("text-xs font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>{check.label}</p>
+        <p className={cn("mt-0.5 text-[11px] leading-4", mutedTextClassName(surfaceTheme))}>{check.message}</p>
+      </div>
+    </div>
+  );
+}
+
 async function fetchGatewayAuthStatus() {
   const response = await fetch("/api/settings/gateway", {
     method: "GET",
@@ -2798,6 +3167,34 @@ function formatUpdateCompatibilityStatus(value: string) {
     default:
       return "Unknown";
   }
+}
+
+function normalizeUpdateVersion(value: string | null | undefined) {
+  const normalized = value?.trim().replace(/^v/i, "");
+  return normalized || null;
+}
+
+function resolveLatestVersionFromUpdateInfo(value: string | null | undefined) {
+  const text = value?.trim();
+  if (!text) {
+    return null;
+  }
+
+  return normalizeUpdateVersion(text.match(/Update available:\s*v?([0-9][0-9A-Za-z.-]*)/i)?.[1]);
+}
+
+function resolveUpdateDecisionMode(
+  decision: OpenClawUpdateDecision | null | undefined
+): OpenClawUpdateCompatibilityMode {
+  if (decision?.status === "candidate") {
+    return "candidate";
+  }
+
+  if (decision?.status === "unknown") {
+    return "advanced";
+  }
+
+  return "recommended";
 }
 
 function formatManifestSource(value: string) {

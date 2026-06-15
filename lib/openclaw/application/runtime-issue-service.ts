@@ -11,6 +11,8 @@ import {
 import {
   runtimeIssueDedupeId,
   type RuntimeIssue,
+  type RuntimeIssueSeverity,
+  type RuntimeIssueType,
   type RuntimeIssueState
 } from "@/lib/openclaw/runtime-issues";
 import { redactErrorMessage, redactSecretText, redactSecrets } from "@/lib/security/redaction";
@@ -34,6 +36,44 @@ export type RuntimeDeviceRequest = {
   age: string | null;
   recoveryCommand: string | null;
 };
+
+export async function recordOpenClawUpdateRuntimeIssue(input: {
+  type: Extract<RuntimeIssueType, "openclaw_update_failed" | "openclaw_postflight_failed" | "openclaw_rollback_needed">;
+  title: string;
+  message: string;
+  severity?: RuntimeIssueSeverity;
+  targetVersion?: string | null;
+  rawOutput?: string | null;
+  errorMessage?: string | null;
+  recoveryCommand?: string | null;
+  inspectCommand?: string | null;
+}) {
+  const issueId = runtimeIssueDedupeId({
+    type: input.type,
+    source: "openclaw_cli",
+    requestId: input.targetVersion ?? undefined
+  });
+  const now = new Date().toISOString();
+
+  await updateRuntimeIssueState(issueId, (current) => ({
+    ...current,
+    id: issueId,
+    type: input.type,
+    source: "openclaw_cli",
+    severity: input.severity ?? "action_required",
+    title: input.title,
+    message: input.message,
+    status: "failed",
+    createdAt: current?.createdAt ?? now,
+    updatedAt: now,
+    recoveryCommand: input.recoveryCommand ?? current?.recoveryCommand,
+    inspectCommand: input.inspectCommand ?? "openclaw gateway status --deep",
+    rawOutput: input.rawOutput ? redactSecretText(input.rawOutput) : current?.rawOutput,
+    errorMessage: input.errorMessage ? redactErrorMessage(input.errorMessage, input.message) : current?.errorMessage
+  }));
+
+  invalidateMissionControlSnapshotCache();
+}
 
 export async function inspectRuntimeIssueDevices(issueId?: string | null): Promise<{
   issue: RuntimeIssue | null;

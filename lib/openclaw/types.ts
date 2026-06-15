@@ -346,6 +346,58 @@ export interface OpenClawUpdateCompatibilitySnapshot {
   unknownVersions: OpenClawUpdateCompatibilityVersion[];
 }
 
+export type OpenClawUpdateSafetyCheckStatus = "safe" | "warning" | "blocker" | "unknown";
+
+export interface OpenClawUpdateSafetyCheck {
+  id: string;
+  label: string;
+  status: OpenClawUpdateSafetyCheckStatus;
+  message: string;
+}
+
+export interface OpenClawUpdateSafetyReport {
+  generatedAt: string;
+  targetVersion: string;
+  currentVersion: string | null;
+  recommendedVersion: string;
+  supportedBaselineVersion: string;
+  decision: OpenClawUpdateDecision;
+  canAttemptUpdate: boolean;
+  requiresExplicitConfirmation: boolean;
+  rollbackSnapshotAvailable: boolean;
+  recommendedNextAction: string;
+  safeChecks: OpenClawUpdateSafetyCheck[];
+  warnings: OpenClawUpdateSafetyCheck[];
+  blockers: OpenClawUpdateSafetyCheck[];
+  unknowns: OpenClawUpdateSafetyCheck[];
+  summary: {
+    gatewayReachable: boolean;
+    gatewayProtocol: string;
+    nativeAuth: string;
+    modelReadiness: string;
+    nativeGatewayCoverage: string;
+    cliFallbackCount: number;
+    runtimeIssueCount: number;
+    unsupportedOperationCount: number;
+    degradedSurfaceCount: number;
+  };
+}
+
+export interface OpenClawShadowProbeReport {
+  generatedAt: string;
+  targetVersion: string;
+  supported: boolean;
+  mutationSafe: true;
+  ok: boolean;
+  limitation: string | null;
+  command: string | null;
+  currentBinaryVersion: string | null;
+  stdout: string;
+  stderr: string;
+  checks: OpenClawUpdateSafetyCheck[];
+  recommendedNextAction: string;
+}
+
 export interface OpenClawCommandDiagnostic {
   id: string;
   command: string;
@@ -939,7 +991,7 @@ export interface MissionAbortResponse {
 export type OpenClawUpdateStreamEvent =
   | {
       type: "status";
-      phase: "preflight" | "starting" | "refreshing" | "rollback";
+      phase: "preflight" | "probe" | "starting" | "refreshing" | "rollback";
       message: string;
     }
   | {
