@@ -298,6 +298,9 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       protocolRange: OPENCLAW_GATEWAY_PROTOCOL_RANGE,
       fallbackCounts: { ...this.fallbackCounts },
       fallbackTotal,
+      pendingRequestCount: connection.pendingRequestCount,
+      sharedInFlightRequestCount: connection.sharedInFlightRequestCount,
+      cachedReadRequestCount: connection.cachedReadRequestCount,
       recentFallbackDiagnostics,
       lastNativeError: lastNativeError || null,
       lastNativeFailureAt: this.lastNativeFailure?.at ?? null,
@@ -1606,7 +1609,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     policy: OpenClawGatewayRequestPolicy = resolveGatewayRequestPolicy(method, options)
   ) {
     const timeoutMs = resolveNativeTimeoutMs(policy.timeoutMs ?? options.timeoutMs ?? this.options.timeoutMs, method);
-    return this.connection.request<TPayload>(method, params, options, timeoutMs);
+    return this.connection.request<TPayload>(method, params, options, timeoutMs, policy);
   }
 
   async probeNativeHandshake(options: OpenClawCommandOptions = {}) {

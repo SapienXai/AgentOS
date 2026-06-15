@@ -134,7 +134,19 @@ test("failed post-update smoke triggers rollback in the update route", () => {
 
   assert.match(routeSource, /if \(smokeTest\.status === "failed"\)/);
   assert.match(routeSource, /runRollbackOpenClaw\(openClawBin, rollbackSnapshot, send\)/);
+  assert.match(routeSource, /refreshSnapshotAfterRollback/);
+  assert.match(routeSource, /compareVersionStrings\(currentVersion, rollbackVersion\) === 0/);
+  assert.match(routeSource, /restoreOpenClawRollbackConfigSnapshot\(rollbackSnapshot\)/);
   assert.match(routeSource, /Rolled back to the previous working OpenClaw version/);
+});
+
+test("failed automatic rollback exposes a restore command for the rollback snapshot", () => {
+  const routeSource = readFileSync(path.join(process.cwd(), "app/api/update/route.ts"), "utf8");
+
+  assert.match(routeSource, /function buildOpenClawRollbackManualCommand/);
+  assert.match(routeSource, /buildOpenClawDowngradeConfigBlockerManualCommand\(\s*formatOpenClawCommand\(openClawBin, \[\]\),\s*rollbackSnapshot\.version\s*\)/);
+  assert.match(routeSource, /recoveryCommand: rollback\.ok \? undefined : buildOpenClawRollbackManualCommand\(openClawBin, rollbackSnapshot\)/);
+  assert.match(routeSource, /manualCommand: rollback\.ok \? undefined : buildOpenClawRollbackManualCommand\(openClawBin, rollbackSnapshot\)/);
 });
 
 test("preflight report blocks update when Gateway is not ready", () => {
@@ -180,6 +192,152 @@ test("candidate preflight remains attemptable only with explicit opt-in warning"
   assert.equal(report.warnings.some((check) => check.id === "manifest-decision"), true);
 });
 
+test("advanced preflight allows install-and-verify when scope approval is pending", () => {
+  const decision = resolveOpenClawUpdateDecision({
+    manifest,
+    agentOsVersion: "0.7.2",
+    targetVersion: "2026.6.6",
+    mode: "advanced"
+  });
+  const report = buildOpenClawUpdatePreflightReport({
+    snapshot: createUpdateSafetySnapshot({
+      pendingScopeApproval: true
+    }),
+    targetVersion: "2026.6.6",
+    decision,
+    rollbackSnapshotAvailable: true,
+    generatedAt: new Date("2026-06-14T10:00:00.000Z")
+  });
+
+  assert.equal(report.canAttemptUpdate, true);
+  assert.equal(report.blockers.some((check) => check.id === "native-auth-scopes"), false);
+  assert.equal(report.warnings.some((check) => check.id === "native-auth-scopes"), true);
+  assert.match(report.recommendedNextAction, /explicit operator risk acceptance/);
+});
+
+test("advanced preflight treats current Gateway downtime as a post-update verification risk", () => {
+  const decision = resolveOpenClawUpdateDecision({
+    manifest,
+    agentOsVersion: "0.7.2",
+    targetVersion: "2026.6.6",
+    mode: "advanced"
+  });
+  const report = buildOpenClawUpdatePreflightReport({
+    snapshot: createUpdateSafetySnapshot({
+      loaded: false,
+      rpcOk: false
+    }),
+    targetVersion: "2026.6.6",
+    decision,
+    rollbackSnapshotAvailable: true,
+    generatedAt: new Date("2026-06-14T10:00:00.000Z")
+  });
+
+  assert.equal(report.canAttemptUpdate, true);
+  assert.equal(report.blockers.some((check) => check.id === "gateway-reachability"), false);
+  assert.equal(report.warnings.some((check) => check.id === "gateway-reachability"), true);
+  assert.match(
+    report.warnings.find((check) => check.id === "gateway-reachability")?.message ?? "",
+    /CLI.*post-update/i
+  );
+});
+
+test("certified preflight still blocks normal update when scope approval is pending", () => {
+  const decision = resolveOpenClawUpdateDecision({
+    manifest,
+    agentOsVersion: "0.7.2",
+    targetVersion: "2026.6.1",
+    mode: "recommended"
+  });
+  const report = buildOpenClawUpdatePreflightReport({
+    snapshot: createUpdateSafetySnapshot({
+      pendingScopeApproval: true
+    }),
+    targetVersion: "2026.6.1",
+    decision,
+    rollbackSnapshotAvailable: true,
+    generatedAt: new Date("2026-06-14T10:00:00.000Z")
+  });
+
+  assert.equal(report.canAttemptUpdate, false);
+  assert.equal(report.blockers.some((check) => check.id === "native-auth-scopes"), true);
+});
+
+test("certified recovery to the baseline can proceed when scope approval is pending", () => {
+  const decision = resolveOpenClawUpdateDecision({
+    manifest,
+    agentOsVersion: "0.7.2",
+    targetVersion: "2026.6.1",
+    mode: "recommended"
+  });
+  const report = buildOpenClawUpdatePreflightReport({
+    snapshot: createUpdateSafetySnapshot({
+      version: "2026.6.6",
+      pendingScopeApproval: true
+    }),
+    targetVersion: "2026.6.1",
+    decision,
+    rollbackSnapshotAvailable: true,
+    generatedAt: new Date("2026-06-14T10:00:00.000Z")
+  });
+
+  assert.equal(report.canAttemptUpdate, true);
+  assert.equal(report.requiresExplicitConfirmation, true);
+  assert.equal(report.blockers.some((check) => check.id === "native-auth-scopes"), false);
+  assert.equal(report.warnings.some((check) => check.id === "native-auth-scopes"), true);
+  assert.match(
+    report.warnings.find((check) => check.id === "native-auth-scopes")?.message ?? "",
+    /returning to the certified baseline/
+  );
+});
+
+test("certified recovery to the baseline requires a saved rollback snapshot", () => {
+  const decision = resolveOpenClawUpdateDecision({
+    manifest,
+    agentOsVersion: "0.7.2",
+    targetVersion: "2026.6.1",
+    mode: "recommended"
+  });
+  const report = buildOpenClawUpdatePreflightReport({
+    snapshot: createUpdateSafetySnapshot({
+      version: "2026.6.6"
+    }),
+    targetVersion: "2026.6.1",
+    decision,
+    rollbackSnapshotAvailable: false,
+    generatedAt: new Date("2026-06-14T10:00:00.000Z")
+  });
+
+  assert.equal(report.canAttemptUpdate, false);
+  assert.equal(report.blockers.some((check) => check.id === "rollback-metadata"), true);
+  assert.match(
+    report.blockers.find((check) => check.id === "rollback-metadata")?.message ?? "",
+    /saved rollback snapshot/
+  );
+});
+
+test("certified preflight still blocks normal update when the current Gateway is down", () => {
+  const decision = resolveOpenClawUpdateDecision({
+    manifest,
+    agentOsVersion: "0.7.2",
+    targetVersion: "2026.6.1",
+    mode: "recommended"
+  });
+  const report = buildOpenClawUpdatePreflightReport({
+    snapshot: createUpdateSafetySnapshot({
+      loaded: false,
+      rpcOk: false
+    }),
+    targetVersion: "2026.6.1",
+    decision,
+    rollbackSnapshotAvailable: true,
+    generatedAt: new Date("2026-06-14T10:00:00.000Z")
+  });
+
+  assert.equal(report.canAttemptUpdate, false);
+  assert.equal(report.blockers.some((check) => check.id === "gateway-reachability"), true);
+});
+
 test("update route exposes non-mutating preflight and probe actions", () => {
   const routeSource = readFileSync(path.join(process.cwd(), "app/api/update/route.ts"), "utf8");
 
@@ -188,6 +346,91 @@ test("update route exposes non-mutating preflight and probe actions", () => {
   assert.match(routeSource, /runOpenClawShadowProbe/);
   assert.match(routeSource, /recordOpenClawUpdateRuntimeIssue/);
   assert.match(routeSource, /redactSecrets\(\{ report \}\)/);
+});
+
+test("update route treats installed target with down Gateway as unhealthy", () => {
+  const routeSource = readFileSync(path.join(process.cwd(), "app/api/update/route.ts"), "utf8");
+
+  assert.match(routeSource, /isTargetOpenClawInstalled\(snapshot, targetVersion\)/);
+  assert.match(routeSource, /!isOpenClawSnapshotGatewayReady\(snapshot\)/);
+  assert.match(routeSource, /OpenClaw v\$\{targetVersion\} is installed, but the Gateway is not reachable/);
+});
+
+test("update route classifies certified downgrade blocked by newer config", () => {
+  const routeSource = readFileSync(path.join(process.cwd(), "app/api/update/route.ts"), "utf8");
+
+  assert.match(routeSource, /isOpenClawDowngradeConfigBlocker\(failureOutput\)/);
+  assert.match(routeSource, /OpenClaw certified downgrade blocked by newer config/);
+  assert.match(routeSource, /buildOpenClawDowngradeConfigBlockerManualCommand/);
+  assert.match(routeSource, /shouldUseCertifiedRollbackSnapshotRecovery/);
+  assert.match(routeSource, /runCertifiedRollbackSnapshotRecovery/);
+  assert.match(routeSource, /Using the saved OpenClaw rollback snapshot for certified recovery/);
+  assert.match(routeSource, /restoreConfigAndRestartOpenClaw/);
+  assert.match(routeSource, /resolveNewerRollbackSnapshotVersion/);
+  assert.match(routeSource, /OpenClaw certified baseline blocked by newer config/);
+  assert.match(routeSource, /Restore v\$\{newerRollbackSnapshotVersion\}/);
+});
+
+test("update route keeps certified targets installed when postflight only has warnings", () => {
+  const routeSource = readFileSync(path.join(process.cwd(), "app/api/update/route.ts"), "utf8");
+
+  assert.match(routeSource, /const certifiedTarget = updateDecision\.status === "certified"/);
+  assert.match(routeSource, /verifyOpenClawPostUpdateCompatibility\(verifiedSnapshot,\s*\{\s*certifiedTarget\s*\}\)/);
+  assert.match(routeSource, /OpenClaw certified postflight completed with warnings/);
+  assert.match(routeSource, /OpenClaw certified runtime smoke needs review/);
+  assert.match(routeSource, /if \(certifiedTarget\) \{/);
+  assert.match(routeSource, /ok: true,\s+message: `\$\{verification\.message\} \$\{smokeFailureMessage\}`/);
+});
+
+test("update dialog keeps OpenClaw output and capability diff inside the modal width", () => {
+  const dialogSource = readFileSync(
+    path.join(process.cwd(), "components/mission-control/mission-control-shell.dialogs.tsx"),
+    "utf8"
+  );
+
+  assert.match(dialogSource, /overflow-x-hidden overflow-y-auto/);
+  assert.match(dialogSource, /w-\[calc\(100vw-32px\)\] max-w-\[468px\]/);
+  assert.match(dialogSource, /whitespace-pre-wrap break-all/);
+  assert.match(dialogSource, /\[overflow-wrap:anywhere\]/);
+  assert.match(dialogSource, /sm:grid-cols-\[minmax\(0,1fr\)_minmax\(0,10rem\)\]/);
+});
+
+test("opening an update action resets stale failed update dialog state", () => {
+  const shellSource = readFileSync(
+    path.join(process.cwd(), "components/mission-control/mission-control-shell.tsx"),
+    "utf8"
+  );
+
+  assert.match(shellSource, /onOpenUpdateDialog: \(targetVersion, mode = "recommended"\) => \{\s+if \(updateRunState !== "running"\) \{/);
+  assert.match(shellSource, /onRollbackOpenClaw: \(\) => \{\s+if \(updateRunState !== "running"\) \{/);
+});
+
+test("update dialog surfaces target blockers even when capability modes are unchanged", () => {
+  const dialogSource = readFileSync(
+    path.join(process.cwd(), "components/mission-control/mission-control-shell.dialogs.tsx"),
+    "utf8"
+  );
+
+  assert.match(dialogSource, /isCapabilityDiffTargetBlocker/);
+  assert.match(dialogSource, /Target blockers/);
+  assert.match(dialogSource, /target diagnostics still report certification blockers/);
+});
+
+test("capability matrix labels active and certified OpenClaw versions distinctly", () => {
+  const settingsSource = readFileSync(
+    path.join(process.cwd(), "components/mission-control/settings-control-center.tsx"),
+    "utf8"
+  );
+
+  assert.match(settingsSource, /label="Active OpenClaw"/);
+  assert.match(settingsSource, /Certified baseline/);
+  assert.match(settingsSource, /wrapValue/);
+  assert.match(settingsSource, /Certified baseline comparison/);
+  assert.match(settingsSource, /Runtime gaps remain/);
+  assert.match(settingsSource, /No new regressions/);
+  assert.match(settingsSource, /Diff evidence missing/);
+  assert.match(settingsSource, /Target blockers/);
+  assert.match(settingsSource, /badgeTone=\{summary\.missingRequiredOperationCount > 0 \? "danger"/);
 });
 
 test("rollback snapshot records compatibility summary and config hash", () => {
@@ -202,14 +445,18 @@ test("rollback snapshot records compatibility summary and config hash", () => {
 function createUpdateSafetySnapshot(input: {
   loaded?: boolean;
   rpcOk?: boolean;
+  pendingScopeApproval?: boolean;
+  version?: string;
 }): MissionControlSnapshot {
+  const version = input.version ?? "2026.4.2";
+
   return {
     diagnostics: {
       installed: true,
       loaded: input.loaded ?? true,
       rpcOk: input.rpcOk ?? true,
       health: "healthy",
-      version: "2026.4.2",
+      version,
       latestVersion: "2026.6.1",
       workspaceRoot: "/tmp/agentos",
       configuredWorkspaceRoot: null,
@@ -234,7 +481,7 @@ function createUpdateSafetySnapshot(input: {
       },
       capabilityMatrix: {
         detectedAt: "2026-06-14T10:00:00.000Z",
-        openClawVersion: "2026.4.2",
+        openClawVersion: version,
         gatewayProtocolVersion: "1",
         authMode: "local-token",
         supportedMethods: [],
@@ -311,7 +558,22 @@ function createUpdateSafetySnapshot(input: {
         lastConnectedAt: "2026-06-14T10:00:00.000Z",
         lastDisconnectedAt: null
       },
-      runtimeIssues: [],
+      runtimeIssues: input.pendingScopeApproval
+        ? [{
+            id: "scope_upgrade_pending:openclaw_gateway:req-1",
+            type: "scope_upgrade_pending",
+            source: "openclaw_gateway",
+            severity: "action_required",
+            status: "active",
+            title: "OpenClaw scope approval pending",
+            message: "OpenClaw requested additional local operator scopes.",
+            firstSeenAt: "2026-06-14T10:00:00.000Z",
+            lastSeenAt: "2026-06-14T10:00:00.000Z",
+            requestId: "req-1",
+            requestedScopes: ["runtime:write"],
+            approvedScopes: ["runtime:read"]
+          }]
+        : [],
       securityWarnings: [],
       issues: []
     },

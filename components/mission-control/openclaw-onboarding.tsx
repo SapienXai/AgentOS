@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowLeft, ArrowRight, Check, LoaderCircle, Sparkles } from "lucide-react";
 import { motion } from "motion/react";
 
@@ -186,6 +188,7 @@ export function OpenClawOnboarding({
   const gatewayAuthNeedsSetup = snapshot.diagnostics.issues.some((issue) =>
     /gateway\..*auth|redacted secret|AGENTOS_OPENCLAW_GATEWAY_TOKEN|OPENCLAW_GATEWAY_TOKEN/i.test(issue)
   );
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
 
   const primaryAction = resolvePrimaryAction({
     stage,
@@ -196,13 +199,27 @@ export function OpenClawOnboarding({
     defaultModelId
   });
 
-  return (
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      setPortalRoot(document.body);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, []);
+
+  if (!portalRoot) {
+    return null;
+  }
+
+  return createPortal(
     <motion.div
       initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
       animate={{ opacity: 1, backdropFilter: "blur(12px)" }}
       exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
       className={cn(
-        "openclaw-onboarding-backdrop absolute inset-0 z-[80] pointer-events-auto isolate flex items-center justify-center overflow-hidden px-3 py-4 sm:px-4 sm:py-6",
+        "openclaw-onboarding-backdrop fixed inset-0 z-[1000] pointer-events-auto isolate flex h-dvh w-screen max-w-full items-center justify-center overflow-hidden px-3 py-4 sm:px-4 sm:py-6",
         surfaceTheme === "light"
           ? "openclaw-onboarding-backdrop--light bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.94),rgba(247,239,232,0.88)_46%,rgba(242,230,220,0.92))]"
           : "openclaw-onboarding-backdrop--dark bg-[radial-gradient(circle_at_top,rgba(17,24,39,0.9),rgba(3,7,18,0.92)_48%,rgba(2,6,23,0.96))]"
@@ -212,7 +229,7 @@ export function OpenClawOnboarding({
         initial={{ opacity: 0, y: 18, scale: 0.985 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         className={cn(
-          "relative z-10 my-auto flex w-full min-h-0 max-h-[min(80vh,640px)] flex-col overflow-hidden rounded-[16px] border shadow-[0_18px_46px_rgba(0,0,0,0.18)] backdrop-blur-2xl",
+          "relative z-10 flex w-full min-h-0 max-h-[calc(100dvh-32px)] flex-col overflow-hidden rounded-[16px] border shadow-[0_18px_46px_rgba(0,0,0,0.18)] backdrop-blur-2xl sm:max-h-[calc(100dvh-48px)]",
           showLaunchpad && (isLaunchpadBuilding || launchpadCreateRunState === "error")
             ? "max-w-[640px]"
             : "max-w-[420px]",
@@ -519,6 +536,7 @@ export function OpenClawOnboarding({
           </div>
         </div>
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    portalRoot
   );
 }

@@ -9,13 +9,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const gatewayControlSchema = z.object({
-  action: z.enum(["start", "stop", "restart"])
+  action: z.enum(["start", "stop", "restart", "doctor"])
 });
 
 const actionMessageMap = {
   start: "Gateway start requested.",
   stop: "Gateway stop requested.",
-  restart: "Gateway restart requested."
+  restart: "Gateway restart requested.",
+  doctor: "OpenClaw doctor repair requested."
 } satisfies Record<z.infer<typeof gatewayControlSchema>["action"], string>;
 
 export async function POST(request: Request) {

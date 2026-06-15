@@ -59,13 +59,17 @@ export function resolveNativeTimeoutMs(input?: number, method?: string) {
 }
 
 export function resolveGatewayRequestPolicy(method: string, options: OpenClawCommandOptions = {}): OpenClawGatewayRequestPolicy {
-  const safety = isGatewayMutationMethod(method) ? "mutation" : "read";
+  const safety = method === "update.status"
+    ? "read"
+    : isGatewayMutationMethod(method)
+      ? "mutation"
+      : "read";
 
   return {
     safety,
     timeoutMs: options.timeoutMs,
     allowCliFallback: true,
-    allowReadCliFallbackOnNativeFailure: false,
+    allowReadCliFallbackOnNativeFailure: method === "update.status",
     allowMutationFallbackOnUnsupported: safety === "mutation"
   };
 }

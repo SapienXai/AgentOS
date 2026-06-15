@@ -9,6 +9,7 @@ import {
   KeyRound,
   LoaderCircle,
   RotateCcw,
+  TerminalSquare,
   X
 } from "lucide-react";
 
@@ -17,7 +18,7 @@ import type { MissionControlSnapshot, RuntimeIssue } from "@/lib/agentos/contrac
 import { cn } from "@/lib/utils";
 
 type SurfaceTheme = "dark" | "light";
-type RuntimeAction = "reviewDevices" | "approveRequest" | "approveLatest" | "dismiss";
+type RuntimeAction = "reviewDevices" | "approveRequest" | "approveLatest" | "openRecovery" | "dismiss";
 
 type RuntimeActionResponse = {
   snapshot?: MissionControlSnapshot;
@@ -324,12 +325,38 @@ function RuntimeIssueActions({
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<RuntimeDeviceReview | null>(null);
   const isScopeUpgrade = issue.type === "scope_upgrade_pending";
+  const recoveryCommand = issue.recoveryCommand?.trim() || null;
+  const canOpenRecovery = Boolean(recoveryCommand && !isScopeUpgrade);
 
   const runAction = async (action: RuntimeAction) => {
     setBusyAction(action);
     setError(null);
 
     try {
+      if (action === "openRecovery") {
+        if (!recoveryCommand) {
+          throw new Error("No recovery command is available for this runtime issue.");
+        }
+
+        const response = await fetch("/api/system/open-terminal", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            command: recoveryCommand
+          })
+        });
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+        if (!response.ok || payload?.error) {
+          throw new Error(payload?.error || "Could not open the recovery command.");
+        }
+
+        await onRefresh?.();
+        return;
+      }
+
       const response = await fetch("/api/runtime/issues", {
         method: "POST",
         headers: {
@@ -404,6 +431,18 @@ function RuntimeIssueActions({
             Approve latest
           </Button>
         ) : null}
+        {canOpenRecovery ? (
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void runAction("openRecovery")}
+            disabled={busyAction !== null}
+            className="h-8 rounded-lg px-2.5 text-xs"
+          >
+            {busyAction === "openRecovery" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <TerminalSquare className="h-3.5 w-3.5" />}
+            {resolveRecoveryActionLabel(issue)}
+          </Button>
+        ) : null}
         {issue.status !== "dismissed" && issue.status !== "resolved" ? (
           <Button
             type="button"
@@ -419,9 +458,26 @@ function RuntimeIssueActions({
         ) : null}
       </div>
       {error ? <p className="mt-2 text-xs leading-5 text-rose-500">{error}</p> : null}
+      {canOpenRecovery ? (
+        <p className="mt-2 break-words font-mono text-[10px] leading-4 text-muted-foreground">
+          {recoveryCommand}
+        </p>
+      ) : null}
       {review ? <RuntimeDeviceReviewPanel review={review} surfaceTheme={surfaceTheme} /> : null}
     </div>
   );
+}
+
+function resolveRecoveryActionLabel(issue: RuntimeIssue) {
+  if (issue.type === "openclaw_rollback_needed") {
+    return "Restore last working";
+  }
+
+  if (issue.type === "gateway_unreachable") {
+    return "Restart gateway";
+  }
+
+  return "Open recovery";
 }
 
 function RuntimeDeviceReviewPanel({ review, surfaceTheme }: { review: RuntimeDeviceReview; surfaceTheme: SurfaceTheme }) {

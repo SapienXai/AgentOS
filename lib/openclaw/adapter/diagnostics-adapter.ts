@@ -277,7 +277,7 @@ export function buildGatewayDiagnostics(input: {
       hasOpenClawSignal: input.hasOpenClawSignal
     }),
     version: input.versionDiagnostics.currentVersion,
-    latestVersion: updateCompatibility.recommendedVersion,
+    latestVersion: input.versionDiagnostics.latestVersion ?? updateCompatibility.recommendedVersion,
     updateAvailable,
     updateError: input.versionDiagnostics.updateError,
     updateCompatibility,

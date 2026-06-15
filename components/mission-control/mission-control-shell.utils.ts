@@ -13,6 +13,7 @@ import type {
 } from "@/lib/agentos/contracts";
 
 type UpdateRunState = "idle" | "running" | "success" | "error";
+type UpdateMode = "recommended" | "candidate" | "advanced";
 type SurfaceTheme = "dark" | "light";
 type ModelOnboardingIntent = "auto" | "refresh" | "discover" | "set-default" | "login-provider";
 const workspaceSelectionStorageKeyPrefix = "mission-control-active-workspace-id";
@@ -46,7 +47,7 @@ type MissionDispatchStart = {
   abortController: AbortController;
 };
 
-export function resolveUpdateDialogTitle(runState: UpdateRunState) {
+export function resolveUpdateDialogTitle(runState: UpdateRunState, mode: UpdateMode = "recommended") {
   if (runState === "running") {
     return "Updating OpenClaw";
   }
@@ -59,10 +60,18 @@ export function resolveUpdateDialogTitle(runState: UpdateRunState) {
     return "Update failed";
   }
 
+  if (mode === "advanced") {
+    return "Verify OpenClaw update";
+  }
+
+  if (mode === "candidate") {
+    return "Install candidate update";
+  }
+
   return "Update OpenClaw";
 }
 
-export function resolveUpdateDialogDescription(runState: UpdateRunState) {
+export function resolveUpdateDialogDescription(runState: UpdateRunState, mode: UpdateMode = "recommended") {
   if (runState === "running") {
     return "OpenClaw is being updated now. Local gateway activity may pause briefly while the CLI is replaced.";
   }
@@ -73,6 +82,14 @@ export function resolveUpdateDialogDescription(runState: UpdateRunState) {
 
   if (runState === "error") {
     return "The update did not complete cleanly. Review the result and captured output before trying again.";
+  }
+
+  if (mode === "advanced") {
+    return "This installs the selected unclassified OpenClaw version, verifies the installed version, checks Gateway compatibility, and runs a runtime smoke test before treating it as usable.";
+  }
+
+  if (mode === "candidate") {
+    return "This installs the selected candidate OpenClaw version after compatibility preflight and post-update verification.";
   }
 
   return "This runs openclaw update against the installed CLI and may briefly interrupt local gateway activity.";

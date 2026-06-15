@@ -108,6 +108,7 @@ export type {
   OpenClawAgent,
   OpenClawBinarySelection,
   OpenClawBinarySelectionMode,
+  OpenClawCapabilityDiffReport,
   OpenClawCapabilityMatrix,
   OpenClawCapabilityOperation,
   OpenClawCapabilityOperationMode,

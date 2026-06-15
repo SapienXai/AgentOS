@@ -20,7 +20,9 @@ import type {
 import { recordOpenClawUpdateRuntimeIssue } from "@/lib/openclaw/application/runtime-issue-service";
 import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
 import {
+  buildOpenClawDowngradeConfigBlockerManualCommand,
   buildOpenClawUpdateRecoveryManualCommand,
+  isOpenClawDowngradeConfigBlocker,
   isOpenClawGatewayReadyOutput,
   shouldAttemptOpenClawUpdateRecovery
 } from "@/lib/openclaw/update-recovery";
@@ -37,6 +39,7 @@ import {
   type OpenClawRollbackSnapshot
 } from "@/lib/openclaw/update-rollback";
 import { buildOpenClawUpdatePreflightReport } from "@/lib/openclaw/update-safety";
+import { buildOpenClawCapabilityDiffReport } from "@/lib/openclaw/capability-diff";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
@@ -59,6 +62,7 @@ const runtimeSmokeTestSkippedMessage =
 type UpdateVerification = {
   ok: boolean;
   message: string;
+  warnings?: string[];
 };
 
 type CommandResult = {
@@ -194,10 +198,10 @@ export async function POST(request: Request) {
       return;
     }
 
-    if (updateRequest.action === "rollback") {
-      const rollbackSnapshot = await readOpenClawRollbackSnapshot();
+    const existingRollbackSnapshot = await readOpenClawRollbackSnapshot();
 
-      if (!rollbackSnapshot) {
+    if (updateRequest.action === "rollback") {
+      if (!existingRollbackSnapshot) {
         await recordUpdateRuntimeIssue({
           type: "openclaw_rollback_needed",
           title: "OpenClaw rollback unavailable",
@@ -220,10 +224,10 @@ export async function POST(request: Request) {
       await send({
         type: "status",
         phase: "rollback",
-        message: `Rolling back OpenClaw to v${rollbackSnapshot.version}...`
+        message: `Rolling back OpenClaw to v${existingRollbackSnapshot.version}...`
       });
 
-      const rollback = await runRollbackOpenClaw(openClawBin, rollbackSnapshot, send);
+      const rollback = await runRollbackOpenClaw(openClawBin, existingRollbackSnapshot, send);
       stdout += rollback.stdout;
       stderr += rollback.stderr;
       if (!rollback.ok) {
@@ -231,9 +235,9 @@ export async function POST(request: Request) {
           type: "openclaw_rollback_needed",
           title: "OpenClaw rollback failed",
           message: rollback.message,
-          targetVersion: rollbackSnapshot.version,
+          targetVersion: existingRollbackSnapshot.version,
           rawOutput: [rollback.stdout, rollback.stderr].filter(Boolean).join("\n"),
-          recoveryCommand: formatOpenClawCommand(openClawBin, buildOpenClawUpdateArgs(rollbackSnapshot.version)),
+          recoveryCommand: formatOpenClawCommand(openClawBin, buildOpenClawUpdateArgs(existingRollbackSnapshot.version)),
           severity: "blocked"
         });
       }
@@ -245,7 +249,7 @@ export async function POST(request: Request) {
         type: "done",
         ok: rollback.ok,
         message: rollback.ok
-          ? `OpenClaw rollback completed. Restored v${rollbackSnapshot.version}.`
+          ? `OpenClaw rollback completed. Restored v${existingRollbackSnapshot.version}.`
           : rollback.message,
         exitCode: rollback.exitCode,
         stdout,
@@ -257,6 +261,106 @@ export async function POST(request: Request) {
     }
 
     if (isTargetOpenClawInstalled(snapshot, targetVersion)) {
+      if (!isOpenClawSnapshotGatewayReady(snapshot)) {
+        const certifiedSnapshot = shouldUseCertifiedRollbackSnapshotRecovery(
+          snapshot,
+          targetVersion,
+          updateDecision,
+          existingRollbackSnapshot
+        )
+          ? existingRollbackSnapshot
+          : null;
+
+        if (certifiedSnapshot) {
+          await send({
+            type: "status",
+            phase: "rollback",
+            message:
+              `OpenClaw v${targetVersion} is already installed, but Gateway is not ready. Restoring the certified rollback snapshot before restarting Gateway...`
+          });
+
+          const recovery = await runCertifiedRollbackSnapshotRecovery({
+            openClawBin,
+            rollbackSnapshot: certifiedSnapshot,
+            send,
+            targetVersion
+          });
+          stdout += recovery.stdout;
+          stderr += recovery.stderr;
+
+          await send({
+            type: "done",
+            ok: recovery.ok,
+            message: recovery.ok
+              ? `OpenClaw certified recovery completed. Restored v${certifiedSnapshot.version}.`
+              : recovery.message,
+            exitCode: recovery.exitCode,
+            stdout,
+            stderr,
+            snapshot: recovery.snapshot,
+            manualCommand: recovery.ok
+              ? undefined
+              : formatOpenClawCommand(openClawBin, buildOpenClawUpdateArgs(certifiedSnapshot.version))
+          });
+          await closeWriter();
+          return;
+        }
+
+        const newerRollbackSnapshotVersion = resolveNewerRollbackSnapshotVersion(targetVersion, existingRollbackSnapshot);
+        if (updateDecision.status === "certified" && newerRollbackSnapshotVersion) {
+          const recoveryCommand = buildOpenClawDowngradeConfigBlockerManualCommand(
+            formatOpenClawCommand(openClawBin, []),
+            newerRollbackSnapshotVersion
+          );
+          const message =
+            `OpenClaw v${targetVersion} is installed, but Gateway cannot be treated as healthy because the available rollback snapshot is v${newerRollbackSnapshotVersion}. Restore v${newerRollbackSnapshotVersion} or reset/migrate the OpenClaw config before retrying the certified baseline.`;
+          await recordUpdateRuntimeIssue({
+            type: "openclaw_rollback_needed",
+            title: "OpenClaw certified baseline blocked by newer config",
+            message,
+            targetVersion,
+            recoveryCommand,
+            severity: "blocked"
+          });
+          await send({
+            type: "done",
+            ok: false,
+            message,
+            exitCode: null,
+            stdout,
+            stderr,
+            snapshot,
+            manualCommand: recoveryCommand
+          });
+          await closeWriter();
+          return;
+        }
+
+        const recoveryCommand = buildOpenClawUpdateRecoveryManualCommand(formatOpenClawCommand(openClawBin, []));
+        await recordUpdateRuntimeIssue({
+          type: "openclaw_postflight_failed",
+          title: "OpenClaw target installed but Gateway is not ready",
+          message:
+            `OpenClaw v${targetVersion} is installed, but the Gateway is not reachable. Repair Gateway access before treating this version as healthy.`,
+          targetVersion,
+          recoveryCommand,
+          severity: "action_required"
+        });
+        await send({
+          type: "done",
+          ok: false,
+          message:
+            `OpenClaw v${targetVersion} is installed, but the Gateway is not reachable. Repair Gateway access before treating this version as healthy.`,
+          exitCode: null,
+          stdout,
+          stderr,
+          snapshot,
+          manualCommand: recoveryCommand
+        });
+        await closeWriter();
+        return;
+      }
+
       await send({
         type: "done",
         ok: true,
@@ -274,7 +378,7 @@ export async function POST(request: Request) {
       snapshot,
       targetVersion,
       decision: updateDecision,
-      rollbackSnapshotAvailable: Boolean(await readOpenClawRollbackSnapshot())
+      rollbackSnapshotAvailable: Boolean(existingRollbackSnapshot)
     });
 
     await send({
@@ -300,6 +404,50 @@ export async function POST(request: Request) {
         stdout,
         stderr,
         snapshot
+      });
+      await closeWriter();
+      return;
+    }
+
+    const certifiedSnapshot = shouldUseCertifiedRollbackSnapshotRecovery(
+      snapshot,
+      targetVersion,
+      updateDecision,
+      existingRollbackSnapshot
+    )
+      ? existingRollbackSnapshot
+      : null;
+
+    if (certifiedSnapshot) {
+      await send({
+        type: "status",
+        phase: "rollback",
+        message:
+          `Using the saved OpenClaw rollback snapshot for certified recovery to v${certifiedSnapshot.version}...`
+      });
+
+      const recovery = await runCertifiedRollbackSnapshotRecovery({
+        openClawBin,
+        rollbackSnapshot: certifiedSnapshot,
+        send,
+        targetVersion
+      });
+      stdout += recovery.stdout;
+      stderr += recovery.stderr;
+
+      await send({
+        type: "done",
+        ok: recovery.ok,
+        message: recovery.ok
+          ? `OpenClaw certified recovery completed. Restored v${certifiedSnapshot.version}.`
+          : recovery.message,
+        exitCode: recovery.exitCode,
+        stdout,
+        stderr,
+        snapshot: recovery.snapshot,
+        manualCommand: recovery.ok
+          ? undefined
+          : formatOpenClawCommand(openClawBin, buildOpenClawUpdateArgs(certifiedSnapshot.version))
       });
       await closeWriter();
       return;
@@ -406,6 +554,7 @@ export async function POST(request: Request) {
             /interactive tty/i.test(failureOutput) ||
             /re-?run in a tty/i.test(failureOutput) ||
             /confirm the downgrade/i.test(failureOutput);
+          const downgradeConfigBlocked = isOpenClawDowngradeConfigBlocker(failureOutput);
 
           if (needsInteractiveTty) {
             await recordUpdateRuntimeIssue({
@@ -424,6 +573,35 @@ export async function POST(request: Request) {
               stdout,
               stderr: stderr || "Downgrade confirmation required.",
               manualCommand: failureCommand
+            });
+            await closeWriter();
+            return;
+          }
+
+          if (downgradeConfigBlocked) {
+            const recoveryCommand = buildOpenClawDowngradeConfigBlockerManualCommand(
+              formatOpenClawCommand(openClawBin, []),
+              rollbackSnapshot.version
+            );
+            const message =
+              `OpenClaw changed to v${targetVersion}, but the Gateway restart was blocked because local config/service metadata was last written by a newer OpenClaw version. Restore the last working OpenClaw version or reset/migrate the OpenClaw config before retrying the certified baseline.`;
+            await recordUpdateRuntimeIssue({
+              type: "openclaw_rollback_needed",
+              title: "OpenClaw certified downgrade blocked by newer config",
+              message,
+              targetVersion,
+              rawOutput: failureOutput,
+              recoveryCommand,
+              severity: "blocked"
+            });
+            await send({
+              type: "done",
+              ok: false,
+              message,
+              exitCode: code,
+              stdout,
+              stderr,
+              manualCommand: recoveryCommand
             });
             await closeWriter();
             return;
@@ -495,19 +673,28 @@ export async function POST(request: Request) {
           clearMissionControlCaches();
           const nextSnapshot = await getMissionControlSnapshot({ force: true });
           const verifiedSnapshot = preserveKnownUpdateTarget(snapshot, nextSnapshot);
+          const verifiedCapabilityDiff = buildOpenClawCapabilityDiffReport({
+            certified: snapshot.diagnostics,
+            target: verifiedSnapshot.diagnostics
+          });
           const verification = verifyOpenClawUpdate(snapshot, verifiedSnapshot, targetVersion);
+          const certifiedTarget = updateDecision.status === "certified";
+          const postflightWarnings: string[] = [];
 
           if (!verification.ok) {
             const rollback = await runRollbackOpenClaw(openClawBin, rollbackSnapshot, send);
             stdout += rollback.stdout;
             stderr += rollback.stderr;
+            const resultSnapshot = rollback.ok
+              ? await refreshSnapshotAfterRollback(verifiedSnapshot)
+              : verifiedSnapshot;
             await recordUpdateRuntimeIssue({
               type: rollback.ok ? "openclaw_postflight_failed" : "openclaw_rollback_needed",
               title: rollback.ok ? "OpenClaw postflight failed" : "OpenClaw rollback needed",
               message: `${verification.message} ${rollback.ok ? "Rollback completed." : rollback.message}`,
               targetVersion,
               rawOutput: [stdout, stderr].filter(Boolean).join("\n"),
-              recoveryCommand: rollback.ok ? undefined : formatOpenClawCommand(openClawBin, updateArgs),
+              recoveryCommand: rollback.ok ? undefined : buildOpenClawRollbackManualCommand(openClawBin, rollbackSnapshot),
               severity: rollback.ok ? "action_required" : "blocked"
             });
 
@@ -518,26 +705,32 @@ export async function POST(request: Request) {
               exitCode: rollback.exitCode ?? code,
               stdout,
               stderr,
-              snapshot: verifiedSnapshot,
-              manualCommand: rollback.ok ? undefined : formatOpenClawCommand(openClawBin, updateArgs)
+              snapshot: resultSnapshot,
+              capabilityDiff: verifiedCapabilityDiff,
+              manualCommand: rollback.ok ? undefined : buildOpenClawRollbackManualCommand(openClawBin, rollbackSnapshot)
             });
             await closeWriter();
             return;
           }
 
-          const compatibilityVerification = verifyOpenClawPostUpdateCompatibility(verifiedSnapshot);
+          const compatibilityVerification = verifyOpenClawPostUpdateCompatibility(verifiedSnapshot, {
+            certifiedTarget
+          });
 
           if (!compatibilityVerification.ok) {
             const rollback = await runRollbackOpenClaw(openClawBin, rollbackSnapshot, send);
             stdout += rollback.stdout;
             stderr += rollback.stderr;
+            const resultSnapshot = rollback.ok
+              ? await refreshSnapshotAfterRollback(verifiedSnapshot)
+              : verifiedSnapshot;
             await recordUpdateRuntimeIssue({
               type: rollback.ok ? "openclaw_postflight_failed" : "openclaw_rollback_needed",
               title: rollback.ok ? "OpenClaw compatibility postflight failed" : "OpenClaw rollback needed",
               message: `${compatibilityVerification.message} ${rollback.ok ? "Rollback completed." : rollback.message}`,
               targetVersion,
               rawOutput: [stdout, stderr].filter(Boolean).join("\n"),
-              recoveryCommand: rollback.ok ? undefined : formatOpenClawCommand(openClawBin, updateArgs),
+              recoveryCommand: rollback.ok ? undefined : buildOpenClawRollbackManualCommand(openClawBin, rollbackSnapshot),
               severity: rollback.ok ? "action_required" : "blocked"
             });
 
@@ -548,11 +741,29 @@ export async function POST(request: Request) {
               exitCode: rollback.exitCode ?? code,
               stdout,
               stderr,
-              snapshot: verifiedSnapshot,
-              manualCommand: rollback.ok ? undefined : formatOpenClawCommand(openClawBin, updateArgs)
+              snapshot: resultSnapshot,
+              capabilityDiff: verifiedCapabilityDiff,
+              manualCommand: rollback.ok ? undefined : buildOpenClawRollbackManualCommand(openClawBin, rollbackSnapshot)
             });
             await closeWriter();
             return;
+          }
+
+          if (compatibilityVerification.warnings?.length) {
+            postflightWarnings.push(compatibilityVerification.message);
+            stdout = stdout
+              ? `${stdout}\n${compatibilityVerification.message}`
+              : compatibilityVerification.message;
+            await recordUpdateRuntimeIssue({
+              type: "openclaw_postflight_failed",
+              title: certifiedTarget
+                ? "OpenClaw certified postflight completed with warnings"
+                : "OpenClaw postflight completed with warnings",
+              message: compatibilityVerification.message,
+              targetVersion,
+              rawOutput: [stdout, stderr].filter(Boolean).join("\n"),
+              severity: "warning"
+            });
           }
 
           await send({
@@ -563,19 +774,62 @@ export async function POST(request: Request) {
 
           const smokeTest = await ensureOpenClawRuntimeSmokeTest({ force: true });
           const finalSnapshot = await getMissionControlSnapshot({ force: true });
+          const finalCapabilityDiff = buildOpenClawCapabilityDiffReport({
+            certified: snapshot.diagnostics,
+            target: finalSnapshot.diagnostics
+          });
           const smokeTestOutput = smokeTest.error || smokeTest.summary || "";
 
           if (smokeTest.status === "failed") {
             const classification = classifyOpenClawRuntimeSmokeTestFailure(smokeTestOutput);
+            const smokeFailureMessage = classification
+              ? `OpenClaw updated, but ${classification.detail}`
+              : `OpenClaw updated, but the live runtime smoke test failed.${smokeTestOutput ? ` ${smokeTestOutput}` : ""}`;
+
+            if (certifiedTarget) {
+              const recoveryCommand = buildOpenClawRuntimeSmokeTestRecoveryCommand(
+                formatOpenClawCommand(openClawBin, []),
+                smokeTestOutput
+              );
+              stdout = stdout
+                ? `${stdout}\n${smokeFailureMessage}`
+                : smokeFailureMessage;
+              await recordUpdateRuntimeIssue({
+                type: "openclaw_postflight_failed",
+                title: "OpenClaw certified runtime smoke needs review",
+                message: smokeFailureMessage,
+                targetVersion,
+                rawOutput: [stdout, stderr, smokeTestOutput].filter(Boolean).join("\n"),
+                recoveryCommand,
+                severity: "action_required"
+              });
+              await send({
+                type: "done",
+                ok: true,
+                message: `${verification.message} ${smokeFailureMessage}`.trim(),
+                exitCode: code,
+                stdout,
+                stderr: stderr
+                  ? `${stderr}\n${smokeTestOutput || "Runtime smoke test failed."}`
+                  : smokeTestOutput || "Runtime smoke test failed.",
+                snapshot: finalSnapshot,
+                capabilityDiff: finalCapabilityDiff,
+                manualCommand: recoveryCommand
+              });
+              await closeWriter();
+              return;
+            }
+
             const rollback = await runRollbackOpenClaw(openClawBin, rollbackSnapshot, send);
             stdout += rollback.stdout;
             stderr += rollback.stderr;
+            const resultSnapshot = rollback.ok
+              ? await refreshSnapshotAfterRollback(finalSnapshot)
+              : finalSnapshot;
             await recordUpdateRuntimeIssue({
               type: rollback.ok ? "openclaw_postflight_failed" : "openclaw_rollback_needed",
               title: rollback.ok ? "OpenClaw runtime smoke postflight failed" : "OpenClaw rollback needed",
-              message: classification
-                ? `OpenClaw updated, but ${classification.detail}`
-                : "OpenClaw updated, but the live runtime smoke test failed.",
+              message: smokeFailureMessage,
               targetVersion,
               rawOutput: [stdout, stderr, smokeTestOutput].filter(Boolean).join("\n"),
               recoveryCommand: rollback.ok
@@ -587,15 +841,14 @@ export async function POST(request: Request) {
             await send({
               type: "done",
               ok: false,
-              message: classification
-                ? `OpenClaw updated, but ${classification.detail} ${rollback.ok ? "Rolled back to the previous working OpenClaw version." : rollback.message}`
-                : `OpenClaw updated, but the live runtime smoke test failed. ${smokeTestOutput} ${rollback.ok ? "Rolled back to the previous working OpenClaw version." : rollback.message}`.trim(),
+              message: `${smokeFailureMessage} ${rollback.ok ? "Rolled back to the previous working OpenClaw version." : rollback.message}`.trim(),
               exitCode: rollback.exitCode ?? code,
               stdout,
               stderr: stderr
                 ? `${stderr}\n${smokeTestOutput || "Runtime smoke test failed."}`
                 : smokeTestOutput || "Runtime smoke test failed.",
-              snapshot: finalSnapshot,
+              snapshot: resultSnapshot,
+              capabilityDiff: finalCapabilityDiff,
               manualCommand: rollback.ok
                 ? undefined
                 : buildOpenClawRuntimeSmokeTestRecoveryCommand(formatOpenClawCommand(openClawBin, []), smokeTestOutput)
@@ -613,11 +866,14 @@ export async function POST(request: Request) {
           await send({
             type: "done",
             ok: true,
-            message: verification.message,
+            message: postflightWarnings.length
+              ? `${verification.message} ${postflightWarnings.join(" ")}`
+              : verification.message,
             exitCode: code,
             stdout,
             stderr,
-            snapshot: finalSnapshot
+            snapshot: finalSnapshot,
+            capabilityDiff: finalCapabilityDiff
           });
         } catch (error) {
           await recordUpdateRuntimeIssue({
@@ -798,7 +1054,7 @@ async function runOpenClawShadowProbe(input: {
     recommendedNextAction:
       blockers.length > 0
         ? "Do not update. Resolve the target compatibility blocker first."
-        : "Run preflight before applying the update. Treat this probe as limited evidence, not certification."
+        : "Use install-and-verify to test the target version. Treat this probe as limited evidence, not certification."
   };
 }
 
@@ -948,8 +1204,12 @@ function verifyOpenClawUpdate(
   };
 }
 
-function verifyOpenClawPostUpdateCompatibility(snapshot: MissionControlSnapshot): UpdateVerification {
+function verifyOpenClawPostUpdateCompatibility(
+  snapshot: MissionControlSnapshot,
+  input: { certifiedTarget?: boolean } = {}
+): UpdateVerification {
   const issues: string[] = [];
+  const warnings: string[] = [];
   const contract = snapshot.diagnostics.capabilityMatrix?.compatibility?.methodContract;
   const configPatch = snapshot.diagnostics.capabilityMatrix?.configPatch;
 
@@ -962,11 +1222,20 @@ function verifyOpenClawPostUpdateCompatibility(snapshot: MissionControlSnapshot)
   }
 
   if (configPatch !== "supported") {
-    issues.push("Gateway config schema/patch support is not available.");
+    if (input.certifiedTarget) {
+      warnings.push("Gateway config schema/patch support is not available.");
+    } else {
+      issues.push("Gateway config schema/patch support is not available.");
+    }
   }
 
   if (snapshot.diagnostics.modelReadiness.ready === false && snapshot.diagnostics.modelReadiness.issues.length > 0) {
-    issues.push(`Model readiness could not be confirmed: ${snapshot.diagnostics.modelReadiness.issues[0]}`);
+    const message = `Model readiness could not be confirmed: ${snapshot.diagnostics.modelReadiness.issues[0]}`;
+    if (input.certifiedTarget) {
+      warnings.push(message);
+    } else {
+      issues.push(message);
+    }
   }
 
   if (snapshot.diagnostics.compatibilityReport?.status === "incompatible") {
@@ -986,6 +1255,20 @@ function verifyOpenClawPostUpdateCompatibility(snapshot: MissionControlSnapshot)
     };
   }
 
+  if (warnings.length > 0) {
+    const fallbackCount = snapshot.diagnostics.transport?.fallbackTotal ?? 0;
+    const lastNativeFailure =
+      snapshot.diagnostics.transport?.lastNativeError ||
+      snapshot.diagnostics.gatewayFallbackDiagnostics?.[0]?.issue ||
+      "No native failure detail was reported.";
+
+    return {
+      ok: true,
+      message: `${warnings.join(" ")} Fallback count: ${fallbackCount}. Last native failure: ${lastNativeFailure}`,
+      warnings
+    };
+  }
+
   return {
     ok: true,
     message: "Post-update OpenClaw compatibility checks passed."
@@ -997,6 +1280,10 @@ function isTargetOpenClawInstalled(snapshot: MissionControlSnapshot, targetVersi
   const normalizedTargetVersion = normalizeVersion(targetVersion);
 
   return Boolean(version && normalizedTargetVersion && compareVersionStrings(version, normalizedTargetVersion) === 0);
+}
+
+function isOpenClawSnapshotGatewayReady(snapshot: MissionControlSnapshot) {
+  return Boolean(snapshot.diagnostics.installed && snapshot.diagnostics.loaded && snapshot.diagnostics.rpcOk);
 }
 
 function buildOpenClawUpdateArgs(targetVersion: string) {
@@ -1048,11 +1335,84 @@ async function runRollbackOpenClaw(
     message: `Restoring previous OpenClaw version v${rollbackSnapshot.version}...`
   });
 
+  const currentVersionResult = await runRecoveryCommand(openClawBin, ["--version"], async () => {}, {
+    timeoutMs: 15_000,
+    streamOutput: false
+  });
+  const currentVersion = normalizeVersion(
+    [currentVersionResult.stdout, currentVersionResult.stderr].filter(Boolean).join("\n")
+  );
+  const rollbackVersion = normalizeVersion(rollbackSnapshot.version);
+
+  if (
+    currentVersion &&
+    rollbackVersion &&
+    compareVersionStrings(currentVersion, rollbackVersion) === 0
+  ) {
+    const recovery = await restoreConfigAndRestartOpenClaw(openClawBin, rollbackSnapshot, send);
+
+    return {
+      ok: recovery.ok,
+      message: recovery.ok
+        ? `Rolled back OpenClaw to v${rollbackSnapshot.version}.`
+        : recovery.message,
+      exitCode: recovery.exitCode,
+      stdout: [
+        currentVersionResult.stdout,
+        recovery.stdout
+      ].filter(Boolean).join("\n"),
+      stderr: [
+        currentVersionResult.stderr,
+        recovery.stderr
+      ].filter(Boolean).join("\n")
+    };
+  }
+
   const rollbackResult = await runRecoveryCommand(openClawBin, buildOpenClawUpdateArgs(rollbackSnapshot.version), send, {
     timeoutMs: updateTimeoutMs
   });
 
   if (rollbackResult.errorMessage || rollbackResult.timedOut || rollbackResult.code !== 0) {
+    const rollbackOutput = [rollbackResult.stdout, rollbackResult.stderr, rollbackResult.errorMessage]
+      .filter(Boolean)
+      .join("\n");
+
+    if (isOpenClawDowngradeConfigBlocker(rollbackOutput)) {
+      const postFailureVersionResult = await runRecoveryCommand(openClawBin, ["--version"], async () => {}, {
+        timeoutMs: 15_000,
+        streamOutput: false
+      });
+      const postFailureVersion = normalizeVersion(
+        [postFailureVersionResult.stdout, postFailureVersionResult.stderr].filter(Boolean).join("\n")
+      );
+
+      if (
+        postFailureVersion &&
+        rollbackVersion &&
+        compareVersionStrings(postFailureVersion, rollbackVersion) === 0
+      ) {
+        const recovery = await restoreConfigAndRestartOpenClaw(openClawBin, rollbackSnapshot, send);
+
+        return {
+          ok: recovery.ok,
+          message: recovery.ok
+            ? `Rolled back OpenClaw to v${rollbackSnapshot.version}.`
+            : recovery.message,
+          exitCode: recovery.exitCode,
+          stdout: [
+            rollbackResult.stdout,
+            postFailureVersionResult.stdout,
+            recovery.stdout
+          ].filter(Boolean).join("\n"),
+          stderr: [
+            rollbackResult.stderr || rollbackResult.errorMessage,
+            postFailureVersionResult.stderr,
+            recovery.stderr
+          ].filter(Boolean).join("\n")
+        };
+      }
+    }
+
     return {
       ok: false,
       message: "Automatic OpenClaw rollback failed. Use the manual update command from the details panel.",
@@ -1062,17 +1422,173 @@ async function runRollbackOpenClaw(
     };
   }
 
+  const recovery = await restoreConfigAndRestartOpenClaw(openClawBin, rollbackSnapshot, send);
+
+  return {
+    ok: recovery.ok,
+    message: recovery.ok
+      ? `Rolled back OpenClaw to v${rollbackSnapshot.version}.`
+      : recovery.message,
+    exitCode: recovery.exitCode,
+    stdout: [
+      rollbackResult.stdout,
+      recovery.stdout
+    ].filter(Boolean).join("\n"),
+    stderr: [
+      rollbackResult.stderr,
+      recovery.stderr
+    ].filter(Boolean).join("\n")
+  };
+}
+
+function buildOpenClawRollbackManualCommand(
+  openClawBin: string,
+  rollbackSnapshot: OpenClawRollbackSnapshot
+) {
+  return buildOpenClawDowngradeConfigBlockerManualCommand(
+    formatOpenClawCommand(openClawBin, []),
+    rollbackSnapshot.version
+  );
+}
+
+async function restoreConfigAndRestartOpenClaw(
+  openClawBin: string,
+  rollbackSnapshot: OpenClawRollbackSnapshot,
+  send: (event: OpenClawUpdateStreamEvent) => Promise<unknown>
+) {
   const configRestore = await restoreOpenClawRollbackConfigSnapshot(rollbackSnapshot);
+  let stdout = `${configRestore.message}\n`;
+  let stderr = "";
+
+  if (!configRestore.restored) {
+    return {
+      ok: false,
+      message: configRestore.message,
+      exitCode: null,
+      stdout,
+      stderr
+    };
+  }
+
+  await send({
+    type: "status",
+    phase: "refreshing",
+    message: "Restarting OpenClaw Gateway with the restored config snapshot..."
+  });
+
+  const restartResult = await runRecoveryCommand(openClawBin, ["gateway", "restart"], send, {
+    timeoutMs: 90_000
+  });
+  stdout += restartResult.stdout;
+  stderr += restartResult.stderr;
+
+  if (restartResult.errorMessage || restartResult.timedOut || restartResult.code !== 0) {
+    return {
+      ok: false,
+      message: "OpenClaw config snapshot was restored, but Gateway restart failed.",
+      exitCode: restartResult.code,
+      stdout,
+      stderr: stderr || restartResult.errorMessage || "Gateway restart failed."
+    };
+  }
+
+  await send({
+    type: "status",
+    phase: "refreshing",
+    message: "Waiting for the OpenClaw gateway to become ready..."
+  });
+
+  const healthResult = await waitForGatewayReady(openClawBin);
+  stdout += healthResult.stdout;
+  stderr += healthResult.stderr;
+
+  if (healthResult.errorMessage || healthResult.timedOut || healthResult.code !== 0) {
+    return {
+      ok: false,
+      message: "OpenClaw config snapshot was restored, but Gateway did not become healthy.",
+      exitCode: healthResult.code,
+      stdout,
+      stderr: stderr || healthResult.errorMessage || "Gateway readiness check failed."
+    };
+  }
 
   return {
     ok: true,
-    message: `Rolled back OpenClaw to v${rollbackSnapshot.version}.`,
+    message: "Restored OpenClaw config and restarted Gateway.",
     exitCode: 0,
-    stdout: rollbackResult.stdout
-      ? `${rollbackResult.stdout}\n${configRestore.message}\n`
-      : `${configRestore.message}\n`,
-    stderr: rollbackResult.stderr
+    stdout,
+    stderr
   };
+}
+
+async function refreshSnapshotAfterRollback(fallbackSnapshot: MissionControlSnapshot) {
+  resetOpenClawBinCache();
+  clearMissionControlCaches();
+
+  return getMissionControlSnapshot({ force: true }).catch(() => fallbackSnapshot);
+}
+
+async function runCertifiedRollbackSnapshotRecovery(input: {
+  openClawBin: string;
+  rollbackSnapshot: OpenClawRollbackSnapshot;
+  send: (event: OpenClawUpdateStreamEvent) => Promise<unknown>;
+  targetVersion: string;
+}) {
+  const rollback = await runRollbackOpenClaw(input.openClawBin, input.rollbackSnapshot, input.send);
+  resetOpenClawBinCache();
+  clearMissionControlCaches();
+  const snapshot = await getMissionControlSnapshot({ force: true }).catch(() => undefined);
+
+  if (!rollback.ok) {
+    await recordUpdateRuntimeIssue({
+      type: "openclaw_rollback_needed",
+      title: "OpenClaw certified recovery failed",
+      message: rollback.message,
+      targetVersion: input.targetVersion,
+      rawOutput: [rollback.stdout, rollback.stderr].filter(Boolean).join("\n"),
+      recoveryCommand: formatOpenClawCommand(input.openClawBin, buildOpenClawUpdateArgs(input.rollbackSnapshot.version)),
+      severity: "blocked"
+    });
+  }
+
+  return {
+    ...rollback,
+    snapshot
+  };
+}
+
+function shouldUseCertifiedRollbackSnapshotRecovery(
+  snapshot: MissionControlSnapshot,
+  targetVersion: string,
+  decision: ReturnType<typeof resolveOpenClawUpdateDecision>,
+  rollbackSnapshot: OpenClawRollbackSnapshot | null
+) {
+  const currentVersion = normalizeVersion(snapshot.diagnostics.version);
+  const normalizedTarget = normalizeVersion(targetVersion);
+  const rollbackVersion = normalizeVersion(rollbackSnapshot?.version);
+
+  return Boolean(
+    currentVersion &&
+      normalizedTarget &&
+      rollbackVersion &&
+      decision.status === "certified" &&
+      compareVersionStrings(rollbackVersion, normalizedTarget) === 0 &&
+      compareVersionStrings(currentVersion, normalizedTarget) >= 0
+  );
+}
+
+function resolveNewerRollbackSnapshotVersion(
+  targetVersion: string,
+  rollbackSnapshot: OpenClawRollbackSnapshot | null
+) {
+  const normalizedTarget = normalizeVersion(targetVersion);
+  const rollbackVersion = normalizeVersion(rollbackSnapshot?.version);
+
+  if (!normalizedTarget || !rollbackVersion || compareVersionStrings(rollbackVersion, normalizedTarget) <= 0) {
+    return null;
+  }
+
+  return rollbackVersion;
 }
 
 function preserveKnownUpdateTarget(

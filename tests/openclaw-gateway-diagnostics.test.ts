@@ -291,6 +291,39 @@ test("version diagnostics use update.status when status lacks registry details",
   assert.match(diagnostics.updateInfo ?? "", /Update available/);
 });
 
+test("gateway diagnostics keep registry latest separate from certified default update", () => {
+  const diagnostics = buildGatewayDiagnostics({
+    gatewayStatus: {
+      service: { loaded: false },
+      gateway: { port: 18789, probeUrl: "ws://127.0.0.1:18789" },
+      rpc: { ok: false }
+    },
+    status: { version: "2026.6.1" },
+    configuredWorkspaceRoot: null,
+    workspaceRoot: "/tmp/workspace",
+    configuredGatewayUrl: null,
+    hasOpenClawSignal: true,
+    securityWarnings: [],
+    runtimeDiagnostics,
+    openClawBinarySelection,
+    modelReadiness,
+    issues: [],
+    versionDiagnostics: {
+      currentVersion: "2026.6.1",
+      latestVersion: "2026.6.6",
+      updateAvailable: true,
+      updateError: undefined,
+      updateInfo: "Update available: v2026.6.6 is ready. Current version: v2026.6.1."
+    }
+  });
+
+  assert.equal(diagnostics.version, "2026.6.1");
+  assert.equal(diagnostics.latestVersion, "2026.6.6");
+  assert.equal(diagnostics.updateAvailable, false);
+  assert.equal(diagnostics.updateCompatibility?.latestDecision?.version, "2026.6.6");
+  assert.equal(diagnostics.updateCompatibility?.latestDecision?.status, "unknown");
+});
+
 test("version diagnostics expose update.status errors instead of reporting loading", () => {
   const diagnostics = buildVersionDiagnostics({
     status: { version: "2026.6.0" },

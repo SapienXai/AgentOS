@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 
 import {
@@ -128,6 +130,80 @@ test("runtime issue detector preserves dismissed active issues without duplicati
   assert.equal(issues[0]?.status, "dismissed");
 });
 
+test("runtime issue detector reopens dismissed gateway recovery while gateway remains unhealthy", () => {
+  const id = "gateway_unreachable:openclaw_gateway:global";
+  const issues = buildRuntimeIssues({
+    diagnostics: {
+      installed: true,
+      loaded: false,
+      rpcOk: false,
+      health: "degraded",
+      transport: {
+        gatewayMode: "unreachable",
+        lastNativeError: "connect ECONNREFUSED 127.0.0.1:18789"
+      }
+    },
+    states: {
+      [id]: {
+        id,
+        type: "gateway_unreachable",
+        source: "openclaw_gateway",
+        severity: "blocked",
+        title: "OpenClaw Gateway is unreachable",
+        message: "AgentOS cannot reach the OpenClaw Gateway.",
+        status: "dismissed",
+        createdAt: "2026-06-14T09:00:00.000Z",
+        updatedAt: "2026-06-14T09:01:00.000Z"
+      }
+    },
+    now: new Date("2026-06-14T10:00:00.000Z")
+  });
+
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.id, id);
+  assert.equal(issues[0]?.type, "gateway_unreachable");
+  assert.equal(issues[0]?.status, "open");
+  assert.equal(issues[0]?.recoveryCommand, "openclaw gateway restart");
+});
+
+test("runtime issue detector reopens rollback recovery and suppresses generic gateway action", () => {
+  const id = "openclaw_rollback_needed:openclaw_cli:2026.6.6";
+  const recoveryCommand = "/Users/example/.openclaw/bin/openclaw update --tag 2026.6.6 --yes";
+  const issues = buildRuntimeIssues({
+    diagnostics: {
+      installed: true,
+      loaded: false,
+      rpcOk: false,
+      health: "degraded",
+      transport: {
+        gatewayMode: "unreachable",
+        lastNativeError: "Gateway restart blocked by newer config metadata."
+      }
+    },
+    states: {
+      [id]: {
+        id,
+        type: "openclaw_rollback_needed",
+        source: "openclaw_cli",
+        severity: "blocked",
+        title: "OpenClaw rollback needed",
+        message: "Restore the last working OpenClaw version before restarting the Gateway.",
+        recoveryCommand,
+        status: "dismissed",
+        createdAt: "2026-06-14T09:00:00.000Z",
+        updatedAt: "2026-06-14T09:01:00.000Z"
+      }
+    },
+    now: new Date("2026-06-14T10:00:00.000Z")
+  });
+
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.id, id);
+  assert.equal(issues[0]?.type, "openclaw_rollback_needed");
+  assert.equal(issues[0]?.status, "open");
+  assert.equal(issues[0]?.recoveryCommand, recoveryCommand);
+});
+
 test("runtime issue detector restores failed OpenClaw update issues from state", () => {
   const id = "openclaw_postflight_failed:openclaw_cli:2026.6.1";
   const issues = buildRuntimeIssues({
@@ -153,4 +229,38 @@ test("runtime issue detector restores failed OpenClaw update issues from state",
   assert.equal(issues[0]?.source, "openclaw_cli");
   assert.equal(issues[0]?.severity, "blocked");
   assert.equal(issues[0]?.status, "failed");
+});
+
+test("runtime issue detector rewrites stale rollback commands from saved snapshot output", () => {
+  const id = "openclaw_rollback_needed:openclaw_cli:2026.6.6";
+  const issues = buildRuntimeIssues({
+    states: {
+      [id]: {
+        id,
+        type: "openclaw_rollback_needed",
+        source: "openclaw_cli",
+        severity: "blocked",
+        title: "OpenClaw rollback needed",
+        message: "Automatic OpenClaw rollback failed.",
+        status: "failed",
+        createdAt: "2026-06-14T09:00:00.000Z",
+        updatedAt: "2026-06-14T09:01:00.000Z",
+        recoveryCommand: "/Users/example/.openclaw/bin/openclaw update --tag 2026.6.6 --yes",
+        rawOutput: "> Saved OpenClaw rollback snapshot for v2026.6.1.\n> Running openclaw update --tag 2026.6.6..."
+      }
+    },
+    now: new Date("2026-06-14T10:00:00.000Z")
+  });
+
+  assert.equal(issues[0]?.recoveryCommand, "/Users/example/.openclaw/bin/openclaw update --tag 2026.6.1 --yes && /Users/example/.openclaw/bin/openclaw gateway restart && /Users/example/.openclaw/bin/openclaw gateway status --deep");
+});
+
+test("runtime inbox exposes recovery commands for non-scope issues", () => {
+  const source = readFileSync(path.join(process.cwd(), "components/runtime/runtime-inbox.tsx"), "utf8");
+
+  assert.match(source, /openRecovery/);
+  assert.match(source, /\/api\/system\/open-terminal/);
+  assert.match(source, /Restore last working/);
+  assert.match(source, /Restart gateway/);
+  assert.match(source, /recoveryCommand/);
 });

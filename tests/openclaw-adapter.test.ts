@@ -352,6 +352,29 @@ test("gateway application service controls the gateway through the adapter", asy
   ]);
 });
 
+test("gateway application service coalesces concurrent identical control actions", async () => {
+  const calls: MockCall[] = [];
+  const client = createMockGatewayClient({
+    async controlGateway(action: "start" | "stop" | "restart", options?: OpenClawCommandOptions) {
+      calls.push({ method: "controlGateway", action, options });
+      await delay(10);
+      return { ok: true, action };
+    }
+  }).client;
+  setOpenClawGatewayClientForTesting(client);
+
+  const [first, second] = await Promise.all([
+    controlGateway("restart"),
+    controlGateway("restart")
+  ]);
+
+  assert.deepEqual(first, { ok: true, action: "restart" });
+  assert.equal(first, second);
+  assert.deepEqual(calls, [
+    { method: "controlGateway", action: "restart", options: {} }
+  ]);
+});
+
 test("OpenClaw gateway client factory supports a provider extension point", () => {
   const { client } = createMockGatewayClient();
   setOpenClawGatewayClientProvider(() => client);

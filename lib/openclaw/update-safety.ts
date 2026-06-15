@@ -1,4 +1,5 @@
 import { OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
+import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
 import type {
   MissionControlSnapshot,
   OpenClawUpdateDecision,
@@ -44,6 +45,24 @@ export function buildOpenClawUpdatePreflightReport(
   const modelReadiness = diagnostics.modelReadiness.ready
     ? "Ready"
     : diagnostics.modelReadiness.issues[0] ?? "Unknown";
+  const isCertifiedRecoveryTarget = Boolean(
+    diagnostics.version &&
+      input.decision.status === "certified" &&
+      compareVersionStrings(diagnostics.version, input.targetVersion) > 0
+  );
+  const certifiedRecoveryMissingSnapshot = isCertifiedRecoveryTarget && !input.rollbackSnapshotAvailable;
+  const hasPendingScopeApproval = diagnostics.runtimeIssues.some((issue) => issue.type === "scope_upgrade_pending");
+  const hasGatewayReachability = diagnostics.installed && diagnostics.loaded && diagnostics.rpcOk;
+  const gatewayReachabilityStatus = hasGatewayReachability
+    ? "safe"
+    : input.decision.requiresExplicitOptIn || isCertifiedRecoveryTarget
+      ? "warning"
+      : "blocker";
+  const pendingScopeStatus = hasPendingScopeApproval
+    ? input.decision.requiresExplicitOptIn || isCertifiedRecoveryTarget
+      ? "warning"
+      : "blocker"
+    : "unknown";
 
   const checks: OpenClawUpdateSafetyCheck[] = [
     createCheck({
@@ -69,11 +88,14 @@ export function buildOpenClawUpdatePreflightReport(
     createCheck({
       id: "gateway-reachability",
       label: "Current Gateway reachability",
-      status: diagnostics.installed && diagnostics.loaded && diagnostics.rpcOk ? "safe" : "blocker",
-      message:
-        diagnostics.installed && diagnostics.loaded && diagnostics.rpcOk
+      status: gatewayReachabilityStatus,
+      message: hasGatewayReachability
           ? "The current OpenClaw Gateway is reachable and loaded."
-          : "The current OpenClaw Gateway is not ready. Repair Gateway access before updating."
+          : input.decision.requiresExplicitOptIn
+            ? "The current OpenClaw Gateway is not ready. Advanced install-and-verify may proceed through the OpenClaw CLI, then must prove Gateway health post-update."
+            : isCertifiedRecoveryTarget
+              ? "The current OpenClaw Gateway is not ready. Certified recovery may proceed through the OpenClaw CLI, then must prove Gateway health post-update."
+            : "The current OpenClaw Gateway is not ready. Repair Gateway access before updating."
     }),
     createCheck({
       id: "gateway-protocol",
@@ -117,9 +139,13 @@ export function buildOpenClawUpdatePreflightReport(
     createCheck({
       id: "native-auth-scopes",
       label: "Native auth and scopes",
-      status: diagnostics.runtimeIssues.some((issue) => issue.type === "scope_upgrade_pending") ? "blocker" : "unknown",
-      message: diagnostics.runtimeIssues.some((issue) => issue.type === "scope_upgrade_pending")
-        ? "A pending OpenClaw scope approval must be resolved before updating."
+      status: pendingScopeStatus,
+      message: hasPendingScopeApproval
+        ? input.decision.requiresExplicitOptIn
+          ? "A pending OpenClaw scope approval remains a certification risk, but advanced install-and-verify can proceed and will validate post-update behavior."
+          : isCertifiedRecoveryTarget
+            ? "A pending OpenClaw scope approval remains a recovery risk, but returning to the certified baseline can proceed and will validate post-update behavior."
+          : "A pending OpenClaw scope approval must be resolved before a normal certified update."
         : `Native auth state: ${nativeAuth}.`
     }),
     createCheck({
@@ -135,9 +161,15 @@ export function buildOpenClawUpdatePreflightReport(
     createCheck({
       id: "rollback-metadata",
       label: "Rollback metadata",
-      status: input.rollbackSnapshotAvailable ? "safe" : "warning",
+      status: input.rollbackSnapshotAvailable
+        ? "safe"
+        : certifiedRecoveryMissingSnapshot
+          ? "blocker"
+          : "warning",
       message: input.rollbackSnapshotAvailable
         ? "A previous rollback snapshot is available."
+        : certifiedRecoveryMissingSnapshot
+          ? "Certified recovery needs a saved rollback snapshot because OpenClaw may reject restarting an older binary with config written by a newer version."
         : "No previous rollback snapshot exists yet; AgentOS will create one before mutating OpenClaw."
     })
   ];
@@ -147,7 +179,8 @@ export function buildOpenClawUpdatePreflightReport(
   const blockers = checks.filter((check) => check.status === "blocker");
   const unknowns = checks.filter((check) => check.status === "unknown");
   const canAttemptUpdate = blockers.length === 0 && input.decision.allowed;
-  const requiresExplicitConfirmation = input.decision.requiresExplicitOptIn || input.decision.status !== "certified";
+  const requiresExplicitConfirmation =
+    input.decision.requiresExplicitOptIn || input.decision.status !== "certified" || isCertifiedRecoveryTarget;
 
   return {
     generatedAt: (input.generatedAt ?? new Date()).toISOString(),

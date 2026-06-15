@@ -15,6 +15,7 @@ import {
   KeyRound,
   ListChecks,
   LoaderCircle,
+  Microscope,
   PackageCheck,
   RefreshCw,
   RotateCcw,
@@ -53,6 +54,7 @@ import type {
 } from "@/lib/openclaw/gateway-auth";
 import { compactPath } from "@/lib/openclaw/presenters";
 import type {
+  OpenClawCapabilityDiffReport,
   OpenClawShadowProbeReport,
   OpenClawUpdateCompatibilityMode,
   OpenClawUpdateDecision,
@@ -153,6 +155,7 @@ export function SettingsControlCenter(
     isSavingOpenClawBinary,
     isCheckingForUpdates,
     updateRunState,
+    updateCapabilityDiff,
     selectedModelId,
     modelOnboardingRunState,
     gatewayControlAction,
@@ -242,6 +245,12 @@ export function SettingsControlCenter(
     hasCertifiedUpdateAvailable
       ? "recommended"
       : resolveUpdateDecisionMode(updateCompatibility?.latestDecision);
+  const canVerifyLatestUpdate = Boolean(
+    hasRegistryUpdateAvailable &&
+      latestVersion &&
+      defaultUpdateMode === "advanced" &&
+      updateCompatibility?.latestDecision?.status === "unknown"
+  );
   const isUpdateRegistryLoading = Boolean(
     snapshot.diagnostics.version && !recommendedVersion && !snapshot.diagnostics.updateError
   );
@@ -273,6 +282,20 @@ export function SettingsControlCenter(
     () => resolveTransportDiagnosticsSummary(snapshot.diagnostics.transport, connectionState, snapshot.diagnostics.eventBridge),
     [connectionState, snapshot.diagnostics.eventBridge, snapshot.diagnostics.transport]
   );
+  const activeRuntimeIssues = snapshot.diagnostics.runtimeIssues.filter(
+    (issue) => issue.status !== "resolved" && issue.status !== "dismissed"
+  );
+  const hasScopeUpgradeIssue = activeRuntimeIssues.some((issue) => issue.type === "scope_upgrade_pending");
+  const hasOpenClawRollbackIssue = activeRuntimeIssues.some((issue) => issue.type === "openclaw_rollback_needed");
+  const isGatewayProcessUnavailable =
+    !snapshot.diagnostics.loaded ||
+    (!snapshot.diagnostics.rpcOk && !hasScopeUpgradeIssue) ||
+    (transportSummary.statusTone === "danger" && !hasScopeUpgradeIssue);
+  const gatewayAccessRepairBlockMessage = hasOpenClawRollbackIssue
+    ? "Gateway access repair is blocked by an incomplete OpenClaw update or rollback. Roll back to the last working OpenClaw snapshot, then restart the Gateway."
+    : isGatewayProcessUnavailable
+      ? "Gateway access repair needs a running Gateway. Start or restart the Gateway first; if OpenClaw reports a version/config mismatch, roll back to the last working OpenClaw snapshot."
+      : null;
   const capabilityMatrix = snapshot.diagnostics.capabilityMatrix;
   const compatibilityReport = snapshot.diagnostics.compatibilityReport;
   const gatewayCompatibilityProfile = capabilityMatrix?.compatibility;
@@ -864,6 +887,23 @@ export function SettingsControlCenter(
                       {isRunningShadowProbe ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
                       Test target safely
                     </Button>
+                    {canVerifyLatestUpdate ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => onOpenUpdateDialog(latestVersion ?? undefined, "advanced")}
+                        disabled={updateRunState === "running"}
+                        className={cn(
+                          "h-9 rounded-full border px-4 text-xs",
+                          surfaceTheme === "light"
+                            ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                            : "border-amber-300/25 bg-amber-300/10 text-amber-100 hover:bg-amber-300/15"
+                        )}
+                      >
+                        <Microscope className="h-3.5 w-3.5" />
+                        Install and verify latest
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       onClick={() => onOpenUpdateDialog(recommendedVersion ?? undefined, "recommended")}
@@ -1119,18 +1159,18 @@ export function SettingsControlCenter(
                     </div>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-3 gap-2">
-                    {(["start", "stop", "restart"] as const).map((action) => (
+                  <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {(["start", "stop", "restart", "doctor"] as const).map((action) => (
                       <Button
                         key={action}
                         type="button"
                         variant="secondary"
                         onClick={() => void onControlGateway(action)}
                         disabled={gatewayControlAction !== null}
-                        className={cn(secondaryButtonClassName(surfaceTheme), "capitalize")}
+                        className={cn(secondaryButtonClassName(surfaceTheme), action === "doctor" ? "normal-case" : "capitalize")}
                       >
                         {gatewayControlAction === action ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-                        {action}
+                        {action === "doctor" ? "Doctor --fix" : action}
                       </Button>
                     ))}
                   </div>
@@ -1169,8 +1209,9 @@ export function SettingsControlCenter(
                         type="button"
                         variant="secondary"
                         onClick={() => void repairGatewayDeviceAccess()}
-                        disabled={isRepairingGatewayDeviceAccess}
+                        disabled={isRepairingGatewayDeviceAccess || Boolean(gatewayAccessRepairBlockMessage)}
                         className={secondaryButtonClassName(surfaceTheme, "px-3", "gateway-contrast")}
+                        title={gatewayAccessRepairBlockMessage ?? undefined}
                       >
                         {isRepairingGatewayDeviceAccess ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}
                         Repair local access
@@ -1224,6 +1265,33 @@ export function SettingsControlCenter(
                         Test auth
                       </Button>
                     </div>
+                    {gatewayAccessRepairBlockMessage ? (
+                      <div
+                        className={cn(
+                          "mt-3 rounded-[14px] border p-3 text-xs leading-5",
+                          surfaceTheme === "light"
+                            ? "border-amber-200 bg-amber-50 text-amber-900"
+                            : "border-amber-300/20 bg-amber-300/[0.08] text-amber-100"
+                        )}
+                      >
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          <p>{gatewayAccessRepairBlockMessage}</p>
+                        </div>
+                        {hasOpenClawRollbackIssue || isGatewayProcessUnavailable ? (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={onRollbackOpenClaw}
+                            disabled={updateRunState === "running"}
+                            className={cn(secondaryButtonClassName(surfaceTheme, "mt-2 px-3", "gateway-contrast"), "w-full")}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            Rollback to last working OpenClaw
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {gatewayAuthError || gatewayAuthSaveMessage || gatewayAuthStatus?.native.issue ? (
                       <p
                         className={cn(
@@ -1251,6 +1319,8 @@ export function SettingsControlCenter(
                   <CapabilityMatrixPanel
                     rows={capabilityRows}
                     summary={capabilitySummary}
+                    snapshot={snapshot}
+                    updateCapabilityDiff={updateCapabilityDiff}
                     surfaceTheme={surfaceTheme}
                   />
                 </Card>
@@ -1889,29 +1959,259 @@ function SummaryTile({
   );
 }
 
+function CapabilityBaselineComparisonPanel({
+  diff,
+  snapshot,
+  summary,
+  surfaceTheme
+}: {
+  diff: OpenClawCapabilityDiffReport | null;
+  snapshot: MissionControlShellSettingsPanelProps["snapshot"];
+  summary: OpenClawCapabilityMatrixSummary;
+  surfaceTheme: SurfaceTheme;
+}) {
+  const activeVersion = normalizeUpdateVersion(snapshot.diagnostics.version ?? summary.openClawVersionLabel);
+  const certifiedVersion = normalizeUpdateVersion(
+    snapshot.diagnostics.updateCompatibility?.recommendedVersion ??
+      snapshot.diagnostics.compatibilityReport?.openClaw.recommendedVersion ??
+      summary.recommendedVersionLabel
+  );
+  const hasVersionDelta = Boolean(activeVersion && certifiedVersion && activeVersion !== certifiedVersion);
+  const diffMatchesActive =
+    Boolean(diff) &&
+    normalizeUpdateVersion(diff?.targetVersion) === activeVersion &&
+    normalizeUpdateVersion(diff?.certifiedVersion) === certifiedVersion;
+  const blockerRows = diffMatchesActive
+    ? diff!.rows.filter((row) => isCapabilityDiffTargetBlocker(row))
+    : [];
+  const changedRows = diffMatchesActive
+    ? diff!.rows.filter((row) => row.changeKind !== "unchanged")
+    : [];
+  const visibleRows = Array.from(new Map([...blockerRows, ...changedRows].map((row) => [row.operationId, row])).values()).slice(0, 5);
+  const hasRuntimeGaps =
+    summary.missingRequiredOperationCount > 0 || summary.unknownOrDegradedOperationCount > 0;
+  const statusLabel = !hasVersionDelta
+    ? "Baseline active"
+    : diffMatchesActive
+      ? diff!.summary.certificationBlockerCount > 0
+        ? "Review blockers"
+        : hasRuntimeGaps
+          ? "Runtime gaps remain"
+          : "No new regressions"
+      : "Diff evidence missing";
+  const statusTone = !hasVersionDelta
+    ? "success"
+    : diffMatchesActive
+      ? diff!.summary.certificationBlockerCount > 0
+        ? "danger"
+        : hasRuntimeGaps
+          ? "warning"
+          : "success"
+      : "warning";
+
+  return (
+    <div
+      className={cn(
+        "rounded-[20px] border p-4",
+        surfaceTheme === "light" ? "border-[#e3d4c8] bg-[#fffaf6]" : "border-white/8 bg-white/[0.03]"
+      )}
+    >
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className={cn("text-[10px] uppercase tracking-[0.22em]", mutedTextClassName(surfaceTheme))}>
+            Certified baseline comparison
+          </p>
+          <h3 className={cn("mt-1 break-words text-sm font-medium", surfaceTheme === "light" ? "text-[#4a382c]" : "text-white")}>
+            {formatVersionValue(certifiedVersion)} {"->"} {formatVersionValue(activeVersion)}
+          </h3>
+        </div>
+        <span className={comparisonStatusClassName(statusTone, surfaceTheme)}>{statusLabel}</span>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-4">
+        <Metric
+          label="Native +"
+          value={diffMatchesActive ? String(diff!.summary.nativeImprovements) : "-"}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="Native -"
+          value={diffMatchesActive ? String(diff!.summary.nativeRegressions) : "-"}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="Fallback -"
+          value={diffMatchesActive ? String(diff!.summary.fallbackRegressions) : "-"}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="Target blockers"
+          value={diffMatchesActive ? String(diff!.summary.certificationBlockerCount) : "-"}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+      </div>
+
+      <p className={cn("mt-3 text-xs leading-5", mutedTextClassName(surfaceTheme))}>
+        {!hasVersionDelta
+          ? "The active OpenClaw version is the certified baseline, so this page is showing baseline runtime capabilities."
+          : diffMatchesActive
+            ? diff!.summary.certificationBlockerCount > 0
+              ? "The active version is newer than the certified baseline. The diff was captured during install-and-verify and still has target blockers below."
+              : hasRuntimeGaps
+                ? "The install-and-verify diff did not add new regressions, but the active runtime matrix still has required or degraded capability gaps."
+                : "The active version is newer than the certified baseline. The latest install-and-verify diff did not detect native regressions, fallback regressions, or target blockers."
+            : "This page is showing the active runtime capability matrix only. Run Install and verify latest to capture a certified-vs-active diff for this browser session."}
+      </p>
+
+      {visibleRows.length > 0 ? (
+        <div className="mt-3 grid gap-2">
+          {visibleRows.map((row) => (
+            <div
+              key={row.operationId}
+              className={cn(
+                "grid gap-2 rounded-[14px] border px-3 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(0,10rem)]",
+                surfaceTheme === "light" ? "border-[#eadccf] bg-white/70" : "border-white/8 bg-slate-950/25"
+              )}
+            >
+              <div className="min-w-0">
+                <p className={cn("break-words font-medium", surfaceTheme === "light" ? "text-[#4a382c]" : "text-slate-100")}>
+                  {row.label}
+                </p>
+                <p className={cn("mt-0.5 break-all", mutedTextClassName(surfaceTheme))}>{row.operationId}</p>
+              </div>
+              <div className={cn("min-w-0 break-words sm:text-right", mutedTextClassName(surfaceTheme))}>
+                <p>{formatCapabilityDiffMode(row.certifiedMode)} {"->"} {formatCapabilityDiffMode(row.targetMode)}</p>
+                <p className="mt-0.5">
+                  {isCapabilityDiffTargetBlocker(row) ? "Target blocker" : formatCapabilityDiffChange(row.changeKind)}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function isCapabilityDiffTargetBlocker(row: OpenClawCapabilityDiffReport["rows"][number]) {
+  return (
+    row.severity === "regression" ||
+    row.targetMode === "missing" ||
+    row.targetMode === "disabled" ||
+    row.missingRequiredMethods.length > 0
+  );
+}
+
+function comparisonStatusClassName(tone: "success" | "warning" | "danger", surfaceTheme: SurfaceTheme) {
+  const base = "rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em]";
+
+  if (tone === "danger") {
+    return cn(base, surfaceTheme === "light" ? "border-rose-300 bg-rose-50 text-rose-700" : "border-rose-300/25 bg-rose-300/10 text-rose-100");
+  }
+
+  if (tone === "warning") {
+    return cn(base, surfaceTheme === "light" ? "border-amber-300 bg-amber-50 text-amber-700" : "border-amber-300/25 bg-amber-300/10 text-amber-100");
+  }
+
+  return cn(base, surfaceTheme === "light" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100");
+}
+
+function formatCapabilityDiffMode(value: string) {
+  switch (value) {
+    case "gateway-native":
+      return "Native";
+    case "cli-fallback":
+      return "CLI";
+    case "degraded":
+      return "Degraded";
+    case "disabled":
+      return "Disabled";
+    case "unknown":
+      return "Unknown";
+    case "missing":
+      return "Missing";
+    default:
+      return value;
+  }
+}
+
+function formatCapabilityDiffChange(value: OpenClawCapabilityDiffReport["rows"][number]["changeKind"]) {
+  switch (value) {
+    case "added":
+      return "Added";
+    case "removed":
+      return "Removed";
+    case "mode-changed":
+      return "Mode changed";
+    case "method-changed":
+      return "Methods changed";
+    case "fallback-changed":
+      return "Fallback changed";
+    case "unchanged":
+      return "Unchanged";
+  }
+}
+
+function metricBadgeClassName(tone: "success" | "warning" | "danger" | "neutral", dark: boolean) {
+  if (tone === "danger") {
+    return dark
+      ? "border-rose-300/25 bg-rose-300/10 text-rose-100"
+      : "border-rose-300 bg-rose-50 text-rose-700";
+  }
+
+  if (tone === "warning") {
+    return dark
+      ? "border-amber-300/25 bg-amber-300/10 text-amber-100"
+      : "border-amber-300 bg-amber-50 text-amber-700";
+  }
+
+  if (tone === "neutral") {
+    return dark
+      ? "border-slate-300/20 bg-slate-300/10 text-slate-200"
+      : "border-slate-200 bg-slate-50 text-slate-600";
+  }
+
+  return dark
+    ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
+    : "border-emerald-200 bg-emerald-50 text-emerald-700";
+}
+
 function Metric({
   label,
   value,
   badge,
+  badgeTone = "success",
   surfaceTheme,
   dark = false,
-  compact = false
+  compact = false,
+  wrapValue = false
 }: {
   label: string;
   value: string;
   badge?: string;
+  badgeTone?: "success" | "warning" | "danger" | "neutral";
   surfaceTheme: SurfaceTheme;
   dark?: boolean;
   compact?: boolean;
+  wrapValue?: boolean;
 }) {
   const cardToneIsDark = dark || surfaceTheme === "dark";
   return (
-    <div>
+    <div className="min-w-0">
       <p className={cn("text-[11px]", cardToneIsDark ? "text-slate-400" : "text-muted-foreground")}>{label}</p>
-      <div className="mt-1.5 flex items-center gap-2">
+      <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2">
         <p
           className={cn(
-            "min-w-0 truncate font-medium",
+            "min-w-0 font-medium",
+            wrapValue ? "break-words" : "truncate",
             compact ? "text-sm" : "text-[1.05rem]",
             cardToneIsDark ? "text-white" : "text-foreground"
           )}
@@ -1923,9 +2223,7 @@ function Metric({
           <span
             className={cn(
               "shrink-0 rounded-full border px-2 py-0.5 text-[9px] uppercase tracking-[0.12em]",
-              cardToneIsDark
-                ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
-                : "border-emerald-200 bg-emerald-50 text-emerald-700"
+              metricBadgeClassName(badgeTone, cardToneIsDark)
             )}
           >
             {badge}
@@ -2001,10 +2299,14 @@ function DiagnosticBlock({
 function CapabilityMatrixPanel({
   rows,
   summary,
+  snapshot,
+  updateCapabilityDiff,
   surfaceTheme
 }: {
   rows: OpenClawCapabilityMatrixRow[];
   summary: OpenClawCapabilityMatrixSummary;
+  snapshot: MissionControlShellSettingsPanelProps["snapshot"];
+  updateCapabilityDiff: OpenClawCapabilityDiffReport | null;
   surfaceTheme: SurfaceTheme;
 }) {
   const rowsByStatus = {
@@ -2019,12 +2321,13 @@ function CapabilityMatrixPanel({
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Metric
-          label="OpenClaw"
+          label="Active OpenClaw"
           value={summary.openClawVersionLabel}
-          badge={`Recommended ${summary.recommendedVersionLabel}`}
+          badge={`Certified baseline ${summary.recommendedVersionLabel}`}
           surfaceTheme={surfaceTheme}
           dark={surfaceTheme === "dark"}
           compact
+          wrapValue
         />
         <Metric
           label="AgentOS compatibility"
@@ -2045,12 +2348,26 @@ function CapabilityMatrixPanel({
         <Metric
           label="Required gaps"
           value={String(summary.missingRequiredOperationCount)}
-          badge={summary.unknownOrDegradedOperationCount > 0 ? `${summary.unknownOrDegradedOperationCount} unknown/degraded` : "Clear"}
+          badge={
+            summary.missingRequiredOperationCount > 0
+              ? `${summary.missingRequiredOperationCount} gaps`
+              : summary.unknownOrDegradedOperationCount > 0
+                ? `${summary.unknownOrDegradedOperationCount} unknown/degraded`
+                : "Clear"
+          }
+          badgeTone={summary.missingRequiredOperationCount > 0 ? "danger" : summary.unknownOrDegradedOperationCount > 0 ? "warning" : "success"}
           surfaceTheme={surfaceTheme}
           dark={surfaceTheme === "dark"}
           compact
         />
       </div>
+
+      <CapabilityBaselineComparisonPanel
+        diff={updateCapabilityDiff}
+        snapshot={snapshot}
+        summary={summary}
+        surfaceTheme={surfaceTheme}
+      />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Metric
@@ -2836,6 +3153,12 @@ function UpdateRegistryPanel({
             Latest detected status: {formatUpdateCompatibilityStatus(latestDecision.status)}. {latestDecision.reason}
           </p>
         ) : null}
+        {hasRegistryUpdateAvailable && !hasCertifiedUpdateAvailable ? (
+          <p className="mt-1.5 opacity-90">
+            Verification path: install the latest target only after operator confirmation, verify the installed version,
+            check Gateway compatibility, run a runtime smoke test, and attempt rollback if postflight fails.
+          </p>
+        ) : null}
         {updateError ? (
           <p className={cn("mt-1.5", surfaceTheme === "light" ? "text-rose-700" : "text-rose-200")}>{updateError}</p>
         ) : null}
@@ -2955,6 +3278,9 @@ function UpdateSafetyPanel({
               <h3 className={cn("mt-1 max-w-full break-words text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
                 OpenClaw v{report.targetVersion} preflight
               </h3>
+              <p className={cn("mt-1 text-[11px] leading-4", mutedTextClassName(surfaceTheme))}>
+                Preflight checks whether the current AgentOS/OpenClaw environment is ready to attempt the selected update. It does not install or certify the target binary.
+              </p>
             </div>
             <span
               className={cn(
@@ -2975,7 +3301,7 @@ function UpdateSafetyPanel({
             surfaceTheme={surfaceTheme}
             rows={[
               ["Installed now", report.currentVersion ? `v${report.currentVersion}` : "Unknown"],
-              ["Target gate", report.canAttemptUpdate ? "Can be attempted" : "Blocked"],
+              ["Target gate", report.canAttemptUpdate ? report.requiresExplicitConfirmation ? "Can be attempted with explicit confirmation" : "Can be attempted" : "Blocked"],
               ["Recommended action", report.recommendedNextAction],
               ["Gateway", report.summary.gatewayReachable ? "Reachable" : "Not ready"],
               ["Protocol", report.summary.gatewayProtocol],
@@ -3003,6 +3329,9 @@ function UpdateSafetyPanel({
               <h3 className={cn("mt-1 max-w-full break-words text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
                 Target v{shadowProbeReport.targetVersion}
               </h3>
+              <p className={cn("mt-1 text-[11px] leading-4", mutedTextClassName(surfaceTheme))}>
+                Shadow probe is non-mutating. It confirms the active OpenClaw binary and target manifest decision, but cannot execute the target binary until OpenClaw exposes staging.
+              </p>
             </div>
             <span className={cn("inline-flex max-w-full justify-self-start rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] sm:justify-self-end", mutedTextClassName(surfaceTheme))}>
               {shadowProbeReport.supported ? "Staged" : "Limited"}
@@ -3017,6 +3346,7 @@ function UpdateSafetyPanel({
             surfaceTheme={surfaceTheme}
             rows={[
               ["Mutation safety", shadowProbeReport.mutationSafe ? "No active binary change" : "Unknown"],
+              ["Target binary coverage", shadowProbeReport.supported ? "Staged target tested" : "Not staged"],
               ["Current binary version", shadowProbeReport.currentBinaryVersion ?? "Unknown"],
               ["Probe command", shadowProbeReport.command ?? "Not available"],
               ["Next action", shadowProbeReport.recommendedNextAction]

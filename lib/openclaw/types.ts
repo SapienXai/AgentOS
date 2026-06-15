@@ -398,6 +398,57 @@ export interface OpenClawShadowProbeReport {
   recommendedNextAction: string;
 }
 
+export type OpenClawCapabilityDiffChangeKind =
+  | "added"
+  | "removed"
+  | "mode-changed"
+  | "method-changed"
+  | "fallback-changed"
+  | "unchanged";
+
+export type OpenClawCapabilityDiffSeverity = "improvement" | "regression" | "changed" | "unchanged";
+
+export interface OpenClawCapabilityDiffRow {
+  operationId: string;
+  label: string;
+  changeKind: OpenClawCapabilityDiffChangeKind;
+  severity: OpenClawCapabilityDiffSeverity;
+  certifiedMode: OpenClawCapabilityOperationMode | "missing";
+  targetMode: OpenClawCapabilityOperationMode | "missing";
+  certifiedNative: boolean;
+  targetNative: boolean;
+  certifiedFallbackAllowed: boolean;
+  targetFallbackAllowed: boolean;
+  addedMethods: string[];
+  removedMethods: string[];
+  addedEvents: string[];
+  removedEvents: string[];
+  missingRequiredMethods: string[];
+  reason: string;
+  recovery: string | null;
+}
+
+export interface OpenClawCapabilityDiffReport {
+  generatedAt: string;
+  certifiedVersion: string | null;
+  targetVersion: string | null;
+  certifiedProtocolVersion: string | null;
+  targetProtocolVersion: string | null;
+  summary: {
+    totalOperations: number;
+    unchangedOperations: number;
+    addedOperations: number;
+    removedOperations: number;
+    nativeImprovements: number;
+    nativeRegressions: number;
+    fallbackRegressions: number;
+    newMissingRequiredMethods: number;
+    degradedOrUnknownOperations: number;
+    certificationBlockerCount: number;
+  };
+  rows: OpenClawCapabilityDiffRow[];
+}
+
 export interface OpenClawCommandDiagnostic {
   id: string;
   command: string;
@@ -1007,6 +1058,7 @@ export type OpenClawUpdateStreamEvent =
       stdout: string;
       stderr: string;
       snapshot?: MissionControlSnapshot;
+      capabilityDiff?: OpenClawCapabilityDiffReport;
       manualCommand?: string;
       docsUrl?: string;
     };

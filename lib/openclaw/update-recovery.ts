@@ -11,9 +11,24 @@ export function shouldAttemptOpenClawUpdateRecovery(output: string) {
     /Completion cache update failed/i.test(normalized) ||
     /Gateway did not become healthy after restart/i.test(normalized) ||
     /Gateway version mismatch/i.test(normalized) ||
+    /updated install (?:refresh|restart) failed/i.test(normalized) ||
+    /Gateway (?:install|restart) blocked/i.test(normalized) ||
     /Run `?openclaw gateway status --deep`? for details/i.test(normalized);
 
   return (updateFinished || versionAdvanced) && postUpdateFailure;
+}
+
+export function isOpenClawDowngradeConfigBlocker(output: string) {
+  const normalized = output.trim();
+
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    /older than the config last written by OpenClaw/i.test(normalized) ||
+    /Refusing to (?:install|rewrite|restart).*because this OpenClaw binary .* is older than the config last written/i.test(normalized)
+  );
 }
 
 export function isOpenClawGatewayReadyOutput(output: string) {
@@ -33,4 +48,14 @@ export function isOpenClawGatewayReadyOutput(output: string) {
 
 export function buildOpenClawUpdateRecoveryManualCommand(command: string) {
   return `${command} doctor --fix && ${command} gateway restart && ${command} gateway status --deep`;
+}
+
+export function buildOpenClawDowngradeConfigBlockerManualCommand(command: string, restoreVersion: string | null | undefined) {
+  const version = restoreVersion?.trim().replace(/^v/i, "");
+
+  if (!version) {
+    return buildOpenClawUpdateRecoveryManualCommand(command);
+  }
+
+  return `${command} update --tag ${version} --yes && ${command} gateway restart && ${command} gateway status --deep`;
 }

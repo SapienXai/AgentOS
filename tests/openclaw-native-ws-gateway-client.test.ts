@@ -738,6 +738,45 @@ test("native WS gateway client uses CLI update status when Gateway lacks availab
   assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.operation, "update.status");
 });
 
+test("native WS gateway client uses CLI update status when Gateway update status is unreachable", async () => {
+  clearOpenClawGatewayFallbackDiagnosticsForTesting();
+  const fallback = new FallbackGatewayClient();
+  fallback.updateStatusPayload = {
+    update: {
+      registry: {
+        latestVersion: "10.0.0"
+      }
+    },
+    availability: {
+      available: true,
+      latestVersion: "10.0.0"
+    }
+  };
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: frame.method === "connect",
+        payload: frame.method === "connect" ? { protocol: 3 } : undefined,
+        error: frame.method === "connect" ? undefined : { message: "Gateway unavailable", code: "UNAVAILABLE" }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  assert.deepEqual(await client.getUpdateStatus(), fallback.updateStatusPayload);
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "update.status"]);
+  assert.deepEqual(fallback.calls.map((call) => call.method), ["getUpdateStatus"]);
+  assert.equal(client.getDiagnostics().fallbackTotal, 1);
+  assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.operation, "update.status");
+});
+
 test("native WS gateway client keeps status native without cached CLI registry backfill", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
@@ -1587,6 +1626,57 @@ test("native WS gateway client reads config paths from Gateway snapshots", async
   assert.equal(await client.getConfig("gateway.remote.url"), "ws://127.0.0.1:18789");
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "config.get"]);
   assert.deepEqual(sentFrames[1]?.params, {});
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway client dedupes concurrent config snapshot reads", async () => {
+  clearOpenClawGatewayFallbackDiagnosticsForTesting();
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    if (frame.method === "connect") {
+      globalThis.queueMicrotask(() => {
+        socket.emitMessage({ type: "res", id: frame.id, ok: true, payload: { protocol: 4 } });
+      });
+      return;
+    }
+
+    globalThis.setTimeout(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: {
+          exists: true,
+          valid: true,
+          hash: "hash-1",
+          config: {
+            gateway: {
+              remote: {
+                url: "ws://127.0.0.1:18789"
+              }
+            }
+          }
+        }
+      });
+    }, 5);
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  const values = await Promise.all(
+    Array.from({ length: 10 }, () => client.getConfig("gateway.remote.url"))
+  );
+  const cachedValue = await client.getConfig("gateway.remote.url");
+
+  assert.deepEqual(values, Array.from({ length: 10 }, () => "ws://127.0.0.1:18789"));
+  assert.equal(cachedValue, "ws://127.0.0.1:18789");
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "config.get"]);
+  assert.equal(client.getDiagnostics().cachedReadRequestCount, 1);
+  assert.equal(client.getDiagnostics().sharedInFlightRequestCount, 0);
   assert.deepEqual(fallback.calls, []);
 });
 

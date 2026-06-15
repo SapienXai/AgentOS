@@ -28,13 +28,14 @@ import type {
   ResetTarget
 } from "@/lib/agentos/contracts";
 import type { GatewayNativeAuthStatus } from "@/lib/openclaw/gateway-auth";
+import type { OpenClawCapabilityDiffReport } from "@/lib/openclaw/types";
 import { isOpenClawOnboardingModelReady } from "@/lib/openclaw/readiness";
 import { cn } from "@/lib/utils";
 
 type SurfaceTheme = "dark" | "light";
 type SnapshotStreamState = "connecting" | "live" | "retrying";
 type UpdateRunState = "idle" | "running" | "success" | "error";
-type GatewayControlAction = "start" | "stop" | "restart";
+type GatewayControlAction = "start" | "stop" | "restart" | "doctor";
 type OnboardingWizardStage = "system" | "models";
 
 export type MissionControlShellSettingsPanelProps = {
@@ -47,6 +48,7 @@ export type MissionControlShellSettingsPanelProps = {
   isSavingWorkspaceRoot: boolean;
   isCheckingForUpdates: boolean;
   updateRunState: UpdateRunState;
+  updateCapabilityDiff: OpenClawCapabilityDiffReport | null;
   selectedModelId: string;
   modelOnboardingRunState: UpdateRunState;
   gatewayControlAction: GatewayControlAction | null;

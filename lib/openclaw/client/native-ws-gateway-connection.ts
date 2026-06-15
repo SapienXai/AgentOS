@@ -35,6 +35,7 @@ import type {
   OpenClawCommandOptions,
   OpenClawGatewayClient,
   OpenClawGatewayClientDiagnostics,
+  OpenClawGatewayRequestPolicy,
   OpenClawGatewayEventSubscription
 } from "@/lib/openclaw/client/types";
 
@@ -42,9 +43,13 @@ export type GatewayEventListener = (event: GatewayEventFrame) => void;
 
 export type GatewayCloseListener = () => void;
 
+const readRequestCacheTtlMs = 300;
+
 export class PersistentOpenClawGatewayConnection {
   private socket: WebSocketLike | null = null;
   private pending = new Map<string, PendingRequest>();
+  private sharedReadRequests = new Map<string, Promise<unknown>>();
+  private readRequestCache = new Map<string, { expiresAt: number; payload: unknown }>();
   private cleanupCallbacks: Array<() => void> = [];
   private eventListeners = new Set<GatewayEventListener>();
   private closeListeners = new Set<GatewayCloseListener>();
@@ -62,11 +67,21 @@ export class PersistentOpenClawGatewayConnection {
 
   getDiagnostics(): Pick<
     OpenClawGatewayClientDiagnostics,
-    "connectionState" | "protocolVersion" | "lastNativeError" | "lastConnectedAt" | "lastDisconnectedAt"
+    | "connectionState"
+    | "protocolVersion"
+    | "pendingRequestCount"
+    | "sharedInFlightRequestCount"
+    | "cachedReadRequestCount"
+    | "lastNativeError"
+    | "lastConnectedAt"
+    | "lastDisconnectedAt"
   > {
     return {
       connectionState: this.state,
       protocolVersion: typeof this.hello?.protocol === "number" ? this.hello.protocol : null,
+      pendingRequestCount: this.pending.size,
+      sharedInFlightRequestCount: this.sharedReadRequests.size,
+      cachedReadRequestCount: this.readRequestCache.size,
       lastNativeError: this.lastNativeError,
       lastConnectedAt: this.lastConnectedAt,
       lastDisconnectedAt: this.lastDisconnectedAt
@@ -77,7 +92,8 @@ export class PersistentOpenClawGatewayConnection {
     method: string,
     params: Record<string, unknown>,
     options: OpenClawCommandOptions,
-    timeoutMs: number
+    timeoutMs: number,
+    policy?: Pick<OpenClawGatewayRequestPolicy, "safety">
   ) {
     const hello = await this.ensureConnected(options, timeoutMs);
     assertGatewayMethodSupported(hello, method);
@@ -86,7 +102,49 @@ export class PersistentOpenClawGatewayConnection {
       throw new NativeGatewayError("OpenClaw Gateway connection is not ready.");
     }
 
-    return sendGatewayRequest<TPayload>(socket, this.pending, method, params, timeoutMs, options.signal);
+    if (policy?.safety !== "read" || options.signal) {
+      return sendGatewayRequest<TPayload>(socket, this.pending, method, params, timeoutMs, options.signal);
+    }
+
+    this.pruneExpiredReadCache();
+    const cacheKey = buildReadRequestCacheKey(method, params);
+    const cached = this.readRequestCache.get(cacheKey);
+
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.payload as TPayload;
+    }
+
+    const existing = this.sharedReadRequests.get(cacheKey);
+
+    if (existing) {
+      return existing as Promise<TPayload>;
+    }
+
+    const request = sendGatewayRequest<TPayload>(socket, this.pending, method, params, timeoutMs)
+      .then((payload) => {
+        this.readRequestCache.set(cacheKey, {
+          expiresAt: Date.now() + readRequestCacheTtlMs,
+          payload
+        });
+
+        return payload;
+      })
+      .finally(() => {
+        this.sharedReadRequests.delete(cacheKey);
+      });
+
+    this.sharedReadRequests.set(cacheKey, request);
+    return request;
+  }
+
+  private pruneExpiredReadCache() {
+    const now = Date.now();
+
+    for (const [key, entry] of this.readRequestCache) {
+      if (entry.expiresAt <= now) {
+        this.readRequestCache.delete(key);
+      }
+    }
   }
 
   async probe(options: OpenClawCommandOptions, timeoutMs: number) {
@@ -321,6 +379,8 @@ export class PersistentOpenClawGatewayConnection {
     this.socket = null;
     this.hello = null;
     this.state = options.state;
+    this.sharedReadRequests.clear();
+    this.readRequestCache.clear();
     if (options.state !== "connecting" && hadSocket) {
       this.lastDisconnectedAt = new Date().toISOString();
     }
@@ -341,6 +401,26 @@ export class PersistentOpenClawGatewayConnection {
       closeSocketForDisconnect(socket);
     }
   }
+}
+
+function buildReadRequestCacheKey(method: string, params: Record<string, unknown>) {
+  return `${method}:${stableStringify(params)}`;
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
 }
 
 function closeSocketForDisconnect(socket: WebSocketLike) {

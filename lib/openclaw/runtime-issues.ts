@@ -117,6 +117,7 @@ export function buildRuntimeIssues(input: RuntimeIssueInput): RuntimeIssue[] {
   const now = (input.now ?? new Date()).toISOString();
   const candidates = collectRuntimeIssueCandidates(input, now);
   const activeById = new Map<string, RuntimeIssue>();
+  const gatewayUnhealthy = isGatewayUnhealthy(input);
 
   for (const candidate of candidates) {
     const existing = activeById.get(candidate.id);
@@ -124,17 +125,27 @@ export function buildRuntimeIssues(input: RuntimeIssueInput): RuntimeIssue[] {
   }
 
   const states = input.states ?? {};
-  const merged = [...activeById.values()].map((issue) => applyRuntimeIssueState(issue, states[issue.id], now));
+  let merged = [...activeById.values()].map((issue) =>
+    applyRuntimeIssueState(issue, states[issue.id], now, {
+      reopenDismissed: shouldReopenActiveRuntimeIssue(issue, gatewayUnhealthy)
+    })
+  );
 
   for (const state of Object.values(states)) {
     if (!state?.id || activeById.has(state.id)) {
       continue;
     }
 
-    const restored = restoreRuntimeIssueFromState(state, now);
+    const restored = restoreRuntimeIssueFromState(state, now, {
+      reopenDismissed: shouldReopenPersistedRuntimeIssue(state, gatewayUnhealthy)
+    });
     if (restored) {
       merged.push(restored);
     }
+  }
+
+  if (merged.some((issue) => isOpenRuntimeIssue(issue) && issue.type === "openclaw_rollback_needed")) {
+    merged = merged.filter((issue) => issue.type !== "gateway_unreachable");
   }
 
   return merged.sort(compareRuntimeIssues);
@@ -429,13 +440,20 @@ function mergeRuntimeIssue(left: RuntimeIssue, right: RuntimeIssue, now: string)
   };
 }
 
-function applyRuntimeIssueState(issue: RuntimeIssue, state: RuntimeIssueState | undefined, now: string): RuntimeIssue {
+function applyRuntimeIssueState(
+  issue: RuntimeIssue,
+  state: RuntimeIssueState | undefined,
+  now: string,
+  options: { reopenDismissed?: boolean } = {}
+): RuntimeIssue {
   if (!state) {
     return issue;
   }
 
   const activeStatus =
-    state.status === "dismissed" || state.status === "failed"
+    state.status === "dismissed" && options.reopenDismissed
+      ? "open"
+      : state.status === "dismissed" || state.status === "failed"
       ? state.status
       : "open";
 
@@ -449,7 +467,11 @@ function applyRuntimeIssueState(issue: RuntimeIssue, state: RuntimeIssueState | 
   };
 }
 
-function restoreRuntimeIssueFromState(state: RuntimeIssueState, now: string): RuntimeIssue | null {
+function restoreRuntimeIssueFromState(
+  state: RuntimeIssueState,
+  now: string,
+  options: { reopenDismissed?: boolean } = {}
+): RuntimeIssue | null {
   if (state.status === "open" || state.status === "resolving") {
     return null;
   }
@@ -468,16 +490,86 @@ function restoreRuntimeIssueFromState(state: RuntimeIssueState, now: string): Ru
     requestedScopes: state.requestedScopes,
     approvedScopes: state.approvedScopes,
     command: state.command,
-    recoveryCommand: state.recoveryCommand,
+    recoveryCommand: normalizeRollbackRecoveryCommandFromState(state) ?? state.recoveryCommand,
     fallbackCommand: state.fallbackCommand,
     inspectCommand: state.inspectCommand,
     createdAt: state.createdAt ?? state.updatedAt ?? now,
     updatedAt: state.updatedAt ?? now,
     resolvedAt: state.resolvedAt,
-    status: state.status,
+    status: state.status === "dismissed" && options.reopenDismissed ? "open" : state.status,
     rawOutput: state.rawOutput,
     errorMessage: state.errorMessage
   };
+}
+
+function normalizeRollbackRecoveryCommandFromState(state: RuntimeIssueState) {
+  if (state.type !== "openclaw_rollback_needed" || !state.recoveryCommand) {
+    return null;
+  }
+
+  const rollbackVersion = readRollbackSnapshotVersionFromOutput(state.rawOutput);
+  if (!rollbackVersion) {
+    return null;
+  }
+
+  const openClawCommand = readOpenClawCommandPrefix(state.recoveryCommand);
+  if (!openClawCommand) {
+    return null;
+  }
+
+  return `${openClawCommand} update --tag ${rollbackVersion} --yes && ${openClawCommand} gateway restart && ${openClawCommand} gateway status --deep`;
+}
+
+function readRollbackSnapshotVersionFromOutput(output: string | null | undefined) {
+  const text = output?.trim();
+  if (!text) {
+    return null;
+  }
+
+  return (
+    text.match(/\bSaved OpenClaw rollback snapshot for v?(\d+(?:\.\d+)+)\b/i)?.[1] ??
+    text.match(/\bRestoring previous OpenClaw version v?(\d+(?:\.\d+)+)\b/i)?.[1] ??
+    null
+  );
+}
+
+function readOpenClawCommandPrefix(command: string) {
+  const text = command.trim();
+  if (!text) {
+    return null;
+  }
+
+  return (
+    text.match(/^(.+?)\s+update\s+--tag\s+\S+/i)?.[1]?.trim() ??
+    text.match(/^(.+?)\s+gateway\s+restart\b/i)?.[1]?.trim() ??
+    null
+  );
+}
+
+function isGatewayUnhealthy(input: RuntimeIssueInput) {
+  return Boolean(
+    input.diagnostics?.installed &&
+      !input.diagnostics.rpcOk &&
+      (
+        input.diagnostics.transport?.gatewayMode === "unreachable" ||
+        !input.diagnostics.loaded ||
+        input.diagnostics.health === "offline" ||
+        input.diagnostics.health === "degraded"
+      )
+  );
+}
+
+function shouldReopenActiveRuntimeIssue(issue: RuntimeIssue, gatewayUnhealthy: boolean) {
+  return gatewayUnhealthy && issue.type === "gateway_unreachable" && issue.severity === "blocked";
+}
+
+function shouldReopenPersistedRuntimeIssue(state: RuntimeIssueState, gatewayUnhealthy: boolean) {
+  return Boolean(
+    gatewayUnhealthy &&
+      state.status === "dismissed" &&
+      state.type === "openclaw_rollback_needed" &&
+      state.recoveryCommand
+  );
 }
 
 function pickRuntimeIssueStateDetails(state: RuntimeIssueState): Partial<RuntimeIssue> {

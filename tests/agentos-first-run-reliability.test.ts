@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 
 import { createErrorSnapshot, createFallbackSnapshot } from "@/lib/openclaw/fallback";
@@ -44,6 +46,17 @@ test("fallback demo snapshot remains explicitly offline and non-live", () => {
   assert.ok(snapshot.agents.every((agent) => agent.id.includes("demo")));
   assert.ok(snapshot.runtimes.every((runtime) => runtime.id.includes("demo")));
   assert.ok(snapshot.tasks.every((task) => task.id.includes("demo") || task.key.includes("demo")));
+});
+
+test("onboarding overlay is portaled and does not create outer page scroll", () => {
+  const source = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding.tsx"), "utf8");
+
+  assert.match(source, /createPortal\(/);
+  assert.match(source, /document\.body/);
+  assert.match(source, /openclaw-onboarding-backdrop fixed inset-0 z-\[1000\]/);
+  assert.match(source, /overflow-hidden/);
+  assert.doesNotMatch(source, /openclaw-onboarding-backdrop[^\n]+overflow-y-auto/);
+  assert.match(source, /max-h-\[calc\(100dvh-32px\)\]/);
 });
 
 test("first-run write actions return actionable readiness failures before mutation", () => {

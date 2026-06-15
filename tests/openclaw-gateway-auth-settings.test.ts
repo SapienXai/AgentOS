@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +15,26 @@ import {
   setOpenClawAdapterForTesting,
   type OpenClawAdapter
 } from "@/lib/openclaw/adapter/openclaw-adapter";
+
+test("Gateway settings route unreachable Gateway repair to rollback or process recovery", () => {
+  const source = readFileSync(join(process.cwd(), "components/mission-control/settings-control-center.tsx"), "utf8");
+
+  assert.match(source, /hasOpenClawRollbackIssue/);
+  assert.match(source, /gatewayAccessRepairBlockMessage/);
+  assert.match(source, /Rollback to last working OpenClaw/);
+  assert.match(source, /disabled=\{isRepairingGatewayDeviceAccess \|\| Boolean\(gatewayAccessRepairBlockMessage\)\}/);
+});
+
+test("Gateway settings expose OpenClaw doctor repair through Gateway control", () => {
+  const settingsSource = readFileSync(join(process.cwd(), "components/mission-control/settings-control-center.tsx"), "utf8");
+  const routeSource = readFileSync(join(process.cwd(), "app/api/gateway/control/route.ts"), "utf8");
+  const serviceSource = readFileSync(join(process.cwd(), "lib/openclaw/application/gateway-service.ts"), "utf8");
+
+  assert.match(settingsSource, /\["start", "stop", "restart", "doctor"\]/);
+  assert.match(settingsSource, /Doctor --fix/);
+  assert.match(routeSource, /z\.enum\(\["start", "stop", "restart", "doctor"\]\)/);
+  assert.match(serviceSource, /runOpenClaw\(\["doctor", "--fix"\]/);
+});
 
 function createSettingsAdapter(config: Record<string, unknown> = {}): OpenClawAdapter {
   const mutableConfig = { ...config };

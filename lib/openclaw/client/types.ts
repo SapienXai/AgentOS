@@ -57,6 +57,9 @@ export type OpenClawGatewayClientDiagnostics = {
   };
   fallbackCounts: Record<string, number>;
   fallbackTotal: number;
+  pendingRequestCount?: number;
+  sharedInFlightRequestCount?: number;
+  cachedReadRequestCount?: number;
   recentFallbackDiagnostics: OpenClawGatewayRecentFallbackDiagnostic[];
   lastNativeError: string | null;
   lastNativeFailureAt: string | null;

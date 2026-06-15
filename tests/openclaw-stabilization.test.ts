@@ -88,7 +88,9 @@ import {
 } from "@/components/mission-control/task-review-state";
 import { buildAgentChatPrompt } from "@/lib/openclaw/agent-chat-prompt";
 import {
+  buildOpenClawDowngradeConfigBlockerManualCommand,
   buildOpenClawUpdateRecoveryManualCommand,
+  isOpenClawDowngradeConfigBlocker,
   isOpenClawGatewayReadyOutput,
   shouldAttemptOpenClawUpdateRecovery
 } from "@/lib/openclaw/update-recovery";
@@ -361,6 +363,23 @@ Gateway did not become healthy after restart.`;
   assert.equal(
     buildOpenClawUpdateRecoveryManualCommand("/Users/example/.openclaw/bin/openclaw"),
     "/Users/example/.openclaw/bin/openclaw doctor --fix && /Users/example/.openclaw/bin/openclaw gateway restart && /Users/example/.openclaw/bin/openclaw gateway status --deep"
+  );
+});
+
+test("openclaw update recovery detects newer-config downgrade blockers", () => {
+  const output = `Update Result: OK
+  Root: /Users/example/.openclaw/tools/node-v22.22.0/lib/node_modules/openclaw
+  Before: 2026.6.6
+  After: 2026.6.1
+
+Failed to refresh gateway service environment from updated install: Error: updated install refresh failed (/Users/example/.openclaw/tools/node-v22.22.0/lib/node_modules/openclaw/dist/index.js): Gateway install blocked: Refusing to install or rewrite the gateway service because this OpenClaw binary (2026.6.1) is older than the config last written by OpenClaw 2026.6.6.
+Gateway: restart failed: Error: updated install restart failed (/Users/example/.openclaw/tools/node-v22.22.0/lib/node_modules/openclaw/dist/index.js): Gateway restart blocked: Refusing to restart the gateway service because this OpenClaw binary (2026.6.1) is older than the config last written by OpenClaw 2026.6.6.`;
+
+  assert.equal(shouldAttemptOpenClawUpdateRecovery(output), true);
+  assert.equal(isOpenClawDowngradeConfigBlocker(output), true);
+  assert.equal(
+    buildOpenClawDowngradeConfigBlockerManualCommand("/Users/example/.openclaw/bin/openclaw", "2026.6.6"),
+    "/Users/example/.openclaw/bin/openclaw update --tag 2026.6.6 --yes && /Users/example/.openclaw/bin/openclaw gateway restart && /Users/example/.openclaw/bin/openclaw gateway status --deep"
   );
 });
 

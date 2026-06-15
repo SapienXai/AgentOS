@@ -79,6 +79,7 @@ import {
   resolveInitialOnboardingModelId
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import { compactPath } from "@/lib/openclaw/presenters";
+import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
 import { consumeNdjsonStream } from "@/lib/ndjson";
 import {
   buildWorkspaceCreateProgressTemplate,
@@ -95,6 +96,7 @@ import type {
   MissionResponse,
   MissionControlSnapshot,
   OpenClawBinarySelection,
+  OpenClawCapabilityDiffReport,
   OpenClawModelOnboardingPhase,
   OpenClawModelOnboardingStreamEvent,
   OpenClawOnboardingPhase,
@@ -132,7 +134,7 @@ type ComposeIntent = {
 
 type UpdateRunState = "idle" | "running" | "success" | "error";
 type OnboardingWizardStage = "system" | "models";
-type GatewayControlAction = "start" | "stop" | "restart";
+type GatewayControlAction = "start" | "stop" | "restart" | "doctor";
 type ModelOnboardingIntent = "auto" | "refresh" | "discover" | "set-default" | "login-provider";
 type ModelOnboardingRunOptions = {
   autoOpenTerminal?: boolean;
@@ -152,6 +154,7 @@ const modelAuthTerminalAutoOpenCooldownMs = 2 * 60 * 1000;
 const modelAuthStatusPollDelaysMs = [4_000, 8_000, 15_000, 30_000, 45_000, 60_000];
 const launchpadWorkspaceHandoffPollDelaysMs = [0, 800, 1_200, 1_800, 2_600, 3_600, 5_000, 6_500];
 const launchpadWorkspaceHandoffSuccessPauseMs = 450;
+const openClawCapabilityDiffStorageKey = "agentos:last-openclaw-capability-diff";
 const useIsomorphicLayoutEffect = typeof globalThis.window === "undefined" ? useEffect : useLayoutEffect;
 const initialModelSwitchFeedback: ModelSwitchFeedback = {
   phase: "idle",
@@ -294,6 +297,7 @@ export function MissionControlShell({
   const [updateResultMessage, setUpdateResultMessage] = useState<string | null>(null);
   const [updateLog, setUpdateLog] = useState("");
   const [updateManualCommand, setUpdateManualCommand] = useState<string | null>(null);
+  const [updateCapabilityDiff, setUpdateCapabilityDiff] = useState<OpenClawCapabilityDiffReport | null>(null);
   const [updateTargetVersion, setUpdateTargetVersion] = useState<string | null>(null);
   const [updateMode, setUpdateMode] = useState<"recommended" | "candidate" | "advanced">("recommended");
   const [onboardingRunState, setOnboardingRunState] = useState<UpdateRunState>("idle");
@@ -304,6 +308,31 @@ export function MissionControlShell({
   const [onboardingManualCommand, setOnboardingManualCommand] = useState<string | null>(null);
   const [onboardingDocsUrl, setOnboardingDocsUrl] = useState<string | null>(null);
   const [onboardingStage, setOnboardingStage] = useState<OnboardingWizardStage>("system");
+
+  useEffect(() => {
+    if (typeof window === "undefined" || updateCapabilityDiff) {
+      return;
+    }
+
+    const stored = window.localStorage.getItem(openClawCapabilityDiffStorageKey);
+    if (!stored) {
+      return;
+    }
+
+    try {
+      setUpdateCapabilityDiff(JSON.parse(stored) as OpenClawCapabilityDiffReport);
+    } catch {
+      window.localStorage.removeItem(openClawCapabilityDiffStorageKey);
+    }
+  }, [updateCapabilityDiff]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !updateCapabilityDiff) {
+      return;
+    }
+
+    window.localStorage.setItem(openClawCapabilityDiffStorageKey, JSON.stringify(updateCapabilityDiff));
+  }, [updateCapabilityDiff]);
   const [selectedOnboardingModelId, setSelectedOnboardingModelId] = useState<string>("");
   const [discoveredModels, setDiscoveredModels] = useState<DiscoveredModelCandidate[]>([]);
   const [modelOnboardingRunState, setModelOnboardingRunState] = useState<UpdateRunState>("idle");
@@ -1533,6 +1562,7 @@ export function MissionControlShell({
     setUpdateResultMessage(null);
     setUpdateLog("");
     setUpdateManualCommand(null);
+    setUpdateCapabilityDiff(null);
     updateUpdateToast(action === "rollback" ? "Starting OpenClaw rollback..." : "Starting OpenClaw update...");
 
     try {
@@ -1599,6 +1629,7 @@ export function MissionControlShell({
               setUpdateResultMessage(event.message);
               setUpdateRunState(event.ok ? "success" : "error");
               setUpdateManualCommand(event.manualCommand ?? null);
+              setUpdateCapabilityDiff(event.capabilityDiff ?? null);
 
               if (event.snapshot) {
                 setSnapshot(event.snapshot);
@@ -1628,6 +1659,7 @@ export function MissionControlShell({
           setUpdateResultMessage(event.message);
           setUpdateRunState(event.ok ? "success" : "error");
           setUpdateManualCommand(event.manualCommand ?? null);
+          setUpdateCapabilityDiff(event.capabilityDiff ?? null);
 
           if (event.snapshot) {
             setSnapshot(event.snapshot);
@@ -2641,6 +2673,17 @@ export function MissionControlShell({
       const nextSnapshot = await refreshSnapshot({ force: true });
       const checkedAt = Date.now();
       const updateInfo = nextSnapshot.diagnostics.updateInfo?.trim();
+      const currentVersion = normalizeUpdateVersion(nextSnapshot.diagnostics.version);
+      const registryLatestVersion =
+        nextSnapshot.diagnostics.updateCompatibility?.latestDecision?.version ??
+        resolveLatestVersionFromUpdateInfo(updateInfo) ??
+        nextSnapshot.diagnostics.latestVersion ??
+        null;
+      const hasRegistryUpdateAvailable = Boolean(
+        currentVersion &&
+          registryLatestVersion &&
+          compareVersionStrings(registryLatestVersion, currentVersion) > 0
+      );
       const isUpdateRegistryLoading =
         Boolean(nextSnapshot.diagnostics.version) &&
         !nextSnapshot.diagnostics.latestVersion &&
@@ -2660,6 +2703,15 @@ export function MissionControlShell({
           description:
             updateInfo ||
             `v${nextSnapshot.diagnostics.latestVersion} is available. Current version: v${nextSnapshot.diagnostics.version || "unknown"}.`
+        });
+        return;
+      }
+
+      if (hasRegistryUpdateAvailable) {
+        toast.message("Latest OpenClaw needs review.", {
+          description:
+            updateInfo ||
+            `v${registryLatestVersion} is available. Current version: v${nextSnapshot.diagnostics.version || "unknown"}.`
         });
         return;
       }
@@ -3170,6 +3222,7 @@ export function MissionControlShell({
     isSavingWorkspaceRoot,
     isCheckingForUpdates,
     updateRunState,
+    updateCapabilityDiff,
     selectedModelId: selectedOnboardingModelId,
     modelOnboardingRunState,
     gatewayControlAction,
@@ -3186,7 +3239,7 @@ export function MissionControlShell({
     onRunModelSetDefault: runModelSetDefault,
     onOpenAddModels: openAddModelsDialog,
     onOpenUpdateDialog: (targetVersion, mode = "recommended") => {
-      if (updateRunState === "idle") {
+      if (updateRunState !== "running") {
         resetUpdateDialogState();
       }
       setUpdateTargetVersion(targetVersion ?? null);
@@ -3194,7 +3247,7 @@ export function MissionControlShell({
       setIsUpdateDialogOpen(true);
     },
     onRollbackOpenClaw: () => {
-      if (updateRunState === "idle") {
+      if (updateRunState !== "running") {
         resetUpdateDialogState();
       }
       setIsUpdateDialogOpen(true);
@@ -3350,6 +3403,9 @@ export function MissionControlShell({
         updateResultMessage={updateResultMessage}
         updateLog={updateLog}
         updateManualCommand={updateManualCommand}
+        updateCapabilityDiff={updateCapabilityDiff}
+        updateTargetVersion={updateTargetVersion}
+        updateMode={updateMode}
         activeRuntimeCount={activeRuntimeCount}
         updateInstallSummary={openClawInstallSummary}
         onUpdateDialogOpenChange={(open) => {
@@ -4170,6 +4226,9 @@ export function MissionControlShell({
           updateResultMessage={updateResultMessage}
           updateLog={updateLog}
           updateManualCommand={updateManualCommand}
+          updateCapabilityDiff={updateCapabilityDiff}
+          updateTargetVersion={updateTargetVersion}
+          updateMode={updateMode}
           activeRuntimeCount={activeRuntimeCount}
           updateInstallSummary={openClawInstallSummary}
           onUpdateDialogOpenChange={(open) => {
@@ -4191,4 +4250,18 @@ export function MissionControlShell({
       </div>
     </div>
   );
+}
+
+function normalizeUpdateVersion(value: string | null | undefined) {
+  const normalized = value?.trim().replace(/^v/i, "");
+  return normalized || null;
+}
+
+function resolveLatestVersionFromUpdateInfo(value: string | null | undefined) {
+  const text = value?.trim();
+  if (!text) {
+    return null;
+  }
+
+  return normalizeUpdateVersion(text.match(/Update available:\s*v?([0-9][0-9A-Za-z.-]*)/i)?.[1]);
 }
