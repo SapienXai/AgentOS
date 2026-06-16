@@ -14,6 +14,8 @@ import { resolveAgentOsVersion } from "@/lib/agentos/version";
 import type { OpenClawUpdateStreamEvent } from "@/lib/agentos/contracts";
 import type {
   MissionControlSnapshot,
+  OpenClawCapabilityDiffReport,
+  OpenClawRuntimeSmokeTest,
   OpenClawShadowProbeReport,
   OpenClawUpdateSafetyReport
 } from "@/lib/openclaw/types";
@@ -40,6 +42,10 @@ import {
 } from "@/lib/openclaw/update-rollback";
 import { buildOpenClawUpdatePreflightReport } from "@/lib/openclaw/update-safety";
 import { buildOpenClawCapabilityDiffReport } from "@/lib/openclaw/capability-diff";
+import {
+  buildOpenClawCertificationScorecardReport,
+  type OpenClawCertificationRollbackEvidence
+} from "@/lib/openclaw/certification-scorecard";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
@@ -192,7 +198,16 @@ export async function POST(request: Request) {
         message: redactErrorMessage(error, "OpenClaw CLI could not be resolved."),
         exitCode: null,
         stdout,
-        stderr
+        stderr,
+        certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+          baselineSnapshot: snapshot,
+          targetVersion,
+          decision: updateDecision,
+          updateAttempted: false,
+          updateCompleted: false,
+          rollbackSnapshotCreated: false,
+          failureMessage: redactErrorMessage(error, "OpenClaw CLI could not be resolved.")
+        })
       });
       await closeWriter();
       return;
@@ -261,6 +276,13 @@ export async function POST(request: Request) {
     }
 
     if (isTargetOpenClawInstalled(snapshot, targetVersion)) {
+      const alreadyInstalledPreflightReport = buildOpenClawUpdatePreflightReport({
+        snapshot,
+        targetVersion,
+        decision: updateDecision,
+        rollbackSnapshotAvailable: Boolean(existingRollbackSnapshot)
+      });
+
       if (!isOpenClawSnapshotGatewayReady(snapshot)) {
         const certifiedSnapshot = shouldUseCertifiedRollbackSnapshotRecovery(
           snapshot,
@@ -298,6 +320,21 @@ export async function POST(request: Request) {
             stdout,
             stderr,
             snapshot: recovery.snapshot,
+            certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+              baselineSnapshot: snapshot,
+              targetSnapshot: recovery.snapshot ?? null,
+              targetVersion,
+              decision: updateDecision,
+              preflightReport: alreadyInstalledPreflightReport,
+              updateAttempted: true,
+              updateCompleted: recovery.ok,
+              exitCode: recovery.exitCode,
+              rollbackSnapshotCreated: Boolean(existingRollbackSnapshot),
+              rollbackToCertifiedBaseline: recovery.ok ? "passed" : "failed",
+              stdout,
+              stderr,
+              failureMessage: recovery.ok ? null : recovery.message
+            }),
             manualCommand: recovery.ok
               ? undefined
               : formatOpenClawCommand(openClawBin, buildOpenClawUpdateArgs(certifiedSnapshot.version))
@@ -330,6 +367,20 @@ export async function POST(request: Request) {
             stdout,
             stderr,
             snapshot,
+            certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+              baselineSnapshot: snapshot,
+              targetSnapshot: snapshot,
+              targetVersion,
+              decision: updateDecision,
+              preflightReport: alreadyInstalledPreflightReport,
+              updateAttempted: false,
+              updateCompleted: false,
+              rollbackSnapshotCreated: Boolean(existingRollbackSnapshot),
+              rollbackToCertifiedBaseline: "not-run",
+              stdout,
+              stderr,
+              failureMessage: message
+            }),
             manualCommand: recoveryCommand
           });
           await closeWriter();
@@ -355,6 +406,20 @@ export async function POST(request: Request) {
           stdout,
           stderr,
           snapshot,
+          certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+            baselineSnapshot: snapshot,
+            targetSnapshot: snapshot,
+            targetVersion,
+            decision: updateDecision,
+            preflightReport: alreadyInstalledPreflightReport,
+            updateAttempted: false,
+            updateCompleted: false,
+            rollbackSnapshotCreated: Boolean(existingRollbackSnapshot),
+            rollbackToCertifiedBaseline: "not-run",
+            stdout,
+            stderr,
+            failureMessage: `OpenClaw v${targetVersion} is installed, but the Gateway is not reachable.`
+          }),
           manualCommand: recoveryCommand
         });
         await closeWriter();
@@ -368,7 +433,20 @@ export async function POST(request: Request) {
         exitCode: 0,
         stdout,
         stderr,
-        snapshot
+        snapshot,
+        certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+          baselineSnapshot: snapshot,
+          targetSnapshot: snapshot,
+          targetVersion,
+          decision: updateDecision,
+          preflightReport: alreadyInstalledPreflightReport,
+          updateAttempted: false,
+          updateCompleted: true,
+          exitCode: 0,
+          rollbackSnapshotCreated: Boolean(existingRollbackSnapshot),
+          stdout,
+          stderr
+        })
       });
       await closeWriter();
       return;
@@ -403,7 +481,17 @@ export async function POST(request: Request) {
         exitCode: null,
         stdout,
         stderr,
-        snapshot
+        snapshot,
+        certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+          baselineSnapshot: snapshot,
+          targetVersion,
+          decision: updateDecision,
+          preflightReport: preflight.report,
+          updateAttempted: false,
+          updateCompleted: false,
+          rollbackSnapshotCreated: false,
+          failureMessage: preflight.message
+        })
       });
       await closeWriter();
       return;
@@ -511,7 +599,19 @@ export async function POST(request: Request) {
           message: `OpenClaw update failed to start: ${error.message}`,
           exitCode: null,
           stdout,
-          stderr: stderr ? `${stderr}\n${error.message}` : error.message
+          stderr: stderr ? `${stderr}\n${error.message}` : error.message,
+          certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+            baselineSnapshot: snapshot,
+            targetVersion,
+            decision: updateDecision,
+            preflightReport: preflight.report,
+            updateAttempted: true,
+            updateCompleted: false,
+            rollbackSnapshotCreated: true,
+            stdout,
+            stderr,
+            failureMessage: error.message
+          })
         });
         await closeWriter();
       })();
@@ -540,7 +640,20 @@ export async function POST(request: Request) {
             message: "OpenClaw update timed out.",
             exitCode: code,
             stdout,
-            stderr: stderr || `Update exceeded ${Math.round(updateTimeoutMs / 1000)} seconds.`
+            stderr: stderr || `Update exceeded ${Math.round(updateTimeoutMs / 1000)} seconds.`,
+            certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+              baselineSnapshot: snapshot,
+              targetVersion,
+              decision: updateDecision,
+              preflightReport: preflight.report,
+              updateAttempted: true,
+              updateCompleted: false,
+              exitCode: code,
+              rollbackSnapshotCreated: true,
+              stdout,
+              stderr,
+              failureMessage: "OpenClaw update timed out."
+            })
           });
           await closeWriter();
           return;
@@ -572,6 +685,19 @@ export async function POST(request: Request) {
               exitCode: code,
               stdout,
               stderr: stderr || "Downgrade confirmation required.",
+              certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+                baselineSnapshot: snapshot,
+                targetVersion,
+                decision: updateDecision,
+                preflightReport: preflight.report,
+                updateAttempted: true,
+                updateCompleted: false,
+                exitCode: code,
+                rollbackSnapshotCreated: true,
+                stdout,
+                stderr,
+                failureMessage: "OpenClaw update needs to be confirmed in a terminal."
+              }),
               manualCommand: failureCommand
             });
             await closeWriter();
@@ -601,6 +727,19 @@ export async function POST(request: Request) {
               exitCode: code,
               stdout,
               stderr,
+              certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+                baselineSnapshot: snapshot,
+                targetVersion,
+                decision: updateDecision,
+                preflightReport: preflight.report,
+                updateAttempted: true,
+                updateCompleted: false,
+                exitCode: code,
+                rollbackSnapshotCreated: true,
+                stdout,
+                stderr,
+                failureMessage: message
+              }),
               manualCommand: recoveryCommand
             });
             await closeWriter();
@@ -622,7 +761,20 @@ export async function POST(request: Request) {
               message: "OpenClaw update failed.",
               exitCode: code,
               stdout,
-              stderr
+              stderr,
+              certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+                baselineSnapshot: snapshot,
+                targetVersion,
+                decision: updateDecision,
+                preflightReport: preflight.report,
+                updateAttempted: true,
+                updateCompleted: false,
+                exitCode: code,
+                rollbackSnapshotCreated: true,
+                stdout,
+                stderr,
+                failureMessage: "OpenClaw update failed."
+              })
             });
             await closeWriter();
             return;
@@ -655,6 +807,19 @@ export async function POST(request: Request) {
               exitCode: recovery.exitCode ?? code,
               stdout,
               stderr,
+              certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+                baselineSnapshot: snapshot,
+                targetVersion,
+                decision: updateDecision,
+                preflightReport: preflight.report,
+                updateAttempted: true,
+                updateCompleted: false,
+                exitCode: recovery.exitCode ?? code,
+                rollbackSnapshotCreated: true,
+                stdout,
+                stderr,
+                failureMessage: recovery.message
+              }),
               manualCommand: buildOpenClawUpdateRecoveryManualCommand(formatOpenClawCommand(openClawBin, []))
             });
             await closeWriter();
@@ -707,6 +872,22 @@ export async function POST(request: Request) {
               stderr,
               snapshot: resultSnapshot,
               capabilityDiff: verifiedCapabilityDiff,
+              certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+                baselineSnapshot: snapshot,
+                targetSnapshot: verifiedSnapshot,
+                targetVersion,
+                decision: updateDecision,
+                preflightReport: preflight.report,
+                capabilityDiff: verifiedCapabilityDiff,
+                updateAttempted: true,
+                updateCompleted: false,
+                exitCode: code,
+                rollbackSnapshotCreated: true,
+                rollbackToCertifiedBaseline: rollback.ok ? "passed" : "failed",
+                stdout,
+                stderr,
+                failureMessage: verification.message
+              }),
               manualCommand: rollback.ok ? undefined : buildOpenClawRollbackManualCommand(openClawBin, rollbackSnapshot)
             });
             await closeWriter();
@@ -743,6 +924,22 @@ export async function POST(request: Request) {
               stderr,
               snapshot: resultSnapshot,
               capabilityDiff: verifiedCapabilityDiff,
+              certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+                baselineSnapshot: snapshot,
+                targetSnapshot: verifiedSnapshot,
+                targetVersion,
+                decision: updateDecision,
+                preflightReport: preflight.report,
+                capabilityDiff: verifiedCapabilityDiff,
+                updateAttempted: true,
+                updateCompleted: true,
+                exitCode: code,
+                rollbackSnapshotCreated: true,
+                rollbackToCertifiedBaseline: rollback.ok ? "passed" : "failed",
+                stdout,
+                stderr,
+                failureMessage: compatibilityVerification.message
+              }),
               manualCommand: rollback.ok ? undefined : buildOpenClawRollbackManualCommand(openClawBin, rollbackSnapshot)
             });
             await closeWriter();
@@ -814,6 +1011,25 @@ export async function POST(request: Request) {
                   : smokeTestOutput || "Runtime smoke test failed.",
                 snapshot: finalSnapshot,
                 capabilityDiff: finalCapabilityDiff,
+                certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+                  baselineSnapshot: snapshot,
+                  targetSnapshot: finalSnapshot,
+                  targetVersion,
+                  decision: updateDecision,
+                  preflightReport: preflight.report,
+                  capabilityDiff: finalCapabilityDiff,
+                  smokeTest,
+                  updateAttempted: true,
+                  updateCompleted: true,
+                  exitCode: code,
+                  rollbackSnapshotCreated: true,
+                  rollbackToCertifiedBaseline: "not-required",
+                  stdout,
+                  stderr: stderr
+                    ? `${stderr}\n${smokeTestOutput || "Runtime smoke test failed."}`
+                    : smokeTestOutput || "Runtime smoke test failed.",
+                  failureMessage: smokeFailureMessage
+                }),
                 manualCommand: recoveryCommand
               });
               await closeWriter();
@@ -849,6 +1065,25 @@ export async function POST(request: Request) {
                 : smokeTestOutput || "Runtime smoke test failed.",
               snapshot: resultSnapshot,
               capabilityDiff: finalCapabilityDiff,
+              certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+                baselineSnapshot: snapshot,
+                targetSnapshot: finalSnapshot,
+                targetVersion,
+                decision: updateDecision,
+                preflightReport: preflight.report,
+                capabilityDiff: finalCapabilityDiff,
+                smokeTest,
+                updateAttempted: true,
+                updateCompleted: true,
+                exitCode: code,
+                rollbackSnapshotCreated: true,
+                rollbackToCertifiedBaseline: rollback.ok ? "passed" : "failed",
+                stdout,
+                stderr: stderr
+                  ? `${stderr}\n${smokeTestOutput || "Runtime smoke test failed."}`
+                  : smokeTestOutput || "Runtime smoke test failed.",
+                failureMessage: smokeFailureMessage
+              }),
               manualCommand: rollback.ok
                 ? undefined
                 : buildOpenClawRuntimeSmokeTestRecoveryCommand(formatOpenClawCommand(openClawBin, []), smokeTestOutput)
@@ -873,7 +1108,22 @@ export async function POST(request: Request) {
             stdout,
             stderr,
             snapshot: finalSnapshot,
-            capabilityDiff: finalCapabilityDiff
+            capabilityDiff: finalCapabilityDiff,
+            certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+              baselineSnapshot: snapshot,
+              targetSnapshot: finalSnapshot,
+              targetVersion,
+              decision: updateDecision,
+              preflightReport: preflight.report,
+              capabilityDiff: finalCapabilityDiff,
+              smokeTest,
+              updateAttempted: true,
+              updateCompleted: true,
+              exitCode: code,
+              rollbackSnapshotCreated: true,
+              stdout,
+              stderr
+            })
           });
         } catch (error) {
           await recordUpdateRuntimeIssue({
@@ -893,7 +1143,20 @@ export async function POST(request: Request) {
             stdout,
             stderr: stderr
               ? `${stderr}\n${redactErrorMessage(error, "Status refresh failed.")}`
-              : redactErrorMessage(error, "Status refresh failed.")
+              : redactErrorMessage(error, "Status refresh failed."),
+            certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+              baselineSnapshot: snapshot,
+              targetVersion,
+              decision: updateDecision,
+              preflightReport: preflight.report,
+              updateAttempted: true,
+              updateCompleted: false,
+              exitCode: code,
+              rollbackSnapshotCreated: true,
+              stdout,
+              stderr,
+              failureMessage: redactErrorMessage(error, "Status refresh failed.")
+            })
           });
         }
 
@@ -1316,6 +1579,57 @@ async function runOpenClawUpdatePreflight(input: {
     message: `Preflight passed for OpenClaw v${input.targetVersion}. ${report.recommendedNextAction}`,
     report
   };
+}
+
+function buildOpenClawUpdateCertificationScorecard(input: {
+  baselineSnapshot: MissionControlSnapshot;
+  targetSnapshot?: MissionControlSnapshot | null;
+  targetVersion: string;
+  decision: ReturnType<typeof resolveOpenClawUpdateDecision>;
+  preflightReport?: OpenClawUpdateSafetyReport | null;
+  capabilityDiff?: OpenClawCapabilityDiffReport | null;
+  smokeTest?: OpenClawRuntimeSmokeTest | null;
+  updateAttempted: boolean;
+  updateCompleted: boolean;
+  exitCode?: number | null;
+  rollbackSnapshotCreated: boolean;
+  rollbackToCertifiedBaseline?: OpenClawCertificationRollbackEvidence;
+  restoreLastWorking?: OpenClawCertificationRollbackEvidence;
+  stdout?: string;
+  stderr?: string;
+  failureMessage?: string | null;
+}) {
+  const targetSnapshot = input.targetSnapshot ?? null;
+  const targetDiagnostics = targetSnapshot?.diagnostics ?? null;
+  const targetVersion = normalizeVersion(input.targetVersion) || input.targetVersion;
+  const installedVersion = normalizeVersion(targetDiagnostics?.version);
+  const baselineVersion = normalizeVersion(input.baselineSnapshot.diagnostics.version);
+  const rollbackToCertifiedBaseline =
+    input.rollbackToCertifiedBaseline ??
+    (baselineVersion && targetVersion && compareVersionStrings(baselineVersion, targetVersion) === 0
+      ? "not-required"
+      : "not-run");
+
+  return buildOpenClawCertificationScorecardReport({
+    baselineDiagnostics: input.baselineSnapshot.diagnostics,
+    targetDiagnostics,
+    capabilityDiff: input.capabilityDiff ?? null,
+    preflightReport: input.preflightReport ?? null,
+    manifestDecision: input.decision,
+    smokeTest: input.smokeTest ?? targetDiagnostics?.runtime.smokeTest ?? null,
+    update: {
+      attempted: input.updateAttempted,
+      completed: input.updateCompleted,
+      exitCode: input.exitCode ?? null,
+      targetVersion,
+      installedVersion,
+      rollbackSnapshotCreated: input.rollbackSnapshotCreated,
+      rollbackToCertifiedBaseline,
+      restoreLastWorking: input.restoreLastWorking ?? "not-run",
+      output: [input.stdout, input.stderr].filter(Boolean).join("\n"),
+      failureMessage: input.failureMessage ?? null
+    }
+  });
 }
 
 async function recordUpdateRuntimeIssue(

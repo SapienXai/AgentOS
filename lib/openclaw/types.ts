@@ -449,6 +449,70 @@ export interface OpenClawCapabilityDiffReport {
   rows: OpenClawCapabilityDiffRow[];
 }
 
+export type OpenClawCertificationScorecardStatus =
+  | "certified"
+  | "pre_certified_eligible"
+  | "compatible_with_warnings"
+  | "degraded"
+  | "blocked"
+  | "evidence_missing";
+
+export type OpenClawCertificationScorecardCategoryId =
+  | "registry-policy"
+  | "capability-contract"
+  | "gateway-lifecycle"
+  | "runtime-smoke"
+  | "update-rollback"
+  | "plugin-config";
+
+export type OpenClawCertificationScorecardFindingSeverity = "blocker" | "warning" | "unknown" | "info";
+
+export interface OpenClawCertificationScorecardFinding {
+  id: string;
+  severity: OpenClawCertificationScorecardFindingSeverity;
+  message: string;
+}
+
+export interface OpenClawCertificationScorecardCategory {
+  id: OpenClawCertificationScorecardCategoryId;
+  label: string;
+  score: number;
+  maxScore: number;
+  status: OpenClawCertificationScorecardStatus;
+  evidence: string;
+  findings: OpenClawCertificationScorecardFinding[];
+}
+
+export interface OpenClawCertificationScorecardArtifact {
+  schemaVersion: 1;
+  generatedAt: string;
+  baselineVersion: string | null;
+  targetVersion: string | null;
+  score: number;
+  status: OpenClawCertificationScorecardStatus;
+  globalCertification: "certified" | "not_certified";
+  hardBlockers: string[];
+  warnings: string[];
+  unknowns: string[];
+  categories: OpenClawCertificationScorecardCategory[];
+  capabilityDiff: OpenClawCapabilityDiffReport | null;
+}
+
+export interface OpenClawCertificationScorecardReport {
+  generatedAt: string;
+  baselineVersion: string | null;
+  targetVersion: string | null;
+  score: number;
+  status: OpenClawCertificationScorecardStatus;
+  globalCertification: "certified" | "not_certified";
+  hardBlockers: string[];
+  warnings: string[];
+  unknowns: string[];
+  categories: OpenClawCertificationScorecardCategory[];
+  capabilityDiff: OpenClawCapabilityDiffReport | null;
+  artifact: OpenClawCertificationScorecardArtifact | null;
+}
+
 export interface OpenClawCommandDiagnostic {
   id: string;
   command: string;
@@ -1059,6 +1123,7 @@ export type OpenClawUpdateStreamEvent =
       stderr: string;
       snapshot?: MissionControlSnapshot;
       capabilityDiff?: OpenClawCapabilityDiffReport;
+      certificationScorecard?: OpenClawCertificationScorecardReport;
       manualCommand?: string;
       docsUrl?: string;
     };

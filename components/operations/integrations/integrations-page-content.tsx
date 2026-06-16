@@ -471,6 +471,7 @@ export function IntegrationsPageContent({
         snapshot={rootSnapshot}
         initialProvider={initialModelProvider}
         onSnapshotChange={setSnapshot}
+        surfaceTheme={surfaceTheme}
       />
     </>
   );

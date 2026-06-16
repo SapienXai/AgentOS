@@ -562,6 +562,7 @@ export function MissionSidebar({
       <MissionControlDialogShell
         open={isEditAgentOpen}
         onOpenChange={handleEditAgentOpenChange}
+        surfaceTheme={surfaceTheme}
         title="Edit OpenClaw agent"
         description="Update identity, preset, model, and operating policy."
         icon={Bot}

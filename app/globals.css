@@ -219,6 +219,80 @@
   mask-image: radial-gradient(circle at center, black 44%, transparent 100%);
 }
 
+.agentos-light-modal {
+  border-color: rgba(213, 199, 184, 0.92) !important;
+  background: linear-gradient(180deg, rgba(255, 252, 248, 0.98), rgba(247, 243, 238, 0.98)) !important;
+  color: #2d241f !important;
+  box-shadow: 0 24px 72px rgba(61, 47, 36, 0.18) !important;
+}
+
+.agentos-light-modal [class*="bg-[linear-gradient"] {
+  background: linear-gradient(180deg, rgba(255, 252, 248, 0.96), rgba(246, 241, 235, 0.92)) !important;
+}
+
+.agentos-light-modal [class*="bg-slate-950"],
+.agentos-light-modal [class*="bg-slate-900"] {
+  background-color: rgba(246, 241, 235, 0.94) !important;
+}
+
+.agentos-light-modal [class*="bg-white/["] {
+  background-color: rgba(255, 255, 255, 0.62) !important;
+}
+
+.agentos-light-modal [class*="border-white/"] {
+  border-color: rgba(213, 199, 184, 0.9) !important;
+}
+
+.agentos-light-modal [class*="text-white"],
+.agentos-light-modal [class*="text-slate-100"],
+.agentos-light-modal [class*="text-slate-200"] {
+  color: #2d241f !important;
+}
+
+.agentos-light-modal [class*="text-slate-300"],
+.agentos-light-modal [class*="text-slate-400"],
+.agentos-light-modal [class*="text-slate-500"] {
+  color: #74665c !important;
+}
+
+.agentos-light-modal [class*="text-cyan-50"],
+.agentos-light-modal [class*="text-cyan-100"] {
+  color: #0e7490 !important;
+}
+
+.agentos-light-modal [class*="text-amber-50"],
+.agentos-light-modal [class*="text-amber-100"] {
+  color: #92400e !important;
+}
+
+.agentos-light-modal [class*="text-rose-100"],
+.agentos-light-modal [class*="text-rose-300"] {
+  color: #be123c !important;
+}
+
+.agentos-light-modal [class*="from-[rgba(13,20,34"],
+.agentos-light-modal [class*="from-[rgba(15,23,42"] {
+  --tw-gradient-from: rgba(255, 252, 248, 0.96) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgba(255, 252, 248, 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+.agentos-light-modal [class*="bg-cyan-300/"],
+.agentos-light-modal [class*="bg-cyan-400/"] {
+  background-color: rgba(6, 182, 212, 0.1) !important;
+}
+
+.agentos-light-modal [class*="bg-amber-300/"],
+.agentos-light-modal [class*="bg-amber-400/"] {
+  background-color: rgba(245, 158, 11, 0.12) !important;
+}
+
+.agentos-light-modal input {
+  border-color: rgba(213, 199, 184, 0.95) !important;
+  background-color: rgba(255, 255, 255, 0.84) !important;
+  color: #2d241f !important;
+}
+
 .mission-shell--light::after {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 16%);
 }

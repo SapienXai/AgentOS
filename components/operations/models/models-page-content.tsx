@@ -204,6 +204,7 @@ export function ModelsPageContent({
         onOpenChange={setIsAddModelsDialogOpen}
         snapshot={rootSnapshot}
         onSnapshotChange={setSnapshot}
+        surfaceTheme={surfaceTheme}
       />
     </>
   );

@@ -22,6 +22,7 @@ import {
 import type {
   MissionControlSnapshot,
   OpenClawCapabilityDiffReport,
+  OpenClawCertificationScorecardReport,
   WorkItemRecord
 } from "@/lib/agentos/contracts";
 import type { OpenClawInstallSummary } from "@/components/mission-control/mission-control-shell.utils";
@@ -49,6 +50,7 @@ export function MissionControlShellDialogs({
   updateLog,
   updateManualCommand,
   updateCapabilityDiff,
+  updateCertificationScorecard,
   updateTargetVersion,
   updateMode,
   activeRuntimeCount,
@@ -71,6 +73,7 @@ export function MissionControlShellDialogs({
   updateLog: string;
   updateManualCommand: string | null;
   updateCapabilityDiff: OpenClawCapabilityDiffReport | null;
+  updateCertificationScorecard: OpenClawCertificationScorecardReport | null;
   updateTargetVersion: string | null;
   updateMode: UpdateMode;
   activeRuntimeCount: number;
@@ -385,8 +388,10 @@ export function MissionControlShellDialogs({
                 </div>
               </div>
 
-              <CapabilityDiffPanel
+              <CertificationScorecardPanel
+                scorecard={updateCertificationScorecard}
                 diff={updateCapabilityDiff}
+                updateMode={updateMode}
                 surfaceTheme={surfaceTheme}
               />
 
@@ -670,14 +675,18 @@ export function MissionControlShellDialogs({
   );
 }
 
-function CapabilityDiffPanel({
+function CertificationScorecardPanel({
+  scorecard,
   diff,
+  updateMode,
   surfaceTheme
 }: {
+  scorecard: OpenClawCertificationScorecardReport | null;
   diff: OpenClawCapabilityDiffReport | null;
+  updateMode: UpdateMode;
   surfaceTheme: SurfaceTheme;
 }) {
-  if (!diff) {
+  if (!scorecard) {
     return (
       <div
         className={cn(
@@ -687,15 +696,37 @@ function CapabilityDiffPanel({
             : "border-white/8 bg-white/[0.03] text-slate-300"
         )}
       >
-        Capability diff will appear after an install-and-verify run captures target diagnostics.
+        Certification scorecard will appear after an install-and-verify run captures target diagnostics.
       </div>
     );
   }
 
-  const visibleRows = diff.rows
+  const capabilityDiff = scorecard.capabilityDiff ?? diff;
+  const capabilityCategory = scorecard.categories.find((category) => category.id === "capability-contract");
+  const visibleRows = (capabilityDiff?.rows ?? [])
     .filter((row) => row.changeKind !== "unchanged" || isCapabilityDiffTargetBlocker(row))
     .slice(0, 8);
-  const hasBlockers = diff.summary.certificationBlockerCount > 0;
+  const canGenerateArtifact = updateMode === "advanced" && Boolean(scorecard.artifact);
+
+  const generateCertificationArtifact = () => {
+    if (!scorecard.artifact) {
+      return;
+    }
+
+    const target = scorecard.targetVersion ?? "unknown";
+    const blob = new Blob([`${JSON.stringify(scorecard.artifact, null, 2)}\n`], {
+      type: "application/json"
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `openclaw-certification-${target}.json`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    toast.success("Certification artifact generated.");
+  };
 
   return (
     <div
@@ -710,38 +741,79 @@ function CapabilityDiffPanel({
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
             <p className={surfaceTheme === "light" ? "text-[10px] uppercase tracking-[0.24em] text-[#9a7f6c]" : "text-[10px] uppercase tracking-[0.24em] text-slate-500"}>
-              Capability certification diff
+              Certification scorecard
             </p>
             <p className={cn("mt-1 break-words text-sm font-medium", surfaceTheme === "light" ? "text-[#4a382c]" : "text-white")}>
-              {formatVersionLabel(diff.certifiedVersion)} {"->"} {formatVersionLabel(diff.targetVersion)}
+              {formatVersionLabel(scorecard.baselineVersion)} {"->"} {formatVersionLabel(scorecard.targetVersion)}
             </p>
           </div>
           <span
-            className={cn(
-              "rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]",
-              hasBlockers
-                ? surfaceTheme === "light"
-                  ? "border-rose-300 bg-rose-50 text-rose-700"
-                  : "border-rose-300/25 bg-rose-300/10 text-rose-100"
-                : surfaceTheme === "light"
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                  : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
-            )}
+            className={scorecardStatusClassName(scorecard.status, surfaceTheme)}
           >
-            {hasBlockers ? `${diff.summary.certificationBlockerCount} blockers` : "No blockers"}
+            {formatScorecardStatus(scorecard.status)}
           </span>
         </div>
       </div>
 
       <div className="grid min-w-0 gap-2 px-4 py-3 sm:grid-cols-4">
-        <DiffMetric label="Native +" value={String(diff.summary.nativeImprovements)} surfaceTheme={surfaceTheme} />
-        <DiffMetric label="Native -" value={String(diff.summary.nativeRegressions)} surfaceTheme={surfaceTheme} />
-        <DiffMetric label="Fallback -" value={String(diff.summary.fallbackRegressions)} surfaceTheme={surfaceTheme} />
-        <DiffMetric label="Target blockers" value={String(diff.summary.certificationBlockerCount)} surfaceTheme={surfaceTheme} />
+        <DiffMetric label="Score" value={`${scorecard.score}/100`} surfaceTheme={surfaceTheme} />
+        <DiffMetric label="Hard blockers" value={String(scorecard.hardBlockers.length)} surfaceTheme={surfaceTheme} />
+        <DiffMetric label="Warnings" value={String(scorecard.warnings.length)} surfaceTheme={surfaceTheme} />
+        <DiffMetric label="Global cert." value={scorecard.globalCertification === "certified" ? "Certified" : "Not certified"} surfaceTheme={surfaceTheme} />
       </div>
 
+      <div className="grid min-w-0 gap-2 px-4 pb-3 sm:grid-cols-2">
+        {scorecard.categories.map((category) => (
+          <div
+            key={category.id}
+            className={cn(
+              "min-w-0 rounded-[16px] border px-3 py-2 text-xs",
+              surfaceTheme === "light" ? "border-[#eadccf] bg-white/70" : "border-white/8 bg-slate-950/25"
+            )}
+          >
+            <div className="flex min-w-0 items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className={cn("break-words font-medium", surfaceTheme === "light" ? "text-[#4a382c]" : "text-slate-100")}>
+                  {category.label}
+                </p>
+                <p className={cn("mt-0.5 break-words", surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-400")}>
+                  {category.evidence}
+                </p>
+              </div>
+              <span className={cn("shrink-0 font-mono text-[11px]", surfaceTheme === "light" ? "text-[#705b4d]" : "text-slate-300")}>
+                {category.score}/{category.maxScore}
+              </span>
+            </div>
+            {category.findings.length > 0 ? (
+              <p className={cn("mt-2 break-words", surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-400")}>
+                {category.findings[0]?.message}
+              </p>
+            ) : null}
+          </div>
+        ))}
+      </div>
+
+      {updateMode === "advanced" ? (
+        <div className={cn("flex flex-wrap items-center justify-between gap-2 border-t px-4 py-3", surfaceTheme === "light" ? "border-[#eadccf]" : "border-white/8")}>
+          <p className={cn("text-xs leading-5", surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-400")}>
+            Operator artifact generation is available only when install-and-verify evidence is complete, score is at least 90, runtime smoke passed, and rollback evidence is verified.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={!canGenerateArtifact}
+            onClick={generateCertificationArtifact}
+            title={canGenerateArtifact ? "Generate certification artifact" : "Certification artifact is disabled until the scorecard is eligible."}
+          >
+            <Copy className="mr-2 h-4 w-4" />
+            Generate artifact
+          </Button>
+        </div>
+      ) : null}
+
       {visibleRows.length > 0 ? (
-        <div className="grid min-w-0 gap-2 px-4 pb-4">
+        <div className="grid min-w-0 gap-2 border-t px-4 py-4">
           {visibleRows.map((row) => (
             <div
               key={row.operationId}
@@ -782,10 +854,10 @@ function CapabilityDiffPanel({
           ))}
         </div>
       ) : (
-        <p className={surfaceTheme === "light" ? "px-4 pb-4 text-sm text-[#8b7262]" : "px-4 pb-4 text-sm text-slate-400"}>
-          {hasBlockers
-            ? "No capability deltas were detected, but the target diagnostics still report certification blockers."
-            : "No capability changes were detected between the certified baseline and target diagnostics."}
+        <p className={surfaceTheme === "light" ? "border-t px-4 py-4 text-sm text-[#8b7262]" : "border-t border-white/8 px-4 py-4 text-sm text-slate-400"}>
+          {capabilityCategory?.status === "blocked"
+            ? "No capability method deltas were visible, but the target diagnostics still report capability blockers."
+            : "Capability-equivalent: no Gateway method coverage delta was detected. This does not certify update, rollback, plugin, config, or runtime behavior."}
         </p>
       )}
     </div>
@@ -873,6 +945,46 @@ function formatDiffChange(value: OpenClawCapabilityDiffReport["rows"][number]["c
     case "unchanged":
       return "Unchanged";
   }
+}
+
+function formatScorecardStatus(value: OpenClawCertificationScorecardReport["status"]) {
+  switch (value) {
+    case "certified":
+      return "Certified";
+    case "pre_certified_eligible":
+      return "Pre-certified eligible";
+    case "compatible_with_warnings":
+      return "Compatible with warnings";
+    case "degraded":
+      return "Degraded";
+    case "blocked":
+      return "Blocked";
+    case "evidence_missing":
+      return "Evidence missing";
+  }
+}
+
+function scorecardStatusClassName(
+  value: OpenClawCertificationScorecardReport["status"],
+  surfaceTheme: SurfaceTheme
+) {
+  const base = "rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]";
+
+  if (value === "blocked") {
+    return cn(base, surfaceTheme === "light"
+      ? "border-rose-300 bg-rose-50 text-rose-700"
+      : "border-rose-300/25 bg-rose-300/10 text-rose-100");
+  }
+
+  if (value === "evidence_missing" || value === "degraded" || value === "compatible_with_warnings") {
+    return cn(base, surfaceTheme === "light"
+      ? "border-amber-300 bg-amber-50 text-amber-700"
+      : "border-amber-300/25 bg-amber-300/10 text-amber-100");
+  }
+
+  return cn(base, surfaceTheme === "light"
+    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+    : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100");
 }
 
 function diffSeverityClassName(

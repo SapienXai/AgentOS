@@ -78,14 +78,17 @@ export function AddModelsDialog({
   onOpenChange,
   snapshot,
   initialProvider = null,
-  onSnapshotChange
+  onSnapshotChange,
+  surfaceTheme = "dark"
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   snapshot: MissionControlSnapshot;
   initialProvider?: AddModelsProviderId | null;
   onSnapshotChange: (snapshot: MissionControlSnapshot) => void;
+  surfaceTheme?: "dark" | "light";
 }) {
+  const isLight = surfaceTheme === "light";
   const normalizedInitialProvider = normalizeAddModelsProviderId(initialProvider);
   const [activeTab, setActiveTab] = useState<"catalog" | "providers">("providers");
   const [activeProvider, setActiveProvider] = useState<AddModelsProviderId | null>(normalizedInitialProvider);
@@ -693,7 +696,12 @@ export function AddModelsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[80dvh] max-h-[80dvh] w-[calc(100vw-16px)] max-w-[760px] flex-col gap-0 overflow-hidden p-0 sm:h-[min(80dvh,700px)] sm:max-h-[min(80dvh,700px)] sm:w-[min(760px,calc(100vw-40px))]">
+      <DialogContent
+        className={cn(
+          "flex h-[80dvh] max-h-[80dvh] w-[calc(100vw-16px)] max-w-[760px] flex-col gap-0 overflow-hidden p-0 sm:h-[min(80dvh,700px)] sm:max-h-[min(80dvh,700px)] sm:w-[min(760px,calc(100vw-40px))]",
+          surfaceTheme === "light" && "agentos-light-modal"
+        )}
+      >
         <DialogHeader className="shrink-0 border-b border-white/10 bg-[linear-gradient(180deg,rgba(12,18,31,0.96),rgba(9,13,24,0.98))] px-4 py-3.5 pr-10">
           <DialogTitle className="text-[1.05rem]">Add Models</DialogTitle>
           <DialogDescription className="max-w-[560px] text-[11px] leading-[1rem] text-slate-400">
@@ -744,6 +752,7 @@ export function AddModelsDialog({
                               descriptor={provider}
                               active={activeProviderId === provider.id}
                               compact
+                              surfaceTheme={surfaceTheme}
                               connected={resolveConnectionDetail(snapshot, providerDrafts, provider.id).connected}
                               detail={resolveConnectionDetail(snapshot, providerDrafts, provider.id).detail}
                               onClick={() => {
@@ -769,7 +778,15 @@ export function AddModelsDialog({
                         </div>
                         <Badge
                           variant={activeConnection?.connected ? "success" : "muted"}
-                          className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]"
+                          className={cn(
+                            "px-1.5 py-0.5 text-[9px] tracking-[0.12em]",
+                            isLight &&
+                              activeConnection?.connected &&
+                              "border-emerald-300 bg-emerald-50 text-emerald-800",
+                            isLight &&
+                              !activeConnection?.connected &&
+                              "border-[#e3dbd0] bg-white/70 text-[#71675d]"
+                          )}
                         >
                           {activeConnection?.connected ? "Connected" : "Not connected"}
                         </Badge>
@@ -782,7 +799,9 @@ export function AddModelsDialog({
                             className={cn(
                               "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[9px] uppercase tracking-[0.14em]",
                               step.status === "done"
-                                ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
+                                ? isLight
+                                  ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                                  : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
                                 : step.status === "active"
                                   ? "border-cyan-300/20 bg-cyan-300/10 text-cyan-100"
                                   : "border-white/10 bg-white/[0.03] text-slate-500"
@@ -1173,9 +1192,16 @@ export function AddModelsDialog({
                           ) : null}
 
                           {activeDraft.flowState === "add-success" ? (
-                            <div className="mt-3 flex items-center gap-2.5 rounded-[16px] border border-emerald-300/20 bg-emerald-300/[0.08] px-3 py-2">
-                              <CircleCheckBig className="h-3.5 w-3.5 text-emerald-200" />
-                              <p className="text-[11px] text-emerald-50">
+                            <div
+                              className={cn(
+                                "mt-3 flex items-center gap-2.5 rounded-[16px] border px-3 py-2",
+                                isLight
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                                  : "border-emerald-300/20 bg-emerald-300/[0.08] text-emerald-50"
+                              )}
+                            >
+                              <CircleCheckBig className={cn("h-3.5 w-3.5", isLight ? "text-emerald-700" : "text-emerald-200")} />
+                              <p className="text-[11px]">
                                 {activeDraft.statusMessage || "Models were added successfully."}
                               </p>
                             </div>

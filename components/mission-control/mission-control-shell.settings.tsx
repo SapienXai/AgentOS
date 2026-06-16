@@ -12,19 +12,18 @@ import {
   RefreshCw,
   Settings2,
   SlidersHorizontal,
-  Wrench
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { resolveTransportDiagnosticsSummary } from "@/components/mission-control/settings-control-center.utils";
 import type { OpenClawInstallSummary } from "@/components/mission-control/mission-control-shell.utils";
 import type {
   AddModelsProviderId,
   MissionControlSnapshot,
   OpenClawBinarySelection,
+  OpenClawCertificationScorecardReport,
   ResetTarget
 } from "@/lib/agentos/contracts";
 import type { GatewayNativeAuthStatus } from "@/lib/openclaw/gateway-auth";
@@ -49,6 +48,7 @@ export type MissionControlShellSettingsPanelProps = {
   isCheckingForUpdates: boolean;
   updateRunState: UpdateRunState;
   updateCapabilityDiff: OpenClawCapabilityDiffReport | null;
+  updateCertificationScorecard: OpenClawCertificationScorecardReport | null;
   selectedModelId: string;
   modelOnboardingRunState: UpdateRunState;
   gatewayControlAction: GatewayControlAction | null;
@@ -79,7 +79,6 @@ export type MissionControlShellSettingsPanelProps = {
 export function MissionControlShellSettingsPanel({
   snapshot,
   surfaceTheme,
-  connectionState,
   isCheckingForUpdates,
   updateRunState,
   lastCheckedAt,
@@ -101,18 +100,17 @@ export function MissionControlShellSettingsPanel({
   const updateStatusText = isCheckingForUpdates
     ? "Checking update registry..."
     : hasUpdateAvailable
-      ? `Recommended v${recommendedVersion}`
+      ? "Update available"
       : snapshot.diagnostics.updateError
         ? "Check failed"
         : isUpdateRegistryLoading
           ? snapshot.diagnostics.updateInfo?.trim() || "Registry status is still loading."
           : "Up to date";
+  const recommendedUpdateLabel = recommendedVersion ? `Recommended v${recommendedVersion}` : "Recommended unavailable";
   const defaultModel =
     snapshot.diagnostics.modelReadiness.resolvedDefaultModel ||
     snapshot.diagnostics.modelReadiness.defaultModel ||
     "Not selected";
-  const gatewayLabel = resolveGatewayLabel(snapshot);
-  const transportSummary = resolveTransportDiagnosticsSummary(snapshot.diagnostics.transport, connectionState);
   const hasAuthIssue = Boolean(
     gatewayAuthStatus &&
       !gatewayAuthStatus.native.ok &&
@@ -194,21 +192,24 @@ export function MissionControlShellSettingsPanel({
         </div>
 
         <div className={cn("mt-3 rounded-[18px] border p-3", insetPanelClassName(surfaceTheme))}>
-          <div className="flex items-center justify-between gap-2.5">
-            <div>
-              <p className={cn("text-[9px] uppercase tracking-[0.18em]", mutedTextClassName(surfaceTheme))}>
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <p className={cn("shrink-0 text-[9px] uppercase tracking-[0.18em]", mutedTextClassName(surfaceTheme))}>
                 Updates
               </p>
-              <p className="mt-0.5 text-[13px]">{updateStatusText}</p>
+              <p className={cn("truncate text-right text-[9px] uppercase tracking-[0.14em]", mutedTextClassName(surfaceTheme))}>
+                {recommendedUpdateLabel}
+              </p>
             </div>
-            <div className="flex items-center gap-2">
+            <p className="mt-1 truncate text-[13px]">{updateStatusText}</p>
+            <div className="mt-2 grid grid-cols-2 gap-1.5">
               <Button
                 type="button"
                 size="sm"
                 variant="secondary"
                 onClick={() => void onCheckForUpdates()}
                 disabled={isCheckingForUpdates || isUpdateRunning}
-                className={quickButtonClassName(surfaceTheme)}
+                className={cn("min-w-0 px-2 text-[10px]", quickButtonClassName(surfaceTheme))}
               >
                 {isCheckingForUpdates ? (
                   <LoaderCircle className="h-3 w-3 animate-spin" />
@@ -223,10 +224,11 @@ export function MissionControlShellSettingsPanel({
                   size="sm"
                   onClick={() => onOpenUpdateDialog(recommendedVersion, "recommended")}
                   disabled={isUpdateRunning}
-                  className="rounded-full bg-emerald-600 px-2.5 text-[11px] text-white shadow-[0_12px_24px_rgba(16,185,129,0.24)] hover:bg-emerald-500"
+                  className="min-w-0 rounded-full bg-emerald-600 px-2 text-[10px] text-white shadow-[0_12px_24px_rgba(16,185,129,0.24)] hover:bg-emerald-500"
+                  aria-label={`Update to ${recommendedUpdateLabel}`}
                 >
                   <ArrowUpRight className="h-3 w-3" />
-                  Update recommended
+                  Update
                 </Button>
               ) : null}
             </div>
@@ -252,13 +254,6 @@ export function MissionControlShellSettingsPanel({
       </div>
 
       <div className="mt-2.5 grid gap-1.5">
-        <QuickRow
-          surfaceTheme={surfaceTheme}
-          icon={<Wrench className="h-3.5 w-3.5" />}
-          label="Gateway"
-          value={transportSummary.statusLabel}
-          detail={`${gatewayLabel} / ${transportSummary.gatewayModeLabel}`}
-        />
         <QuickRow
           surfaceTheme={surfaceTheme}
           icon={<SlidersHorizontal className="h-3.5 w-3.5" />}
@@ -491,13 +486,6 @@ async function fetchGatewayAuthStatus() {
 
   const result = (await response.json()) as { authStatus: GatewayNativeAuthStatus };
   return result.authStatus;
-}
-
-function resolveGatewayLabel(snapshot: MissionControlSnapshot) {
-  const { diagnostics } = snapshot;
-  const locality = diagnostics.bindMode === "remote" || diagnostics.configuredGatewayUrl ? "Remote" : "Local";
-  const state = diagnostics.rpcOk || diagnostics.loaded ? "Online" : "Offline";
-  return `${locality} / ${state}`;
 }
 
 function formatSnapshotHealthLabel(snapshot: MissionControlSnapshot) {

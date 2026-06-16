@@ -97,6 +97,7 @@ import type {
   MissionControlSnapshot,
   OpenClawBinarySelection,
   OpenClawCapabilityDiffReport,
+  OpenClawCertificationScorecardReport,
   OpenClawModelOnboardingPhase,
   OpenClawModelOnboardingStreamEvent,
   OpenClawOnboardingPhase,
@@ -155,6 +156,7 @@ const modelAuthStatusPollDelaysMs = [4_000, 8_000, 15_000, 30_000, 45_000, 60_00
 const launchpadWorkspaceHandoffPollDelaysMs = [0, 800, 1_200, 1_800, 2_600, 3_600, 5_000, 6_500];
 const launchpadWorkspaceHandoffSuccessPauseMs = 450;
 const openClawCapabilityDiffStorageKey = "agentos:last-openclaw-capability-diff";
+const openClawCertificationScorecardStorageKey = "agentos:last-openclaw-certification-scorecard";
 const useIsomorphicLayoutEffect = typeof globalThis.window === "undefined" ? useEffect : useLayoutEffect;
 const initialModelSwitchFeedback: ModelSwitchFeedback = {
   phase: "idle",
@@ -298,6 +300,8 @@ export function MissionControlShell({
   const [updateLog, setUpdateLog] = useState("");
   const [updateManualCommand, setUpdateManualCommand] = useState<string | null>(null);
   const [updateCapabilityDiff, setUpdateCapabilityDiff] = useState<OpenClawCapabilityDiffReport | null>(null);
+  const [updateCertificationScorecard, setUpdateCertificationScorecard] =
+    useState<OpenClawCertificationScorecardReport | null>(null);
   const [updateTargetVersion, setUpdateTargetVersion] = useState<string | null>(null);
   const [updateMode, setUpdateMode] = useState<"recommended" | "candidate" | "advanced">("recommended");
   const [onboardingRunState, setOnboardingRunState] = useState<UpdateRunState>("idle");
@@ -333,6 +337,31 @@ export function MissionControlShell({
 
     window.localStorage.setItem(openClawCapabilityDiffStorageKey, JSON.stringify(updateCapabilityDiff));
   }, [updateCapabilityDiff]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || updateCertificationScorecard) {
+      return;
+    }
+
+    const stored = window.localStorage.getItem(openClawCertificationScorecardStorageKey);
+    if (!stored) {
+      return;
+    }
+
+    try {
+      setUpdateCertificationScorecard(JSON.parse(stored) as OpenClawCertificationScorecardReport);
+    } catch {
+      window.localStorage.removeItem(openClawCertificationScorecardStorageKey);
+    }
+  }, [updateCertificationScorecard]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !updateCertificationScorecard) {
+      return;
+    }
+
+    window.localStorage.setItem(openClawCertificationScorecardStorageKey, JSON.stringify(updateCertificationScorecard));
+  }, [updateCertificationScorecard]);
   const [selectedOnboardingModelId, setSelectedOnboardingModelId] = useState<string>("");
   const [discoveredModels, setDiscoveredModels] = useState<DiscoveredModelCandidate[]>([]);
   const [modelOnboardingRunState, setModelOnboardingRunState] = useState<UpdateRunState>("idle");
@@ -1563,6 +1592,11 @@ export function MissionControlShell({
     setUpdateLog("");
     setUpdateManualCommand(null);
     setUpdateCapabilityDiff(null);
+    setUpdateCertificationScorecard(null);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(openClawCapabilityDiffStorageKey);
+      window.localStorage.removeItem(openClawCertificationScorecardStorageKey);
+    }
     updateUpdateToast(action === "rollback" ? "Starting OpenClaw rollback..." : "Starting OpenClaw update...");
 
     try {
@@ -1630,6 +1664,7 @@ export function MissionControlShell({
               setUpdateRunState(event.ok ? "success" : "error");
               setUpdateManualCommand(event.manualCommand ?? null);
               setUpdateCapabilityDiff(event.capabilityDiff ?? null);
+              setUpdateCertificationScorecard(event.certificationScorecard ?? null);
 
               if (event.snapshot) {
                 setSnapshot(event.snapshot);
@@ -1660,6 +1695,7 @@ export function MissionControlShell({
           setUpdateRunState(event.ok ? "success" : "error");
           setUpdateManualCommand(event.manualCommand ?? null);
           setUpdateCapabilityDiff(event.capabilityDiff ?? null);
+          setUpdateCertificationScorecard(event.certificationScorecard ?? null);
 
           if (event.snapshot) {
             setSnapshot(event.snapshot);
@@ -3223,6 +3259,7 @@ export function MissionControlShell({
     isCheckingForUpdates,
     updateRunState,
     updateCapabilityDiff,
+    updateCertificationScorecard,
     selectedModelId: selectedOnboardingModelId,
     modelOnboardingRunState,
     gatewayControlAction,
@@ -3346,6 +3383,7 @@ export function MissionControlShell({
         snapshot={snapshot}
         initialProvider={initialAddModelsProvider}
         onSnapshotChange={setSnapshot}
+        surfaceTheme={surfaceTheme}
       />
 
       <ResetDialog
@@ -3404,6 +3442,7 @@ export function MissionControlShell({
         updateLog={updateLog}
         updateManualCommand={updateManualCommand}
         updateCapabilityDiff={updateCapabilityDiff}
+        updateCertificationScorecard={updateCertificationScorecard}
         updateTargetVersion={updateTargetVersion}
         updateMode={updateMode}
         activeRuntimeCount={activeRuntimeCount}
@@ -3862,6 +3901,7 @@ export function MissionControlShell({
           onRefresh={async () => {
             await refreshSnapshot({ force: true });
           }}
+          surfaceTheme={surfaceTheme}
         />
 
         <AgentModelPickerDialog
@@ -3872,6 +3912,7 @@ export function MissionControlShell({
           onSnapshotChange={(updater) => setSnapshot(updater)}
           onRefresh={refresh}
           onOpenAddModels={openAddModelsFromModelPicker}
+          surfaceTheme={surfaceTheme}
         />
 
         <div className="pointer-events-auto absolute bottom-[calc(env(safe-area-inset-bottom)+12px)] left-4 right-4 z-40 lg:bottom-6 lg:left-1/2 lg:right-auto lg:w-[min(800px,calc(100vw-320px))] lg:-translate-x-1/2">
@@ -4169,6 +4210,7 @@ export function MissionControlShell({
           snapshot={snapshot}
           initialProvider={initialAddModelsProvider}
           onSnapshotChange={setSnapshot}
+          surfaceTheme={surfaceTheme}
         />
 
         <ResetDialog
@@ -4227,6 +4269,7 @@ export function MissionControlShell({
           updateLog={updateLog}
           updateManualCommand={updateManualCommand}
           updateCapabilityDiff={updateCapabilityDiff}
+          updateCertificationScorecard={updateCertificationScorecard}
           updateTargetVersion={updateTargetVersion}
           updateMode={updateMode}
           activeRuntimeCount={activeRuntimeCount}

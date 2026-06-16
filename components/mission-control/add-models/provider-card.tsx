@@ -12,6 +12,7 @@ export function ProviderCard({
   micro = false,
   connected = false,
   detail,
+  surfaceTheme = "dark",
   onClick
 }: {
   descriptor: ModelProviderDescriptor;
@@ -20,9 +21,11 @@ export function ProviderCard({
   micro?: boolean;
   connected?: boolean;
   detail?: string | null;
+  surfaceTheme?: "dark" | "light";
   onClick: () => void;
 }) {
   const isMicro = micro;
+  const isLight = surfaceTheme === "light";
 
   return (
     <button
@@ -31,15 +34,19 @@ export function ProviderCard({
       className={cn(
         "group w-full rounded-[20px] border text-left transition-all",
         isMicro ? "rounded-[16px] p-1.5" : compact ? "p-2.5" : "p-3.5",
-        active
-          ? isMicro
-            ? "border-cyan-300/40 bg-[linear-gradient(180deg,rgba(23,32,52,0.98),rgba(11,18,31,0.98))] shadow-[0_8px_16px_rgba(10,16,28,0.18)]"
-            : compact
-              ? "border-cyan-300/40 bg-[linear-gradient(180deg,rgba(23,32,52,0.98),rgba(11,18,31,0.98))] shadow-[0_12px_26px_rgba(10,16,28,0.22)]"
-              : "border-cyan-300/40 bg-[linear-gradient(180deg,rgba(23,32,52,0.98),rgba(11,18,31,0.98))] shadow-[0_16px_36px_rgba(10,16,28,0.26)]"
-          : isMicro
-            ? "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(10,15,28,0.92))] hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(20,29,49,0.96),rgba(12,18,31,0.96))]"
-            : "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(10,15,28,0.92))] hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(20,29,49,0.96),rgba(12,18,31,0.96))]"
+        isLight
+          ? active
+            ? "border-cyan-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(242,248,250,0.92))] shadow-[0_12px_26px_rgba(71,85,105,0.10)]"
+            : "border-[#e3dbd0] bg-[linear-gradient(180deg,rgba(255,255,255,0.86),rgba(248,243,236,0.88))] hover:border-[#d8cfc2] hover:bg-white"
+          : active
+            ? isMicro
+              ? "border-cyan-300/40 bg-[linear-gradient(180deg,rgba(23,32,52,0.98),rgba(11,18,31,0.98))] shadow-[0_8px_16px_rgba(10,16,28,0.18)]"
+              : compact
+                ? "border-cyan-300/40 bg-[linear-gradient(180deg,rgba(23,32,52,0.98),rgba(11,18,31,0.98))] shadow-[0_12px_26px_rgba(10,16,28,0.22)]"
+                : "border-cyan-300/40 bg-[linear-gradient(180deg,rgba(23,32,52,0.98),rgba(11,18,31,0.98))] shadow-[0_16px_36px_rgba(10,16,28,0.26)]"
+            : isMicro
+              ? "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(10,15,28,0.92))] hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(20,29,49,0.96),rgba(12,18,31,0.96))]"
+              : "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(10,15,28,0.92))] hover:border-white/18 hover:bg-[linear-gradient(180deg,rgba(20,29,49,0.96),rgba(12,18,31,0.96))]"
       )}
     >
       <div className={cn("flex items-start justify-between", isMicro ? "gap-1.5" : "gap-2.5")}>
@@ -54,6 +61,8 @@ export function ProviderCard({
           variant={connected ? "success" : active ? "default" : "muted"}
           className={cn(
             "tracking-[0.12em]",
+            isLight && connected && "border-emerald-300 bg-emerald-50 text-emerald-800",
+            isLight && active && !connected && "border-cyan-300 bg-cyan-50 text-cyan-800",
             isMicro ? "px-1 py-0.5 text-[7px]" : compact ? "px-1.5 py-0.5 text-[9px]" : "px-2 py-0.5 text-[10px]"
           )}
         >
@@ -64,7 +73,8 @@ export function ProviderCard({
       <div className={cn(isMicro ? "mt-1.5" : compact ? "mt-2" : "mt-3.5")}>
         <p
           className={cn(
-            "font-display text-white",
+            "font-display",
+            isLight ? "text-[#2d241f]" : "text-white",
             isMicro ? "text-[0.72rem]" : compact ? "text-[0.82rem]" : "text-[0.94rem]"
           )}
         >
@@ -72,7 +82,8 @@ export function ProviderCard({
         </p>
         <p
           className={cn(
-            "mt-1 text-slate-300",
+            "mt-1",
+            isLight ? "text-[#71675d]" : "text-slate-300",
             isMicro
               ? "line-clamp-2 text-[8px] leading-[0.85rem]"
               : compact
@@ -84,7 +95,8 @@ export function ProviderCard({
         </p>
         <p
           className={cn(
-            "mt-2.5 uppercase tracking-[0.18em] text-slate-500",
+            "mt-2.5 uppercase tracking-[0.18em]",
+            isLight ? "text-[#8c8177]" : "text-slate-500",
             isMicro ? "line-clamp-1 text-[7px]" : compact ? "text-[8px]" : "text-[9px]"
           )}
         >

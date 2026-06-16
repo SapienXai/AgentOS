@@ -96,9 +96,8 @@ export function WorkspaceWizardDialog({
   const [basicStep, setBasicStep] = useState<WorkspaceCreateStep>("intake");
   const [blueprintEditorFocus, setBlueprintEditorFocus] = useState<WorkspaceBlueprintEditorFocus>("workspace.name");
   const [documentEditorPath, setDocumentEditorPath] = useState("AGENTS.md");
-  const effectiveSurfaceTheme: SurfaceTheme = "dark";
-  const isLight = false;
-  void surfaceTheme;
+  const effectiveSurfaceTheme = surfaceTheme;
+  const isLight = surfaceTheme === "light";
   const editingWorkspace = isEditingWorkspace
     ? snapshot.workspaces.find((workspace) => workspace.id === workspaceEditId) ?? null
     : null;
@@ -310,6 +309,7 @@ export function WorkspaceWizardDialog({
     <MissionControlDialogShell
       open={open}
       onOpenChange={handleOpenChange}
+      surfaceTheme={surfaceTheme}
       title={isEditingWorkspace ? "Edit workspace" : "Create workspace"}
       description={
         isEditingWorkspace

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -53,10 +53,36 @@ export function RuntimeIssueIndicator({
   onRefresh?: () => Promise<void> | void;
 }) {
   const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const summary = summarizeRuntimeIssues(snapshot.diagnostics.runtimeIssues);
 
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
   return (
-    <div className="relative">
+    <div className="relative" ref={menuRef}>
       <button
         type="button"
         aria-expanded={open}

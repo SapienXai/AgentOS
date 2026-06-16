@@ -31,6 +31,7 @@ import {
 } from "@/lib/openclaw/capability-editor";
 import { OPENCLAW_BUILTIN_TOOL_CATALOG, OPENCLAW_TOOL_GROUP_CATALOG } from "@/lib/openclaw/tool-catalog";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
+import { cn } from "@/lib/utils";
 
 type AgentCapabilityEditorDialogProps = {
   open: boolean;
@@ -40,6 +41,7 @@ type AgentCapabilityEditorDialogProps = {
   onOpenChange: (open: boolean) => void;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
   onRefresh?: () => Promise<void>;
+  surfaceTheme?: "dark" | "light";
 };
 
 export function AgentCapabilityEditorDialog({
@@ -49,7 +51,8 @@ export function AgentCapabilityEditorDialog({
   snapshot,
   onOpenChange,
   onSnapshotChange,
-  onRefresh
+  onRefresh,
+  surfaceTheme = "dark"
 }: AgentCapabilityEditorDialogProps) {
   const agent = agentId ? snapshot.agents.find((entry) => entry.id === agentId) ?? null : null;
   const workspace = snapshot.workspaces.find((entry) => entry.id === agent?.workspaceId);
@@ -336,7 +339,12 @@ export function AgentCapabilityEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(680px,calc(100vw-1.5rem))] max-h-[calc(100dvh-1.5rem)] overflow-hidden rounded-[24px] border-white/10 bg-[linear-gradient(180deg,rgba(7,10,18,0.98),rgba(4,7,14,0.98))] p-0">
+      <DialogContent
+        className={cn(
+          "w-[min(680px,calc(100vw-1.5rem))] max-h-[calc(100dvh-1.5rem)] overflow-hidden rounded-[24px] border-white/10 bg-[linear-gradient(180deg,rgba(7,10,18,0.98),rgba(4,7,14,0.98))] p-0",
+          surfaceTheme === "light" && "agentos-light-modal"
+        )}
+      >
         <div className="flex max-h-[calc(100dvh-1.5rem)] min-h-0 flex-col">
           <DialogHeader className="border-b border-white/[0.08] px-4 py-2.5">
             <DialogTitle className="text-[0.95rem]">{`Edit ${isSkillsEditor ? "skills" : "tools"} · ${formatAgentDisplayName(agent)}`}</DialogTitle>

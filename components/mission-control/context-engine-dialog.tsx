@@ -671,9 +671,11 @@ function ProjectContextTab({
               </div>
             )}
           </ScrollArea>
-          <div className="flex items-center justify-end gap-3 border-t border-white/[0.07] px-4 py-3 text-xs text-slate-400">
-            <span>Total</span>
-            <span className="text-sm font-semibold text-white">{formatTokenValue(enabledProjectTokenTotal)} tokens</span>
+          <div className="grid grid-cols-[minmax(150px,1fr)_105px_132px_32px] items-center border-t border-white/[0.07] px-3 py-2 text-xs text-slate-400">
+            <span className="text-[11px] uppercase tracking-[0.18em]">Total</span>
+            <span className="font-semibold text-white">{formatTokenValue(enabledProjectTokenTotal)} tokens</span>
+            <span />
+            <span />
           </div>
         </section>
 

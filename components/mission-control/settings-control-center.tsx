@@ -55,6 +55,7 @@ import type {
 import { compactPath } from "@/lib/openclaw/presenters";
 import type {
   OpenClawCapabilityDiffReport,
+  OpenClawCertificationScorecardReport,
   OpenClawShadowProbeReport,
   OpenClawUpdateCompatibilityMode,
   OpenClawUpdateDecision,
@@ -156,6 +157,7 @@ export function SettingsControlCenter(
     isCheckingForUpdates,
     updateRunState,
     updateCapabilityDiff,
+    updateCertificationScorecard,
     selectedModelId,
     modelOnboardingRunState,
     gatewayControlAction,
@@ -1321,6 +1323,7 @@ export function SettingsControlCenter(
                     summary={capabilitySummary}
                     snapshot={snapshot}
                     updateCapabilityDiff={updateCapabilityDiff}
+                    updateCertificationScorecard={updateCertificationScorecard}
                     surfaceTheme={surfaceTheme}
                   />
                 </Card>
@@ -1961,11 +1964,13 @@ function SummaryTile({
 
 function CapabilityBaselineComparisonPanel({
   diff,
+  scorecard,
   snapshot,
   summary,
   surfaceTheme
 }: {
   diff: OpenClawCapabilityDiffReport | null;
+  scorecard: OpenClawCertificationScorecardReport | null;
   snapshot: MissionControlShellSettingsPanelProps["snapshot"];
   summary: OpenClawCapabilityMatrixSummary;
   surfaceTheme: SurfaceTheme;
@@ -1981,6 +1986,11 @@ function CapabilityBaselineComparisonPanel({
     Boolean(diff) &&
     normalizeUpdateVersion(diff?.targetVersion) === activeVersion &&
     normalizeUpdateVersion(diff?.certifiedVersion) === certifiedVersion;
+  const scorecardMatchesActive =
+    Boolean(scorecard) &&
+    normalizeUpdateVersion(scorecard?.targetVersion) === activeVersion &&
+    normalizeUpdateVersion(scorecard?.baselineVersion) === certifiedVersion;
+  const capabilityEquivalent = Boolean(diffMatchesActive && diff!.summary.certificationBlockerCount === 0);
   const blockerRows = diffMatchesActive
     ? diff!.rows.filter((row) => isCapabilityDiffTargetBlocker(row))
     : [];
@@ -1992,21 +2002,33 @@ function CapabilityBaselineComparisonPanel({
     summary.missingRequiredOperationCount > 0 || summary.unknownOrDegradedOperationCount > 0;
   const statusLabel = !hasVersionDelta
     ? "Baseline active"
-    : diffMatchesActive
-      ? diff!.summary.certificationBlockerCount > 0
+    : scorecardMatchesActive
+      ? scorecard!.globalCertification === "certified"
+        ? "Certified"
+        : capabilityEquivalent
+          ? "Capability-equivalent"
+          : formatScorecardStatus(scorecard!.status)
+      : diffMatchesActive
+        ? diff!.summary.certificationBlockerCount > 0
         ? "Review blockers"
         : hasRuntimeGaps
           ? "Runtime gaps remain"
-          : "No new regressions"
+          : "Capability-equivalent"
       : "Diff evidence missing";
   const statusTone = !hasVersionDelta
     ? "success"
-    : diffMatchesActive
-      ? diff!.summary.certificationBlockerCount > 0
+    : scorecardMatchesActive
+      ? scorecard!.status === "blocked" || scorecard!.status === "evidence_missing"
         ? "danger"
-        : hasRuntimeGaps
+        : scorecard!.status === "compatible_with_warnings" || scorecard!.status === "degraded"
           ? "warning"
           : "success"
+      : diffMatchesActive
+        ? diff!.summary.certificationBlockerCount > 0
+          ? "danger"
+          : hasRuntimeGaps
+            ? "warning"
+            : "success"
       : "warning";
 
   return (
@@ -2030,29 +2052,29 @@ function CapabilityBaselineComparisonPanel({
 
       <div className="mt-3 grid gap-2 sm:grid-cols-4">
         <Metric
-          label="Native +"
-          value={diffMatchesActive ? String(diff!.summary.nativeImprovements) : "-"}
+          label="Capability"
+          value={capabilityEquivalent ? "Equivalent" : diffMatchesActive ? "Changed" : "-"}
           surfaceTheme={surfaceTheme}
           dark={surfaceTheme === "dark"}
           compact
         />
         <Metric
-          label="Native -"
-          value={diffMatchesActive ? String(diff!.summary.nativeRegressions) : "-"}
+          label="Certification"
+          value={scorecardMatchesActive ? (scorecard!.globalCertification === "certified" ? "Certified" : "Not certified") : "-"}
           surfaceTheme={surfaceTheme}
           dark={surfaceTheme === "dark"}
           compact
         />
         <Metric
-          label="Fallback -"
-          value={diffMatchesActive ? String(diff!.summary.fallbackRegressions) : "-"}
+          label="Score"
+          value={scorecardMatchesActive ? `${scorecard!.score}/100` : "-"}
           surfaceTheme={surfaceTheme}
           dark={surfaceTheme === "dark"}
           compact
         />
         <Metric
-          label="Target blockers"
-          value={diffMatchesActive ? String(diff!.summary.certificationBlockerCount) : "-"}
+          label="Hard blockers"
+          value={scorecardMatchesActive ? String(scorecard!.hardBlockers.length) : diffMatchesActive ? String(diff!.summary.certificationBlockerCount) : "-"}
           surfaceTheme={surfaceTheme}
           dark={surfaceTheme === "dark"}
           compact
@@ -2062,12 +2084,18 @@ function CapabilityBaselineComparisonPanel({
       <p className={cn("mt-3 text-xs leading-5", mutedTextClassName(surfaceTheme))}>
         {!hasVersionDelta
           ? "The active OpenClaw version is the certified baseline, so this page is showing baseline runtime capabilities."
-          : diffMatchesActive
-            ? diff!.summary.certificationBlockerCount > 0
+          : scorecardMatchesActive
+            ? scorecard!.globalCertification === "certified"
+              ? "The active version is globally certified by the AgentOS compatibility registry."
+              : capabilityEquivalent
+                ? "Capability-equivalent does not certify update, rollback, plugin, config, or runtime behavior. Review the certification scorecard before promoting this version."
+                : "The active version is not globally certified. The scorecard includes capability, gateway lifecycle, runtime smoke, update/rollback, and plugin/config evidence."
+            : diffMatchesActive
+              ? diff!.summary.certificationBlockerCount > 0
               ? "The active version is newer than the certified baseline. The diff was captured during install-and-verify and still has target blockers below."
               : hasRuntimeGaps
                 ? "The install-and-verify diff did not add new regressions, but the active runtime matrix still has required or degraded capability gaps."
-                : "The active version is newer than the certified baseline. The latest install-and-verify diff did not detect native regressions, fallback regressions, or target blockers."
+                : "The active version is capability-equivalent to the certified baseline, but certification scorecard evidence is missing."
             : "This page is showing the active runtime capability matrix only. Run Install and verify latest to capture a certified-vs-active diff for this browser session."}
       </p>
 
@@ -2122,6 +2150,23 @@ function comparisonStatusClassName(tone: "success" | "warning" | "danger", surfa
   }
 
   return cn(base, surfaceTheme === "light" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100");
+}
+
+function formatScorecardStatus(value: OpenClawCertificationScorecardReport["status"]) {
+  switch (value) {
+    case "certified":
+      return "Certified";
+    case "pre_certified_eligible":
+      return "Pre-certified eligible";
+    case "compatible_with_warnings":
+      return "Compatible with warnings";
+    case "degraded":
+      return "Degraded";
+    case "blocked":
+      return "Blocked";
+    case "evidence_missing":
+      return "Evidence missing";
+  }
 }
 
 function formatCapabilityDiffMode(value: string) {
@@ -2301,12 +2346,14 @@ function CapabilityMatrixPanel({
   summary,
   snapshot,
   updateCapabilityDiff,
+  updateCertificationScorecard,
   surfaceTheme
 }: {
   rows: OpenClawCapabilityMatrixRow[];
   summary: OpenClawCapabilityMatrixSummary;
   snapshot: MissionControlShellSettingsPanelProps["snapshot"];
   updateCapabilityDiff: OpenClawCapabilityDiffReport | null;
+  updateCertificationScorecard: OpenClawCertificationScorecardReport | null;
   surfaceTheme: SurfaceTheme;
 }) {
   const rowsByStatus = {
@@ -2364,6 +2411,7 @@ function CapabilityMatrixPanel({
 
       <CapabilityBaselineComparisonPanel
         diff={updateCapabilityDiff}
+        scorecard={updateCertificationScorecard}
         snapshot={snapshot}
         summary={summary}
         surfaceTheme={surfaceTheme}

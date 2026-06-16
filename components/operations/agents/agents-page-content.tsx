@@ -272,12 +272,14 @@ export function AgentsPageContent({
         onSnapshotChange={(updater) => setSnapshot((current) => updater(current))}
         onRefresh={refresh}
         onOpenAddModels={() => setIsAddModelsDialogOpen(true)}
+        surfaceTheme={surfaceTheme}
       />
       <AddModelsDialog
         open={isAddModelsDialogOpen}
         onOpenChange={setIsAddModelsDialogOpen}
         snapshot={rootSnapshot}
         onSnapshotChange={setSnapshot}
+        surfaceTheme={surfaceTheme}
       />
       <AgentCapabilityEditorDialog
         open={Boolean(capabilityAgentId)}
@@ -287,6 +289,7 @@ export function AgentsPageContent({
         onOpenChange={(open) => setCapabilityAgentId(open ? capabilityAgentId : null)}
         onSnapshotChange={(updater) => setSnapshot((current) => updater(current))}
         onRefresh={refresh}
+        surfaceTheme={surfaceTheme}
       />
       <MissionDispatchDialog
         open={Boolean(dispatchAgent)}

@@ -382,7 +382,7 @@ test("update route keeps certified targets installed when postflight only has wa
   assert.match(routeSource, /ok: true,\s+message: `\$\{verification\.message\} \$\{smokeFailureMessage\}`/);
 });
 
-test("update dialog keeps OpenClaw output and capability diff inside the modal width", () => {
+test("update dialog keeps OpenClaw output and certification scorecard inside the modal width", () => {
   const dialogSource = readFileSync(
     path.join(process.cwd(), "components/mission-control/mission-control-shell.dialogs.tsx"),
     "utf8"
@@ -393,6 +393,8 @@ test("update dialog keeps OpenClaw output and capability diff inside the modal w
   assert.match(dialogSource, /whitespace-pre-wrap break-all/);
   assert.match(dialogSource, /\[overflow-wrap:anywhere\]/);
   assert.match(dialogSource, /sm:grid-cols-\[minmax\(0,1fr\)_minmax\(0,10rem\)\]/);
+  assert.match(dialogSource, /Certification scorecard/);
+  assert.match(dialogSource, /Generate artifact/);
 });
 
 test("opening an update action resets stale failed update dialog state", () => {
@@ -412,8 +414,16 @@ test("update dialog surfaces target blockers even when capability modes are unch
   );
 
   assert.match(dialogSource, /isCapabilityDiffTargetBlocker/);
-  assert.match(dialogSource, /Target blockers/);
-  assert.match(dialogSource, /target diagnostics still report certification blockers/);
+  assert.match(dialogSource, /Hard blockers/);
+  assert.match(dialogSource, /target diagnostics still report capability blockers/);
+});
+
+test("update stream carries certification scorecard evidence with capability diff", () => {
+  const routeSource = readFileSync(path.join(process.cwd(), "app/api/update/route.ts"), "utf8");
+
+  assert.match(routeSource, /certificationScorecard/);
+  assert.match(routeSource, /buildOpenClawUpdateCertificationScorecard/);
+  assert.match(routeSource, /capabilityDiff: finalCapabilityDiff/);
 });
 
 test("capability matrix labels active and certified OpenClaw versions distinctly", () => {
@@ -427,9 +437,11 @@ test("capability matrix labels active and certified OpenClaw versions distinctly
   assert.match(settingsSource, /wrapValue/);
   assert.match(settingsSource, /Certified baseline comparison/);
   assert.match(settingsSource, /Runtime gaps remain/);
-  assert.match(settingsSource, /No new regressions/);
+  assert.match(settingsSource, /Capability-equivalent/);
+  assert.match(settingsSource, /Not certified/);
+  assert.match(settingsSource, /Capability-equivalent does not certify update, rollback, plugin, config, or runtime behavior/);
   assert.match(settingsSource, /Diff evidence missing/);
-  assert.match(settingsSource, /Target blockers/);
+  assert.match(settingsSource, /Hard blockers/);
   assert.match(settingsSource, /badgeTone=\{summary\.missingRequiredOperationCount > 0 \? "danger"/);
 });
 

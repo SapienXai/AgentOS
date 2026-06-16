@@ -32,7 +32,8 @@ export function AgentModelPickerDialog({
   onOpenChange,
   onSnapshotChange,
   onRefresh,
-  onOpenAddModels
+  onOpenAddModels,
+  surfaceTheme = "dark"
 }: {
   open: boolean;
   agentId: string | null;
@@ -41,6 +42,7 @@ export function AgentModelPickerDialog({
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
   onRefresh?: () => Promise<void>;
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
+  surfaceTheme?: "dark" | "light";
 }) {
   const agent = agentId ? snapshot.agents.find((entry) => entry.id === agentId) ?? null : null;
   const currentModelId = agent?.modelId && agent.modelId !== "unassigned" ? normalizeOpenAiCodexModelId(agent.modelId) : "";
@@ -186,7 +188,12 @@ export function AgentModelPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[80dvh] max-h-[80dvh] w-[calc(100vw-16px)] max-w-[760px] flex-col gap-0 overflow-hidden p-0 sm:h-[min(80dvh,720px)] sm:max-h-[min(80dvh,720px)] sm:w-[min(760px,calc(100vw-40px))]">
+      <DialogContent
+        className={cn(
+          "flex h-[80dvh] max-h-[80dvh] w-[calc(100vw-16px)] max-w-[760px] flex-col gap-0 overflow-hidden p-0 sm:h-[min(80dvh,720px)] sm:max-h-[min(80dvh,720px)] sm:w-[min(760px,calc(100vw-40px))]",
+          surfaceTheme === "light" && "agentos-light-modal"
+        )}
+      >
         <DialogHeader className="shrink-0 border-b border-white/10 bg-[linear-gradient(180deg,rgba(12,18,31,0.96),rgba(9,13,24,0.98))] px-4 py-3.5 pr-10">
           <DialogTitle className="text-[1.05rem]">Change model</DialogTitle>
           <DialogDescription className="max-w-[520px] text-[11px] leading-[1rem] text-slate-400">

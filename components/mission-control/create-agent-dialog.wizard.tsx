@@ -75,9 +75,8 @@ export function CreateAgentDialog({
   trigger,
   surfaceTheme = "dark"
 }: CreateAgentDialogProps) {
-  const effectiveSurfaceTheme: SurfaceTheme = "dark";
-  const isLight = false;
-  void surfaceTheme;
+  const effectiveSurfaceTheme = surfaceTheme;
+  const isLight = surfaceTheme === "light";
   const initialWorkspaceId = defaultWorkspaceId ?? snapshot.workspaces[0]?.id ?? "";
   const [isMounted, setIsMounted] = useState(false);
   const [showAdvancedIdentity, setShowAdvancedIdentity] = useState(false);
@@ -514,6 +513,7 @@ export function CreateAgentDialog({
     <MissionControlDialogShell
       open={open}
       onOpenChange={handleOpenChange}
+      surfaceTheme={surfaceTheme}
       trigger={trigger}
       title="Create New Agent"
       description={stage === "start" ? "Choose a starting point." : getWizardStageHint(startPoint, stage)}
