@@ -426,6 +426,50 @@ export interface OpenClawCapabilityDiffRow {
   missingRequiredMethods: string[];
   reason: string;
   recovery: string | null;
+  evidenceSource: string | null;
+  preferredMethod: string | null;
+  supportedMethod: string | null;
+  aliasMethods: string[];
+  targetReason: string;
+  targetRecovery: string | null;
+}
+
+export interface OpenClawPluginConfigMigrationFinding {
+  kind: "plugin-api" | "plugin-install" | "config-version" | "config-patch" | "update-status-schema";
+  severity: OpenClawCertificationScorecardFindingSeverity;
+  pluginId: string | null;
+  pluginVersion: string | null;
+  requiredApiVersion: string | null;
+  hostVersion: string | null;
+  configWriterVersion: string | null;
+  configKey: string | null;
+  message: string;
+  recovery: string | null;
+}
+
+export interface OpenClawCertificationRoundTripStep {
+  id: "baseline-restore" | "target-install" | "target-verify" | "rollback-verify" | "final-target-verify";
+  requestedVersion: string;
+  installedVersion: string | null;
+  gatewayLoaded: boolean;
+  rpcReady: boolean;
+  runtimeSmokeStatus: OpenClawRuntimeSmokeTest["status"] | "unknown";
+  fallbackCount: number;
+  exitCode: number | null;
+  ok: boolean;
+  message: string;
+  stdoutPreview: string | null;
+  stderrPreview: string | null;
+}
+
+export interface OpenClawCertificationRoundTripEvidence {
+  status: "passed" | "failed" | "not-run";
+  startedAt: string | null;
+  finishedAt: string | null;
+  baselineVersion: string | null;
+  targetVersion: string | null;
+  steps: OpenClawCertificationRoundTripStep[];
+  failureMessage: string | null;
 }
 
 export interface OpenClawCapabilityDiffReport {
@@ -496,6 +540,9 @@ export interface OpenClawCertificationScorecardArtifact {
   unknowns: string[];
   categories: OpenClawCertificationScorecardCategory[];
   capabilityDiff: OpenClawCapabilityDiffReport | null;
+  capabilityBlockerRows: OpenClawCapabilityDiffRow[];
+  pluginConfigFindings: OpenClawPluginConfigMigrationFinding[];
+  roundTripEvidence: OpenClawCertificationRoundTripEvidence;
 }
 
 export interface OpenClawCertificationScorecardReport {
@@ -510,6 +557,9 @@ export interface OpenClawCertificationScorecardReport {
   unknowns: string[];
   categories: OpenClawCertificationScorecardCategory[];
   capabilityDiff: OpenClawCapabilityDiffReport | null;
+  capabilityBlockerRows: OpenClawCapabilityDiffRow[];
+  pluginConfigFindings: OpenClawPluginConfigMigrationFinding[];
+  roundTripEvidence: OpenClawCertificationRoundTripEvidence;
   artifact: OpenClawCertificationScorecardArtifact | null;
 }
 
@@ -1106,7 +1156,17 @@ export interface MissionAbortResponse {
 export type OpenClawUpdateStreamEvent =
   | {
       type: "status";
-      phase: "preflight" | "probe" | "starting" | "refreshing" | "rollback";
+      phase:
+        | "preflight"
+        | "probe"
+        | "starting"
+        | "refreshing"
+        | "rollback"
+        | "baseline-restore"
+        | "target-install"
+        | "target-verify"
+        | "rollback-verify"
+        | "final-target-verify";
       message: string;
     }
   | {
@@ -1435,13 +1495,27 @@ export interface WorkspaceDeleteInput {
 
 export interface WorkspaceCreateResult {
   workspaceId: string;
+  workspaceName?: string;
   workspacePath: string;
   agentIds: string[];
   primaryAgentId: string;
+  agentProjections?: WorkspaceCreateAgentProjection[];
   kickoffRunId?: string;
   kickoffStatus?: string;
   kickoffError?: string;
   warnings?: string[];
+}
+
+export interface WorkspaceCreateAgentProjection {
+  id: string;
+  name: string;
+  modelId?: string;
+  emoji?: string;
+  theme?: string;
+  policy?: AgentPolicy;
+  heartbeat?: AgentHeartbeatInput;
+  skills?: string[];
+  tools?: string[];
 }
 
 export type WorkspaceCreateStreamEvent =
@@ -1747,9 +1821,11 @@ export interface WorkspacePlan {
 export interface WorkspacePlanDeployResult {
   plan: WorkspacePlan;
   workspaceId: string;
+  workspaceName?: string;
   workspacePath: string;
   primaryAgentId: string;
   agentIds: string[];
+  agentProjections?: WorkspaceCreateAgentProjection[];
   kickoffRunIds: string[];
   warnings: string[];
 }

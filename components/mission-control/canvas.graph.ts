@@ -28,6 +28,7 @@ import { resolveAgentModelLabel } from "@/lib/openclaw/presenters";
 import type {
   MissionControlSnapshot,
   AgentRecord,
+  WorkspaceRecord,
   WorkItemRecord
 } from "@/lib/agentos/contracts";
 import type { AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
@@ -101,13 +102,13 @@ export function buildCanvasGraph(
   const selectedTaskAgentId = selectedTask ? resolveTaskOwnerId(selectedTask) : null;
   const isFocusMode = focusedAgent !== null;
   const focusWorkspaceId = focusedAgent?.workspaceId ?? null;
-  const visibleWorkspaces = isFocusMode
-    ? snapshot.workspaces.filter((workspace) => workspace.id === focusWorkspaceId)
-    : activeWorkspaceId
-      ? snapshot.workspaces.filter((workspace) => workspace.id === activeWorkspaceId)
-      : [...snapshot.workspaces].sort(
-          (left, right) => right.activeRuntimeIds.length - left.activeRuntimeIds.length
-        );
+  const visibleWorkspaces = resolveVisibleWorkspaces({
+    snapshot,
+    activeWorkspaceId,
+    focusWorkspaceId,
+    isFocusMode,
+    pendingCreatedAgents
+  });
 
   const workspaceNodes: CanvasNode[] = [];
   const contentNodes: CanvasNode[] = [];
@@ -427,6 +428,88 @@ export function buildCanvasGraph(
       ...buildSurfaceTetherEdges(nodes, composerTargetAgentId, isComposerActive)
     ]
   };
+}
+
+function resolveVisibleWorkspaces(input: {
+  snapshot: MissionControlSnapshot;
+  activeWorkspaceId: string | null;
+  focusWorkspaceId: string | null;
+  isFocusMode: boolean;
+  pendingCreatedAgents: PendingAgentProjection[];
+}): WorkspaceRecord[] {
+  if (input.isFocusMode) {
+    return input.snapshot.workspaces.filter((workspace) => workspace.id === input.focusWorkspaceId);
+  }
+
+  if (!input.activeWorkspaceId) {
+    return [...input.snapshot.workspaces].sort(
+      (left, right) => right.activeRuntimeIds.length - left.activeRuntimeIds.length
+    );
+  }
+
+  const liveWorkspaces = input.snapshot.workspaces.filter((workspace) => workspace.id === input.activeWorkspaceId);
+
+  if (liveWorkspaces.length > 0) {
+    return liveWorkspaces;
+  }
+
+  const pendingWorkspaceAgents = input.pendingCreatedAgents.filter(
+    (agent) => agent.workspaceId === input.activeWorkspaceId
+  );
+
+  if (pendingWorkspaceAgents.length === 0) {
+    return [];
+  }
+
+  return [buildPendingWorkspaceRecord(input.activeWorkspaceId, pendingWorkspaceAgents)];
+}
+
+function buildPendingWorkspaceRecord(workspaceId: string, pendingAgents: PendingAgentProjection[]): WorkspaceRecord {
+  const firstAgent = pendingAgents[0];
+  const workspacePath = firstAgent?.workspacePath ?? "";
+  const workspaceName =
+    firstAgent?.workspaceName ??
+    readPathBasename(workspacePath) ??
+    workspaceId;
+
+  return {
+    id: workspaceId,
+    name: workspaceName,
+    slug: workspaceId,
+    path: workspacePath,
+    kind: "workspace",
+    agentIds: pendingAgents.map((agent) => agent.id),
+    modelIds: pendingAgents.map((agent) => agent.modelId).filter(Boolean),
+    activeRuntimeIds: [],
+    totalSessions: 0,
+    health: "standby",
+    bootstrap: {
+      template: null,
+      sourceMode: null,
+      agentTemplate: null,
+      coreFiles: [],
+      optionalFiles: [],
+      folders: [],
+      projectShell: [],
+      localSkillIds: []
+    },
+    capabilities: {
+      skills: [],
+      tools: [],
+      workspaceOnlyAgentCount: pendingAgents.filter((agent) => agent.policy.fileAccess === "workspace-only").length
+    },
+    channels: []
+  };
+}
+
+function readPathBasename(value: string) {
+  const normalized = value.trim().replace(/\/+$/g, "");
+
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.split("/").pop() || null;
 }
 
 export function buildEdgesForNodes(

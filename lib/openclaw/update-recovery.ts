@@ -27,7 +27,24 @@ export function isOpenClawDowngradeConfigBlocker(output: string) {
 
   return (
     /older than the config last written by OpenClaw/i.test(normalized) ||
-    /Refusing to (?:install|rewrite|restart).*because this OpenClaw binary .* is older than the config last written/i.test(normalized)
+    /Refusing to (?:install|rewrite|restart).*because this OpenClaw binary .* is older than the config last written/i.test(normalized) ||
+    /OpenClaw config was written by version .*but this command is running/i.test(normalized) ||
+    /Gateway service was installed by OpenClaw .*current CLI is/i.test(normalized)
+  );
+}
+
+export function resolveOpenClawDowngradeBlockerRestoreVersion(output: string) {
+  const normalized = output.trim();
+
+  if (!normalized || !isOpenClawDowngradeConfigBlocker(normalized)) {
+    return null;
+  }
+
+  return (
+    normalized.match(/\bconfig last written by OpenClaw\s+v?(\d+(?:\.\d+)+)\b/i)?.[1] ??
+    normalized.match(/\bconfig was written by version\s+v?(\d+(?:\.\d+)+)\b/i)?.[1] ??
+    normalized.match(/\binstalled by OpenClaw\s+v?(\d+(?:\.\d+)+)\b/i)?.[1] ??
+    null
   );
 }
 

@@ -12,6 +12,11 @@ import {
   resolveSuggestedAgentModelId
 } from "@/components/mission-control/create-agent-dialog.utils";
 import {
+  buildPendingAgentsForWorkspaceResult,
+  buildPendingWorkspaceMenuEntries,
+  parsePendingAgentProjections
+} from "@/components/mission-control/pending-agent-projection";
+import {
   createOptimisticMissionTaskRecord,
   buildLaunchpadWorkspaceHandoffProgress,
   buildWorkspaceSelectionStorageKey,
@@ -42,6 +47,110 @@ test("agent draft helpers keep create flows stable", () => {
   assert.equal(buildScopedAgentId("My Workspace", "Agent Name"), "my-workspace-agent-name");
   assert.equal(buildUniqueAgentId(existingAgents, "My Workspace", "Agent Name"), "my-workspace-agent-name-2");
   assert.equal(applyAgentPreset(draft, "setup").policy.preset, "setup");
+});
+
+test("pending agent projections survive remount while live snapshot catches up", () => {
+  const pending = parsePendingAgentProjections(JSON.stringify([
+    {
+      id: "workspace-aslans-chinesse-builder-manyak-musti",
+      workspaceId: "workspace-aslans-chinesse-builder",
+      workspacePath: "/tmp/workspace",
+      name: "Manyak Musti",
+      modelId: "openai/gpt-5.4-mini",
+      emoji: "M",
+      theme: "Build",
+      policy: {
+        preset: "worker",
+        missingToolBehavior: "fallback",
+        installScope: "workspace",
+        fileAccess: "workspace-only",
+        networkAccess: "restricted"
+      },
+      heartbeat: {
+        enabled: false
+      },
+      skills: [],
+      tools: [],
+      createdAt: 1_000
+    }
+  ]), 2_000);
+
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0]?.name, "Manyak Musti");
+  assert.equal(pending[0]?.id, "workspace-aslans-chinesse-builder-manyak-musti");
+});
+
+test("pending workspace menu entries keep creating workspaces reachable", () => {
+  const pending = parsePendingAgentProjections(JSON.stringify([
+    {
+      id: "tortellini-builder",
+      workspaceId: "tortellini",
+      workspacePath: "/tmp/tortellini",
+      workspaceName: "Tortellini",
+      name: "Builder",
+      modelId: "openai/gpt-5.5",
+      policy: {
+        preset: "worker",
+        missingToolBehavior: "fallback",
+        installScope: "workspace",
+        fileAccess: "workspace-only",
+        networkAccess: "restricted"
+      },
+      heartbeat: {
+        enabled: false
+      },
+      skills: [],
+      tools: [],
+      createdAt: 1_000
+    },
+    {
+      id: "tortellini-storm-breaker",
+      workspaceId: "tortellini",
+      workspacePath: "/tmp/tortellini",
+      workspaceName: "Tortellini",
+      name: "Storm Breaker",
+      modelId: "openai/gpt-5.5",
+      policy: {
+        preset: "worker",
+        missingToolBehavior: "fallback",
+        installScope: "workspace",
+        fileAccess: "workspace-only",
+        networkAccess: "restricted"
+      },
+      heartbeat: {
+        enabled: false
+      },
+      skills: [],
+      tools: [],
+      createdAt: 1_000
+    }
+  ]), 2_000);
+
+  const pendingEntries = buildPendingWorkspaceMenuEntries(pending, new Set());
+
+  assert.deepEqual(pendingEntries, [
+    {
+      id: "tortellini",
+      name: "Tortellini",
+      detail: "2 agents creating",
+      pending: true
+    }
+  ]);
+  assert.deepEqual(buildPendingWorkspaceMenuEntries(pending, new Set(["tortellini"])), []);
+});
+
+test("workspace create results keep display workspace and agent names in pending projections", () => {
+  const pending = buildPendingAgentsForWorkspaceResult({
+    workspaceId: "tortellini",
+    workspaceName: "Tortellini",
+    workspacePath: "/tmp/tortellini",
+    agentIds: ["tortellini-builder", "tortellini-storm-breaker"],
+    primaryAgentId: "tortellini-builder"
+  }, 2_000);
+
+  assert.equal(pending[0]?.workspaceName, "Tortellini");
+  assert.equal(pending[0]?.name, "Builder");
+  assert.equal(pending[1]?.name, "Storm Breaker");
 });
 
 test("agent draft model helper prefers workspace and available recommended models when default is missing", () => {

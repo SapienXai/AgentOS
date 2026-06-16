@@ -1,10 +1,13 @@
 import type {
   GatewayDiagnostics,
   OpenClawCapabilityDiffReport,
+  OpenClawCapabilityDiffRow,
   OpenClawCertificationScorecardCategory,
   OpenClawCertificationScorecardFinding,
   OpenClawCertificationScorecardReport,
   OpenClawCertificationScorecardStatus,
+  OpenClawCertificationRoundTripEvidence,
+  OpenClawPluginConfigMigrationFinding,
   OpenClawRuntimeSmokeTest,
   OpenClawUpdateDecision,
   OpenClawUpdateSafetyReport
@@ -31,6 +34,7 @@ export type OpenClawCertificationScorecardInput = {
     failureMessage?: string | null;
   };
   smokeTest?: OpenClawRuntimeSmokeTest | null;
+  roundTripEvidence?: OpenClawCertificationRoundTripEvidence | null;
   generatedAt?: Date;
 };
 
@@ -68,6 +72,12 @@ export function buildOpenClawCertificationScorecardReport(
   const unknowns = categories.flatMap((category) =>
     category.findings.filter((finding) => finding.severity === "unknown").map((finding) => finding.message)
   );
+  const capabilityBlockerRows = resolveCapabilityBlockerRows(input.capabilityDiff ?? null);
+  const pluginConfigFindings = resolvePluginConfigMigrationFindings(input);
+  const roundTripEvidence = input.roundTripEvidence ?? createDefaultRoundTripEvidence({
+    baselineVersion,
+    targetVersion
+  });
   const globalCertification: OpenClawCertificationScorecardReport["globalCertification"] =
     input.manifestDecision?.status === "certified" && hardBlockers.length === 0
       ? "certified"
@@ -81,12 +91,16 @@ export function buildOpenClawCertificationScorecardReport(
   const rollbackPassed =
     input.update.rollbackToCertifiedBaseline === "passed" ||
     input.update.rollbackToCertifiedBaseline === "not-required";
+  const roundTripPassed =
+    roundTripEvidence.status === "passed" ||
+    (input.update.rollbackToCertifiedBaseline === "not-required" && baselineVersion === targetVersion);
   const artifactEligible =
     score >= 90 &&
     hardBlockers.length === 0 &&
     targetDiagnosticsAvailable &&
     input.smokeTest?.status === "passed" &&
-    rollbackPassed;
+    rollbackPassed &&
+    roundTripPassed;
   const artifact = artifactEligible
     ? {
         schemaVersion: 1 as const,
@@ -100,7 +114,10 @@ export function buildOpenClawCertificationScorecardReport(
         warnings,
         unknowns,
         categories,
-        capabilityDiff: input.capabilityDiff ?? null
+        capabilityDiff: input.capabilityDiff ?? null,
+        capabilityBlockerRows,
+        pluginConfigFindings,
+        roundTripEvidence
       }
     : null;
 
@@ -116,6 +133,9 @@ export function buildOpenClawCertificationScorecardReport(
     unknowns,
     categories,
     capabilityDiff: input.capabilityDiff ?? null,
+    capabilityBlockerRows,
+    pluginConfigFindings,
+    roundTripEvidence,
     artifact
   };
 }
@@ -431,41 +451,26 @@ function buildUpdateRollbackCategory(
 }
 
 function buildPluginConfigCategory(input: OpenClawCertificationScorecardInput) {
-  const findings: OpenClawCertificationScorecardFinding[] = [];
-  const output = input.update.output ?? "";
+  const pluginConfigFindings = resolvePluginConfigMigrationFindings(input);
+  const findings: OpenClawCertificationScorecardFinding[] = pluginConfigFindings.map((finding) => ({
+    id: `plugin-config-${finding.kind}`,
+    severity: finding.severity,
+    message: finding.message
+  }));
   const diagnostics = input.targetDiagnostics;
   let score: number = categoryMaxScores["plugin-config"];
 
-  if (/Plugin\s+"[^"]+"\s+installation blocked|Disabled\s+"[^"]+"\s+after plugin update failure|plugin requires plugin API/i.test(output)) {
-    findings.push({
-      id: "plugin-api-blocked",
-      severity: "blocker",
-      message: "A required OpenClaw plugin install or API compatibility check failed."
-    });
+  if (pluginConfigFindings.some((finding) => finding.severity === "blocker")) {
     score = 0;
   }
 
-  if (/Refusing to (?:install|restart|rewrite).*older than the config last written by|config last written by a newer OpenClaw version/i.test(output)) {
-    findings.push({
-      id: "config-newer-version-blocked",
-      severity: "blocker",
-      message: "OpenClaw config/service metadata was written by a newer version and blocked restart or recovery."
-    });
-    score = 0;
-  }
-
-  if (/update\.status did not include update availability details/i.test(output)) {
-    findings.push({
-      id: "update-status-schema-warning",
-      severity: "warning",
-      message: "Gateway update.status did not include update availability details."
-    });
+  if (pluginConfigFindings.some((finding) => finding.severity === "warning")) {
     score = Math.min(score, 8);
   }
 
-  if (/Gateway config schema\/patch support is not available/i.test(output) || diagnostics?.capabilityMatrix?.configPatch !== "supported") {
+  if (diagnostics?.capabilityMatrix?.configPatch !== "supported" && !findings.some((finding) => finding.id === "plugin-config-config-patch")) {
     findings.push({
-      id: "config-patch-warning",
+      id: "plugin-config-config-patch",
       severity: "warning",
       message: "Gateway config schema/patch support is unavailable or unknown."
     });
@@ -477,10 +482,164 @@ function buildPluginConfigCategory(input: OpenClawCertificationScorecardInput) {
     label: "Plugin/config migration",
     score,
     evidence: findings.length > 0
-      ? "Plugin/config warnings were detected in update output or target diagnostics."
+      ? `${findings.length} plugin/config migration finding(s) were detected.`
       : "No plugin or config migration issues were detected.",
     findings
   });
+}
+
+function resolveCapabilityBlockerRows(diff: OpenClawCapabilityDiffReport | null): OpenClawCapabilityDiffRow[] {
+  return (diff?.rows ?? []).filter((row) =>
+    row.severity === "regression" ||
+    row.targetMode === "missing" ||
+    row.targetMode === "disabled" ||
+    row.missingRequiredMethods.length > 0
+  );
+}
+
+function resolvePluginConfigMigrationFindings(
+  input: OpenClawCertificationScorecardInput
+): OpenClawPluginConfigMigrationFinding[] {
+  const output = input.update.output ?? "";
+  const findings: OpenClawPluginConfigMigrationFinding[] = [];
+  const pluginApi = /plugin\s+["']?([@\w./-]+)["']?:?\s+plugin requires plugin API\s+>=?v?(\d+(?:\.\d+)+),?\s+but this host is\s+v?(\d+(?:\.\d+)+)/i.exec(output);
+  const pluginInstall = /Plugin\s+"([^"]+)"\s+installation blocked(?::\s*([^\n]+))?/i.exec(output);
+  const disabledPlugin = /Disabled\s+"([^"]+)"\s+after plugin update failure(?::\s*([^\n]+))?/i.exec(output);
+  const configBlocker =
+    /config (?:was written by version|last written by(?: a newer OpenClaw version)?)[^\d]*(?:v)?(\d+(?:\.\d+)+)/i.exec(output) ??
+    /Refusing to (?:install|restart|rewrite).*older than the config last written by[^\d]*(?:v)?(\d+(?:\.\d+)+)/i.exec(output);
+  const updateStatusWarning = /update\.status did not include update availability details/i.test(output);
+  const configPatchWarning =
+    /Gateway config schema\/patch support is not available/i.test(output) ||
+    input.targetDiagnostics?.capabilityMatrix?.configPatch !== "supported";
+
+  if (pluginApi) {
+    findings.push(createPluginConfigFinding({
+      kind: "plugin-api",
+      severity: "blocker",
+      pluginId: pluginApi[1] ?? null,
+      requiredApiVersion: pluginApi[2] ?? null,
+      hostVersion: pluginApi[3] ?? null,
+      message: `${pluginApi[1]} plugin requires plugin API >=${formatVersion(pluginApi[2])}; host reports ${formatVersion(pluginApi[3])}.`,
+      recovery: "Align the OpenClaw plugin version with the active OpenClaw host before certifying this target."
+    }));
+  }
+
+  if (pluginInstall || disabledPlugin) {
+    const match = pluginInstall ?? disabledPlugin;
+    findings.push(createPluginConfigFinding({
+      kind: "plugin-install",
+      severity: "blocker",
+      pluginId: match?.[1] ?? null,
+      message: match?.[2]
+        ? `${match[1]} plugin install/update failed: ${sanitizeFindingMessage(match[2])}.`
+        : `${match?.[1] ?? "OpenClaw"} plugin install/update failed.`,
+      recovery: "Repair the plugin install/update failure and rerun certification."
+    }));
+  }
+
+  if (configBlocker) {
+    findings.push(createPluginConfigFinding({
+      kind: "config-version",
+      severity: "blocker",
+      configWriterVersion: configBlocker[1] ?? null,
+      message: `OpenClaw config/service metadata was written by ${formatVersion(configBlocker[1])} and blocked restart or recovery.`,
+      recovery: "Restore the matching OpenClaw version or migrate/reset the OpenClaw config before retrying certification."
+    }));
+  }
+
+  if (updateStatusWarning) {
+    findings.push(createPluginConfigFinding({
+      kind: "update-status-schema",
+      severity: "warning",
+      message: "Gateway update.status did not include update availability details.",
+      recovery: "Keep update status classified as incomplete until the Gateway reports availability metadata."
+    }));
+  }
+
+  if (configPatchWarning) {
+    findings.push(createPluginConfigFinding({
+      kind: "config-patch",
+      severity: "warning",
+      configKey: "config.patch",
+      message: "Gateway config schema/patch support is unavailable or unknown.",
+      recovery: "Keep config mutation surfaces degraded until config schema/patch support is advertised."
+    }));
+  }
+
+  return dedupePluginConfigFindings(findings);
+}
+
+function createPluginConfigFinding(
+  input: Partial<OpenClawPluginConfigMigrationFinding> &
+    Pick<OpenClawPluginConfigMigrationFinding, "kind" | "severity" | "message">
+): OpenClawPluginConfigMigrationFinding {
+  return {
+    kind: input.kind,
+    severity: input.severity,
+    pluginId: sanitizeConfigKey(input.pluginId),
+    pluginVersion: sanitizeVersion(input.pluginVersion),
+    requiredApiVersion: sanitizeVersion(input.requiredApiVersion),
+    hostVersion: sanitizeVersion(input.hostVersion),
+    configWriterVersion: sanitizeVersion(input.configWriterVersion),
+    configKey: sanitizeConfigKey(input.configKey),
+    message: sanitizeFindingMessage(input.message),
+    recovery: input.recovery ? sanitizeFindingMessage(input.recovery) : null
+  };
+}
+
+function dedupePluginConfigFindings(findings: OpenClawPluginConfigMigrationFinding[]) {
+  const seen = new Set<string>();
+
+  return findings.filter((finding) => {
+    const key = `${finding.kind}:${finding.pluginId ?? ""}:${finding.configWriterVersion ?? ""}:${finding.message}`;
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function sanitizeVersion(value: string | null | undefined) {
+  return normalizeVersion(value);
+}
+
+function sanitizeConfigKey(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed
+    .replace(/[^\w@./:-]+/g, "")
+    .split("/")
+    .filter(Boolean)
+    .slice(-2)
+    .join("/");
+}
+
+function sanitizeFindingMessage(value: string) {
+  return value
+    .replace(/(?:[A-Za-z]:)?\/(?:Users|home)\/[^/\s]+/g, "<home>")
+    .replace(/(?:token|password|secret|key)=\S+/gi, "$1=<redacted>")
+    .trim();
+}
+
+function createDefaultRoundTripEvidence(input: {
+  baselineVersion: string | null;
+  targetVersion: string | null;
+}): OpenClawCertificationRoundTripEvidence {
+  return {
+    status: "not-run",
+    startedAt: null,
+    finishedAt: null,
+    baselineVersion: input.baselineVersion,
+    targetVersion: input.targetVersion,
+    steps: [],
+    failureMessage: null
+  };
 }
 
 function createCategory(input: Omit<OpenClawCertificationScorecardCategory, "maxScore" | "status">) {

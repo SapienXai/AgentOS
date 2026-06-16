@@ -23,6 +23,11 @@ import {
 } from "@/lib/openclaw/install";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import {
+  buildOpenClawDowngradeConfigBlockerManualCommand,
+  isOpenClawDowngradeConfigBlocker,
+  resolveOpenClawDowngradeBlockerRestoreVersion
+} from "@/lib/openclaw/update-recovery";
+import {
   clearMissionControlCaches,
   getMissionControlSnapshot,
   touchOpenClawRuntimeStateAccess
@@ -165,6 +170,39 @@ export async function POST(request: Request) {
       await closeWriter();
     };
 
+    const failGatewayCommand = async (
+      phase: Extract<OpenClawOnboardingPhase, "installing-gateway" | "starting-gateway">,
+      fallbackMessage: string,
+      openClawBin: string,
+      result: CommandResult,
+      manualCommand: string
+    ) => {
+      const output = collectCommandOutput(result);
+
+      if (!isOpenClawDowngradeConfigBlocker(output)) {
+        await fail(phase, fallbackMessage, {
+          exitCode: result.code,
+          manualCommand
+        });
+        return;
+      }
+
+      const restoreVersion = resolveOpenClawDowngradeBlockerRestoreVersion(output);
+      await fail(
+        phase,
+        restoreVersion
+          ? `OpenClaw Gateway is blocked because the active CLI is older than config written by v${restoreVersion}. Restore v${restoreVersion} or reset/migrate the OpenClaw config before retrying setup.`
+          : "OpenClaw Gateway is blocked because the active CLI is older than the installed Gateway config. Restore the newer OpenClaw version or reset/migrate the OpenClaw config before retrying setup.",
+        {
+          exitCode: result.code,
+          manualCommand: buildOpenClawDowngradeConfigBlockerManualCommand(
+            formatOpenClawCommand(openClawBin, []),
+            restoreVersion
+          )
+        }
+      );
+    };
+
     const loadSnapshot = async (force = false): Promise<MissionControlSnapshot> => {
       if (force || !snapshot) {
         snapshot = force
@@ -243,10 +281,13 @@ export async function POST(request: Request) {
         appendOutput(gatewayInstallResult);
 
         if (gatewayInstallResult.errorMessage || gatewayInstallResult.timedOut || gatewayInstallResult.code !== 0) {
-          await fail("installing-gateway", "Gateway installation failed.", {
-            exitCode: gatewayInstallResult.code,
-            manualCommand: formatOpenClawCommand(openClawBin, ["gateway", "install", "--force", "--json"])
-          });
+          await failGatewayCommand(
+            "installing-gateway",
+            "Gateway installation failed.",
+            openClawBin,
+            gatewayInstallResult,
+            formatOpenClawCommand(openClawBin, ["gateway", "install", "--force", "--json"])
+          );
           return;
         }
       }
@@ -327,10 +368,13 @@ export async function POST(request: Request) {
             const gatewayInstallPayload = parseGatewayCommandPayload(gatewayInstallResult.stdout);
 
             if (gatewayInstallResult.errorMessage || gatewayInstallResult.timedOut || gatewayInstallResult.code !== 0) {
-              await fail("installing-gateway", "Gateway installation failed.", {
-                exitCode: gatewayInstallResult.code,
-                manualCommand: formatOpenClawCommand(openClawBin, ["gateway", "install", "--json"])
-              });
+              await failGatewayCommand(
+                "installing-gateway",
+                "Gateway installation failed.",
+                openClawBin,
+                gatewayInstallResult,
+                formatOpenClawCommand(openClawBin, ["gateway", "install", "--json"])
+              );
               return;
             }
 
@@ -366,10 +410,13 @@ export async function POST(request: Request) {
           }
 
           if (gatewayStartResult.errorMessage || gatewayStartResult.timedOut || gatewayStartResult.code !== 0) {
-            await fail("starting-gateway", "Gateway failed to start.", {
-              exitCode: gatewayStartResult.code,
-              manualCommand: formatOpenClawCommand(openClawBin, ["gateway", "start", "--json"])
-            });
+            await failGatewayCommand(
+              "starting-gateway",
+              "Gateway failed to start.",
+              openClawBin,
+              gatewayStartResult,
+              formatOpenClawCommand(openClawBin, ["gateway", "start", "--json"])
+            );
             return;
           }
         }
@@ -1320,6 +1367,10 @@ function appendLine(base: string, line: string) {
   }
 
   return base ? `${base}\n${cleanLine}` : cleanLine;
+}
+
+function collectCommandOutput(result: CommandResult) {
+  return [result.stdout, result.stderr, result.errorMessage].filter(Boolean).join("\n");
 }
 
 async function readGatewayStatus(openClawBin: string): Promise<GatewayStatusPayload | null> {

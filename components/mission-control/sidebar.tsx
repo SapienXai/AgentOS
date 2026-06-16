@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -35,7 +35,11 @@ import {
   missionControlDialogControlClassName,
   missionControlDialogPanelClassName
 } from "@/components/mission-control/mission-control-dialog-shell";
-import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
+import {
+  buildPendingWorkspaceMenuEntries,
+  type PendingAgentProjection,
+  type PendingWorkspaceMenuEntry
+} from "@/components/mission-control/pending-agent-projection";
 import { RailTooltip } from "@/components/mission-control/rail-tooltip";
 import { StatusDot } from "@/components/mission-control/status-dot";
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
@@ -143,6 +147,7 @@ type MissionSidebarProps = {
   onOpenWorkspaceCreate: () => void;
   onEditWorkspace: (workspaceId: string) => void;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
+  pendingCreatedAgents?: PendingAgentProjection[];
   onAgentCreationPending?: (agent: PendingAgentProjection) => void;
   onAgentCreatedVisible?: (agentId: string) => void;
   settingsMode?: boolean;
@@ -169,6 +174,15 @@ const sidebarItems: SidebarItem[] = [
 
 const agentOsLogoSrc = "/assets/logo.webp";
 
+type WorkspaceMenuEntry =
+  | {
+      id: string;
+      name: string;
+      detail: string;
+      pending: false;
+    }
+  | PendingWorkspaceMenuEntry;
+
 export function MissionSidebar({
   snapshot,
   surfaceTheme,
@@ -183,6 +197,7 @@ export function MissionSidebar({
   onOpenWorkspaceCreate,
   onEditWorkspace,
   onSnapshotChange,
+  pendingCreatedAgents = [],
   onAgentCreationPending,
   onAgentCreatedVisible
 }: MissionSidebarProps) {
@@ -208,10 +223,34 @@ export function MissionSidebar({
     return () => window.removeEventListener("hashchange", syncHash);
   }, []);
 
+  const pendingWorkspaceEntries = useMemo(
+    () => buildPendingWorkspaceMenuEntries(
+      pendingCreatedAgents,
+      new Set(snapshot.workspaces.map((workspace) => workspace.id))
+    ),
+    [pendingCreatedAgents, snapshot.workspaces]
+  );
+  const workspaceMenuEntries = useMemo<WorkspaceMenuEntry[]>(
+    () => [
+      ...snapshot.workspaces.map((workspace) => ({
+        id: workspace.id,
+        name: workspace.name,
+        detail: `${workspace.agentIds.length} agents`,
+        pending: false as const
+      })),
+      ...pendingWorkspaceEntries
+    ],
+    [pendingWorkspaceEntries, snapshot.workspaces]
+  );
+  const workspaceCount = workspaceMenuEntries.length;
+  const activePendingWorkspace = activeWorkspaceId
+    ? pendingWorkspaceEntries.find((workspace) => workspace.id === activeWorkspaceId) ?? null
+    : null;
   const activeWorkspace =
     (activeWorkspaceId
       ? snapshot.workspaces.find((workspace) => workspace.id === activeWorkspaceId)
       : null) ??
+    activePendingWorkspace ??
     snapshot.workspaces[0] ??
     null;
   const statusTone = resolveStatusTone(snapshot.diagnostics.health, connectionState);
@@ -408,7 +447,7 @@ export function MissionSidebar({
           statusTone={statusTone}
           surfaceTheme={surfaceTheme}
           workspaceLabel={activeWorkspaceId === null ? "All workspaces" : activeWorkspace?.name || "No workspace"}
-          workspaceDetail={activeWorkspaceId === null ? `${snapshot.workspaces.length} workspaces` : "Workspace"}
+          workspaceDetail={activeWorkspaceId === null ? `${workspaceCount} workspaces` : activePendingWorkspace ? "Creating workspace" : "Workspace"}
           snapshot={snapshot}
           activeWorkspaceId={activeWorkspace?.id ?? null}
           onRefresh={onRefresh}
@@ -433,6 +472,9 @@ export function MissionSidebar({
               activeWorkspaceId={activeWorkspaceId}
               snapshot={snapshot}
               workspace={activeWorkspace}
+              workspaceMenuEntries={workspaceMenuEntries}
+              workspaceCount={workspaceCount}
+              activeWorkspaceIsPending={Boolean(activePendingWorkspace)}
               statusLabel={statusLabel}
               statusTone={statusTone}
               onSelectWorkspace={onSelectWorkspace}
@@ -1039,6 +1081,9 @@ function WorkspaceSwitcher({
   activeWorkspaceId,
   snapshot,
   workspace,
+  workspaceMenuEntries,
+  workspaceCount,
+  activeWorkspaceIsPending,
   statusLabel,
   statusTone,
   onSelectWorkspace,
@@ -1048,7 +1093,10 @@ function WorkspaceSwitcher({
 }: {
   activeWorkspaceId: string | null;
   snapshot: MissionControlSnapshot;
-  workspace: MissionControlSnapshot["workspaces"][number] | null;
+  workspace: Pick<MissionControlSnapshot["workspaces"][number], "id" | "name"> | PendingWorkspaceMenuEntry | null;
+  workspaceMenuEntries: WorkspaceMenuEntry[];
+  workspaceCount: number;
+  activeWorkspaceIsPending: boolean;
   statusLabel: string;
   statusTone: string;
   onSelectWorkspace: (workspaceId: string | null) => void;
@@ -1173,7 +1221,7 @@ function WorkspaceSwitcher({
           </span>
           <span className="mt-0.5 flex items-center gap-1.5 text-[0.63rem] font-semibold uppercase leading-none tracking-[0.22em] text-muted-foreground">
             <StatusDot tone={statusTone} pulse={statusTone === "bg-emerald-400"} className="h-2 w-2" />
-            {activeWorkspaceId === null ? `${snapshot.workspaces.length} workspaces` : "Workspace"}
+            {activeWorkspaceId === null ? `${workspaceCount} workspaces` : activeWorkspaceIsPending ? "Creating workspace" : "Workspace"}
           </span>
         </span>
         <span className="flex flex-col items-end gap-1">
@@ -1194,7 +1242,7 @@ function WorkspaceSwitcher({
         >
           <WorkspaceMenuButton
             label="All workspaces"
-            detail={`${snapshot.workspaces.length} total`}
+            detail={`${workspaceCount} total`}
             selected={activeWorkspaceId === null}
             onClick={() => {
               onSelectWorkspace(null);
@@ -1202,11 +1250,11 @@ function WorkspaceSwitcher({
               setWorkspaceActionsOpenForId(null);
             }}
           />
-          {snapshot.workspaces.map((entry) => (
+          {workspaceMenuEntries.map((entry) => (
             <WorkspaceMenuRow
               key={entry.id}
               label={entry.name}
-              detail={`${entry.agentIds.length} agents`}
+              detail={entry.detail}
               selected={entry.id === activeWorkspaceId}
               actionsOpen={workspaceActionsOpenForId === entry.id}
               onClick={() => {
@@ -1214,13 +1262,21 @@ function WorkspaceSwitcher({
                 setOpen(false);
                 setWorkspaceActionsOpenForId(null);
               }}
-              onToggleActions={() => setWorkspaceActionsOpenForId((current) => (current === entry.id ? null : entry.id))}
-              onEdit={() => {
-                onEditWorkspace(entry.id);
-                setOpen(false);
-                setWorkspaceActionsOpenForId(null);
-              }}
-              onDelete={() => requestDeleteWorkspace(entry.id)}
+              onToggleActions={
+                entry.pending
+                  ? undefined
+                  : () => setWorkspaceActionsOpenForId((current) => (current === entry.id ? null : entry.id))
+              }
+              onEdit={
+                entry.pending
+                  ? undefined
+                  : () => {
+                      onEditWorkspace(entry.id);
+                      setOpen(false);
+                      setWorkspaceActionsOpenForId(null);
+                    }
+              }
+              onDelete={entry.pending ? undefined : () => requestDeleteWorkspace(entry.id)}
             />
           ))}
           <div className="mt-1 border-t border-border pt-1">
@@ -1480,10 +1536,12 @@ function WorkspaceMenuRow({
   selected: boolean;
   actionsOpen: boolean;
   onClick: () => void;
-  onToggleActions: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
+  onToggleActions?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }) {
+  const hasActions = Boolean(onToggleActions && onEdit && onDelete);
+
   return (
     <div className="relative">
       <WorkspaceMenuButton
@@ -1492,10 +1550,10 @@ function WorkspaceMenuRow({
         selected={selected}
         onClick={onClick}
         onEndAdornmentClick={onToggleActions}
-        endAdornment={<Settings2 className="h-4 w-4" />}
+        endAdornment={hasActions ? <Settings2 className="h-4 w-4" /> : null}
       />
 
-      {actionsOpen ? (
+      {actionsOpen && onEdit && onDelete ? (
         <div
           role="menu"
           className="absolute right-0 top-[calc(100%-2px)] z-50 min-w-[152px] rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-panel backdrop-blur-xl"

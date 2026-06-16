@@ -86,12 +86,14 @@ import {
   resolveTaskReviewSummary,
   taskReviewContinuationGraceMs
 } from "@/components/mission-control/task-review-state";
+import { buildTaskReviewContinuationPrompt } from "@/lib/openclaw/domains/task-review-continuation";
 import { buildAgentChatPrompt } from "@/lib/openclaw/agent-chat-prompt";
 import {
   buildOpenClawDowngradeConfigBlockerManualCommand,
   buildOpenClawUpdateRecoveryManualCommand,
   isOpenClawDowngradeConfigBlocker,
   isOpenClawGatewayReadyOutput,
+  resolveOpenClawDowngradeBlockerRestoreVersion,
   shouldAttemptOpenClawUpdateRecovery
 } from "@/lib/openclaw/update-recovery";
 import {
@@ -377,10 +379,19 @@ Gateway: restart failed: Error: updated install restart failed (/Users/example/.
 
   assert.equal(shouldAttemptOpenClawUpdateRecovery(output), true);
   assert.equal(isOpenClawDowngradeConfigBlocker(output), true);
+  assert.equal(resolveOpenClawDowngradeBlockerRestoreVersion(output), "2026.6.6");
   assert.equal(
     buildOpenClawDowngradeConfigBlockerManualCommand("/Users/example/.openclaw/bin/openclaw", "2026.6.6"),
     "/Users/example/.openclaw/bin/openclaw update --tag 2026.6.6 --yes && /Users/example/.openclaw/bin/openclaw gateway restart && /Users/example/.openclaw/bin/openclaw gateway status --deep"
   );
+});
+
+test("openclaw update recovery extracts restore version from status output", () => {
+  const output = `Service config issue: Gateway service was installed by OpenClaw 2026.6.6; current CLI is 2026.6.1.
+Your OpenClaw config was written by version 2026.6.6, but this command is running 2026.6.1.`;
+
+  assert.equal(isOpenClawDowngradeConfigBlocker(output), true);
+  assert.equal(resolveOpenClawDowngradeBlockerRestoreVersion(output), "2026.6.6");
 });
 
 test("openclaw update recovery accepts deep gateway readiness output", () => {
@@ -3261,11 +3272,56 @@ test("continued task review state expires when no live activity follows", () => 
 test("mission matching accepts continuation prompts with original mission context", () => {
   assert.equal(
     matchesMissionText(
-      "Continue this task from the last captured output. Finish the remaining work and verify the result.\n\nOriginal mission:\nbana youtube stratejisi önersene bitane kanalı büyütmek için\n\nLast captured output:\n...",
+      [
+        "Continue this task in the existing task context. Use the current OpenClaw session state and previous result; do not restart unless the operator explicitly asks for a retry.",
+        "",
+        "Operator follow-up:",
+        "Continue from the captured output, finish the remaining work, and verify the result.",
+        "",
+        "Original mission:",
+        "bana youtube stratejisi önersene bitane kanalı büyütmek için",
+        "",
+        "Latest result:",
+        "..."
+      ].join("\n"),
       "bana youtube stratejisi önersene bitane kanalı büyütmek için"
     ),
     true
   );
+});
+
+test("task review continuation prompt includes operator reply", () => {
+  const task = {
+    id: "task-1",
+    key: "dispatch:dispatch-1",
+    title: "Research competitors",
+    mission: "Find three current competitors and summarize positioning.",
+    subtitle: "Which market should I prioritize?",
+    status: "stalled",
+    updatedAt: Date.parse("2026-05-21T10:00:00.000Z"),
+    ageMs: 0,
+    runtimeIds: ["runtime-1"],
+    agentIds: ["agent-1"],
+    sessionIds: ["session-1"],
+    runIds: ["dispatch-1"],
+    runtimeCount: 1,
+    updateCount: 1,
+    liveRunCount: 0,
+    artifactCount: 0,
+    warningCount: 1,
+    dispatchId: "dispatch-1",
+    metadata: {}
+  } satisfies MissionControlSnapshot["tasks"][number];
+
+  const prompt = buildTaskReviewContinuationPrompt(
+    task,
+    "I found two competitors. Which market should I prioritize?",
+    "Prioritize the US market and finish the third competitor comparison."
+  );
+
+  assert.match(prompt, /Operator follow-up:\nPrioritize the US market/);
+  assert.match(prompt, /Original mission:\nFind three current competitors/);
+  assert.match(prompt, /Latest result:\nI found two competitors/);
 });
 
 test("mission dispatch feed does not turn missing transcripts into dispatch errors", async () => {

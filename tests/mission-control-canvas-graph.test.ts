@@ -255,6 +255,95 @@ test("buildCanvasGraph renders a pending agent birth node until the live snapsho
   assert.equal(agentNode?.data.agent.currentAction, "Provisioning in OpenClaw");
 });
 
+test("buildCanvasGraph renders pending workspace agents before the workspace snapshot catches up", () => {
+  const snapshot = {
+    generatedAt: new Date().toISOString(),
+    agents: [],
+    tasks: [],
+    channelRegistry: {
+      channels: []
+    },
+    models: [{ id: "openai/gpt-4.1", name: "GPT-4.1", provider: "OpenAI" }],
+    workspaces: []
+  } as unknown as MissionControlSnapshot;
+
+  const graph = buildCanvasGraph(
+    snapshot,
+    [],
+    [],
+    0,
+    "tortellini",
+    null,
+    null,
+    "tortellini-builder",
+    null,
+    null,
+    false,
+    [],
+    [],
+    [],
+    [],
+    () => {},
+    undefined,
+    undefined,
+    () => {},
+    () => {},
+    () => {},
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    () => {},
+    () => {},
+    () => {},
+    () => {},
+    () => {},
+    () => {},
+    () => {},
+    () => {},
+    [
+      {
+        id: "tortellini-builder",
+        workspaceId: "tortellini",
+        workspacePath: "/tmp/tortellini",
+        workspaceName: "Tortellini",
+        name: "Builder",
+        modelId: "openai/gpt-4.1",
+        emoji: "*",
+        theme: "Build",
+        policy: {
+          preset: "worker",
+          missingToolBehavior: "fallback",
+          installScope: "workspace",
+          fileAccess: "workspace-only",
+          networkAccess: "restricted"
+        },
+        heartbeat: {
+          enabled: false
+        },
+        skills: [],
+        tools: [],
+        createdAt: 1
+      }
+    ],
+    {},
+    {}
+  );
+
+  const workspaceNode = graph.nodes.find((node) => node.id === "tortellini");
+  const agentNode = graph.nodes.find((node) => node.id === "tortellini-builder");
+
+  assert.equal(workspaceNode?.type, "workspace");
+  assert.equal(agentNode?.type, "agent");
+  assert.equal(agentNode?.data.agent.name, "Builder");
+  assert.equal(agentNode?.data.pendingCreation, true);
+});
+
 test("buildCanvasGraph packs idle workspace agents without growing the workspace for every agent", () => {
   const buildGraphForAgentCount = (agentCount: number) => {
     const agents = Array.from({ length: agentCount }, (_, index) => ({

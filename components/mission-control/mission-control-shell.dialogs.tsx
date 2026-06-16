@@ -79,7 +79,7 @@ export function MissionControlShellDialogs({
   activeRuntimeCount: number;
   updateInstallSummary: OpenClawInstallSummary;
   onUpdateDialogOpenChange: (open: boolean) => void;
-  onRunOpenClawUpdate: () => void;
+  onRunOpenClawUpdate: (action?: "update" | "rollback" | "certify-round-trip") => void;
 }) {
   const isUpdateRunning = updateRunState === "running";
   const isUpdateFinished = updateRunState === "success" || updateRunState === "error";
@@ -645,28 +645,41 @@ export function MissionControlShellDialogs({
               {isUpdateRunning ? "Run in background" : isUpdateFinished ? "Done" : "Cancel"}
             </Button>
             {isUpdateFinished ? null : (
-              <Button
-                type="button"
-                onClick={onRunOpenClawUpdate}
-                disabled={isUpdateRunning}
-                className={cn(
-                  snapshot.diagnostics.updateAvailable
-                    ? "bg-amber-400 text-slate-950 shadow-lg shadow-amber-400/20 hover:bg-amber-300"
-                    : "",
-                  surfaceTheme === "light" && !snapshot.diagnostics.updateAvailable
-                    ? "bg-[#c8946f] text-white shadow-[0_12px_28px_rgba(200,148,111,0.24)] hover:bg-[#b88461]"
-                    : ""
-                )}
-              >
-                {isUpdateRunning ? (
-                  <>
-                    <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-                    Updating...
-                  </>
-                ) : (
-                  updateMode === "advanced" ? "Install and verify" : "Update now"
-                )}
-              </Button>
+              <>
+                {updateMode === "advanced" ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => onRunOpenClawUpdate("certify-round-trip")}
+                    disabled={isUpdateRunning}
+                    className={surfaceTheme === "light" ? "border-[#d9c9bc] bg-[#f5ebe3] text-[#6c5647] hover:bg-[#eddccf]" : ""}
+                  >
+                    Certify round-trip
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  onClick={() => onRunOpenClawUpdate("update")}
+                  disabled={isUpdateRunning}
+                  className={cn(
+                    snapshot.diagnostics.updateAvailable
+                      ? "bg-amber-400 text-slate-950 shadow-lg shadow-amber-400/20 hover:bg-amber-300"
+                      : "",
+                    surfaceTheme === "light" && !snapshot.diagnostics.updateAvailable
+                      ? "bg-[#c8946f] text-white shadow-[0_12px_28px_rgba(200,148,111,0.24)] hover:bg-[#b88461]"
+                      : ""
+                  )}
+                >
+                  {isUpdateRunning ? (
+                    <>
+                      <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    updateMode === "advanced" ? "Install and verify" : "Update now"
+                  )}
+                </Button>
+              </>
             )}
           </DialogFooter>
         </DialogContent>
@@ -703,10 +716,25 @@ function CertificationScorecardPanel({
 
   const capabilityDiff = scorecard.capabilityDiff ?? diff;
   const capabilityCategory = scorecard.categories.find((category) => category.id === "capability-contract");
-  const visibleRows = (capabilityDiff?.rows ?? [])
-    .filter((row) => row.changeKind !== "unchanged" || isCapabilityDiffTargetBlocker(row))
-    .slice(0, 8);
+  const capabilityBlockerRows = scorecard.capabilityBlockerRows ?? [];
+  const visibleRows = [
+    ...capabilityBlockerRows,
+    ...(capabilityDiff?.rows ?? []).filter((row) =>
+      !capabilityBlockerRows.some((blocker) => blocker.operationId === row.operationId) &&
+      row.changeKind !== "unchanged"
+    )
+  ].slice(0, 12);
   const canGenerateArtifact = updateMode === "advanced" && Boolean(scorecard.artifact);
+  const roundTripEvidence = scorecard.roundTripEvidence ?? {
+    status: "not-run" as const,
+    startedAt: null,
+    finishedAt: null,
+    baselineVersion: scorecard.baselineVersion,
+    targetVersion: scorecard.targetVersion,
+    steps: [],
+    failureMessage: null
+  };
+  const pluginConfigFindings = scorecard.pluginConfigFindings ?? [];
 
   const generateCertificationArtifact = () => {
     if (!scorecard.artifact) {
@@ -796,7 +824,7 @@ function CertificationScorecardPanel({
       {updateMode === "advanced" ? (
         <div className={cn("flex flex-wrap items-center justify-between gap-2 border-t px-4 py-3", surfaceTheme === "light" ? "border-[#eadccf]" : "border-white/8")}>
           <p className={cn("text-xs leading-5", surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-400")}>
-            Operator artifact generation is available only when install-and-verify evidence is complete, score is at least 90, runtime smoke passed, and rollback evidence is verified.
+            Operator artifact generation is available only when install-and-verify evidence is complete, score is at least 90, runtime smoke passed, and round-trip rollback evidence is verified.
           </p>
           <Button
             type="button"
@@ -809,6 +837,44 @@ function CertificationScorecardPanel({
             <Copy className="mr-2 h-4 w-4" />
             Generate artifact
           </Button>
+        </div>
+      ) : null}
+
+      {pluginConfigFindings.length > 0 || roundTripEvidence.status !== "not-run" ? (
+        <div className="grid min-w-0 gap-2 border-t px-4 py-4 sm:grid-cols-2">
+          <div className={cn("min-w-0 rounded-[16px] border px-3 py-2 text-xs", surfaceTheme === "light" ? "border-[#eadccf] bg-white/70" : "border-white/8 bg-slate-950/25")}>
+            <p className={cn("font-medium", surfaceTheme === "light" ? "text-[#4a382c]" : "text-slate-100")}>
+              Plugin/config evidence
+            </p>
+            {pluginConfigFindings.length > 0 ? (
+              <div className="mt-2 grid gap-2">
+                {pluginConfigFindings.slice(0, 4).map((finding, index) => (
+                  <p key={`${finding.kind}-${finding.pluginId ?? index}`} className={cn("break-words", surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-400")}>
+                    {finding.message}
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <p className={cn("mt-2", surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-400")}>
+                No plugin/config migration finding was detected.
+              </p>
+            )}
+          </div>
+          <div className={cn("min-w-0 rounded-[16px] border px-3 py-2 text-xs", surfaceTheme === "light" ? "border-[#eadccf] bg-white/70" : "border-white/8 bg-slate-950/25")}>
+            <p className={cn("font-medium", surfaceTheme === "light" ? "text-[#4a382c]" : "text-slate-100")}>
+              Round-trip evidence
+            </p>
+            <p className={cn("mt-2 break-words", surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-400")}>
+              {roundTripEvidence.status === "not-run"
+                ? "Round-trip certification has not run."
+                : `${formatScorecardStatus(roundTripEvidence.status === "passed" ? "pre_certified_eligible" : "blocked")} across ${roundTripEvidence.steps.length} step(s).`}
+            </p>
+            {roundTripEvidence.failureMessage ? (
+              <p className={cn("mt-1 break-words", surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-400")}>
+                {roundTripEvidence.failureMessage}
+              </p>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -837,6 +903,14 @@ function CertificationScorecardPanel({
                 <p className={surfaceTheme === "light" ? "mt-0.5 break-all text-[#8b7262]" : "mt-0.5 break-all text-slate-400"}>
                   {row.operationId}
                 </p>
+                <p className={surfaceTheme === "light" ? "mt-1 break-words text-[#8b7262]" : "mt-1 break-words text-slate-400"}>
+                  {row.targetReason}
+                </p>
+                {row.targetRecovery ? (
+                  <p className={surfaceTheme === "light" ? "mt-1 break-words text-[#8b7262]" : "mt-1 break-words text-slate-400"}>
+                    Recovery: {row.targetRecovery}
+                  </p>
+                ) : null}
               </div>
               <div className={cn("min-w-0 break-words sm:text-right", surfaceTheme === "light" ? "text-[#705b4d]" : "text-slate-300")}>
                 <p className="break-words">{formatModeLabel(row.certifiedMode)} {"->"} {formatModeLabel(row.targetMode)}</p>
@@ -847,7 +921,12 @@ function CertificationScorecardPanel({
                       ? `Added: ${row.addedMethods.join(", ")}`
                       : row.removedMethods.length > 0
                         ? `Removed: ${row.removedMethods.join(", ")}`
-                        : "No method delta"}
+                        : row.supportedMethod
+                          ? `Supported: ${row.supportedMethod}`
+                          : `Preferred: ${row.preferredMethod ?? "unknown"}`}
+                </p>
+                <p className="mt-0.5 break-all [overflow-wrap:anywhere]">
+                  Source: {row.evidenceSource ?? "unknown"}
                 </p>
               </div>
             </div>
@@ -861,15 +940,6 @@ function CertificationScorecardPanel({
         </p>
       )}
     </div>
-  );
-}
-
-function isCapabilityDiffTargetBlocker(row: OpenClawCapabilityDiffReport["rows"][number]) {
-  return (
-    row.severity === "regression" ||
-    row.targetMode === "missing" ||
-    row.targetMode === "disabled" ||
-    row.missingRequiredMethods.length > 0
   );
 }
 

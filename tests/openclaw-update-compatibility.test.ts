@@ -144,9 +144,34 @@ test("failed automatic rollback exposes a restore command for the rollback snaps
   const routeSource = readFileSync(path.join(process.cwd(), "app/api/update/route.ts"), "utf8");
 
   assert.match(routeSource, /function buildOpenClawRollbackManualCommand/);
+  assert.match(routeSource, /parseOpenClawVersion/);
+  assert.match(routeSource, /function normalizeOpenClawCommandVersionOutput/);
+  assert.match(routeSource, /this command is running\\s\+v\?/);
+  assert.match(routeSource, /const restoringToOlderVersion = Boolean/);
+  assert.match(routeSource, /compareVersionStrings\(currentVersion, rollbackVersion\) > 0/);
+  assert.match(routeSource, /const preRestore = await restoreOpenClawRollbackConfigSnapshot\(rollbackSnapshot\)/);
   assert.match(routeSource, /buildOpenClawDowngradeConfigBlockerManualCommand\(\s*formatOpenClawCommand\(openClawBin, \[\]\),\s*rollbackSnapshot\.version\s*\)/);
   assert.match(routeSource, /recoveryCommand: rollback\.ok \? undefined : buildOpenClawRollbackManualCommand\(openClawBin, rollbackSnapshot\)/);
   assert.match(routeSource, /manualCommand: rollback\.ok \? undefined : buildOpenClawRollbackManualCommand\(openClawBin, rollbackSnapshot\)/);
+  assert.match(routeSource, /"gateway", "install", "--force"/);
+  assert.match(routeSource, /Gateway service reinstall failed/);
+});
+
+test("advanced round-trip certification route is explicit and evidence-backed", () => {
+  const routeSource = readFileSync(path.join(process.cwd(), "app/api/update/route.ts"), "utf8");
+  const typeSource = readFileSync(path.join(process.cwd(), "lib/openclaw/types.ts"), "utf8");
+
+  assert.match(routeSource, /"certify-round-trip"/);
+  assert.match(routeSource, /Round-trip certification requires advanced update mode/);
+  assert.match(routeSource, /runOpenClawCertificationRoundTrip/);
+  assert.match(routeSource, /roundTripEvidence: roundTrip\.evidence/);
+  assert.match(routeSource, /phase: "baseline-restore"/);
+  assert.match(routeSource, /"target-install"/);
+  assert.match(routeSource, /"target-verify"/);
+  assert.match(routeSource, /"rollback-verify"/);
+  assert.match(routeSource, /"final-target-verify"/);
+  assert.match(typeSource, /OpenClawCertificationRoundTripEvidence/);
+  assert.match(typeSource, /OpenClawPluginConfigMigrationFinding/);
 });
 
 test("preflight report blocks update when Gateway is not ready", () => {
@@ -341,7 +366,7 @@ test("certified preflight still blocks normal update when the current Gateway is
 test("update route exposes non-mutating preflight and probe actions", () => {
   const routeSource = readFileSync(path.join(process.cwd(), "app/api/update/route.ts"), "utf8");
 
-  assert.match(routeSource, /z\.enum\(\["preflight", "probe", "update", "rollback"\]\)/);
+  assert.match(routeSource, /z\.enum\(\["preflight", "probe", "update", "rollback", "certify-round-trip"\]\)/);
   assert.match(routeSource, /buildOpenClawUpdatePreflightReport/);
   assert.match(routeSource, /runOpenClawShadowProbe/);
   assert.match(routeSource, /recordOpenClawUpdateRuntimeIssue/);
@@ -402,9 +427,22 @@ test("opening an update action resets stale failed update dialog state", () => {
     path.join(process.cwd(), "components/mission-control/mission-control-shell.tsx"),
     "utf8"
   );
+  const quickSettingsSource = readFileSync(
+    path.join(process.cwd(), "components/mission-control/mission-control-shell.settings.tsx"),
+    "utf8"
+  );
+  const controlCenterSource = readFileSync(
+    path.join(process.cwd(), "components/mission-control/settings-control-center.tsx"),
+    "utf8"
+  );
 
   assert.match(shellSource, /onOpenUpdateDialog: \(targetVersion, mode = "recommended"\) => \{\s+if \(updateRunState !== "running"\) \{/);
   assert.match(shellSource, /onRollbackOpenClaw: \(\) => \{\s+if \(updateRunState !== "running"\) \{/);
+  assert.match(quickSettingsSource, /compareVersionStrings\(targetVersion, currentVersion\) < 0 \? "rollback" : "update"/);
+  assert.match(quickSettingsSource, /Rollback available/);
+  assert.match(quickSettingsSource, /isRecommendedRollback \? "Rollback" : "Update"/);
+  assert.match(controlCenterSource, /compareVersionStrings\(normalizedRecommendedVersion, normalizedCurrentVersion\) < 0/);
+  assert.match(controlCenterSource, /Rollback to certified/);
 });
 
 test("update dialog surfaces target blockers even when capability modes are unchanged", () => {
@@ -413,7 +451,7 @@ test("update dialog surfaces target blockers even when capability modes are unch
     "utf8"
   );
 
-  assert.match(dialogSource, /isCapabilityDiffTargetBlocker/);
+  assert.match(dialogSource, /capabilityBlockerRows/);
   assert.match(dialogSource, /Hard blockers/);
   assert.match(dialogSource, /target diagnostics still report capability blockers/);
 });

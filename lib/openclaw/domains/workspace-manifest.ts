@@ -23,6 +23,8 @@ import type {
   WorkspaceTemplate
 } from "@/lib/openclaw/types";
 
+const RECENT_MANIFEST_AGENT_PRUNE_GRACE_MS = 10 * 60 * 1000;
+
 export type WorkspaceProjectManifestAgent = {
   id: string;
   name: string | null;
@@ -160,9 +162,10 @@ export async function reconcileWorkspaceProjectManifestAgents(
     const existingAgents = parsed.agents
       .map((entry) => parseWorkspaceProjectManifestAgent(entry))
       .filter((entry): entry is WorkspaceProjectManifestAgent => Boolean(entry));
-    const nextAgents = existingAgents.filter((entry) => activeIds.has(entry.id));
+    const preserveMissingAgents = isRecentlyUpdatedManifest(parsed.updatedAt);
+    const nextAgents = existingAgents.filter((entry) => activeIds.has(entry.id) || preserveMissingAgents);
     const staleAgentIds = existingAgents
-      .filter((entry) => !activeIds.has(entry.id))
+      .filter((entry) => !activeIds.has(entry.id) && !preserveMissingAgents)
       .map((entry) => entry.id);
 
     if (nextAgents.length === existingAgents.length) {
@@ -193,6 +196,16 @@ export async function reconcileWorkspaceProjectManifestAgents(
   }
 
   return readWorkspaceProjectManifest(workspacePath);
+}
+
+function isRecentlyUpdatedManifest(value: unknown) {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const timestamp = Date.parse(value);
+
+  return Number.isFinite(timestamp) && Date.now() - timestamp < RECENT_MANIFEST_AGENT_PRUNE_GRACE_MS;
 }
 
 function buildAgentPolicySkillDirectoryName(agentId: string) {

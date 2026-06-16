@@ -4,7 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { formatOpenClawCommand, resetOpenClawBinCache, resolveOpenClawBin } from "@/lib/openclaw/cli";
+import { formatOpenClawCommand, parseOpenClawVersion, resetOpenClawBinCache, resolveOpenClawBin } from "@/lib/openclaw/cli";
 import {
   clearMissionControlCaches,
   ensureOpenClawRuntimeSmokeTest,
@@ -15,6 +15,8 @@ import type { OpenClawUpdateStreamEvent } from "@/lib/agentos/contracts";
 import type {
   MissionControlSnapshot,
   OpenClawCapabilityDiffReport,
+  OpenClawCertificationRoundTripEvidence,
+  OpenClawCertificationRoundTripStep,
   OpenClawRuntimeSmokeTest,
   OpenClawShadowProbeReport,
   OpenClawUpdateSafetyReport
@@ -52,7 +54,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const updateSchema = z.object({
-  action: z.enum(["preflight", "probe", "update", "rollback"]).default("update"),
+  action: z.enum(["preflight", "probe", "update", "rollback", "certify-round-trip"]).default("update"),
   confirmed: z.boolean().optional(),
   targetVersion: z.string().trim().optional(),
   mode: z.enum(["recommended", "candidate", "advanced"]).default("recommended")
@@ -85,6 +87,18 @@ type UpdatePreflightResult = {
   report: OpenClawUpdateSafetyReport;
 };
 
+type RoundTripResult = {
+  ok: boolean;
+  message: string;
+  evidence: OpenClawCertificationRoundTripEvidence;
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  baselineSnapshot?: MissionControlSnapshot;
+  snapshot?: MissionControlSnapshot;
+  smokeTest?: OpenClawRuntimeSmokeTest | null;
+};
+
 export async function POST(request: Request) {
   let updateRequest: z.infer<typeof updateSchema>;
 
@@ -108,7 +122,7 @@ export async function POST(request: Request) {
     mode: updateRequest.mode
   });
 
-  if (updateRequest.action === "update" && !updateDecision.allowed) {
+  if ((updateRequest.action === "update" || updateRequest.action === "certify-round-trip") && !updateDecision.allowed) {
     return NextResponse.json(
       {
         error: updateDecision.reason,
@@ -118,7 +132,12 @@ export async function POST(request: Request) {
     );
   }
 
-  if ((updateRequest.action === "update" || updateRequest.action === "rollback") && updateRequest.confirmed !== true) {
+  if (
+    (updateRequest.action === "update" ||
+      updateRequest.action === "rollback" ||
+      updateRequest.action === "certify-round-trip") &&
+    updateRequest.confirmed !== true
+  ) {
     return NextResponse.json(
       {
         error: "Update confirmation is required."
@@ -127,7 +146,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (updateRequest.action === "update" && !snapshot.diagnostics.installed) {
+  if ((updateRequest.action === "update" || updateRequest.action === "certify-round-trip") && !snapshot.diagnostics.installed) {
     return NextResponse.json(
       {
         error: snapshot.diagnostics.issues[0] || "OpenClaw is unavailable."
@@ -214,6 +233,121 @@ export async function POST(request: Request) {
     }
 
     const existingRollbackSnapshot = await readOpenClawRollbackSnapshot();
+
+    if (updateRequest.action === "certify-round-trip") {
+      if (updateRequest.mode !== "advanced") {
+        await send({
+          type: "done",
+          ok: false,
+          message: "Round-trip certification requires advanced update mode.",
+          exitCode: null,
+          stdout,
+          stderr,
+          certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+            baselineSnapshot: snapshot,
+            targetVersion,
+            decision: updateDecision,
+            updateAttempted: false,
+            updateCompleted: false,
+            rollbackSnapshotCreated: Boolean(existingRollbackSnapshot),
+            failureMessage: "Round-trip certification requires advanced update mode."
+          })
+        });
+        await closeWriter();
+        return;
+      }
+
+      const baselineVersion = OPENCLAW_RECOMMENDED_VERSION;
+      const preflight = await runOpenClawUpdatePreflight({
+        snapshot,
+        targetVersion,
+        decision: updateDecision,
+        rollbackSnapshotAvailable: Boolean(existingRollbackSnapshot)
+      });
+
+      await send({
+        type: "status",
+        phase: "preflight",
+        message: preflight.message
+      });
+
+      if (!preflight.ok) {
+        await send({
+          type: "done",
+          ok: false,
+          message: preflight.message,
+          exitCode: null,
+          stdout,
+          stderr,
+          snapshot,
+          certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+            baselineSnapshot: snapshot,
+            targetVersion,
+            decision: updateDecision,
+            preflightReport: preflight.report,
+            updateAttempted: false,
+            updateCompleted: false,
+            rollbackSnapshotCreated: Boolean(existingRollbackSnapshot),
+            failureMessage: preflight.message
+          })
+        });
+        await closeWriter();
+        return;
+      }
+
+      await send({
+        type: "status",
+        phase: "baseline-restore",
+        message: `Starting OpenClaw certification round-trip: v${baselineVersion} -> v${targetVersion} -> v${baselineVersion} -> v${targetVersion}.`
+      });
+
+      const roundTrip = await runOpenClawCertificationRoundTrip({
+        openClawBin,
+        baselineVersion,
+        targetVersion,
+        send
+      });
+      stdout += roundTrip.stdout;
+      stderr += roundTrip.stderr;
+      const finalSnapshot = roundTrip.snapshot ?? await getMissionControlSnapshot({ force: true }).catch(() => snapshot);
+      const baselineSnapshot = roundTrip.baselineSnapshot ?? snapshot;
+      const finalCapabilityDiff = buildOpenClawCapabilityDiffReport({
+        certified: baselineSnapshot.diagnostics,
+        target: finalSnapshot.diagnostics
+      });
+
+      await send({
+        type: "done",
+        ok: roundTrip.ok,
+        message: roundTrip.message,
+        exitCode: roundTrip.exitCode,
+        stdout,
+        stderr,
+        snapshot: finalSnapshot,
+        capabilityDiff: finalCapabilityDiff,
+        certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+          baselineSnapshot,
+          targetSnapshot: finalSnapshot,
+          targetVersion,
+          decision: updateDecision,
+          preflightReport: preflight.report,
+          capabilityDiff: finalCapabilityDiff,
+          smokeTest: roundTrip.smokeTest ?? finalSnapshot.diagnostics.runtime.smokeTest ?? null,
+          roundTripEvidence: roundTrip.evidence,
+          updateAttempted: true,
+          updateCompleted: roundTrip.ok,
+          exitCode: roundTrip.exitCode,
+          rollbackSnapshotCreated: true,
+          rollbackToCertifiedBaseline: roundTrip.ok ? "passed" : "failed",
+          stdout,
+          stderr,
+          failureMessage: roundTrip.ok ? null : roundTrip.message
+        }),
+        manualCommand: roundTrip.ok ? undefined : formatOpenClawCommand(openClawBin, buildOpenClawUpdateArgs(baselineVersion))
+      });
+      await closeWriter();
+      return;
+    }
 
     if (updateRequest.action === "rollback") {
       if (!existingRollbackSnapshot) {
@@ -1272,7 +1406,9 @@ async function runOpenClawShadowProbe(input: {
     });
     stdout = result.stdout;
     stderr = result.stderr || result.errorMessage || "";
-    currentBinaryVersion = normalizeVersion([result.stdout, result.stderr].filter(Boolean).join("\n"));
+    currentBinaryVersion = normalizeOpenClawCommandVersionOutput(
+      [result.stdout, result.stderr].filter(Boolean).join("\n")
+    );
     checks.push({
       id: "current-binary-version",
       label: "Current binary probe",
@@ -1589,6 +1725,7 @@ function buildOpenClawUpdateCertificationScorecard(input: {
   preflightReport?: OpenClawUpdateSafetyReport | null;
   capabilityDiff?: OpenClawCapabilityDiffReport | null;
   smokeTest?: OpenClawRuntimeSmokeTest | null;
+  roundTripEvidence?: OpenClawCertificationRoundTripEvidence | null;
   updateAttempted: boolean;
   updateCompleted: boolean;
   exitCode?: number | null;
@@ -1617,6 +1754,7 @@ function buildOpenClawUpdateCertificationScorecard(input: {
     preflightReport: input.preflightReport ?? null,
     manifestDecision: input.decision,
     smokeTest: input.smokeTest ?? targetDiagnostics?.runtime.smokeTest ?? null,
+    roundTripEvidence: input.roundTripEvidence ?? null,
     update: {
       attempted: input.updateAttempted,
       completed: input.updateCompleted,
@@ -1638,6 +1776,326 @@ async function recordUpdateRuntimeIssue(
   await recordOpenClawUpdateRuntimeIssue(input).catch(() => {});
 }
 
+async function runOpenClawCertificationRoundTrip(input: {
+  openClawBin: string;
+  baselineVersion: string;
+  targetVersion: string;
+  send: (event: OpenClawUpdateStreamEvent) => Promise<unknown>;
+}): Promise<RoundTripResult> {
+  const startedAt = new Date().toISOString();
+  const steps: OpenClawCertificationRoundTripStep[] = [];
+  let stdout = "";
+  let stderr = "";
+  let exitCode: number | null = 0;
+
+  const runStep = async (
+    id: OpenClawCertificationRoundTripStep["id"],
+    requestedVersion: string,
+    message: string,
+    options: { runUpdate: boolean; runSmoke: boolean }
+  ) => {
+    await input.send({
+      type: "status",
+      phase: id,
+      message
+    });
+
+    let commandResult: CommandResult = {
+      code: 0,
+      stdout: "",
+      stderr: "",
+      timedOut: false
+    };
+
+    if (options.runUpdate) {
+      commandResult = await runRecoveryCommand(input.openClawBin, buildOpenClawUpdateArgs(requestedVersion), input.send, {
+        timeoutMs: updateTimeoutMs
+      });
+      stdout = appendText(stdout, commandResult.stdout);
+      stderr = appendText(stderr, commandResult.stderr || commandResult.errorMessage || "");
+      exitCode = commandResult.code;
+    }
+
+    if (commandResult.errorMessage || commandResult.timedOut || commandResult.code !== 0) {
+      const failedStep = createRoundTripStep({
+        id,
+        requestedVersion,
+        snapshot: null,
+        smokeTest: null,
+        commandResult,
+        ok: false,
+        message: commandResult.errorMessage || `OpenClaw v${requestedVersion} command failed.`
+      });
+      steps.push(failedStep);
+      return {
+        ok: false,
+        step: failedStep,
+        snapshot: null,
+        smokeTest: null
+      };
+    }
+
+    const healthResult = await waitForGatewayReady(input.openClawBin);
+    stdout = appendText(stdout, healthResult.stdout);
+    stderr = appendText(stderr, healthResult.stderr || healthResult.errorMessage || "");
+
+    resetOpenClawBinCache();
+    clearMissionControlCaches();
+    const snapshot = await getMissionControlSnapshot({ force: true });
+    const verification = verifyOpenClawUpdateVersionOnly(snapshot, requestedVersion);
+    const smokeTest = options.runSmoke
+      ? await ensureOpenClawRuntimeSmokeTest({ force: true })
+      : snapshot.diagnostics.runtime.smokeTest ?? null;
+    const freshSnapshot = await getMissionControlSnapshot({ force: true }).catch(() => snapshot);
+    const gatewayOk =
+      !healthResult.errorMessage &&
+      !healthResult.timedOut &&
+      healthResult.code === 0 &&
+      freshSnapshot.diagnostics.loaded &&
+      freshSnapshot.diagnostics.rpcOk;
+    const smokeOk = !options.runSmoke || smokeTest.status === "passed";
+    const ok = verification.ok && gatewayOk && smokeOk;
+    const step = createRoundTripStep({
+      id,
+      requestedVersion,
+      snapshot: freshSnapshot,
+      smokeTest,
+      commandResult,
+      ok,
+      message: ok
+        ? `${id} verified v${requestedVersion}.`
+        : [
+            verification.ok ? null : verification.message,
+            gatewayOk ? null : "Gateway was not healthy after this round-trip step.",
+            smokeOk ? null : smokeTest.error || "Runtime smoke did not pass."
+          ].filter(Boolean).join(" ")
+    });
+    steps.push(step);
+
+    return {
+      ok,
+      step,
+      snapshot: freshSnapshot,
+      smokeTest
+    };
+  };
+
+  const baseline = await runStep(
+    "baseline-restore",
+    input.baselineVersion,
+    `Restoring certified baseline OpenClaw v${input.baselineVersion} before round-trip certification...`,
+    { runUpdate: true, runSmoke: true }
+  );
+  if (!baseline.ok) {
+    return finishRoundTrip({
+      ok: false,
+      message: baseline.step.message,
+      startedAt,
+      baselineVersion: input.baselineVersion,
+      targetVersion: input.targetVersion,
+      steps,
+      stdout,
+      stderr,
+      exitCode,
+      baselineSnapshot: baseline.snapshot ?? undefined,
+      snapshot: baseline.snapshot ?? undefined,
+      smokeTest: baseline.smokeTest
+    });
+  }
+  const baselineSnapshot = baseline.snapshot ?? undefined;
+
+  const targetInstall = await runStep(
+    "target-install",
+    input.targetVersion,
+    `Installing target OpenClaw v${input.targetVersion} for certification...`,
+    { runUpdate: true, runSmoke: false }
+  );
+  if (!targetInstall.ok) {
+    return finishRoundTrip({
+      ok: false,
+      message: targetInstall.step.message,
+      startedAt,
+      baselineVersion: input.baselineVersion,
+      targetVersion: input.targetVersion,
+      steps,
+      stdout,
+      stderr,
+      exitCode,
+      baselineSnapshot,
+      snapshot: targetInstall.snapshot ?? baselineSnapshot,
+      smokeTest: targetInstall.smokeTest
+    });
+  }
+
+  const targetVerify = await runStep(
+    "target-verify",
+    input.targetVersion,
+    `Verifying target OpenClaw v${input.targetVersion} Gateway health and runtime smoke...`,
+    { runUpdate: false, runSmoke: true }
+  );
+  if (!targetVerify.ok) {
+    return finishRoundTrip({
+      ok: false,
+      message: targetVerify.step.message,
+      startedAt,
+      baselineVersion: input.baselineVersion,
+      targetVersion: input.targetVersion,
+      steps,
+      stdout,
+      stderr,
+      exitCode,
+      baselineSnapshot,
+      snapshot: targetVerify.snapshot ?? targetInstall.snapshot ?? baselineSnapshot,
+      smokeTest: targetVerify.smokeTest
+    });
+  }
+
+  const rollbackVerify = await runStep(
+    "rollback-verify",
+    input.baselineVersion,
+    `Rolling back to certified baseline v${input.baselineVersion} and verifying Gateway health...`,
+    { runUpdate: true, runSmoke: true }
+  );
+  if (!rollbackVerify.ok) {
+    return finishRoundTrip({
+      ok: false,
+      message: rollbackVerify.step.message,
+      startedAt,
+      baselineVersion: input.baselineVersion,
+      targetVersion: input.targetVersion,
+      steps,
+      stdout,
+      stderr,
+      exitCode,
+      baselineSnapshot,
+      snapshot: rollbackVerify.snapshot ?? targetVerify.snapshot ?? baselineSnapshot,
+      smokeTest: rollbackVerify.smokeTest
+    });
+  }
+
+  const finalTarget = await runStep(
+    "final-target-verify",
+    input.targetVersion,
+    `Reinstalling target OpenClaw v${input.targetVersion} after rollback and verifying final health...`,
+    { runUpdate: true, runSmoke: true }
+  );
+  const finalSnapshot = finalTarget.snapshot ?? undefined;
+  const finalSmokeTest = finalTarget.smokeTest;
+
+  return finishRoundTrip({
+    ok: finalTarget.ok,
+    message: finalTarget.ok
+      ? `OpenClaw certification round-trip completed: v${input.baselineVersion} -> v${input.targetVersion} -> v${input.baselineVersion} -> v${input.targetVersion}.`
+      : finalTarget.step.message,
+    startedAt,
+    baselineVersion: input.baselineVersion,
+    targetVersion: input.targetVersion,
+    steps,
+    stdout,
+    stderr,
+    exitCode,
+    baselineSnapshot,
+    snapshot: finalSnapshot,
+    smokeTest: finalSmokeTest
+  });
+}
+
+function finishRoundTrip(input: {
+  ok: boolean;
+  message: string;
+  startedAt: string;
+  baselineVersion: string;
+  targetVersion: string;
+  steps: OpenClawCertificationRoundTripStep[];
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  baselineSnapshot?: MissionControlSnapshot;
+  snapshot?: MissionControlSnapshot;
+  smokeTest?: OpenClawRuntimeSmokeTest | null;
+}): RoundTripResult {
+  const evidence: OpenClawCertificationRoundTripEvidence = {
+    status: input.ok ? "passed" : "failed",
+    startedAt: input.startedAt,
+    finishedAt: new Date().toISOString(),
+    baselineVersion: input.baselineVersion,
+    targetVersion: input.targetVersion,
+    steps: input.steps,
+    failureMessage: input.ok ? null : input.message
+  };
+
+  return {
+    ok: input.ok,
+    message: input.message,
+    evidence,
+    stdout: input.stdout,
+    stderr: input.stderr,
+    exitCode: input.exitCode,
+    baselineSnapshot: input.baselineSnapshot,
+    snapshot: input.snapshot,
+    smokeTest: input.smokeTest ?? null
+  };
+}
+
+function createRoundTripStep(input: {
+  id: OpenClawCertificationRoundTripStep["id"];
+  requestedVersion: string;
+  snapshot: MissionControlSnapshot | null;
+  smokeTest: OpenClawRuntimeSmokeTest | null;
+  commandResult: CommandResult;
+  ok: boolean;
+  message: string;
+}): OpenClawCertificationRoundTripStep {
+  return {
+    id: input.id,
+    requestedVersion: normalizeVersion(input.requestedVersion) ?? input.requestedVersion,
+    installedVersion: normalizeVersion(input.snapshot?.diagnostics.version),
+    gatewayLoaded: Boolean(input.snapshot?.diagnostics.loaded),
+    rpcReady: Boolean(input.snapshot?.diagnostics.rpcOk),
+    runtimeSmokeStatus: input.smokeTest?.status ?? input.snapshot?.diagnostics.runtime.smokeTest?.status ?? "unknown",
+    fallbackCount: input.snapshot?.diagnostics.transport?.fallbackTotal ?? 0,
+    exitCode: input.commandResult.code,
+    ok: input.ok,
+    message: input.message,
+    stdoutPreview: previewCommandOutput(input.commandResult.stdout),
+    stderrPreview: previewCommandOutput(input.commandResult.stderr || input.commandResult.errorMessage || "")
+  };
+}
+
+function verifyOpenClawUpdateVersionOnly(snapshot: MissionControlSnapshot, targetVersion: string): UpdateVerification {
+  const afterVersion = normalizeVersion(snapshot.diagnostics.version);
+  const expectedVersion = normalizeVersion(targetVersion);
+
+  if (!afterVersion || !expectedVersion || compareVersionStrings(afterVersion, expectedVersion) !== 0) {
+    return {
+      ok: false,
+      message: `Installed OpenClaw version is ${formatVersion(afterVersion)}. Expected ${formatVersion(expectedVersion)}.`
+    };
+  }
+
+  return {
+    ok: true,
+    message: `Installed OpenClaw version verified: ${formatVersion(afterVersion)}.`
+  };
+}
+
+function appendText(current: string, next: string) {
+  if (!next) {
+    return current;
+  }
+
+  return current ? `${current}\n${next}` : next;
+}
+
+function previewCommandOutput(value: string) {
+  const trimmed = redactSecrets(value).trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed.length > 1200 ? `${trimmed.slice(0, 1200)}...` : trimmed;
+}
+
 async function runRollbackOpenClaw(
   openClawBin: string,
   rollbackSnapshot: OpenClawRollbackSnapshot,
@@ -1653,7 +2111,7 @@ async function runRollbackOpenClaw(
     timeoutMs: 15_000,
     streamOutput: false
   });
-  const currentVersion = normalizeVersion(
+  const currentVersion = normalizeOpenClawCommandVersionOutput(
     [currentVersionResult.stdout, currentVersionResult.stderr].filter(Boolean).join("\n")
   );
   const rollbackVersion = normalizeVersion(rollbackSnapshot.version);
@@ -1682,6 +2140,29 @@ async function runRollbackOpenClaw(
     };
   }
 
+  const restoringToOlderVersion = Boolean(
+    currentVersion &&
+      rollbackVersion &&
+      compareVersionStrings(currentVersion, rollbackVersion) > 0
+  );
+  let preRestoreStdout = "";
+  const preRestoreStderr = "";
+
+  if (restoringToOlderVersion) {
+    const preRestore = await restoreOpenClawRollbackConfigSnapshot(rollbackSnapshot);
+    preRestoreStdout = `${preRestore.message}\n`;
+
+    if (!preRestore.restored) {
+      return {
+        ok: false,
+        message: preRestore.message,
+        exitCode: null,
+        stdout: preRestoreStdout,
+        stderr: preRestoreStderr
+      };
+    }
+  }
+
   const rollbackResult = await runRecoveryCommand(openClawBin, buildOpenClawUpdateArgs(rollbackSnapshot.version), send, {
     timeoutMs: updateTimeoutMs
   });
@@ -1696,7 +2177,7 @@ async function runRollbackOpenClaw(
         timeoutMs: 15_000,
         streamOutput: false
       });
-      const postFailureVersion = normalizeVersion(
+      const postFailureVersion = normalizeOpenClawCommandVersionOutput(
         [postFailureVersionResult.stdout, postFailureVersionResult.stderr].filter(Boolean).join("\n")
       );
 
@@ -1714,11 +2195,13 @@ async function runRollbackOpenClaw(
             : recovery.message,
           exitCode: recovery.exitCode,
           stdout: [
+            preRestoreStdout,
             rollbackResult.stdout,
             postFailureVersionResult.stdout,
             recovery.stdout
           ].filter(Boolean).join("\n"),
           stderr: [
+            preRestoreStderr,
             rollbackResult.stderr || rollbackResult.errorMessage,
             postFailureVersionResult.stderr,
             recovery.stderr
@@ -1731,8 +2214,10 @@ async function runRollbackOpenClaw(
       ok: false,
       message: "Automatic OpenClaw rollback failed. Use the manual update command from the details panel.",
       exitCode: rollbackResult.code,
-      stdout: rollbackResult.stdout,
-      stderr: rollbackResult.stderr || rollbackResult.errorMessage || "Rollback command failed."
+      stdout: [preRestoreStdout, rollbackResult.stdout].filter(Boolean).join("\n"),
+      stderr: [preRestoreStderr, rollbackResult.stderr || rollbackResult.errorMessage || "Rollback command failed."]
+        .filter(Boolean)
+        .join("\n")
     };
   }
 
@@ -1745,10 +2230,12 @@ async function runRollbackOpenClaw(
       : recovery.message,
     exitCode: recovery.exitCode,
     stdout: [
+      preRestoreStdout,
       rollbackResult.stdout,
       recovery.stdout
     ].filter(Boolean).join("\n"),
     stderr: [
+      preRestoreStderr,
       rollbackResult.stderr,
       recovery.stderr
     ].filter(Boolean).join("\n")
@@ -1781,6 +2268,28 @@ async function restoreConfigAndRestartOpenClaw(
       exitCode: null,
       stdout,
       stderr
+    };
+  }
+
+  await send({
+    type: "status",
+    phase: "refreshing",
+    message: "Reinstalling OpenClaw Gateway service with the restored config snapshot..."
+  });
+
+  const installResult = await runRecoveryCommand(openClawBin, ["gateway", "install", "--force"], send, {
+    timeoutMs: 90_000
+  });
+  stdout += installResult.stdout;
+  stderr += installResult.stderr;
+
+  if (installResult.errorMessage || installResult.timedOut || installResult.code !== 0) {
+    return {
+      ok: false,
+      message: "OpenClaw config snapshot was restored, but Gateway service reinstall failed.",
+      exitCode: installResult.code,
+      stdout,
+      stderr: stderr || installResult.errorMessage || "Gateway service reinstall failed."
     };
   }
 
@@ -1939,6 +2448,20 @@ function preserveKnownUpdateTarget(
 function normalizeVersion(value: string | null | undefined) {
   const normalized = value?.trim().replace(/^v/i, "");
   return normalized || null;
+}
+
+function normalizeOpenClawCommandVersionOutput(value: string | null | undefined) {
+  const output = value?.trim();
+
+  if (!output) {
+    return null;
+  }
+
+  return (
+    parseOpenClawVersion(output) ??
+    output.match(/\bthis command is running\s+v?(\d+(?:\.\d+)+)\b/i)?.[1] ??
+    normalizeVersion(output)
+  );
 }
 
 function formatVersion(value: string | null | undefined) {

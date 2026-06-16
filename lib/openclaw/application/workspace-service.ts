@@ -90,6 +90,7 @@ import type {
   OpenClawAgent,
   OperationProgressSnapshot,
   WorkspaceCreateInput,
+  WorkspaceCreateAgentProjection,
   WorkspaceCreateRules,
   WorkspaceCreateResult,
   WorkspaceDeleteInput,
@@ -354,9 +355,11 @@ export async function createWorkspaceProject(
 
   return {
     workspaceId: resolveWorkspaceIdForSnapshotPath(snapshot.workspaces, targetDir),
+    workspaceName: normalized.name,
     workspacePath: targetDir,
     agentIds: createdAgentIds,
     primaryAgentId,
+    agentProjections: buildWorkspaceCreateAgentProjections(createdAgentIds, enabledAgents, workspaceModelId),
     kickoffRunId,
     kickoffStatus,
     kickoffError,
@@ -1173,13 +1176,56 @@ async function resolveExistingWorkspaceCreateResult(
 
   return {
     workspaceId: workspace?.id ?? workspaceId,
+    workspaceName: workspace?.name ?? manifest.name ?? path.basename(targetDir),
     workspacePath: workspace?.path ?? targetDir,
     agentIds: resolvedAgentIds,
     primaryAgentId,
+    agentProjections: buildWorkspaceCreateAgentProjections(
+      manifestAgentRefs.map((entry) => entry.agentId),
+      manifestAgentRefs.map((entry) => entry.agent),
+      undefined
+    ),
     kickoffRunId: undefined,
     kickoffStatus: undefined,
     kickoffError: undefined
   };
+}
+
+function buildWorkspaceCreateAgentProjections(
+  agentIds: string[],
+  agents: WorkspaceAgentBlueprintInput[],
+  workspaceModelId: string | undefined
+): WorkspaceCreateAgentProjection[] {
+  const projections: WorkspaceCreateAgentProjection[] = [];
+
+  agents.forEach((agent, index) => {
+    const id = agentIds[index];
+
+    if (!id) {
+      return;
+    }
+
+    const policy = resolveAgentPolicy(agent.policy?.preset ?? DEFAULT_AGENT_PRESET, agent.policy);
+    const skillIds = uniqueStrings([
+      ...(agent.skillIds ?? []),
+      agent.skillId ?? ""
+    ]);
+    const tools = policy.fileAccess === "workspace-only" ? ["fs.workspaceOnly"] : [];
+
+    projections.push({
+      id,
+      name: normalizeOptionalValue(agent.name) ?? agent.role ?? id,
+      modelId: normalizeOptionalValue(agent.modelId) ?? workspaceModelId,
+      emoji: normalizeOptionalValue(agent.emoji) ?? undefined,
+      theme: normalizeOptionalValue(agent.theme) ?? undefined,
+      policy,
+      heartbeat: agent.heartbeat,
+      skills: skillIds,
+      tools
+    });
+  });
+
+  return projections;
 }
 
 function resolveManifestWorkspaceAgentProvisioningRef(

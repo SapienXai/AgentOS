@@ -3,6 +3,13 @@
 import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
 import { MissionSidebar } from "@/components/mission-control/sidebar";
+import {
+  buildPendingAgentRecord,
+  buildPendingAgentsForWorkspaceResult,
+  parsePendingAgentProjections,
+  pendingAgentProjectionStorageKey,
+  type PendingAgentProjection
+} from "@/components/mission-control/pending-agent-projection";
 import { useMissionControlPreferences } from "@/components/mission-control/use-mission-control-preferences";
 import { WorkspaceWizardDialog } from "@/components/mission-control/workspace-wizard/workspace-wizard-dialog";
 import {
@@ -15,7 +22,7 @@ import { scopeMissionControlSnapshot } from "@/components/operations/operations-
 import { OperationsTopBar } from "@/components/operations/operations-ui";
 import { toast } from "@/components/ui/sonner";
 import { useMissionControlData } from "@/hooks/use-mission-control-data";
-import type { MissionControlSnapshot, WorkspaceRecord } from "@/lib/agentos/contracts";
+import type { MissionControlSnapshot, WorkspaceCreateResult, WorkspacePlanDeployResult, WorkspaceRecord } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
 
 export type OperationsShellContext = {
@@ -28,6 +35,59 @@ export type OperationsShellContext = {
   refresh: () => Promise<void>;
   setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
 };
+
+function loadPendingAgentProjections() {
+  if (typeof globalThis.localStorage === "undefined") {
+    return [];
+  }
+
+  return parsePendingAgentProjections(globalThis.localStorage.getItem(pendingAgentProjectionStorageKey));
+}
+
+function buildPendingWorkspaceRecord(workspaceId: string, pendingAgents: PendingAgentProjection[]): WorkspaceRecord {
+  const firstAgent = pendingAgents[0];
+  const workspacePath = firstAgent?.workspacePath ?? "";
+  const workspaceName = firstAgent?.workspaceName ?? readPathBasename(workspacePath) ?? workspaceId;
+
+  return {
+    id: workspaceId,
+    name: workspaceName,
+    slug: workspaceId,
+    path: workspacePath,
+    kind: "workspace",
+    agentIds: pendingAgents.map((agent) => agent.id),
+    modelIds: pendingAgents.map((agent) => agent.modelId).filter(Boolean),
+    activeRuntimeIds: [],
+    totalSessions: 0,
+    health: "standby",
+    bootstrap: {
+      template: null,
+      sourceMode: null,
+      agentTemplate: null,
+      coreFiles: [],
+      optionalFiles: [],
+      folders: [],
+      projectShell: [],
+      localSkillIds: []
+    },
+    capabilities: {
+      skills: [],
+      tools: [],
+      workspaceOnlyAgentCount: pendingAgents.filter((agent) => agent.policy.fileAccess === "workspace-only").length
+    },
+    channels: []
+  };
+}
+
+function readPathBasename(value: string) {
+  const normalized = value.trim().replace(/\/+$/g, "");
+
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.split("/").pop() || null;
+}
 
 export function OperationsShell({
   initialSnapshot,
@@ -47,16 +107,49 @@ export function OperationsShell({
   const [isWorkspaceWizardOpen, setIsWorkspaceWizardOpen] = useState(false);
   const [workspaceWizardInitialMode, setWorkspaceWizardInitialMode] = useState<"basic" | "advanced">("basic");
   const [workspaceWizardEditId, setWorkspaceWizardEditId] = useState<string | null>(null);
+  const [pendingCreatedAgents, setPendingCreatedAgents] = useState<PendingAgentProjection[]>(loadPendingAgentProjections);
+  const liveAgentIds = useMemo(() => new Set(snapshot.agents.map((agent) => agent.id)), [snapshot.agents]);
+  const visiblePendingCreatedAgents = useMemo(
+    () => pendingCreatedAgents.filter((agent) => !liveAgentIds.has(agent.id)),
+    [liveAgentIds, pendingCreatedAgents]
+  );
+  const activePendingAgents = useMemo(
+    () => activeWorkspaceId
+      ? visiblePendingCreatedAgents.filter((agent) => agent.workspaceId === activeWorkspaceId)
+      : [],
+    [activeWorkspaceId, visiblePendingCreatedAgents]
+  );
+  const activePendingWorkspace = useMemo(
+    () =>
+      activeWorkspaceId && activePendingAgents.length > 0 && !snapshot.workspaces.some((workspace) => workspace.id === activeWorkspaceId)
+        ? buildPendingWorkspaceRecord(activeWorkspaceId, activePendingAgents)
+        : null,
+    [activePendingAgents, activeWorkspaceId, snapshot.workspaces]
+  );
+  const uiSnapshot = useMemo<MissionControlSnapshot>(() => {
+    if (!activePendingWorkspace) {
+      return snapshot;
+    }
+
+    return {
+      ...snapshot,
+      workspaces: [...snapshot.workspaces, activePendingWorkspace],
+      agents: [
+        ...snapshot.agents,
+        ...activePendingAgents.map(buildPendingAgentRecord)
+      ]
+    };
+  }, [activePendingAgents, activePendingWorkspace, snapshot]);
   const activeWorkspace = useMemo(
     () =>
       activeWorkspaceId
-        ? snapshot.workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null
+        ? uiSnapshot.workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null
         : null,
-    [activeWorkspaceId, snapshot.workspaces]
+    [activeWorkspaceId, uiSnapshot.workspaces]
   );
   const scopedSnapshot = useMemo(
-    () => scopeMissionControlSnapshot(snapshot, activeWorkspaceId),
-    [activeWorkspaceId, snapshot]
+    () => scopeMissionControlSnapshot(uiSnapshot, activeWorkspaceId),
+    [activeWorkspaceId, uiSnapshot]
   );
 
   useEffect(() => {
@@ -86,8 +179,12 @@ export function OperationsShell({
 
     const workspaceSelectionStorageKey = buildWorkspaceSelectionStorageKey(workspaceRoot);
     const storedWorkspaceId = globalThis.localStorage?.getItem(workspaceSelectionStorageKey) ?? null;
+    const selectableWorkspaceIds = Array.from(new Set([
+      ...snapshot.workspaces.map((workspace) => workspace.id),
+      ...visiblePendingCreatedAgents.map((agent) => agent.workspaceId)
+    ]));
     const resolvedWorkspaceId = resolveWorkspaceSelection(
-      snapshot.workspaces.map((workspace) => workspace.id),
+      selectableWorkspaceIds,
       storedWorkspaceId,
       activeWorkspaceId
     );
@@ -102,6 +199,7 @@ export function OperationsShell({
   }, [
     activeWorkspaceId,
     loadedWorkspaceSelectionRoot,
+    visiblePendingCreatedAgents,
     snapshot
   ]);
 
@@ -124,6 +222,19 @@ export function OperationsShell({
     );
   }, [activeWorkspaceId, loadedWorkspaceSelectionRoot, snapshot.diagnostics.workspaceRoot]);
 
+  useEffect(() => {
+    if (typeof globalThis.localStorage === "undefined") {
+      return;
+    }
+
+    if (visiblePendingCreatedAgents.length === 0) {
+      globalThis.localStorage.removeItem(pendingAgentProjectionStorageKey);
+      return;
+    }
+
+    globalThis.localStorage.setItem(pendingAgentProjectionStorageKey, JSON.stringify(visiblePendingCreatedAgents));
+  }, [visiblePendingCreatedAgents]);
+
   const openWorkspaceWizard = (mode: "basic" | "advanced" = "basic") => {
     setWorkspaceWizardEditId(null);
     setWorkspaceWizardInitialMode(mode);
@@ -143,6 +254,20 @@ export function OperationsShell({
       setWorkspaceWizardEditId(null);
       setWorkspaceWizardInitialMode("basic");
     }
+  };
+
+  const handleWorkspaceCreated = (result: WorkspaceCreateResult | WorkspacePlanDeployResult) => {
+    const pendingAgents = buildPendingAgentsForWorkspaceResult(result);
+
+    if (pendingAgents.length > 0) {
+      const pendingAgentIds = new Set(pendingAgents.map((agent) => agent.id));
+      setPendingCreatedAgents((current) => [
+        ...current.filter((agent) => !pendingAgentIds.has(agent.id)),
+        ...pendingAgents
+      ]);
+    }
+
+    setActiveWorkspaceId(result.workspaceId);
   };
 
   return (
@@ -180,6 +305,7 @@ export function OperationsShell({
           snapshot={snapshot}
           surfaceTheme={surfaceTheme}
           activeWorkspaceId={activeWorkspaceId}
+          pendingCreatedAgents={visiblePendingCreatedAgents}
           requestedAgentAction={null}
           connectionState={connectionState}
           collapsed={!sidebarExpanded}
@@ -234,6 +360,7 @@ export function OperationsShell({
           snapshot={snapshot}
           surfaceTheme={surfaceTheme}
           activeWorkspaceId={activeWorkspaceId}
+          pendingCreatedAgents={visiblePendingCreatedAgents}
           requestedAgentAction={null}
           connectionState={connectionState}
           collapsed={!mobileSidebarOpen}
@@ -283,7 +410,7 @@ export function OperationsShell({
           />
           {children({
             snapshot: scopedSnapshot,
-            rootSnapshot: snapshot,
+            rootSnapshot: uiSnapshot,
             activeWorkspace,
             activeWorkspaceId,
             connectionState,
@@ -303,7 +430,7 @@ export function OperationsShell({
         surfaceTheme={surfaceTheme}
         snapshot={snapshot}
         onRefresh={refresh}
-        onWorkspaceCreated={setActiveWorkspaceId}
+        onWorkspaceCreated={handleWorkspaceCreated}
         onWorkspaceUpdated={setActiveWorkspaceId}
       />
     </div>

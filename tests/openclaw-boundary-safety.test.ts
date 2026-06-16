@@ -91,6 +91,7 @@ test("OpenClaw direct CLI JSON usage remains in documented fallback/discovery fi
 
 test("OpenClaw direct CLI command usage remains in documented fallback/provisioning files", () => {
   const allowed = new Set([
+    "lib/openclaw/application/gateway-service.ts",
     "lib/openclaw/client/cli-gateway-client.ts",
     "lib/openclaw/reset.ts"
   ]);

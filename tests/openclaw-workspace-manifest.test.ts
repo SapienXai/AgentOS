@@ -66,3 +66,60 @@ test("project manifest reconciliation prunes stale agents and keeps a primary ag
   );
   await access(path.join(workspacePath, "skills", "agent-policy-live-agent", "SKILL.md"));
 });
+
+test("project manifest reconciliation keeps recently created agents during snapshot lag", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-workspace-manifest-"));
+  tempRoots.push(tempRoot);
+  const workspacePath = path.join(tempRoot, "workspace");
+  await mkdir(path.join(workspacePath, ".openclaw"), { recursive: true });
+
+  await writeFile(
+    path.join(workspacePath, ".openclaw", "project.json"),
+    JSON.stringify(
+      {
+        version: 1,
+        name: "Manifest Lab",
+        updatedAt: new Date().toISOString(),
+        agents: [
+          {
+            id: "live-agent",
+            name: "Live Agent",
+            role: "Current role",
+            isPrimary: true,
+            enabled: true
+          },
+          {
+            id: "world-of-builders-hulk-ak",
+            name: "Hulk AK",
+            role: "Worker",
+            isPrimary: false,
+            enabled: true
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const manifest = await reconcileWorkspaceProjectManifestAgents(workspacePath, ["live-agent"]);
+  const persisted = JSON.parse(await readFile(path.join(workspacePath, ".openclaw", "project.json"), "utf8")) as {
+    agents: Array<{ id: string; name: string }>;
+  };
+
+  assert.deepEqual(
+    manifest.agents.map((agent) => [agent.id, agent.name]),
+    [
+      ["live-agent", "Live Agent"],
+      ["world-of-builders-hulk-ak", "Hulk AK"]
+    ]
+  );
+  assert.deepEqual(
+    persisted.agents.map((agent) => [agent.id, agent.name]),
+    [
+      ["live-agent", "Live Agent"],
+      ["world-of-builders-hulk-ak", "Hulk AK"]
+    ]
+  );
+});

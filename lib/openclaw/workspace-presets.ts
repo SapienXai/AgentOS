@@ -349,6 +349,8 @@ export function buildDefaultWorkspaceAgents(
   teamPreset: WorkspaceTeamPreset,
   workspaceName?: string
 ): WorkspaceAgentBlueprintInput[] {
+  void workspaceName;
+
   const seeds = TEMPLATE_AGENT_SEEDS[template];
 
   if (teamPreset === "solo") {
@@ -356,11 +358,7 @@ export function buildDefaultWorkspaceAgents(
     return [
       {
         ...primary,
-        name: buildWorkspaceAgentName(
-          workspaceName,
-          primary.role,
-          primary.role === "Builder" ? "Default Agent" : primary.name
-        ),
+        name: primary.name,
         policy: resolveAgentPolicy(primary.id === "browser" ? "browser" : "worker"),
         enabled: true
       }
@@ -370,9 +368,7 @@ export function buildDefaultWorkspaceAgents(
   return seeds.map((entry) => ({
     id: entry.id,
     role: entry.role,
-    name: entry.isPrimary
-      ? buildWorkspaceAgentName(workspaceName, entry.role, entry.name)
-      : entry.name,
+    name: entry.name,
       emoji: entry.emoji,
       theme: entry.theme,
       skillId: entry.skillId,
@@ -388,14 +384,7 @@ export function buildWorkspaceAgentName(
   role: string,
   fallbackName: string
 ) {
-  const workspaceLabel = deriveWorkspaceAgentPrefix(workspaceName);
-
-  if (!workspaceLabel) {
-    return fallbackName;
-  }
-
-  const trimmedRole = role.trim();
-  return trimmedRole ? `${workspaceLabel} ${trimmedRole}` : workspaceLabel;
+  return fallbackName.trim() || role.trim() || deriveWorkspaceAgentPrefix(workspaceName) || "Agent";
 }
 
 function deriveWorkspaceAgentPrefix(workspaceName: string | undefined) {

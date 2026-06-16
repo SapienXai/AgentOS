@@ -7,12 +7,15 @@ import {
   CornerDownRight,
   Eye,
   FileText,
+  Files,
+  ListChecks,
   Loader2,
+  MessageSquare,
   RefreshCw,
   XCircle
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { InteractiveContent } from "@/components/mission-control/interactive-content";
 import {
@@ -33,8 +36,10 @@ import {
   DialogTitle
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
 import { useTaskFeed } from "@/hooks/use-task-feed";
 import type { MissionControlSnapshot, TaskFeedEvent, WorkItemRecord } from "@/lib/agentos/contracts";
+import type { RuntimeCreatedFile } from "@/lib/openclaw/types";
 import {
   formatAgentDisplayName,
   formatRelativeTime,
@@ -49,7 +54,7 @@ type TaskReviewDialogProps = {
   surfaceTheme: "dark" | "light";
   onOpenChange: (open: boolean) => void;
   onAccept: (task: WorkItemRecord) => Promise<void> | void;
-  onContinue: (task: WorkItemRecord, capturedOutput: string) => Promise<void> | void;
+  onContinue: (task: WorkItemRecord, capturedOutput: string, operatorMessage?: string) => Promise<void> | void;
   onRetry: (task: WorkItemRecord) => Promise<void> | void;
   onDismiss: (task: WorkItemRecord) => Promise<void> | void;
   onOpenEvidence: (task: WorkItemRecord, target: "overview" | "output" | "files") => void;
@@ -69,6 +74,7 @@ export function TaskReviewDialog({
   onOpenEvidence
 }: TaskReviewDialogProps) {
   const [pendingAction, setPendingAction] = useState<TaskReviewPendingAction>(null);
+  const [operatorReply, setOperatorReply] = useState("");
   const localFeed = useMemo(
     () => readTaskFeedEvents(task?.metadata.optimisticEvents),
     [task?.metadata.optimisticEvents]
@@ -95,6 +101,7 @@ export function TaskReviewDialog({
   const reviewedAt = currentTask ? readTaskReviewReviewedAt(currentTask) : null;
   const reviewAction = currentTask ? readTaskReviewAction(currentTask) : null;
   const capturedOutput = currentTask ? readCapturedTaskOutput(currentTask, integrity?.finalResponseText) : "";
+  const createdFiles = detail?.createdFiles ?? [];
   const originalPrompt = currentTask ? readTaskPromptText(currentTask) : "";
   const issue = integrity?.issues.find((entry) => entry.id === "partial-final-response") ?? integrity?.issues[0] ?? null;
   const dispatchIssueDetail = currentTask ? resolveTaskDispatchIssueDetail(currentTask, integrity) : null;
@@ -102,13 +109,27 @@ export function TaskReviewDialog({
   const statusLabel = reviewStatus ? resolveTaskReviewBadgeLabel(reviewStatus) : isVerified ? "verified" : "needs review";
   const issueSummary = reviewStatus
     ? resolveTaskReviewSummary(reviewStatus)
-    : dispatchIssueDetail ||
-      issue?.detail ||
+    : resolveReviewIssueSummary(dispatchIssueDetail, issue?.detail) ||
       (isVerified
         ? "AgentOS recovered a matching completed response and no review issues remain."
         : "The captured task evidence needs an operator decision before AgentOS treats the result as handled.");
+  const rawIssueDetail = dispatchIssueDetail || issue?.detail || null;
+  const shouldShowRawIssueDetail = rawIssueDetail && rawIssueDetail !== issueSummary;
+  const reviewGuidance = currentTask
+    ? resolveReviewGuidance({
+        task: currentTask,
+        createdFiles,
+        capturedOutput,
+        rawIssueDetail
+      })
+    : [];
+  const reportedFileCount = createdFiles.length || currentTask?.artifactCount || 0;
   const isLight = surfaceTheme === "light";
   const isActionPending = pendingAction !== null;
+
+  useEffect(() => {
+    setOperatorReply("");
+  }, [open, task?.id]);
 
   const runAction = async (action: Exclude<TaskReviewPendingAction, null>, callback: () => Promise<void> | void) => {
     if (pendingAction) {
@@ -200,11 +221,118 @@ export function TaskReviewDialog({
                 <p className={cn("text-[12.5px] leading-6", isLight ? "text-slate-700" : "text-slate-200")}>
                   {issueSummary}
                 </p>
+                {shouldShowRawIssueDetail ? (
+                  <p className={cn("mt-2 text-[11px] leading-5", isLight ? "text-slate-500" : "text-slate-400")}>
+                    OpenClaw detail: {rawIssueDetail}
+                  </p>
+                ) : null}
                 {reviewAction ? (
                   <p className={cn("mt-2 text-[11px]", isLight ? "text-slate-500" : "text-slate-500")}>
                     Last operator action: {reviewAction}
                   </p>
                 ) : null}
+              </ReviewSection>
+
+              <ReviewSection icon={ListChecks} title="What to review" tone="warning" isLight={isLight}>
+                <ul className={cn("space-y-2 text-[12.5px] leading-5", isLight ? "text-slate-700" : "text-slate-200")}>
+                  {reviewGuidance.map((item) => (
+                    <li key={item} className="flex gap-2">
+                      <span className={cn("mt-2 h-1.5 w-1.5 shrink-0 rounded-full", isLight ? "bg-amber-500" : "bg-amber-200")} />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </ReviewSection>
+
+              <ReviewSection icon={Files} title="Files to inspect" tone={reportedFileCount > 0 ? "success" : "neutral"} isLight={isLight}>
+                {createdFiles.length > 0 ? (
+                  <div className="space-y-2">
+                    {createdFiles.slice(0, 6).map((file) => (
+                      <div
+                        key={`${file.path}:${file.displayPath}`}
+                        className={cn(
+                          "min-w-0 border-b pb-2 last:border-b-0 last:pb-0",
+                          isLight ? "border-slate-100" : "border-white/[0.08]"
+                        )}
+                      >
+                        <p className={cn("truncate font-mono text-[12px]", isLight ? "text-slate-800" : "text-slate-100")}>
+                          {file.displayPath || file.path}
+                        </p>
+                        {file.path && file.path !== file.displayPath ? (
+                          <p className={cn("mt-0.5 truncate text-[11px]", isLight ? "text-slate-500" : "text-slate-400")}>
+                            {file.path}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
+                    {createdFiles.length > 6 ? (
+                      <p className={cn("text-[11px]", isLight ? "text-slate-500" : "text-slate-400")}>
+                        {createdFiles.length - 6} more file{createdFiles.length - 6 === 1 ? "" : "s"} in the task evidence.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className={cn("text-[12.5px] leading-5", isLight ? "text-slate-600" : "text-slate-300")}>
+                    {reportedFileCount > 0
+                      ? `This task reports ${reportedFileCount} generated file${reportedFileCount === 1 ? "" : "s"}, but the detailed file list has not loaded yet.`
+                      : "OpenClaw did not report generated files for this task. Use the files evidence view if the agent appears to have written workspace files."}
+                  </p>
+                )}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className={cn(
+                    "mt-3 w-full justify-start gap-2 sm:w-auto",
+                    isLight && "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100"
+                  )}
+                  disabled={!currentTask || isActionPending}
+                  onClick={() => {
+                    if (currentTask) {
+                      onOpenEvidence(currentTask, "files");
+                    }
+                  }}
+                >
+                  <Eye className="h-4 w-4" />
+                  Open files
+                </Button>
+              </ReviewSection>
+
+              <ReviewSection icon={MessageSquare} title="Operator reply" isLight={isLight}>
+                <Textarea
+                  value={operatorReply}
+                  onChange={(event) => setOperatorReply(event.target.value)}
+                  placeholder="Answer the agent or add continuation instructions before continuing this task."
+                  className={cn(
+                    "min-h-[112px] resize-none text-[12.5px] leading-5",
+                    isLight
+                      ? "border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-300"
+                      : "border-white/[0.08] bg-black/20 text-slate-100 placeholder:text-slate-500 focus-visible:ring-cyan-300/25"
+                  )}
+                  disabled={!currentTask || isActionPending}
+                />
+                <div className="mt-3 flex justify-end">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className={cn(
+                      "w-full gap-2 sm:w-auto",
+                      isLight && "border-slate-200 bg-white text-slate-800 hover:bg-slate-100"
+                    )}
+                    disabled={!currentTask || isActionPending}
+                    onClick={() => void runAction("continue", () => {
+                      if (currentTask) {
+                        return onContinue(currentTask, capturedOutput, operatorReply);
+                      }
+                    })}
+                  >
+                    {pendingAction === "continue" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CornerDownRight className="h-4 w-4" />}
+                    {pendingAction === "continue"
+                      ? "Continuing..."
+                      : operatorReply.trim()
+                        ? "Send reply and continue"
+                        : "Continue task"}
+                  </Button>
+                </div>
               </ReviewSection>
 
               <ReviewSection icon={ClipboardList} title="Original prompt" isLight={isLight}>
@@ -330,7 +458,7 @@ export function TaskReviewDialog({
             disabled={!currentTask || isActionPending}
             onClick={() => void runAction("continue", () => {
               if (currentTask) {
-                return onContinue(currentTask, capturedOutput);
+                return onContinue(currentTask, capturedOutput, operatorReply);
               }
             })}
           >
@@ -426,6 +554,59 @@ function readCapturedTaskOutput(task: WorkItemRecord, integrityFinalResponse?: s
   const subtitle = task.subtitle.trim();
 
   return finalResponse || metadataFinalResponse || resultPreview || subtitle;
+}
+
+function resolveReviewIssueSummary(dispatchIssueDetail: string | null, integrityIssueDetail?: string | null) {
+  const detail = dispatchIssueDetail || integrityIssueDetail || null;
+
+  if (!detail) {
+    return null;
+  }
+
+  if (isGatewayWaitTimeoutDetail(detail)) {
+    return "OpenClaw accepted the task, but AgentOS did not capture a final agent answer before the Gateway wait window expired. Review the captured output and transcript; if the agent asked a question or the result is incomplete, send an operator reply or continuation.";
+  }
+
+  return detail;
+}
+
+function resolveReviewGuidance(input: {
+  task: WorkItemRecord;
+  createdFiles: RuntimeCreatedFile[];
+  capturedOutput: string;
+  rawIssueDetail: string | null;
+}) {
+  const fileCount = input.createdFiles.length || input.task.artifactCount;
+  const hasGatewayTimeout = input.rawIssueDetail ? isGatewayWaitTimeoutDetail(input.rawIssueDetail) : false;
+  const guidance: string[] = [];
+
+  if (hasGatewayTimeout) {
+    guidance.push(
+      "The review is not asking you to approve the timeout itself. It is asking whether the captured work is complete enough to accept."
+    );
+  } else {
+    guidance.push("Review the captured work before marking this task handled.");
+  }
+
+  if (fileCount > 0) {
+    guidance.push(
+      `Inspect the ${fileCount} generated file${fileCount === 1 ? "" : "s"} and decide whether they satisfy the original prompt.`
+    );
+  } else {
+    guidance.push("If the agent appears to have written files, open the files evidence view and verify the workspace output directly.");
+  }
+
+  if (input.capturedOutput.trim()) {
+    guidance.push("Check the captured output for missing sections, unanswered questions, or instructions that still need an operator reply.");
+  }
+
+  guidance.push("Accept the result if the work is good, send a reply and continue if context is missing, or retry if the run produced the wrong work.");
+
+  return guidance;
+}
+
+function isGatewayWaitTimeoutDetail(detail: string) {
+  return /OpenClaw Gateway wait timed out/i.test(detail);
 }
 
 function readTaskPromptText(task: WorkItemRecord) {

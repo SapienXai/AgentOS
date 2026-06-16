@@ -55,14 +55,21 @@ export function buildSnapshotAgentEntry(input: {
   profile: OpenClawAgent["profile"];
 }) {
   const configuredSkills = filterAgentPolicySkills(input.configured?.skills ?? []);
-  const agentName =
-    normalizeOptionalValue(input.identityOverrides?.name) ||
-    input.configured?.name ||
-    input.manifestAgent?.name ||
-    input.rawAgent.name ||
-    input.configured?.identity?.name ||
-    input.rawAgent.identityName ||
-    input.rawAgent.id;
+  const agentName = resolveSnapshotAgentDisplayName(
+    input.rawAgent.id,
+    [
+      input.identityOverrides?.name,
+      input.configured?.identity?.name,
+      input.configured?.name,
+      input.manifestAgent?.name,
+      input.rawAgent.identityName,
+      input.rawAgent.name,
+      input.rawAgent.id
+    ],
+    {
+      workspaceId: input.workspaceId
+    }
+  );
   const policy =
     input.manifestAgent?.policy ??
     resolveAgentPolicy(
@@ -109,9 +116,18 @@ export function buildSnapshotAgentEntry(input: {
     id: input.rawAgent.id,
     name: agentName,
     identityName:
-      normalizeOptionalValue(input.identityOverrides?.name) ||
-      input.configured?.identity?.name ||
-      input.rawAgent.identityName ||
+      resolveSnapshotAgentIdentityName(
+        input.rawAgent.id,
+        [
+          input.identityOverrides?.name,
+          input.configured?.identity?.name,
+          input.rawAgent.identityName,
+          input.manifestAgent?.name
+        ],
+        {
+          workspaceId: input.workspaceId
+        }
+      ) ||
       undefined,
     workspaceId: input.workspaceId,
     workspacePath: input.rawAgent.workspace,
@@ -185,4 +201,79 @@ export function buildSnapshotAgentEntry(input: {
     activeRuntimeIds,
     relationships
   } satisfies SnapshotAgentEntry;
+}
+
+export function resolveSnapshotAgentDisplayName(
+  agentId: string,
+  candidates: Array<string | null | undefined>,
+  options: {
+    workspaceId?: string | null;
+  } = {}
+) {
+  const idLikeName = candidates
+    .map((candidate) => normalizeOptionalValue(candidate))
+    .find((candidate) => candidate && isAgentIdLikeDisplayName(agentId, candidate));
+  const displayName = candidates
+    .map((candidate) => normalizeOptionalValue(candidate))
+    .find((candidate) => candidate && !isAgentIdLikeDisplayName(agentId, candidate));
+
+  return displayName ?? inferScopedAgentDisplayName(agentId, options.workspaceId) ?? idLikeName ?? agentId;
+}
+
+function resolveSnapshotAgentIdentityName(
+  agentId: string,
+  candidates: Array<string | null | undefined>,
+  options: {
+    workspaceId?: string | null;
+  } = {}
+) {
+  const displayName = candidates
+    .map((candidate) => normalizeOptionalValue(candidate))
+    .find((candidate) => candidate && !isAgentIdLikeDisplayName(agentId, candidate));
+
+  return displayName ?? inferScopedAgentDisplayName(agentId, options.workspaceId) ?? null;
+}
+
+function isAgentIdLikeDisplayName(agentId: string, value: string) {
+  const normalizedId = slugifyAgentName(agentId);
+  const normalizedValue = slugifyAgentName(value);
+
+  return Boolean(normalizedId && normalizedValue && normalizedId === normalizedValue);
+}
+
+function slugifyAgentName(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function inferScopedAgentDisplayName(agentId: string, workspaceId: string | null | undefined) {
+  const normalizedWorkspaceId = normalizeOptionalValue(workspaceId);
+
+  if (!normalizedWorkspaceId) {
+    return null;
+  }
+
+  const prefix = `${normalizedWorkspaceId}-`;
+
+  if (!agentId.startsWith(prefix)) {
+    return null;
+  }
+
+  const localId = agentId.slice(prefix.length);
+  const words = localId
+    .split(/[-_\s]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (words.length === 0) {
+    return null;
+  }
+
+  return words
+    .map((word) => word.length <= 2 ? word.toUpperCase() : word[0]?.toUpperCase() + word.slice(1))
+    .join(" ");
 }

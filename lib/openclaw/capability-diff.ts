@@ -148,7 +148,16 @@ function buildCapabilityDiffRow(input: {
     removedEvents,
     missingRequiredMethods,
     reason: input.targetOperation?.reason || input.certifiedOperation?.reason || "No capability reason reported.",
-    recovery: input.targetOperation?.recovery ?? input.certifiedOperation?.recovery ?? null
+    recovery: input.targetOperation?.recovery ?? input.certifiedOperation?.recovery ?? null,
+    evidenceSource:
+      input.targetDiagnostics.capabilityMatrix?.compatibility?.methodContract?.source ??
+      input.certifiedDiagnostics.capabilityMatrix?.compatibility?.methodContract?.source ??
+      null,
+    preferredMethod: input.targetOperation?.preferredMethod ?? input.certifiedOperation?.preferredMethod ?? null,
+    supportedMethod: input.targetOperation?.supportedMethod ?? null,
+    aliasMethods: input.targetOperation?.aliasMethods ?? [],
+    targetReason: input.targetOperation?.reason ?? "Target capability reason was not reported.",
+    targetRecovery: input.targetOperation?.recovery ?? null
   };
 }
 

@@ -591,9 +591,11 @@ export async function deployWorkspacePlan(
     const result = {
       plan: finalPlan,
       workspaceId: created.workspaceId,
+      workspaceName: created.workspaceName,
       workspacePath: created.workspacePath,
       primaryAgentId: created.primaryAgentId,
       agentIds: created.agentIds,
+      agentProjections: created.agentProjections,
       kickoffRunIds: finalPlan.deploy.kickoffRunIds,
       warnings
     };

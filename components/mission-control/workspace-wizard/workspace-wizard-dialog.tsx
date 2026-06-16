@@ -33,9 +33,11 @@ import {
 } from "@/lib/openclaw/planner-presenters";
 import type {
   MissionControlSnapshot,
+  WorkspaceCreateResult,
   WorkspaceCreateRules,
   WorkspaceModelProfile,
   WorkspacePlan,
+  WorkspacePlanDeployResult,
   WorkspaceTeamPreset,
   WorkspaceTemplate
 } from "@/lib/agentos/contracts";
@@ -64,7 +66,7 @@ type WorkspaceWizardDialogProps = {
   surfaceTheme: SurfaceTheme;
   snapshot: MissionControlSnapshot;
   onRefresh: () => Promise<void>;
-  onWorkspaceCreated: (workspaceId: string) => void;
+  onWorkspaceCreated: (result: WorkspaceCreateResult | WorkspacePlanDeployResult) => void;
   onWorkspaceUpdated?: (workspaceId: string) => void;
 };
 
@@ -1805,7 +1807,7 @@ function ChoiceCard({
         "group flex h-full min-h-[90px] flex-col justify-between rounded-[18px] border p-3 text-left transition-colors",
         selected
           ? isLight
-            ? "border-[#1f1b17] bg-[#1f1b17] text-white"
+            ? "border-[#c89e73] bg-[#fff1df] text-[#4d3523] shadow-[0_0_0_1px_rgba(200,158,115,0.22)]"
             : "border-cyan-300 bg-cyan-300/10 text-white"
           : isLight
             ? "border-[#e8e0d6] bg-[#faf6f1] text-[#171410] hover:border-[#d7c8ba] hover:bg-[#f6efe6]"
@@ -1820,7 +1822,7 @@ function ChoiceCard({
               "inline-flex size-8 shrink-0 items-center justify-center rounded-full border",
               selected
                 ? isLight
-                  ? "border-white/15 bg-white/10 text-white"
+                  ? "border-[#d9b17f] bg-white text-[#6a4524]"
                   : "border-white/15 bg-white/10 text-white"
                 : isLight
                   ? "border-[#ddd3c5] bg-white text-[#5f564b]"
@@ -1838,7 +1840,7 @@ function ChoiceCard({
         </div>
 
         {selected ? (
-          <Badge variant={isLight ? "muted" : "default"} className={isLight ? "bg-white text-[#3d342b]" : ""}>
+          <Badge variant={isLight ? "muted" : "default"} className={isLight ? "border-[#e0c39e] bg-white text-[#5b3c22]" : ""}>
             Selected
           </Badge>
         ) : null}
@@ -1853,7 +1855,7 @@ function ChoiceCard({
             "inline-flex size-5 items-center justify-center rounded-full border",
             selected
               ? isLight
-                ? "border-white/15 bg-white/10 text-white"
+                ? "border-[#c89e73] bg-[#c89e73] text-white"
                 : "border-white/15 bg-white/10 text-white"
               : isLight
                 ? "border-[#d9cec2] bg-white text-transparent"
@@ -1900,7 +1902,7 @@ function RuleToggleRow({
           "mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-md border",
           checked
             ? isLight
-              ? "border-[#1f1b17] bg-[#1f1b17] text-white"
+              ? "border-[#c89e73] bg-[#fff1df] text-[#6a4524]"
               : "border-cyan-300 bg-cyan-300 text-slate-950"
             : isLight
               ? "border-[#d9d0c6] bg-white text-transparent"
@@ -1944,7 +1946,7 @@ function PresetButton({
         "w-full rounded-[14px] border px-3 py-2 text-left transition-colors",
         active
           ? isLight
-            ? "border-[#1f1b17] bg-[#1f1b17] text-white"
+            ? "border-[#c89e73] bg-[#fff1df] text-[#4d3523] shadow-[0_0_0_1px_rgba(200,158,115,0.18)]"
             : "border-cyan-300 bg-cyan-300/15 text-cyan-50"
           : isLight
             ? "border-[#e8e0d6] bg-[#faf6f1] text-[#171410] hover:border-[#d8c9ba] hover:bg-[#f6efe6]"

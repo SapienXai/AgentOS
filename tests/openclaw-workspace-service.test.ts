@@ -54,6 +54,10 @@ import {
 import {
   assertWorkspaceBootstrapAgentIdsAvailable
 } from "@/lib/openclaw/domains/agent-provisioning";
+import {
+  buildDefaultWorkspaceAgents,
+  buildWorkspaceAgentName
+} from "@/lib/openclaw/workspace-presets";
 import type {
   MissionControlSnapshot,
   WorkspaceAgentBlueprintInput
@@ -134,6 +138,16 @@ test("workspace creation does not downgrade validation failures to sync warnings
     formatPostCreateWorkspaceConfigSyncWarning(new Error('Agent id "main" already exists in workspace "Workspace".')),
     null
   );
+});
+
+test("default workspace agents keep user-facing role names separate from scoped ids", () => {
+  const soloAgents = buildDefaultWorkspaceAgents("software", "solo", "Tortellini");
+  const coreAgents = buildDefaultWorkspaceAgents("software", "core", "Tortellini");
+
+  assert.equal(soloAgents[0]?.id, "builder");
+  assert.equal(soloAgents[0]?.name, "Builder");
+  assert.equal(coreAgents[0]?.name, "Builder");
+  assert.equal(buildWorkspaceAgentName("Tortellini", "Builder", "Builder"), "Builder");
 });
 
 test("workspace bootstrap allows existing agent ids inside the target workspace", () => {

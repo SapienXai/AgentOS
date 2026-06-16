@@ -28,6 +28,7 @@ import type {
 } from "@/lib/agentos/contracts";
 import type { GatewayNativeAuthStatus } from "@/lib/openclaw/gateway-auth";
 import type { OpenClawCapabilityDiffReport } from "@/lib/openclaw/types";
+import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
 import { isOpenClawOnboardingModelReady } from "@/lib/openclaw/readiness";
 import { cn } from "@/lib/utils";
 
@@ -93,6 +94,8 @@ export function MissionControlShellSettingsPanel({
   const isUpdateRunning = updateRunState === "running";
   const isOpenClawReady = isOpenClawOnboardingModelReady(snapshot);
   const recommendedVersion = snapshot.diagnostics.updateCompatibility?.recommendedVersion ?? snapshot.diagnostics.latestVersion;
+  const updateDirection = resolveUpdateDirection(snapshot.diagnostics.version, recommendedVersion);
+  const isRecommendedRollback = updateDirection === "rollback";
   const hasUpdateAvailable = Boolean(snapshot.diagnostics.updateAvailable && recommendedVersion);
   const isUpdateRegistryLoading = Boolean(
     snapshot.diagnostics.version && !snapshot.diagnostics.latestVersion && !snapshot.diagnostics.updateError
@@ -100,7 +103,9 @@ export function MissionControlShellSettingsPanel({
   const updateStatusText = isCheckingForUpdates
     ? "Checking update registry..."
     : hasUpdateAvailable
-      ? "Update available"
+      ? isRecommendedRollback
+        ? "Rollback available"
+        : "Update available"
       : snapshot.diagnostics.updateError
         ? "Check failed"
         : isUpdateRegistryLoading
@@ -225,10 +230,10 @@ export function MissionControlShellSettingsPanel({
                   onClick={() => onOpenUpdateDialog(recommendedVersion, "recommended")}
                   disabled={isUpdateRunning}
                   className="min-w-0 rounded-full bg-emerald-600 px-2 text-[10px] text-white shadow-[0_12px_24px_rgba(16,185,129,0.24)] hover:bg-emerald-500"
-                  aria-label={`Update to ${recommendedUpdateLabel}`}
+                  aria-label={`${isRecommendedRollback ? "Rollback" : "Update"} to ${recommendedUpdateLabel}`}
                 >
                   <ArrowUpRight className="h-3 w-3" />
-                  Update
+                  {isRecommendedRollback ? "Rollback" : "Update"}
                 </Button>
               ) : null}
             </div>
@@ -486,6 +491,14 @@ async function fetchGatewayAuthStatus() {
 
   const result = (await response.json()) as { authStatus: GatewayNativeAuthStatus };
   return result.authStatus;
+}
+
+function resolveUpdateDirection(currentVersion: string | undefined, targetVersion: string | undefined) {
+  if (!currentVersion || !targetVersion) {
+    return "update";
+  }
+
+  return compareVersionStrings(targetVersion, currentVersion) < 0 ? "rollback" : "update";
 }
 
 function formatSnapshotHealthLabel(snapshot: MissionControlSnapshot) {

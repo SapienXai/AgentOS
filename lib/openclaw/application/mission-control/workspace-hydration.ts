@@ -1,6 +1,9 @@
 import "server-only";
 
-import { buildSnapshotAgentEntry } from "@/lib/openclaw/adapter/agent-snapshot-adapter";
+import {
+  buildSnapshotAgentEntry,
+  resolveSnapshotAgentDisplayName
+} from "@/lib/openclaw/adapter/agent-snapshot-adapter";
 import { readAgentBootstrapProfile } from "@/lib/openclaw/adapter/agent-profile-adapter";
 import {
   buildWorkspaceBootstrapProfileCache,
@@ -137,14 +140,23 @@ export async function hydrateMissionControlWorkspaceGraph(input: {
         (await readWorkspaceProjectManifest(rawAgent.workspace));
       manifestByWorkspace.set(rawAgent.workspace, manifest);
       const manifestAgent = manifest.agents.find((entry) => entry.id === rawAgent.id) ?? null;
+      const agentDisplayName = resolveSnapshotAgentDisplayName(
+        rawAgent.id,
+        [
+          configured?.identity?.name,
+          configured?.name,
+          manifestAgent?.name,
+          rawAgent.identityName,
+          rawAgent.name,
+          rawAgent.id
+        ],
+        {
+          workspaceId
+        }
+      );
       const profile = await readAgentBootstrapProfile(rawAgent.workspace, {
         agentId: rawAgent.id,
-        agentName:
-          configured?.name ||
-          rawAgent.name ||
-          configured?.identity?.name ||
-          rawAgent.identityName ||
-          rawAgent.id,
+        agentName: agentDisplayName,
         configuredSkills: filterAgentPolicySkills(configured?.skills ?? []),
         configuredTools: uniqueStrings([
           ...(manifestAgent?.toolIds ?? []),

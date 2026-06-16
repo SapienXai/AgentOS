@@ -38,7 +38,12 @@ import { WorkspaceChannelsDialog } from "@/components/mission-control/workspace-
 import { WorkspaceContextFilesDialog } from "@/components/mission-control/workspace-context-files-dialog";
 import { WorkspaceWizardDialog } from "@/components/mission-control/workspace-wizard/workspace-wizard-dialog";
 import { resolveSuggestedAgentModelId } from "@/components/mission-control/create-agent-dialog.utils";
-import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
+import {
+  buildPendingAgentsForWorkspaceResult,
+  parsePendingAgentProjections,
+  pendingAgentProjectionStorageKey,
+  type PendingAgentProjection
+} from "@/components/mission-control/pending-agent-projection";
 import { ConnectAccountWizard } from "@/components/operations/accounts/accounts-page-content";
 import dynamic from "next/dynamic";
 import { toast } from "@/components/ui/sonner";
@@ -109,6 +114,7 @@ import type {
   OpenClawUpdateStreamEvent,
   WorkspaceCreateResult,
   WorkspaceCreateStreamEvent,
+  WorkspacePlanDeployResult,
   WorkItemRecord
 } from "@/lib/agentos/contracts";
 import {
@@ -192,6 +198,14 @@ function wait(ms: number) {
   });
 }
 
+function loadPendingAgentProjections() {
+  if (typeof globalThis.localStorage === "undefined") {
+    return [];
+  }
+
+  return parsePendingAgentProjections(globalThis.localStorage.getItem(pendingAgentProjectionStorageKey));
+}
+
 export function MissionControlShell({
   initialSnapshot,
   mode = "mission"
@@ -249,7 +263,7 @@ export function MissionControlShell({
 
   const missionDispatchAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const [recentCreatedAgentId, setRecentCreatedAgentId] = useState<string | null>(null);
-  const [pendingCreatedAgents, setPendingCreatedAgents] = useState<PendingAgentProjection[]>([]);
+  const [pendingCreatedAgents, setPendingCreatedAgents] = useState<PendingAgentProjection[]>(loadPendingAgentProjections);
   const [agentCreationWarnings, setAgentCreationWarnings] = useState<Record<string, string>>({});
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
@@ -777,6 +791,33 @@ export function MissionControlShell({
       agentCreationWarningTimeoutsRef.current.set(agent.id, timeout);
     }
   }, [selectNode, setActiveWorkspaceId]);
+
+  const handleWorkspaceCreated = useCallback((result: WorkspaceCreateResult | WorkspacePlanDeployResult) => {
+    const pendingAgents = buildPendingAgentsForWorkspaceResult(result);
+
+    if (pendingAgents.length > 0) {
+      const pendingAgentIds = new Set(pendingAgents.map((agent) => agent.id));
+      setPendingCreatedAgents((current) => [
+        ...current.filter((agent) => !pendingAgentIds.has(agent.id)),
+        ...pendingAgents
+      ]);
+    }
+
+    openWorkspaceOnCanvas(result.workspaceId, { markPending: true });
+  }, [openWorkspaceOnCanvas]);
+
+  useEffect(() => {
+    if (typeof globalThis.localStorage === "undefined") {
+      return;
+    }
+
+    if (pendingCreatedAgents.length === 0) {
+      globalThis.localStorage.removeItem(pendingAgentProjectionStorageKey);
+      return;
+    }
+
+    globalThis.localStorage.setItem(pendingAgentProjectionStorageKey, JSON.stringify(pendingCreatedAgents));
+  }, [pendingCreatedAgents]);
 
   useEffect(() => {
     if (pendingCreatedAgents.length === 0) {
@@ -1529,14 +1570,16 @@ export function MissionControlShell({
     };
   }, [isSettingsOpen]);
 
-  const runOpenClawUpdate = async (action: "update" | "rollback" = "update") => {
+  const runOpenClawUpdate = async (action: "update" | "rollback" | "certify-round-trip" = "update") => {
     if (updateRunState === "running") {
       setIsUpdateDialogOpen(true);
       return;
     }
 
     const updateUpdateToast = (description: string) => {
-      updateOperationToastIdRef.current = toast.loading("Updating OpenClaw...", {
+      updateOperationToastIdRef.current = toast.loading(
+        action === "certify-round-trip" ? "Certifying OpenClaw..." : "Updating OpenClaw...",
+        {
         id: updateOperationToastIdRef.current ?? undefined,
         description,
         duration: Infinity,
@@ -1544,7 +1587,8 @@ export function MissionControlShell({
           label: "View",
           onClick: () => setIsUpdateDialogOpen(true)
         }
-      });
+        }
+      );
     };
     const completeUpdateToast = (ok: boolean, description: string) => {
       const toastOptions = {
@@ -1558,9 +1602,9 @@ export function MissionControlShell({
       };
 
       if (ok) {
-        toast.success("OpenClaw updated.", toastOptions);
+        toast.success(action === "certify-round-trip" ? "OpenClaw certification completed." : "OpenClaw updated.", toastOptions);
       } else {
-        toast.error("OpenClaw update failed.", toastOptions);
+        toast.error(action === "certify-round-trip" ? "OpenClaw certification failed." : "OpenClaw update failed.", toastOptions);
       }
 
       updateOperationToastIdRef.current = null;
@@ -1587,7 +1631,13 @@ export function MissionControlShell({
 
     setIsUpdateDialogOpen(true);
     setUpdateRunState("running");
-    setUpdateStatusMessage(action === "rollback" ? "Starting OpenClaw rollback..." : "Starting OpenClaw update...");
+    setUpdateStatusMessage(
+      action === "rollback"
+        ? "Starting OpenClaw rollback..."
+        : action === "certify-round-trip"
+          ? "Starting OpenClaw certification round-trip..."
+          : "Starting OpenClaw update..."
+    );
     setUpdateResultMessage(null);
     setUpdateLog("");
     setUpdateManualCommand(null);
@@ -1597,7 +1647,13 @@ export function MissionControlShell({
       window.localStorage.removeItem(openClawCapabilityDiffStorageKey);
       window.localStorage.removeItem(openClawCertificationScorecardStorageKey);
     }
-    updateUpdateToast(action === "rollback" ? "Starting OpenClaw rollback..." : "Starting OpenClaw update...");
+    updateUpdateToast(
+      action === "rollback"
+        ? "Starting OpenClaw rollback..."
+        : action === "certify-round-trip"
+          ? "Starting OpenClaw certification round-trip..."
+          : "Starting OpenClaw update..."
+    );
 
     try {
       const response = await fetch("/api/update", {
@@ -1608,7 +1664,7 @@ export function MissionControlShell({
         body: JSON.stringify({
           action,
           confirmed: true,
-          ...(action === "update"
+          ...(action === "update" || action === "certify-round-trip"
             ? {
                 targetVersion: updateTargetVersion ?? snapshot.diagnostics.updateCompatibility?.recommendedVersion,
                 mode: updateMode
@@ -2987,6 +3043,7 @@ export function MissionControlShell({
       "mission-control-workspace-plan-id",
       "mission-control-recent-prompts",
       "mission-control-node-positions",
+      pendingAgentProjectionStorageKey,
       taskReviewStateStorageKey
     ];
     const prefixKeys = [
@@ -3369,9 +3426,7 @@ export function MissionControlShell({
         surfaceTheme={surfaceTheme}
         snapshot={snapshot}
         onRefresh={refresh}
-        onWorkspaceCreated={(workspaceId) => {
-          openWorkspaceOnCanvas(workspaceId, { markPending: true });
-        }}
+        onWorkspaceCreated={handleWorkspaceCreated}
         onWorkspaceUpdated={(workspaceId) => {
           openWorkspaceOnCanvas(workspaceId, { markPending: true });
         }}
@@ -3459,8 +3514,8 @@ export function MissionControlShell({
             resetUpdateDialogState();
           }
         }}
-        onRunOpenClawUpdate={() => {
-          void runOpenClawUpdate();
+        onRunOpenClawUpdate={(action) => {
+          void runOpenClawUpdate(action);
         }}
       />
     </>
@@ -3537,6 +3592,7 @@ export function MissionControlShell({
             onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
             onEditWorkspace={openWorkspaceWizardForEdit}
             onSnapshotChange={setSnapshot}
+            pendingCreatedAgents={pendingCreatedAgents}
             onAgentCreationPending={handleAgentCreationPending}
             onAgentCreatedVisible={handleCreatedAgentVisible}
           />
@@ -3595,6 +3651,7 @@ export function MissionControlShell({
             onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
             onEditWorkspace={openWorkspaceWizardForEdit}
             onSnapshotChange={setSnapshot}
+            pendingCreatedAgents={pendingCreatedAgents}
             onAgentCreationPending={handleAgentCreationPending}
             onAgentCreatedVisible={handleCreatedAgentVisible}
           />
@@ -4196,9 +4253,7 @@ export function MissionControlShell({
           surfaceTheme={surfaceTheme}
           snapshot={snapshot}
           onRefresh={refresh}
-          onWorkspaceCreated={(workspaceId) => {
-            openWorkspaceOnCanvas(workspaceId, { markPending: true });
-          }}
+          onWorkspaceCreated={handleWorkspaceCreated}
           onWorkspaceUpdated={(workspaceId) => {
             openWorkspaceOnCanvas(workspaceId, { markPending: true });
           }}
@@ -4286,8 +4341,8 @@ export function MissionControlShell({
               resetUpdateDialogState();
             }
           }}
-          onRunOpenClawUpdate={() => {
-            void runOpenClawUpdate();
+          onRunOpenClawUpdate={(action) => {
+            void runOpenClawUpdate(action);
           }}
         />
       </div>

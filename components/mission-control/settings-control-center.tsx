@@ -52,6 +52,7 @@ import type {
   GatewayNativeAuthCredentialKind,
   GatewayNativeAuthStatus
 } from "@/lib/openclaw/gateway-auth";
+import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
 import { compactPath } from "@/lib/openclaw/presenters";
 import type {
   OpenClawCapabilityDiffReport,
@@ -232,6 +233,11 @@ export function SettingsControlCenter(
     updateCompatibility?.recommendedDecision.allowed &&
       normalizedRecommendedVersion &&
       normalizedRecommendedVersion !== normalizedCurrentVersion
+  );
+  const isCertifiedRollback = Boolean(
+    normalizedCurrentVersion &&
+      normalizedRecommendedVersion &&
+      compareVersionStrings(normalizedRecommendedVersion, normalizedCurrentVersion) < 0
   );
   const hasRegistryUpdateAvailable = Boolean(
     normalizedLatestVersion &&
@@ -917,7 +923,7 @@ export function SettingsControlCenter(
                       className="h-9 rounded-full bg-primary px-4 text-xs text-primary-foreground hover:bg-primary/90"
                     >
                       {updateRunState === "running" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="h-3.5 w-3.5" />}
-                      Update to certified
+                      {isCertifiedRollback ? "Rollback to certified" : "Update to certified"}
                     </Button>
                     <Button
                       type="button"

@@ -1323,7 +1323,7 @@ function PresetButton({
         "w-full rounded-[14px] border px-3 py-2 text-left transition-colors",
         active
           ? isLight
-            ? "border-[#1f1b17] bg-[#1f1b17] text-white"
+            ? "border-[#c89e73] bg-[#fff1df] text-[#4d3523] shadow-[0_0_0_1px_rgba(200,158,115,0.18)]"
             : "border-cyan-300 bg-cyan-300/15 text-cyan-50"
           : isLight
             ? "border-[#e8e0d6] bg-[#faf6f1] text-[#171410] hover:border-[#d8c9ba] hover:bg-[#f6efe6]"

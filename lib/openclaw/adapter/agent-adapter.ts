@@ -13,7 +13,7 @@ export function buildAgentPayloadsFromConfig(
 ): AgentPayload {
   return dedupeLegacyAgentPayloads(agentConfig.map((entry) => ({
     id: entry.id,
-    name: entry.name || entry.identity?.name || entry.id,
+    name: resolveConfigAgentDisplayName(entry),
     identityName: entry.identity?.name,
     identityEmoji: entry.identity?.emoji,
     identitySource: entry.identity ? "config" : undefined,
@@ -39,7 +39,7 @@ export function buildAgentPayloadsFromGatewayList(
 
     return {
       id: entry.id,
-      name: entry.name || identity?.name || configured?.name || entry.id,
+      name: resolveGatewayAgentDisplayName(entry.id, entry.name, identity?.name, configured?.name),
       identityName: identity?.name,
       identityEmoji: identity?.emoji,
       identitySource: entry.identity ? "gateway" : configured?.identity ? "config" : undefined,
@@ -49,6 +49,42 @@ export function buildAgentPayloadsFromGatewayList(
       isDefault: entry.id === gatewayPayload.defaultId || Boolean(configured?.default)
     };
   }), openClawStateRootPath);
+}
+
+function resolveConfigAgentDisplayName(entry: AgentConfigPayload[number]) {
+  return resolveAgentDisplayName({
+    id: entry.id,
+    primaryName: entry.name,
+    fallbackName: entry.identity?.name
+  });
+}
+
+function resolveGatewayAgentDisplayName(
+  agentId: string,
+  gatewayName: string | undefined,
+  identityName: string | undefined,
+  configuredName: string | undefined
+) {
+  return resolveAgentDisplayName({
+    id: agentId,
+    primaryName: gatewayName,
+    fallbackName: identityName ?? configuredName
+  });
+}
+
+function resolveAgentDisplayName(input: {
+  id: string;
+  primaryName: string | undefined;
+  fallbackName: string | undefined;
+}) {
+  const primaryName = normalizeOptionalValue(input.primaryName);
+  const fallbackName = normalizeOptionalValue(input.fallbackName);
+
+  if (primaryName && primaryName !== input.id) {
+    return primaryName;
+  }
+
+  return fallbackName ?? primaryName ?? input.id;
 }
 
 function dedupeLegacyAgentPayloads(agents: AgentPayload, openClawStateRootPath: string): AgentPayload {

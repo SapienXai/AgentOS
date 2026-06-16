@@ -13,6 +13,7 @@ import {
 } from "@/components/mission-control/task-review-state";
 import { resolveTaskPrompt } from "@/components/mission-control/mission-control-shell.utils";
 import type { WorkItemRecord } from "@/lib/agentos/contracts";
+import { buildTaskReviewContinuationPrompt } from "@/lib/openclaw/domains/task-review-continuation";
 
 type InspectorTabId = "overview" | "chat" | "output" | "files" | "raw";
 
@@ -39,33 +40,6 @@ type UseTaskReviewWorkflowInput = {
   setIsComposerActive: (active: boolean) => void;
   refreshSnapshot: (options?: { force?: boolean }) => unknown;
 };
-
-function limitTaskReviewMessageSection(value: string, maxLength: number) {
-  const normalized = value.trim();
-
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, maxLength).trimEnd()}\n\n[truncated for task continuation]`;
-}
-
-function buildTaskReviewContinuationPrompt(task: WorkItemRecord, capturedOutput: string) {
-  const originalPrompt = limitTaskReviewMessageSection(resolveTaskPrompt(task), 3200);
-  const output = limitTaskReviewMessageSection(capturedOutput, 7600);
-
-  return [
-    "Continue this task from the last captured output. Finish the remaining work and verify the result.",
-    "",
-    "Original mission:",
-    originalPrompt,
-    output ? "" : null,
-    output ? "Last captured output:" : null,
-    output || null
-  ]
-    .filter((entry): entry is string => typeof entry === "string")
-    .join("\n");
-}
 
 function buildTaskReviewRetryPrompt(task: WorkItemRecord) {
   return [
@@ -160,8 +134,8 @@ export function useTaskReviewWorkflow({
   );
 
   const continueTaskReview = useCallback(
-    async (task: WorkItemRecord, capturedOutput: string) => {
-      const message = buildTaskReviewContinuationPrompt(task, capturedOutput);
+    async (task: WorkItemRecord, capturedOutput: string, operatorMessage?: string) => {
+      const message = buildTaskReviewContinuationPrompt(task, capturedOutput, operatorMessage);
 
       try {
         const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/control`, {
@@ -181,7 +155,7 @@ export function useTaskReviewWorkflow({
           throw new Error(payload?.error || "Unable to continue this task.");
         }
 
-        recordTaskReviewResolution(task, "continued", "Accepted continuation");
+        recordTaskReviewResolution(task, "continued", operatorMessage?.trim() ? "Sent operator reply" : "Accepted continuation");
         selectNode(task.id, "output");
         setIsInspectorOpen(true);
         closeTaskReview();

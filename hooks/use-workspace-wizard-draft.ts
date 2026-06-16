@@ -61,7 +61,7 @@ type UseWorkspaceWizardDraftOptions = {
   initialMode: WorkspaceWizardMode;
   workspaceEditId?: string | null;
   onRefresh: () => Promise<void>;
-  onWorkspaceCreated: (workspaceId: string) => void;
+  onWorkspaceCreated: (result: WorkspaceCreateResult | WorkspacePlanDeployResult) => void;
   onWorkspaceUpdated?: (workspaceId: string) => void;
 };
 
@@ -539,7 +539,7 @@ export function useWorkspaceWizardDraft({
       const result = createdResult as WorkspaceCreateResult;
       clearStoredPlan();
       await onRefresh();
-      onWorkspaceCreated(result.workspaceId);
+      onWorkspaceCreated(result);
 
       toast.success("Workspace created.", {
         description: `${result.agentIds.length} agent${result.agentIds.length === 1 ? "" : "s"} created at ${result.workspacePath}`
@@ -692,7 +692,7 @@ export function useWorkspaceWizardDraft({
       commitPlan(result.plan);
       clearStoredPlan();
       await onRefresh();
-      onWorkspaceCreated(result.workspaceId);
+      onWorkspaceCreated(result);
 
       toast.success("Workspace deployed.", {
         description: result.workspacePath
