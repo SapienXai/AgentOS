@@ -587,7 +587,20 @@ export function resolveOnboardingAction(snapshot: MissionControlSnapshot) {
 }
 
 export function hasAgentOSWorkspaceSetup(snapshot: Pick<MissionControlSnapshot, "workspaces" | "agents">) {
-  return (snapshot.workspaces?.length ?? 0) > 0 && (snapshot.agents?.length ?? 0) > 0;
+  return snapshot.workspaces.some((workspace) => {
+    const workspaceAgentIds = new Set(workspace.agentIds ?? []);
+    const workspacePath = normalizeSetupPath(workspace.path);
+
+    return snapshot.agents.some((agent) =>
+      agent.workspaceId === workspace.id ||
+      workspaceAgentIds.has(agent.id) ||
+      (Boolean(workspacePath) && normalizeSetupPath(agent.workspacePath) === workspacePath)
+    );
+  });
+}
+
+function normalizeSetupPath(value?: string | null) {
+  return value?.trim().replace(/\/+$/, "") || null;
 }
 
 export function resolveLaunchpadWorkspaceSetupReadiness(

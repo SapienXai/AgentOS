@@ -15,6 +15,7 @@ import {
 import {
   completedEmptyAgentChatResponseMessage,
   emptyAgentChatResponseMessage,
+  extractAgentChatEmptyResponseDiagnosticText,
   extractAssistantTextFromAgentChatStreamLine,
   extractAgentChatMessagesFromSessionHistory,
   extractLatestAssistantTextFromSessionHistory,
@@ -476,14 +477,17 @@ export async function POST(
             ]
           };
         }
+        const emptyResponseDiagnosticMessage = resolveEmptyAgentChatDiagnosticMessage(result, {
+          modelId: activeAgentModelId
+        });
         response = recoverDirectIdentityResponse(response, formatAgentDisplayName(agent), operatorMessage);
         response = attachStreamMissionControlAction(response, latestStreamAction);
-        response = recoverCompletedEmptyAgentChatResponse(response);
+        response = recoverCompletedEmptyAgentChatResponse(response, emptyResponseDiagnosticMessage);
         if (isEmptyAgentChatResponse(response)) {
           await send({
             type: "done",
             ok: false,
-            message: emptyAgentChatResponseMessage
+            message: emptyResponseDiagnosticMessage ?? emptyAgentChatResponseMessage
           });
           return;
         }
@@ -732,18 +736,23 @@ function isEmptyAgentChatResponse(response: MissionResponse) {
   return response.meta?.emptyAgentChatResponse === true;
 }
 
-function recoverCompletedEmptyAgentChatResponse(response: MissionResponse): MissionResponse {
+function recoverCompletedEmptyAgentChatResponse(
+  response: MissionResponse,
+  diagnosticMessage?: string | null
+): MissionResponse {
   if (!isCompletedEmptyAgentChatResponse(response)) {
     return response;
   }
 
+  const message = diagnosticMessage ?? completedEmptyAgentChatResponseMessage;
+
   return {
     ...response,
     status: "completed",
-    summary: completedEmptyAgentChatResponseMessage,
+    summary: message,
     payloads: [
       {
-        text: completedEmptyAgentChatResponseMessage,
+        text: message,
         mediaUrl: null
       }
     ],
@@ -753,6 +762,25 @@ function recoverCompletedEmptyAgentChatResponse(response: MissionResponse): Miss
       emptyAgentChatCompletedWithoutText: true
     }
   };
+}
+
+function resolveEmptyAgentChatDiagnosticMessage(
+  payload: AgentChatCommandPayload,
+  options: {
+    modelId?: string | null;
+  } = {}
+) {
+  const diagnosticText = extractAgentChatEmptyResponseDiagnosticText(payload);
+
+  if (!diagnosticText) {
+    return null;
+  }
+
+  return (
+    resolveOpenClawRuntimeFailureMessage(diagnosticText, options) ||
+    resolveAgentChatRuntimeFailureMessage(diagnosticText) ||
+    `OpenClaw completed the chat turn without assistant text, but exposed this diagnostic: ${diagnosticText}`
+  );
 }
 
 function recoverDirectIdentityResponse(response: MissionResponse, agentName: string, operatorMessage: string): MissionResponse {

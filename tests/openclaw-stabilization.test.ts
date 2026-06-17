@@ -974,8 +974,8 @@ test("model onboarding requires an explicit selection before verification", () =
       defaultModelId: "openai/gpt-5.4"
     }),
     {
-      kind: "dismiss",
-      label: "Enter AgentOS"
+      kind: "set-default",
+      label: "Verify model setup"
     }
   );
 
@@ -1004,8 +1004,8 @@ test("model onboarding requires an explicit selection before verification", () =
       defaultModelId: "openai/gpt-5.4"
     }),
     {
-      kind: "dismiss",
-      label: "Enter AgentOS"
+      kind: "set-default",
+      label: "Verify model setup"
     }
   );
 

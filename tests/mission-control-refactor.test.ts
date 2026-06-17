@@ -20,6 +20,7 @@ import {
   createOptimisticMissionTaskRecord,
   buildLaunchpadWorkspaceHandoffProgress,
   buildWorkspaceSelectionStorageKey,
+  hasAgentOSWorkspaceSetup,
   mergeSnapshotWithOptimisticTasks,
   resolveGatewayDraft,
   resolveLaunchpadWorkspaceSetupReadiness,
@@ -431,12 +432,14 @@ test("onboarding launchpad requires confirmed setup or a workspace-backed model"
     ...detectedDefaultOnly,
     workspaces: [
       {
-        id: "workspace-1"
+        id: "workspace-1",
+        agentIds: ["agent-1"]
       }
     ],
     agents: [
       {
-        id: "agent-1"
+        id: "agent-1",
+        workspaceId: "workspace-1"
       }
     ]
   } as unknown as MissionControlSnapshot;
@@ -507,6 +510,56 @@ test("onboarding launchpad requires confirmed setup or a workspace-backed model"
     }),
     true
   );
+});
+
+test("workspace setup requires a workspace-backed agent", () => {
+  const unrelatedRecords = {
+    workspaces: [
+      {
+        id: "workspace-1",
+        path: "/tmp/workspace-1",
+        agentIds: []
+      }
+    ],
+    agents: [
+      {
+        id: "agent-1",
+        workspaceId: "workspace-2",
+        workspacePath: "/tmp/workspace-2"
+      }
+    ]
+  } as unknown as MissionControlSnapshot;
+  const linkedByWorkspaceAgentIds = {
+    ...unrelatedRecords,
+    workspaces: [
+      {
+        id: "workspace-1",
+        path: "/tmp/workspace-1",
+        agentIds: ["agent-1"]
+      }
+    ],
+    agents: [
+      {
+        id: "agent-1",
+        workspaceId: "workspace-2",
+        workspacePath: "/tmp/workspace-2"
+      }
+    ]
+  } as unknown as MissionControlSnapshot;
+  const linkedByPath = {
+    ...unrelatedRecords,
+    agents: [
+      {
+        id: "agent-1",
+        workspaceId: "workspace-2",
+        workspacePath: "/tmp/workspace-1/"
+      }
+    ]
+  } as unknown as MissionControlSnapshot;
+
+  assert.equal(hasAgentOSWorkspaceSetup(unrelatedRecords), false);
+  assert.equal(hasAgentOSWorkspaceSetup(linkedByWorkspaceAgentIds), true);
+  assert.equal(hasAgentOSWorkspaceSetup(linkedByPath), true);
 });
 
 test("launchpad workspace handoff waits for the workspace and starter agent", () => {

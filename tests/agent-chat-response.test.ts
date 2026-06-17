@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  completedEmptyAgentChatResponseMessage,
+  extractAgentChatEmptyResponseDiagnosticText,
   extractAgentChatMessagesFromSessionHistory,
   extractAssistantTextFromAgentChatStreamLine,
   extractVisibleAgentChatOperatorText,
@@ -199,6 +201,28 @@ test("agent chat response helper detects completed turns without assistant text"
       }
     }),
     false
+  );
+});
+
+test("agent chat response helper extracts diagnostics from empty turn payloads", () => {
+  assert.equal(
+    extractAgentChatEmptyResponseDiagnosticText({
+      status: "completed",
+      meta: {
+        provider: {
+          error: "OpenRouter returned HTTP 429 rate limit for this model."
+        }
+      }
+    }),
+    "OpenRouter returned HTTP 429 rate limit for this model."
+  );
+
+  assert.equal(
+    extractAgentChatEmptyResponseDiagnosticText({
+      status: "completed",
+      summary: completedEmptyAgentChatResponseMessage
+    }),
+    completedEmptyAgentChatResponseMessage
   );
 });
 

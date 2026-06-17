@@ -7,7 +7,7 @@ export const emptyAgentChatResponseMessage =
   "OpenClaw finished the chat turn, but AgentOS could not find assistant text in the Gateway stream, session history, or transcript. This means the runtime did not expose a reply back to AgentOS, even if workspace changes were already applied. Refresh state, ask the agent for a summary, or inspect Gateway diagnostics if it repeats.";
 
 export const completedEmptyAgentChatResponseMessage =
-  "OpenClaw marked the chat turn completed, but did not expose a chat reply to AgentOS. AgentOS checked the Gateway stream, session history, and transcript. Workspace changes may already be applied; refresh state or ask the agent for a summary if you need details.";
+  "OpenClaw marked the chat turn completed, but did not expose a chat reply or failure reason to AgentOS. AgentOS checked the Gateway stream, session history, and transcript. This can happen after a provider/auth/rate-limit failure if OpenClaw completes the turn without surfacing the provider error. Workspace changes may already be applied; refresh state, check model diagnostics, or ask the agent for a summary if you need details.";
 
 export const incompleteAgentChatConfirmationMessage =
   "OpenClaw/Codex stopped before AgentOS received the final turn-complete confirmation. This is a runtime confirmation problem, not a normal assistant reply. AgentOS cannot verify whether the final reply was saved; retry the message, refresh state, or ask the agent for a summary if the workspace changed.";
@@ -136,6 +136,18 @@ export function resolveAgentChatRuntimeFailureMessage(rawFailure: string) {
   }
 
   return null;
+}
+
+export function extractAgentChatEmptyResponseDiagnosticText(payload: unknown) {
+  const candidates = collectDiagnosticTextCandidates(payload)
+    .map((value) => value.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const meaningfulCandidates = candidates.filter((value) => !/^(completed|running|ok|true|false)$/i.test(value));
+  const diagnostic = meaningfulCandidates.find((value) =>
+    /auth|token|oauth|provider|model|rate|limit|quota|credit|429|401|403|error|failed|failure|stalled|aborted|timeout|timed out|disconnect/i.test(value)
+  ) ?? meaningfulCandidates[0] ?? null;
+
+  return diagnostic ? diagnostic.slice(0, 500) : null;
 }
 
 function stripTrailingMissionControlActionBlock(value: string) {
@@ -339,4 +351,40 @@ function parseRecord(value: string) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function collectDiagnosticTextCandidates(value: unknown, seen = new Set<unknown>()): string[] {
+  if (typeof value === "string") {
+    return value.trim() ? [value] : [];
+  }
+
+  if (!isRecord(value) || seen.has(value)) {
+    return [];
+  }
+
+  seen.add(value);
+
+  const keys = [
+    "error",
+    "errorMessage",
+    "failure",
+    "message",
+    "detail",
+    "reason",
+    "cause",
+    "diagnostic",
+    "diagnostics",
+    "stopReason",
+    "summary",
+    "status",
+    "meta",
+    "result"
+  ];
+
+  const keyedCandidates = keys.flatMap((key) => collectDiagnosticTextCandidates(value[key], seen));
+  const nestedCandidates = Object.entries(value)
+    .filter(([key]) => !keys.includes(key))
+    .flatMap(([, entry]) => collectDiagnosticTextCandidates(entry, seen));
+
+  return [...keyedCandidates, ...nestedCandidates];
 }

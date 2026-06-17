@@ -2419,14 +2419,25 @@ export function MissionControlShell({
       return;
     }
 
-    if (currentDefaultModelId && targetModelId.trim() === currentDefaultModelId.trim()) {
+    if (
+      currentDefaultModelId &&
+      targetModelId.trim() === currentDefaultModelId.trim() &&
+      isOpenClawOnboardingModelReady
+    ) {
       return;
     }
 
-    await runModelOnboarding({
-      intent: "set-default",
-      modelId: targetModelId
-    });
+    await runModelOnboarding(
+      currentDefaultModelId && targetModelId.trim() === currentDefaultModelId.trim()
+        ? {
+            intent: "auto",
+            modelId: targetModelId
+          }
+        : {
+            intent: "set-default",
+            modelId: targetModelId
+          }
+    );
   };
 
   const dismissOnboarding = useCallback(() => {
@@ -2692,16 +2703,29 @@ export function MissionControlShell({
     setIsSettingsOpen(true);
   };
 
-  const enterAgentOS = useCallback(() => {
-    if (!hasAgentOSWorkspaceSetup(snapshot)) {
-      void runLaunchpadWorkspaceCreate();
-      return;
+  const enterAgentOS = useCallback(async () => {
+    let entrySnapshot = snapshot;
+
+    if (!hasAgentOSWorkspaceSetup(entrySnapshot)) {
+      if (entrySnapshot.workspaces.length === 0) {
+        const refreshedSnapshot = await refreshSnapshot({ force: true }).catch(() => null);
+
+        if (refreshedSnapshot) {
+          entrySnapshot = refreshedSnapshot;
+          setSnapshot(refreshedSnapshot);
+        }
+      }
+
+      if (!hasAgentOSWorkspaceSetup(entrySnapshot) && entrySnapshot.workspaces.length === 0) {
+        void runLaunchpadWorkspaceCreate();
+        return;
+      }
     }
 
     const targetWorkspaceId =
-      (activeWorkspaceId && snapshot.workspaces.some((workspace) => workspace.id === activeWorkspaceId)
+      (activeWorkspaceId && entrySnapshot.workspaces.some((workspace) => workspace.id === activeWorkspaceId)
         ? activeWorkspaceId
-        : snapshot.workspaces[0]?.id) ?? null;
+        : entrySnapshot.workspaces[0]?.id) ?? null;
 
     if (targetWorkspaceId) {
       setPendingWorkspaceOpenId(null);
@@ -2709,7 +2733,15 @@ export function MissionControlShell({
     }
 
     dismissOnboarding();
-  }, [activeWorkspaceId, dismissOnboarding, openWorkspaceOnCanvas, runLaunchpadWorkspaceCreate, snapshot]);
+  }, [
+    activeWorkspaceId,
+    dismissOnboarding,
+    openWorkspaceOnCanvas,
+    refreshSnapshot,
+    runLaunchpadWorkspaceCreate,
+    setSnapshot,
+    snapshot
+  ]);
 
   const controlGateway = async (action: GatewayControlAction) => {
     setGatewayControlAction(action);

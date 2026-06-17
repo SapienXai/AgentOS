@@ -240,8 +240,12 @@ export function resolvePrimaryAction(params: {
   const defaultModelId = params.defaultModelId?.trim() ?? "";
 
   if (selectedModelId) {
-    if (selectedModelId === defaultModelId) {
+    if (params.modelReady && selectedModelId === defaultModelId) {
       return { kind: "dismiss" as const, label: "Enter AgentOS" };
+    }
+
+    if (selectedModelId === defaultModelId) {
+      return { kind: "set-default" as const, label: "Verify model setup" };
     }
 
     return { kind: "set-default" as const, label: "Set as default" };
