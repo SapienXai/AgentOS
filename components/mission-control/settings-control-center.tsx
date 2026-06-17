@@ -8,23 +8,34 @@ import {
   Bot,
   Box,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Copy,
+  Database,
+  Download,
   Folder,
+  HelpCircle,
   KeyRound,
+  Layers,
   ListChecks,
   LoaderCircle,
   Microscope,
+  OctagonAlert,
   PackageCheck,
   RefreshCw,
   RotateCcw,
   Save,
   Settings2,
   ShieldCheck,
+  SquareTerminal,
+  Star,
+  Target,
   TerminalSquare,
   Trash2,
-  Wrench
+  TriangleAlert,
+  Wrench,
+  XCircle
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -62,6 +73,17 @@ import type {
   OpenClawUpdateDecision,
   OpenClawUpdateSafetyReport
 } from "@/lib/openclaw/types";
+import type {
+  OpenClawCodexFixBundle,
+  OpenClawCompatibilityCertificationPromotion,
+  OpenClawCompatibilityLabReport
+} from "@/lib/openclaw/compatibility-lab/types";
+import {
+  buildAgentOsOpenClawContractComparison,
+  filterAgentOsOpenClawContractRows,
+  type AgentOsOpenClawContractComparison
+} from "@/lib/openclaw/contracts/contract-diff-service";
+import type { AgentOsOpenClawContractComparisonFilter } from "@/lib/openclaw/contracts/types";
 import { cn } from "@/lib/utils";
 
 const binaryModes: Array<{
@@ -204,6 +226,14 @@ export function SettingsControlCenter(
   const [updateSafetyError, setUpdateSafetyError] = useState<string | null>(null);
   const [isRunningUpdatePreflight, setIsRunningUpdatePreflight] = useState(false);
   const [isRunningShadowProbe, setIsRunningShadowProbe] = useState(false);
+  const [compatibilityLabReport, setCompatibilityLabReport] = useState<OpenClawCompatibilityLabReport | null>(null);
+  const [compatibilityLabError, setCompatibilityLabError] = useState<string | null>(null);
+  const [isGeneratingCompatibilityLabReport, setIsGeneratingCompatibilityLabReport] = useState(false);
+  const [codexFixBundle, setCodexFixBundle] = useState<OpenClawCodexFixBundle | null>(null);
+  const [isGeneratingCodexFixBundle, setIsGeneratingCodexFixBundle] = useState(false);
+  const [certificationPromotion, setCertificationPromotion] =
+    useState<OpenClawCompatibilityCertificationPromotion | null>(null);
+  const [isPromotingCertification, setIsPromotingCertification] = useState(false);
   const [configUpdatePacing, setConfigUpdatePacing] = useState(() => snapshot.diagnostics.configUpdatePacing);
   const [configUpdatePacingMode, setConfigUpdatePacingMode] = useState(
     () => snapshot.diagnostics.configUpdatePacing.settings.mode
@@ -315,6 +345,15 @@ export function SettingsControlCenter(
     () => summarizeOpenClawCapabilityRows(snapshot.diagnostics, capabilityRows),
     [capabilityRows, snapshot.diagnostics]
   );
+  const contractComparison = useMemo(
+    () => buildAgentOsOpenClawContractComparison({
+      diagnostics: snapshot.diagnostics,
+      capabilityDiff: updateCapabilityDiff,
+      scorecard: updateCertificationScorecard,
+      labReport: compatibilityLabReport
+    }),
+    [compatibilityLabReport, snapshot.diagnostics, updateCapabilityDiff, updateCertificationScorecard]
+  );
   const gatewayFallbackDiagnostics = (
     snapshot.diagnostics.gatewayFallbackDiagnostics?.length
       ? snapshot.diagnostics.gatewayFallbackDiagnostics
@@ -397,6 +436,149 @@ export function SettingsControlCenter(
       setIsRunningShadowProbe(false);
     }
   };
+
+  const runCompatibilityLabReport = async (
+    targetVersion = defaultUpdateTargetVersion
+  ) => {
+    setIsGeneratingCompatibilityLabReport(true);
+    setCompatibilityLabError(null);
+    setCodexFixBundle(null);
+    setCertificationPromotion(null);
+
+    try {
+      const response = await fetch("/api/openclaw/compatibility-lab", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        cache: "no-store",
+        body: JSON.stringify({
+          action: "report",
+          targetVersion,
+          mode: "recommended"
+        })
+      });
+
+      const result = (await response.json().catch(() => null)) as {
+        report?: OpenClawCompatibilityLabReport;
+        error?: string;
+      } | null;
+
+      if (!response.ok || !result?.report) {
+        throw new Error(result?.error || "OpenClaw Compatibility Lab report failed.");
+      }
+
+      setCompatibilityLabReport(result.report);
+    } catch (error) {
+      setCompatibilityLabError(error instanceof Error ? error.message : "Unable to generate OpenClaw Compatibility Lab report.");
+    } finally {
+      setIsGeneratingCompatibilityLabReport(false);
+    }
+  };
+
+  const generateCodexFixBundle = async (reportId = compatibilityLabReport?.id) => {
+    if (!reportId) {
+      setCompatibilityLabError("Generate a compatibility report before creating a Codex fix bundle.");
+      return;
+    }
+
+    setIsGeneratingCodexFixBundle(true);
+    setCompatibilityLabError(null);
+
+    try {
+      const response = await fetch("/api/openclaw/compatibility-lab", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        cache: "no-store",
+        body: JSON.stringify({
+          action: "fix-bundle",
+          reportId
+        })
+      });
+
+      const result = (await response.json().catch(() => null)) as {
+        bundle?: OpenClawCodexFixBundle;
+        error?: string;
+      } | null;
+
+      if (!response.ok || !result?.bundle) {
+        throw new Error(result?.error || "OpenClaw Codex fix bundle generation failed.");
+      }
+
+      setCodexFixBundle(result.bundle);
+    } catch (error) {
+      setCompatibilityLabError(error instanceof Error ? error.message : "Unable to generate Codex fix bundle.");
+    } finally {
+      setIsGeneratingCodexFixBundle(false);
+    }
+  };
+
+  const certifyCompatibilityTarget = async (reportId = compatibilityLabReport?.id) => {
+    if (!reportId) {
+      setCompatibilityLabError("Generate a compatibility report before certifying an OpenClaw target.");
+      return;
+    }
+
+    setIsPromotingCertification(true);
+    setCompatibilityLabError(null);
+
+    try {
+      const response = await fetch("/api/openclaw/compatibility-lab", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        cache: "no-store",
+        body: JSON.stringify({
+          action: "certify",
+          reportId
+        })
+      });
+
+      const result = (await response.json().catch(() => null)) as {
+        promotion?: OpenClawCompatibilityCertificationPromotion;
+        error?: string;
+      } | null;
+
+      if (!response.ok || !result?.promotion) {
+        throw new Error(result?.error || "OpenClaw target certification failed.");
+      }
+
+      setCertificationPromotion(result.promotion);
+    } catch (error) {
+      setCompatibilityLabError(error instanceof Error ? error.message : "Unable to certify OpenClaw target.");
+    } finally {
+      setIsPromotingCertification(false);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/openclaw/compatibility-lab", {
+          method: "GET",
+          cache: "no-store"
+        });
+        const result = (await response.json().catch(() => null)) as {
+          report?: OpenClawCompatibilityLabReport | null;
+        } | null;
+
+        if (!cancelled && response.ok && result?.report) {
+          setCompatibilityLabReport(result.report);
+        }
+      } catch {
+        // Latest lab report is optional; explicit generation surfaces errors.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const snapshotReport = snapshot.diagnostics.compatibilitySmokeTest;
@@ -895,6 +1077,16 @@ export function SettingsControlCenter(
                       {isRunningShadowProbe ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
                       Test target safely
                     </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => void runCompatibilityLabReport(defaultUpdateTargetVersion)}
+                      disabled={!defaultUpdateTargetVersion || isGeneratingCompatibilityLabReport || updateRunState === "running"}
+                      className={secondaryButtonClassName(surfaceTheme, "px-4")}
+                    >
+                      {isGeneratingCompatibilityLabReport ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Microscope className="h-3.5 w-3.5" />}
+                      Generate compatibility report
+                    </Button>
                     {canVerifyLatestUpdate ? (
                       <Button
                         type="button"
@@ -977,6 +1169,23 @@ export function SettingsControlCenter(
                   <UpdateSafetyPanel
                     report={updateSafetyReport}
                     shadowProbeReport={shadowProbeReport}
+                    surfaceTheme={surfaceTheme}
+                  />
+
+                  <CompatibilityLabPanel
+                    report={compatibilityLabReport}
+                    bundle={codexFixBundle}
+                    scorecard={updateCertificationScorecard}
+                    promotion={certificationPromotion}
+                    error={compatibilityLabError}
+                    isGeneratingReport={isGeneratingCompatibilityLabReport}
+                    isGeneratingBundle={isGeneratingCodexFixBundle}
+                    isPromotingCertification={isPromotingCertification}
+                    isUpdateRunning={updateRunState === "running"}
+                    onGenerateReport={() => void runCompatibilityLabReport(defaultUpdateTargetVersion)}
+                    onGenerateBundle={() => void generateCodexFixBundle()}
+                    onRunCertification={(targetVersion) => onOpenUpdateDialog(targetVersion, "advanced")}
+                    onCertifyTarget={() => void certifyCompatibilityTarget()}
                     surfaceTheme={surfaceTheme}
                   />
 
@@ -1330,6 +1539,7 @@ export function SettingsControlCenter(
                     snapshot={snapshot}
                     updateCapabilityDiff={updateCapabilityDiff}
                     updateCertificationScorecard={updateCertificationScorecard}
+                    contractComparison={contractComparison}
                     surfaceTheme={surfaceTheme}
                   />
                 </Card>
@@ -2353,6 +2563,7 @@ function CapabilityMatrixPanel({
   snapshot,
   updateCapabilityDiff,
   updateCertificationScorecard,
+  contractComparison,
   surfaceTheme
 }: {
   rows: OpenClawCapabilityMatrixRow[];
@@ -2360,6 +2571,7 @@ function CapabilityMatrixPanel({
   snapshot: MissionControlShellSettingsPanelProps["snapshot"];
   updateCapabilityDiff: OpenClawCapabilityDiffReport | null;
   updateCertificationScorecard: OpenClawCertificationScorecardReport | null;
+  contractComparison: AgentOsOpenClawContractComparison;
   surfaceTheme: SurfaceTheme;
 }) {
   const rowsByStatus = {
@@ -2420,6 +2632,11 @@ function CapabilityMatrixPanel({
         scorecard={updateCertificationScorecard}
         snapshot={snapshot}
         summary={summary}
+        surfaceTheme={surfaceTheme}
+      />
+
+      <ContractComparisonPanel
+        comparison={contractComparison}
         surfaceTheme={surfaceTheme}
       />
 
@@ -2563,6 +2780,634 @@ function CapabilityDetail({
       </p>
     </div>
   );
+}
+
+const contractComparisonFilters: Array<{
+  id: AgentOsOpenClawContractComparisonFilter;
+  label: string;
+  icon: LucideIcon;
+}> = [
+  { id: "all", label: "All", icon: Box },
+  { id: "blockers", label: "Blockers", icon: ShieldCheck },
+  { id: "required", label: "Required", icon: Star },
+  { id: "warnings", label: "Warnings", icon: TriangleAlert },
+  { id: "payload-shape-changes", label: "Payload shape changes", icon: Microscope },
+  { id: "cli-fallback", label: "CLI fallback", icon: SquareTerminal }
+];
+
+function ContractComparisonPanel({
+  comparison,
+  surfaceTheme
+}: {
+  comparison: AgentOsOpenClawContractComparison;
+  surfaceTheme: SurfaceTheme;
+}) {
+  const [filter, setFilter] = useState<AgentOsOpenClawContractComparisonFilter>("all");
+  const rows = filterAgentOsOpenClawContractRows(comparison.rows, filter);
+  const showReportOnlyPill = comparison.targetEvidenceLabel === "Report-only, target not executed";
+
+  return (
+    <section
+      className={cn(
+        "overflow-hidden rounded-[18px] border p-4 shadow-[0_16px_42px_rgba(15,23,42,0.06)]",
+        surfaceTheme === "light"
+          ? "border-slate-200 bg-white text-slate-950"
+          : "border-white/[0.08] bg-[#101a2a]/92 text-slate-100"
+      )}
+    >
+      <ContractComparisonHeader
+        evidenceLabel={comparison.installedEvidenceLabel}
+        surfaceTheme={surfaceTheme}
+      />
+
+      <ContractSummaryStats
+        comparison={comparison}
+        showReportOnlyPill={showReportOnlyPill}
+        surfaceTheme={surfaceTheme}
+      />
+
+      <ContractFilterChips
+        filter={filter}
+        onFilterChange={setFilter}
+        surfaceTheme={surfaceTheme}
+      />
+
+      <ContractComparisonTable
+        comparison={comparison}
+        rows={rows}
+        surfaceTheme={surfaceTheme}
+      />
+    </section>
+  );
+}
+
+function ContractComparisonHeader({
+  evidenceLabel,
+  surfaceTheme
+}: {
+  evidenceLabel: string;
+  surfaceTheme: SurfaceTheme;
+}) {
+  return (
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <div className="min-w-0">
+        <p className={cn("text-[11px] font-semibold uppercase tracking-[0.2em]", surfaceTheme === "light" ? "text-blue-600" : "text-blue-300")}>
+          Contract comparison
+        </p>
+        <h3 className={cn("mt-2 text-2xl font-semibold tracking-tight", surfaceTheme === "light" ? "text-slate-950" : "text-slate-50")}>
+          AgentOS OpenClaw Contract Registry
+        </h3>
+        <p className={cn("mt-2 max-w-3xl text-sm leading-6", surfaceTheme === "light" ? "text-slate-600" : "text-slate-400")}>
+          Baseline expectations are registry-backed. Installed and target columns show available evidence only.
+        </p>
+      </div>
+      <span
+        className={cn(
+          "inline-flex h-9 shrink-0 items-center gap-2 self-start rounded-[10px] border px-3 text-sm font-medium",
+          surfaceTheme === "light"
+            ? "border-blue-300 bg-blue-50 text-blue-700"
+            : "border-blue-300/25 bg-blue-300/10 text-blue-100"
+        )}
+      >
+        <Database className="h-4 w-4" />
+        {evidenceLabel}
+      </span>
+    </div>
+  );
+}
+
+function ContractSummaryStats({
+  comparison,
+  showReportOnlyPill,
+  surfaceTheme
+}: {
+  comparison: AgentOsOpenClawContractComparison;
+  showReportOnlyPill: boolean;
+  surfaceTheme: SurfaceTheme;
+}) {
+  const stats: Array<{
+    label: string;
+    value: string;
+    icon: LucideIcon;
+    tone: "blue" | "green" | "purple" | "amber" | "red" | "gray";
+  }> = [
+    { label: "Baseline", value: `v${comparison.baselineVersion}`, icon: Layers, tone: "blue" },
+    { label: "Installed", value: comparison.installedVersion ? `v${comparison.installedVersion}` : "Evidence missing", icon: Download, tone: "green" },
+    { label: "Target", value: comparison.targetVersion ? `v${comparison.targetVersion}` : "Evidence missing", icon: Target, tone: "purple" },
+    { label: "Passed", value: String(comparison.summary.passed), icon: CheckCircle2, tone: "green" },
+    { label: "Warnings", value: String(comparison.summary.warnings), icon: TriangleAlert, tone: "amber" },
+    { label: "Failed", value: String(comparison.summary.failed), icon: XCircle, tone: "red" },
+    { label: "Unknown", value: String(comparison.summary.unknown), icon: HelpCircle, tone: "gray" },
+    { label: "Blockers", value: String(comparison.summary.certificationBlockers), icon: OctagonAlert, tone: "red" }
+  ];
+
+  return (
+    <div
+      className={cn(
+        "relative mt-5 rounded-[12px] border",
+        surfaceTheme === "light" ? "border-slate-200 bg-slate-50/70" : "border-white/[0.08] bg-white/[0.035]"
+      )}
+    >
+      <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4 xl:grid-cols-8">
+        {stats.map((stat) => (
+          <ContractSummaryStat key={stat.label} {...stat} surfaceTheme={surfaceTheme} />
+        ))}
+      </div>
+      {showReportOnlyPill ? (
+        <div className="flex justify-center px-4 pb-3 xl:absolute xl:inset-x-0 xl:-bottom-4 xl:pb-0">
+          <span
+            className={cn(
+              "inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]",
+              surfaceTheme === "light"
+                ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
+            )}
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Report-only, target not executed
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ContractSummaryStat({
+  label,
+  value,
+  icon: Icon,
+  tone,
+  surfaceTheme
+}: {
+  label: string;
+  value: string;
+  icon: LucideIcon;
+  tone: "blue" | "green" | "purple" | "amber" | "red" | "gray";
+  surfaceTheme: SurfaceTheme;
+}) {
+  return (
+    <div className="min-w-0 px-4 py-4">
+      <div className="flex items-center gap-2">
+        <Icon className={cn("h-4 w-4 shrink-0", contractToneTextClassName(tone, surfaceTheme))} />
+        <p className={cn("truncate text-[11px] font-semibold uppercase tracking-[0.14em]", surfaceTheme === "light" ? "text-slate-500" : "text-slate-400")}>
+          {label}
+        </p>
+      </div>
+      <p className={cn("mt-2 truncate text-xl font-semibold", surfaceTheme === "light" ? "text-slate-950" : "text-slate-50")} title={value}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function ContractFilterChips({
+  filter,
+  onFilterChange,
+  surfaceTheme
+}: {
+  filter: AgentOsOpenClawContractComparisonFilter;
+  onFilterChange: (filter: AgentOsOpenClawContractComparisonFilter) => void;
+  surfaceTheme: SurfaceTheme;
+}) {
+  return (
+    <div className="mt-8 flex flex-wrap gap-2">
+      {contractComparisonFilters.map((entry) => {
+        const Icon = entry.icon;
+        const selected = filter === entry.id;
+
+        return (
+          <button
+            key={entry.id}
+            type="button"
+            onClick={() => onFilterChange(entry.id)}
+            className={cn(
+              "inline-flex h-9 items-center gap-2 rounded-[9px] border px-3 text-xs font-medium transition-colors",
+              selected
+                ? surfaceTheme === "light"
+                  ? "border-blue-300 bg-blue-50 text-blue-700 shadow-[0_8px_18px_rgba(37,99,235,0.08)]"
+                  : "border-blue-300/25 bg-blue-300/10 text-blue-100"
+                : surfaceTheme === "light"
+                  ? "border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50/45"
+                  : "border-white/10 bg-[#0f1826] text-slate-300 hover:bg-white/[0.06]"
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {entry.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ContractComparisonTable({
+  comparison,
+  rows,
+  surfaceTheme
+}: {
+  comparison: AgentOsOpenClawContractComparison;
+  rows: AgentOsOpenClawContractComparison["rows"];
+  surfaceTheme: SurfaceTheme;
+}) {
+  return (
+    <div className={cn("mt-5 overflow-hidden rounded-[12px] border shadow-[0_12px_30px_rgba(15,23,42,0.04)]", surfaceTheme === "light" ? "border-slate-200 bg-white" : "border-white/[0.08] bg-[#0f1826]")}>
+      <div className="overflow-x-auto">
+        <div className="min-w-[1120px]">
+          <div className={cn(
+            "grid grid-cols-[1.35fr_0.75fr_1.28fr_1.28fr_1.28fr_0.8fr_0.55fr] border-b px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.12em]",
+            surfaceTheme === "light" ? "border-slate-200 bg-slate-50 text-slate-500" : "border-white/[0.08] bg-white/[0.04] text-slate-400"
+          )}>
+            <span>Operation</span>
+            <span>Requirement</span>
+            <span>Baseline expected</span>
+            <span>Installed actual</span>
+            <span>Target actual</span>
+            <span>Status</span>
+            <span>Blocks</span>
+          </div>
+          <div>
+            {rows.length > 0 ? rows.map((row) => (
+              <ContractComparisonRow
+                key={row.operationId}
+                row={row}
+                targetFallbackLabel={comparison.targetEvidenceLabel}
+                surfaceTheme={surfaceTheme}
+              />
+            )) : (
+              <div className="p-5">
+                <EmptyState
+                  title="Evidence missing"
+                  detail="No contract operations matched this filter. Missing evidence is not treated as passing."
+                  surfaceTheme={surfaceTheme}
+                />
+              </div>
+            )}
+          </div>
+          {rows.length > 0 ? (
+            <div className={cn("border-t px-5 py-3 text-center text-xs", surfaceTheme === "light" ? "border-slate-200 text-slate-500" : "border-white/[0.08] text-slate-400")}>
+              Showing {rows.length} of {comparison.rows.length} operations · Use filters above to focus your view
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ContractComparisonRow({
+  row,
+  targetFallbackLabel,
+  surfaceTheme
+}: {
+  row: AgentOsOpenClawContractComparison["rows"][number];
+  targetFallbackLabel: string;
+  surfaceTheme: SurfaceTheme;
+}) {
+  const OperationIcon = resolveContractOperationIcon(row.areaId);
+
+  return (
+    <details
+      className={cn(
+        "group border-b last:border-b-0",
+        row.blocksCertification
+          ? surfaceTheme === "light"
+            ? "border-rose-100 bg-rose-50/35"
+            : "border-rose-300/15 bg-rose-300/[0.045]"
+          : surfaceTheme === "light"
+            ? "border-slate-200 bg-white"
+            : "border-white/[0.08] bg-[#0f1826]"
+      )}
+    >
+      <summary className="grid cursor-pointer list-none grid-cols-[1.35fr_0.75fr_1.28fr_1.28fr_1.28fr_0.8fr_0.55fr] items-center gap-4 px-5 py-4">
+        <ContractOperationCell row={row} icon={OperationIcon} surfaceTheme={surfaceTheme} />
+        <RequirementBadge requirement={row.requirement} status={row.status} surfaceTheme={surfaceTheme} />
+        <EvidenceSummaryCell evidence={buildBaselineEvidence(row)} surfaceTheme={surfaceTheme} />
+        <EvidenceSummaryCell evidence={buildInstalledEvidence(row)} surfaceTheme={surfaceTheme} />
+        <EvidenceSummaryCell evidence={buildTargetEvidence(row, targetFallbackLabel)} surfaceTheme={surfaceTheme} />
+        <ContractStatusBadge status={row.status} surfaceTheme={surfaceTheme} />
+        <BlocksBadge blocks={row.blocksCertification} surfaceTheme={surfaceTheme} />
+      </summary>
+      <ExpandedEvidenceDetails row={row} targetFallbackLabel={targetFallbackLabel} surfaceTheme={surfaceTheme} />
+    </details>
+  );
+}
+
+type ContractEvidenceLine = {
+  label: string;
+  value: string;
+  tone: "success" | "warning" | "danger" | "neutral";
+};
+
+type ContractEvidenceSummary = {
+  lines: ContractEvidenceLine[];
+  tags: Array<{
+    label: string;
+    tone: "success" | "warning" | "danger" | "neutral";
+  }>;
+};
+
+function ContractOperationCell({
+  row,
+  icon: Icon,
+  surfaceTheme
+}: {
+  row: AgentOsOpenClawContractComparison["rows"][number];
+  icon: LucideIcon;
+  surfaceTheme: SurfaceTheme;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <span
+        className={cn(
+          "flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] border",
+          row.blocksCertification
+            ? surfaceTheme === "light"
+              ? "border-rose-100 bg-rose-50 text-rose-600"
+              : "border-rose-300/20 bg-rose-300/10 text-rose-100"
+            : surfaceTheme === "light"
+              ? "border-blue-100 bg-blue-50 text-blue-600"
+              : "border-blue-300/15 bg-blue-300/10 text-blue-100"
+        )}
+      >
+        <Icon className="h-5 w-5" />
+      </span>
+      <span className="min-w-0">
+        <span className={cn("block truncate text-sm font-semibold", surfaceTheme === "light" ? "text-slate-950" : "text-slate-50")}>
+          {row.label}
+        </span>
+        <span className={cn("mt-1 block truncate text-[11px]", surfaceTheme === "light" ? "text-slate-500" : "text-slate-400")}>
+          {row.areaId} / {row.operationId}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function EvidenceSummaryCell({
+  evidence,
+  surfaceTheme
+}: {
+  evidence: ContractEvidenceSummary;
+  surfaceTheme: SurfaceTheme;
+}) {
+  return (
+    <div className="min-w-0 space-y-1.5">
+      {evidence.lines.map((line) => (
+        <div key={`${line.label}:${line.value}`} className="grid grid-cols-[10px_4.8rem_minmax(0,1fr)] items-baseline gap-1.5 text-[11px] leading-4">
+          <span className={cn("mt-1 h-1.5 w-1.5 rounded-full", evidenceDotClassName(line.tone, surfaceTheme))} />
+          <span className={cn(surfaceTheme === "light" ? "text-slate-500" : "text-slate-400")}>{line.label}:</span>
+          <span className={cn("truncate", line.tone === "danger" ? surfaceTheme === "light" ? "text-rose-700" : "text-rose-200" : surfaceTheme === "light" ? "text-slate-700" : "text-slate-200")} title={line.value}>
+            {line.value}
+          </span>
+        </div>
+      ))}
+      {evidence.tags.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5 pt-0.5">
+          {evidence.tags.map((tag) => (
+            <span key={tag.label} className={evidenceTagClassName(tag.tone, surfaceTheme)}>
+              {tag.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RequirementBadge({
+  requirement,
+  status,
+  surfaceTheme
+}: {
+  requirement: AgentOsOpenClawContractComparison["rows"][number]["requirement"];
+  status: AgentOsOpenClawContractComparison["rows"][number]["status"];
+  surfaceTheme: SurfaceTheme;
+}) {
+  const label = requirement === "experimental" && status === "warning" ? "Warning" : formatCapabilityBaseline(requirement);
+  const tone =
+    requirement === "required"
+      ? "blue"
+      : requirement === "experimental"
+        ? "amber"
+        : "gray";
+
+  return (
+    <span className={contractBadgeClassName(tone, surfaceTheme)}>
+      {label}
+    </span>
+  );
+}
+
+function ContractStatusBadge({
+  status,
+  surfaceTheme
+}: {
+  status: AgentOsOpenClawContractComparison["rows"][number]["status"];
+  surfaceTheme: SurfaceTheme;
+}) {
+  const Icon = status === "passed"
+    ? CheckCircle2
+    : status === "failed"
+      ? XCircle
+      : status === "warning"
+        ? TriangleAlert
+        : HelpCircle;
+  const tone = status === "passed" ? "green" : status === "failed" ? "red" : status === "warning" ? "amber" : "gray";
+
+  return (
+    <span className={contractBadgeClassName(tone, surfaceTheme)}>
+      <Icon className="h-3.5 w-3.5" />
+      {formatCompatibilityLabStatus(status)}
+    </span>
+  );
+}
+
+function BlocksBadge({
+  blocks,
+  surfaceTheme
+}: {
+  blocks: boolean;
+  surfaceTheme: SurfaceTheme;
+}) {
+  return (
+    <span className={contractBadgeClassName(blocks ? "red" : "gray", surfaceTheme)}>
+      {blocks ? "Yes" : "No"}
+    </span>
+  );
+}
+
+function ExpandedEvidenceDetails({
+  row,
+  targetFallbackLabel,
+  surfaceTheme
+}: {
+  row: AgentOsOpenClawContractComparison["rows"][number];
+  targetFallbackLabel: string;
+  surfaceTheme: SurfaceTheme;
+}) {
+  return (
+    <div className={cn("grid gap-3 border-t px-5 py-4 lg:grid-cols-3", surfaceTheme === "light" ? "border-slate-200 bg-slate-50/70" : "border-white/[0.08] bg-black/10")}>
+      <CapabilityDetail label="Full baseline expectation" value={row.baselineExpected} surfaceTheme={surfaceTheme} />
+      <CapabilityDetail label="Full installed evidence" value={row.installedActual || "Evidence missing"} surfaceTheme={surfaceTheme} />
+      <CapabilityDetail label="Full target evidence" value={row.targetActual ?? targetFallbackLabel} surfaceTheme={surfaceTheme} />
+      <CapabilityDetail label="Payload status" value={row.hasPayloadShapeChange ? "Payload mismatch or shape change detected" : row.actual.payloadShapeStatus ?? "Not checked"} surfaceTheme={surfaceTheme} />
+      <CapabilityDetail label="CLI fallback" value={row.usesCliFallback ? "CLI fallback used or regressed" : "No CLI fallback evidence"} surfaceTheme={surfaceTheme} />
+      <CapabilityDetail label="Files and tests" value={`Files: ${formatShortList(row.affectedAgentOsFiles, 4)}. Tests: ${formatShortList(row.regressionTests, 4)}.`} surfaceTheme={surfaceTheme} />
+      {row.evidence.length > 0 ? (
+        <div className="lg:col-span-3">
+          <DiagnosticBlock title="raw evidence" value={row.evidence.join("\n")} surfaceTheme={surfaceTheme} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function buildBaselineEvidence(row: AgentOsOpenClawContractComparison["rows"][number]): ContractEvidenceSummary {
+  return {
+    lines: [
+      { label: "Methods", value: row.expected.gatewayMethods.slice(0, 2).join(", ") || "none", tone: row.expected.gatewayMethods.length ? "success" : "neutral" },
+      { label: "Events", value: row.expected.eventNames.slice(0, 2).join(", ") || "none", tone: row.expected.eventNames.length ? "success" : "neutral" },
+      { label: "Payload", value: shortenPayloadLabel(row.expected.payloadShape ?? "not specified"), tone: row.expected.payloadShape ? "success" : "neutral" },
+      { label: "Norm", value: "AgentOS", tone: "success" }
+    ],
+    tags: row.expected.cliFallbackAllowed ? [] : [{ label: "no CLI fallback", tone: "warning" }]
+  };
+}
+
+function buildInstalledEvidence(row: AgentOsOpenClawContractComparison["rows"][number]): ContractEvidenceSummary {
+  const payloadStatus = row.actual.payloadShapeStatus ?? "not checked";
+  const payloadTone = payloadStatus === "invalid" ? "danger" : payloadStatus === "not checked" ? "neutral" : "success";
+
+  return {
+    lines: [
+      { label: "Method", value: row.actual.supportedMethod ?? "none", tone: row.actual.supportedMethod ? "success" : row.status === "failed" ? "danger" : "neutral" },
+      { label: "Event", value: row.actual.supportedEvent ?? "none", tone: row.actual.supportedEvent ? "success" : "neutral" },
+      { label: "Payload", value: payloadStatus === "valid" ? "accepted" : payloadStatus, tone: payloadTone }
+    ],
+    tags: [
+      { label: row.actual.mode, tone: row.actual.mode === "cli-fallback" ? "warning" : row.actual.mode === "gateway-native" ? "success" : "neutral" },
+      ...(row.hasPayloadShapeChange ? [{ label: "payload mismatch", tone: "danger" as const }] : [])
+    ]
+  };
+}
+
+function buildTargetEvidence(
+  row: AgentOsOpenClawContractComparison["rows"][number],
+  targetFallbackLabel: string
+): ContractEvidenceSummary {
+  if (!row.targetActual) {
+    return {
+      lines: [
+        { label: "Method", value: "unknown", tone: "neutral" },
+        { label: "Event", value: "unknown", tone: "neutral" },
+        { label: "Payload", value: "unknown", tone: "neutral" }
+      ],
+      tags: [{ label: targetFallbackLabel.toLowerCase(), tone: "neutral" }]
+    };
+  }
+
+  const method = readEvidenceSegment(row.targetActual, "Method") || "none";
+  const event = readEvidenceSegment(row.targetActual, "Event") || "none";
+  const payload = readEvidenceSegment(row.targetActual, "Payload") || "not checked";
+  const mode = readEvidenceMode(row.targetActual);
+  const status = row.targetStatus ?? row.status;
+  const payloadTone = /invalid|mismatch|partial/i.test(payload) ? "danger" : /unknown|not checked/i.test(payload) ? "neutral" : "success";
+
+  return {
+    lines: [
+      { label: "Method", value: method, tone: method === "none" ? status === "failed" ? "danger" : "neutral" : "success" },
+      { label: "Event", value: event, tone: event === "none" ? "neutral" : "success" },
+      { label: "Payload", value: payload === "valid" ? "accepted" : payload, tone: payloadTone }
+    ],
+    tags: [
+      { label: mode, tone: mode === "cli-fallback" ? "warning" : mode === "gateway-native" ? "success" : "neutral" },
+      ...(row.usesCliFallback ? [{ label: "CLI fallback used", tone: "warning" as const }] : [])
+    ]
+  };
+}
+
+function readEvidenceSegment(value: string, label: string) {
+  return value.match(new RegExp(`${label}:\\s*([^;]+)`, "i"))?.[1]?.trim() ?? null;
+}
+
+function readEvidenceMode(value: string) {
+  const parts = value.split(";").map((part) => part.trim()).filter(Boolean);
+  return parts[1] ?? "unknown evidence";
+}
+
+function shortenPayloadLabel(value: string) {
+  return value
+    .replace(/\s+response accepted by AgentOS normalizers$/i, " response")
+    .replace(/\s+accepted by AgentOS normalizers$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function resolveContractOperationIcon(areaId: string): LucideIcon {
+  if (areaId === "gateway-protocol") {
+    return Activity;
+  }
+  if (areaId === "models-providers") {
+    return Box;
+  }
+  if (areaId === "sessions-tasks-agents") {
+    return Bot;
+  }
+  if (areaId === "config-patching") {
+    return Settings2;
+  }
+  if (areaId === "channels-accounts-scopes") {
+    return KeyRound;
+  }
+  return Layers;
+}
+
+function contractBadgeClassName(
+  tone: "blue" | "green" | "amber" | "red" | "gray",
+  surfaceTheme: SurfaceTheme
+) {
+  const base = "inline-flex w-fit items-center justify-center gap-1.5 rounded-[9px] border px-2.5 py-1 text-xs font-medium";
+
+  if (tone === "blue") {
+    return cn(base, surfaceTheme === "light" ? "border-blue-300 bg-blue-50 text-blue-700" : "border-blue-300/25 bg-blue-300/10 text-blue-100");
+  }
+  if (tone === "green") {
+    return cn(base, surfaceTheme === "light" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100");
+  }
+  if (tone === "amber") {
+    return cn(base, surfaceTheme === "light" ? "border-amber-300 bg-amber-50 text-amber-700" : "border-amber-300/25 bg-amber-300/10 text-amber-100");
+  }
+  if (tone === "red") {
+    return cn(base, surfaceTheme === "light" ? "border-rose-300 bg-rose-50 text-rose-700" : "border-rose-300/25 bg-rose-300/10 text-rose-100");
+  }
+
+  return cn(base, surfaceTheme === "light" ? "border-slate-200 bg-slate-50 text-slate-600" : "border-white/10 bg-white/[0.04] text-slate-300");
+}
+
+function contractToneTextClassName(
+  tone: "blue" | "green" | "purple" | "amber" | "red" | "gray",
+  surfaceTheme: SurfaceTheme
+) {
+  if (tone === "blue") return surfaceTheme === "light" ? "text-blue-600" : "text-blue-300";
+  if (tone === "green") return surfaceTheme === "light" ? "text-emerald-600" : "text-emerald-300";
+  if (tone === "purple") return surfaceTheme === "light" ? "text-violet-600" : "text-violet-300";
+  if (tone === "amber") return surfaceTheme === "light" ? "text-amber-600" : "text-amber-300";
+  if (tone === "red") return surfaceTheme === "light" ? "text-rose-600" : "text-rose-300";
+  return surfaceTheme === "light" ? "text-slate-400" : "text-slate-500";
+}
+
+function evidenceDotClassName(tone: "success" | "warning" | "danger" | "neutral", surfaceTheme: SurfaceTheme) {
+  if (tone === "success") return surfaceTheme === "light" ? "bg-emerald-500" : "bg-emerald-300";
+  if (tone === "warning") return "bg-amber-500";
+  if (tone === "danger") return "bg-rose-500";
+  return surfaceTheme === "light" ? "bg-slate-300" : "bg-slate-500";
+}
+
+function evidenceTagClassName(tone: "success" | "warning" | "danger" | "neutral", surfaceTheme: SurfaceTheme) {
+  if (tone === "success") return contractBadgeClassName("green", surfaceTheme);
+  if (tone === "warning") return contractBadgeClassName("amber", surfaceTheme);
+  if (tone === "danger") return contractBadgeClassName("red", surfaceTheme);
+  return contractBadgeClassName("gray", surfaceTheme);
 }
 
 function CompatibilityPanel({
@@ -3417,6 +4262,276 @@ function UpdateSafetyPanel({
   );
 }
 
+function CompatibilityLabPanel({
+  report,
+  bundle,
+  scorecard,
+  promotion,
+  error,
+  isGeneratingReport,
+  isGeneratingBundle,
+  isPromotingCertification,
+  isUpdateRunning,
+  onGenerateReport,
+  onGenerateBundle,
+  onRunCertification,
+  onCertifyTarget,
+  surfaceTheme
+}: {
+  report: OpenClawCompatibilityLabReport | null;
+  bundle: OpenClawCodexFixBundle | null;
+  scorecard: OpenClawCertificationScorecardReport | null;
+  promotion: OpenClawCompatibilityCertificationPromotion | null;
+  error: string | null;
+  isGeneratingReport: boolean;
+  isGeneratingBundle: boolean;
+  isPromotingCertification: boolean;
+  isUpdateRunning: boolean;
+  onGenerateReport: () => void;
+  onGenerateBundle: () => void;
+  onRunCertification: (targetVersion: string) => void;
+  onCertifyTarget: () => void;
+  surfaceTheme: SurfaceTheme;
+}) {
+  if (!report && !error && !isGeneratingReport) {
+    return null;
+  }
+
+  const blockingAreas = report?.areas.filter((area) => area.blocksCertification && area.status !== "passed") ?? [];
+  const nonPassingAreas = report?.areas.filter((area) => area.status !== "passed") ?? [];
+  const scorecardMatchesReport = Boolean(
+    report &&
+      scorecard &&
+      normalizeUpdateVersion(scorecard.targetVersion) === normalizeUpdateVersion(report.targetOpenClawVersion) &&
+      normalizeUpdateVersion(scorecard.baselineVersion) === normalizeUpdateVersion(report.currentCertifiedBaseline)
+  );
+  const canPromoteFromScorecard = Boolean(
+    scorecardMatchesReport &&
+      scorecard?.artifact &&
+      scorecard.hardBlockers.length === 0 &&
+      scorecard.roundTripEvidence.status === "passed"
+  );
+  const certificationRunLabel = !report
+    ? "Report required"
+    : !scorecardMatchesReport
+      ? "Target not installed/tested"
+      : scorecard!.status === "blocked" || scorecard!.status === "evidence_missing"
+        ? "Certification blocked"
+        : canPromoteFromScorecard
+          ? "Promotion eligible"
+          : formatScorecardStatus(scorecard!.status);
+
+  return (
+    <div className={cn("mt-4 rounded-[18px] border p-3.5", insetPanelClassName(surfaceTheme))}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className={labelClassName(surfaceTheme)}>Compatibility Lab</p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <p className={cn("font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+              {report ? `OpenClaw v${report.targetOpenClawVersion}` : "No report yet"}
+            </p>
+            {report ? (
+              <span className={transportTonePillClassName(compatibilityLabStatusTone(report.status), surfaceTheme)}>
+                {formatCompatibilityLabStatus(report.status)}
+              </span>
+            ) : null}
+            {report?.certificationBlocked ? (
+              <span className={transportTonePillClassName("warning", surfaceTheme)}>Needs certification</span>
+            ) : null}
+          </div>
+          <p className={cn("mt-1 text-xs leading-5", mutedTextClassName(surfaceTheme))}>
+            {report
+              ? `Report ${formatTimestamp(report.generatedAt)}. Report-only checks do not certify the target until the target binary is installed, compared, smoked, and rollback evidence is captured.`
+              : "Generate a report to combine manifest policy, Gateway contracts, payload shape checks, runtime smoke, and rollback evidence."}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onGenerateReport}
+            disabled={isGeneratingReport}
+            className={secondaryButtonClassName(surfaceTheme, "px-4")}
+          >
+            {isGeneratingReport ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Microscope className="h-3.5 w-3.5" />}
+            {report ? "Refresh report" : "Generate report"}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onGenerateBundle}
+            disabled={!report || isGeneratingBundle || nonPassingAreas.length === 0}
+            className={secondaryButtonClassName(surfaceTheme, "px-4")}
+          >
+            {isGeneratingBundle ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+            Generate Codex fix bundle
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => report ? onRunCertification(report.targetOpenClawVersion) : undefined}
+            disabled={!report || isUpdateRunning}
+            className={secondaryButtonClassName(surfaceTheme, "px-4")}
+            title="Opens the advanced update dialog. Use Certify round-trip there to install the target, compare it to the baseline, run smoke checks, and capture rollback evidence."
+          >
+            {isUpdateRunning ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+            Run target certification
+          </Button>
+        </div>
+      </div>
+
+      {error ? (
+        <p className={cn("mt-3 text-xs leading-5", surfaceTheme === "light" ? "text-rose-700" : "text-rose-200")}>
+          {error}
+        </p>
+      ) : null}
+
+      {report ? (
+        <>
+          <InfoRows
+            surfaceTheme={surfaceTheme}
+            rows={[
+              ["Certified baseline", `v${report.currentCertifiedBaseline}`],
+              ["Installed OpenClaw", report.installedOpenClawVersion ? `v${report.installedOpenClawVersion}` : "Unknown"],
+              ["Manifest status", formatUpdateCompatibilityStatus(report.manifestDecision.status)],
+              ["Certification gate", report.certificationBlocked ? "Blocked" : "No lab blockers"],
+              ["Target certification run", certificationRunLabel],
+              ["Area counts", `${report.summary.passed} passed / ${report.summary.warnings} warning / ${report.summary.failed} failed / ${report.summary.unknown} unknown`],
+              ["Next action", report.summary.recommendedNextAction]
+            ]}
+          />
+
+          <div
+            className={cn(
+              "mt-3 rounded-[16px] border p-3",
+              canPromoteFromScorecard
+                ? surfaceTheme === "light"
+                  ? "border-emerald-200 bg-emerald-50/70"
+                  : "border-emerald-300/20 bg-emerald-300/10"
+                : surfaceTheme === "light"
+                  ? "border-amber-200 bg-amber-50/70"
+                  : "border-amber-300/20 bg-amber-300/10"
+            )}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+                  Target install comparison
+                </p>
+                <p className={cn("mt-1 text-xs leading-5", mutedTextClassName(surfaceTheme))}>
+                  {scorecardMatchesReport
+                    ? `Round-trip evidence ${scorecard!.roundTripEvidence.status}; score ${scorecard!.score}/100; hard blockers ${scorecard!.hardBlockers.length}.`
+                    : "The latest lab report has not yet been backed by a target install, baseline comparison, runtime smoke, and rollback verification run."}
+                </p>
+              </div>
+              <span className={transportTonePillClassName(canPromoteFromScorecard ? "success" : "warning", surfaceTheme)}>
+                {certificationRunLabel}
+              </span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => onRunCertification(report.targetOpenClawVersion)}
+                disabled={isUpdateRunning}
+                className={secondaryButtonClassName(surfaceTheme, "px-4")}
+              >
+                {isUpdateRunning ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                Install, compare, smoke
+              </Button>
+              {canPromoteFromScorecard ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={onCertifyTarget}
+                  disabled={isPromotingCertification}
+                  className={secondaryButtonClassName(surfaceTheme, "px-4")}
+                  title="Certifies this target in the local audited compatibility manifest override."
+                >
+                  {isPromotingCertification ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                  Certify target
+                </Button>
+              ) : null}
+            </div>
+            {promotion ? (
+              <p className={cn("mt-3 text-xs leading-5", surfaceTheme === "light" ? "text-emerald-700" : "text-emerald-100")}>
+                Certified v{promotion.targetOpenClawVersion} locally at {formatTimestamp(promotion.promotedAt)}.
+                Recommended OpenClaw is now v{promotion.promotedRecommendedVersion} after the next snapshot refresh.
+              </p>
+            ) : null}
+          </div>
+
+          {blockingAreas.length > 0 ? (
+            <div className="mt-3 space-y-2">
+              {blockingAreas.slice(0, 5).map((area) => (
+                <div
+                  key={area.id}
+                  className={cn(
+                    "rounded-[16px] border p-3",
+                    surfaceTheme === "light" ? "border-amber-200 bg-amber-50/70" : "border-amber-300/20 bg-amber-300/10"
+                  )}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={transportTonePillClassName(compatibilityLabStatusTone(area.status), surfaceTheme)}>
+                      {formatCompatibilityLabStatus(area.status)}
+                    </span>
+                    <p className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+                      {area.name}
+                    </p>
+                  </div>
+                  <p className={cn("mt-2 text-xs leading-5", mutedTextClassName(surfaceTheme))}>
+                    {area.evidence[0] ?? area.recommendedNextAction}
+                  </p>
+                  <p className={cn("mt-1 text-xs leading-5", mutedTextClassName(surfaceTheme))}>
+                    Fix scope: {area.suggestedFixScope}
+                  </p>
+                  <p className={cn("mt-1 break-words text-[11px] leading-4", mutedTextClassName(surfaceTheme))}>
+                    Affected: {formatShortList(area.affectedAgentOsFiles, 3)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {bundle ? (
+            <div className={cn("mt-3 rounded-[16px] border p-3", surfaceTheme === "light" ? "border-border bg-card" : "border-white/[0.08] bg-[#101a2a]/92")}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+                  Codex fix bundle
+                </p>
+                <span className={transportTonePillClassName(bundle.failures.length > 0 ? "warning" : "success", surfaceTheme)}>
+                  {bundle.failures.length} item{bundle.failures.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <p className={cn("mt-2 text-xs leading-5", mutedTextClassName(surfaceTheme))}>{bundle.instruction}</p>
+              {bundle.failures.length > 0 ? (
+                <div className="mt-2 grid gap-2">
+                  {bundle.failures.slice(0, 3).map((failure) => (
+                    <div key={failure.areaId} className={cn("rounded-[12px] border p-2.5 text-xs", insetPanelClassName(surfaceTheme))}>
+                      <p className="font-medium">{failure.areaId}</p>
+                      <p className={cn("mt-1 break-words", mutedTextClassName(surfaceTheme))}>
+                        {failure.suggestedMinimalPatchScope}
+                      </p>
+                      <p className={cn("mt-1 break-words font-mono text-[10px]", mutedTextClassName(surfaceTheme))}>
+                        {failure.failingCommandOrTest}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <DiagnosticBlock
+                title="fix bundle json"
+                value={formatRawDetails(bundle)}
+                surfaceTheme={surfaceTheme}
+              />
+            </div>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function UpdateSafetyCheckGroup({
   title,
   checks,
@@ -3549,6 +4664,20 @@ function formatUpdateCompatibilityStatus(value: string) {
       return "Blocked";
     case "unknown":
     default:
+      return "Needs certification";
+  }
+}
+
+function formatCompatibilityLabStatus(value: OpenClawCompatibilityLabReport["status"] | OpenClawCompatibilityLabReport["areas"][number]["status"]) {
+  switch (value) {
+    case "passed":
+      return "Passed";
+    case "warning":
+      return "Warning";
+    case "failed":
+      return "Failed";
+    case "unknown":
+    default:
       return "Unknown";
   }
 }
@@ -3615,6 +4744,20 @@ function compatibilityReportStatusTone(value: CompatibilityReport["status"]): Tr
     case "degraded":
       return "warning";
     case "incompatible":
+      return "danger";
+    case "unknown":
+    default:
+      return "neutral";
+  }
+}
+
+function compatibilityLabStatusTone(value: OpenClawCompatibilityLabReport["status"] | OpenClawCompatibilityLabReport["areas"][number]["status"]): TransportStatusTone {
+  switch (value) {
+    case "passed":
+      return "success";
+    case "warning":
+      return "warning";
+    case "failed":
       return "danger";
     case "unknown":
     default:

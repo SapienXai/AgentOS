@@ -48,6 +48,7 @@ import {
   buildOpenClawCertificationScorecardReport,
   type OpenClawCertificationRollbackEvidence
 } from "@/lib/openclaw/certification-scorecard";
+import { persistOpenClawCertificationScorecard } from "@/lib/openclaw/compatibility-lab/store";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
@@ -315,6 +316,25 @@ export async function POST(request: Request) {
         certified: baselineSnapshot.diagnostics,
         target: finalSnapshot.diagnostics
       });
+      const certificationScorecard = buildOpenClawUpdateCertificationScorecard({
+        baselineSnapshot,
+        targetSnapshot: finalSnapshot,
+        targetVersion,
+        decision: updateDecision,
+        preflightReport: preflight.report,
+        capabilityDiff: finalCapabilityDiff,
+        smokeTest: roundTrip.smokeTest ?? finalSnapshot.diagnostics.runtime.smokeTest ?? null,
+        roundTripEvidence: roundTrip.evidence,
+        updateAttempted: true,
+        updateCompleted: roundTrip.ok,
+        exitCode: roundTrip.exitCode,
+        rollbackSnapshotCreated: true,
+        rollbackToCertifiedBaseline: roundTrip.ok ? "passed" : "failed",
+        stdout,
+        stderr,
+        failureMessage: roundTrip.ok ? null : roundTrip.message
+      });
+      await persistOpenClawCertificationScorecard(certificationScorecard).catch(() => {});
 
       await send({
         type: "done",
@@ -325,24 +345,7 @@ export async function POST(request: Request) {
         stderr,
         snapshot: finalSnapshot,
         capabilityDiff: finalCapabilityDiff,
-        certificationScorecard: buildOpenClawUpdateCertificationScorecard({
-          baselineSnapshot,
-          targetSnapshot: finalSnapshot,
-          targetVersion,
-          decision: updateDecision,
-          preflightReport: preflight.report,
-          capabilityDiff: finalCapabilityDiff,
-          smokeTest: roundTrip.smokeTest ?? finalSnapshot.diagnostics.runtime.smokeTest ?? null,
-          roundTripEvidence: roundTrip.evidence,
-          updateAttempted: true,
-          updateCompleted: roundTrip.ok,
-          exitCode: roundTrip.exitCode,
-          rollbackSnapshotCreated: true,
-          rollbackToCertifiedBaseline: roundTrip.ok ? "passed" : "failed",
-          stdout,
-          stderr,
-          failureMessage: roundTrip.ok ? null : roundTrip.message
-        }),
+        certificationScorecard,
         manualCommand: roundTrip.ok ? undefined : formatOpenClawCommand(openClawBin, buildOpenClawUpdateArgs(baselineVersion))
       });
       await closeWriter();

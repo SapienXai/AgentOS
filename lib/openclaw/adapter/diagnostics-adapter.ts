@@ -29,6 +29,7 @@ import {
   resolveOpenClawUpdateCompatibilitySnapshot,
   shouldShowDefaultOpenClawUpdate
 } from "@/lib/openclaw/update-compatibility";
+import type { OpenClawCompatibilityManifest } from "@/lib/openclaw/update-compatibility";
 
 type PayloadReuseState = {
   reusedCachedValue: boolean;
@@ -197,6 +198,7 @@ export function buildGatewayDiagnostics(input: {
   compatibilityReport?: MissionControlSnapshot["diagnostics"]["compatibilityReport"];
   configUpdatePacing?: MissionControlSnapshot["diagnostics"]["configUpdatePacing"];
   compatibilitySmokeTest?: MissionControlSnapshot["diagnostics"]["compatibilitySmokeTest"];
+  updateCompatibilityManifest?: OpenClawCompatibilityManifest | null;
   commandHistory?: OpenClawCommandDiagnostic[];
   transport?: MissionControlSnapshot["diagnostics"]["transport"];
   eventBridge?: MissionControlSnapshot["diagnostics"]["eventBridge"];
@@ -254,6 +256,7 @@ export function buildGatewayDiagnostics(input: {
     states: input.runtimeIssueStates
   });
   const updateCompatibility = resolveOpenClawUpdateCompatibilitySnapshot({
+    manifest: input.updateCompatibilityManifest ?? undefined,
     agentOsVersion: input.agentOsVersion ?? "0.7.2",
     currentVersion: input.versionDiagnostics.currentVersion,
     latestVersion: input.versionDiagnostics.latestVersion

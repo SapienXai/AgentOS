@@ -7,6 +7,7 @@ import {
   getCachedOpenClawCompatibilityReport,
   getOpenClawCompatibilityReport
 } from "@/lib/openclaw/compat";
+import { buildOpenClawCompatibilityLabReport } from "@/lib/openclaw/compatibility-lab/report-service";
 import { resolveOpenClawCompatibilityTarget } from "@/lib/openclaw/compat/targets";
 import {
   OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS,
@@ -100,6 +101,31 @@ test("compatibility report fails a required contract when live response shape dr
   assert.equal(modelsContract?.status, "failed");
   assert.equal(modelsContract?.responseShapeValid, false);
   assert.match(modelsContract?.suggestedRecovery ?? "", /response matches the contract/i);
+
+  const labReport = buildOpenClawCompatibilityLabReport({
+    generatedAt: new Date("2026-06-17T10:00:00.000Z"),
+    targetVersion: OPENCLAW_SUPPORTED_BASELINE_VERSION,
+    currentCertifiedBaseline: OPENCLAW_SUPPORTED_BASELINE_VERSION,
+    installedOpenClawVersion: OPENCLAW_SUPPORTED_BASELINE_VERSION,
+    manifestDecision: {
+      version: OPENCLAW_SUPPORTED_BASELINE_VERSION,
+      status: "certified",
+      allowed: true,
+      defaultVisible: true,
+      requiresExplicitOptIn: false,
+      requiresAgentOsUpdate: false,
+      minRequiredAgentOsVersion: null,
+      reason: "Certified stable baseline.",
+      notes: null
+    },
+    preflightReport: null,
+    compatibilityReport: report,
+    capabilityMatrix: null,
+    compatibilitySmokeReport: null,
+    runtimeIssues: []
+  });
+
+  assert.equal(labReport.areas.find((area) => area.id === "payload-shapes")?.status, "failed");
 });
 
 test("compatibility report avoids scoped live probes that require runtime ids or extra scopes", async () => {

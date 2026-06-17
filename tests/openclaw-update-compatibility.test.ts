@@ -91,6 +91,55 @@ test("unknown OpenClaw version is hidden from the default update path", () => {
   assert.equal(decision.defaultVisible, false);
 });
 
+test("Compatibility Lab report generation keeps unknown latest in report-only policy mode", () => {
+  const settingsSource = readFileSync(
+    path.join(process.cwd(), "components/mission-control/settings-control-center.tsx"),
+    "utf8"
+  );
+
+  assert.match(settingsSource, /\/api\/openclaw\/compatibility-lab/);
+  assert.match(settingsSource, /action:\s*"report"/);
+  assert.match(settingsSource, /mode:\s*"recommended"/);
+  assert.doesNotMatch(settingsSource, /action:\s*"report"[\s\S]{0,160}mode:\s*"advanced"/);
+});
+
+test("Compatibility Lab route exposes report, fix bundle, and certify actions without update execution", () => {
+  const routeSource = readFileSync(
+    path.join(process.cwd(), "app/api/openclaw/compatibility-lab/route.ts"),
+    "utf8"
+  );
+
+  assert.match(routeSource, /"report"/);
+  assert.match(routeSource, /"fix-bundle"/);
+  assert.match(routeSource, /"certify"/);
+  assert.match(routeSource, /promoteOpenClawCompatibilityCertification/);
+  assert.doesNotMatch(routeSource, /openclaw update --tag|buildOpenClawUpdateArgs|spawn\(/);
+});
+
+test("Compatibility Lab UI requires target install comparison before certification promotion", () => {
+  const settingsSource = readFileSync(
+    path.join(process.cwd(), "components/mission-control/settings-control-center.tsx"),
+    "utf8"
+  );
+
+  assert.match(settingsSource, /Run target certification/);
+  assert.match(settingsSource, /Install, compare, smoke/);
+  assert.match(settingsSource, /onOpenUpdateDialog\(targetVersion,\s*"advanced"\)/);
+  assert.match(settingsSource, /Certify target/);
+  assert.match(settingsSource, /action:\s*"certify"/);
+  assert.match(settingsSource, /local audited compatibility manifest override/);
+});
+
+test("round-trip certification persists server-side scorecard evidence for promotion", () => {
+  const routeSource = readFileSync(
+    path.join(process.cwd(), "app/api/update/route.ts"),
+    "utf8"
+  );
+
+  assert.match(routeSource, /persistOpenClawCertificationScorecard/);
+  assert.match(routeSource, /certificationScorecard/);
+});
+
 test("blocked OpenClaw version is rejected with the manifest reason", () => {
   const decision = resolveOpenClawUpdateDecision({
     manifest,

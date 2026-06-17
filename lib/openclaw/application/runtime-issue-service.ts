@@ -5,6 +5,7 @@ import {
   getMissionControlSnapshot,
   invalidateMissionControlSnapshotCache
 } from "@/lib/openclaw/application/mission-control-service";
+import type { OpenClawCompatibilityLabReport } from "@/lib/openclaw/compatibility-lab/types";
 import {
   updateRuntimeIssueState
 } from "@/lib/openclaw/domains/control-plane-settings";
@@ -73,6 +74,51 @@ export async function recordOpenClawUpdateRuntimeIssue(input: {
   }));
 
   invalidateMissionControlSnapshotCache();
+}
+
+export async function recordOpenClawCertificationRuntimeIssue(report: OpenClawCompatibilityLabReport) {
+  const blockingAreas = report.areas.filter((area) => area.blocksCertification && area.status !== "passed");
+  if (blockingAreas.length === 0) {
+    return null;
+  }
+
+  const issueId = runtimeIssueDedupeId({
+    type: "openclaw_certification_blocked",
+    source: "openclaw_gateway",
+    requestId: report.targetOpenClawVersion
+  });
+  const now = new Date().toISOString();
+  const evidence = blockingAreas
+    .slice(0, 4)
+    .map((area) => `${area.name}: ${area.status} - ${area.evidence[0] ?? area.recommendedNextAction}`)
+    .join("\n");
+
+  await updateRuntimeIssueState(issueId, (current) => ({
+    ...current,
+    id: issueId,
+    type: "openclaw_certification_blocked",
+    source: "openclaw_gateway",
+    severity: report.status === "failed" ? "blocked" : "action_required",
+    title: "OpenClaw compatibility certification blocked",
+    message: `OpenClaw v${report.targetOpenClawVersion} cannot be certified yet. ${report.summary.recommendedNextAction}`,
+    status: "failed",
+    createdAt: current?.createdAt ?? now,
+    updatedAt: now,
+    command: "Open Settings / OpenClaw Update Center",
+    inspectCommand: "Open Settings / OpenClaw Update Center",
+    recoveryCommand: undefined,
+    rawOutput: redactSecretText(JSON.stringify({
+      reportId: report.id,
+      targetOpenClawVersion: report.targetOpenClawVersion,
+      currentCertifiedBaseline: report.currentCertifiedBaseline,
+      certificationBlocked: report.certificationBlocked,
+      recommendedNextAction: report.summary.recommendedNextAction,
+      evidence
+    }, null, 2))
+  }));
+
+  invalidateMissionControlSnapshotCache();
+  return issueId;
 }
 
 export async function inspectRuntimeIssueDevices(issueId?: string | null): Promise<{

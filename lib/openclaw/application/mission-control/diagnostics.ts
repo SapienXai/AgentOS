@@ -36,6 +36,7 @@ import type {
 import { getOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import { isDeferredPayloadResult } from "@/lib/openclaw/client/payload-cache";
 import { getOpenClawEventBridgeStreamStatus } from "@/lib/openclaw/application/event-bridge-service";
+import { readOpenClawCompatibilityManifestOverride } from "@/lib/openclaw/compatibility-lab/store";
 import { RuntimeDiagnosticsStateCache } from "@/lib/openclaw/state/runtime-diagnostics-cache";
 import {
   buildModelRecords,
@@ -151,6 +152,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
   if (input.profile === "interactive" && !compatibilityReport) {
     warmOpenClawCompatibilityReport();
   }
+  const updateCompatibilityManifest = await readOpenClawCompatibilityManifestOverride();
 
   return buildGatewayDiagnostics({
     gatewayStatus: input.gatewayStatus,
@@ -168,6 +170,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
     compatibilityReport,
     configUpdatePacing: getConfigUpdatePacingSnapshotForSettings(input.settings),
     compatibilitySmokeTest: getLatestOpenClawCompatibilitySmokeTest(input.settings),
+    updateCompatibilityManifest,
     commandHistory: getRecentOpenClawCommandDiagnostics(),
     transport,
     eventBridge: getOpenClawEventBridgeStreamStatus(),

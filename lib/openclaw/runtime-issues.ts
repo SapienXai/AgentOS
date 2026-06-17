@@ -10,6 +10,7 @@ export type RuntimeIssueType =
   | "openclaw_update_failed"
   | "openclaw_postflight_failed"
   | "openclaw_rollback_needed"
+  | "openclaw_certification_blocked"
   | "unknown_runtime_action";
 
 export type RuntimeIssueSource =
@@ -102,6 +103,7 @@ const defaultIssueTypes: RuntimeIssueType[] = [
   "openclaw_update_failed",
   "openclaw_postflight_failed",
   "openclaw_rollback_needed",
+  "openclaw_certification_blocked",
   "unknown_runtime_action"
 ];
 

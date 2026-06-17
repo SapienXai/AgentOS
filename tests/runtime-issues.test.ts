@@ -231,6 +231,33 @@ test("runtime issue detector restores failed OpenClaw update issues from state",
   assert.equal(issues[0]?.status, "failed");
 });
 
+test("runtime issue detector restores OpenClaw certification blockers from state", () => {
+  const id = "openclaw_certification_blocked:openclaw_gateway:2026.6.6";
+  const issues = buildRuntimeIssues({
+    states: {
+      [id]: {
+        id,
+        type: "openclaw_certification_blocked",
+        source: "openclaw_gateway",
+        severity: "blocked",
+        title: "OpenClaw compatibility certification blocked",
+        message: "OpenClaw v2026.6.6 cannot be certified yet.",
+        status: "failed",
+        createdAt: "2026-06-17T09:00:00.000Z",
+        updatedAt: "2026-06-17T09:01:00.000Z",
+        rawOutput: "{\"reportId\":\"openclaw-lab-test\"}"
+      }
+    },
+    now: new Date("2026-06-17T10:00:00.000Z")
+  });
+
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.type, "openclaw_certification_blocked");
+  assert.equal(issues[0]?.source, "openclaw_gateway");
+  assert.equal(issues[0]?.severity, "blocked");
+  assert.equal(issues[0]?.status, "failed");
+});
+
 test("runtime issue detector rewrites stale rollback commands from saved snapshot output", () => {
   const id = "openclaw_rollback_needed:openclaw_cli:2026.6.6";
   const issues = buildRuntimeIssues({
