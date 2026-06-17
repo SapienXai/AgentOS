@@ -30,6 +30,7 @@ export type PendingWorkspaceMenuEntry = {
   name: string;
   detail: string;
   pending: true;
+  createdAt: number;
 };
 
 export function parsePendingAgentProjections(
@@ -129,15 +130,17 @@ export function buildPendingWorkspaceMenuEntries(
   return Array.from(byWorkspace.entries())
     .map(([workspaceId, agents]) => {
       const firstAgent = agents[0];
+      const createdAt = Math.max(...agents.map((agent) => agent.createdAt));
 
       return {
         id: workspaceId,
         name: firstAgent?.workspaceName ?? readPathBasename(firstAgent?.workspacePath ?? "") ?? workspaceId,
         detail: `${agents.length} agent${agents.length === 1 ? "" : "s"} creating`,
-        pending: true as const
+        pending: true as const,
+        createdAt
       };
     })
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .sort((left, right) => right.createdAt - left.createdAt || left.name.localeCompare(right.name));
 }
 
 export function inferDisplayNameFromScopedAgentId(agentId: string, workspaceId: string) {

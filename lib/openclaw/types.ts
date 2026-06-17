@@ -618,6 +618,7 @@ export interface WorkspaceProject {
   slug: string;
   path: string;
   kind: "workspace";
+  createdAt?: number | null;
   agentIds: string[];
   modelIds: string[];
   activeRuntimeIds: string[];

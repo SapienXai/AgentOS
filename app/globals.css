@@ -852,6 +852,28 @@
   height: 0;
 }
 
+.workspace-menu-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.28) transparent;
+}
+
+.workspace-menu-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.workspace-menu-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.workspace-menu-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.26);
+  border-radius: 9999px;
+}
+
+.workspace-menu-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.38);
+}
+
 @keyframes openclaw-onboarding-aurora {
   0% {
     transform: translate3d(-7%, -4%, 0) rotate(0deg) scale(1);

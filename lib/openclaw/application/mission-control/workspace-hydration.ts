@@ -1,5 +1,7 @@
 import "server-only";
 
+import { stat } from "node:fs/promises";
+
 import {
   buildSnapshotAgentEntry,
   resolveSnapshotAgentDisplayName
@@ -233,9 +235,13 @@ export async function hydrateMissionControlWorkspaceGraph(input: {
         workspaceAgents,
         manifest ?? undefined
       );
+      const createdAt = await readWorkspaceCreatedAt(workspace.path);
 
       return buildWorkspaceProjectEntry({
-        workspace,
+        workspace: {
+          ...workspace,
+          createdAt
+        },
         manifest,
         metadata,
         allAgents: agents
@@ -249,6 +255,24 @@ export async function hydrateMissionControlWorkspaceGraph(input: {
     relationships,
     manifestByWorkspace
   };
+}
+
+async function readWorkspaceCreatedAt(workspacePath: string) {
+  try {
+    const stats = await stat(workspacePath);
+
+    if (Number.isFinite(stats.birthtimeMs) && stats.birthtimeMs > 0) {
+      return stats.birthtimeMs;
+    }
+
+    if (Number.isFinite(stats.ctimeMs) && stats.ctimeMs > 0) {
+      return stats.ctimeMs;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 function ensureWorkspace(

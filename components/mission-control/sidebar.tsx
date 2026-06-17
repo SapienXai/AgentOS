@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   AlertTriangle,
   Bot,
@@ -174,14 +175,17 @@ const sidebarItems: SidebarItem[] = [
 
 const agentOsLogoSrc = "/assets/logo.webp";
 
-type WorkspaceMenuEntry =
+type WorkspaceMenuEntry = (
   | {
       id: string;
       name: string;
       detail: string;
       pending: false;
     }
-  | PendingWorkspaceMenuEntry;
+  | PendingWorkspaceMenuEntry
+) & {
+  sortRank: number;
+};
 
 export function MissionSidebar({
   snapshot,
@@ -232,14 +236,18 @@ export function MissionSidebar({
   );
   const workspaceMenuEntries = useMemo<WorkspaceMenuEntry[]>(
     () => [
-      ...snapshot.workspaces.map((workspace) => ({
+      ...snapshot.workspaces.map((workspace, index) => ({
+        sortRank: resolveWorkspaceMenuSortRank(workspace, index, snapshot.workspaces.length),
         id: workspace.id,
         name: workspace.name,
         detail: `${workspace.agentIds.length} agents`,
         pending: false as const
       })),
-      ...pendingWorkspaceEntries
-    ],
+      ...pendingWorkspaceEntries.map((workspace) => ({
+        ...workspace,
+        sortRank: workspace.createdAt
+      }))
+    ].sort((left, right) => right.sortRank - left.sortRank || left.name.localeCompare(right.name)),
     [pendingWorkspaceEntries, snapshot.workspaces]
   );
   const workspaceCount = workspaceMenuEntries.length;
@@ -1077,6 +1085,18 @@ function SidebarCreateAgentAction({
   );
 }
 
+function resolveWorkspaceMenuSortRank(
+  workspace: Pick<MissionControlSnapshot["workspaces"][number], "createdAt">,
+  index: number,
+  total: number
+) {
+  if (typeof workspace.createdAt === "number" && Number.isFinite(workspace.createdAt)) {
+    return workspace.createdAt;
+  }
+
+  return total - index;
+}
+
 function WorkspaceSwitcher({
   activeWorkspaceId,
   snapshot,
@@ -1235,72 +1255,94 @@ function WorkspaceSwitcher({
         </span>
       </button>
 
-      {open ? (
-        <div
-          role="menu"
-          className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-panel backdrop-blur-xl"
-        >
-          <WorkspaceMenuButton
-            label="All workspaces"
-            detail={`${workspaceCount} total`}
-            selected={activeWorkspaceId === null}
-            onClick={() => {
-              onSelectWorkspace(null);
-              setOpen(false);
-              setWorkspaceActionsOpenForId(null);
-            }}
-          />
-          {workspaceMenuEntries.map((entry) => (
-            <WorkspaceMenuRow
-              key={entry.id}
-              label={entry.name}
-              detail={entry.detail}
-              selected={entry.id === activeWorkspaceId}
-              actionsOpen={workspaceActionsOpenForId === entry.id}
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            role="menu"
+            initial={{ opacity: 0, y: 8, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.985 }}
+            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-xl border border-border/80 bg-popover/95 p-1.5 text-popover-foreground shadow-[0_22px_54px_hsl(var(--background)/0.22),0_0_0_1px_hsl(var(--foreground)/0.03)] backdrop-blur-xl"
+          >
+            <WorkspaceMenuButton
+              label="All workspaces"
+              detail={`${workspaceCount} total`}
+              selected={activeWorkspaceId === null}
+              leadingAdornment={
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary">
+                  <Home className="h-3.5 w-3.5" />
+                </span>
+              }
               onClick={() => {
-                onSelectWorkspace(entry.id);
+                onSelectWorkspace(null);
                 setOpen(false);
                 setWorkspaceActionsOpenForId(null);
               }}
-              onToggleActions={
-                entry.pending
-                  ? undefined
-                  : () => setWorkspaceActionsOpenForId((current) => (current === entry.id ? null : entry.id))
-              }
-              onEdit={
-                entry.pending
-                  ? undefined
-                  : () => {
-                      onEditWorkspace(entry.id);
+            />
+
+            <div className="workspace-menu-scroll mt-1 flex max-h-[356px] flex-col gap-1 overflow-y-auto pr-1">
+              {workspaceMenuEntries.map((entry, index) => (
+                <motion.div
+                  key={entry.id}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: Math.min(index, 6) * 0.015, duration: 0.14 }}
+                >
+                  <WorkspaceMenuRow
+                    label={entry.name}
+                    detail={entry.detail}
+                    selected={entry.id === activeWorkspaceId}
+                    pending={entry.pending}
+                    actionsOpen={workspaceActionsOpenForId === entry.id}
+                    onClick={() => {
+                      onSelectWorkspace(entry.id);
                       setOpen(false);
                       setWorkspaceActionsOpenForId(null);
+                    }}
+                    onToggleActions={
+                      entry.pending
+                        ? undefined
+                        : () => setWorkspaceActionsOpenForId((current) => (current === entry.id ? null : entry.id))
                     }
-              }
-              onDelete={entry.pending ? undefined : () => requestDeleteWorkspace(entry.id)}
-            />
-          ))}
-          <div className="mt-1 border-t border-border pt-1">
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                onOpenWorkspaceCreate();
-                setOpen(false);
-                setWorkspaceActionsOpenForId(null);
-              }}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-            >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
-                <Plus className="h-3.5 w-3.5" />
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-[0.82rem] font-medium">Create Workspace</span>
-                <span className="mt-0.5 block text-[0.67rem] text-muted-foreground">Start a new workspace</span>
-              </span>
-            </button>
-          </div>
-        </div>
-      ) : null}
+                    onEdit={
+                      entry.pending
+                        ? undefined
+                        : () => {
+                            onEditWorkspace(entry.id);
+                            setOpen(false);
+                            setWorkspaceActionsOpenForId(null);
+                          }
+                    }
+                    onDelete={entry.pending ? undefined : () => requestDeleteWorkspace(entry.id)}
+                  />
+                </motion.div>
+              ))}
+            </div>
+
+            <div className="mt-1.5 border-t border-border/70 pt-1.5">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onOpenWorkspaceCreate();
+                  setOpen(false);
+                  setWorkspaceActionsOpenForId(null);
+                }}
+                className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left text-primary transition-all hover:border-primary/20 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary">
+                  <Plus className="h-3.5 w-3.5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[0.82rem] font-medium">Create Workspace</span>
+                  <span className="mt-0.5 block text-[0.67rem] text-muted-foreground">Start a new workspace</span>
+                </span>
+              </button>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <Dialog
         open={Boolean(deleteTarget)}
@@ -1466,6 +1508,7 @@ function WorkspaceMenuButton({
   selected,
   onClick,
   className,
+  leadingAdornment,
   endAdornment,
   onEndAdornmentClick
 }: {
@@ -1474,6 +1517,7 @@ function WorkspaceMenuButton({
   selected: boolean;
   onClick: () => void;
   className?: string;
+  leadingAdornment?: ReactNode;
   endAdornment?: ReactNode;
   onEndAdornmentClick?: () => void;
 }) {
@@ -1495,14 +1539,15 @@ function WorkspaceMenuButton({
         onClick();
       }}
       className={cn(
-        "flex w-full min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        "flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
         selected
-          ? "bg-primary/10 text-primary"
-          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+          ? "border-primary/25 bg-primary/10 text-primary shadow-[0_8px_20px_hsl(var(--primary)/0.08)]"
+          : "border-transparent text-muted-foreground hover:border-border/80 hover:bg-accent/70 hover:text-accent-foreground",
         className
       )}
     >
-      <span className="min-w-0">
+      {leadingAdornment}
+      <span className="min-w-0 flex-1">
         <span className="block truncate text-[0.82rem] font-medium">{label}</span>
         <span className="mt-0.5 block text-[0.67rem] text-muted-foreground">{detail}</span>
       </span>
@@ -1510,8 +1555,10 @@ function WorkspaceMenuButton({
         <span
           data-workspace-actions-trigger="true"
           className={cn(
-            "ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors",
-            selected ? "text-primary hover:bg-primary/10" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            "ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors",
+            selected
+              ? "text-primary hover:bg-primary/10"
+              : "text-muted-foreground hover:bg-background/80 hover:text-accent-foreground"
           )}
         >
           {endAdornment}
@@ -1525,6 +1572,7 @@ function WorkspaceMenuRow({
   label,
   detail,
   selected,
+  pending,
   actionsOpen,
   onClick,
   onToggleActions,
@@ -1534,6 +1582,7 @@ function WorkspaceMenuRow({
   label: string;
   detail: string;
   selected: boolean;
+  pending: boolean;
   actionsOpen: boolean;
   onClick: () => void;
   onToggleActions?: () => void;
@@ -1550,21 +1599,59 @@ function WorkspaceMenuRow({
         selected={selected}
         onClick={onClick}
         onEndAdornmentClick={onToggleActions}
+        leadingAdornment={<WorkspaceMenuAvatar label={label} pending={pending} selected={selected} />}
         endAdornment={hasActions ? <Settings2 className="h-4 w-4" /> : null}
       />
 
-      {actionsOpen && onEdit && onDelete ? (
-        <div
-          role="menu"
-          className="absolute right-0 top-[calc(100%-2px)] z-50 min-w-[152px] rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-panel backdrop-blur-xl"
-          onClick={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <WorkspaceActionButton icon={Pencil} label="Edit workspace" onClick={onEdit} />
-          <WorkspaceActionButton icon={Trash2} label="Delete workspace" destructive onClick={onDelete} />
-        </div>
-      ) : null}
+      <AnimatePresence initial={false}>
+        {actionsOpen && onEdit && onDelete ? (
+          <motion.div
+            initial={{ height: 0, opacity: 0, y: -4 }}
+            animate={{ height: "auto", opacity: 1, y: 0 }}
+            exit={{ height: 0, opacity: 0, y: -4 }}
+            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            className="overflow-hidden"
+          >
+            <div
+              role="menu"
+              className="mx-1 mt-1 grid grid-cols-2 gap-1 rounded-lg border border-border/80 bg-background/[0.88] p-1 text-popover-foreground shadow-[0_14px_34px_hsl(var(--background)/0.20)] backdrop-blur-xl"
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <WorkspaceActionButton icon={Pencil} label="Edit workspace" onClick={onEdit} />
+              <WorkspaceActionButton icon={Trash2} label="Delete workspace" destructive onClick={onDelete} />
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
+  );
+}
+
+function WorkspaceMenuAvatar({
+  label,
+  pending,
+  selected
+}: {
+  label: string;
+  pending: boolean;
+  selected: boolean;
+}) {
+  const initial = label.trim().charAt(0).toUpperCase() || "W";
+
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-[0.68rem] font-semibold",
+        selected
+          ? "border-primary/25 bg-primary/[0.12] text-primary"
+          : "border-border/80 bg-background/70 text-muted-foreground",
+        pending && "border-amber-300/30 bg-amber-300/10 text-amber-500 dark:text-amber-200"
+      )}
+    >
+      {pending ? <span className="h-1.5 w-1.5 rounded-full bg-current shadow-[0_0_10px_currentColor]" /> : initial}
+    </span>
   );
 }
 
@@ -1585,14 +1672,14 @@ function WorkspaceActionButton({
       role="menuitem"
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        "flex min-w-0 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
         destructive
           ? "text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-300 dark:hover:bg-rose-400/10 dark:hover:text-rose-100"
           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       )}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" />
-      <span>{label}</span>
+      <span className="truncate">{label}</span>
     </button>
   );
 }

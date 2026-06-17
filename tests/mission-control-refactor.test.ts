@@ -134,7 +134,8 @@ test("pending workspace menu entries keep creating workspaces reachable", () => 
       id: "tortellini",
       name: "Tortellini",
       detail: "2 agents creating",
-      pending: true
+      pending: true,
+      createdAt: 1_000
     }
   ]);
   assert.deepEqual(buildPendingWorkspaceMenuEntries(pending, new Set(["tortellini"])), []);
