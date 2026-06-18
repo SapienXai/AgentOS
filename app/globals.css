@@ -147,6 +147,68 @@
     border: 1px solid currentColor;
     opacity: 0.15;
   }
+
+  .cockpit-panel {
+    position: relative;
+    overflow: hidden;
+    border-color: hsl(var(--border) / 0.88);
+    background:
+      linear-gradient(180deg, hsl(var(--card) / 0.96), hsl(var(--background) / 0.82));
+    box-shadow: var(--shadow-card);
+  }
+
+  .cockpit-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background:
+      linear-gradient(180deg, hsl(var(--foreground) / 0.035), transparent 22%),
+      radial-gradient(circle at 92% 0%, hsl(var(--primary) / 0.06), transparent 34%);
+    opacity: 0.9;
+  }
+
+  .cockpit-panel > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .cockpit-inset {
+    border-color: hsl(var(--border) / 0.82);
+    background: hsl(var(--muted) / 0.44);
+  }
+
+  .dark .cockpit-panel {
+    border-color: hsl(var(--primary) / 0.16);
+    background:
+      radial-gradient(circle at 8% -6%, hsl(var(--primary) / 0.08), transparent 32%),
+      linear-gradient(180deg, hsl(var(--card) / 0.94), hsl(var(--background) / 0.88));
+    box-shadow:
+      0 1px 0 hsl(var(--foreground) / 0.035) inset,
+      0 18px 64px rgba(0, 0, 0, 0.32),
+      0 0 0 1px hsl(var(--primary) / 0.035);
+  }
+
+  .dark .cockpit-inset {
+    border-color: hsl(var(--primary) / 0.12);
+    background:
+      linear-gradient(180deg, hsl(var(--card) / 0.72), hsl(var(--background) / 0.46));
+  }
+
+  .mission-shell--light .cockpit-panel {
+    border-color: hsl(var(--border) / 0.92);
+    background:
+      linear-gradient(180deg, hsl(0 0% 100% / 0.98), hsl(220 27% 98% / 0.92));
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.04),
+      0 18px 42px rgba(15, 23, 42, 0.07);
+  }
+
+  .mission-shell--light .cockpit-inset {
+    border-color: hsl(var(--border) / 0.92);
+    background: hsl(220 18% 96% / 0.78);
+  }
 }
 
 .mission-shell::before {
