@@ -841,11 +841,11 @@ export function SettingsControlCenter(
     >
         <section
           className={cn(
-            "min-w-0 pb-8 pl-[72px] pr-3 pt-[86px] sm:pl-[84px] sm:pr-6 lg:mr-[84px] lg:px-7 xl:px-8",
-            sidebarOpen ? "lg:ml-[316px]" : "lg:ml-[80px]"
+            "min-w-0 pb-8 pl-[64px] pr-3 pt-[86px] sm:pl-[72px] sm:pr-4 lg:px-4 xl:px-5 2xl:px-6",
+            sidebarOpen ? "lg:ml-[308px]" : "lg:ml-[72px]"
           )}
         >
-          <div className="mx-auto max-w-[1520px] space-y-5">
+          <div className="mx-auto max-w-[1680px] space-y-5">
             <section className="space-y-5">
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[1.05fr_0.9fr_0.9fr_1.45fr_0.7fr_0.72fr]">
                   <SummaryTile
@@ -905,8 +905,10 @@ export function SettingsControlCenter(
               <nav
                 aria-label="Settings sections"
                 className={cn(
-                  "flex gap-1 overflow-x-auto rounded-[18px] border p-1",
-                  surfaceTheme === "light" ? "border-border bg-card/84 shadow-card" : "border-border bg-card/90"
+                  "flex gap-1 overflow-x-auto rounded-[18px] border p-1 shadow-[0_18px_44px_rgba(15,23,42,0.10)]",
+                  surfaceTheme === "light"
+                    ? "border-border bg-card"
+                    : "border-border bg-[#0b111c] shadow-[0_18px_48px_rgba(0,0,0,0.36)]"
                 )}
               >
                 {settingsSections.map((section) => {
@@ -1045,10 +1047,10 @@ export function SettingsControlCenter(
                               scrollSettingsToTop();
                             }}
                             className={cn(
-                              "group min-h-[134px] rounded-[18px] border p-4 transition-colors",
+                              "group min-h-[134px] rounded-[18px] border p-4 shadow-[0_14px_34px_rgba(15,23,42,0.07)] transition-colors",
                               surfaceTheme === "light"
-                                ? "border-border bg-card/72 hover:border-primary/25 hover:bg-muted/45"
-                                : "border-border bg-white/[0.035] hover:border-primary/25 hover:bg-white/[0.06]"
+                                ? "border-slate-200 bg-white hover:border-primary/25 hover:bg-slate-50"
+                                : "border-white/[0.12] bg-[#121a27] shadow-[0_16px_38px_rgba(0,0,0,0.24)] hover:border-primary/30 hover:bg-[#172231]"
                             )}
                           >
                             <div className="flex items-start justify-between gap-3">
