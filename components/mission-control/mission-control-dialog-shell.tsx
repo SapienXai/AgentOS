@@ -28,6 +28,7 @@ type MissionControlDialogShellProps = {
   children: ReactNode;
   bodyClassName?: string;
   contentClassName?: string;
+  disableOutsideDismiss?: boolean;
 };
 
 export function MissionControlDialogShell({
@@ -43,7 +44,8 @@ export function MissionControlDialogShell({
   footer,
   children,
   bodyClassName,
-  contentClassName
+  contentClassName,
+  disableOutsideDismiss = false
 }: MissionControlDialogShellProps) {
   const isLight = surfaceTheme === "light";
 
@@ -51,6 +53,8 @@ export function MissionControlDialogShell({
     <Dialog open={open} onOpenChange={onOpenChange}>
       {trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
       <DialogContent
+        onInteractOutside={disableOutsideDismiss ? (event) => event.preventDefault() : undefined}
+        onPointerDownOutside={disableOutsideDismiss ? (event) => event.preventDefault() : undefined}
         overlayClassName={isLight ? "bg-[rgba(26,22,18,0.26)] backdrop-blur-lg" : "bg-black/78 backdrop-blur-lg"}
         closeClassName={cn(
           "right-3 top-3 h-7 w-7",

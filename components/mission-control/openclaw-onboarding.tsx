@@ -330,7 +330,7 @@ export function OpenClawOnboarding({
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2.5 pb-2.5 sm:px-3 sm:pb-3">
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 pb-40 sm:px-3 sm:pb-40 [-webkit-overflow-scrolling:touch]">
             {showLaunchpad ? (
               <LaunchpadStage
                 surfaceTheme={surfaceTheme}
@@ -377,7 +377,7 @@ export function OpenClawOnboarding({
 
           <div
             className={cn(
-              "mt-auto flex flex-wrap items-center justify-between gap-1.5 border-t px-2.5 py-2 sm:px-3",
+              "mt-auto shrink-0 flex flex-wrap items-center justify-between gap-1.5 border-t px-2.5 py-2 sm:px-3",
               surfaceTheme === "light" ? "border-[#ebddd2]" : "border-white/8"
             )}
           >

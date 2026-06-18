@@ -144,6 +144,7 @@ type MissionSidebarProps = {
   onConnectModelProvider: (provider: string) => void;
   onOpenModelSetup: () => void;
   onOpenAddModels: () => void;
+  onOpenCreateAgent?: () => void;
   onOpenWorkspaceCreate: () => void;
   onEditWorkspace: (workspaceId: string) => void;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
@@ -196,6 +197,7 @@ export function MissionSidebar({
   onToggleCollapsed,
   onSelectWorkspace,
   onRefresh,
+  onOpenCreateAgent,
   onOpenWorkspaceCreate,
   onEditWorkspace,
   onSnapshotChange,
@@ -497,6 +499,7 @@ export function MissionSidebar({
               onSnapshotChange={onSnapshotChange}
               onAgentCreationPending={onAgentCreationPending}
               onAgentCreatedVisible={onAgentCreatedVisible}
+              onOpenCreateAgent={onOpenCreateAgent}
             />
 
             <nav aria-label="Primary" className="sidebar-scroll mt-6 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
@@ -1035,7 +1038,8 @@ function SidebarCreateAgentAction({
   onRefresh,
   onSnapshotChange,
   onAgentCreationPending,
-  onAgentCreatedVisible
+  onAgentCreatedVisible,
+  onOpenCreateAgent
 }: {
   snapshot: MissionControlSnapshot;
   activeWorkspaceId: string | null;
@@ -1045,8 +1049,69 @@ function SidebarCreateAgentAction({
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
   onAgentCreationPending?: (agent: PendingAgentProjection) => void;
   onAgentCreatedVisible?: (agentId: string) => void;
+  onOpenCreateAgent?: () => void;
 }) {
-  const hasWorkspace = Boolean(activeWorkspaceId);
+  const hasWorkspace = Boolean(activeWorkspaceId ?? snapshot.workspaces[0]?.id);
+  const trigger = collapsed ? (
+    <button
+      type="button"
+      disabled={!hasWorkspace}
+      aria-label="New Agent"
+      title={hasWorkspace ? "New Agent" : "Create a workspace first"}
+      onPointerDown={(event) => {
+        if (!onOpenCreateAgent || !hasWorkspace) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        onOpenCreateAgent();
+      }}
+      onClick={(event) => {
+        if (!onOpenCreateAgent || !hasWorkspace) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        onOpenCreateAgent();
+      }}
+      className="mt-3 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card/75 text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <Plus className="h-4 w-4" />
+    </button>
+  ) : (
+    <button
+      type="button"
+      disabled={!hasWorkspace}
+      onPointerDown={(event) => {
+        if (!onOpenCreateAgent || !hasWorkspace) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        onOpenCreateAgent();
+      }}
+      onClick={(event) => {
+        if (!onOpenCreateAgent || !hasWorkspace) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        onOpenCreateAgent();
+      }}
+      className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-primary px-3.5 text-[0.84rem] font-semibold text-primary-foreground shadow-[0_12px_26px_hsl(var(--primary)/0.18)] transition-all hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <Plus className="h-[18px] w-[18px]" />
+      <span>New Agent</span>
+    </button>
+  );
+
+  if (onOpenCreateAgent) {
+    return trigger;
+  }
 
   return (
     <CreateAgentDialog
@@ -1057,28 +1122,7 @@ function SidebarCreateAgentAction({
       onAgentCreationPending={onAgentCreationPending}
       onAgentCreatedVisible={onAgentCreatedVisible}
       surfaceTheme={surfaceTheme}
-      trigger={
-        collapsed ? (
-          <button
-            type="button"
-            disabled={!hasWorkspace}
-            aria-label="New Agent"
-            title={hasWorkspace ? "New Agent" : "Create a workspace first"}
-            className="mt-3 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card/75 text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            disabled={!hasWorkspace}
-            className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-primary px-3.5 text-[0.84rem] font-semibold text-primary-foreground shadow-[0_12px_26px_hsl(var(--primary)/0.18)] transition-all hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Plus className="h-[18px] w-[18px]" />
-            <span>New Agent</span>
-          </button>
-        )
-      }
+      trigger={trigger}
     />
   );
 }
@@ -1930,6 +1974,7 @@ function CollapsedSidebar({
   onSnapshotChange,
   onAgentCreationPending,
   onAgentCreatedVisible,
+  onOpenCreateAgent,
   onItemNavigate,
   onExpandCollapsed
 }: {
@@ -1945,6 +1990,7 @@ function CollapsedSidebar({
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
   onAgentCreationPending?: (agent: PendingAgentProjection) => void;
   onAgentCreatedVisible?: (agentId: string) => void;
+  onOpenCreateAgent?: () => void;
   onItemNavigate: (item: SidebarItem) => void;
   onExpandCollapsed: () => void;
 }) {
@@ -1994,6 +2040,7 @@ function CollapsedSidebar({
           onSnapshotChange={onSnapshotChange}
           onAgentCreationPending={onAgentCreationPending}
           onAgentCreatedVisible={onAgentCreatedVisible}
+          onOpenCreateAgent={onOpenCreateAgent}
         />
       </RailTooltip>
 

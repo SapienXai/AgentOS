@@ -352,6 +352,7 @@ export function ModelStage({
 
           <OpenClawOnboardingProviderFlow
             snapshot={snapshot}
+            surfaceTheme={surfaceTheme}
             selectedModelId={selectedModelId}
             onSelectedModelIdChange={onSelectedModelIdChange}
             onOpenAddModels={onOpenAddModels}

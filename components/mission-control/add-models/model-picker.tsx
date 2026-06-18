@@ -31,7 +31,8 @@ export function ModelPicker({
   onSearchChange,
   onToggleModel,
   onAddSelected,
-  isAdding
+  isAdding,
+  surfaceTheme = "dark"
 }: {
   provider: AddModelsProviderId;
   models: AddModelsCatalogModel[];
@@ -41,7 +42,9 @@ export function ModelPicker({
   onToggleModel: (modelId: string) => void;
   onAddSelected: () => void;
   isAdding: boolean;
+  surfaceTheme?: "dark" | "light";
 }) {
+  const isLight = surfaceTheme === "light";
   const recommendedModels = models.filter((model) => model.recommended);
   const availableSelectedCount = selectedModelIds.filter(
     (modelId) => !models.find((model) => model.id === modelId)?.alreadyAdded
@@ -53,10 +56,19 @@ export function ModelPicker({
   const filteredAllModels = filterModels(models, search);
 
   return (
-    <div className="rounded-[18px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,15,26,0.94),rgba(7,11,20,0.96))] p-3">
+    <div
+      className={cn(
+        "rounded-[18px] border p-3",
+        isLight
+          ? "border-[#e3d5c8] bg-[linear-gradient(180deg,rgba(255,252,248,0.98),rgba(247,241,234,0.95))]"
+          : "border-white/10 bg-[linear-gradient(180deg,rgba(10,15,26,0.94),rgba(7,11,20,0.96))]"
+      )}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="font-display text-[0.84rem] text-white">Select models to add</p>
+          <p className={cn("font-display text-[0.84rem]", isLight ? "text-[#2d241f]" : "text-white")}>
+            Select models to add
+          </p>
         </div>
         <Badge variant="muted" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
           {models.filter((model) => model.alreadyAdded).length} already added
@@ -91,6 +103,7 @@ export function ModelPicker({
               selectedModelIds={selectedModelIds}
               onToggleModel={onToggleModel}
               emptyMessage="No recommended matches. Switch to All models to browse the full catalog."
+              surfaceTheme={surfaceTheme}
             />
           </TabsContent>
           <TabsContent value="all">
@@ -99,6 +112,7 @@ export function ModelPicker({
               selectedModelIds={selectedModelIds}
               onToggleModel={onToggleModel}
               emptyMessage="No models matched this search."
+              surfaceTheme={surfaceTheme}
             />
           </TabsContent>
         </Tabs>
@@ -109,12 +123,13 @@ export function ModelPicker({
             selectedModelIds={selectedModelIds}
             onToggleModel={onToggleModel}
             emptyMessage="No models matched this search."
+            surfaceTheme={surfaceTheme}
           />
         </div>
       )}
 
-      <div className="mt-3 flex items-center justify-between gap-2 border-t border-white/10 pt-3">
-        <p className="text-[9px] leading-4 text-slate-400">
+      <div className={cn("mt-3 flex items-center justify-between gap-2 border-t pt-3", isLight ? "border-[#e3d5c8]" : "border-white/10")}>
+        <p className={cn("text-[9px] leading-4", isLight ? "text-[#74665c]" : "text-slate-400")}>
           {availableSelectedCount > 0
             ? `${availableSelectedCount} model${availableSelectedCount === 1 ? "" : "s"} selected`
             : "Choose at least one model to add"}
@@ -136,16 +151,25 @@ function ModelList({
   models,
   selectedModelIds,
   onToggleModel,
-  emptyMessage
+  emptyMessage,
+  surfaceTheme = "dark"
 }: {
   models: AddModelsCatalogModel[];
   selectedModelIds: string[];
   onToggleModel: (modelId: string) => void;
   emptyMessage: string;
+  surfaceTheme?: "dark" | "light";
 }) {
+  const isLight = surfaceTheme === "light";
+
   if (models.length === 0) {
     return (
-      <div className="rounded-[16px] border border-dashed border-white/10 bg-white/[0.03] px-3 py-5 text-center text-[11px] text-slate-400">
+      <div
+        className={cn(
+          "rounded-[16px] border border-dashed px-3 py-5 text-center text-[11px]",
+          isLight ? "border-[#e3d5c8] bg-white/70 text-[#74665c]" : "border-white/10 bg-white/[0.03] text-slate-400"
+        )}
+      >
         {emptyMessage}
       </div>
     );
@@ -165,26 +189,42 @@ function ModelList({
             onClick={() => onToggleModel(model.id)}
             className={cn(
               "flex w-full items-start justify-between gap-2 rounded-[14px] border px-2.5 py-2 text-left transition-all",
-              model.alreadyAdded
-                ? "cursor-not-allowed border-white/8 bg-white/[0.02] opacity-70"
-                : selected
-                  ? "border-cyan-300/35 bg-cyan-300/[0.08]"
-                  : needsSetup
-                    ? "border-amber-300/20 bg-amber-300/[0.06] hover:border-amber-300/30 hover:bg-amber-300/[0.08]"
-                  : "border-white/8 bg-white/[0.03] hover:border-white/16 hover:bg-white/[0.05]"
+              isLight
+                ? model.alreadyAdded
+                  ? "cursor-not-allowed border-[#e6d8cb] bg-[#f7f1ea] opacity-70"
+                  : selected
+                    ? "border-cyan-300 bg-cyan-50"
+                    : needsSetup
+                      ? "border-amber-300 bg-amber-50 hover:border-amber-400"
+                    : "border-[#e6d8cb] bg-white/80 hover:border-[#d8c6b8] hover:bg-white"
+                : model.alreadyAdded
+                  ? "cursor-not-allowed border-white/8 bg-white/[0.02] opacity-70"
+                  : selected
+                    ? "border-cyan-300/35 bg-cyan-300/[0.08]"
+                    : needsSetup
+                      ? "border-amber-300/20 bg-amber-300/[0.06] hover:border-amber-300/30 hover:bg-amber-300/[0.08]"
+                    : "border-white/8 bg-white/[0.03] hover:border-white/16 hover:bg-white/[0.05]"
             )}
           >
             <div className="flex min-w-0 items-start gap-2">
               <div
                 className={cn(
                   "mt-0.5 flex h-[16px] w-[16px] shrink-0 items-center justify-center rounded-md border",
-                  model.alreadyAdded
-                    ? "border-white/10 bg-white/[0.03] text-slate-500"
-                    : selected
-                      ? "border-cyan-300/50 bg-cyan-300/15 text-cyan-100"
-                      : needsSetup
-                        ? "border-amber-300/30 bg-amber-300/10 text-amber-100"
-                      : "border-white/12 bg-white/[0.03] text-transparent"
+                  isLight
+                    ? model.alreadyAdded
+                      ? "border-[#d9cbbf] bg-white text-[#8c8177]"
+                      : selected
+                        ? "border-cyan-300 bg-cyan-100 text-cyan-800"
+                        : needsSetup
+                          ? "border-amber-300 bg-amber-100 text-amber-800"
+                        : "border-[#d9cbbf] bg-white text-transparent"
+                    : model.alreadyAdded
+                      ? "border-white/10 bg-white/[0.03] text-slate-500"
+                      : selected
+                        ? "border-cyan-300/50 bg-cyan-300/15 text-cyan-100"
+                        : needsSetup
+                          ? "border-amber-300/30 bg-amber-300/10 text-amber-100"
+                        : "border-white/12 bg-white/[0.03] text-transparent"
                 )}
               >
                 {model.alreadyAdded ? (
@@ -196,17 +236,19 @@ function ModelList({
                 )}
               </div>
               <div className="min-w-0">
-                <p className="truncate text-[11px] font-medium text-white">{model.name}</p>
-                <p className="mt-0.5 truncate text-[9px] uppercase tracking-[0.16em] text-slate-500">
+                <p className={cn("truncate text-[11px] font-medium", isLight ? "text-[#2d241f]" : "text-white")}>
+                  {model.name}
+                </p>
+                <p className={cn("mt-0.5 truncate text-[9px] uppercase tracking-[0.16em]", isLight ? "text-[#8c8177]" : "text-slate-500")}>
                   {model.id}
                 </p>
-                <div className="mt-1 flex flex-wrap gap-1.5 text-[9px] text-slate-400">
+                <div className={cn("mt-1 flex flex-wrap gap-1.5 text-[9px]", isLight ? "text-[#74665c]" : "text-slate-400")}>
                   <span>{model.input}</span>
                   {model.contextWindow ? <span>{Intl.NumberFormat().format(model.contextWindow)} ctx</span> : null}
                   {model.isFree ? <span>free</span> : null}
                 </div>
                 {needsSetup ? (
-                  <p className="mt-1 text-[9px] leading-4 text-amber-100/85">
+                  <p className={cn("mt-1 text-[9px] leading-4", isLight ? "text-amber-800" : "text-amber-100/85")}>
                     {resolveSetupHint(model)}
                   </p>
                 ) : null}

@@ -60,8 +60,10 @@ type CreateAgentDialogProps = {
   onAgentCreationPending?: (agent: PendingAgentProjection) => void;
   onAgentCreated?: (agentId: string) => void;
   onAgentCreatedVisible?: (agentId: string) => void;
-  trigger: ReactNode;
+  trigger?: ReactNode;
   surfaceTheme?: SurfaceTheme;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 export function CreateAgentDialog({
@@ -73,14 +75,24 @@ export function CreateAgentDialog({
   onAgentCreated,
   onAgentCreatedVisible,
   trigger,
-  surfaceTheme = "dark"
+  surfaceTheme = "dark",
+  open: controlledOpen,
+  onOpenChange: onControlledOpenChange
 }: CreateAgentDialogProps) {
   const effectiveSurfaceTheme = surfaceTheme;
   const isLight = surfaceTheme === "light";
   const initialWorkspaceId = defaultWorkspaceId ?? snapshot.workspaces[0]?.id ?? "";
   const [isMounted, setIsMounted] = useState(false);
   const [showAdvancedIdentity, setShowAdvancedIdentity] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setDialogOpen = useCallback((nextOpen: boolean) => {
+    if (controlledOpen === undefined) {
+      setUncontrolledOpen(nextOpen);
+    }
+
+    onControlledOpenChange?.(nextOpen);
+  }, [controlledOpen, onControlledOpenChange]);
   const [stage, setStage] = useState<WizardStage>("start");
   const [startPoint, setStartPoint] = useState<StartPoint | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<AgentPreset>("worker");
@@ -255,8 +267,8 @@ export function CreateAgentDialog({
     setCreatedAgentId(null);
     setCreatedAgentWarning(null);
     setIsSaving(false);
-    setOpen(false);
-  }, [createProgress, createdAgentId, createdAgentVisible, createdAgentWarning, onAgentCreated, onAgentCreatedVisible]);
+    setDialogOpen(false);
+  }, [createProgress, createdAgentId, createdAgentVisible, createdAgentWarning, onAgentCreated, onAgentCreatedVisible, setDialogOpen]);
 
   useEffect(() => {
     if (createProgress !== "syncing" || !createdAgentId || createdAgentVisible) {
@@ -277,7 +289,7 @@ export function CreateAgentDialog({
       setCreatedAgentId(null);
       setCreatedAgentWarning(null);
       setIsSaving(false);
-      setOpen(false);
+      setDialogOpen(false);
     }, 12000);
 
     return () => {
@@ -286,14 +298,14 @@ export function CreateAgentDialog({
         createSyncTimeoutRef.current = null;
       }
     };
-  }, [createProgress, createdAgentId, createdAgentVisible, createdAgentWarning, onAgentCreated]);
+  }, [createProgress, createdAgentId, createdAgentVisible, createdAgentWarning, onAgentCreated, setDialogOpen]);
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen && (isSaving || createProgress !== "idle")) {
       return;
     }
 
-    setOpen(nextOpen);
+    setDialogOpen(nextOpen);
 
     if (!nextOpen) {
       resetWizardState(initialWorkspaceId);
@@ -309,13 +321,16 @@ export function CreateAgentDialog({
     setSelectedPreset("worker");
     setSelectedImportAgentId(null);
     setImportSearch("");
-    setDraft(nextDraft);
 
-    // Empty için ara adım yok — direkt details'e geç
     if (nextStartPoint === "empty") {
+      setDraft(nextDraft);
       setStage("details");
+    } else if (nextStartPoint === "preset") {
+      setDraft(applyAgentPreset(nextDraft, "worker"));
+      setStage("preset");
     } else {
-      setStage("start");
+      setDraft(nextDraft);
+      setStage("import");
     }
   };
 
@@ -529,6 +544,7 @@ export function CreateAgentDialog({
         ) : null
       }
       bodyClassName="px-4 py-3.5"
+      disableOutsideDismiss
       footer={
         <div className="flex w-full flex-col gap-2">
           {createProgressMessage ? (

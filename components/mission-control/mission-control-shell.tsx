@@ -10,6 +10,7 @@ import { AddModelsDialog } from "@/components/mission-control/add-models/add-mod
 import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
 import { AgentCapabilityEditorDialog } from "@/components/mission-control/agent-capability-editor-dialog";
 import { CommandBar } from "@/components/mission-control/command-bar";
+import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
 import { ContextEngineDialog } from "@/components/mission-control/context-engine-dialog";
 import { InspectorPanel } from "@/components/mission-control/inspector-panel";
 import { MissionControlShellDialogs } from "@/components/mission-control/mission-control-shell.dialogs";
@@ -395,6 +396,7 @@ export function MissionControlShell({
   const [gatewayControlAction, setGatewayControlAction] = useState<GatewayControlAction | null>(null);
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
   const [isAddModelsDialogOpen, setIsAddModelsDialogOpen] = useState(false);
+  const [isSidebarCreateAgentDialogOpen, setIsSidebarCreateAgentDialogOpen] = useState(false);
   const [initialAddModelsProvider, setInitialAddModelsProvider] = useState<AddModelsProviderId | null>(null);
   const [pendingWorkspaceOpenId, setPendingWorkspaceOpenId] = useState<string | null>(null);
   const [loadedWorkspaceSelectionRoot, setLoadedWorkspaceSelectionRoot] = useState<string | null>(null);
@@ -701,7 +703,8 @@ export function MissionControlShell({
     (!isOpenClawOnboardingModelReady || needsWorkspaceSetup) &&
     !shouldShowLaunchpadReadyState;
   const shouldShowOnboarding =
-    shouldAutoShowOnboarding || showOnboardingReadyState || isOnboardingForcedOpen;
+    !isAddModelsDialogOpen &&
+    (shouldAutoShowOnboarding || showOnboardingReadyState || isOnboardingForcedOpen);
   const scopedTasks = uiSnapshot.tasks.filter(
     (task) => !activeWorkspaceId || resolveTaskWorkspaceId(task, uiSnapshot.agents) === activeWorkspaceId
   );
@@ -839,7 +842,7 @@ export function MissionControlShell({
       warningTimeouts.forEach((timeout) => clearTimeout(timeout));
       warningTimeouts.clear();
     };
-  }, []);
+  }, [setSnapshot]);
 
   const handleAgentModelPickerOpenChange = useCallback((open: boolean) => {
     if (open) {
@@ -2785,6 +2788,22 @@ export function MissionControlShell({
     setIsAddModelsDialogOpen(true);
   };
 
+  const handleAddModelsProviderSnapshotReady = (nextSnapshot: MissionControlSnapshot) => {
+    setSnapshot(nextSnapshot);
+
+    if (!resolveOpenClawModelReady(nextSnapshot)) {
+      return;
+    }
+
+    setIsOnboardingForcedOpen(false);
+    setShowOnboardingReadyState(false);
+    setIsOnboardingDismissed(true);
+    setOnboardingStatusMessage(null);
+    setOnboardingResultMessage(null);
+    setModelOnboardingStatusMessage(null);
+    setModelOnboardingResultMessage(null);
+  };
+
   const openAddModelsFromModelPicker = () => {
     setAgentModelRequest(null);
     openAddModelsDialog(null);
@@ -3470,6 +3489,19 @@ export function MissionControlShell({
         snapshot={snapshot}
         initialProvider={initialAddModelsProvider}
         onSnapshotChange={setSnapshot}
+        onProviderSnapshotReady={handleAddModelsProviderSnapshotReady}
+        surfaceTheme={surfaceTheme}
+      />
+
+      <CreateAgentDialog
+        open={isSidebarCreateAgentDialogOpen}
+        onOpenChange={setIsSidebarCreateAgentDialogOpen}
+        snapshot={uiSnapshot}
+        defaultWorkspaceId={activeWorkspaceId}
+        onRefresh={refresh}
+        onSnapshotChange={setSnapshot}
+        onAgentCreationPending={handleAgentCreationPending}
+        onAgentCreatedVisible={handleCreatedAgentVisible}
         surfaceTheme={surfaceTheme}
       />
 
@@ -3621,6 +3653,10 @@ export function MissionControlShell({
             onConnectModelProvider={runModelProviderLogin}
             onOpenModelSetup={() => openSetupWizard()}
             onOpenAddModels={openAddModelsDialog}
+            onOpenCreateAgent={() => {
+              setIsSidebarOpen(true);
+              setIsSidebarCreateAgentDialogOpen(true);
+            }}
             onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
             onEditWorkspace={openWorkspaceWizardForEdit}
             onSnapshotChange={setSnapshot}
@@ -3680,6 +3716,10 @@ export function MissionControlShell({
             onConnectModelProvider={runModelProviderLogin}
             onOpenModelSetup={() => openSetupWizard()}
             onOpenAddModels={openAddModelsDialog}
+            onOpenCreateAgent={() => {
+              setIsSidebarOpen(true);
+              setIsSidebarCreateAgentDialogOpen(true);
+            }}
             onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
             onEditWorkspace={openWorkspaceWizardForEdit}
             onSnapshotChange={setSnapshot}
@@ -3942,6 +3982,10 @@ export function MissionControlShell({
             onConnectModelProvider={runModelProviderLogin}
             onOpenModelSetup={() => openSetupWizard()}
             onOpenAddModels={openAddModelsDialog}
+            onOpenCreateAgent={() => {
+              setIsSidebarOpen(true);
+              setIsSidebarCreateAgentDialogOpen(true);
+            }}
             onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
             onEditWorkspace={openWorkspaceWizardForEdit}
             onSnapshotChange={setSnapshot}
@@ -4297,6 +4341,19 @@ export function MissionControlShell({
           snapshot={snapshot}
           initialProvider={initialAddModelsProvider}
           onSnapshotChange={setSnapshot}
+          onProviderSnapshotReady={handleAddModelsProviderSnapshotReady}
+          surfaceTheme={surfaceTheme}
+        />
+
+        <CreateAgentDialog
+          open={isSidebarCreateAgentDialogOpen}
+          onOpenChange={setIsSidebarCreateAgentDialogOpen}
+          snapshot={uiSnapshot}
+          defaultWorkspaceId={activeWorkspaceId}
+          onRefresh={refresh}
+          onSnapshotChange={setSnapshot}
+          onAgentCreationPending={handleAgentCreationPending}
+          onAgentCreatedVisible={handleCreatedAgentVisible}
           surfaceTheme={surfaceTheme}
         />
 

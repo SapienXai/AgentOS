@@ -79,6 +79,7 @@ export function AddModelsDialog({
   snapshot,
   initialProvider = null,
   onSnapshotChange,
+  onProviderSnapshotReady,
   surfaceTheme = "dark"
 }: {
   open: boolean;
@@ -86,6 +87,7 @@ export function AddModelsDialog({
   snapshot: MissionControlSnapshot;
   initialProvider?: AddModelsProviderId | null;
   onSnapshotChange: (snapshot: MissionControlSnapshot) => void;
+  onProviderSnapshotReady?: (snapshot: MissionControlSnapshot) => void;
   surfaceTheme?: "dark" | "light";
 }) {
   const isLight = surfaceTheme === "light";
@@ -692,6 +694,10 @@ export function AddModelsDialog({
       loaded: true,
       ...overrides
     });
+
+    if (result.snapshot) {
+      onProviderSnapshotReady?.(result.snapshot);
+    }
   }
 
   return (
@@ -1105,7 +1111,14 @@ export function AddModelsDialog({
                           ) : null}
 
                           {shouldShowDiscoveryCta ? (
-                            <div className="mt-4 rounded-[24px] border border-cyan-300/20 bg-[linear-gradient(180deg,rgba(17,28,47,0.98),rgba(10,16,28,0.98))] p-4 shadow-[0_18px_42px_rgba(7,11,20,0.28)]">
+                            <div
+                              className={cn(
+                                "mt-4 rounded-[24px] border p-4",
+                                isLight
+                                  ? "border-cyan-200 bg-[linear-gradient(180deg,rgba(255,252,248,0.98),rgba(239,249,251,0.94))] shadow-[0_18px_42px_rgba(122,91,68,0.12)]"
+                                  : "border-cyan-300/20 bg-[linear-gradient(180deg,rgba(17,28,47,0.98),rgba(10,16,28,0.98))] shadow-[0_18px_42px_rgba(7,11,20,0.28)]"
+                              )}
+                            >
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div className="min-w-0">
                                   <p className="font-display text-[0.92rem] text-white">
@@ -1187,6 +1200,7 @@ export function AddModelsDialog({
                                   activeDraft.flowState === "connecting" &&
                                   activeDraft.statusMessage === "Adding selected models..."
                                 }
+                                surfaceTheme={surfaceTheme}
                               />
                             </div>
                           ) : null}
@@ -1219,7 +1233,14 @@ export function AddModelsDialog({
                           ) : null}
                         </>
                       ) : (
-                        <div className="mt-4 flex min-h-[260px] items-center justify-center overflow-hidden rounded-[24px] border border-cyan-300/20 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.16),rgba(8,15,28,0.98)_70%)] px-4 py-10 text-center shadow-[0_22px_52px_rgba(7,11,20,0.32)]">
+                        <div
+                          className={cn(
+                            "mt-4 flex min-h-[260px] items-center justify-center overflow-hidden rounded-[24px] border px-4 py-10 text-center",
+                            isLight
+                              ? "border-cyan-200 bg-[radial-gradient(circle_at_top,rgba(207,244,250,0.9),rgba(255,252,248,0.98)_70%)] shadow-[0_22px_52px_rgba(122,91,68,0.12)]"
+                              : "border-cyan-300/20 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.16),rgba(8,15,28,0.98)_70%)] shadow-[0_22px_52px_rgba(7,11,20,0.32)]"
+                          )}
+                        >
                           <div className="relative flex max-w-[340px] flex-col items-center">
                             <div className="absolute inset-x-8 top-8 h-px bg-gradient-to-r from-transparent via-cyan-200/70 to-transparent blur-sm animate-pulse" />
                             <div className="absolute inset-x-8 bottom-8 h-px bg-gradient-to-r from-transparent via-cyan-200/30 to-transparent blur-sm animate-pulse [animation-delay:180ms]" />

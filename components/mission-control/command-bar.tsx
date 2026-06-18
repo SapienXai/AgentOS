@@ -116,6 +116,7 @@ export function CommandBar({
   const [isDockHovered, setIsDockHovered] = useState(false);
   const [isCompactAfterSubmit, setIsCompactAfterSubmit] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [isCreateAgentDialogOpen, setIsCreateAgentDialogOpen] = useState(false);
   const [composeSuggestion, setComposeSuggestion] = useState<ComposerSuggestion | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const autoSelectionScopeRef = useRef<string | null>(null);
@@ -476,23 +477,24 @@ export function CommandBar({
   };
 
   return (
-    <div
-      className={cn(
-        "mx-auto w-full transition-[width,max-width] duration-300",
-        shouldRenderCollapsedComposer && "max-w-[360px]",
-        isDesktopCollapsed && "lg:w-[360px]"
-      )}
-      onMouseEnter={() => {
-        if (isDesktopLayout && !isSubmitting) {
-          setIsDockHovered(true);
-        }
-      }}
-      onMouseLeave={() => {
-        if (isDesktopLayout && !isSubmitting) {
-          setIsDockHovered(false);
-        }
-      }}
-    >
+    <>
+      <div
+        className={cn(
+          "mx-auto w-full transition-[width,max-width] duration-300",
+          shouldRenderCollapsedComposer && "max-w-[360px]",
+          isDesktopCollapsed && "lg:w-[360px]"
+        )}
+        onMouseEnter={() => {
+          if (isDesktopLayout && !isSubmitting) {
+            setIsDockHovered(true);
+          }
+        }}
+        onMouseLeave={() => {
+          if (isDesktopLayout && !isSubmitting) {
+            setIsDockHovered(false);
+          }
+        }}
+      >
       <AnimatePresence initial={false} mode="wait">
         {shouldRenderCollapsedComposer ? (
           <motion.button
@@ -710,26 +712,13 @@ export function CommandBar({
                         />
                       ))}
                       {targetWorkspace ? (
-                      <CreateAgentDialog
-                        snapshot={snapshot}
-                        defaultWorkspaceId={targetWorkspace.id}
-                        onRefresh={onRefresh}
-                        onAgentCreationPending={onAgentCreationPending}
-                        onAgentCreated={(agentId) => {
-                          preferredCreatedAgentIdRef.current = agentId;
-                          setTargetAgentId(agentId);
-                        }}
-                        onAgentCreatedVisible={onAgentCreatedVisible}
-                        surfaceTheme={surfaceTheme}
-                        trigger={
                           <button
                             type="button"
-                              className="inline-flex h-8 items-center rounded-full border border-white/[0.08] bg-white/[0.04] px-3 text-[12px] text-slate-300 transition-all hover:bg-white/[0.08] hover:text-white"
-                            >
-                              + Create Agent
-                            </button>
-                          }
-                        />
+                            onClick={() => setIsCreateAgentDialogOpen(true)}
+                            className="inline-flex h-8 items-center rounded-full border border-white/[0.08] bg-white/[0.04] px-3 text-[12px] text-slate-300 transition-all hover:bg-white/[0.08] hover:text-white"
+                          >
+                            + Create Agent
+                          </button>
                       ) : null}
                       {isMounted && targetWorkspace ? (
                         <button
@@ -810,7 +799,25 @@ export function CommandBar({
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+      </div>
+
+      {targetWorkspace ? (
+        <CreateAgentDialog
+          open={isCreateAgentDialogOpen}
+          onOpenChange={setIsCreateAgentDialogOpen}
+          snapshot={snapshot}
+          defaultWorkspaceId={targetWorkspace.id}
+          onRefresh={onRefresh}
+          onAgentCreationPending={onAgentCreationPending}
+          onAgentCreated={(agentId) => {
+            preferredCreatedAgentIdRef.current = agentId;
+            setTargetAgentId(agentId);
+          }}
+          onAgentCreatedVisible={onAgentCreatedVisible}
+          surfaceTheme={surfaceTheme}
+        />
+      ) : null}
+    </>
   );
 }
 

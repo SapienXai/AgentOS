@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
+import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
 import { MissionSidebar } from "@/components/mission-control/sidebar";
 import {
   buildPendingAgentRecord,
@@ -107,6 +108,7 @@ export function OperationsShell({
   const [isWorkspaceWizardOpen, setIsWorkspaceWizardOpen] = useState(false);
   const [workspaceWizardInitialMode, setWorkspaceWizardInitialMode] = useState<"basic" | "advanced">("basic");
   const [workspaceWizardEditId, setWorkspaceWizardEditId] = useState<string | null>(null);
+  const [isCreateAgentDialogOpen, setIsCreateAgentDialogOpen] = useState(false);
   const [pendingCreatedAgents, setPendingCreatedAgents] = useState<PendingAgentProjection[]>(loadPendingAgentProjections);
   const liveAgentIds = useMemo(() => new Set(snapshot.agents.map((agent) => agent.id)), [snapshot.agents]);
   const visiblePendingCreatedAgents = useMemo(
@@ -270,6 +272,18 @@ export function OperationsShell({
     setActiveWorkspaceId(result.workspaceId);
   };
 
+  const handleAgentCreationPending = (agent: PendingAgentProjection) => {
+    setPendingCreatedAgents((current) => [
+      ...current.filter((pendingAgent) => pendingAgent.id !== agent.id),
+      agent
+    ]);
+    setActiveWorkspaceId(agent.workspaceId);
+  };
+
+  const handleCreatedAgentVisible = (agentId: string) => {
+    setPendingCreatedAgents((current) => current.filter((agent) => agent.id !== agentId));
+  };
+
   return (
     <div
       className={cn(
@@ -329,10 +343,15 @@ export function OperationsShell({
           onConnectModelProvider={(provider) => toast.message(`Open ${provider} setup from Mission Control to connect it.`)}
           onOpenModelSetup={() => toast.message("Model setup opens from Mission Control.")}
           onOpenAddModels={() => toast.message("Add Models opens from Mission Control.")}
+          onOpenCreateAgent={() => {
+            setSidebarExpanded(true);
+            setIsCreateAgentDialogOpen(true);
+          }}
           onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
           onEditWorkspace={openWorkspaceWizardForEdit}
           onSnapshotChange={setSnapshot}
-          onAgentCreatedVisible={() => {}}
+          onAgentCreationPending={handleAgentCreationPending}
+          onAgentCreatedVisible={handleCreatedAgentVisible}
         />
       </div>
 
@@ -384,10 +403,15 @@ export function OperationsShell({
           onConnectModelProvider={(provider) => toast.message(`Open ${provider} setup from Mission Control to connect it.`)}
           onOpenModelSetup={() => toast.message("Model setup opens from Mission Control.")}
           onOpenAddModels={() => toast.message("Add Models opens from Mission Control.")}
+          onOpenCreateAgent={() => {
+            setMobileSidebarOpen(false);
+            setIsCreateAgentDialogOpen(true);
+          }}
           onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
           onEditWorkspace={openWorkspaceWizardForEdit}
           onSnapshotChange={setSnapshot}
-          onAgentCreatedVisible={() => {}}
+          onAgentCreationPending={handleAgentCreationPending}
+          onAgentCreatedVisible={handleCreatedAgentVisible}
         />
       </div>
 
@@ -432,6 +456,18 @@ export function OperationsShell({
         onRefresh={refresh}
         onWorkspaceCreated={handleWorkspaceCreated}
         onWorkspaceUpdated={setActiveWorkspaceId}
+      />
+
+      <CreateAgentDialog
+        open={isCreateAgentDialogOpen}
+        onOpenChange={setIsCreateAgentDialogOpen}
+        snapshot={uiSnapshot}
+        defaultWorkspaceId={activeWorkspaceId}
+        onRefresh={refresh}
+        onSnapshotChange={setSnapshot}
+        onAgentCreationPending={handleAgentCreationPending}
+        onAgentCreatedVisible={handleCreatedAgentVisible}
+        surfaceTheme={surfaceTheme}
       />
     </div>
   );

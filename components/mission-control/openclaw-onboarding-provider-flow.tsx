@@ -62,6 +62,7 @@ const initialDraftState = (): ProviderDraft => ({
 
 export function OpenClawOnboardingProviderFlow({
   snapshot,
+  surfaceTheme = "dark",
   selectedModelId,
   onSelectedModelIdChange,
   onOpenAddModels,
@@ -69,12 +70,14 @@ export function OpenClawOnboardingProviderFlow({
   autoDiscover = true
 }: {
   snapshot: MissionControlSnapshot;
+  surfaceTheme?: "dark" | "light";
   selectedModelId: string;
   onSelectedModelIdChange: (value: string) => void;
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
   autoDiscover?: boolean;
 }) {
+  const isLight = surfaceTheme === "light";
   const [activeProviderId, setActiveProviderId] = useState<AddModelsProviderId>(() =>
     resolveInitialOnboardingProviderId(snapshot, selectedModelId)
   );
@@ -418,12 +421,12 @@ export function OpenClawOnboardingProviderFlow({
     <div
       className={cn(
         "mt-3 rounded-[16px] border px-3 py-3",
-        "border-white/8 bg-[rgba(255,255,255,0.03)]"
+        isLight ? "border-[#e3d5c8] bg-[#fffaf6]" : "border-white/8 bg-[rgba(255,255,255,0.03)]"
       )}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="whitespace-nowrap text-[8px] font-medium text-slate-500">
+          <p className={cn("whitespace-nowrap text-[8px] font-medium", isLight ? "text-[#8f7664]" : "text-slate-500")}>
             Provider first : {modelProviderRegistry.length} providers
           </p>
         </div>
@@ -450,6 +453,7 @@ export function OpenClawOnboardingProviderFlow({
                 micro
                 connected={connection.connected}
                 detail={connection.detail}
+                surfaceTheme={surfaceTheme}
                 onClick={() => {
                   setActiveProviderId(provider.id);
                   if (selectedProviderId && selectedProviderId !== provider.id) {
@@ -462,10 +466,19 @@ export function OpenClawOnboardingProviderFlow({
         })}
       </div>
 
-      <div className="mt-3 rounded-[18px] border border-white/10 bg-[linear-gradient(180deg,rgba(11,18,32,0.96),rgba(6,10,18,0.98))] p-3">
+      <div
+        className={cn(
+          "mt-3 rounded-[18px] border p-3",
+          isLight
+            ? "border-[#e3d5c8] bg-[linear-gradient(180deg,rgba(255,252,248,0.98),rgba(247,241,234,0.95))]"
+            : "border-white/10 bg-[linear-gradient(180deg,rgba(11,18,32,0.96),rgba(6,10,18,0.98))]"
+        )}
+      >
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="font-display text-[0.88rem] text-white">{activeDescriptor.label}</p>
+            <p className={cn("font-display text-[0.88rem]", isLight ? "text-[#2d241f]" : "text-white")}>
+              {activeDescriptor.label}
+            </p>
           </div>
 
           <Badge
@@ -477,8 +490,8 @@ export function OpenClawOnboardingProviderFlow({
         </div>
 
         {activeDraft.statusMessage && !showLoadingHero ? (
-          <div className="mt-3 rounded-[16px] border border-white/10 bg-white/[0.04] px-3 py-2">
-            <p className="text-[11px] text-slate-200">{activeDraft.statusMessage}</p>
+          <div className={cn("mt-3 rounded-[16px] border px-3 py-2", isLight ? "border-[#e3d5c8] bg-white/70" : "border-white/10 bg-white/[0.04]")}>
+            <p className={cn("text-[11px]", isLight ? "text-[#4f3d31]" : "text-slate-200")}>{activeDraft.statusMessage}</p>
           </div>
         ) : null}
 
@@ -578,14 +591,21 @@ export function OpenClawOnboardingProviderFlow({
                 </Button>
               </div>
             </div>
-            <div className="mt-2.5 overflow-x-auto rounded-[14px] border border-white/10 bg-slate-950/60 px-3 py-2">
-              <code className="text-[10px] text-slate-200">{activeDraft.manualCommand}</code>
+            <div className={cn("mt-2.5 overflow-x-auto rounded-[14px] border px-3 py-2", isLight ? "border-[#e3d5c8] bg-white/80" : "border-white/10 bg-slate-950/60")}>
+              <code className={cn("text-[10px]", isLight ? "text-[#4f3d31]" : "text-slate-200")}>{activeDraft.manualCommand}</code>
             </div>
           </div>
         ) : null}
 
         {showLoadingHero ? (
-          <div className="relative mt-4 flex min-h-[280px] items-center justify-center overflow-hidden rounded-[28px] border border-cyan-300/20 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.16),rgba(8,15,28,0.98)_70%)] px-4 py-10 text-center shadow-[0_22px_52px_rgba(7,11,20,0.32)]">
+          <div
+            className={cn(
+              "relative mt-4 flex min-h-[280px] items-center justify-center overflow-hidden rounded-[28px] border px-4 py-10 text-center",
+              isLight
+                ? "border-cyan-200 bg-[radial-gradient(circle_at_top,rgba(207,244,250,0.9),rgba(255,252,248,0.98)_70%)] shadow-[0_22px_52px_rgba(122,91,68,0.12)]"
+                : "border-cyan-300/20 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.16),rgba(8,15,28,0.98)_70%)] shadow-[0_22px_52px_rgba(7,11,20,0.32)]"
+            )}
+          >
             <div className="absolute inset-x-8 top-8 h-px bg-gradient-to-r from-transparent via-cyan-200/70 to-transparent blur-sm animate-pulse" />
             <div className="absolute inset-x-8 bottom-8 h-px bg-gradient-to-r from-transparent via-cyan-200/30 to-transparent blur-sm animate-pulse [animation-delay:180ms]" />
             <div className="absolute left-8 top-8 h-24 w-24 rounded-full border border-cyan-300/15 bg-cyan-300/[0.04] blur-[1px] animate-pulse" />
@@ -593,12 +613,12 @@ export function OpenClawOnboardingProviderFlow({
             <div className="absolute bottom-10 left-1/2 h-20 w-20 -translate-x-1/2 rounded-full border border-cyan-300/10 bg-cyan-300/[0.03] blur-[1px] animate-pulse [animation-delay:240ms]" />
             <div className="relative flex max-w-[340px] flex-col items-center">
               <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-cyan-300/20 bg-cyan-300/[0.08] shadow-[0_0_0_8px_rgba(34,211,238,0.05)]">
-                <LoaderCircle className="h-8 w-8 animate-spin text-cyan-200" />
+                <LoaderCircle className={cn("h-8 w-8 animate-spin", isLight ? "text-cyan-700" : "text-cyan-200")} />
               </div>
-              <p className="font-display text-[1.1rem] leading-[1.2rem] tracking-[0.01em] text-white">
+              <p className={cn("font-display text-[1.1rem] leading-[1.2rem] tracking-[0.01em]", isLight ? "text-[#2d241f]" : "text-white")}>
                 {loadingHeroTitle}
               </p>
-              <p className="mt-2 max-w-[280px] text-[11px] leading-[1rem] text-slate-400">
+              <p className={cn("mt-2 max-w-[280px] text-[11px] leading-[1rem]", isLight ? "text-[#74665c]" : "text-slate-400")}>
                 {activeDraft.flowState === "discovering"
                   ? "Pulling the provider catalog into AgentOS."
                   : activeDraft.flowState === "connecting"
@@ -615,11 +635,11 @@ export function OpenClawOnboardingProviderFlow({
         ) : null}
 
         {activeDescriptor.connectKind === "oauth" && !activeConnection.connected && activeModels.length === 0 && !showLoadingHero ? (
-          <div className="mt-4 rounded-[20px] border border-white/10 bg-white/[0.03] p-3">
+          <div className={cn("mt-4 rounded-[20px] border p-3", isLight ? "border-[#e3d5c8] bg-white/70" : "border-white/10 bg-white/[0.03]")}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="font-display text-[0.88rem] text-white">Use Codex app-server</p>
-                <p className="mt-1 max-w-[500px] text-[10px] leading-[0.98rem] text-slate-400">
+                <p className={cn("font-display text-[0.88rem]", isLight ? "text-[#2d241f]" : "text-white")}>Use Codex app-server</p>
+                <p className={cn("mt-1 max-w-[500px] text-[10px] leading-[0.98rem]", isLight ? "text-[#74665c]" : "text-slate-400")}>
                   OpenClaw {OPENCLAW_RECOMMENDED_VERSION} uses the Codex app-server plugin for ChatGPT-backed models.
                 </p>
               </div>
@@ -711,8 +731,8 @@ export function OpenClawOnboardingProviderFlow({
                     </Button>
                   </div>
                 </div>
-                <div className="mt-2.5 overflow-x-auto rounded-[14px] border border-white/10 bg-slate-950/60 px-3 py-2">
-                  <code className="text-[10px] text-slate-200">{activeDraft.manualCommand}</code>
+                <div className={cn("mt-2.5 overflow-x-auto rounded-[14px] border px-3 py-2", isLight ? "border-[#e3d5c8] bg-white/80" : "border-white/10 bg-slate-950/60")}>
+                  <code className={cn("text-[10px]", isLight ? "text-[#4f3d31]" : "text-slate-200")}>{activeDraft.manualCommand}</code>
                 </div>
               </div>
             ) : null}
@@ -722,7 +742,7 @@ export function OpenClawOnboardingProviderFlow({
         {canShowModelList && !showLoadingHero ? (
           <>
             <div className="mt-4 flex flex-nowrap items-center justify-between gap-2 overflow-x-auto pb-1">
-              <p className="shrink-0 whitespace-nowrap text-[9px] uppercase tracking-[0.16em] text-slate-500">
+              <p className={cn("shrink-0 whitespace-nowrap text-[9px] uppercase tracking-[0.16em]", isLight ? "text-[#8c8177]" : "text-slate-500")}>
                 {activeModels.length > 0
                   ? `Found ${activeModels.length} model${activeModels.length === 1 ? "" : "s"}`
                   : "No models found"}
@@ -774,7 +794,7 @@ export function OpenClawOnboardingProviderFlow({
             ) : null}
 
             {activeModels.length > 0 ? (
-              <div className="mt-3 max-h-[min(34vh,260px)] space-y-1 overflow-y-auto pr-1">
+              <div className="mt-3 space-y-1 pr-1">
                 {activeModels.map((model) => {
                   const selected = selectedModelId === model.id;
 
@@ -788,16 +808,20 @@ export function OpenClawOnboardingProviderFlow({
                       className={cn(
                         "flex w-full items-start justify-between gap-2 rounded-[14px] border px-2.5 py-2 text-left transition-all",
                         selected
-                          ? "border-cyan-300/35 bg-cyan-300/[0.08]"
-                          : "border-white/8 bg-white/[0.03] hover:border-white/16 hover:bg-white/[0.05]"
+                          ? isLight
+                            ? "border-cyan-300 bg-cyan-50"
+                            : "border-cyan-300/35 bg-cyan-300/[0.08]"
+                          : isLight
+                            ? "border-[#e6d8cb] bg-white/80 hover:border-[#d8c6b8] hover:bg-white"
+                            : "border-white/8 bg-white/[0.03] hover:border-white/16 hover:bg-white/[0.05]"
                       )}
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-[11px] font-medium text-white">{model.name}</p>
-                        <p className="mt-0.5 truncate text-[9px] uppercase tracking-[0.16em] text-slate-500">
+                        <p className={cn("truncate text-[11px] font-medium", isLight ? "text-[#2d241f]" : "text-white")}>{model.name}</p>
+                        <p className={cn("mt-0.5 truncate text-[9px] uppercase tracking-[0.16em]", isLight ? "text-[#8c8177]" : "text-slate-500")}>
                           {model.id}
                         </p>
-                        <div className="mt-1 flex flex-wrap gap-1.5 text-[9px] text-slate-400">
+                        <div className={cn("mt-1 flex flex-wrap gap-1.5 text-[9px]", isLight ? "text-[#74665c]" : "text-slate-400")}>
                           <span>{model.input}</span>
                           {model.contextWindow ? <span>{Intl.NumberFormat().format(model.contextWindow)} ctx</span> : null}
                           {model.isFree ? <span>free</span> : null}
@@ -835,10 +859,15 @@ export function OpenClawOnboardingProviderFlow({
         ) : null}
 
         {selectedModelLabel && !showLoadingHero ? (
-          <div className="mt-3 flex items-center justify-between gap-2 rounded-[16px] border border-emerald-300/15 bg-emerald-300/[0.06] px-3 py-2">
+          <div
+            className={cn(
+              "mt-3 flex items-center justify-between gap-2 rounded-[16px] border px-3 py-2",
+              isLight ? "border-emerald-200 bg-emerald-50" : "border-emerald-300/15 bg-emerald-300/[0.06]"
+            )}
+          >
             <div className="min-w-0">
-              <p className="text-[8px] uppercase tracking-[0.16em] text-emerald-200/75">Selected model</p>
-              <p className="truncate text-[11px] text-emerald-50">{selectedModelLabel}</p>
+              <p className={cn("text-[8px] uppercase tracking-[0.16em]", isLight ? "text-emerald-700/75" : "text-emerald-200/75")}>Selected model</p>
+              <p className={cn("truncate text-[11px]", isLight ? "text-emerald-900" : "text-emerald-50")}>{selectedModelLabel}</p>
             </div>
             <Badge variant="default" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
               Selected
