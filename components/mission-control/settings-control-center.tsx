@@ -111,6 +111,7 @@ type CompatibilityReport = NonNullable<
   MissionControlShellSettingsPanelProps["snapshot"]["diagnostics"]["compatibilityReport"]
 >;
 type SettingsSectionId =
+  | "overview"
   | "openclaw"
   | "gateway"
   | "capabilities"
@@ -129,6 +130,7 @@ type SettingsSection = {
 };
 
 const settingsSections: SettingsSection[] = [
+  { id: "overview", label: "Overview", icon: Settings2 },
   { id: "openclaw", label: "OpenClaw", icon: Activity },
   { id: "gateway", label: "Gateway", icon: ShieldCheck },
   { id: "capabilities", label: "Capabilities", icon: ListChecks },
@@ -141,6 +143,7 @@ const settingsSections: SettingsSection[] = [
 ];
 
 const settingsSectionDescriptions: Record<SettingsSectionId, string> = {
+  overview: "System configuration, runtime health, and operator controls.",
   openclaw: "Source-of-truth runtime state, update flow, and local binary selection.",
   gateway: "Connection state, auth repair, endpoint control, and native transport health.",
   capabilities: "Native coverage, fallback surface, and protocol contract detail.",
@@ -153,6 +156,7 @@ const settingsSectionDescriptions: Record<SettingsSectionId, string> = {
 };
 
 const relatedSettingsSections: Record<SettingsSectionId, SettingsSectionId[]> = {
+  overview: ["openclaw", "gateway", "diagnostics"],
   openclaw: ["gateway", "diagnostics", "advanced"],
   gateway: ["openclaw", "capabilities", "diagnostics"],
   capabilities: ["gateway", "diagnostics", "advanced"],
@@ -819,14 +823,7 @@ export function SettingsControlCenter(
     : null;
   const activeSectionConfig = settingsSections.find((section) => section.id === renderedActiveSection) ?? settingsSections[0];
   const activeSectionLabel = activeSectionConfig.label;
-  const activeSectionDescription = settingsSectionDescriptions[renderedActiveSection];
   const relatedSectionIds = relatedSettingsSections[renderedActiveSection];
-  const settingsOverviewRows = [
-    ["OpenClaw", snapshot.diagnostics.version ? `v${snapshot.diagnostics.version}` : "Unknown"],
-    ["Gateway", transportSummary.statusLabel],
-    ["Model", selectedOrDefaultModelId || "Not selected"],
-    ["Workspace", compactPath(workspaceRootDraft || snapshot.diagnostics.workspaceRoot || "Not configured")],
-  ] as Array<[string, string]>;
   const scrollSettingsToTop = () => {
     if (typeof window === "undefined") {
       return;
@@ -849,18 +846,8 @@ export function SettingsControlCenter(
           )}
         >
           <div className="mx-auto max-w-[1520px] space-y-5">
-            <section className={cn("rounded-[14px] border p-2 backdrop-blur-xl", cardClassName(surfaceTheme))}>
-              <div className="flex flex-col gap-1.5 xl:flex-row xl:items-start xl:justify-between">
-                <div className="min-w-0">
-                  <p className={cn("text-[10px] uppercase tracking-[0.2em]", mutedTextClassName(surfaceTheme))}>Settings</p>
-                  <h1 className={cn("mt-0.5 font-display text-[1.25rem] leading-tight sm:text-[1.55rem]", surfaceTheme === "light" ? "text-[#1f1712]" : "text-slate-50")}>
-                    Refined control panel
-                  </h1>
-                  <p className={cn("mt-0.5 max-w-lg text-[11px] leading-4", mutedTextClassName(surfaceTheme))}>
-                    Configure OpenClaw, Gateway access, models, workspace defaults, and diagnostics from one structured surface.
-                  </p>
-                </div>
-                <div className="grid gap-1 sm:grid-cols-2 xl:min-w-[0] xl:grid-cols-4">
+            <section className="space-y-5">
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[1.05fr_0.9fr_0.9fr_1.45fr_0.7fr_0.72fr]">
                   <SummaryTile
                     label="OpenClaw"
                     value={snapshot.diagnostics.version ? `v${snapshot.diagnostics.version}` : "Unknown"}
@@ -871,8 +858,8 @@ export function SettingsControlCenter(
                   />
                   <SummaryTile
                     label="Gateway"
-                    value={transportSummary.statusLabel}
-                    detail={transportSummary.protocolLabel}
+                    value={snapshot.diagnostics.loaded || snapshot.diagnostics.rpcOk ? "Online" : "Offline"}
+                    detail={transportSummary.statusLabel}
                     surfaceTheme={surfaceTheme}
                     compact
                   />
@@ -890,105 +877,226 @@ export function SettingsControlCenter(
                     surfaceTheme={surfaceTheme}
                     compact
                   />
-                </div>
+                  <SummaryTile
+                    label="Status"
+                    value={connectionState === "live" ? "Online" : connectionState === "retrying" ? "Retrying" : "Connecting"}
+                    detail="AgentOS stream"
+                    surfaceTheme={surfaceTheme}
+                    compact
+                  />
+                  <SummaryTile
+                    label="Runtime"
+                    value={snapshot.runtimes.some((runtime) => runtime.status === "running") ? "Running" : "Idle"}
+                    detail={`${activeRuntimeIssues.length} issue${activeRuntimeIssues.length === 1 ? "" : "s"}`}
+                    surfaceTheme={surfaceTheme}
+                    compact
+                  />
               </div>
-            </section>
 
-            <section className="rounded-[18px] border p-4 backdrop-blur-xl">
-              <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
-              <aside className="space-y-4 xl:sticky xl:top-[92px] xl:self-start">
-                <Card
-                  title="Sections"
-                  icon={Settings2}
-                  surfaceTheme={surfaceTheme}
-                  action={<span className={cn("rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.18em]", mutedTextClassName(surfaceTheme))}>9</span>}
-                >
-                  <nav aria-label="Settings sections" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                    {settingsSections.map((section, index) => {
-                      const active = renderedActiveSection === section.id;
-                      const Icon = section.icon;
+              <div className="flex flex-col gap-1.5">
+                <h1 className={cn("font-display text-[1.45rem] leading-tight sm:text-[1.85rem]", surfaceTheme === "light" ? "text-[#1f1712]" : "text-slate-50")}>
+                  Settings
+                </h1>
+                <p className={cn("max-w-2xl text-sm leading-6", mutedTextClassName(surfaceTheme))}>
+                  System configuration, runtime health, and operator controls.
+                </p>
+              </div>
 
-                      return (
-                        <Link
-                          key={section.id}
-                          href={`/settings#${section.id}`}
-                          scroll={false}
-                          aria-current={active ? "page" : undefined}
-                          onClick={() => {
-                            setActiveSection(section.id);
-                            scrollSettingsToTop();
-                          }}
-                          className={cn(
-                            "flex min-h-12 items-center justify-between gap-3 rounded-[16px] border px-3 py-2 text-left text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
-                            active
-                              ? section.destructive
-                                ? "border-destructive/35 bg-destructive/8 text-destructive shadow-[0_10px_22px_rgba(239,68,68,0.08)]"
-                                : "border-primary/30 bg-primary/8 text-primary shadow-[0_10px_22px_rgba(239,68,68,0.08)]"
-                              : surfaceTheme === "light"
-                                ? "border-border bg-card/72 text-foreground/80 hover:border-primary/20 hover:bg-muted/55"
-                                : "border-border bg-white/[0.035] text-slate-200/80 hover:border-primary/20 hover:bg-white/[0.06]"
-                          )}
-                        >
-                          <span className="flex min-w-0 items-center gap-3">
-                            <span
-                              className={cn(
-                                "flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] border",
-                                active
-                                  ? section.destructive
-                                    ? "border-destructive/20 bg-destructive/10 text-destructive"
-                                    : "border-primary/15 bg-primary/10 text-primary"
-                                  : surfaceTheme === "light"
-                                    ? "border-border bg-card text-muted-foreground"
-                                    : "border-border bg-[#101a2a] text-slate-300"
-                              )}
-                            >
-                              <Icon className="h-3.5 w-3.5" />
-                            </span>
-                            <span className="min-w-0 truncate">{section.label}</span>
-                          </span>
-                          <span className={cn("shrink-0 text-[10px] uppercase tracking-[0.18em]", active ? "text-current" : mutedTextClassName(surfaceTheme))}>
-                            {String(index + 1).padStart(2, "0")}
-                          </span>
-                        </Link>
-                      );
-                    })}
-                  </nav>
-                </Card>
+              <nav
+                aria-label="Settings sections"
+                className={cn(
+                  "flex gap-1 overflow-x-auto rounded-[18px] border p-1",
+                  surfaceTheme === "light" ? "border-border bg-card/84 shadow-card" : "border-border bg-card/90"
+                )}
+              >
+                {settingsSections.map((section) => {
+                  const active = renderedActiveSection === section.id;
 
-                <Card title="Active surface" icon={activeSectionConfig.icon} surfaceTheme={surfaceTheme}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className={labelClassName(surfaceTheme)}>Current section</p>
-                      <h2 className={cn("mt-2 font-display text-lg", surfaceTheme === "light" ? "text-[#2d211b]" : "text-slate-100")}>
-                        {activeSectionLabel}
-                      </h2>
-                    </div>
-                    <span
+                  return (
+                    <Link
+                      key={section.id}
+                      href={`/settings#${section.id}`}
+                      scroll={false}
+                      aria-current={active ? "page" : undefined}
+                      onClick={() => {
+                        setActiveSection(section.id);
+                        scrollSettingsToTop();
+                      }}
                       className={cn(
-                        "rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]",
-                        activeSectionConfig.destructive
-                          ? surfaceTheme === "light"
-                            ? "border-destructive/20 bg-destructive/8 text-destructive"
-                            : "border-destructive/20 bg-destructive/10 text-destructive"
+                        "relative flex min-h-10 shrink-0 items-center justify-center rounded-[14px] px-4 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
+                        active
+                          ? section.destructive
+                            ? "bg-destructive/10 text-destructive"
+                            : "bg-primary/10 text-primary"
                           : surfaceTheme === "light"
-                            ? "border-primary/20 bg-primary/8 text-primary"
-                            : "border-primary/20 bg-primary/10 text-primary"
+                            ? "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                            : "text-slate-300 hover:bg-white/[0.06] hover:text-slate-50",
+                        active ? "after:absolute after:bottom-0 after:left-4 after:right-4 after:h-0.5 after:rounded-full after:bg-current" : null
                       )}
                     >
-                      {activeSectionConfig.destructive ? "Destructive" : "Focused"}
-                    </span>
-                  </div>
-                  <p className={cn("mt-2 text-sm leading-6", mutedTextClassName(surfaceTheme))}>{activeSectionDescription}</p>
-                  <InfoRows
-                    surfaceTheme={surfaceTheme}
-                    rows={settingsOverviewRows.slice(0, 3)}
-                    successIndex={1}
-                  />
-                </Card>
-              </aside>
+                      {section.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </section>
 
+            <section className="space-y-4">
               <div className="min-w-0 space-y-4">
-                <div className="mt-5 flex flex-col gap-4">
+                <div className="flex flex-col gap-4">
+              {renderedActiveSection === "overview" ? (
+              <section id="overview" className="scroll-mt-24 space-y-5">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <Card title="OpenClaw" icon={Activity} surfaceTheme={surfaceTheme}>
+                    <Metric
+                      label="Current version"
+                      value={snapshot.diagnostics.version ? `v${snapshot.diagnostics.version}` : "Unknown"}
+                      badge={recommendedVersion ? `Recommended ${formatVersionValue(recommendedVersion)}` : "No recommendation"}
+                      surfaceTheme={surfaceTheme}
+                    />
+                    <SettingsInlineLink href="/settings#openclaw" label="Open settings" surfaceTheme={surfaceTheme} onActivate={() => setActiveSection("openclaw")} />
+                  </Card>
+                  <Card title="Gateway" icon={ShieldCheck} surfaceTheme={surfaceTheme}>
+                    <Metric
+                      label="Gateway"
+                      value={snapshot.diagnostics.loaded || snapshot.diagnostics.rpcOk ? "Online" : "Offline"}
+                      badge={transportSummary.protocolLabel}
+                      surfaceTheme={surfaceTheme}
+                    />
+                    <SettingsInlineLink href="/settings#gateway" label="Open settings" surfaceTheme={surfaceTheme} onActivate={() => setActiveSection("gateway")} />
+                  </Card>
+                  <Card title="Models" icon={Box} surfaceTheme={surfaceTheme}>
+                    <Metric
+                      label="Active model"
+                      value={selectedOrDefaultModelId || "Not selected"}
+                      badge={`${snapshot.diagnostics.modelReadiness.availableModelCount} available`}
+                      surfaceTheme={surfaceTheme}
+                    />
+                    <SettingsInlineLink href="/settings#models" label="Open settings" surfaceTheme={surfaceTheme} onActivate={() => setActiveSection("models")} />
+                  </Card>
+                  <Card title="Workspace" icon={Folder} surfaceTheme={surfaceTheme}>
+                    <Metric
+                      label="Current workspace"
+                      value={compactPath(workspaceRootDraft || snapshot.diagnostics.workspaceRoot || "Not configured")}
+                      badge={`${snapshot.workspaces.length} tracked`}
+                      surfaceTheme={surfaceTheme}
+                    />
+                    <SettingsInlineLink href="/settings#workspace" label="Open settings" surfaceTheme={surfaceTheme} onActivate={() => setActiveSection("workspace")} />
+                  </Card>
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <Card
+                    title="System Health"
+                    icon={Activity}
+                    surfaceTheme={surfaceTheme}
+                    action={
+                      <StatusPill
+                        label={activeRuntimeIssues.length ? `${activeRuntimeIssues.length} visible` : "Healthy"}
+                        tone={activeRuntimeIssues.length ? "danger" : "success"}
+                        surfaceTheme={surfaceTheme}
+                      />
+                    }
+                  >
+                    <InfoRows
+                      surfaceTheme={surfaceTheme}
+                      rows={[
+                        ["Runtime issues", `${activeRuntimeIssues.length} visible`],
+                        ["Native Gateway coverage", compatibilityReport ? `${compatibilityReport.summary.nativeGatewayCoveragePercent}% (${compatibilityReport.summary.nativeGatewayCoverageLabel})` : "Unknown"],
+                        ["CLI fallback count", String(transportSummary.fallbackTotal)],
+                        ["Latest detected version", latestVersion ? `v${latestVersion}` : "Unknown"],
+                        ["Last health check", lastCheckedAt ? new Date(lastCheckedAt).toLocaleTimeString() : "Not checked"]
+                      ]}
+                    />
+                    <SettingsInlineLink href="/settings#diagnostics" label="View diagnostics" surfaceTheme={surfaceTheme} onActivate={() => setActiveSection("diagnostics")} />
+                  </Card>
+
+                  <Card title="Quick Actions" icon={Wrench} surfaceTheme={surfaceTheme}>
+                    <div className="grid gap-2">
+                      <SettingsActionRow icon={Activity} label="Open OpenClaw settings" href="/settings#openclaw" surfaceTheme={surfaceTheme} onActivate={() => setActiveSection("openclaw")} />
+                      <SettingsActionRow icon={ShieldCheck} label="Open Gateway settings" href="/settings#gateway" surfaceTheme={surfaceTheme} onActivate={() => setActiveSection("gateway")} />
+                      <SettingsActionRow icon={TerminalSquare} label="Run diagnostics" href="/settings#diagnostics" surfaceTheme={surfaceTheme} onActivate={() => setActiveSection("diagnostics")} />
+                      <SettingsActionRow icon={Box} label="Manage models" href="/settings#models" surfaceTheme={surfaceTheme} onActivate={() => setActiveSection("models")} />
+                    </div>
+                  </Card>
+                </div>
+
+                <Card title="Settings Sections" icon={Settings2} surfaceTheme={surfaceTheme}>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {settingsSections
+                      .filter((section) => section.id !== "overview")
+                      .map((section) => {
+                        const Icon = section.icon;
+                        const status = resolveSettingsSectionStatus(section.id, {
+                          snapshot,
+                          transportSummary,
+                          compatibilityReport: compatibilityReport ?? null,
+                          activeRuntimeIssuesCount: activeRuntimeIssues.length,
+                          selectedOrDefaultModelId
+                        });
+
+                        return (
+                          <Link
+                            key={section.id}
+                            href={`/settings#${section.id}`}
+                            scroll={false}
+                            onClick={() => {
+                              setActiveSection(section.id);
+                              scrollSettingsToTop();
+                            }}
+                            className={cn(
+                              "group min-h-[134px] rounded-[18px] border p-4 transition-colors",
+                              surfaceTheme === "light"
+                                ? "border-border bg-card/72 hover:border-primary/25 hover:bg-muted/45"
+                                : "border-border bg-white/[0.035] hover:border-primary/25 hover:bg-white/[0.06]"
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <span className={cardIconClassName(surfaceTheme)}>
+                                <Icon className="h-4 w-4" />
+                              </span>
+                              <StatusPill label={status.label} tone={status.tone} surfaceTheme={surfaceTheme} />
+                            </div>
+                            <h3 className={cn("mt-4 text-sm font-semibold", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+                              {section.label}
+                            </h3>
+                            <p className={cn("mt-2 min-h-10 text-xs leading-5", mutedTextClassName(surfaceTheme))}>
+                              {settingsSectionDescriptions[section.id]}
+                            </p>
+                            <span className={cn("mt-3 inline-flex items-center gap-2 text-xs font-medium", section.destructive ? "text-destructive" : "text-primary")}>
+                              Configure <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                            </span>
+                          </Link>
+                        );
+                      })}
+                  </div>
+                </Card>
+
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <Card title="Runtime Context" icon={Database} surfaceTheme={surfaceTheme}>
+                    <InfoRows
+                      surfaceTheme={surfaceTheme}
+                      rows={[
+                        ["Workspace", compactPath(workspaceRootDraft || snapshot.diagnostics.workspaceRoot || "Not configured")],
+                        ["Runtime", snapshot.runtimes.some((runtime) => runtime.status === "running") ? "Running" : "Idle"],
+                        ["Transport", transportSummary.statusLabel]
+                      ]}
+                    />
+                  </Card>
+                  <Card title="System Snapshot" icon={CheckCircle2} surfaceTheme={surfaceTheme}>
+                    <InfoRows
+                      surfaceTheme={surfaceTheme}
+                      rows={[
+                        ["OpenClaw", snapshot.diagnostics.version ? `v${snapshot.diagnostics.version}` : "Unknown"],
+                        ["Gateway", snapshot.diagnostics.gatewayUrl || "Not configured"],
+                        ["Compatibility", compatibilityReport ? formatCompatibilityReportStatus(compatibilityReport.status) : "Unknown"]
+                      ]}
+                    />
+                  </Card>
+                </div>
+              </section>
+              ) : null}
+
               {renderedActiveSection === "openclaw" ? (
               <section id="openclaw" className="scroll-mt-24">
                 <div
@@ -2018,7 +2126,6 @@ export function SettingsControlCenter(
               ) : null}
               </div>
             </div>
-          </div>
           </section>
             <div className="grid gap-4 xl:grid-cols-3">
               <Card title="Context" icon={activeSectionConfig.icon} surfaceTheme={surfaceTheme}>
@@ -2175,6 +2282,99 @@ function SummaryTile({
         <p className={cn(compact ? "mt-0.5 text-[10px] leading-4" : "mt-1 text-[11px] leading-4", mutedTextClassName(surfaceTheme))}>{detail}</p>
       ) : null}
     </div>
+  );
+}
+
+function StatusPill({
+  label,
+  tone,
+  surfaceTheme
+}: {
+  label: string;
+  tone: "success" | "warning" | "danger" | "neutral";
+  surfaceTheme: SurfaceTheme;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-[10px] font-medium",
+        tone === "success"
+          ? surfaceTheme === "light"
+            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+            : "border-emerald-300/20 bg-emerald-300/[0.08] text-emerald-200"
+          : tone === "warning"
+            ? surfaceTheme === "light"
+              ? "border-amber-200 bg-amber-50 text-amber-700"
+              : "border-amber-300/24 bg-amber-300/[0.08] text-amber-200"
+            : tone === "danger"
+              ? surfaceTheme === "light"
+                ? "border-red-200 bg-red-50 text-red-700"
+                : "border-rose-300/20 bg-rose-300/[0.08] text-rose-200"
+              : surfaceTheme === "light"
+                ? "border-border bg-card text-muted-foreground"
+                : "border-white/10 bg-white/[0.04] text-slate-300"
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+function SettingsInlineLink({
+  href,
+  label,
+  surfaceTheme,
+  onActivate
+}: {
+  href: string;
+  label: string;
+  surfaceTheme: SurfaceTheme;
+  onActivate: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      scroll={false}
+      onClick={onActivate}
+      className={cn("mt-4 inline-flex items-center gap-2 text-xs font-medium", surfaceTheme === "light" ? "text-primary" : "text-primary")}
+    >
+      {label}
+      <ChevronRight className="h-3.5 w-3.5" />
+    </Link>
+  );
+}
+
+function SettingsActionRow({
+  icon: Icon,
+  label,
+  href,
+  surfaceTheme,
+  onActivate
+}: {
+  icon: LucideIcon;
+  label: string;
+  href: string;
+  surfaceTheme: SurfaceTheme;
+  onActivate: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      scroll={false}
+      onClick={onActivate}
+      className={cn(
+        "flex min-h-12 items-center justify-between gap-3 rounded-[14px] border px-3.5 py-2.5 text-sm font-medium transition-colors",
+        surfaceTheme === "light"
+          ? "border-border bg-card/80 text-foreground hover:border-primary/25 hover:bg-muted/55"
+          : "border-border bg-white/[0.035] text-slate-100 hover:border-primary/25 hover:bg-white/[0.06]"
+      )}
+    >
+      <span className="flex min-w-0 items-center gap-3">
+        <Icon className={cn("h-4 w-4 shrink-0", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")} />
+        <span className="min-w-0 truncate">{label}</span>
+      </span>
+      <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />
+    </Link>
   );
 }
 
@@ -5076,8 +5276,59 @@ function copyToClipboard(value: string) {
   void navigator.clipboard.writeText(value);
 }
 
+function resolveSettingsSectionStatus(
+  sectionId: SettingsSectionId,
+  context: {
+    snapshot: MissionControlShellSettingsPanelProps["snapshot"];
+    transportSummary: TransportDiagnosticsSummary;
+    compatibilityReport: CompatibilityReport | null;
+    activeRuntimeIssuesCount: number;
+    selectedOrDefaultModelId: string;
+  }
+): { label: string; tone: "success" | "warning" | "danger" | "neutral" } {
+  switch (sectionId) {
+    case "openclaw":
+      return context.snapshot.diagnostics.version
+        ? { label: "Current", tone: "success" }
+        : { label: "Unknown", tone: "neutral" };
+    case "gateway":
+      return context.snapshot.diagnostics.loaded || context.snapshot.diagnostics.rpcOk
+        ? { label: "Online", tone: "success" }
+        : { label: "Offline", tone: "danger" };
+    case "capabilities":
+      return context.compatibilityReport
+        ? { label: formatCompatibilityReportStatus(context.compatibilityReport.status), tone: context.compatibilityReport.status === "compatible" ? "success" : "warning" }
+        : { label: "Unknown", tone: "neutral" };
+    case "models":
+      return context.selectedOrDefaultModelId
+        ? { label: "Active", tone: "success" }
+        : { label: "Needs setup", tone: "warning" };
+    case "workspace":
+      return context.snapshot.diagnostics.workspaceRoot
+        ? { label: "Active", tone: "success" }
+        : { label: "Not set", tone: "warning" };
+    case "agents":
+      return context.snapshot.agents.length
+        ? { label: "Enabled", tone: "success" }
+        : { label: "Empty", tone: "neutral" };
+    case "diagnostics":
+      return context.activeRuntimeIssuesCount
+        ? { label: `${context.activeRuntimeIssuesCount} visible`, tone: "warning" }
+        : { label: "Good", tone: "success" };
+    case "advanced":
+      return context.transportSummary.fallbackTotal
+        ? { label: "Fallback used", tone: "warning" }
+        : { label: "Configured", tone: "neutral" };
+    case "danger-zone":
+      return { label: "Restricted", tone: "danger" };
+    case "overview":
+    default:
+      return { label: "Ready", tone: "neutral" };
+  }
+}
+
 function resolveInitialSettingsSection(): SettingsSectionId {
-  return "openclaw";
+  return "overview";
 }
 
 function resolveHashSettingsSection(): SettingsSectionId {
@@ -5086,6 +5337,8 @@ function resolveHashSettingsSection(): SettingsSectionId {
   }
 
   switch (window.location.hash.replace(/^#/, "")) {
+    case "overview":
+      return "overview";
     case "gateway":
       return "gateway";
     case "capabilities":
@@ -5103,8 +5356,9 @@ function resolveHashSettingsSection(): SettingsSectionId {
     case "danger-zone":
       return "danger-zone";
     case "openclaw":
-    default:
       return "openclaw";
+    default:
+      return "overview";
   }
 }
 
