@@ -432,7 +432,13 @@ export async function POST(
           {
             onStdout: handleCommandStdout
           },
-          { timeoutMs: 120000, signal: request.signal }
+          {
+            timeoutMs: 120000,
+            signal: request.signal,
+            // OpenClaw v2026.6.1 Gateway direct-chat events can complete without assistant text.
+            // Keep agent-card chat on the CLI transcript path until Gateway exposes reliable reply text.
+            forceCli: true
+          }
         ) as Promise<AgentChatCommandPayload>;
 
         void (async () => {
