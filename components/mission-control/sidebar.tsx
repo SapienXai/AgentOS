@@ -24,7 +24,6 @@ import {
   Plug,
   Plus,
   Settings2,
-  TerminalSquare,
   Trash2
 } from "lucide-react";
 
@@ -171,7 +170,6 @@ const sidebarItems: SidebarItem[] = [
   { label: "Models", href: "/models", icon: Cpu, section: "operations" },
   { label: "Integrations", href: "/integrations", icon: Plug, section: "operations" },
   { label: "Settings", href: "/settings", icon: Settings2, section: "system" },
-  { label: "Diagnostics", href: "/settings#diagnostics", hash: "diagnostics", icon: TerminalSquare, section: "system" },
 ];
 
 const agentOsLogoSrc = "/assets/logo.webp";

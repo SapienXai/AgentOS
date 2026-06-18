@@ -519,10 +519,10 @@ test("sidebar exposes config-driven mission and admin navigation routes", () => 
   assert.match(source, /\{ label: "Models", href: "\/models", icon: Cpu, section: "operations" \}/);
   assert.match(source, /\{ label: "Integrations", href: "\/integrations", icon: Plug, section: "operations" \}/);
   assert.match(source, /\{ label: "Settings", href: "\/settings", icon: Settings2, section: "system" \}/);
-  assert.match(source, /\{ label: "Diagnostics", href: "\/settings#diagnostics", hash: "diagnostics", icon: TerminalSquare, section: "system" \}/);
   assert.match(source, /onOpenWorkspaceCreate: \(\) => void;/);
   assert.match(source, /<span className="block truncate text-\[0\.82rem\] font-medium">Create Workspace<\/span>/);
   assert.match(source, /onOpenWorkspaceCreate\(\);[\s\S]*?setOpen\(false\);/);
+  assert.doesNotMatch(source, /label: "Diagnostics"/);
   assert.doesNotMatch(source, /label: "Sessions"/);
   assert.doesNotMatch(source, /label: "Billing"/);
   assert.doesNotMatch(source, /label: "Audit Logs"/);
