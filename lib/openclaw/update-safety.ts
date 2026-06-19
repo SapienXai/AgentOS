@@ -45,6 +45,9 @@ export function buildOpenClawUpdatePreflightReport(
   const modelReadiness = diagnostics.modelReadiness.ready
     ? "Ready"
     : diagnostics.modelReadiness.issues[0] ?? "Unknown";
+  const installedBelowRequiredBaseline = Boolean(
+    diagnostics.version && compareVersionStrings(diagnostics.version, OPENCLAW_SUPPORTED_BASELINE_VERSION) < 0
+  );
   const isCertifiedRecoveryTarget = Boolean(
     diagnostics.version &&
       input.decision.status === "certified" &&
@@ -68,16 +71,22 @@ export function buildOpenClawUpdatePreflightReport(
     createCheck({
       id: "installed-version",
       label: "Installed OpenClaw version",
-      status: diagnostics.version ? "safe" : "blocker",
+      status: diagnostics.version
+        ? installedBelowRequiredBaseline
+          ? "blocker"
+          : "safe"
+        : "blocker",
       message: diagnostics.version
-        ? `Current OpenClaw version is v${diagnostics.version}.`
+        ? installedBelowRequiredBaseline
+          ? `AgentOS requires OpenClaw ${OPENCLAW_SUPPORTED_BASELINE_VERSION} or newer.`
+          : `Current OpenClaw version is v${diagnostics.version}.`
         : "AgentOS could not detect the installed OpenClaw version."
     }),
     createCheck({
       id: "recommended-baseline",
-      label: "AgentOS supported baseline",
+      label: "AgentOS required baseline",
       status: "safe",
-      message: `AgentOS supports baseline v${OPENCLAW_SUPPORTED_BASELINE_VERSION} and recommends v${OPENCLAW_RECOMMENDED_VERSION}.`
+      message: `OpenClaw ${OPENCLAW_SUPPORTED_BASELINE_VERSION}+ required. Recommended version: v${OPENCLAW_RECOMMENDED_VERSION}.`
     }),
     createCheck({
       id: "manifest-decision",

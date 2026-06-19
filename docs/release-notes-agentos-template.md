@@ -6,7 +6,7 @@
 
 ## OpenClaw Compatibility Impact
 
-- OpenClaw supported baseline: <version or unchanged>.
+- OpenClaw required baseline: <version or unchanged>.
 - Native Gateway/API impact: <none, improved, degraded, or changed>.
 - CLI fallback impact: <none or explicit fallback change>.
 

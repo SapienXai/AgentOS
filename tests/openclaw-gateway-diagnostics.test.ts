@@ -173,7 +173,7 @@ test("update availability fallback stays visible without degrading Gateway healt
       gateway: { port: 18789, probeUrl: "ws://127.0.0.1:18789" },
       rpc: { ok: true }
     },
-    status: { version: "2026.6.1" },
+    status: { version: "2026.6.8" },
     configuredWorkspaceRoot: null,
     workspaceRoot: "/tmp/workspace",
     configuredGatewayUrl: null,
@@ -216,7 +216,7 @@ test("update availability fallback stays visible without degrading Gateway healt
     },
     issues: [],
     versionDiagnostics: {
-      currentVersion: "2026.6.1",
+      currentVersion: "2026.6.8",
       latestVersion: undefined,
       updateAvailable: undefined,
       updateError: undefined,
@@ -291,14 +291,14 @@ test("version diagnostics use update.status when status lacks registry details",
   assert.match(diagnostics.updateInfo ?? "", /Update available/);
 });
 
-test("gateway diagnostics keep registry latest separate from certified default update", () => {
+test("gateway diagnostics block registry latest versions below the required baseline", () => {
   const diagnostics = buildGatewayDiagnostics({
     gatewayStatus: {
       service: { loaded: false },
       gateway: { port: 18789, probeUrl: "ws://127.0.0.1:18789" },
       rpc: { ok: false }
     },
-    status: { version: "2026.6.1" },
+    status: { version: "2026.6.8" },
     configuredWorkspaceRoot: null,
     workspaceRoot: "/tmp/workspace",
     configuredGatewayUrl: null,
@@ -309,19 +309,19 @@ test("gateway diagnostics keep registry latest separate from certified default u
     modelReadiness,
     issues: [],
     versionDiagnostics: {
-      currentVersion: "2026.6.1",
+      currentVersion: "2026.6.8",
       latestVersion: "2026.6.6",
       updateAvailable: true,
       updateError: undefined,
-      updateInfo: "Update available: v2026.6.6 is ready. Current version: v2026.6.1."
+      updateInfo: "Update available: v2026.6.6 is ready. Current version: v2026.6.8."
     }
   });
 
-  assert.equal(diagnostics.version, "2026.6.1");
+  assert.equal(diagnostics.version, "2026.6.8");
   assert.equal(diagnostics.latestVersion, "2026.6.6");
   assert.equal(diagnostics.updateAvailable, false);
   assert.equal(diagnostics.updateCompatibility?.latestDecision?.version, "2026.6.6");
-  assert.equal(diagnostics.updateCompatibility?.latestDecision?.status, "unknown");
+  assert.equal(diagnostics.updateCompatibility?.latestDecision?.status, "blocked");
 });
 
 test("version diagnostics expose update.status errors instead of reporting loading", () => {

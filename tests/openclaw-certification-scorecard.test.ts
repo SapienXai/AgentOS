@@ -10,7 +10,7 @@ import type {
 } from "@/lib/openclaw/types";
 
 const candidateDecision: OpenClawUpdateDecision = {
-  version: "2026.6.6",
+  version: "2026.7.0",
   status: "unknown",
   allowed: true,
   defaultVisible: false,
@@ -27,8 +27,8 @@ function createDiagnostics(input: Partial<GatewayDiagnostics> = {}): GatewayDiag
     loaded: true,
     rpcOk: true,
     health: "ok",
-    version: "2026.6.1",
-    latestVersion: "2026.6.6",
+    version: "2026.6.8",
+    latestVersion: "2026.7.0",
     workspaceRoot: "/tmp/workspace",
     configuredWorkspaceRoot: null,
     dashboardUrl: "http://127.0.0.1:3000",
@@ -75,7 +75,7 @@ function createDiagnostics(input: Partial<GatewayDiagnostics> = {}): GatewayDiag
     },
     capabilityMatrix: {
       detectedAt: "2026-06-15T08:00:00.000Z",
-      openClawVersion: "2026.6.1",
+      openClawVersion: "2026.6.8",
       gatewayProtocolVersion: "4",
       authMode: "native",
       supportedMethods: ["sessions.list", "config.patch"],
@@ -156,10 +156,10 @@ function createTargetDiagnostics(input: Partial<GatewayDiagnostics> = {}) {
   const baseline = createDiagnostics();
   return createDiagnostics({
     ...baseline,
-    version: "2026.6.6",
+    version: "2026.7.0",
     capabilityMatrix: {
       ...baseline.capabilityMatrix!,
-      openClawVersion: "2026.6.6"
+      openClawVersion: "2026.7.0"
     },
     ...input
   });
@@ -190,7 +190,7 @@ function buildScorecard(input: {
     update: {
       attempted: true,
       completed: input.completed ?? true,
-      targetVersion: "2026.6.6",
+      targetVersion: "2026.7.0",
       installedVersion: target?.version ?? null,
       rollbackSnapshotCreated: true,
       rollbackToCertifiedBaseline: input.rollbackToCertifiedBaseline ?? "passed",
@@ -206,14 +206,14 @@ function createRoundTripEvidence(status: "passed" | "failed" | "not-run"): OpenC
     status,
     startedAt: status === "not-run" ? null : "2026-06-15T08:00:00.000Z",
     finishedAt: status === "not-run" ? null : "2026-06-15T08:09:00.000Z",
-    baselineVersion: "2026.6.1",
-    targetVersion: "2026.6.6",
+    baselineVersion: "2026.6.8",
+    targetVersion: "2026.7.0",
     steps: status === "not-run"
       ? []
       : [{
           id: "final-target-verify",
-          requestedVersion: "2026.6.6",
-          installedVersion: "2026.6.6",
+          requestedVersion: "2026.7.0",
+          installedVersion: "2026.7.0",
           gatewayLoaded: true,
           rpcReady: true,
           runtimeSmokeStatus: status,
@@ -345,13 +345,13 @@ test("missing target diagnostics reports evidence missing", () => {
 
 test("required plugin API mismatch blocks certification", () => {
   const scorecard = buildScorecard({
-    output: "plugin codex: plugin requires plugin API >=2026.6.6, but this host is 2026.6.1; skipping discovery"
+    output: "plugin codex: plugin requires plugin API >=2026.7.0, but this host is 2026.6.8; skipping discovery"
   });
 
   assert.equal(scorecard.status, "blocked");
   assert.equal(scorecard.pluginConfigFindings[0]?.pluginId, "codex");
-  assert.equal(scorecard.pluginConfigFindings[0]?.requiredApiVersion, "2026.6.6");
-  assert.equal(scorecard.pluginConfigFindings[0]?.hostVersion, "2026.6.1");
+  assert.equal(scorecard.pluginConfigFindings[0]?.requiredApiVersion, "2026.7.0");
+  assert.equal(scorecard.pluginConfigFindings[0]?.hostVersion, "2026.6.8");
   assert.match(scorecard.hardBlockers.join("\n"), /codex plugin requires plugin API/);
 });
 
@@ -359,11 +359,11 @@ test("plugin install and newer config blockers are structured", () => {
   const scorecard = buildScorecard({
     output: [
       'Plugin "codex" installation blocked: incompatible plugin manifest',
-      "Refusing to restart Gateway because this command is older than the config last written by OpenClaw 2026.6.6."
+      "Refusing to restart Gateway because this command is older than the config last written by OpenClaw 2026.7.0."
     ].join("\n")
   });
 
   assert.equal(scorecard.status, "blocked");
   assert.equal(scorecard.pluginConfigFindings.some((finding) => finding.kind === "plugin-install" && finding.pluginId === "codex"), true);
-  assert.equal(scorecard.pluginConfigFindings.some((finding) => finding.kind === "config-version" && finding.configWriterVersion === "2026.6.6"), true);
+  assert.equal(scorecard.pluginConfigFindings.some((finding) => finding.kind === "config-version" && finding.configWriterVersion === "2026.7.0"), true);
 });

@@ -65,6 +65,7 @@ import type {
 } from "@/lib/openclaw/gateway-auth";
 import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
 import { compactPath } from "@/lib/openclaw/presenters";
+import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 import type {
   OpenClawCapabilityDiffReport,
   OpenClawCertificationScorecardReport,
@@ -4206,7 +4207,7 @@ function UpdateRegistryPanel({
         />
       </div>
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <Metric
           label="Current version"
           value={`v${currentVersion}`}
@@ -4218,6 +4219,14 @@ function UpdateRegistryPanel({
           label="Recommended"
           value={recommendedVersion ? `v${recommendedVersion}` : "Unknown"}
           badge={hasCertifiedUpdateAvailable ? "Ready" : updateError ? "Error" : isBusy || isUpdateRegistryLoading ? "Loading" : "Stable"}
+          surfaceTheme={surfaceTheme}
+          dark={surfaceTheme === "dark"}
+          compact
+        />
+        <Metric
+          label="Required baseline"
+          value={`v${OPENCLAW_SUPPORTED_BASELINE_VERSION}+`}
+          badge="Required"
           surfaceTheme={surfaceTheme}
           dark={surfaceTheme === "dark"}
           compact
@@ -4246,7 +4255,7 @@ function UpdateRegistryPanel({
         {updateCompatibility ? (
           <p className="mt-1.5 opacity-90">
             Manifest source: {formatManifestSource(updateCompatibility.manifestSource)}. Recommended status:{" "}
-            {formatUpdateCompatibilityStatus(updateCompatibility.recommendedDecision.status)}.
+            {formatUpdateCompatibilityStatus(updateCompatibility.recommendedDecision.status)}. OpenClaw {OPENCLAW_SUPPORTED_BASELINE_VERSION}+ required.
           </p>
         ) : null}
         {latestDecision ? (
@@ -4402,6 +4411,8 @@ function UpdateSafetyPanel({
             surfaceTheme={surfaceTheme}
             rows={[
               ["Installed now", report.currentVersion ? `v${report.currentVersion}` : "Unknown"],
+              ["Required baseline", `v${report.supportedBaselineVersion}+`],
+              ["Recommended version", `v${report.recommendedVersion}`],
               ["Target gate", report.canAttemptUpdate ? report.requiresExplicitConfirmation ? "Can be attempted with explicit confirmation" : "Can be attempted" : "Blocked"],
               ["Recommended action", report.recommendedNextAction],
               ["Gateway", report.summary.gatewayReachable ? "Reachable" : "Not ready"],

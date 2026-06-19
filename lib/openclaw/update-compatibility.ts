@@ -101,12 +101,28 @@ export function resolveOpenClawUpdateDecision(input: {
   const minRequiredAgentOsVersion =
     normalizeVersion(manifestEntry?.minRequiredAgentOsVersion) ??
     normalizeVersion(manifest.minRequiredAgentOsVersion);
+  const belowSupportedBaseline =
+    compareVersionStrings(targetVersion, OPENCLAW_SUPPORTED_BASELINE_VERSION) < 0;
   const requiresAgentOsUpdate = Boolean(
     minRequiredAgentOsVersion &&
       compareVersionStrings(normalizeVersion(input.agentOsVersion) ?? "0.0.0", minRequiredAgentOsVersion) < 0
   );
   const notes = manifestEntry?.notes?.trim() || null;
   const configuredReason = manifestEntry?.reason?.trim() || null;
+
+  if (belowSupportedBaseline) {
+    return {
+      version: targetVersion,
+      status: "blocked",
+      allowed: false,
+      defaultVisible: false,
+      requiresExplicitOptIn: false,
+      requiresAgentOsUpdate: false,
+      minRequiredAgentOsVersion,
+      reason: `AgentOS requires OpenClaw ${OPENCLAW_SUPPORTED_BASELINE_VERSION} or newer.`,
+      notes: notes || "OpenClaw versions below the AgentOS required baseline are unsupported."
+    };
+  }
 
   if (requiresAgentOsUpdate) {
     return {

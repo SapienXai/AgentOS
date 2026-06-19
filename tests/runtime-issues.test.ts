@@ -205,7 +205,7 @@ test("runtime issue detector reopens rollback recovery and suppresses generic ga
 });
 
 test("runtime issue detector restores failed OpenClaw update issues from state", () => {
-  const id = "openclaw_postflight_failed:openclaw_cli:2026.6.1";
+  const id = "openclaw_postflight_failed:openclaw_cli:2026.6.8";
   const issues = buildRuntimeIssues({
     states: {
       [id]: {
@@ -273,13 +273,13 @@ test("runtime issue detector rewrites stale rollback commands from saved snapsho
         createdAt: "2026-06-14T09:00:00.000Z",
         updatedAt: "2026-06-14T09:01:00.000Z",
         recoveryCommand: "/Users/example/.openclaw/bin/openclaw update --tag 2026.6.6 --yes",
-        rawOutput: "> Saved OpenClaw rollback snapshot for v2026.6.1.\n> Running openclaw update --tag 2026.6.6..."
+        rawOutput: "> Saved OpenClaw rollback snapshot for v2026.6.8.\n> Running openclaw update --tag 2026.6.6..."
       }
     },
     now: new Date("2026-06-14T10:00:00.000Z")
   });
 
-  assert.equal(issues[0]?.recoveryCommand, "/Users/example/.openclaw/bin/openclaw update --tag 2026.6.1 --yes && /Users/example/.openclaw/bin/openclaw gateway restart && /Users/example/.openclaw/bin/openclaw gateway status --deep");
+  assert.equal(issues[0]?.recoveryCommand, "/Users/example/.openclaw/bin/openclaw update --tag 2026.6.8 --yes && /Users/example/.openclaw/bin/openclaw gateway restart && /Users/example/.openclaw/bin/openclaw gateway status --deep");
 });
 
 test("runtime inbox exposes recovery commands for non-scope issues", () => {

@@ -11,8 +11,8 @@ test("compatibility lab keeps unknown targets report-only and certification bloc
   const report = buildOpenClawCompatibilityLabReport({
     generatedAt: new Date("2026-06-17T10:00:00.000Z"),
     targetVersion: "2026.9.0",
-    currentCertifiedBaseline: "2026.6.1",
-    installedOpenClawVersion: "2026.6.1",
+    currentCertifiedBaseline: "2026.6.8",
+    installedOpenClawVersion: "2026.6.8",
     manifestDecision: createDecision({
       version: "2026.9.0",
       status: "unknown",
@@ -36,11 +36,11 @@ test("compatibility lab keeps unknown targets report-only and certification bloc
 test("compatibility lab maps payload shape failures to parser modules", () => {
   const report = buildOpenClawCompatibilityLabReport({
     generatedAt: new Date("2026-06-17T10:00:00.000Z"),
-    targetVersion: "2026.6.6",
-    currentCertifiedBaseline: "2026.6.1",
-    installedOpenClawVersion: "2026.6.6",
+    targetVersion: "2026.7.0",
+    currentCertifiedBaseline: "2026.6.8",
+    installedOpenClawVersion: "2026.7.0",
     manifestDecision: createDecision({
-      version: "2026.6.6",
+      version: "2026.7.0",
       status: "candidate",
       allowed: false,
       reason: "Preview validation in progress."
@@ -65,11 +65,11 @@ test("compatibility lab maps payload shape failures to parser modules", () => {
 test("compatibility lab redacts runtime issue evidence", () => {
   const report = buildOpenClawCompatibilityLabReport({
     generatedAt: new Date("2026-06-17T10:00:00.000Z"),
-    targetVersion: "2026.6.6",
-    currentCertifiedBaseline: "2026.6.1",
-    installedOpenClawVersion: "2026.6.6",
+    targetVersion: "2026.7.0",
+    currentCertifiedBaseline: "2026.6.8",
+    installedOpenClawVersion: "2026.7.0",
     manifestDecision: createDecision({
-      version: "2026.6.6",
+      version: "2026.7.0",
       status: "candidate",
       allowed: false,
       reason: "Preview validation in progress."

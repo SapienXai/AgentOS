@@ -11,19 +11,19 @@ import type { OpenClawCertificationScorecardReport } from "@/lib/openclaw/types"
 test("certification promotion builds a local override manifest for the target", () => {
   const scorecard = createEligibleScorecard();
   const manifest = buildPromotedManifestOverride({
-    targetVersion: "2026.6.8",
+    targetVersion: "2026.7.0",
     minRequiredAgentOsVersion: "0.7.2",
     promotedAt: "2026-06-17T12:00:00.000Z",
-    reportId: "openclaw-lab-2026.6.8",
+    reportId: "openclaw-lab-2026.7.0",
     scorecard
   });
 
-  const promoted = manifest.versions.find((entry) => entry.version === "2026.6.8");
+  const promoted = manifest.versions.find((entry) => entry.version === "2026.7.0");
 
   assert.equal(manifest.source, "override");
-  assert.equal(manifest.recommendedVersion, "2026.6.8");
+  assert.equal(manifest.recommendedVersion, "2026.7.0");
   assert.equal(promoted?.status, "certified");
-  assert.match(promoted?.reason ?? "", /openclaw-lab-2026\.6\.8/);
+  assert.match(promoted?.reason ?? "", /openclaw-lab-2026\.7\.0/);
 });
 
 test("certification promotion allows manifest policy blocker but rejects runtime blockers and missing artifacts", () => {
@@ -94,13 +94,13 @@ function createReport(
 ): OpenClawCompatibilityLabReport {
   return {
     schemaVersion: 1,
-    id: "openclaw-lab-2026.6.8",
+    id: "openclaw-lab-2026.7.0",
     generatedAt: "2026-06-17T11:59:00.000Z",
-    targetOpenClawVersion: "2026.6.8",
-    currentCertifiedBaseline: "2026.6.1",
-    installedOpenClawVersion: "2026.6.8",
+    targetOpenClawVersion: "2026.7.0",
+    currentCertifiedBaseline: "2026.6.8",
+    installedOpenClawVersion: "2026.7.0",
     manifestDecision: {
-      version: "2026.6.8",
+      version: "2026.7.0",
       status: "unknown",
       allowed: false,
       defaultVisible: false,
@@ -131,8 +131,8 @@ function createEligibleScorecard(
 ): OpenClawCertificationScorecardReport {
   const base: OpenClawCertificationScorecardReport = {
     generatedAt: "2026-06-17T12:00:00.000Z",
-    baselineVersion: "2026.6.1",
-    targetVersion: "2026.6.8",
+    baselineVersion: "2026.6.8",
+    targetVersion: "2026.7.0",
     score: 96,
     status: "pre_certified_eligible",
     globalCertification: "not_certified",
@@ -145,8 +145,8 @@ function createEligibleScorecard(
     pluginConfigFindings: [],
     roundTripEvidence: {
       status: "passed",
-      baselineVersion: "2026.6.1",
-      targetVersion: "2026.6.8",
+      baselineVersion: "2026.6.8",
+      targetVersion: "2026.7.0",
       startedAt: "2026-06-17T11:50:00.000Z",
       finishedAt: "2026-06-17T12:00:00.000Z",
       steps: [],
@@ -155,8 +155,8 @@ function createEligibleScorecard(
     artifact: {
       schemaVersion: 1,
       generatedAt: "2026-06-17T12:00:00.000Z",
-      baselineVersion: "2026.6.1",
-      targetVersion: "2026.6.8",
+      baselineVersion: "2026.6.8",
+      targetVersion: "2026.7.0",
       score: 96,
       status: "pre_certified_eligible",
       globalCertification: "not_certified",
@@ -169,8 +169,8 @@ function createEligibleScorecard(
       pluginConfigFindings: [],
       roundTripEvidence: {
         status: "passed",
-        baselineVersion: "2026.6.1",
-        targetVersion: "2026.6.8",
+        baselineVersion: "2026.6.8",
+        targetVersion: "2026.7.0",
         startedAt: "2026-06-17T11:50:00.000Z",
         finishedAt: "2026-06-17T12:00:00.000Z",
         steps: [],

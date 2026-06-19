@@ -5,9 +5,9 @@ Use this checklist before publishing or announcing an AgentOS release. It is man
 ## Prerequisites
 
 - Use Node.js 24 or newer.
-- Install or select the OpenClaw supported baseline from `lib/openclaw/versions.ts`.
+- Install or select OpenClaw 2026.6.8 or newer.
 - Start the OpenClaw Gateway on loopback.
-- Confirm `openclaw gateway status --json` reports protocol v4, reachable RPC, and operator auth.
+- Confirm `openclaw gateway status --deep --json` reports protocol v4, reachable RPC, and operator auth.
 
 ## Package Smoke
 

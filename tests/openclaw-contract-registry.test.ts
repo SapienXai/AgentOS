@@ -85,9 +85,9 @@ function createDiagnostics(input: {
       manifestSource: "local-fallback",
       agentOsVersion: "0.7.2",
       currentVersion: "2026.6.8",
-      recommendedVersion: "2026.6.1",
+      recommendedVersion: "2026.6.8",
       recommendedDecision: {
-        version: "2026.6.1",
+        version: "2026.6.8",
         status: "certified",
         allowed: true,
         defaultVisible: true,
@@ -105,7 +105,7 @@ function createDiagnostics(input: {
     },
     capabilityMatrix: {
       openClawVersion: "2026.6.8",
-      recommendedVersion: "2026.6.1",
+      recommendedVersion: "2026.6.8",
       protocolVersion: 4,
       gatewayProtocolVersion: 4,
       requestedProtocolRange: "4",

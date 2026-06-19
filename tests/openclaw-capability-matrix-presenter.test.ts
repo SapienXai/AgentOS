@@ -11,13 +11,13 @@ type GatewayDiagnostics = MissionControlSnapshot["diagnostics"];
 
 function createDiagnostics(input: Partial<GatewayDiagnostics> = {}): GatewayDiagnostics {
   return {
-    version: "2026.6.1",
-    latestVersion: "2026.6.1",
+    version: "2026.6.8",
+    latestVersion: "2026.6.8",
     updateCompatibility: undefined,
     compatibilityReport: null,
     capabilityMatrix: {
       detectedAt: "2026-06-14T10:00:00.000Z",
-      openClawVersion: "2026.6.1",
+      openClawVersion: "2026.6.8",
       gatewayProtocolVersion: "4",
       authMode: "native",
       supportedMethods: ["sessions.list"],
@@ -108,7 +108,7 @@ test("capability matrix presenter marks certified native Gateway operations as n
   assert.equal(rows.length, 1);
   assert.equal(rows[0].status, "gateway-native");
   assert.equal(rows[0].methodCoverageLabel, "Native sessions.list");
-  assert.equal(summary.openClawVersionLabel, "v2026.6.1");
+  assert.equal(summary.openClawVersionLabel, "v2026.6.8");
   assert.equal(summary.nativeOperationCount, 1);
   assert.equal(summary.cliFallbackOperationCount, 0);
 });
@@ -265,11 +265,11 @@ test("capability matrix presenter falls back to real compatibility contracts whe
       statusReason: "Gateway has partial native method coverage.",
       recovery: "Update OpenClaw.",
       openClaw: {
-        installedVersion: "2026.6.1",
+        installedVersion: "2026.6.8",
         versionSource: "detected",
-        recommendedVersion: "2026.6.1",
-        supportedBaselineVersion: "2026.6.1",
-        testedVersions: ["2026.6.1"]
+        recommendedVersion: "2026.6.8",
+        supportedBaselineVersion: "2026.6.8",
+        testedVersions: ["2026.6.8"]
       },
       gateway: {
         health: "degraded",
@@ -327,8 +327,8 @@ test("capability matrix presenter falls back to real compatibility contracts whe
         degradedSurfaces: ["config"],
         unsupportedSurfaces: ["config"],
         failedSurfaces: [],
-        supportedOpenClawVersion: "2026.6.1",
-        testedOpenClawVersions: ["2026.6.1"],
+        supportedOpenClawVersion: "2026.6.8",
+        testedOpenClawVersions: ["2026.6.8"],
         unsupportedOperationCount: 1,
         degradedOperationCount: 0,
         failedOperationCount: 0,

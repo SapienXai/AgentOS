@@ -35,6 +35,7 @@ const staleBaselineCopyPattern = new RegExp([
 
 test("setup smoke uses the centralized OpenClaw baseline constants", () => {
   assert.equal(OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION);
+  assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.6.8");
   assert.match(OPENCLAW_RECOMMENDED_VERSION, /^\d{4}\.\d+\.\d+$/);
   assert.equal(OPENCLAW_GATEWAY_BASELINE_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION);
 

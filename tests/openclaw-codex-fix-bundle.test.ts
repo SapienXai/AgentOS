@@ -37,9 +37,9 @@ function createReport(output: { stdout?: string; stderr?: string } = {}): OpenCl
     schemaVersion: 1,
     id: "openclaw-lab-test",
     generatedAt: "2026-06-17T10:00:00.000Z",
-    targetOpenClawVersion: "2026.6.6",
-    currentCertifiedBaseline: "2026.6.1",
-    installedOpenClawVersion: "2026.6.1",
+    targetOpenClawVersion: "2026.7.0",
+    currentCertifiedBaseline: "2026.6.8",
+    installedOpenClawVersion: "2026.6.8",
     manifestDecision: createDecision(),
     probeTimestamp: "2026-06-17T10:00:00.000Z",
     status: "failed",
@@ -73,7 +73,7 @@ function createReport(output: { stdout?: string; stderr?: string } = {}): OpenCl
 
 function createDecision(): OpenClawUpdateDecision {
   return {
-    version: "2026.6.6",
+    version: "2026.7.0",
     status: "candidate",
     allowed: false,
     defaultVisible: true,

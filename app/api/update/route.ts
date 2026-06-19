@@ -34,7 +34,7 @@ import {
   buildOpenClawRuntimeSmokeTestRecoveryCommand,
   classifyOpenClawRuntimeSmokeTestFailure
 } from "@/lib/openclaw/runtime-compatibility";
-import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
+import { OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 import { resolveOpenClawUpdateDecision } from "@/lib/openclaw/update-compatibility";
 import {
   createOpenClawRollbackSnapshot,
@@ -234,6 +234,48 @@ export async function POST(request: Request) {
     }
 
     const existingRollbackSnapshot = await readOpenClawRollbackSnapshot();
+
+    if (
+      (updateRequest.action === "update" || updateRequest.action === "certify-round-trip") &&
+      isInstalledOpenClawBelowRequiredBaseline(snapshot)
+    ) {
+      const preflightReport = buildOpenClawUpdatePreflightReport({
+        snapshot,
+        targetVersion,
+        decision: updateDecision,
+        rollbackSnapshotAvailable: Boolean(existingRollbackSnapshot)
+      });
+      const message = `AgentOS requires OpenClaw ${OPENCLAW_SUPPORTED_BASELINE_VERSION} or newer.`;
+
+      await recordUpdateRuntimeIssue({
+        type: "openclaw_update_failed",
+        title: "OpenClaw baseline unsupported",
+        message,
+        targetVersion,
+        severity: "blocked"
+      });
+      await send({
+        type: "done",
+        ok: false,
+        message,
+        exitCode: null,
+        stdout,
+        stderr,
+        snapshot,
+        certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+          baselineSnapshot: snapshot,
+          targetVersion,
+          decision: updateDecision,
+          preflightReport,
+          updateAttempted: false,
+          updateCompleted: false,
+          rollbackSnapshotCreated: Boolean(existingRollbackSnapshot),
+          failureMessage: message
+        })
+      });
+      await closeWriter();
+      return;
+    }
 
     if (updateRequest.action === "certify-round-trip") {
       if (updateRequest.mode !== "advanced") {
@@ -487,7 +529,7 @@ export async function POST(request: Request) {
             newerRollbackSnapshotVersion
           );
           const message =
-            `OpenClaw v${targetVersion} is installed, but Gateway cannot be treated as healthy because the available rollback snapshot is v${newerRollbackSnapshotVersion}. Restore v${newerRollbackSnapshotVersion} or reset/migrate the OpenClaw config before retrying the certified baseline.`;
+            `OpenClaw v${targetVersion} is installed, but Gateway cannot be treated as healthy because the available rollback snapshot is v${newerRollbackSnapshotVersion}. Restore v${newerRollbackSnapshotVersion} or repair the OpenClaw config before retrying the certified baseline.`;
           await recordUpdateRuntimeIssue({
             type: "openclaw_rollback_needed",
             title: "OpenClaw certified baseline blocked by newer config",
@@ -690,7 +732,83 @@ export async function POST(request: Request) {
       message: `Saved OpenClaw rollback snapshot for v${rollbackSnapshot.version}.`
     });
 
-    const updateArgs = buildOpenClawUpdateArgs(targetVersion);
+    const statusResult = await runOpenClawPreUpdateStatusCheck(openClawBin, send);
+    stdout += statusResult.stdout;
+    stderr += statusResult.stderr || statusResult.errorMessage || "";
+
+    if (statusResult.errorMessage || statusResult.timedOut || statusResult.code !== 0) {
+      await recordUpdateRuntimeIssue({
+        type: "openclaw_update_failed",
+        title: "OpenClaw update status failed",
+        message: "OpenClaw update status check failed before mutation.",
+        targetVersion,
+        rawOutput: [statusResult.stdout, statusResult.stderr, statusResult.errorMessage].filter(Boolean).join("\n"),
+        severity: "blocked"
+      });
+      await send({
+        type: "done",
+        ok: false,
+        message: "OpenClaw update status check failed before mutation.",
+        exitCode: statusResult.code,
+        stdout,
+        stderr,
+        snapshot,
+        certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+          baselineSnapshot: snapshot,
+          targetVersion,
+          decision: updateDecision,
+          preflightReport: preflight.report,
+          updateAttempted: false,
+          updateCompleted: false,
+          rollbackSnapshotCreated: true,
+          stdout,
+          stderr,
+          failureMessage: "OpenClaw update status check failed before mutation."
+        })
+      });
+      await closeWriter();
+      return;
+    }
+
+    const dryRunResult = await runOpenClawUpdateDryRun(openClawBin, send);
+    stdout += dryRunResult.stdout;
+    stderr += dryRunResult.stderr || dryRunResult.errorMessage || "";
+
+    if (dryRunResult.errorMessage || dryRunResult.timedOut || dryRunResult.code !== 0) {
+      await recordUpdateRuntimeIssue({
+        type: "openclaw_update_failed",
+        title: "OpenClaw update dry-run failed",
+        message: "OpenClaw update dry-run failed before mutation.",
+        targetVersion,
+        rawOutput: [dryRunResult.stdout, dryRunResult.stderr, dryRunResult.errorMessage].filter(Boolean).join("\n"),
+        severity: "blocked"
+      });
+      await send({
+        type: "done",
+        ok: false,
+        message: "OpenClaw update dry-run failed before mutation.",
+        exitCode: dryRunResult.code,
+        stdout,
+        stderr,
+        snapshot,
+        certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+          baselineSnapshot: snapshot,
+          targetVersion,
+          decision: updateDecision,
+          preflightReport: preflight.report,
+          updateAttempted: false,
+          updateCompleted: false,
+          rollbackSnapshotCreated: true,
+          stdout,
+          stderr,
+          failureMessage: "OpenClaw update dry-run failed before mutation."
+        })
+      });
+      await closeWriter();
+      return;
+    }
+
+    const updateArgs = buildOpenClawUpdateArgs(targetVersion, updateRequest.mode);
     const child = spawn(openClawBin, updateArgs, {
       cwd: process.cwd(),
       env: process.env
@@ -704,7 +822,9 @@ export async function POST(request: Request) {
     await send({
       type: "status",
       phase: "starting",
-      message: `Running openclaw update --tag ${targetVersion}...`
+      message: updateRequest.mode === "recommended" && targetVersion === OPENCLAW_RECOMMENDED_VERSION
+        ? "Running openclaw update --channel stable --yes --json..."
+        : `Running openclaw update --tag ${targetVersion} --yes --json...`
     });
 
     child.stdout.on("data", (chunk: Buffer | string) => {
@@ -847,10 +967,10 @@ export async function POST(request: Request) {
               rollbackSnapshot.version
             );
             const message =
-              `OpenClaw changed to v${targetVersion}, but the Gateway restart was blocked because local config/service metadata was last written by a newer OpenClaw version. Restore the last working OpenClaw version or reset/migrate the OpenClaw config before retrying the certified baseline.`;
+              `OpenClaw changed to v${targetVersion}, but the Gateway restart was blocked because local config/service metadata was last written by a newer OpenClaw version. Restore the last working OpenClaw version or repair the OpenClaw config before retrying the certified baseline.`;
             await recordUpdateRuntimeIssue({
               type: "openclaw_rollback_needed",
-              title: "OpenClaw certified downgrade blocked by newer config",
+              title: "OpenClaw certified restore blocked by newer config",
               message,
               targetVersion,
               rawOutput: failureOutput,
@@ -1325,7 +1445,7 @@ async function recoverOpenClawPostUpdate(
     }
   };
 
-  const doctorResult = await runRecoveryCommand(openClawBin, ["doctor", "--fix"], send, {
+  const doctorResult = await runRecoveryCommand(openClawBin, ["doctor", "--lint", "--json"], send, {
     timeoutMs: 4 * 60 * 1000
   });
   appendOutput(doctorResult);
@@ -1333,7 +1453,7 @@ async function recoverOpenClawPostUpdate(
   if (doctorResult.errorMessage || doctorResult.timedOut || doctorResult.code !== 0) {
     return {
       ok: false,
-      message: "OpenClaw update applied, but AgentOS could not repair post-update setup.",
+      message: "OpenClaw update applied, but OpenClaw doctor lint did not pass.",
       exitCode: doctorResult.code,
       stdout,
       stderr
@@ -1473,7 +1593,7 @@ async function waitForGatewayReady(openClawBin: string) {
   await delay(gatewayReadyInitialDelayMs);
 
   while (Date.now() - startedAt < gatewayReadyTimeoutMs) {
-    latestResult = await runRecoveryCommand(openClawBin, ["gateway", "status", "--deep"], async () => {}, {
+    latestResult = await runRecoveryCommand(openClawBin, ["gateway", "status", "--deep", "--json"], async () => {}, {
       timeoutMs: gatewayReadyProbeTimeoutMs,
       streamOutput: false
     });
@@ -1688,8 +1808,51 @@ function isOpenClawSnapshotGatewayReady(snapshot: MissionControlSnapshot) {
   return Boolean(snapshot.diagnostics.installed && snapshot.diagnostics.loaded && snapshot.diagnostics.rpcOk);
 }
 
-function buildOpenClawUpdateArgs(targetVersion: string) {
-  return ["update", "--tag", targetVersion, "--yes"];
+function buildOpenClawUpdateArgs(
+  targetVersion: string,
+  mode: "recommended" | "candidate" | "advanced" = "advanced"
+) {
+  if (mode === "recommended" && normalizeVersion(targetVersion) === OPENCLAW_RECOMMENDED_VERSION) {
+    return ["update", "--channel", "stable", "--yes", "--json"];
+  }
+
+  return ["update", "--tag", targetVersion, "--yes", "--json"];
+}
+
+async function runOpenClawPreUpdateStatusCheck(
+  openClawBin: string,
+  send: (event: OpenClawUpdateStreamEvent) => Promise<unknown>
+) {
+  await send({
+    type: "status",
+    phase: "preflight",
+    message: "Running openclaw update status --json..."
+  });
+
+  return runRecoveryCommand(openClawBin, ["update", "status", "--json"], send, {
+    timeoutMs: 60_000
+  });
+}
+
+async function runOpenClawUpdateDryRun(
+  openClawBin: string,
+  send: (event: OpenClawUpdateStreamEvent) => Promise<unknown>
+) {
+  await send({
+    type: "status",
+    phase: "preflight",
+    message: "Running openclaw update --dry-run --json..."
+  });
+
+  return runRecoveryCommand(openClawBin, ["update", "--dry-run", "--json"], send, {
+    timeoutMs: 2 * 60 * 1000
+  });
+}
+
+function isInstalledOpenClawBelowRequiredBaseline(snapshot: MissionControlSnapshot) {
+  const version = normalizeVersion(snapshot.diagnostics.version);
+
+  return Boolean(version && compareVersionStrings(version, OPENCLAW_SUPPORTED_BASELINE_VERSION) < 0);
 }
 
 async function runOpenClawUpdatePreflight(input: {

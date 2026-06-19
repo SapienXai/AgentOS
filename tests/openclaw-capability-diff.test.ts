@@ -10,8 +10,8 @@ function createDiagnostics(input: Partial<GatewayDiagnostics> = {}): GatewayDiag
     loaded: true,
     rpcOk: true,
     health: "ok",
-    version: "2026.6.1",
-    latestVersion: "2026.6.1",
+    version: "2026.6.8",
+    latestVersion: "2026.6.8",
     workspaceRoot: "/tmp/workspace",
     configuredWorkspaceRoot: null,
     dashboardUrl: "http://127.0.0.1:3000",
@@ -62,7 +62,7 @@ function createDiagnostics(input: Partial<GatewayDiagnostics> = {}): GatewayDiag
     issues: [],
     capabilityMatrix: {
       detectedAt: "2026-06-15T08:00:00.000Z",
-      openClawVersion: "2026.6.1",
+      openClawVersion: "2026.6.8",
       gatewayProtocolVersion: "4",
       authMode: "native",
       supportedMethods: ["sessions.list", "config.patch"],
@@ -183,7 +183,7 @@ test("capability diff reports native improvements and regressions between certif
     generatedAt: new Date("2026-06-15T08:10:00.000Z")
   });
 
-  assert.equal(report.certifiedVersion, "2026.6.1");
+  assert.equal(report.certifiedVersion, "2026.6.8");
   assert.equal(report.targetVersion, "2026.6.6");
   assert.equal(report.summary.nativeImprovements, 2);
   assert.equal(report.summary.nativeRegressions, 1);
