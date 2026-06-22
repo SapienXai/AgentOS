@@ -390,6 +390,7 @@ export function MissionControlShell({
     useState<ModelSwitchFeedback>(initialModelSwitchFeedback);
   const [isOnboardingDismissed, setIsOnboardingDismissed] = useState(false);
   const [isOnboardingForcedOpen, setIsOnboardingForcedOpen] = useState(false);
+  const [onboardingSessionKey, setOnboardingSessionKey] = useState(0);
   const [showOnboardingReadyState, setShowOnboardingReadyState] = useState(false);
   const [requiresFreshInstallSystemSetup, setRequiresFreshInstallSystemSetup] = useState(false);
   const [hasSeenMissionReady, setHasSeenMissionReady] = useState(false);
@@ -697,6 +698,10 @@ export function MissionControlShell({
     isOpenClawOnboardingSystemReady &&
     isOpenClawOnboardingModelReady &&
     !hasWorkspaceSetup;
+  const isOnboardingFullyReady =
+    isOpenClawOnboardingSystemReady &&
+    isOpenClawOnboardingModelReady &&
+    hasWorkspaceSetup;
   const shouldAutoShowOnboarding =
     !hasActiveMissionWork &&
     (!isOnboardingDismissed || needsWorkspaceSetup) &&
@@ -2683,9 +2688,10 @@ export function MissionControlShell({
     );
 
     setIsSettingsOpen(false);
+    setOnboardingSessionKey((current) => current + 1);
     setOnboardingStage(resolvedStage);
     setIsOnboardingDismissed(false);
-    setShowOnboardingReadyState(stage === undefined && shouldShowLaunchpadReadyState);
+    setShowOnboardingReadyState(stage === undefined && (shouldShowLaunchpadReadyState || isOnboardingFullyReady));
     setIsOnboardingForcedOpen(true);
 
     if (resolvedStage === "models") {
@@ -3414,6 +3420,7 @@ export function MissionControlShell({
     <>
       {shouldShowOnboarding ? (
         <OpenClawOnboarding
+          key={`onboarding-${onboardingSessionKey}`}
           snapshot={snapshot}
           surfaceTheme={surfaceTheme}
           stage={effectiveOnboardingStage}
@@ -4266,6 +4273,7 @@ export function MissionControlShell({
 
         {shouldShowOnboarding ? (
           <OpenClawOnboarding
+            key={`onboarding-${onboardingSessionKey}`}
             snapshot={snapshot}
             surfaceTheme={surfaceTheme}
             stage={effectiveOnboardingStage}

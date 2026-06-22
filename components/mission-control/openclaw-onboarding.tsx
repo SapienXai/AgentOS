@@ -43,6 +43,8 @@ import {
   type ModelSwitchFeedback
 } from "@/components/mission-control/openclaw-onboarding.stages";
 
+type OnboardingVisualStage = WizardStage | "finish";
+
 export function OpenClawOnboarding({
   snapshot,
   surfaceTheme,
@@ -125,6 +127,7 @@ export function OpenClawOnboarding({
     launchpadCreateRunState === "success" ||
     launchpadCreateRunState === "error"
   );
+  const canShowFinish = onboardingSystemReady && onboardingModelReady && (hasWorkspaceSetup || showReadyState);
   const isLaunchpadBuilding = launchpadCreateRunState === "running";
   const workspaceCount = snapshot.workspaces.length;
   const agentCount = snapshot.agents.length;
@@ -137,6 +140,11 @@ export function OpenClawOnboarding({
     snapshot.diagnostics.modelReadiness.resolvedDefaultModel ||
     snapshot.diagnostics.modelReadiness.defaultModel ||
     null;
+  const gatewayAuthNeedsSetup = snapshot.diagnostics.issues.some((issue) =>
+    /gateway\..*auth|redacted secret|AGENTOS_OPENCLAW_GATEWAY_TOKEN|OPENCLAW_GATEWAY_TOKEN/i.test(issue)
+  );
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
+  const [selectedVisualStage, setSelectedVisualStage] = useState<OnboardingVisualStage | null>(null);
   const systemPhaseForSteps = onboardingSystemReady ? "ready" : systemPhase;
   const systemSteps = buildSystemSteps(snapshot, systemPhaseForSteps, {
     forcePending: systemSetupRequired
@@ -144,13 +152,19 @@ export function OpenClawOnboarding({
   const availableModels = snapshot.models.filter((model) => model.available !== false && !model.missing);
   const selectedModelLabel =
     availableModels.find((model) => model.id === selectedModelId)?.name || selectedModelId || null;
-  const stageRun = stage === "system" ? systemRun : modelRun;
+  const defaultVisualStage: OnboardingVisualStage = canShowFinish ? "finish" : showLaunchpad ? "finish" : stage;
+  const effectiveSelectedVisualStage =
+    selectedVisualStage === "finish" && !canShowFinish && !showLaunchpad ? null : selectedVisualStage;
+  const visualStage = effectiveSelectedVisualStage ?? defaultVisualStage;
+  const renderLaunchpad = visualStage === "finish";
+  const activeWizardStage: WizardStage = visualStage === "finish" ? stage : visualStage;
+  const stageRun = activeWizardStage === "system" ? systemRun : modelRun;
   const stageStatusCopy =
     stageRun.statusMessage ||
     stageRun.resultMessage ||
-    resolveStageDescription(stage, systemActionDescription, selectedModelLabel);
+    resolveStageDescription(activeWizardStage, systemActionDescription, selectedModelLabel);
   const phaseLabel =
-    stage === "system"
+    activeWizardStage === "system"
       ? onboardingSystemReady
         ? "ready"
         : systemSetupRequired
@@ -161,14 +175,10 @@ export function OpenClawOnboarding({
     stageRun.runState !== "idle" ||
     Boolean(stageRun.manualCommand) ||
     stageRun.log.trim().length > 0 ||
-    (stage === "models" && discoveredModels.length > 0);
-  const gatewayAuthNeedsSetup = snapshot.diagnostics.issues.some((issue) =>
-    /gateway\..*auth|redacted secret|AGENTOS_OPENCLAW_GATEWAY_TOKEN|OPENCLAW_GATEWAY_TOKEN/i.test(issue)
-  );
-  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
+    (activeWizardStage === "models" && discoveredModels.length > 0);
 
   const primaryAction = resolvePrimaryAction({
-    stage,
+    stage: activeWizardStage,
     systemReady: onboardingSystemReady,
     modelReady: onboardingModelReady,
     systemActionLabel,
@@ -180,8 +190,7 @@ export function OpenClawOnboarding({
     (onboardingModelReady ? 1 : 0) +
     (hasWorkspaceSetup || showReadyState ? 1 : 0);
   const progressPercent = Math.max(0, Math.min(100, Math.round((completedProgressUnits / 5) * 100)));
-  const visualStep = showLaunchpad ? "finish" : stage;
-  const activeStepNumber = visualStep === "finish" ? 3 : visualStep === "models" ? 2 : 1;
+  const activeStepNumber = visualStage === "finish" ? 3 : visualStage === "models" ? 2 : 1;
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -242,14 +251,19 @@ export function OpenClawOnboarding({
               activeStep={activeStepNumber}
               systemReady={onboardingSystemReady}
               modelReady={onboardingModelReady}
-              finishReady={hasWorkspaceSetup || showReadyState}
+              finishReady={canShowFinish}
               surfaceTheme={surfaceTheme}
-              onSelectStage={onSelectStage}
+              onSelectStage={(nextStage) => {
+                setSelectedVisualStage(nextStage);
+                if (nextStage !== "finish") {
+                  onSelectStage(nextStage);
+                }
+              }}
             />
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-6 pb-24 pt-6 sm:px-8 lg:px-12 [-webkit-overflow-scrolling:touch]">
-            {showLaunchpad ? (
+            {renderLaunchpad ? (
               <LaunchpadStage
                 surfaceTheme={surfaceTheme}
                 workspaceCount={workspaceCount}
@@ -263,7 +277,7 @@ export function OpenClawOnboarding({
                 createProgress={launchpadCreateProgress}
                 createRunState={launchpadCreateRunState}
               />
-            ) : stage === "system" ? (
+            ) : visualStage === "system" ? (
               <SetupSystemStage
                 steps={systemSteps}
                 surfaceTheme={surfaceTheme}
@@ -312,7 +326,7 @@ export function OpenClawOnboarding({
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-3">
-              {showLaunchpad ? (
+              {renderLaunchpad ? (
                 <span
                   className={cn(
                     "rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.12em]",
@@ -333,7 +347,7 @@ export function OpenClawOnboarding({
                         ? "Needs attention"
                         : "Ready"}
                 </span>
-              ) : stage === "models" ? (
+              ) : visualStage === "models" ? (
                 <Button
                   type="button"
                   variant="ghost"
@@ -346,7 +360,7 @@ export function OpenClawOnboarding({
                   Back
                 </Button>
               ) : null}
-              {showLaunchpad ? (
+              {renderLaunchpad ? (
                 <>
                   {hasWorkspaceSetup ? (
                     <Button
@@ -394,7 +408,7 @@ export function OpenClawOnboarding({
                 </>
               ) : (
                 <>
-                  {stage === "models" && !onboardingModelReady ? (
+                  {visualStage === "models" && !onboardingModelReady ? (
                     <Button
                       type="button"
                       variant="secondary"
@@ -406,7 +420,7 @@ export function OpenClawOnboarding({
                     </Button>
                   ) : null}
 
-                  {stage === "system" && !onboardingSystemReady ? (
+                  {visualStage === "system" && !onboardingSystemReady ? (
                     <Button
                       type="button"
                       variant="ghost"
@@ -423,7 +437,7 @@ export function OpenClawOnboarding({
                   <Button
                     type="button"
                     onClick={() => {
-                      if (stage === "system") {
+                      if (visualStage === "system") {
                         if (primaryAction.kind === "dismiss") {
                           onEnterAgentOS();
                           return;
@@ -626,7 +640,7 @@ function SetupStepper({
   modelReady: boolean;
   finishReady: boolean;
   surfaceTheme: SurfaceTheme;
-  onSelectStage: (stage: WizardStage) => void;
+  onSelectStage: (stage: OnboardingVisualStage) => void;
 }) {
   const steps = [
     { order: 1, id: "system", label: "System Setup", description: "Configure core services", complete: systemReady },
@@ -666,8 +680,8 @@ function SetupStepper({
 
         return (
           <div key={step.id} className="contents">
-            {step.id === "finish" ? (
-              <div title={modelReady ? "Finish opens after model setup." : "Complete model setup before finishing."}>
+            {step.id === "finish" && !modelReady ? (
+              <div title="Complete model setup before finishing." className="cursor-not-allowed opacity-60">
                 {content}
               </div>
             ) : (
