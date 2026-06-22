@@ -44,12 +44,13 @@ jobs:
 
       - name: Run Mission Control browser smoke
         shell: bash
-        env:
-          AGENTOS_SMOKE_BASE_URL: http://127.0.0.1:3000
-          AGENTOS_SMOKE_ALLOW_DATA_BLOCKED: "1"
-          AGENTOS_SMOKE_JSON_OUTPUT: .smoke/mission-control-smoke.json
         run: |
           mkdir -p .smoke
+          export AGENTOS_API_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')"
+          export AGENTOS_SMOKE_BASE_URL=http://127.0.0.1:3000
+          export AGENTOS_SMOKE_ALLOW_DATA_BLOCKED=1
+          export AGENTOS_SMOKE_JSON_OUTPUT=.smoke/mission-control-smoke.json
+
           pnpm start > .smoke/agentos-server.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
