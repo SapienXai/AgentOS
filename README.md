@@ -1,11 +1,15 @@
 <div align="center">
   <img src="public/assets/screenshots/hero.jpeg" alt="AgentOS control-plane interface" width="100%" />
 
-# AgentOS | Control Plane
+<h1 style="font-size:3.75rem; line-height:0.95; margin:0 0 0.25rem;">
+  <strong>Agent<span style="color:#d7263d;">OS</span></strong>
+</h1>
 
-**Human operating layer for coordinating AI agents, projects, and companies from a single workspace.**
+<p style="font-size:1.4rem; line-height:1.15; margin:0 0 0.75rem;"><strong>Run agents like a company.</strong></p>
 
-Built on top of OpenClaw, the agent orchestration kernel.
+<p>AgentOS is the native control plane for OpenClaw — an operations layer for creating, coordinating, and supervising AI agents from one workspace.</p>
+
+<p>It turns OpenClaw into a manageable system for real work: agents, tasks, models, context, approvals, runtime visibility, and human oversight.</p>
 
 <p>
   <a href="https://sapienx.app/agentos"><strong>Website</strong></a>
