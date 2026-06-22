@@ -218,11 +218,9 @@ export function RuntimeInboxPanel({
 }) {
   const issues = useMemo(() => {
     const all = snapshot.diagnostics.runtimeIssues ?? [];
-    const visible = variant === "full"
-      ? all
-      : all.filter((issue) => issue.status !== "resolved" && issue.status !== "dismissed");
+    const visible = all.filter((issue) => issue.status !== "resolved" && issue.status !== "dismissed");
     return typeof maxIssues === "number" ? visible.slice(0, maxIssues) : visible;
-  }, [maxIssues, snapshot.diagnostics.runtimeIssues, variant]);
+  }, [maxIssues, snapshot.diagnostics.runtimeIssues]);
 
   return (
     <div className="min-w-0">

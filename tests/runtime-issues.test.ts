@@ -290,4 +290,5 @@ test("runtime inbox exposes recovery commands for non-scope issues", () => {
   assert.match(source, /Restore last working/);
   assert.match(source, /Restart gateway/);
   assert.match(source, /recoveryCommand/);
+  assert.match(source, /all\.filter\(\(issue\) => issue\.status !== "resolved" && issue\.status !== "dismissed"\)/);
 });

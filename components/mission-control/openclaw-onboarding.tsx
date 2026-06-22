@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ArrowRight, Check, Info, LoaderCircle, XCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, Copy, Info, LoaderCircle, SquareTerminal, XCircle } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/sonner";
 import {
   isOpenClawMissionReady,
   isOpenClawOnboardingModelReady,
@@ -20,6 +21,7 @@ import type {
   OperationProgressSnapshot
 } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
+import { isOpenClawTerminalCommand } from "@/lib/openclaw/terminal-command";
 import {
   buildSystemSteps,
   ghostActionClassName,
@@ -209,8 +211,8 @@ export function OpenClawOnboarding({
     >
       <SetupBackground surfaceTheme={surfaceTheme} />
       <motion.div
-        initial={{ opacity: 0, y: 18, scale: 0.985 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
+        initial={{ opacity: 0, y: 18, scale: 0.885 }}
+        animate={{ opacity: 1, y: 0, scale: 0.9 }}
         className={cn(
           "relative z-10 flex w-full min-h-0 max-h-[calc(100dvh-24px)] max-w-[980px] flex-col overflow-hidden rounded-[18px] border backdrop-blur-2xl sm:max-h-[calc(100dvh-32px)]",
           surfaceTheme === "light"
@@ -268,6 +270,7 @@ export function OpenClawOnboarding({
                 run={stageRun}
                 gatewayAuthNeedsSetup={gatewayAuthNeedsSetup}
                 statusCopy={stageStatusCopy}
+                phaseLabel={phaseLabel}
                 onOpenGatewayAuthSettings={onOpenGatewayAuthSettings}
               />
             ) : (
@@ -702,6 +705,7 @@ function SetupSystemStage({
   run,
   gatewayAuthNeedsSetup,
   statusCopy,
+  phaseLabel,
   onOpenGatewayAuthSettings
 }: {
   steps: Array<{ id: string; label: string; description: string; state: StepState }>;
@@ -709,21 +713,22 @@ function SetupSystemStage({
   run: StageRunDetails;
   gatewayAuthNeedsSetup: boolean;
   statusCopy: string;
+  phaseLabel: string;
   onOpenGatewayAuthSettings: () => void;
 }) {
   return (
-    <div className="mx-auto max-w-[900px]">
-      <h2 className="text-[21px] font-semibold tracking-[-0.02em]">System Setup</h2>
+    <div className="mx-auto max-w-[860px]">
+      <h2 className="text-[18px] font-semibold tracking-[-0.01em]">System Setup</h2>
       <div className="mt-1 flex items-baseline justify-between gap-4 max-sm:flex-col max-sm:items-start max-sm:gap-1">
-        <p className="text-[14px] leading-6 text-muted-foreground">
+        <p className="text-[12px] leading-5 text-muted-foreground">
           Install the CLI, start the gateway, and verify RPC.
         </p>
-        <p className="shrink-0 text-right text-[11px] font-semibold uppercase tracking-[0.16em] text-primary max-sm:text-left">
+        <p className="shrink-0 text-right text-[10px] font-semibold uppercase tracking-[0.14em] text-primary max-sm:text-left">
           Step 1 of 3
         </p>
       </div>
 
-      <div className="mt-4 space-y-2.5">
+      <div className="mt-3 space-y-2">
         {steps.map((step, index) => (
           <SetupTaskRow
             key={step.id}
@@ -738,7 +743,7 @@ function SetupSystemStage({
       {run.runState === "error" || gatewayAuthNeedsSetup ? (
         <div
           className={cn(
-            "mt-5 rounded-[14px] border px-4 py-3",
+            "mt-3 rounded-[12px] border px-3 py-2.5",
             surfaceTheme === "light"
               ? "border-destructive/25 bg-destructive/5 text-destructive"
               : "border-destructive/30 bg-destructive/10 text-red-100"
@@ -747,10 +752,10 @@ function SetupSystemStage({
           <div className="flex items-start gap-3">
             <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <div className="min-w-0">
-              <p className="text-[13px] font-semibold">
+              <p className="text-[12px] font-semibold">
                 {gatewayAuthNeedsSetup ? "Native Gateway auth needs attention" : "System setup needs attention"}
               </p>
-              <p className="mt-1 text-[12px] leading-5 text-current/80">
+              <p className="mt-1 text-[11px] leading-4 text-current/80">
                 {gatewayAuthNeedsSetup
                   ? "OpenClaw reports a redacted Gateway secret. Generate a local token in Settings so AgentOS can use native WS instead of CLI fallback."
                   : statusCopy}
@@ -761,7 +766,7 @@ function SetupSystemStage({
                   size="sm"
                   variant="secondary"
                   onClick={onOpenGatewayAuthSettings}
-                  className="mt-3 h-8 rounded-full px-3 text-[12px]"
+                  className="mt-2 h-7 rounded-full px-2.5 text-[11px]"
                 >
                   Configure Gateway auth
                 </Button>
@@ -771,7 +776,221 @@ function SetupSystemStage({
         </div>
       ) : null}
 
+      <SetupRunDetailsPanel
+        surfaceTheme={surfaceTheme}
+        statusCopy={statusCopy}
+        phaseLabel={phaseLabel}
+        run={run}
+      />
+
       <SetupStatusPanel surfaceTheme={surfaceTheme} />
+    </div>
+  );
+}
+
+function SetupRunDetailsPanel({
+  surfaceTheme,
+  statusCopy,
+  phaseLabel,
+  run
+}: {
+  surfaceTheme: SurfaceTheme;
+  statusCopy: string;
+  phaseLabel: string;
+  run: StageRunDetails;
+}) {
+  const hasDetails =
+    run.log.trim().length > 0 ||
+    Boolean(run.manualCommand) ||
+    Boolean(run.statusMessage) ||
+    Boolean(run.resultMessage) ||
+    run.runState === "running" ||
+    run.runState === "error";
+  const [detailsOpen, setDetailsOpen] = useState(true);
+  const [isOpeningTerminal, setIsOpeningTerminal] = useState(false);
+  const canOpenTerminal = isOpenClawTerminalCommand(run.manualCommand);
+  const displayStatus = run.statusMessage || run.resultMessage || statusCopy;
+
+  useEffect(() => {
+    if (hasDetails) {
+      setDetailsOpen(true);
+    }
+  }, [hasDetails]);
+
+  const copyCommand = async () => {
+    if (!run.manualCommand) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(run.manualCommand);
+      toast.success("Command copied.", {
+        description: "Open Terminal and paste it."
+      });
+    } catch (error) {
+      toast.error("Could not copy command.", {
+        description: error instanceof Error ? error.message : "Clipboard access is unavailable."
+      });
+    }
+  };
+
+  const openTerminal = async () => {
+    if (!run.manualCommand || !canOpenTerminal) {
+      return;
+    }
+
+    setIsOpeningTerminal(true);
+
+    try {
+      const response = await fetch("/api/system/open-terminal", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          command: run.manualCommand
+        })
+      });
+      const result = (await response.json().catch(() => null)) as { error?: string } | null;
+
+      if (!response.ok || result?.error) {
+        throw new Error(result?.error || "Unable to open Terminal.");
+      }
+
+      toast.success("Terminal opened.", {
+        description: "Finish auth there, then refresh."
+      });
+    } catch (error) {
+      toast.error("Could not open Terminal.", {
+        description: error instanceof Error ? error.message : "Open Terminal manually and run the command."
+      });
+    } finally {
+      setIsOpeningTerminal(false);
+    }
+  };
+
+  return (
+    <div
+      className={cn(
+        "mt-3 overflow-hidden rounded-[12px] border",
+        surfaceTheme === "light"
+          ? "border-border/80 bg-white/66"
+          : "border-white/10 bg-white/[0.035]"
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => setDetailsOpen((value) => !value)}
+        className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
+      >
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[12px] font-semibold">Setup log</p>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em]",
+                run.runState === "running"
+                  ? "bg-primary/10 text-primary"
+                  : run.runState === "error"
+                    ? "bg-destructive/10 text-destructive"
+                    : run.runState === "success"
+                      ? surfaceTheme === "light"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-emerald-300/10 text-emerald-200"
+                      : "bg-muted text-muted-foreground"
+              )}
+            >
+              {run.runState === "running" ? <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" /> : null}
+              {phaseLabel}
+            </span>
+          </div>
+          <p className="mt-0.5 truncate text-[11px] leading-4 text-muted-foreground max-sm:whitespace-normal">
+            {displayStatus}
+          </p>
+        </div>
+        <ChevronDown
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+            detailsOpen && "rotate-180"
+          )}
+        />
+      </button>
+
+      {detailsOpen ? (
+        <div className={cn("border-t px-3 py-2.5", surfaceTheme === "light" ? "border-border/70" : "border-white/8")}>
+          <pre
+            className={cn(
+              "max-h-[92px] min-h-[46px] overflow-auto whitespace-pre-wrap break-words rounded-[8px] border px-2.5 py-1.5 font-mono text-[9px] leading-3",
+              surfaceTheme === "light"
+                ? "border-border/70 bg-muted/35 text-foreground"
+                : "border-white/8 bg-black/20 text-slate-200"
+            )}
+          >
+            {run.log || "No output yet.\n\nStart setup to stream OpenClaw logs here."}
+          </pre>
+
+          {run.manualCommand ? (
+            <div
+              className={cn(
+                "mt-2 rounded-[8px] border px-2.5 py-2",
+                surfaceTheme === "light"
+                  ? "border-border/70 bg-muted/25"
+                  : "border-white/8 bg-black/15"
+              )}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  {canOpenTerminal ? "Terminal command" : "Manual command"}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={copyCommand}
+                    className="h-6 rounded-full px-2 text-[10px]"
+                  >
+                    <Copy className="mr-1.5 h-3 w-3" />
+                    Copy
+                  </Button>
+                  {canOpenTerminal ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={openTerminal}
+                      disabled={isOpeningTerminal}
+                    className="h-6 rounded-full px-2 text-[10px]"
+                    >
+                      {isOpeningTerminal ? (
+                        <LoaderCircle className="mr-1.5 h-3 w-3 animate-spin" />
+                      ) : (
+                        <SquareTerminal className="mr-1.5 h-3 w-3" />
+                      )}
+                      {isOpeningTerminal ? "Opening" : "Open"}
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              <code className="mt-1.5 block max-h-[56px] overflow-auto break-all font-mono text-[9px] leading-3 text-muted-foreground">
+                {run.manualCommand}
+              </code>
+            </div>
+          ) : null}
+
+          {run.docsUrl ? (
+            <a
+              href={run.docsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-flex items-center gap-1 text-[10px] font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Setup docs
+              <ArrowRight className="h-3 w-3" />
+            </a>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -796,7 +1015,7 @@ function SetupTaskRow({
     <motion.div
       layout
       className={cn(
-        "relative flex min-h-[64px] items-center gap-4 overflow-hidden rounded-[14px] border px-4 py-2.5 max-sm:grid max-sm:grid-cols-[36px_minmax(0,1fr)] max-sm:items-start max-sm:gap-x-3 max-sm:gap-y-2",
+        "relative flex min-h-[50px] items-center gap-3 overflow-hidden rounded-[12px] border px-3 py-2 max-sm:grid max-sm:grid-cols-[30px_minmax(0,1fr)] max-sm:items-start max-sm:gap-x-2.5 max-sm:gap-y-1.5",
         surfaceTheme === "light" ? "border-border/80 bg-white/72" : "border-white/10 bg-white/[0.035]",
         isActive && "border-primary/24"
       )}
@@ -811,7 +1030,7 @@ function SetupTaskRow({
       ) : null}
       <span
         className={cn(
-          "relative z-[1] inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-[14px] font-semibold max-sm:row-span-2",
+          "relative z-[1] inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold max-sm:row-span-2",
           step.state === "complete"
             ? surfaceTheme === "light"
               ? "border-emerald-300 bg-emerald-50 text-emerald-700"
@@ -824,20 +1043,20 @@ function SetupTaskRow({
         )}
       >
         {step.state === "complete" ? (
-          <Check className="h-4 w-4" />
+          <Check className="h-3.5 w-3.5" />
         ) : isRunning ? (
-          <LoaderCircle className="h-4 w-4 animate-spin" />
+          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
         ) : (
           index + 1
         )}
       </span>
       <div className="relative z-[1] min-w-0 flex-1">
-        <p className="text-[15px] font-semibold tracking-[-0.01em]">{step.label}</p>
-        <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{step.description}</p>
+        <p className="text-[13px] font-semibold tracking-[-0.01em]">{step.label}</p>
+        <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{step.description}</p>
       </div>
       <span
         className={cn(
-          "relative z-[1] inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] max-sm:col-start-2 max-sm:w-fit",
+          "relative z-[1] inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] max-sm:col-start-2 max-sm:w-fit",
           isRunning
             ? "bg-primary/10 text-primary"
             : step.state === "complete"
@@ -876,22 +1095,22 @@ function SetupStatusPanel({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
   return (
     <div
       className={cn(
-        "mt-4 rounded-[14px] border px-4 py-3",
+        "mt-3 rounded-[12px] border px-3 py-2.5",
         surfaceTheme === "light"
           ? "border-primary/18 bg-primary/[0.035]"
           : "border-primary/20 bg-primary/[0.075]"
       )}
     >
-      <div className="flex items-start gap-4">
-        <span className="mt-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <Info className="h-4 w-4" />
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <Info className="h-3.5 w-3.5" />
         </span>
         <div>
-          <p className="text-[14px] font-semibold">What happens next?</p>
-          <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
+          <p className="text-[12px] font-semibold">What happens next?</p>
+          <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
             We&apos;ll install the CLI if needed, start the gateway, and verify connectivity.
           </p>
-          <p className="mt-3 text-[13px] leading-5 text-muted-foreground">
+          <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
             Recommended setup target: <span className="font-semibold text-primary">v{OPENCLAW_RECOMMENDED_VERSION}</span>
           </p>
         </div>

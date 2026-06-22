@@ -43,7 +43,7 @@ type ProviderDraft = {
   models: AddModelsCatalogModel[];
   apiKey: string;
   search: string;
-  flowState: "idle" | "connecting" | "discovering" | "ready" | "error";
+  flowState: "idle" | "connecting" | "verifying" | "discovering" | "ready" | "error";
 };
 
 const initialDraftState = (): ProviderDraft => ({
@@ -179,11 +179,14 @@ export function OpenClawOnboardingProviderFlow({
     null;
   const showLoadingHero =
     activeDraft.flowState === "connecting" ||
+    activeDraft.flowState === "verifying" ||
     activeDraft.flowState === "discovering" ||
     (activeDraft.statusMessage?.startsWith("Checking ") === true && !activeConnection.connected);
   const loadingHeroTitle =
     activeDraft.flowState === "discovering"
       ? `Discovering ${activeDescriptor.shortLabel} models...`
+      : activeDraft.flowState === "verifying"
+        ? activeDraft.statusMessage || `Verifying ${activeDescriptor.shortLabel} connection...`
       : activeDraft.flowState === "connecting"
         ? activeDraft.statusMessage || `Connecting ${activeDescriptor.shortLabel}...`
         : activeDraft.statusMessage || `Checking ${activeDescriptor.shortLabel}...`;
@@ -232,11 +235,16 @@ export function OpenClawOnboardingProviderFlow({
 
   async function refreshProvider(providerId: AddModelsProviderId) {
     const adapter = getModelProviderAdapter(providerId);
+    const previousDraft = resolveDraft(providerDrafts[providerId]);
+    const isTerminalReturn = Boolean(previousDraft.manualCommand);
+    const providerLabel = formatProviderLabel(providerId);
 
     updateDraft(providerId, {
-      flowState: "idle",
+      flowState: "verifying",
       errorMessage: null,
-      statusMessage: `Checking ${formatProviderLabel(providerId)}...`
+      statusMessage: isTerminalReturn
+        ? `Verifying ${providerLabel} connection and waiting for the default model...`
+        : `Checking ${providerLabel}...`
     });
 
     try {
@@ -247,7 +255,16 @@ export function OpenClawOnboardingProviderFlow({
         !hasVisibleModelsForProvider(providerId);
       const nextState = shouldDiscover ? "discovering" : "idle";
 
-      applyActionResult(providerId, result, nextState);
+      applyActionResult(
+        providerId,
+        result,
+        nextState,
+        isTerminalReturn && result.connection.connected && !shouldDiscover
+          ? {
+              statusMessage: result.message || `${providerLabel} is connected. Waiting for AgentOS to refresh the default model.`
+            }
+          : undefined
+      );
       applySnapshotResult(result);
 
       if (shouldDiscover) {
@@ -620,7 +637,9 @@ export function OpenClawOnboardingProviderFlow({
               </p>
               <p className={cn("mt-2 max-w-[280px] text-[11px] leading-[1rem]", isLight ? "text-[#74665c]" : "text-slate-400")}>
                 {activeDraft.flowState === "discovering"
-                  ? "Pulling the provider catalog into AgentOS."
+                  ? "Pulling the provider catalog into AgentOS, then checking the default model."
+                  : activeDraft.flowState === "verifying"
+                    ? "Checking the provider connection, refreshing OpenClaw state, and waiting for the default model to appear."
                   : activeDraft.flowState === "connecting"
                     ? "Preparing the provider connection."
                     : "Checking provider status before discovery."}

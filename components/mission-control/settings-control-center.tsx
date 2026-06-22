@@ -1162,7 +1162,7 @@ export function SettingsControlCenter(
                         ["Model readiness", snapshot.diagnostics.modelReadiness.ready ? "Ready" : snapshot.diagnostics.modelReadiness.issues[0] ?? "Unknown"],
                         ["Native Gateway coverage", compatibilityReport ? `${compatibilityReport.summary.nativeGatewayCoveragePercent}% (${compatibilityReport.summary.nativeGatewayCoverageLabel})` : "Unknown"],
                         ["CLI fallback count", String(transportSummary.fallbackTotal)],
-                        ["Runtime issues", `${snapshot.diagnostics.runtimeIssues.length} visible`]
+                        ["Runtime issues", `${activeRuntimeIssues.length} visible`]
                       ]}
                     />
                   </div>
