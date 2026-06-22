@@ -85,7 +85,7 @@ export function OperationsPage({
         if (page === "models") {
           return (
             <ModelsPageContent
-              snapshot={context.snapshot}
+              snapshot={context.rootSnapshot}
               rootSnapshot={context.rootSnapshot}
               surfaceTheme={context.surfaceTheme}
               refresh={context.refresh}

@@ -9,7 +9,7 @@ import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { isAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
 import { cn } from "@/lib/utils";
-import { buildModelViews, formatBigNumber, summarizeTokens, type ModelView } from "@/components/operations/operations-data";
+import { buildAgentViews, buildModelViews, formatBigNumber, summarizeTokens, type AgentView, type ModelView } from "@/components/operations/operations-data";
 import { EmptyState, EntityIcon, InspectorPanelFrame, KeyValue, MiniBadge, OperationsPageLayout, PageHeader, SearchToolbar, SectionCard, StatCard, StatGrid, StatusBadge, ToolbarButton } from "@/components/operations/operations-ui";
 import { formatModelSortLabel, MetricMini, readClientError, sortModelViews, UnsupportedPanel } from "@/components/operations/operations-shared";
 
@@ -30,6 +30,10 @@ export function ModelsPageContent({
     () => buildModelViews(snapshot),
     [snapshot]
   );
+  const agents = useMemo(
+    () => buildAgentViews(snapshot),
+    [snapshot]
+  );
   const [search, setSearch] = useState("");
   const [provider, setProvider] = useState("All Providers");
   const [sort, setSort] = useState<"name" | "provider" | "status" | "role">("provider");
@@ -47,6 +51,11 @@ export function ModelsPageContent({
     return matchesSearch && matchesProvider;
   }).sort((left, right) => sortModelViews(left, right, sort));
   const selectedModel = filteredModels.find((model) => model.id === selectedId) ?? filteredModels[0] ?? null;
+  const selectedModelId = selectedModel?.id ?? null;
+  const selectedModelAgents = useMemo(
+    () => (selectedModelId ? agents.filter((agent) => agent.source?.modelId === selectedModelId) : []),
+    [agents, selectedModelId]
+  );
   const connectedProviders = new Set(models.filter((model) => model.statusTone !== "danger").map((model) => model.provider)).size;
   const tokenTotal = summarizeTokens(snapshot);
   const defaultModelId = snapshot.diagnostics.modelReadiness.resolvedDefaultModel ?? snapshot.diagnostics.modelReadiness.defaultModel;
@@ -195,6 +204,7 @@ export function ModelsPageContent({
             settingDefault={settingDefaultId === selectedModel.id}
             onSetDefault={() => void setDefaultModel(selectedModel)}
             onOpenAddModels={() => setIsAddModelsDialogOpen(true)}
+            linkedAgents={selectedModelAgents}
           />
         ) : null
       }
@@ -275,7 +285,8 @@ function ModelInspector({
   onTabChange,
   settingDefault,
   onSetDefault,
-  onOpenAddModels
+  onOpenAddModels,
+  linkedAgents
 }: {
   model: ModelView;
   tab: "Details" | "Capabilities" | "Performance";
@@ -283,7 +294,11 @@ function ModelInspector({
   settingDefault: boolean;
   onSetDefault: () => void;
   onOpenAddModels: () => void;
+  linkedAgents: AgentView[];
 }) {
+  const visibleAgents = linkedAgents.slice(0, 6);
+  const hiddenAgentCount = Math.max(0, linkedAgents.length - visibleAgents.length);
+
   return (
     <InspectorPanelFrame>
       <div className="flex items-start gap-2.5">
@@ -299,6 +314,35 @@ function ModelInspector({
           <p className="mt-2.5 text-xs leading-5 text-foreground/80">Configured model route reported by AgentOS/OpenClaw.</p>
         </div>
       </div>
+      <SectionCard title="Linked Agents" className="mt-3">
+        {linkedAgents.length === 0 ? (
+          <div className="px-3 py-3 text-xs leading-5 text-muted-foreground">
+            No agents are currently using this model.
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {visibleAgents.map((agent) => (
+              <div key={agent.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <EntityIcon icon={agent.icon} label={agent.name} tone={agent.iconTone} size="sm" />
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-semibold text-foreground">{agent.name}</p>
+                      <p className="truncate text-[0.66rem] text-muted-foreground">{agent.workspaceName}</p>
+                    </div>
+                  </div>
+                </div>
+                <StatusBadge label={agent.statusLabel} tone={agent.statusTone} />
+              </div>
+            ))}
+            {hiddenAgentCount > 0 ? (
+              <div className="px-3 py-2.5">
+                <MiniBadge>+{hiddenAgentCount} more agents</MiniBadge>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </SectionCard>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <Button
           size="sm"
