@@ -2018,7 +2018,6 @@ function CollapsedSidebar({
         label={`${workspaceLabel} - ${workspaceDetail}`}
         side="right"
         surfaceTheme={surfaceTheme}
-        panelCollapsed
       >
         <button
           type="button"
@@ -2030,7 +2029,7 @@ function CollapsedSidebar({
         </button>
       </RailTooltip>
 
-      <RailTooltip label="New Agent" side="right" surfaceTheme={surfaceTheme} panelCollapsed>
+      <RailTooltip label="New Agent" side="right" surfaceTheme={surfaceTheme}>
         <SidebarCreateAgentAction
           snapshot={snapshot}
           activeWorkspaceId={activeWorkspaceId}
@@ -2059,7 +2058,6 @@ function CollapsedSidebar({
                     label={item.label}
                     side="right"
                     surfaceTheme={surfaceTheme}
-                    panelCollapsed
                   >
                     <Link
                       href={item.href ?? "#"}

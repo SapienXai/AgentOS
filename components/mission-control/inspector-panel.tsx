@@ -254,9 +254,15 @@ function InspectorPanelContent({
     { id: "agent", label: "Agent", icon: Bot },
     { id: "tasks", label: "Tasks", icon: ClipboardList }
   ] satisfies Array<{ id: InspectorScopeShortcut; label: string; icon: LucideIcon }>;
+  const isLight = surfaceTheme === "light";
 
   return (
-    <div className="panel-surface panel-glow flex h-full flex-row-reverse overflow-hidden rounded-l-[22px] border border-r-0 border-sky-100/[0.09] bg-[radial-gradient(circle_at_22%_0%,rgba(125,211,252,0.055),transparent_34%),radial-gradient(circle_at_100%_18%,rgba(250,0,63,0.045),transparent_30%),linear-gradient(180deg,rgba(5,11,22,0.96),rgba(2,7,16,0.99))] shadow-[0_24px_70px_rgba(0,0,0,0.46)] backdrop-blur-2xl">
+    <div
+      className={cn(
+        "panel-surface panel-glow flex h-full flex-row-reverse overflow-hidden rounded-l-[22px] border border-r-0 border-sky-100/[0.09] bg-[radial-gradient(circle_at_22%_0%,rgba(125,211,252,0.055),transparent_34%),radial-gradient(circle_at_100%_18%,rgba(250,0,63,0.045),transparent_30%),linear-gradient(180deg,rgba(5,11,22,0.96),rgba(2,7,16,0.99))] shadow-[0_24px_70px_rgba(0,0,0,0.46)] backdrop-blur-2xl",
+        isLight && "mission-inspector-light"
+      )}
+    >
       <div
         className={cn(
           "flex h-full shrink-0 flex-col items-center bg-[linear-gradient(180deg,rgba(4,10,20,0.92),rgba(2,6,13,0.98))] px-1.5 py-3",
@@ -271,7 +277,6 @@ function InspectorPanelContent({
               label={item.label}
               active={activeScope === item.id}
               surfaceTheme={surfaceTheme}
-              panelCollapsed={collapsed}
               tooltipSide="left"
               onClick={() => {
                 if (!collapsed && activeScope === item.id) {
@@ -2862,7 +2867,6 @@ function InspectorRailButton({
   label,
   active,
   surfaceTheme,
-  panelCollapsed,
   tooltipSide,
   disabled = false,
   onClick
@@ -2871,7 +2875,6 @@ function InspectorRailButton({
   label: string;
   active: boolean;
   surfaceTheme: "dark" | "light";
-  panelCollapsed: boolean;
   tooltipSide: "left" | "right";
   disabled?: boolean;
   onClick: () => void;
@@ -2881,7 +2884,6 @@ function InspectorRailButton({
       label={label}
       side={tooltipSide}
       surfaceTheme={surfaceTheme}
-      panelCollapsed={panelCollapsed}
     >
       <button
         type="button"
