@@ -15,115 +15,27 @@ import type {
   OpenClawCompatibilityContractCheck,
   OpenClawCompatibilityReport
 } from "@/lib/openclaw/compat/types";
+import type {
+  OpenClawGatewayGoldenPathStep,
+  OpenClawGatewayGoldenPathStepStatus,
+  OpenClawGatewayProductSurface,
+  OpenClawGatewayProductSurfaceAction,
+  OpenClawGatewayProductSurfaceInboxItem,
+  OpenClawGatewayProductSurfaceInboxSeverity,
+  OpenClawGatewayProductSurfaceProbe,
+  OpenClawGatewayProductSurfaceSnapshot,
+  OpenClawGatewayProductSurfaceStatus
+} from "@/lib/openclaw/application/gateway-surface-types";
 
-export type OpenClawGatewayProductSurfaceStatus =
-  | "native"
-  | "scope-required"
-  | "degraded"
-  | "unsupported"
-  | "upstream-needed"
-  | "recovery-cli"
-  | "unknown";
-
-export type OpenClawGatewayProductSurfaceProbeStatus = "passed" | "failed" | "skipped";
-
-export type OpenClawGatewayProductSurfaceProbe = {
-  method: string;
-  status: OpenClawGatewayProductSurfaceProbeStatus;
-  summary: string;
-  keys: string[];
-  itemCount: number | null;
-  error: string | null;
-};
-
-export type OpenClawGatewayProductSurfaceActionKind =
-  | "open-product-page"
-  | "run-native-probe"
-  | "retry-native-probe"
-  | "view-runtime-inbox"
-  | "show-scope"
-  | "show-degraded"
-  | "show-upstream"
-  | "open-recovery"
-  | "native-read"
-  | "native-mutation";
-
-export type OpenClawGatewayProductSurfaceAction = {
-  id: string;
-  label: string;
-  kind: OpenClawGatewayProductSurfaceActionKind;
-  enabled: boolean;
-  href: string | null;
-  method: string | null;
-  reason: string;
-  recovery: string;
-  dangerous?: boolean;
-};
-
-export type OpenClawGatewayProductSurfaceInboxSeverity =
-  | "info"
-  | "warning"
-  | "action_required"
-  | "blocked";
-
-export type OpenClawGatewayProductSurfaceInboxItem = {
-  id: string;
-  surfaceId: string;
-  title: string;
-  message: string;
-  severity: OpenClawGatewayProductSurfaceInboxSeverity;
-  status: OpenClawGatewayProductSurfaceStatus;
-  method: string | null;
-  recovery: string;
-  createdAt: string;
-  source: "gateway-surface";
-};
-
-export type OpenClawGatewayProductSurface = {
-  id: string;
-  label: string;
-  category: string;
-  operations: OpenClawGatewayCompatibilityOperationId[];
-  methods: string[];
-  events: string[];
-  scopes: string[];
-  currentAgentOsPath: string;
-  uiDestination: string;
-  testTarget: string;
-  productHref: string | null;
-  runtimeInboxHref: string;
-  agentOsRoutes: string[];
-  agentOsServices: string[];
-  agentOsComponents: string[];
-  lastCheckedAt: string;
-  status: OpenClawGatewayProductSurfaceStatus;
-  statusLabel: string;
-  reason: string;
-  recovery: string;
-  nativeMethodCount: number;
-  degradedOperationCount: number;
-  unsupportedOperationCount: number;
-  cliFallbackOperationCount: number;
-  probes: OpenClawGatewayProductSurfaceProbe[];
-  actions: OpenClawGatewayProductSurfaceAction[];
-};
-
-export type OpenClawGatewayProductSurfaceSnapshot = {
-  generatedAt: string;
-  isRealRuntime: boolean;
-  isSimulatedRuntime: boolean;
-  capabilitySource: OpenClawCompatibilityReport["gateway"]["capabilitySource"];
-  nativeCoverageLabel: string;
-  nativeCoveragePercent: number;
-  cliForced: boolean;
-  fallbackActiveCount: number;
-  degradedSurfaceCount: number;
-  unsupportedSurfaceCount: number;
-  scopeRequiredSurfaceCount: number;
-  actionableItemCount: number;
-  inboxItems: OpenClawGatewayProductSurfaceInboxItem[];
-  surfaces: OpenClawGatewayProductSurface[];
-};
+export type {
+  OpenClawGatewayGoldenPathStep,
+  OpenClawGatewayProductSurface,
+  OpenClawGatewayProductSurfaceAction,
+  OpenClawGatewayProductSurfaceInboxItem,
+  OpenClawGatewayProductSurfaceProbe,
+  OpenClawGatewayProductSurfaceSnapshot,
+  OpenClawGatewayProductSurfaceStatus
+} from "@/lib/openclaw/application/gateway-surface-types";
 
 type NativeCallableGatewayClient = OpenClawGatewayClient & {
   callNative?: <TPayload>(
@@ -638,6 +550,7 @@ export async function getOpenClawGatewayProductSurfaceSnapshot(options: {
     cliForced: report.fallback.cliForced,
     fallbackActiveCount: report.fallback.activeFallbackCount
   });
+  const goldenPathSteps = buildGoldenPathSteps(surfaces);
 
   return {
     generatedAt,
@@ -653,6 +566,7 @@ export async function getOpenClawGatewayProductSurfaceSnapshot(options: {
     scopeRequiredSurfaceCount: surfaces.filter((surface) => surface.status === "scope-required").length,
     actionableItemCount: inboxItems.filter((item) => item.severity === "action_required" || item.severity === "blocked").length,
     inboxItems,
+    goldenPathSteps,
     surfaces
   };
 }
@@ -672,13 +586,21 @@ function buildSurface(
   const fallbackContracts = contracts.filter((contract) => contract.cliFallbackAvailable);
   const reason = resolveSurfaceReason(contracts, probes);
   const recovery = resolveSurfaceRecovery(contracts, status);
+  const recoveryHref = resolveSurfaceRecoveryHref(definition, status);
+  const primaryActionLabel = resolveSurfacePrimaryActionLabel(status);
+  const primaryActionHref = status === "native"
+    ? definition.productHref ?? recoveryHref
+    : recoveryHref;
   const actions = buildSurfaceActions({
     definition,
     contracts,
     probes,
     status,
     reason,
-    recovery
+    recovery,
+    recoveryHref,
+    primaryActionLabel,
+    primaryActionHref
   });
 
   return {
@@ -693,6 +615,9 @@ function buildSurface(
     uiDestination: definition.uiDestination,
     testTarget: definition.testTarget,
     productHref: definition.productHref ?? null,
+    primaryActionLabel,
+    primaryActionHref,
+    recoveryHref,
     runtimeInboxHref: "/settings#diagnostics",
     agentOsRoutes: definition.agentOsRoutes,
     agentOsServices: definition.agentOsServices,
@@ -718,12 +643,26 @@ function buildSurfaceActions(input: {
   status: OpenClawGatewayProductSurfaceStatus;
   reason: string;
   recovery: string;
+  recoveryHref: string;
+  primaryActionLabel: string;
+  primaryActionHref: string;
 }): OpenClawGatewayProductSurfaceAction[] {
   const actions: OpenClawGatewayProductSurfaceAction[] = [];
   const failedProbe = input.probes.find((probe) => probe.status === "failed");
   const missingScopes = Array.from(new Set(input.contracts.flatMap((contract) => contract.missingScopes))).sort();
 
-  if (input.definition.productHref) {
+  actions.push({
+    id: `${input.definition.id}:primary`,
+    label: input.primaryActionLabel,
+    kind: input.status === "native" ? "open-product-page" : "open-recovery",
+    enabled: true,
+    href: input.primaryActionHref,
+    method: null,
+    reason: input.reason,
+    recovery: input.recovery
+  });
+
+  if (input.definition.productHref && input.definition.productHref !== input.primaryActionHref) {
     actions.push({
       id: `${input.definition.id}:open-product`,
       label: "Open product surface",
@@ -751,10 +690,10 @@ function buildSurfaceActions(input: {
 
   actions.push({
     id: `${input.definition.id}:runtime-inbox`,
-    label: "View runtime inbox",
-    kind: "view-runtime-inbox",
-    enabled: input.status !== "native",
-    href: "/settings#diagnostics",
+      label: "View runtime inbox",
+      kind: "view-runtime-inbox",
+      enabled: input.status !== "native",
+      href: "/settings#diagnostics",
     method: null,
     reason: input.status === "native"
       ? "No runtime inbox item is required for a native surface."
@@ -806,8 +745,8 @@ function buildSurfaceActions(input: {
       id: `${input.definition.id}:recovery`,
       label: input.status === "recovery-cli" ? "Open explicit recovery" : "Open recovery view",
       kind: "open-recovery",
-      enabled: Boolean(input.definition.recoveryHref),
-      href: input.definition.recoveryHref ?? null,
+      enabled: true,
+      href: input.recoveryHref,
       method: null,
       reason: input.status === "recovery-cli"
         ? "This surface still requires explicit CLI recovery for one or more operations."
@@ -854,6 +793,47 @@ function buildSurfaceActions(input: {
   return actions;
 }
 
+function resolveSurfaceRecoveryHref(
+  definition: SurfaceDefinition,
+  status: OpenClawGatewayProductSurfaceStatus
+) {
+  if (status === "scope-required" || status === "recovery-cli") {
+    return "/settings#gateway";
+  }
+
+  if (definition.recoveryHref) {
+    return definition.recoveryHref;
+  }
+
+  if (status === "degraded" || status === "unknown") {
+    return "/settings#diagnostics";
+  }
+
+  if (status === "unsupported" || status === "upstream-needed") {
+    return "/settings#capabilities";
+  }
+
+  return definition.productHref ?? "/settings#capabilities";
+}
+
+function resolveSurfacePrimaryActionLabel(status: OpenClawGatewayProductSurfaceStatus) {
+  switch (status) {
+    case "native":
+      return "Open product surface";
+    case "scope-required":
+      return "Open Gateway access";
+    case "degraded":
+      return "Open diagnostics";
+    case "recovery-cli":
+      return "Open recovery route";
+    case "unsupported":
+    case "upstream-needed":
+      return "Open capability details";
+    case "unknown":
+      return "Verify live Gateway";
+  }
+}
+
 function buildSnapshotInboxItems(input: {
   surfaces: OpenClawGatewayProductSurface[];
   generatedAt: string;
@@ -874,7 +854,10 @@ function buildSnapshotInboxItems(input: {
       severity: "warning",
       status: "degraded",
       method: null,
+      actionLabel: "Verify live Gateway",
+      actionHref: "/settings#gateway",
       recovery: "Refresh compatibility against a live OpenClaw Gateway runtime.",
+      recoveryHref: "/settings#diagnostics",
       createdAt: input.generatedAt,
       source: "gateway-surface"
     });
@@ -891,7 +874,10 @@ function buildSnapshotInboxItems(input: {
       severity: "action_required",
       status: "recovery-cli",
       method: null,
+      actionLabel: "Open Gateway recovery",
+      actionHref: "/settings#gateway",
       recovery: "Use CLI only for setup, recovery, or Gateway process lifecycle, then refresh Gateway-native probes.",
+      recoveryHref: "/settings#diagnostics",
       createdAt: input.generatedAt,
       source: "gateway-surface"
     });
@@ -911,13 +897,114 @@ function buildSnapshotInboxItems(input: {
       severity: gatewayInboxSeverityForStatus(surface.status),
       status: surface.status,
       method: failedProbe?.method ?? surface.methods[0] ?? null,
+      actionLabel: surface.primaryActionLabel,
+      actionHref: surface.primaryActionHref,
       recovery: surface.recovery,
+      recoveryHref: surface.recoveryHref,
       createdAt: input.generatedAt,
       source: "gateway-surface"
     });
   }
 
   return items;
+}
+
+function buildGoldenPathSteps(
+  surfaces: OpenClawGatewayProductSurface[]
+): OpenClawGatewayGoldenPathStep[] {
+  const surfacesById = new Map(surfaces.map((surface) => [surface.id, surface]));
+  const definitions: Array<{
+    id: string;
+    label: string;
+    surfaceIds: string[];
+  }> = [
+    {
+      id: "workspace-create",
+      label: "Workspace create",
+      surfaceIds: ["gateway-health", "runtime-presence-capabilities", "config-admin"]
+    },
+    {
+      id: "agent-create",
+      label: "Agent create",
+      surfaceIds: ["agents", "models-auth-runtime", "agent-files"]
+    },
+    {
+      id: "chat-task-dispatch",
+      label: "Chat / task dispatch",
+      surfaceIds: ["sessions-chat", "tasks", "runtime-presence-capabilities"]
+    },
+    {
+      id: "stream-final-output",
+      label: "Stream and final output",
+      surfaceIds: ["sessions-chat", "tasks"]
+    },
+    {
+      id: "transcript-runtime-visibility",
+      label: "Transcript and runtime visibility",
+      surfaceIds: ["runtime-presence-capabilities", "sessions-chat", "usage-cost"]
+    }
+  ];
+
+  return definitions.map((definition) => {
+    const relatedSurfaces = definition.surfaceIds
+      .map((surfaceId) => surfacesById.get(surfaceId))
+      .filter((surface): surface is OpenClawGatewayProductSurface => Boolean(surface));
+    const firstIssue = relatedSurfaces.find((surface) => surface.status !== "native");
+    const status = resolveGoldenPathStepStatus(relatedSurfaces);
+
+    return {
+      id: definition.id,
+      label: definition.label,
+      surfaceIds: definition.surfaceIds,
+      status,
+      statusLabel: formatGoldenPathStepStatus(status),
+      reason: firstIssue
+        ? `${firstIssue.label}: ${firstIssue.reason}`
+        : "All mapped Gateway surfaces for this golden path step are native.",
+      actionLabel: firstIssue?.primaryActionLabel ?? "Open product surface",
+      actionHref: firstIssue?.primaryActionHref ?? "/",
+      recoveryHref: firstIssue?.recoveryHref ?? "/settings#capabilities"
+    };
+  });
+}
+
+function resolveGoldenPathStepStatus(
+  surfaces: OpenClawGatewayProductSurface[]
+): OpenClawGatewayGoldenPathStepStatus {
+  if (surfaces.length === 0) {
+    return "unknown";
+  }
+
+  if (surfaces.some((surface) => surface.status === "unsupported" || surface.status === "upstream-needed")) {
+    return "blocked";
+  }
+
+  if (surfaces.some((surface) => (
+    surface.status === "degraded" ||
+    surface.status === "scope-required" ||
+    surface.status === "recovery-cli"
+  ))) {
+    return "degraded";
+  }
+
+  if (surfaces.some((surface) => surface.status === "unknown")) {
+    return "unknown";
+  }
+
+  return "ready";
+}
+
+function formatGoldenPathStepStatus(status: OpenClawGatewayGoldenPathStepStatus) {
+  switch (status) {
+    case "ready":
+      return "Ready";
+    case "degraded":
+      return "Degraded";
+    case "blocked":
+      return "Blocked";
+    case "unknown":
+      return "Unknown";
+  }
 }
 
 function gatewayInboxSeverityForStatus(

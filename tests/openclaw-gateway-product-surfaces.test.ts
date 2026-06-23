@@ -57,6 +57,7 @@ describe("OpenClaw Gateway product surfaces", () => {
     assert.ok(usage?.actions.some((action) => action.kind === "run-native-probe" && action.enabled));
     assert.ok(usage?.actions.some((action) => action.kind === "open-product-page" && action.href === "/settings#capabilities"));
     assert.equal(snapshot.inboxItems.length, 0);
+    assert.ok(snapshot.goldenPathSteps.every((step) => step.status === "ready"));
   });
 
   it("keeps version-default compatibility degraded instead of presenting stale data as real certification", async () => {
@@ -84,7 +85,9 @@ describe("OpenClaw Gateway product surfaces", () => {
     assert.equal(snapshot.isSimulatedRuntime, true);
     assert.equal(snapshot.capabilitySource, "version-default");
     assert.notEqual(snapshot.surfaces.find((surface) => surface.id === "sessions-chat")?.status, "native");
-    assert.ok(snapshot.inboxItems.some((item) => item.id === "gateway-surface:runtime:simulated-capabilities"));
+    const simulatedItem = snapshot.inboxItems.find((item) => item.id === "gateway-surface:runtime:simulated-capabilities");
+    assert.equal(simulatedItem?.actionHref, "/settings#gateway");
+    assert.equal(simulatedItem?.recoveryHref, "/settings#diagnostics");
   });
 
   it("reports native probe failures as degraded and does not silently call CLI fallback", async () => {
@@ -121,8 +124,13 @@ describe("OpenClaw Gateway product surfaces", () => {
     assert.ok(snapshot.inboxItems.some((item) => (
       item.surfaceId === "usage-cost" &&
       item.method === "usage.status" &&
-      item.severity === "action_required"
+      item.severity === "action_required" &&
+      item.actionHref === "/settings#diagnostics" &&
+      item.recoveryHref === "/settings#diagnostics"
     )));
+    const transcriptVisibility = snapshot.goldenPathSteps.find((step) => step.id === "transcript-runtime-visibility");
+    assert.equal(transcriptVisibility?.status, "degraded");
+    assert.equal(transcriptVisibility?.actionHref, "/settings#diagnostics");
   });
 
   it("turns missing Gateway scopes into actionable surface inbox items", async () => {
@@ -159,11 +167,21 @@ describe("OpenClaw Gateway product surfaces", () => {
       !action.enabled &&
       action.label.includes("operator.admin")
     )));
+    assert.ok(config?.actions.some((action) => (
+      action.id === "config-admin:primary" &&
+      action.enabled &&
+      action.href === "/settings#gateway"
+    )));
     assert.ok(snapshot.inboxItems.some((item) => (
       item.surfaceId === "config-admin" &&
       item.status === "scope-required" &&
-      item.severity === "action_required"
+      item.severity === "action_required" &&
+      item.actionHref === "/settings#gateway" &&
+      item.recoveryHref === "/settings#gateway"
     )));
+    const workspaceCreate = snapshot.goldenPathSteps.find((step) => step.id === "workspace-create");
+    assert.equal(workspaceCreate?.status, "degraded");
+    assert.equal(workspaceCreate?.actionHref, "/settings#gateway");
     assert.ok(snapshot.actionableItemCount > 0);
   });
 });
