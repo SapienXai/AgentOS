@@ -17,12 +17,25 @@ type ContractProbe = {
 
 const operationSurfaceMap: Partial<Record<string, OpenClawCompatibilityCapabilityId>> = {
   health: "gatewayHealth",
+  diagnosticsStability: "gatewayHealth",
+  gatewayIdentity: "gatewayHealth",
+  presence: "presence",
   logsTail: "gatewayHealth",
   models: "models",
   modelAuthOrder: "authProfiles",
   modelScan: "models",
+  usageStatus: "usage",
+  usageCost: "usage",
+  sessionUsage: "usage",
+  memoryDoctor: "memory",
+  messaging: "channels",
+  secrets: "secrets",
+  wizard: "secrets",
   sessionLifecycle: "sessions",
+  sessionMutation: "sessions",
+  sessionMessages: "sessions",
   sessionHistory: "transcripts",
+  chatMessage: "transcripts",
   missionDispatch: "chat",
   missionStream: "chat",
   chatControl: "chat",
@@ -30,34 +43,62 @@ const operationSurfaceMap: Partial<Record<string, OpenClawCompatibilityCapabilit
   taskEvents: "tasks",
   taskAssign: "tasks",
   taskCancel: "tasks",
-  artifacts: "tasks",
+  artifacts: "artifacts",
+  artifactDownload: "artifacts",
   runtimeSnapshot: "sessions",
-  tools: "tasks",
-  plugins: "config",
-  execApprovals: "tasks",
-  devicePairList: "config",
-  deviceApproval: "config",
-  cronRead: "tasks",
-  channels: "accountsBrowserProfiles",
-  channelList: "accountsBrowserProfiles",
-  channelLogs: "accountsBrowserProfiles",
-  channelProvisioning: "accountsBrowserProfiles",
-  channelRemoval: "accountsBrowserProfiles",
-  gmailProvisioning: "accountsBrowserProfiles",
-  automationProvisioning: "tasks",
+  commands: "commands",
+  tools: "tools",
+  plugins: "plugins",
+  execApprovals: "approvals",
+  pluginApprovals: "approvals",
+  devicePairList: "devices",
+  deviceApproval: "devices",
+  deviceToken: "devices",
+  nodePairing: "nodes",
+  nodePresence: "nodes",
+  nodeInvoke: "nodes",
+  nodeQueue: "nodes",
+  cronRead: "cron",
+  cronWrite: "cron",
+  cronRunHistory: "cron",
+  channels: "channels",
+  channelList: "channels",
+  channelLogs: "channels",
+  channelLogin: "channels",
+  channelProvisioning: "channels",
+  channelRemoval: "channels",
+  gmailProvisioning: "channels",
+  automationProvisioning: "cron",
   browserProfiles: "accountsBrowserProfiles",
-  skills: "config",
-  updates: "gatewayHealth",
+  voiceWake: "channels",
+  talkCatalog: "talk",
+  talkConfig: "talk",
+  talkSession: "talk",
+  talkClient: "talk",
+  tts: "tts",
+  environments: "environments",
+  skills: "skills",
+  updates: "updates",
   configSchemaLookup: "config",
   configPatch: "config",
-  agentCreate: "sessions",
-  agentUpdate: "sessions",
-  agentIdentity: "sessions",
-  agentDelete: "sessions"
+  agentCreate: "agents",
+  agentUpdate: "agents",
+  agentIdentity: "agents",
+  agentFiles: "agentFiles",
+  agentDelete: "agents"
 };
 
 const operationRequiredScopes: Partial<Record<string, string[]>> = {
-  execApprovals: ["operator.approvals"]
+  configSchemaLookup: ["operator.admin"],
+  configPatch: ["operator.admin"],
+  secrets: ["operator.admin"],
+  wizard: ["operator.admin"],
+  updates: ["operator.admin"],
+  execApprovals: ["operator.approvals"],
+  pluginApprovals: ["operator.approvals"],
+  deviceApproval: ["operator.pairing"],
+  deviceToken: ["operator.pairing"],
+  nodePairing: ["operator.pairing"]
 };
 
 const methodProbes: Record<string, ContractProbe> = {
@@ -81,6 +122,42 @@ const methodProbes: Record<string, ContractProbe> = {
     params: {},
     validate: isObjectRecord
   },
+  "usage.status": {
+    params: {},
+    validate: isObjectRecord
+  },
+  "usage.cost": {
+    params: {},
+    validate: isObjectRecord
+  },
+  "sessions.usage": {
+    params: { limit: 1 },
+    validate: isObjectRecord
+  },
+  "sessions.usage.timeseries": {
+    params: { limit: 1 },
+    validate: isObjectRecord
+  },
+  "sessions.usage.logs": {
+    params: { limit: 1 },
+    validate: isObjectRecord
+  },
+  "doctor.memory.status": {
+    params: {},
+    validate: isObjectRecord
+  },
+  "diagnostics.stability": {
+    params: {},
+    validate: isObjectRecord
+  },
+  "gateway.identity.get": {
+    params: {},
+    validate: isObjectRecord
+  },
+  "system-presence": {
+    params: {},
+    validate: isObjectRecord
+  },
   "sessions.list": {
     params: { limit: 1 },
     validate: (payload) => Array.isArray(readObject(payload)?.sessions)
@@ -92,6 +169,14 @@ const methodProbes: Record<string, ContractProbe> = {
   "tasks.list": {
     params: { limit: 1 },
     validate: (payload) => Array.isArray(readObject(payload)?.tasks)
+  },
+  "tasks.get": {
+    params: { taskId: "__agentos_contract_probe__" },
+    validate: isObjectRecord
+  },
+  "commands.list": {
+    params: {},
+    validate: (payload) => Array.isArray(readObject(payload)?.commands) || isObjectRecord(payload)
   },
   "tools.catalog": {
     params: {},
@@ -116,6 +201,14 @@ const methodProbes: Record<string, ContractProbe> = {
     params: {},
     validate: isObjectRecord
   },
+  "node.pair.list": {
+    params: {},
+    validate: isObjectRecord
+  },
+  "node.list": {
+    params: {},
+    validate: isObjectRecord
+  },
   "devices.list": {
     params: {},
     validate: isObjectRecord
@@ -128,11 +221,43 @@ const methodProbes: Record<string, ContractProbe> = {
     params: { includeDisabled: true },
     validate: (payload) => Array.isArray(readObject(payload)?.jobs)
   },
+  "cron.runs": {
+    params: { limit: 1 },
+    validate: isObjectRecord
+  },
   "channels.status": {
     params: { probe: false },
     validate: isObjectRecord
   },
-  "channels.list": {
+  "web.login.start": {
+    params: {},
+    validate: isObjectRecord
+  },
+  "voicewake.get": {
+    params: {},
+    validate: isObjectRecord
+  },
+  "talk.catalog": {
+    params: {},
+    validate: isObjectRecord
+  },
+  "talk.config": {
+    params: { includeSecrets: false },
+    validate: isObjectRecord
+  },
+  "tts.status": {
+    params: {},
+    validate: isObjectRecord
+  },
+  "tts.providers": {
+    params: {},
+    validate: isObjectRecord
+  },
+  "environments.list": {
+    params: {},
+    validate: isObjectRecord
+  },
+  "environments.status": {
     params: {},
     validate: isObjectRecord
   },
@@ -185,11 +310,13 @@ async function checkOperationContract(
   const supportedMethod = operation.methods.find((method) => methodSet.has(method)) ?? null;
   const supportedEvent = operation.events?.find((event) => eventSet.has(event)) ?? null;
   const advertisedNativeSupport = Boolean(supportedMethod || supportedEvent);
+  const liveCapabilityMetadata = input.capabilitySource !== "version-default";
+  const versionDefaultExpectation = advertisedNativeSupport && !liveCapabilityMetadata;
   const requiredScopes = operationRequiredScopes[operation.id] ?? [];
   const missingScopes = input.authScopes.length > 0 && advertisedNativeSupport
     ? requiredScopes.filter((scope) => !input.authScopes.includes(scope))
     : [];
-  const nativeGatewaySupported = advertisedNativeSupport && missingScopes.length === 0;
+  const nativeGatewaySupported = advertisedNativeSupport && missingScopes.length === 0 && liveCapabilityMetadata;
   const fallbackAllowed = operation.fallbackAllowed !== false;
   const cliFallbackAvailable = fallbackAllowed && input.cliFallbackAvailable;
   const baseline = operation.baseline ?? "optional";
@@ -222,6 +349,7 @@ async function checkOperationContract(
   const status = resolveContractStatus({
     nativeGatewaySupported,
     cliFallbackAvailable,
+    versionDefaultExpectation,
     responseShapeStatus,
     liveFailure
   });
@@ -262,11 +390,16 @@ async function checkOperationContract(
 function resolveContractStatus(input: {
   nativeGatewaySupported: boolean;
   cliFallbackAvailable: boolean;
+  versionDefaultExpectation: boolean;
   responseShapeStatus: OpenClawCompatibilityResponseShapeStatus;
   liveFailure: string | null;
 }): OpenClawCompatibilityContractStatus {
   if (input.nativeGatewaySupported) {
     return input.responseShapeStatus === "invalid" || input.liveFailure ? "failed" : "ok";
+  }
+
+  if (input.versionDefaultExpectation) {
+    return "degraded";
   }
 
   return input.cliFallbackAvailable ? "degraded" : "unsupported";
@@ -303,6 +436,11 @@ function resolveContractReason(input: {
     }
 
     return `${input.operation.label} is native through ${evidence}; response shape was not checked in this report.`;
+  }
+
+  if (input.capabilitySource === "version-default" && (input.supportedMethod || input.supportedEvent)) {
+    const evidence = input.supportedMethod ?? input.supportedEvent;
+    return `${input.operation.label} matches the version-default expectation through ${evidence}, but live Gateway capability metadata was not advertised.`;
   }
 
   if (input.cliFallbackAvailable) {

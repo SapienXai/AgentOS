@@ -3571,6 +3571,73 @@ test("native WS gateway client exposes optional Gateway support methods", async 
   assert.deepEqual(fallback.calls, []);
 });
 
+test("native WS gateway client exposes OpenClaw 2026.6.8 Gateway surfaces without CLI fallback", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? { protocol: 4 }
+          : frame.method === "artifacts.download"
+            ? { artifactId: "artifact-1", content: "payload" }
+            : frame.method === "commands.list"
+              ? { commands: [{ name: "agent" }] }
+              : frame.method === "usage.status"
+                ? { enabled: true }
+                : frame.method === "doctor.memory.status"
+                  ? { ok: true }
+                  : frame.method === "agents.files.list"
+                    ? { files: [{ path: "AGENTS.md" }] }
+                    : frame.method === "environments.list"
+                      ? { environments: [] }
+                      : frame.method === "talk.catalog"
+                        ? { providers: [] }
+                        : frame.method === "tts.status"
+                          ? { enabled: false }
+                          : frame.method === "node.list"
+                            ? { nodes: [] }
+                            : { ok: true }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  assert.deepEqual(await client.downloadArtifact({ artifactId: "artifact-1" }), {
+    artifactId: "artifact-1",
+    content: "payload"
+  });
+  assert.deepEqual(await client.listCommands(), { commands: [{ name: "agent" }] });
+  assert.deepEqual(await client.getUsageStatus(), { enabled: true });
+  assert.deepEqual(await client.getMemoryDoctorStatus(), { ok: true });
+  assert.deepEqual(await client.listAgentFiles({ agentId: "agent-1" }), { files: [{ path: "AGENTS.md" }] });
+  assert.deepEqual(await client.listEnvironments(), { environments: [] });
+  assert.deepEqual(await client.getTalkCatalog(), { providers: [] });
+  assert.deepEqual(await client.getTtsStatus(), { enabled: false });
+  assert.deepEqual(await client.listNodes(), { nodes: [] });
+
+  assert.deepEqual(sentFrames.map((frame) => frame.method), [
+    "connect",
+    "artifacts.download",
+    "commands.list",
+    "usage.status",
+    "doctor.memory.status",
+    "agents.files.list",
+    "environments.list",
+    "talk.catalog",
+    "tts.status",
+    "node.list"
+  ]);
+  assert.deepEqual(fallback.calls, []);
+});
+
 test("native WS gateway client exposes Phase 2 runtime Gateway methods", async () => {
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {

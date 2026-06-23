@@ -2,16 +2,30 @@ import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 
 export type OpenClawGatewayCompatibilityOperationId =
   | "health"
+  | "diagnosticsStability"
+  | "gatewayIdentity"
+  | "presence"
   | "models"
   | "modelAuthOrder"
   | "modelScan"
+  | "usageStatus"
+  | "usageCost"
+  | "sessionUsage"
+  | "memoryDoctor"
   | "logsTail"
+  | "messaging"
   | "configSchemaLookup"
   | "configPatch"
+  | "secrets"
+  | "wizard"
   | "sessionLifecycle"
+  | "sessionMutation"
+  | "sessionMessages"
+  | "chatMessage"
   | "agentCreate"
   | "agentUpdate"
   | "agentIdentity"
+  | "agentFiles"
   | "agentDelete"
   | "missionDispatch"
   | "missionStream"
@@ -22,21 +36,39 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "taskAssign"
   | "taskCancel"
   | "artifacts"
+  | "artifactDownload"
   | "runtimeSnapshot"
+  | "commands"
   | "tools"
   | "plugins"
   | "execApprovals"
+  | "pluginApprovals"
   | "devicePairList"
   | "deviceApproval"
+  | "deviceToken"
+  | "nodePairing"
+  | "nodePresence"
+  | "nodeInvoke"
+  | "nodeQueue"
   | "cronRead"
+  | "cronWrite"
+  | "cronRunHistory"
   | "channels"
   | "channelList"
   | "channelLogs"
+  | "channelLogin"
   | "channelProvisioning"
   | "channelRemoval"
   | "gmailProvisioning"
   | "automationProvisioning"
   | "browserProfiles"
+  | "voiceWake"
+  | "talkCatalog"
+  | "talkConfig"
+  | "talkSession"
+  | "talkClient"
+  | "tts"
+  | "environments"
   | "skills"
   | "updates";
 
@@ -52,6 +84,15 @@ export type OpenClawGatewayCompatibilityOperationDefinition = {
 
 export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibilityOperationDefinition[] = [
   { id: "health", label: "Gateway health", methods: ["health", "status"], baseline: "required" },
+  { id: "diagnosticsStability", label: "Gateway diagnostics", methods: ["diagnostics.stability"], baseline: "optional" },
+  { id: "gatewayIdentity", label: "Gateway identity", methods: ["gateway.identity.get"], baseline: "optional" },
+  {
+    id: "presence",
+    label: "Presence and heartbeats",
+    methods: ["system-presence", "last-heartbeat", "set-heartbeats"],
+    events: ["presence", "tick", "health", "heartbeat", "shutdown"],
+    baseline: "optional"
+  },
   { id: "models", label: "Models List", methods: ["models.list", "models.authStatus"], baseline: "required" },
   {
     id: "modelAuthOrder",
@@ -65,12 +106,57 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     label: "Model scan",
     methods: ["models.scan"],
     recovery: "Use explicit model refresh/discovery fallback only as recovery and update OpenClaw for native models.scan.",
+    baseline: "experimental"
+  },
+  { id: "usageStatus", label: "Usage status", methods: ["usage.status"], baseline: "optional" },
+  { id: "usageCost", label: "Usage cost", methods: ["usage.cost"], baseline: "optional" },
+  {
+    id: "sessionUsage",
+    label: "Session usage",
+    methods: ["sessions.usage", "sessions.usage.timeseries", "sessions.usage.logs"],
+    baseline: "optional"
+  },
+  {
+    id: "memoryDoctor",
+    label: "Memory doctor",
+    methods: [
+      "doctor.memory.status",
+      "doctor.memory.dreamDiary",
+      "doctor.memory.backfillDreamDiary",
+      "doctor.memory.resetDreamDiary",
+      "doctor.memory.resetGroundedShortTerm",
+      "doctor.memory.repairDreamingArtifacts",
+      "doctor.memory.dedupeDreamDiary",
+      "doctor.memory.remHarness"
+    ],
     baseline: "optional"
   },
   { id: "logsTail", label: "Gateway logs", methods: ["logs.tail"], baseline: "required" },
+  { id: "messaging", label: "Operator messaging", methods: ["send", "push.test"], baseline: "optional" },
   { id: "configSchemaLookup", label: "Config schema lookup", methods: ["config.schema.lookup", "config.schema"], baseline: "required" },
   { id: "configPatch", label: "Config patch", methods: ["config.patch", "config.apply", "config.set"], baseline: "required" },
-  { id: "sessionLifecycle", label: "Session lifecycle", methods: ["sessions.create", "sessions.patch", "sessions.steer"], baseline: "optional" },
+  { id: "secrets", label: "Secret reload and resolution", methods: ["secrets.reload", "secrets.resolve"], baseline: "optional" },
+  { id: "wizard", label: "Setup wizard", methods: ["wizard.start", "wizard.next", "wizard.status", "wizard.cancel"], baseline: "optional" },
+  {
+    id: "sessionLifecycle",
+    label: "Session lifecycle",
+    methods: ["sessions.list", "sessions.resolve", "sessions.create", "sessions.send", "sessions.steer", "sessions.abort"],
+    baseline: "required"
+  },
+  {
+    id: "sessionMutation",
+    label: "Session mutation",
+    methods: ["sessions.patch", "sessions.reset", "sessions.delete", "sessions.compact"],
+    baseline: "optional"
+  },
+  {
+    id: "sessionMessages",
+    label: "Session message stream",
+    methods: ["sessions.subscribe", "sessions.unsubscribe", "sessions.messages.subscribe", "sessions.messages.unsubscribe"],
+    events: ["chat", "session.message", "session.operation", "session.tool", "sessions.changed"],
+    baseline: "optional"
+  },
+  { id: "chatMessage", label: "Chat message lookup", methods: ["chat.message.get"], baseline: "optional" },
   { id: "agentCreate", label: "Agent creation", methods: ["agents.create"], baseline: "required" },
   { id: "agentUpdate", label: "Agent update", methods: ["agents.update"], fallbackAllowed: false, baseline: "required" },
   {
@@ -79,6 +165,12 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     methods: ["agents.identity.set", "agents.setIdentity", "agents.set-identity"],
     recovery: "Continue with AgentOS config sync for native identity drift and update OpenClaw for agents.identity.set.",
     baseline: "experimental"
+  },
+  {
+    id: "agentFiles",
+    label: "Agent files",
+    methods: ["agents.files.list", "agents.files.get", "agents.files.set"],
+    baseline: "optional"
   },
   { id: "agentDelete", label: "Agent removal", methods: ["agents.delete"], baseline: "required" },
   { id: "missionDispatch", label: "Mission dispatch", methods: ["chat.send", "sessions.send"], baseline: "required" },
@@ -91,12 +183,17 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   },
   { id: "chatControl", label: "Chat control", methods: ["chat.abort", "chat.inject"], baseline: "optional" },
   { id: "agentWait", label: "Agent wait", methods: ["agent.wait"], baseline: "optional" },
-  { id: "sessionHistory", label: "Session history", methods: ["chat.history", "sessions.preview", "sessions.get", "sessions.describe"], baseline: "optional" },
+  {
+    id: "sessionHistory",
+    label: "Session history",
+    methods: ["chat.history", "sessions.preview", "sessions.get", "sessions.describe"],
+    baseline: "optional"
+  },
   {
     id: "taskEvents",
     label: "Task events",
-    methods: ["tasks.subscribe", "tasks.get", "tasks.list"],
-    events: ["task", "task.updated", "task.completed"],
+    methods: ["tasks.list", "tasks.get"],
+    events: ["session.operation", "sessions.changed", "task", "task.updated", "task.completed"],
     baseline: "optional"
   },
   {
@@ -115,7 +212,9 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     events: ["artifact", "artifact.updated"],
     baseline: "optional"
   },
+  { id: "artifactDownload", label: "Artifact download", methods: ["artifacts.download"], baseline: "optional" },
   { id: "runtimeSnapshot", label: "Runtime snapshot", methods: ["sessions.list", "tasks.list"], baseline: "required" },
+  { id: "commands", label: "Command catalog", methods: ["commands.list"], fallbackAllowed: false, baseline: "optional" },
   { id: "tools", label: "Tool catalog", methods: ["tools.catalog", "tools.effective", "tools.invoke"], fallbackAllowed: false, baseline: "optional" },
   { id: "plugins", label: "Plugin catalog", methods: ["plugins.uiDescriptors", "plugins.list"], baseline: "optional" },
   {
@@ -130,11 +229,45 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     ],
     baseline: "optional"
   },
+  {
+    id: "pluginApprovals",
+    label: "Plugin approvals",
+    methods: [
+      "plugin.approval.request",
+      "plugin.approval.list",
+      "plugin.approval.waitDecision",
+      "plugin.approval.resolve"
+    ],
+    baseline: "optional"
+  },
   { id: "devicePairList", label: "Device pairing list", methods: ["device.pair.list", "devices.list", "gateway.devices.list"], baseline: "optional" },
-  { id: "deviceApproval", label: "Device access repair", methods: ["device.pair.approve", "devices.approve", "gateway.devices.approve"], baseline: "optional" },
+  {
+    id: "deviceApproval",
+    label: "Device access repair",
+    methods: ["device.pair.approve", "device.pair.reject", "device.pair.remove", "devices.approve", "gateway.devices.approve"],
+    baseline: "optional"
+  },
+  { id: "deviceToken", label: "Device token lifecycle", methods: ["device.token.rotate", "device.token.revoke"], baseline: "optional" },
+  {
+    id: "nodePairing",
+    label: "Node pairing",
+    methods: ["node.pair.request", "node.pair.list", "node.pair.approve", "node.pair.reject", "node.pair.remove", "node.pair.verify"],
+    events: ["node.pair.requested", "node.pair.resolved"],
+    baseline: "optional"
+  },
+  { id: "nodePresence", label: "Node presence", methods: ["node.list", "node.describe", "node.rename"], events: ["node.event"], baseline: "optional" },
+  { id: "nodeInvoke", label: "Node invoke", methods: ["node.invoke", "node.invoke.result"], baseline: "optional" },
+  {
+    id: "nodeQueue",
+    label: "Node pending queue",
+    methods: ["node.pending.pull", "node.pending.ack", "node.pending.enqueue", "node.pending.drain"],
+    baseline: "optional"
+  },
   { id: "cronRead", label: "Automation status", methods: ["cron.list", "cron.status"], baseline: "optional" },
+  { id: "cronWrite", label: "Automation writes", methods: ["cron.get", "cron.add", "cron.update", "cron.remove"], baseline: "optional" },
+  { id: "cronRunHistory", label: "Automation run history", methods: ["cron.run", "cron.runs", "wake"], events: ["cron"], baseline: "optional" },
   { id: "channels", label: "Channel status", methods: ["channels.status"], baseline: "required" },
-  { id: "channelList", label: "Channel list", methods: ["channels.list", "channels.status"], baseline: "optional" },
+  { id: "channelList", label: "Channel list", methods: ["channels.status"], baseline: "optional" },
   {
     id: "channelLogs",
     label: "Channel logs",
@@ -142,6 +275,7 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     recovery: "Use visible CLI fallback only for channel log recovery and update OpenClaw for native channels.logs.",
     baseline: "experimental"
   },
+  { id: "channelLogin", label: "Channel and web login", methods: ["channels.logout", "web.login.start", "web.login.wait"], baseline: "optional" },
   {
     id: "channelProvisioning",
     label: "Channel provisioning",
@@ -165,6 +299,37 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   },
   { id: "automationProvisioning", label: "Automation provisioning", methods: ["cron.add", "cron.create"], baseline: "experimental" },
   { id: "browserProfiles", label: "Browser profiles", methods: ["browser.request"], fallbackAllowed: false, baseline: "experimental" },
+  { id: "voiceWake", label: "Voice wake", methods: ["voicewake.get", "voicewake.set"], events: ["voicewake.changed"], baseline: "optional" },
+  { id: "talkCatalog", label: "Talk catalog", methods: ["talk.catalog"], baseline: "optional" },
+  { id: "talkConfig", label: "Talk config", methods: ["talk.config"], baseline: "optional" },
+  {
+    id: "talkSession",
+    label: "Talk session control",
+    methods: [
+      "talk.session.create",
+      "talk.session.join",
+      "talk.session.appendAudio",
+      "talk.session.startTurn",
+      "talk.session.endTurn",
+      "talk.session.cancelTurn",
+      "talk.session.cancelOutput",
+      "talk.session.submitToolResult",
+      "talk.session.steer",
+      "talk.session.close",
+      "talk.mode",
+      "talk.speak"
+    ],
+    events: ["talk.event"],
+    baseline: "optional"
+  },
+  { id: "talkClient", label: "Talk client control", methods: ["talk.client.create", "talk.client.toolCall", "talk.client.steer"], baseline: "optional" },
+  {
+    id: "tts",
+    label: "Text to speech",
+    methods: ["tts.status", "tts.providers", "tts.enable", "tts.disable", "tts.setProvider", "tts.convert"],
+    baseline: "optional"
+  },
+  { id: "environments", label: "Environments", methods: ["environments.list", "environments.status"], baseline: "optional" },
   { id: "skills", label: "Skill status", methods: ["skills.status"], baseline: "optional" },
   { id: "updates", label: "Update status", methods: ["update.status", "update.run", "status"], baseline: "optional" }
 ];
@@ -173,12 +338,11 @@ export const OPENCLAW_GATEWAY_BASELINE_VERSION = OPENCLAW_SUPPORTED_BASELINE_VER
 
 export const OPENCLAW_GATEWAY_BASELINE_PROTOCOL_VERSION = 4;
 
-export const OPENCLAW_2026_6_1_REQUIRED_GATEWAY_METHODS = [
+export const OPENCLAW_2026_6_8_REQUIRED_GATEWAY_METHODS = [
   "health",
   "status",
   "update.status",
   "models.list",
-  "models.authStatus",
   "agents.list",
   "agents.create",
   "agents.update",
@@ -196,72 +360,163 @@ export const OPENCLAW_2026_6_1_REQUIRED_GATEWAY_METHODS = [
   "logs.tail"
 ] as const;
 
-export const OPENCLAW_2026_6_1_OPTIONAL_GATEWAY_METHODS = [
+export const OPENCLAW_2026_6_8_OPTIONAL_GATEWAY_METHODS = [
   "agent.identity.get",
   "agent.wait",
+  "agents.files.list",
+  "agents.files.get",
+  "agents.files.set",
   "artifacts.download",
   "artifacts.get",
   "artifacts.list",
+  "chat.message.get",
   "chat.abort",
   "chat.history",
   "chat.inject",
   "channels.logout",
-  "channels.list",
-  "channels.start",
-  "channels.stop",
+  "commands.list",
+  "cron.get",
+  "cron.add",
   "cron.list",
+  "cron.remove",
+  "cron.run",
+  "cron.runs",
   "cron.status",
-  "devices.list",
+  "cron.update",
+  "diagnostics.stability",
+  "device.token.rotate",
+  "device.token.revoke",
   "device.pair.list",
   "device.pair.approve",
   "device.pair.reject",
   "device.pair.remove",
+  "doctor.memory.status",
+  "doctor.memory.dreamDiary",
+  "doctor.memory.backfillDreamDiary",
+  "doctor.memory.resetDreamDiary",
+  "doctor.memory.resetGroundedShortTerm",
+  "doctor.memory.repairDreamingArtifacts",
+  "doctor.memory.dedupeDreamDiary",
+  "doctor.memory.remHarness",
+  "environments.list",
+  "environments.status",
   "exec.approval.get",
   "exec.approval.list",
   "exec.approval.request",
   "exec.approval.resolve",
   "exec.approval.waitDecision",
+  "exec.approvals.get",
+  "exec.approvals.node.get",
+  "exec.approvals.node.set",
+  "exec.approvals.set",
+  "gateway.identity.get",
+  "last-heartbeat",
+  "node.describe",
+  "node.event",
+  "node.invoke",
+  "node.invoke.result",
+  "node.list",
+  "node.pending.ack",
+  "node.pending.drain",
+  "node.pending.enqueue",
+  "node.pending.pull",
+  "node.pair.approve",
+  "node.pair.list",
+  "node.pair.reject",
+  "node.pair.remove",
+  "node.pair.request",
+  "node.pair.verify",
+  "node.rename",
   "plugins.uiDescriptors",
   "plugins.list",
-  "models.scan",
+  "plugin.approval.list",
+  "plugin.approval.request",
+  "plugin.approval.resolve",
+  "plugin.approval.waitDecision",
+  "push.test",
+  "secrets.reload",
+  "secrets.resolve",
+  "send",
+  "set-heartbeats",
   "sessions.abort",
+  "sessions.compact",
   "sessions.create",
+  "sessions.delete",
   "sessions.describe",
   "sessions.get",
   "sessions.messages.subscribe",
+  "sessions.messages.unsubscribe",
   "sessions.patch",
+  "sessions.reset",
   "sessions.resolve",
   "sessions.steer",
   "sessions.subscribe",
+  "sessions.unsubscribe",
+  "sessions.usage",
+  "sessions.usage.logs",
+  "sessions.usage.timeseries",
   "skills.detail",
   "skills.install",
   "skills.search",
   "skills.status",
   "skills.update",
+  "system-presence",
   "tasks.cancel",
   "tasks.get",
   "tasks.list",
-  "tasks.subscribe",
+  "talk.catalog",
+  "talk.client.create",
+  "talk.client.steer",
+  "talk.client.toolCall",
+  "talk.config",
+  "talk.event",
+  "talk.mode",
+  "talk.session.appendAudio",
+  "talk.session.cancelOutput",
+  "talk.session.cancelTurn",
+  "talk.session.close",
+  "talk.session.create",
+  "talk.session.endTurn",
+  "talk.session.join",
+  "talk.session.startTurn",
+  "talk.session.steer",
+  "talk.session.submitToolResult",
+  "talk.speak",
+  "tts.convert",
+  "tts.disable",
+  "tts.enable",
+  "tts.providers",
+  "tts.setProvider",
+  "tts.status",
   "tools.catalog",
   "tools.effective",
   "tools.invoke",
-  "update.run"
+  "update.run",
+  "usage.cost",
+  "usage.status",
+  "voicewake.get",
+  "voicewake.set",
+  "web.login.start",
+  "web.login.wait",
+  "wake",
+  "wizard.cancel",
+  "wizard.next",
+  "wizard.start",
+  "wizard.status"
 ] as const;
 
 export const OPENCLAW_EXPERIMENTAL_GATEWAY_METHODS = [
-  "diagnostics.stability",
-  "agents.files.list",
-  "agents.files.get",
-  "agents.files.set",
-  "plugin.approval.list",
-  "plugin.approval.resolve",
-  "environment.list",
-  "environment.get",
-  "environment.create",
-  "environment.update",
-  "environment.delete",
+  "artifacts.put",
+  "artifacts.delete",
+  "channels.list",
+  "channels.start",
+  "channels.stop",
+  "cron.create",
+  "devices.list",
   "gateway.restart.preflight",
   "gateway.restart.request",
+  "models.authStatus",
+  "models.scan",
   "tasks.assign",
   "models.authOrder.set",
   "models.auth.order.set",
@@ -276,14 +531,12 @@ export const OPENCLAW_EXPERIMENTAL_GATEWAY_METHODS = [
   "channels.delete",
   "webhooks.gmail.setup",
   "gmail.setup",
-  "cron.add",
-  "cron.create",
   "browser.request"
 ] as const;
 
 const additionalGatewayFirstMethods = [
-  ...OPENCLAW_2026_6_1_REQUIRED_GATEWAY_METHODS,
-  ...OPENCLAW_2026_6_1_OPTIONAL_GATEWAY_METHODS,
+  ...OPENCLAW_2026_6_8_REQUIRED_GATEWAY_METHODS,
+  ...OPENCLAW_2026_6_8_OPTIONAL_GATEWAY_METHODS,
   ...OPENCLAW_EXPERIMENTAL_GATEWAY_METHODS
 ];
 
@@ -296,17 +549,17 @@ export const OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS = Array.from(
 
 export const OPENCLAW_GATEWAY_BASELINE_METHODS = Array.from(
   new Set([
-    ...OPENCLAW_2026_6_1_REQUIRED_GATEWAY_METHODS,
-    ...OPENCLAW_2026_6_1_OPTIONAL_GATEWAY_METHODS
+    ...OPENCLAW_2026_6_8_REQUIRED_GATEWAY_METHODS,
+    ...OPENCLAW_2026_6_8_OPTIONAL_GATEWAY_METHODS
   ])
 ).sort();
 
 export const OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS = Array.from(
-  new Set(OPENCLAW_2026_6_1_REQUIRED_GATEWAY_METHODS)
+  new Set(OPENCLAW_2026_6_8_REQUIRED_GATEWAY_METHODS)
 ).sort();
 
 export const OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS = Array.from(
-  new Set(OPENCLAW_2026_6_1_OPTIONAL_GATEWAY_METHODS)
+  new Set(OPENCLAW_2026_6_8_OPTIONAL_GATEWAY_METHODS)
 ).sort();
 
 export const OPENCLAW_GATEWAY_EXPERIMENTAL_METHODS = Array.from(

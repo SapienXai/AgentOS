@@ -92,7 +92,7 @@ Direct CLI usage is guarded by boundary tests. Current allowed files are fallbac
 | plugins / skills list | `openclaw plugins/skills list --json` | `plugins.uiDescriptors`, `skills.status` | Gateway-first typed RPC | Yes | Low |
 | agents list | `openclaw agents list --json` | `agents.list` | Gateway-first typed RPC, merged with local config for AgentOS fields | Yes | Medium |
 | agents create/update/delete | `openclaw agents add/delete` plus AgentOS config writes | `agents.create`, `agents.update`, `agents.delete` | Gateway-first lifecycle calls; AgentOS-owned metadata side effects remain in application services | Yes, for unsupported older Gateway versions and local metadata side effects | Medium |
-| agent turn / stream | `openclaw agent --json` / JSON stream | `chat.send`, `sessions.send`, `sessions.abort`, `chat.abort`, `sessions.subscribe`, `sessions.messages.subscribe` | Gateway-first mission dispatch/abort and native stream adapter support; direct chat UI forces CLI transcript streaming until Gateway events include assistant text | Yes; event subscription can be absent or status-only on older/current Gateway versions | High |
+| agent turn / stream | `openclaw agent --json` / JSON stream | `chat.send`, `sessions.send`, `sessions.abort`, `chat.abort`, `sessions.subscribe`, `sessions.messages.subscribe` | Gateway-first mission dispatch/abort and native stream adapter support; direct chat now attempts native Gateway streaming and uses transcript/history polling only as response recovery | Yes; event subscription can be absent or status-only on older/current Gateway versions | High |
 | sessions / recent activity | filesystem catalog plus status/session data | `sessions.list` | Gateway-first typed RPC with filesystem catalog fallback | Yes, for unavailable Gateway or CLI gateway-call failure | Medium |
 | config reads | `openclaw config get <path> --json` | `config.get` snapshot | Gateway-first snapshot read with AgentOS path extraction | Yes | Medium |
 | config set/unset | `openclaw config set/unset <path>` | `config.schema`, `config.patch`, `config.apply`, legacy `config.set` | Gateway-first path patch with base hash | Yes; CLI path-level set/unset is preferred over full overwrite when snapshots contain redacted secrets | Medium |
@@ -186,7 +186,7 @@ Current fragile areas:
 - Capability matrix detection maps advertised methods into feature support flags and unsupported-method diagnostics.
 - Protocol mismatch diagnostics include the negotiated protocol, AgentOS' supported range, and recovery guidance.
 - Native mission dispatch uses `chat.send` when the capability matrix advertises it.
-- Direct agent chat covers native stream adapter support and per-request CLI stream fallback. The agent-card chat route currently forces CLI transcript streaming because current Gateway session events can be status-only and omit assistant text.
+- Direct agent chat covers native stream adapter support and per-request recovery fallback. The agent-card chat route no longer forces CLI streaming; it relies on Gateway events first and keeps transcript/history polling to recover assistant text when session events are status-only.
 - Gateway event bridge frames normalize into AgentOS runtime records.
 - Gateway malformed response falls back to CLI.
 - Gateway failure followed by CLI failure returns the actionable CLI failure while recording Gateway diagnostics.

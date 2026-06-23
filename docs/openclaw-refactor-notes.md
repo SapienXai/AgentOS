@@ -250,7 +250,7 @@ Added/updated coverage:
 - Boundary safety coverage for production `service.ts` imports, app/component/hook low-level CLI/raw Gateway imports, allowlisted direct `runOpenClawJson` usage, allowlisted direct `runOpenClaw` usage, and `lib/openclaw` import cycles.
 - Compatibility surface coverage that keeps the explicit `service.ts` export list from changing accidentally.
 
-Native WS status: Gateway-first for supported typed read/probe workflows, config snapshot mutation, agent lifecycle, mission dispatch, stream adapter support, logs, approvals, cron reads, and generic RPC when usable native auth is available; CLI-backed for gateway process control, provisioning, unsupported older Gateway versions, direct-chat transcript compatibility fallback, and environments where OpenClaw exposes only redacted secrets to AgentOS. CLI fallback status is unchanged and remains required for production safety.
+Native WS status: Gateway-first for supported typed read/probe workflows, config snapshot mutation, agent lifecycle, mission dispatch, direct-chat streaming, stream adapter support, logs, approvals, cron reads, and generic RPC when usable native auth is available; CLI-backed for gateway process control, provisioning, unsupported older Gateway versions, explicit recovery fallback, and environments where OpenClaw exposes only redacted secrets to AgentOS. CLI fallback remains required for recovery and unsupported Gateway compatibility, but direct chat no longer forces CLI streaming.
 
 Current risks:
 

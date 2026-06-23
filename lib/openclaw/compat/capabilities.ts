@@ -24,28 +24,53 @@ const capabilityDefinitions: CapabilityDefinition[] = [
   {
     id: "gatewayHealth",
     label: "Gateway health",
-    methods: ["health", "status", "logs.tail"]
+    methods: ["health", "status", "logs.tail", "diagnostics.stability", "gateway.identity.get"]
+  },
+  {
+    id: "presence",
+    label: "Presence",
+    methods: ["system-presence", "last-heartbeat", "set-heartbeats"],
+    events: ["presence", "tick", "health", "heartbeat", "shutdown"]
   },
   {
     id: "sessions",
     label: "Sessions",
     methods: [
       "sessions.list",
+      "sessions.resolve",
       "sessions.create",
+      "sessions.send",
+      "sessions.abort",
       "sessions.patch",
+      "sessions.reset",
+      "sessions.delete",
+      "sessions.compact",
       "sessions.steer",
       "sessions.preview",
       "sessions.get",
       "sessions.describe",
-      "sessions.subscribe"
+      "sessions.subscribe",
+      "sessions.unsubscribe",
+      "sessions.messages.subscribe",
+      "sessions.messages.unsubscribe"
     ],
-    events: ["session.message", "session.tool", "sessions.changed"]
+    events: ["chat", "session.message", "session.operation", "session.tool", "sessions.changed"]
   },
   {
     id: "chat",
     label: "Chat",
-    methods: ["chat.send", "sessions.send", "chat.history", "chat.abort", "chat.inject"],
+    methods: ["chat.send", "sessions.send", "chat.history", "chat.abort", "chat.inject", "chat.message.get"],
     events: ["chat", "agent", "session.message", "session.tool"]
+  },
+  {
+    id: "agents",
+    label: "Agents",
+    methods: ["agents.list", "agents.create", "agents.update", "agents.delete", "agent.identity.get"]
+  },
+  {
+    id: "agentFiles",
+    label: "Agent files",
+    methods: ["agents.files.list", "agents.files.get", "agents.files.set"]
   },
   {
     id: "models",
@@ -58,15 +83,172 @@ const capabilityDefinitions: CapabilityDefinition[] = [
     methods: ["models.authStatus", "models.authOrder.set", "models.auth.order.set"]
   },
   {
+    id: "usage",
+    label: "Usage and cost",
+    methods: ["usage.status", "usage.cost", "sessions.usage", "sessions.usage.timeseries", "sessions.usage.logs"]
+  },
+  {
+    id: "memory",
+    label: "Memory doctor",
+    methods: [
+      "doctor.memory.status",
+      "doctor.memory.dreamDiary",
+      "doctor.memory.backfillDreamDiary",
+      "doctor.memory.resetDreamDiary",
+      "doctor.memory.resetGroundedShortTerm",
+      "doctor.memory.repairDreamingArtifacts",
+      "doctor.memory.dedupeDreamDiary",
+      "doctor.memory.remHarness"
+    ]
+  },
+  {
     id: "accountsBrowserProfiles",
     label: "Accounts/browser profiles",
-    methods: ["browser.request", "channels.status", "channels.list"]
+    methods: ["browser.request", "channels.status", "web.login.start", "web.login.wait"]
+  },
+  {
+    id: "channels",
+    label: "Channels",
+    methods: ["channels.status", "channels.logout", "send", "push.test", "voicewake.get", "voicewake.set"],
+    events: ["voicewake.changed"]
+  },
+  {
+    id: "talk",
+    label: "Talk",
+    methods: [
+      "talk.catalog",
+      "talk.config",
+      "talk.session.create",
+      "talk.session.join",
+      "talk.session.appendAudio",
+      "talk.session.startTurn",
+      "talk.session.endTurn",
+      "talk.session.cancelTurn",
+      "talk.session.cancelOutput",
+      "talk.session.submitToolResult",
+      "talk.session.steer",
+      "talk.session.close",
+      "talk.mode",
+      "talk.client.create",
+      "talk.client.toolCall",
+      "talk.client.steer",
+      "talk.speak"
+    ],
+    events: ["talk.event"]
+  },
+  {
+    id: "tts",
+    label: "Text to speech",
+    methods: ["tts.status", "tts.providers", "tts.enable", "tts.disable", "tts.setProvider", "tts.convert"]
   },
   {
     id: "tasks",
     label: "Tasks",
-    methods: ["tasks.list", "tasks.get", "tasks.assign", "tasks.cancel", "tasks.subscribe"],
-    events: ["task", "task.updated", "task.completed"]
+    methods: ["tasks.list", "tasks.get", "tasks.cancel", "tasks.assign"],
+    events: ["session.operation", "sessions.changed", "task", "task.updated", "task.completed"]
+  },
+  {
+    id: "artifacts",
+    label: "Artifacts",
+    methods: ["artifacts.list", "artifacts.get", "artifacts.download", "artifacts.put", "artifacts.delete"],
+    events: ["artifact", "artifact.updated"]
+  },
+  {
+    id: "tools",
+    label: "Tools",
+    methods: ["tools.catalog", "tools.effective", "tools.invoke", "commands.list"]
+  },
+  {
+    id: "approvals",
+    label: "Approvals",
+    methods: [
+      "exec.approval.request",
+      "exec.approval.get",
+      "exec.approval.list",
+      "exec.approval.resolve",
+      "exec.approval.waitDecision",
+      "exec.approvals.get",
+      "exec.approvals.set",
+      "exec.approvals.node.get",
+      "exec.approvals.node.set",
+      "plugin.approval.request",
+      "plugin.approval.list",
+      "plugin.approval.waitDecision",
+      "plugin.approval.resolve"
+    ],
+    events: ["exec.approval.requested", "exec.approval.resolved", "plugin.approval.requested", "plugin.approval.resolved"]
+  },
+  {
+    id: "devices",
+    label: "Devices",
+    methods: [
+      "device.pair.list",
+      "device.pair.approve",
+      "device.pair.reject",
+      "device.pair.remove",
+      "device.token.rotate",
+      "device.token.revoke",
+      "devices.list"
+    ],
+    events: ["device.pair.requested", "device.pair.resolved"]
+  },
+  {
+    id: "nodes",
+    label: "Nodes",
+    methods: [
+      "node.pair.request",
+      "node.pair.list",
+      "node.pair.approve",
+      "node.pair.reject",
+      "node.pair.remove",
+      "node.pair.verify",
+      "node.list",
+      "node.describe",
+      "node.rename",
+      "node.invoke",
+      "node.invoke.result",
+      "node.pending.pull",
+      "node.pending.ack",
+      "node.pending.enqueue",
+      "node.pending.drain"
+    ],
+    events: ["node.event", "node.pair.requested", "node.pair.resolved"]
+  },
+  {
+    id: "cron",
+    label: "Cron automation",
+    methods: ["wake", "cron.get", "cron.list", "cron.status", "cron.add", "cron.update", "cron.remove", "cron.run", "cron.runs"],
+    events: ["cron"]
+  },
+  {
+    id: "environments",
+    label: "Environments",
+    methods: ["environments.list", "environments.status"]
+  },
+  {
+    id: "skills",
+    label: "Skills",
+    methods: ["skills.status", "skills.search", "skills.detail", "skills.install", "skills.update"]
+  },
+  {
+    id: "plugins",
+    label: "Plugins",
+    methods: ["plugins.uiDescriptors", "plugins.list"]
+  },
+  {
+    id: "updates",
+    label: "Updates",
+    methods: ["update.status", "update.run"]
+  },
+  {
+    id: "commands",
+    label: "Commands",
+    methods: ["commands.list"]
+  },
+  {
+    id: "secrets",
+    label: "Secrets and wizard",
+    methods: ["secrets.reload", "secrets.resolve", "wizard.start", "wizard.next", "wizard.status", "wizard.cancel"]
   },
   {
     id: "config",
@@ -206,7 +388,11 @@ function resolveCapabilityReason(
 ) {
   if (status === "supported") {
     const evidence = [...supportedMethods, ...supportedEvents].slice(0, 4).join(", ");
-    return `${label} is available via ${source === "version-default" ? "version-based safe defaults" : "Gateway capability metadata"}${evidence ? ` (${evidence})` : ""}.`;
+    if (source === "version-default") {
+      return `${label} matches the ${OPENCLAW_SUPPORTED_BASELINE_VERSION} version-default expectation, but Gateway did not advertise live capability metadata${evidence ? ` (${evidence})` : ""}.`;
+    }
+
+    return `${label} is available via Gateway capability metadata${evidence ? ` (${evidence})` : ""}.`;
   }
 
   if (status === "unsupported") {

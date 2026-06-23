@@ -79,7 +79,9 @@ test("compatibility report uses version safe defaults when Gateway omits method 
   assert.equal(report.gateway.capabilitySource, "version-default");
   assert.equal(report.capabilities.find((capability) => capability.id === "sessions")?.source, "version-default");
   assert.equal(report.capabilities.find((capability) => capability.id === "sessions")?.status, "supported");
-  assert.equal(report.contracts.find((check) => check.operation === "models")?.nativeGatewaySupported, true);
+  assert.equal(report.contracts.find((check) => check.operation === "models")?.nativeGatewaySupported, false);
+  assert.equal(report.contracts.find((check) => check.operation === "models")?.status, "degraded");
+  assert.equal(report.status, "degraded");
 });
 
 test("compatibility report fails a required contract when live response shape drifts", async () => {
@@ -187,7 +189,14 @@ function baseReportOptions(
   gateway: FakeOpenClawGateway,
   options: { authScopes?: string[] } = {}
 ) {
-  const authScopes = options.authScopes ?? ["operator.read", "operator.write", "operator.approvals"];
+  const authScopes = options.authScopes ?? [
+    "operator.read",
+    "operator.write",
+    "operator.admin",
+    "operator.approvals",
+    "operator.pairing",
+    "operator.talk.secrets"
+  ];
 
   return {
     target: {
@@ -234,7 +243,14 @@ function createCompatibilityGateway(
   methods: string[],
   options: { advertiseMethods?: boolean; authScopes?: string[] } = {}
 ) {
-  const authScopes = options.authScopes ?? ["operator.read", "operator.write", "operator.approvals"];
+  const authScopes = options.authScopes ?? [
+    "operator.read",
+    "operator.write",
+    "operator.admin",
+    "operator.approvals",
+    "operator.pairing",
+    "operator.talk.secrets"
+  ];
   const events = options.advertiseMethods === false
     ? []
     : ["chat", "agent", "session.message", "session.tool", "task", "task.updated", "task.completed"];
@@ -256,18 +272,42 @@ function createCompatibilityGateway(
 
   gateway.route("models.list", (_frame, context) => context.respond({ models: [] }));
   gateway.route("models.authStatus", (_frame, context) => context.respond({ auth: { providers: [] } }));
+  gateway.route("usage.status", (_frame, context) => context.respond({ enabled: true }));
+  gateway.route("usage.cost", (_frame, context) => context.respond({ total: 0, currency: "USD" }));
+  gateway.route("sessions.usage", (_frame, context) => context.respond({ sessions: [] }));
+  gateway.route("sessions.usage.timeseries", (_frame, context) => context.respond({ points: [] }));
+  gateway.route("sessions.usage.logs", (_frame, context) => context.respond({ logs: [] }));
+  gateway.route("doctor.memory.status", (_frame, context) => context.respond({ ok: true }));
+  gateway.route("diagnostics.stability", (_frame, context) => context.respond({ ok: true }));
+  gateway.route("gateway.identity.get", (_frame, context) => context.respond({ id: "gateway-test" }));
+  gateway.route("system-presence", (_frame, context) => context.respond({ nodes: [] }));
   gateway.route("sessions.list", (_frame, context) => context.respond({ sessions: [] }));
   gateway.route("sessions.preview", (_frame, context) => context.respond({ messages: [], sessions: [] }));
   gateway.route("chat.history", (_frame, context) => context.respond({ messages: [] }));
   gateway.route("tasks.list", (_frame, context) => context.respond({ tasks: [] }));
   gateway.route("artifacts.list", (_frame, context) => context.respond({ artifacts: [] }));
+  gateway.route("commands.list", (_frame, context) => context.respond({ commands: [] }));
   gateway.route("tools.catalog", (_frame, context) => context.respond({ tools: [] }));
   gateway.route("tools.effective", (_frame, context) => context.respond({ tools: [] }));
   gateway.route("exec.approval.list", (_frame, context) => context.respond({ approvals: [], pending: [] }));
   gateway.route("device.pair.list", (_frame, context) => context.respond({ pending: [], devices: [] }));
+  gateway.route("node.pair.list", (_frame, context) => context.respond({ pending: [], nodes: [] }));
+  gateway.route("node.list", (_frame, context) => context.respond({ nodes: [] }));
   gateway.route("devices.list", (_frame, context) => context.respond({ devices: [] }));
   gateway.route("cron.list", (_frame, context) => context.respond({ jobs: [] }));
   gateway.route("cron.status", (_frame, context) => context.respond({ enabled: false, jobs: 0 }));
+  gateway.route("cron.runs", (_frame, context) => context.respond({ runs: [] }));
+  gateway.route("voicewake.get", (_frame, context) => context.respond({ enabled: false }));
+  gateway.route("talk.catalog", (_frame, context) => context.respond({ providers: [] }));
+  gateway.route("talk.config", (_frame, context) => context.respond({ mode: "off" }));
+  gateway.route("tts.status", (_frame, context) => context.respond({ enabled: false }));
+  gateway.route("tts.providers", (_frame, context) => context.respond({ providers: [] }));
+  gateway.route("environments.list", (_frame, context) => context.respond({ environments: [] }));
+  gateway.route("environments.status", (_frame, context) => context.respond({ environments: [] }));
+  gateway.route("config.get", (_frame, context) => context.respond({ config: {} }));
+  gateway.route("config.schema", (_frame, context) => context.respond({ schema: {} }));
+  gateway.route("config.schema.lookup", (_frame, context) => context.respond({ path: "gateway", schema: {} }));
+  gateway.route("skills.status", (_frame, context) => context.respond({ skills: [] }));
   gateway.route("logs.tail", (_frame, context) => context.respond({ lines: [] }));
 
   return gateway;

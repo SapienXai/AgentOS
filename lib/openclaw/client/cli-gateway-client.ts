@@ -21,6 +21,8 @@ import type {
   OpenClawAgentIdentityInput,
   OpenClawAgentModelStatusInput,
   OpenClawArtifactDeleteInput,
+  OpenClawArtifactDownloadInput,
+  OpenClawArtifactDownloadPayload,
   OpenClawArtifactGetInput,
   OpenClawArtifactListInput,
   OpenClawArtifactListPayload,
@@ -54,6 +56,8 @@ import type {
   OpenClawGatewayClientDiagnostics,
   OpenClawGatewayEventCallbacks,
   OpenClawGatewayEventSubscription,
+  OpenClawGatewaySurfaceInput,
+  OpenClawGatewaySurfacePayload,
   OpenClawGmailSetupInput,
   OpenClawHealthPayload,
   OpenClawListModelsInput,
@@ -493,6 +497,10 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
     return this.call<OpenClawArtifactPayload>("artifacts.get", { ...input }, options);
   }
 
+  downloadArtifact(input: OpenClawArtifactDownloadInput, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawArtifactDownloadPayload>("artifacts.download", { ...input }, options);
+  }
+
   async putArtifact(
     input: OpenClawArtifactPutInput,
     options: OpenClawCommandOptions = {}
@@ -566,6 +574,94 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
 
   invokeTool(input: OpenClawToolInvokeInput, options: OpenClawCommandOptions = {}) {
     return this.call<OpenClawToolInvokePayload>("tools.invoke", { ...input }, options);
+  }
+
+  listCommands(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("commands.list", input, options);
+  }
+
+  getUsageStatus(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("usage.status", input, options);
+  }
+
+  getUsageCost(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("usage.cost", input, options);
+  }
+
+  getSessionUsage(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("sessions.usage", input, options);
+  }
+
+  getSessionUsageTimeseries(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("sessions.usage.timeseries", input, options);
+  }
+
+  getSessionUsageLogs(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("sessions.usage.logs", input, options);
+  }
+
+  getMemoryDoctorStatus(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("doctor.memory.status", input, options);
+  }
+
+  getMemoryDreamDiary(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("doctor.memory.dreamDiary", input, options);
+  }
+
+  listAgentFiles(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("agents.files.list", input, options);
+  }
+
+  getAgentFile(input: OpenClawGatewaySurfaceInput, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("agents.files.get", input, options);
+  }
+
+  setAgentFile(input: OpenClawGatewaySurfaceInput, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("agents.files.set", input, options);
+  }
+
+  listEnvironments(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("environments.list", input, options);
+  }
+
+  getEnvironmentStatus(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("environments.status", input, options);
+  }
+
+  getTalkCatalog(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("talk.catalog", input, options);
+  }
+
+  getTalkConfig(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("talk.config", input, options);
+  }
+
+  getTtsStatus(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("tts.status", input, options);
+  }
+
+  getTtsProviders(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("tts.providers", input, options);
+  }
+
+  listNodes(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("node.list", input, options);
+  }
+
+  describeNode(input: OpenClawGatewaySurfaceInput, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("node.describe", input, options);
+  }
+
+  invokeNode(input: OpenClawGatewaySurfaceInput, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("node.invoke", input, options);
+  }
+
+  listPluginApprovals(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("plugin.approval.list", input, options);
+  }
+
+  resolvePluginApproval(input: OpenClawGatewaySurfaceInput, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawGatewaySurfacePayload>("plugin.approval.resolve", input, options);
   }
 
   async subscribeRuntimeEvents(

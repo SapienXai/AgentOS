@@ -115,7 +115,7 @@ AgentOS now treats the current method names listed above as the native path and 
 - Gateway-first model auth/list normalization.
 - Gateway-first agent create/update with unsupported-method fallback.
 - Gateway-first mission dispatch path selection, including unknown capability discovery.
-- Gateway-native stream adapter behavior through `chat.send` and session events, plus direct-chat CLI fallback when events do not include assistant text.
+- Gateway-native stream adapter behavior through `chat.send` and session events, plus direct-chat transcript/history recovery when events do not include assistant text.
 - Mission abort native path selection.
 - Gateway session event subscription without legacy `events.subscribe`.
 - Config patch payload shape with `baseHash`.
@@ -128,7 +128,7 @@ AgentOS now treats the current method names listed above as the native path and 
 
 - `agents.create` does not accept every AgentOS metadata side effect directly. AgentOS uses the native method first, then applies AgentOS-owned policy skills, bootstrap files, identity files, workspace manifests, and local metadata. Unsupported Gateways still use CLI/application fallback.
 - Older native-create attempts could leave a duplicate global OpenClaw agent beside the AgentOS workspace-local agent when the Gateway generated its own id/path. AgentOS suppresses that legacy duplicate in snapshots when the workspace and display name match and the workspace-local agent is present.
-- Direct streamed chat UI currently forces CLI transcript streaming because current Gateway session events can be status-only and may omit assistant response text. The native stream adapter remains covered for Gateway versions that emit usable assistant deltas/finals.
+- Direct streamed chat UI now attempts native Gateway streaming first. Transcript/history polling remains as response recovery because Gateway session events can be status-only and may omit assistant response text.
 - Config merge-patch paths cannot represent array-index writes safely; those paths continue through CLI fallback.
 - Some Gateway methods are available in source but not yet integrated because AgentOS does not add higher-level operator/workspace value there today, for example low-level `tools.*`, `agent.wait`, `sessions.preview`, device/node pairing APIs, and wizard RPCs.
 - Local installed OpenClaw may lag latest source. Capability detection and CLI fallback are the compatibility guard for that skew.
