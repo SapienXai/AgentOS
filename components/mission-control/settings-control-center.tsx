@@ -111,6 +111,54 @@ type CompatibilitySmokeReport = NonNullable<
 type CompatibilityReport = NonNullable<
   MissionControlShellSettingsPanelProps["snapshot"]["diagnostics"]["compatibilityReport"]
 >;
+type GatewayProductSurfaceStatus =
+  | "native"
+  | "scope-required"
+  | "degraded"
+  | "unsupported"
+  | "upstream-needed"
+  | "recovery-cli"
+  | "unknown";
+type GatewayProductSurfaceProbe = {
+  method: string;
+  status: "passed" | "failed" | "skipped";
+  summary: string;
+  keys: string[];
+  itemCount: number | null;
+  error: string | null;
+};
+type GatewayProductSurface = {
+  id: string;
+  label: string;
+  category: string;
+  operations: string[];
+  methods: string[];
+  events: string[];
+  scopes: string[];
+  currentAgentOsPath: string;
+  uiDestination: string;
+  testTarget: string;
+  status: GatewayProductSurfaceStatus;
+  statusLabel: string;
+  reason: string;
+  recovery: string;
+  nativeMethodCount: number;
+  degradedOperationCount: number;
+  unsupportedOperationCount: number;
+  cliFallbackOperationCount: number;
+  probes: GatewayProductSurfaceProbe[];
+};
+type GatewayProductSurfaceSnapshot = {
+  generatedAt: string;
+  isRealRuntime: boolean;
+  isSimulatedRuntime: boolean;
+  capabilitySource: string;
+  nativeCoverageLabel: string;
+  nativeCoveragePercent: number;
+  cliForced: boolean;
+  fallbackActiveCount: number;
+  surfaces: GatewayProductSurface[];
+};
 type SettingsSectionId =
   | "overview"
   | "openclaw"
@@ -2777,6 +2825,9 @@ function CapabilityMatrixPanel({
   contractComparison: AgentOsOpenClawContractComparison;
   surfaceTheme: SurfaceTheme;
 }) {
+  const [surfaceSnapshot, setSurfaceSnapshot] = useState<GatewayProductSurfaceSnapshot | null>(null);
+  const [surfaceSnapshotError, setSurfaceSnapshotError] = useState<string | null>(null);
+  const [isLoadingSurfaceSnapshot, setIsLoadingSurfaceSnapshot] = useState(false);
   const rowsByStatus = {
     native: rows.filter((row) => row.status === "gateway-native"),
     fallback: rows.filter((row) => row.status === "cli-fallback" || row.fallbackCount > 0),
@@ -2784,6 +2835,31 @@ function CapabilityMatrixPanel({
     degraded: rows.filter((row) => row.status === "degraded" || row.status === "unknown"),
     disabled: rows.filter((row) => row.status === "disabled")
   };
+  const loadSurfaceSnapshot = useCallback(async () => {
+    setIsLoadingSurfaceSnapshot(true);
+    setSurfaceSnapshotError(null);
+
+    try {
+      const response = await fetch("/api/openclaw/gateway-surfaces", {
+        cache: "no-store"
+      });
+      const result = (await response.json().catch(() => null)) as GatewayProductSurfaceSnapshot & { error?: string } | null;
+
+      if (!response.ok || !result?.surfaces) {
+        throw new Error(result?.error || "Gateway surface snapshot failed.");
+      }
+
+      setSurfaceSnapshot(result);
+    } catch (error) {
+      setSurfaceSnapshotError(error instanceof Error ? error.message : "Unable to load Gateway surface snapshot.");
+    } finally {
+      setIsLoadingSurfaceSnapshot(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSurfaceSnapshot();
+  }, [loadSurfaceSnapshot]);
 
   return (
     <div className="space-y-4">
@@ -2841,6 +2917,14 @@ function CapabilityMatrixPanel({
       <ContractComparisonPanel
         comparison={contractComparison}
         surfaceTheme={surfaceTheme}
+      />
+
+      <GatewayProductSurfacePanel
+        snapshot={surfaceSnapshot}
+        error={surfaceSnapshotError}
+        loading={isLoadingSurfaceSnapshot}
+        surfaceTheme={surfaceTheme}
+        onRefresh={() => void loadSurfaceSnapshot()}
       />
 
       <div className="grid gap-3 sm:grid-cols-3">
@@ -2964,6 +3048,291 @@ function CapabilityMatrixPanel({
       )}
     </div>
   );
+}
+
+function GatewayProductSurfacePanel({
+  snapshot,
+  error,
+  loading,
+  surfaceTheme,
+  onRefresh
+}: {
+  snapshot: GatewayProductSurfaceSnapshot | null;
+  error: string | null;
+  loading: boolean;
+  surfaceTheme: SurfaceTheme;
+  onRefresh: () => void;
+}) {
+  const surfaces = useMemo(() => snapshot?.surfaces ?? [], [snapshot?.surfaces]);
+  const groupedSurfaces = useMemo(
+    () => Array.from(new Set(surfaces.map((surface) => surface.category))).map((category) => ({
+      category,
+      surfaces: surfaces.filter((surface) => surface.category === category)
+    })),
+    [surfaces]
+  );
+  const counts = useMemo(
+    () => ({
+      native: surfaces.filter((surface) => surface.status === "native").length,
+      degraded: surfaces.filter((surface) => surface.status === "degraded" || surface.status === "scope-required").length,
+      upstream: surfaces.filter((surface) => surface.status === "upstream-needed" || surface.status === "unsupported").length,
+      recoveryCli: surfaces.filter((surface) => surface.status === "recovery-cli").length
+    }),
+    [surfaces]
+  );
+
+  return (
+    <div className={cn("rounded-[18px] border p-3.5", insetPanelClassName(surfaceTheme))}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className={labelClassName(surfaceTheme)}>Gateway-native product surface map</p>
+          <h3 className={cn("mt-1 text-sm font-semibold", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+            OpenClaw 2026.6.8 surfaces exposed to AgentOS product flows
+          </h3>
+          <p className={cn("mt-1 max-w-3xl text-xs leading-5", mutedTextClassName(surfaceTheme))}>
+            This panel uses the live compatibility report and read-only native Gateway probes. Failed probes stay degraded and do not fall back to CLI.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onRefresh}
+          disabled={loading}
+          className={cn(secondaryButtonClassName(surfaceTheme, "h-8 px-3 text-xs", "gateway-contrast"), "shrink-0")}
+        >
+          {loading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          Refresh surfaces
+        </Button>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <GatewaySurfaceMetric
+          label="Runtime"
+          value={snapshot ? snapshot.isRealRuntime ? "Real Gateway" : "Simulated" : "Loading"}
+          detail={snapshot ? `${snapshot.capabilitySource} / ${formatTimestamp(snapshot.generatedAt)}` : "Waiting for surface snapshot"}
+          surfaceTheme={surfaceTheme}
+          tone={snapshot?.isRealRuntime ? "success" : "warning"}
+        />
+        <GatewaySurfaceMetric
+          label="Native coverage"
+          value={snapshot ? `${snapshot.nativeCoveragePercent}%` : "Unknown"}
+          detail={snapshot?.nativeCoverageLabel ?? "Compatibility report not loaded"}
+          surfaceTheme={surfaceTheme}
+          tone={snapshot && snapshot.nativeCoveragePercent >= 80 ? "success" : "warning"}
+        />
+        <GatewaySurfaceMetric
+          label="Native surfaces"
+          value={String(counts.native)}
+          detail={`${counts.degraded} degraded/scope-gated, ${counts.upstream} upstream`}
+          surfaceTheme={surfaceTheme}
+          tone={counts.degraded === 0 && counts.upstream === 0 ? "success" : "warning"}
+        />
+        <GatewaySurfaceMetric
+          label="Recovery CLI"
+          value={String(counts.recoveryCli)}
+          detail={`${snapshot?.fallbackActiveCount ?? 0} active fallback diagnostics`}
+          surfaceTheme={surfaceTheme}
+          tone={counts.recoveryCli > 0 || (snapshot?.cliForced ?? false) ? "warning" : "success"}
+        />
+      </div>
+
+      {error ? (
+        <div className={cn("mt-3 rounded-[14px] border p-3 text-xs leading-5", surfaceTheme === "light" ? "border-red-200 bg-red-50 text-red-800" : "border-rose-300/20 bg-rose-300/10 text-rose-100")}>
+          {error}
+        </div>
+      ) : null}
+
+      {!snapshot && !error ? (
+        <div className={cn("mt-3 rounded-[14px] border p-3 text-xs", surfaceTheme === "light" ? "border-border bg-muted/50 text-muted-foreground" : "border-white/[0.08] bg-[#0d1624]/70 text-slate-400")}>
+          {loading ? "Loading Gateway-native surface state..." : "Gateway-native surface state has not been loaded yet."}
+        </div>
+      ) : null}
+
+      {snapshot && !snapshot.isRealRuntime ? (
+        <div className={cn("mt-3 rounded-[14px] border p-3 text-xs leading-5", surfaceTheme === "light" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-amber-300/20 bg-amber-300/[0.08] text-amber-100")}>
+          Compatibility is not certified against a real live Gateway runtime. Treat supported surfaces as degraded until live capability metadata is advertised.
+        </div>
+      ) : null}
+
+      {groupedSurfaces.length > 0 ? (
+        <div className="mt-4 space-y-4">
+          {groupedSurfaces.map((group) => (
+            <section key={group.category}>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className={cn("text-[0.62rem] font-bold uppercase tracking-[0.16em]", mutedTextClassName(surfaceTheme))}>
+                  {group.category}
+                </p>
+                <span className={cn("text-[0.62rem]", mutedTextClassName(surfaceTheme))}>
+                  {group.surfaces.length} surface{group.surfaces.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <div className="grid gap-2 lg:grid-cols-2">
+                {group.surfaces.map((surface) => (
+                  <GatewayProductSurfaceCard
+                    key={surface.id}
+                    surface={surface}
+                    surfaceTheme={surfaceTheme}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function GatewayProductSurfaceCard({
+  surface,
+  surfaceTheme
+}: {
+  surface: GatewayProductSurface;
+  surfaceTheme: SurfaceTheme;
+}) {
+  const tone = gatewaySurfaceStatusTone(surface.status);
+  const failedProbe = surface.probes.find((probe) => probe.status === "failed");
+  const passedProbeCount = surface.probes.filter((probe) => probe.status === "passed").length;
+
+  return (
+    <details
+      className={cn(
+        "group rounded-[16px] border",
+        surfaceTheme === "light"
+          ? "border-border bg-card"
+          : "border-white/[0.08] bg-[#101a2a]/86"
+      )}
+    >
+      <summary className="grid cursor-pointer list-none gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)_auto] sm:items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={transportTonePillClassName(tone, surfaceTheme)}>{surface.statusLabel}</span>
+            {surface.scopes.length > 0 ? (
+              <span className={baselinePillClassName("optional", surfaceTheme)}>
+                {surface.scopes.length} scope{surface.scopes.length === 1 ? "" : "s"}
+              </span>
+            ) : null}
+          </div>
+          <p className={cn("mt-2 truncate text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+            {surface.label}
+          </p>
+          <p className={cn("mt-1 truncate text-[11px]", mutedTextClassName(surfaceTheme))}>
+            {surface.uiDestination}
+          </p>
+        </div>
+        <div className="min-w-0">
+          <p className={labelClassName(surfaceTheme)}>Native probes</p>
+          <p className={cn("mt-1 truncate text-xs", surfaceTheme === "light" ? "text-foreground" : "text-slate-200")}>
+            {surface.probes.length > 0
+              ? `${passedProbeCount}/${surface.probes.length} passed`
+              : "No read probe"}
+          </p>
+          <p className={cn("mt-1 truncate text-[11px]", mutedTextClassName(surfaceTheme))}>
+            {surface.methods.slice(0, 2).join(", ") || "No methods mapped"}
+          </p>
+        </div>
+        <ChevronDown className={cn("h-4 w-4 transition-transform group-open:rotate-180", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")} />
+      </summary>
+
+      <div className={cn("border-t p-3", surfaceTheme === "light" ? "border-border" : "border-white/[0.08]")}>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <CapabilityDetail label="Current AgentOS path" value={surface.currentAgentOsPath} surfaceTheme={surfaceTheme} />
+          <CapabilityDetail label="Test target" value={surface.testTarget} surfaceTheme={surfaceTheme} />
+          <CapabilityDetail label="Methods" value={formatShortList(surface.methods, 6)} surfaceTheme={surfaceTheme} />
+          <CapabilityDetail label="Events" value={surface.events.length ? formatShortList(surface.events, 6) : "None"} surfaceTheme={surfaceTheme} />
+          <CapabilityDetail label="Scopes" value={surface.scopes.length ? surface.scopes.join(", ") : "None"} surfaceTheme={surfaceTheme} />
+          <CapabilityDetail label="Fallback operations" value={String(surface.cliFallbackOperationCount)} surfaceTheme={surfaceTheme} />
+        </div>
+
+        <div className="mt-3 space-y-2">
+          <p className={cn("text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-300")}>
+            Reason: {surface.reason}
+          </p>
+          <p className={cn("text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
+            Recovery: {surface.recovery}
+          </p>
+        </div>
+
+        {failedProbe ? (
+          <div className={cn("mt-3 rounded-[12px] border p-2.5 text-xs leading-5", surfaceTheme === "light" ? "border-red-200 bg-red-50 text-red-800" : "border-rose-300/20 bg-rose-300/10 text-rose-100")}>
+            {failedProbe.method}: {failedProbe.error}
+          </div>
+        ) : null}
+
+        {surface.probes.length > 0 ? (
+          <div className="mt-3 grid gap-2">
+            {surface.probes.map((probe) => (
+              <div key={probe.method} className={cn("rounded-[12px] border p-2.5 text-xs", insetPanelClassName(surfaceTheme))}>
+                <div className="flex items-center justify-between gap-2">
+                  <code className={cn("truncate", surfaceTheme === "light" ? "text-foreground" : "text-slate-200")}>
+                    {probe.method}
+                  </code>
+                  <span className={transportTonePillClassName(gatewayProbeTone(probe.status), surfaceTheme)}>
+                    {probe.status}
+                  </span>
+                </div>
+                <p className={cn("mt-1.5 leading-5", mutedTextClassName(surfaceTheme))}>{probe.summary}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+function GatewaySurfaceMetric({
+  label,
+  value,
+  detail,
+  tone,
+  surfaceTheme
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone: TransportStatusTone;
+  surfaceTheme: SurfaceTheme;
+}) {
+  return (
+    <div className={cn("rounded-[14px] border p-3", insetPanelClassName(surfaceTheme))}>
+      <div className="flex items-center justify-between gap-2">
+        <p className={labelClassName(surfaceTheme)}>{label}</p>
+        <span className={transportTonePillClassName(tone, surfaceTheme)}>{tone}</span>
+      </div>
+      <p className={cn("mt-2 truncate text-sm font-semibold", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+        {value}
+      </p>
+      <p className={cn("mt-1 truncate text-[11px]", mutedTextClassName(surfaceTheme))}>{detail}</p>
+    </div>
+  );
+}
+
+function gatewaySurfaceStatusTone(status: GatewayProductSurfaceStatus): TransportStatusTone {
+  switch (status) {
+    case "native":
+      return "success";
+    case "scope-required":
+    case "degraded":
+    case "recovery-cli":
+      return "warning";
+    case "unsupported":
+    case "upstream-needed":
+      return "danger";
+    case "unknown":
+      return "neutral";
+  }
+}
+
+function gatewayProbeTone(status: GatewayProductSurfaceProbe["status"]): TransportStatusTone {
+  switch (status) {
+    case "passed":
+      return "success";
+    case "failed":
+      return "danger";
+    case "skipped":
+      return "warning";
+  }
 }
 
 function CapabilityDetail({
