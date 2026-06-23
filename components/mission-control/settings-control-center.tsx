@@ -127,6 +127,39 @@ type GatewayProductSurfaceProbe = {
   itemCount: number | null;
   error: string | null;
 };
+type GatewayProductSurfaceAction = {
+  id: string;
+  label: string;
+  kind:
+    | "open-product-page"
+    | "run-native-probe"
+    | "retry-native-probe"
+    | "view-runtime-inbox"
+    | "show-scope"
+    | "show-degraded"
+    | "show-upstream"
+    | "open-recovery"
+    | "native-read"
+    | "native-mutation";
+  enabled: boolean;
+  href: string | null;
+  method: string | null;
+  reason: string;
+  recovery: string;
+  dangerous?: boolean;
+};
+type GatewayProductSurfaceInboxItem = {
+  id: string;
+  surfaceId: string;
+  title: string;
+  message: string;
+  severity: "info" | "warning" | "action_required" | "blocked";
+  status: GatewayProductSurfaceStatus;
+  method: string | null;
+  recovery: string;
+  createdAt: string;
+  source: "gateway-surface";
+};
 type GatewayProductSurface = {
   id: string;
   label: string;
@@ -138,6 +171,12 @@ type GatewayProductSurface = {
   currentAgentOsPath: string;
   uiDestination: string;
   testTarget: string;
+  productHref: string | null;
+  runtimeInboxHref: string;
+  agentOsRoutes: string[];
+  agentOsServices: string[];
+  agentOsComponents: string[];
+  lastCheckedAt: string;
   status: GatewayProductSurfaceStatus;
   statusLabel: string;
   reason: string;
@@ -147,6 +186,7 @@ type GatewayProductSurface = {
   unsupportedOperationCount: number;
   cliFallbackOperationCount: number;
   probes: GatewayProductSurfaceProbe[];
+  actions: GatewayProductSurfaceAction[];
 };
 type GatewayProductSurfaceSnapshot = {
   generatedAt: string;
@@ -157,6 +197,11 @@ type GatewayProductSurfaceSnapshot = {
   nativeCoveragePercent: number;
   cliForced: boolean;
   fallbackActiveCount: number;
+  degradedSurfaceCount: number;
+  unsupportedSurfaceCount: number;
+  scopeRequiredSurfaceCount: number;
+  actionableItemCount: number;
+  inboxItems: GatewayProductSurfaceInboxItem[];
   surfaces: GatewayProductSurface[];
 };
 type SettingsSectionId =
@@ -3064,6 +3109,7 @@ function GatewayProductSurfacePanel({
   onRefresh: () => void;
 }) {
   const surfaces = useMemo(() => snapshot?.surfaces ?? [], [snapshot?.surfaces]);
+  const inboxItems = useMemo(() => snapshot?.inboxItems ?? [], [snapshot?.inboxItems]);
   const groupedSurfaces = useMemo(
     () => Array.from(new Set(surfaces.map((surface) => surface.category))).map((category) => ({
       category,
@@ -3105,7 +3151,7 @@ function GatewayProductSurfacePanel({
         </Button>
       </div>
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
         <GatewaySurfaceMetric
           label="Runtime"
           value={snapshot ? snapshot.isRealRuntime ? "Real Gateway" : "Simulated" : "Loading"}
@@ -3126,6 +3172,13 @@ function GatewayProductSurfacePanel({
           detail={`${counts.degraded} degraded/scope-gated, ${counts.upstream} upstream`}
           surfaceTheme={surfaceTheme}
           tone={counts.degraded === 0 && counts.upstream === 0 ? "success" : "warning"}
+        />
+        <GatewaySurfaceMetric
+          label="Runtime inbox"
+          value={String(inboxItems.length)}
+          detail={`${snapshot?.actionableItemCount ?? 0} actionable item${(snapshot?.actionableItemCount ?? 0) === 1 ? "" : "s"}`}
+          surfaceTheme={surfaceTheme}
+          tone={(snapshot?.actionableItemCount ?? 0) > 0 ? "warning" : "success"}
         />
         <GatewaySurfaceMetric
           label="Recovery CLI"
@@ -3154,6 +3207,15 @@ function GatewayProductSurfacePanel({
         </div>
       ) : null}
 
+      {snapshot ? (
+        <GatewaySurfaceInboxPanel
+          items={inboxItems}
+          surfaceTheme={surfaceTheme}
+          onRefresh={onRefresh}
+          loading={loading}
+        />
+      ) : null}
+
       {groupedSurfaces.length > 0 ? (
         <div className="mt-4 space-y-4">
           {groupedSurfaces.map((group) => (
@@ -3172,6 +3234,8 @@ function GatewayProductSurfacePanel({
                     key={surface.id}
                     surface={surface}
                     surfaceTheme={surfaceTheme}
+                    onRefresh={onRefresh}
+                    loading={loading}
                   />
                 ))}
               </div>
@@ -3183,12 +3247,98 @@ function GatewayProductSurfacePanel({
   );
 }
 
+function GatewaySurfaceInboxPanel({
+  items,
+  surfaceTheme,
+  onRefresh,
+  loading
+}: {
+  items: GatewayProductSurfaceInboxItem[];
+  surfaceTheme: SurfaceTheme;
+  onRefresh: () => void;
+  loading: boolean;
+}) {
+  const visibleItems = items.slice(0, 5);
+
+  return (
+    <div className={cn("mt-3 rounded-[14px] border p-3", insetPanelClassName(surfaceTheme))}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className={labelClassName(surfaceTheme)}>Gateway runtime inbox</p>
+          <p className={cn("mt-1 text-xs leading-5", mutedTextClassName(surfaceTheme))}>
+            Surface readiness issues generated from live compatibility state and native read probes.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onRefresh}
+          disabled={loading}
+          className={cn(secondaryButtonClassName(surfaceTheme, "h-8 px-3 text-xs", "gateway-contrast"), "shrink-0")}
+        >
+          {loading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          Refresh inbox
+        </Button>
+      </div>
+
+      {visibleItems.length > 0 ? (
+        <div className="mt-3 grid gap-2">
+          {visibleItems.map((item) => (
+            <div
+              key={item.id}
+              className={cn(
+                "rounded-[12px] border p-2.5 text-xs leading-5",
+                item.severity === "blocked"
+                  ? surfaceTheme === "light" ? "border-red-200 bg-red-50 text-red-900" : "border-rose-300/20 bg-rose-300/10 text-rose-100"
+                  : item.severity === "action_required"
+                    ? surfaceTheme === "light" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-amber-300/20 bg-amber-300/[0.08] text-amber-100"
+                    : insetPanelClassName(surfaceTheme)
+              )}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={transportTonePillClassName(gatewaySurfaceStatusTone(item.status), surfaceTheme)}>
+                  {item.severity.replace("_", " ")}
+                </span>
+                <span className={cn("font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+                  {item.title}
+                </span>
+              </div>
+              <p className="mt-1.5">{item.message}</p>
+              <p className={cn("mt-1.5", mutedTextClassName(surfaceTheme))}>
+                Recovery: {item.recovery}
+              </p>
+              {item.method ? (
+                <code className={cn("mt-1.5 block break-words text-[11px]", mutedTextClassName(surfaceTheme))}>
+                  {item.method}
+                </code>
+              ) : null}
+            </div>
+          ))}
+          {items.length > visibleItems.length ? (
+            <p className={cn("text-[11px]", mutedTextClassName(surfaceTheme))}>
+              {items.length - visibleItems.length} additional Gateway surface item{items.length - visibleItems.length === 1 ? "" : "s"} are visible in the expanded surface list.
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <div className={cn("mt-3 rounded-[12px] border p-2.5 text-xs", insetPanelClassName(surfaceTheme))}>
+          No Gateway surface inbox items. Current mapped product surfaces are native or informational.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GatewayProductSurfaceCard({
   surface,
-  surfaceTheme
+  surfaceTheme,
+  onRefresh,
+  loading
 }: {
   surface: GatewayProductSurface;
   surfaceTheme: SurfaceTheme;
+  onRefresh: () => void;
+  loading: boolean;
 }) {
   const tone = gatewaySurfaceStatusTone(surface.status);
   const failedProbe = surface.probes.find((probe) => probe.status === "failed");
@@ -3230,6 +3380,9 @@ function GatewayProductSurfaceCard({
           <p className={cn("mt-1 truncate text-[11px]", mutedTextClassName(surfaceTheme))}>
             {surface.methods.slice(0, 2).join(", ") || "No methods mapped"}
           </p>
+          <p className={cn("mt-1 truncate text-[11px]", mutedTextClassName(surfaceTheme))}>
+            Checked {formatTimestamp(surface.lastCheckedAt)}
+          </p>
         </div>
         <ChevronDown className={cn("h-4 w-4 transition-transform group-open:rotate-180", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")} />
       </summary>
@@ -3242,6 +3395,9 @@ function GatewayProductSurfaceCard({
           <CapabilityDetail label="Events" value={surface.events.length ? formatShortList(surface.events, 6) : "None"} surfaceTheme={surfaceTheme} />
           <CapabilityDetail label="Scopes" value={surface.scopes.length ? surface.scopes.join(", ") : "None"} surfaceTheme={surfaceTheme} />
           <CapabilityDetail label="Fallback operations" value={String(surface.cliFallbackOperationCount)} surfaceTheme={surfaceTheme} />
+          <CapabilityDetail label="AgentOS routes" value={formatShortList(surface.agentOsRoutes, 4)} surfaceTheme={surfaceTheme} />
+          <CapabilityDetail label="AgentOS services" value={formatShortList(surface.agentOsServices, 4)} surfaceTheme={surfaceTheme} />
+          <CapabilityDetail label="AgentOS components" value={formatShortList(surface.agentOsComponents, 4)} surfaceTheme={surfaceTheme} />
         </div>
 
         <div className="mt-3 space-y-2">
@@ -3252,6 +3408,25 @@ function GatewayProductSurfaceCard({
             Recovery: {surface.recovery}
           </p>
         </div>
+
+        {surface.actions.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {surface.actions.slice(0, 9).map((action) => (
+              <GatewaySurfaceActionButton
+                key={action.id}
+                action={action}
+                surfaceTheme={surfaceTheme}
+                onRefresh={onRefresh}
+                loading={loading}
+              />
+            ))}
+            {surface.actions.length > 9 ? (
+              <span className={cn("inline-flex h-8 items-center text-[11px]", mutedTextClassName(surfaceTheme))}>
+                +{surface.actions.length - 9} gated action{surface.actions.length - 9 === 1 ? "" : "s"}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
 
         {failedProbe ? (
           <div className={cn("mt-3 rounded-[12px] border p-2.5 text-xs leading-5", surfaceTheme === "light" ? "border-red-200 bg-red-50 text-red-800" : "border-rose-300/20 bg-rose-300/10 text-rose-100")}>
@@ -3279,6 +3454,109 @@ function GatewayProductSurfaceCard({
       </div>
     </details>
   );
+}
+
+function GatewaySurfaceActionButton({
+  action,
+  surfaceTheme,
+  onRefresh,
+  loading
+}: {
+  action: GatewayProductSurfaceAction;
+  surfaceTheme: SurfaceTheme;
+  onRefresh: () => void;
+  loading: boolean;
+}) {
+  const isProbeAction = action.kind === "run-native-probe" || action.kind === "retry-native-probe";
+  const disabled = !action.enabled || (isProbeAction && loading);
+  const className = cn(
+    secondaryButtonClassName(surfaceTheme, "h-8 max-w-full px-2.5 text-[11px]", "gateway-contrast"),
+    action.dangerous && (surfaceTheme === "light" ? "border-red-200 text-red-700" : "border-rose-300/20 text-rose-100")
+  );
+  const content = (
+    <>
+      {isProbeAction && loading ? (
+        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <GatewaySurfaceActionIcon kind={action.kind} className="h-3.5 w-3.5 shrink-0" />
+      )}
+      <span className="min-w-0 truncate">{action.label}</span>
+    </>
+  );
+  const title = `${action.reason}${action.recovery ? ` Recovery: ${action.recovery}` : ""}`;
+
+  if (isProbeAction) {
+    return (
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={onRefresh}
+        disabled={disabled}
+        title={title}
+        className={className}
+      >
+        {content}
+      </Button>
+    );
+  }
+
+  if (action.href && action.enabled) {
+    return (
+      <Button
+        type="button"
+        variant="secondary"
+        asChild
+        title={title}
+        className={className}
+      >
+        <Link href={action.href}>
+          {content}
+        </Link>
+      </Button>
+    );
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="secondary"
+      disabled
+      title={title}
+      className={className}
+    >
+      {content}
+    </Button>
+  );
+}
+
+function GatewaySurfaceActionIcon({
+  kind,
+  className
+}: {
+  kind: GatewayProductSurfaceAction["kind"];
+  className?: string;
+}) {
+  switch (kind) {
+    case "open-product-page":
+      return <ChevronRight className={className} />;
+    case "run-native-probe":
+    case "retry-native-probe":
+      return <RefreshCw className={className} />;
+    case "view-runtime-inbox":
+      return <ListChecks className={className} />;
+    case "show-scope":
+      return <KeyRound className={className} />;
+    case "show-degraded":
+      return <TriangleAlert className={className} />;
+    case "show-upstream":
+      return <AlertTriangle className={className} />;
+    case "open-recovery":
+      return <TerminalSquare className={className} />;
+    case "native-read":
+      return <Microscope className={className} />;
+    case "native-mutation":
+      return <OctagonAlert className={className} />;
+  }
 }
 
 function GatewaySurfaceMetric({

@@ -54,6 +54,9 @@ describe("OpenClaw Gateway product surfaces", () => {
     const usage = snapshot.surfaces.find((surface) => surface.id === "usage-cost");
     assert.equal(usage?.status, "native");
     assert.ok((usage?.probes ?? []).every((probe) => probe.status === "passed"));
+    assert.ok(usage?.actions.some((action) => action.kind === "run-native-probe" && action.enabled));
+    assert.ok(usage?.actions.some((action) => action.kind === "open-product-page" && action.href === "/settings#capabilities"));
+    assert.equal(snapshot.inboxItems.length, 0);
   });
 
   it("keeps version-default compatibility degraded instead of presenting stale data as real certification", async () => {
@@ -81,6 +84,7 @@ describe("OpenClaw Gateway product surfaces", () => {
     assert.equal(snapshot.isSimulatedRuntime, true);
     assert.equal(snapshot.capabilitySource, "version-default");
     assert.notEqual(snapshot.surfaces.find((surface) => surface.id === "sessions-chat")?.status, "native");
+    assert.ok(snapshot.inboxItems.some((item) => item.id === "gateway-surface:runtime:simulated-capabilities"));
   });
 
   it("reports native probe failures as degraded and does not silently call CLI fallback", async () => {
@@ -113,6 +117,54 @@ describe("OpenClaw Gateway product surfaces", () => {
     assert.equal(failedProbe?.status, "failed");
     assert.match(failedProbe?.error ?? "", /\/Users\/\[redacted\]/);
     assert.doesNotMatch(failedProbe?.error ?? "", /secret-value|kazimakgul/);
+    assert.ok(usage?.actions.some((action) => action.kind === "retry-native-probe" && action.enabled));
+    assert.ok(snapshot.inboxItems.some((item) => (
+      item.surfaceId === "usage-cost" &&
+      item.method === "usage.status" &&
+      item.severity === "action_required"
+    )));
+  });
+
+  it("turns missing Gateway scopes into actionable surface inbox items", async () => {
+    setOpenClawGatewayClientForTesting(buildFakeClient({
+      callNative: async (method) => fakePayloadForMethod(method)
+    }));
+
+    const snapshot = await getOpenClawGatewayProductSurfaceSnapshot({
+      compatibilityReport: buildReport({
+        contracts: OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS.map((operation) => {
+          if (operation.id !== "configPatch") {
+            return buildOkContract(operation);
+          }
+
+          return {
+            ...buildOkContract(operation),
+            requiredScopes: ["operator.admin"],
+            missingScopes: ["operator.admin"],
+            nativeGatewaySupported: false,
+            status: "degraded",
+            reason: "Config patch requires operator.admin.",
+            suggestedRecovery: "Reconnect Gateway with operator.admin scope before enabling config writes."
+          };
+        })
+      }),
+      includeProbes: false,
+      now: () => new Date("2026-06-23T12:00:00.000Z")
+    });
+
+    const config = snapshot.surfaces.find((surface) => surface.id === "config-admin");
+    assert.equal(config?.status, "scope-required");
+    assert.ok(config?.actions.some((action) => (
+      action.kind === "show-scope" &&
+      !action.enabled &&
+      action.label.includes("operator.admin")
+    )));
+    assert.ok(snapshot.inboxItems.some((item) => (
+      item.surfaceId === "config-admin" &&
+      item.status === "scope-required" &&
+      item.severity === "action_required"
+    )));
+    assert.ok(snapshot.actionableItemCount > 0);
   });
 });
 
