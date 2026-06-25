@@ -56,7 +56,8 @@ const modelOnboardingSchema = z.discriminatedUnion("intent", [
   }),
   z.object({
     intent: z.literal("login-provider"),
-    provider: z.string().trim().min(1)
+    provider: z.string().trim().min(1),
+    force: z.boolean().optional()
   })
 ]);
 
@@ -491,7 +492,8 @@ export async function POST(request: Request) {
         }
 
         const authHandoff = resolveProviderAuthHandoff(provider, openClawBin, {
-          codexPluginReady
+          codexPluginReady,
+          force: input.intent === "login-provider" ? input.force === true : false
         });
 
         await send({
@@ -932,6 +934,7 @@ function resolveProviderAuthHandoff(
   commandBin?: string,
   options?: {
     codexPluginReady?: boolean;
+    force?: boolean;
   }
 ) {
   const normalized = normalizeOpenClawAuthProvider(provider);
@@ -948,7 +951,10 @@ function resolveProviderAuthHandoff(
   }
 
   if (normalized === "codex" || normalized === "openai-codex") {
-    return resolveOpenAiCodexAuthHandoff(bin, options?.codexPluginReady ?? true);
+    return resolveOpenAiCodexAuthHandoff(bin, options?.codexPluginReady ?? true, {
+      force: options?.force,
+      intent: options?.force ? "refresh" : undefined
+    });
   }
 
   return {

@@ -461,6 +461,12 @@ test("openclaw runtime failure message explains codex route rejection", () => {
     "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai --set-default"
   );
   assert.equal(
+    resolveOpenClawRuntimeFailureMessage("Agent failed before reply: auth refresh request timed out after 10s.", {
+      modelId: "openai/gpt-5.4-mini"
+    }),
+    "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai --set-default"
+  );
+  assert.equal(
     resolveOpenClawRuntimeFailureMessage("429 Provider returned error", {
       modelId: "openrouter/google/gemma-4-26b-a4b-it:free"
     }),

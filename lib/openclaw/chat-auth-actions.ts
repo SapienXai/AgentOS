@@ -99,7 +99,7 @@ function resolveProviderFromModelId(modelId: string | null | undefined, message:
     return null;
   }
 
-  if (modelProvider === "openai" && /\bChatGPT\b|\bCodex\b/i.test(message)) {
+  if (modelProvider === "openai" && (/\bChatGPT\b|\bCodex\b/i.test(message) || /\bauth refresh request timed out\b/i.test(message))) {
     return "openai-codex";
   }
 

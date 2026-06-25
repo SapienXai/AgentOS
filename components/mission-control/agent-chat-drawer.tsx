@@ -502,9 +502,14 @@ export function AgentChatDrawer({
             const isPendingUser = entry.role === "user" && entry.id === runSnapshot.userMessageId && runSnapshot.isRunning;
             const showInlineStatus = entry.status === "sending" && isPendingUser;
             const errorMessage = entry.errorMessage?.trim();
+            const assistantDiagnosticText =
+              isAssistant && !isPendingAssistant && !isActiveAssistant ? visibleAssistantText.trim() : "";
+            const authActionMessage = errorMessage || assistantDiagnosticText;
             const gatewayRepairAction = errorMessage ? resolveAgentChatGatewayRepairAction(errorMessage) : null;
             const authAction =
-              errorMessage && !gatewayRepairAction ? resolveAgentChatAuthAction(errorMessage, agent.modelId) : null;
+              authActionMessage && !gatewayRepairAction ? resolveAgentChatAuthAction(authActionMessage, agent.modelId) : null;
+            const showAssistantRecoveryAction =
+              !isPendingAssistant && entry.status !== "error" && isAssistant && Boolean(authAction && onConnectModelProvider);
 
             return (
               <div key={entry.id} className={cn("flex", isUser ? "justify-end" : "justify-start")}>
@@ -630,6 +635,24 @@ export function AgentChatDrawer({
                           {gatewayRepairAction.cta}
                         </Button>
                       ) : null}
+                    </div>
+                  ) : showAssistantRecoveryAction && authAction && onConnectModelProvider ? (
+                    <div className="mt-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => onConnectModelProvider(authAction.provider)}
+                        className={cn(
+                          "h-8 rounded-full px-3 text-[11px]",
+                          surfaceTheme === "light"
+                            ? "border-rose-200 bg-white text-rose-800 hover:bg-rose-50"
+                            : "border-rose-300/20 bg-rose-300/10 text-rose-100 hover:bg-rose-300/16"
+                        )}
+                      >
+                        <KeyRound className="mr-1.5 h-3.5 w-3.5" />
+                        Connect {authAction.label}
+                      </Button>
                     </div>
                   ) : null}
                 </div>

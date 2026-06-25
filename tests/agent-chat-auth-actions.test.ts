@@ -26,6 +26,26 @@ test("agent chat auth action understands Codex provider login commands", () => {
   assert.equal(action?.label, "ChatGPT");
 });
 
+test("agent chat auth action detects Codex auth refresh timeout diagnostics", () => {
+  const action = resolveAgentChatAuthAction(
+    "OpenClaw completed the chat turn without assistant text, but exposed this diagnostic: Agent failed before reply: auth refresh request timed out after 10s.",
+    "openai/gpt-5.4-mini"
+  );
+
+  assert.equal(action?.provider, "openai-codex");
+  assert.equal(action?.label, "ChatGPT");
+});
+
+test("agent chat auth action detects silent Codex chat stream failures", () => {
+  const action = resolveAgentChatAuthAction(
+    "OpenClaw reported the ChatGPT/Codex chat stream failed before assistant text was available, but did not expose the provider error. Reconnect ChatGPT, then retry this message.",
+    "openai/gpt-5.4-mini"
+  );
+
+  assert.equal(action?.provider, "openai-codex");
+  assert.equal(action?.label, "ChatGPT");
+});
+
 test("agent chat auth action reads provider from OpenClaw auth command", () => {
   const action = resolveAgentChatAuthAction(
     "Authentication required. Run: openclaw models auth paste-token --provider=openrouter",

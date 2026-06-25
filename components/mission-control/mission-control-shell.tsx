@@ -147,6 +147,7 @@ type ModelOnboardingIntent = "auto" | "refresh" | "discover" | "set-default" | "
 type ModelOnboardingRunOptions = {
   autoOpenTerminal?: boolean;
   forceOpen?: boolean;
+  forceAuth?: boolean;
   verifyProvider?: AddModelsProviderId;
 };
 type InspectorScopeShortcut = "workspace" | "agent" | "tasks";
@@ -2085,7 +2086,7 @@ export function MissionControlShell({
       | { intent: Extract<ModelOnboardingIntent, "refresh"> }
       | { intent: Extract<ModelOnboardingIntent, "discover"> }
       | { intent: Extract<ModelOnboardingIntent, "set-default">; modelId: string }
-      | { intent: Extract<ModelOnboardingIntent, "login-provider">; provider: string },
+      | { intent: Extract<ModelOnboardingIntent, "login-provider">; provider: string; force?: boolean },
     options: ModelOnboardingRunOptions = {}
   ) => {
     const actionCopy = resolveModelOnboardingActionCopy(payload.intent);
@@ -2390,25 +2391,28 @@ export function MissionControlShell({
       (entry) => entry.provider === providerId
     );
 
-    if (snapshotProvider?.connected) {
+    if (!options.forceAuth && snapshotProvider?.connected) {
       markModelProviderConnected(providerId, snapshotProvider.detail, snapshot);
       return;
     }
 
-    try {
-      const status = await readModelProviderStatus(providerId, { timeoutMs: 2500 });
+    if (!options.forceAuth) {
+      try {
+        const status = await readModelProviderStatus(providerId, { timeoutMs: 2500 });
 
-      if (status.connection.connected) {
-        markModelProviderConnected(providerId, status.connection.detail, status.snapshot);
-        return;
+        if (status.connection.connected) {
+          markModelProviderConnected(providerId, status.connection.detail, status.snapshot);
+          return;
+        }
+      } catch {
+        // Fall through to the OpenClaw auth handoff if status cannot be read.
       }
-    } catch {
-      // Fall through to the OpenClaw auth handoff if status cannot be read.
     }
 
     await runModelOnboarding({
       intent: "login-provider",
-      provider: providerId
+      provider: providerId,
+      force: options.forceAuth || undefined
     }, {
       forceOpen: true,
       verifyProvider: providerId,
@@ -4020,7 +4024,7 @@ export function MissionControlShell({
             onSnapshotChange={setSnapshot}
             onConfigureAgentCapabilities={handleConfigureAgentCapabilities}
             onConnectModelProvider={(provider) => {
-              void runModelProviderLogin(provider, { autoOpenTerminal: true });
+              void runModelProviderLogin(provider, { autoOpenTerminal: true, forceAuth: true });
             }}
             collapsed={!isInspectorOpen}
             onToggleCollapsed={() => setIsInspectorOpen((current) => !current)}

@@ -31,6 +31,7 @@ import {
 import { extractMissionControlAction, type MissionControlAction } from "@/lib/openclaw/chat-actions";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { ensureOpenAiCodexAuthOrderForAgent } from "@/lib/openclaw/application/model-auth-service";
+import { isOpenAiCodexBackedModel } from "@/lib/openclaw/domains/model-provider-connection";
 import {
   readAgentChatSessionsForAgent,
   recordAgentChatSession,
@@ -483,6 +484,7 @@ export async function POST(
         const emptyResponseDiagnosticMessage = resolveEmptyAgentChatDiagnosticMessage(result, {
           modelId: activeAgentModelId
         });
+        response = recoverSilentOpenAiCodexChatFailure(response, activeAgentModelId);
         response = recoverDirectIdentityResponse(response, formatAgentDisplayName(agent), operatorMessage);
         response = attachStreamMissionControlAction(response, latestStreamAction);
         response = recoverCompletedEmptyAgentChatResponse(response, emptyResponseDiagnosticMessage);
@@ -764,6 +766,34 @@ function recoverCompletedEmptyAgentChatResponse(
       emptyAgentChatResponse: false,
       emptyAgentChatCompletedWithoutText: true
     }
+  };
+}
+
+function recoverSilentOpenAiCodexChatFailure(response: MissionResponse, modelId?: string | null): MissionResponse {
+  if (!modelId || !isOpenAiCodexBackedModel(modelId) || response.status !== "stalled") {
+    return response;
+  }
+
+  const responseText = [response.summary, ...response.payloads.map((entry) => entry.text)].join("\n\n");
+  if (!/OpenClaw Gateway reported the chat stream failed before assistant text was available\./i.test(responseText)) {
+    return response;
+  }
+
+  const message = [
+    "OpenClaw reported the ChatGPT/Codex chat stream failed before assistant text was available, but did not expose the provider error.",
+    "Reconnect ChatGPT, then retry this message.",
+    "If it repeats after reconnecting, inspect `openclaw logs --follow`."
+  ].join(" ");
+
+  return {
+    ...response,
+    summary: message,
+    payloads: [
+      {
+        text: message,
+        mediaUrl: null
+      }
+    ]
   };
 }
 

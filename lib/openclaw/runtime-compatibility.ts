@@ -71,7 +71,8 @@ export function classifyOpenClawRuntimeSmokeTestFailure(
   }
 
   if (
-    isOpenAiCodexAuthFailure(normalized)
+    isOpenAiCodexAuthFailure(normalized) ||
+    isOpenAiCodexAuthRefreshTimeout(normalized, options.modelId)
   ) {
     return {
       kind: "provider-auth",
@@ -161,4 +162,11 @@ function isOpenRouterRateLimitFailure(output: string, modelId?: string | null) {
   }
 
   return /\b429\b|too many requests|rate limit(?:ed)?|quota|out of credits|insufficient credits/i.test(output);
+}
+
+function isOpenAiCodexAuthRefreshTimeout(output: string, modelId?: string | null) {
+  const modelProvider = modelId?.split("/", 1)[0]?.trim().toLowerCase();
+  const mentionsCodexProvider = /\b(openai|openai-codex|chatgpt|codex)\b/i.test(output) || modelProvider === "openai";
+
+  return mentionsCodexProvider && /\bauth refresh request timed out\b/i.test(output);
 }

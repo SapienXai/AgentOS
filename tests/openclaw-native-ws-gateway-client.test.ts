@@ -4175,6 +4175,63 @@ test("native WS gateway client explains failed chat stream events without assist
   assert.deepEqual(fallback.calls, []);
 });
 
+test("native WS gateway client suppresses lifecycle stop reasons for empty chat streams", async () => {
+  const fallback = new FallbackGatewayClient();
+  let subscriptionSocket: { emitMessage: (frame: Record<string, unknown>) => void } | null = null;
+  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? {
+              protocol: 4,
+              features: {
+                methods: ["chat.send", "sessions.subscribe", "sessions.messages.subscribe"],
+                events: ["session.message"]
+              }
+            }
+          : { runId: "run-1", status: "running" }
+      });
+
+      if (frame.method === "sessions.messages.subscribe") {
+        subscriptionSocket = socket;
+      }
+
+      if (frame.method === "chat.send") {
+        subscriptionSocket?.emitMessage({
+          type: "event",
+          event: "session.message",
+          payload: {
+            sessionKey: "agent:agent-1:explicit:session-1",
+            runId: "run-1",
+            status: "failed",
+            stopReason: "create"
+          }
+        });
+      }
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  const result = await client.streamAgentTurn(
+    { agentId: "agent-1", sessionId: "session-1", message: "hello" },
+    {},
+    { timeoutMs: 25 }
+  );
+
+  assert.equal(result.status, "stalled");
+  assert.equal(result.summary, "OpenClaw Gateway reported the chat stream failed before assistant text was available.");
+  assert.deepEqual(result.payloads, []);
+  assert.deepEqual(fallback.calls, []);
+});
+
 test("native WS gateway client resolves stream completion through agent.wait when events have no final text", async () => {
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {

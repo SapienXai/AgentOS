@@ -176,7 +176,17 @@ test("model onboarding route installs the Codex plugin before provider login whe
   assert.match(routeSource, /readOpenClawCodexPluginReady/);
   assert.match(routeSource, /resolveOpenAiCodexAuthHandoff/);
   assert.match(routeSource, /codexPluginReady/);
+  assert.match(routeSource, /force:\s*input\.intent === "login-provider"\s*\?\s*input\.force === true\s*:\s*false/);
   assert.doesNotMatch(routeSource, /readOpenClawCodexPluginReady\(\)\.catch\(\(\) => true\)/);
+});
+
+test("agent chat recovery forces ChatGPT auth refresh instead of trusting stale connected state", () => {
+  const shellSource = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
+  const chatRouteSource = readFileSync(path.join(rootDir, "app/api/agents/[agentId]/chat/route.ts"), "utf8");
+
+  assert.match(shellSource, /force:\s*options\.forceAuth\s*\|\|\s*undefined/);
+  assert.match(shellSource, /autoOpenTerminal:\s*true,\s*forceAuth:\s*true/);
+  assert.match(chatRouteSource, /recoverSilentOpenAiCodexChatFailure/);
 });
 
 test("local Gateway port probes do not claim authenticated RPC readiness", () => {

@@ -274,7 +274,7 @@ function resolveGatewayTurnFailureSummary(payload: Record<string, unknown>, stat
     readNonEmptyString(payload.message) ??
     readNonEmptyString(payload.stopReason);
 
-  if (explicitReason) {
+  if (explicitReason && isMeaningfulGatewayTurnFailureReason(explicitReason)) {
     return `OpenClaw Gateway ended the chat stream without assistant text: ${explicitReason}`;
   }
 
@@ -291,6 +291,16 @@ function resolveGatewayTurnFailureSummary(payload: Record<string, unknown>, stat
   }
 
   return "OpenClaw Gateway ended the chat stream before assistant text was available.";
+}
+
+function isMeaningfulGatewayTurnFailureReason(reason: string) {
+  const normalized = reason.trim().toLowerCase();
+
+  if (!normalized) {
+    return false;
+  }
+
+  return !/^(create|created|stop|stopped|complete|completed|done|end|ended|finish|finished|success|ok)$/i.test(normalized);
 }
 
 function readGatewayMessageRole(value: unknown): string | null {
