@@ -118,6 +118,31 @@ export function TasksPageContent({
     }
   };
 
+  const runTaskHealthAudit = async () => {
+    try {
+      const response = await fetch("/api/tasks/health", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "audit"
+        })
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok || result.error) {
+        throw new Error(result.error || "Unable to run the task audit.");
+      }
+
+      toast.success("Task audit completed.");
+      await refresh();
+    } catch (error) {
+      toast.error("Task audit failed.", {
+        description: error instanceof Error ? error.message : "Unknown task audit error."
+      });
+    }
+  };
+
   return (
     <>
       <OperationsPageLayout
@@ -171,6 +196,8 @@ export function TasksPageContent({
             title="Task Health / Runtime Issues"
             showGroups
             onRefresh={refresh}
+            onRunAudit={runTaskHealthAudit}
+            onOpenTask={setSelectedId}
           />
 
           <SearchToolbar

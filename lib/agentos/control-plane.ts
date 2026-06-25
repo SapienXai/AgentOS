@@ -13,6 +13,7 @@ import {
 } from "@/lib/openclaw/application/workspace-service";
 import { abortMissionTask, submitMission } from "@/lib/openclaw/application/mission-service";
 import { controlRunningTaskSession } from "@/lib/openclaw/application/task-control-service";
+import { runTaskHealthAudit } from "@/lib/openclaw/application/task-health-service";
 import {
   ensureOpenClawRuntimeSmokeTest,
   ensureOpenClawRuntimeStateAccess,
@@ -95,6 +96,7 @@ export {
   reconcileWorkspaceSurfaceBindings,
   repairGatewayNativeDeviceAccess,
   saveGatewayNativeAuthCredential,
+  runTaskHealthAudit,
   setWorkspaceChannelGroups,
   setWorkspaceChannelPrimary,
   submitMission,

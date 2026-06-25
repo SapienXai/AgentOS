@@ -1,6 +1,8 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Clock3, History, RotateCw } from "lucide-react";
+import Link from "next/link";
+import { useState } from "react";
+import { AlertTriangle, CheckCircle2, Clock3, History, RotateCw, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { MissionControlSnapshot, TaskHealthSummary, TaskRunIssueGroup } from "@/lib/agentos/contracts";
@@ -13,15 +15,20 @@ export function TaskHealthCard({
   title = "Task Health",
   compact = false,
   showGroups = false,
-  onRefresh
+  onRefresh,
+  onRunAudit,
+  onOpenTask
 }: {
   snapshot: MissionControlSnapshot;
   title?: string;
   compact?: boolean;
   showGroups?: boolean;
   onRefresh?: () => Promise<void> | void;
+  onRunAudit?: () => Promise<void> | void;
+  onOpenTask?: (taskId: string) => void;
 }) {
   const health = snapshot.diagnostics.taskHealth;
+  const [auditRunning, setAuditRunning] = useState(false);
 
   if (!health) {
     return (
@@ -45,12 +52,41 @@ export function TaskHealthCard({
     <SectionCard
       title={title}
       action={
-        onRefresh ? (
-          <Button variant="secondary" size="sm" className="h-7 rounded-lg px-2 text-[0.68rem]" onClick={() => void onRefresh()}>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-7 rounded-lg px-2 text-[0.68rem]"
+            disabled={!onRefresh}
+            title={onRefresh ? "Refresh the current OpenClaw snapshot." : "Refresh is unavailable on this surface."}
+            onClick={() => void onRefresh?.()}
+          >
             <RotateCw className="mr-1.5 h-3 w-3" />
             Recheck
           </Button>
-        ) : null
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-7 rounded-lg px-2 text-[0.68rem]"
+            disabled={!onRunAudit || auditRunning}
+            title={onRunAudit ? "Run openclaw tasks audit --json through the CLI fallback." : "Task audit is unavailable on this surface."}
+            onClick={async () => {
+              if (!onRunAudit) {
+                return;
+              }
+
+              setAuditRunning(true);
+              try {
+                await onRunAudit();
+              } finally {
+                setAuditRunning(false);
+              }
+            }}
+          >
+            <ShieldCheck className="mr-1.5 h-3 w-3" />
+            {auditRunning ? "Running..." : "Run audit"}
+          </Button>
+        </div>
       }
     >
       <div className="space-y-3 p-3">
@@ -83,7 +119,7 @@ export function TaskHealthCard({
           detail={resolveTaskHealthDetail(health)}
         />
 
-        {showGroups ? <TaskIssueGroups health={health} snapshot={snapshot} /> : null}
+        {showGroups ? <TaskIssueGroups health={health} snapshot={snapshot} onOpenTask={onOpenTask} /> : null}
       </div>
     </SectionCard>
   );
@@ -98,7 +134,15 @@ function TaskHealthMetric({ label, value, tone }: { label: string; value: number
   );
 }
 
-function TaskIssueGroups({ health, snapshot }: { health: TaskHealthSummary; snapshot: MissionControlSnapshot }) {
+function TaskIssueGroups({
+  health,
+  snapshot,
+  onOpenTask
+}: {
+  health: TaskHealthSummary;
+  snapshot: MissionControlSnapshot;
+  onOpenTask?: (taskId: string) => void;
+}) {
   const referenceMs = resolveRelativeTimeReferenceMs(snapshot.generatedAt);
   const groups = health.groups.slice(0, 8);
 
@@ -117,17 +161,26 @@ function TaskIssueGroups({ health, snapshot }: { health: TaskHealthSummary; snap
         Historical task failure groups
       </div>
       {groups.map((group) => (
-        <TaskIssueGroupRow key={group.id} group={group} referenceMs={referenceMs} />
+        <TaskIssueGroupRow key={group.id} group={group} referenceMs={referenceMs} onOpenTask={onOpenTask} />
       ))}
     </div>
   );
 }
 
-function TaskIssueGroupRow({ group, referenceMs }: { group: TaskRunIssueGroup; referenceMs: number }) {
+function TaskIssueGroupRow({
+  group,
+  referenceMs,
+  onOpenTask
+}: {
+  group: TaskRunIssueGroup;
+  referenceMs: number;
+  onOpenTask?: (taskId: string) => void;
+}) {
   const statusDetail = Object.entries(group.statusCounts)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([status, count]) => `${status}: ${count}`)
     .join(" · ");
+  const taskId = group.taskIds[0] ?? null;
 
   return (
     <div className="rounded-lg border border-border bg-card/70 p-3">
@@ -154,6 +207,52 @@ function TaskIssueGroupRow({ group, referenceMs }: { group: TaskRunIssueGroup; r
           {group.lastError ?? group.lastSummary}
         </p>
       ) : null}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          className="h-8 rounded-lg px-2.5 text-[0.7rem]"
+          disabled={!taskId || !onOpenTask}
+          title={
+            taskId && onOpenTask
+              ? "Select this task to inspect the related session and run metadata."
+              : "Task selection is unavailable on this surface."
+          }
+          onClick={() => {
+            if (taskId && onOpenTask) {
+              onOpenTask(taskId);
+            }
+          }}
+        >
+          Open task details
+        </Button>
+        {group.agentId ? (
+          <Button asChild variant="secondary" size="sm" className="h-8 rounded-lg px-2.5 text-[0.7rem]">
+            <Link href="/settings#agents">
+              Open agent settings
+            </Link>
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-8 rounded-lg px-2.5 text-[0.7rem]"
+            disabled
+            title="No agent id was reported for this task group."
+          >
+            Open agent settings
+          </Button>
+        )}
+        <Button
+          variant="secondary"
+          size="sm"
+          className="h-8 rounded-lg px-2.5 text-[0.7rem]"
+          disabled
+          title="OpenClaw logs tail does not expose agent or session filters in the current contract."
+        >
+          Open logs
+        </Button>
+      </div>
     </div>
   );
 }

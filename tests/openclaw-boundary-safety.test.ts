@@ -79,7 +79,8 @@ test("app, components, and hooks do not import low-level OpenClaw clients direct
 test("OpenClaw direct CLI JSON usage remains in documented fallback/discovery files", () => {
   const allowed = new Set([
     "lib/openclaw/cli.ts",
-    "lib/openclaw/client/cli-gateway-client.ts"
+    "lib/openclaw/client/cli-gateway-client.ts",
+    "lib/openclaw/application/task-health-service.ts"
   ]);
   const offenders = readProjectSourceFiles(["lib/openclaw"])
     .filter((filePath) => readFileSync(filePath, "utf8").includes("runOpenClawJson"))

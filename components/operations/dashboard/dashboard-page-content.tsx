@@ -29,6 +29,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toast } from "@/components/ui/sonner";
 import { RuntimeIssuesCard } from "@/components/runtime/runtime-inbox";
 import { TaskHealthCard } from "@/components/operations/task-health-card";
 import type { MissionControlSnapshot, WorkspaceRecord } from "@/lib/agentos/contracts";
@@ -123,6 +124,31 @@ export function DashboardPageContent({
   const snapshotAgeLabel = formatRelativeTime(Date.parse(rootSnapshot.generatedAt), referenceMs);
   const activeWorkspaceLabel = activeWorkspace?.name ?? "All workspaces";
   const activeWorkspaceDetail = activeWorkspace?.path ? compactPath(activeWorkspace.path) : `${rootSnapshot.workspaces.length} workspaces visible`;
+
+  const runTaskHealthAudit = async () => {
+    try {
+      const response = await fetch("/api/tasks/health", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "audit"
+        })
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok || result.error) {
+        throw new Error(result.error || "Unable to run the task audit.");
+      }
+
+      toast.success("Task audit completed.");
+      await refresh();
+    } catch (error) {
+      toast.error("Task audit failed.", {
+        description: error instanceof Error ? error.message : "Unknown task audit error."
+      });
+    }
+  };
 
   return (
     <>
@@ -263,6 +289,7 @@ export function DashboardPageContent({
               title="Task Health"
               compact
               onRefresh={refresh}
+              onRunAudit={runTaskHealthAudit}
             />
             <RuntimeIssuesCard
               snapshot={rootSnapshot}
