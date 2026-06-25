@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { buildTaskViews, formatBigNumber, summarizeTokens, taskStatusIcons, type TaskView } from "@/components/operations/operations-data";
 import { EmptyState, FilterChip, InspectorPanelFrame, KeyValue, MoreButton, OperationsPageLayout, PageHeader, ProgressBar, SearchToolbar, SectionCard, StatCard, StatGrid, StatusBadge, ToolbarButton, ViewToggle, pageSurface } from "@/components/operations/operations-ui";
 import { canCancelTask, formatTaskFilterLabel, formatTaskSortLabel, MetricMini, MissionDispatchDialog, resolveTaskTone, sortTaskViews, UnsupportedPanel } from "@/components/operations/operations-shared";
+import { TaskHealthCard } from "@/components/operations/task-health-card";
 import {
   ExpandableTaskResult,
   TaskFollowUpComposer,
@@ -76,6 +77,7 @@ export function TasksPageContent({
     cancelled: tasks.filter((task) => task.status === "cancelled").length,
     stalled: tasks.filter((task) => task.status === "stalled").length
   };
+  const taskHealth = snapshot.diagnostics.taskHealth;
   const tokenTotal = snapshot.tasks.reduce((sum, task) => sum + (task.tokenUsage?.total ?? 0), 0) || summarizeTokens(snapshot);
   const sortModes: Array<typeof sort> = ["updated", "title", "status", "agent"];
 
@@ -151,12 +153,25 @@ export function TasksPageContent({
 
           <StatGrid columns={4}>
             <StatCard label="Total Tasks" value={String(tasks.length)} detail={`${snapshot.tasks.length} tracked from snapshot`} icon={ClipboardList} tone="info" />
-            <StatCard label="Running" value={String(statusCounts.running)} detail="Live task records" icon={Activity} tone="success" />
-            <StatCard label="Queued" value={String(statusCounts.queued)} detail="Waiting to run" icon={Clock3} tone="warning" />
-            <StatCard label="Needs Approval" value={String(statusCounts.approval)} detail="Warnings or review gates" icon={ShieldCheck} tone="danger" />
+            <StatCard label="Running" value={String(taskHealth?.active.running ?? statusCounts.running)} detail="Live task records" icon={Activity} tone="success" />
+            <StatCard label="Queued" value={String(taskHealth?.active.queued ?? statusCounts.queued)} detail="Waiting to run" icon={Clock3} tone="warning" />
+            <StatCard
+              label="Historical Failures"
+              value={String(taskHealth?.historical.issueCount ?? 0)}
+              detail={taskHealth?.audit.state === "clean" ? "Audit clean" : "Audit findings present"}
+              icon={ShieldCheck}
+              tone={(taskHealth?.currentIssue.count ?? 0) > 0 ? "danger" : (taskHealth?.historical.issueCount ?? 0) > 0 ? "warning" : "success"}
+            />
             <StatCard label="Completed" value={String(statusCounts.completed)} detail="Completed task records" icon={CircleCheck} tone="purple" />
             <StatCard label="Runtime Tokens" value={formatBigNumber(tokenTotal)} detail={tokenTotal ? "From live task/runtime usage" : "No token usage reported"} icon={Sparkles} tone="purple" />
           </StatGrid>
+
+          <TaskHealthCard
+            snapshot={snapshot}
+            title="Task Health / Runtime Issues"
+            showGroups
+            onRefresh={refresh}
+          />
 
           <SearchToolbar
             search={search}

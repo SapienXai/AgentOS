@@ -8,6 +8,7 @@ import {
   settleDeviceAccessPayloadFromOpenClaw,
   settleModelStatusPayloadFromOpenClaw,
   settleStatusPayloadFromOpenClaw,
+  settleTaskListPayloadFromOpenClaw,
   settleUpdateStatusPayloadFromOpenClaw,
   type UpdateStatusPayload
 } from "@/lib/openclaw/adapter/gateway-payloads";
@@ -59,6 +60,7 @@ import {
   type ModelsStatusPayload,
   type OpenClawDeviceListPayload,
   type OpenClawRuntimeSnapshotPayload,
+  type OpenClawTaskListPayload,
   type PresencePayload,
   type StatusPayload
 } from "@/lib/openclaw/client/gateway-client";
@@ -114,6 +116,7 @@ let modelsPayloadCache: CachedPayload<ModelsPayload> | null = null;
 let modelsStatusPayloadCache: CachedPayload<ModelsStatusPayload> | null = null;
 let sessionsPayloadCache: CachedPayload<SessionsPayload> | null = null;
 let runtimeSnapshotPayloadCache: CachedPayload<OpenClawRuntimeSnapshotPayload> | null = null;
+let taskListPayloadCache: CachedPayload<OpenClawTaskListPayload> | null = null;
 let presencePayloadCache: CachedPayload<PresencePayload> | null = null;
 const runtimeHistoryStore = createMissionControlRuntimeHistoryStore();
 const statusPayloadCache = new CachedPayloadController<StatusPayload>();
@@ -147,6 +150,7 @@ function clearMissionControlPayloadCaches() {
   modelsStatusPayloadCache = null;
   sessionsPayloadCache = null;
   runtimeSnapshotPayloadCache = null;
+  taskListPayloadCache = null;
   presencePayloadCache = null;
 }
 
@@ -228,6 +232,7 @@ async function loadMissionControlSnapshots({
     let modelsResult: PromiseSettledResult<ModelsPayload>;
     let modelStatusResult: PromiseSettledResult<ModelsStatusPayload>;
     let deviceAccessResult: PromiseSettledResult<OpenClawDeviceListPayload>;
+    let taskListResult: PromiseSettledResult<OpenClawTaskListPayload> = createDeferredPayloadResult();
     let presenceResult: PromiseSettledResult<PresencePayload>;
 
     const statusCacheNeedsRefresh = statusPayloadCache.shouldRefresh();
@@ -347,6 +352,9 @@ async function loadMissionControlSnapshots({
       : shouldHydrateRuntimeSnapshot
         ? await settleRuntimeSnapshotPayloadFromOpenClaw(profile === "interactive" ? 8_000 : 15_000)
         : createDeferredPayloadResult<OpenClawRuntimeSnapshotPayload>();
+    if (!systemProfile) {
+      taskListResult = await settleTaskListPayloadFromOpenClaw(profile === "interactive" ? 8_000 : 15_000);
+    }
     const resolvedAgents = resolveCachedPayload(agentsResult, agentPayloadCache, (entry) => {
       agentPayloadCache = entry;
     });
@@ -361,6 +369,9 @@ async function loadMissionControlSnapshots({
     });
     const resolvedRuntimeSnapshot = resolveCachedPayload(runtimeSnapshotResult, runtimeSnapshotPayloadCache, (entry) => {
       runtimeSnapshotPayloadCache = entry;
+    });
+    const resolvedTaskList = resolveCachedPayload(taskListResult, taskListPayloadCache, (entry) => {
+      taskListPayloadCache = entry;
     });
     const resolvedPresence = resolveCachedPayload(presenceResult, presencePayloadCache, (entry) => {
       presencePayloadCache = entry;
@@ -389,6 +400,7 @@ async function loadMissionControlSnapshots({
       modelStatusResult.status === "fulfilled" ||
       sessionsResult.status === "fulfilled" ||
       runtimeSnapshotResult.status === "fulfilled" ||
+      taskListResult.status === "fulfilled" ||
       updateStatusResult.status === "fulfilled" ||
       deviceAccessResult.status === "fulfilled" ||
       presenceResult.status === "fulfilled";
@@ -458,6 +470,7 @@ async function loadMissionControlSnapshots({
       configuredGatewayUrl,
       gatewayStatus,
       status,
+      taskList: resolvedTaskList.value,
       updateStatus: resolvedUpdateStatus.value,
       hasOpenClawSignal,
       runtimeDiagnostics,
@@ -474,6 +487,7 @@ async function loadMissionControlSnapshots({
       payloadResults: {
         gatewayStatus: gatewayStatusResult,
         status: statusResult,
+        taskList: taskListResult,
         updateStatus: updateStatusResult,
         deviceAccess: deviceAccessResult,
         agents: agentsResult,
@@ -487,6 +501,7 @@ async function loadMissionControlSnapshots({
         gatewayStatusResult.status === "rejected" && resolvedGatewayStatus.reusedCachedValue,
       payloadReuse: {
         status: resolvedStatus,
+        taskList: resolvedTaskList,
         updateStatus: resolvedUpdateStatus,
         agents: resolvedAgents,
         agentConfig: resolvedAgentConfig,

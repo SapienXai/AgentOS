@@ -30,6 +30,7 @@ import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RuntimeIssuesCard } from "@/components/runtime/runtime-inbox";
+import { TaskHealthCard } from "@/components/operations/task-health-card";
 import type { MissionControlSnapshot, WorkspaceRecord } from "@/lib/agentos/contracts";
 import { compactPath, formatRelativeTime, formatTokens, resolveRelativeTimeReferenceMs } from "@/lib/openclaw/presenters";
 import {
@@ -102,7 +103,8 @@ export function DashboardPageContent({
   const diagnosticInboxItems = buildDiagnosticInboxItems(rootSnapshot, activeRuntimeIssues);
   const attentionItems = buildAttentionItems(rootSnapshot);
   const hasGatewayPermissionIssue = attentionItems.some(isGatewayPermissionIssue);
-  const needsAttentionCount = taskCounts.attention + activeRuntimeIssues.length + diagnosticInboxItems.length;
+  const currentTaskIssueCount = rootSnapshot.diagnostics.taskHealth?.currentIssue.count ?? taskCounts.attention;
+  const needsAttentionCount = currentTaskIssueCount + activeRuntimeIssues.length + diagnosticInboxItems.length;
   const dashboardQuery = dashboardSearch.trim().toLowerCase();
   const filteredAgents = useMemo(
     () => filterAgents(agents, dashboardQuery),
@@ -191,7 +193,7 @@ export function DashboardPageContent({
           <StatCard label="Agents" value={String(agents.length)} detail={`${runningAgents.length} active, ${readyAgents.length} ready`} icon={Bot} tone="success" />
           <StatCard label="Running Tasks" value={String(taskCounts.running)} detail={`${taskCounts.queued} queued`} icon={Activity} tone="info" />
           <StatCard label="Completed" value={String(taskCounts.completed)} detail="Completed task records" icon={CircleCheck} tone="success" />
-          <StatCard label="Needs Attention" value={String(needsAttentionCount)} detail={formatAttentionDetail(taskCounts.attention, activeRuntimeIssues.length + diagnosticInboxItems.length)} icon={AlertTriangle} tone={needsAttentionCount > 0 ? "warning" : "muted"} />
+          <StatCard label="Needs Attention" value={String(needsAttentionCount)} detail={formatAttentionDetail(currentTaskIssueCount, activeRuntimeIssues.length + diagnosticInboxItems.length)} icon={AlertTriangle} tone={needsAttentionCount > 0 ? "warning" : "muted"} />
           <StatCard label="Tokens" value={tokenTotal > 0 ? formatBigNumber(tokenTotal) : "None"} detail={tokenTotal > 0 ? "Reported usage" : "No usage reported"} icon={Sparkles} tone="purple" />
         </StatGrid>
 
@@ -255,29 +257,31 @@ export function DashboardPageContent({
             </div>
           </SectionCard>
 
-          <SectionCard
-            className={cn(dashboardPanelClassName, "xl:col-span-5")}
-          >
-            <div className="space-y-3 p-3">
-              <RuntimeIssuesCard
-                snapshot={rootSnapshot}
-                surfaceTheme={surfaceTheme}
-                onSnapshotChange={setSnapshot}
-                onRefresh={refresh}
+          <div className={cn("space-y-3 xl:col-span-5")}>
+            <TaskHealthCard
+              snapshot={rootSnapshot}
+              title="Task Health"
+              compact
+              onRefresh={refresh}
+            />
+            <RuntimeIssuesCard
+              snapshot={rootSnapshot}
+              surfaceTheme={surfaceTheme}
+              onSnapshotChange={setSnapshot}
+              onRefresh={refresh}
+            />
+            {diagnosticInboxItems.length > 0 ? (
+              <CompactIssueList
+                items={diagnosticInboxItems}
+                title="Diagnostics"
+                footer={
+                  diagnosticInboxItems.length > 3 ? (
+                    <PanelLink href="/settings#diagnostics" label="View all issues" />
+                  ) : null
+                }
               />
-              {diagnosticInboxItems.length > 0 ? (
-                <CompactIssueList
-                  items={diagnosticInboxItems}
-                  title="Diagnostics"
-                  footer={
-                    diagnosticInboxItems.length > 3 ? (
-                      <PanelLink href="/settings#diagnostics" label="View all issues" />
-                    ) : null
-                  }
-                />
-              ) : null}
-            </div>
-          </SectionCard>
+            ) : null}
+          </div>
 
           <SectionCard
             title="Recent Task Activity"

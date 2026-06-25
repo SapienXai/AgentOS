@@ -277,6 +277,20 @@ export type StatusPayload = {
       everyMs?: number | null;
     }>;
   };
+  tasks?: {
+    total?: number;
+    active?: number;
+    terminal?: number;
+    failures?: number;
+    byStatus?: Record<string, number>;
+    byRuntime?: Record<string, number>;
+  };
+  taskAudit?: {
+    total?: number;
+    warnings?: number;
+    errors?: number;
+    byCode?: Record<string, number>;
+  };
 };
 
 export type AgentPayload = Array<{

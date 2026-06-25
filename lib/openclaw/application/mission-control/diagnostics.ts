@@ -30,6 +30,7 @@ import type {
   ModelsPayload,
   ModelsStatusPayload,
   OpenClawDeviceListPayload,
+  OpenClawTaskListPayload,
   PresencePayload,
   StatusPayload
 } from "@/lib/openclaw/client/gateway-client";
@@ -52,6 +53,7 @@ import {
 import { getConfigUpdatePacingSnapshotForSettings } from "@/lib/openclaw/application/config-pacing-service";
 import type { SessionsPayload } from "@/lib/openclaw/domains/session-catalog";
 import type { UpdateStatusPayload } from "@/lib/openclaw/adapter/gateway-payloads";
+import { buildTaskHealthSummary } from "@/lib/openclaw/domains/task-health";
 import type {
   MissionControlSnapshot,
   OpenClawAgent
@@ -88,6 +90,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
   configuredGatewayUrl?: string | null;
   gatewayStatus?: GatewayStatusPayload;
   status?: StatusPayload;
+  taskList?: OpenClawTaskListPayload;
   updateStatus?: UpdateStatusPayload;
   hasOpenClawSignal: boolean;
   runtimeDiagnostics: MissionControlSnapshot["diagnostics"]["runtime"];
@@ -101,6 +104,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
     status: PromiseSettledResult<StatusPayload>;
     updateStatus: PromiseSettledResult<UpdateStatusPayload>;
     deviceAccess: PromiseSettledResult<OpenClawDeviceListPayload>;
+    taskList: PromiseSettledResult<OpenClawTaskListPayload>;
     agents: PromiseSettledResult<AgentPayload>;
     agentConfig: PromiseSettledResult<AgentConfigPayload>;
     models: PromiseSettledResult<ModelsPayload>;
@@ -111,6 +115,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
   gatewayStatusRejectedWithCachedValue: boolean;
   payloadReuse: {
     status: PayloadReuseState;
+    taskList: PayloadReuseState;
     updateStatus: PayloadReuseState;
     agents: PayloadReuseState;
     agentConfig: PayloadReuseState;
@@ -140,6 +145,8 @@ export async function buildLiveMissionControlDiagnostics(input: {
     warmOpenClawCapabilityMatrix();
   }
   const transport = getOpenClawGatewayClient()?.getDiagnostics?.();
+  const statusTransport = transport?.fallbackCounts.status ? "cli-fallback" : "gateway-native";
+  const taskListTransport = transport?.fallbackCounts["tasks.list"] ? "cli-fallback" : "gateway-native";
   const compatibilityReport =
     input.profile === "interactive"
       ? getCachedOpenClawCompatibilityReport() ?? undefined
@@ -158,6 +165,17 @@ export async function buildLiveMissionControlDiagnostics(input: {
     gatewayStatus: input.gatewayStatus,
     status: input.status,
     deviceAccess: input.deviceAccess,
+    taskHealth: buildTaskHealthSummary({
+      status: input.status,
+      taskList: input.taskList,
+      agents: input.agents,
+      statusAvailable: input.payloadResults.status.status === "fulfilled",
+      taskListAvailable: input.payloadResults.taskList.status === "fulfilled",
+      statusTransport: input.payloadResults.status.status === "fulfilled" ? statusTransport : "unknown",
+      taskListTransport: input.payloadResults.taskList.status === "fulfilled" ? taskListTransport : "unknown",
+      auditTransport: input.status?.taskAudit ? statusTransport : "unknown",
+      fallbackReason: describePayloadError(input.payloadResults.taskList)
+    }),
     configuredWorkspaceRoot: input.configuredWorkspaceRoot,
     workspaceRoot: resolveWorkspaceRoot(input.configuredWorkspaceRoot),
     configuredGatewayUrl: input.configuredGatewayUrl,

@@ -194,6 +194,7 @@ export function buildGatewayDiagnostics(input: {
   runtimeDiagnostics: MissionControlSnapshot["diagnostics"]["runtime"];
   openClawBinarySelection: OpenClawBinarySelection;
   modelReadiness: ModelReadiness;
+  taskHealth?: MissionControlSnapshot["diagnostics"]["taskHealth"];
   capabilityMatrix?: OpenClawCapabilityMatrix;
   compatibilityReport?: MissionControlSnapshot["diagnostics"]["compatibilityReport"];
   configUpdatePacing?: MissionControlSnapshot["diagnostics"]["configUpdatePacing"];
@@ -299,6 +300,7 @@ export function buildGatewayDiagnostics(input: {
     serviceLabel: input.gatewayStatus?.service?.label,
     openClawBinarySelection: input.openClawBinarySelection,
     modelReadiness: input.modelReadiness,
+    taskHealth: input.taskHealth,
     capabilityMatrix: input.capabilityMatrix,
     compatibilityReport: input.compatibilityReport ?? null,
     configUpdatePacing: input.configUpdatePacing ?? createDefaultConfigUpdatePacingDiagnostics(),

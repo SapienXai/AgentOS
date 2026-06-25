@@ -77,6 +77,70 @@ export interface OpenClawRuntimeDiagnostics {
   issues: string[];
 }
 
+export type TaskHealthTransport = "gateway-native" | "cli-fallback" | "sidecar-derived" | "unsupported" | "unknown";
+export type TaskHealthSeverity = "healthy" | "warning" | "critical" | "unknown";
+export type TaskAuditState = "clean" | "findings" | "error" | "unknown";
+
+export interface TaskAuditSummary {
+  state: TaskAuditState;
+  total: number;
+  warnings: number;
+  errors: number;
+  byCode: Record<string, number>;
+  explanation: string;
+}
+
+export interface TaskRunIssueGroup {
+  id: string;
+  agentId: string | null;
+  agentName: string | null;
+  runtime: string;
+  sourceId: string | null;
+  ownerKey: string | null;
+  requesterSessionKey: string | null;
+  childSessionKey: string | null;
+  statusCounts: Record<string, number>;
+  issueCount: number;
+  lastErrorAt: string | null;
+  lastSummary: string | null;
+  lastError: string | null;
+  taskIds: string[];
+  runIds: string[];
+  sessionKeys: string[];
+}
+
+export interface TaskHealthSummary {
+  generatedAt: string;
+  source: {
+    status: TaskHealthTransport;
+    taskList: TaskHealthTransport;
+    audit: TaskHealthTransport;
+    fallbackReason: string | null;
+  };
+  active: {
+    active: number;
+    queued: number;
+    running: number;
+  };
+  currentIssue: {
+    count: number;
+    severity: TaskHealthSeverity;
+    reasons: string[];
+  };
+  historical: {
+    issueCount: number;
+    failed: number;
+    timedOut: number;
+    lost: number;
+    cancelled: number;
+    succeeded: number;
+    totalTracked: number;
+  };
+  audit: TaskAuditSummary;
+  groups: TaskRunIssueGroup[];
+  explanation: string;
+}
+
 export interface OpenClawSmokeTestCheck {
   id: string;
   label: string;
@@ -306,6 +370,7 @@ export interface GatewayDiagnostics {
   commandHistory?: OpenClawCommandDiagnostic[];
   transport?: import("@/lib/openclaw/client/types").OpenClawGatewayClientDiagnostics;
   runtimeIssues: RuntimeIssue[];
+  taskHealth?: TaskHealthSummary;
   securityWarnings: string[];
   issues: string[];
 }
