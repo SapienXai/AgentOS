@@ -6,6 +6,7 @@ import type { TaskAuditSummary } from "@/lib/openclaw/types";
 export interface TaskHealthAuditResult {
   command: string;
   transport: "cli-fallback";
+  completedAt: string;
   audit: TaskAuditSummary;
 }
 
@@ -21,10 +22,12 @@ export async function runTaskHealthAudit(
     ["tasks", "audit", "--json"],
     { timeoutMs: options.timeoutMs ?? 30_000 }
   );
+  const completedAt = new Date().toISOString();
 
   return {
     command: "openclaw tasks audit --json",
     transport: "cli-fallback",
+    completedAt,
     audit: normalizeTaskAuditSummary(auditPayload)
   };
 }

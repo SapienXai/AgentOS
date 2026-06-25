@@ -31,7 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
 import { RuntimeIssuesCard } from "@/components/runtime/runtime-inbox";
-import { TaskHealthCard } from "@/components/operations/task-health-card";
+import { TaskHealthCard, type TaskAuditActivity } from "@/components/operations/task-health-card";
 import type { MissionControlSnapshot, WorkspaceRecord } from "@/lib/agentos/contracts";
 import { compactPath, formatRelativeTime, formatTokens, resolveRelativeTimeReferenceMs } from "@/lib/openclaw/presenters";
 import {
@@ -124,8 +124,15 @@ export function DashboardPageContent({
   const snapshotAgeLabel = formatRelativeTime(Date.parse(rootSnapshot.generatedAt), referenceMs);
   const activeWorkspaceLabel = activeWorkspace?.name ?? "All workspaces";
   const activeWorkspaceDetail = activeWorkspace?.path ? compactPath(activeWorkspace.path) : `${rootSnapshot.workspaces.length} workspaces visible`;
+  const [auditActivity, setAuditActivity] = useState<TaskAuditActivity | null>(null);
 
   const runTaskHealthAudit = async () => {
+    setAuditActivity({
+      status: "running",
+      lastRunAt: null,
+      title: "Task audit running",
+      detail: "OpenClaw CLI audit is running."
+    });
     try {
       const response = await fetch("/api/tasks/health", {
         method: "POST",
@@ -141,11 +148,39 @@ export function DashboardPageContent({
         throw new Error(result.error || "Unable to run the task audit.");
       }
 
+      const auditResult = result as {
+        completedAt?: string;
+        audit?: { state?: string; explanation?: string; warnings?: number; errors?: number; total?: number };
+      };
+      const completedAt = auditResult.completedAt ?? new Date().toISOString();
+      const auditSummary = auditResult.audit;
       toast.success("Task audit completed.");
+      setAuditActivity({
+        status: "success",
+        lastRunAt: completedAt,
+        title:
+          auditSummary?.state === "clean"
+            ? "Task audit clean"
+            : auditSummary?.state === "findings"
+              ? "Task audit found findings"
+              : "Task audit completed",
+        detail:
+          auditSummary?.explanation ??
+          (auditSummary?.errors || auditSummary?.warnings
+            ? `${auditSummary.errors ?? 0} errors, ${auditSummary.warnings ?? 0} warnings`
+            : "OpenClaw task audit completed successfully.")
+      });
       await refresh();
     } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unknown task audit error.";
+      setAuditActivity({
+        status: "error",
+        lastRunAt: new Date().toISOString(),
+        title: "Task audit failed",
+        detail
+      });
       toast.error("Task audit failed.", {
-        description: error instanceof Error ? error.message : "Unknown task audit error."
+        description: detail
       });
     }
   };
@@ -290,6 +325,7 @@ export function DashboardPageContent({
               compact
               onRefresh={refresh}
               onRunAudit={runTaskHealthAudit}
+              auditActivity={auditActivity}
             />
             <RuntimeIssuesCard
               snapshot={rootSnapshot}

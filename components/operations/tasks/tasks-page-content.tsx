@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { buildTaskViews, formatBigNumber, summarizeTokens, taskStatusIcons, type TaskView } from "@/components/operations/operations-data";
 import { EmptyState, FilterChip, InspectorPanelFrame, KeyValue, MoreButton, OperationsPageLayout, PageHeader, ProgressBar, SearchToolbar, SectionCard, StatCard, StatGrid, StatusBadge, ToolbarButton, ViewToggle, pageSurface } from "@/components/operations/operations-ui";
 import { canCancelTask, formatTaskFilterLabel, formatTaskSortLabel, MetricMini, MissionDispatchDialog, resolveTaskTone, sortTaskViews, UnsupportedPanel } from "@/components/operations/operations-shared";
-import { TaskHealthCard } from "@/components/operations/task-health-card";
+import { TaskHealthCard, type TaskAuditActivity } from "@/components/operations/task-health-card";
 import {
   ExpandableTaskResult,
   TaskFollowUpComposer,
@@ -25,7 +25,7 @@ import {
   readTaskFollowUpsFromMetadata,
   resolveTaskFollowUpDisplayMessage
 } from "@/lib/openclaw/domains/task-follow-up-records";
-import { compactMissionText, formatTokens } from "@/lib/openclaw/presenters";
+import { compactMissionText, formatTokens, shortId } from "@/lib/openclaw/presenters";
 
 type OperationTaskTab = {
   id: string;
@@ -57,6 +57,7 @@ export function TasksPageContent({
   const [view, setView] = useState<"board" | "list">("board");
   const [selectedId, setSelectedId] = useState(tasks[0]?.id ?? "");
   const [activeFollowUpByTaskId, setActiveFollowUpByTaskId] = useState<Record<string, SubmittedTaskFollowUp | null>>({});
+  const [auditActivity, setAuditActivity] = useState<TaskAuditActivity | null>(null);
   const [dispatchOpen, setDispatchOpen] = useState(false);
 
   const filteredTasks = tasks.filter((task) => {
@@ -67,7 +68,8 @@ export function TasksPageContent({
     const matchesFilter = filter === "all" || task.status === filter;
     return matchesSearch && matchesFilter;
   }).sort((left, right) => sortTaskViews(left, right, sort));
-  const selectedTask = filteredTasks.find((task) => task.id === selectedId) ?? filteredTasks[0] ?? null;
+  const selectedTask = tasks.find((task) => task.id === selectedId) ?? filteredTasks[0] ?? null;
+  const selectedTaskVisible = Boolean(selectedTask && filteredTasks.some((task) => task.id === selectedTask.id));
   const selectedFollowUp = selectedTask ? activeFollowUpByTaskId[selectedTask.id] ?? null : null;
   const statusCounts: Record<TaskView["status"], number> = {
     queued: tasks.filter((task) => task.status === "queued").length,
@@ -119,6 +121,12 @@ export function TasksPageContent({
   };
 
   const runTaskHealthAudit = async () => {
+    setAuditActivity({
+      status: "running",
+      lastRunAt: null,
+      title: "Task audit running",
+      detail: "OpenClaw CLI audit is running."
+    });
     try {
       const response = await fetch("/api/tasks/health", {
         method: "POST",
@@ -134,11 +142,39 @@ export function TasksPageContent({
         throw new Error(result.error || "Unable to run the task audit.");
       }
 
+      const auditResult = result as {
+        completedAt?: string;
+        audit?: { state?: string; explanation?: string; warnings?: number; errors?: number; total?: number };
+      };
+      const completedAt = auditResult.completedAt ?? new Date().toISOString();
+      const auditSummary = auditResult.audit;
       toast.success("Task audit completed.");
+      setAuditActivity({
+        status: "success",
+        lastRunAt: completedAt,
+        title:
+          auditSummary?.state === "clean"
+            ? "Task audit clean"
+            : auditSummary?.state === "findings"
+              ? "Task audit found findings"
+              : "Task audit completed",
+        detail:
+          auditSummary?.explanation ??
+          (auditSummary?.errors || auditSummary?.warnings
+            ? `${auditSummary.errors ?? 0} errors, ${auditSummary.warnings ?? 0} warnings`
+            : "OpenClaw task audit completed successfully.")
+      });
       await refresh();
     } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unknown task audit error.";
+      setAuditActivity({
+        status: "error",
+        lastRunAt: new Date().toISOString(),
+        title: "Task audit failed",
+        detail
+      });
       toast.error("Task audit failed.", {
-        description: error instanceof Error ? error.message : "Unknown task audit error."
+        description: detail
       });
     }
   };
@@ -198,6 +234,7 @@ export function TasksPageContent({
             onRefresh={refresh}
             onRunAudit={runTaskHealthAudit}
             onOpenTask={setSelectedId}
+            auditActivity={auditActivity}
           />
 
           <SearchToolbar
@@ -277,9 +314,10 @@ export function TasksPageContent({
         </>
       }
       inspector={selectedTask ? (
-        <TaskInspector
+          <TaskInspector
           task={selectedTask}
           activeFollowUp={selectedFollowUp}
+          isVisibleInCurrentFilters={selectedTaskVisible}
           onAbort={() => abortTask(selectedTask)}
           onFollowUpComplete={refresh}
           onActiveFollowUpChange={(followUp) => {
@@ -700,12 +738,14 @@ function taskCardTabStatusDotClassName(statusLabel: string) {
 function TaskInspector({
   task,
   activeFollowUp,
+  isVisibleInCurrentFilters,
   onAbort,
   onFollowUpComplete,
   onActiveFollowUpChange
 }: {
   task: TaskView;
   activeFollowUp?: SubmittedTaskFollowUp | null;
+  isVisibleInCurrentFilters?: boolean;
   onAbort: () => void;
   onFollowUpComplete: () => Promise<void>;
   onActiveFollowUpChange: (followUp: SubmittedTaskFollowUp | null) => void;
@@ -732,6 +772,11 @@ function TaskInspector({
   return (
     <InspectorPanelFrame title="Task Details">
       <h2 className="text-base font-semibold text-foreground">{displayTitle}</h2>
+      {!isVisibleInCurrentFilters ? (
+        <div className="mt-2 rounded-[10px] border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-700 dark:text-amber-100">
+          This task is selected from task health, but it is outside the current search or filter results.
+        </div>
+      ) : null}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <StatusBadge label={displayStatusLabel} tone={displayStatusTone} />
         {activeFollowUp ? <span className="rounded-full bg-primary/10 px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-primary">Follow-up</span> : null}
@@ -744,6 +789,25 @@ function TaskInspector({
             <p className="mt-1 text-[0.68rem] text-muted-foreground">{task.category} work item</p>
           </div>
           <Button variant="secondary" size="sm" className="h-7 rounded-[8px] px-2 text-[0.7rem]" disabled title="Task-to-agent messaging is not exposed from this inspector. Use the Agents page chat for direct messages.">Message</Button>
+        </div>
+      </SectionCard>
+      <SectionCard title="Runtime Context" className="mt-3">
+        <div className="grid gap-2 p-2.5">
+          <KeyValue label="Task id" value={shortId(task.id, 18)} />
+          <KeyValue label="Dispatch id" value={task.source?.dispatchId ? shortId(task.source.dispatchId, 18) : "Not reported"} />
+          <KeyValue label="Primary runtime" value={task.source?.primaryRuntimeId ? shortId(task.source.primaryRuntimeId, 18) : "Not reported"} />
+          <KeyValue
+            label="Session ids"
+            value={task.source?.sessionIds?.length ? `${shortId(task.source.sessionIds[0], 18)}${task.source.sessionIds.length > 1 ? ` +${task.source.sessionIds.length - 1}` : ""}` : "Not reported"}
+          />
+          <KeyValue
+            label="Run ids"
+            value={task.source?.runIds?.length ? `${shortId(task.source.runIds[0], 18)}${task.source.runIds.length > 1 ? ` +${task.source.runIds.length - 1}` : ""}` : "Not reported"}
+          />
+          <KeyValue
+            label="Runtime ids"
+            value={task.source?.runtimeIds?.length ? `${shortId(task.source.runtimeIds[0], 18)}${task.source.runtimeIds.length > 1 ? ` +${task.source.runtimeIds.length - 1}` : ""}` : "Not reported"}
+          />
         </div>
       </SectionCard>
       <div className="mt-3 space-y-3">

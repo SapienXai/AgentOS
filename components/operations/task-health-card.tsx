@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock3, History, RotateCw, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -10,6 +9,13 @@ import { formatRelativeTime, resolveRelativeTimeReferenceMs, shortId } from "@/l
 import { cn } from "@/lib/utils";
 import { KeyValue, SectionCard, StatusBadge, type StatusTone } from "@/components/operations/operations-ui";
 
+export type TaskAuditActivity = {
+  status: "idle" | "running" | "success" | "error";
+  lastRunAt: string | null;
+  title: string;
+  detail: string | null;
+};
+
 export function TaskHealthCard({
   snapshot,
   title = "Task Health",
@@ -17,7 +23,8 @@ export function TaskHealthCard({
   showGroups = false,
   onRefresh,
   onRunAudit,
-  onOpenTask
+  onOpenTask,
+  auditActivity
 }: {
   snapshot: MissionControlSnapshot;
   title?: string;
@@ -26,9 +33,9 @@ export function TaskHealthCard({
   onRefresh?: () => Promise<void> | void;
   onRunAudit?: () => Promise<void> | void;
   onOpenTask?: (taskId: string) => void;
+  auditActivity?: TaskAuditActivity | null;
 }) {
   const health = snapshot.diagnostics.taskHealth;
-  const [auditRunning, setAuditRunning] = useState(false);
 
   if (!health) {
     return (
@@ -47,6 +54,7 @@ export function TaskHealthCard({
   const tone = resolveTaskHealthTone(health);
   const historicalLabel = formatHistoricalLabel(health);
   const auditLabel = health.audit.state === "clean" ? "Clean" : health.audit.state === "findings" ? "Findings" : "Unknown";
+  const referenceMs = resolveRelativeTimeReferenceMs(snapshot.generatedAt);
 
   return (
     <SectionCard
@@ -68,23 +76,22 @@ export function TaskHealthCard({
             variant="secondary"
             size="sm"
             className="h-7 rounded-lg px-2 text-[0.68rem]"
-            disabled={!onRunAudit || auditRunning}
+            disabled={!onRunAudit || auditActivity?.status === "running"}
             title={onRunAudit ? "Run openclaw tasks audit --json through the CLI fallback." : "Task audit is unavailable on this surface."}
             onClick={async () => {
               if (!onRunAudit) {
                 return;
               }
 
-              setAuditRunning(true);
               try {
                 await onRunAudit();
-              } finally {
-                setAuditRunning(false);
+              } catch {
+                // The page-level handler owns user-facing error state.
               }
             }}
           >
             <ShieldCheck className="mr-1.5 h-3 w-3" />
-            {auditRunning ? "Running..." : "Run audit"}
+            {auditActivity?.status === "running" ? "Running..." : auditActivity?.status === "error" ? "Retry audit" : "Run audit"}
           </Button>
         </div>
       }
@@ -118,6 +125,8 @@ export function TaskHealthCard({
           title={historicalLabel}
           detail={resolveTaskHealthDetail(health)}
         />
+
+        <TaskAuditActivityPanel auditActivity={auditActivity} onRunAudit={onRunAudit} referenceMs={referenceMs} />
 
         {showGroups ? <TaskIssueGroups health={health} snapshot={snapshot} onOpenTask={onOpenTask} /> : null}
       </div>
@@ -266,6 +275,67 @@ function TaskHealthNotice({ tone, title, detail }: { tone: StatusTone; title: st
           <p className="text-xs font-semibold">{title}</p>
           <p className="mt-1 text-xs leading-5 opacity-80">{detail}</p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function TaskAuditActivityPanel({
+  auditActivity,
+  onRunAudit,
+  referenceMs
+}: {
+  auditActivity?: TaskAuditActivity | null;
+  onRunAudit?: () => Promise<void> | void;
+  referenceMs: number;
+}) {
+  const isRunning = auditActivity?.status === "running";
+  const isError = auditActivity?.status === "error";
+  const badgeTone: StatusTone = isError ? "danger" : isRunning ? "warning" : auditActivity?.status === "success" ? "success" : "muted";
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/25 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <StatusBadge
+              label={
+                isError
+                  ? "Failed"
+                  : isRunning
+                    ? "Running"
+                    : auditActivity?.status === "success"
+                      ? "Completed"
+                      : "Not run"
+              }
+              tone={badgeTone}
+            />
+            <p className="text-xs font-semibold text-foreground">Last task audit</p>
+          </div>
+          <p className="mt-1 text-xs font-medium leading-5 text-foreground">
+            {auditActivity?.title ?? "No task audit recorded yet."}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {auditActivity?.lastRunAt
+              ? `Completed ${formatRelativeTime(Date.parse(auditActivity.lastRunAt), referenceMs)}.`
+              : "No task audit has been recorded in this session."}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {auditActivity?.detail ?? (isRunning ? "CLI audit is running." : "Run the audit to capture the latest OpenClaw task health result.")}
+          </p>
+        </div>
+        {isError && onRunAudit ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-8 rounded-lg px-2.5 text-[0.7rem]"
+            onClick={() => void onRunAudit()}
+            title="Retry the task audit."
+          >
+            <RotateCw className="mr-1.5 h-3 w-3" />
+            Retry
+          </Button>
+        ) : null}
       </div>
     </div>
   );

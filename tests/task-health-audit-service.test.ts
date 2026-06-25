@@ -40,6 +40,7 @@ test("task health audit normalizes CLI payload into a safe summary", async () =>
   ]);
   assert.equal(result.command, "openclaw tasks audit --json");
   assert.equal(result.transport, "cli-fallback");
+  assert.match(result.completedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(result.audit.state, "findings");
   assert.equal(result.audit.total, 3);
   assert.equal(result.audit.warnings, 1);
