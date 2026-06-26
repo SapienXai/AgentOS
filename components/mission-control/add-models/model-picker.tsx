@@ -58,7 +58,7 @@ export function ModelPicker({
   return (
     <div
       className={cn(
-        "rounded-[18px] border p-3",
+        "rounded-[15px] border p-3",
         isLight
           ? "border-[#e3d5c8] bg-[linear-gradient(180deg,rgba(255,252,248,0.98),rgba(247,241,234,0.95))]"
           : "border-white/10 bg-[linear-gradient(180deg,rgba(10,15,26,0.94),rgba(7,11,20,0.96))]"
@@ -66,11 +66,11 @@ export function ModelPicker({
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className={cn("font-display text-[0.84rem]", isLight ? "text-[#2d241f]" : "text-white")}>
+          <p className={cn("font-display text-[0.78rem]", isLight ? "text-[#2d241f]" : "text-white")}>
             Select models to add
           </p>
         </div>
-        <Badge variant="muted" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
+        <Badge variant="muted" className="px-1.5 py-0.5 text-[8px] tracking-[0.12em]">
           {models.filter((model) => model.alreadyAdded).length} already added
         </Badge>
       </div>
@@ -82,18 +82,18 @@ export function ModelPicker({
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={searchPlaceholder ?? "Search models"}
-            className="h-8 pl-8 text-[11px]"
+            className="h-7 pl-8 text-[10px]"
           />
         </div>
       ) : null}
 
       {hasOpenRouterTabs ? (
         <Tabs defaultValue="recommended" className="mt-3">
-          <TabsList className="h-8 rounded-[16px] p-0.5">
-            <TabsTrigger value="recommended" className="rounded-[13px] px-2 py-1 text-[10px]">
+          <TabsList className="h-7 rounded-[14px] p-0.5">
+            <TabsTrigger value="recommended" className="rounded-[11px] px-2 py-1 text-[9px]">
               Recommended
             </TabsTrigger>
-            <TabsTrigger value="all" className="rounded-[13px] px-2 py-1 text-[10px]">
+            <TabsTrigger value="all" className="rounded-[11px] px-2 py-1 text-[9px]">
               All models
             </TabsTrigger>
           </TabsList>
@@ -129,7 +129,7 @@ export function ModelPicker({
       )}
 
       <div className={cn("mt-3 flex items-center justify-between gap-2 border-t pt-3", isLight ? "border-[#e3d5c8]" : "border-white/10")}>
-        <p className={cn("text-[9px] leading-4", isLight ? "text-[#74665c]" : "text-slate-400")}>
+        <p className={cn("text-[8px] leading-3", isLight ? "text-[#74665c]" : "text-slate-400")}>
           {availableSelectedCount > 0
             ? `${availableSelectedCount} model${availableSelectedCount === 1 ? "" : "s"} selected`
             : "Choose at least one model to add"}
@@ -138,7 +138,7 @@ export function ModelPicker({
           type="button"
           onClick={onAddSelected}
           disabled={availableSelectedCount === 0 || isAdding}
-          className="h-7 rounded-full px-2.5 text-[10px]"
+          className="h-7 rounded-full px-2.5 text-[9px]"
         >
           {isAdding ? "Adding..." : "Add selected models"}
         </Button>
@@ -166,7 +166,7 @@ function ModelList({
     return (
       <div
         className={cn(
-          "rounded-[16px] border border-dashed px-3 py-5 text-center text-[11px]",
+          "rounded-[13px] border border-dashed px-3 py-4 text-center text-[10px]",
           isLight ? "border-[#e3d5c8] bg-white/70 text-[#74665c]" : "border-white/10 bg-white/[0.03] text-slate-400"
         )}
       >
@@ -176,7 +176,7 @@ function ModelList({
   }
 
   return (
-    <div className="max-h-[min(28vh,220px)] space-y-1 overflow-y-auto pr-1">
+    <div className="max-h-[min(40vh,360px)] space-y-1 overflow-y-auto pr-1">
       {models.map((model) => {
         const selected = selectedModelIds.includes(model.id);
         const needsSetup = !model.alreadyAdded && (model.available === false || model.missing);
@@ -188,7 +188,7 @@ function ModelList({
             disabled={model.alreadyAdded}
             onClick={() => onToggleModel(model.id)}
             className={cn(
-              "flex w-full items-start justify-between gap-2 rounded-[14px] border px-2.5 py-2 text-left transition-all",
+              "flex w-full items-start justify-between gap-2 rounded-[12px] border px-2.5 py-1.5 text-left transition-all",
               isLight
                 ? model.alreadyAdded
                   ? "cursor-not-allowed border-[#e6d8cb] bg-[#f7f1ea] opacity-70"
@@ -236,19 +236,19 @@ function ModelList({
                 )}
               </div>
               <div className="min-w-0">
-                <p className={cn("truncate text-[11px] font-medium", isLight ? "text-[#2d241f]" : "text-white")}>
+                <p className={cn("truncate text-[10px] font-medium", isLight ? "text-[#2d241f]" : "text-white")}>
                   {model.name}
                 </p>
-                <p className={cn("mt-0.5 truncate text-[9px] uppercase tracking-[0.16em]", isLight ? "text-[#8c8177]" : "text-slate-500")}>
+                <p className={cn("mt-0.5 truncate text-[8px] uppercase tracking-[0.16em]", isLight ? "text-[#8c8177]" : "text-slate-500")}>
                   {model.id}
                 </p>
-                <div className={cn("mt-1 flex flex-wrap gap-1.5 text-[9px]", isLight ? "text-[#74665c]" : "text-slate-400")}>
+                <div className={cn("mt-1 flex flex-wrap gap-1.5 text-[8px]", isLight ? "text-[#74665c]" : "text-slate-400")}>
                   <span>{model.input}</span>
                   {model.contextWindow ? <span>{Intl.NumberFormat().format(model.contextWindow)} ctx</span> : null}
                   {model.isFree ? <span>free</span> : null}
                 </div>
                 {needsSetup ? (
-                  <p className={cn("mt-1 text-[9px] leading-4", isLight ? "text-amber-800" : "text-amber-100/85")}>
+                  <p className={cn("mt-1 text-[8px] leading-3", isLight ? "text-amber-800" : "text-amber-100/85")}>
                     {resolveSetupHint(model)}
                   </p>
                 ) : null}
@@ -257,23 +257,23 @@ function ModelList({
 
             <div className="shrink-0">
               {model.alreadyAdded ? (
-                <Badge variant="muted" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
+                <Badge variant="muted" className="px-1.5 py-0.5 text-[8px] tracking-[0.12em]">
                   Already added
                 </Badge>
               ) : needsSetup ? (
-                <Badge variant="warning" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
+                <Badge variant="warning" className="px-1.5 py-0.5 text-[8px] tracking-[0.12em]">
                   Needs setup
                 </Badge>
               ) : model.recommended ? (
-                <Badge variant="default" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
+                <Badge variant="default" className="px-1.5 py-0.5 text-[8px] tracking-[0.12em]">
                   Recommended
                 </Badge>
               ) : model.local ? (
-                <Badge variant="success" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
+                <Badge variant="success" className="px-1.5 py-0.5 text-[8px] tracking-[0.12em]">
                   Local
                 </Badge>
               ) : (
-                <Badge variant="muted" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
+                <Badge variant="muted" className="px-1.5 py-0.5 text-[8px] tracking-[0.12em]">
                   Remote
                 </Badge>
               )}

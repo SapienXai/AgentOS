@@ -1,12 +1,25 @@
 "use client";
 
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
-import { CircleCheckBig, Copy, LoaderCircle, RefreshCw, SquareTerminal } from "lucide-react";
+import {
+  Boxes,
+  CircleCheckBig,
+  Copy,
+  Database,
+  HardDrive,
+  HelpCircle,
+  Library,
+  LoaderCircle,
+  RefreshCw,
+  Settings,
+  SquareTerminal,
+  Trash2
+} from "lucide-react";
 
 import { CustomProviderCard } from "@/components/mission-control/add-models/custom-provider-card";
 import { GlobalModelPicker } from "@/components/mission-control/add-models/global-model-picker";
 import { ModelPicker } from "@/components/mission-control/add-models/model-picker";
-import { ProviderCard } from "@/components/mission-control/add-models/provider-card";
+import { ProviderLogo } from "@/components/mission-control/provider-logo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -290,6 +303,26 @@ export function AddModelsDialog({
   const activeConnection = activeProviderId
     ? resolveConnectionDetail(snapshot, providerDrafts, activeProviderId)
     : null;
+  const connectedProviderCount = useMemo(
+    () =>
+      providerDescriptors.filter((provider) =>
+        resolveConnectionDetail(snapshot, providerDrafts, provider.id).connected
+      ).length,
+    [providerDescriptors, providerDrafts, snapshot]
+  );
+  const selectedProviderModelCount = activeProviderId
+    ? snapshot.models.filter((model) => modelMatchesProvider(activeProviderId, model.id, model.provider)).length +
+      activeDraft.models.length
+    : 0;
+  const selectedProviderMaxContext = activeProviderId
+    ? Math.max(
+        0,
+        ...snapshot.models
+          .filter((model) => modelMatchesProvider(activeProviderId, model.id, model.provider))
+          .map((model) => model.contextWindow ?? 0),
+        ...activeDraft.models.map((model) => model.contextWindow ?? 0)
+      )
+    : 0;
   const showLoadingHero =
     Boolean(activeProviderId && activeDescriptor) &&
     (activeDraft.flowState === "discovery-loading" ||
@@ -894,97 +927,215 @@ export function AddModelsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          "flex h-[80dvh] max-h-[80dvh] w-[calc(100vw-16px)] max-w-[760px] flex-col gap-0 overflow-hidden p-0 sm:h-[min(80dvh,700px)] sm:max-h-[min(80dvh,700px)] sm:w-[min(760px,calc(100vw-40px))]",
-          surfaceTheme === "light" && "agentos-light-modal"
+          "flex h-[min(90dvh,900px)] max-h-[90dvh] w-[calc(100vw-16px)] max-w-[1540px] flex-col gap-0 overflow-hidden rounded-[26px] p-0 sm:w-[min(1540px,calc(100vw-42px))]",
+          isLight
+            ? "agentos-light-modal border-border bg-card text-card-foreground shadow-[0_35px_100px_rgba(63,47,34,0.18),0_0_0_1px_rgba(120,92,66,0.08)]"
+            : "border-white/12 bg-[#070b14] text-white shadow-[0_35px_130px_rgba(0,0,0,0.68),0_0_80px_rgba(124,58,237,0.13)]"
         )}
       >
-        <DialogHeader className="shrink-0 border-b border-white/10 bg-[linear-gradient(180deg,rgba(12,18,31,0.96),rgba(9,13,24,0.98))] px-4 py-3.5 pr-10">
-          <DialogTitle className="text-[1.05rem]">Add Models</DialogTitle>
-          <DialogDescription className="max-w-[560px] text-[11px] leading-[1rem] text-slate-400">
-            Connect or refresh providers first, then browse the catalog when you want to add models in bulk.
-          </DialogDescription>
+        <DialogHeader
+          className={cn(
+            "relative shrink-0 border-b px-6 py-4 pr-14",
+            isLight
+              ? "border-border bg-[radial-gradient(circle_at_8%_0%,hsl(var(--primary)/0.10),transparent_28%),linear-gradient(180deg,hsl(var(--card)),hsl(var(--muted)/0.64))]"
+              : "border-white/10 bg-[radial-gradient(circle_at_8%_0%,rgba(124,58,237,0.16),transparent_28%),linear-gradient(180deg,rgba(11,17,30,0.98),rgba(7,11,20,0.98))]"
+          )}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                "flex h-11 w-11 items-center justify-center rounded-[14px] border",
+                isLight
+                  ? "border-primary/20 bg-primary/10 text-primary shadow-[0_18px_42px_rgba(124,58,237,0.10)]"
+                  : "border-violet-300/25 bg-[linear-gradient(145deg,rgba(124,58,237,0.88),rgba(76,29,149,0.92))] text-white shadow-[0_0_38px_rgba(124,58,237,0.28)]"
+              )}
+            >
+              <Library className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className={cn("font-display text-[1.35rem] leading-none tracking-[-0.03em]", isLight ? "text-foreground" : "text-white")}>
+                Model Library
+              </DialogTitle>
+              <DialogDescription className={cn("mt-1.5 max-w-[560px] text-[0.78rem] leading-4", isLight ? "text-muted-foreground" : "text-slate-300")}>
+                Manage providers and discover models.
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
         <Tabs
           value={activeTab}
           onValueChange={(value) => setActiveTab(value as "catalog" | "providers")}
-          className="min-h-0 flex flex-1 flex-col"
+          className={cn(
+            "min-h-0 flex flex-1 flex-col lg:grid lg:grid-cols-[190px_minmax(0,1fr)]",
+            isLight
+              ? "bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--muted)/0.45))]"
+              : "bg-[linear-gradient(180deg,rgba(5,8,17,0.98),rgba(4,7,14,0.99))]"
+          )}
         >
-          <div className="shrink-0 border-b border-white/10 px-4 py-3">
-            <TabsList className="h-8 rounded-[16px] p-0.5">
-              <TabsTrigger value="providers" className="rounded-[13px] px-2.5 py-1 text-[10px]">
+          <div className={cn("flex shrink-0 flex-col border-b px-3 py-3 lg:min-h-0 lg:border-b-0 lg:border-r", isLight ? "border-border bg-card/65" : "border-white/10 bg-slate-950/25")}>
+            <TabsList className="grid h-auto gap-1.5 rounded-none bg-transparent p-0">
+              <TabsTrigger
+                value="catalog"
+                className={cn(
+                  "justify-start rounded-[11px] px-2.5 py-2 text-[0.76rem]",
+                  isLight ? "text-muted-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary" : "data-[state=active]:bg-violet-500/25"
+                )}
+              >
+                <Boxes className="mr-2 h-4 w-4" />
+                Available
+              </TabsTrigger>
+              <TabsTrigger
+                value="providers"
+                className={cn(
+                  "justify-start rounded-[11px] px-2.5 py-2 text-[0.76rem]",
+                  isLight ? "text-muted-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary" : "data-[state=active]:bg-violet-500/25"
+                )}
+              >
+                <Database className="mr-2 h-4 w-4" />
                 Providers
               </TabsTrigger>
-              <TabsTrigger value="catalog" className="rounded-[13px] px-2.5 py-1 text-[10px]">
+              <button
+                type="button"
+                className={cn("flex cursor-not-allowed items-center rounded-[11px] px-2.5 py-2 text-left text-[0.76rem]", isLight ? "text-muted-foreground/70" : "text-slate-500")}
+                title="Catalog tab already includes global catalog search."
+              >
+                <Library className="mr-2 h-4 w-4" />
                 Catalog
-              </TabsTrigger>
+              </button>
+              <button
+                type="button"
+                className={cn("flex cursor-not-allowed items-center rounded-[11px] px-2.5 py-2 text-left text-[0.76rem]", isLight ? "text-muted-foreground/70" : "text-slate-500")}
+                title="Local models are managed through the Ollama provider."
+              >
+                <HardDrive className="mr-2 h-4 w-4" />
+                Local Models
+              </button>
+              <button
+                type="button"
+                className={cn("flex cursor-not-allowed items-center rounded-[11px] px-2.5 py-2 text-left text-[0.76rem]", isLight ? "text-muted-foreground/70" : "text-slate-500")}
+                title="Defaults are managed from model selection and settings."
+              >
+                <Settings className="mr-2 h-4 w-4" />
+                Defaults
+              </button>
             </TabsList>
+            <div className={cn("mt-auto hidden rounded-[14px] border p-3 text-[0.66rem] leading-4 lg:block", isLight ? "border-border bg-muted/35 text-muted-foreground" : "border-white/10 bg-white/[0.035] text-slate-400")}>
+              <HelpCircle className={cn("mb-1.5 h-4 w-4", isLight ? "text-muted-foreground" : "text-slate-300")} />
+              Providers give AgentOS access to model catalogs and keep them up to date.
+              <span className={cn("mt-2 block", isLight ? "text-primary" : "text-violet-300")}>Learn more -&gt;</span>
+            </div>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <TabsContent value="providers" className="!mt-0 m-0 h-full">
-              <div className="space-y-4 px-3 py-3 sm:px-4 sm:py-4">
-                <div className="rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(13,20,34,0.94),rgba(9,13,24,0.96))] p-3">
-                  <div className="flex items-start justify-between gap-3">
+              <div className="grid min-h-full gap-0 xl:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="space-y-3 px-4 py-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="font-display text-[0.84rem] text-white">All providers</p>
-                      <p className="mt-1 text-[9px] leading-[0.95rem] text-slate-400">
-                        Connect or refresh a provider, then return to the catalog when you want to add models in one pass.
-                      </p>
+                      <p className={cn("font-display text-[1.05rem]", isLight ? "text-foreground" : "text-white")}>Providers</p>
+                      <p className={cn("mt-0.5 text-[0.76rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Connect providers to access and manage models.</p>
                     </div>
-                    <Badge variant="muted" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
-                      {providerDescriptors.length + 1} total
-                    </Badge>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge className={cn("px-2.5 py-1 text-[0.66rem]", isLight ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-emerald-300/20 bg-emerald-400/10 text-emerald-200")}>
+                        <span className="mr-2 h-2 w-2 rounded-full bg-emerald-400" />
+                        {connectedProviderCount} Connected
+                      </Badge>
+                      <Badge variant="muted" className="px-2.5 py-1 text-[0.66rem]">
+                        {activeDraft.loaded ? "Selected provider loaded" : "Select a provider"}
+                      </Badge>
+                      <Button
+                        type="button"
+                        className="h-7 rounded-[9px] bg-violet-600 px-2.5 text-[0.66rem]"
+                        disabled={!activeProviderId || isDiscovering}
+                        onClick={() => {
+                          if (activeProviderId) {
+                            void discoverProvider(activeProviderId, true);
+                          }
+                        }}
+                      >
+                        <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                        Refresh selected
+                      </Button>
+                    </div>
                   </div>
 
-                  <div className="relative mt-2.5">
-                    <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-[rgba(13,20,34,0.96)] to-transparent" />
-                    <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-gradient-to-l from-[rgba(13,20,34,0.96)] to-transparent" />
-                    <div className="-mx-1 overflow-x-auto overscroll-x-contain pb-1">
-                      <div className="flex min-w-max gap-2.5 px-1">
-                        {providerDescriptors.map((provider) => (
-                          <div key={provider.id} className="w-[236px] shrink-0 snap-start sm:w-[244px]">
-                            <ProviderCard
-                              descriptor={provider}
-                              active={activeProviderId === provider.id && activeSetupMode === "standard"}
-                              compact
-                              surfaceTheme={surfaceTheme}
-                              connected={resolveConnectionDetail(snapshot, providerDrafts, provider.id).connected}
-                              detail={resolveConnectionDetail(snapshot, providerDrafts, provider.id).detail}
-                              onClick={() => {
-                                void selectProvider(provider.id);
-                              }}
-                            />
+                  <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                    {providerDescriptors.map((provider) => {
+                      const connection = resolveConnectionDetail(snapshot, providerDrafts, provider.id);
+                      const providerModelCount = snapshot.models.filter((model) => modelMatchesProvider(provider.id, model.id, model.provider)).length +
+                        resolveDraft(providerDrafts[provider.id]).models.length;
+                      const active = activeProviderId === provider.id && activeSetupMode === "standard";
+
+                      return (
+                        <button
+                          key={provider.id}
+                          type="button"
+                          onClick={() => {
+                            void selectProvider(provider.id);
+                          }}
+                          className={cn(
+                            "min-h-[168px] rounded-[15px] border p-3 text-left transition",
+                            active
+                              ? isLight
+                                ? "border-primary/45 bg-primary/10 shadow-[0_18px_44px_rgba(124,58,237,0.12)]"
+                                : "border-violet-400 bg-[radial-gradient(circle_at_8%_0%,rgba(124,58,237,0.20),transparent_36%),linear-gradient(180deg,rgba(20,27,48,0.92),rgba(10,15,28,0.92))] shadow-[0_0_0_1px_rgba(168,85,247,0.22),0_0_34px_rgba(124,58,237,0.16)]"
+                              : isLight
+                                ? "border-border bg-card hover:border-primary/25 hover:bg-accent/60"
+                                : "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(10,15,28,0.86))] hover:border-violet-300/35 hover:bg-white/[0.055]"
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <ProviderLogo provider={provider.id} className="h-10 w-10 rounded-[12px]" />
+                            <Badge
+                              className={cn(
+                                "px-2 py-0.5 text-[0.62rem]",
+                                connection.connected
+                                  ? isLight ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-emerald-300/20 bg-emerald-400/10 text-emerald-200"
+                                  : provider.connectKind === "local"
+                                    ? isLight ? "border-cyan-300 bg-cyan-50 text-cyan-800" : "border-cyan-300/20 bg-cyan-400/10 text-cyan-200"
+                                    : isLight ? "border-amber-300 bg-amber-50 text-amber-800" : "border-amber-300/20 bg-amber-400/10 text-amber-200"
+                              )}
+                            >
+                              {connection.connected ? "Connected" : provider.connectKind === "local" ? "Detected" : "Not connected"}
+                            </Badge>
                           </div>
-                        ))}
-                        <div className="w-[236px] shrink-0 snap-start sm:w-[244px]">
-                          <CustomProviderCard
-                            active={activeProviderId === "custom" && activeSetupMode === "custom-openai-compatible"}
-                            compact
-                            surfaceTheme={surfaceTheme}
-                            connected={false}
-                            detail={resolveCustomEndpointDetail(resolveDraft(providerDrafts.custom)?.endpoint)}
-                            onClick={() => {
-                              setActiveProvider("custom");
-                              setActiveSetupMode("custom-openai-compatible");
-                              setActiveTab("providers");
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="pointer-events-none absolute bottom-1.5 right-3 z-10 rounded-full border border-white/10 bg-slate-950/70 px-2 py-0.5 text-[8px] uppercase tracking-[0.14em] text-slate-400">
-                      Scroll -&gt;
-                    </div>
+                          <p className={cn("mt-3 font-display text-[0.92rem]", isLight ? "text-foreground" : "text-white")}>{provider.label}</p>
+                          <p className={cn("mt-1.5 line-clamp-2 text-[0.76rem] leading-5", isLight ? "text-muted-foreground" : "text-slate-300")}>{provider.description}</p>
+                          <div className={cn("mt-3 text-[0.68rem] leading-4", isLight ? "text-muted-foreground" : "text-slate-400")}>
+                            <p>{providerModelCount} model{providerModelCount === 1 ? "" : "s"}</p>
+                            <p>{connection.detail || provider.helperText}</p>
+                          </div>
+                          <div className="mt-3 flex gap-1.5">
+                            <span className={cn("rounded-[9px] border px-3 py-1.5 text-[0.68rem] font-medium", isLight ? "border-border bg-muted/45 text-foreground" : "border-white/10 bg-white/[0.04] text-white")}>
+                              {connection.connected ? "Configured" : provider.connectKind === "local" ? "Detected" : "Needs setup"}
+                            </span>
+                            <span className={cn("rounded-[9px] border px-3 py-1.5 text-[0.68rem] font-medium", isLight ? "border-border bg-card text-muted-foreground" : "border-white/10 bg-white/[0.04] text-slate-200")}>
+                              Select
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                    <CustomProviderCard
+                      active={activeProviderId === "custom" && activeSetupMode === "custom-openai-compatible"}
+                      surfaceTheme={surfaceTheme}
+                      connected={false}
+                      detail={resolveCustomEndpointDetail(resolveDraft(providerDrafts.custom)?.endpoint)}
+                      onClick={() => {
+                        setActiveProvider("custom");
+                        setActiveSetupMode("custom-openai-compatible");
+                        setActiveTab("providers");
+                      }}
+                    />
                   </div>
-                </div>
 
-                <div className="rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(11,18,32,0.96),rgba(6,10,18,0.98))] p-3">
+                <div className={cn("rounded-[18px] border p-3", isLight ? "border-border bg-card shadow-card" : "border-white/10 bg-[linear-gradient(180deg,rgba(11,18,32,0.96),rgba(6,10,18,0.98))]")}>
                   {activeProviderId && activeDescriptor ? (
                     <>
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="font-display text-[0.88rem] text-white">
+                          <p className={cn("font-display text-[0.88rem]", isLight ? "text-foreground" : "text-white")}>
                             {activeSetupMode === "custom-openai-compatible"
                               ? "Custom OpenAI-compatible provider"
                               : activeDescriptor.label}
@@ -1017,8 +1168,8 @@ export function AddModelsDialog({
                                   ? "border-emerald-300 bg-emerald-50 text-emerald-800"
                                   : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
                                 : step.status === "active"
-                                  ? "border-cyan-300/20 bg-cyan-300/10 text-cyan-100"
-                                  : "border-white/10 bg-white/[0.03] text-slate-500"
+                                  ? isLight ? "border-cyan-300 bg-cyan-50 text-cyan-800" : "border-cyan-300/20 bg-cyan-300/10 text-cyan-100"
+                                  : isLight ? "border-border bg-muted/40 text-muted-foreground" : "border-white/10 bg-white/[0.03] text-slate-500"
                             )}
                           >
                             <span
@@ -1037,23 +1188,23 @@ export function AddModelsDialog({
                       </div>
 
                       {activeDraft.statusMessage && !showLoadingHero ? (
-                        <div className="mt-3 rounded-[16px] border border-white/10 bg-white/[0.04] px-3 py-2">
-                          <p className="text-[11px] text-slate-200">{activeDraft.statusMessage}</p>
+                        <div className={cn("mt-3 rounded-[16px] border px-3 py-2", isLight ? "border-border bg-muted/35" : "border-white/10 bg-white/[0.04]")}>
+                          <p className={cn("text-[11px]", isLight ? "text-foreground" : "text-slate-200")}>{activeDraft.statusMessage}</p>
                         </div>
                       ) : null}
 
                       {activeDraft.errorMessage ? (
-                        <div className="mt-3 rounded-[16px] border border-rose-400/20 bg-rose-400/[0.08] px-3 py-2 text-[11px] text-rose-100">
+                        <div className={cn("mt-3 rounded-[16px] border px-3 py-2 text-[11px]", isLight ? "border-rose-200 bg-rose-50 text-rose-800" : "border-rose-400/20 bg-rose-400/[0.08] text-rose-100")}>
                           {activeDraft.errorMessage}
                         </div>
                       ) : null}
 
                       {showGatewayRecoveryCommand ? (
-                        <div className="mt-3 rounded-[16px] border border-amber-300/20 bg-amber-300/[0.08] px-3 py-2">
+                        <div className={cn("mt-3 rounded-[16px] border px-3 py-2", isLight ? "border-amber-200 bg-amber-50" : "border-amber-300/20 bg-amber-300/[0.08]")}>
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
-                              <p className="text-[11px] font-medium text-amber-50">Gateway recovery</p>
-                              <p className="mt-1 max-w-[480px] text-[10px] leading-[0.98rem] text-amber-100/78">
+                              <p className={cn("text-[11px] font-medium", isLight ? "text-amber-900" : "text-amber-50")}>Gateway recovery</p>
+                              <p className={cn("mt-1 max-w-[480px] text-[10px] leading-[0.98rem]", isLight ? "text-amber-800" : "text-amber-100/78")}>
                                 Automatic Gateway auth repair did not finish. Inspect Gateway status, then retry adding models.
                               </p>
                             </div>
@@ -1096,8 +1247,8 @@ export function AddModelsDialog({
                               </Button>
                             </div>
                           </div>
-                          <div className="mt-2.5 overflow-x-auto rounded-[14px] border border-white/10 bg-slate-950/60 px-3 py-2">
-                            <code className="text-[10px] text-slate-200">{activeDraft.manualCommand}</code>
+                          <div className={cn("mt-2.5 overflow-x-auto rounded-[14px] border px-3 py-2", isLight ? "border-amber-200 bg-white/70" : "border-white/10 bg-slate-950/60")}>
+                            <code className={cn("text-[10px]", isLight ? "text-foreground" : "text-slate-200")}>{activeDraft.manualCommand}</code>
                           </div>
                         </div>
                       ) : null}
@@ -1105,11 +1256,11 @@ export function AddModelsDialog({
                       {!showLoadingHero ? (
                         <>
                           {activeProviderId === "openai-codex" ? (
-                            <div className="mt-4 rounded-[20px] border border-white/10 bg-white/[0.03] p-3">
+                            <div className={cn("mt-4 rounded-[20px] border p-3", isLight ? "border-border bg-muted/35" : "border-white/10 bg-white/[0.03]")}>
                               <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
-                                  <p className="font-display text-[0.88rem] text-white">Use Codex app-server</p>
-                                  <p className="mt-1 max-w-[500px] text-[10px] leading-[0.98rem] text-slate-400">
+                                  <p className={cn("font-display text-[0.88rem]", isLight ? "text-foreground" : "text-white")}>Use Codex app-server</p>
+                                  <p className={cn("mt-1 max-w-[500px] text-[10px] leading-[0.98rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
                                     OpenClaw {OPENCLAW_RECOMMENDED_VERSION} uses the Codex app-server plugin for ChatGPT-backed models.
                                   </p>
                                 </div>
@@ -1154,11 +1305,11 @@ export function AddModelsDialog({
                               </div>
 
                               {activeDraft.manualCommand ? (
-                                <div className="mt-3 rounded-[16px] border border-cyan-300/15 bg-cyan-300/[0.07] p-3">
+                                <div className={cn("mt-3 rounded-[16px] border p-3", isLight ? "border-cyan-200 bg-cyan-50" : "border-cyan-300/15 bg-cyan-300/[0.07]")}>
                                   <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
-                                      <p className="text-[11px] font-medium text-cyan-50">Finish setup in Terminal</p>
-                                      <p className="mt-1 max-w-[480px] text-[10px] leading-[0.98rem] text-cyan-100/80">
+                                      <p className={cn("text-[11px] font-medium", isLight ? "text-cyan-900" : "text-cyan-50")}>Finish setup in Terminal</p>
+                                      <p className={cn("mt-1 max-w-[480px] text-[10px] leading-[0.98rem]", isLight ? "text-cyan-800" : "text-cyan-100/80")}>
                                         Open Terminal, complete the Codex app-server setup, then return here and check discovery.
                                       </p>
                                     </div>
@@ -1211,8 +1362,8 @@ export function AddModelsDialog({
                                       </Button>
                                     </div>
                                   </div>
-                                  <div className="mt-2.5 overflow-x-auto rounded-[14px] border border-white/10 bg-slate-950/60 px-3 py-2">
-                                    <code className="text-[10px] text-slate-200">{activeDraft.manualCommand}</code>
+                                  <div className={cn("mt-2.5 overflow-x-auto rounded-[14px] border px-3 py-2", isLight ? "border-cyan-200 bg-white/70" : "border-white/10 bg-slate-950/60")}>
+                                    <code className={cn("text-[10px]", isLight ? "text-foreground" : "text-slate-200")}>{activeDraft.manualCommand}</code>
                                   </div>
                                 </div>
                               ) : null}
@@ -1220,11 +1371,11 @@ export function AddModelsDialog({
                           ) : null}
 
                           {activeDescriptor.connectKind === "apiKey" ? (
-                            <div className="mt-4 rounded-[20px] border border-white/10 bg-white/[0.03] p-3">
+                            <div className={cn("mt-4 rounded-[20px] border p-3", isLight ? "border-border bg-muted/35" : "border-white/10 bg-white/[0.03]")}>
                               {activeSetupMode === "custom-openai-compatible" ? (
-                                <div className="mb-3 rounded-[16px] border border-cyan-300/20 bg-cyan-300/[0.07] px-3 py-2">
-                                  <p className="text-[11px] font-medium text-cyan-50">Custom OpenAI-compatible provider</p>
-                                  <p className="mt-1 max-w-[500px] text-[10px] leading-[0.98rem] text-cyan-100/80">
+                                <div className={cn("mb-3 rounded-[16px] border px-3 py-2", isLight ? "border-cyan-200 bg-cyan-50" : "border-cyan-300/20 bg-cyan-300/[0.07]")}>
+                                  <p className={cn("text-[11px] font-medium", isLight ? "text-cyan-900" : "text-cyan-50")}>Custom OpenAI-compatible provider</p>
+                                  <p className={cn("mt-1 max-w-[500px] text-[10px] leading-[0.98rem]", isLight ? "text-cyan-800" : "text-cyan-100/80")}>
                                     OpenClaw stores this as an explicit provider under <code>models.providers.&lt;id&gt;</code>. Use a `/v1` base URL and an API key from your provider.
                                   </p>
                                 </div>
@@ -1233,7 +1384,7 @@ export function AddModelsDialog({
                                 {activeSetupMode === "custom-openai-compatible" ? (
                                   <>
                                     <div className="min-w-[220px] flex-1">
-                                      <label className="block text-[9px] uppercase tracking-[0.16em] text-slate-500">
+                                      <label className={cn("block text-[9px] uppercase tracking-[0.16em]", isLight ? "text-muted-foreground" : "text-slate-500")}>
                                         Base URL
                                       </label>
                                       <Input
@@ -1245,7 +1396,7 @@ export function AddModelsDialog({
                                       />
                                     </div>
                                     <div className="min-w-[180px] flex-1">
-                                      <label className="block text-[9px] uppercase tracking-[0.16em] text-slate-500">
+                                      <label className={cn("block text-[9px] uppercase tracking-[0.16em]", isLight ? "text-muted-foreground" : "text-slate-500")}>
                                         Manual model ID
                                       </label>
                                       <Input
@@ -1259,7 +1410,7 @@ export function AddModelsDialog({
                                 ) : null}
                                 {activeSetupMode !== "custom-openai-compatible" ? (
                                   <div className="min-w-0 flex-1">
-                                    <label className="block text-[9px] uppercase tracking-[0.16em] text-slate-500">
+                                    <label className={cn("block text-[9px] uppercase tracking-[0.16em]", isLight ? "text-muted-foreground" : "text-slate-500")}>
                                       API key
                                     </label>
                                     <Input
@@ -1273,7 +1424,7 @@ export function AddModelsDialog({
                                 ) : null}
                                 {activeSetupMode === "custom-openai-compatible" ? (
                                   <div className="min-w-[220px] flex-1">
-                                    <label className="block text-[9px] uppercase tracking-[0.16em] text-slate-500">
+                                    <label className={cn("block text-[9px] uppercase tracking-[0.16em]", isLight ? "text-muted-foreground" : "text-slate-500")}>
                                       API key
                                     </label>
                                     <Input
@@ -1286,7 +1437,7 @@ export function AddModelsDialog({
                                   </div>
                                 ) : null}
                                 {activeSetupMode === "custom-openai-compatible" ? (
-                                  <p className="w-full text-[9px] leading-[0.9rem] text-slate-500">
+                                  <p className={cn("w-full text-[9px] leading-[0.9rem]", isLight ? "text-muted-foreground" : "text-slate-500")}>
                                     Provider ID is inferred as {resolveCustomDraftProviderId(activeDraft) || "provider-id"} from the base URL. Models are saved as {resolveCustomDraftProviderId(activeDraft) || "provider-id"}/&lt;model&gt;.
                                   </p>
                                 ) : null}
@@ -1320,11 +1471,11 @@ export function AddModelsDialog({
                                 </Button>
                               </div>
                               {activeDraft.manualCommand ? (
-                                <div className="mt-3 rounded-[16px] border border-cyan-300/15 bg-cyan-300/[0.07] p-3">
+                                <div className={cn("mt-3 rounded-[16px] border p-3", isLight ? "border-cyan-200 bg-cyan-50" : "border-cyan-300/15 bg-cyan-300/[0.07]")}>
                                   <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
-                                      <p className="text-[11px] font-medium text-cyan-50">Finish setup in Terminal</p>
-                                      <p className="mt-1 max-w-[480px] text-[10px] leading-[0.98rem] text-cyan-100/80">
+                                      <p className={cn("text-[11px] font-medium", isLight ? "text-cyan-900" : "text-cyan-50")}>Finish setup in Terminal</p>
+                                      <p className={cn("mt-1 max-w-[480px] text-[10px] leading-[0.98rem]", isLight ? "text-cyan-800" : "text-cyan-100/80")}>
                                         Open Terminal, paste the provider API key there, then return here and check discovery.
                                       </p>
                                     </div>
@@ -1377,8 +1528,8 @@ export function AddModelsDialog({
                                       </Button>
                                     </div>
                                   </div>
-                                  <div className="mt-2.5 overflow-x-auto rounded-[14px] border border-white/10 bg-slate-950/60 px-3 py-2">
-                                    <code className="text-[10px] text-slate-200">{activeDraft.manualCommand}</code>
+                                  <div className={cn("mt-2.5 overflow-x-auto rounded-[14px] border px-3 py-2", isLight ? "border-cyan-200 bg-white/70" : "border-white/10 bg-slate-950/60")}>
+                                    <code className={cn("text-[10px]", isLight ? "text-foreground" : "text-slate-200")}>{activeDraft.manualCommand}</code>
                                   </div>
                                 </div>
                               ) : null}
@@ -1396,10 +1547,10 @@ export function AddModelsDialog({
                             >
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div className="min-w-0">
-                                  <p className="font-display text-[0.92rem] text-white">
+                                  <p className={cn("font-display text-[0.92rem]", isLight ? "text-foreground" : "text-white")}>
                                     {isDiscovering ? "Discovering models..." : discoveryActionLabel}
                                   </p>
-                                  <p className="mt-1 max-w-[520px] text-[11px] leading-[1rem] text-slate-400">
+                                  <p className={cn("mt-1 max-w-[520px] text-[11px] leading-[1rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
                                     {isDiscovering
                                       ? "OpenClaw is pulling the provider catalog into this workspace."
                                       : discoveryDescription}
@@ -1449,6 +1600,7 @@ export function AddModelsDialog({
                               onCopyCommand={(command) => {
                                 void copyText(command);
                               }}
+                              surfaceTheme={surfaceTheme}
                             />
                           ) : null}
 
@@ -1501,7 +1653,7 @@ export function AddModelsDialog({
                               href={activeDraft.docsUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="mt-3 inline-flex text-[10px] text-slate-300 underline underline-offset-4"
+                              className={cn("mt-3 inline-flex text-[10px] underline underline-offset-4", isLight ? "text-primary" : "text-slate-300")}
                             >
                               OpenClaw model docs
                             </a>
@@ -1525,10 +1677,10 @@ export function AddModelsDialog({
                             <div className="relative mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-cyan-300/20 bg-cyan-300/[0.08] shadow-[0_0_0_8px_rgba(34,211,238,0.05)]">
                               <LoaderCircle className="h-8 w-8 animate-spin text-cyan-200" />
                             </div>
-                            <p className="font-display text-[1.1rem] leading-[1.2rem] tracking-[0.01em] text-white">
+                            <p className={cn("font-display text-[1.1rem] leading-[1.2rem] tracking-[0.01em]", isLight ? "text-foreground" : "text-white")}>
                               {loadingHeroTitle}
                             </p>
-                            <p className="mt-2 max-w-[280px] text-[11px] leading-[1rem] text-slate-400">
+                            <p className={cn("mt-2 max-w-[280px] text-[11px] leading-[1rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
                               {loadingHeroCopy}
                             </p>
                             <div className="mt-4 flex gap-1.5">
@@ -1541,10 +1693,10 @@ export function AddModelsDialog({
                       )}
                     </>
                   ) : (
-                    <div className="flex min-h-[180px] items-center justify-center rounded-[20px] border border-dashed border-white/10 bg-white/[0.02] px-4 py-6 text-center">
+                    <div className={cn("flex min-h-[180px] items-center justify-center rounded-[20px] border border-dashed px-4 py-6 text-center", isLight ? "border-border bg-muted/35" : "border-white/10 bg-white/[0.02]")}>
                       <div>
-                        <p className="font-display text-[0.88rem] text-white">Choose a provider to begin</p>
-                        <p className="mt-1.5 max-w-[360px] text-[11px] leading-[0.98rem] text-slate-400">
+                        <p className={cn("font-display text-[0.88rem]", isLight ? "text-foreground" : "text-white")}>Choose a provider to begin</p>
+                        <p className={cn("mt-1.5 max-w-[360px] text-[11px] leading-[0.98rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
                           Start with ChatGPT, OpenRouter, Gemini, DeepSeek, Mistral, or Ollama Local. The flow will
                           guide you through connect, discovery, selection, and add.
                         </p>
@@ -1552,16 +1704,128 @@ export function AddModelsDialog({
                     </div>
                   )}
                 </div>
+                </div>
+                <aside
+                  className={cn(
+                    "border-t p-4 xl:border-l xl:border-t-0",
+                    isLight
+                      ? "border-border bg-card/80"
+                      : "border-white/10 bg-[linear-gradient(180deg,rgba(10,15,28,0.92),rgba(6,9,18,0.96))]"
+                  )}
+                >
+                  {activeProviderId && activeDescriptor ? (
+                    <div className="sticky top-0">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className={cn("font-display text-[1.05rem]", isLight ? "text-foreground" : "text-white")}>
+                            {activeSetupMode === "custom-openai-compatible" ? "Custom provider" : activeDescriptor.label}
+                          </p>
+                          <p className={cn("mt-0.5 text-[0.72rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
+                            {activeSetupMode === "custom-openai-compatible" ? "OpenAI-compatible endpoint" : activeDescriptor.description}
+                          </p>
+                        </div>
+                        <ProviderLogo provider={activeProviderId} className="h-12 w-12 rounded-[13px]" />
+                      </div>
+
+                      <Badge
+                        className={cn(
+                          "mt-3 px-2.5 py-1 text-[0.68rem]",
+                          activeConnection?.connected
+                            ? isLight ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-emerald-300/20 bg-emerald-400/10 text-emerald-200"
+                            : isLight ? "border-amber-300 bg-amber-50 text-amber-800" : "border-amber-300/20 bg-amber-400/10 text-amber-200"
+                        )}
+                      >
+                        <span className={cn("mr-2 h-2 w-2 rounded-full", activeConnection?.connected ? "bg-emerald-400" : "bg-amber-400")} />
+                        {activeConnection?.connected ? "Connected" : "Not connected"}
+                      </Badge>
+
+                      <div className={cn("mt-4 border-t pt-4", isLight ? "border-border" : "border-white/10")}>
+                        <p className={cn("font-display text-[0.84rem]", isLight ? "text-foreground" : "text-white")}>Overview</p>
+                        <div className="mt-3 space-y-3">
+                          <InspectorMetric label="Models discovered" value={String(selectedProviderModelCount)} surfaceTheme={surfaceTheme} />
+                          <InspectorMetric label="Context window support" value={selectedProviderMaxContext > 0 ? `Up to ${Intl.NumberFormat().format(selectedProviderMaxContext / 1000)}k` : "Unknown"} surfaceTheme={surfaceTheme} />
+                          <InspectorMetric label="Discovery state" value={activeDraft.loaded ? "Loaded this session" : "Not refreshed"} surfaceTheme={surfaceTheme} />
+                          <InspectorMetric label="Status" value={activeConnection?.connected ? "Healthy" : "Needs setup"} tone={activeConnection?.connected ? "success" : "warning"} surfaceTheme={surfaceTheme} />
+                        </div>
+                      </div>
+
+                      <div className={cn("mt-4 border-t pt-4", isLight ? "border-border" : "border-white/10")}>
+                        <p className={cn("font-display text-[0.84rem]", isLight ? "text-foreground" : "text-white")}>Actions</p>
+                        <div className="mt-3 space-y-2">
+                          <button
+                            type="button"
+                            className={cn(
+                              "flex w-full items-center gap-2.5 rounded-[12px] border px-3 py-2.5 text-left transition",
+                              isLight
+                                ? "border-border bg-card text-foreground hover:border-primary/25 hover:bg-accent"
+                                : "border-white/10 bg-white/[0.04] hover:border-violet-300/30 hover:bg-violet-400/10"
+                            )}
+                            onClick={() => {
+                              void discoverProvider(activeProviderId, true);
+                            }}
+                          >
+                            <RefreshCw className={cn("h-4 w-4", isLight ? "text-primary" : "text-slate-300")} />
+                            <span>
+                              <span className={cn("block text-[0.78rem] font-medium", isLight ? "text-foreground" : "text-white")}>Refresh models</span>
+                              <span className={cn("block text-[0.66rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Discover new models</span>
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className={cn(
+                              "flex w-full items-center gap-2.5 rounded-[12px] border px-3 py-2.5 text-left transition",
+                              isLight
+                                ? "border-border bg-card text-foreground hover:border-primary/25 hover:bg-accent"
+                                : "border-white/10 bg-white/[0.04] hover:border-violet-300/30 hover:bg-violet-400/10"
+                            )}
+                            onClick={() => {
+                              void runStatus(activeProviderId);
+                            }}
+                          >
+                            <Settings className={cn("h-4 w-4", isLight ? "text-primary" : "text-slate-300")} />
+                            <span>
+                              <span className={cn("block text-[0.78rem] font-medium", isLight ? "text-foreground" : "text-white")}>Manage connection</span>
+                              <span className={cn("block text-[0.66rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>API key, base URL, and settings</span>
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled
+                            className={cn(
+                              "flex w-full cursor-not-allowed items-center gap-2.5 rounded-[12px] border px-3 py-2.5 text-left opacity-70",
+                              isLight ? "border-rose-200 bg-rose-50" : "border-rose-400/20 bg-rose-500/[0.07]"
+                            )}
+                            title="Disconnect requires an OpenClaw provider removal capability."
+                          >
+                            <Trash2 className={cn("h-4 w-4", isLight ? "text-rose-700" : "text-rose-300")} />
+                            <span>
+                              <span className={cn("block text-[0.78rem] font-medium", isLight ? "text-rose-800" : "text-rose-200")}>Disconnect</span>
+                              <span className={cn("block text-[0.66rem]", isLight ? "text-rose-700" : "text-rose-300/80")}>Remove this provider</span>
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className={cn("flex h-full min-h-[260px] items-center justify-center rounded-[16px] border border-dashed text-center", isLight ? "border-border bg-muted/35" : "border-white/10")}>
+                      <div>
+                        <Database className={cn("mx-auto h-8 w-8", isLight ? "text-muted-foreground" : "text-slate-500")} />
+                        <p className={cn("mt-2 text-xs", isLight ? "text-foreground" : "text-slate-300")}>Select a provider</p>
+                        <p className={cn("mt-1 text-[11px]", isLight ? "text-muted-foreground" : "text-slate-500")}>Provider details and actions appear here.</p>
+                      </div>
+                    </div>
+                  )}
+                </aside>
               </div>
             </TabsContent>
 
             <TabsContent value="catalog" className="!mt-0 m-0 h-full">
-              <div className="space-y-4 px-3 py-3 sm:px-4 sm:py-4">
-                <div className="rounded-[20px] border border-white/10 bg-[linear-gradient(180deg,rgba(11,18,32,0.96),rgba(6,10,18,0.98))] p-3">
+              <div className="space-y-3 px-3 py-3">
+                <div className={cn("rounded-[16px] border p-3", isLight ? "border-border bg-card shadow-card" : "border-white/10 bg-[linear-gradient(180deg,rgba(11,18,32,0.96),rgba(6,10,18,0.98))]")}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="font-display text-[0.84rem] text-white">OpenClaw catalog</p>
-                      <p className="mt-1 text-[9px] leading-[0.95rem] text-slate-400">
+                      <p className={cn("font-display text-[0.78rem]", isLight ? "text-foreground" : "text-white")}>OpenClaw catalog</p>
+                      <p className={cn("mt-1 text-[9px] leading-[0.95rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
                         Search the full OpenClaw model catalog, then load five more whenever you want to extend the list.
                       </p>
                     </div>
@@ -1580,7 +1844,7 @@ export function AddModelsDialog({
                 </div>
 
                 {globalCatalogError ? (
-                  <div className="rounded-[18px] border border-rose-400/20 bg-rose-400/[0.08] px-4 py-3 text-[11px] text-rose-100">
+                  <div className={cn("rounded-[18px] border px-4 py-3 text-[11px]", isLight ? "border-rose-200 bg-rose-50 text-rose-800" : "border-rose-400/20 bg-rose-400/[0.08] text-rose-100")}>
                     {globalCatalogError}
                   </div>
                 ) : null}
@@ -1612,10 +1876,11 @@ export function AddModelsDialog({
                   visibleModelCount={catalogVisibleCount}
                   isAdding={isAddingCatalogModels}
                   isLoading={isLoadingGlobalCatalog && catalogModels.length === 0}
+                  surfaceTheme={surfaceTheme}
                 />
 
                 {!isLoadingGlobalCatalog && catalogModels.length === 0 && !globalCatalogError ? (
-                  <div className="rounded-[18px] border border-dashed border-white/10 bg-white/[0.02] px-4 py-5 text-center text-[11px] text-slate-400">
+                  <div className={cn("rounded-[18px] border border-dashed px-4 py-5 text-center text-[11px]", isLight ? "border-border bg-muted/35 text-muted-foreground" : "border-white/10 bg-white/[0.02] text-slate-400")}>
                     OpenClaw did not return any supported models yet. Check your installation or refresh providers.
                   </div>
                 ) : null}
@@ -1630,24 +1895,28 @@ export function AddModelsDialog({
 
 function EmptyStateCard({
   emptyState,
-  onCopyCommand
+  onCopyCommand,
+  surfaceTheme = "dark"
 }: {
   emptyState: AddModelsEmptyState;
   onCopyCommand: (command: string) => void;
+  surfaceTheme?: "dark" | "light";
 }) {
+  const isLight = surfaceTheme === "light";
+
   return (
-    <div className="mt-3 rounded-[20px] border border-white/10 bg-white/[0.03] p-3">
-      <p className="font-display text-[0.88rem] text-white">{emptyState.title}</p>
-      <p className="mt-1 max-w-[520px] text-[11px] leading-[0.98rem] text-slate-400">{emptyState.description}</p>
+    <div className={cn("mt-3 rounded-[20px] border p-3", isLight ? "border-border bg-muted/35" : "border-white/10 bg-white/[0.03]")}>
+      <p className={cn("font-display text-[0.88rem]", isLight ? "text-foreground" : "text-white")}>{emptyState.title}</p>
+      <p className={cn("mt-1 max-w-[520px] text-[11px] leading-[0.98rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>{emptyState.description}</p>
 
       {emptyState.commands?.length ? (
         <div className="mt-3 space-y-1.5">
           {emptyState.commands.map((command) => (
             <div
               key={command}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-[14px] border border-white/10 bg-slate-950/60 px-3 py-2"
+              className={cn("flex flex-wrap items-center justify-between gap-2 rounded-[14px] border px-3 py-2", isLight ? "border-border bg-card" : "border-white/10 bg-slate-950/60")}
             >
-              <code className="text-[10px] text-slate-200">{command}</code>
+              <code className={cn("text-[10px]", isLight ? "text-foreground" : "text-slate-200")}>{command}</code>
               <Button
                 type="button"
                 size="sm"
@@ -1662,6 +1931,38 @@ function EmptyStateCard({
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function InspectorMetric({
+  label,
+  value,
+  tone = "default",
+  surfaceTheme = "dark"
+}: {
+  label: string;
+  value: string;
+  tone?: "default" | "success" | "warning";
+  surfaceTheme?: "dark" | "light";
+}) {
+  const isLight = surfaceTheme === "light";
+
+  return (
+    <div className="flex items-center justify-between gap-3 text-[0.82rem]">
+      <span className={cn(isLight ? "text-muted-foreground" : "text-slate-400")}>{label}</span>
+      <span
+        className={cn(
+          "text-right font-medium",
+          tone === "success"
+            ? isLight ? "text-emerald-700" : "text-emerald-300"
+            : tone === "warning"
+              ? isLight ? "text-amber-800" : "text-amber-300"
+              : isLight ? "text-foreground" : "text-slate-100"
+        )}
+      >
+        {value}
+      </span>
     </div>
   );
 }

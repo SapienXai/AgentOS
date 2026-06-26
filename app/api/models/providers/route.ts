@@ -46,6 +46,7 @@ import {
   readOpenClawCodexPluginReady,
   readOpenClawExplicitProviderConfig,
   persistOpenClawExplicitProviderConfig,
+  readOpenClawOpenAiProviderConfig,
   persistOpenClawOpenAiProviderConfig,
   persistOpenClawProviderToken,
   readOpenClawConfiguredModelIds,
@@ -53,7 +54,6 @@ import {
   readOpenClawProviderModelStatus,
   setOpenClawDefaultModel
 } from "@/lib/openclaw/application/model-provider-state-service";
-import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
   isGatewayAuthSetupRecoveryError,
   runWithGatewayAuthSetupRecovery
@@ -1174,7 +1174,6 @@ function readProviderActionError(error: unknown) {
 }
 
 async function readProviderConnectionContext(provider: AddModelsProviderId) {
-  const adapter = getOpenClawAdapter();
   const [configuredModelIds, modelStatus] = await Promise.all([
     readOpenClawConfiguredModelIds(),
     readOpenClawProviderModelStatus()
@@ -1203,7 +1202,7 @@ async function readProviderConnectionContext(provider: AddModelsProviderId) {
   return {
     connection: await applyProviderRuntimeFailure(
       provider,
-      await resolveProviderConnectionStatus(provider, modelStatus, configuredModelIds, fileBasedStatus, adapter)
+      await resolveProviderConnectionStatus(provider, modelStatus, configuredModelIds, fileBasedStatus)
     ),
     configuredModelIds,
     ollamaState: null
@@ -1236,11 +1235,10 @@ async function resolveProviderConnectionStatus(
   provider: AddModelsProviderId,
   modelStatus: ModelsStatusPayload | null,
   configuredModelIds: Set<string>,
-  fileBasedStatus: AddModelsProviderConnectionStatus,
-  adapter: ReturnType<typeof getOpenClawAdapter>
+  fileBasedStatus: AddModelsProviderConnectionStatus
 ) {
   const openAiGatewayConfig = provider === "openai"
-    ? await readOpenAiGatewayProviderConfig(adapter)
+    ? await readOpenClawOpenAiProviderConfig()
     : null;
   const modelStatusConnection = buildModelStatusConnectionStatus(provider, modelStatus, configuredModelIds);
   const customOpenAiConnection = provider === "openai"
@@ -1302,16 +1300,6 @@ function buildOllamaConnectionStatus(ollamaState: OllamaState): AddModelsProvide
 
 function isCustomOpenAiEndpointConnection(connection: AddModelsProviderConnectionStatus | null) {
   return Boolean(connection?.provider === "openai" && connection.detail?.includes("Custom endpoint:"));
-}
-
-async function readOpenAiGatewayProviderConfig(adapter: ReturnType<typeof getOpenClawAdapter>) {
-  try {
-    return await adapter.getConfig<OpenClawProviderModelsEntry>("models.providers.openai", {
-      timeoutMs: 5_000
-    });
-  } catch {
-    return null;
-  }
 }
 
 function buildCustomOpenAiEndpointConnectionStatus(

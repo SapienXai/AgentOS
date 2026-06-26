@@ -228,6 +228,17 @@ export async function readOpenClawExplicitProviderConfig(provider: string) {
   }
 }
 
+export async function readOpenClawOpenAiProviderConfig(): Promise<OpenClawProviderModelsEntry | null> {
+  try {
+    return await getOpenClawAdapter().getConfig<OpenClawProviderModelsEntry>(
+      "models.providers.openai",
+      { timeoutMs: 5_000 }
+    );
+  } catch {
+    return null;
+  }
+}
+
 export async function readOpenClawExplicitProviderSummaries(): Promise<OpenClawExplicitProviderSummary[]> {
   let providers: Record<string, OpenClawProviderModelsEntry> | null = null;
 
