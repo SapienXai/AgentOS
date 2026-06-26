@@ -12,7 +12,11 @@ import {
 } from "@/lib/openclaw/client/native-ws-gateway-config";
 import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import { isKnownOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
-import { getModelProviderDescriptor, isAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
+import {
+  getModelProviderDescriptor,
+  isAddModelsProviderId,
+  isBuiltInAddModelsProviderId
+} from "@/lib/openclaw/model-provider-registry";
 import { redactSecretText } from "@/lib/security/redaction";
 import type {
   AddModelsProviderConnectionStatus,
@@ -51,13 +55,26 @@ type OpenClawModelDefaultsEntry = Record<string, unknown> & {
   };
 };
 
-type OpenClawProviderModelsEntry = Record<string, unknown> & {
+export type OpenClawProviderModelsEntry = Record<string, unknown> & {
   models?: OpenClawProviderModelEntry[];
+  baseUrl?: string;
+  baseURL?: string;
+  apiKey?: string;
+  api?: string;
 };
 
-type OpenClawProviderModelEntry = Record<string, unknown> & {
+export type OpenClawProviderModelEntry = Record<string, unknown> & {
   id?: string;
   name?: string;
+  input?: string | string[];
+  contextWindow?: number | null;
+  maxTokens?: number | null;
+};
+
+export type OpenClawExplicitProviderSummary = {
+  id: string;
+  baseUrl: string | null;
+  modelCount: number;
 };
 
 type OpenClawAuthProfilesPayload = {
@@ -146,7 +163,10 @@ export async function buildOpenClawFileBasedProviderConnectionStatus(
     ...Object.values(config.auth?.profiles ?? {}),
     ...Object.values(authProfiles.profiles ?? {})
   ].filter((entry) => providerAuthEntryMatchesAddModelsProvider(entry, provider)).length;
+  const customEndpoint = provider === "openai" ? readOpenAiBaseUrl(config) : null;
+  const hasOpenAiApiKey = provider === "openai" ? Boolean(readOpenAiApiKey(config)) : false;
   const connected = providerAuthCount > 0 ||
+    (provider === "openai" && hasOpenAiApiKey) ||
     (provider === "openai-codex" && configuredCount > 0 && isCodexHarnessEnabled(config));
 
   return {
@@ -156,14 +176,178 @@ export async function buildOpenClawFileBasedProviderConnectionStatus(
     needsTerminal: descriptor.connectKind === "oauth",
     detail:
       connected
-        ? `${configuredCount} configured model${configuredCount === 1 ? "" : "s"} in AgentOS.`
+        ? `${configuredCount} configured model${configuredCount === 1 ? "" : "s"} in AgentOS.${customEndpoint ? ` Custom endpoint: ${customEndpoint}.` : ""}`
         : configuredCount > 0
-          ? `${configuredCount} configured model${configuredCount === 1 ? "" : "s"} are already saved in AgentOS. Connect ${descriptor.shortLabel} to use them.`
-          : descriptor.helperText
+          ? `${configuredCount} configured model${configuredCount === 1 ? "" : "s"} are already saved in AgentOS. Connect ${descriptor.shortLabel} to use them.${customEndpoint ? ` Custom endpoint: ${customEndpoint}.` : ""}`
+          : customEndpoint
+            ? `Custom endpoint: ${customEndpoint}. Connect ${descriptor.shortLabel} to use it.`
+            : descriptor.helperText
   };
 }
 
-export async function persistOpenClawProviderToken(provider: AddModelsProviderId, token: string) {
+export async function persistOpenClawOpenAiProviderConfig(
+  apiKey: string,
+  options?: { endpoint?: string }
+) {
+  const adapter = getOpenClawAdapter();
+  const existingProviderConfig = await adapter.getConfig<OpenClawProviderModelsEntry>(
+    "models.providers.openai",
+    { timeoutMs: 5_000 }
+  );
+  const nextProviderConfig = cloneProviderModelsEntry(existingProviderConfig);
+  const trimmedApiKey = apiKey.trim();
+  const trimmedEndpoint = options?.endpoint?.trim();
+
+  nextProviderConfig.apiKey = trimmedApiKey;
+
+  if (trimmedEndpoint) {
+    nextProviderConfig.baseUrl = trimmedEndpoint;
+    delete nextProviderConfig.baseURL;
+  } else {
+    delete nextProviderConfig.baseUrl;
+    delete nextProviderConfig.baseURL;
+  }
+
+  await adapter.setConfig("models.providers.openai", nextProviderConfig, { timeoutMs: 5_000 });
+}
+
+export async function readOpenClawExplicitProviderConfig(provider: string) {
+  const providerId = provider.trim();
+
+  if (!providerId) {
+    return null;
+  }
+
+  try {
+    return await getOpenClawAdapter().getConfig<OpenClawProviderModelsEntry>(
+      `models.providers.${providerId}`,
+      { timeoutMs: 5_000 }
+    );
+  } catch {
+    return null;
+  }
+}
+
+export async function readOpenClawExplicitProviderSummaries(): Promise<OpenClawExplicitProviderSummary[]> {
+  let providers: Record<string, OpenClawProviderModelsEntry> | null = null;
+
+  try {
+    providers = await getOpenClawAdapter().getConfig<Record<string, OpenClawProviderModelsEntry>>(
+      "models.providers",
+      { timeoutMs: 5_000 }
+    );
+  } catch {
+    return [];
+  }
+
+  if (!isRecord(providers)) {
+    return [];
+  }
+
+  return Object.entries(providers)
+    .filter(([providerId, providerConfig]) =>
+      isAddModelsProviderId(providerId) &&
+      !isBuiltInAddModelsProviderId(providerId) &&
+      isRecord(providerConfig)
+    )
+    .map(([providerId, providerConfig]) => ({
+      id: providerId,
+      baseUrl: readProviderConfigBaseUrl(providerConfig),
+      modelCount: Array.isArray(providerConfig.models) ? providerConfig.models.length : 0
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+export async function persistOpenClawExplicitProviderConfig(
+  provider: string,
+  input: {
+    providerName?: string | null;
+    baseUrl: string;
+    apiKey: string;
+    api?: string;
+    models?: OpenClawProviderModelEntry[];
+  }
+) {
+  const providerId = provider.trim();
+  const existingProviderConfig = await readOpenClawExplicitProviderConfig(providerId);
+  const nextProviderConfig = cloneProviderModelsEntry(existingProviderConfig);
+
+  nextProviderConfig.baseUrl = input.baseUrl.trim();
+  delete nextProviderConfig.baseURL;
+  nextProviderConfig.apiKey = input.apiKey.trim();
+  nextProviderConfig.api = input.api?.trim() || "openai-completions";
+
+  if (input.models?.length) {
+    nextProviderConfig.models = mergeProviderModelEntries(nextProviderConfig.models ?? [], input.models);
+  }
+
+  await getOpenClawAdapter().setConfig(
+    `models.providers.${providerId}`,
+    sanitizeProviderConfigForOpenClaw(nextProviderConfig),
+    { timeoutMs: 5_000 }
+  );
+}
+
+export async function addOpenClawExplicitProviderModelsToConfig(
+  provider: string,
+  modelIds: string[],
+  metadata: OpenClawProviderModelEntry[] = []
+) {
+  const providerId = provider.trim();
+  const normalizedModelIds = modelIds
+    .map((modelId) => normalizeExplicitProviderModelId(providerId, modelId))
+    .filter(Boolean);
+
+  if (!providerId || normalizedModelIds.length === 0) {
+    return;
+  }
+
+  const adapter = getOpenClawAdapter();
+  const existingProviderConfig = await readOpenClawExplicitProviderConfig(providerId);
+  const nextProviderConfig = cloneProviderModelsEntry(existingProviderConfig);
+  const metadataById = new Map(
+    metadata
+      .map((entry) => [entry.id?.trim(), entry] as const)
+      .filter((entry): entry is [string, OpenClawProviderModelEntry] => Boolean(entry[0]))
+  );
+  nextProviderConfig.models = mergeProviderModelEntries(
+    nextProviderConfig.models ?? [],
+    normalizedModelIds.map((modelId) => ({
+      id: modelId,
+      name: metadataById.get(modelId)?.name || modelId,
+      input: metadataById.get(modelId)?.input || "text",
+      contextWindow: metadataById.get(modelId)?.contextWindow,
+      maxTokens: metadataById.get(modelId)?.maxTokens
+    }))
+  );
+
+  await adapter.setConfig(
+    `models.providers.${providerId}.models`,
+    mergeProviderModelEntries([], nextProviderConfig.models ?? []),
+    { timeoutMs: 5_000 }
+  );
+
+  const existingDefaults = await adapter.getConfig<OpenClawAgentDefaultsConfig>(
+    "agents.defaults",
+    { timeoutMs: 5_000 }
+  );
+  const nextDefaults = cloneAgentDefaults(existingDefaults);
+  const nextModels = cloneModelEntries(nextDefaults.models);
+
+  for (const modelId of normalizedModelIds) {
+    const modelRef = `${providerId}/${modelId}`;
+    nextModels[modelRef] = isRecord(nextModels[modelRef]) ? nextModels[modelRef] : {};
+  }
+
+  nextDefaults.models = nextModels;
+  await adapter.setConfig("agents.defaults", nextDefaults, { timeoutMs: 5_000 });
+}
+
+export async function persistOpenClawProviderToken(
+  provider: AddModelsProviderId,
+  token: string,
+  options?: { endpoint?: string }
+) {
   assertLegacyProviderFileFallbackEnabled(
     "Gateway-native provider token persistence is not available yet."
   );
@@ -184,6 +368,7 @@ export async function persistOpenClawProviderToken(provider: AddModelsProviderId
     provider,
     mode: "token"
   };
+  applyProviderEndpointConfig(config, provider, options?.endpoint);
 
   authProfiles.version = 1;
   authProfiles.profiles = authProfiles.profiles || {};
@@ -775,6 +960,103 @@ function cloneProviderModelsEntry(value: unknown): OpenClawProviderModelsEntry {
   } as OpenClawProviderModelsEntry;
 }
 
+function sanitizeProviderConfigForOpenClaw(entry: OpenClawProviderModelsEntry): OpenClawProviderModelsEntry {
+  const baseUrl = readProviderConfigBaseUrl(entry) ?? undefined;
+  const apiKey = typeof entry.apiKey === "string" && entry.apiKey.trim() ? entry.apiKey.trim() : undefined;
+  const api = typeof entry.api === "string" && entry.api.trim() ? entry.api.trim() : undefined;
+  const models = mergeProviderModelEntries([], entry.models ?? []);
+
+  return {
+    ...(models.length > 0 ? { models } : {}),
+    ...(baseUrl ? { baseUrl } : {}),
+    ...(apiKey ? { apiKey } : {}),
+    ...(api ? { api } : {})
+  };
+}
+
+function readProviderConfigBaseUrl(entry: OpenClawProviderModelsEntry) {
+  return typeof entry.baseUrl === "string" && entry.baseUrl.trim()
+    ? entry.baseUrl.trim()
+    : typeof entry.baseURL === "string" && entry.baseURL.trim()
+      ? entry.baseURL.trim()
+      : null;
+}
+
+function mergeProviderModelEntries(
+  existingEntries: OpenClawProviderModelEntry[],
+  incomingEntries: OpenClawProviderModelEntry[]
+) {
+  const entriesById = new Map<string, OpenClawProviderModelEntry>();
+
+  for (const entry of existingEntries) {
+    const id = entry.id?.trim();
+
+    if (id) {
+      entriesById.set(id, sanitizeProviderModelEntryForConfig({ ...entry, id }));
+    }
+  }
+
+  for (const entry of incomingEntries) {
+    const id = entry.id?.trim();
+
+    if (!id) {
+      continue;
+    }
+
+    entriesById.set(id, sanitizeProviderModelEntryForConfig({
+      ...entriesById.get(id),
+      ...entry,
+      id,
+      name: entry.name?.trim() || entriesById.get(id)?.name || id
+    }));
+  }
+
+  return [...entriesById.values()];
+}
+
+function sanitizeProviderModelEntryForConfig(entry: OpenClawProviderModelEntry): OpenClawProviderModelEntry {
+  const id = entry.id?.trim();
+  const name = entry.name?.trim() || id;
+  const input = normalizeProviderModelInputForConfig(entry.input);
+  const contextWindow = typeof entry.contextWindow === "number" && Number.isFinite(entry.contextWindow)
+    ? entry.contextWindow
+    : undefined;
+  const maxTokens = typeof entry.maxTokens === "number" && Number.isFinite(entry.maxTokens)
+    ? entry.maxTokens
+    : undefined;
+
+  return {
+    ...(id ? { id } : {}),
+    ...(name ? { name } : {}),
+    ...(input.length > 0 ? { input } : {}),
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    ...(maxTokens !== undefined ? { maxTokens } : {})
+  };
+}
+
+function normalizeProviderModelInputForConfig(input: OpenClawProviderModelEntry["input"]) {
+  const values = Array.isArray(input)
+    ? input
+    : typeof input === "string"
+      ? input.split(/[,+]/)
+      : [];
+
+  return values
+    .map((value) => value.trim())
+    .filter((value, index, allValues) => value.length > 0 && allValues.indexOf(value) === index);
+}
+
+function normalizeExplicitProviderModelId(provider: string, modelId: string) {
+  const trimmed = modelId.trim();
+  const prefix = `${provider}/`;
+
+  if (!trimmed) {
+    return "";
+  }
+
+  return trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : trimmed;
+}
+
 function toProviderScopedModelId(provider: AddModelsProviderId, modelId: string) {
   const trimmed = modelId.trim();
   const prefix = `${provider}/`;
@@ -867,6 +1149,53 @@ function isReadyCodexPlugin(plugin: { id: string; name: string; status?: string 
 
 function stripLegacyAgentRuntimeFromDefaults(defaults: OpenClawAgentDefaultsConfig) {
   delete (defaults as Record<string, unknown>).agentRuntime;
+}
+
+export function applyProviderEndpointConfig(
+  config: OpenClawConfigPayload,
+  provider: AddModelsProviderId,
+  endpoint?: string
+) {
+  if (provider !== "openai") {
+    return;
+  }
+
+  config.models = config.models || {};
+  config.models.providers = config.models.providers || {};
+  const nextProviderConfig = cloneProviderModelsEntry(config.models.providers.openai);
+  const trimmedEndpoint = endpoint?.trim();
+
+  if (trimmedEndpoint) {
+    nextProviderConfig.baseUrl = trimmedEndpoint;
+    delete nextProviderConfig.baseURL;
+  } else {
+    delete nextProviderConfig.baseUrl;
+    delete nextProviderConfig.baseURL;
+  }
+
+  config.models.providers.openai = nextProviderConfig;
+}
+
+export function readOpenAiBaseUrl(config: OpenClawConfigPayload) {
+  const rawBaseUrl = config.models?.providers?.openai?.baseUrl ?? config.models?.providers?.openai?.baseURL;
+  const trimmed = typeof rawBaseUrl === "string" ? rawBaseUrl.trim() : "";
+
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    return `${url.origin}${url.pathname.replace(/\/$/, "")}`;
+  } catch {
+    return trimmed;
+  }
+}
+
+function readOpenAiApiKey(config: OpenClawConfigPayload) {
+  const rawApiKey = config.models?.providers?.openai?.apiKey;
+
+  return typeof rawApiKey === "string" && rawApiKey.trim() ? rawApiKey.trim() : null;
 }
 
 async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {

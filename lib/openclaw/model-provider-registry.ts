@@ -1,7 +1,8 @@
 import type {
   AddModelsProviderCategory,
   AddModelsProviderConnectKind,
-  AddModelsProviderId
+  AddModelsProviderId,
+  BuiltInAddModelsProviderId
 } from "@/lib/openclaw/types";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 
@@ -14,12 +15,14 @@ export type ModelProviderDescriptor = {
   connectKind: AddModelsProviderConnectKind;
   accent: string;
   helperText: string;
+  kind?: "builtin" | "explicit" | "action";
   searchPlaceholder?: string;
 };
 
-export const modelProviderRegistry: ModelProviderDescriptor[] = [
+export const modelProviderRegistry: Array<ModelProviderDescriptor & { id: BuiltInAddModelsProviderId; kind: "builtin" }> = [
   {
     id: "openai-codex",
+    kind: "builtin",
     label: "ChatGPT",
     shortLabel: "ChatGPT",
     description: "Use OpenClaw's Codex app-server provider and pull in Codex-ready models.",
@@ -30,6 +33,7 @@ export const modelProviderRegistry: ModelProviderDescriptor[] = [
   },
   {
     id: "openrouter",
+    kind: "builtin",
     label: "OpenRouter",
     shortLabel: "OpenRouter",
     description: "Add an API key, discover the full catalog, and curate the models you want.",
@@ -41,6 +45,7 @@ export const modelProviderRegistry: ModelProviderDescriptor[] = [
   },
   {
     id: "ollama",
+    kind: "builtin",
     label: "Ollama Local",
     shortLabel: "Ollama",
     description: "Discover models already available on this machine and add them instantly.",
@@ -51,6 +56,7 @@ export const modelProviderRegistry: ModelProviderDescriptor[] = [
   },
   {
     id: "anthropic",
+    kind: "builtin",
     label: "Anthropic",
     shortLabel: "Anthropic",
     description: "Paste an API key and add Claude models through the same flow.",
@@ -61,6 +67,7 @@ export const modelProviderRegistry: ModelProviderDescriptor[] = [
   },
   {
     id: "openai",
+    kind: "builtin",
     label: "OpenAI API",
     shortLabel: "OpenAI",
     description: "Connect a standard OpenAI API key for direct GPT model access.",
@@ -71,6 +78,7 @@ export const modelProviderRegistry: ModelProviderDescriptor[] = [
   },
   {
     id: "google",
+    kind: "builtin",
     label: "Gemini",
     shortLabel: "Gemini",
     description: "Add a Gemini API key, discover Google models, and pick the routes you want.",
@@ -82,6 +90,7 @@ export const modelProviderRegistry: ModelProviderDescriptor[] = [
   },
   {
     id: "deepseek",
+    kind: "builtin",
     label: "DeepSeek",
     shortLabel: "DeepSeek",
     description: "Add a DeepSeek API key, discover the catalog, and add the models you need.",
@@ -93,6 +102,7 @@ export const modelProviderRegistry: ModelProviderDescriptor[] = [
   },
   {
     id: "mistral",
+    kind: "builtin",
     label: "Mistral",
     shortLabel: "Mistral",
     description: "Add a Mistral API key, discover Mistral and Codestral models, and curate your routes.",
@@ -104,6 +114,7 @@ export const modelProviderRegistry: ModelProviderDescriptor[] = [
   },
   {
     id: "xai",
+    kind: "builtin",
     label: "xAI",
     shortLabel: "xAI",
     description: "Use an xAI API key to bring Grok models into AgentOS.",
@@ -121,15 +132,19 @@ export const otherModelProviders = modelProviderRegistry.filter((provider) => pr
 export function getModelProviderDescriptor(providerId: AddModelsProviderId) {
   const descriptor = modelProviderRegistry.find((provider) => provider.id === providerId);
 
-  if (!descriptor) {
-    throw new Error(`Unknown model provider: ${providerId}`);
-  }
+  return descriptor ?? buildExplicitModelProviderDescriptor(providerId);
+}
 
-  return descriptor;
+export function getBuiltInModelProviderDescriptor(providerId: BuiltInAddModelsProviderId) {
+  return modelProviderRegistry.find((provider) => provider.id === providerId);
+}
+
+export function isBuiltInAddModelsProviderId(value: unknown): value is BuiltInAddModelsProviderId {
+  return typeof value === "string" && modelProviderRegistry.some((provider) => provider.id === value);
 }
 
 export function isAddModelsProviderId(value: unknown): value is AddModelsProviderId {
-  return typeof value === "string" && modelProviderRegistry.some((provider) => provider.id === value);
+  return typeof value === "string" && isValidExplicitProviderId(value);
 }
 
 export function normalizeAddModelsProviderId(value: unknown): AddModelsProviderId | null {
@@ -141,7 +156,7 @@ export function normalizeAddModelsProviderId(value: unknown): AddModelsProviderI
     return "google";
   }
 
-  if (isAddModelsProviderId(value)) {
+  if (isBuiltInAddModelsProviderId(value) || isAddModelsProviderId(value)) {
     return value;
   }
 
@@ -156,7 +171,7 @@ export function normalizeAddModelsProviderId(value: unknown): AddModelsProviderI
       return "google";
     }
 
-    if (isAddModelsProviderId(candidateId)) {
+    if (isBuiltInAddModelsProviderId(candidateId) || isAddModelsProviderId(candidateId)) {
       return candidateId;
     }
   }
@@ -179,4 +194,34 @@ export function formatModelProviderLabel(providerId: string) {
     .split("-")
     .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
     .join(" ");
+}
+
+export function isValidExplicitProviderId(value: string) {
+  return /^[a-z0-9][a-z0-9_-]{1,62}$/.test(value);
+}
+
+export function normalizeExplicitProviderId(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 63);
+}
+
+export function buildExplicitModelProviderDescriptor(providerId: string, label?: string | null): ModelProviderDescriptor {
+  const resolvedLabel = label?.trim() || formatModelProviderLabel(providerId);
+
+  return {
+    id: providerId,
+    kind: "explicit",
+    label: resolvedLabel,
+    shortLabel: resolvedLabel,
+    description: "Use an explicit OpenAI-compatible provider configured in OpenClaw.",
+    category: "other",
+    connectKind: "apiKey",
+    accent: "from-[#e6fbfb] via-[#f4ffff] to-white",
+    helperText: "OpenClaw config-backed provider namespace.",
+    searchPlaceholder: `Search ${resolvedLabel} models`
+  };
 }

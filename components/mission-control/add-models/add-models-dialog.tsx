@@ -3,6 +3,7 @@
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { CircleCheckBig, Copy, LoaderCircle, RefreshCw, SquareTerminal } from "lucide-react";
 
+import { CustomProviderCard } from "@/components/mission-control/add-models/custom-provider-card";
 import { GlobalModelPicker } from "@/components/mission-control/add-models/global-model-picker";
 import { ModelPicker } from "@/components/mission-control/add-models/model-picker";
 import { ProviderCard } from "@/components/mission-control/add-models/provider-card";
@@ -19,9 +20,13 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   modelProviderRegistry,
+  buildExplicitModelProviderDescriptor,
+  formatModelProviderLabel,
   getModelProviderDescriptor,
   isAddModelsProviderId,
-  normalizeAddModelsProviderId
+  isBuiltInAddModelsProviderId,
+  normalizeAddModelsProviderId,
+  normalizeExplicitProviderId
 } from "@/lib/openclaw/model-provider-registry";
 import { getModelProviderAdapter, ModelProviderActionError } from "@/lib/openclaw/model-provider-adapters";
 import { modelMatchesAddModelsProvider } from "@/lib/openclaw/domains/model-provider-connection";
@@ -49,7 +54,11 @@ type ProviderDraft = {
   docsUrl: string | null;
   models: AddModelsCatalogModel[];
   selectedModelIds: string[];
+  providerName: string;
+  providerId: string;
   apiKey: string;
+  endpoint: string;
+  manualModelId: string;
   search: string;
   loaded: boolean;
 };
@@ -66,7 +75,11 @@ const initialDraftState = (): ProviderDraft => ({
   docsUrl: null,
   models: [],
   selectedModelIds: [],
+  providerName: "",
+  providerId: "",
   apiKey: "",
+  endpoint: "",
+  manualModelId: "",
   search: "",
   loaded: false
 });
@@ -102,7 +115,10 @@ export function AddModelsDialog({
   const [globalCatalogModels, setGlobalCatalogModels] = useState<GlobalCatalogModel[]>([]);
   const [isLoadingGlobalCatalog, setIsLoadingGlobalCatalog] = useState(false);
   const [globalCatalogError, setGlobalCatalogError] = useState<string | null>(null);
+  const [activeSetupMode, setActiveSetupMode] = useState<"standard" | "custom-openai-compatible">("standard");
+  const [explicitProviderIds, setExplicitProviderIds] = useState<string[]>([]);
   const handleInitialProviderOpen = useEffectEvent((providerId: AddModelsProviderId) => {
+    setActiveSetupMode("standard");
     setActiveTab("providers");
     void selectProvider(providerId);
   });
@@ -135,11 +151,72 @@ export function AddModelsDialog({
       setIsLoadingGlobalCatalog(false);
     }
   });
+  const loadExplicitProviders = useEffectEvent(async () => {
+    try {
+      const response = await fetch("/api/models/providers");
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            providers?: Array<{
+              id?: string;
+              baseUrl?: string | null;
+              modelCount?: number;
+            }>;
+            error?: string;
+          }
+        | null;
+
+      if (!response.ok || !payload) {
+        throw new Error(payload?.error || "Custom providers could not be loaded.");
+      }
+
+      const providerSummaries = Array.isArray(payload.providers) ? payload.providers : [];
+      const providerIds = providerSummaries
+        .map((provider) => normalizeAddModelsProviderId(provider.id))
+        .filter((providerId): providerId is AddModelsProviderId => Boolean(providerId));
+
+      setExplicitProviderIds(providerIds);
+      setProviderDrafts((current) => {
+        const next = { ...current };
+
+        for (const provider of providerSummaries) {
+          const providerId = normalizeAddModelsProviderId(provider.id);
+
+          if (!providerId) {
+            continue;
+          }
+
+          const currentDraft = resolveDraft(next[providerId]);
+          next[providerId] = {
+            ...currentDraft,
+            endpoint: provider.baseUrl ?? currentDraft.endpoint,
+            connection: {
+              provider: providerId,
+              connected: Boolean(provider.baseUrl),
+              canConnect: true,
+              needsTerminal: false,
+              source: "explicit-provider-config",
+              detail: provider.baseUrl
+                ? `${provider.modelCount ?? 0} configured model${provider.modelCount === 1 ? "" : "s"} in OpenClaw. Endpoint: ${provider.baseUrl}.`
+                : "Custom provider is configured in OpenClaw."
+            },
+            loaded: currentDraft.loaded
+          };
+        }
+
+        return next;
+      });
+    } catch (error) {
+      toast.error("Custom providers could not be loaded.", {
+        description: error instanceof Error ? error.message : "OpenClaw provider config could not be read."
+      });
+    }
+  });
 
   useEffect(() => {
     if (!open) {
       setActiveTab("providers");
       setActiveProvider(null);
+      setActiveSetupMode("standard");
       setCatalogSearch("");
       setCatalogVisibleCount(CATALOG_PAGE_SIZE);
       setGlobalCatalogModels([]);
@@ -155,7 +232,11 @@ export function AddModelsDialog({
               statusMessage: null,
               errorMessage: null,
               selectedModelIds: [],
+              providerName: "",
+              providerId: "",
               apiKey: "",
+              endpoint: "",
+              manualModelId: "",
               search: ""
             }
           ])
@@ -169,8 +250,11 @@ export function AddModelsDialog({
     if (normalizedInitialProvider) {
       handleInitialProviderOpen(normalizedInitialProvider);
     } else {
+      setActiveSetupMode("standard");
       setActiveTab("providers");
     }
+
+    void loadExplicitProviders();
   }, [open, normalizedInitialProvider]);
 
   useEffect(() => {
@@ -181,9 +265,28 @@ export function AddModelsDialog({
     void loadGlobalCatalog();
   }, [open, activeTab, globalCatalogModels.length, isLoadingGlobalCatalog]);
 
+  const explicitProviderDescriptors = useMemo(
+    () =>
+      explicitProviderIds.map((providerId) =>
+        buildExplicitModelProviderDescriptor(providerId, resolveDraft(providerDrafts[providerId]).providerName)
+      ),
+    [explicitProviderIds, providerDrafts]
+  );
+  const providerDescriptors = useMemo(
+    () => [...modelProviderRegistry, ...explicitProviderDescriptors],
+    [explicitProviderDescriptors]
+  );
   const activeProviderId = isAddModelsProviderId(activeProvider) ? activeProvider : null;
   const activeDraft = activeProviderId ? resolveDraft(providerDrafts[activeProviderId]) : initialDraftState();
-  const activeDescriptor = activeProviderId ? getModelProviderDescriptor(activeProviderId) : null;
+  const activeDescriptor = activeProviderId
+    ? activeSetupMode === "custom-openai-compatible"
+      ? buildExplicitModelProviderDescriptor(resolveCustomDraftProviderId(activeDraft), activeDraft.providerName || "Custom provider")
+      : getModelProviderDescriptor(activeProviderId)
+    : null;
+  const activeProviderLabel =
+    activeSetupMode === "custom-openai-compatible"
+      ? activeDraft.providerName || "Custom provider"
+      : activeDescriptor?.shortLabel ?? "provider";
   const activeConnection = activeProviderId
     ? resolveConnectionDetail(snapshot, providerDrafts, activeProviderId)
     : null;
@@ -194,24 +297,28 @@ export function AddModelsDialog({
       (activeDraft.statusMessage?.startsWith("Checking ") === true && !activeConnection?.connected));
   const loadingHeroTitle =
     activeDraft.flowState === "discovery-loading"
-      ? `Discovering ${activeDescriptor?.shortLabel ?? "provider"} models...`
+      ? `Discovering ${activeProviderLabel} models...`
       : activeDraft.flowState === "connecting"
-        ? activeDraft.statusMessage || `Connecting ${activeDescriptor?.shortLabel ?? "provider"}...`
-        : activeDraft.statusMessage || `Checking ${activeDescriptor?.shortLabel ?? "provider"}...`;
+        ? activeDraft.statusMessage || `Connecting ${activeProviderLabel}...`
+        : activeDraft.statusMessage || `Checking ${activeProviderLabel}...`;
   const loadingHeroCopy =
     activeDraft.flowState === "discovery-loading"
       ? "Pulling the provider catalog into AgentOS."
       : activeDraft.flowState === "connecting"
         ? "Preparing the provider connection."
         : "Checking provider status before discovery.";
-  const shouldShowDiscoveryCta = Boolean(activeProviderId && activeDescriptor);
+  const shouldShowDiscoveryCta = Boolean(
+    activeProviderId && activeDescriptor && activeSetupMode !== "custom-openai-compatible"
+  );
   const isDiscovering = activeDraft.flowState === "discovery-loading";
   const discoveryActionLabel =
     activeDraft.models.length > 0 ? "Refresh discovery" : "Discover models";
   const discoveryButtonLabel = isDiscovering ? "Discovering..." : discoveryActionLabel;
   const discoveryDescription = activeConnection?.connected
     ? "The provider is connected. Pull the available models into this workspace before choosing one."
-    : activeDescriptor?.connectKind === "oauth"
+    : activeSetupMode === "custom-openai-compatible"
+      ? "Configure the explicit OpenAI-compatible provider first, then pull the available models into this workspace."
+      : activeDescriptor?.connectKind === "oauth"
       ? "Use your account login first, then pull the available models into this workspace."
       : "Connect the provider first, then pull the available models into this workspace.";
   const showGatewayRecoveryCommand = Boolean(
@@ -294,6 +401,7 @@ export function AddModelsDialog({
   }, [catalogModels, catalogSelectedModelIds]);
   async function selectProvider(providerId: AddModelsProviderId) {
     setActiveProvider(providerId);
+    setActiveSetupMode("standard");
     setActiveTab("providers");
 
     const draft = resolveDraft(providerDrafts[providerId]);
@@ -340,7 +448,15 @@ export function AddModelsDialog({
     }
   }
 
-  async function connectProvider(providerId: AddModelsProviderId, options?: { force?: boolean }) {
+  async function connectProvider(
+    providerId: AddModelsProviderId,
+    options?: {
+      force?: boolean;
+      endpoint?: string;
+      providerName?: string;
+      modelId?: string;
+    }
+  ) {
     const adapter = getModelProviderAdapter(providerId);
     const draft = resolveDraft(providerDrafts[providerId]);
 
@@ -352,12 +468,17 @@ export function AddModelsDialog({
           ? options?.force
             ? "Refreshing Codex app-server setup..."
             : "Checking Codex app-server setup..."
+          : providerId === "openai" && options?.endpoint
+            ? "Connecting OpenAI-compatible endpoint..."
           : `Connecting ${getModelProviderDescriptor(providerId).shortLabel}...`
     });
 
     try {
       const result = await adapter.connect({
         apiKey: draft.apiKey,
+        endpoint: options?.endpoint,
+        providerName: options?.providerName,
+        modelId: options?.modelId,
         force: options?.force
       });
 
@@ -366,7 +487,8 @@ export function AddModelsDialog({
         result,
         providerId === "openai-codex" ? "connecting" : result.models.length ? "discovery-success" : "idle",
         {
-          apiKey: ""
+          apiKey: "",
+          endpoint: providerId === "openai" && options?.endpoint ? options.endpoint : draft.endpoint
         }
       );
 
@@ -377,6 +499,74 @@ export function AddModelsDialog({
       updateDraft(providerId, {
         flowState: "auth-error",
         errorMessage: error instanceof Error ? error.message : "Provider connection failed."
+      });
+    }
+  }
+
+  async function connectCustomProvider() {
+    const customDraft = resolveDraft(providerDrafts.custom);
+    const providerId = resolveCustomDraftProviderId(customDraft);
+    const providerName = customDraft.providerName.trim() || formatModelProviderLabel(providerId);
+
+    updateDraft("custom", {
+      flowState: "connecting",
+      errorMessage: null,
+      statusMessage: `Connecting ${providerName}...`
+    });
+
+    updateDraft(providerId, {
+      ...customDraft,
+      flowState: "connecting",
+      errorMessage: null,
+      statusMessage: `Connecting ${providerName}...`,
+      providerName,
+      providerId
+    });
+
+    try {
+      const adapter = getModelProviderAdapter(providerId);
+      const result = await adapter.connect({
+        apiKey: customDraft.apiKey,
+        endpoint: customDraft.endpoint,
+        providerName,
+        modelId: customDraft.manualModelId
+      });
+
+      setExplicitProviderIds((current) => current.includes(providerId) ? current : [...current, providerId]);
+      setActiveProvider(providerId);
+      setActiveSetupMode("standard");
+      applyActionResult(
+        providerId,
+        result,
+        result.models.length ? "discovery-success" : result.emptyState ? "discovery-empty" : "idle",
+        {
+          providerName,
+          providerId,
+          apiKey: "",
+          endpoint: customDraft.endpoint,
+          manualModelId: customDraft.manualModelId
+        }
+      );
+      updateDraft("custom", {
+        flowState: "idle",
+        statusMessage: null,
+        errorMessage: null,
+        apiKey: "",
+        manualModelId: ""
+      });
+
+      if (result.snapshot) {
+        onSnapshotChange(result.snapshot);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Custom provider connection failed.";
+      updateDraft("custom", {
+        flowState: "auth-error",
+        errorMessage: message
+      });
+      updateDraft(providerId, {
+        flowState: "auth-error",
+        errorMessage: message
       });
     }
   }
@@ -743,7 +933,7 @@ export function AddModelsDialog({
                       </p>
                     </div>
                     <Badge variant="muted" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
-                      {modelProviderRegistry.length} total
+                      {providerDescriptors.length + 1} total
                     </Badge>
                   </div>
 
@@ -752,11 +942,11 @@ export function AddModelsDialog({
                     <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-gradient-to-l from-[rgba(13,20,34,0.96)] to-transparent" />
                     <div className="-mx-1 overflow-x-auto overscroll-x-contain pb-1">
                       <div className="flex min-w-max gap-2.5 px-1">
-                        {modelProviderRegistry.map((provider) => (
+                        {providerDescriptors.map((provider) => (
                           <div key={provider.id} className="w-[236px] shrink-0 snap-start sm:w-[244px]">
                             <ProviderCard
                               descriptor={provider}
-                              active={activeProviderId === provider.id}
+                              active={activeProviderId === provider.id && activeSetupMode === "standard"}
                               compact
                               surfaceTheme={surfaceTheme}
                               connected={resolveConnectionDetail(snapshot, providerDrafts, provider.id).connected}
@@ -767,6 +957,20 @@ export function AddModelsDialog({
                             />
                           </div>
                         ))}
+                        <div className="w-[236px] shrink-0 snap-start sm:w-[244px]">
+                          <CustomProviderCard
+                            active={activeProviderId === "custom" && activeSetupMode === "custom-openai-compatible"}
+                            compact
+                            surfaceTheme={surfaceTheme}
+                            connected={false}
+                            detail={resolveCustomEndpointDetail(resolveDraft(providerDrafts.custom)?.endpoint)}
+                            onClick={() => {
+                              setActiveProvider("custom");
+                              setActiveSetupMode("custom-openai-compatible");
+                              setActiveTab("providers");
+                            }}
+                          />
+                        </div>
                       </div>
                     </div>
                     <div className="pointer-events-none absolute bottom-1.5 right-3 z-10 rounded-full border border-white/10 bg-slate-950/70 px-2 py-0.5 text-[8px] uppercase tracking-[0.14em] text-slate-400">
@@ -780,7 +984,11 @@ export function AddModelsDialog({
                     <>
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="font-display text-[0.88rem] text-white">{activeDescriptor.label}</p>
+                          <p className="font-display text-[0.88rem] text-white">
+                            {activeSetupMode === "custom-openai-compatible"
+                              ? "Custom OpenAI-compatible provider"
+                              : activeDescriptor.label}
+                          </p>
                         </div>
                         <Badge
                           variant={activeConnection?.connected ? "success" : "muted"}
@@ -795,7 +1003,7 @@ export function AddModelsDialog({
                           )}
                         >
                           {activeConnection?.connected ? "Connected" : "Not connected"}
-                        </Badge>
+                          </Badge>
                       </div>
 
                       <div className="mt-3 flex flex-wrap gap-1">
@@ -1013,24 +1221,91 @@ export function AddModelsDialog({
 
                           {activeDescriptor.connectKind === "apiKey" ? (
                             <div className="mt-4 rounded-[20px] border border-white/10 bg-white/[0.03] p-3">
-                              <div className="flex flex-wrap items-end gap-3">
-                                <div className="min-w-0 flex-1">
-                                  <label className="block text-[9px] uppercase tracking-[0.16em] text-slate-500">
-                                    API key
-                                  </label>
-                                  <Input
-                                    type="password"
-                                    value={activeDraft.apiKey}
-                                    onChange={(event) => updateDraft(activeProviderId, { apiKey: event.target.value })}
-                                    placeholder={activeProviderId === "openrouter" ? "sk-or-v1-..." : "Paste API key"}
-                                    className="mt-1.5 h-8 text-[11px]"
-                                  />
+                              {activeSetupMode === "custom-openai-compatible" ? (
+                                <div className="mb-3 rounded-[16px] border border-cyan-300/20 bg-cyan-300/[0.07] px-3 py-2">
+                                  <p className="text-[11px] font-medium text-cyan-50">Custom OpenAI-compatible provider</p>
+                                  <p className="mt-1 max-w-[500px] text-[10px] leading-[0.98rem] text-cyan-100/80">
+                                    OpenClaw stores this as an explicit provider under <code>models.providers.&lt;id&gt;</code>. Use a `/v1` base URL and an API key from your provider.
+                                  </p>
                                 </div>
+                              ) : null}
+                              <div className="flex flex-wrap items-end gap-3">
+                                {activeSetupMode === "custom-openai-compatible" ? (
+                                  <>
+                                    <div className="min-w-[220px] flex-1">
+                                      <label className="block text-[9px] uppercase tracking-[0.16em] text-slate-500">
+                                        Base URL
+                                      </label>
+                                      <Input
+                                        type="url"
+                                        value={activeDraft.endpoint}
+                                        onChange={(event) => updateDraft(activeProviderId, { endpoint: event.target.value })}
+                                        placeholder="https://api.entrim.ai/v1"
+                                        className="mt-1.5 h-8 text-[11px]"
+                                      />
+                                    </div>
+                                    <div className="min-w-[180px] flex-1">
+                                      <label className="block text-[9px] uppercase tracking-[0.16em] text-slate-500">
+                                        Manual model ID
+                                      </label>
+                                      <Input
+                                        value={activeDraft.manualModelId}
+                                        onChange={(event) => updateDraft(activeProviderId, { manualModelId: event.target.value })}
+                                        placeholder="Optional if discovery is empty"
+                                        className="mt-1.5 h-8 text-[11px]"
+                                      />
+                                    </div>
+                                  </>
+                                ) : null}
+                                {activeSetupMode !== "custom-openai-compatible" ? (
+                                  <div className="min-w-0 flex-1">
+                                    <label className="block text-[9px] uppercase tracking-[0.16em] text-slate-500">
+                                      API key
+                                    </label>
+                                    <Input
+                                      type="password"
+                                      value={activeDraft.apiKey}
+                                      onChange={(event) => updateDraft(activeProviderId, { apiKey: event.target.value })}
+                                      placeholder={activeProviderId === "openrouter" ? "sk-or-v1-..." : "Paste API key"}
+                                      className="mt-1.5 h-8 text-[11px]"
+                                    />
+                                  </div>
+                                ) : null}
+                                {activeSetupMode === "custom-openai-compatible" ? (
+                                  <div className="min-w-[220px] flex-1">
+                                    <label className="block text-[9px] uppercase tracking-[0.16em] text-slate-500">
+                                      API key
+                                    </label>
+                                    <Input
+                                      type="password"
+                                      value={activeDraft.apiKey}
+                                      onChange={(event) => updateDraft(activeProviderId, { apiKey: event.target.value })}
+                                      placeholder="Paste provider API key"
+                                      className="mt-1.5 h-8 text-[11px]"
+                                    />
+                                  </div>
+                                ) : null}
+                                {activeSetupMode === "custom-openai-compatible" ? (
+                                  <p className="w-full text-[9px] leading-[0.9rem] text-slate-500">
+                                    Provider ID is inferred as {resolveCustomDraftProviderId(activeDraft) || "provider-id"} from the base URL. Models are saved as {resolveCustomDraftProviderId(activeDraft) || "provider-id"}/&lt;model&gt;.
+                                  </p>
+                                ) : null}
                                 <Button
                                   type="button"
                                   className="h-8 rounded-full px-3 text-[10px]"
-                                  disabled={activeDraft.flowState === "connecting" || !activeDraft.apiKey.trim()}
+                                  disabled={
+                                    activeDraft.flowState === "connecting" ||
+                                    !activeDraft.apiKey.trim() ||
+                                    (activeSetupMode === "custom-openai-compatible" &&
+                                      (!activeDraft.endpoint.trim() ||
+                                        !resolveCustomDraftProviderId(activeDraft).trim()))
+                                  }
                                   onClick={() => {
+                                    if (activeSetupMode === "custom-openai-compatible") {
+                                      void connectCustomProvider();
+                                      return;
+                                    }
+
                                     void connectProvider(activeProviderId);
                                   }}
                                 >
@@ -1039,9 +1314,9 @@ export function AddModelsDialog({
                                       <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                                       Connecting...
                                     </>
-                                  ) : (
-                                    `Connect ${activeDescriptor.shortLabel}`
-                                  )}
+                                  ) : activeSetupMode === "custom-openai-compatible"
+                                    ? "Connect custom provider"
+                                    : `Connect ${activeDescriptor.shortLabel}`}
                                 </Button>
                               </div>
                               {activeDraft.manualCommand ? (
@@ -1393,6 +1668,60 @@ function EmptyStateCard({
 
 function resolveDraft(draft?: ProviderDraft): ProviderDraft {
   return draft ? draft : initialDraftState();
+}
+
+function resolveCustomDraftProviderId(draft: ProviderDraft) {
+  const explicitProviderId = normalizeExplicitProviderId(draft.providerId);
+
+  if (explicitProviderId) {
+    return explicitProviderId;
+  }
+
+  const inferredProviderId = inferProviderIdFromBaseUrl(draft.endpoint);
+
+  if (!inferredProviderId) {
+    return "";
+  }
+
+  return isBuiltInAddModelsProviderId(inferredProviderId)
+    ? `${inferredProviderId}-custom`
+    : inferredProviderId;
+}
+
+function inferProviderIdFromBaseUrl(endpoint: string) {
+  const trimmed = endpoint.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  try {
+    const hostname = new URL(trimmed).hostname.toLowerCase();
+    const hostnameParts = hostname.split(".").filter(Boolean);
+    const meaningfulParts = hostnameParts.filter((part) => !["api", "gateway", "llm", "models"].includes(part));
+    const providerCandidate = meaningfulParts.length >= 2
+      ? meaningfulParts[meaningfulParts.length - 2]
+      : meaningfulParts[0] ?? hostnameParts[0] ?? "";
+
+    return normalizeExplicitProviderId(providerCandidate || hostname);
+  } catch {
+    return normalizeExplicitProviderId(trimmed);
+  }
+}
+
+function resolveCustomEndpointDetail(endpoint?: string) {
+  const trimmed = endpoint?.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    return `Custom endpoint: ${url.origin}${url.pathname.replace(/\/$/, "")}`;
+  } catch {
+    return `Custom endpoint: ${trimmed}`;
+  }
 }
 
 function isSelectableModel(model: AddModelsCatalogModel) {

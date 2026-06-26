@@ -1336,7 +1336,7 @@ export type OpenClawModelOnboardingStreamEvent =
       discoveredModels?: DiscoveredModelCandidate[];
     };
 
-export type AddModelsProviderId =
+export type BuiltInAddModelsProviderId =
   | "openai-codex"
   | "openrouter"
   | "ollama"
@@ -1346,6 +1346,8 @@ export type AddModelsProviderId =
   | "google"
   | "deepseek"
   | "mistral";
+
+export type AddModelsProviderId = BuiltInAddModelsProviderId | (string & {});
 
 export type AddModelsProviderCategory = "primary" | "other";
 
@@ -1383,6 +1385,7 @@ export interface AddModelsProviderConnectionStatus {
   canConnect: boolean;
   needsTerminal: boolean;
   detail: string | null;
+  source?: "model-status" | "gateway-config" | "explicit-provider-config" | "local-provider" | "cli-fallback" | "unsupported" | "unknown";
 }
 
 export interface AddModelsEmptyState {
@@ -1409,8 +1412,10 @@ export type AddModelsProviderActionRequest =
   | {
       action: "connect";
       provider: AddModelsProviderId;
+      providerName?: string;
       apiKey?: string;
       endpoint?: string;
+      modelId?: string;
       force?: boolean;
     }
   | {

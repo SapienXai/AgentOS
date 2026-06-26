@@ -2,7 +2,6 @@
 
 import {
   getModelProviderDescriptor,
-  modelProviderRegistry,
   type ModelProviderDescriptor
 } from "@/lib/openclaw/model-provider-registry";
 import type {
@@ -15,7 +14,7 @@ export type ModelProviderAdapter = {
   id: AddModelsProviderId;
   descriptor: ModelProviderDescriptor;
   getConnectionStatus: () => Promise<AddModelsProviderActionResult>;
-  connect: (input?: { apiKey?: string; endpoint?: string; force?: boolean }) => Promise<AddModelsProviderActionResult>;
+  connect: (input?: { apiKey?: string; endpoint?: string; providerName?: string; modelId?: string; force?: boolean }) => Promise<AddModelsProviderActionResult>;
   switchAccount: () => Promise<AddModelsProviderActionResult>;
   discoverModels: () => Promise<AddModelsProviderActionResult>;
   addModels: (modelIds: string[]) => Promise<AddModelsProviderActionResult>;
@@ -70,8 +69,10 @@ function createModelProviderAdapter(providerId: AddModelsProviderId): ModelProvi
       runProviderAction({
         action: "connect",
         provider: providerId,
+        providerName: input?.providerName?.trim() ? input.providerName.trim() : undefined,
         apiKey: input?.apiKey?.trim() ? input.apiKey.trim() : undefined,
         endpoint: input?.endpoint?.trim() ? input.endpoint.trim() : undefined,
+        modelId: input?.modelId?.trim() ? input.modelId.trim() : undefined,
         force: input?.force === true ? true : undefined
       }),
     switchAccount: () =>
@@ -93,10 +94,16 @@ function createModelProviderAdapter(providerId: AddModelsProviderId): ModelProvi
   };
 }
 
-export const modelProviderAdapters = Object.fromEntries(
-  modelProviderRegistry.map((provider) => [provider.id, createModelProviderAdapter(provider.id)])
-) as Record<AddModelsProviderId, ModelProviderAdapter>;
+const modelProviderAdapters = new Map<string, ModelProviderAdapter>();
 
 export function getModelProviderAdapter(providerId: AddModelsProviderId) {
-  return modelProviderAdapters[providerId];
+  const cached = modelProviderAdapters.get(providerId);
+
+  if (cached) {
+    return cached;
+  }
+
+  const adapter = createModelProviderAdapter(providerId);
+  modelProviderAdapters.set(providerId, adapter);
+  return adapter;
 }

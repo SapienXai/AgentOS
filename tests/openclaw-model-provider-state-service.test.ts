@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
 import { setOpenClawAdapterForTesting, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
-import { POST as modelsProviderPost } from "@/app/api/models/providers/route";
 import {
+  GET as modelsProviderGet,
+  POST as modelsProviderPost
+} from "@/app/api/models/providers/route";
+import {
+  addOpenClawExplicitProviderModelsToConfig,
   addOpenClawModelsToConfig,
   ensureOpenClawModelRuntimeConfig,
   persistOpenClawProviderToken,
@@ -12,10 +16,16 @@ import {
 } from "@/lib/openclaw/application/model-provider-state-service";
 
 const legacyProviderFileFallbackEnv = "AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK";
+const originalFetch = globalThis.fetch;
+
+function fetchRouteGet() {
+  return modelsProviderGet();
+}
 
 afterEach(() => {
   delete process.env[legacyProviderFileFallbackEnv];
   setOpenClawAdapterForTesting(null);
+  globalThis.fetch = originalFetch;
 });
 
 test("provider token persistence does not silently write OpenClaw auth files by default", async () => {
@@ -23,6 +33,247 @@ test("provider token persistence does not silently write OpenClaw auth files by 
     () => persistOpenClawProviderToken("openai", "sk-test"),
     /Legacy OpenClaw provider file writes are disabled by default/
   );
+});
+
+test("custom provider connect writes an explicit OpenClaw provider and namespaces discovered models", async () => {
+  const calls: Array<{ path: string; value: unknown }> = [];
+  const configs = new Map<string, unknown>([
+    [
+      "agents.defaults.models",
+      {
+        "openai/gpt-5.4": {}
+      }
+    ]
+  ]);
+  let fetchUrl = "";
+  let authHeader = "";
+
+  setOpenClawAdapterForTesting({
+    async getConfig(path: string) {
+      return configs.has(path) ? configs.get(path) as never : null;
+    },
+    async setConfig(path: string, value: unknown) {
+      calls.push({ path, value });
+      configs.set(path, value);
+      return { stdout: "", stderr: "", code: 0 };
+    },
+    async getModelStatus() {
+      return {
+        allowed: [],
+        auth: {
+          providers: [],
+          oauth: {
+            providers: []
+          }
+        }
+      };
+    }
+  } as unknown as OpenClawAdapter);
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    fetchUrl = String(input);
+    authHeader = String(init?.headers instanceof Headers
+      ? init.headers.get("Authorization")
+      : (init?.headers as Record<string, string> | undefined)?.Authorization ?? "");
+
+    return new Response(
+      JSON.stringify({
+        data: [
+          { id: "gpt-oss-120b" },
+          { id: "gpt-5.4" }
+        ]
+      }),
+      {
+        status: 200,
+        headers: {
+          "content-type": "application/json"
+        }
+      }
+    );
+  }) as typeof fetch;
+
+  const response = await modelsProviderPost(
+    new Request("http://agentos.test/api/models/providers", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "connect",
+        provider: "entrim",
+        providerName: "Entrim",
+        endpoint: "https://api.entrim.ai/v1",
+        apiKey: "sk-entrim-test"
+      })
+    })
+  );
+  const payload = await response.json();
+  const serialized = JSON.stringify(payload);
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.provider, "entrim");
+  assert.equal(payload.connection.connected, true);
+  assert.match(payload.connection.detail, /Endpoint: https:\/\/api\.entrim\.ai\/v1/);
+  assert.equal(fetchUrl, "https://api.entrim.ai/v1/models");
+  assert.equal(authHeader, "Bearer sk-entrim-test");
+  assert.doesNotMatch(serialized, /sk-entrim-test/);
+  assert.deepEqual(
+    payload.models.map((model: { id: string; alreadyAdded?: boolean }) => ({
+      id: model.id,
+      alreadyAdded: model.alreadyAdded
+    })),
+    [
+      {
+        id: "entrim/gpt-oss-120b",
+        alreadyAdded: false
+      },
+      {
+        id: "entrim/gpt-5.4",
+        alreadyAdded: false
+      }
+    ]
+  );
+  assert.deepEqual(calls, [
+    {
+      path: "models.providers.entrim",
+      value: {
+        baseUrl: "https://api.entrim.ai/v1",
+        apiKey: "sk-entrim-test",
+        api: "openai-completions",
+        models: [
+          {
+            id: "gpt-oss-120b",
+            name: "gpt-oss-120b"
+          },
+          {
+            id: "gpt-5.4",
+            name: "gpt-5.4"
+          }
+        ]
+      }
+    }
+  ]);
+});
+
+test("adding custom provider models writes explicit provider metadata and AgentOS defaults", async () => {
+  const calls: string[] = [];
+  const configs = new Map<string, unknown>([
+    [
+      "models.providers.entrim",
+      {
+        name: "Legacy Entrim",
+        label: "Legacy Entrim",
+        models: [
+          {
+            id: "gpt-oss-120b",
+            name: "GPT OSS 120B"
+          }
+        ],
+        apiKey: "[redacted]",
+        baseUrl: "https://api.entrim.ai/v1"
+      }
+    ],
+    [
+      "agents.defaults",
+      {}
+    ]
+  ]);
+
+  setOpenClawAdapterForTesting({
+    async getConfig(path: string) {
+      calls.push(`get:${path}`);
+      return configs.has(path) ? configs.get(path) as never : null;
+    },
+    async setConfig(path: string, value: unknown) {
+      calls.push(`set:${path}`);
+      configs.set(path, value);
+      return { stdout: "", stderr: "", code: 0 };
+    },
+  } as unknown as OpenClawAdapter);
+
+  await addOpenClawExplicitProviderModelsToConfig(
+    "entrim",
+    ["entrim/gpt-oss-120b"],
+    [
+      {
+        id: "gpt-oss-120b",
+        name: "GPT OSS 120B",
+        input: "text",
+        contextWindow: null,
+        maxTokens: null
+      }
+    ]
+  );
+
+  assert.deepEqual(calls, [
+    "get:models.providers.entrim",
+    "set:models.providers.entrim.models",
+    "get:agents.defaults",
+    "set:agents.defaults"
+  ]);
+  assert.deepEqual(configs.get("models.providers.entrim.models"), [
+    {
+      id: "gpt-oss-120b",
+      name: "GPT OSS 120B",
+      input: ["text"]
+    }
+  ]);
+  assert.deepEqual(configs.get("models.providers.entrim"), {
+    name: "Legacy Entrim",
+    label: "Legacy Entrim",
+    models: [
+      {
+        id: "gpt-oss-120b",
+        name: "GPT OSS 120B"
+      }
+    ],
+    apiKey: "[redacted]",
+    baseUrl: "https://api.entrim.ai/v1"
+  });
+  assert.deepEqual(configs.get("agents.defaults"), {
+    models: {
+      "entrim/gpt-oss-120b": {}
+    }
+  });
+});
+
+test("custom provider list returns explicit providers without exposing secrets", async () => {
+  setOpenClawAdapterForTesting({
+    async getConfig(path: string) {
+      if (path === "models.providers") {
+        return {
+          openai: {
+            apiKey: "[redacted]",
+            models: [{ id: "gpt-5.4" }]
+          },
+          entrim: {
+            apiKey: "[redacted]",
+            baseUrl: "https://api.entrim.ai/v1",
+            models: [
+              {
+                id: "gpt-oss-120b",
+                name: "GPT OSS 120B"
+              }
+            ]
+          }
+        };
+      }
+
+      return null;
+    }
+  } as unknown as OpenClawAdapter);
+
+  const response = await fetchRouteGet();
+  const payload = await response.json();
+  const serialized = JSON.stringify(payload);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(payload.providers, [
+    {
+      id: "entrim",
+      baseUrl: "https://api.entrim.ai/v1",
+      modelCount: 1
+    }
+  ]);
+  assert.doesNotMatch(serialized, /apiKey|redacted/);
 });
 
 test("OpenRouter connect returns terminal paste-token handoff when native token persistence is unavailable", async () => {
