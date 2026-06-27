@@ -285,9 +285,56 @@ export function AddModelsDialog({
       ),
     [explicitProviderIds, providerDrafts]
   );
-  const providerDescriptors = useMemo(
-    () => [...modelProviderRegistry, ...explicitProviderDescriptors],
-    [explicitProviderDescriptors]
+  const providerDescriptors = useMemo(() => [...modelProviderRegistry, ...explicitProviderDescriptors], [explicitProviderDescriptors]);
+  const providerDescriptorsByStatus = useMemo(() => {
+    const buckets = {
+      connected: [] as typeof providerDescriptors,
+      detected: [] as typeof providerDescriptors,
+      notConnected: [] as typeof providerDescriptors
+    };
+
+    for (const provider of providerDescriptors) {
+      const connection = resolveConnectionDetail(snapshot, providerDrafts, provider.id);
+      const rank = getProviderSortRank(provider.id, connection.connected);
+
+      if (rank === 0) {
+        buckets.connected.push(provider);
+      } else if (rank === 1) {
+        buckets.detected.push(provider);
+      } else {
+        buckets.notConnected.push(provider);
+      }
+    }
+
+    const sortBucket = (bucket: typeof providerDescriptors) =>
+      bucket.sort((left, right) => formatModelProviderLabel(left.id).localeCompare(formatModelProviderLabel(right.id)));
+
+    return {
+      connected: sortBucket(buckets.connected),
+      detected: sortBucket(buckets.detected),
+      notConnected: sortBucket(buckets.notConnected)
+    };
+  }, [providerDescriptors, providerDrafts, snapshot]);
+  const providerCards = useMemo(
+    () =>
+      providerDescriptors
+        .map((provider) => {
+          const connection = resolveConnectionDetail(snapshot, providerDrafts, provider.id);
+
+          return {
+            provider,
+            connection,
+            statusRank: getProviderSortRank(provider.id, connection.connected)
+          };
+        })
+        .sort((left, right) => {
+          if (left.statusRank !== right.statusRank) {
+            return left.statusRank - right.statusRank;
+          }
+
+          return formatModelProviderLabel(left.provider.id).localeCompare(formatModelProviderLabel(right.provider.id));
+        }),
+    [providerDescriptors, providerDrafts, snapshot]
   );
   const activeProviderId = isAddModelsProviderId(activeProvider) ? activeProvider : null;
   const activeDraft = activeProviderId ? resolveDraft(providerDrafts[activeProviderId]) : initialDraftState();
@@ -303,13 +350,7 @@ export function AddModelsDialog({
   const activeConnection = activeProviderId
     ? resolveConnectionDetail(snapshot, providerDrafts, activeProviderId)
     : null;
-  const connectedProviderCount = useMemo(
-    () =>
-      providerDescriptors.filter((provider) =>
-        resolveConnectionDetail(snapshot, providerDrafts, provider.id).connected
-      ).length,
-    [providerDescriptors, providerDrafts, snapshot]
-  );
+  const connectedProviderCount = providerDescriptorsByStatus.connected.length;
   const selectedProviderModelCount = activeProviderId
     ? snapshot.models.filter((model) => modelMatchesProvider(activeProviderId, model.id, model.provider)).length +
       activeDraft.models.length
@@ -927,7 +968,7 @@ export function AddModelsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          "flex h-[min(90dvh,900px)] max-h-[90dvh] w-[calc(100vw-16px)] max-w-[1540px] flex-col gap-0 overflow-hidden rounded-[26px] p-0 sm:w-[min(1540px,calc(100vw-42px))]",
+          "flex h-[min(90dvh,900px)] max-h-[90dvh] w-[calc(100vw-48px)] max-w-[1420px] flex-col gap-0 overflow-hidden rounded-[26px] p-0 sm:w-[min(1420px,calc(100vw-64px))]",
           isLight
             ? "agentos-light-modal border-border bg-card text-card-foreground shadow-[0_35px_100px_rgba(63,47,34,0.18),0_0_0_1px_rgba(120,92,66,0.08)]"
             : "border-white/12 bg-[#070b14] text-white shadow-[0_35px_130px_rgba(0,0,0,0.68),0_0_80px_rgba(124,58,237,0.13)]"
@@ -1060,10 +1101,10 @@ export function AddModelsDialog({
                     </div>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-                    {providerDescriptors.map((provider) => {
-                      const connection = resolveConnectionDetail(snapshot, providerDrafts, provider.id);
-                      const providerModelCount = snapshot.models.filter((model) => modelMatchesProvider(provider.id, model.id, model.provider)).length +
+                  <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-3">
+                    {providerCards.map(({ provider, connection }) => {
+                      const providerModelCount =
+                        snapshot.models.filter((model) => modelMatchesProvider(provider.id, model.id, model.provider)).length +
                         resolveDraft(providerDrafts[provider.id]).models.length;
                       const active = activeProviderId === provider.id && activeSetupMode === "standard";
 
@@ -1075,7 +1116,7 @@ export function AddModelsDialog({
                             void selectProvider(provider.id);
                           }}
                           className={cn(
-                            "min-h-[168px] rounded-[15px] border p-3 text-left transition",
+                            "min-h-[152px] rounded-[14px] border p-2.5 text-left transition",
                             active
                               ? isLight
                                 ? "border-primary/45 bg-primary/10 shadow-[0_18px_44px_rgba(124,58,237,0.12)]"
@@ -1086,7 +1127,7 @@ export function AddModelsDialog({
                           )}
                         >
                           <div className="flex items-start justify-between gap-3">
-                            <ProviderLogo provider={provider.id} className="h-10 w-10 rounded-[12px]" />
+                            <ProviderLogo provider={provider.id} className="h-9 w-9 rounded-[11px]" />
                             <Badge
                               className={cn(
                                 "px-2 py-0.5 text-[0.62rem]",
@@ -1100,34 +1141,39 @@ export function AddModelsDialog({
                               {connection.connected ? "Connected" : provider.connectKind === "local" ? "Detected" : "Not connected"}
                             </Badge>
                           </div>
-                          <p className={cn("mt-3 font-display text-[0.92rem]", isLight ? "text-foreground" : "text-white")}>{provider.label}</p>
-                          <p className={cn("mt-1.5 line-clamp-2 text-[0.76rem] leading-5", isLight ? "text-muted-foreground" : "text-slate-300")}>{provider.description}</p>
-                          <div className={cn("mt-3 text-[0.68rem] leading-4", isLight ? "text-muted-foreground" : "text-slate-400")}>
-                            <p>{providerModelCount} model{providerModelCount === 1 ? "" : "s"}</p>
+                          <p className={cn("mt-2.5 font-display text-[0.87rem]", isLight ? "text-foreground" : "text-white")}>{provider.label}</p>
+                          <p className={cn("mt-1 line-clamp-2 text-[0.72rem] leading-[1.15]", isLight ? "text-muted-foreground" : "text-slate-300")}>{provider.description}</p>
+                          <div className={cn("mt-2.5 text-[0.64rem] leading-4", isLight ? "text-muted-foreground" : "text-slate-400")}>
+                            <p>
+                              {providerModelCount} model{providerModelCount === 1 ? "" : "s"}
+                            </p>
                             <p>{connection.detail || provider.helperText}</p>
                           </div>
-                          <div className="mt-3 flex gap-1.5">
-                            <span className={cn("rounded-[9px] border px-3 py-1.5 text-[0.68rem] font-medium", isLight ? "border-border bg-muted/45 text-foreground" : "border-white/10 bg-white/[0.04] text-white")}>
+                          <div className="mt-2.5 flex flex-wrap gap-1">
+                            <span className={cn("rounded-[9px] border px-2.5 py-1 text-[0.64rem] font-medium", isLight ? "border-border bg-muted/45 text-foreground" : "border-white/10 bg-white/[0.04] text-white")}>
                               {connection.connected ? "Configured" : provider.connectKind === "local" ? "Detected" : "Needs setup"}
                             </span>
-                            <span className={cn("rounded-[9px] border px-3 py-1.5 text-[0.68rem] font-medium", isLight ? "border-border bg-card text-muted-foreground" : "border-white/10 bg-white/[0.04] text-slate-200")}>
+                            <span className={cn("rounded-[9px] border px-2.5 py-1 text-[0.64rem] font-medium", isLight ? "border-border bg-card text-muted-foreground" : "border-white/10 bg-white/[0.04] text-slate-200")}>
                               Select
                             </span>
                           </div>
                         </button>
                       );
                     })}
-                    <CustomProviderCard
-                      active={activeProviderId === "custom" && activeSetupMode === "custom-openai-compatible"}
-                      surfaceTheme={surfaceTheme}
-                      connected={false}
-                      detail={resolveCustomEndpointDetail(resolveDraft(providerDrafts.custom)?.endpoint)}
-                      onClick={() => {
-                        setActiveProvider("custom");
-                        setActiveSetupMode("custom-openai-compatible");
-                        setActiveTab("providers");
-                      }}
-                    />
+                    <div className="col-span-full">
+                      <CustomProviderCard
+                        active={activeProviderId === "custom" && activeSetupMode === "custom-openai-compatible"}
+                        compact
+                        surfaceTheme={surfaceTheme}
+                        connected={false}
+                        detail={resolveCustomEndpointDetail(resolveDraft(providerDrafts.custom)?.endpoint)}
+                        onClick={() => {
+                          setActiveProvider("custom");
+                          setActiveSetupMode("custom-openai-compatible");
+                          setActiveTab("providers");
+                        }}
+                      />
+                    </div>
                   </div>
 
                 <div className={cn("rounded-[18px] border p-3", isLight ? "border-border bg-card shadow-card" : "border-white/10 bg-[linear-gradient(180deg,rgba(11,18,32,0.96),rgba(6,10,18,0.98))]")}>
@@ -1536,128 +1582,6 @@ export function AddModelsDialog({
                             </div>
                           ) : null}
 
-                          {shouldShowDiscoveryCta ? (
-                            <div
-                              className={cn(
-                                "mt-4 rounded-[24px] border p-4",
-                                isLight
-                                  ? "border-cyan-200 bg-[linear-gradient(180deg,rgba(255,252,248,0.98),rgba(239,249,251,0.94))] shadow-[0_18px_42px_rgba(122,91,68,0.12)]"
-                                  : "border-cyan-300/20 bg-[linear-gradient(180deg,rgba(17,28,47,0.98),rgba(10,16,28,0.98))] shadow-[0_18px_42px_rgba(7,11,20,0.28)]"
-                              )}
-                            >
-                              <div className="flex flex-wrap items-center justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className={cn("font-display text-[0.92rem]", isLight ? "text-foreground" : "text-white")}>
-                                    {isDiscovering ? "Discovering models..." : discoveryActionLabel}
-                                  </p>
-                                  <p className={cn("mt-1 max-w-[520px] text-[11px] leading-[1rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
-                                    {isDiscovering
-                                      ? "OpenClaw is pulling the provider catalog into this workspace."
-                                      : discoveryDescription}
-                                  </p>
-                                </div>
-                                <div className="flex shrink-0 flex-wrap gap-2">
-                                  <Button
-                                    type="button"
-                                    variant="default"
-                                    className="h-11 rounded-full px-5 text-[12px] font-medium"
-                                    disabled={isDiscovering}
-                                    onClick={() => {
-                                      void discoverProvider(activeProviderId);
-                                    }}
-                                  >
-                                    {isDiscovering ? (
-                                      <>
-                                        <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-                                        Discovering...
-                                      </>
-                                    ) : (
-                                      <>
-                                        <RefreshCw className="mr-2 h-4 w-4" />
-                                        {discoveryButtonLabel}
-                                      </>
-                                    )}
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-11 rounded-full px-4 text-[10px]"
-                                    onClick={() => {
-                                      void runStatus(activeProviderId);
-                                    }}
-                                  >
-                                    Refresh status
-                                  </Button>
-                                </div>
-                              </div>
-                            </div>
-                          ) : null}
-
-                          {activeDraft.emptyState ? (
-                            <EmptyStateCard
-                              emptyState={activeDraft.emptyState}
-                              onCopyCommand={(command) => {
-                                void copyText(command);
-                              }}
-                              surfaceTheme={surfaceTheme}
-                            />
-                          ) : null}
-
-                          {activeDraft.models.length > 0 ? (
-                            <div className="mt-5">
-                              <ModelPicker
-                                provider={activeProviderId}
-                                models={activeDraft.models}
-                                selectedModelIds={activeDraft.selectedModelIds}
-                                search={activeDraft.search}
-                                onSearchChange={(value) => updateDraft(activeProviderId, { search: value })}
-                                onToggleModel={(modelId) => {
-                                  const selected = activeDraft.selectedModelIds.includes(modelId);
-                                  updateDraft(activeProviderId, {
-                                    selectedModelIds: selected
-                                      ? activeDraft.selectedModelIds.filter((entry) => entry !== modelId)
-                                      : [...activeDraft.selectedModelIds, modelId]
-                                  });
-                                }}
-                                onAddSelected={() => {
-                                  void addSelectedModels(activeProviderId);
-                                }}
-                                isAdding={
-                                  activeDraft.flowState === "connecting" &&
-                                  activeDraft.statusMessage === "Adding selected models..."
-                                }
-                                surfaceTheme={surfaceTheme}
-                              />
-                            </div>
-                          ) : null}
-
-                          {activeDraft.flowState === "add-success" ? (
-                            <div
-                              className={cn(
-                                "mt-3 flex items-center gap-2.5 rounded-[16px] border px-3 py-2",
-                                isLight
-                                  ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                                  : "border-emerald-300/20 bg-emerald-300/[0.08] text-emerald-50"
-                              )}
-                            >
-                              <CircleCheckBig className={cn("h-3.5 w-3.5", isLight ? "text-emerald-700" : "text-emerald-200")} />
-                              <p className="text-[11px]">
-                                {activeDraft.statusMessage || "Models were added successfully."}
-                              </p>
-                            </div>
-                          ) : null}
-
-                          {activeDraft.docsUrl ? (
-                            <a
-                              href={activeDraft.docsUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className={cn("mt-3 inline-flex text-[10px] underline underline-offset-4", isLight ? "text-primary" : "text-slate-300")}
-                            >
-                              OpenClaw model docs
-                            </a>
-                          ) : null}
                         </>
                       ) : (
                         <div
@@ -1738,6 +1662,131 @@ export function AddModelsDialog({
                         <span className={cn("mr-2 h-2 w-2 rounded-full", activeConnection?.connected ? "bg-emerald-400" : "bg-amber-400")} />
                         {activeConnection?.connected ? "Connected" : "Not connected"}
                       </Badge>
+
+                      <div className="mt-4 space-y-4">
+                        {shouldShowDiscoveryCta ? (
+                          <div
+                            className={cn(
+                              "rounded-[24px] border p-4",
+                              isLight
+                                ? "border-cyan-200 bg-[linear-gradient(180deg,rgba(255,252,248,0.98),rgba(239,249,251,0.94))] shadow-[0_18px_42px_rgba(122,91,68,0.12)]"
+                                : "border-cyan-300/20 bg-[linear-gradient(180deg,rgba(17,28,47,0.98),rgba(10,16,28,0.98))] shadow-[0_18px_42px_rgba(7,11,20,0.28)]"
+                            )}
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className={cn("font-display text-[0.92rem]", isLight ? "text-foreground" : "text-white")}>
+                                  {isDiscovering ? "Discovering models..." : discoveryActionLabel}
+                                </p>
+                                <p className={cn("mt-1 max-w-[520px] text-[11px] leading-[1rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
+                                  {isDiscovering
+                                    ? "OpenClaw is pulling the provider catalog into this workspace."
+                                    : discoveryDescription}
+                                </p>
+                              </div>
+                              <div className="flex shrink-0 flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  variant="default"
+                                  className="h-11 rounded-full px-5 text-[12px] font-medium"
+                                  disabled={isDiscovering}
+                                  onClick={() => {
+                                    void discoverProvider(activeProviderId);
+                                  }}
+                                >
+                                  {isDiscovering ? (
+                                    <>
+                                      <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                                      Discovering...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <RefreshCw className="mr-2 h-4 w-4" />
+                                      {discoveryButtonLabel}
+                                    </>
+                                  )}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-11 rounded-full px-4 text-[10px]"
+                                  onClick={() => {
+                                    void runStatus(activeProviderId);
+                                  }}
+                                >
+                                  Refresh status
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {activeDraft.emptyState ? (
+                          <EmptyStateCard
+                            emptyState={activeDraft.emptyState}
+                            onCopyCommand={(command) => {
+                              void copyText(command);
+                            }}
+                            surfaceTheme={surfaceTheme}
+                          />
+                        ) : null}
+
+                        {activeDraft.models.length > 0 ? (
+                          <div>
+                            <ModelPicker
+                              provider={activeProviderId}
+                              models={activeDraft.models}
+                              selectedModelIds={activeDraft.selectedModelIds}
+                              search={activeDraft.search}
+                              onSearchChange={(value) => updateDraft(activeProviderId, { search: value })}
+                              onToggleModel={(modelId) => {
+                                const selected = activeDraft.selectedModelIds.includes(modelId);
+                                updateDraft(activeProviderId, {
+                                  selectedModelIds: selected
+                                    ? activeDraft.selectedModelIds.filter((entry) => entry !== modelId)
+                                    : [...activeDraft.selectedModelIds, modelId]
+                                });
+                              }}
+                              onAddSelected={() => {
+                                void addSelectedModels(activeProviderId);
+                              }}
+                              isAdding={
+                                activeDraft.flowState === "connecting" &&
+                                activeDraft.statusMessage === "Adding selected models..."
+                              }
+                              surfaceTheme={surfaceTheme}
+                            />
+                          </div>
+                        ) : null}
+
+                        {activeDraft.flowState === "add-success" ? (
+                          <div
+                            className={cn(
+                              "flex items-center gap-2.5 rounded-[16px] border px-3 py-2",
+                              isLight
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                                : "border-emerald-300/20 bg-emerald-300/[0.08] text-emerald-50"
+                            )}
+                          >
+                            <CircleCheckBig className={cn("h-3.5 w-3.5", isLight ? "text-emerald-700" : "text-emerald-200")} />
+                            <p className="text-[11px]">
+                              {activeDraft.statusMessage || "Models were added successfully."}
+                            </p>
+                          </div>
+                        ) : null}
+
+                        {activeDraft.docsUrl ? (
+                          <a
+                            href={activeDraft.docsUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={cn("inline-flex text-[10px] underline underline-offset-4", isLight ? "text-primary" : "text-slate-300")}
+                          >
+                            OpenClaw model docs
+                          </a>
+                        ) : null}
+                      </div>
 
                       <div className={cn("mt-4 border-t pt-4", isLight ? "border-border" : "border-white/10")}>
                         <p className={cn("font-display text-[0.84rem]", isLight ? "text-foreground" : "text-white")}>Overview</p>
@@ -2071,6 +2120,18 @@ function resolveConnectionDetail(
         ? `${localModelCount} model${localModelCount === 1 ? "" : "s"} are already saved in AgentOS. Connect ${getModelProviderDescriptor(providerId).shortLabel} to use them.`
         : getModelProviderDescriptor(providerId).helperText
   };
+}
+
+function getProviderSortRank(providerId: AddModelsProviderId, connected: boolean) {
+  if (connected) {
+    return 0;
+  }
+
+  if (providerId === "ollama") {
+    return 1;
+  }
+
+  return 2;
 }
 
 function modelMatchesProvider(providerId: AddModelsProviderId, modelId: string, modelProvider?: string | null) {

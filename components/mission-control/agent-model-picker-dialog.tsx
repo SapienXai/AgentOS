@@ -243,7 +243,7 @@ export function AgentModelPickerDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          "flex h-[min(88dvh,860px)] max-h-[88dvh] w-[calc(100vw-16px)] max-w-[1500px] flex-col gap-0 overflow-hidden rounded-[28px] p-0 sm:w-[min(1500px,calc(100vw-42px))]",
+          "flex h-[min(94dvh,940px)] max-h-[94dvh] w-[calc(100vw-48px)] max-w-[1400px] flex-col gap-0 overflow-hidden rounded-[28px] p-0 sm:w-[min(1400px,calc(100vw-64px))]",
           isLight
             ? "agentos-light-modal border-border bg-card text-card-foreground shadow-[0_30px_90px_rgba(63,47,34,0.18),0_0_0_1px_rgba(120,92,66,0.08)]"
             : "border-violet-400/45 bg-[#070a14] text-white shadow-[0_0_0_1px_rgba(168,85,247,0.18),0_30px_120px_rgba(3,7,18,0.72),0_0_80px_rgba(124,58,237,0.20)]"
@@ -251,29 +251,29 @@ export function AgentModelPickerDialog({
       >
         <DialogHeader
           className={cn(
-            "relative shrink-0 overflow-hidden border-b px-6 py-4 pr-14",
+            "relative shrink-0 overflow-hidden border-b px-5 py-3.5 pr-12",
             isLight
               ? "border-border bg-[radial-gradient(circle_at_15%_20%,rgba(236,72,153,0.10),transparent_32%),radial-gradient(circle_at_92%_12%,rgba(124,58,237,0.12),transparent_30%),linear-gradient(135deg,hsl(var(--card)),hsl(var(--muted)/0.64))]"
               : "border-white/10 bg-[radial-gradient(circle_at_15%_20%,rgba(236,72,153,0.16),transparent_32%),radial-gradient(circle_at_92%_12%,rgba(124,58,237,0.20),transparent_30%),linear-gradient(135deg,rgba(12,18,34,0.98),rgba(8,10,23,0.98))]"
           )}
         >
           <div className={cn("absolute inset-x-12 bottom-0 h-px bg-gradient-to-r from-transparent to-transparent", isLight ? "via-primary/25" : "via-violet-400/60")} />
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <div
               className={cn(
-                "flex h-14 w-14 items-center justify-center rounded-[18px] border",
+                "flex h-12 w-12 items-center justify-center rounded-[16px] border",
                 isLight
                   ? "border-primary/20 bg-primary/10 text-primary shadow-[0_18px_42px_rgba(124,58,237,0.10)]"
                   : "border-pink-400/25 bg-[linear-gradient(145deg,rgba(236,72,153,0.20),rgba(124,58,237,0.14))] text-pink-300 shadow-[0_0_36px_rgba(236,72,153,0.18)]"
               )}
             >
-              <Grid2X2 className="h-6 w-6" />
+              <Grid2X2 className="h-5 w-5" />
             </div>
             <div>
-              <DialogTitle className={cn("font-display text-[1.45rem] leading-none tracking-[-0.04em]", isLight ? "text-foreground" : "text-white")}>
+              <DialogTitle className={cn("font-display text-[1.3rem] leading-none tracking-[-0.04em]", isLight ? "text-foreground" : "text-white")}>
                 Change Model
               </DialogTitle>
-              <DialogDescription className={cn("mt-1.5 max-w-[620px] text-[0.82rem] leading-5", isLight ? "text-muted-foreground" : "text-slate-300")}>
+              <DialogDescription className={cn("mt-1 max-w-[620px] text-[0.78rem] leading-[1.15rem]", isLight ? "text-muted-foreground" : "text-slate-300")}>
                 Choose the model this agent will use.
               </DialogDescription>
             </div>
@@ -282,7 +282,7 @@ export function AgentModelPickerDialog({
 
         <div
           className={cn(
-            "grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[330px_minmax(0,1fr)]",
+            "grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden p-3 lg:grid-cols-[300px_minmax(0,1fr)]",
             isLight
               ? "bg-[radial-gradient(circle_at_8%_85%,hsl(var(--primary)/0.08),transparent_28%),linear-gradient(180deg,hsl(var(--background)),hsl(var(--muted)/0.42))]"
               : "bg-[radial-gradient(circle_at_8%_85%,rgba(34,211,238,0.10),transparent_28%),linear-gradient(180deg,rgba(4,7,17,0.96),rgba(3,6,14,0.98))]"
@@ -290,129 +290,129 @@ export function AgentModelPickerDialog({
         >
           <aside
             className={cn(
-              "min-h-0 overflow-y-auto rounded-[20px] border p-3",
+              "min-h-0 overflow-y-auto rounded-[18px] border p-2.5",
               isLight
                 ? "border-border bg-card shadow-card"
                 : "border-white/10 bg-[linear-gradient(180deg,rgba(17,24,43,0.90),rgba(9,13,25,0.92))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
             )}
           >
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
               <div
                 className={cn(
-                  "flex h-14 w-14 items-center justify-center rounded-[18px] border",
+                  "flex h-12 w-12 items-center justify-center rounded-[16px] border",
                   isLight
                     ? "border-primary/20 bg-[radial-gradient(circle_at_50%_15%,rgba(255,255,255,0.65),transparent_28%),linear-gradient(145deg,hsl(var(--primary)/0.16),hsl(var(--muted)))] text-primary shadow-[0_18px_42px_rgba(124,58,237,0.10)]"
                     : "border-violet-300/25 bg-[radial-gradient(circle_at_50%_15%,rgba(255,255,255,0.18),transparent_25%),linear-gradient(145deg,rgba(124,58,237,0.72),rgba(30,41,59,0.82))] text-white shadow-[0_18px_48px_rgba(124,58,237,0.28)]"
                 )}
               >
-                <Bot className="h-7 w-7" />
+                <Bot className="h-6 w-6" />
               </div>
               <div className="min-w-0">
-                <p className={cn("truncate font-display text-[1.05rem]", isLight ? "text-foreground" : "text-white")}>{formatAgentDisplayName(agent)}</p>
-                <p className={cn("mt-0.5 truncate text-[0.74rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>{agent.id}</p>
-                <Badge className={cn("mt-1.5 px-2 py-0.5 text-[9px] uppercase tracking-[0.14em]", isLight ? "border-primary/25 bg-primary/10 text-primary" : "border-violet-400/30 bg-violet-400/15 text-violet-100")}>
+                <p className={cn("truncate font-display text-[0.98rem]", isLight ? "text-foreground" : "text-white")}>{formatAgentDisplayName(agent)}</p>
+                <p className={cn("mt-0.5 truncate text-[0.68rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>{agent.id}</p>
+                <Badge className={cn("mt-1 px-2 py-0.5 text-[8px] uppercase tracking-[0.14em]", isLight ? "border-primary/25 bg-primary/10 text-primary" : "border-violet-400/30 bg-violet-400/15 text-violet-100")}>
                   Current agent
                 </Badge>
               </div>
             </div>
 
-            <div className={cn("mt-4 rounded-[16px] border p-3", isLight ? "border-border bg-muted/35" : "border-white/10 bg-white/[0.035]")}>
-              <div className="flex items-center gap-3">
-                <div className={cn("flex h-9 w-9 items-center justify-center rounded-[12px] border", isLight ? "border-primary/20 bg-primary/10 text-primary" : "border-violet-300/20 bg-violet-400/15 text-violet-100")}>
+            <div className={cn("mt-2.5 rounded-[14px] border p-2.5", isLight ? "border-border bg-muted/35" : "border-white/10 bg-white/[0.035]")}>
+              <div className="flex items-center gap-2.5">
+                <div className={cn("flex h-8 w-8 items-center justify-center rounded-[11px] border", isLight ? "border-primary/20 bg-primary/10 text-primary" : "border-violet-300/20 bg-violet-400/15 text-violet-100")}>
                   <ProviderGlyph provider={currentModel ? resolvePickerModelProvider(currentModel) : "openai-codex"} />
                 </div>
                 <div className="min-w-0">
-                  <p className={cn("text-[0.66rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Current model</p>
-                  <p className={cn("truncate text-[0.86rem] font-semibold", isLight ? "text-foreground" : "text-white")}>
+                  <p className={cn("text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Current model</p>
+                  <p className={cn("truncate text-[0.8rem] font-semibold", isLight ? "text-foreground" : "text-white")}>
                     {currentModel?.name || (currentModelId ? currentModelId : "OpenClaw default")}
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="mt-2.5 grid grid-cols-3 gap-1.5">
               <MetricTile label="Provider" value={currentModel ? formatPickerModelProviderLabel(currentModel) : "Default"} surfaceTheme={surfaceTheme} />
               <MetricTile label="Context window" value={currentModel ? formatContextWindow(currentModel.contextWindow) : "Unknown"} surfaceTheme={surfaceTheme} />
               <MetricTile label="Status" value={currentStatusLabel} tone={currentModelSelectable ? "success" : "warning"} surfaceTheme={surfaceTheme} />
             </div>
 
-            <div className={cn("mt-3 rounded-[16px] border p-3", isLight ? "border-border bg-muted/35" : "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.74),rgba(15,23,42,0.34))]")}>
-              <div className="flex items-center gap-3">
-                <div className={cn("relative flex h-12 w-12 items-center justify-center rounded-full border", isLight ? "border-primary/20 bg-primary/10" : "border-violet-400/20 bg-violet-500/10")}>
-                  <div className={cn("absolute inset-1 rounded-full border-[5px] border-r-transparent opacity-70", isLight ? "border-primary/50" : "border-violet-500/55")} />
-                  <span className={cn("text-[0.68rem] font-semibold", isLight ? "text-primary" : "text-white")}>N/A</span>
+            <div className={cn("mt-2.5 rounded-[14px] border p-2.5", isLight ? "border-border bg-muted/35" : "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.74),rgba(15,23,42,0.34))]")}>
+              <div className="flex items-center gap-2.5">
+                <div className={cn("relative flex h-10 w-10 items-center justify-center rounded-full border", isLight ? "border-primary/20 bg-primary/10" : "border-violet-400/20 bg-violet-500/10")}>
+                  <div className={cn("absolute inset-1 rounded-full border-[4px] border-r-transparent opacity-70", isLight ? "border-primary/50" : "border-violet-500/55")} />
+                  <span className={cn("text-[0.62rem] font-semibold", isLight ? "text-primary" : "text-white")}>N/A</span>
                 </div>
                 <div>
-                  <p className={cn("text-[0.66rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Context capacity</p>
-                  <p className={cn("mt-0.5 text-[0.98rem] font-semibold", isLight ? "text-foreground" : "text-white")}>
+                  <p className={cn("text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Context capacity</p>
+                  <p className={cn("mt-0.5 text-[0.84rem] font-semibold", isLight ? "text-foreground" : "text-white")}>
                     {currentModel ? formatContextWindow(currentModel.contextWindow) : "Unknown"}
                   </p>
-                  <p className={cn("mt-0.5 text-[0.66rem]", isLight ? "text-muted-foreground" : "text-slate-500")}>Live token usage is not available from OpenClaw yet</p>
+                  <p className={cn("mt-0.5 text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-500")}>Live token usage is not available from OpenClaw yet</p>
                 </div>
               </div>
             </div>
 
-            <div className={cn("mt-3 rounded-[16px] border p-2.5", isLight ? "border-border bg-muted/35" : "border-white/10 bg-white/[0.035]")}>
-              <p className={cn("px-1 text-[0.66rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Quick actions</p>
+            <div className={cn("mt-2.5 rounded-[14px] border p-2", isLight ? "border-border bg-muted/35" : "border-white/10 bg-white/[0.035]")}>
+              <p className={cn("px-1 text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Quick actions</p>
               <button
                 type="button"
                 onClick={handleOpenAddModels}
                 className={cn(
-                  "mt-2 flex w-full items-center justify-between rounded-[13px] border px-2.5 py-2.5 text-left transition",
+                  "mt-1.5 flex w-full items-center justify-between rounded-[12px] border px-2 py-2 text-left transition",
                   isLight
                     ? "border-border bg-card text-foreground hover:border-primary/25 hover:bg-accent"
                     : "border-white/8 bg-white/[0.04] hover:border-violet-300/30 hover:bg-violet-400/10"
                 )}
               >
-                <span className="flex items-center gap-3">
-                  <span className={cn("flex h-8 w-8 items-center justify-center rounded-[10px]", isLight ? "bg-primary/10 text-primary" : "bg-white/[0.06] text-slate-200")}>
-                    <Database className="h-3.5 w-3.5" />
+                <span className="flex items-center gap-2.5">
+                  <span className={cn("flex h-7 w-7 items-center justify-center rounded-[9px]", isLight ? "bg-primary/10 text-primary" : "bg-white/[0.06] text-slate-200")}>
+                    <Database className="h-3 w-3" />
                   </span>
                   <span>
-                    <span className={cn("block text-[0.78rem] font-medium", isLight ? "text-foreground" : "text-white")}>Open Model Library</span>
-                    <span className={cn("block text-[0.66rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Manage providers & models</span>
+                    <span className={cn("block text-[0.72rem] font-medium", isLight ? "text-foreground" : "text-white")}>Open Model Library</span>
+                    <span className={cn("block text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Manage providers & models</span>
                   </span>
                 </span>
-                <ChevronRight className={cn("h-4 w-4", isLight ? "text-muted-foreground" : "text-slate-500")} />
+                <ChevronRight className={cn("h-3.5 w-3.5", isLight ? "text-muted-foreground" : "text-slate-500")} />
               </button>
               <button
                 type="button"
                 className={cn(
-                  "mt-1.5 flex w-full cursor-not-allowed items-center justify-between rounded-[13px] border px-2.5 py-2.5 text-left opacity-70",
+                  "mt-1.5 flex w-full cursor-not-allowed items-center justify-between rounded-[12px] border px-2 py-2 text-left opacity-70",
                   isLight ? "border-border bg-muted/55 text-muted-foreground" : "border-white/8 bg-white/[0.025]"
                 )}
                 title="Model settings are managed by provider setup for now."
               >
-                <span className="flex items-center gap-3">
-                  <span className={cn("flex h-8 w-8 items-center justify-center rounded-[10px]", isLight ? "bg-muted text-muted-foreground" : "bg-white/[0.06] text-slate-300")}>
-                    <Settings className="h-3.5 w-3.5" />
+                <span className="flex items-center gap-2.5">
+                  <span className={cn("flex h-7 w-7 items-center justify-center rounded-[9px]", isLight ? "bg-muted text-muted-foreground" : "bg-white/[0.06] text-slate-300")}>
+                    <Settings className="h-3 w-3" />
                   </span>
                   <span>
-                    <span className={cn("block text-[0.78rem] font-medium", isLight ? "text-foreground" : "text-white")}>Model Settings</span>
-                    <span className={cn("block text-[0.66rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Default params & routing</span>
+                    <span className={cn("block text-[0.72rem] font-medium", isLight ? "text-foreground" : "text-white")}>Model Settings</span>
+                    <span className={cn("block text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Default params & routing</span>
                   </span>
                 </span>
-                <ChevronRight className={cn("h-4 w-4", isLight ? "text-muted-foreground" : "text-slate-500")} />
+                <ChevronRight className={cn("h-3.5 w-3.5", isLight ? "text-muted-foreground" : "text-slate-500")} />
               </button>
             </div>
           </aside>
 
           <section
             className={cn(
-              "min-h-0 overflow-hidden rounded-[20px] border p-3",
+              "min-h-0 overflow-hidden rounded-[18px] border p-2.5",
               isLight
                 ? "border-border bg-card shadow-card"
                 : "border-white/10 bg-[linear-gradient(180deg,rgba(10,15,30,0.82),rgba(5,8,18,0.86))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
             )}
           >
-            <div className="flex flex-col gap-2 xl:flex-row">
+            <div className="flex flex-col gap-1.5 xl:flex-row">
               <div className="relative min-w-0 flex-1">
-                <Search className={cn("pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2", isLight ? "text-muted-foreground" : "text-slate-500")} />
+                <Search className={cn("pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2", isLight ? "text-muted-foreground" : "text-slate-500")} />
                 <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search models..."
-                  className={cn("h-10 rounded-[12px] pl-10 text-[0.82rem]", isLight ? "border-input bg-card text-foreground" : "border-white/10 bg-slate-950/45 text-slate-100")}
+                  className={cn("h-8 rounded-[11px] pl-9 text-[0.76rem]", isLight ? "border-input bg-card text-foreground" : "border-white/10 bg-slate-950/45 text-slate-100")}
                 />
               </div>
               <NativeFilter value={providerFilter} onChange={setProviderFilter} ariaLabel="Provider filter" surfaceTheme={surfaceTheme}>
@@ -433,13 +433,13 @@ export function AgentModelPickerDialog({
                 <option value="context">Sort: Context</option>
                 <option value="provider">Sort: Provider</option>
               </NativeFilter>
-              <Button type="button" variant="secondary" className="h-10 rounded-[12px] px-3">
-                <SlidersHorizontal className="h-4 w-4" />
+              <Button type="button" variant="secondary" className="h-8 rounded-[11px] px-3">
+                <SlidersHorizontal className="h-3.5 w-3.5" />
               </Button>
             </div>
 
-            <div className="mt-3 min-h-0 overflow-y-auto pr-1 lg:max-h-[calc(88dvh-205px)]">
-              <div className="space-y-1.5">
+            <div className="mt-2 min-h-0 overflow-y-auto pr-1 lg:max-h-[calc(90dvh-180px)]">
+              <div className="space-y-1">
                 {visibleModels.length > 0 ? (
                   visibleModels.map((model) => {
                     const selected = selectedModelId === model.id;
@@ -454,11 +454,11 @@ export function AgentModelPickerDialog({
                         aria-pressed={selected}
                         onClick={() => selectable && setSelectedModelId(model.id)}
                         className={cn(
-                          "grid w-full grid-cols-[24px_1fr] items-center gap-3 rounded-[15px] border px-3 py-2.5 text-left transition lg:grid-cols-[24px_1.15fr_112px_104px_104px_74px_20px]",
+                          "grid w-full grid-cols-[22px_1fr] items-center gap-2 rounded-[14px] border px-2 py-1.5 text-left transition lg:grid-cols-[22px_1.05fr_100px_92px_92px_68px_18px]",
                           selected
                             ? isLight
-                              ? "border-primary/55 bg-primary/10 shadow-[0_0_0_1px_hsl(var(--primary)/0.14),0_18px_40px_rgba(124,58,237,0.12)]"
-                              : "border-violet-400/85 bg-[radial-gradient(circle_at_10%_50%,rgba(124,58,237,0.28),transparent_36%),linear-gradient(180deg,rgba(39,25,79,0.80),rgba(12,18,35,0.86))] shadow-[0_0_0_1px_rgba(168,85,247,0.28),0_0_36px_rgba(124,58,237,0.28)]"
+                              ? "border-primary/55 bg-primary/10 shadow-[0_0_0_1px_hsl(var(--primary)/0.14),0_14px_28px_rgba(124,58,237,0.10)]"
+                              : "border-violet-400/85 bg-[radial-gradient(circle_at_10%_50%,rgba(124,58,237,0.28),transparent_36%),linear-gradient(180deg,rgba(39,25,79,0.80),rgba(12,18,35,0.86))] shadow-[0_0_0_1px_rgba(168,85,247,0.28),0_0_36px_rgba(124,58,237,0.22)]"
                             : isLight
                               ? "border-border bg-card hover:border-primary/25 hover:bg-accent/60"
                               : "border-white/8 bg-white/[0.035] hover:border-violet-300/25 hover:bg-white/[0.055]",
@@ -466,40 +466,47 @@ export function AgentModelPickerDialog({
                         )}
                       >
                         <span className={cn(
-                          "flex h-5 w-5 items-center justify-center rounded-full border",
+                          "flex h-[18px] w-[18px] items-center justify-center rounded-full border",
                           selected
                             ? "border-primary bg-primary text-primary-foreground"
                             : isLight
                               ? "border-border bg-card"
                               : "border-slate-500/70 bg-slate-950/40"
                         )}>
-                          {selected ? <Check className="h-3 w-3" /> : null}
+                          {selected ? <Check className="h-2.5 w-2.5" /> : null}
                         </span>
 
-                        <span className="flex min-w-0 items-center gap-3">
-                          <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border", getProviderIconTone(provider, surfaceTheme))}>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border", getProviderIconTone(provider, surfaceTheme))}>
                             <ProviderGlyph provider={provider} />
                           </span>
                           <span className="min-w-0">
-                            <span className={cn("block truncate text-[0.88rem] font-semibold", isLight ? "text-foreground" : "text-white")}>{formatModelLabel(model.id)}</span>
-                            <span className={cn("mt-0.5 block truncate text-[0.74rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>{model.name}</span>
-                            <span className="mt-1.5 flex flex-wrap gap-1">
-                              <Badge variant="muted" className="px-1.5 py-0.5 text-[9px]">{formatModelProviderLabel(provider)}</Badge>
+                            <span className={cn("block truncate text-[0.78rem] font-semibold", isLight ? "text-foreground" : "text-white")}>{formatModelLabel(model.id)}</span>
+                            <span className={cn("mt-0.5 block truncate text-[0.66rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>{model.name}</span>
+                            <span className="mt-0.5 flex flex-wrap gap-1">
+                              <Badge variant="muted" className="px-1.5 py-0.5 text-[7.5px]">{formatModelProviderLabel(provider)}</Badge>
                               {model.contextWindow ? (
-                                <Badge variant="muted" className="px-1.5 py-0.5 text-[9px]">{formatContextWindow(model.contextWindow)} context window</Badge>
+                                <Badge variant="muted" className="px-1.5 py-0.5 text-[7.5px]">{formatContextWindow(model.contextWindow)} context window</Badge>
                               ) : null}
                             </span>
-                            {!selectable ? <span className={cn("mt-2 block text-[0.72rem]", isLight ? "text-amber-800" : "text-amber-200")}>{resolveModelSetupHint(model)}</span> : null}
+                            {!selectable ? (
+                              <span
+                                title={resolveModelSetupHint(model)}
+                                className={cn("mt-1 block truncate text-[0.66rem] leading-tight", isLight ? "text-amber-800" : "text-amber-200")}
+                              >
+                                {resolveModelSetupHint(model)}
+                              </span>
+                            ) : null}
                           </span>
                         </span>
 
-                        <MetricInline icon={<Cpu className="h-4 w-4" />} value={formatContextWindow(model.contextWindow)} label="Context window" surfaceTheme={surfaceTheme} />
-                        <MetricInline icon={<Zap className="h-4 w-4" />} value={resolvePerformanceLabel(model)} label="Performance" surfaceTheme={surfaceTheme} />
-                        <MetricInline icon={<span className={cn("h-3 w-3 rounded-full", selectable ? "bg-emerald-400" : "bg-amber-400")} />} value={selectable ? "Ready" : "Needs setup"} label="Status" tone={selectable ? "success" : "warning"} surfaceTheme={surfaceTheme} />
-                        <Badge className={cn("justify-self-start rounded-[8px] px-2 py-0.5 text-[0.66rem]", model.local ? (isLight ? "border-cyan-300 bg-cyan-50 text-cyan-800" : "border-cyan-300/30 bg-cyan-400/10 text-cyan-100") : (isLight ? "border-primary/25 bg-primary/10 text-primary" : "border-violet-300/30 bg-violet-500/10 text-violet-100"))}>
+                        <MetricInline icon={<Cpu className="h-3.5 w-3.5" />} value={formatContextWindow(model.contextWindow)} label="Context window" surfaceTheme={surfaceTheme} />
+                        <MetricInline icon={<Zap className="h-3.5 w-3.5" />} value={resolvePerformanceLabel(model)} label="Performance" surfaceTheme={surfaceTheme} />
+                        <MetricInline icon={<span className={cn("h-2.5 w-2.5 rounded-full", selectable ? "bg-emerald-400" : "bg-amber-400")} />} value={selectable ? "Ready" : "Needs setup"} label="Status" tone={selectable ? "success" : "warning"} surfaceTheme={surfaceTheme} />
+                        <Badge className={cn("justify-self-start rounded-[8px] px-2 py-0.5 text-[0.6rem]", model.local ? (isLight ? "border-cyan-300 bg-cyan-50 text-cyan-800" : "border-cyan-300/30 bg-cyan-400/10 text-cyan-100") : (isLight ? "border-primary/25 bg-primary/10 text-primary" : "border-violet-300/30 bg-violet-500/10 text-violet-100"))}>
                           {model.local ? "Local" : "Remote"}
                         </Badge>
-                        <ChevronRight className={cn("hidden h-5 w-5 justify-self-end lg:block", isLight ? "text-muted-foreground" : "text-slate-400")} />
+                        <ChevronRight className={cn("hidden h-4 w-4 justify-self-end lg:block", isLight ? "text-muted-foreground" : "text-slate-400")} />
                       </button>
                     );
                   })
@@ -523,17 +530,19 @@ export function AgentModelPickerDialog({
           </section>
         </div>
 
-        <div className={cn("shrink-0 border-t px-6 py-3", isLight ? "border-border bg-card" : "border-white/[0.08] bg-slate-950/55")}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className={cn("flex items-center gap-2 text-[0.76rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
-              <Info className={cn("h-4 w-4", isLight ? "text-muted-foreground" : "text-slate-500")} />
-              <span>Models marked <span className={cn(isLight ? "text-amber-800" : "text-amber-300")}>Needs setup</span> require provider connection first.</span>
+        <div className={cn("shrink-0 border-t px-4 py-2", isLight ? "border-border bg-card" : "border-white/[0.08] bg-slate-950/55")}>
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <div className={cn("flex min-w-0 flex-1 items-center gap-2 text-[0.68rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
+              <Info className={cn("h-3.5 w-3.5 shrink-0", isLight ? "text-muted-foreground" : "text-slate-500")} />
+              <span className="min-w-0 truncate">
+                Models marked <span className={cn(isLight ? "text-amber-800" : "text-amber-300")}>Needs setup</span> require provider connection first.
+              </span>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex shrink-0 items-center gap-2">
               <Button
                 type="button"
                 variant="secondary"
-                className="h-10 rounded-[12px] px-6 text-[0.82rem]"
+                className="h-[34px] shrink-0 rounded-[11px] px-[18px] text-[0.76rem]"
                 disabled={saving}
                 onClick={() => onOpenChange(false)}
               >
@@ -541,7 +550,12 @@ export function AgentModelPickerDialog({
               </Button>
               <Button
                 type="button"
-                className="h-10 rounded-[12px] bg-[linear-gradient(135deg,#7c3aed,#ec4899)] px-6 text-[0.82rem] font-semibold shadow-[0_18px_45px_rgba(124,58,237,0.35)]"
+                className={cn(
+                  "h-[34px] shrink-0 rounded-[11px] px-[18px] text-[0.76rem] font-semibold shadow-[0_18px_45px_rgba(124,58,237,0.35)]",
+                  isLight
+                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                    : "bg-[linear-gradient(135deg,#7c3aed,#ec4899)]"
+                )}
                 disabled={saving || !hasChanges || !selectedModelSelectable}
                 onClick={() => {
                   void saveModel();
