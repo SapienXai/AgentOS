@@ -336,7 +336,15 @@ export function AddModelsDialog({
         }),
     [providerDescriptors, providerDrafts, snapshot]
   );
+  const defaultProviderId = providerCards[0]?.provider.id ?? null;
   const activeProviderId = isAddModelsProviderId(activeProvider) ? activeProvider : null;
+  useEffect(() => {
+    if (!open || activeProviderId || !defaultProviderId) {
+      return;
+    }
+
+    setActiveProvider(defaultProviderId);
+  }, [open, activeProviderId, defaultProviderId]);
   const activeDraft = activeProviderId ? resolveDraft(providerDrafts[activeProviderId]) : initialDraftState();
   const activeDescriptor = activeProviderId
     ? activeSetupMode === "custom-openai-compatible"
@@ -1113,57 +1121,80 @@ export function AddModelsDialog({
                         snapshot.models.filter((model) => modelMatchesProvider(provider.id, model.id, model.provider)).length +
                         resolveDraft(providerDrafts[provider.id]).models.length;
                       const active = activeProviderId === provider.id && activeSetupMode === "standard";
+                      const isChatGPTProvider = provider.id === "openai-codex";
 
                       return (
-                        <button
-                          key={provider.id}
-                          type="button"
-                          onClick={() => {
-                            void selectProvider(provider.id);
-                          }}
-                          className={cn(
-                            "min-h-[152px] rounded-[14px] border p-2.5 text-left transition",
-                            active
-                              ? isLight
-                                ? "border-primary/45 bg-primary/10 shadow-[0_18px_44px_rgba(124,58,237,0.12)]"
-                                : "border-violet-400 bg-[radial-gradient(circle_at_8%_0%,rgba(124,58,237,0.20),transparent_36%),linear-gradient(180deg,rgba(20,27,48,0.92),rgba(10,15,28,0.92))] shadow-[0_0_0_1px_rgba(168,85,247,0.22),0_0_34px_rgba(124,58,237,0.16)]"
-                              : isLight
-                                ? "border-border bg-card hover:border-primary/25 hover:bg-accent/60"
-                                : "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(10,15,28,0.86))] hover:border-violet-300/35 hover:bg-white/[0.055]"
-                          )}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <ProviderLogo provider={provider.id} className="h-9 w-9 rounded-[11px]" />
-                            <Badge
+                        <div key={provider.id} className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void selectProvider(provider.id);
+                            }}
+                            className={cn(
+                              "min-h-[152px] rounded-[14px] border p-2.5 text-left transition",
+                              active
+                                ? isLight
+                                  ? "border-primary/45 bg-primary/10 shadow-[0_18px_44px_rgba(124,58,237,0.12)]"
+                                  : "border-violet-400 bg-[radial-gradient(circle_at_8%_0%,rgba(124,58,237,0.20),transparent_36%),linear-gradient(180deg,rgba(20,27,48,0.92),rgba(10,15,28,0.92))] shadow-[0_0_0_1px_rgba(168,85,247,0.22),0_0_34px_rgba(124,58,237,0.16)]"
+                                : isLight
+                                  ? "border-border bg-card hover:border-primary/25 hover:bg-accent/60"
+                                  : "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(10,15,28,0.86))] hover:border-violet-300/35 hover:bg-white/[0.055]"
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <ProviderLogo provider={provider.id} className="h-9 w-9 rounded-[11px]" />
+                              <Badge
+                                className={cn(
+                                  "px-2 py-0.5 text-[0.62rem]",
+                                  connection.connected
+                                    ? isLight ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-emerald-300/20 bg-emerald-400/10 text-emerald-200"
+                                    : provider.connectKind === "local"
+                                      ? isLight ? "border-cyan-300 bg-cyan-50 text-cyan-800" : "border-cyan-300/20 bg-cyan-400/10 text-cyan-200"
+                                      : isLight ? "border-amber-300 bg-amber-50 text-amber-800" : "border-amber-300/20 bg-amber-400/10 text-amber-200"
+                                )}
+                              >
+                                {connection.connected ? "Connected" : provider.connectKind === "local" ? "Detected" : "Not connected"}
+                              </Badge>
+                            </div>
+                            <p className={cn("mt-2.5 font-display text-[0.87rem]", isLight ? "text-foreground" : "text-white")}>{provider.label}</p>
+                            <p className={cn("mt-1 line-clamp-2 text-[0.72rem] leading-[1.15]", isLight ? "text-muted-foreground" : "text-slate-300")}>{provider.description}</p>
+                            <div className={cn("mt-2.5 text-[0.64rem] leading-4", isLight ? "text-muted-foreground" : "text-slate-400")}>
+                              <p>
+                                {providerModelCount} model{providerModelCount === 1 ? "" : "s"}
+                              </p>
+                              <p>{connection.detail || provider.helperText}</p>
+                            </div>
+                            <div className="mt-2.5 flex flex-wrap gap-1">
+                              <span className={cn("rounded-[9px] border px-2.5 py-1 text-[0.64rem] font-medium", isLight ? "border-border bg-muted/45 text-foreground" : "border-white/10 bg-white/[0.04] text-white")}>
+                                {connection.connected ? "Configured" : provider.connectKind === "local" ? "Detected" : "Needs setup"}
+                              </span>
+                            </div>
+                          </button>
+
+                          {isChatGPTProvider ? (
+                            <Button
+                              type="button"
+                              variant="secondary"
                               className={cn(
-                                "px-2 py-0.5 text-[0.62rem]",
-                                connection.connected
-                                  ? isLight ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-emerald-300/20 bg-emerald-400/10 text-emerald-200"
-                                  : provider.connectKind === "local"
-                                    ? isLight ? "border-cyan-300 bg-cyan-50 text-cyan-800" : "border-cyan-300/20 bg-cyan-400/10 text-cyan-200"
-                                    : isLight ? "border-amber-300 bg-amber-50 text-amber-800" : "border-amber-300/20 bg-amber-400/10 text-amber-200"
+                                "h-7 w-full rounded-[10px] px-2.5 text-[0.64rem]",
+                                isLight
+                                  ? "border border-border bg-card text-foreground hover:border-primary/25 hover:bg-accent"
+                                  : "border border-white/10 bg-white/[0.04] text-white hover:border-violet-300/30 hover:bg-violet-400/10"
                               )}
+                              disabled={activeConnection?.connected ? false : false}
+                              onClick={() => {
+                                if (connection.connected) {
+                                  void switchProviderAccount(provider.id);
+                                  return;
+                                }
+
+                                void connectProvider(provider.id, { force: true });
+                              }}
                             >
-                              {connection.connected ? "Connected" : provider.connectKind === "local" ? "Detected" : "Not connected"}
-                            </Badge>
-                          </div>
-                          <p className={cn("mt-2.5 font-display text-[0.87rem]", isLight ? "text-foreground" : "text-white")}>{provider.label}</p>
-                          <p className={cn("mt-1 line-clamp-2 text-[0.72rem] leading-[1.15]", isLight ? "text-muted-foreground" : "text-slate-300")}>{provider.description}</p>
-                          <div className={cn("mt-2.5 text-[0.64rem] leading-4", isLight ? "text-muted-foreground" : "text-slate-400")}>
-                            <p>
-                              {providerModelCount} model{providerModelCount === 1 ? "" : "s"}
-                            </p>
-                            <p>{connection.detail || provider.helperText}</p>
-                          </div>
-                          <div className="mt-2.5 flex flex-wrap gap-1">
-                            <span className={cn("rounded-[9px] border px-2.5 py-1 text-[0.64rem] font-medium", isLight ? "border-border bg-muted/45 text-foreground" : "border-white/10 bg-white/[0.04] text-white")}>
-                              {connection.connected ? "Configured" : provider.connectKind === "local" ? "Detected" : "Needs setup"}
-                            </span>
-                            <span className={cn("rounded-[9px] border px-2.5 py-1 text-[0.64rem] font-medium", isLight ? "border-border bg-card text-muted-foreground" : "border-white/10 bg-white/[0.04] text-slate-200")}>
-                              Select
-                            </span>
-                          </div>
-                        </button>
+                              {connection.connected ? "Switch account" : "Refresh setup"}
+                            </Button>
+                          ) : null}
+                        </div>
                       );
                     })}
                     <CustomProviderCard

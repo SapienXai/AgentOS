@@ -542,6 +542,20 @@ export function AgentModelPickerDialog({
               <Button
                 type="button"
                 variant="secondary"
+                className={cn(
+                  "h-[34px] shrink-0 rounded-[11px] px-[14px] text-[0.76rem]",
+                  isLight
+                    ? "border-border bg-card text-foreground hover:border-primary/25 hover:bg-accent"
+                    : "border-white/10 bg-white/[0.04] text-white hover:border-violet-300/30 hover:bg-violet-400/10"
+                )}
+                onClick={handleOpenAddModels}
+              >
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Add model
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
                 className="h-[34px] shrink-0 rounded-[11px] px-[18px] text-[0.76rem]"
                 disabled={saving}
                 onClick={() => onOpenChange(false)}
