@@ -20,6 +20,17 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type GlobalCatalogModel = Omit<AddModelsCatalogModel, "alreadyAdded">;
+type CatalogSource = "openclaw" | "openclaw-cache" | "snapshot";
+type CatalogReadResult = {
+  models: GlobalCatalogModel[];
+  source: CatalogSource;
+  warning?: string;
+};
+
+const OPENCLAW_CATALOG_TIMEOUT_MS = 8_000;
+const SNAPSHOT_FALLBACK_TIMEOUT_MS = 8_000;
+let lastSuccessfulCatalog: GlobalCatalogModel[] | null = null;
+
 const catalogAddSchema = z.object({
   provider: z.string().trim().min(1),
   modelIds: z.array(z.string().trim().min(1)).min(1)
@@ -27,8 +38,8 @@ const catalogAddSchema = z.object({
 
 export async function GET() {
   try {
-    const models = await readGlobalCatalog();
-    return NextResponse.json(redactSecrets({ models }), { status: 200 });
+    const result = await readGlobalCatalog();
+    return NextResponse.json(redactSecrets(result), { status: 200 });
   } catch (error) {
     return NextResponse.json(
       {
@@ -89,16 +100,57 @@ export async function POST(request: Request) {
   }
 }
 
-async function readGlobalCatalog(): Promise<GlobalCatalogModel[]> {
+async function readGlobalCatalog(): Promise<CatalogReadResult> {
   try {
     const [payload, modelStatus] = await Promise.all([
-      listOpenClawModels({ all: true }),
+      listOpenClawModels({ all: true }, { timeoutMs: OPENCLAW_CATALOG_TIMEOUT_MS }),
       readModelStatus()
     ]);
-    return normalizeCatalogModels(payload.models, modelStatus);
-  } catch {
-    const snapshot = await getMissionControlSnapshot();
-    return normalizeSnapshotModels(snapshot);
+    const models = normalizeCatalogModels(payload.models, modelStatus);
+    lastSuccessfulCatalog = models;
+    return { models, source: "openclaw" };
+  } catch (catalogError) {
+    if (lastSuccessfulCatalog) {
+      return {
+        models: lastSuccessfulCatalog,
+        source: "openclaw-cache",
+        warning: "OpenClaw catalog refresh failed. Showing the last successful catalog response."
+      };
+    }
+
+    try {
+      const snapshot = await withTimeout(
+        getMissionControlSnapshot({ loadProfile: "system" }),
+        SNAPSHOT_FALLBACK_TIMEOUT_MS,
+        "OpenClaw snapshot fallback timed out."
+      );
+      const models = normalizeSnapshotModels(snapshot);
+      lastSuccessfulCatalog = models;
+      return {
+        models,
+        source: "snapshot",
+        warning: "OpenClaw catalog refresh failed. Showing models from the latest OpenClaw snapshot."
+      };
+    } catch {
+      throw catalogError;
+    }
+  }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
   }
 }
 

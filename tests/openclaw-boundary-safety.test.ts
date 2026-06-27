@@ -171,6 +171,31 @@ test("model provider API route uses the Codex login command helper", () => {
   assert.doesNotMatch(routeSource, /models\s+auth\s+login\s+--provider\s+openai-codex\s+--set-default/);
 });
 
+test("Model Library preserves discovery results across provider status refreshes", () => {
+  const source = readFileSync(
+    path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"),
+    "utf8"
+  );
+  const statusHandler = source.match(
+    /async function runStatus[\s\S]*?\n  async function connectProvider/
+  )?.[0] ?? "";
+
+  assert.match(source, /discoveryLoaded:\s*boolean/);
+  assert.match(source, /result\.action === "status" && result\.models\.length === 0/);
+  assert.match(source, /result\.action === "discover" \|\| result\.models\.length > 0/);
+  assert.doesNotMatch(statusHandler, /models:\s*currentDraft/);
+  assert.match(source, /Discovery state" value=\{activeDraft\.discoveryLoaded/);
+});
+
+test("Model Library catalog requests are bounded and retain real OpenClaw fallback data", () => {
+  const source = readFileSync(path.join(rootDir, "app/api/models/catalog/route.ts"), "utf8");
+
+  assert.match(source, /listOpenClawModels\(\{ all: true \}, \{ timeoutMs: OPENCLAW_CATALOG_TIMEOUT_MS \}\)/);
+  assert.match(source, /lastSuccessfulCatalog/);
+  assert.match(source, /source: "openclaw-cache"/);
+  assert.match(source, /getMissionControlSnapshot\(\{ loadProfile: "system" \}\)/);
+});
+
 test("model onboarding route installs the Codex plugin before provider login when needed", () => {
   const routeSource = readFileSync(path.join(rootDir, "app/api/onboarding/models/route.ts"), "utf8");
 

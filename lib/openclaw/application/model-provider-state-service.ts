@@ -11,7 +11,10 @@ import {
   readGatewayConfigRateLimitRetryAfterMs
 } from "@/lib/openclaw/client/native-ws-gateway-config";
 import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
-import { isKnownOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
+import {
+  isKnownOpenAiCodexModelId,
+  normalizeOpenAiCodexModelId
+} from "@/lib/openclaw/domains/model-provider-connection";
 import {
   getModelProviderDescriptor,
   isAddModelsProviderId,
@@ -442,6 +445,46 @@ export async function addOpenClawModelsToConfig(provider: AddModelsProviderId, m
   await writeJsonFile(openClawConfigPath, config);
 }
 
+export async function removeOpenClawConfiguredModelFromConfig(
+  modelId: string,
+  options: { provider?: AddModelsProviderId | null } = {}
+) {
+  const requestedModelId = modelId.trim();
+  const provider = options.provider ?? resolveProviderFromModelIdForRuntime(requestedModelId);
+  const canonicalModelId = normalizeOpenAiCodexModelId(requestedModelId);
+
+  if (!requestedModelId) {
+    return {
+      modelId: canonicalModelId,
+      provider,
+      via: "skipped" as const
+    };
+  }
+
+  try {
+    await removeOpenClawConfiguredModelViaGateway(provider, canonicalModelId, requestedModelId);
+    return {
+      modelId: canonicalModelId,
+      provider,
+      via: "gateway" as const
+    };
+  } catch (error) {
+    if (!isLegacyProviderFileFallbackEnabled()) {
+      throw new Error(buildGatewayConfigMutationFailureMessage("removing the model", error));
+    }
+  }
+
+  const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
+  applyModelConfigRemovalToFileConfig(config, provider, canonicalModelId, requestedModelId);
+  await writeJsonFile(openClawConfigPath, config);
+
+  return {
+    modelId: canonicalModelId,
+    provider,
+    via: "legacy-file" as const
+  };
+}
+
 export async function ensureOpenClawModelRuntimeConfig(
   modelId: string,
   options: { provider?: AddModelsProviderId | null } = {}
@@ -677,6 +720,207 @@ async function ensureModelRuntimeConfigViaGatewayOnce(provider: AddModelsProvide
   if (provider === "openai-codex") {
     await adapter.setConfig("plugins.entries.codex.enabled", true, { timeoutMs: 5_000 });
   }
+}
+
+async function removeOpenClawConfiguredModelViaGateway(
+  provider: AddModelsProviderId | null,
+  canonicalModelId: string,
+  requestedModelId: string
+) {
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt <= gatewayConfigPatchRetryDelaysMs.length; attempt += 1) {
+    try {
+      await removeOpenClawConfiguredModelViaGatewayOnce(provider, canonicalModelId, requestedModelId);
+      return;
+    } catch (error) {
+      lastError = error;
+      const retryDelayMs = resolveGatewayConfigPatchRetryDelayMs(error, attempt);
+
+      if (retryDelayMs === null) {
+        throw error;
+      }
+
+      await tryStartGatewayAfterTransientConfigFailure(error);
+      await delay(retryDelayMs);
+    }
+  }
+
+  throw lastError;
+}
+
+async function removeOpenClawConfiguredModelViaGatewayOnce(
+  provider: AddModelsProviderId | null,
+  canonicalModelId: string,
+  requestedModelId: string
+) {
+  const adapter = getOpenClawAdapter();
+  const existingDefaults = await adapter.getConfig<OpenClawAgentDefaultsConfig>(
+    "agents.defaults",
+    { timeoutMs: 5_000 }
+  );
+  const nextDefaults = cloneAgentDefaults(existingDefaults);
+  const nextModels = cloneModelEntries(nextDefaults.models);
+  let changed = false;
+
+  if (nextModels[canonicalModelId]) {
+    delete nextModels[canonicalModelId];
+    changed = true;
+  }
+
+  if (provider) {
+    changed = await removeProviderModelEntryViaGateway(adapter, provider, canonicalModelId, requestedModelId) || changed;
+  }
+
+  nextDefaults.models = nextModels;
+
+  if (nextDefaults.model?.primary === canonicalModelId) {
+    const nextPrimary = Object.keys(nextModels)[0];
+
+    if (nextPrimary) {
+      nextDefaults.model = {
+        ...(nextDefaults.model || {}),
+        primary: nextPrimary
+      };
+    } else {
+      delete nextDefaults.model;
+    }
+
+    changed = true;
+  }
+
+  if (changed) {
+    stripLegacyAgentRuntimeFromDefaults(nextDefaults);
+    await adapter.setConfig("agents.defaults", nextDefaults, { timeoutMs: 5_000 });
+  }
+}
+
+async function removeProviderModelEntryViaGateway(
+  adapter: ReturnType<typeof getOpenClawAdapter>,
+  provider: AddModelsProviderId,
+  canonicalModelId: string,
+  requestedModelId: string
+) {
+  const configProvider = resolveProviderConfigId(provider);
+
+  if (!configProvider) {
+    return false;
+  }
+
+  const providerConfig = await adapter.getConfig<OpenClawProviderModelsEntry>(
+    `models.providers.${configProvider}`,
+    { timeoutMs: 5_000 }
+  ).catch(() => null);
+  const modelIndex = findProviderModelEntryIndex(providerConfig?.models ?? [], configProvider, canonicalModelId, requestedModelId);
+
+  if (modelIndex < 0) {
+    return false;
+  }
+
+  await adapter.unsetConfig(`models.providers.${configProvider}.models[${modelIndex}]`, { timeoutMs: 5_000 });
+  return true;
+}
+
+function applyModelConfigRemovalToFileConfig(
+  config: OpenClawConfigPayload,
+  provider: AddModelsProviderId | null,
+  canonicalModelId: string,
+  requestedModelId: string
+) {
+  config.meta = {
+    ...config.meta,
+    lastTouchedAt: new Date().toISOString()
+  };
+  config.agents = config.agents || {};
+  config.agents.defaults = config.agents.defaults || {};
+  config.agents.defaults.models = config.agents.defaults.models || {};
+
+  delete config.agents.defaults.models[canonicalModelId];
+
+  if (config.agents.defaults.model?.primary === canonicalModelId) {
+    const remainingModelIds = Object.keys(config.agents.defaults.models);
+    if (remainingModelIds[0]) {
+      config.agents.defaults.model = {
+        ...(config.agents.defaults.model || {}),
+        primary: remainingModelIds[0]
+      };
+    } else {
+      delete config.agents.defaults.model;
+    }
+  }
+
+  if (provider) {
+    removeProviderModelEntryFromFileConfig(config, provider, canonicalModelId, requestedModelId);
+  }
+
+  stripLegacyAgentRuntimeFromDefaults(config.agents.defaults);
+}
+
+function removeProviderModelEntryFromFileConfig(
+  config: OpenClawConfigPayload,
+  provider: AddModelsProviderId,
+  canonicalModelId: string,
+  requestedModelId: string
+) {
+  const configProvider = resolveProviderConfigId(provider);
+  if (!configProvider) {
+    return;
+  }
+
+  const providerConfig = config.models?.providers?.[configProvider];
+  const modelIndex = findProviderModelEntryIndex(providerConfig?.models ?? [], configProvider, canonicalModelId, requestedModelId);
+
+  if (modelIndex < 0 || !providerConfig?.models) {
+    return;
+  }
+
+  providerConfig.models.splice(modelIndex, 1);
+}
+
+function findProviderModelEntryIndex(
+  models: OpenClawProviderModelEntry[],
+  provider: string,
+  canonicalModelId: string,
+  requestedModelId: string
+) {
+  const targetIdentity = normalizeProviderModelIdentity(provider, canonicalModelId, requestedModelId);
+
+  return models.findIndex((entry) =>
+    normalizeProviderModelIdentity(provider, entry.id ?? "", entry.id ?? "") === targetIdentity
+  );
+}
+
+function normalizeProviderModelIdentity(
+  provider: string,
+  modelId: string,
+  alternateModelId?: string
+) {
+  const candidates = [modelId, alternateModelId].filter((value): value is string => Boolean(value));
+
+  for (const candidate of candidates) {
+    const trimmed = candidate.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const canonical = normalizeOpenAiCodexModelId(trimmed);
+    const scoped = normalizeExplicitProviderModelId(provider, canonical);
+    if (scoped) {
+      return scoped.toLowerCase();
+    }
+
+    return canonical.toLowerCase();
+  }
+
+  return "";
+}
+
+function resolveProviderConfigId(provider: AddModelsProviderId) {
+  if (provider === "openai-codex") {
+    return "openai";
+  }
+
+  return provider.trim();
 }
 
 function isModelRuntimePrepared(

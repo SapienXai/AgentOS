@@ -45,6 +45,7 @@ import {
   buildOpenClawFileBasedProviderConnectionStatus,
   readOpenClawCodexPluginReady,
   readOpenClawExplicitProviderConfig,
+  removeOpenClawConfiguredModelFromConfig,
   persistOpenClawExplicitProviderConfig,
   readOpenClawOpenAiProviderConfig,
   persistOpenClawOpenAiProviderConfig,
@@ -127,6 +128,11 @@ const requestSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("set-default"),
+    provider: explicitProviderIdSchema,
+    modelId: z.string().trim().min(1)
+  }),
+  z.object({
+    action: z.literal("remove-model"),
     provider: explicitProviderIdSchema,
     modelId: z.string().trim().min(1)
   })
@@ -395,6 +401,10 @@ async function handleProviderAction(
     return setProviderDefaultModel(input.provider, input.modelId, commandBin);
   }
 
+  if (input.action === "remove-model") {
+    return removeProviderModel(input.provider, input.modelId, commandBin);
+  }
+
   let repairedGatewayAuth = false;
 
   if (!isBuiltInAddModelsProviderId(input.provider)) {
@@ -647,6 +657,52 @@ async function setProviderDefaultModel(
       provider: savedDefault.provider ?? provider,
       via: savedDefault.via
     }
+  });
+}
+
+async function removeProviderModel(
+  provider: AddModelsProviderId,
+  modelId: string,
+  commandBin = "openclaw"
+): Promise<AddModelsProviderActionResult> {
+  const statusContext = await readProviderConnectionContext(provider);
+
+  try {
+    await runWithGatewayAuthSetupRecovery(
+      () => removeOpenClawConfiguredModelFromConfig(modelId, { provider }),
+      {
+        operationLabel: "removing the model"
+      }
+    );
+  } catch (error) {
+    const providerModels = await readProviderCatalog(provider, statusContext.configuredModelIds, commandBin)
+      .catch(() => []);
+
+    return buildActionResult({
+      ok: false,
+      action: "remove-model",
+      provider,
+      message: readProviderActionError(error),
+      connection: statusContext.connection,
+      models: providerModels,
+      docsUrl: addModelsDocsUrl
+    });
+  }
+
+  clearMissionControlCaches();
+  const refreshedSnapshot = await getMissionControlSnapshot({ force: true }).catch(() => undefined);
+  const refreshedStatus = await readProviderConnectionContext(provider);
+  const providerModels = await readProviderCatalog(provider, refreshedStatus.configuredModelIds, commandBin);
+
+  return buildActionResult({
+    ok: true,
+    action: "remove-model",
+    provider,
+    message: "Model removed from AgentOS config.",
+    snapshot: refreshedSnapshot,
+    connection: refreshedStatus.connection,
+    models: providerModels,
+    docsUrl: addModelsDocsUrl
   });
 }
 

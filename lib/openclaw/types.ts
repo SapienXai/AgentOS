@@ -1401,7 +1401,8 @@ export type AddModelsProviderAction =
   | "switch-account"
   | "discover"
   | "add-models"
-  | "set-default";
+  | "set-default"
+  | "remove-model";
 
 export type AddModelsProviderActionRequest =
   | {
@@ -1433,6 +1434,11 @@ export type AddModelsProviderActionRequest =
     }
   | {
       action: "set-default";
+      provider: AddModelsProviderId;
+      modelId: string;
+    }
+  | {
+      action: "remove-model";
       provider: AddModelsProviderId;
       modelId: string;
     };

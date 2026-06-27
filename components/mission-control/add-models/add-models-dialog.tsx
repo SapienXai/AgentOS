@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
   Boxes,
   CircleCheckBig,
@@ -30,7 +30,7 @@ import {
   DialogTitle
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   modelProviderRegistry,
   buildExplicitModelProviderDescriptor,
@@ -74,9 +74,11 @@ type ProviderDraft = {
   manualModelId: string;
   search: string;
   loaded: boolean;
+  discoveryLoaded: boolean;
 };
 
 type GlobalCatalogModel = Omit<AddModelsCatalogModel, "alreadyAdded">;
+type SidebarFilter = "available" | "providers" | "catalog" | "local-models" | "defaults";
 
 const initialDraftState = (): ProviderDraft => ({
   flowState: "idle",
@@ -94,10 +96,12 @@ const initialDraftState = (): ProviderDraft => ({
   endpoint: "",
   manualModelId: "",
   search: "",
-  loaded: false
+  loaded: false,
+  discoveryLoaded: false
 });
 
 const CATALOG_PAGE_SIZE = 5;
+const CATALOG_REQUEST_TIMEOUT_MS = 20_000;
 
 export function AddModelsDialog({
   open,
@@ -129,18 +133,29 @@ export function AddModelsDialog({
   const [isLoadingGlobalCatalog, setIsLoadingGlobalCatalog] = useState(false);
   const [globalCatalogError, setGlobalCatalogError] = useState<string | null>(null);
   const [activeSetupMode, setActiveSetupMode] = useState<"standard" | "custom-openai-compatible">("standard");
+  const [sidebarFilter, setSidebarFilter] = useState<SidebarFilter>("providers");
   const [explicitProviderIds, setExplicitProviderIds] = useState<string[]>([]);
+  const [switchAccountProviderId, setSwitchAccountProviderId] = useState<AddModelsProviderId | null>(null);
+  const globalCatalogLoadStartedRef = useRef(false);
   const handleInitialProviderOpen = useEffectEvent((providerId: AddModelsProviderId) => {
     setActiveSetupMode("standard");
     setActiveTab("providers");
+    setSidebarFilter("providers");
     void selectProvider(providerId);
   });
-  const loadGlobalCatalog = useEffectEvent(async () => {
+  async function requestGlobalCatalog(force = false) {
+    if (globalCatalogLoadStartedRef.current && !force) {
+      return;
+    }
+
+    globalCatalogLoadStartedRef.current = true;
     setIsLoadingGlobalCatalog(true);
     setGlobalCatalogError(null);
 
     try {
-      const response = await fetch("/api/models/catalog");
+      const response = await fetch("/api/models/catalog", {
+        signal: AbortSignal.timeout(CATALOG_REQUEST_TIMEOUT_MS)
+      });
       const payload = (await response.json().catch(() => null)) as
         | {
             models?: GlobalCatalogModel[];
@@ -154,7 +169,12 @@ export function AddModelsDialog({
 
       setGlobalCatalogModels(Array.isArray(payload.models) ? payload.models : []);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "OpenClaw catalog could not be loaded.";
+      const message =
+        error instanceof DOMException && error.name === "TimeoutError"
+          ? "OpenClaw catalog request timed out. Check Gateway status and try again."
+          : error instanceof Error
+            ? error.message
+            : "OpenClaw catalog could not be loaded.";
       setGlobalCatalogModels([]);
       setGlobalCatalogError(message);
       toast.error("OpenClaw catalog could not be loaded.", {
@@ -163,6 +183,9 @@ export function AddModelsDialog({
     } finally {
       setIsLoadingGlobalCatalog(false);
     }
+  }
+  const loadGlobalCatalogFromEffect = useEffectEvent(() => {
+    void requestGlobalCatalog();
   });
   const loadExplicitProviders = useEffectEvent(async () => {
     try {
@@ -187,7 +210,7 @@ export function AddModelsDialog({
         .map((provider) => normalizeAddModelsProviderId(provider.id))
         .filter((providerId): providerId is AddModelsProviderId => Boolean(providerId));
 
-      setExplicitProviderIds(providerIds);
+      setExplicitProviderIds((current) => Array.from(new Set([...current, ...providerIds])));
       setProviderDrafts((current) => {
         const next = { ...current };
 
@@ -228,6 +251,7 @@ export function AddModelsDialog({
   useEffect(() => {
     if (!open) {
       setActiveTab("providers");
+      setSidebarFilter("providers");
       setActiveProvider(null);
       setActiveSetupMode("standard");
       setCatalogSearch("");
@@ -235,6 +259,8 @@ export function AddModelsDialog({
       setGlobalCatalogModels([]);
       setGlobalCatalogError(null);
       setIsLoadingGlobalCatalog(false);
+      globalCatalogLoadStartedRef.current = false;
+      setSwitchAccountProviderId(null);
       setProviderDrafts((current) =>
         Object.fromEntries(
           Object.entries(current).map(([providerId, draft]) => [
@@ -265,25 +291,44 @@ export function AddModelsDialog({
     } else {
       setActiveSetupMode("standard");
       setActiveTab("providers");
+      setSidebarFilter("providers");
     }
 
     void loadExplicitProviders();
   }, [open, normalizedInitialProvider]);
 
   useEffect(() => {
-    if (!open || activeTab !== "catalog" || globalCatalogModels.length > 0 || isLoadingGlobalCatalog) {
+    if (!open || activeTab !== "catalog" || globalCatalogModels.length > 0) {
       return;
     }
 
-    void loadGlobalCatalog();
-  }, [open, activeTab, globalCatalogModels.length, isLoadingGlobalCatalog]);
+    loadGlobalCatalogFromEffect();
+  }, [open, activeTab, globalCatalogModels.length]);
 
+  const snapshotExplicitProviderIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          snapshot.models
+            .map((model) => normalizeAddModelsProviderId(model.provider || model.id.split("/")[0]))
+            .filter(
+              (providerId): providerId is AddModelsProviderId =>
+                Boolean(providerId) && !isBuiltInAddModelsProviderId(providerId)
+            )
+        )
+      ),
+    [snapshot.models]
+  );
+  const effectiveExplicitProviderIds = useMemo(
+    () => Array.from(new Set([...explicitProviderIds, ...snapshotExplicitProviderIds])),
+    [explicitProviderIds, snapshotExplicitProviderIds]
+  );
   const explicitProviderDescriptors = useMemo(
     () =>
-      explicitProviderIds.map((providerId) =>
+      effectiveExplicitProviderIds.map((providerId) =>
         buildExplicitModelProviderDescriptor(providerId, resolveDraft(providerDrafts[providerId]).providerName)
       ),
-    [explicitProviderIds, providerDrafts]
+    [effectiveExplicitProviderIds, providerDrafts]
   );
   const providerDescriptors = useMemo(() => [...modelProviderRegistry, ...explicitProviderDescriptors], [explicitProviderDescriptors]);
   const providerDescriptorsByStatus = useMemo(() => {
@@ -336,6 +381,8 @@ export function AddModelsDialog({
         }),
     [providerDescriptors, providerDrafts, snapshot]
   );
+  const defaultModelId = snapshot.diagnostics.modelReadiness.resolvedDefaultModel ?? snapshot.diagnostics.modelReadiness.defaultModel;
+  const defaultModelProviderId = defaultModelId ? normalizeAddModelsProviderId(defaultModelId.split("/")[0] ?? null) : null;
   const defaultProviderId = providerCards[0]?.provider.id ?? null;
   const activeProviderId = isAddModelsProviderId(activeProvider) ? activeProvider : null;
   useEffect(() => {
@@ -358,7 +405,49 @@ export function AddModelsDialog({
   const activeConnection = activeProviderId
     ? resolveConnectionDetail(snapshot, providerDrafts, activeProviderId)
     : null;
+  const switchAccountProvider = switchAccountProviderId ? getModelProviderDescriptor(switchAccountProviderId) : null;
+  const switchAccountDraft = switchAccountProviderId ? resolveDraft(providerDrafts[switchAccountProviderId]) : null;
+  const switchAccountCommand = switchAccountDraft?.manualCommand ?? null;
   const connectedProviderCount = providerDescriptorsByStatus.connected.length;
+  const availableProviderCards = providerCards.filter(({ connection }) => connection.connected);
+  const localProviderCards = providerCards.filter(({ provider }) => provider.connectKind === "local");
+  const defaultProviderCards = defaultModelProviderId
+    ? providerCards.filter(({ provider }) => provider.id === defaultModelProviderId)
+    : [];
+  const sidebarVisibleProviderCards =
+    sidebarFilter === "available"
+      ? availableProviderCards.length > 0
+        ? availableProviderCards
+        : providerCards
+      : sidebarFilter === "local-models"
+        ? localProviderCards.length > 0
+          ? localProviderCards
+          : providerCards
+        : sidebarFilter === "defaults"
+          ? defaultProviderCards.length > 0
+            ? defaultProviderCards
+            : providerCards
+          : providerCards;
+  const sidebarFilterLabel =
+    sidebarFilter === "available"
+      ? "Available"
+      : sidebarFilter === "local-models"
+        ? "Local models"
+        : sidebarFilter === "defaults"
+          ? "Defaults"
+          : sidebarFilter === "catalog"
+            ? "Catalog"
+            : "Providers";
+  const sidebarFilterDescription =
+    sidebarFilter === "available"
+      ? "Connected providers ready to use."
+      : sidebarFilter === "local-models"
+        ? "Local providers detected on this machine."
+        : sidebarFilter === "defaults"
+          ? "Providers behind the current default model."
+          : sidebarFilter === "catalog"
+            ? "Browse the global model catalog."
+            : "Show all provider cards.";
   const selectedProviderModelCount = activeProviderId
     ? snapshot.models.filter((model) => modelMatchesProvider(activeProviderId, model.id, model.provider)).length +
       activeDraft.models.length
@@ -390,7 +479,10 @@ export function AddModelsDialog({
         ? "Preparing the provider connection."
         : "Checking provider status before discovery.";
   const shouldShowDiscoveryCta = Boolean(
-    activeProviderId && activeDescriptor && activeSetupMode !== "custom-openai-compatible"
+    activeProviderId &&
+      activeDescriptor &&
+      activeSetupMode !== "custom-openai-compatible" &&
+      activeDraft.models.length === 0
   );
   const showProviderConnectionForm = Boolean(activeProviderId && activeDescriptor && activeDescriptor.connectKind === "apiKey");
   const isDiscovering = activeDraft.flowState === "discovery-loading";
@@ -482,6 +574,29 @@ export function AddModelsDialog({
 
     return groups;
   }, [catalogModels, catalogSelectedModelIds]);
+  function focusSidebarFilter(filter: SidebarFilter) {
+    setSidebarFilter(filter);
+
+    if (filter === "catalog") {
+      setActiveTab("catalog");
+      return;
+    }
+
+    setActiveTab("providers");
+
+    const targetProviderId =
+      filter === "available"
+        ? availableProviderCards[0]?.provider.id ?? providerCards[0]?.provider.id ?? null
+        : filter === "local-models"
+          ? localProviderCards[0]?.provider.id ?? providerCards[0]?.provider.id ?? null
+          : filter === "defaults"
+            ? defaultModelProviderId ?? providerCards[0]?.provider.id ?? null
+            : providerCards[0]?.provider.id ?? null;
+
+    if (targetProviderId) {
+      void selectProvider(targetProviderId);
+    }
+  }
   async function selectProvider(providerId: AddModelsProviderId) {
     setActiveProvider(providerId);
     setActiveSetupMode("standard");
@@ -510,10 +625,7 @@ export function AddModelsDialog({
 
     try {
       const result = await adapter.getConnectionStatus();
-      const currentDraft = resolveDraft(providerDrafts[providerId]);
-      applyActionResult(providerId, result, result.emptyState ? "discovery-empty" : "idle", {
-        models: currentDraft.loaded && currentDraft.models.length > 0 ? currentDraft.models : result.models
-      });
+      applyActionResult(providerId, result, result.emptyState ? "discovery-empty" : "idle");
 
       if (result.snapshot) {
         onSnapshotChange(result.snapshot);
@@ -955,17 +1067,28 @@ export function AddModelsDialog({
     flowState: AddModelsFlowState,
     overrides?: Partial<ProviderDraft>
   ) {
-    updateDraft(providerId, {
-      flowState,
-      connection: result.connection,
-      statusMessage: result.message,
-      errorMessage: null,
-      emptyState: result.emptyState ?? null,
-      manualCommand: result.manualCommand ?? null,
-      docsUrl: result.docsUrl ?? null,
-      models: result.models,
-      loaded: true,
-      ...overrides
+    setProviderDrafts((current) => {
+      const currentDraft = resolveDraft(current[providerId]);
+      const shouldPreserveDiscoveredModels = result.action === "status" && result.models.length === 0;
+
+      return {
+        ...current,
+        [providerId]: {
+          ...currentDraft,
+          flowState,
+          connection: result.connection,
+          statusMessage: result.message,
+          errorMessage: null,
+          emptyState: result.emptyState ?? null,
+          manualCommand: result.manualCommand ?? null,
+          docsUrl: result.docsUrl ?? null,
+          models: shouldPreserveDiscoveredModels ? currentDraft.models : result.models,
+          loaded: true,
+          discoveryLoaded:
+            currentDraft.discoveryLoaded || result.action === "discover" || result.models.length > 0,
+          ...overrides
+        }
+      };
     });
 
     if (result.snapshot) {
@@ -1024,56 +1147,236 @@ export function AddModelsDialog({
           )}
         >
           <div className={cn("flex shrink-0 flex-col border-b px-3 py-3 lg:min-h-0 lg:border-b-0 lg:border-r", isLight ? "border-border bg-card/65" : "border-white/10 bg-slate-950/25")}>
-            <TabsList className="grid h-auto gap-1.5 rounded-none bg-transparent p-0">
-              <TabsTrigger
-                value="catalog"
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                aria-pressed={sidebarFilter === "available"}
+                onClick={() => focusSidebarFilter("available")}
                 className={cn(
-                  "justify-start rounded-[11px] px-2.5 py-2 text-[0.76rem]",
-                  isLight ? "text-muted-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary" : "data-[state=active]:bg-violet-500/25"
+                  "group flex items-center justify-between gap-3 rounded-[14px] border px-3 py-2.5 text-left transition",
+                  sidebarFilter === "available"
+                    ? isLight
+                      ? "border-primary/25 bg-primary/10 text-primary shadow-[0_12px_30px_rgba(124,58,237,0.08)]"
+                      : "border-violet-400/35 bg-violet-500/15 text-white shadow-[0_12px_28px_rgba(124,58,237,0.18)]"
+                    : isLight
+                      ? "border-transparent bg-transparent text-foreground hover:border-border hover:bg-accent/50"
+                      : "border-transparent bg-white/[0.02] text-slate-300 hover:border-white/10 hover:bg-white/[0.05]"
                 )}
               >
-                <Boxes className="mr-2 h-4 w-4" />
-                Available
-              </TabsTrigger>
-              <TabsTrigger
-                value="providers"
+                <span className="flex min-w-0 items-start gap-2.5">
+                  <span className={cn("flex h-8 w-8 items-center justify-center rounded-[10px] border", sidebarFilter === "available" ? (isLight ? "border-primary/20 bg-white/70" : "border-violet-300/25 bg-white/[0.08]") : isLight ? "border-border bg-background" : "border-white/10 bg-slate-950/40")}>
+                    <Boxes className={cn("h-4 w-4", sidebarFilter === "available" ? (isLight ? "text-primary" : "text-violet-200") : isLight ? "text-muted-foreground" : "text-slate-300")} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center justify-between gap-2">
+                      <span className={cn("block text-[0.82rem] font-medium leading-none", isLight ? "text-inherit" : "text-inherit")}>Available</span>
+                      <Badge
+                        variant="muted"
+                        className={cn(
+                          "h-6 shrink-0 rounded-full px-2.5 text-[0.64rem]",
+                          sidebarFilter === "available"
+                            ? isLight
+                              ? "border-primary/15 bg-white/60 text-primary"
+                              : "border-violet-300/20 bg-white/[0.08] text-white"
+                            : isLight
+                              ? "bg-card text-muted-foreground"
+                              : "bg-white/[0.04] text-slate-300"
+                        )}
+                      >
+                        {availableProviderCards.length}
+                      </Badge>
+                    </span>
+                    <span className={cn("mt-1 block text-[0.66rem] leading-none", sidebarFilter === "available" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
+                      Connected providers
+                    </span>
+                  </span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                aria-pressed={sidebarFilter === "providers"}
+                onClick={() => focusSidebarFilter("providers")}
                 className={cn(
-                  "justify-start rounded-[11px] px-2.5 py-2 text-[0.76rem]",
-                  isLight ? "text-muted-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary" : "data-[state=active]:bg-violet-500/25"
+                  "group flex items-center justify-between gap-3 rounded-[14px] border px-3 py-2.5 text-left transition",
+                  sidebarFilter === "providers"
+                    ? isLight
+                      ? "border-primary/25 bg-primary/10 text-primary shadow-[0_12px_30px_rgba(124,58,237,0.08)]"
+                      : "border-violet-400/35 bg-violet-500/15 text-white shadow-[0_12px_28px_rgba(124,58,237,0.18)]"
+                    : isLight
+                      ? "border-transparent bg-transparent text-foreground hover:border-border hover:bg-accent/50"
+                      : "border-transparent bg-white/[0.02] text-slate-300 hover:border-white/10 hover:bg-white/[0.05]"
                 )}
               >
-                <Database className="mr-2 h-4 w-4" />
-                Providers
-              </TabsTrigger>
+                <span className="flex min-w-0 items-start gap-2.5">
+                  <span className={cn("flex h-8 w-8 items-center justify-center rounded-[10px] border", sidebarFilter === "providers" ? (isLight ? "border-primary/20 bg-white/70" : "border-violet-300/25 bg-white/[0.08]") : isLight ? "border-border bg-background" : "border-white/10 bg-slate-950/40")}>
+                    <Database className={cn("h-4 w-4", sidebarFilter === "providers" ? (isLight ? "text-primary" : "text-violet-200") : isLight ? "text-muted-foreground" : "text-slate-300")} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center justify-between gap-2">
+                      <span className={cn("block text-[0.82rem] font-medium leading-none", isLight ? "text-inherit" : "text-inherit")}>Providers</span>
+                      <Badge
+                        variant="muted"
+                        className={cn(
+                          "h-6 shrink-0 rounded-full px-2.5 text-[0.64rem]",
+                          sidebarFilter === "providers"
+                            ? isLight
+                              ? "border-primary/15 bg-white/60 text-primary"
+                              : "border-violet-300/20 bg-white/[0.08] text-white"
+                            : isLight
+                              ? "bg-card text-muted-foreground"
+                              : "bg-white/[0.04] text-slate-300"
+                        )}
+                      >
+                        {providerCards.length}
+                      </Badge>
+                    </span>
+                    <span className={cn("mt-1 block text-[0.66rem] leading-none", sidebarFilter === "providers" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
+                      All provider cards
+                    </span>
+                  </span>
+                </span>
+              </button>
+
               <button
                 type="button"
-                className={cn("flex cursor-not-allowed items-center rounded-[11px] px-2.5 py-2 text-left text-[0.76rem]", isLight ? "text-muted-foreground/70" : "text-slate-500")}
-                title="Catalog tab already includes global catalog search."
+                aria-pressed={sidebarFilter === "catalog"}
+                onClick={() => focusSidebarFilter("catalog")}
+                className={cn(
+                  "group flex items-center justify-between gap-3 rounded-[14px] border px-3 py-2.5 text-left transition",
+                  sidebarFilter === "catalog"
+                    ? isLight
+                      ? "border-primary/25 bg-primary/10 text-primary shadow-[0_12px_30px_rgba(124,58,237,0.08)]"
+                      : "border-violet-400/35 bg-violet-500/15 text-white shadow-[0_12px_28px_rgba(124,58,237,0.18)]"
+                    : isLight
+                      ? "border-transparent bg-transparent text-foreground hover:border-border hover:bg-accent/50"
+                      : "border-transparent bg-white/[0.02] text-slate-300 hover:border-white/10 hover:bg-white/[0.05]"
+                )}
               >
-                <Library className="mr-2 h-4 w-4" />
-                Catalog
+                <span className="flex min-w-0 items-start gap-2.5">
+                  <span className={cn("flex h-8 w-8 items-center justify-center rounded-[10px] border", sidebarFilter === "catalog" ? (isLight ? "border-primary/20 bg-white/70" : "border-violet-300/25 bg-white/[0.08]") : isLight ? "border-border bg-background" : "border-white/10 bg-slate-950/40")}>
+                    <Library className={cn("h-4 w-4", sidebarFilter === "catalog" ? (isLight ? "text-primary" : "text-violet-200") : isLight ? "text-muted-foreground" : "text-slate-300")} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center justify-between gap-2">
+                      <span className={cn("block text-[0.82rem] font-medium leading-none", isLight ? "text-inherit" : "text-inherit")}>Catalog</span>
+                      <Badge
+                        variant="muted"
+                        className={cn(
+                          "h-6 shrink-0 rounded-full px-2.5 text-[0.64rem]",
+                          sidebarFilter === "catalog"
+                            ? isLight
+                              ? "border-primary/15 bg-white/60 text-primary"
+                              : "border-violet-300/20 bg-white/[0.08] text-white"
+                            : isLight
+                              ? "bg-card text-muted-foreground"
+                              : "bg-white/[0.04] text-slate-300"
+                        )}
+                      >
+                        {globalCatalogModels.length > 0 ? globalCatalogModels.length : "—"}
+                      </Badge>
+                    </span>
+                    <span className={cn("mt-1 block text-[0.66rem] leading-none", sidebarFilter === "catalog" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
+                      Browse global models
+                    </span>
+                  </span>
+                </span>
               </button>
+
               <button
                 type="button"
-                className={cn("flex cursor-not-allowed items-center rounded-[11px] px-2.5 py-2 text-left text-[0.76rem]", isLight ? "text-muted-foreground/70" : "text-slate-500")}
-                title="Local models are managed through the Ollama provider."
+                aria-pressed={sidebarFilter === "local-models"}
+                onClick={() => focusSidebarFilter("local-models")}
+                className={cn(
+                  "group flex items-center justify-between gap-3 rounded-[14px] border px-3 py-2.5 text-left transition",
+                  sidebarFilter === "local-models"
+                    ? isLight
+                      ? "border-primary/25 bg-primary/10 text-primary shadow-[0_12px_30px_rgba(124,58,237,0.08)]"
+                      : "border-violet-400/35 bg-violet-500/15 text-white shadow-[0_12px_28px_rgba(124,58,237,0.18)]"
+                    : isLight
+                      ? "border-transparent bg-transparent text-foreground hover:border-border hover:bg-accent/50"
+                      : "border-transparent bg-white/[0.02] text-slate-300 hover:border-white/10 hover:bg-white/[0.05]"
+                )}
               >
-                <HardDrive className="mr-2 h-4 w-4" />
-                Local Models
+                <span className="flex min-w-0 items-start gap-2.5">
+                  <span className={cn("flex h-8 w-8 items-center justify-center rounded-[10px] border", sidebarFilter === "local-models" ? (isLight ? "border-primary/20 bg-white/70" : "border-violet-300/25 bg-white/[0.08]") : isLight ? "border-border bg-background" : "border-white/10 bg-slate-950/40")}>
+                    <HardDrive className={cn("h-4 w-4", sidebarFilter === "local-models" ? (isLight ? "text-primary" : "text-violet-200") : isLight ? "text-muted-foreground" : "text-slate-300")} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center justify-between gap-2">
+                      <span className={cn("block text-[0.82rem] font-medium leading-none", isLight ? "text-inherit" : "text-inherit")}>Local Models</span>
+                      <Badge
+                        variant="muted"
+                        className={cn(
+                          "h-6 shrink-0 rounded-full px-2.5 text-[0.64rem]",
+                          sidebarFilter === "local-models"
+                            ? isLight
+                              ? "border-primary/15 bg-white/60 text-primary"
+                              : "border-violet-300/20 bg-white/[0.08] text-white"
+                            : isLight
+                              ? "bg-card text-muted-foreground"
+                              : "bg-white/[0.04] text-slate-300"
+                        )}
+                      >
+                        {localProviderCards.length}
+                      </Badge>
+                    </span>
+                    <span className={cn("mt-1 block text-[0.66rem] leading-none", sidebarFilter === "local-models" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
+                      Detected on this machine
+                    </span>
+                  </span>
+                </span>
               </button>
+
               <button
                 type="button"
-                className={cn("flex cursor-not-allowed items-center rounded-[11px] px-2.5 py-2 text-left text-[0.76rem]", isLight ? "text-muted-foreground/70" : "text-slate-500")}
-                title="Defaults are managed from model selection and settings."
+                aria-pressed={sidebarFilter === "defaults"}
+                onClick={() => focusSidebarFilter("defaults")}
+                className={cn(
+                  "group flex items-center justify-between gap-3 rounded-[14px] border px-3 py-2.5 text-left transition",
+                  sidebarFilter === "defaults"
+                    ? isLight
+                      ? "border-primary/25 bg-primary/10 text-primary shadow-[0_12px_30px_rgba(124,58,237,0.08)]"
+                      : "border-violet-400/35 bg-violet-500/15 text-white shadow-[0_12px_28px_rgba(124,58,237,0.18)]"
+                    : isLight
+                      ? "border-transparent bg-transparent text-foreground hover:border-border hover:bg-accent/50"
+                      : "border-transparent bg-white/[0.02] text-slate-300 hover:border-white/10 hover:bg-white/[0.05]"
+                )}
               >
-                <Settings className="mr-2 h-4 w-4" />
-                Defaults
+                <span className="flex min-w-0 items-start gap-2.5">
+                  <span className={cn("flex h-8 w-8 items-center justify-center rounded-[10px] border", sidebarFilter === "defaults" ? (isLight ? "border-primary/20 bg-white/70" : "border-violet-300/25 bg-white/[0.08]") : isLight ? "border-border bg-background" : "border-white/10 bg-slate-950/40")}>
+                    <Settings className={cn("h-4 w-4", sidebarFilter === "defaults" ? (isLight ? "text-primary" : "text-violet-200") : isLight ? "text-muted-foreground" : "text-slate-300")} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center justify-between gap-2">
+                      <span className={cn("block text-[0.82rem] font-medium leading-none", isLight ? "text-inherit" : "text-inherit")}>Defaults</span>
+                      <Badge
+                        variant="muted"
+                        className={cn(
+                          "h-6 shrink-0 rounded-full px-2.5 text-[0.64rem]",
+                          sidebarFilter === "defaults"
+                            ? isLight
+                              ? "border-primary/15 bg-white/60 text-primary"
+                              : "border-violet-300/20 bg-white/[0.08] text-white"
+                            : isLight
+                              ? "bg-card text-muted-foreground"
+                              : "bg-white/[0.04] text-slate-300"
+                        )}
+                      >
+                        {defaultModelProviderId ? 1 : "—"}
+                      </Badge>
+                    </span>
+                    <span className={cn("mt-1 block text-[0.66rem] leading-none", sidebarFilter === "defaults" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
+                      Current default route
+                    </span>
+                  </span>
+                </span>
               </button>
-            </TabsList>
-            <div className={cn("mt-auto hidden rounded-[14px] border p-3 text-[0.66rem] leading-4 lg:block", isLight ? "border-border bg-muted/35 text-muted-foreground" : "border-white/10 bg-white/[0.035] text-slate-400")}>
+            </div>
+            <div className={cn("mt-auto hidden rounded-[16px] border p-3 text-[0.66rem] leading-4 lg:block", isLight ? "border-border bg-muted/35 text-muted-foreground" : "border-white/10 bg-white/[0.035] text-slate-400")}>
               <HelpCircle className={cn("mb-1.5 h-4 w-4", isLight ? "text-muted-foreground" : "text-slate-300")} />
-              Providers give AgentOS access to model catalogs and keep them up to date.
-              <span className={cn("mt-2 block", isLight ? "text-primary" : "text-violet-300")}>Learn more -&gt;</span>
+              {sidebarFilterDescription}
+              <span className={cn("mt-2 block font-medium", isLight ? "text-primary" : "text-violet-300")}>{sidebarFilterLabel} filter</span>
             </div>
           </div>
 
@@ -1083,8 +1386,8 @@ export function AddModelsDialog({
                 <div className="space-y-3 px-4 py-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className={cn("font-display text-[1.05rem]", isLight ? "text-foreground" : "text-white")}>Providers</p>
-                      <p className={cn("mt-0.5 text-[0.76rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Connect providers to access and manage models.</p>
+                      <p className={cn("font-display text-[1.05rem]", isLight ? "text-foreground" : "text-white")}>{sidebarFilterLabel}</p>
+                      <p className={cn("mt-0.5 text-[0.76rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>{sidebarFilterDescription}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Badge className={cn("px-2.5 py-1 text-[0.66rem]", isLight ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-emerald-300/20 bg-emerald-400/10 text-emerald-200")}>
@@ -1116,22 +1419,19 @@ export function AddModelsDialog({
                   </div>
 
                   <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-3">
-                    {providerCards.map(({ provider, connection }) => {
+                    {sidebarVisibleProviderCards.map(({ provider, connection }) => {
                       const providerModelCount =
                         snapshot.models.filter((model) => modelMatchesProvider(provider.id, model.id, model.provider)).length +
                         resolveDraft(providerDrafts[provider.id]).models.length;
                       const active = activeProviderId === provider.id && activeSetupMode === "standard";
                       const isChatGPTProvider = provider.id === "openai-codex";
+                      const showSwitchAccountAction = isChatGPTProvider && connection.connected;
 
                       return (
-                        <div key={provider.id} className="space-y-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void selectProvider(provider.id);
-                            }}
+                        <div key={provider.id} className="h-full">
+                          <div
                             className={cn(
-                              "min-h-[152px] rounded-[14px] border p-2.5 text-left transition",
+                              "flex h-[164px] flex-col overflow-hidden rounded-[14px] border transition",
                               active
                                 ? isLight
                                   ? "border-primary/45 bg-primary/10 shadow-[0_18px_44px_rgba(124,58,237,0.12)]"
@@ -1141,59 +1441,79 @@ export function AddModelsDialog({
                                   : "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(10,15,28,0.86))] hover:border-violet-300/35 hover:bg-white/[0.055]"
                             )}
                           >
-                            <div className="flex items-start justify-between gap-3">
-                              <ProviderLogo provider={provider.id} className="h-9 w-9 rounded-[11px]" />
-                              <Badge
-                                className={cn(
-                                  "px-2 py-0.5 text-[0.62rem]",
-                                  connection.connected
-                                    ? isLight ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-emerald-300/20 bg-emerald-400/10 text-emerald-200"
-                                    : provider.connectKind === "local"
-                                      ? isLight ? "border-cyan-300 bg-cyan-50 text-cyan-800" : "border-cyan-300/20 bg-cyan-400/10 text-cyan-200"
-                                      : isLight ? "border-amber-300 bg-amber-50 text-amber-800" : "border-amber-300/20 bg-amber-400/10 text-amber-200"
-                                )}
-                              >
-                                {connection.connected ? "Connected" : provider.connectKind === "local" ? "Detected" : "Not connected"}
-                              </Badge>
-                            </div>
-                            <p className={cn("mt-2.5 font-display text-[0.87rem]", isLight ? "text-foreground" : "text-white")}>{provider.label}</p>
-                            <p className={cn("mt-1 line-clamp-2 text-[0.72rem] leading-[1.15]", isLight ? "text-muted-foreground" : "text-slate-300")}>{provider.description}</p>
-                            <div className={cn("mt-2.5 text-[0.64rem] leading-4", isLight ? "text-muted-foreground" : "text-slate-400")}>
-                              <p>
-                                {providerModelCount} model{providerModelCount === 1 ? "" : "s"}
-                              </p>
-                              <p>{connection.detail || provider.helperText}</p>
-                            </div>
-                            <div className="mt-2.5 flex flex-wrap gap-1">
-                              <span className={cn("rounded-[9px] border px-2.5 py-1 text-[0.64rem] font-medium", isLight ? "border-border bg-muted/45 text-foreground" : "border-white/10 bg-white/[0.04] text-white")}>
-                                {connection.connected ? "Configured" : provider.connectKind === "local" ? "Detected" : "Needs setup"}
-                              </span>
-                            </div>
-                          </button>
-
-                          {isChatGPTProvider ? (
-                            <Button
+                            <button
                               type="button"
-                              variant="secondary"
-                              className={cn(
-                                "h-7 w-full rounded-[10px] px-2.5 text-[0.64rem]",
-                                isLight
-                                  ? "border border-border bg-card text-foreground hover:border-primary/25 hover:bg-accent"
-                                  : "border border-white/10 bg-white/[0.04] text-white hover:border-violet-300/30 hover:bg-violet-400/10"
-                              )}
-                              disabled={activeConnection?.connected ? false : false}
                               onClick={() => {
-                                if (connection.connected) {
-                                  void switchProviderAccount(provider.id);
-                                  return;
-                                }
-
-                                void connectProvider(provider.id, { force: true });
+                                void selectProvider(provider.id);
                               }}
+                              className="min-h-0 w-full flex-1 overflow-hidden p-2.5 pb-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/55 focus-visible:ring-inset"
                             >
-                              {connection.connected ? "Switch account" : "Refresh setup"}
-                            </Button>
-                          ) : null}
+                              <div className="flex items-start justify-between gap-3">
+                                {provider.kind === "explicit" ? (
+                                  <span
+                                    className={cn(
+                                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] border",
+                                      isLight
+                                        ? "border-primary/20 bg-primary/10 text-primary"
+                                        : "border-cyan-300/20 bg-cyan-300/10 text-cyan-100"
+                                    )}
+                                    aria-hidden="true"
+                                  >
+                                    <SquareTerminal className="h-4 w-4" />
+                                  </span>
+                                ) : (
+                                  <ProviderLogo provider={provider.id} className="h-9 w-9 rounded-[11px]" />
+                                )}
+                                <Badge
+                                  className={cn(
+                                    "px-2 py-0.5 text-[0.62rem]",
+                                    connection.connected
+                                      ? isLight ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-emerald-300/20 bg-emerald-400/10 text-emerald-200"
+                                      : provider.connectKind === "local"
+                                        ? isLight ? "border-cyan-300 bg-cyan-50 text-cyan-800" : "border-cyan-300/20 bg-cyan-400/10 text-cyan-200"
+                                        : isLight ? "border-amber-300 bg-amber-50 text-amber-800" : "border-amber-300/20 bg-amber-400/10 text-amber-200"
+                                  )}
+                                >
+                                  {connection.connected ? "Connected" : provider.connectKind === "local" ? "Detected" : "Not connected"}
+                                </Badge>
+                              </div>
+                              <p className={cn("mt-2.5 font-display text-[0.87rem]", isLight ? "text-foreground" : "text-white")}>{provider.label}</p>
+                              <p className={cn("mt-1 line-clamp-2 text-[0.72rem] leading-[1.15]", isLight ? "text-muted-foreground" : "text-slate-300")}>{provider.description}</p>
+                              <div className={cn("mt-2 text-[0.64rem] leading-4", isLight ? "text-muted-foreground" : "text-slate-400")}>
+                                <p className="line-clamp-1">
+                                  {providerModelCount} model{providerModelCount === 1 ? "" : "s"}
+                                </p>
+                                <p className="line-clamp-1">{connection.detail || provider.helperText}</p>
+                              </div>
+                            </button>
+
+                            <div className="flex min-h-8 shrink-0 items-end px-2.5 pb-2.5">
+                              <div className="flex min-w-0 w-full items-center gap-1.5">
+                                <span className={cn("inline-flex h-6 min-w-0 items-center truncate rounded-[9px] border px-2.5 text-[0.64rem] font-medium", isLight ? "border-border bg-muted/45 text-foreground" : "border-white/10 bg-white/[0.04] text-white")}>
+                                  {connection.connected ? "Configured" : provider.connectKind === "local" ? "Detected" : "Needs setup"}
+                                </span>
+                                {showSwitchAccountAction ? (
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    className={cn(
+                                      "h-6 min-w-0 shrink px-2.5 text-[0.64rem] shadow-none",
+                                      isLight
+                                        ? "border border-border bg-card text-foreground hover:border-primary/25 hover:bg-accent"
+                                        : "border border-white/10 bg-white/[0.04] text-white hover:border-violet-300/30 hover:bg-violet-400/10"
+                                    )}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setSwitchAccountProviderId(provider.id);
+                                      void switchProviderAccount(provider.id);
+                                    }}
+                                  >
+                                    <span className="truncate">Switch account</span>
+                                  </Button>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       );
                     })}
@@ -1999,7 +2319,7 @@ export function AddModelsDialog({
                         <div className="mt-3 space-y-3">
                           <InspectorMetric label="Models discovered" value={String(selectedProviderModelCount)} surfaceTheme={surfaceTheme} />
                           <InspectorMetric label="Context window support" value={selectedProviderMaxContext > 0 ? `Up to ${Intl.NumberFormat().format(selectedProviderMaxContext / 1000)}k` : "Unknown"} surfaceTheme={surfaceTheme} />
-                          <InspectorMetric label="Discovery state" value={activeDraft.loaded ? "Loaded this session" : "Not refreshed"} surfaceTheme={surfaceTheme} />
+                          <InspectorMetric label="Discovery state" value={activeDraft.discoveryLoaded ? "Loaded this session" : "Not refreshed"} surfaceTheme={surfaceTheme} />
                           <InspectorMetric label="Status" value={activeConnection?.connected ? "Healthy" : "Needs setup"} tone={activeConnection?.connected ? "success" : "warning"} surfaceTheme={surfaceTheme} />
                         </div>
                       </div>
@@ -2099,8 +2419,19 @@ export function AddModelsDialog({
                 </div>
 
                 {globalCatalogError ? (
-                  <div className={cn("rounded-[18px] border px-4 py-3 text-[11px]", isLight ? "border-rose-200 bg-rose-50 text-rose-800" : "border-rose-400/20 bg-rose-400/[0.08] text-rose-100")}>
-                    {globalCatalogError}
+                  <div className={cn("flex items-center justify-between gap-3 rounded-[18px] border px-4 py-3 text-[11px]", isLight ? "border-rose-200 bg-rose-50 text-rose-800" : "border-rose-400/20 bg-rose-400/[0.08] text-rose-100")}>
+                    <span>{globalCatalogError}</span>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="h-7 shrink-0 rounded-full px-3 text-[9px]"
+                      disabled={isLoadingGlobalCatalog}
+                      onClick={() => {
+                        void requestGlobalCatalog(true);
+                      }}
+                    >
+                      Try again
+                    </Button>
                   </div>
                 ) : null}
 
@@ -2143,6 +2474,123 @@ export function AddModelsDialog({
             </TabsContent>
           </div>
         </Tabs>
+        <Dialog
+          open={switchAccountProviderId !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSwitchAccountProviderId(null);
+            }
+          }}
+        >
+          <DialogContent
+            className={cn(
+              "w-[min(92vw,420px)] rounded-[22px] p-0",
+              isLight
+                ? "border-border bg-card text-card-foreground shadow-[0_30px_90px_rgba(63,47,34,0.18),0_0_0_1px_rgba(120,92,66,0.08)]"
+                : "border-white/10 bg-[#070a14] text-white shadow-[0_30px_90px_rgba(0,0,0,0.5)]"
+            )}
+          >
+            <div className={cn("border-b px-4 py-3.5", isLight ? "border-border" : "border-white/10")}>
+              <DialogTitle className={cn("font-display text-[1rem]", isLight ? "text-foreground" : "text-white")}>Switch account</DialogTitle>
+              <DialogDescription className={cn("mt-1 text-[0.78rem] leading-5", isLight ? "text-muted-foreground" : "text-slate-400")}>
+                {switchAccountProvider?.label || "This provider"} will refresh its OpenClaw account connection.
+              </DialogDescription>
+            </div>
+            <div className="px-4 py-4">
+              <div className={cn("rounded-[16px] border px-3 py-2.5", isLight ? "border-cyan-200 bg-cyan-50" : "border-cyan-300/15 bg-cyan-300/[0.07]")}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className={cn("text-[11px] font-medium", isLight ? "text-cyan-900" : "text-cyan-50")}>Finish setup in Terminal</p>
+                    <p className={cn("mt-1 max-w-[420px] text-[10px] leading-[0.98rem]", isLight ? "text-cyan-800" : "text-cyan-100/80")}>
+                      Open Terminal, paste the command there, then return here and check discovery.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-7 rounded-full px-2.5 text-[10px]"
+                      disabled={isOpeningTerminal || !switchAccountCommand}
+                      onClick={() => {
+                        void openTerminal(switchAccountCommand || "");
+                      }}
+                    >
+                      {isOpeningTerminal ? (
+                        <>
+                          <LoaderCircle className="mr-1.5 h-3 w-3 animate-spin" />
+                          Opening...
+                        </>
+                      ) : (
+                        <>
+                          <SquareTerminal className="mr-1.5 h-3 w-3" />
+                          Open Terminal
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 rounded-full px-2.5 text-[10px]"
+                      disabled={!switchAccountCommand}
+                      onClick={() => {
+                        void copyText(switchAccountCommand || "");
+                      }}
+                    >
+                      <Copy className="mr-1.5 h-3 w-3" />
+                      Copy command
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 rounded-full px-2.5 text-[10px]"
+                      disabled={!switchAccountProviderId}
+                      onClick={() => {
+                        if (!switchAccountProviderId) {
+                          return;
+                        }
+
+                        void discoverProvider(switchAccountProviderId);
+                      }}
+                    >
+                      <RefreshCw className="mr-1.5 h-3 w-3" />
+                      I&apos;ve connected it
+                    </Button>
+                  </div>
+                </div>
+                <div className={cn("mt-2.5 overflow-x-auto rounded-[14px] border px-3 py-2", isLight ? "border-cyan-200 bg-white/70" : "border-white/10 bg-slate-950/60")}>
+                  <code className={cn("text-[10px]", isLight ? "text-foreground" : "text-slate-200")}>
+                    {switchAccountCommand || "Preparing terminal command..."}
+                  </code>
+                </div>
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="h-8 rounded-full px-3 text-[10px]"
+                  onClick={() => setSwitchAccountProviderId(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="h-8 rounded-full px-3 text-[10px]"
+                  onClick={() => {
+                    if (!switchAccountProviderId) {
+                      return;
+                    }
+                    setSwitchAccountProviderId(null);
+                  }}
+                >
+                  Done
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );
@@ -2223,7 +2671,7 @@ function InspectorMetric({
 }
 
 function resolveDraft(draft?: ProviderDraft): ProviderDraft {
-  return draft ? draft : initialDraftState();
+  return draft ? { ...initialDraftState(), ...draft } : initialDraftState();
 }
 
 function resolveCustomDraftProviderId(draft: ProviderDraft) {
@@ -2288,7 +2736,7 @@ function resolveConnectionDetail(
   snapshot: MissionControlSnapshot,
   drafts: Partial<Record<string, ProviderDraft>>,
   providerId: AddModelsProviderId
-) {
+): AddModelsProviderConnectionStatus {
   const cachedConnection = drafts[providerId]?.connection;
 
   if (cachedConnection) {
@@ -2298,7 +2746,8 @@ function resolveConnectionDetail(
   const readinessProvider = snapshot.diagnostics.modelReadiness.authProviders.find(
     (provider) => provider.provider === providerId
   );
-  const localModelCount = snapshot.models.filter((model) => modelMatchesProvider(providerId, model.id, model.provider)).length;
+  const providerModels = snapshot.models.filter((model) => modelMatchesProvider(providerId, model.id, model.provider));
+  const localModelCount = providerModels.length;
 
   if (providerId === "ollama") {
     return {
@@ -2310,6 +2759,21 @@ function resolveConnectionDetail(
         localModelCount > 0
           ? `${localModelCount} model${localModelCount === 1 ? "" : "s"} already visible in AgentOS.`
           : "Detect local models from this machine."
+    };
+  }
+
+  if (!isBuiltInAddModelsProviderId(providerId) && localModelCount > 0) {
+    const hasAvailableModel = providerModels.some((model) => !model.missing && model.available !== false);
+
+    return {
+      provider: providerId,
+      connected: hasAvailableModel,
+      canConnect: true,
+      needsTerminal: false,
+      source: "explicit-provider-config",
+      detail: hasAvailableModel
+        ? `${localModelCount} configured model${localModelCount === 1 ? "" : "s"} available through OpenClaw.`
+        : `${localModelCount} configured model${localModelCount === 1 ? "" : "s"} need provider recovery.`
     };
   }
 

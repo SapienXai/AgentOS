@@ -17,6 +17,7 @@ import {
   Settings,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   Zap
 } from "lucide-react";
 
@@ -69,11 +70,14 @@ export function AgentModelPickerDialog({
   const [typeFilter, setTypeFilter] = useState("all");
   const [sortMode, setSortMode] = useState("recent");
   const [saving, setSaving] = useState(false);
+  const [removingModelId, setRemovingModelId] = useState<string | null>(null);
+  const [deleteTargetModelId, setDeleteTargetModelId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const snapshotRef = useRef(snapshot);
   const modelOptions = useMemo(() => dedupeSnapshotModels(snapshot.models), [snapshot.models]);
   const currentModel = currentModelId ? findModelByCanonicalId(modelOptions, currentModelId) : null;
   const currentModelSelectable = currentModel ? isSelectableModel(currentModel) : false;
+  const deleteTargetModel = deleteTargetModelId ? findModelByCanonicalId(modelOptions, deleteTargetModelId) : null;
 
   useEffect(() => {
     snapshotRef.current = snapshot;
@@ -233,6 +237,61 @@ export function AgentModelPickerDialog({
   const handleOpenAddModels = () => {
     onOpenAddModels(null);
     onOpenChange(false);
+  };
+
+  const handleRequestDeleteModel = (model: AgentModelRecord) => {
+    setDeleteTargetModelId(model.id);
+    setError(null);
+  };
+
+  const handleConfirmDeleteModel = async () => {
+    if (!deleteTargetModel) {
+      return;
+    }
+
+    setRemovingModelId(deleteTargetModel.id);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/models/providers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "remove-model",
+          provider: resolvePickerModelProvider(deleteTargetModel),
+          modelId: deleteTargetModel.id
+        })
+      });
+      const payload = (await response.json()) as { error?: string; ok?: boolean };
+
+      if (!response.ok || payload.error || payload.ok === false) {
+        throw new Error(payload.error || "Unable to remove the model.");
+      }
+
+      const removedModelId = normalizeOpenAiCodexModelId(deleteTargetModel.id);
+      const nextSnapshot = removeSnapshotModel(snapshotRef.current, removedModelId);
+
+      snapshotRef.current = nextSnapshot;
+      onSnapshotChange?.(() => nextSnapshot);
+      setSelectedModelId((currentSelected) =>
+        normalizeOpenAiCodexModelId(currentSelected) === removedModelId
+          ? resolveFallbackSelectedModelId(nextSnapshot)
+          : currentSelected
+      );
+      setDeleteTargetModelId(null);
+
+      toast.success("Model removed.", {
+        description: deleteTargetModel.name
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to remove the model.";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setRemovingModelId(null);
+    }
   };
 
   if (!agent) {
@@ -447,14 +506,10 @@ export function AgentModelPickerDialog({
                     const provider = resolvePickerModelProvider(model);
 
                     return (
-                      <button
+                      <div
                         key={model.id}
-                        type="button"
-                        disabled={!selectable}
-                        aria-pressed={selected}
-                        onClick={() => selectable && setSelectedModelId(model.id)}
                         className={cn(
-                          "grid w-full grid-cols-[22px_1fr] items-center gap-2 rounded-[14px] border px-2 py-1.5 text-left transition lg:grid-cols-[22px_1.05fr_100px_92px_92px_68px_18px]",
+                          "grid w-full grid-cols-[minmax(0,1fr)_38px] items-stretch gap-1.5 rounded-[14px] border p-1.5 transition",
                           selected
                             ? isLight
                               ? "border-primary/55 bg-primary/10 shadow-[0_0_0_1px_hsl(var(--primary)/0.14),0_14px_28px_rgba(124,58,237,0.10)]"
@@ -462,52 +517,83 @@ export function AgentModelPickerDialog({
                             : isLight
                               ? "border-border bg-card hover:border-primary/25 hover:bg-accent/60"
                               : "border-white/8 bg-white/[0.035] hover:border-violet-300/25 hover:bg-white/[0.055]",
-                          !selectable && "cursor-not-allowed opacity-60"
+                          !selectable && "opacity-70"
                         )}
                       >
-                        <span className={cn(
-                          "flex h-[18px] w-[18px] items-center justify-center rounded-full border",
-                          selected
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : isLight
-                              ? "border-border bg-card"
-                              : "border-slate-500/70 bg-slate-950/40"
-                        )}>
-                          {selected ? <Check className="h-2.5 w-2.5" /> : null}
-                        </span>
-
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border", getProviderIconTone(provider, surfaceTheme))}>
-                            <ProviderGlyph provider={provider} />
+                        <button
+                          type="button"
+                          disabled={!selectable}
+                          aria-pressed={selected}
+                          onClick={() => selectable && setSelectedModelId(model.id)}
+                          className={cn(
+                            "grid min-h-[72px] min-w-0 grid-cols-[22px_1fr] items-center gap-2 rounded-[12px] px-2 py-1.5 text-left transition lg:grid-cols-[22px_1.05fr_100px_92px_92px_68px]",
+                            isLight ? "hover:bg-accent/50" : "hover:bg-white/[0.03]",
+                            !selectable && "cursor-not-allowed"
+                          )}
+                        >
+                          <span className={cn(
+                            "flex h-[18px] w-[18px] items-center justify-center rounded-full border",
+                            selected
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : isLight
+                                ? "border-border bg-card"
+                                : "border-slate-500/70 bg-slate-950/40"
+                          )}>
+                            {selected ? <Check className="h-2.5 w-2.5" /> : null}
                           </span>
-                          <span className="min-w-0">
-                            <span className={cn("block truncate text-[0.78rem] font-semibold", isLight ? "text-foreground" : "text-white")}>{formatModelLabel(model.id)}</span>
-                            <span className={cn("mt-0.5 block truncate text-[0.66rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>{model.name}</span>
-                            <span className="mt-0.5 flex flex-wrap gap-1">
-                              <Badge variant="muted" className="px-1.5 py-0.5 text-[7.5px]">{formatModelProviderLabel(provider)}</Badge>
-                              {model.contextWindow ? (
-                                <Badge variant="muted" className="px-1.5 py-0.5 text-[7.5px]">{formatContextWindow(model.contextWindow)} context window</Badge>
+
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border", getProviderIconTone(provider, surfaceTheme))}>
+                              <ProviderGlyph provider={provider} />
+                            </span>
+                            <span className="min-w-0">
+                              <span className={cn("block truncate text-[0.78rem] font-semibold", isLight ? "text-foreground" : "text-white")}>{formatModelLabel(model.id)}</span>
+                              <span className={cn("mt-0.5 block truncate text-[0.66rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>{model.name}</span>
+                              <span className="mt-0.5 flex flex-wrap gap-1">
+                                <Badge variant="muted" className="px-1.5 py-0.5 text-[7.5px]">{formatModelProviderLabel(provider)}</Badge>
+                                {model.contextWindow ? (
+                                  <Badge variant="muted" className="px-1.5 py-0.5 text-[7.5px]">{formatContextWindow(model.contextWindow)} context window</Badge>
+                                ) : null}
+                              </span>
+                              {!selectable ? (
+                                <span
+                                  title={resolveModelSetupHint(model)}
+                                  className={cn("mt-1 block truncate text-[0.66rem] leading-tight", isLight ? "text-amber-800" : "text-amber-200")}
+                                >
+                                  {resolveModelSetupHint(model)}
+                                </span>
                               ) : null}
                             </span>
-                            {!selectable ? (
-                              <span
-                                title={resolveModelSetupHint(model)}
-                                className={cn("mt-1 block truncate text-[0.66rem] leading-tight", isLight ? "text-amber-800" : "text-amber-200")}
-                              >
-                                {resolveModelSetupHint(model)}
-                              </span>
-                            ) : null}
                           </span>
-                        </span>
 
-                        <MetricInline icon={<Cpu className="h-3.5 w-3.5" />} value={formatContextWindow(model.contextWindow)} label="Context window" surfaceTheme={surfaceTheme} />
-                        <MetricInline icon={<Zap className="h-3.5 w-3.5" />} value={resolvePerformanceLabel(model)} label="Performance" surfaceTheme={surfaceTheme} />
-                        <MetricInline icon={<span className={cn("h-2.5 w-2.5 rounded-full", selectable ? "bg-emerald-400" : "bg-amber-400")} />} value={selectable ? "Ready" : "Needs setup"} label="Status" tone={selectable ? "success" : "warning"} surfaceTheme={surfaceTheme} />
-                        <Badge className={cn("justify-self-start rounded-[8px] px-2 py-0.5 text-[0.6rem]", model.local ? (isLight ? "border-cyan-300 bg-cyan-50 text-cyan-800" : "border-cyan-300/30 bg-cyan-400/10 text-cyan-100") : (isLight ? "border-primary/25 bg-primary/10 text-primary" : "border-violet-300/30 bg-violet-500/10 text-violet-100"))}>
-                          {model.local ? "Local" : "Remote"}
-                        </Badge>
-                        <ChevronRight className={cn("hidden h-4 w-4 justify-self-end lg:block", isLight ? "text-muted-foreground" : "text-slate-400")} />
-                      </button>
+                          <MetricInline icon={<Cpu className="h-3.5 w-3.5" />} value={formatContextWindow(model.contextWindow)} label="Context window" surfaceTheme={surfaceTheme} />
+                          <MetricInline icon={<Zap className="h-3.5 w-3.5" />} value={resolvePerformanceLabel(model)} label="Performance" surfaceTheme={surfaceTheme} />
+                          <MetricInline icon={<span className={cn("h-2.5 w-2.5 rounded-full", selectable ? "bg-emerald-400" : "bg-amber-400")} />} value={selectable ? "Ready" : "Needs setup"} label="Status" tone={selectable ? "success" : "warning"} surfaceTheme={surfaceTheme} />
+                          <Badge className={cn("justify-self-start rounded-[8px] px-2 py-0.5 text-[0.6rem]", model.local ? (isLight ? "border-cyan-300 bg-cyan-50 text-cyan-800" : "border-cyan-300/30 bg-cyan-400/10 text-cyan-100") : (isLight ? "border-primary/25 bg-primary/10 text-primary" : "border-violet-300/30 bg-violet-500/10 text-violet-100"))}>
+                            {model.local ? "Local" : "Remote"}
+                          </Badge>
+                        </button>
+
+                        <button
+                          type="button"
+                          aria-label={`Remove ${formatModelLabel(model.id)} from config`}
+                          title="Remove from config"
+                          disabled={removingModelId === model.id}
+                          onClick={() => handleRequestDeleteModel(model)}
+                          className={cn(
+                            "flex min-h-[72px] items-center justify-center rounded-[12px] border transition",
+                            isLight
+                              ? "border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100"
+                              : "border-rose-400/20 bg-rose-400/10 text-rose-200 hover:border-rose-300/30 hover:bg-rose-400/20"
+                          )}
+                        >
+                          {removingModelId === model.id ? (
+                            <LoaderCircle className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
                     );
                   })
                 ) : (
@@ -581,6 +667,67 @@ export function AgentModelPickerDialog({
             </div>
           </div>
         </div>
+
+        <Dialog open={Boolean(deleteTargetModel)} onOpenChange={(nextOpen) => !nextOpen && setDeleteTargetModelId(null)}>
+          <DialogContent
+            className={cn(
+              "w-[calc(100vw-48px)] max-w-[520px] rounded-[24px] p-0",
+              isLight
+                ? "agentos-light-modal border-border bg-card text-card-foreground shadow-[0_24px_72px_rgba(63,47,34,0.18)]"
+                : "border-white/10 bg-[#0b1020] text-white shadow-[0_24px_72px_rgba(0,0,0,0.55)]"
+            )}
+          >
+            <DialogHeader className={cn("border-b px-5 py-4", isLight ? "border-border bg-muted/30" : "border-white/10 bg-white/[0.03]")}>
+              <DialogTitle className={cn("font-display text-lg", isLight ? "text-foreground" : "text-white")}>
+                Remove model
+              </DialogTitle>
+              <DialogDescription className={cn("text-sm", isLight ? "text-muted-foreground" : "text-slate-300")}>
+                This removes the model from the OpenClaw config and hides it from this model list.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="px-5 py-4">
+              <div className={cn("rounded-[16px] border px-4 py-3", isLight ? "border-border bg-muted/30" : "border-white/10 bg-white/[0.03]")}>
+                <p className={cn("text-[0.72rem] uppercase tracking-[0.18em]", isLight ? "text-muted-foreground" : "text-slate-400")}>Model</p>
+                <p className={cn("mt-1 font-semibold", isLight ? "text-foreground" : "text-white")}>{deleteTargetModel?.name}</p>
+                <p className={cn("mt-0.5 text-sm", isLight ? "text-muted-foreground" : "text-slate-300")}>{deleteTargetModel?.id}</p>
+              </div>
+              <div className={cn("mt-3 text-sm leading-6", isLight ? "text-foreground/80" : "text-slate-300")}>
+                Removing the model will update the config immediately. If the provider can still discover it later, it may reappear after a refresh.
+              </div>
+            </div>
+            <div className={cn("flex items-center justify-end gap-2 border-t px-5 py-4", isLight ? "border-border bg-card" : "border-white/10 bg-slate-950/50")}>
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-9 rounded-[11px] px-4 text-sm"
+                disabled={removingModelId === deleteTargetModel?.id}
+                onClick={() => setDeleteTargetModelId(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className={cn(
+                  "h-9 rounded-[11px] px-4 text-sm font-semibold",
+                  isLight
+                    ? "bg-rose-600 text-white hover:bg-rose-700"
+                    : "bg-rose-500 text-white hover:bg-rose-400"
+                )}
+                disabled={!deleteTargetModel || removingModelId === deleteTargetModel.id}
+                onClick={() => {
+                  void handleConfirmDeleteModel();
+                }}
+              >
+                {removingModelId === deleteTargetModel?.id ? (
+                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-2 h-4 w-4" />
+                )}
+                Remove model
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );
@@ -854,6 +1001,27 @@ function updateSnapshotAgentModel(
       usageCount: modelUsage.get(model.id) ?? 0
     }))
   };
+}
+
+function removeSnapshotModel(
+  snapshot: MissionControlSnapshot,
+  modelId: string
+) {
+  const canonicalModelId = normalizeOpenAiCodexModelId(modelId);
+  const nextModels = dedupeSnapshotModels(snapshot.models).filter(
+    (model) => normalizeOpenAiCodexModelId(model.id) !== canonicalModelId
+  );
+
+  return {
+    ...snapshot,
+    models: nextModels
+  };
+}
+
+function resolveFallbackSelectedModelId(snapshot: MissionControlSnapshot) {
+  const nextModel = dedupeSnapshotModels(snapshot.models).find((model) => isSelectableModel(model));
+
+  return nextModel?.id ?? "";
 }
 
 function findModelByCanonicalId(

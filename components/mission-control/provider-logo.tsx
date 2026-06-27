@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import * as simpleIcons from "simple-icons";
 
 import { cn } from "@/lib/utils";
@@ -12,18 +11,18 @@ type SimpleIconData = {
 };
 
 type ProviderLogoConfig =
-  | { kind: "image"; src: string }
+  | { kind: "asset"; src: string }
   | { kind: "simple"; icon: SimpleIconData };
 
 const simpleIconMap = simpleIcons as Record<string, SimpleIconData | undefined>;
 
 const providerLogoConfig: Record<string, ProviderLogoConfig> = {
   "openai-codex": {
-    kind: "image",
+    kind: "asset",
     src: "/assets/provider-logos/openai.svg"
   },
   openai: {
-    kind: "image",
+    kind: "asset",
     src: "/assets/provider-logos/openai.svg"
   },
   anthropic: {
@@ -39,7 +38,7 @@ const providerLogoConfig: Record<string, ProviderLogoConfig> = {
     icon: requireSimpleIcon("siGooglegemini", "Gemini")
   },
   deepseek: {
-    kind: "image",
+    kind: "asset",
     src: "/assets/provider-logos/deepseek.svg"
   },
   mistral: {
@@ -55,7 +54,7 @@ const providerLogoConfig: Record<string, ProviderLogoConfig> = {
     icon: requireSimpleIcon("siOllama", "Ollama")
   },
   xai: {
-    kind: "image",
+    kind: "asset",
     src: "/assets/provider-logos/xai.svg"
   }
 };
@@ -95,14 +94,10 @@ export function ProviderLogo({
       )}
       aria-hidden="true"
     >
-      {config.kind === "image" ? (
-        <Image
-          src={config.src}
-          alt=""
-          width={18}
-          height={18}
-          className="h-[72%] w-[72%] select-none object-contain"
-          unoptimized
+      {config.kind === "asset" ? (
+        <span
+          className="h-[72%] w-[72%] select-none bg-contain bg-center bg-no-repeat"
+          style={{ backgroundImage: `url(${config.src})` }}
         />
       ) : (
         <svg viewBox="0 0 24 24" className="h-[72%] w-[72%] select-none" fill={`#${config.icon.hex}`}>

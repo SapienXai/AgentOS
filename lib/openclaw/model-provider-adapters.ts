@@ -30,16 +30,29 @@ export class ModelProviderActionError extends Error {
   }
 }
 
+const MODEL_PROVIDER_REQUEST_TIMEOUT_MS = 30_000;
+
 async function runProviderAction(
   request: AddModelsProviderActionRequest
 ): Promise<AddModelsProviderActionResult> {
-  const response = await fetch("/api/models/providers", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(request)
-  });
+  let response: Response;
+
+  try {
+    response = await fetch("/api/models/providers", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(MODEL_PROVIDER_REQUEST_TIMEOUT_MS)
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      throw new Error("Model provider request timed out. Check OpenClaw Gateway status and try again.");
+    }
+
+    throw error;
+  }
 
   const result = (await response.json().catch(() => null)) as
     | (AddModelsProviderActionResult & { error?: string })
