@@ -384,6 +384,7 @@ export function AddModelsDialog({
   const shouldShowDiscoveryCta = Boolean(
     activeProviderId && activeDescriptor && activeSetupMode !== "custom-openai-compatible"
   );
+  const showProviderConnectionForm = Boolean(activeProviderId && activeDescriptor && activeDescriptor.connectKind === "apiKey");
   const isDiscovering = activeDraft.flowState === "discovery-loading";
   const discoveryActionLabel =
     activeDraft.models.length > 0 ? "Refresh discovery" : "Discover models";
@@ -1087,7 +1088,12 @@ export function AddModelsDialog({
                       </Badge>
                       <Button
                         type="button"
-                        className="h-7 rounded-[9px] bg-violet-600 px-2.5 text-[0.66rem]"
+                        className={cn(
+                          "h-7 rounded-[9px] px-2.5 text-[0.66rem] font-medium",
+                          isLight
+                            ? "border border-border bg-card text-foreground shadow-none hover:border-primary/25 hover:bg-accent"
+                            : "bg-violet-600 text-white hover:bg-violet-500"
+                        )}
                         disabled={!activeProviderId || isDiscovering}
                         onClick={() => {
                           if (activeProviderId) {
@@ -1095,7 +1101,7 @@ export function AddModelsDialog({
                           }
                         }}
                       >
-                        <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                        <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", isLight ? "text-primary" : "text-white")} />
                         Refresh selected
                       </Button>
                     </div>
@@ -1160,20 +1166,17 @@ export function AddModelsDialog({
                         </button>
                       );
                     })}
-                    <div className="col-span-full">
-                      <CustomProviderCard
-                        active={activeProviderId === "custom" && activeSetupMode === "custom-openai-compatible"}
-                        compact
-                        surfaceTheme={surfaceTheme}
-                        connected={false}
-                        detail={resolveCustomEndpointDetail(resolveDraft(providerDrafts.custom)?.endpoint)}
-                        onClick={() => {
-                          setActiveProvider("custom");
-                          setActiveSetupMode("custom-openai-compatible");
-                          setActiveTab("providers");
-                        }}
-                      />
-                    </div>
+                    <CustomProviderCard
+                      active={activeProviderId === "custom" && activeSetupMode === "custom-openai-compatible"}
+                      surfaceTheme={surfaceTheme}
+                      connected={false}
+                      detail={resolveCustomEndpointDetail(resolveDraft(providerDrafts.custom)?.endpoint)}
+                      onClick={() => {
+                        setActiveProvider("custom");
+                        setActiveSetupMode("custom-openai-compatible");
+                        setActiveTab("providers");
+                      }}
+                    />
                   </div>
 
                 <div className={cn("rounded-[18px] border p-3", isLight ? "border-border bg-card shadow-card" : "border-white/10 bg-[linear-gradient(180deg,rgba(11,18,32,0.96),rgba(6,10,18,0.98))]")}>
@@ -1416,7 +1419,7 @@ export function AddModelsDialog({
                             </div>
                           ) : null}
 
-                          {activeDescriptor.connectKind === "apiKey" ? (
+                          {false ? (
                             <div className={cn("mt-4 rounded-[20px] border p-3", isLight ? "border-border bg-muted/35" : "border-white/10 bg-white/[0.03]")}>
                               {activeSetupMode === "custom-openai-compatible" ? (
                                 <div className={cn("mb-3 rounded-[16px] border px-3 py-2", isLight ? "border-cyan-200 bg-cyan-50" : "border-cyan-300/20 bg-cyan-300/[0.07]")}>
@@ -1436,7 +1439,7 @@ export function AddModelsDialog({
                                       <Input
                                         type="url"
                                         value={activeDraft.endpoint}
-                                        onChange={(event) => updateDraft(activeProviderId, { endpoint: event.target.value })}
+                                        onChange={(event) => updateDraft(activeProviderId!, { endpoint: event.target.value })}
                                         placeholder="https://api.entrim.ai/v1"
                                         className="mt-1.5 h-8 text-[11px]"
                                       />
@@ -1447,7 +1450,7 @@ export function AddModelsDialog({
                                       </label>
                                       <Input
                                         value={activeDraft.manualModelId}
-                                        onChange={(event) => updateDraft(activeProviderId, { manualModelId: event.target.value })}
+                                        onChange={(event) => updateDraft(activeProviderId!, { manualModelId: event.target.value })}
                                         placeholder="Optional if discovery is empty"
                                         className="mt-1.5 h-8 text-[11px]"
                                       />
@@ -1462,7 +1465,7 @@ export function AddModelsDialog({
                                     <Input
                                       type="password"
                                       value={activeDraft.apiKey}
-                                      onChange={(event) => updateDraft(activeProviderId, { apiKey: event.target.value })}
+                                      onChange={(event) => updateDraft(activeProviderId!, { apiKey: event.target.value })}
                                       placeholder={activeProviderId === "openrouter" ? "sk-or-v1-..." : "Paste API key"}
                                       className="mt-1.5 h-8 text-[11px]"
                                     />
@@ -1476,7 +1479,7 @@ export function AddModelsDialog({
                                     <Input
                                       type="password"
                                       value={activeDraft.apiKey}
-                                      onChange={(event) => updateDraft(activeProviderId, { apiKey: event.target.value })}
+                                      onChange={(event) => updateDraft(activeProviderId!, { apiKey: event.target.value })}
                                       placeholder="Paste provider API key"
                                       className="mt-1.5 h-8 text-[11px]"
                                     />
@@ -1503,7 +1506,7 @@ export function AddModelsDialog({
                                       return;
                                     }
 
-                                    void connectProvider(activeProviderId);
+                                    void connectProvider(activeProviderId!);
                                   }}
                                 >
                                   {activeDraft.flowState === "connecting" ? (
@@ -1513,7 +1516,7 @@ export function AddModelsDialog({
                                     </>
                                   ) : activeSetupMode === "custom-openai-compatible"
                                     ? "Connect custom provider"
-                                    : `Connect ${activeDescriptor.shortLabel}`}
+                                    : `Connect ${activeDescriptor!.shortLabel}`}
                                 </Button>
                               </div>
                               {activeDraft.manualCommand ? (
@@ -1566,7 +1569,7 @@ export function AddModelsDialog({
                                         size="sm"
                                         className="h-7 rounded-full px-2.5 text-[10px]"
                                         onClick={() => {
-                                          void discoverProvider(activeProviderId);
+                                          void discoverProvider(activeProviderId!);
                                         }}
                                       >
                                         <RefreshCw className="mr-1.5 h-3 w-3" />
@@ -1664,6 +1667,178 @@ export function AddModelsDialog({
                       </Badge>
 
                       <div className="mt-4 space-y-4">
+                        {showProviderConnectionForm ? (
+                          <div className={cn("rounded-[24px] border p-4", isLight ? "border-border bg-muted/35" : "border-white/10 bg-white/[0.03]")}>
+                            {activeSetupMode === "custom-openai-compatible" ? (
+                              <div className={cn("mb-3 rounded-[16px] border px-3 py-2", isLight ? "border-cyan-200 bg-cyan-50" : "border-cyan-300/20 bg-cyan-300/[0.07]")}>
+                                <p className={cn("text-[11px] font-medium", isLight ? "text-cyan-900" : "text-cyan-50")}>Custom OpenAI-compatible provider</p>
+                                <p className={cn("mt-1 max-w-[500px] text-[10px] leading-[0.98rem]", isLight ? "text-cyan-800" : "text-cyan-100/80")}>
+                                  OpenClaw stores this as an explicit provider under <code>models.providers.&lt;id&gt;</code>. Use a `/v1` base URL and an API key from your provider.
+                                </p>
+                              </div>
+                            ) : (
+                              <div className={cn("mb-3 rounded-[16px] border px-3 py-2", isLight ? "border-cyan-200 bg-cyan-50" : "border-cyan-300/20 bg-cyan-300/[0.07]")}>
+                                <p className={cn("text-[11px] font-medium", isLight ? "text-cyan-900" : "text-cyan-50")}>
+                                  Connect {activeDescriptor.shortLabel} to start discovering models.
+                                </p>
+                                <p className={cn("mt-1 max-w-[500px] text-[10px] leading-[0.98rem]", isLight ? "text-cyan-800" : "text-cyan-100/80")}>
+                                  Enter the provider API key here. Discovery will unlock after the connection is ready.
+                                </p>
+                              </div>
+                            )}
+
+                            <div className="space-y-3">
+                              {activeSetupMode === "custom-openai-compatible" ? (
+                                <div className="space-y-2">
+                                  <div>
+                                    <label className={cn("block text-[9px] uppercase tracking-[0.16em]", isLight ? "text-muted-foreground" : "text-slate-500")}>
+                                      Base URL
+                                    </label>
+                                    <Input
+                                      type="url"
+                                      value={activeDraft.endpoint}
+                                      onChange={(event) => updateDraft(activeProviderId, { endpoint: event.target.value })}
+                                      placeholder="https://api.entrim.ai/v1"
+                                      className="mt-1.5 h-8 text-[11px]"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className={cn("block text-[9px] uppercase tracking-[0.16em]", isLight ? "text-muted-foreground" : "text-slate-500")}>
+                                      Manual model ID
+                                    </label>
+                                    <Input
+                                      value={activeDraft.manualModelId}
+                                      onChange={(event) => updateDraft(activeProviderId, { manualModelId: event.target.value })}
+                                      placeholder="Optional if discovery is empty"
+                                      className="mt-1.5 h-8 text-[11px]"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className={cn("block text-[9px] uppercase tracking-[0.16em]", isLight ? "text-muted-foreground" : "text-slate-500")}>
+                                      API key
+                                    </label>
+                                    <Input
+                                      type="password"
+                                      value={activeDraft.apiKey}
+                                      onChange={(event) => updateDraft(activeProviderId, { apiKey: event.target.value })}
+                                      placeholder="Paste provider API key"
+                                      className="mt-1.5 h-8 text-[11px]"
+                                    />
+                                  </div>
+                                  <p className={cn("text-[9px] leading-[0.9rem]", isLight ? "text-muted-foreground" : "text-slate-500")}>
+                                    Provider ID is inferred as {resolveCustomDraftProviderId(activeDraft) || "provider-id"} from the base URL. Models are saved as {resolveCustomDraftProviderId(activeDraft) || "provider-id"}/&lt;model&gt;.
+                                  </p>
+                                </div>
+                              ) : (
+                                <div>
+                                  <label className={cn("block text-[9px] uppercase tracking-[0.16em]", isLight ? "text-muted-foreground" : "text-slate-500")}>
+                                    API key
+                                  </label>
+                                  <Input
+                                    type="password"
+                                    value={activeDraft.apiKey}
+                                    onChange={(event) => updateDraft(activeProviderId, { apiKey: event.target.value })}
+                                    placeholder={activeProviderId === "openrouter" ? "sk-or-v1-..." : "Paste API key"}
+                                    className="mt-1.5 h-8 text-[11px]"
+                                  />
+                                </div>
+                              )}
+
+                              <Button
+                                type="button"
+                                className="h-8 rounded-full px-3 text-[10px]"
+                                disabled={
+                                  activeDraft.flowState === "connecting" ||
+                                  !activeDraft.apiKey.trim() ||
+                                  (activeSetupMode === "custom-openai-compatible" &&
+                                    (!activeDraft.endpoint.trim() || !resolveCustomDraftProviderId(activeDraft).trim()))
+                                }
+                                onClick={() => {
+                                  if (activeSetupMode === "custom-openai-compatible") {
+                                    void connectCustomProvider();
+                                    return;
+                                  }
+
+                                  void connectProvider(activeProviderId);
+                                }}
+                              >
+                                {activeDraft.flowState === "connecting" ? (
+                                  <>
+                                    <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                    Connecting...
+                                  </>
+                                ) : activeSetupMode === "custom-openai-compatible"
+                                  ? "Connect custom provider"
+                                  : `Connect ${activeDescriptor.shortLabel}`}
+                              </Button>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {activeDraft.manualCommand ? (
+                          <div className={cn("rounded-[16px] border p-3", isLight ? "border-cyan-200 bg-cyan-50" : "border-cyan-300/15 bg-cyan-300/[0.07]")}>
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <p className={cn("text-[11px] font-medium", isLight ? "text-cyan-900" : "text-cyan-50")}>Finish setup in Terminal</p>
+                                <p className={cn("mt-1 max-w-[480px] text-[10px] leading-[0.98rem]", isLight ? "text-cyan-800" : "text-cyan-100/80")}>
+                                  Open Terminal, paste the provider API key there, then return here and check discovery.
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  className="h-7 rounded-full px-2.5 text-[10px]"
+                                  disabled={isOpeningTerminal}
+                                  onClick={() => {
+                                    void openTerminal(activeDraft.manualCommand || "");
+                                  }}
+                                >
+                                  {isOpeningTerminal ? (
+                                    <>
+                                      <LoaderCircle className="mr-1.5 h-3 w-3 animate-spin" />
+                                      Opening...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <SquareTerminal className="mr-1.5 h-3 w-3" />
+                                      Open Terminal
+                                    </>
+                                  )}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 rounded-full px-2.5 text-[10px]"
+                                  onClick={() => {
+                                    void copyText(activeDraft.manualCommand || "");
+                                  }}
+                                >
+                                  <Copy className="mr-1.5 h-3 w-3" />
+                                  Copy command
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 rounded-full px-2.5 text-[10px]"
+                                  onClick={() => {
+                                    void discoverProvider(activeProviderId);
+                                  }}
+                                >
+                                  <RefreshCw className="mr-1.5 h-3 w-3" />
+                                  I&apos;ve connected it
+                                </Button>
+                              </div>
+                            </div>
+                            <div className={cn("mt-2.5 overflow-x-auto rounded-[14px] border px-3 py-2", isLight ? "border-cyan-200 bg-white/70" : "border-white/10 bg-slate-950/60")}>
+                              <code className={cn("text-[10px]", isLight ? "text-foreground" : "text-slate-200")}>{activeDraft.manualCommand}</code>
+                            </div>
+                          </div>
+                        ) : null}
+
                         {shouldShowDiscoveryCta ? (
                           <div
                             className={cn(
