@@ -1233,6 +1233,17 @@ export function SettingsControlCenter(
                     <Button
                       type="button"
                       variant="secondary"
+                      asChild
+                      className={secondaryButtonClassName(surfaceTheme, "px-4")}
+                    >
+                      <Link href="/updates">
+                        <Download className="h-3.5 w-3.5" />
+                        Open Updates page
+                      </Link>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
                       onClick={() => void onCheckForUpdates()}
                       disabled={isCheckingForUpdates || updateRunState === "running"}
                       className={secondaryButtonClassName(surfaceTheme, "px-4")}

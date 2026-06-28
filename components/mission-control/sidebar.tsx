@@ -15,6 +15,7 @@ import {
   ChevronRight,
   ClipboardList,
   Cpu,
+  Download,
   FileText,
   Gauge,
   Home,
@@ -169,6 +170,7 @@ const sidebarItems: SidebarItem[] = [
   { label: "Accounts", href: "/accounts", icon: KeyRound, section: "operations" },
   { label: "Models", href: "/models", icon: Cpu, section: "operations" },
   { label: "Integrations", href: "/integrations", icon: Plug, section: "operations" },
+  { label: "Updates", href: "/updates", icon: Download, section: "system" },
   { label: "Settings", href: "/settings", icon: Settings2, section: "system" },
 ];
 
