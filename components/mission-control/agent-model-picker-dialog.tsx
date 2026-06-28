@@ -38,10 +38,12 @@ import {
 } from "@/lib/openclaw/domains/model-provider-connection";
 import { formatAgentDisplayName, formatContextWindow, formatModelLabel } from "@/lib/openclaw/presenters";
 import type {
+  AddModelsCatalogModel,
   AddModelsProviderActionResult,
   AddModelsProviderId,
   MissionControlSnapshot
 } from "@/lib/agentos/contracts";
+import { useModelCatalog } from "@/hooks/use-model-catalog";
 import { cn } from "@/lib/utils";
 
 type AgentModelRecord = MissionControlSnapshot["models"][number];
@@ -78,7 +80,17 @@ export function AgentModelPickerDialog({
   const [deleteTargetModelId, setDeleteTargetModelId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const snapshotRef = useRef(snapshot);
-  const modelOptions = useMemo(() => dedupeSnapshotModels(snapshot.models), [snapshot.models]);
+  const {
+    models: sharedCatalogModels,
+    refresh: refreshSharedCatalog
+  } = useModelCatalog({
+    enabled: open,
+    snapshot
+  });
+  const modelOptions = useMemo(
+    () => dedupeSnapshotModels(buildConfiguredModelRecords(sharedCatalogModels, snapshot.models)),
+    [sharedCatalogModels, snapshot.models]
+  );
   const currentModel = currentModelId ? findModelByCanonicalId(modelOptions, currentModelId) : null;
   const currentModelSelectable = currentModel ? isSelectableModel(currentModel) : false;
   const deleteTargetModel = deleteTargetModelId ? findModelByCanonicalId(modelOptions, deleteTargetModelId) : null;
@@ -279,6 +291,7 @@ export function AgentModelPickerDialog({
 
       snapshotRef.current = nextSnapshot;
       onSnapshotChange?.(() => nextSnapshot);
+      void refreshSharedCatalog(true);
       setSelectedModelId((currentSelected) =>
         normalizeOpenAiCodexModelId(currentSelected) === removedModelId
           ? resolveFallbackSelectedModelId(nextSnapshot)
@@ -518,7 +531,7 @@ export function AgentModelPickerDialog({
                       <div
                         key={model.id}
                         className={cn(
-                          "grid w-full grid-cols-[minmax(0,1fr)_38px] items-stretch gap-1.5 rounded-[14px] border p-1.5 transition",
+                          "grid w-full grid-cols-[minmax(0,1fr)_32px] items-stretch gap-1.5 rounded-[14px] border p-1.5 transition",
                           selected
                             ? isLight
                               ? "border-primary/55 bg-primary/10 shadow-[0_0_0_1px_hsl(var(--primary)/0.14),0_14px_28px_rgba(124,58,237,0.10)]"
@@ -590,16 +603,14 @@ export function AgentModelPickerDialog({
                           disabled={removingModelId === model.id}
                           onClick={() => handleRequestDeleteModel(model)}
                           className={cn(
-                            "flex min-h-[72px] items-center justify-center rounded-[12px] border transition",
-                            isLight
-                              ? "border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100"
-                              : "border-rose-400/20 bg-rose-400/10 text-rose-200 hover:border-rose-300/30 hover:bg-rose-400/20"
+                            "flex h-8 w-8 items-center justify-center self-center justify-self-end rounded-full border border-transparent text-rose-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50",
+                            isLight ? "hover:bg-rose-50 hover:text-rose-600" : "hover:bg-rose-500/10 hover:text-rose-300"
                           )}
                         >
                           {removingModelId === model.id ? (
-                            <LoaderCircle className="h-4 w-4 animate-spin" />
+                            <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                           ) : (
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
                           )}
                         </button>
                       </div>
@@ -1068,6 +1079,34 @@ function dedupeSnapshotModels(models: AgentModelRecord[]) {
   }
 
   return Array.from(recordsByIdentity.values());
+}
+
+function buildConfiguredModelRecords(
+  catalogModels: AddModelsCatalogModel[],
+  snapshotModels: AgentModelRecord[]
+) {
+  const snapshotByIdentity = new Map(
+    snapshotModels.map((model) => [modelRecordIdentityKey(model.id, model.provider), model] as const)
+  );
+
+  return catalogModels
+    .filter((model) => model.alreadyAdded)
+    .map((model): AgentModelRecord => {
+      const snapshotModel = snapshotByIdentity.get(modelRecordIdentityKey(model.id, model.provider));
+
+      return {
+        id: model.id,
+        name: model.name,
+        provider: model.provider,
+        input: model.input,
+        contextWindow: model.contextWindow,
+        local: model.local,
+        available: model.available,
+        missing: model.missing,
+        tags: model.tags,
+        usageCount: snapshotModel?.usageCount ?? 0
+      };
+    });
 }
 
 function mergeSnapshotModelRecords(

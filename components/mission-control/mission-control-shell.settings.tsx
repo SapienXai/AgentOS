@@ -85,6 +85,7 @@ export function MissionControlShellSettingsPanel({
   lastCheckedAt,
   onCheckForUpdates,
   onOpenSetupWizard,
+  onOpenAddModels,
   onOpenUpdateDialog
 }: MissionControlShellSettingsPanelProps) {
   const [gatewayAuthStatus, setGatewayAuthStatus] = useState<GatewayNativeAuthStatus | null>(null);
@@ -266,11 +267,15 @@ export function MissionControlShellSettingsPanel({
           value={defaultModel}
           wrapValue
           action={
-            <Button asChild size="sm" variant="secondary" className={quickButtonClassName(surfaceTheme)}>
-              <Link href="/settings#models">
-                <Plus className="h-3 w-3" />
-                Models
-              </Link>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => onOpenAddModels(null)}
+              className={quickButtonClassName(surfaceTheme)}
+            >
+              <Plus className="h-3 w-3" />
+              Models
             </Button>
           }
         />

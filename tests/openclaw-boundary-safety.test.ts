@@ -194,6 +194,8 @@ test("Model Library catalog requests are bounded and retain real OpenClaw fallba
   assert.match(source, /lastSuccessfulCatalog/);
   assert.match(source, /source: "openclaw-cache"/);
   assert.match(source, /getMissionControlSnapshot\(\{ loadProfile: "system" \}\)/);
+  assert.match(source, /readOpenClawConfiguredModelIds\(\)/);
+  assert.match(source, /markConfiguredCatalogModels\(result\.models, configuredModelIds\)/);
 });
 
 test("model onboarding route installs the Codex plugin before provider login when needed", () => {
@@ -712,6 +714,26 @@ test("onboarding provider flow applies discovery snapshots to the setup shell", 
   assert.match(stagesSource, /onSnapshotChange=\{onSnapshotChange\}/);
   assert.match(onboardingSource, /onSnapshotChange=\{onSnapshotChange\}/);
   assert.match(shellSource, /onSnapshotChange=\{setSnapshot\}/);
+});
+
+test("model setup exposes explicit providers and the custom provider creation flow", () => {
+  const setupSource = readFileSync(
+    path.join(rootDir, "components/mission-control/openclaw-onboarding-provider-flow.tsx"),
+    "utf8"
+  );
+  const librarySource = readFileSync(
+    path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"),
+    "utf8"
+  );
+
+  assert.match(setupSource, /buildExplicitModelProviderDescriptor\(providerId\)/);
+  assert.match(setupSource, /providerDescriptors\.map\(\(provider\)/);
+  assert.match(setupSource, /aria-label="Add custom provider"/);
+  assert.match(setupSource, /onOpenAddModels\("custom"\)/);
+  assert.match(librarySource, /isInitialCustomProvider = normalizedInitialProvider === "custom"/);
+  assert.match(librarySource, /!open \|\| isInitialCustomProvider \|\| activeProviderId \|\| !defaultProviderId/);
+  assert.match(librarySource, /setActiveSetupMode\("custom-openai-compatible"\)/);
+  assert.match(librarySource, /custom: initialDraftState\(\)/);
 });
 
 test("setup wizard rehydrates the verified default model when reopened", () => {

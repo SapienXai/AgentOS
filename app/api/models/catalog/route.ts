@@ -5,8 +5,12 @@ import { listOpenClawModels } from "@/lib/openclaw/application/catalog-service";
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { buildModelRecords } from "@/lib/openclaw/adapter/model-adapter";
-import { addOpenClawModelsToConfig } from "@/lib/openclaw/application/model-provider-state-service";
+import {
+  addOpenClawModelsToConfig,
+  readOpenClawConfiguredModelIds
+} from "@/lib/openclaw/application/model-provider-state-service";
 import { normalizeOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
+import { markConfiguredCatalogModels } from "@/lib/openclaw/domains/model-catalog-projection";
 import {
   isGatewayAuthSetupRecoveryError,
   runWithGatewayAuthSetupRecovery
@@ -38,8 +42,17 @@ const catalogAddSchema = z.object({
 
 export async function GET() {
   try {
-    const result = await readGlobalCatalog();
-    return NextResponse.json(redactSecrets(result), { status: 200 });
+    const [result, configuredModelIds] = await Promise.all([
+      readGlobalCatalog(),
+      readOpenClawConfiguredModelIds()
+    ]);
+    return NextResponse.json(
+      redactSecrets({
+        ...result,
+        models: markConfiguredCatalogModels(result.models, configuredModelIds)
+      }),
+      { status: 200 }
+    );
   } catch (error) {
     return NextResponse.json(
       {

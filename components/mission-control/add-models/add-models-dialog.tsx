@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import {
   Boxes,
   CircleCheckBig,
@@ -45,6 +45,7 @@ import { getModelProviderAdapter, ModelProviderActionError } from "@/lib/opencla
 import { modelMatchesAddModelsProvider } from "@/lib/openclaw/domains/model-provider-connection";
 import { isOpenClawTerminalCommand } from "@/lib/openclaw/terminal-command";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
+import { useModelCatalog } from "@/hooks/use-model-catalog";
 import type {
   AddModelsCatalogModel,
   AddModelsEmptyState,
@@ -77,7 +78,6 @@ type ProviderDraft = {
   discoveryLoaded: boolean;
 };
 
-type GlobalCatalogModel = Omit<AddModelsCatalogModel, "alreadyAdded">;
 type SidebarFilter = "available" | "providers" | "catalog" | "local-models" | "defaults";
 
 const initialDraftState = (): ProviderDraft => ({
@@ -101,7 +101,6 @@ const initialDraftState = (): ProviderDraft => ({
 });
 
 const CATALOG_PAGE_SIZE = 5;
-const CATALOG_REQUEST_TIMEOUT_MS = 20_000;
 
 export function AddModelsDialog({
   open,
@@ -122,6 +121,7 @@ export function AddModelsDialog({
 }) {
   const isLight = surfaceTheme === "light";
   const normalizedInitialProvider = normalizeAddModelsProviderId(initialProvider);
+  const isInitialCustomProvider = normalizedInitialProvider === "custom";
   const [activeTab, setActiveTab] = useState<"catalog" | "providers">("providers");
   const [activeProvider, setActiveProvider] = useState<AddModelsProviderId | null>(normalizedInitialProvider);
   const [providerDrafts, setProviderDrafts] = useState<Partial<Record<string, ProviderDraft>>>({});
@@ -129,63 +129,25 @@ export function AddModelsDialog({
   const [isAddingCatalogModels, setIsAddingCatalogModels] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogVisibleCount, setCatalogVisibleCount] = useState(CATALOG_PAGE_SIZE);
-  const [globalCatalogModels, setGlobalCatalogModels] = useState<GlobalCatalogModel[]>([]);
-  const [isLoadingGlobalCatalog, setIsLoadingGlobalCatalog] = useState(false);
-  const [globalCatalogError, setGlobalCatalogError] = useState<string | null>(null);
   const [activeSetupMode, setActiveSetupMode] = useState<"standard" | "custom-openai-compatible">("standard");
   const [sidebarFilter, setSidebarFilter] = useState<SidebarFilter>("providers");
   const [explicitProviderIds, setExplicitProviderIds] = useState<string[]>([]);
   const [switchAccountProviderId, setSwitchAccountProviderId] = useState<AddModelsProviderId | null>(null);
-  const globalCatalogLoadStartedRef = useRef(false);
+  const {
+    models: globalCatalogModels,
+    isLoading: isLoadingGlobalCatalog,
+    error: globalCatalogError,
+    warning: globalCatalogWarning,
+    refresh: refreshGlobalCatalog
+  } = useModelCatalog({
+    enabled: open && activeTab === "catalog",
+    snapshot
+  });
   const handleInitialProviderOpen = useEffectEvent((providerId: AddModelsProviderId) => {
     setActiveSetupMode("standard");
     setActiveTab("providers");
     setSidebarFilter("providers");
     void selectProvider(providerId);
-  });
-  async function requestGlobalCatalog(force = false) {
-    if (globalCatalogLoadStartedRef.current && !force) {
-      return;
-    }
-
-    globalCatalogLoadStartedRef.current = true;
-    setIsLoadingGlobalCatalog(true);
-    setGlobalCatalogError(null);
-
-    try {
-      const response = await fetch("/api/models/catalog", {
-        signal: AbortSignal.timeout(CATALOG_REQUEST_TIMEOUT_MS)
-      });
-      const payload = (await response.json().catch(() => null)) as
-        | {
-            models?: GlobalCatalogModel[];
-            error?: string;
-          }
-        | null;
-
-      if (!response.ok || !payload) {
-        throw new Error(payload?.error || "OpenClaw catalog could not be loaded.");
-      }
-
-      setGlobalCatalogModels(Array.isArray(payload.models) ? payload.models : []);
-    } catch (error) {
-      const message =
-        error instanceof DOMException && error.name === "TimeoutError"
-          ? "OpenClaw catalog request timed out. Check Gateway status and try again."
-          : error instanceof Error
-            ? error.message
-            : "OpenClaw catalog could not be loaded.";
-      setGlobalCatalogModels([]);
-      setGlobalCatalogError(message);
-      toast.error("OpenClaw catalog could not be loaded.", {
-        description: message
-      });
-    } finally {
-      setIsLoadingGlobalCatalog(false);
-    }
-  }
-  const loadGlobalCatalogFromEffect = useEffectEvent(() => {
-    void requestGlobalCatalog();
   });
   const loadExplicitProviders = useEffectEvent(async () => {
     try {
@@ -256,16 +218,12 @@ export function AddModelsDialog({
       setActiveSetupMode("standard");
       setCatalogSearch("");
       setCatalogVisibleCount(CATALOG_PAGE_SIZE);
-      setGlobalCatalogModels([]);
-      setGlobalCatalogError(null);
-      setIsLoadingGlobalCatalog(false);
-      globalCatalogLoadStartedRef.current = false;
       setSwitchAccountProviderId(null);
       setProviderDrafts((current) =>
         Object.fromEntries(
           Object.entries(current).map(([providerId, draft]) => [
             providerId,
-            {
+            providerId === "custom" ? initialDraftState() : {
               ...draft,
               flowState: "idle",
               statusMessage: null,
@@ -286,7 +244,16 @@ export function AddModelsDialog({
       return;
     }
 
-    if (normalizedInitialProvider) {
+    if (isInitialCustomProvider) {
+      setActiveProvider("custom");
+      setActiveSetupMode("custom-openai-compatible");
+      setActiveTab("providers");
+      setSidebarFilter("providers");
+      setProviderDrafts((current) => ({
+        ...current,
+        custom: initialDraftState()
+      }));
+    } else if (normalizedInitialProvider) {
       handleInitialProviderOpen(normalizedInitialProvider);
     } else {
       setActiveSetupMode("standard");
@@ -295,15 +262,7 @@ export function AddModelsDialog({
     }
 
     void loadExplicitProviders();
-  }, [open, normalizedInitialProvider]);
-
-  useEffect(() => {
-    if (!open || activeTab !== "catalog" || globalCatalogModels.length > 0) {
-      return;
-    }
-
-    loadGlobalCatalogFromEffect();
-  }, [open, activeTab, globalCatalogModels.length]);
+  }, [isInitialCustomProvider, open, normalizedInitialProvider]);
 
   const snapshotExplicitProviderIds = useMemo(
     () =>
@@ -386,12 +345,12 @@ export function AddModelsDialog({
   const defaultProviderId = providerCards[0]?.provider.id ?? null;
   const activeProviderId = isAddModelsProviderId(activeProvider) ? activeProvider : null;
   useEffect(() => {
-    if (!open || activeProviderId || !defaultProviderId) {
+    if (!open || isInitialCustomProvider || activeProviderId || !defaultProviderId) {
       return;
     }
 
     setActiveProvider(defaultProviderId);
-  }, [open, activeProviderId, defaultProviderId]);
+  }, [open, isInitialCustomProvider, activeProviderId, defaultProviderId]);
   const activeDraft = activeProviderId ? resolveDraft(providerDrafts[activeProviderId]) : initialDraftState();
   const activeDescriptor = activeProviderId
     ? activeSetupMode === "custom-openai-compatible"
@@ -502,13 +461,8 @@ export function AddModelsDialog({
     (/gateway/i.test(activeDraft.errorMessage) || /\bgateway\s+status\b/i.test(activeDraft.manualCommand))
   );
   const catalogModels = useMemo(() => {
-    const configuredModelIds = new Set(snapshot.models.map((model) => model.id));
-
     return globalCatalogModels
-      .map((model) => ({
-        ...model,
-        alreadyAdded: configuredModelIds.has(model.id)
-      }))
+      .slice()
       .sort((left, right) => {
         const leftAlreadyAdded = left.alreadyAdded;
         const rightAlreadyAdded = right.alreadyAdded;
@@ -542,7 +496,7 @@ export function AddModelsDialog({
 
         return left.id.localeCompare(right.id);
       });
-  }, [globalCatalogModels, snapshot.models]);
+  }, [globalCatalogModels]);
   const catalogSelectedModelIds = useMemo(
     () => Object.values(providerDrafts).flatMap((draft) => draft?.selectedModelIds ?? []),
     [providerDrafts]
@@ -2427,11 +2381,17 @@ export function AddModelsDialog({
                       className="h-7 shrink-0 rounded-full px-3 text-[9px]"
                       disabled={isLoadingGlobalCatalog}
                       onClick={() => {
-                        void requestGlobalCatalog(true);
+                        void refreshGlobalCatalog(true);
                       }}
                     >
                       Try again
                     </Button>
+                  </div>
+                ) : null}
+
+                {globalCatalogWarning ? (
+                  <div className={cn("rounded-[16px] border px-3 py-2 text-[10px]", isLight ? "border-amber-200 bg-amber-50 text-amber-800" : "border-amber-300/20 bg-amber-300/[0.06] text-amber-100")}>
+                    {globalCatalogWarning}
                   </div>
                 ) : null}
 

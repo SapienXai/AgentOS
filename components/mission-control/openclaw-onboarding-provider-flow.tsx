@@ -1,7 +1,7 @@
 "use client";
 
-import { Copy, LoaderCircle, RefreshCw, Search, SquareTerminal } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Copy, LoaderCircle, Plus, RefreshCw, Search, SquareTerminal } from "lucide-react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import { ProviderCard } from "@/components/mission-control/add-models/provider-card";
 import { Badge } from "@/components/ui/badge";
@@ -24,12 +24,16 @@ import {
 import {
   getModelProviderDescriptor,
   isAddModelsProviderId,
+  isBuiltInAddModelsProviderId,
+  buildExplicitModelProviderDescriptor,
   modelProviderRegistry
 } from "@/lib/openclaw/model-provider-registry";
 import { getModelProviderAdapter } from "@/lib/openclaw/model-provider-adapters";
 import { modelMatchesAddModelsProvider } from "@/lib/openclaw/domains/model-provider-connection";
+import { enrichCatalogModels } from "@/lib/openclaw/domains/model-catalog-projection";
 import { isOpenClawTerminalCommand } from "@/lib/openclaw/terminal-command";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
+import { useModelCatalog } from "@/hooks/use-model-catalog";
 import { cn } from "@/lib/utils";
 
 type ProviderDraft = {
@@ -44,6 +48,12 @@ type ProviderDraft = {
   apiKey: string;
   search: string;
   flowState: "idle" | "connecting" | "verifying" | "discovering" | "ready" | "error";
+};
+
+type ExplicitProviderSummary = {
+  id: string;
+  baseUrl: string | null;
+  modelCount: number;
 };
 
 const initialDraftState = (): ProviderDraft => ({
@@ -85,6 +95,88 @@ export function OpenClawOnboardingProviderFlow({
     {}
   );
   const [isOpeningTerminal, setIsOpeningTerminal] = useState(false);
+  const [explicitProviderSummaries, setExplicitProviderSummaries] = useState<ExplicitProviderSummary[]>([]);
+  const [explicitProviderError, setExplicitProviderError] = useState<string | null>(null);
+  const {
+    models: sharedCatalogModels,
+    error: sharedCatalogError,
+    warning: sharedCatalogWarning
+  } = useModelCatalog({
+    enabled: true,
+    snapshot
+  });
+  const loadExplicitProviders = useEffectEvent(async () => {
+    try {
+      const response = await fetch("/api/models/providers");
+      const payload = (await response.json().catch(() => null)) as
+        | { providers?: ExplicitProviderSummary[]; error?: string }
+        | null;
+
+      if (!response.ok || !payload) {
+        throw new Error(payload?.error || "Custom providers could not be loaded.");
+      }
+
+      const summaries = Array.isArray(payload.providers) ? payload.providers : [];
+      setExplicitProviderSummaries(summaries);
+      setExplicitProviderError(null);
+      setProviderDrafts((current) => {
+        const next = { ...current };
+
+        for (const provider of summaries) {
+          if (!isAddModelsProviderId(provider.id) || isBuiltInAddModelsProviderId(provider.id)) {
+            continue;
+          }
+
+          next[provider.id] = {
+            ...resolveDraft(next[provider.id]),
+            loaded: true,
+            connection: {
+              provider: provider.id,
+              connected: Boolean(provider.baseUrl),
+              canConnect: true,
+              needsTerminal: false,
+              source: "explicit-provider-config",
+              detail: provider.baseUrl
+                ? `${provider.modelCount} configured model${provider.modelCount === 1 ? "" : "s"} in OpenClaw. Endpoint: ${provider.baseUrl}.`
+                : "Custom provider is configured in OpenClaw."
+            }
+          };
+        }
+
+        return next;
+      });
+    } catch (error) {
+      setExplicitProviderError(error instanceof Error ? error.message : "Custom providers could not be loaded.");
+    }
+  });
+
+  useEffect(() => {
+    void loadExplicitProviders();
+  }, []);
+
+  const providerDescriptors = useMemo(() => {
+    const explicitProviderIds = new Set<string>();
+
+    for (const summary of explicitProviderSummaries) {
+      if (isAddModelsProviderId(summary.id) && !isBuiltInAddModelsProviderId(summary.id)) {
+        explicitProviderIds.add(summary.id);
+      }
+    }
+
+    for (const model of snapshot.models) {
+      const providerId = model.provider || model.id.split("/")[0];
+      if (isAddModelsProviderId(providerId) && !isBuiltInAddModelsProviderId(providerId)) {
+        explicitProviderIds.add(providerId);
+      }
+    }
+
+    return [
+      ...modelProviderRegistry,
+      ...Array.from(explicitProviderIds)
+        .sort((left, right) => left.localeCompare(right))
+        .map((providerId) => buildExplicitModelProviderDescriptor(providerId))
+    ];
+  }, [explicitProviderSummaries, snapshot.models]);
 
   const selectedCatalogModels = useMemo(
     () => Object.values(providerDrafts).flatMap((draft) => draft?.models ?? []),
@@ -146,7 +238,13 @@ export function OpenClawOnboardingProviderFlow({
       snapshot.models
     ]
   );
-  const activeCatalogModels = activeDraft.models.length > 0 ? activeDraft.models : snapshotProviderModels;
+  const activeCatalogModels = useMemo(
+    () => enrichCatalogModels(
+      activeDraft.models.length > 0 ? activeDraft.models : snapshotProviderModels,
+      sharedCatalogModels
+    ),
+    [activeDraft.models, sharedCatalogModels, snapshotProviderModels]
+  );
   const activeModels = useMemo(() => {
     const query = activeDraft.search.trim().toLowerCase();
 
@@ -444,7 +542,7 @@ export function OpenClawOnboardingProviderFlow({
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className={cn("whitespace-nowrap text-[8px] font-medium", isLight ? "text-[#8f7664]" : "text-slate-500")}>
-            Provider first : {modelProviderRegistry.length} providers
+            Provider first : {providerDescriptors.length} providers
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-1.5">
@@ -456,8 +554,15 @@ export function OpenClawOnboardingProviderFlow({
         </div>
       </div>
 
+      {sharedCatalogError || sharedCatalogWarning || explicitProviderError ? (
+        <div className={cn("mt-2 rounded-[12px] border px-2.5 py-2 text-[9px] leading-4", isLight ? "border-amber-200 bg-amber-50 text-amber-800" : "border-amber-300/20 bg-amber-300/[0.06] text-amber-100")}
+        >
+          {sharedCatalogError || sharedCatalogWarning || explicitProviderError}
+        </div>
+      ) : null}
+
       <div className="mt-3 flex snap-x snap-mandatory flex-nowrap gap-2 overflow-x-auto overflow-y-hidden pb-2 pr-1">
-        {modelProviderRegistry.map((provider) => {
+        {providerDescriptors.map((provider) => {
           const draft = resolveDraft(providerDrafts[provider.id]);
           const connection = draft.connection ?? resolveConnectionDetail(snapshot, provider.id);
 
@@ -481,6 +586,29 @@ export function OpenClawOnboardingProviderFlow({
             </div>
           );
         })}
+        <div className="w-[128px] shrink-0 snap-start sm:w-[136px]">
+          <button
+            type="button"
+            onClick={() => onOpenAddModels("custom")}
+            className={cn(
+              "group flex h-full min-h-[104px] w-full flex-col justify-between rounded-[16px] border border-dashed p-2 text-left transition-colors",
+              isLight
+                ? "border-[#d8cfc2] bg-white/60 text-[#2d241f] hover:border-cyan-300 hover:bg-cyan-50/60"
+                : "border-white/15 bg-white/[0.025] text-white hover:border-cyan-300/40 hover:bg-cyan-300/[0.06]"
+            )}
+            aria-label="Add custom provider"
+          >
+            <span className={cn("flex h-6 w-6 items-center justify-center rounded-[9px] border", isLight ? "border-cyan-200 bg-cyan-50 text-cyan-700" : "border-cyan-300/20 bg-cyan-300/10 text-cyan-100")}>
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            </span>
+            <span>
+              <span className="block font-display text-[0.72rem]">Custom provider</span>
+              <span className={cn("mt-1 block text-[8px] leading-[0.85rem]", isLight ? "text-[#71675d]" : "text-slate-400")}>
+                Add an OpenAI-compatible endpoint.
+              </span>
+            </span>
+          </button>
+        </div>
       </div>
 
       <div
