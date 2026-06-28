@@ -37,7 +37,11 @@ import {
   normalizeOpenAiCodexModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
 import { formatAgentDisplayName, formatContextWindow, formatModelLabel } from "@/lib/openclaw/presenters";
-import type { AddModelsProviderId, MissionControlSnapshot } from "@/lib/agentos/contracts";
+import type {
+  AddModelsProviderActionResult,
+  AddModelsProviderId,
+  MissionControlSnapshot
+} from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
 
 type AgentModelRecord = MissionControlSnapshot["models"][number];
@@ -264,14 +268,14 @@ export function AgentModelPickerDialog({
           modelId: deleteTargetModel.id
         })
       });
-      const payload = (await response.json()) as { error?: string; ok?: boolean };
+      const payload = (await response.json()) as AddModelsProviderActionResult & { error?: string };
 
       if (!response.ok || payload.error || payload.ok === false) {
         throw new Error(payload.error || "Unable to remove the model.");
       }
 
       const removedModelId = normalizeOpenAiCodexModelId(deleteTargetModel.id);
-      const nextSnapshot = removeSnapshotModel(snapshotRef.current, removedModelId);
+      const nextSnapshot = removeSnapshotModel(payload.snapshot ?? snapshotRef.current, removedModelId);
 
       snapshotRef.current = nextSnapshot;
       onSnapshotChange?.(() => nextSnapshot);
@@ -285,6 +289,11 @@ export function AgentModelPickerDialog({
       toast.success("Model removed.", {
         description: deleteTargetModel.name
       });
+
+      const refreshPromise = onRefresh?.();
+      if (refreshPromise) {
+        void refreshPromise.catch(() => undefined);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to remove the model.";
       setError(message);
@@ -692,7 +701,7 @@ export function AgentModelPickerDialog({
                 <p className={cn("mt-0.5 text-sm", isLight ? "text-muted-foreground" : "text-slate-300")}>{deleteTargetModel?.id}</p>
               </div>
               <div className={cn("mt-3 text-sm leading-6", isLight ? "text-foreground/80" : "text-slate-300")}>
-                Removing the model will update the config immediately. If the provider can still discover it later, it may reappear after a refresh.
+                Removing the model will update the OpenClaw config immediately and keep it out of this list after refresh.
               </div>
             </div>
             <div className={cn("flex items-center justify-end gap-2 border-t px-5 py-4", isLight ? "border-border bg-card" : "border-white/10 bg-slate-950/50")}>

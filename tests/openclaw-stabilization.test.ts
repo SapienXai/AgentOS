@@ -57,6 +57,7 @@ import {
 } from "@/lib/openclaw/domains/workspace-bootstrap";
 import {
   buildModelRecords,
+  filterModelsToConfiguredSelection,
   inferFallbackModelMetadata,
   mergeConfiguredModelsIntoModelsPayload,
   mergeModelStatusWithAgentConfigDefaults
@@ -1743,6 +1744,57 @@ test("configured model merge does not duplicate live Codex model payloads", () =
 
   assert.equal(models.length, 1);
   assert.equal(models[0]?.key, "openai/gpt-5.5");
+});
+
+test("mission control model selection excludes discoverable models removed from config", () => {
+  const models = filterModelsToConfiguredSelection(
+    [
+      {
+        key: "openai/gpt-5.5",
+        name: "GPT-5.5",
+        input: "text",
+        contextWindow: 272000,
+        local: false,
+        available: true,
+        missing: false,
+        tags: []
+      },
+      {
+        key: "openai/gpt-5.4-mini",
+        name: "GPT-5.4 Mini",
+        input: "text",
+        contextWindow: 272000,
+        local: false,
+        available: true,
+        missing: false,
+        tags: []
+      }
+    ],
+    ["openai/gpt-5.5"]
+  );
+
+  assert.deepEqual(models.map((model) => model.key), ["openai/gpt-5.5"]);
+});
+
+test("mission control model selection retains models assigned to agents", () => {
+  const models = filterModelsToConfiguredSelection(
+    [
+      {
+        key: "anthropic/claude-sonnet-4-5",
+        name: "Claude Sonnet 4.5",
+        input: "text",
+        contextWindow: 200000,
+        local: false,
+        available: true,
+        missing: false,
+        tags: []
+      }
+    ],
+    [],
+    [{ modelId: "anthropic/claude-sonnet-4-5" }]
+  );
+
+  assert.deepEqual(models.map((model) => model.key), ["anthropic/claude-sonnet-4-5"]);
 });
 
 test("ChatGPT auth order repair prefers usable Codex OAuth profiles", () => {

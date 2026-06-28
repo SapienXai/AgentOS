@@ -12,6 +12,7 @@ import {
   ensureOpenClawModelRuntimeConfig,
   persistOpenClawProviderToken,
   readOpenClawCodexPluginReady,
+  removeOpenClawConfiguredModelFromConfig,
   setOpenClawDefaultModel
 } from "@/lib/openclaw/application/model-provider-state-service";
 
@@ -33,6 +34,64 @@ test("provider token persistence does not silently write OpenClaw auth files by 
     () => persistOpenClawProviderToken("openai", "sk-test"),
     /Legacy OpenClaw provider file writes are disabled by default/
   );
+});
+
+test("model removal unsets the exact configured model key before rewriting defaults", async () => {
+  const calls: string[] = [];
+  const defaults: {
+    model: { primary: string };
+    models: Record<string, Record<string, unknown>>;
+  } = {
+    model: {
+      primary: "openai/gpt-5.5"
+    },
+    models: {
+      "openai/gpt-5.5": {},
+      "anthropic/claude-sonnet-4-6": {
+        alias: "sonnet"
+      },
+      "openai/o4-mini": {}
+    }
+  };
+
+  setOpenClawAdapterForTesting({
+    async getConfig(path: string) {
+      if (path === "agents.defaults") {
+        return structuredClone(defaults) as never;
+      }
+
+      if (path === "agents.defaults.models") {
+        return structuredClone(defaults.models) as never;
+      }
+
+      return null;
+    },
+    async setConfig(path: string, value: unknown) {
+      calls.push(`set:${path}`);
+      if (path === "agents.defaults") {
+        Object.assign(defaults, value);
+      }
+      return { stdout: "", stderr: "", code: 0 };
+    },
+    async unsetConfig(path: string) {
+      calls.push(`unset:${path}`);
+      if (path === 'agents.defaults.models["anthropic/claude-sonnet-4-6"]') {
+        delete defaults.models["anthropic/claude-sonnet-4-6"];
+      }
+      return { stdout: "", stderr: "", code: 0 };
+    }
+  } as unknown as OpenClawAdapter);
+
+  await removeOpenClawConfiguredModelFromConfig("anthropic/claude-sonnet-4-6", {
+    provider: "anthropic"
+  });
+
+  assert.deepEqual(calls, [
+    'unset:agents.defaults.models["anthropic/claude-sonnet-4-6"]',
+    "set:agents.defaults"
+  ]);
+  assert.equal("anthropic/claude-sonnet-4-6" in defaults.models, false);
+  assert.equal("openai/o4-mini" in defaults.models, true);
 });
 
 test("custom provider connect writes an explicit OpenClaw provider and namespaces discovered models", async () => {

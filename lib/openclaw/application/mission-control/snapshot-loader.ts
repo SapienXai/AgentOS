@@ -13,10 +13,7 @@ import {
   type UpdateStatusPayload
 } from "@/lib/openclaw/adapter/gateway-payloads";
 import { GatewayStatusCache } from "@/lib/openclaw/client/gateway-status-cache";
-import {
-  settleAgentConfigFromStateFile,
-  settleConfiguredModelIdsFromStateFile
-} from "@/lib/openclaw/state/agent-config-payload";
+import { settleAgentConfigFromStateFile } from "@/lib/openclaw/state/agent-config-payload";
 import {
   openClawStateRootPath
 } from "@/lib/openclaw/state/paths";
@@ -73,6 +70,7 @@ import {
   normalizeConfiguredWorkspaceRootValue,
   readMissionControlSettings
 } from "@/lib/openclaw/domains/control-plane-settings";
+import { readOpenClawConfiguredModelIds } from "@/lib/openclaw/application/model-provider-state-service";
 import type { MissionControlSnapshot } from "@/lib/openclaw/types";
 import {
   hydrateMissionControlChannels
@@ -252,7 +250,12 @@ async function loadMissionControlSnapshots({
         ? settleStatusPayloadFromOpenClaw(15_000)
         : Promise.resolve(createDeferredPayloadResult<StatusPayload>());
       const agentConfigPromise = settleAgentConfigFromStateFile(openClawStateRootPath);
-      const configuredModelIdsPromise = settleConfiguredModelIdsFromStateFile(openClawStateRootPath);
+      const configuredModelIdsPromise = readOpenClawConfiguredModelIds().then(
+        (configuredModelIds) => ({
+          status: "fulfilled",
+          value: Array.from(configuredModelIds)
+        }) as PromiseSettledResult<string[]>
+      );
       const modelStatusPromise = shouldHydrateModelStatus
         ? settleModelStatusPayloadFromOpenClaw(15_000)
         : Promise.resolve(createDeferredPayloadResult<ModelsStatusPayload>());
@@ -292,7 +295,12 @@ async function loadMissionControlSnapshots({
         settleStatusPayloadFromOpenClaw(45_000),
         settleGatewayStatusPayloadFromOpenClaw(45_000),
         settleAgentConfigFromStateFile(openClawStateRootPath),
-        settleConfiguredModelIdsFromStateFile(openClawStateRootPath),
+        readOpenClawConfiguredModelIds().then(
+          (configuredModelIds) => ({
+            status: "fulfilled",
+            value: Array.from(configuredModelIds)
+          }) as PromiseSettledResult<string[]>
+        ),
         settleModelStatusPayloadFromOpenClaw(45_000),
         settleDeviceAccessPayloadFromOpenClaw(10_000)
       ]);

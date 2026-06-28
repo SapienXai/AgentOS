@@ -42,6 +42,7 @@ import { RuntimeDiagnosticsStateCache } from "@/lib/openclaw/state/runtime-diagn
 import {
   buildModelRecords,
   buildModelsPayloadFromFallbackSources,
+  filterModelsToConfiguredSelection,
   mergeConfiguredModelsIntoModelsPayload
 } from "@/lib/openclaw/adapter/model-adapter";
 import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-normalization";
@@ -221,8 +222,11 @@ export function buildMissionControlModelRecords(input: {
   modelStatus?: ModelsStatusPayload;
   configuredModelIds?: Iterable<string>;
 }) {
+  const configuredModelIds = Array.from(input.configuredModelIds ?? []);
+  const mergedModels = mergeConfiguredModelsIntoModelsPayload(input.models, configuredModelIds);
+
   return buildModelRecords(
-    mergeConfiguredModelsIntoModelsPayload(input.models, input.configuredModelIds ?? []),
+    filterModelsToConfiguredSelection(mergedModels, configuredModelIds, input.agents),
     input.agents,
     input.modelStatus
   );

@@ -12,6 +12,7 @@ import {
   type WebSocketFactory
 } from "@/lib/openclaw/client/native-ws-gateway-client";
 import { resolveConfiguredGatewaySecretFromLocalConfig } from "@/lib/openclaw/client/native-ws-gateway-auth";
+import { parseConfigPath } from "@/lib/openclaw/client/native-ws-gateway-utils";
 import type {
   ModelsStatusPayload,
   OpenClawAddAgentInput,
@@ -27,6 +28,13 @@ type SentFrame = {
   method: string;
   params: Record<string, unknown>;
 };
+
+test("config paths preserve quoted model IDs as one segment", () => {
+  assert.deepEqual(
+    parseConfigPath('agents.defaults.models["ollama/qwen3.5:9b"]'),
+    ["agents", "defaults", "models", "ollama/qwen3.5:9b"]
+  );
+});
 
 class FallbackGatewayClient implements OpenClawGatewayClient {
   calls: Array<{ method: string; params?: unknown; options?: OpenClawCommandOptions }> = [];

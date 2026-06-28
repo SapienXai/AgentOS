@@ -84,6 +84,25 @@ export function mergeConfiguredModelsIntoModelsPayload(
   return mergedModels;
 }
 
+export function filterModelsToConfiguredSelection(
+  models: ModelsPayload["models"],
+  configuredModelIds: Iterable<string>,
+  agents: AgentModelDefaultLike[] = []
+): ModelsPayload["models"] {
+  const selectedModelIds = new Set(
+    [
+      ...Array.from(configuredModelIds),
+      ...agents.map((agent) => readAgentModel(agent) ?? "")
+    ]
+      .map((modelId) => normalizeOpenAiCodexModelId(modelId).toLowerCase())
+      .filter(Boolean)
+  );
+
+  return models.filter((model) =>
+    selectedModelIds.has(normalizeOpenAiCodexModelId(model.key).toLowerCase())
+  );
+}
+
 export function inferFallbackModelMetadata(modelId: string): {
   contextWindow: number | null;
   local: boolean | null;

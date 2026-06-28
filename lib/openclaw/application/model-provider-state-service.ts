@@ -761,20 +761,27 @@ async function removeOpenClawConfiguredModelViaGatewayOnce(
   );
   const nextDefaults = cloneAgentDefaults(existingDefaults);
   const nextModels = cloneModelEntries(nextDefaults.models);
+  const matchingModelIds = Object.keys(nextModels).filter(
+    (modelId) => normalizeOpenAiCodexModelId(modelId) === canonicalModelId
+  );
   let changed = false;
-
-  if (nextModels[canonicalModelId]) {
-    delete nextModels[canonicalModelId];
-    changed = true;
-  }
 
   if (provider) {
     changed = await removeProviderModelEntryViaGateway(adapter, provider, canonicalModelId, requestedModelId) || changed;
   }
 
+  for (const modelId of matchingModelIds) {
+    await adapter.unsetConfig(buildQuotedConfigKeyPath("agents.defaults.models", modelId), { timeoutMs: 5_000 });
+    delete nextModels[modelId];
+    changed = true;
+  }
+
   nextDefaults.models = nextModels;
 
-  if (nextDefaults.model?.primary === canonicalModelId) {
+  if (
+    nextDefaults.model?.primary &&
+    normalizeOpenAiCodexModelId(nextDefaults.model.primary) === canonicalModelId
+  ) {
     const nextPrimary = Object.keys(nextModels)[0];
 
     if (nextPrimary) {
@@ -793,6 +800,22 @@ async function removeOpenClawConfiguredModelViaGatewayOnce(
     stripLegacyAgentRuntimeFromDefaults(nextDefaults);
     await adapter.setConfig("agents.defaults", nextDefaults, { timeoutMs: 5_000 });
   }
+
+  const persistedModels = await adapter.getConfig<Record<string, OpenClawModelDefaultsEntry>>(
+    "agents.defaults.models",
+    { timeoutMs: 5_000 }
+  );
+  const removalPersisted = !Object.keys(isRecord(persistedModels) ? persistedModels : {}).some(
+    (modelId) => normalizeOpenAiCodexModelId(modelId) === canonicalModelId
+  );
+
+  if (!removalPersisted) {
+    throw new Error(`OpenClaw kept ${canonicalModelId} in agents.defaults.models after removal.`);
+  }
+}
+
+function buildQuotedConfigKeyPath(parentPath: string, key: string) {
+  return `${parentPath}[${JSON.stringify(key)}]`;
 }
 
 async function removeProviderModelEntryViaGateway(

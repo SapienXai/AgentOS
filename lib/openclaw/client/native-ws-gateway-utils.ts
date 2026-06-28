@@ -40,7 +40,7 @@ export function readConfigPath(source: unknown, path: string) {
 
 export function parseConfigPath(path: string): Array<string | number> {
   const segments: Array<string | number> = [];
-  const matcher = /([^[.\]]+)|\[(\d+)\]/g;
+  const matcher = /([^[.\]]+)|\[(\d+)\]|\["((?:\\.|[^"\\])*)"\]/g;
   let match: RegExpExecArray | null;
 
   while ((match = matcher.exec(path))) {
@@ -48,6 +48,8 @@ export function parseConfigPath(path: string): Array<string | number> {
       segments.push(match[1]);
     } else if (match[2]) {
       segments.push(Number(match[2]));
+    } else if (match[3] !== undefined) {
+      segments.push(JSON.parse(`"${match[3]}"`) as string);
     }
   }
 
