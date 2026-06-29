@@ -139,14 +139,14 @@ export function buildRuntimeIssues(input: RuntimeIssueInput): RuntimeIssue[] {
     }
 
     const restored = restoreRuntimeIssueFromState(state, now, {
-      reopenDismissed: shouldReopenPersistedRuntimeIssue(state, gatewayUnhealthy)
+      reopenDismissed: false
     });
     if (restored) {
       merged.push(restored);
     }
   }
 
-  if (merged.some((issue) => isOpenRuntimeIssue(issue) && issue.type === "openclaw_rollback_needed")) {
+  if (merged.some((issue) => issue.type === "openclaw_rollback_needed" && issue.status !== "resolved")) {
     merged = merged.filter((issue) => issue.type !== "gateway_unreachable");
   }
 
@@ -563,15 +563,6 @@ function isGatewayUnhealthy(input: RuntimeIssueInput) {
 
 function shouldReopenActiveRuntimeIssue(issue: RuntimeIssue, gatewayUnhealthy: boolean) {
   return gatewayUnhealthy && issue.type === "gateway_unreachable" && issue.severity === "blocked";
-}
-
-function shouldReopenPersistedRuntimeIssue(state: RuntimeIssueState, gatewayUnhealthy: boolean) {
-  return Boolean(
-    gatewayUnhealthy &&
-      state.status === "dismissed" &&
-      state.type === "openclaw_rollback_needed" &&
-      state.recoveryCommand
-  );
 }
 
 function pickRuntimeIssueStateDetails(state: RuntimeIssueState): Partial<RuntimeIssue> {

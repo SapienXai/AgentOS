@@ -14,11 +14,20 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { MissionControlSnapshot, RuntimeIssue } from "@/lib/agentos/contracts";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
+import { toast } from "@/components/ui/sonner";
+import type { MissionControlSnapshot, OpenClawUpdateStreamEvent, RuntimeIssue } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
 
 type SurfaceTheme = "dark" | "light";
-type RuntimeAction = "reviewDevices" | "approveRequest" | "approveLatest" | "openRecovery" | "dismiss";
+type RuntimeAction = "reviewDevices" | "approveRequest" | "approveLatest" | "openRecovery" | "restoreRollback" | "dismiss";
 
 type RuntimeActionResponse = {
   snapshot?: MissionControlSnapshot;
@@ -348,15 +357,52 @@ function RuntimeIssueActions({
   const [busyAction, setBusyAction] = useState<RuntimeAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<RuntimeDeviceReview | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState(false);
+  const [actionStatus, setActionStatus] = useState<string | null>(null);
   const isScopeUpgrade = issue.type === "scope_upgrade_pending";
   const recoveryCommand = issue.recoveryCommand?.trim() || null;
-  const canOpenRecovery = Boolean(recoveryCommand && !isScopeUpgrade);
+  const rollbackTargetVersion = readRecoveryTargetVersion(recoveryCommand);
+  const isRollbackRecovery = issue.type === "openclaw_rollback_needed" || Boolean(
+    rollbackTargetVersion && issue.type === "openclaw_postflight_failed"
+  );
+  const canOpenRecovery = Boolean(recoveryCommand && !isScopeUpgrade && !isRollbackRecovery);
 
   const runAction = async (action: RuntimeAction) => {
     setBusyAction(action);
     setError(null);
+    setActionStatus(null);
 
     try {
+      if (action === "restoreRollback") {
+        const response = await fetch("/api/update", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            action: "rollback",
+            confirmed: true
+          })
+        });
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(payload?.error || "OpenClaw restore request failed.");
+        }
+
+        const result = await readUpdateStream(response, setActionStatus);
+        if (!result.ok) {
+          throw new Error(result.message);
+        }
+
+        if (result.snapshot) {
+          onSnapshotChange?.(result.snapshot);
+        }
+        await onRefresh?.();
+        toast.success("OpenClaw restored.", { description: result.message });
+        return;
+      }
+
       if (action === "openRecovery") {
         if (!recoveryCommand) {
           throw new Error("No recovery command is available for this runtime issue.");
@@ -406,6 +452,10 @@ function RuntimeIssueActions({
         onSnapshotChange?.(payload.snapshot);
       } else {
         await onRefresh?.();
+      }
+
+      if (action === "dismiss") {
+        toast.success("Runtime issue dismissed.");
       }
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : "Runtime issue action failed.");
@@ -467,6 +517,18 @@ function RuntimeIssueActions({
             {resolveRecoveryActionLabel(issue)}
           </Button>
         ) : null}
+        {isRollbackRecovery && recoveryCommand ? (
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => setConfirmRestore(true)}
+            disabled={busyAction !== null}
+            className="h-8 rounded-lg px-2.5 text-xs"
+          >
+            {busyAction === "restoreRollback" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+            Restore last working
+          </Button>
+        ) : null}
         {issue.status !== "dismissed" && issue.status !== "resolved" ? (
           <Button
             type="button"
@@ -482,14 +544,98 @@ function RuntimeIssueActions({
         ) : null}
       </div>
       {error ? <p className="mt-2 text-xs leading-5 text-rose-500">{error}</p> : null}
+      {actionStatus ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{actionStatus}</p> : null}
       {canOpenRecovery ? (
         <p className="mt-2 break-words font-mono text-[10px] leading-4 text-muted-foreground">
           {recoveryCommand}
         </p>
       ) : null}
       {review ? <RuntimeDeviceReviewPanel review={review} surfaceTheme={surfaceTheme} /> : null}
+      <Dialog open={confirmRestore} onOpenChange={setConfirmRestore}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Restore the last working OpenClaw version?</DialogTitle>
+            <DialogDescription>
+              This mutates the installed OpenClaw version, restores saved configuration when available, restarts the Gateway and verifies health.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm">
+            <div className="grid gap-2 text-xs sm:grid-cols-2">
+              <span className="text-muted-foreground">Restore target</span>
+              <strong className="font-mono text-foreground sm:text-right">
+                {rollbackTargetVersion ? `v${rollbackTargetVersion}` : "Saved rollback snapshot"}
+              </strong>
+              <span className="text-muted-foreground">Gateway impact</span>
+              <strong className="font-medium text-foreground sm:text-right">Restart and health verification</strong>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => setConfirmRestore(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                setConfirmRestore(false);
+                void runAction("restoreRollback");
+              }}
+            >
+              Restore and restart
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+async function readUpdateStream(
+  response: Response,
+  onStatus: (message: string) => void
+): Promise<Extract<OpenClawUpdateStreamEvent, { type: "done" }>> {
+  if (!response.body) {
+    throw new Error("OpenClaw restore did not return a readable stream.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: Extract<OpenClawUpdateStreamEvent, { type: "done" }> | null = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = done ? "" : lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (!line.trim()) {
+        continue;
+      }
+
+      const event = JSON.parse(line) as OpenClawUpdateStreamEvent;
+      if (event.type === "status") {
+        onStatus(event.message);
+      } else if (event.type === "done") {
+        result = event;
+      }
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  if (!result) {
+    throw new Error("OpenClaw restore stream ended unexpectedly.");
+  }
+
+  return result;
+}
+
+function readRecoveryTargetVersion(command: string | null) {
+  return command?.match(/\bupdate\s+--tag\s+v?(\d+(?:\.\d+)+)\b/i)?.[1] ?? null;
 }
 
 function resolveRecoveryActionLabel(issue: RuntimeIssue) {

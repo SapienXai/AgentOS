@@ -55,6 +55,9 @@ export function buildOpenClawUpdatePreflightReport(
   );
   const certifiedRecoveryMissingSnapshot = isCertifiedRecoveryTarget && !input.rollbackSnapshotAvailable;
   const hasPendingScopeApproval = diagnostics.runtimeIssues.some((issue) => issue.type === "scope_upgrade_pending");
+  const activeRuntimeCount = (input.snapshot.runtimes ?? []).filter((runtime) => runtime.status === "running").length;
+  const activeTaskCount = (input.snapshot.tasks ?? []).filter((task) => task.status === "running" || task.status === "queued").length;
+  const activeWorkloadCount = activeRuntimeCount + activeTaskCount;
   const hasGatewayReachability = diagnostics.installed && diagnostics.loaded && diagnostics.rpcOk;
   const gatewayReachabilityStatus = hasGatewayReachability
     ? "safe"
@@ -166,6 +169,14 @@ export function buildOpenClawUpdatePreflightReport(
       message: diagnostics.runtimeIssues.length
         ? `${diagnostics.runtimeIssues.length} runtime issue(s) are currently visible in Runtime Inbox.`
         : "No active runtime issues are currently visible."
+    }),
+    createCheck({
+      id: "active-workloads",
+      label: "Active workloads",
+      status: activeWorkloadCount > 0 ? "warning" : "safe",
+      message: activeWorkloadCount > 0
+        ? `${activeRuntimeCount} running runtime(s) and ${activeTaskCount} running or queued task(s) may be interrupted by the Gateway restart.`
+        : "No running runtimes or queued tasks were detected."
     }),
     createCheck({
       id: "rollback-metadata",

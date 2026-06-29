@@ -166,7 +166,7 @@ test("runtime issue detector reopens dismissed gateway recovery while gateway re
   assert.equal(issues[0]?.recoveryCommand, "openclaw gateway restart");
 });
 
-test("runtime issue detector reopens rollback recovery and suppresses generic gateway action", () => {
+test("runtime issue detector keeps dismissed rollback recovery hidden until a new failure is recorded", () => {
   const id = "openclaw_rollback_needed:openclaw_cli:2026.6.6";
   const recoveryCommand = "/Users/example/.openclaw/bin/openclaw update --tag 2026.6.6 --yes";
   const issues = buildRuntimeIssues({
@@ -200,7 +200,7 @@ test("runtime issue detector reopens rollback recovery and suppresses generic ga
   assert.equal(issues.length, 1);
   assert.equal(issues[0]?.id, id);
   assert.equal(issues[0]?.type, "openclaw_rollback_needed");
-  assert.equal(issues[0]?.status, "open");
+  assert.equal(issues[0]?.status, "dismissed");
   assert.equal(issues[0]?.recoveryCommand, recoveryCommand);
 });
 
@@ -285,7 +285,9 @@ test("runtime issue detector rewrites stale rollback commands from saved snapsho
 test("runtime inbox exposes recovery commands for non-scope issues", () => {
   const source = readFileSync(path.join(process.cwd(), "components/runtime/runtime-inbox.tsx"), "utf8");
 
-  assert.match(source, /openRecovery/);
+  assert.match(source, /restoreRollback/);
+  assert.match(source, /action:\s*"rollback"/);
+  assert.match(source, /Restore and restart/);
   assert.match(source, /\/api\/system\/open-terminal/);
   assert.match(source, /Restore last working/);
   assert.match(source, /Restart gateway/);

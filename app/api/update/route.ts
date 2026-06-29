@@ -58,7 +58,8 @@ const updateSchema = z.object({
   action: z.enum(["preflight", "probe", "update", "rollback", "certify-round-trip"]).default("update"),
   confirmed: z.boolean().optional(),
   targetVersion: z.string().trim().optional(),
-  mode: z.enum(["recommended", "candidate", "advanced"]).default("recommended")
+  mode: z.enum(["recommended", "candidate", "advanced"]).default("recommended"),
+  rollbackPolicy: z.enum(["automatic", "manual"]).default("automatic")
 });
 
 const updateTimeoutMs = 10 * 60 * 1000;
@@ -1156,6 +1157,49 @@ export async function POST(request: Request) {
           });
 
           if (!compatibilityVerification.ok) {
+            if (updateRequest.rollbackPolicy === "manual") {
+              const recoveryCommand = buildOpenClawRollbackManualCommand(openClawBin, rollbackSnapshot);
+              const message = `${compatibilityVerification.message} OpenClaw v${targetVersion} remains installed because manual rollback was selected.`;
+              await recordUpdateRuntimeIssue({
+                type: "openclaw_postflight_failed",
+                title: "OpenClaw compatibility postflight needs review",
+                message,
+                targetVersion,
+                rawOutput: [stdout, stderr].filter(Boolean).join("\n"),
+                recoveryCommand,
+                severity: "action_required"
+              });
+              await send({
+                type: "done",
+                ok: true,
+                message,
+                exitCode: code,
+                stdout,
+                stderr,
+                snapshot: verifiedSnapshot,
+                capabilityDiff: verifiedCapabilityDiff,
+                certificationScorecard: buildOpenClawUpdateCertificationScorecard({
+                  baselineSnapshot: snapshot,
+                  targetSnapshot: verifiedSnapshot,
+                  targetVersion,
+                  decision: updateDecision,
+                  preflightReport: preflight.report,
+                  capabilityDiff: verifiedCapabilityDiff,
+                  updateAttempted: true,
+                  updateCompleted: true,
+                  exitCode: code,
+                  rollbackSnapshotCreated: true,
+                  rollbackToCertifiedBaseline: "not-run",
+                  stdout,
+                  stderr,
+                  failureMessage: compatibilityVerification.message
+                }),
+                manualCommand: recoveryCommand
+              });
+              await closeWriter();
+              return;
+            }
+
             const rollback = await runRollbackOpenClaw(openClawBin, rollbackSnapshot, send);
             stdout += rollback.stdout;
             stderr += rollback.stderr;
@@ -1240,27 +1284,34 @@ export async function POST(request: Request) {
               ? `OpenClaw updated, but ${classification.detail}`
               : `OpenClaw updated, but the live runtime smoke test failed.${smokeTestOutput ? ` ${smokeTestOutput}` : ""}`;
 
-            if (certifiedTarget) {
+            if (certifiedTarget || updateRequest.rollbackPolicy === "manual") {
               const recoveryCommand = buildOpenClawRuntimeSmokeTestRecoveryCommand(
                 formatOpenClawCommand(openClawBin, []),
                 smokeTestOutput
               );
+              const targetRetentionMessage = updateRequest.rollbackPolicy === "manual"
+                ? ` OpenClaw v${targetVersion} remains installed because manual rollback was selected.`
+                : "";
               stdout = stdout
                 ? `${stdout}\n${smokeFailureMessage}`
                 : smokeFailureMessage;
               await recordUpdateRuntimeIssue({
                 type: "openclaw_postflight_failed",
-                title: "OpenClaw certified runtime smoke needs review",
-                message: smokeFailureMessage,
+                title: certifiedTarget
+                  ? "OpenClaw certified runtime smoke needs review"
+                  : "OpenClaw runtime smoke needs review",
+                message: `${smokeFailureMessage}${targetRetentionMessage}`,
                 targetVersion,
                 rawOutput: [stdout, stderr, smokeTestOutput].filter(Boolean).join("\n"),
-                recoveryCommand,
+                recoveryCommand: updateRequest.rollbackPolicy === "manual"
+                  ? buildOpenClawRollbackManualCommand(openClawBin, rollbackSnapshot)
+                  : recoveryCommand,
                 severity: "action_required"
               });
               await send({
                 type: "done",
                 ok: true,
-                message: `${verification.message} ${smokeFailureMessage}`.trim(),
+                message: `${verification.message} ${smokeFailureMessage}${targetRetentionMessage}`.trim(),
                 exitCode: code,
                 stdout,
                 stderr: stderr
@@ -1280,14 +1331,16 @@ export async function POST(request: Request) {
                   updateCompleted: true,
                   exitCode: code,
                   rollbackSnapshotCreated: true,
-                  rollbackToCertifiedBaseline: "not-required",
+                  rollbackToCertifiedBaseline: updateRequest.rollbackPolicy === "manual" ? "not-run" : "not-required",
                   stdout,
                   stderr: stderr
                     ? `${stderr}\n${smokeTestOutput || "Runtime smoke test failed."}`
                     : smokeTestOutput || "Runtime smoke test failed.",
                   failureMessage: smokeFailureMessage
                 }),
-                manualCommand: recoveryCommand
+                manualCommand: updateRequest.rollbackPolicy === "manual"
+                  ? buildOpenClawRollbackManualCommand(openClawBin, rollbackSnapshot)
+                  : recoveryCommand
               });
               await closeWriter();
               return;

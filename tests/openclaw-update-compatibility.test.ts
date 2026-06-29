@@ -280,6 +280,29 @@ test("candidate preflight remains attemptable only with explicit opt-in warning"
   assert.equal(report.warnings.some((check) => check.id === "manifest-decision"), true);
 });
 
+test("preflight warns when active workloads may be interrupted", () => {
+  const decision = resolveOpenClawUpdateDecision({
+    manifest,
+    agentOsVersion: "0.7.2",
+    targetVersion: "2026.6.8",
+    mode: "recommended"
+  });
+  const snapshot = createUpdateSafetySnapshot({});
+  snapshot.runtimes = [{ status: "running" }] as MissionControlSnapshot["runtimes"];
+  snapshot.tasks = [{ status: "queued" }] as MissionControlSnapshot["tasks"];
+  const report = buildOpenClawUpdatePreflightReport({
+    snapshot,
+    targetVersion: "2026.6.8",
+    decision,
+    rollbackSnapshotAvailable: true,
+    generatedAt: new Date("2026-06-14T10:00:00.000Z")
+  });
+
+  assert.equal(report.canAttemptUpdate, true);
+  assert.equal(report.warnings.some((check) => check.id === "active-workloads"), true);
+  assert.match(report.warnings.find((check) => check.id === "active-workloads")?.message ?? "", /interrupted/);
+});
+
 test("advanced preflight allows install-and-verify when scope approval is pending", () => {
   const decision = resolveOpenClawUpdateDecision({
     manifest,
@@ -436,6 +459,22 @@ test("update route exposes non-mutating preflight and probe actions", () => {
   assert.match(routeSource, /redactSecrets\(\{ report \}\)/);
 });
 
+test("Updates page requires confirmation and keeps manually selected targets installed", () => {
+  const routeSource = readFileSync(path.join(process.cwd(), "app/api/update/route.ts"), "utf8");
+  const updatesSource = readFileSync(
+    path.join(process.cwd(), "components/operations/updates/updates-page-content.tsx"),
+    "utf8"
+  );
+
+  assert.match(routeSource, /rollbackPolicy:\s*z\.enum\(\["automatic", "manual"\]\)/);
+  assert.match(routeSource, /updateRequest\.rollbackPolicy === "manual"/);
+  assert.match(routeSource, /remains installed because manual rollback was selected/);
+  assert.match(updatesSource, /rollbackPolicy:\s*"manual"/);
+  assert.match(updatesSource, /const requestInstall[\s\S]*setInstallTarget\(release\)/);
+  assert.doesNotMatch(updatesSource, /const requestInstall[\s\S]{0,800}void runInstall\(release\)/);
+  assert.match(updatesSource, /Rollback policy" value="Manual - keep target on failure/);
+});
+
 test("update route uses OpenClaw 2026.6.8+ JSON updater commands", () => {
   const routeSource = readFileSync(path.join(process.cwd(), "app/api/update/route.ts"), "utf8");
 
@@ -478,8 +517,8 @@ test("update route keeps certified targets installed when postflight only has wa
   assert.match(routeSource, /verifyOpenClawPostUpdateCompatibility\(verifiedSnapshot,\s*\{\s*certifiedTarget\s*\}\)/);
   assert.match(routeSource, /OpenClaw certified postflight completed with warnings/);
   assert.match(routeSource, /OpenClaw certified runtime smoke needs review/);
-  assert.match(routeSource, /if \(certifiedTarget\) \{/);
-  assert.match(routeSource, /ok: true,\s+message: `\$\{verification\.message\} \$\{smokeFailureMessage\}`/);
+  assert.match(routeSource, /if \(certifiedTarget \|\| updateRequest\.rollbackPolicy === "manual"\) \{/);
+  assert.match(routeSource, /ok: true,\s+message: `\$\{verification\.message\} \$\{smokeFailureMessage\}\$\{targetRetentionMessage\}`/);
 });
 
 test("update dialog keeps OpenClaw output and certification scorecard inside the modal width", () => {
