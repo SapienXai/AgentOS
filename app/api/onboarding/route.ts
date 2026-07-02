@@ -13,6 +13,7 @@ import { probeLocalGatewayStatus } from "@/lib/openclaw/client/local-gateway-pro
 import { resolveLatestPendingDeviceRequestId } from "@/lib/openclaw/client/native-ws-gateway-protocol";
 import { settleAgentConfigFromStateFile } from "@/lib/openclaw/state/agent-config-payload";
 import { openClawStateRootPath } from "@/lib/openclaw/state/paths";
+import { inspectOpenClawRuntimeState } from "@/lib/openclaw/state/runtime-state";
 import { isOpenClawSystemReady } from "@/lib/openclaw/readiness";
 import {
   OPENCLAW_INSTALL_DOCS_URL,
@@ -266,6 +267,17 @@ export async function POST(request: Request) {
         }
 
         openClawBin = installedOpenClawBin;
+      }
+
+      const runtimeState = await inspectOpenClawRuntimeState(openClawStateRootPath, [], { touch: true });
+      if (!runtimeState.stateWritable) {
+        const detail = runtimeState.issues[0] || `OpenClaw state root is not writable: ${openClawStateRootPath}`;
+        aggregatedStderr = appendLine(aggregatedStderr, detail);
+        await fail(
+          "verifying",
+          "OpenClaw is installed, but AgentOS cannot write to its runtime state. Start AgentOS outside the sandbox or grant this process write access to ~/.openclaw, then retry System Setup. OpenClaw does not need to be reinstalled."
+        );
+        return;
       }
 
       let gatewayStatus = await readGatewayStatus(openClawBin);
