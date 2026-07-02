@@ -5,7 +5,8 @@ import { spawn } from "node:child_process";
 import {
   getOpenClawBundledNodeBinPath,
   getOpenClawLocalPrefixBinPath,
-  getOpenClawUserLocalBinPath
+  getOpenClawUserLocalBinPath,
+  getOpenClawWindowsNpmBinPath
 } from "@/lib/openclaw/install";
 import {
   createDefaultOpenClawBinarySelection,
@@ -429,6 +430,7 @@ export function getOpenClawBinCandidates() {
     bundledNodeBin,
     localPrefixBin,
     getOpenClawUserLocalBinPath(),
+    process.platform === "win32" ? getOpenClawWindowsNpmBinPath() : "",
     "openclaw"
   ];
 
