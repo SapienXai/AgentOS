@@ -20,7 +20,8 @@ import {
   ensureOpenClawLocalBinOnPath,
   getOpenClawInstallCommand,
   getOpenClawLocalPrefix,
-  getOpenClawLocalPrefixBinPath
+  getOpenClawLocalPrefixBinPath,
+  repairOpenClawWindowsNpmShims
 } from "@/lib/openclaw/install";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import {
@@ -226,6 +227,21 @@ export async function POST(request: Request) {
         resolveErrorMessage = redactErrorMessage(error, "OpenClaw CLI could not be resolved.");
         return null;
       });
+
+      if (!openClawBin && process.platform === "win32") {
+        const repairedBin = await repairOpenClawWindowsNpmShims().catch(() => null);
+        if (repairedBin) {
+          resetOpenClawBinCache();
+          openClawBin = await resolveOpenClawBin().catch(() => null);
+          if (openClawBin) {
+            await send({
+              type: "log",
+              stream: "stdout",
+              text: "Recovered the installed OpenClaw Windows command shim.\n"
+            });
+          }
+        }
+      }
 
       if (!openClawBin) {
         const installCommand = getOpenClawInstallCommand();
@@ -801,6 +817,10 @@ async function installOpenClawCli(
     });
   }
   resetOpenClawBinCache();
+
+  if (process.platform === "win32") {
+    await repairOpenClawWindowsNpmShims().catch(() => null);
+  }
 
   if (process.platform !== "win32") {
     await send({
