@@ -3,7 +3,7 @@ import "server-only";
 import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 
@@ -59,6 +59,44 @@ export function getOpenClawUserLocalBinPath() {
 export function getOpenClawWindowsNpmBinPath() {
   const appData = process.env.APPDATA?.trim() || path.join(os.homedir(), "AppData", "Roaming");
   return path.join(appData, "npm", "openclaw.cmd");
+}
+
+export async function repairOpenClawWindowsNpmShims(options: {
+  npmBinDir?: string;
+  platform?: NodeJS.Platform;
+} = {}) {
+  if ((options.platform ?? process.platform) !== "win32") {
+    return null;
+  }
+
+  const npmBinDir = options.npmBinDir
+    ?? path.dirname(getOpenClawWindowsNpmBinPath());
+  const commandPath = path.join(npmBinDir, "openclaw.cmd");
+
+  if (await pathExists(commandPath)) {
+    return commandPath;
+  }
+
+  const packageEntry = path.join(npmBinDir, "node_modules", "openclaw", "openclaw.mjs");
+  if (!(await pathExists(packageEntry))) {
+    return null;
+  }
+
+  const entries = await readdir(npmBinDir).catch(() => [] as string[]);
+
+  for (const extension of ["", ".cmd", ".ps1"]) {
+    const targetName = `openclaw${extension}`;
+    if (await pathExists(path.join(npmBinDir, targetName))) {
+      continue;
+    }
+
+    const temporaryName = entries.find((entry) => entry.startsWith(`.${targetName}-`));
+    if (temporaryName) {
+      await rename(path.join(npmBinDir, temporaryName), path.join(npmBinDir, targetName));
+    }
+  }
+
+  return (await pathExists(commandPath)) ? commandPath : null;
 }
 
 export function getOpenClawInstallCommand() {
