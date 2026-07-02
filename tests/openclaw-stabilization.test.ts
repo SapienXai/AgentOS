@@ -13,6 +13,7 @@ import {
   getOpenClawInstallCommand,
   getOpenClawLocalPrefixBinPath,
   getOpenClawUserLocalBinPath,
+  getOpenClawWindowsNpmBinPath,
   mergeDirectoryIntoPathList,
   pathListIncludesDirectory
 } from "@/lib/openclaw/install";
@@ -310,6 +311,9 @@ test("openclaw resolver considers local prefix fallbacks", () => {
   assert.ok(bundledNodeBinIndex < localPrefixBinIndex);
   assert.ok(candidates.includes(getOpenClawLocalPrefixBinPath().replaceAll("\\", "/")));
   assert.ok(candidates.includes(getOpenClawUserLocalBinPath().replaceAll("\\", "/")));
+  if (process.platform === "win32") {
+    assert.ok(candidates.includes(getOpenClawWindowsNpmBinPath().replaceAll("\\", "/")));
+  }
 });
 
 test("openclaw resolver does not let the managed wrapper shadow the bundled node install", () => {
