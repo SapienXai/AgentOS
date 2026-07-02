@@ -31,6 +31,7 @@ let reconnecting = false;
 let suppressNextReconnect = false;
 let reconnectBaseMs = defaultReconnectBaseMs;
 let reconnectMaxMs = defaultReconnectMaxMs;
+let bridgeGeneration = 0;
 const bridgeEventSubscribers = new Set<(frame: GatewayEventFrame) => void>();
 
 export function getOpenClawEventBridgeStatus() {
@@ -92,8 +93,11 @@ export function startOpenClawEventBridge() {
     return;
   }
 
-  starting = startEventBridge().finally(() => {
-    starting = null;
+  const generation = bridgeGeneration;
+  starting = startEventBridge(generation).finally(() => {
+    if (bridgeGeneration === generation) {
+      starting = null;
+    }
   });
   void starting;
 }
@@ -125,8 +129,12 @@ export async function readOpenClawEventBridgeRuntimes(): Promise<RuntimeRecord[]
   }
 }
 
-async function startEventBridge() {
+async function startEventBridge(generation: number) {
   const capabilityMatrix = await getOpenClawCapabilityMatrix().catch(() => null);
+  if (bridgeGeneration !== generation) {
+    return;
+  }
+
   if (capabilityMatrix?.eventBridge === "unsupported") {
     lastError = "OpenClaw Gateway does not advertise compatible session/event support.";
     reconnecting = false;
@@ -134,7 +142,7 @@ async function startEventBridge() {
   }
 
   try {
-    subscription = await getOpenClawAdapter().subscribeRuntimeEvents(
+    const nextSubscription = await getOpenClawAdapter().subscribeRuntimeEvents(
       {
         includeSessions: true,
         includeTasks: true,
@@ -153,22 +161,36 @@ async function startEventBridge() {
         },
         onClose: () => {
           subscription = null;
-          scheduleEventBridgeReconnect();
+          scheduleEventBridgeReconnect(generation);
         }
       },
       { timeoutMs: 5_000 }
     );
+    if (bridgeGeneration !== generation) {
+      nextSubscription.close();
+      return;
+    }
+
+    subscription = nextSubscription;
     lastError = null;
     reconnectAttempt = 0;
     reconnecting = false;
   } catch (error) {
+    if (bridgeGeneration !== generation) {
+      return;
+    }
+
     subscription = null;
     lastError = redactErrorMessage(error, "OpenClaw Gateway event stream failed.");
-    scheduleEventBridgeReconnect();
+    scheduleEventBridgeReconnect(generation);
   }
 }
 
-function scheduleEventBridgeReconnect() {
+function scheduleEventBridgeReconnect(generation = bridgeGeneration) {
+  if (bridgeGeneration !== generation) {
+    return;
+  }
+
   if (suppressNextReconnect) {
     suppressNextReconnect = false;
     reconnecting = false;
@@ -184,6 +206,11 @@ function scheduleEventBridgeReconnect() {
   const delayMs = Math.min(reconnectMaxMs, reconnectBaseMs * 2 ** Math.max(0, reconnectAttempt - 1));
 
   reconnectTimer = setTimeout(() => {
+    if (bridgeGeneration !== generation) {
+      reconnectTimer = null;
+      return;
+    }
+
     reconnectTimer = null;
     startOpenClawEventBridge();
   }, delayMs);
@@ -253,6 +280,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function resetOpenClawEventBridgeForTesting() {
+  bridgeGeneration += 1;
   suppressNextReconnect = true;
   subscription?.close();
   subscription = null;

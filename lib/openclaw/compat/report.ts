@@ -85,7 +85,9 @@ export function getCachedOpenClawCompatibilityReport() {
   }
 
   if (Date.now() - cachedCompatibilityReport.capturedAt >= compatibilityReportCacheTtlMs) {
-    warmOpenClawCompatibilityReport();
+    if (!cachedCompatibilityReport.value.target.isSimulatedRuntime) {
+      warmOpenClawCompatibilityReport();
+    }
   }
 
   return cachedCompatibilityReport.value;

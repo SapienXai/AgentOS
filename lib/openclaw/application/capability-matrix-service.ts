@@ -122,9 +122,13 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
       supportedEvents = readSupportedEvents(capabilityPayload);
     } else {
       try {
-        const hello = await new NativeWsOpenClawGatewayClient({ timeoutMs: 2_500 }).probeNativeHandshake({
+        const client = new NativeWsOpenClawGatewayClient({ timeoutMs: 2_500 });
+        const hello = await client.probeNativeHandshake({
           timeoutMs: 2_500
+        }).finally(() => {
+          client.close("capability matrix handshake probe finished");
         });
+
         methodContractSource = "gateway-handshake";
         protocolVersion = readProtocolVersion(hello);
         authMode = readAuthMode(hello);

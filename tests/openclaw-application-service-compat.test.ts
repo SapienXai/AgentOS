@@ -10,6 +10,8 @@ import {
   getRuntimeOutput as getRuntimeOutputFromApplication,
   getTaskDetail as getTaskDetailFromApplication
 } from "@/lib/openclaw/application/runtime-service";
+import { resetOpenClawEventBridgeForTesting } from "@/lib/openclaw/application/event-bridge-service";
+import { resetOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import {
   updateGatewayRemoteUrl as updateGatewayRemoteUrlFromApplication,
   updateWorkspaceRoot as updateWorkspaceRootFromApplication
@@ -34,6 +36,8 @@ async function readErrorMessage(action: () => Promise<unknown>) {
 }
 
 afterEach(() => {
+  resetOpenClawEventBridgeForTesting();
+  resetOpenClawGatewayClient("application service compatibility test cleanup");
   clearMissionControlCaches();
 });
 

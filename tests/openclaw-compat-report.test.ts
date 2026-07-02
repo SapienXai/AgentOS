@@ -42,7 +42,7 @@ test("compatibility report marks the stable advertised Gateway contract compatib
   assert.ok(report.summary.nativeGatewayCoveragePercent > 50);
 });
 
-test("compatibility report cache keeps stale data while refresh warms", async () => {
+test("compatibility report cache keeps stale simulated data without real-local warmup", async () => {
   const gateway = createCompatibilityGateway([
     ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
     ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS

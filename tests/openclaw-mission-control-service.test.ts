@@ -5,6 +5,8 @@ import {
   clearMissionControlCaches as clearApplicationMissionControlCaches,
   getMissionControlSnapshot as getApplicationMissionControlSnapshot
 } from "@/lib/openclaw/application/mission-control-service";
+import { resetOpenClawEventBridgeForTesting } from "@/lib/openclaw/application/event-bridge-service";
+import { resetOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import {
   clearMissionControlCaches as clearCompatibilityMissionControlCaches,
   getMissionControlSnapshot as getCompatibilityMissionControlSnapshot
@@ -31,7 +33,10 @@ const snapshotResponseKeys = [
 ];
 
 afterEach(() => {
+  resetOpenClawEventBridgeForTesting();
+  resetOpenClawGatewayClient("mission control service compatibility test cleanup");
   clearApplicationMissionControlCaches();
+  clearCompatibilityMissionControlCaches();
 });
 
 test("mission control service preserves the compatibility snapshot response shape", async () => {

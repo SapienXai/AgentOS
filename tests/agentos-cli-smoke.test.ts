@@ -83,7 +83,7 @@ test("agentos doctor reports read-only OpenClaw Gateway compatibility details", 
   const fakeOpenClaw = await writeFakeOpenClawGatewayBinary(fixture.installRoot);
   const result = runCli(fixture.cliPath, ["doctor", "--deep"], {
     env: {
-      ...createSmokeEnv(fixture.installRoot),
+      ...createSmokeEnv(fixture.installRoot, { port: allocateSmokePort() }),
       OPENCLAW_BIN: fakeOpenClaw
     }
   });
@@ -107,7 +107,7 @@ test("agentos doctor deep mode can print OpenClaw compatibility JSON", async () 
   const fakeOpenClaw = await writeFakeOpenClawGatewayBinary(fixture.installRoot);
   const result = runCli(fixture.cliPath, ["doctor", "--deep", "--json"], {
     env: {
-      ...createSmokeEnv(fixture.installRoot),
+      ...createSmokeEnv(fixture.installRoot, { port: allocateSmokePort() }),
       OPENCLAW_BIN: fakeOpenClaw
     }
   });
@@ -133,7 +133,7 @@ test("agentos doctor warns when Gateway required method metadata is incomplete",
   });
   const result = runCli(fixture.cliPath, ["doctor", "--deep"], {
     env: {
-      ...createSmokeEnv(fixture.installRoot),
+      ...createSmokeEnv(fixture.installRoot, { port: allocateSmokePort() }),
       OPENCLAW_BIN: fakeOpenClaw
     }
   });
@@ -150,7 +150,7 @@ test("agentos doctor redacts Gateway probe failure details", async () => {
   });
   const result = runCli(fixture.cliPath, ["doctor", "--deep"], {
     env: {
-      ...createSmokeEnv(fixture.installRoot),
+      ...createSmokeEnv(fixture.installRoot, { port: allocateSmokePort() }),
       OPENCLAW_BIN: fakeOpenClaw
     }
   });
@@ -489,13 +489,15 @@ function runCli(
   });
 }
 
-function createSmokeEnv(installRoot: string): NodeJS.ProcessEnv {
+function createSmokeEnv(installRoot: string, options: { port?: number } = {}): NodeJS.ProcessEnv {
+  const port = options.port ?? 3000;
+
   return {
     ...process.env,
     AGENTOS_CLI_TEST: "1",
     AGENTOS_INSTALL_ROOT: installRoot,
     AGENTOS_HOST: "127.0.0.1",
-    AGENTOS_PORT: "3000",
+    AGENTOS_PORT: String(port),
     AGENTOS_OPEN: "0",
     PATH: path.join(installRoot, "empty-bin")
   };

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { afterEach, test } from "node:test";
 
+import { resetOpenClawEventBridgeForTesting } from "@/lib/openclaw/application/event-bridge-service";
+import { clearMissionControlCaches } from "@/lib/openclaw/application/mission-control-service";
+import { resetOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import {
   bindWorkspaceChannelAgent as bindApplicationWorkspaceChannelAgent,
   createManagedChatChannelAccount as createApplicationManagedChatChannelAccount,
@@ -33,6 +36,12 @@ async function readErrorMessage(action: () => Promise<unknown>) {
 
   throw new Error("Expected action to throw.");
 }
+
+afterEach(() => {
+  resetOpenClawEventBridgeForTesting();
+  resetOpenClawGatewayClient("channel service compatibility test cleanup");
+  clearMissionControlCaches();
+});
 
 test("channel application service preserves upsert validation shape", async () => {
   const input = {
