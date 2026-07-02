@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { access } from "node:fs/promises";
+import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { NextResponse } from "next/server";
@@ -228,19 +229,6 @@ export async function POST(request: Request) {
 
       if (!openClawBin) {
         const installCommand = getOpenClawInstallCommand();
-
-        if (process.platform === "win32") {
-          const currentSnapshot = await loadSnapshot();
-
-          aggregatedStderr = resolveErrorMessage || "OpenClaw CLI could not be resolved.";
-
-          await fail("installing-cli", "OpenClaw CLI could not be resolved.", {
-            snapshot: currentSnapshot,
-            manualCommand: installCommand,
-            docsUrl
-          });
-          return;
-        }
 
         const installedOpenClawBin = await installOpenClawCli(send, appendOutput, installCommand);
 
@@ -779,72 +767,80 @@ async function installOpenClawCli(
   await send({
     type: "status",
     phase: "installing-cli",
-    message: `Installing OpenClaw v${OPENCLAW_RECOMMENDED_VERSION} into ${getOpenClawLocalPrefix()}...`
+    message: process.platform === "win32"
+      ? `Installing OpenClaw v${OPENCLAW_RECOMMENDED_VERSION} with the official Windows installer...`
+      : `Installing OpenClaw v${OPENCLAW_RECOMMENDED_VERSION} into ${getOpenClawLocalPrefix()}...`
   });
 
-  const installResult = await runCommand("bash", ["-lc", installCommand], send);
+  const installResult = process.platform === "win32"
+    ? await runCommand(resolveWindowsPowerShellExecutable(), [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        installCommand
+      ], send)
+    : await runCommand("bash", ["-lc", installCommand], send);
   appendOutput(installResult);
 
   if (installResult.errorMessage || installResult.timedOut || installResult.code !== 0) {
     return null;
   }
 
-  await writeOpenClawBinarySelection({
-    ...createDefaultOpenClawBinarySelection(),
-    mode: "local-prefix",
-    path: getOpenClawLocalPrefixBinPath(),
-    resolvedPath: getOpenClawLocalPrefixBinPath(),
-    label: "Local prefix",
-    detail: getOpenClawLocalPrefixBinPath()
-  });
+  if (process.platform === "win32") {
+    await writeOpenClawBinarySelection(createDefaultOpenClawBinarySelection());
+  } else {
+    await writeOpenClawBinarySelection({
+      ...createDefaultOpenClawBinarySelection(),
+      mode: "local-prefix",
+      path: getOpenClawLocalPrefixBinPath(),
+      resolvedPath: getOpenClawLocalPrefixBinPath(),
+      label: "Local prefix",
+      detail: getOpenClawLocalPrefixBinPath()
+    });
+  }
   resetOpenClawBinCache();
 
-  await send({
-    type: "status",
-    phase: "installing-cli",
-    message: "Adding OpenClaw to the terminal PATH..."
-  });
-
-  try {
-    const pathSetupResult = await ensureOpenClawLocalBinOnPath();
-    const pathSetupSummary = buildOpenClawPathSetupSummary(pathSetupResult);
-
-    appendOutput({
-      code: 0,
-      stdout: `${pathSetupSummary}\n`,
-      stderr: pathSetupResult.warnings.length > 0 ? `${pathSetupResult.warnings.join("\n")}\n` : "",
-      timedOut: false
-    });
-
+  if (process.platform !== "win32") {
     await send({
-      type: "log",
-      stream: "stdout",
-      text: `${pathSetupSummary}\n`
+      type: "status",
+      phase: "installing-cli",
+      message: "Adding OpenClaw to the terminal PATH..."
     });
 
-    for (const warning of pathSetupResult.warnings) {
+    try {
+      const pathSetupResult = await ensureOpenClawLocalBinOnPath();
+      const pathSetupSummary = buildOpenClawPathSetupSummary(pathSetupResult);
+
+      appendOutput({
+        code: 0,
+        stdout: `${pathSetupSummary}\n`,
+        stderr: pathSetupResult.warnings.length > 0 ? `${pathSetupResult.warnings.join("\n")}\n` : "",
+        timedOut: false
+      });
+
       await send({
         type: "log",
-        stream: "stderr",
-        text: `${warning}\n`
+        stream: "stdout",
+        text: `${pathSetupSummary}\n`
       });
+
+      for (const warning of pathSetupResult.warnings) {
+        await send({
+          type: "log",
+          stream: "stderr",
+          text: `${warning}\n`
+        });
+      }
+    } catch (error) {
+      const message = redactErrorMessage(
+        error,
+        "OpenClaw installed, but AgentOS could not update the terminal PATH automatically."
+      );
+      appendOutput({ code: 0, stdout: "", stderr: `${message}\n`, timedOut: false });
+      await send({ type: "log", stream: "stderr", text: `${message}\n` });
     }
-  } catch (error) {
-    const message = redactErrorMessage(
-      error,
-      "OpenClaw installed, but AgentOS could not update the terminal PATH automatically."
-    );
-    appendOutput({
-      code: 0,
-      stdout: "",
-      stderr: `${message}\n`,
-      timedOut: false
-    });
-    await send({
-      type: "log",
-      stream: "stderr",
-      text: `${message}\n`
-    });
   }
 
   try {
@@ -852,6 +848,12 @@ async function installOpenClawCli(
   } catch {
     return null;
   }
+}
+
+function resolveWindowsPowerShellExecutable() {
+  return process.env.SystemRoot
+    ? path.join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+    : "powershell.exe";
 }
 
 async function syncGatewayAuthTokenBeforeFirstStart(
