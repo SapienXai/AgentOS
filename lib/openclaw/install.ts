@@ -56,6 +56,11 @@ export function getOpenClawUserLocalBinPath() {
   return path.join(os.homedir(), ".local", "bin", process.platform === "win32" ? "openclaw.cmd" : "openclaw");
 }
 
+export function getOpenClawWindowsNpmBinPath() {
+  const appData = process.env.APPDATA?.trim() || path.join(os.homedir(), "AppData", "Roaming");
+  return path.join(appData, "npm", "openclaw.cmd");
+}
+
 export function getOpenClawInstallCommand() {
   if (process.platform === "win32") {
     return `& ([scriptblock]::Create((iwr -useb ${OPENCLAW_INSTALL_POWERSHELL_URL}))) -Tag ${OPENCLAW_RECOMMENDED_VERSION} -NoOnboard`;
