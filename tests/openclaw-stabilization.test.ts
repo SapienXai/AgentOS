@@ -15,7 +15,8 @@ import {
   getOpenClawUserLocalBinPath,
   getOpenClawWindowsNpmBinPath,
   mergeDirectoryIntoPathList,
-  pathListIncludesDirectory
+  pathListIncludesDirectory,
+  repairOpenClawWindowsNpmShims
 } from "@/lib/openclaw/install";
 import {
   buildOpenClawBinarySelectionSnapshot,
@@ -331,6 +332,19 @@ test("openclaw resolver does not let the managed wrapper shadow the bundled node
       process.env.OPENCLAW_BIN = previousOpenClawBin;
     }
   }
+});
+
+test("openclaw Windows shim recovery repairs an installed package without reinstalling it", async () => {
+  const npmBinDir = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-npm-"));
+  const packageDir = path.join(npmBinDir, "node_modules", "openclaw");
+  await mkdir(packageDir, { recursive: true });
+  await writeFile(path.join(packageDir, "openclaw.mjs"), "#!/usr/bin/env node\n", "utf8");
+  await writeFile(path.join(npmBinDir, ".openclaw.cmd-staged"), "@echo off\r\n", "utf8");
+
+  const repairedPath = await repairOpenClawWindowsNpmShims({ npmBinDir, platform: "win32" });
+
+  assert.equal(repairedPath, path.join(npmBinDir, "openclaw.cmd"));
+  assert.equal(await readFile(repairedPath!, "utf8"), "@echo off\r\n");
 });
 
 test("openclaw binary selection helpers preserve explicit choices", () => {
