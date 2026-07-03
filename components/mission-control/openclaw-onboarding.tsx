@@ -53,6 +53,7 @@ export function OpenClawOnboarding({
   modelReady,
   systemSetupRequired,
   systemStatusChecking,
+  gatewayReachable,
   showReadyState,
   systemActionLabel,
   systemActionDescription,
@@ -85,6 +86,7 @@ export function OpenClawOnboarding({
   modelReady?: boolean;
   systemSetupRequired?: boolean;
   systemStatusChecking?: boolean;
+  gatewayReachable?: boolean | null;
   showReadyState: boolean;
   systemActionLabel: string;
   systemActionDescription: string;
@@ -150,7 +152,8 @@ export function OpenClawOnboarding({
   const [selectedVisualStage, setSelectedVisualStage] = useState<OnboardingVisualStage | null>(null);
   const systemPhaseForSteps = onboardingSystemReady ? "ready" : systemPhase;
   const systemSteps = buildSystemSteps(snapshot, systemPhaseForSteps, {
-    forcePending: systemSetupRequired || systemStatusChecking || systemRun.runState === "running"
+    forcePending: systemSetupRequired || systemStatusChecking || systemRun.runState === "running",
+    gatewayReachable
   });
   const availableModels = snapshot.models.filter((model) => model.available !== false && !model.missing);
   const selectedModelLabel =
