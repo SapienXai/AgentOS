@@ -85,7 +85,8 @@ export async function runOpenClawStream(
     const invocation = resolveOpenClawSpawnInvocation(openClawBin, args);
     const child = spawn(/*turbopackIgnore: true*/ invocation.command, invocation.args, {
       detached: true,
-      env: buildOpenClawEnv()
+      env: buildOpenClawEnv(),
+      windowsHide: true
     });
 
     let stdout = "";
@@ -709,7 +710,8 @@ async function canExecuteOpenClaw(command: string) {
 
     try {
       child = spawn(/*turbopackIgnore: true*/ invocation.command, invocation.args, {
-        stdio: "ignore"
+        stdio: "ignore",
+        windowsHide: true
       });
     } catch {
       resolve(false);
