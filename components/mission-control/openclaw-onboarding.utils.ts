@@ -53,7 +53,7 @@ export function resolveEffectiveWizardStage(stage: WizardStage, systemReady: boo
 export function buildSystemSteps(
   snapshot: MissionControlSnapshot,
   phase: OpenClawOnboardingPhase | null,
-  options: { forcePending?: boolean } = {}
+  options: { forcePending?: boolean; gatewayReachable?: boolean | null } = {}
 ) {
   const forcePending = options.forcePending === true;
   const directGatewayRun = !forcePending && snapshot.diagnostics.rpcOk && !snapshot.diagnostics.loaded;
@@ -64,6 +64,7 @@ export function buildSystemSteps(
     phase === "verifying" ||
     phase === "ready";
   const gatewayComplete =
+    options.gatewayReachable === true ||
     (!forcePending && snapshot.diagnostics.loaded) ||
     directGatewayRun ||
     phase === "starting-gateway" ||
@@ -188,6 +189,10 @@ function resolveSystemStepDescription(
 
     if (!forcePending && snapshot.diagnostics.rpcOk) {
       return "Gateway is running directly.";
+    }
+
+    if (gatewayComplete) {
+      return "Gateway responds on the local port; full verification continues.";
     }
 
     return "Register the gateway service once.";
