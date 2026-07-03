@@ -20,6 +20,7 @@ export async function GET(request: Request) {
   let unsubscribeGatewayEvents: (() => void) | undefined;
   let closed = false;
   let snapshotTask: Promise<void> | null = null;
+  let cliInstalled: boolean | null = null;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -118,9 +119,18 @@ export async function GET(request: Request) {
       };
 
       const sendSystemStatus = async () => {
-        const gatewayStatus = await probeLocalGatewayStatus().catch(() => null);
+        const [gatewayStatus, detectedCliInstalled] = await Promise.all([
+          probeLocalGatewayStatus().catch(() => null),
+          cliInstalled === true
+            ? Promise.resolve(true)
+            : import("@/lib/openclaw/cli")
+                .then(({ resolveOpenClawBin }) => resolveOpenClawBin().then(() => true).catch(() => false))
+                .catch(() => false)
+        ]);
+        cliInstalled = detectedCliInstalled;
         sendEvent("system-status", {
-          gatewayReachable: Boolean(gatewayStatus)
+          gatewayReachable: Boolean(gatewayStatus),
+          cliInstalled
         });
       };
 
