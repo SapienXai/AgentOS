@@ -6,7 +6,9 @@ import {
   getOpenClawBundledNodeBinPath,
   getOpenClawLocalPrefixBinPath,
   getOpenClawUserLocalBinPath,
-  getOpenClawWindowsNpmBinPath
+  getOpenClawWindowsNpmBinPath,
+  getOpenClawWindowsNpmEntryPath,
+  resolveOpenClawSpawnInvocation
 } from "@/lib/openclaw/install";
 import {
   createDefaultOpenClawBinarySelection,
@@ -80,7 +82,8 @@ export async function runOpenClawStream(
     const startedAtMs = Date.now();
     const startedAt = new Date(startedAtMs).toISOString();
     const commandDiagnosticId = `openclaw:${startedAtMs}:${commandDiagnosticSequence++}`;
-    const child = spawn(/*turbopackIgnore: true*/ openClawBin, args, {
+    const invocation = resolveOpenClawSpawnInvocation(openClawBin, args);
+    const child = spawn(/*turbopackIgnore: true*/ invocation.command, invocation.args, {
       detached: true,
       env: buildOpenClawEnv()
     });
@@ -430,6 +433,7 @@ export function getOpenClawBinCandidates() {
     bundledNodeBin,
     localPrefixBin,
     getOpenClawUserLocalBinPath(),
+    process.platform === "win32" ? getOpenClawWindowsNpmEntryPath() : "",
     process.platform === "win32" ? getOpenClawWindowsNpmBinPath() : "",
     "openclaw"
   ];
@@ -700,9 +704,17 @@ function buildOpenClawEnv() {
 
 async function canExecuteOpenClaw(command: string) {
   return await new Promise<boolean>((resolve) => {
-    const child = spawn(/*turbopackIgnore: true*/ command, ["--version"], {
-      stdio: "ignore"
-    });
+    const invocation = resolveOpenClawSpawnInvocation(command, ["--version"]);
+    let child;
+
+    try {
+      child = spawn(/*turbopackIgnore: true*/ invocation.command, invocation.args, {
+        stdio: "ignore"
+      });
+    } catch {
+      resolve(false);
+      return;
+    }
 
     child.once("error", () => {
       resolve(false);
