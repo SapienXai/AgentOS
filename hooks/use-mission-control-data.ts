@@ -35,6 +35,7 @@ export function isNewerSnapshot(nextSnapshot: ControlPlaneSnapshot, currentSnaps
 export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
+  const [hasReceivedLiveSnapshot, setHasReceivedLiveSnapshot] = useState(false);
 
   useEffect(() => {
     const source = new EventSource("/api/stream");
@@ -45,6 +46,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
         setSnapshot((currentSnapshot) =>
           isNewerSnapshot(nextSnapshot, currentSnapshot) ? nextSnapshot : currentSnapshot
         );
+        setHasReceivedLiveSnapshot(true);
         setConnectionState("live");
       });
     });
@@ -77,6 +79,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
       setSnapshot((currentSnapshot) =>
         isNewerSnapshot(nextSnapshot, currentSnapshot) ? nextSnapshot : currentSnapshot
       );
+      setHasReceivedLiveSnapshot(true);
       setConnectionState("live");
     });
 
@@ -90,6 +93,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
   return {
     snapshot,
     connectionState,
+    hasReceivedLiveSnapshot,
     refresh,
     refreshSnapshot,
     setSnapshot
