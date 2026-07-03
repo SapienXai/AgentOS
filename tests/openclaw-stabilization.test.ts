@@ -950,6 +950,27 @@ test("CLI readiness does not wait for the first full live snapshot", () => {
   assert.equal(steps.find((step) => step.id === "gateway")?.state, "pending");
 });
 
+test("lightweight CLI status overrides a stale installed snapshot", () => {
+  const snapshot = {
+    diagnostics: {
+      installed: true,
+      version: "2026.6.8",
+      loaded: false,
+      rpcOk: false,
+      runtime: {
+        stateWritable: false,
+        sessionStoreWritable: false
+      }
+    }
+  } as unknown as MissionControlSnapshot;
+
+  const checkingSteps = buildSystemSteps(snapshot, null, { cliInstalled: null });
+  const missingSteps = buildSystemSteps(snapshot, null, { cliInstalled: false });
+
+  assert.equal(checkingSteps.find((step) => step.id === "cli")?.state, "pending");
+  assert.equal(missingSteps.find((step) => step.id === "cli")?.state, "pending");
+});
+
 test("onboarding treats canonical OpenAI model refs as ChatGPT when Codex auth owns the route", () => {
   const snapshot = {
     diagnostics: {
