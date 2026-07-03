@@ -108,8 +108,9 @@ export function OpenClawOnboarding({
   launchpadCreateProgress: OperationProgressSnapshot | null;
   launchpadCreateRunState: "idle" | "running" | "success" | "error";
 }) {
-  const onboardingSystemReady =
-    systemReady ?? (systemRun.runState === "success" || isOpenClawOnboardingSystemReady(snapshot));
+  const onboardingSystemReady = systemRun.runState === "running"
+    ? false
+    : systemReady ?? (systemRun.runState === "success" || isOpenClawOnboardingSystemReady(snapshot));
   const hasWorkspaceSetup = hasAgentOSWorkspaceSetup(snapshot);
   const operationalReady = isOpenClawMissionReady(snapshot);
   const onboardingModelReady =
@@ -147,7 +148,7 @@ export function OpenClawOnboarding({
   const [selectedVisualStage, setSelectedVisualStage] = useState<OnboardingVisualStage | null>(null);
   const systemPhaseForSteps = onboardingSystemReady ? "ready" : systemPhase;
   const systemSteps = buildSystemSteps(snapshot, systemPhaseForSteps, {
-    forcePending: systemSetupRequired
+    forcePending: systemSetupRequired || systemRun.runState === "running"
   });
   const availableModels = snapshot.models.filter((model) => model.available !== false && !model.missing);
   const selectedModelLabel =
