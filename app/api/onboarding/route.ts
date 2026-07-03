@@ -721,7 +721,8 @@ async function runCommand(
   const invocation = resolveOpenClawSpawnInvocation(command, args);
   const child = spawn(invocation.command, invocation.args, {
     cwd: process.cwd(),
-    env: process.env
+    env: process.env,
+    windowsHide: true
   });
 
   let stdout = "";
