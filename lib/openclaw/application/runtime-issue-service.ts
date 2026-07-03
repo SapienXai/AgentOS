@@ -1,5 +1,9 @@
 import "server-only";
 
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
   getMissionControlSnapshot,
@@ -20,6 +24,7 @@ import { redactErrorMessage, redactSecretText, redactSecrets } from "@/lib/secur
 
 const deviceListTimeoutMs = 10_000;
 const deviceApproveTimeoutMs = 10_000;
+const legacyConfigHealthPath = path.join(os.homedir(), ".openclaw", "logs", "config-health.json");
 
 export type RuntimeDeviceReview = {
   command: string;
@@ -253,6 +258,76 @@ export async function dismissRuntimeIssue(issueId: string) {
   return getMissionControlSnapshot({ force: true });
 }
 
+export async function repairRuntimeIssueLegacyState(issueId: string) {
+  const issue = await findRuntimeIssue(issueId);
+  if (!issue || issue.type !== "openclaw_doctor_warning") {
+    throw new Error("This runtime issue does not support legacy state repair.");
+  }
+
+  const now = new Date().toISOString();
+  await updateRuntimeIssueState(issue.id, (current) => ({
+    ...runtimeIssueToState(issue),
+    ...current,
+    id: issue.id,
+    status: "resolving",
+    updatedAt: now
+  }));
+
+  try {
+    await fs.access(legacyConfigHealthPath);
+    const archivePath = `${legacyConfigHealthPath}.agentos-archive-${Date.now()}`;
+    await fs.rename(legacyConfigHealthPath, archivePath);
+
+    const resolvedAt = new Date().toISOString();
+    await updateRuntimeIssueState(issue.id, (current) => ({
+      ...runtimeIssueToState(issue),
+      ...current,
+      id: issue.id,
+      status: "resolved",
+      updatedAt: resolvedAt,
+      resolvedAt,
+      command: "Archive legacy config health sidecar",
+      recoveryCommand: undefined,
+      rawOutput: "Archived the legacy OpenClaw config health sidecar. Rechecked OpenClaw status.",
+      errorMessage: undefined
+    }));
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      const resolvedAt = new Date().toISOString();
+      await updateRuntimeIssueState(issue.id, (current) => ({
+        ...runtimeIssueToState(issue),
+        ...current,
+        id: issue.id,
+        status: "resolved",
+        updatedAt: resolvedAt,
+        resolvedAt,
+        command: "Archive legacy config health sidecar",
+        recoveryCommand: undefined,
+        rawOutput: "The legacy OpenClaw config health sidecar was already absent.",
+        errorMessage: undefined
+      }));
+    } else {
+      const failedAt = new Date().toISOString();
+      await updateRuntimeIssueState(issue.id, (current) => ({
+        ...runtimeIssueToState(issue),
+        ...current,
+        id: issue.id,
+        status: "failed",
+        updatedAt: failedAt,
+        errorMessage: redactErrorMessage(error, "OpenClaw legacy state repair failed.")
+      }));
+      invalidateMissionControlSnapshotCache();
+      throw error;
+    }
+  }
+
+  invalidateMissionControlSnapshotCache();
+  return {
+    repaired: true,
+    snapshot: await getMissionControlSnapshot({ force: true })
+  };
+}
+
 async function findRuntimeIssue(issueId: string) {
   const id = issueId.trim();
   if (!id) {
@@ -385,4 +460,8 @@ function readCommandOutput(error: unknown) {
   const stdout = "stdout" in error && typeof error.stdout === "string" ? error.stdout : "";
   const stderr = "stderr" in error && typeof error.stderr === "string" ? error.stderr : "";
   return stderr || stdout || "";
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
 }

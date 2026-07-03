@@ -10,6 +10,7 @@ export type RuntimeIssueType =
   | "openclaw_update_failed"
   | "openclaw_postflight_failed"
   | "openclaw_rollback_needed"
+  | "openclaw_doctor_warning"
   | "openclaw_certification_blocked"
   | "unknown_runtime_action";
 
@@ -60,7 +61,7 @@ export type RuntimeIssueInput = {
     service?: { loaded?: boolean };
     rpc?: { ok?: boolean; error?: string };
   };
-  status?: {
+  status?: Record<string, unknown> & {
     gateway?: {
       reachable?: boolean;
       error?: string | null;
@@ -84,6 +85,12 @@ export type RuntimeIssueInput = {
       recovery?: string;
     }>;
     gatewayFallbackReasons?: string[];
+    commandHistory?: Array<{
+      command?: string;
+      args?: string[];
+      stdoutPreview?: string | null;
+      stderrPreview?: string | null;
+    }>;
     issues?: string[];
   };
   issues?: string[];
@@ -103,6 +110,7 @@ const defaultIssueTypes: RuntimeIssueType[] = [
   "openclaw_update_failed",
   "openclaw_postflight_failed",
   "openclaw_rollback_needed",
+  "openclaw_doctor_warning",
   "openclaw_certification_blocked",
   "unknown_runtime_action"
 ];
@@ -270,6 +278,20 @@ function collectRuntimeIssueCandidates(input: RuntimeIssueInput, now: string): R
         now
       }));
     }
+
+    if (isOpenClawLegacyStateMigrationWarning(text)) {
+      issues.push(createRuntimeIssue({
+        type: "openclaw_doctor_warning",
+        source: "openclaw_cli",
+        severity: "action_required",
+        title: "OpenClaw doctor warning needs repair",
+        message: "OpenClaw reported a legacy config health sidecar that conflicts with shared SQLite state. Archive the legacy sidecar, then recheck OpenClaw status.",
+        command: "Archive legacy config health sidecar",
+        inspectCommand: "openclaw status",
+        rawOutput: text,
+        now
+      }));
+    }
   }
 
   const diagnostics = input.diagnostics;
@@ -357,6 +379,20 @@ function collectRuntimeIssueTextSources(input: RuntimeIssueInput) {
   add("openclaw_gateway", input.status?.gateway?.authWarning);
   add("openclaw_gateway", input.diagnostics?.transport?.lastNativeError);
 
+  for (const entry of collectStatusWarningStrings(input.status)) {
+    add("openclaw_cli", entry);
+  }
+
+  for (const entry of input.diagnostics?.commandHistory ?? []) {
+    const commandText = [entry.command, ...(entry.args ?? [])].filter(Boolean).join(" ");
+    if (!/\bstatus\b/.test(commandText)) {
+      continue;
+    }
+
+    add("openclaw_cli", entry.stdoutPreview);
+    add("openclaw_cli", entry.stderrPreview);
+  }
+
   for (const entry of input.diagnostics?.gatewayFallbackDiagnostics ?? []) {
     add("openclaw_gateway", entry.issue);
     add("openclaw_gateway", entry.recovery);
@@ -379,6 +415,53 @@ function collectRuntimeIssueTextSources(input: RuntimeIssueInput) {
   }
 
   return sources;
+}
+
+function isOpenClawLegacyStateMigrationWarning(text: string) {
+  return (
+    /legacy state migration warnings/i.test(text) ||
+    /left legacy config health state in place/i.test(text) ||
+    /config-health\.json/i.test(text)
+  );
+}
+
+function collectStatusWarningStrings(status: RuntimeIssueInput["status"]) {
+  const statusRecord = readRecord(status);
+  if (!statusRecord) {
+    return [];
+  }
+
+  const warnings: string[] = [];
+  collectWarningLikeStrings(statusRecord, warnings, []);
+  return Array.from(new Set(warnings));
+}
+
+function collectWarningLikeStrings(value: unknown, output: string[], path: string[], depth = 0) {
+  if (depth > 5) {
+    return;
+  }
+
+  if (typeof value === "string") {
+    const keyPath = path.join(".");
+    if (/(warning|warnings|issue|issues|doctor|migration|migrations|state)/i.test(keyPath)) {
+      output.push(value);
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => collectWarningLikeStrings(entry, output, [...path, String(index)], depth + 1));
+    return;
+  }
+
+  const record = readRecord(value);
+  if (!record) {
+    return;
+  }
+
+  for (const [key, entry] of Object.entries(record)) {
+    collectWarningLikeStrings(entry, output, [...path, key], depth + 1);
+  }
 }
 
 function createRuntimeIssue(input: {

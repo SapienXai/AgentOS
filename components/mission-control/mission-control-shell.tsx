@@ -1676,7 +1676,8 @@ export function MissionControlShell({
           ...(action === "update" || action === "certify-round-trip"
             ? {
                 targetVersion: updateTargetVersion ?? snapshot.diagnostics.updateCompatibility?.recommendedVersion,
-                mode: updateMode
+                mode: updateMode,
+                rollbackPolicy: "manual"
               }
             : {})
         })
@@ -3601,7 +3602,7 @@ export function MissionControlShell({
 
           setIsUpdateDialogOpen(open);
 
-          if (!open) {
+          if (!open && updateRunState === "idle") {
             resetUpdateDialogState();
           }
         }}
@@ -4456,7 +4457,7 @@ export function MissionControlShell({
 
             setIsUpdateDialogOpen(open);
 
-            if (!open) {
+            if (!open && updateRunState === "idle") {
               resetUpdateDialogState();
             }
           }}

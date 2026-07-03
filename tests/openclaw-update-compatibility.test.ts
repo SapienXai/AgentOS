@@ -192,15 +192,17 @@ test("offline mode uses local fallback manifest", () => {
   assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions[0]?.version, OPENCLAW_RECOMMENDED_VERSION);
 });
 
-test("failed post-update smoke triggers rollback in the update route", () => {
+test("failed post-update verification keeps the target installed by default", () => {
   const routeSource = readFileSync(path.join(process.cwd(), "app/api/update/route.ts"), "utf8");
 
+  assert.match(routeSource, /rollbackPolicy:\s*z\.enum\(\["automatic", "manual"\]\)\.default\("manual"\)/);
+  assert.match(routeSource, /OpenClaw v\$\{targetVersion\} remains installed because automatic rollback is disabled/);
   assert.match(routeSource, /if \(smokeTest\.status === "failed"\)/);
-  assert.match(routeSource, /runRollbackOpenClaw\(openClawBin, rollbackSnapshot, send\)/);
-  assert.match(routeSource, /refreshSnapshotAfterRollback/);
+  assert.match(routeSource, /if \(certifiedTarget \|\| updateRequest\.rollbackPolicy === "manual"\) \{/);
+  assert.match(routeSource, /rollbackToCertifiedBaseline:\s*"not-run"/);
   assert.match(routeSource, /compareVersionStrings\(currentVersion, rollbackVersion\) === 0/);
   assert.match(routeSource, /restoreOpenClawRollbackConfigSnapshot\(rollbackSnapshot\)/);
-  assert.match(routeSource, /Rolled back to the previous working OpenClaw version/);
+  assert.doesNotMatch(routeSource, /manual rollback was selected/);
 });
 
 test("failed automatic rollback exposes a restore command for the rollback snapshot", () => {
@@ -468,7 +470,7 @@ test("Updates page requires confirmation and keeps manually selected targets ins
 
   assert.match(routeSource, /rollbackPolicy:\s*z\.enum\(\["automatic", "manual"\]\)/);
   assert.match(routeSource, /updateRequest\.rollbackPolicy === "manual"/);
-  assert.match(routeSource, /remains installed because manual rollback was selected/);
+  assert.match(routeSource, /remains installed because automatic rollback is disabled/);
   assert.match(updatesSource, /rollbackPolicy:\s*"manual"/);
   assert.match(updatesSource, /const requestInstall[\s\S]*setInstallTarget\(release\)/);
   assert.doesNotMatch(updatesSource, /const requestInstall[\s\S]{0,800}void runInstall\(release\)/);

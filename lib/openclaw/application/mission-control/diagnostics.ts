@@ -22,7 +22,7 @@ import {
   buildOpenClawBinarySelectionSnapshot,
   readOpenClawBinarySelection
 } from "@/lib/openclaw/binary-selection";
-import { getRecentOpenClawCommandDiagnostics, getResolvedOpenClawBin, resolveOpenClawVersion } from "@/lib/openclaw/cli";
+import { getRecentOpenClawCommandDiagnostics, getResolvedOpenClawBin, resolveOpenClawVersion, runOpenClaw } from "@/lib/openclaw/cli";
 import type {
   AgentConfigPayload,
   AgentPayload,
@@ -64,6 +64,10 @@ import { resolveWorkspaceRoot } from "@/lib/openclaw/application/mission-control
 type PayloadReuseState = {
   reusedCachedValue: boolean;
 };
+
+const statusWarningProbeTtlMs = 60_000;
+let statusWarningProbeExpiresAt = 0;
+let statusWarningProbePromise: Promise<void> | null = null;
 
 export async function buildMissionControlRuntimeDiagnostics(
   agents: Array<{ id: string; agentDir?: string | null }>,
@@ -161,6 +165,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
     warmOpenClawCompatibilityReport();
   }
   const updateCompatibilityManifest = await readOpenClawCompatibilityManifestOverride();
+  const commandHistory = await getCommandHistoryWithStatusWarningProbe(input.hasOpenClawSignal);
 
   return buildGatewayDiagnostics({
     gatewayStatus: input.gatewayStatus,
@@ -190,7 +195,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
     configUpdatePacing: getConfigUpdatePacingSnapshotForSettings(input.settings),
     compatibilitySmokeTest: getLatestOpenClawCompatibilitySmokeTest(input.settings),
     updateCompatibilityManifest,
-    commandHistory: getRecentOpenClawCommandDiagnostics(),
+    commandHistory,
     transport,
     eventBridge: getOpenClawEventBridgeStreamStatus(),
     runtimeIssueStates: input.settings.runtimeIssues,
@@ -206,6 +211,29 @@ export async function buildLiveMissionControlDiagnostics(input: {
       ]
     })
   });
+}
+
+async function getCommandHistoryWithStatusWarningProbe(hasOpenClawSignal: boolean) {
+  if (!hasOpenClawSignal) {
+    return getRecentOpenClawCommandDiagnostics();
+  }
+
+  const now = Date.now();
+  if (now >= statusWarningProbeExpiresAt && !statusWarningProbePromise) {
+    statusWarningProbeExpiresAt = now + statusWarningProbeTtlMs;
+    statusWarningProbePromise = runOpenClaw(["status", "--json"], { timeoutMs: 20_000 })
+      .then(() => undefined)
+      .catch(() => undefined)
+      .finally(() => {
+        statusWarningProbePromise = null;
+      });
+  }
+
+  if (statusWarningProbePromise) {
+    await statusWarningProbePromise;
+  }
+
+  return getRecentOpenClawCommandDiagnostics();
 }
 
 function describePayloadError(result: PromiseSettledResult<unknown>) {

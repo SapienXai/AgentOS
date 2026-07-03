@@ -27,7 +27,14 @@ import type { MissionControlSnapshot, OpenClawUpdateStreamEvent, RuntimeIssue } 
 import { cn } from "@/lib/utils";
 
 type SurfaceTheme = "dark" | "light";
-type RuntimeAction = "reviewDevices" | "approveRequest" | "approveLatest" | "openRecovery" | "restoreRollback" | "dismiss";
+type RuntimeAction =
+  | "reviewDevices"
+  | "approveRequest"
+  | "approveLatest"
+  | "openRecovery"
+  | "repairLegacyState"
+  | "restoreRollback"
+  | "dismiss";
 
 type RuntimeActionResponse = {
   snapshot?: MissionControlSnapshot;
@@ -122,7 +129,7 @@ export function RuntimeIssueIndicator({
           role="dialog"
           aria-label="Runtime Inbox"
           className={cn(
-            "absolute right-0 top-10 z-[70] isolate w-[min(92vw,420px)] rounded-[16px] border p-3 shadow-[0_28px_84px_rgba(0,0,0,0.52)]",
+            "absolute right-0 top-10 z-[70] isolate max-h-[calc(100vh-96px)] w-[min(92vw,380px)] overflow-hidden rounded-[14px] border p-2.5 shadow-[0_28px_84px_rgba(0,0,0,0.52)]",
             surfaceTheme === "light"
               ? "border-[#d8c7b8] bg-[#fffaf3] text-foreground shadow-[0_28px_70px_rgba(70,48,32,0.22)]"
               : "border-white/[0.12] bg-[#07111f] text-slate-100 ring-1 ring-black/[0.45]"
@@ -225,14 +232,56 @@ export function RuntimeInboxPanel({
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
   onRefresh?: () => Promise<void> | void;
 }) {
+  const [hiddenIssueIds, setHiddenIssueIds] = useState<Set<string>>(() => new Set());
+  const [exitingIssueIds, setExitingIssueIds] = useState<Set<string>>(() => new Set());
+  const dismissTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  const isDropdown = variant === "dropdown";
   const issues = useMemo(() => {
     const all = snapshot.diagnostics.runtimeIssues ?? [];
-    const visible = all.filter((issue) => issue.status !== "resolved" && issue.status !== "dismissed");
+    const visible = all.filter((issue) => {
+      const active = issue.status !== "resolved" && issue.status !== "dismissed";
+      return (active || exitingIssueIds.has(issue.id)) && !hiddenIssueIds.has(issue.id);
+    });
     return typeof maxIssues === "number" ? visible.slice(0, maxIssues) : visible;
-  }, [maxIssues, snapshot.diagnostics.runtimeIssues]);
+  }, [exitingIssueIds, hiddenIssueIds, maxIssues, snapshot.diagnostics.runtimeIssues]);
+
+  useEffect(() => () => {
+    dismissTimersRef.current.forEach(clearTimeout);
+    dismissTimersRef.current = [];
+  }, []);
+
+  const dismissOptimistically = (issueId: string) => {
+    const dismissedAt = new Date().toISOString();
+    setExitingIssueIds((current) => new Set(current).add(issueId));
+    onSnapshotChange?.({
+      ...snapshot,
+      diagnostics: {
+        ...snapshot.diagnostics,
+        runtimeIssues: snapshot.diagnostics.runtimeIssues.map((issue) =>
+          issue.id === issueId
+            ? {
+                ...issue,
+                status: "dismissed",
+                updatedAt: dismissedAt
+              }
+            : issue
+        )
+      }
+    });
+
+    const timer = setTimeout(() => {
+      setHiddenIssueIds((current) => new Set(current).add(issueId));
+      setExitingIssueIds((current) => {
+        const next = new Set(current);
+        next.delete(issueId);
+        return next;
+      });
+    }, 180);
+    dismissTimersRef.current.push(timer);
+  };
 
   return (
-    <div className="min-w-0">
+    <div className={cn("min-w-0", isDropdown && "flex max-h-[calc(100vh-116px)] flex-col overflow-hidden")}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Runtime Inbox</p>
@@ -253,15 +302,23 @@ export function RuntimeInboxPanel({
           </div>
         </div>
       ) : (
-        <div className="mt-3 space-y-2">
+        <div
+          className={cn(
+            "mt-3 space-y-2",
+            isDropdown && "-mx-1 min-h-0 overflow-y-auto overscroll-contain px-1 pr-2 [scrollbar-width:thin]"
+          )}
+        >
           {issues.map((issue) => (
             <RuntimeIssueRow
               key={issue.id}
               issue={issue}
               surfaceTheme={surfaceTheme}
+              compact={isDropdown}
+              exiting={exitingIssueIds.has(issue.id)}
               showDetails={variant === "full"}
               onSnapshotChange={onSnapshotChange}
               onRefresh={onRefresh}
+              onOptimisticDismiss={dismissOptimistically}
             />
           ))}
         </div>
@@ -273,30 +330,47 @@ export function RuntimeInboxPanel({
 function RuntimeIssueRow({
   issue,
   surfaceTheme,
+  compact,
+  exiting,
   showDetails,
   onSnapshotChange,
-  onRefresh
+  onRefresh,
+  onOptimisticDismiss
 }: {
   issue: RuntimeIssue;
   surfaceTheme: SurfaceTheme;
+  compact?: boolean;
+  exiting?: boolean;
   showDetails?: boolean;
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
   onRefresh?: () => Promise<void> | void;
+  onOptimisticDismiss?: (issueId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className={cn("rounded-[13px] border p-3", issueRowClassName(surfaceTheme, issue))}>
+    <div
+      className={cn(
+        "rounded-[13px] border transition-all duration-200 ease-out",
+        compact ? "p-2.5" : "p-3",
+        exiting ? "max-h-0 scale-[0.98] overflow-hidden border-transparent p-0 opacity-0" : "max-h-[520px] animate-in fade-in-0 slide-in-from-top-1 opacity-100",
+        issueRowClassName(surfaceTheme, issue)
+      )}
+    >
       <div className="flex items-start gap-2.5">
         <span className={cn("mt-1 h-2 w-2 shrink-0 rounded-full", severityDotClassName(issue.severity))} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <p className="min-w-0 text-sm font-semibold leading-5 text-current">{issue.title}</p>
-            <RuntimePill>{formatSeverity(issue.severity)}</RuntimePill>
-            <RuntimePill>{issue.status}</RuntimePill>
+            <p className={cn("min-w-0 font-semibold text-current", compact ? "text-[13px] leading-4" : "text-sm leading-5")}>
+              {issue.title}
+            </p>
+            {compact ? null : <RuntimePill>{formatSeverity(issue.severity)}</RuntimePill>}
+            {compact ? null : <RuntimePill>{issue.status}</RuntimePill>}
           </div>
-          <p className="mt-1 text-xs leading-5 opacity-80">{issue.message}</p>
-          <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] uppercase tracking-[0.12em] opacity-70">
+          <p className={cn("mt-1 text-xs opacity-80", compact ? "line-clamp-2 leading-4" : "leading-5")}>
+            {issue.message}
+          </p>
+          <div className={cn("mt-2 flex flex-wrap gap-1.5 uppercase tracking-[0.12em] opacity-70", compact ? "text-[9px]" : "text-[10px]")}>
             <span>{formatSource(issue.source)}</span>
             <span>·</span>
             <span>{formatTimestamp(issue.createdAt)}</span>
@@ -313,8 +387,10 @@ function RuntimeIssueRow({
       <RuntimeIssueActions
         issue={issue}
         surfaceTheme={surfaceTheme}
+        compact={compact}
         onSnapshotChange={onSnapshotChange}
         onRefresh={onRefresh}
+        onOptimisticDismiss={onOptimisticDismiss}
       />
 
       {showDetails || issue.rawOutput || issue.errorMessage ? (
@@ -346,13 +422,15 @@ function RuntimeIssueActions({
   surfaceTheme,
   compact,
   onSnapshotChange,
-  onRefresh
+  onRefresh,
+  onOptimisticDismiss
 }: {
   issue: RuntimeIssue;
   surfaceTheme: SurfaceTheme;
   compact?: boolean;
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
   onRefresh?: () => Promise<void> | void;
+  onOptimisticDismiss?: (issueId: string) => void;
 }) {
   const [busyAction, setBusyAction] = useState<RuntimeAction | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -365,7 +443,8 @@ function RuntimeIssueActions({
   const isRollbackRecovery = issue.type === "openclaw_rollback_needed" || Boolean(
     rollbackTargetVersion && issue.type === "openclaw_postflight_failed"
   );
-  const canOpenRecovery = Boolean(recoveryCommand && !isScopeUpgrade && !isRollbackRecovery);
+  const isLegacyStateRepair = issue.type === "openclaw_doctor_warning";
+  const canOpenRecovery = Boolean(recoveryCommand && !isScopeUpgrade && !isRollbackRecovery && !isLegacyStateRepair);
 
   const runAction = async (action: RuntimeAction) => {
     setBusyAction(action);
@@ -427,6 +506,37 @@ function RuntimeIssueActions({
         return;
       }
 
+      if (action === "repairLegacyState") {
+        const response = await fetch("/api/runtime/issues", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            action,
+            issueId: issue.id
+          })
+        });
+
+        const payload = (await response.json().catch(() => null)) as RuntimeActionResponse | null;
+
+        if (!response.ok) {
+          throw new Error(payload?.error || "Legacy state repair failed.");
+        }
+
+        if (payload?.snapshot) {
+          onSnapshotChange?.(payload.snapshot);
+        } else {
+          await onRefresh?.();
+        }
+        toast.success("OpenClaw legacy state archived.");
+        return;
+      }
+
+      if (action === "dismiss") {
+        onOptimisticDismiss?.(issue.id);
+      }
+
       const response = await fetch("/api/runtime/issues", {
         method: "POST",
         headers: {
@@ -438,6 +548,7 @@ function RuntimeIssueActions({
           requestId: action === "approveRequest" ? issue.requestId : undefined
         })
       });
+
       const payload = (await response.json().catch(() => null)) as RuntimeActionResponse | null;
 
       if (!response.ok) {
@@ -466,7 +577,7 @@ function RuntimeIssueActions({
   };
 
   return (
-    <div className="mt-3">
+    <div className={cn(compact ? "mt-2" : "mt-3")}>
       <div className={cn("flex flex-wrap gap-1.5", compact && "mt-2")}>
         {isScopeUpgrade ? (
           <Button
@@ -517,6 +628,18 @@ function RuntimeIssueActions({
             {resolveRecoveryActionLabel(issue)}
           </Button>
         ) : null}
+        {isLegacyStateRepair ? (
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void runAction("repairLegacyState")}
+            disabled={busyAction !== null}
+            className="h-8 rounded-lg px-2.5 text-xs"
+          >
+            {busyAction === "repairLegacyState" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <TerminalSquare className="h-3.5 w-3.5" />}
+            Archive legacy state
+          </Button>
+        ) : null}
         {isRollbackRecovery && recoveryCommand ? (
           <Button
             type="button"
@@ -545,7 +668,7 @@ function RuntimeIssueActions({
       </div>
       {error ? <p className="mt-2 text-xs leading-5 text-rose-500">{error}</p> : null}
       {actionStatus ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{actionStatus}</p> : null}
-      {canOpenRecovery ? (
+      {canOpenRecovery && !compact ? (
         <p className="mt-2 break-words font-mono text-[10px] leading-4 text-muted-foreground">
           {recoveryCommand}
         </p>
@@ -645,6 +768,10 @@ function resolveRecoveryActionLabel(issue: RuntimeIssue) {
 
   if (issue.type === "gateway_unreachable") {
     return "Restart gateway";
+  }
+
+  if (issue.type === "openclaw_doctor_warning") {
+    return "Open doctor fix";
   }
 
   return "Open recovery";

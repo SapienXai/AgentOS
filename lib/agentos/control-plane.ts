@@ -24,7 +24,8 @@ import {
 import {
   approveRuntimeIssue,
   dismissRuntimeIssue,
-  inspectRuntimeIssueDevices
+  inspectRuntimeIssueDevices,
+  repairRuntimeIssueLegacyState
 } from "@/lib/openclaw/application/runtime-issue-service";
 import {
   generateGatewayNativeAuthToken,
@@ -94,6 +95,7 @@ export {
   inspectRuntimeIssueDevices,
   readWorkspaceEditSeed,
   reconcileWorkspaceSurfaceBindings,
+  repairRuntimeIssueLegacyState,
   repairGatewayNativeDeviceAccess,
   saveGatewayNativeAuthCredential,
   runTaskHealthAudit,
