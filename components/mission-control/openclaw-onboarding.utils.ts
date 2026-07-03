@@ -55,19 +55,24 @@ export function buildSystemSteps(
   phase: OpenClawOnboardingPhase | null,
   options: {
     forcePending?: boolean;
+    cliInstalled?: boolean | null;
     gatewayReachable?: boolean | null;
     suppressGatewaySnapshot?: boolean;
   } = {}
 ) {
   const forcePending = options.forcePending === true;
   const gatewayProbeResolved = options.gatewayReachable != null;
+  const installedFromStatus =
+    options.cliInstalled === undefined
+      ? snapshot.diagnostics.installed
+      : options.cliInstalled === true;
   const directGatewayRun =
     options.gatewayReachable !== false &&
     !forcePending &&
     snapshot.diagnostics.rpcOk &&
     !snapshot.diagnostics.loaded;
   const cliComplete =
-    (!forcePending && snapshot.diagnostics.installed) ||
+    (!forcePending && installedFromStatus) ||
     phase === "installing-gateway" ||
     phase === "starting-gateway" ||
     phase === "verifying" ||
@@ -156,7 +161,7 @@ function resolveSystemStepDescription(
   forcePending: boolean
 ) {
   if (stepId === "cli") {
-    if (!forcePending && snapshot.diagnostics.installed) {
+    if (!forcePending && cliComplete) {
       return `Installed${snapshot.diagnostics.version ? ` · v${snapshot.diagnostics.version}` : ""}`;
     }
 
