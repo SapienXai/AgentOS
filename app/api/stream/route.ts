@@ -15,6 +15,7 @@ const STREAM_EVENT_DEBOUNCE_MS = 300;
 
 export async function GET(request: Request) {
   let interval: ReturnType<typeof setInterval> | undefined;
+  let systemStatusInterval: ReturnType<typeof setInterval> | undefined;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let unsubscribeGatewayEvents: (() => void) | undefined;
   let closed = false;
@@ -30,6 +31,10 @@ export async function GET(request: Request) {
         if (interval) {
           clearInterval(interval);
           interval = undefined;
+        }
+        if (systemStatusInterval) {
+          clearInterval(systemStatusInterval);
+          systemStatusInterval = undefined;
         }
         if (debounceTimer) {
           clearTimeout(debounceTimer);
@@ -133,6 +138,9 @@ export async function GET(request: Request) {
         eventBridge: getOpenClawEventBridgeStreamStatus()
       });
       void sendSystemStatus();
+      systemStatusInterval = setInterval(() => {
+        void sendSystemStatus();
+      }, 1_000);
       void sendSnapshot();
     },
     cancel() {
