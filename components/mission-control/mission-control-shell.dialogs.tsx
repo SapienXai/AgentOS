@@ -582,7 +582,7 @@ export function MissionControlShellDialogs({
                 {activeRuntimeCount > 0
                   ? `${activeRuntimeCount} running or queued runtime${activeRuntimeCount === 1 ? "" : "s"} may be interrupted during the update.`
                   : updateMode === "advanced"
-                    ? "This installs an unclassified OpenClaw version, then runs post-update compatibility checks and a runtime smoke test. AgentOS will try rollback if verification fails."
+                    ? "This installs an unclassified OpenClaw version, then runs post-update compatibility checks and a runtime smoke test. If verification fails, AgentOS keeps the target installed and shows manual recovery."
                     : "No running runtimes are currently tracked, so the update risk is lower."}
               </div>
 

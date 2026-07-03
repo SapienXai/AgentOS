@@ -59,7 +59,7 @@ const updateSchema = z.object({
   confirmed: z.boolean().optional(),
   targetVersion: z.string().trim().optional(),
   mode: z.enum(["recommended", "candidate", "advanced"]).default("recommended"),
-  rollbackPolicy: z.enum(["automatic", "manual"]).default("automatic")
+  rollbackPolicy: z.enum(["automatic", "manual"]).default("manual")
 });
 
 const updateTimeoutMs = 10 * 60 * 1000;
@@ -1105,30 +1105,26 @@ export async function POST(request: Request) {
           const postflightWarnings: string[] = [];
 
           if (!verification.ok) {
-            const rollback = await runRollbackOpenClaw(openClawBin, rollbackSnapshot, send);
-            stdout += rollback.stdout;
-            stderr += rollback.stderr;
-            const resultSnapshot = rollback.ok
-              ? await refreshSnapshotAfterRollback(verifiedSnapshot)
-              : verifiedSnapshot;
+            const recoveryCommand = buildOpenClawRollbackManualCommand(openClawBin, rollbackSnapshot);
+            const message = `${verification.message} OpenClaw v${targetVersion} remains installed because automatic rollback is disabled.`;
             await recordUpdateRuntimeIssue({
-              type: rollback.ok ? "openclaw_postflight_failed" : "openclaw_rollback_needed",
-              title: rollback.ok ? "OpenClaw postflight failed" : "OpenClaw rollback needed",
-              message: `${verification.message} ${rollback.ok ? "Rollback completed." : rollback.message}`,
+              type: "openclaw_postflight_failed",
+              title: "OpenClaw postflight needs review",
+              message,
               targetVersion,
               rawOutput: [stdout, stderr].filter(Boolean).join("\n"),
-              recoveryCommand: rollback.ok ? undefined : buildOpenClawRollbackManualCommand(openClawBin, rollbackSnapshot),
-              severity: rollback.ok ? "action_required" : "blocked"
+              recoveryCommand,
+              severity: "action_required"
             });
 
             await send({
               type: "done",
               ok: false,
-              message: `${verification.message} ${rollback.ok ? "Rolled back to the previous working OpenClaw version." : rollback.message}`,
-              exitCode: rollback.exitCode ?? code,
+              message,
+              exitCode: code,
               stdout,
               stderr,
-              snapshot: resultSnapshot,
+              snapshot: verifiedSnapshot,
               capabilityDiff: verifiedCapabilityDiff,
               certificationScorecard: buildOpenClawUpdateCertificationScorecard({
                 baselineSnapshot: snapshot,
@@ -1141,12 +1137,12 @@ export async function POST(request: Request) {
                 updateCompleted: false,
                 exitCode: code,
                 rollbackSnapshotCreated: true,
-                rollbackToCertifiedBaseline: rollback.ok ? "passed" : "failed",
+                rollbackToCertifiedBaseline: "not-run",
                 stdout,
                 stderr,
                 failureMessage: verification.message
               }),
-              manualCommand: rollback.ok ? undefined : buildOpenClawRollbackManualCommand(openClawBin, rollbackSnapshot)
+              manualCommand: recoveryCommand
             });
             await closeWriter();
             return;
@@ -1159,7 +1155,7 @@ export async function POST(request: Request) {
           if (!compatibilityVerification.ok) {
             if (updateRequest.rollbackPolicy === "manual") {
               const recoveryCommand = buildOpenClawRollbackManualCommand(openClawBin, rollbackSnapshot);
-              const message = `${compatibilityVerification.message} OpenClaw v${targetVersion} remains installed because manual rollback was selected.`;
+              const message = `${compatibilityVerification.message} OpenClaw v${targetVersion} remains installed because automatic rollback is disabled.`;
               await recordUpdateRuntimeIssue({
                 type: "openclaw_postflight_failed",
                 title: "OpenClaw compatibility postflight needs review",
@@ -1290,7 +1286,7 @@ export async function POST(request: Request) {
                 smokeTestOutput
               );
               const targetRetentionMessage = updateRequest.rollbackPolicy === "manual"
-                ? ` OpenClaw v${targetVersion} remains installed because manual rollback was selected.`
+                ? ` OpenClaw v${targetVersion} remains installed because automatic rollback is disabled.`
                 : "";
               stdout = stdout
                 ? `${stdout}\n${smokeFailureMessage}`

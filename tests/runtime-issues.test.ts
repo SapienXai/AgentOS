@@ -104,6 +104,52 @@ test("runtime issue detector reads pending OpenClaw device access requests", () 
   assert.equal(issues[0]?.recoveryCommand, `openclaw devices approve ${requestId}`);
 });
 
+test("runtime issue detector surfaces OpenClaw legacy state migration doctor warnings", () => {
+  const warning =
+    "Left legacy config health state in place because 1 entry conflicts with shared SQLite state: /Users/example/.openclaw/logs/config-health.json";
+  const issues = buildRuntimeIssues({
+    status: {
+      doctor: {
+        warnings: [warning]
+      }
+    },
+    now: new Date("2026-07-03T13:50:08.000Z")
+  });
+
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.type, "openclaw_doctor_warning");
+  assert.equal(issues[0]?.source, "openclaw_cli");
+  assert.equal(issues[0]?.severity, "action_required");
+  assert.equal(issues[0]?.title, "OpenClaw doctor warning needs repair");
+  assert.equal(issues[0]?.command, "Archive legacy config health sidecar");
+  assert.equal(issues[0]?.recoveryCommand, undefined);
+  assert.equal(issues[0]?.inspectCommand, "openclaw status");
+  assert.match(issues[0]?.rawOutput ?? "", /config-health\.json/);
+});
+
+test("runtime issue detector reads OpenClaw status warnings from command history", () => {
+  const issues = buildRuntimeIssues({
+    diagnostics: {
+      installed: true,
+      loaded: true,
+      rpcOk: true,
+      commandHistory: [{
+        command: "openclaw",
+        args: ["status", "--json"],
+        stdoutPreview: null,
+        stderrPreview:
+          "[state-migrations] Legacy state migration warnings:\n- Left legacy config health state in place because 1 entry conflicts with shared SQLite state: /Users/example/.openclaw/logs/config-health.json"
+      }]
+    },
+    now: new Date("2026-07-03T13:50:08.000Z")
+  });
+
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0]?.type, "openclaw_doctor_warning");
+  assert.equal(issues[0]?.command, "Archive legacy config health sidecar");
+  assert.equal(issues[0]?.recoveryCommand, undefined);
+});
+
 test("runtime issue detector preserves dismissed active issues without duplicating them", () => {
   const requestId = "5d037abd-5db8-444a-98f5-f49920c95338";
   const id = `scope_upgrade_pending:openclaw_gateway:${requestId}`;
@@ -289,8 +335,25 @@ test("runtime inbox exposes recovery commands for non-scope issues", () => {
   assert.match(source, /action:\s*"rollback"/);
   assert.match(source, /Restore and restart/);
   assert.match(source, /\/api\/system\/open-terminal/);
+  assert.match(source, /repairLegacyState/);
+  assert.match(source, /Archive legacy state/);
   assert.match(source, /Restore last working/);
   assert.match(source, /Restart gateway/);
   assert.match(source, /recoveryCommand/);
-  assert.match(source, /all\.filter\(\(issue\) => issue\.status !== "resolved" && issue\.status !== "dismissed"\)/);
+  assert.match(source, /hiddenIssueIds/);
+  assert.match(source, /exitingIssueIds/);
+  assert.match(source, /onOptimisticDismiss/);
+});
+
+test("runtime issue route exposes controlled legacy state repair", () => {
+  const routeSource = readFileSync(path.join(process.cwd(), "app/api/runtime/issues/route.ts"), "utf8");
+  const serviceSource = readFileSync(path.join(process.cwd(), "lib/openclaw/application/runtime-issue-service.ts"), "utf8");
+
+  assert.match(routeSource, /repairLegacyState/);
+  assert.match(routeSource, /repairRuntimeIssueLegacyState/);
+  assert.match(serviceSource, /config-health\.json/);
+  assert.match(serviceSource, /fs\.rename/);
+  assert.match(serviceSource, /\.agentos-archive-/);
+  assert.doesNotMatch(serviceSource, /spawn\(/);
+  assert.doesNotMatch(serviceSource, /execFile/);
 });

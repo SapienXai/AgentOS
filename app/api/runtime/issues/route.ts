@@ -4,7 +4,8 @@ import { z } from "zod";
 import {
   approveRuntimeIssue,
   dismissRuntimeIssue,
-  inspectRuntimeIssueDevices
+  inspectRuntimeIssueDevices,
+  repairRuntimeIssueLegacyState
 } from "@/lib/agentos/control-plane";
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
@@ -25,6 +26,10 @@ const runtimeIssueActionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("approveLatest"),
     issueId: z.string().min(1).optional().nullable()
+  }),
+  z.object({
+    action: z.literal("repairLegacyState"),
+    issueId: z.string().min(1)
   }),
   z.object({
     action: z.literal("dismiss"),
@@ -72,6 +77,11 @@ export async function POST(request: Request) {
         issueId: input.issueId,
         latest: true
       });
+      return NextResponse.json(redactSecrets(result));
+    }
+
+    if (input.action === "repairLegacyState") {
+      const result = await repairRuntimeIssueLegacyState(input.issueId);
       return NextResponse.json(redactSecrets(result));
     }
 

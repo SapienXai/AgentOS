@@ -249,6 +249,7 @@ export function buildGatewayDiagnostics(input: {
       gatewayFallbackReasons: activeGatewayFallbackDiagnostics.map(
         (entry) => `${entry.operationLabel} (${entry.operation}): ${entry.kind}: ${entry.issue} Recovery: ${entry.recovery}`
       ),
+      commandHistory: input.commandHistory,
       issues
     },
     issues,
