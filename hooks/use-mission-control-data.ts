@@ -37,6 +37,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [hasReceivedLiveSnapshot, setHasReceivedLiveSnapshot] = useState(false);
   const [gatewayReachable, setGatewayReachable] = useState<boolean | null>(null);
+  const [cliInstalled, setCliInstalled] = useState<boolean | null>(null);
 
   useEffect(() => {
     const source = new EventSource("/api/stream");
@@ -53,8 +54,9 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
     });
 
     source.addEventListener("system-status", (event) => {
-      const status = JSON.parse(event.data) as { gatewayReachable?: boolean };
+      const status = JSON.parse(event.data) as { gatewayReachable?: boolean; cliInstalled?: boolean };
       setGatewayReachable(status.gatewayReachable === true);
+      setCliInstalled(status.cliInstalled === true);
     });
 
     source.addEventListener("error", () => {
@@ -101,6 +103,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
     connectionState,
     hasReceivedLiveSnapshot,
     gatewayReachable,
+    cliInstalled,
     refresh,
     refreshSnapshot,
     setSnapshot
