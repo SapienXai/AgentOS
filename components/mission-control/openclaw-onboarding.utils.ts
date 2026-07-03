@@ -56,7 +56,12 @@ export function buildSystemSteps(
   options: { forcePending?: boolean; gatewayReachable?: boolean | null } = {}
 ) {
   const forcePending = options.forcePending === true;
-  const directGatewayRun = !forcePending && snapshot.diagnostics.rpcOk && !snapshot.diagnostics.loaded;
+  const gatewayProbeResolved = options.gatewayReachable != null;
+  const directGatewayRun =
+    options.gatewayReachable !== false &&
+    !forcePending &&
+    snapshot.diagnostics.rpcOk &&
+    !snapshot.diagnostics.loaded;
   const cliComplete =
     (!forcePending && snapshot.diagnostics.installed) ||
     phase === "installing-gateway" ||
@@ -65,7 +70,7 @@ export function buildSystemSteps(
     phase === "ready";
   const gatewayComplete =
     options.gatewayReachable === true ||
-    (!forcePending && snapshot.diagnostics.loaded) ||
+    (!gatewayProbeResolved && !forcePending && snapshot.diagnostics.loaded) ||
     directGatewayRun ||
     phase === "starting-gateway" ||
     phase === "verifying" ||
