@@ -198,6 +198,10 @@ export function OpenClawOnboarding({
     selectedModelId,
     defaultModelId
   });
+  const isPrimaryActionResolving =
+    visualStage === "system" &&
+    !onboardingSystemReady &&
+    (cliInstalled == null || gatewayReachable == null);
   const completedProgressUnits =
     systemSteps.filter((step) => step.state === "complete").length +
     (onboardingModelReady ? 1 : 0) +
@@ -477,7 +481,11 @@ export function OpenClawOnboarding({
 
                       return;
                     }}
-                    disabled={stageRun.runState === "running" || primaryAction.kind === "select-model"}
+                    disabled={
+                      stageRun.runState === "running" ||
+                      isPrimaryActionResolving ||
+                      primaryAction.kind === "select-model"
+                    }
                     className={cn(
                       "h-11 min-w-[190px] rounded-full px-5 text-[14px] transition-transform active:scale-[0.98]",
                       surfaceTheme === "light"
@@ -485,10 +493,10 @@ export function OpenClawOnboarding({
                         : "bg-primary text-primary-foreground shadow-[0_14px_34px_hsl(var(--primary)/0.28)] hover:bg-primary/90"
                     )}
                   >
-                    {stageRun.runState === "running" ? (
+                    {stageRun.runState === "running" || isPrimaryActionResolving ? (
                       <>
                         <LoaderCircle className="mr-1.5 h-3 w-3 animate-spin" />
-                        Working...
+                        {stageRun.runState === "running" ? "Working..." : "Checking..."}
                       </>
                     ) : (
                       <>
