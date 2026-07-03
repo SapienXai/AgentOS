@@ -804,6 +804,17 @@ test("full uninstall reset reopens onboarding at system setup", () => {
   assert.equal(runResetIndex >= 0 && pendingIndex > runResetIndex && pendingIndex < runningIndex, true);
 });
 
+test("system setup starts Gateway before requesting a full readiness snapshot", () => {
+  const source = readFileSync(path.join(rootDir, "app/api/onboarding/route.ts"), "utf8");
+  const statusIndex = source.indexOf("let gatewayStatus = await readGatewayStatus(openClawBin);");
+  const startIndex = source.indexOf('runCommand(openClawBin, ["gateway", "start", "--json"]', statusIndex);
+  const snapshotIndex = source.indexOf("snapshot = await loadSnapshot(true);", statusIndex);
+
+  assert.equal(statusIndex >= 0 && startIndex > statusIndex, true);
+  assert.equal(snapshotIndex === -1 || snapshotIndex > startIndex, true);
+  assert.match(source, /const gatewayStatusTimeoutMs = 3_000;/);
+});
+
 function resolveLocalOpenClawImport(filePath: string, specifier: string) {
   if (specifier.startsWith("@/")) {
     return `${specifier.slice(2)}.ts`;
