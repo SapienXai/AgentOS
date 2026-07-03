@@ -22,7 +22,8 @@ import {
   getOpenClawInstallCommand,
   getOpenClawLocalPrefix,
   getOpenClawLocalPrefixBinPath,
-  repairOpenClawWindowsNpmShims
+  repairOpenClawWindowsNpmShims,
+  resolveOpenClawSpawnInvocation
 } from "@/lib/openclaw/install";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import {
@@ -717,7 +718,8 @@ async function runCommand(
     timeoutMs?: number;
   } = {}
 ): Promise<CommandResult> {
-  const child = spawn(command, args, {
+  const invocation = resolveOpenClawSpawnInvocation(command, args);
+  const child = spawn(invocation.command, invocation.args, {
     cwd: process.cwd(),
     env: process.env
   });
