@@ -61,6 +61,18 @@ export function getOpenClawWindowsNpmBinPath() {
   return path.join(appData, "npm", "openclaw.cmd");
 }
 
+export function getOpenClawWindowsNpmEntryPath() {
+  return path.join(path.dirname(getOpenClawWindowsNpmBinPath()), "node_modules", "openclaw", "openclaw.mjs");
+}
+
+export function resolveOpenClawSpawnInvocation(command: string, args: string[]) {
+  if (process.platform === "win32" && command.toLowerCase().endsWith(".mjs")) {
+    return { command: process.execPath, args: [command, ...args] };
+  }
+
+  return { command, args };
+}
+
 export async function repairOpenClawWindowsNpmShims(options: {
   npmBinDir?: string;
   platform?: NodeJS.Platform;
