@@ -63,7 +63,7 @@ const onboardingSchema = z.object({
 
 const docsUrl = OPENCLAW_INSTALL_DOCS_URL;
 const commandTimeoutMs = 10 * 60 * 1000;
-const gatewayStatusTimeoutMs = 8_000;
+const gatewayStatusTimeoutMs = 3_000;
 const readyTimeoutMs = 60_000;
 const postAuthRepairReadyTimeoutMs = 90_000;
 const readyPollIntervalMs = 250;
@@ -306,25 +306,6 @@ export async function POST(request: Request) {
             gatewayInstallResult,
             formatOpenClawCommand(openClawBin, ["gateway", "install", "--force", "--json"])
           );
-          return;
-        }
-      }
-
-      if (!gatewayStatus?.rpc?.ok) {
-        const readySnapshot = await loadSnapshot(true);
-
-        if (isOpenClawReady(readySnapshot)) {
-          await send({
-            type: "done",
-            ok: true,
-            phase: "ready",
-            message: "OpenClaw system setup is already complete.",
-            exitCode: 0,
-            stdout: aggregatedStdout,
-            stderr: aggregatedStderr,
-            snapshot: readySnapshot
-          });
-          await closeWriter();
           return;
         }
       }
