@@ -53,7 +53,11 @@ export function resolveEffectiveWizardStage(stage: WizardStage, systemReady: boo
 export function buildSystemSteps(
   snapshot: MissionControlSnapshot,
   phase: OpenClawOnboardingPhase | null,
-  options: { forcePending?: boolean; gatewayReachable?: boolean | null } = {}
+  options: {
+    forcePending?: boolean;
+    gatewayReachable?: boolean | null;
+    suppressGatewaySnapshot?: boolean;
+  } = {}
 ) {
   const forcePending = options.forcePending === true;
   const gatewayProbeResolved = options.gatewayReachable != null;
@@ -70,7 +74,7 @@ export function buildSystemSteps(
     phase === "ready";
   const gatewayComplete =
     options.gatewayReachable === true ||
-    (!gatewayProbeResolved && !forcePending && snapshot.diagnostics.loaded) ||
+    (!gatewayProbeResolved && !options.suppressGatewaySnapshot && !forcePending && snapshot.diagnostics.loaded) ||
     directGatewayRun ||
     phase === "starting-gateway" ||
     phase === "verifying" ||
