@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { formatOpenClawCommand, resolveOpenClawBin } from "@/lib/openclaw/cli";
+import { resolveOpenClawSpawnInvocation } from "@/lib/openclaw/install";
 import {
   isOpenClawMissionReady,
   isOpenClawOnboardingSystemReady
@@ -664,9 +665,11 @@ async function runCommand(
 ): Promise<CommandResult> {
   const streamStdout = options?.streamStdout ?? true;
   const streamStderr = options?.streamStderr ?? true;
-  const child = spawn(command, args, {
+  const invocation = resolveOpenClawSpawnInvocation(command, args);
+  const child = spawn(invocation.command, invocation.args, {
     cwd: process.cwd(),
-    env: process.env
+    env: process.env,
+    windowsHide: true
   });
 
   let stdout = "";
