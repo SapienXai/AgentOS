@@ -156,7 +156,8 @@ export function OpenClawOnboarding({
   const systemSteps = buildSystemSteps(snapshot, systemPhaseForSteps, {
     forcePending: systemSetupRequired || systemRun.runState === "running",
     suppressGatewaySnapshot: systemStatusChecking,
-    gatewayReachable
+    gatewayReachable,
+    cliInstalled
   });
   const availableModels = snapshot.models.filter((model) => model.available !== false && !model.missing);
   const selectedModelLabel =
@@ -186,10 +187,13 @@ export function OpenClawOnboarding({
     stageRun.log.trim().length > 0 ||
     (activeWizardStage === "models" && discoveredModels.length > 0);
 
-  const effectiveSystemActionLabel =
-    !onboardingSystemReady && cliInstalled === true && gatewayReachable !== true
-      ? "Prepare local gateway"
-      : systemActionLabel;
+  const effectiveSystemActionLabel = !onboardingSystemReady
+    ? cliInstalled === false
+      ? "Install OpenClaw"
+      : cliInstalled === true && gatewayReachable !== true
+        ? "Prepare local gateway"
+        : systemActionLabel
+    : systemActionLabel;
   const primaryAction = resolvePrimaryAction({
     stage: activeWizardStage,
     systemReady: onboardingSystemReady,
