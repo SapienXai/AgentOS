@@ -215,7 +215,7 @@ export function MissionControlShell({
   initialSnapshot: MissionControlSnapshot;
   mode?: "mission" | "settings";
 }) {
-  const { snapshot, connectionState, hasReceivedLiveSnapshot, gatewayReachable, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
+  const { snapshot, connectionState, hasReceivedLiveSnapshot, gatewayReachable, cliInstalled, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
   const {
     activeWorkspaceId,
     setActiveWorkspaceId,
@@ -3452,6 +3452,7 @@ export function MissionControlShell({
           systemSetupRequired={requiresFreshInstallSystemSetup}
           systemStatusChecking={!hasReceivedLiveSnapshot}
           gatewayReachable={gatewayReachable}
+          cliInstalled={cliInstalled}
           showReadyState={showOnboardingReadyState}
           systemActionLabel={onboardingAction.label}
           systemActionDescription={onboardingAction.description}
@@ -4307,6 +4308,7 @@ export function MissionControlShell({
             systemSetupRequired={requiresFreshInstallSystemSetup}
             systemStatusChecking={!hasReceivedLiveSnapshot}
             gatewayReachable={gatewayReachable}
+            cliInstalled={cliInstalled}
             showReadyState={showOnboardingReadyState}
             systemActionLabel={onboardingAction.label}
             systemActionDescription={onboardingAction.description}
