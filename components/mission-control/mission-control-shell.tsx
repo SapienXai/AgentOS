@@ -215,7 +215,7 @@ export function MissionControlShell({
   initialSnapshot: MissionControlSnapshot;
   mode?: "mission" | "settings";
 }) {
-  const { snapshot, connectionState, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
+  const { snapshot, connectionState, hasReceivedLiveSnapshot, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
   const {
     activeWorkspaceId,
     setActiveWorkspaceId,
@@ -3435,6 +3435,7 @@ export function MissionControlShell({
             isOpenClawOnboardingModelReady
           }
           systemSetupRequired={requiresFreshInstallSystemSetup}
+          systemStatusChecking={!hasReceivedLiveSnapshot}
           showReadyState={showOnboardingReadyState}
           systemActionLabel={onboardingAction.label}
           systemActionDescription={onboardingAction.description}
@@ -4288,6 +4289,7 @@ export function MissionControlShell({
               isOpenClawOnboardingModelReady
             }
             systemSetupRequired={requiresFreshInstallSystemSetup}
+            systemStatusChecking={!hasReceivedLiveSnapshot}
             showReadyState={showOnboardingReadyState}
             systemActionLabel={onboardingAction.label}
             systemActionDescription={onboardingAction.description}
