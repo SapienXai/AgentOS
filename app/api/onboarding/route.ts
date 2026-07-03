@@ -17,6 +17,7 @@ import { inspectOpenClawRuntimeState } from "@/lib/openclaw/state/runtime-state"
 import { isOpenClawSystemReady } from "@/lib/openclaw/readiness";
 import {
   OPENCLAW_INSTALL_DOCS_URL,
+  buildOpenClawSpawnEnv,
   buildOpenClawPathSetupSummary,
   ensureOpenClawLocalBinOnPath,
   getOpenClawInstallCommand,
@@ -721,7 +722,7 @@ async function runCommand(
   const invocation = resolveOpenClawSpawnInvocation(command, args);
   const child = spawn(invocation.command, invocation.args, {
     cwd: process.cwd(),
-    env: process.env,
+    env: buildOpenClawSpawnEnv(),
     windowsHide: true
   });
 

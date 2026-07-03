@@ -215,7 +215,7 @@ export function MissionControlShell({
   initialSnapshot: MissionControlSnapshot;
   mode?: "mission" | "settings";
 }) {
-  const { snapshot, connectionState, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
+  const { snapshot, connectionState, hasReceivedLiveSnapshot, gatewayReachable, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
   const {
     activeWorkspaceId,
     setActiveWorkspaceId,
@@ -3181,6 +3181,12 @@ export function MissionControlShell({
       return;
     }
 
+    const isFullUninstall = resetDialogTarget === "full-uninstall";
+    if (isFullUninstall) {
+      setRequiresFreshInstallSystemSetup(true);
+      setOnboardingStage("system");
+    }
+
     setResetRunState("running");
     setResetStatusMessage(
       resetDialogTarget === "full-uninstall"
@@ -3267,6 +3273,9 @@ export function MissionControlShell({
                   }
                 );
               } else {
+                if (isFullUninstall) {
+                  setRequiresFreshInstallSystemSetup(false);
+                }
                 toast.error(
                   resetDialogTarget === "full-uninstall"
                     ? "Full uninstall failed."
@@ -3305,6 +3314,8 @@ export function MissionControlShell({
             }
 
             clearMissionControlBrowserState();
+          } else if (isFullUninstall) {
+            setRequiresFreshInstallSystemSetup(false);
           }
         }
       }
@@ -3313,6 +3324,9 @@ export function MissionControlShell({
         throw new Error("Reset stream ended unexpectedly.");
       }
     } catch (error) {
+      if (isFullUninstall) {
+        setRequiresFreshInstallSystemSetup(false);
+      }
       setResetRunState("error");
       setResetStatusMessage(null);
       setResetResultMessage(error instanceof Error ? error.message : "Reset failed.");
@@ -3436,6 +3450,8 @@ export function MissionControlShell({
             isOpenClawOnboardingModelReady
           }
           systemSetupRequired={requiresFreshInstallSystemSetup}
+          systemStatusChecking={!hasReceivedLiveSnapshot}
+          gatewayReachable={gatewayReachable}
           showReadyState={showOnboardingReadyState}
           systemActionLabel={onboardingAction.label}
           systemActionDescription={onboardingAction.description}
@@ -4289,6 +4305,8 @@ export function MissionControlShell({
               isOpenClawOnboardingModelReady
             }
             systemSetupRequired={requiresFreshInstallSystemSetup}
+            systemStatusChecking={!hasReceivedLiveSnapshot}
+            gatewayReachable={gatewayReachable}
             showReadyState={showOnboardingReadyState}
             systemActionLabel={onboardingAction.label}
             systemActionDescription={onboardingAction.description}

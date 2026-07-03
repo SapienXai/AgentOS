@@ -53,10 +53,19 @@ export function resolveEffectiveWizardStage(stage: WizardStage, systemReady: boo
 export function buildSystemSteps(
   snapshot: MissionControlSnapshot,
   phase: OpenClawOnboardingPhase | null,
-  options: { forcePending?: boolean } = {}
+  options: {
+    forcePending?: boolean;
+    gatewayReachable?: boolean | null;
+    suppressGatewaySnapshot?: boolean;
+  } = {}
 ) {
   const forcePending = options.forcePending === true;
-  const directGatewayRun = !forcePending && snapshot.diagnostics.rpcOk && !snapshot.diagnostics.loaded;
+  const gatewayProbeResolved = options.gatewayReachable != null;
+  const directGatewayRun =
+    options.gatewayReachable !== false &&
+    !forcePending &&
+    snapshot.diagnostics.rpcOk &&
+    !snapshot.diagnostics.loaded;
   const cliComplete =
     (!forcePending && snapshot.diagnostics.installed) ||
     phase === "installing-gateway" ||
@@ -64,7 +73,8 @@ export function buildSystemSteps(
     phase === "verifying" ||
     phase === "ready";
   const gatewayComplete =
-    (!forcePending && snapshot.diagnostics.loaded) ||
+    options.gatewayReachable === true ||
+    (!gatewayProbeResolved && !options.suppressGatewaySnapshot && !forcePending && snapshot.diagnostics.loaded) ||
     directGatewayRun ||
     phase === "starting-gateway" ||
     phase === "verifying" ||
@@ -188,6 +198,10 @@ function resolveSystemStepDescription(
 
     if (!forcePending && snapshot.diagnostics.rpcOk) {
       return "Gateway is running directly.";
+    }
+
+    if (gatewayComplete) {
+      return "Gateway responds on the local port; full verification continues.";
     }
 
     return "Register the gateway service once.";

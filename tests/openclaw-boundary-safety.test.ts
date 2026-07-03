@@ -797,6 +797,11 @@ test("full uninstall reset reopens onboarding at system setup", () => {
   assert.match(source, /setRequiresFreshInstallSystemSetup\(true\);[\s\S]*setOnboardingStage\("system"\);/);
   assert.match(source, /stage=\{effectiveOnboardingStage\}/);
   assert.match(source, /systemSetupRequired=\{requiresFreshInstallSystemSetup\}/);
+
+  const runResetIndex = source.indexOf("const runReset = async () => {");
+  const pendingIndex = source.indexOf("setRequiresFreshInstallSystemSetup(true);", runResetIndex);
+  const runningIndex = source.indexOf('setResetRunState("running");', runResetIndex);
+  assert.equal(runResetIndex >= 0 && pendingIndex > runResetIndex && pendingIndex < runningIndex, true);
 });
 
 function resolveLocalOpenClawImport(filePath: string, specifier: string) {

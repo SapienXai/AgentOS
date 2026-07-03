@@ -1,6 +1,7 @@
 import "server-only";
 
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { access, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
@@ -71,6 +72,22 @@ export function resolveOpenClawSpawnInvocation(command: string, args: string[]) 
   }
 
   return { command, args };
+}
+
+export function buildOpenClawSpawnEnv(env: NodeJS.ProcessEnv = process.env) {
+  if (process.platform !== "win32") {
+    return { ...env };
+  }
+
+  const preloadPath = path.join(process.cwd(), "scripts", "openclaw-windows-hide.cjs");
+  if (!existsSync(preloadPath)) {
+    return { ...env };
+  }
+  const preloadOption = `--require=${JSON.stringify(preloadPath)}`;
+  return {
+    ...env,
+    NODE_OPTIONS: [env.NODE_OPTIONS?.trim(), preloadOption].filter(Boolean).join(" ")
+  };
 }
 
 export async function repairOpenClawWindowsNpmShims(options: {

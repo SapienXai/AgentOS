@@ -3,6 +3,7 @@ import "server-only";
 import { spawn } from "node:child_process";
 
 import {
+  buildOpenClawSpawnEnv,
   getOpenClawBundledNodeBinPath,
   getOpenClawLocalPrefixBinPath,
   getOpenClawUserLocalBinPath,
@@ -700,7 +701,7 @@ function quoteShellSegment(value: string) {
 }
 
 function buildOpenClawEnv() {
-  return { ...process.env };
+  return buildOpenClawSpawnEnv();
 }
 
 async function canExecuteOpenClaw(command: string) {

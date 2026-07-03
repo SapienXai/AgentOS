@@ -4,6 +4,7 @@ import {
   subscribeOpenClawEventBridgeEvents
 } from "@/lib/openclaw/application/event-bridge-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { probeLocalGatewayStatus } from "@/lib/openclaw/client/local-gateway-probe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ const STREAM_EVENT_DEBOUNCE_MS = 300;
 
 export async function GET(request: Request) {
   let interval: ReturnType<typeof setInterval> | undefined;
+  let systemStatusInterval: ReturnType<typeof setInterval> | undefined;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let unsubscribeGatewayEvents: (() => void) | undefined;
   let closed = false;
@@ -29,6 +31,10 @@ export async function GET(request: Request) {
         if (interval) {
           clearInterval(interval);
           interval = undefined;
+        }
+        if (systemStatusInterval) {
+          clearInterval(systemStatusInterval);
+          systemStatusInterval = undefined;
         }
         if (debounceTimer) {
           clearTimeout(debounceTimer);
@@ -111,7 +117,15 @@ export async function GET(request: Request) {
         }, delayMs);
       };
 
+      const sendSystemStatus = async () => {
+        const gatewayStatus = await probeLocalGatewayStatus().catch(() => null);
+        sendEvent("system-status", {
+          gatewayReachable: Boolean(gatewayStatus)
+        });
+      };
+
       unsubscribeGatewayEvents = subscribeOpenClawEventBridgeEvents(() => {
+        void sendSystemStatus();
         scheduleSnapshot(STREAM_EVENT_DEBOUNCE_MS);
       });
 
@@ -123,6 +137,10 @@ export async function GET(request: Request) {
         ok: true,
         eventBridge: getOpenClawEventBridgeStreamStatus()
       });
+      void sendSystemStatus();
+      systemStatusInterval = setInterval(() => {
+        void sendSystemStatus();
+      }, 1_000);
       void sendSnapshot();
     },
     cancel() {

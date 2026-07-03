@@ -71,6 +71,7 @@ import {
 } from "@/lib/openclaw/application/model-auth-service";
 import { inferSessionKindFromCatalogEntry } from "@/lib/openclaw/domains/session-catalog";
 import {
+  buildSystemSteps,
   resolveEffectiveWizardStage,
   resolveInitialOnboardingProviderId,
   resolveOnboardingModelProviderId,
@@ -907,6 +908,46 @@ test("onboarding starts on the selected, connected, or preferred provider", () =
   } as unknown as MissionControlSnapshot;
 
   assert.equal(resolveInitialOnboardingProviderId(connectedSnapshot, undefined), "ollama");
+});
+
+test("live gateway probe overrides a stale ready snapshot", () => {
+  const snapshot = {
+    diagnostics: {
+      installed: true,
+      version: "2026.6.8",
+      loaded: true,
+      rpcOk: true,
+      runtime: {
+        stateWritable: true,
+        sessionStoreWritable: true
+      }
+    }
+  } as unknown as MissionControlSnapshot;
+
+  const steps = buildSystemSteps(snapshot, null, { gatewayReachable: false });
+  const gatewayStep = steps.find((step) => step.id === "gateway");
+
+  assert.equal(gatewayStep?.state, "pending");
+});
+
+test("CLI readiness does not wait for the first full live snapshot", () => {
+  const snapshot = {
+    diagnostics: {
+      installed: true,
+      version: "2026.6.8",
+      loaded: true,
+      rpcOk: true,
+      runtime: {
+        stateWritable: true,
+        sessionStoreWritable: true
+      }
+    }
+  } as unknown as MissionControlSnapshot;
+
+  const steps = buildSystemSteps(snapshot, null, { suppressGatewaySnapshot: true });
+
+  assert.equal(steps.find((step) => step.id === "cli")?.state, "complete");
+  assert.equal(steps.find((step) => step.id === "gateway")?.state, "pending");
 });
 
 test("onboarding treats canonical OpenAI model refs as ChatGPT when Codex auth owns the route", () => {
