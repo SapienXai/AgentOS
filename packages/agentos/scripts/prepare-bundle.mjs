@@ -24,6 +24,11 @@ await cp(staticDir, path.join(bundleDir, ".next", "static"), {
 await copyDirectoryTree(publicDir, path.join(bundleDir, "public"), {
   tolerateReadErrors: true
 });
+await mkdir(path.join(bundleDir, "scripts"), { recursive: true });
+await cp(
+  path.join(repoRoot, "scripts", "openclaw-windows-hide.cjs"),
+  path.join(bundleDir, "scripts", "openclaw-windows-hide.cjs")
+);
 await removeLocalRuntimeFiles(bundleDir);
 await removeDotStoreFiles(bundleDir);
 
