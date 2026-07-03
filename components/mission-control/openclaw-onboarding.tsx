@@ -54,6 +54,7 @@ export function OpenClawOnboarding({
   systemSetupRequired,
   systemStatusChecking,
   gatewayReachable,
+  cliInstalled,
   showReadyState,
   systemActionLabel,
   systemActionDescription,
@@ -87,6 +88,7 @@ export function OpenClawOnboarding({
   systemSetupRequired?: boolean;
   systemStatusChecking?: boolean;
   gatewayReachable?: boolean | null;
+  cliInstalled?: boolean | null;
   showReadyState: boolean;
   systemActionLabel: string;
   systemActionDescription: string;
@@ -184,11 +186,15 @@ export function OpenClawOnboarding({
     stageRun.log.trim().length > 0 ||
     (activeWizardStage === "models" && discoveredModels.length > 0);
 
+  const effectiveSystemActionLabel =
+    !onboardingSystemReady && cliInstalled === true && gatewayReachable !== true
+      ? "Prepare local gateway"
+      : systemActionLabel;
   const primaryAction = resolvePrimaryAction({
     stage: activeWizardStage,
     systemReady: onboardingSystemReady,
     modelReady: onboardingModelReady,
-    systemActionLabel,
+    systemActionLabel: effectiveSystemActionLabel,
     selectedModelId,
     defaultModelId
   });
