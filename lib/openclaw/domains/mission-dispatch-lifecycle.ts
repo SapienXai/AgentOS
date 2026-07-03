@@ -137,6 +137,7 @@ export async function launchMissionDispatchRunner(record: MissionDispatchRecord)
   await access(missionDispatchRunnerPath, fsConstants.R_OK);
   const openClawBin = await resolveOpenClawBin();
   const child = spawn(process.execPath, [missionDispatchRunnerPath, missionDispatchRecordPath(record.id)], {
+    windowsHide: true,
     cwd: process.cwd(),
     detached: true,
     stdio: "ignore",
