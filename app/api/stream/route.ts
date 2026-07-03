@@ -4,6 +4,7 @@ import {
   subscribeOpenClawEventBridgeEvents
 } from "@/lib/openclaw/application/event-bridge-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { probeLocalGatewayStatus } from "@/lib/openclaw/client/local-gateway-probe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -111,7 +112,15 @@ export async function GET(request: Request) {
         }, delayMs);
       };
 
+      const sendSystemStatus = async () => {
+        const gatewayStatus = await probeLocalGatewayStatus().catch(() => null);
+        sendEvent("system-status", {
+          gatewayReachable: Boolean(gatewayStatus)
+        });
+      };
+
       unsubscribeGatewayEvents = subscribeOpenClawEventBridgeEvents(() => {
+        void sendSystemStatus();
         scheduleSnapshot(STREAM_EVENT_DEBOUNCE_MS);
       });
 
@@ -123,6 +132,7 @@ export async function GET(request: Request) {
         ok: true,
         eventBridge: getOpenClawEventBridgeStreamStatus()
       });
+      void sendSystemStatus();
       void sendSnapshot();
     },
     cancel() {
