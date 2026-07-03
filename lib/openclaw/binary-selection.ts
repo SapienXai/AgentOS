@@ -90,6 +90,7 @@ export async function assertExecutableOpenClawBinary(binPath: string) {
   const result = spawnSync(binPath, ["--version"], {
     encoding: "utf8",
     timeout: 5_000,
+    windowsHide: true,
     env: {
       ...process.env
     }
@@ -109,7 +110,8 @@ export async function resolveGlobalOpenClawBinaryPath() {
   const command = process.platform === "win32" ? "where" : "which";
   const args = process.platform === "win32" ? ["openclaw.exe"] : ["openclaw"];
   const result = spawnSync(command, args, {
-    encoding: "utf8"
+    encoding: "utf8",
+    windowsHide: true
   });
 
   if (result.status !== 0 || result.error) {
