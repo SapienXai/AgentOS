@@ -14,6 +14,7 @@ import {
   getOpenClawLocalPrefixBinPath,
   getOpenClawUserLocalBinPath,
   getOpenClawWindowsNpmBinPath,
+  getOpenClawWindowsNpmEntryPath,
   mergeDirectoryIntoPathList,
   pathListIncludesDirectory,
   repairOpenClawWindowsNpmShims
@@ -313,6 +314,7 @@ test("openclaw resolver considers local prefix fallbacks", () => {
   assert.ok(candidates.includes(getOpenClawLocalPrefixBinPath().replaceAll("\\", "/")));
   assert.ok(candidates.includes(getOpenClawUserLocalBinPath().replaceAll("\\", "/")));
   if (process.platform === "win32") {
+    assert.ok(candidates.includes(getOpenClawWindowsNpmEntryPath().replaceAll("\\", "/")));
     assert.ok(candidates.includes(getOpenClawWindowsNpmBinPath().replaceAll("\\", "/")));
   }
 });
