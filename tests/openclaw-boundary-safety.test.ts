@@ -815,6 +815,14 @@ test("system setup starts Gateway before requesting a full readiness snapshot", 
   assert.match(source, /const gatewayStatusTimeoutMs = 3_000;/);
 });
 
+test("system setup action shows a loader until lightweight status resolves", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding.tsx"), "utf8");
+
+  assert.match(source, /const isPrimaryActionResolving =/);
+  assert.match(source, /cliInstalled == null \|\| gatewayReachable == null/);
+  assert.match(source, /"Checking\.\.\."/);
+});
+
 function resolveLocalOpenClawImport(filePath: string, specifier: string) {
   if (specifier.startsWith("@/")) {
     return `${specifier.slice(2)}.ts`;
