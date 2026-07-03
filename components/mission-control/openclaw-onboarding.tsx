@@ -52,6 +52,7 @@ export function OpenClawOnboarding({
   systemReady,
   modelReady,
   systemSetupRequired,
+  systemStatusChecking,
   showReadyState,
   systemActionLabel,
   systemActionDescription,
@@ -83,6 +84,7 @@ export function OpenClawOnboarding({
   systemReady?: boolean;
   modelReady?: boolean;
   systemSetupRequired?: boolean;
+  systemStatusChecking?: boolean;
   showReadyState: boolean;
   systemActionLabel: string;
   systemActionDescription: string;
@@ -108,7 +110,7 @@ export function OpenClawOnboarding({
   launchpadCreateProgress: OperationProgressSnapshot | null;
   launchpadCreateRunState: "idle" | "running" | "success" | "error";
 }) {
-  const onboardingSystemReady = systemRun.runState === "running"
+  const onboardingSystemReady = systemRun.runState === "running" || systemStatusChecking
     ? false
     : systemReady ?? (systemRun.runState === "success" || isOpenClawOnboardingSystemReady(snapshot));
   const hasWorkspaceSetup = hasAgentOSWorkspaceSetup(snapshot);
@@ -148,7 +150,7 @@ export function OpenClawOnboarding({
   const [selectedVisualStage, setSelectedVisualStage] = useState<OnboardingVisualStage | null>(null);
   const systemPhaseForSteps = onboardingSystemReady ? "ready" : systemPhase;
   const systemSteps = buildSystemSteps(snapshot, systemPhaseForSteps, {
-    forcePending: systemSetupRequired || systemRun.runState === "running"
+    forcePending: systemSetupRequired || systemStatusChecking || systemRun.runState === "running"
   });
   const availableModels = snapshot.models.filter((model) => model.available !== false && !model.missing);
   const selectedModelLabel =
