@@ -45,6 +45,7 @@ class FallbackGatewayClient implements OpenClawGatewayClient {
   statusPayload: Record<string, unknown> = {};
   updateStatusPayload: Record<string, unknown> = {};
   modelStatusPayload: ModelsStatusPayload = {};
+  modelsPayload: Awaited<ReturnType<OpenClawGatewayClient["listModels"]>> = { models: [] };
 
   async getHealth() {
     this.calls.push({ method: "getHealth" });
@@ -222,7 +223,7 @@ class FallbackGatewayClient implements OpenClawGatewayClient {
 
   async listModels() {
     this.calls.push({ method: "listModels" });
-    return { models: [] };
+    return this.modelsPayload;
   }
 
   async scanModels() {
@@ -1098,6 +1099,60 @@ test("native WS gateway client does not hide malformed Gateway typed responses b
   assert.deepEqual(fallback.calls, []);
   assert.deepEqual(getRecentOpenClawGatewayFallbackDiagnostics(), []);
   assert.match(client.getDiagnostics().lastNativeError ?? "", /malformed response/);
+});
+
+test("native WS gateway client falls back to CLI when Google provider catalog is incomplete", async () => {
+  clearOpenClawGatewayFallbackDiagnosticsForTesting();
+  const fallback = new FallbackGatewayClient();
+  fallback.modelsPayload = {
+    models: [
+      {
+        key: "google/gemini-2.5-pro",
+        name: "Gemini 2.5 Pro",
+        input: "text+image",
+        contextWindow: 1048576,
+        local: false,
+        available: true,
+        tags: [],
+        missing: false
+      },
+      {
+        key: "google/gemini-3.5-flash",
+        name: "Gemini 3.5 Flash",
+        input: "text+image",
+        contextWindow: 1048576,
+        local: false,
+        available: true,
+        tags: [],
+        missing: false
+      }
+    ]
+  };
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? { protocol: 4 }
+          : { models: [{ id: "gemini-3.5-flash", provider: "google", name: "Gemini 3.5 Flash", input: ["text"] }] }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  const result = await client.listModels({ all: true, provider: "google" });
+
+  assert.deepEqual(result, fallback.modelsPayload);
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "models.list"]);
+  assert.deepEqual(fallback.calls.map((call) => call.method), ["listModels"]);
+  assert.equal(getRecentOpenClawGatewayFallbackDiagnostics()[0]?.operation, "models.list");
 });
 
 test("native WS gateway client treats mixed model auth profiles as connected when one profile is usable", async () => {

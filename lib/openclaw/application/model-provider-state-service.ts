@@ -111,6 +111,7 @@ const openClawAuthProfilesPath = path.join(
 const legacyProviderFileFallbackEnv = "AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK";
 const gatewayConfigPatchRetryDelaysMs = [750, 1_500, 3_000];
 const maxInlineGatewayConfigRateLimitRetryMs = 3_000;
+const googleGenerativeAiBaseUrl = "https://generativelanguage.googleapis.com/v1beta";
 
 type OpenClawAgentDefaultsConfig = NonNullable<NonNullable<OpenClawConfigPayload["agents"]>["defaults"]>;
 
@@ -1146,7 +1147,7 @@ async function ensureProviderModelRegistryViaGateway(
   provider: AddModelsProviderId | null,
   normalizedModelIds: string[]
 ) {
-  if (provider !== "ollama") {
+  if (provider !== "ollama" && provider !== "google") {
     return;
   }
 
@@ -1158,11 +1159,12 @@ async function ensureProviderModelRegistryViaGateway(
     return;
   }
 
+  const configProvider = resolveProviderConfigId(provider);
   let existingProviderConfig: unknown = null;
 
   try {
     existingProviderConfig = await adapter.getConfig<OpenClawProviderModelsEntry>(
-      "models.providers.ollama",
+      `models.providers.${configProvider}`,
       { timeoutMs: 5_000 }
     );
   } catch {
@@ -1170,6 +1172,7 @@ async function ensureProviderModelRegistryViaGateway(
   }
 
   const nextProviderConfig = cloneProviderModelsEntry(existingProviderConfig);
+  applyBuiltInProviderConfigDefaults(nextProviderConfig, provider);
   const existingIds = new Set(
     nextProviderConfig.models
       ?.map((entry) => entry.id?.trim())
@@ -1186,7 +1189,7 @@ async function ensureProviderModelRegistryViaGateway(
   }
 
   if (changed) {
-    await adapter.setConfig("models.providers.ollama", nextProviderConfig, { timeoutMs: 5_000 });
+    await adapter.setConfig(`models.providers.${configProvider}`, nextProviderConfig, { timeoutMs: 5_000 });
   }
 }
 
@@ -1195,14 +1198,16 @@ function applyProviderModelRegistry(
   provider: AddModelsProviderId | null,
   normalizedModelIds: string[]
 ) {
-  if (provider !== "ollama") {
+  if (provider !== "ollama" && provider !== "google") {
     return;
   }
 
   config.models = config.models || {};
   config.models.providers = config.models.providers || {};
 
-  const nextProviderConfig = cloneProviderModelsEntry(config.models.providers.ollama);
+  const configProvider = resolveProviderConfigId(provider);
+  const nextProviderConfig = cloneProviderModelsEntry(config.models.providers[configProvider]);
+  applyBuiltInProviderConfigDefaults(nextProviderConfig, provider);
   const existingIds = new Set(
     nextProviderConfig.models
       ?.map((entry) => entry.id?.trim())
@@ -1218,7 +1223,20 @@ function applyProviderModelRegistry(
     }
   }
 
-  config.models.providers.ollama = nextProviderConfig;
+  config.models.providers[configProvider] = nextProviderConfig;
+}
+
+function applyBuiltInProviderConfigDefaults(
+  providerConfig: OpenClawProviderModelsEntry,
+  provider: AddModelsProviderId
+) {
+  if (provider !== "google") {
+    return;
+  }
+
+  providerConfig.baseUrl = providerConfig.baseUrl?.trim() || googleGenerativeAiBaseUrl;
+  delete providerConfig.baseURL;
+  providerConfig.api = providerConfig.api?.trim() || "google-generative-ai";
 }
 
 function cloneProviderModelsEntry(value: unknown): OpenClawProviderModelsEntry {

@@ -1665,16 +1665,25 @@ function resolveProviderTokenAuthHandoff(
   commandBin: string,
   error: unknown
 ) {
-  if (provider !== "openrouter" || !isProviderTokenPersistenceUnavailable(error)) {
+  if (!isProviderTokenPersistenceUnavailable(error)) {
     return null;
   }
 
   const label = getModelProviderDescriptor(provider).shortLabel;
+  const authCommand = provider === "openrouter" ? "paste-token" : "paste-api-key";
+  const profileArgs = provider === "openrouter" ? [] : ["--profile-id", `${provider}:default`];
 
   return {
-    command: formatOpenClawCommand(commandBin, ["models", "auth", "paste-token", "--provider", "openrouter"]),
+    command: formatOpenClawCommand(commandBin, [
+      "models",
+      "auth",
+      authCommand,
+      "--provider",
+      provider,
+      ...profileArgs
+    ]),
     continueMessage:
-      `OpenClaw does not expose native ${label} token persistence to AgentOS yet. Continue in Terminal to paste your ${label} API key, then return here and refresh this provider.`
+      `OpenClaw does not expose native ${label} API key persistence to AgentOS yet. Continue in Terminal to paste your ${label} API key, then return here and refresh this provider.`
   };
 }
 

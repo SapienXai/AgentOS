@@ -979,8 +979,8 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     );
   }
 
-  listModels(input: OpenClawListModelsInput = {}, options: OpenClawCommandOptions = {}) {
-    return this.gatewayFirst(
+  async listModels(input: OpenClawListModelsInput = {}, options: OpenClawCommandOptions = {}) {
+    const models = await this.gatewayFirst(
       "models.list",
       { view: input.all ? "all" : "configured" },
       options,
@@ -992,6 +992,28 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       },
       () => this.fallback.listModels(input, options)
     );
+
+    const requiresCompleteProviderCatalog = input.all && input.provider === "google";
+
+    if (!input.all || !input.provider || (models.models.length > 0 && !requiresCompleteProviderCatalog)) {
+      return models;
+    }
+
+    const fallbackModels = await this.fallback.listModels(input, options);
+
+    if (requiresCompleteProviderCatalog && fallbackModels.models.length <= models.models.length) {
+      return models;
+    }
+
+    this.recordGatewayFallback(
+      "models.list",
+      new OpenClawGatewayClientError(
+        `OpenClaw Gateway models.list returned an incomplete ${input.provider} catalog while provider-scoped discovery was requested.`,
+        "malformed-response"
+      )
+    );
+
+    return fallbackModels;
   }
 
   scanModels(options: OpenClawCommandOptions & { yes?: boolean; noInput?: boolean; noProbe?: boolean } = {}) {

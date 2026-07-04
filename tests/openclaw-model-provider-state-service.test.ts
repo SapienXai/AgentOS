@@ -372,6 +372,45 @@ test("OpenRouter connect returns terminal paste-token handoff when native token 
   assert.doesNotMatch(serialized, /sk-or-test-secret/);
 });
 
+test("Gemini connect returns terminal paste-api-key handoff when native key persistence is unavailable", async () => {
+  setOpenClawAdapterForTesting({
+    async getConfig() {
+      return {};
+    },
+    async getModelStatus() {
+      return {
+        allowed: [],
+        auth: {
+          providers: [],
+          oauth: {
+            providers: []
+          }
+        }
+      };
+    }
+  } as unknown as OpenClawAdapter);
+
+  const response = await modelsProviderPost(
+    new Request("http://agentos.test/api/models/providers", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "connect",
+        provider: "google",
+        apiKey: "gemini-test-secret"
+      })
+    })
+  );
+  const payload = await response.json();
+  const serialized = JSON.stringify(payload);
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.match(payload.manualCommand, /models auth paste-api-key --provider google/);
+  assert.match(payload.manualCommand, /--profile-id google:default/);
+  assert.match(payload.message, /Continue in Terminal/);
+  assert.doesNotMatch(serialized, /gemini-test-secret/);
+});
+
 test("Codex plugin readiness requires the plugin registry entry", async () => {
   setOpenClawAdapterForTesting({
     async listPlugins() {
@@ -740,6 +779,57 @@ test("setting an already registered Ollama default model avoids duplicate provid
     "get:agents.defaults",
     "set:agents.defaults"
   ]);
+});
+
+test("adding a Gemini model registers the Google provider model before AgentOS defaults", async () => {
+  const calls: string[] = [];
+  const values = new Map<string, unknown>();
+
+  setOpenClawAdapterForTesting({
+    async getConfig(path: string) {
+      calls.push(`get:${path}`);
+
+      if (path === "models.providers.google") {
+        return null;
+      }
+
+      if (path === "agents.defaults") {
+        return { models: {} };
+      }
+
+      return null;
+    },
+    async setConfig(path: string, value: unknown) {
+      calls.push(`set:${path}`);
+      values.set(path, value);
+      return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+    }
+  } as unknown as OpenClawAdapter);
+
+  await addOpenClawModelsToConfig("google", ["google/gemini-3.5-flash"]);
+
+  assert.deepEqual(calls, [
+    "get:models.providers.google",
+    "set:models.providers.google",
+    "get:agents.defaults",
+    "set:agents.defaults"
+  ]);
+  assert.deepEqual(values.get("models.providers.google"), {
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    api: "google-generative-ai",
+    models: [{
+      id: "gemini-3.5-flash",
+      name: "gemini-3.5-flash"
+    }]
+  });
+  assert.deepEqual(values.get("agents.defaults"), {
+    models: {
+      "google/gemini-3.5-flash": {}
+    },
+    model: {
+      primary: "google/gemini-3.5-flash"
+    }
+  });
 });
 
 test("setting a Codex default model normalizes the model ref and enables Codex runtime", async () => {
