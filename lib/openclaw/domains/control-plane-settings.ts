@@ -40,6 +40,7 @@ export type ConfigUpdatePacingSettings = {
 
 export type MissionControlSettings = {
   workspaceRoot?: string;
+  disconnectedModelProviders?: Record<string, string>;
   configUpdatePacing?: ConfigUpdatePacingSettings;
   runtimeIssues?: Record<string, RuntimeIssueState>;
   runtimePreflight?: {
@@ -138,9 +139,11 @@ export async function readMissionControlSettings(): Promise<MissionControlSettin
     const compatibilitySmokeTest = normalizeCompatibilitySmokeTest(parsed.compatibilitySmokeTest);
     const configUpdatePacing = normalizeConfigUpdatePacingSettings(parsed.configUpdatePacing);
     const runtimeIssues = normalizeRuntimeIssueState(parsed.runtimeIssues);
+    const disconnectedModelProviders = normalizeDisconnectedModelProviders(parsed.disconnectedModelProviders);
 
     return {
       ...(workspaceRoot ? { workspaceRoot } : {}),
+      ...(disconnectedModelProviders ? { disconnectedModelProviders } : {}),
       ...(configUpdatePacing ? { configUpdatePacing } : {}),
       ...(runtimeIssues ? { runtimeIssues } : {}),
       ...(runtimePreflight ? { runtimePreflight } : {}),
@@ -149,6 +152,46 @@ export async function readMissionControlSettings(): Promise<MissionControlSettin
   } catch {
     return {};
   }
+}
+
+export async function setModelProviderDisconnected(provider: string, disconnected: boolean) {
+  const providerId = provider.trim();
+  if (!providerId) {
+    throw new Error("Provider id is required.");
+  }
+
+  const settings = await readMissionControlSettings();
+  const disconnectedModelProviders = { ...(settings.disconnectedModelProviders ?? {}) };
+
+  if (disconnected) {
+    disconnectedModelProviders[providerId] = new Date().toISOString();
+  } else {
+    delete disconnectedModelProviders[providerId];
+  }
+
+  await writeMissionControlSettings({
+    ...settings,
+    disconnectedModelProviders: Object.keys(disconnectedModelProviders).length > 0
+      ? disconnectedModelProviders
+      : undefined
+  });
+}
+
+export async function isModelProviderDisconnected(provider: string) {
+  const settings = await readMissionControlSettings();
+  return Boolean(settings.disconnectedModelProviders?.[provider.trim()]);
+}
+
+function normalizeDisconnectedModelProviders(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const entries = Object.entries(value).filter(
+    (entry): entry is [string, string] => Boolean(entry[0].trim()) && typeof entry[1] === "string" && Boolean(entry[1].trim())
+  );
+
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 export async function updateRuntimeIssueState(

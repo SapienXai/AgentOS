@@ -18,6 +18,8 @@ export type ModelProviderAdapter = {
   switchAccount: () => Promise<AddModelsProviderActionResult>;
   discoverModels: () => Promise<AddModelsProviderActionResult>;
   addModels: (modelIds: string[]) => Promise<AddModelsProviderActionResult>;
+  getDisconnectImpact: () => Promise<AddModelsProviderActionResult>;
+  disconnect: () => Promise<AddModelsProviderActionResult>;
 };
 
 export class ModelProviderActionError extends Error {
@@ -103,6 +105,17 @@ function createModelProviderAdapter(providerId: AddModelsProviderId): ModelProvi
         action: "add-models",
         provider: providerId,
         modelIds
+      }),
+    getDisconnectImpact: () =>
+      runProviderAction({
+        action: "disconnect-impact",
+        provider: providerId
+      }),
+    disconnect: () =>
+      runProviderAction({
+        action: "disconnect",
+        provider: providerId,
+        confirmed: true
       })
   };
 }

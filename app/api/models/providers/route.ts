@@ -56,6 +56,14 @@ import {
   setOpenClawDefaultModel
 } from "@/lib/openclaw/application/model-provider-state-service";
 import {
+  disconnectModelProvider,
+  inspectModelProviderDisconnect
+} from "@/lib/openclaw/application/model-provider-disconnect-service";
+import {
+  isModelProviderDisconnected,
+  setModelProviderDisconnected
+} from "@/lib/openclaw/domains/control-plane-settings";
+import {
   isGatewayAuthSetupRecoveryError,
   runWithGatewayAuthSetupRecovery
 } from "@/lib/openclaw/model-setup-recovery";
@@ -135,6 +143,15 @@ const requestSchema = z.discriminatedUnion("action", [
     action: z.literal("remove-model"),
     provider: explicitProviderIdSchema,
     modelId: z.string().trim().min(1)
+  }),
+  z.object({
+    action: z.literal("disconnect-impact"),
+    provider: explicitProviderIdSchema
+  }),
+  z.object({
+    action: z.literal("disconnect"),
+    provider: explicitProviderIdSchema,
+    confirmed: z.literal(true)
   })
 ]);
 
@@ -221,9 +238,56 @@ async function handleProviderAction(
 ): Promise<AddModelsProviderActionResult> {
   const commandBin = await resolveOpenClawBin().catch(() => "openclaw");
 
+  if (input.action === "disconnect-impact") {
+    const [impact, statusContext] = await Promise.all([
+      inspectModelProviderDisconnect(input.provider),
+      readProviderConnectionContext(input.provider)
+    ]);
+
+    return buildActionResult({
+      ok: !impact.blockedReason,
+      action: input.action,
+      provider: input.provider,
+      message: impact.blockedReason ?? buildDisconnectImpactMessage(input.provider, impact),
+      connection: statusContext.connection,
+      models: [],
+      disconnectImpact: impact,
+      docsUrl: addModelsDocsUrl
+    });
+  }
+
+  if (input.action === "disconnect") {
+    const result = await disconnectModelProvider(input.provider);
+    const statusContext = await readProviderConnectionContext(input.provider);
+
+    return buildActionResult({
+      ok: true,
+      action: input.action,
+      provider: input.provider,
+      message: buildDisconnectCompletedMessage(input.provider, result.impact),
+      connection: {
+        ...statusContext.connection,
+        connected: false,
+        detail: buildDisconnectedProviderDetail(result.impact.credentialCleanup)
+      },
+      models: [],
+      disconnectImpact: result.impact,
+      snapshot: result.snapshot,
+      docsUrl: addModelsDocsUrl
+    });
+  }
+
   if (input.action === "status") {
     const statusContext = await readProviderConnectionContext(input.provider);
-    const snapshot = input.includeSnapshot && statusContext.connection.connected
+    const intentionallyDisconnected = await isModelProviderDisconnected(input.provider);
+    const connection = intentionallyDisconnected
+      ? {
+          ...statusContext.connection,
+          connected: false,
+          detail: "Disconnected in AgentOS. Connect again to replace the provider credential and rediscover models."
+        }
+      : statusContext.connection;
+    const snapshot = input.includeSnapshot && connection.connected
       ? await getMissionControlSnapshot({ force: true }).catch(() => undefined)
       : undefined;
 
@@ -231,9 +295,9 @@ async function handleProviderAction(
       ok: true,
       action: input.action,
       provider: input.provider,
-      message: resolveProviderStatusMessage(input.provider, statusContext.connection),
+      message: resolveProviderStatusMessage(input.provider, connection),
       snapshot,
-      connection: statusContext.connection,
+      connection,
       models: [],
       emptyState: statusContext.ollamaState ? resolveOllamaEmptyState(statusContext.ollamaState) : null,
       docsUrl: addModelsDocsUrl
@@ -241,6 +305,7 @@ async function handleProviderAction(
   }
 
   if (input.action === "connect") {
+    await setModelProviderDisconnected(input.provider, false);
     if (!isBuiltInAddModelsProviderId(input.provider)) {
       return connectExplicitProvider(input);
     }
@@ -1192,7 +1257,8 @@ function buildActionResult({
   emptyState = null,
   manualCommand = null,
   docsUrl = null,
-  defaultModel
+  defaultModel,
+  disconnectImpact
 }: {
   ok: boolean;
   action: AddModelsProviderActionResult["action"];
@@ -1205,6 +1271,7 @@ function buildActionResult({
   manualCommand?: string | null;
   docsUrl?: string | null;
   defaultModel?: AddModelsProviderActionResult["defaultModel"];
+  disconnectImpact?: AddModelsProviderActionResult["disconnectImpact"];
 }): AddModelsProviderActionResult {
   return {
     ok,
@@ -1217,8 +1284,35 @@ function buildActionResult({
     manualCommand,
     docsUrl,
     defaultModel,
+    disconnectImpact,
     snapshot
   };
+}
+
+function buildDisconnectImpactMessage(
+  provider: AddModelsProviderId,
+  impact: NonNullable<AddModelsProviderActionResult["disconnectImpact"]>
+) {
+  const label = getModelProviderDescriptor(provider).shortLabel;
+  return `${label} disconnect will remove ${impact.providerModelIds.length} configured model${impact.providerModelIds.length === 1 ? "" : "s"}, reassign ${impact.affectedAgents.length} agent${impact.affectedAgents.length === 1 ? "" : "s"}, and use ${impact.replacementModelId ?? "no replacement model"}.`;
+}
+
+function buildDisconnectCompletedMessage(
+  provider: AddModelsProviderId,
+  impact: NonNullable<AddModelsProviderActionResult["disconnectImpact"]>
+) {
+  const label = getModelProviderDescriptor(provider).shortLabel;
+  return `${label} was disconnected. Removed ${impact.providerModelIds.length} configured model${impact.providerModelIds.length === 1 ? "" : "s"} and reassigned ${impact.affectedAgents.length} agent${impact.affectedAgents.length === 1 ? "" : "s"}.`;
+}
+
+function buildDisconnectedProviderDetail(
+  credentialCleanup: NonNullable<AddModelsProviderActionResult["disconnectImpact"]>["credentialCleanup"]
+) {
+  if (credentialCleanup === "retained-unsupported") {
+    return "Provider models and assignments were removed. OpenClaw does not expose credential deletion yet; reconnecting replaces the retained default credential.";
+  }
+
+  return "Provider models, assignments, and configuration were removed.";
 }
 
 function readProviderActionError(error: unknown) {

@@ -423,17 +423,22 @@ export function AddModelsDialog({
   const showLoadingHero =
     Boolean(activeProviderId && activeDescriptor) &&
     (activeDraft.flowState === "discovery-loading" ||
+      activeDraft.flowState === "disconnecting" ||
       (activeDraft.flowState === "connecting" && !activeDraft.manualCommand) ||
       (activeDraft.statusMessage?.startsWith("Checking ") === true && !activeConnection?.connected));
   const loadingHeroTitle =
     activeDraft.flowState === "discovery-loading"
       ? `Discovering ${activeProviderLabel} models...`
+      : activeDraft.flowState === "disconnecting"
+        ? activeDraft.statusMessage || `Disconnecting ${activeProviderLabel}...`
       : activeDraft.flowState === "connecting"
         ? activeDraft.statusMessage || `Connecting ${activeProviderLabel}...`
         : activeDraft.statusMessage || `Checking ${activeProviderLabel}...`;
   const loadingHeroCopy =
     activeDraft.flowState === "discovery-loading"
       ? "Pulling the provider catalog into AgentOS."
+      : activeDraft.flowState === "disconnecting"
+        ? "Removing provider models, checking affected agents, and updating safe model defaults."
       : activeDraft.flowState === "connecting"
         ? "Preparing the provider connection."
         : "Checking provider status before discovery.";
@@ -445,6 +450,7 @@ export function AddModelsDialog({
   );
   const showProviderConnectionForm = Boolean(activeProviderId && activeDescriptor && activeDescriptor.connectKind === "apiKey");
   const isDiscovering = activeDraft.flowState === "discovery-loading";
+  const isDisconnecting = activeDraft.flowState === "disconnecting";
   const discoveryActionLabel =
     activeDraft.models.length > 0 ? "Refresh discovery" : "Discover models";
   const discoveryButtonLabel = isDiscovering ? "Discovering..." : discoveryActionLabel;
@@ -792,6 +798,102 @@ export function AddModelsDialog({
       });
 
       return null;
+    }
+  }
+
+  async function disconnectProvider(providerId: AddModelsProviderId) {
+    const adapter = getModelProviderAdapter(providerId);
+    const descriptor = getModelProviderDescriptor(providerId);
+
+    updateDraft(providerId, {
+      flowState: "disconnecting",
+      errorMessage: null,
+      statusMessage: `Checking ${descriptor.shortLabel} disconnect impact...`
+    });
+
+    try {
+      const preview = await adapter.getDisconnectImpact();
+      const impact = preview.disconnectImpact;
+
+      if (!impact) {
+        throw new Error("OpenClaw did not return provider disconnect impact details.");
+      }
+
+      if (impact.blockedReason) {
+        throw new Error(impact.blockedReason);
+      }
+
+      const affectedAgentNames = impact.affectedAgents.map((agent) => agent.name).join(", ");
+      const confirmationLines = [
+        `Disconnect ${descriptor.shortLabel}?`,
+        `This removes ${impact.providerModelIds.length} configured model${impact.providerModelIds.length === 1 ? "" : "s"}.`,
+        impact.affectedAgents.length > 0
+          ? `${impact.affectedAgents.length} affected agent${impact.affectedAgents.length === 1 ? "" : "s"} (${affectedAgentNames}) will move to ${impact.replacementModelId}.`
+          : "No agents currently use this provider.",
+        impact.defaultModelAffected
+          ? `The global default will move to ${impact.replacementModelId}.`
+          : "The global default is not affected.",
+        impact.credentialCleanup === "retained-unsupported"
+          ? "OpenClaw does not expose credential deletion yet. Reconnecting will replace its retained default credential."
+          : "Provider configuration will be removed."
+      ];
+
+      if (!window.confirm(confirmationLines.join("\n\n"))) {
+        updateDraft(providerId, {
+          flowState: "idle",
+          statusMessage: `Disconnect canceled. ${descriptor.shortLabel} remains connected.`
+        });
+        return;
+      }
+
+      updateDraft(providerId, {
+        flowState: "disconnecting",
+        statusMessage: `Disconnecting ${descriptor.shortLabel}...`
+      });
+      const result = await adapter.disconnect();
+
+      applyActionResult(providerId, result, "idle", {
+        apiKey: "",
+        endpoint: "",
+        models: [],
+        selectedModelIds: [],
+        discoveryLoaded: false,
+        manualCommand: null
+      });
+
+      if (result.snapshot) {
+        onSnapshotChange(result.snapshot);
+      }
+
+      if (!isBuiltInAddModelsProviderId(providerId)) {
+        setExplicitProviderIds((current) => current.filter((entry) => entry !== providerId));
+      }
+
+      setSidebarFilter("providers");
+
+      toast.success(`${descriptor.shortLabel} disconnected.`, {
+        description: result.message
+      });
+    } catch (error) {
+      const actionResult = readProviderActionErrorResult(error);
+      const errorMessage = error instanceof Error ? error.message : "Provider disconnect failed.";
+
+      if (actionResult) {
+        applyActionResult(providerId, actionResult, "auth-error", {
+          errorMessage,
+          statusMessage: `Disconnect blocked. ${descriptor.shortLabel} remains connected.`
+        });
+      } else {
+        updateDraft(providerId, {
+          flowState: "auth-error",
+          errorMessage,
+          statusMessage: `Disconnect failed. ${descriptor.shortLabel} remains connected.`
+        });
+      }
+
+      toast.error(`${descriptor.shortLabel} was not disconnected.`, {
+        description: errorMessage
+      });
     }
   }
 
@@ -1359,7 +1461,7 @@ export function AddModelsDialog({
                             ? "border border-border bg-card text-foreground shadow-none hover:border-primary/25 hover:bg-accent"
                             : "bg-violet-600 text-white hover:bg-violet-500"
                         )}
-                        disabled={!activeProviderId || isDiscovering}
+                        disabled={!activeProviderId || isDiscovering || isDisconnecting}
                         onClick={() => {
                           if (activeProviderId) {
                             void discoverProvider(activeProviderId, true);
@@ -1374,9 +1476,25 @@ export function AddModelsDialog({
 
                   <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-3">
                     {sidebarVisibleProviderCards.map(({ provider, connection }) => {
+                      const providerDraft = resolveDraft(providerDrafts[provider.id]);
+                      const providerDisconnecting = providerDraft.flowState === "disconnecting";
+                      const providerConnectedLabel = providerDisconnecting
+                        ? "Disconnecting"
+                        : connection.connected
+                          ? "Connected"
+                          : provider.connectKind === "local"
+                            ? "Detected"
+                            : "Not connected";
+                      const providerFooterLabel = providerDisconnecting
+                        ? "Removing provider"
+                        : connection.connected
+                          ? "Configured"
+                          : provider.connectKind === "local"
+                            ? "Detected"
+                            : "Needs setup";
                       const providerModelCount =
                         snapshot.models.filter((model) => modelMatchesProvider(provider.id, model.id, model.provider)).length +
-                        resolveDraft(providerDrafts[provider.id]).models.length;
+                        providerDraft.models.length;
                       const active = activeProviderId === provider.id && activeSetupMode === "standard";
                       const isChatGPTProvider = provider.id === "openai-codex";
                       const showSwitchAccountAction = isChatGPTProvider && connection.connected;
@@ -1421,14 +1539,19 @@ export function AddModelsDialog({
                                 <Badge
                                   className={cn(
                                     "px-2 py-0.5 text-[0.62rem]",
-                                    connection.connected
+                                    providerDisconnecting
+                                      ? isLight ? "border-cyan-300 bg-cyan-50 text-cyan-800" : "border-cyan-300/20 bg-cyan-400/10 text-cyan-200"
+                                      : connection.connected
                                       ? isLight ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-emerald-300/20 bg-emerald-400/10 text-emerald-200"
                                       : provider.connectKind === "local"
                                         ? isLight ? "border-cyan-300 bg-cyan-50 text-cyan-800" : "border-cyan-300/20 bg-cyan-400/10 text-cyan-200"
                                         : isLight ? "border-amber-300 bg-amber-50 text-amber-800" : "border-amber-300/20 bg-amber-400/10 text-amber-200"
                                   )}
                                 >
-                                  {connection.connected ? "Connected" : provider.connectKind === "local" ? "Detected" : "Not connected"}
+                                  {providerDisconnecting ? (
+                                    <LoaderCircle className="mr-1 h-3 w-3 animate-spin" />
+                                  ) : null}
+                                  {providerConnectedLabel}
                                 </Badge>
                               </div>
                               <p className={cn("mt-2.5 font-display text-[0.87rem]", isLight ? "text-foreground" : "text-white")}>{provider.label}</p>
@@ -1437,14 +1560,18 @@ export function AddModelsDialog({
                                 <p className="line-clamp-1">
                                   {providerModelCount} model{providerModelCount === 1 ? "" : "s"}
                                 </p>
-                                <p className="line-clamp-1">{connection.detail || provider.helperText}</p>
+                                <p className="line-clamp-1">
+                                  {providerDisconnecting
+                                    ? providerDraft.statusMessage || "Disconnect in progress..."
+                                    : connection.detail || provider.helperText}
+                                </p>
                               </div>
                             </button>
 
                             <div className="flex min-h-8 shrink-0 items-end px-2.5 pb-2.5">
                               <div className="flex min-w-0 w-full items-center gap-1.5">
                                 <span className={cn("inline-flex h-6 min-w-0 items-center truncate rounded-[9px] border px-2.5 text-[0.64rem] font-medium", isLight ? "border-border bg-muted/45 text-foreground" : "border-white/10 bg-white/[0.04] text-white")}>
-                                  {connection.connected ? "Configured" : provider.connectKind === "local" ? "Detected" : "Needs setup"}
+                                  {providerFooterLabel}
                                 </span>
                                 {showSwitchAccountAction ? (
                                   <Button
@@ -1496,18 +1623,24 @@ export function AddModelsDialog({
                           </p>
                         </div>
                         <Badge
-                          variant={activeConnection?.connected ? "success" : "muted"}
+                          variant={isDisconnecting ? "muted" : activeConnection?.connected ? "success" : "muted"}
                           className={cn(
                             "px-1.5 py-0.5 text-[9px] tracking-[0.12em]",
+                            isDisconnecting &&
+                              (isLight
+                                ? "border-cyan-300 bg-cyan-50 text-cyan-800"
+                                : "border-cyan-300/20 bg-cyan-400/10 text-cyan-200"),
                             isLight &&
+                              !isDisconnecting &&
                               activeConnection?.connected &&
                               "border-emerald-300 bg-emerald-50 text-emerald-800",
                             isLight &&
+                              !isDisconnecting &&
                               !activeConnection?.connected &&
                               "border-[#e3dbd0] bg-white/70 text-[#71675d]"
                           )}
                         >
-                          {activeConnection?.connected ? "Connected" : "Not connected"}
+                          {isDisconnecting ? "Disconnecting" : activeConnection?.connected ? "Connected" : "Not connected"}
                           </Badge>
                       </div>
 
@@ -2292,6 +2425,7 @@ export function AddModelsDialog({
                             onClick={() => {
                               void discoverProvider(activeProviderId, true);
                             }}
+                            disabled={isDisconnecting}
                           >
                             <RefreshCw className={cn("h-4 w-4", isLight ? "text-primary" : "text-slate-300")} />
                             <span>
@@ -2310,6 +2444,7 @@ export function AddModelsDialog({
                             onClick={() => {
                               void runStatus(activeProviderId);
                             }}
+                            disabled={isDisconnecting}
                           >
                             <Settings className={cn("h-4 w-4", isLight ? "text-primary" : "text-slate-300")} />
                             <span>
@@ -2319,17 +2454,25 @@ export function AddModelsDialog({
                           </button>
                           <button
                             type="button"
-                            disabled
+                            disabled={activeDraft.flowState === "disconnecting"}
                             className={cn(
-                              "flex w-full cursor-not-allowed items-center gap-2.5 rounded-[12px] border px-3 py-2.5 text-left opacity-70",
+                              "flex w-full items-center gap-2.5 rounded-[12px] border px-3 py-2.5 text-left transition disabled:cursor-wait disabled:opacity-70",
                               isLight ? "border-rose-200 bg-rose-50" : "border-rose-400/20 bg-rose-500/[0.07]"
                             )}
-                            title="Disconnect requires an OpenClaw provider removal capability."
+                            onClick={() => {
+                              void disconnectProvider(activeProviderId);
+                            }}
                           >
-                            <Trash2 className={cn("h-4 w-4", isLight ? "text-rose-700" : "text-rose-300")} />
+                            {activeDraft.flowState === "disconnecting" ? (
+                              <LoaderCircle className={cn("h-4 w-4 animate-spin", isLight ? "text-rose-700" : "text-rose-300")} />
+                            ) : (
+                              <Trash2 className={cn("h-4 w-4", isLight ? "text-rose-700" : "text-rose-300")} />
+                            )}
                             <span>
-                              <span className={cn("block text-[0.78rem] font-medium", isLight ? "text-rose-800" : "text-rose-200")}>Disconnect</span>
-                              <span className={cn("block text-[0.66rem]", isLight ? "text-rose-700" : "text-rose-300/80")}>Remove this provider</span>
+                              <span className={cn("block text-[0.78rem] font-medium", isLight ? "text-rose-800" : "text-rose-200")}>
+                                {activeDraft.flowState === "disconnecting" ? "Disconnecting..." : "Disconnect"}
+                              </span>
+                              <span className={cn("block text-[0.66rem]", isLight ? "text-rose-700" : "text-rose-300/80")}>Remove provider models and safely reassign agents</span>
                             </span>
                           </button>
                         </div>

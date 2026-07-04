@@ -486,6 +486,60 @@ export async function removeOpenClawConfiguredModelFromConfig(
   };
 }
 
+export async function removeOpenClawProviderConfiguration(provider: AddModelsProviderId) {
+  const adapter = getOpenClawAdapter();
+  const configProvider = resolveProviderConfigId(provider);
+  let providerConfigRemoved = false;
+  let authMetadataRemoved = 0;
+
+  if (provider !== "openai-codex") {
+    const providerConfig = await adapter.getConfig<OpenClawProviderModelsEntry>(
+      `models.providers.${configProvider}`,
+      { timeoutMs: 5_000 }
+    ).catch(() => null);
+
+    if (providerConfig) {
+      await adapter.unsetConfig(`models.providers.${configProvider}`, { timeoutMs: 5_000 });
+      providerConfigRemoved = true;
+    }
+  }
+
+  const authProfiles = await adapter.getConfig<Record<string, { provider?: string }>>(
+    "auth.profiles",
+    { timeoutMs: 5_000 }
+  ).catch(() => null);
+
+  for (const [profileId, profile] of Object.entries(authProfiles ?? {})) {
+    if (!providerAuthEntryMatchesAddModelsProvider(profile, provider)) {
+      continue;
+    }
+
+    await adapter.unsetConfig(buildQuotedConfigKeyPath("auth.profiles", profileId), { timeoutMs: 5_000 });
+    authMetadataRemoved += 1;
+  }
+
+  return {
+    providerConfigRemoved,
+    authMetadataRemoved,
+    credentialCleanup: resolveProviderCredentialCleanup(provider, providerConfigRemoved)
+  };
+}
+
+function resolveProviderCredentialCleanup(
+  provider: AddModelsProviderId,
+  providerConfigRemoved: boolean
+): "removed" | "not-required" | "retained-unsupported" {
+  if (provider === "ollama") {
+    return "not-required";
+  }
+
+  if (!isBuiltInAddModelsProviderId(provider) || (provider === "openai" && providerConfigRemoved)) {
+    return "removed";
+  }
+
+  return "retained-unsupported";
+}
+
 export async function ensureOpenClawModelRuntimeConfig(
   modelId: string,
   options: { provider?: AddModelsProviderId | null } = {}

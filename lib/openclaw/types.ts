@@ -1356,6 +1356,7 @@ export type AddModelsProviderConnectKind = "oauth" | "apiKey" | "local";
 export type AddModelsFlowState =
   | "idle"
   | "connecting"
+  | "disconnecting"
   | "auth-error"
   | "discovery-loading"
   | "discovery-success"
@@ -1402,7 +1403,24 @@ export type AddModelsProviderAction =
   | "discover"
   | "add-models"
   | "set-default"
-  | "remove-model";
+  | "remove-model"
+  | "disconnect-impact"
+  | "disconnect";
+
+export interface AddModelsProviderDisconnectImpact {
+  providerModelIds: string[];
+  affectedAgents: Array<{
+    id: string;
+    name: string;
+    modelId: string;
+  }>;
+  activeAgentIds: string[];
+  defaultModelAffected: boolean;
+  currentDefaultModelId: string | null;
+  replacementModelId: string | null;
+  blockedReason: string | null;
+  credentialCleanup: "removed" | "not-required" | "retained-unsupported";
+}
 
 export type AddModelsProviderActionRequest =
   | {
@@ -1441,6 +1459,15 @@ export type AddModelsProviderActionRequest =
       action: "remove-model";
       provider: AddModelsProviderId;
       modelId: string;
+    }
+  | {
+      action: "disconnect-impact";
+      provider: AddModelsProviderId;
+    }
+  | {
+      action: "disconnect";
+      provider: AddModelsProviderId;
+      confirmed: true;
     };
 
 export interface AddModelsProviderActionResult {
@@ -1458,6 +1485,7 @@ export interface AddModelsProviderActionResult {
     provider: AddModelsProviderId;
     via: "gateway" | "legacy-file";
   };
+  disconnectImpact?: AddModelsProviderDisconnectImpact;
   snapshot?: MissionControlSnapshot;
 }
 

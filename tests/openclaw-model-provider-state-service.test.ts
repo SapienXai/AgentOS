@@ -130,7 +130,13 @@ test("custom provider connect writes an explicit OpenClaw provider and namespace
   } as unknown as OpenClawAdapter);
 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    fetchUrl = String(input);
+    const requestUrl = String(input);
+
+    if (requestUrl === "http://127.0.0.1:18789/readyz") {
+      return new Response("ok", { status: 200 });
+    }
+
+    fetchUrl = requestUrl;
     authHeader = String(init?.headers instanceof Headers
       ? init.headers.get("Authorization")
       : (init?.headers as Record<string, string> | undefined)?.Authorization ?? "");
