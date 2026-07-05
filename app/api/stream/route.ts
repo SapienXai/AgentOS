@@ -133,7 +133,7 @@ export async function GET(request: Request) {
                 .catch(() => false),
           import("@/lib/openclaw/state/local-model-status")
             .then(({ probeLocalDefaultModel }) => probeLocalDefaultModel())
-            .catch(() => ({ checked: false, defaultModelId: null }))
+            .catch(() => ({ checked: false, defaultModelId: null, modelIds: [] as string[] }))
         ]);
         cliInstalled = detectedCliInstalled;
         const gatewayReady = gatewayStatus?.rpc?.ok === true;
