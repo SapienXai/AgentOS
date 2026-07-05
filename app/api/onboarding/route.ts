@@ -553,6 +553,7 @@ export async function POST(request: Request) {
         try {
           const verificationGatewayStatus = await readGatewayStatus(openClawBin).catch(() => gatewayStatus);
           snapshot = await waitForReadySnapshotWithGatewayAuthDetection(openClawBin, verificationGatewayStatus, {
+            initialSnapshot: snapshot,
             onWaiting: async (message) => {
               await send({
                 type: "status",
@@ -648,7 +649,7 @@ export async function POST(request: Request) {
           agentId: runtimeAgentId
         });
 
-        snapshot = await loadSnapshot(true);
+        snapshot = await loadSnapshot();
       } catch (error) {
         aggregatedStderr = aggregatedStderr
           ? `${aggregatedStderr}\n${redactErrorMessage(error, "Runtime state verification failed.")}`
@@ -942,13 +943,14 @@ async function waitForReadySnapshot(
   gatewayStatus?: GatewayStatusPayload | null,
   options: {
     timeoutMs?: number;
+    initialSnapshot?: MissionControlSnapshot | null;
     onWaiting?: (message: string) => Promise<void> | void;
   } = {}
 ) {
   const startedAt = Date.now();
   const timeoutMs = options.timeoutMs ?? readyTimeoutMs;
   const gatewayPort = gatewayStatus?.gateway?.port;
-  let latestSnapshot: MissionControlSnapshot | null = null;
+  let latestSnapshot: MissionControlSnapshot | null = options.initialSnapshot ?? null;
   let lastSnapshotAt = 0;
   let lastStatusAt = 0;
 
@@ -964,15 +966,20 @@ async function waitForReadySnapshot(
   };
 
   if ((await probeLocalGatewayStatus(gatewayPort))?.rpc?.ok) {
+    if (latestSnapshot) {
+      return latestSnapshot;
+    }
+
     const readySnapshot = await loadReadinessSnapshot();
 
-    if (readySnapshot) {
-      return readySnapshot;
-    }
+    return readySnapshot ?? latestSnapshot!;
   }
 
   while (Date.now() - startedAt < timeoutMs) {
     const localProbe = await probeLocalGatewayStatus(gatewayPort);
+    if (localProbe?.rpc?.ok && latestSnapshot) {
+      return latestSnapshot;
+    }
     const gatewayCanServeReadiness =
       localProbe?.rpc?.ok === true ||
       (localProbe?.service?.loaded === true && localProbe.rpc?.ok === undefined);
@@ -1003,6 +1010,7 @@ async function waitForReadySnapshotWithGatewayAuthDetection(
   openClawBin: string,
   gatewayStatus: GatewayStatusPayload | null | undefined,
   options: {
+    initialSnapshot?: MissionControlSnapshot | null;
     onWaiting?: (message: string) => Promise<void> | void;
   } = {}
 ) {
@@ -1015,6 +1023,7 @@ async function waitForReadySnapshotWithGatewayAuthDetection(
 
     try {
       return await waitForReadySnapshot(latestGatewayStatus, {
+        initialSnapshot: options.initialSnapshot,
         timeoutMs: Math.min(Math.max(remainingMs, 1), readyStatusIntervalMs + 1_000),
         onWaiting: options.onWaiting
       });
