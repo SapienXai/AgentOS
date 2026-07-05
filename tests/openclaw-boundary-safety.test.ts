@@ -823,6 +823,8 @@ test("readiness polling does not load full snapshots before Gateway is reachable
 
   assert.doesNotMatch(body, /const immediateSnapshot = await loadReadinessSnapshot/);
   assert.match(body, /gatewayCanServeReadiness &&/);
+  assert.match(body, /if \(localProbe\?\.rpc\?\.ok && latestSnapshot\) \{\s*return latestSnapshot;/);
+  assert.match(source, /initialSnapshot: snapshot/);
 });
 
 test("system setup action shows a loader until lightweight status resolves", () => {
