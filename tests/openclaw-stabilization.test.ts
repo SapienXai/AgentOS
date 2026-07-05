@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { normalizeControlPlaneSnapshot } from "@/lib/agentos/acl/openclaw";
 import { mergeOllamaCatalogModels, parseOllamaListModelNames } from "@/lib/openclaw/domains/model-provider-catalog";
 import { getOpenClawBinCandidates, parseOpenClawVersion } from "@/lib/openclaw/cli";
+import { probeLocalGatewayRegistration } from "@/lib/openclaw/client/local-gateway-probe";
 import {
   getOpenClawBundledNodeBinPath,
   ensureOpenClawLocalBinOnPath,
@@ -991,6 +992,23 @@ test("lightweight registration status completes the Gateway service step while s
   assert.equal(steps.find((step) => step.id === "gateway")?.state, "complete");
   assert.equal(steps.find((step) => step.id === "gateway")?.description, "Gateway is already registered.");
   assert.equal(steps.find((step) => step.id === "runtime")?.state, "current");
+});
+
+test("macOS lightweight registration probe detects the OpenClaw LaunchAgent", async () => {
+  const homeDir = await mkdtemp(path.join(os.tmpdir(), "agentos-macos-gateway-"));
+  const launchAgentsDir = path.join(homeDir, "Library", "LaunchAgents");
+  await mkdir(launchAgentsDir, { recursive: true });
+
+  assert.equal(
+    await probeLocalGatewayRegistration({ platform: "darwin", homeDir, env: {} }),
+    false
+  );
+
+  await writeFile(path.join(launchAgentsDir, "ai.openclaw.gateway.plist"), "<plist />", "utf8");
+  assert.equal(
+    await probeLocalGatewayRegistration({ platform: "darwin", homeDir, env: {} }),
+    true
+  );
 });
 
 test("system setup CTA follows the active step", () => {
