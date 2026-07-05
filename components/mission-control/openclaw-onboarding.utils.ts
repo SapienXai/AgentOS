@@ -155,6 +155,28 @@ export function buildSystemSteps(
   ] as Array<{ id: string; label: string; description: string; state: StepState }>;
 }
 
+export function resolveSystemStepActionLabel(
+  steps: Array<{ id: string; state: StepState }>,
+  fallback: string
+) {
+  const activeStep = steps.find((step) => step.state === "current")
+    ?? steps.find((step) => step.state === "pending");
+
+  if (activeStep?.id === "cli") {
+    return "Install OpenClaw";
+  }
+
+  if (activeStep?.id === "gateway") {
+    return "Prepare local gateway";
+  }
+
+  if (activeStep?.id === "runtime") {
+    return "Start OpenClaw";
+  }
+
+  return fallback;
+}
+
 function resolveSystemStepDescription(
   stepId: SystemStepId,
   snapshot: MissionControlSnapshot,
