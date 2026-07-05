@@ -24,6 +24,7 @@ export async function GET(request: Request) {
   let closed = false;
   let snapshotTask: Promise<void> | null = null;
   let cliInstalled: boolean | null = null;
+  let runtimeWritable: boolean | null = null;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -132,10 +133,28 @@ export async function GET(request: Request) {
                 .catch(() => false)
         ]);
         cliInstalled = detectedCliInstalled;
+        const gatewayReady = gatewayStatus?.rpc?.ok === true;
+
+        if (gatewayReady && runtimeWritable !== true) {
+          runtimeWritable = await Promise.all([
+            import("@/lib/openclaw/state/runtime-state"),
+            import("@/lib/openclaw/state/paths")
+          ]).then(async ([runtimeState, statePaths]) => {
+            const result = await runtimeState.inspectOpenClawRuntimeState(
+              statePaths.openClawStateRootPath,
+              [],
+              { touch: true }
+            );
+            return result.stateWritable && result.sessionStoreWritable;
+          }).catch(() => false);
+        }
+
         sendEvent("system-status", {
           gatewayReachable: Boolean(gatewayStatus),
+          gatewayReady,
           gatewayRegistered,
-          cliInstalled
+          cliInstalled,
+          runtimeWritable
         });
       };
 
