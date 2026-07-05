@@ -830,6 +830,15 @@ test("readiness polling does not load full snapshots before Gateway is reachable
   assert.doesNotMatch(source, /exceeded 60 seconds/);
 });
 
+test("Windows setup starts a registered Gateway task before falling back to the OpenClaw CLI", () => {
+  const source = readFileSync(path.join(rootDir, "app/api/onboarding/route.ts"), "utf8");
+  const directStart = source.indexOf("await startRegisteredWindowsGateway(send)");
+  const cliStart = source.indexOf('await runCommand(openClawBin, ["gateway", "start", "--json"]', directStart);
+
+  assert.equal(directStart >= 0 && cliStart > directStart, true);
+  assert.match(source, /runCommand\(executable, \["\/Run", "\/TN", taskName\]/);
+});
+
 test("system setup action shows a loader until lightweight status resolves", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding.tsx"), "utf8");
 
