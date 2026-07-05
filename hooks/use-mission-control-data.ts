@@ -44,6 +44,10 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
   const [gatewayRegistered, setGatewayRegistered] = useState<boolean | null>(null);
   const [gatewayReady, setGatewayReady] = useState<boolean | null>(null);
   const [runtimeWritable, setRuntimeWritable] = useState<boolean | null>(null);
+  const [localModelStatus, setLocalModelStatus] = useState<{ checked: boolean; defaultModelId: string | null }>({
+    checked: false,
+    defaultModelId: null
+  });
   const [cliInstalled, setCliInstalled] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -67,12 +71,16 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
         gatewayRegistered?: boolean | null;
         cliInstalled?: boolean;
         runtimeWritable?: boolean | null;
+        modelStatus?: { checked?: boolean; defaultModelId?: string | null };
       };
       setGatewayReachable(status.gatewayReachable === true);
       setGatewayRegistered((current) => preserveConfirmedStatus(current, status.gatewayRegistered ?? null));
       setGatewayReady((current) => preserveConfirmedStatus(current, status.gatewayReady === true));
       setCliInstalled(status.cliInstalled === true);
       setRuntimeWritable((current) => preserveConfirmedStatus(current, status.runtimeWritable ?? null));
+      if (status.modelStatus?.checked) {
+        setLocalModelStatus({ checked: true, defaultModelId: status.modelStatus.defaultModelId ?? null });
+      }
     });
 
     source.addEventListener("error", () => {
@@ -122,6 +130,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
     gatewayRegistered,
     gatewayReady,
     runtimeWritable,
+    localModelStatus,
     cliInstalled,
     refresh,
     refreshSnapshot,
