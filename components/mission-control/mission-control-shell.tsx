@@ -1417,20 +1417,32 @@ export function MissionControlShell({
   }, []);
 
   const refreshOnboardingModelSnapshot = useCallback(async (fallbackSnapshot?: MissionControlSnapshot | null) => {
-    let nextSnapshot = fallbackSnapshot ?? null;
+    const immediateSnapshot = fallbackSnapshot ?? null;
+
+    if (immediateSnapshot) {
+      setSnapshot(immediateSnapshot);
+      hydrateOnboardingModelSelection(immediateSnapshot);
+
+      void refreshSnapshot({ force: true })
+        .then((refreshedSnapshot) => {
+          setSnapshot(refreshedSnapshot);
+          hydrateOnboardingModelSelection(refreshedSnapshot);
+        })
+        .catch(() => {
+          // The lightweight stream will continue refreshing model state.
+        });
+
+      return immediateSnapshot;
+    }
 
     try {
-      nextSnapshot = await refreshSnapshot({ force: true });
+      const refreshedSnapshot = await refreshSnapshot({ force: true });
+      setSnapshot(refreshedSnapshot);
+      hydrateOnboardingModelSelection(refreshedSnapshot);
+      return refreshedSnapshot;
     } catch {
-      // Keep the streamed system snapshot if the full refresh is unavailable.
+      return null;
     }
-
-    if (nextSnapshot) {
-      setSnapshot(nextSnapshot);
-      hydrateOnboardingModelSelection(nextSnapshot);
-    }
-
-    return nextSnapshot;
   }, [
     hydrateOnboardingModelSelection,
     refreshSnapshot,
