@@ -4,7 +4,10 @@ import {
   subscribeOpenClawEventBridgeEvents
 } from "@/lib/openclaw/application/event-bridge-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
-import { probeLocalGatewayStatus } from "@/lib/openclaw/client/local-gateway-probe";
+import {
+  probeLocalGatewayRegistration,
+  probeLocalGatewayStatus
+} from "@/lib/openclaw/client/local-gateway-probe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -119,8 +122,9 @@ export async function GET(request: Request) {
       };
 
       const sendSystemStatus = async () => {
-        const [gatewayStatus, detectedCliInstalled] = await Promise.all([
+        const [gatewayStatus, gatewayRegistered, detectedCliInstalled] = await Promise.all([
           probeLocalGatewayStatus().catch(() => null),
+          probeLocalGatewayRegistration().catch(() => null),
           cliInstalled === true
             ? Promise.resolve(true)
             : import("@/lib/openclaw/cli")
@@ -130,6 +134,7 @@ export async function GET(request: Request) {
         cliInstalled = detectedCliInstalled;
         sendEvent("system-status", {
           gatewayReachable: Boolean(gatewayStatus),
+          gatewayRegistered,
           cliInstalled
         });
       };
