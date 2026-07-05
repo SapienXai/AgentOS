@@ -14,12 +14,25 @@ export async function probeLocalDefaultModel(options: {
 
   try {
     const config = JSON.parse(await readFile(path.join(stateRoot, "openclaw.json"), "utf8")) as {
-      agents?: { defaults?: { model?: string | { primary?: string } } };
+      agents?: {
+        defaults?: {
+          model?: string | { primary?: string };
+          models?: Record<string, unknown>;
+        };
+      };
     };
     const model = config.agents?.defaults?.model;
     const defaultModelId = typeof model === "string" ? model.trim() : model?.primary?.trim();
-    return { checked: true, defaultModelId: defaultModelId || null };
+    const configuredModelIds = config.agents?.defaults?.models
+      && typeof config.agents.defaults.models === "object"
+      && !Array.isArray(config.agents.defaults.models)
+      ? Object.keys(config.agents.defaults.models)
+      : [];
+    const modelIds = Array.from(
+      new Set([defaultModelId, ...configuredModelIds].map((modelId) => modelId?.trim()).filter(Boolean))
+    ) as string[];
+    return { checked: true, defaultModelId: defaultModelId || null, modelIds };
   } catch {
-    return { checked: true, defaultModelId: null };
+    return { checked: true, defaultModelId: null, modelIds: [] as string[] };
   }
 }
