@@ -1,7 +1,9 @@
 import "server-only";
 
 import { spawn } from "node:child_process";
+import { access } from "node:fs/promises";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 
 import type { GatewayStatusPayload } from "@/lib/openclaw/client/gateway-client";
@@ -46,15 +48,36 @@ export async function probeLocalGatewayStatus(port = 18789): Promise<GatewayStat
   };
 }
 
-export async function probeLocalGatewayRegistration(): Promise<boolean | null> {
-  if (process.platform !== "win32") {
+export async function probeLocalGatewayRegistration(options: {
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+  homeDir?: string;
+} = {}): Promise<boolean | null> {
+  const platform = options.platform ?? process.platform;
+  const env = options.env ?? process.env;
+
+  if (platform === "darwin") {
+    const profile = env.OPENCLAW_PROFILE?.trim();
+    const label = env.OPENCLAW_LAUNCHD_LABEL?.trim()
+      || (!profile || profile.toLowerCase() === "default" ? "ai.openclaw.gateway" : `ai.openclaw.${profile}`);
+    const plistPath = path.join(options.homeDir ?? os.homedir(), "Library", "LaunchAgents", `${label}.plist`);
+
+    try {
+      await access(plistPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  if (platform !== "win32") {
     return null;
   }
 
-  const executable = process.env.SystemRoot
-    ? path.join(process.env.SystemRoot, "System32", "schtasks.exe")
+  const executable = env.SystemRoot
+    ? path.join(env.SystemRoot, "System32", "schtasks.exe")
     : "schtasks.exe";
-  const taskName = process.env.OPENCLAW_WINDOWS_TASK_NAME?.trim() || "OpenClaw Gateway";
+  const taskName = env.OPENCLAW_WINDOWS_TASK_NAME?.trim() || "OpenClaw Gateway";
 
   return await new Promise<boolean>((resolve) => {
     let child;
