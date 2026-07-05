@@ -58,6 +58,8 @@ export function buildSystemSteps(
     cliInstalled?: boolean | null;
     gatewayReachable?: boolean | null;
     gatewayRegistered?: boolean | null;
+    gatewayReady?: boolean | null;
+    runtimeWritable?: boolean | null;
     suppressGatewaySnapshot?: boolean;
   } = {}
 ) {
@@ -86,8 +88,12 @@ export function buildSystemSteps(
     phase === "starting-gateway" ||
     phase === "verifying" ||
     phase === "ready";
-  const liveComplete = (!forcePending && snapshot.diagnostics.rpcOk) || phase === "ready";
+  const liveComplete =
+    options.gatewayReady === true ||
+    (!forcePending && snapshot.diagnostics.rpcOk) ||
+    phase === "ready";
   const runtimeStateComplete =
+    options.runtimeWritable === true ||
     (!forcePending && snapshot.diagnostics.runtime.stateWritable && snapshot.diagnostics.runtime.sessionStoreWritable) ||
     phase === "ready";
   const runtimeReady = liveComplete && runtimeStateComplete;
