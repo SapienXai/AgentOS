@@ -988,6 +988,7 @@ test("lightweight registration status completes the Gateway service step while s
   });
 
   assert.equal(steps.find((step) => step.id === "gateway")?.state, "complete");
+  assert.equal(steps.find((step) => step.id === "gateway")?.description, "Gateway is already registered.");
   assert.equal(steps.find((step) => step.id === "runtime")?.state, "current");
 });
 
