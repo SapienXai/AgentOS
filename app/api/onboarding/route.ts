@@ -64,8 +64,8 @@ const onboardingSchema = z.object({
 const docsUrl = OPENCLAW_INSTALL_DOCS_URL;
 const commandTimeoutMs = 10 * 60 * 1000;
 const gatewayStatusTimeoutMs = 3_000;
-const readyTimeoutMs = 60_000;
-const postAuthRepairReadyTimeoutMs = 90_000;
+const readyTimeoutMs = 180_000;
+const postAuthRepairReadyTimeoutMs = 180_000;
 const readyPollIntervalMs = 250;
 const readySnapshotIntervalMs = 2_000;
 const readyStatusIntervalMs = 5_000;
@@ -1037,7 +1037,11 @@ async function waitForReadySnapshotWithGatewayAuthDetection(
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error("Readiness check exceeded 60 seconds.");
+  throw new Error(
+    `Readiness check exceeded ${Math.round(readyTimeoutMs / 1000)} seconds.${
+      lastError instanceof Error ? ` Last probe: ${lastError.message}` : ""
+    }`
+  );
 }
 
 class GatewayAuthStatusIssueError extends Error {
