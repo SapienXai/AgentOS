@@ -29,6 +29,7 @@ import {
   resolveModelPhaseLabel,
   resolvePrimaryAction,
   resolveStageDescription,
+  resolveSystemStepActionLabel,
   resolveSystemPhaseLabel,
   type StageRunDetails,
   type SurfaceTheme,
@@ -191,11 +192,7 @@ export function OpenClawOnboarding({
     (activeWizardStage === "models" && discoveredModels.length > 0);
 
   const effectiveSystemActionLabel = !onboardingSystemReady
-    ? cliInstalled === false
-      ? "Install OpenClaw"
-      : cliInstalled === true && gatewayReachable !== true
-        ? "Prepare local gateway"
-        : systemActionLabel
+    ? resolveSystemStepActionLabel(systemSteps, systemActionLabel)
     : systemActionLabel;
   const primaryAction = resolvePrimaryAction({
     stage: activeWizardStage,
