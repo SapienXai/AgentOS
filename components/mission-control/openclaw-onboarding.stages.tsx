@@ -272,16 +272,39 @@ export function ModelStage({
   modelPhase: OpenClawModelOnboardingPhase | null;
   selectedModelId: string;
   modelSwitchFeedback: ModelSwitchFeedback;
-  localModelStatus?: { checked: boolean; defaultModelId: string | null };
+  localModelStatus?: { checked: boolean; defaultModelId: string | null; modelIds: string[] };
   onSelectedModelIdChange: (value: string) => void;
   onClearModelSwitchFeedback: () => void;
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(true);
+  const effectiveSnapshot = useMemo(() => {
+    if (!localModelStatus?.checked || localModelStatus.modelIds.length === 0) {
+      return snapshot;
+    }
+
+    const existingIds = new Set(snapshot.models.map((model) => model.id));
+    const localModels = localModelStatus.modelIds
+      .filter((modelId) => !existingIds.has(modelId))
+      .map((modelId) => ({
+        id: modelId,
+        name: modelId.split("/").at(-1) || modelId,
+        provider: modelId.includes("/") ? modelId.split("/")[0] : "unknown",
+        input: "text",
+        contextWindow: null,
+        local: null,
+        available: true,
+        missing: false,
+        tags: [] as string[],
+        usageCount: 0
+      }));
+
+    return localModels.length > 0 ? { ...snapshot, models: [...snapshot.models, ...localModels] } : snapshot;
+  }, [localModelStatus, snapshot]);
   const availableModels = useMemo(
-    () => snapshot.models.filter((model) => model.available !== false && !model.missing),
-    [snapshot.models]
+    () => effectiveSnapshot.models.filter((model) => model.available !== false && !model.missing),
+    [effectiveSnapshot.models]
   );
   const selectedModelLabel = useMemo(
     () => resolveSelectedModelLabel(selectedModelId, availableModels),
@@ -354,7 +377,7 @@ export function ModelStage({
           />
 
           <OpenClawOnboardingProviderFlow
-            snapshot={snapshot}
+            snapshot={effectiveSnapshot}
             surfaceTheme={surfaceTheme}
             selectedModelId={selectedModelId}
             onSelectedModelIdChange={onSelectedModelIdChange}
