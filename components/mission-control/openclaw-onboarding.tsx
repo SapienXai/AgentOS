@@ -58,6 +58,7 @@ export function OpenClawOnboarding({
   gatewayRegistered,
   gatewayReady,
   runtimeWritable,
+  localModelStatus,
   cliInstalled,
   showReadyState,
   systemActionLabel,
@@ -95,6 +96,7 @@ export function OpenClawOnboarding({
   gatewayRegistered?: boolean | null;
   gatewayReady?: boolean | null;
   runtimeWritable?: boolean | null;
+  localModelStatus?: { checked: boolean; defaultModelId: string | null };
   cliInstalled?: boolean | null;
   showReadyState: boolean;
   systemActionLabel: string;
@@ -325,6 +327,7 @@ export function OpenClawOnboarding({
                 modelPhase={modelPhase}
                 selectedModelId={selectedModelId}
                 modelSwitchFeedback={modelSwitchFeedback}
+                localModelStatus={localModelStatus}
                 onSelectedModelIdChange={onSelectedModelIdChange}
                 onClearModelSwitchFeedback={onClearModelSwitchFeedback}
                 onOpenAddModels={onOpenAddModels}
