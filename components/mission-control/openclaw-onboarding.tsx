@@ -54,6 +54,7 @@ export function OpenClawOnboarding({
   systemSetupRequired,
   systemStatusChecking,
   gatewayReachable,
+  gatewayRegistered,
   cliInstalled,
   showReadyState,
   systemActionLabel,
@@ -88,6 +89,7 @@ export function OpenClawOnboarding({
   systemSetupRequired?: boolean;
   systemStatusChecking?: boolean;
   gatewayReachable?: boolean | null;
+  gatewayRegistered?: boolean | null;
   cliInstalled?: boolean | null;
   showReadyState: boolean;
   systemActionLabel: string;
@@ -157,6 +159,7 @@ export function OpenClawOnboarding({
     forcePending: systemSetupRequired || systemRun.runState === "running",
     suppressGatewaySnapshot: systemStatusChecking,
     gatewayReachable,
+    gatewayRegistered,
     cliInstalled
   });
   const availableModels = snapshot.models.filter((model) => model.available !== false && !model.missing);
@@ -205,7 +208,7 @@ export function OpenClawOnboarding({
   const isPrimaryActionResolving =
     visualStage === "system" &&
     !onboardingSystemReady &&
-    (cliInstalled == null || gatewayReachable == null);
+    (cliInstalled == null || (gatewayReachable == null && gatewayRegistered == null));
   const completedProgressUnits =
     systemSteps.filter((step) => step.state === "complete").length +
     (onboardingModelReady ? 1 : 0) +
