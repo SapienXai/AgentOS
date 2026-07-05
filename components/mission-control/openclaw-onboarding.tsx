@@ -96,7 +96,7 @@ export function OpenClawOnboarding({
   gatewayRegistered?: boolean | null;
   gatewayReady?: boolean | null;
   runtimeWritable?: boolean | null;
-  localModelStatus?: { checked: boolean; defaultModelId: string | null };
+  localModelStatus?: { checked: boolean; defaultModelId: string | null; modelIds: string[] };
   cliInstalled?: boolean | null;
   showReadyState: boolean;
   systemActionLabel: string;
