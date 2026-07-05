@@ -57,6 +57,7 @@ export function buildSystemSteps(
     forcePending?: boolean;
     cliInstalled?: boolean | null;
     gatewayReachable?: boolean | null;
+    gatewayRegistered?: boolean | null;
     suppressGatewaySnapshot?: boolean;
   } = {}
 ) {
@@ -78,6 +79,7 @@ export function buildSystemSteps(
     phase === "verifying" ||
     phase === "ready";
   const gatewayComplete =
+    options.gatewayRegistered === true ||
     options.gatewayReachable === true ||
     (!gatewayProbeResolved && !options.suppressGatewaySnapshot && !forcePending && snapshot.diagnostics.loaded) ||
     directGatewayRun ||
