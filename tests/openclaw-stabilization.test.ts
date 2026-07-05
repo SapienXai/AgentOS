@@ -80,7 +80,7 @@ import {
   resolvePrimaryAction,
   resolveSelectedOnboardingProviderId
 } from "@/components/mission-control/openclaw-onboarding.utils";
-import { isNewerSnapshot } from "@/hooks/use-mission-control-data";
+import { isNewerSnapshot, preserveConfirmedStatus } from "@/hooks/use-mission-control-data";
 import {
   resolveModelOnboardingActionCopy,
   resolveModelOnboardingStartPhase
@@ -1051,6 +1051,13 @@ test("starting OpenClaw preserves completed CLI and Gateway steps", () => {
   assert.equal(steps.find((step) => step.id === "cli")?.state, "complete");
   assert.equal(steps.find((step) => step.id === "gateway")?.state, "complete");
   assert.equal(steps.find((step) => step.id === "runtime")?.state, "current");
+});
+
+test("confirmed Gateway registration does not flicker during restart probes", () => {
+  assert.equal(preserveConfirmedStatus(null, true), true);
+  assert.equal(preserveConfirmedStatus(true, false), true);
+  assert.equal(preserveConfirmedStatus(true, null), true);
+  assert.equal(preserveConfirmedStatus(null, false), false);
 });
 
 test("onboarding treats canonical OpenAI model refs as ChatGPT when Codex auth owns the route", () => {
