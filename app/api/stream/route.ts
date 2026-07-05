@@ -123,14 +123,17 @@ export async function GET(request: Request) {
       };
 
       const sendSystemStatus = async () => {
-        const [gatewayStatus, gatewayRegistered, detectedCliInstalled] = await Promise.all([
+        const [gatewayStatus, gatewayRegistered, detectedCliInstalled, modelStatus] = await Promise.all([
           probeLocalGatewayStatus().catch(() => null),
           probeLocalGatewayRegistration().catch(() => null),
           cliInstalled === true
             ? Promise.resolve(true)
             : import("@/lib/openclaw/cli")
                 .then(({ resolveOpenClawBin }) => resolveOpenClawBin().then(() => true).catch(() => false))
-                .catch(() => false)
+                .catch(() => false),
+          import("@/lib/openclaw/state/local-model-status")
+            .then(({ probeLocalDefaultModel }) => probeLocalDefaultModel())
+            .catch(() => ({ checked: false, defaultModelId: null }))
         ]);
         cliInstalled = detectedCliInstalled;
         const gatewayReady = gatewayStatus?.rpc?.ok === true;
@@ -154,7 +157,8 @@ export async function GET(request: Request) {
           gatewayReady,
           gatewayRegistered,
           cliInstalled,
-          runtimeWritable
+          runtimeWritable,
+          modelStatus
         });
       };
 
