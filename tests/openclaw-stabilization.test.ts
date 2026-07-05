@@ -73,6 +73,7 @@ import { inferSessionKindFromCatalogEntry } from "@/lib/openclaw/domains/session
 import {
   buildSystemSteps,
   resolveEffectiveWizardStage,
+  resolveSystemStepActionLabel,
   resolveInitialOnboardingProviderId,
   resolveOnboardingModelProviderId,
   resolvePrimaryAction,
@@ -990,6 +991,27 @@ test("lightweight registration status completes the Gateway service step while s
   assert.equal(steps.find((step) => step.id === "gateway")?.state, "complete");
   assert.equal(steps.find((step) => step.id === "gateway")?.description, "Gateway is already registered.");
   assert.equal(steps.find((step) => step.id === "runtime")?.state, "current");
+});
+
+test("system setup CTA follows the active step", () => {
+  assert.equal(
+    resolveSystemStepActionLabel([{ id: "cli", state: "current" }], "Continue"),
+    "Install OpenClaw"
+  );
+  assert.equal(
+    resolveSystemStepActionLabel([
+      { id: "cli", state: "complete" },
+      { id: "gateway", state: "current" }
+    ], "Continue"),
+    "Prepare local gateway"
+  );
+  assert.equal(
+    resolveSystemStepActionLabel([
+      { id: "gateway", state: "complete" },
+      { id: "runtime", state: "current" }
+    ], "Continue"),
+    "Start OpenClaw"
+  );
 });
 
 test("onboarding treats canonical OpenAI model refs as ChatGPT when Codex auth owns the route", () => {
