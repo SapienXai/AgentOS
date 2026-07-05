@@ -971,18 +971,14 @@ async function waitForReadySnapshot(
     }
   }
 
-  const immediateSnapshot = await loadReadinessSnapshot();
-
-  if (immediateSnapshot) {
-    return immediateSnapshot;
-  }
-
   while (Date.now() - startedAt < timeoutMs) {
     const localProbe = await probeLocalGatewayStatus(gatewayPort);
+    const gatewayCanServeReadiness =
+      localProbe?.rpc?.ok === true ||
+      (localProbe?.service?.loaded === true && localProbe.rpc?.ok === undefined);
     const shouldReloadSnapshot =
-      Boolean(localProbe?.rpc?.ok) ||
-      !latestSnapshot ||
-      Date.now() - lastSnapshotAt >= readySnapshotIntervalMs;
+      gatewayCanServeReadiness &&
+      (!latestSnapshot || Date.now() - lastSnapshotAt >= readySnapshotIntervalMs);
 
     if (shouldReloadSnapshot) {
       const readySnapshot = await loadReadinessSnapshot();
