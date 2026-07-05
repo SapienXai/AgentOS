@@ -815,6 +815,16 @@ test("system setup starts Gateway before requesting a full readiness snapshot", 
   assert.match(source, /const gatewayStatusTimeoutMs = 3_000;/);
 });
 
+test("readiness polling does not load full snapshots before Gateway is reachable", () => {
+  const source = readFileSync(path.join(rootDir, "app/api/onboarding/route.ts"), "utf8");
+  const functionStart = source.indexOf("async function waitForReadySnapshot(");
+  const functionEnd = source.indexOf("async function waitForReadySnapshotWithGatewayAuthDetection", functionStart);
+  const body = source.slice(functionStart, functionEnd);
+
+  assert.doesNotMatch(body, /const immediateSnapshot = await loadReadinessSnapshot/);
+  assert.match(body, /gatewayCanServeReadiness &&/);
+});
+
 test("system setup action shows a loader until lightweight status resolves", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding.tsx"), "utf8");
 
