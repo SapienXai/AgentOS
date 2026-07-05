@@ -257,6 +257,7 @@ export function ModelStage({
   modelPhase,
   selectedModelId,
   modelSwitchFeedback,
+  localModelStatus,
   onSelectedModelIdChange,
   onClearModelSwitchFeedback,
   onOpenAddModels,
@@ -271,6 +272,7 @@ export function ModelStage({
   modelPhase: OpenClawModelOnboardingPhase | null;
   selectedModelId: string;
   modelSwitchFeedback: ModelSwitchFeedback;
+  localModelStatus?: { checked: boolean; defaultModelId: string | null };
   onSelectedModelIdChange: (value: string) => void;
   onClearModelSwitchFeedback: () => void;
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
@@ -285,10 +287,11 @@ export function ModelStage({
     () => resolveSelectedModelLabel(selectedModelId, availableModels),
     [availableModels, selectedModelId]
   );
-  const defaultModelId =
-    snapshot.diagnostics.modelReadiness.resolvedDefaultModel ||
-    snapshot.diagnostics.modelReadiness.defaultModel ||
-    null;
+  const defaultModelId = localModelStatus?.checked
+    ? localModelStatus.defaultModelId
+    : snapshot.diagnostics.modelReadiness.resolvedDefaultModel ||
+      snapshot.diagnostics.modelReadiness.defaultModel ||
+      null;
   const modelReady = isOpenClawOnboardingModelReady(snapshot);
   const defaultModelLabel = resolveModelDisplayLabel(defaultModelId, availableModels);
   const switchTargetLabel = resolveModelDisplayLabel(selectedModelId, availableModels);
