@@ -104,7 +104,8 @@ export function buildSystemSteps(
         gatewayComplete,
         liveComplete,
         runtimeReady,
-        forcePending
+        forcePending,
+        options.gatewayRegistered
       ),
       state: resolveStepState(cliComplete, !cliComplete && (phase === "detecting" || phase === "installing-cli"))
     },
@@ -119,7 +120,8 @@ export function buildSystemSteps(
         gatewayComplete,
         liveComplete,
         runtimeReady,
-        forcePending
+        forcePending,
+        options.gatewayRegistered
       ),
       state: resolveStepState(
         gatewayComplete,
@@ -137,7 +139,8 @@ export function buildSystemSteps(
         gatewayComplete,
         liveComplete,
         runtimeReady,
-        forcePending
+        forcePending,
+        options.gatewayRegistered
       ),
       state: resolveStepState(
         runtimeReady,
@@ -160,7 +163,8 @@ function resolveSystemStepDescription(
   gatewayComplete: boolean,
   liveComplete: boolean,
   runtimeReady: boolean,
-  forcePending: boolean
+  forcePending: boolean,
+  gatewayRegistered?: boolean | null
 ) {
   if (stepId === "cli") {
     if (!forcePending && cliComplete) {
@@ -179,7 +183,7 @@ function resolveSystemStepDescription(
   }
 
   if (stepId === "gateway") {
-    if (!forcePending && snapshot.diagnostics.loaded) {
+    if (gatewayRegistered === true || (!forcePending && snapshot.diagnostics.loaded)) {
       return "Gateway is already registered.";
     }
 
