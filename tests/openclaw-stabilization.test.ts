@@ -8,6 +8,7 @@ import { normalizeControlPlaneSnapshot } from "@/lib/agentos/acl/openclaw";
 import { mergeOllamaCatalogModels, parseOllamaListModelNames } from "@/lib/openclaw/domains/model-provider-catalog";
 import { getOpenClawBinCandidates, parseOpenClawVersion } from "@/lib/openclaw/cli";
 import { probeLocalGatewayRegistration } from "@/lib/openclaw/client/local-gateway-probe";
+import { probeLocalDefaultModel } from "@/lib/openclaw/state/local-model-status";
 import {
   getOpenClawBundledNodeBinPath,
   ensureOpenClawLocalBinOnPath,
@@ -1000,15 +1001,37 @@ test("macOS lightweight registration probe detects the OpenClaw LaunchAgent", as
   await mkdir(launchAgentsDir, { recursive: true });
 
   assert.equal(
-    await probeLocalGatewayRegistration({ platform: "darwin", homeDir, env: {} }),
+    await probeLocalGatewayRegistration({ platform: "darwin", homeDir, env: { NODE_ENV: "test" } }),
     false
   );
 
   await writeFile(path.join(launchAgentsDir, "ai.openclaw.gateway.plist"), "<plist />", "utf8");
   assert.equal(
-    await probeLocalGatewayRegistration({ platform: "darwin", homeDir, env: {} }),
+    await probeLocalGatewayRegistration({ platform: "darwin", homeDir, env: { NODE_ENV: "test" } }),
     true
   );
+});
+
+test("local model probe reads the configured default without a full snapshot", async () => {
+  const homeDir = await mkdtemp(path.join(os.tmpdir(), "agentos-local-model-"));
+
+  assert.deepEqual(await probeLocalDefaultModel({ homeDir, env: { NODE_ENV: "test" } }), {
+    checked: true,
+    defaultModelId: null
+  });
+
+  const stateDir = path.join(homeDir, ".openclaw");
+  await mkdir(stateDir, { recursive: true });
+  await writeFile(
+    path.join(stateDir, "openclaw.json"),
+    JSON.stringify({ agents: { defaults: { model: { primary: "openai-codex/gpt-5.2" } } } }),
+    "utf8"
+  );
+
+  assert.deepEqual(await probeLocalDefaultModel({ homeDir, env: { NODE_ENV: "test" } }), {
+    checked: true,
+    defaultModelId: "openai-codex/gpt-5.2"
+  });
 });
 
 test("system setup CTA follows the active step", () => {
