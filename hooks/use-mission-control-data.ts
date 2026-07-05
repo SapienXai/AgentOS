@@ -44,9 +44,14 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
   const [gatewayRegistered, setGatewayRegistered] = useState<boolean | null>(null);
   const [gatewayReady, setGatewayReady] = useState<boolean | null>(null);
   const [runtimeWritable, setRuntimeWritable] = useState<boolean | null>(null);
-  const [localModelStatus, setLocalModelStatus] = useState<{ checked: boolean; defaultModelId: string | null }>({
+  const [localModelStatus, setLocalModelStatus] = useState<{
+    checked: boolean;
+    defaultModelId: string | null;
+    modelIds: string[];
+  }>({
     checked: false,
-    defaultModelId: null
+    defaultModelId: null,
+    modelIds: []
   });
   const [cliInstalled, setCliInstalled] = useState<boolean | null>(null);
 
@@ -71,7 +76,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
         gatewayRegistered?: boolean | null;
         cliInstalled?: boolean;
         runtimeWritable?: boolean | null;
-        modelStatus?: { checked?: boolean; defaultModelId?: string | null };
+        modelStatus?: { checked?: boolean; defaultModelId?: string | null; modelIds?: string[] };
       };
       setGatewayReachable(status.gatewayReachable === true);
       setGatewayRegistered((current) => preserveConfirmedStatus(current, status.gatewayRegistered ?? null));
@@ -79,7 +84,11 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
       setCliInstalled(status.cliInstalled === true);
       setRuntimeWritable((current) => preserveConfirmedStatus(current, status.runtimeWritable ?? null));
       if (status.modelStatus?.checked) {
-        setLocalModelStatus({ checked: true, defaultModelId: status.modelStatus.defaultModelId ?? null });
+        setLocalModelStatus({
+          checked: true,
+          defaultModelId: status.modelStatus.defaultModelId ?? null,
+          modelIds: Array.isArray(status.modelStatus.modelIds) ? status.modelStatus.modelIds : []
+        });
       }
     });
 
