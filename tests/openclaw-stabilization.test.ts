@@ -1032,6 +1032,27 @@ test("system setup CTA follows the active step", () => {
   );
 });
 
+test("starting OpenClaw preserves completed CLI and Gateway steps", () => {
+  const snapshot = {
+    diagnostics: {
+      installed: true,
+      loaded: true,
+      rpcOk: false,
+      runtime: { stateWritable: true, sessionStoreWritable: true }
+    }
+  } as unknown as MissionControlSnapshot;
+
+  const steps = buildSystemSteps(snapshot, "detecting", {
+    cliInstalled: true,
+    gatewayRegistered: true,
+    gatewayReachable: false
+  });
+
+  assert.equal(steps.find((step) => step.id === "cli")?.state, "complete");
+  assert.equal(steps.find((step) => step.id === "gateway")?.state, "complete");
+  assert.equal(steps.find((step) => step.id === "runtime")?.state, "current");
+});
+
 test("onboarding treats canonical OpenAI model refs as ChatGPT when Codex auth owns the route", () => {
   const snapshot = {
     diagnostics: {
