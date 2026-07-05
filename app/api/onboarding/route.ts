@@ -9,7 +9,10 @@ import { z } from "zod";
 
 import { formatOpenClawCommand, resetOpenClawBinCache, resolveOpenClawBin } from "@/lib/openclaw/cli";
 import { createDefaultOpenClawBinarySelection, writeOpenClawBinarySelection } from "@/lib/openclaw/binary-selection";
-import { probeLocalGatewayStatus } from "@/lib/openclaw/client/local-gateway-probe";
+import {
+  probeLocalGatewayRegistration,
+  probeLocalGatewayStatus
+} from "@/lib/openclaw/client/local-gateway-probe";
 import { resolveLatestPendingDeviceRequestId } from "@/lib/openclaw/client/native-ws-gateway-protocol";
 import { settleAgentConfigFromStateFile } from "@/lib/openclaw/state/agent-config-payload";
 import { openClawStateRootPath } from "@/lib/openclaw/state/paths";
@@ -340,7 +343,9 @@ export async function POST(request: Request) {
           message: "Starting the local gateway service..."
         });
 
-        let gatewayStartResult = await runCommand(openClawBin, ["gateway", "start", "--json"], send);
+        let gatewayStartResult =
+          await startRegisteredWindowsGateway(send)
+          ?? await runCommand(openClawBin, ["gateway", "start", "--json"], send);
         appendOutput(gatewayStartResult);
         const gatewayStartPayload = parseGatewayCommandPayload(gatewayStartResult.stdout);
         const gatewayReportedNotLoaded = gatewayStartPayload?.result === "not-loaded";
@@ -866,6 +871,28 @@ async function installOpenClawCli(
   } catch {
     return null;
   }
+}
+
+async function startRegisteredWindowsGateway(
+  send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>
+): Promise<CommandResult | null> {
+  if (process.platform !== "win32" || !(await probeLocalGatewayRegistration())) {
+    return null;
+  }
+
+  const executable = process.env.SystemRoot
+    ? path.join(process.env.SystemRoot, "System32", "schtasks.exe")
+    : "schtasks.exe";
+  const taskName = process.env.OPENCLAW_WINDOWS_TASK_NAME?.trim() || "OpenClaw Gateway";
+
+  await send({
+    type: "status",
+    phase: "starting-gateway",
+    message: "Starting the registered Windows gateway task..."
+  });
+
+  const result = await runCommand(executable, ["/Run", "/TN", taskName], send, { timeoutMs: 5_000 });
+  return !result.errorMessage && !result.timedOut && result.code === 0 ? result : null;
 }
 
 function resolveWindowsPowerShellExecutable() {
