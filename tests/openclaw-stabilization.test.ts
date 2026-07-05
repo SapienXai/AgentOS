@@ -1053,6 +1053,30 @@ test("starting OpenClaw preserves completed CLI and Gateway steps", () => {
   assert.equal(steps.find((step) => step.id === "runtime")?.state, "current");
 });
 
+test("lightweight RPC and runtime probes complete the Runtime step", () => {
+  const snapshot = {
+    diagnostics: {
+      installed: true,
+      loaded: true,
+      rpcOk: false,
+      runtime: { stateWritable: false, sessionStoreWritable: false }
+    }
+  } as unknown as MissionControlSnapshot;
+
+  const steps = buildSystemSteps(snapshot, "verifying", {
+    cliInstalled: true,
+    gatewayRegistered: true,
+    gatewayReady: true,
+    runtimeWritable: true
+  });
+
+  assert.equal(steps.find((step) => step.id === "runtime")?.state, "complete");
+  assert.equal(
+    steps.find((step) => step.id === "runtime")?.description,
+    "RPC, state, and session store are ready."
+  );
+});
+
 test("confirmed Gateway registration does not flicker during restart probes", () => {
   assert.equal(preserveConfirmedStatus(null, true), true);
   assert.equal(preserveConfirmedStatus(true, false), true);
