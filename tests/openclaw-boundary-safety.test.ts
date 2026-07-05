@@ -825,6 +825,9 @@ test("readiness polling does not load full snapshots before Gateway is reachable
   assert.match(body, /gatewayCanServeReadiness &&/);
   assert.match(body, /if \(localProbe\?\.rpc\?\.ok && latestSnapshot\) \{\s*return latestSnapshot;/);
   assert.match(source, /initialSnapshot: snapshot/);
+  assert.match(source, /const readyTimeoutMs = 180_000;/);
+  assert.match(source, /const postAuthRepairReadyTimeoutMs = 180_000;/);
+  assert.doesNotMatch(source, /exceeded 60 seconds/);
 });
 
 test("system setup action shows a loader until lightweight status resolves", () => {
