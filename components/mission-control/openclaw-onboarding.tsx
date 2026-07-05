@@ -157,7 +157,7 @@ export function OpenClawOnboarding({
   const [selectedVisualStage, setSelectedVisualStage] = useState<OnboardingVisualStage | null>(null);
   const systemPhaseForSteps = onboardingSystemReady ? "ready" : systemPhase;
   const systemSteps = buildSystemSteps(snapshot, systemPhaseForSteps, {
-    forcePending: systemSetupRequired || systemRun.runState === "running",
+    forcePending: systemSetupRequired,
     suppressGatewaySnapshot: systemStatusChecking,
     gatewayReachable,
     gatewayRegistered,
