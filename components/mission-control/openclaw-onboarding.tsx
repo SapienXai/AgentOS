@@ -56,6 +56,8 @@ export function OpenClawOnboarding({
   systemStatusChecking,
   gatewayReachable,
   gatewayRegistered,
+  gatewayReady,
+  runtimeWritable,
   cliInstalled,
   showReadyState,
   systemActionLabel,
@@ -91,6 +93,8 @@ export function OpenClawOnboarding({
   systemStatusChecking?: boolean;
   gatewayReachable?: boolean | null;
   gatewayRegistered?: boolean | null;
+  gatewayReady?: boolean | null;
+  runtimeWritable?: boolean | null;
   cliInstalled?: boolean | null;
   showReadyState: boolean;
   systemActionLabel: string;
@@ -161,6 +165,8 @@ export function OpenClawOnboarding({
     suppressGatewaySnapshot: systemStatusChecking,
     gatewayReachable,
     gatewayRegistered,
+    gatewayReady,
+    runtimeWritable,
     cliInstalled
   });
   const availableModels = snapshot.models.filter((model) => model.available !== false && !model.missing);
