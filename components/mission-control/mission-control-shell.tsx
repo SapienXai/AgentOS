@@ -3373,24 +3373,11 @@ export function MissionControlShell({
   };
 
   const continueToModelSetup = () => {
-    let canContinueToModels = isOpenClawOnboardingSystemReady;
-    setOnboardingStatusMessage("Refreshing model status...");
-    void refreshOnboardingModelSnapshot(snapshot)
-      .then((nextSnapshot) => {
-        if (!nextSnapshot) {
-          return;
-        }
-
-        if (resolveOpenClawSystemReady(nextSnapshot)) {
-          canContinueToModels = true;
-          setRequiresFreshInstallSystemSetup(false);
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        setOnboardingStatusMessage(null);
-        setOnboardingStage(resolveEffectiveWizardStage("models", canContinueToModels));
-      });
+    setOnboardingStatusMessage(null);
+    setRequiresFreshInstallSystemSetup(false);
+    setShowOnboardingReadyState(false);
+    setOnboardingStage("models");
+    void refreshOnboardingModelSnapshot(snapshot);
   };
 
   const settingsPanelProps: MissionControlShellSettingsPanelProps = {
