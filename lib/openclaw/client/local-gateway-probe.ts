@@ -1,6 +1,8 @@
 import "server-only";
 
+import { spawn } from "node:child_process";
 import net from "node:net";
+import path from "node:path";
 
 import type { GatewayStatusPayload } from "@/lib/openclaw/client/gateway-client";
 
@@ -42,6 +44,44 @@ export async function probeLocalGatewayStatus(port = 18789): Promise<GatewayStat
       probeUrl: `ws://127.0.0.1:${port}`
     }
   };
+}
+
+export async function probeLocalGatewayRegistration(): Promise<boolean | null> {
+  if (process.platform !== "win32") {
+    return null;
+  }
+
+  const executable = process.env.SystemRoot
+    ? path.join(process.env.SystemRoot, "System32", "schtasks.exe")
+    : "schtasks.exe";
+  const taskName = process.env.OPENCLAW_WINDOWS_TASK_NAME?.trim() || "OpenClaw Gateway";
+
+  return await new Promise<boolean>((resolve) => {
+    let child;
+    try {
+      child = spawn(executable, ["/Query", "/TN", taskName], {
+        stdio: "ignore",
+        windowsHide: true
+      });
+    } catch {
+      resolve(false);
+      return;
+    }
+    let settled = false;
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(false);
+    }, 1_000);
+    const finish = (registered: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(registered);
+    };
+
+    child.once("error", () => finish(false));
+    child.once("exit", (code) => finish(code === 0));
+  });
 }
 
 async function probeGatewayReadyEndpoint(port: number, timeoutMs: number): Promise<boolean | null> {
