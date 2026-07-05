@@ -971,6 +971,26 @@ test("lightweight CLI status overrides a stale installed snapshot", () => {
   assert.equal(missingSteps.find((step) => step.id === "cli")?.state, "pending");
 });
 
+test("lightweight registration status completes the Gateway service step while stopped", () => {
+  const snapshot = {
+    diagnostics: {
+      installed: true,
+      loaded: false,
+      rpcOk: false,
+      runtime: { stateWritable: true, sessionStoreWritable: true }
+    }
+  } as unknown as MissionControlSnapshot;
+
+  const steps = buildSystemSteps(snapshot, null, {
+    cliInstalled: true,
+    gatewayRegistered: true,
+    gatewayReachable: false
+  });
+
+  assert.equal(steps.find((step) => step.id === "gateway")?.state, "complete");
+  assert.equal(steps.find((step) => step.id === "runtime")?.state, "current");
+});
+
 test("onboarding treats canonical OpenAI model refs as ChatGPT when Codex auth owns the route", () => {
   const snapshot = {
     diagnostics: {
