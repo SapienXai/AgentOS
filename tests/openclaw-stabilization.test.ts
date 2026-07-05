@@ -1017,20 +1017,29 @@ test("local model probe reads the configured default without a full snapshot", a
 
   assert.deepEqual(await probeLocalDefaultModel({ homeDir, env: { NODE_ENV: "test" } }), {
     checked: true,
-    defaultModelId: null
+    defaultModelId: null,
+    modelIds: []
   });
 
   const stateDir = path.join(homeDir, ".openclaw");
   await mkdir(stateDir, { recursive: true });
   await writeFile(
     path.join(stateDir, "openclaw.json"),
-    JSON.stringify({ agents: { defaults: { model: { primary: "openai-codex/gpt-5.2" } } } }),
+    JSON.stringify({
+      agents: {
+        defaults: {
+          model: { primary: "openai-codex/gpt-5.2" },
+          models: { "anthropic/claude-sonnet-4": {} }
+        }
+      }
+    }),
     "utf8"
   );
 
   assert.deepEqual(await probeLocalDefaultModel({ homeDir, env: { NODE_ENV: "test" } }), {
     checked: true,
-    defaultModelId: "openai-codex/gpt-5.2"
+    defaultModelId: "openai-codex/gpt-5.2",
+    modelIds: ["openai-codex/gpt-5.2", "anthropic/claude-sonnet-4"]
   });
 });
 
