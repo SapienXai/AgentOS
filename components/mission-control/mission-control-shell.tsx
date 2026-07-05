@@ -3377,7 +3377,6 @@ export function MissionControlShell({
     setRequiresFreshInstallSystemSetup(false);
     setShowOnboardingReadyState(false);
     setOnboardingStage("models");
-    void refreshOnboardingModelSnapshot(snapshot);
   };
 
   const settingsPanelProps: MissionControlShellSettingsPanelProps = {
