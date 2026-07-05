@@ -6,6 +6,10 @@ import type { ControlPlaneSnapshot } from "@/lib/agentos/contracts";
 
 type ConnectionState = "connecting" | "live" | "retrying";
 
+export function preserveConfirmedStatus(current: boolean | null, next: boolean | null) {
+  return current === true ? true : next;
+}
+
 export function isNewerSnapshot(nextSnapshot: ControlPlaneSnapshot, currentSnapshot: ControlPlaneSnapshot) {
   const nextRevision = nextSnapshot.revision ?? 0;
   const currentRevision = currentSnapshot.revision ?? 0;
@@ -61,7 +65,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
         cliInstalled?: boolean;
       };
       setGatewayReachable(status.gatewayReachable === true);
-      setGatewayRegistered(status.gatewayRegistered ?? null);
+      setGatewayRegistered((current) => preserveConfirmedStatus(current, status.gatewayRegistered ?? null));
       setCliInstalled(status.cliInstalled === true);
     });
 
