@@ -474,6 +474,7 @@ export function OpenClawOnboarding({
                         }
 
                         if (onboardingSystemReady) {
+                          setSelectedVisualStage("models");
                           onContinueToModels();
                           return;
                         }
