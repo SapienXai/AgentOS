@@ -448,10 +448,10 @@ export function OpenClawOnboarding({
                       type="button"
                       variant="secondary"
                       size="sm"
-                      onClick={() => onOpenAddModels()}
+                      onClick={onSkipSetup}
                       className={cn("h-10 rounded-full px-4 text-[13px]", secondaryActionClassName(surfaceTheme))}
                     >
-                      Open full Add Models
+                      Skip for now
                     </Button>
                   ) : null}
 
