@@ -79,14 +79,9 @@ export function useModelCatalog({
       const nextPayload = await loadModelCatalog(force);
       setPayload(nextPayload);
       return nextPayload;
-    } catch (loadError) {
-      const message =
-        loadError instanceof DOMException && loadError.name === "TimeoutError"
-          ? "OpenClaw catalog request timed out. Check Gateway status and try again."
-          : loadError instanceof Error
-            ? loadError.message
-            : "OpenClaw catalog could not be loaded.";
-      setError(message);
+    } catch {
+      // Configured snapshot models remain usable when the optional global catalog is unavailable.
+      setError(null);
       return null;
     } finally {
       setIsLoading(false);
