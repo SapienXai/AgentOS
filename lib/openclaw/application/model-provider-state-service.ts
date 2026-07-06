@@ -299,11 +299,6 @@ export async function persistOpenClawExplicitProviderConfig(
   delete nextProviderConfig.baseURL;
   nextProviderConfig.apiKey = input.apiKey.trim();
   nextProviderConfig.api = input.api?.trim() || "openai-completions";
-  const providerName = input.providerName?.trim();
-  if (providerName) {
-    nextProviderConfig.name = providerName;
-    nextProviderConfig.label = providerName;
-  }
 
   if (input.models?.length) {
     nextProviderConfig.models = mergeProviderModelEntries(nextProviderConfig.models ?? [], input.models);
@@ -1327,17 +1322,13 @@ function sanitizeProviderConfigForOpenClaw(entry: OpenClawProviderModelsEntry): 
   const baseUrl = readProviderConfigBaseUrl(entry) ?? undefined;
   const apiKey = typeof entry.apiKey === "string" && entry.apiKey.trim() ? entry.apiKey.trim() : undefined;
   const api = typeof entry.api === "string" && entry.api.trim() ? entry.api.trim() : undefined;
-  const name = typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : undefined;
-  const label = typeof entry.label === "string" && entry.label.trim() ? entry.label.trim() : name;
   const models = mergeProviderModelEntries([], entry.models ?? []);
 
   return {
     ...(models.length > 0 ? { models } : {}),
     ...(baseUrl ? { baseUrl } : {}),
     ...(apiKey ? { apiKey } : {}),
-    ...(api ? { api } : {}),
-    ...(name ? { name } : {}),
-    ...(label ? { label } : {})
+    ...(api ? { api } : {})
   };
 }
 

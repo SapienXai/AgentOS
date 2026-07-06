@@ -203,8 +203,6 @@ test("custom provider connect writes an explicit OpenClaw provider and namespace
         baseUrl: "https://api.entrim.ai/v1",
         apiKey: "sk-entrim-test",
         api: "openai-completions",
-        name: "Entrim",
-        label: "Entrim",
         models: [
           {
             id: "gpt-oss-120b",

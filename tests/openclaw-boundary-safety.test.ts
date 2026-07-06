@@ -372,8 +372,8 @@ test("system onboarding repairs Gateway auth before runtime state verification",
   assert.notEqual(repairIndex, -1);
   assert.notEqual(runtimeStateIndex, -1);
   assert.equal(repairIndex < runtimeStateIndex, true);
-  assert.match(source, /const readyTimeoutMs = 60_000/);
-  assert.match(source, /const postAuthRepairReadyTimeoutMs = 90_000/);
+  assert.match(source, /const readyTimeoutMs = 180_000/);
+  assert.match(source, /const postAuthRepairReadyTimeoutMs = 180_000/);
   assert.match(source, /const readyStatusIntervalMs = 5_000/);
   assert.match(source, /waitForReadySnapshotAfterGatewayAuthRepair/);
   assert.match(source, /clearMissionControlCaches\(\);/);
@@ -819,6 +819,20 @@ test("system setup starts Gateway before requesting a full readiness snapshot", 
   assert.match(source, /const gatewayStatusTimeoutMs = 3_000;/);
 });
 
+test("system setup restarts a stopped Gateway service before readiness polling", () => {
+  const source = readFileSync(path.join(rootDir, "app/api/onboarding/route.ts"), "utf8");
+  const postStartIndex = source.indexOf("const postStartGatewayStatus = await readGatewayStatus(openClawBin)");
+  const stoppedCheckIndex = source.indexOf("isGatewayServiceStopped(gatewayStatus)", postStartIndex);
+  const restartIndex = source.indexOf('["gateway", "restart", "--force", "--json"]', stoppedCheckIndex);
+  const waitIndex = source.indexOf("snapshot = await waitForReadySnapshotWithGatewayAuthDetection", restartIndex);
+
+  assert.equal(postStartIndex >= 0 && stoppedCheckIndex > postStartIndex, true);
+  assert.equal(restartIndex > stoppedCheckIndex, true);
+  assert.equal(waitIndex > restartIndex, true);
+  assert.match(source, /Gateway service is registered but stopped\. Restarting it before readiness verification/);
+  assert.match(source, /Gateway service is registered, but the process stayed stopped after restart/);
+});
+
 test("readiness polling does not load full snapshots before Gateway is reachable", () => {
   const source = readFileSync(path.join(rootDir, "app/api/onboarding/route.ts"), "utf8");
   const functionStart = source.indexOf("async function waitForReadySnapshot(");
@@ -847,7 +861,7 @@ test("system setup action shows a loader until lightweight status resolves", () 
   const source = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding.tsx"), "utf8");
 
   assert.match(source, /const isPrimaryActionResolving =/);
-  assert.match(source, /cliInstalled == null \|\| gatewayReachable == null/);
+  assert.match(source, /cliInstalled == null \|\| \(gatewayReachable == null && gatewayRegistered == null\)/);
   assert.match(source, /"Checking\.\.\."/);
 });
 
