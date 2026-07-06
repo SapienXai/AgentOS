@@ -1,6 +1,7 @@
 import "server-only";
 
 import { clearMissionControlCaches, getMissionControlSnapshot } from "@/lib/agentos/control-plane";
+import { clearModelCatalogCache } from "@/lib/openclaw/application/model-catalog-cache-service";
 import { updateAgent } from "@/lib/openclaw/application/agent-service";
 import {
   readOpenClawConfiguredModelIds,
@@ -12,6 +13,7 @@ import { modelMatchesAddModelsProvider } from "@/lib/openclaw/domains/model-prov
 import { setModelProviderDisconnected } from "@/lib/openclaw/domains/control-plane-settings";
 import { normalizeAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
 import type {
+  AddModelsModelRemoveImpact,
   AddModelsProviderDisconnectImpact,
   AddModelsProviderId,
   MissionControlSnapshot,
@@ -37,7 +39,10 @@ const defaultDependencies: DisconnectDependencies = {
   removeModel: removeOpenClawConfiguredModelFromConfig,
   removeProviderConfiguration: removeOpenClawProviderConfiguration,
   markDisconnected: (provider) => setModelProviderDisconnected(provider, true),
-  clearCaches: clearMissionControlCaches
+  clearCaches: () => {
+    clearMissionControlCaches();
+    clearModelCatalogCache();
+  }
 };
 
 export async function inspectModelProviderDisconnect(
@@ -98,6 +103,58 @@ export async function disconnectModelProvider(
   };
 }
 
+export async function inspectModelRemoval(
+  provider: AddModelsProviderId,
+  modelId: string,
+  dependencyOverrides: Partial<DisconnectDependencies> = {}
+) {
+  const dependencies = { ...defaultDependencies, ...dependencyOverrides };
+  const [snapshot, configuredModelIds] = await Promise.all([
+    dependencies.getSnapshot(),
+    dependencies.readConfiguredModelIds()
+  ]);
+
+  return buildModelRemoveImpact(snapshot, provider, modelId, configuredModelIds);
+}
+
+export async function removeModelSafely(
+  provider: AddModelsProviderId,
+  modelId: string,
+  dependencyOverrides: Partial<DisconnectDependencies> = {}
+) {
+  const dependencies = { ...defaultDependencies, ...dependencyOverrides };
+  const [snapshot, configuredModelIds] = await Promise.all([
+    dependencies.getSnapshot(),
+    dependencies.readConfiguredModelIds()
+  ]);
+  const impact = buildModelRemoveImpact(snapshot, provider, modelId, configuredModelIds);
+
+  if (impact.blockedReason) {
+    throw new Error(impact.blockedReason);
+  }
+
+  if (impact.defaultModelAffected && impact.replacementModelId) {
+    await dependencies.setDefaultModel(impact.replacementModelId, {
+      provider: resolveModelProvider(snapshot, impact.replacementModelId)
+    });
+  }
+
+  if (impact.replacementModelId) {
+    for (const agent of impact.affectedAgents) {
+      await dependencies.updateAgentModel(agent.id, impact.replacementModelId);
+    }
+  }
+
+  await dependencies.removeModel(modelId, { provider });
+  dependencies.clearCaches();
+  const refreshedSnapshot = await dependencies.getSnapshot();
+
+  return {
+    impact,
+    snapshot: refreshedSnapshot
+  };
+}
+
 export function buildModelProviderDisconnectImpact(
   snapshot: MissionControlSnapshot,
   provider: AddModelsProviderId,
@@ -138,6 +195,71 @@ export function buildModelProviderDisconnectImpact(
     blockedReason,
     credentialCleanup: resolveExpectedCredentialCleanup(provider)
   };
+}
+
+export function buildModelRemoveImpact(
+  snapshot: MissionControlSnapshot,
+  provider: AddModelsProviderId,
+  modelId: string,
+  configuredModelIds: Set<string>
+): AddModelsModelRemoveImpact {
+  const canonicalModelId = modelId.trim();
+  const modelIsConfigured = configuredModelIds.has(canonicalModelId);
+  const modelBelongs = modelBelongsToProvider(snapshot, provider, canonicalModelId);
+  const affectedAgents = snapshot.agents
+    .filter((agent) => agent.modelId === canonicalModelId)
+    .map((agent) => ({ id: agent.id, name: agent.name || agent.id, modelId: agent.modelId }));
+  const activeAgentIds = affectedAgents
+    .filter((agent) => snapshot.agents.find((candidate) => candidate.id === agent.id)?.activeRuntimeIds.length)
+    .map((agent) => agent.id);
+  const currentDefaultModelId = snapshot.diagnostics.modelReadiness.resolvedDefaultModel ??
+    snapshot.diagnostics.modelReadiness.defaultModel ??
+    null;
+  const defaultModelAffected = currentDefaultModelId === canonicalModelId;
+  const needsReplacement = defaultModelAffected || affectedAgents.length > 0;
+  const replacementModelId = needsReplacement
+    ? resolveModelRemovalReplacement(snapshot, canonicalModelId, currentDefaultModelId)
+    : null;
+  const blockedReason = !modelIsConfigured || !modelBelongs
+    ? `Model removal is blocked because ${canonicalModelId} is not a configured ${provider} model.`
+    : activeAgentIds.length > 0
+      ? `Model removal is blocked while ${activeAgentIds.length} affected agent${activeAgentIds.length === 1 ? " is" : "s are"} running. Wait for active work to finish and retry.`
+      : needsReplacement && !replacementModelId
+        ? "Model removal is blocked because no ready replacement model is available. Connect or add another ready model first."
+        : null;
+
+  return {
+    modelId: canonicalModelId,
+    provider,
+    affectedAgents,
+    activeAgentIds,
+    defaultModelAffected,
+    currentDefaultModelId,
+    replacementModelId,
+    blockedReason
+  };
+}
+
+function resolveModelRemovalReplacement(
+  snapshot: MissionControlSnapshot,
+  modelId: string,
+  currentDefaultModelId: string | null
+) {
+  const usableModels = snapshot.models.filter(
+    (model) => isUsableReplacement(model) && model.id !== modelId
+  );
+  const usableIds = new Set(usableModels.map((model) => model.id));
+
+  if (currentDefaultModelId && currentDefaultModelId !== modelId && usableIds.has(currentDefaultModelId)) {
+    return currentDefaultModelId;
+  }
+
+  const recommendedModelId = snapshot.diagnostics.modelReadiness.recommendedModelId;
+  if (recommendedModelId && recommendedModelId !== modelId && usableIds.has(recommendedModelId)) {
+    return recommendedModelId;
+  }
+
+  return usableModels.toSorted(compareReplacementModels)[0]?.id ?? null;
 }
 
 function resolveProviderDisconnectReplacement(

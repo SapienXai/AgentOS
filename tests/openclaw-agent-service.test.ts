@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  assertAgentModelReadyForAssignment,
   createAgent as createApplicationAgent,
   deleteAgent as deleteApplicationAgent,
   formatPostCreateAgentConfigSyncWarning,
@@ -122,4 +123,47 @@ test("agent creation falls back when the requested model is not ready", () => {
   assert.equal(selection.modelId, "openai/gpt-5.5");
   assert.equal(selection.warnings.length, 1);
   assert.match(selection.warnings[0], /Requested model openai\/gpt-5\.4-mini is not ready/);
+});
+
+test("agent model assignment rejects unavailable and missing models", () => {
+  const snapshot = {
+    diagnostics: {
+      installed: true,
+      rpcOk: true,
+      runtime: {
+        stateWritable: true,
+        sessionStoreWritable: true,
+        issues: []
+      },
+      modelReadiness: {
+        ready: true,
+        defaultModelReady: true,
+        defaultModel: "openai/gpt-5.5",
+        resolvedDefaultModel: "openai/gpt-5.5"
+      }
+    },
+    agents: [],
+    models: [
+      {
+        id: "openai/gpt-5.4-mini",
+        available: false,
+        missing: false
+      },
+      {
+        id: "openai/gpt-5.5",
+        available: true,
+        missing: false
+      }
+    ]
+  } as unknown as MissionControlSnapshot;
+
+  assert.throws(
+    () => assertAgentModelReadyForAssignment(snapshot, "openai/gpt-5.4-mini"),
+    /OpenClaw|not ready|Configure/
+  );
+  assert.throws(
+    () => assertAgentModelReadyForAssignment(snapshot, "google/gemini-3.5-flash"),
+    /OpenClaw|not ready|Configure/
+  );
+  assert.doesNotThrow(() => assertAgentModelReadyForAssignment(snapshot, "openai/gpt-5.5"));
 });

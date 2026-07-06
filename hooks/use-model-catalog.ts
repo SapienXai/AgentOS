@@ -8,6 +8,7 @@ import { mergeCatalogWithConfiguredModels } from "@/lib/openclaw/domains/model-c
 type ModelCatalogPayload = {
   models: AddModelsCatalogModel[];
   source: "openclaw" | "openclaw-cache" | "snapshot";
+  age: number | null;
   warning?: string;
 };
 
@@ -36,6 +37,7 @@ async function loadModelCatalog(force = false) {
     cachedPayload = {
       models: Array.isArray(payload.models) ? payload.models : [],
       source: payload.source,
+      age: typeof payload.age === "number" ? payload.age : null,
       warning: payload.warning
     };
     return cachedPayload;
@@ -111,6 +113,7 @@ export function useModelCatalog({
     error,
     source: payload?.source ?? null,
     warning: payload?.warning ?? null,
+    age: payload?.age ?? null,
     refresh
   };
 }

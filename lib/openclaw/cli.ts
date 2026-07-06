@@ -84,7 +84,8 @@ export async function runOpenClawStream(
     const startedAt = new Date(startedAtMs).toISOString();
     const commandDiagnosticId = `openclaw:${startedAtMs}:${commandDiagnosticSequence++}`;
     const invocation = resolveOpenClawSpawnInvocation(openClawBin, args);
-    const child = spawn(/*turbopackIgnore: true*/ invocation.command, invocation.args, {
+    // turbopackIgnore: true
+    const child = spawn(invocation.command, invocation.args, {
       detached: true,
       env: buildOpenClawEnv(),
       windowsHide: true
@@ -710,7 +711,8 @@ async function canExecuteOpenClaw(command: string) {
     let child;
 
     try {
-      child = spawn(/*turbopackIgnore: true*/ invocation.command, invocation.args, {
+      // turbopackIgnore: true
+      child = spawn(invocation.command, invocation.args, {
         stdio: "ignore",
         windowsHide: true
       });

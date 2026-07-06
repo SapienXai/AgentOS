@@ -1,5 +1,3 @@
-import { spawn } from "node:child_process";
-
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -34,18 +32,16 @@ import {
   isKnownOpenAiCodexModelId,
   normalizeOpenAiCodexModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
-import {
-  mergeOllamaCatalogModels,
-  parseOllamaListModelNames
-} from "@/lib/openclaw/domains/model-provider-catalog";
+import { mergeOllamaCatalogModels } from "@/lib/openclaw/domains/model-provider-catalog";
 import { clearMissionControlCaches, getMissionControlSnapshot } from "@/lib/agentos/control-plane";
+import { clearModelCatalogCache } from "@/lib/openclaw/application/model-catalog-cache-service";
+import { readLocalOllamaModels } from "@/lib/openclaw/application/local-model-provider-service";
 import {
   addOpenClawModelsToConfig,
   addOpenClawExplicitProviderModelsToConfig,
   buildOpenClawFileBasedProviderConnectionStatus,
   readOpenClawCodexPluginReady,
   readOpenClawExplicitProviderConfig,
-  removeOpenClawConfiguredModelFromConfig,
   persistOpenClawExplicitProviderConfig,
   readOpenClawOpenAiProviderConfig,
   persistOpenClawOpenAiProviderConfig,
@@ -57,7 +53,9 @@ import {
 } from "@/lib/openclaw/application/model-provider-state-service";
 import {
   disconnectModelProvider,
-  inspectModelProviderDisconnect
+  inspectModelProviderDisconnect,
+  inspectModelRemoval,
+  removeModelSafely
 } from "@/lib/openclaw/application/model-provider-disconnect-service";
 import {
   isModelProviderDisconnected,
@@ -92,7 +90,7 @@ export const dynamic = "force-dynamic";
 
 const addModelsDocsUrl = "https://docs.openclaw.ai/cli/models";
 const codexDiscoveryTimeoutMs = 15_000;
-const ollamaListTimeoutMs = 5_000;
+const explicitProviderDiscoveryTimeoutMs = 8_000;
 const explicitProviderIdSchema = z.string().trim().min(2).max(63).refine(
   (value) => isAddModelsProviderId(value),
   "Provider ID must use lowercase letters, numbers, hyphen, or underscore."
@@ -136,6 +134,11 @@ const requestSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("set-default"),
+    provider: explicitProviderIdSchema,
+    modelId: z.string().trim().min(1)
+  }),
+  z.object({
+    action: z.literal("remove-model-impact"),
     provider: explicitProviderIdSchema,
     modelId: z.string().trim().min(1)
   }),
@@ -256,6 +259,26 @@ async function handleProviderAction(
     });
   }
 
+  if (input.action === "remove-model-impact") {
+    const [impact, statusContext] = await Promise.all([
+      inspectModelRemoval(input.provider, input.modelId),
+      readProviderConnectionContext(input.provider)
+    ]);
+    const providerModels = await readProviderCatalog(input.provider, statusContext.configuredModelIds, commandBin)
+      .catch(() => []);
+
+    return buildActionResult({
+      ok: !impact.blockedReason,
+      action: input.action,
+      provider: input.provider,
+      message: impact.blockedReason ?? buildModelRemoveImpactMessage(impact),
+      connection: statusContext.connection,
+      models: providerModels,
+      modelRemoveImpact: impact,
+      docsUrl: addModelsDocsUrl
+    });
+  }
+
   if (input.action === "disconnect") {
     const result = await disconnectModelProvider(input.provider);
     const statusContext = await readProviderConnectionContext(input.provider);
@@ -284,6 +307,10 @@ async function handleProviderAction(
       ? {
           ...statusContext.connection,
           connected: false,
+          source: "agentos-sidecar" as const,
+          degraded: true,
+          stale: false,
+          recovery: "Connect again to replace the provider credential and rediscover models.",
           detail: "Disconnected in AgentOS. Connect again to replace the provider credential and rediscover models."
         }
       : statusContext.connection;
@@ -367,7 +394,7 @@ async function handleProviderAction(
     try {
       if (input.provider === "openai") {
         await persistOpenClawOpenAiProviderConfig(apiKey, {
-          endpoint: input.endpoint
+          endpoint: input.endpoint ? normalizeOpenAiCompatibleProviderBaseUrl(input.endpoint) : undefined
         });
       } else {
         await persistOpenClawProviderToken(input.provider, apiKey, {
@@ -402,6 +429,7 @@ async function handleProviderAction(
       });
     }
 
+    clearModelProviderCaches();
     const snapshot = await getMissionControlSnapshot({ force: true });
     const statusContext = await readProviderConnectionContext(input.provider);
     const connectedLabel =
@@ -504,8 +532,9 @@ async function handleProviderAction(
   }
 
   if (input.provider === "openai-codex" && await clearOpenAiCodexAuthRuntimeSmokeFailures()) {
-    clearMissionControlCaches();
+    clearModelProviderCaches();
   }
+  clearModelCatalogCache();
   const refreshedSnapshot = await getMissionControlSnapshot({ force: true });
   const statusContext = await readProviderConnectionContext(input.provider);
   const providerModels = await readProviderCatalog(input.provider, statusContext.configuredModelIds, commandBin);
@@ -528,11 +557,11 @@ async function connectExplicitProvider(
   input: Extract<AddModelsProviderActionRequest, { action: "connect" }>
 ): Promise<AddModelsProviderActionResult> {
   const providerName = input.providerName?.trim() || getModelProviderDescriptor(input.provider).label;
-  const baseUrl = input.endpoint?.trim();
+  let baseUrl: string;
   const apiKey = input.apiKey?.trim();
   const manualModelId = input.modelId?.trim();
 
-  if (!baseUrl || !apiKey) {
+  if (!input.endpoint?.trim() || !apiKey) {
     const statusContext = await readProviderConnectionContext(input.provider);
 
     return buildActionResult({
@@ -546,7 +575,29 @@ async function connectExplicitProvider(
     });
   }
 
-  const discoveredModels = await discoverOpenAiCompatibleEndpointModels(baseUrl, apiKey).catch(() => []);
+  try {
+    baseUrl = normalizeOpenAiCompatibleProviderBaseUrl(input.endpoint);
+  } catch (error) {
+    const statusContext = await readProviderConnectionContext(input.provider);
+
+    return buildActionResult({
+      ok: false,
+      action: input.action,
+      provider: input.provider,
+      message: readProviderActionError(error),
+      connection: statusContext.connection,
+      models: [],
+      docsUrl: addModelsDocsUrl
+    });
+  }
+
+  let discoveryFailed = false;
+  let discoveryFailureMessage: string | null = null;
+  const discoveredModels = await discoverOpenAiCompatibleEndpointModels(baseUrl, apiKey).catch((error) => {
+    discoveryFailed = true;
+    discoveryFailureMessage = readProviderActionError(error);
+    return [];
+  });
   const manualModels = manualModelId ? [toExplicitProviderModelEntry(manualModelId)] : [];
 
   await persistOpenClawExplicitProviderConfig(input.provider, {
@@ -556,6 +607,7 @@ async function connectExplicitProvider(
     api: "openai-completions",
     models: [...manualModels, ...discoveredModels]
   });
+  clearModelProviderCaches();
 
   const snapshot = await getMissionControlSnapshot({ force: true }).catch(() => undefined);
   const statusContext = await readProviderConnectionContext(input.provider);
@@ -565,15 +617,27 @@ async function connectExplicitProvider(
     ok: true,
     action: input.action,
     provider: input.provider,
-    message: `Connected ${providerName}. ${models.length > 0 ? "Select models to add next." : "Discovery returned no models; add a model ID manually."}`,
+    message: discoveryFailed
+      ? `Configured ${providerName}, but model discovery failed: ${discoveryFailureMessage ?? "endpoint did not return models"}. Add a model ID manually or retry discovery.`
+      : `Connected ${providerName}. ${models.length > 0 ? "Select models to add next." : "Discovery returned no models; add a model ID manually."}`,
     snapshot,
-    connection: statusContext.connection,
+    connection: discoveryFailed
+      ? {
+          ...statusContext.connection,
+          connected: models.length > 0,
+          degraded: true,
+          stale: false,
+          recovery: "Add a model ID manually or retry discovery after confirming the endpoint and key."
+        }
+      : statusContext.connection,
     models,
     emptyState: models.length === 0
       ? {
           kind: "no-models",
           title: "No models found",
-          description: "The endpoint is configured, but model discovery did not return selectable models. Enter a model ID manually and reconnect."
+          description: discoveryFailed
+            ? "The endpoint configuration was saved, but direct model discovery failed. Enter a model ID manually or retry after checking the endpoint."
+            : "The endpoint is configured, but model discovery did not return selectable models. Enter a model ID manually and reconnect."
         }
       : null,
     docsUrl: addModelsDocsUrl
@@ -632,6 +696,7 @@ async function addExplicitProviderModels(
     });
 
   await addOpenClawExplicitProviderModelsToConfig(provider, modelIds, metadata);
+  clearModelProviderCaches();
 
   const refreshedSnapshot = await getMissionControlSnapshot({ force: true }).catch(() => undefined);
   const refreshedStatus = await readProviderConnectionContext(provider);
@@ -700,8 +765,9 @@ async function setProviderDefaultModel(
   }
 
   if (provider === "openai-codex" && await clearOpenAiCodexAuthRuntimeSmokeFailures()) {
-    clearMissionControlCaches();
+    clearModelProviderCaches();
   }
+  clearModelCatalogCache();
   const refreshedSnapshot = await getMissionControlSnapshot({ force: true });
   const statusContext = await readProviderConnectionContext(provider);
   const providerModels = await readProviderCatalog(provider, statusContext.configuredModelIds, commandBin);
@@ -731,14 +797,16 @@ async function removeProviderModel(
   commandBin = "openclaw"
 ): Promise<AddModelsProviderActionResult> {
   const statusContext = await readProviderConnectionContext(provider);
+  let removeResult: Awaited<ReturnType<typeof removeModelSafely>>;
 
   try {
-    await runWithGatewayAuthSetupRecovery(
-      () => removeOpenClawConfiguredModelFromConfig(modelId, { provider }),
+    const recoveryResult = await runWithGatewayAuthSetupRecovery(
+      () => removeModelSafely(provider, modelId),
       {
         operationLabel: "removing the model"
       }
     );
+    removeResult = recoveryResult.value;
   } catch (error) {
     const providerModels = await readProviderCatalog(provider, statusContext.configuredModelIds, commandBin)
       .catch(() => []);
@@ -750,11 +818,12 @@ async function removeProviderModel(
       message: readProviderActionError(error),
       connection: statusContext.connection,
       models: providerModels,
+      modelRemoveImpact: await inspectModelRemoval(provider, modelId).catch(() => undefined),
       docsUrl: addModelsDocsUrl
     });
   }
 
-  clearMissionControlCaches();
+  clearModelProviderCaches();
   const refreshedSnapshot = await getMissionControlSnapshot({ force: true }).catch(() => undefined);
   const refreshedStatus = await readProviderConnectionContext(provider);
   const providerModels = await readProviderCatalog(provider, refreshedStatus.configuredModelIds, commandBin);
@@ -763,10 +832,11 @@ async function removeProviderModel(
     ok: true,
     action: "remove-model",
     provider,
-    message: "Model removed from AgentOS config.",
-    snapshot: refreshedSnapshot,
+    message: buildModelRemoveCompletedMessage(removeResult.impact),
+    snapshot: refreshedSnapshot ?? removeResult.snapshot,
     connection: refreshedStatus.connection,
     models: providerModels,
+    modelRemoveImpact: removeResult.impact,
     docsUrl: addModelsDocsUrl
   });
 }
@@ -937,6 +1007,7 @@ async function readExplicitProviderCatalog(
     api: "openai-completions",
     models: discoveredModels
   });
+  clearModelProviderCaches();
 
   const refreshedProviderConfig = await readOpenClawExplicitProviderConfig(provider);
   return normalizeExplicitProviderCatalogModels(provider, refreshedProviderConfig, configuredModelIds);
@@ -972,12 +1043,13 @@ function normalizeExplicitProviderCatalogModels(
 }
 
 async function discoverOpenAiCompatibleEndpointModels(baseUrl: string, apiKey: string) {
-  const modelsUrl = `${baseUrl.replace(/\/$/, "")}/models`;
+  const modelsUrl = `${normalizeOpenAiCompatibleProviderBaseUrl(baseUrl)}/models`;
   const response = await fetch(modelsUrl, {
     headers: {
       Authorization: `Bearer ${apiKey}`
     },
-    cache: "no-store"
+    cache: "no-store",
+    signal: AbortSignal.timeout(explicitProviderDiscoveryTimeoutMs)
   });
 
   if (!response.ok) {
@@ -1003,6 +1075,29 @@ async function discoverOpenAiCompatibleEndpointModels(baseUrl: string, apiKey: s
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
 }
 
+function normalizeOpenAiCompatibleProviderBaseUrl(endpoint: string) {
+  const rawEndpoint = endpoint.trim();
+
+  if (!rawEndpoint) {
+    throw new Error("Enter a base URL to continue.");
+  }
+
+  let url: URL;
+  try {
+    url = new URL(rawEndpoint);
+  } catch {
+    throw new Error("Enter a valid http or https base URL.");
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Provider endpoint must use http or https.");
+  }
+
+  url.hash = "";
+  url.search = "";
+  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+}
+
 function toExplicitProviderModelEntry(modelId: string): OpenClawProviderModelEntry {
   return {
     id: modelId.trim(),
@@ -1023,7 +1118,15 @@ function normalizeExplicitProviderInput(input: OpenClawProviderModelEntry["input
 function readProviderBaseUrl(providerConfig: OpenClawProviderModelsEntry | null) {
   const rawBaseUrl = providerConfig?.baseUrl ?? providerConfig?.baseURL;
 
-  return typeof rawBaseUrl === "string" && rawBaseUrl.trim() ? rawBaseUrl.trim() : null;
+  if (typeof rawBaseUrl !== "string" || !rawBaseUrl.trim()) {
+    return null;
+  }
+
+  try {
+    return normalizeOpenAiCompatibleProviderBaseUrl(rawBaseUrl);
+  } catch {
+    return rawBaseUrl.trim().replace(/\/+$/, "");
+  }
 }
 
 function readProviderApiKey(providerConfig: OpenClawProviderModelsEntry | null) {
@@ -1258,7 +1361,8 @@ function buildActionResult({
   manualCommand = null,
   docsUrl = null,
   defaultModel,
-  disconnectImpact
+  disconnectImpact,
+  modelRemoveImpact
 }: {
   ok: boolean;
   action: AddModelsProviderActionResult["action"];
@@ -1272,6 +1376,7 @@ function buildActionResult({
   docsUrl?: string | null;
   defaultModel?: AddModelsProviderActionResult["defaultModel"];
   disconnectImpact?: AddModelsProviderActionResult["disconnectImpact"];
+  modelRemoveImpact?: AddModelsProviderActionResult["modelRemoveImpact"];
 }): AddModelsProviderActionResult {
   return {
     ok,
@@ -1285,8 +1390,28 @@ function buildActionResult({
     docsUrl,
     defaultModel,
     disconnectImpact,
+    modelRemoveImpact,
     snapshot
   };
+}
+
+function buildModelRemoveImpactMessage(
+  impact: NonNullable<AddModelsProviderActionResult["modelRemoveImpact"]>
+) {
+  const replacement = impact.replacementModelId ? ` Replacement: ${impact.replacementModelId}.` : "";
+  return `Removing ${impact.modelId} will reassign ${impact.affectedAgents.length} agent${impact.affectedAgents.length === 1 ? "" : "s"} and update the OpenClaw global default: ${impact.defaultModelAffected ? "yes" : "no"}.${replacement}`;
+}
+
+function buildModelRemoveCompletedMessage(
+  impact: NonNullable<AddModelsProviderActionResult["modelRemoveImpact"]>
+) {
+  const reassignment = impact.affectedAgents.length > 0
+    ? ` Reassigned ${impact.affectedAgents.length} agent${impact.affectedAgents.length === 1 ? "" : "s"} to ${impact.replacementModelId}.`
+    : "";
+  const defaultUpdate = impact.defaultModelAffected && impact.replacementModelId
+    ? ` OpenClaw global default is now ${impact.replacementModelId}.`
+    : "";
+  return `Removed ${impact.modelId} from OpenClaw config.${reassignment}${defaultUpdate}`;
 }
 
 function buildDisconnectImpactMessage(
@@ -1321,6 +1446,11 @@ function readProviderActionError(error: unknown) {
   }
 
   return redactErrorMessage(error, "Model provider action failed.");
+}
+
+function clearModelProviderCaches() {
+  clearMissionControlCaches();
+  clearModelCatalogCache();
 }
 
 async function readProviderConnectionContext(provider: AddModelsProviderId) {
@@ -1374,7 +1504,12 @@ async function buildExplicitProviderConnectionStatus(
     connected: Boolean(baseUrl && apiKey && (modelCount > 0 || configuredCount > 0)),
     canConnect: true,
     needsTerminal: false,
-    source: "explicit-provider-config",
+    source: "openclaw-config",
+    degraded: Boolean(baseUrl && apiKey && modelCount === 0 && configuredCount === 0),
+    stale: false,
+    recovery: baseUrl && apiKey && modelCount === 0 && configuredCount === 0
+      ? "Discovery returned no persisted models. Add a model ID manually or retry discovery."
+      : null,
     detail: baseUrl
       ? `${configuredCount} configured model${configuredCount === 1 ? "" : "s"} in AgentOS. Endpoint: ${baseUrl}.`
       : "Configure this explicit OpenAI-compatible provider before discovery."
@@ -1412,7 +1547,7 @@ async function applyProviderRuntimeFailure(
 
   if (connection.connected) {
     if (await clearOpenAiCodexAuthRuntimeSmokeFailures()) {
-      clearMissionControlCaches();
+      clearModelProviderCaches();
     }
 
     return connection;
@@ -1428,6 +1563,9 @@ async function applyProviderRuntimeFailure(
   return {
     ...connection,
     connected: false,
+    degraded: true,
+    stale: false,
+    recovery: "Reconnect ChatGPT to refresh the OpenAI Codex OAuth session.",
     detail:
       authFailure.error ||
       "Reconnect ChatGPT to refresh the OpenAI Codex OAuth session."
@@ -1440,6 +1578,10 @@ function buildOllamaConnectionStatus(ollamaState: OllamaState): AddModelsProvide
     connected: Boolean(ollamaState.installed && ollamaState.models.length > 0),
     canConnect: true,
     needsTerminal: false,
+    source: "local-runtime",
+    degraded: true,
+    stale: false,
+    recovery: "AgentOS probed the local Ollama runtime because OpenClaw catalog data was unavailable or incomplete.",
     detail: !ollamaState.installed
       ? "Ollama is not installed on this machine."
       : ollamaState.models.length > 0
@@ -1470,6 +1612,10 @@ function buildCustomOpenAiEndpointConnectionStatus(
     connected: hasApiKey,
     canConnect: true,
     needsTerminal: false,
+    source: "openclaw-config",
+    degraded: !hasApiKey,
+    stale: false,
+    recovery: hasApiKey ? null : "Reconnect OpenAI with an API key before using this custom endpoint.",
     detail: hasApiKey
       ? `${configuredCount} configured model${configuredCount === 1 ? "" : "s"} in AgentOS. Custom endpoint: ${customEndpoint}.`
       : `Custom endpoint: ${customEndpoint}. Connect OpenAI to use it.`
@@ -1591,66 +1737,6 @@ async function readLocalOllamaCatalog(configuredModelIds: Set<string>): Promise<
       isFree: false,
       tags: ["local-ollama"]
     };
-  });
-}
-
-async function readLocalOllamaModels(): Promise<OllamaState> {
-  const output = await runLocalOllamaList().catch((error) => {
-    const message = error instanceof Error ? error.message : String(error || "");
-
-    if (/spawn|not found|enoent/i.test(message)) {
-      return null;
-    }
-
-    return "";
-  });
-
-  if (output === null) {
-    return {
-      installed: false,
-      models: []
-    };
-  }
-
-  return {
-    installed: true,
-    models: parseOllamaListModelNames(output)
-  };
-}
-
-function runLocalOllamaList() {
-  return new Promise<string>((resolve, reject) => {
-    const child = spawn("ollama", ["list"], {
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-    let stdout = "";
-    let stderr = "";
-    const timer = globalThis.setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error("Timed out while running ollama list."));
-    }, ollamaListTimeoutMs);
-
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", (error) => {
-      globalThis.clearTimeout(timer);
-      reject(error);
-    });
-    child.on("close", (code) => {
-      globalThis.clearTimeout(timer);
-      if (code === 0) {
-        resolve(stdout);
-        return;
-      }
-
-      reject(new Error(stderr.trim() || `ollama list exited with code ${code ?? "unknown"}.`));
-    });
   });
 }
 

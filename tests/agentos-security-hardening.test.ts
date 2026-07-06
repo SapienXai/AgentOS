@@ -511,7 +511,7 @@ test("OpenClaw CLI execution keeps argument-array spawn boundaries", () => {
   const cliSource = readProjectFile("lib/openclaw/cli.ts");
   const cliGatewaySource = readProjectFile("lib/openclaw/client/cli-gateway-client.ts");
 
-  assert.match(cliSource, /spawn\([^,]+,\s*args,/);
+  assert.match(cliSource, /spawn\([^,]+,\s*(?:args|invocation\.args),/);
   assert.doesNotMatch(cliSource, /shell:\s*true/);
   assert.match(cliGatewaySource, /containsRedactedOpenClawSecret\(value\)/);
 });

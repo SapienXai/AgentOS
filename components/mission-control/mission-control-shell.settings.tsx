@@ -263,7 +263,7 @@ export function MissionControlShellSettingsPanel({
         <QuickRow
           surfaceTheme={surfaceTheme}
           icon={<SlidersHorizontal className="h-3.5 w-3.5" />}
-          label="Default model"
+          label="OpenClaw global default"
           value={defaultModel}
           wrapValue
           action={

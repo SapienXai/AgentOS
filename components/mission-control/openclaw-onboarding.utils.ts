@@ -80,8 +80,9 @@ export function buildSystemSteps(
     phase === "starting-gateway" ||
     phase === "verifying" ||
     phase === "ready";
+  const hasConfirmedGatewayRegistration = !forcePending && cliComplete && options.gatewayRegistered === true;
   const gatewayComplete =
-    options.gatewayRegistered === true ||
+    hasConfirmedGatewayRegistration ||
     options.gatewayReachable === true ||
     (!gatewayProbeResolved && !options.suppressGatewaySnapshot && !forcePending && snapshot.diagnostics.loaded) ||
     directGatewayRun ||
@@ -111,7 +112,7 @@ export function buildSystemSteps(
         liveComplete,
         runtimeReady,
         forcePending,
-        options.gatewayRegistered
+        hasConfirmedGatewayRegistration
       ),
       state: resolveStepState(cliComplete, !cliComplete && (phase === "detecting" || phase === "installing-cli"))
     },
@@ -127,7 +128,7 @@ export function buildSystemSteps(
         liveComplete,
         runtimeReady,
         forcePending,
-        options.gatewayRegistered
+        hasConfirmedGatewayRegistration
       ),
       state: resolveStepState(
         gatewayComplete,
@@ -146,7 +147,7 @@ export function buildSystemSteps(
         liveComplete,
         runtimeReady,
         forcePending,
-        options.gatewayRegistered
+        hasConfirmedGatewayRegistration
       ),
       state: resolveStepState(
         runtimeReady,

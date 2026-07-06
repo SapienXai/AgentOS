@@ -426,8 +426,40 @@ export async function POST(request: Request) {
         }
 
         const postStartGatewayStatus = await readGatewayStatus(openClawBin).catch(() => gatewayStatus);
+        gatewayStatus = postStartGatewayStatus;
 
-        if (!postStartGatewayStatus?.rpc?.ok && needsGatewayBootstrapConfigRepair(postStartGatewayStatus)) {
+        if (!gatewayStatus?.rpc?.ok && isGatewayServiceStopped(gatewayStatus)) {
+          await send({
+            type: "status",
+            phase: "starting-gateway",
+            message: "Gateway service is registered but stopped. Restarting it before readiness verification..."
+          });
+
+          const restartResult = await runCommand(openClawBin, ["gateway", "restart", "--force", "--json"], send, {
+            timeoutMs: 30_000
+          });
+          appendOutput(restartResult);
+
+          if (restartResult.errorMessage || restartResult.timedOut || restartResult.code !== 0) {
+            await fail("starting-gateway", "Gateway service is registered, but the process did not start.", {
+              exitCode: restartResult.code,
+              manualCommand: formatOpenClawCommand(openClawBin, ["gateway", "restart", "--force", "--json"])
+            });
+            return;
+          }
+
+          gatewayStatus = await readGatewayStatus(openClawBin).catch(() => postStartGatewayStatus);
+
+          if (!gatewayStatus?.rpc?.ok && isGatewayServiceStopped(gatewayStatus)) {
+            await fail("starting-gateway", "Gateway service is registered, but the process stayed stopped after restart.", {
+              snapshot: await loadSnapshot(true).catch(() => undefined),
+              manualCommand: formatOpenClawCommand(openClawBin, ["gateway", "status", "--json"])
+            });
+            return;
+          }
+        }
+
+        if (!gatewayStatus?.rpc?.ok && needsGatewayBootstrapConfigRepair(gatewayStatus)) {
           await send({
             type: "status",
             phase: "starting-gateway",
@@ -473,9 +505,7 @@ export async function POST(request: Request) {
             return;
           }
 
-          gatewayStatus = await readGatewayStatus(openClawBin).catch(() => postStartGatewayStatus);
-        } else {
-          gatewayStatus = postStartGatewayStatus;
+          gatewayStatus = await readGatewayStatus(openClawBin).catch(() => gatewayStatus);
         }
       }
 
@@ -1478,6 +1508,17 @@ function needsGatewayBootstrapConfigRepair(payload: GatewayStatusPayload | null)
   ].filter(Boolean).join("\n");
 
   return /missing config|gateway\.mode=local|current:\s*unset|allow-unconfigured|no gateway\.mode found|no gateway token found/i.test(diagnosticText);
+}
+
+function isGatewayServiceStopped(payload: GatewayStatusPayload | null) {
+  const runtimeStatus = payload?.service?.runtime?.status?.toLowerCase();
+
+  return Boolean(
+    payload?.service?.loaded &&
+    !payload.rpc?.ok &&
+    runtimeStatus &&
+    /^(stopped|failed|inactive|exited|crashed|dead)$/.test(runtimeStatus)
+  );
 }
 
 async function needsGatewayRegistrationRepair(payload: GatewayStatusPayload | null) {

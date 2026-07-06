@@ -995,6 +995,29 @@ test("lightweight registration status completes the Gateway service step while s
   assert.equal(steps.find((step) => step.id === "runtime")?.state, "current");
 });
 
+test("fresh install setup ignores orphaned Gateway registration before CLI is confirmed", () => {
+  const snapshot = {
+    diagnostics: {
+      installed: false,
+      loaded: false,
+      rpcOk: false,
+      runtime: { stateWritable: false, sessionStoreWritable: false }
+    }
+  } as unknown as MissionControlSnapshot;
+
+  const steps = buildSystemSteps(snapshot, null, {
+    forcePending: true,
+    cliInstalled: false,
+    gatewayRegistered: true,
+    gatewayReachable: false
+  });
+
+  assert.equal(steps.find((step) => step.id === "cli")?.state, "pending");
+  assert.equal(steps.find((step) => step.id === "gateway")?.state, "pending");
+  assert.equal(steps.find((step) => step.id === "gateway")?.description, "Register the gateway service once.");
+  assert.equal(steps.find((step) => step.id === "runtime")?.state, "pending");
+});
+
 test("macOS lightweight registration probe detects the OpenClaw LaunchAgent", async () => {
   const homeDir = await mkdtemp(path.join(os.tmpdir(), "agentos-macos-gateway-"));
   const launchAgentsDir = path.join(homeDir, "Library", "LaunchAgents");

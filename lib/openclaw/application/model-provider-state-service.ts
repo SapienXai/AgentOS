@@ -64,6 +64,8 @@ export type OpenClawProviderModelsEntry = Record<string, unknown> & {
   baseURL?: string;
   apiKey?: string;
   api?: string;
+  name?: string;
+  label?: string;
 };
 
 export type OpenClawProviderModelEntry = Record<string, unknown> & {
@@ -178,6 +180,12 @@ export async function buildOpenClawFileBasedProviderConnectionStatus(
     connected,
     canConnect: true,
     needsTerminal: descriptor.connectKind === "oauth",
+    source: "legacy-file",
+    degraded: true,
+    stale: true,
+    recovery: connected
+      ? "Reconnect this provider through Gateway-backed OpenClaw auth so AgentOS can verify live readiness."
+      : `Connect ${descriptor.shortLabel} through OpenClaw Gateway before using these configured models.`,
     detail:
       connected
         ? `${configuredCount} configured model${configuredCount === 1 ? "" : "s"} in AgentOS.${customEndpoint ? ` Custom endpoint: ${customEndpoint}.` : ""}`

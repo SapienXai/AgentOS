@@ -138,6 +138,8 @@ export function AddModelsDialog({
     isLoading: isLoadingGlobalCatalog,
     error: globalCatalogError,
     warning: globalCatalogWarning,
+    source: globalCatalogSource,
+    age: globalCatalogAge,
     refresh: refreshGlobalCatalog
   } = useModelCatalog({
     enabled: open && activeTab === "catalog",
@@ -192,7 +194,10 @@ export function AddModelsDialog({
               connected: Boolean(provider.baseUrl),
               canConnect: true,
               needsTerminal: false,
-              source: "explicit-provider-config",
+              source: "openclaw-config",
+              degraded: false,
+              stale: false,
+              recovery: null,
               detail: provider.baseUrl
                 ? `${provider.modelCount ?? 0} configured model${provider.modelCount === 1 ? "" : "s"} in OpenClaw. Endpoint: ${provider.baseUrl}.`
                 : "Custom provider is configured in OpenClaw."
@@ -299,7 +304,7 @@ export function AddModelsDialog({
 
     for (const provider of providerDescriptors) {
       const connection = resolveConnectionDetail(snapshot, providerDrafts, provider.id);
-      const rank = getProviderSortRank(provider.id, connection.connected);
+      const rank = getProviderSortRank(provider.id, isProviderConnectionReady(connection));
 
       if (rank === 0) {
         buckets.connected.push(provider);
@@ -328,7 +333,7 @@ export function AddModelsDialog({
           return {
             provider,
             connection,
-            statusRank: getProviderSortRank(provider.id, connection.connected)
+            statusRank: getProviderSortRank(provider.id, isProviderConnectionReady(connection))
           };
         })
         .sort((left, right) => {
@@ -364,11 +369,13 @@ export function AddModelsDialog({
   const activeConnection = activeProviderId
     ? resolveConnectionDetail(snapshot, providerDrafts, activeProviderId)
     : null;
+  const activeConnectionReady = isProviderConnectionReady(activeConnection);
+  const activeConnectionLabel = resolveProviderConnectionLabel(activeConnection, activeDescriptor?.connectKind);
   const switchAccountProvider = switchAccountProviderId ? getModelProviderDescriptor(switchAccountProviderId) : null;
   const switchAccountDraft = switchAccountProviderId ? resolveDraft(providerDrafts[switchAccountProviderId]) : null;
   const switchAccountCommand = switchAccountDraft?.manualCommand ?? null;
   const connectedProviderCount = providerDescriptorsByStatus.connected.length;
-  const availableProviderCards = providerCards.filter(({ connection }) => connection.connected);
+  const availableProviderCards = providerCards.filter(({ connection }) => isProviderConnectionReady(connection));
   const localProviderCards = providerCards.filter(({ provider }) => provider.connectKind === "local");
   const defaultProviderCards = defaultModelProviderId
     ? providerCards.filter(({ provider }) => provider.id === defaultModelProviderId)
@@ -403,7 +410,7 @@ export function AddModelsDialog({
       : sidebarFilter === "local-models"
         ? "Local providers detected on this machine."
         : sidebarFilter === "defaults"
-          ? "Providers behind the current default model."
+          ? "Provider behind the OpenClaw global default."
           : sidebarFilter === "catalog"
             ? "Browse the global model catalog."
             : "Show all provider cards.";
@@ -425,7 +432,7 @@ export function AddModelsDialog({
     (activeDraft.flowState === "discovery-loading" ||
       activeDraft.flowState === "disconnecting" ||
       (activeDraft.flowState === "connecting" && !activeDraft.manualCommand) ||
-      (activeDraft.statusMessage?.startsWith("Checking ") === true && !activeConnection?.connected));
+      (activeDraft.statusMessage?.startsWith("Checking ") === true && !activeConnectionReady));
   const loadingHeroTitle =
     activeDraft.flowState === "discovery-loading"
       ? `Discovering ${activeProviderLabel} models...`
@@ -438,7 +445,7 @@ export function AddModelsDialog({
     activeDraft.flowState === "discovery-loading"
       ? "Pulling the provider catalog into AgentOS."
       : activeDraft.flowState === "disconnecting"
-        ? "Removing provider models, checking affected agents, and updating safe model defaults."
+        ? "Removing provider models, checking affected agents, and updating the OpenClaw global default when needed."
       : activeDraft.flowState === "connecting"
         ? "Preparing the provider connection."
         : "Checking provider status before discovery.";
@@ -454,7 +461,7 @@ export function AddModelsDialog({
   const discoveryActionLabel =
     activeDraft.models.length > 0 ? "Refresh discovery" : "Discover models";
   const discoveryButtonLabel = isDiscovering ? "Discovering..." : discoveryActionLabel;
-  const discoveryDescription = activeConnection?.connected
+  const discoveryDescription = activeConnectionReady
     ? "The provider is connected. Pull the available models into this workspace before choosing one."
     : activeSetupMode === "custom-openai-compatible"
       ? "Configure the explicit OpenAI-compatible provider first, then pull the available models into this workspace."
@@ -831,8 +838,8 @@ export function AddModelsDialog({
           ? `${impact.affectedAgents.length} affected agent${impact.affectedAgents.length === 1 ? "" : "s"} (${affectedAgentNames}) will move to ${impact.replacementModelId}.`
           : "No agents currently use this provider.",
         impact.defaultModelAffected
-          ? `The global default will move to ${impact.replacementModelId}.`
-          : "The global default is not affected.",
+          ? `The OpenClaw global default will move to ${impact.replacementModelId}.`
+          : "The OpenClaw global default is not affected.",
         impact.credentialCleanup === "retained-unsupported"
           ? "OpenClaw does not expose credential deletion yet. Reconnecting will replace its retained default credential."
           : "Provider configuration will be removed."
@@ -1423,7 +1430,7 @@ export function AddModelsDialog({
                       </Badge>
                     </span>
                     <span className={cn("mt-1 block text-[0.66rem] leading-none", sidebarFilter === "defaults" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
-                      Current default route
+                      OpenClaw global default
                     </span>
                   </span>
                 </span>
@@ -1478,16 +1485,14 @@ export function AddModelsDialog({
                     {sidebarVisibleProviderCards.map(({ provider, connection }) => {
                       const providerDraft = resolveDraft(providerDrafts[provider.id]);
                       const providerDisconnecting = providerDraft.flowState === "disconnecting";
+                      const providerReady = isProviderConnectionReady(connection);
+                      const providerStateLabel = resolveProviderConnectionLabel(connection, provider.connectKind);
                       const providerConnectedLabel = providerDisconnecting
                         ? "Disconnecting"
-                        : connection.connected
-                          ? "Connected"
-                          : provider.connectKind === "local"
-                            ? "Detected"
-                            : "Not connected";
+                        : providerStateLabel;
                       const providerFooterLabel = providerDisconnecting
                         ? "Removing provider"
-                        : connection.connected
+                        : providerReady
                           ? "Configured"
                           : provider.connectKind === "local"
                             ? "Detected"
@@ -1497,7 +1502,7 @@ export function AddModelsDialog({
                         providerDraft.models.length;
                       const active = activeProviderId === provider.id && activeSetupMode === "standard";
                       const isChatGPTProvider = provider.id === "openai-codex";
-                      const showSwitchAccountAction = isChatGPTProvider && connection.connected;
+                      const showSwitchAccountAction = isChatGPTProvider && providerReady;
 
                       return (
                         <div key={provider.id} className="h-full">
@@ -1541,7 +1546,7 @@ export function AddModelsDialog({
                                     "px-2 py-0.5 text-[0.62rem]",
                                     providerDisconnecting
                                       ? isLight ? "border-cyan-300 bg-cyan-50 text-cyan-800" : "border-cyan-300/20 bg-cyan-400/10 text-cyan-200"
-                                      : connection.connected
+                                      : providerReady
                                       ? isLight ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-emerald-300/20 bg-emerald-400/10 text-emerald-200"
                                       : provider.connectKind === "local"
                                         ? isLight ? "border-cyan-300 bg-cyan-50 text-cyan-800" : "border-cyan-300/20 bg-cyan-400/10 text-cyan-200"
@@ -1623,7 +1628,7 @@ export function AddModelsDialog({
                           </p>
                         </div>
                         <Badge
-                          variant={isDisconnecting ? "muted" : activeConnection?.connected ? "success" : "muted"}
+                          variant={isDisconnecting ? "muted" : activeConnectionReady ? "success" : "muted"}
                           className={cn(
                             "px-1.5 py-0.5 text-[9px] tracking-[0.12em]",
                             isDisconnecting &&
@@ -1632,15 +1637,15 @@ export function AddModelsDialog({
                                 : "border-cyan-300/20 bg-cyan-400/10 text-cyan-200"),
                             isLight &&
                               !isDisconnecting &&
-                              activeConnection?.connected &&
+                              activeConnectionReady &&
                               "border-emerald-300 bg-emerald-50 text-emerald-800",
                             isLight &&
                               !isDisconnecting &&
-                              !activeConnection?.connected &&
+                              !activeConnectionReady &&
                               "border-[#e3dbd0] bg-white/70 text-[#71675d]"
                           )}
                         >
-                          {isDisconnecting ? "Disconnecting" : activeConnection?.connected ? "Connected" : "Not connected"}
+                          {isDisconnecting ? "Disconnecting" : activeConnectionLabel}
                           </Badge>
                       </div>
 
@@ -1756,7 +1761,7 @@ export function AddModelsDialog({
                                   className="h-8 rounded-full px-3 text-[10px]"
                                   disabled={activeDraft.flowState === "connecting" && !activeDraft.manualCommand}
                                   onClick={() => {
-                                    if (activeConnection?.connected) {
+                                    if (activeConnectionReady) {
                                       void runStatus(activeProviderId);
                                       return;
                                     }
@@ -1770,7 +1775,7 @@ export function AddModelsDialog({
                                       Connecting...
                                     </>
                                   ) : (
-                                    activeConnection?.connected ? "Refresh status" : "Connect ChatGPT"
+                                    activeConnectionReady ? "Refresh status" : "Connect ChatGPT"
                                   )}
                                 </Button>
                                 <Button
@@ -1779,7 +1784,7 @@ export function AddModelsDialog({
                                   className="h-8 rounded-full px-3 text-[10px]"
                                   disabled={activeDraft.flowState === "connecting" && !activeDraft.manualCommand}
                                   onClick={() => {
-                                    if (activeConnection?.connected) {
+                                    if (activeConnectionReady) {
                                       void switchProviderAccount(activeProviderId);
                                       return;
                                     }
@@ -1787,7 +1792,7 @@ export function AddModelsDialog({
                                     void connectProvider(activeProviderId, { force: true });
                                   }}
                                 >
-                                  {activeConnection?.connected ? "Switch account" : "Refresh setup"}
+                                  {activeConnectionReady ? "Switch account" : "Refresh setup"}
                                 </Button>
                               </div>
 
@@ -2095,13 +2100,13 @@ export function AddModelsDialog({
                       <Badge
                         className={cn(
                           "mt-3 px-2.5 py-1 text-[0.68rem]",
-                          activeConnection?.connected
+                          activeConnectionReady
                             ? isLight ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-emerald-300/20 bg-emerald-400/10 text-emerald-200"
                             : isLight ? "border-amber-300 bg-amber-50 text-amber-800" : "border-amber-300/20 bg-amber-400/10 text-amber-200"
                         )}
                       >
-                        <span className={cn("mr-2 h-2 w-2 rounded-full", activeConnection?.connected ? "bg-emerald-400" : "bg-amber-400")} />
-                        {activeConnection?.connected ? "Connected" : "Not connected"}
+                        <span className={cn("mr-2 h-2 w-2 rounded-full", activeConnectionReady ? "bg-emerald-400" : "bg-amber-400")} />
+                        {activeConnectionLabel}
                       </Badge>
 
                       <div className="mt-4 space-y-4">
@@ -2407,7 +2412,7 @@ export function AddModelsDialog({
                           <InspectorMetric label="Models discovered" value={String(selectedProviderModelCount)} surfaceTheme={surfaceTheme} />
                           <InspectorMetric label="Context window support" value={selectedProviderMaxContext > 0 ? `Up to ${Intl.NumberFormat().format(selectedProviderMaxContext / 1000)}k` : "Unknown"} surfaceTheme={surfaceTheme} />
                           <InspectorMetric label="Discovery state" value={activeDraft.discoveryLoaded ? "Loaded this session" : "Not refreshed"} surfaceTheme={surfaceTheme} />
-                          <InspectorMetric label="Status" value={activeConnection?.connected ? "Healthy" : "Needs setup"} tone={activeConnection?.connected ? "success" : "warning"} surfaceTheme={surfaceTheme} />
+                          <InspectorMetric label="Status" value={activeConnectionLabel} tone={activeConnectionReady ? "success" : "warning"} surfaceTheme={surfaceTheme} />
                         </div>
                       </div>
 
@@ -2534,7 +2539,11 @@ export function AddModelsDialog({
 
                 {globalCatalogWarning ? (
                   <div className={cn("rounded-[16px] border px-3 py-2 text-[10px]", isLight ? "border-amber-200 bg-amber-50 text-amber-800" : "border-amber-300/20 bg-amber-300/[0.06] text-amber-100")}>
+                    <span className="font-semibold">
+                      {globalCatalogSource === "openclaw-cache" ? "Cached catalog" : globalCatalogSource === "snapshot" ? "Snapshot catalog" : "Catalog warning"}:
+                    </span>{" "}
                     {globalCatalogWarning}
+                    {typeof globalCatalogAge === "number" && globalCatalogAge > 0 ? ` Age: ${formatCatalogAge(globalCatalogAge)}.` : ""}
                   </div>
                 ) : null}
 
@@ -2858,6 +2867,10 @@ function resolveConnectionDetail(
       connected: localModelCount > 0,
       canConnect: true,
       needsTerminal: false,
+      source: "local-runtime",
+      degraded: true,
+      stale: false,
+      recovery: "Refresh through OpenClaw model discovery when Gateway catalog support is available.",
       detail:
         localModelCount > 0
           ? `${localModelCount} model${localModelCount === 1 ? "" : "s"} already visible in AgentOS.`
@@ -2873,7 +2886,10 @@ function resolveConnectionDetail(
       connected: hasAvailableModel,
       canConnect: true,
       needsTerminal: false,
-      source: "explicit-provider-config",
+      source: "openclaw-config",
+      degraded: !hasAvailableModel,
+      stale: false,
+      recovery: hasAvailableModel ? null : "Reconnect this provider or add a ready model before assigning it.",
       detail: hasAvailableModel
         ? `${localModelCount} configured model${localModelCount === 1 ? "" : "s"} available through OpenClaw.`
         : `${localModelCount} configured model${localModelCount === 1 ? "" : "s"} need provider recovery.`
@@ -2887,6 +2903,10 @@ function resolveConnectionDetail(
     connected,
     canConnect: true,
     needsTerminal: providerId === "openai-codex",
+    source: readinessProvider ? "gateway" : "openclaw-config",
+    degraded: !connected && localModelCount > 0,
+    stale: false,
+    recovery: connected ? null : `Connect ${getModelProviderDescriptor(providerId).shortLabel} through OpenClaw, then refresh discovery.`,
     detail: connected
       ? readinessProvider?.detail || getModelProviderDescriptor(providerId).helperText
       : localModelCount > 0
@@ -2905,6 +2925,55 @@ function getProviderSortRank(providerId: AddModelsProviderId, connected: boolean
   }
 
   return 2;
+}
+
+function formatCatalogAge(ageMs: number) {
+  if (ageMs < 60_000) {
+    return `${Math.max(1, Math.round(ageMs / 1000))}s`;
+  }
+
+  if (ageMs < 3_600_000) {
+    return `${Math.round(ageMs / 60_000)}m`;
+  }
+
+  return `${Math.round(ageMs / 3_600_000)}h`;
+}
+
+function isProviderConnectionReady(connection: AddModelsProviderConnectionStatus | null | undefined) {
+  if (!connection?.connected) {
+    return false;
+  }
+
+  return !connection.degraded &&
+    !connection.stale &&
+    (connection.source === "gateway" || connection.source === "openclaw-config");
+}
+
+function resolveProviderConnectionLabel(
+  connection: AddModelsProviderConnectionStatus | null | undefined,
+  connectKind?: string
+) {
+  if (!connection) {
+    return "Unknown";
+  }
+
+  if (connection.source === "agentos-sidecar") {
+    return "Disconnected in AgentOS";
+  }
+
+  if (connection.stale) {
+    return "Cached";
+  }
+
+  if (connection.degraded) {
+    return connection.connected ? "Degraded" : "Needs reconnect";
+  }
+
+  if (isProviderConnectionReady(connection)) {
+    return "Connected";
+  }
+
+  return connectKind === "local" ? "Detected" : "Not connected";
 }
 
 function modelMatchesProvider(providerId: AddModelsProviderId, modelId: string, modelProvider?: string | null) {

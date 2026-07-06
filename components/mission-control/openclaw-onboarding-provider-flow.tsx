@@ -135,7 +135,10 @@ export function OpenClawOnboardingProviderFlow({
               connected: Boolean(provider.baseUrl),
               canConnect: true,
               needsTerminal: false,
-              source: "explicit-provider-config",
+              source: "openclaw-config",
+              degraded: false,
+              stale: false,
+              recovery: null,
               detail: provider.baseUrl
                 ? `${provider.modelCount} configured model${provider.modelCount === 1 ? "" : "s"} in OpenClaw. Endpoint: ${provider.baseUrl}.`
                 : "Custom provider is configured in OpenClaw."

@@ -78,6 +78,8 @@ export function AgentModelPickerDialog({
   const [saving, setSaving] = useState(false);
   const [removingModelId, setRemovingModelId] = useState<string | null>(null);
   const [deleteTargetModelId, setDeleteTargetModelId] = useState<string | null>(null);
+  const [deleteImpactLoading, setDeleteImpactLoading] = useState(false);
+  const [deleteImpact, setDeleteImpact] = useState<AddModelsProviderActionResult["modelRemoveImpact"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const snapshotRef = useRef(snapshot);
   const {
@@ -255,9 +257,38 @@ export function AgentModelPickerDialog({
     onOpenChange(false);
   };
 
-  const handleRequestDeleteModel = (model: AgentModelRecord) => {
+  const handleRequestDeleteModel = async (model: AgentModelRecord) => {
     setDeleteTargetModelId(model.id);
+    setDeleteImpact(null);
     setError(null);
+
+    setDeleteImpactLoading(true);
+    try {
+      const response = await fetch("/api/models/providers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "remove-model-impact",
+          provider: resolvePickerModelProvider(model),
+          modelId: model.id
+        })
+      });
+      const payload = (await response.json()) as AddModelsProviderActionResult & { error?: string };
+
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || "Unable to inspect model removal impact.");
+      }
+
+      setDeleteImpact(payload.modelRemoveImpact ?? null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to inspect model removal impact.";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setDeleteImpactLoading(false);
+    }
   };
 
   const handleConfirmDeleteModel = async () => {
@@ -298,6 +329,7 @@ export function AgentModelPickerDialog({
           : currentSelected
       );
       setDeleteTargetModelId(null);
+      setDeleteImpact(null);
 
       toast.success("Model removed.", {
         description: deleteTargetModel.name
@@ -403,16 +435,16 @@ export function AgentModelPickerDialog({
                   <ProviderGlyph provider={currentModel ? resolvePickerModelProvider(currentModel) : "openai-codex"} />
                 </div>
                 <div className="min-w-0">
-                  <p className={cn("text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Current model</p>
+                  <p className={cn("text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Agent override</p>
                   <p className={cn("truncate text-[0.8rem] font-semibold", isLight ? "text-foreground" : "text-white")}>
-                    {currentModel?.name || (currentModelId ? currentModelId : "OpenClaw default")}
+                    {currentModel?.name || (currentModelId ? currentModelId : "OpenClaw global default")}
                   </p>
                 </div>
               </div>
             </div>
 
             <div className="mt-2.5 grid grid-cols-3 gap-1.5">
-              <MetricTile label="Provider" value={currentModel ? formatPickerModelProviderLabel(currentModel) : "Default"} surfaceTheme={surfaceTheme} />
+              <MetricTile label="Provider" value={currentModel ? formatPickerModelProviderLabel(currentModel) : "OpenClaw global default"} surfaceTheme={surfaceTheme} />
               <MetricTile label="Context window" value={currentModel ? formatContextWindow(currentModel.contextWindow) : "Unknown"} surfaceTheme={surfaceTheme} />
               <MetricTile label="Status" value={currentStatusLabel} tone={currentModelSelectable ? "success" : "warning"} surfaceTheme={surfaceTheme} />
             </div>
@@ -601,7 +633,9 @@ export function AgentModelPickerDialog({
                           aria-label={`Remove ${formatModelLabel(model.id)} from config`}
                           title="Remove from config"
                           disabled={removingModelId === model.id}
-                          onClick={() => handleRequestDeleteModel(model)}
+                          onClick={() => {
+                            void handleRequestDeleteModel(model);
+                          }}
                           className={cn(
                             "flex h-8 w-8 items-center justify-center self-center justify-self-end rounded-full border border-transparent text-rose-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50",
                             isLight ? "hover:bg-rose-50 hover:text-rose-600" : "hover:bg-rose-500/10 hover:text-rose-300"
@@ -688,7 +722,12 @@ export function AgentModelPickerDialog({
           </div>
         </div>
 
-        <Dialog open={Boolean(deleteTargetModel)} onOpenChange={(nextOpen) => !nextOpen && setDeleteTargetModelId(null)}>
+        <Dialog open={Boolean(deleteTargetModel)} onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setDeleteTargetModelId(null);
+            setDeleteImpact(null);
+          }
+        }}>
           <DialogContent
             className={cn(
               "w-[calc(100vw-48px)] max-w-[520px] rounded-[24px] p-0",
@@ -712,7 +751,37 @@ export function AgentModelPickerDialog({
                 <p className={cn("mt-0.5 text-sm", isLight ? "text-muted-foreground" : "text-slate-300")}>{deleteTargetModel?.id}</p>
               </div>
               <div className={cn("mt-3 text-sm leading-6", isLight ? "text-foreground/80" : "text-slate-300")}>
-                Removing the model will update the OpenClaw config immediately and keep it out of this list after refresh.
+                Removing the model updates OpenClaw config immediately. AgentOS will reassign affected agents before removing the model.
+              </div>
+              <div className={cn("mt-3 rounded-[16px] border px-4 py-3 text-sm", isLight ? "border-border bg-background" : "border-white/10 bg-slate-950/45")}>
+                {deleteImpactLoading ? (
+                  <div className={cn("flex items-center gap-2", isLight ? "text-muted-foreground" : "text-slate-300")}>
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    Checking affected agents and default model…
+                  </div>
+                ) : deleteImpact ? (
+                  <div className="space-y-2">
+                    <p className={cn("font-medium", deleteImpact.blockedReason ? "text-rose-500" : isLight ? "text-foreground" : "text-white")}>
+                      {deleteImpact.blockedReason ?? "Removal can proceed safely."}
+                    </p>
+                    <p className={isLight ? "text-muted-foreground" : "text-slate-300"}>
+                      Affected agents: {deleteImpact.affectedAgents.length}
+                      {deleteImpact.activeAgentIds.length > 0 ? ` (${deleteImpact.activeAgentIds.length} active)` : ""}.
+                    </p>
+                    <p className={isLight ? "text-muted-foreground" : "text-slate-300"}>
+                      OpenClaw global default affected: {deleteImpact.defaultModelAffected ? "yes" : "no"}.
+                    </p>
+                    {deleteImpact.replacementModelId ? (
+                      <p className={isLight ? "text-muted-foreground" : "text-slate-300"}>
+                        Replacement model: {deleteImpact.replacementModelId}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className={isLight ? "text-muted-foreground" : "text-slate-300"}>
+                    Impact could not be inspected yet. Retry before removing this model.
+                  </p>
+                )}
               </div>
             </div>
             <div className={cn("flex items-center justify-end gap-2 border-t px-5 py-4", isLight ? "border-border bg-card" : "border-white/10 bg-slate-950/50")}>
@@ -733,7 +802,12 @@ export function AgentModelPickerDialog({
                     ? "bg-rose-600 text-white hover:bg-rose-700"
                     : "bg-rose-500 text-white hover:bg-rose-400"
                 )}
-                disabled={!deleteTargetModel || removingModelId === deleteTargetModel.id}
+                disabled={
+                  !deleteTargetModel ||
+                  deleteImpactLoading ||
+                  Boolean(deleteImpact?.blockedReason) ||
+                  removingModelId === deleteTargetModel.id
+                }
                 onClick={() => {
                   void handleConfirmDeleteModel();
                 }}
