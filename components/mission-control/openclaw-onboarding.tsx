@@ -384,7 +384,10 @@ export function OpenClawOnboarding({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={onBackToSystem}
+                  onClick={() => {
+                    setSelectedVisualStage("system");
+                    onBackToSystem();
+                  }}
                   disabled={stageRun.runState === "running"}
                   className={cn("h-10 rounded-full px-4 text-[13px]", ghostActionClassName(surfaceTheme))}
                 >
