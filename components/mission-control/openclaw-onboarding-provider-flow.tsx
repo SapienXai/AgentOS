@@ -565,6 +565,29 @@ export function OpenClawOnboardingProviderFlow({
       ) : null}
 
       <div className="mt-3 flex snap-x snap-mandatory flex-nowrap gap-2 overflow-x-auto overflow-y-hidden pb-2 pr-1">
+        <div className="w-[128px] shrink-0 snap-start sm:w-[136px]">
+          <button
+            type="button"
+            onClick={() => onOpenAddModels()}
+            className={cn(
+              "group flex h-full min-h-[104px] w-full flex-col justify-between rounded-[16px] border p-2 text-left transition-colors",
+              isLight
+                ? "border-cyan-200 bg-cyan-50/70 text-[#2d241f] hover:border-cyan-300 hover:bg-cyan-50"
+                : "border-cyan-300/30 bg-cyan-300/[0.06] text-white hover:border-cyan-300/50 hover:bg-cyan-300/[0.1]"
+            )}
+            aria-label="Browse all models"
+          >
+            <span className={cn("flex h-6 w-6 items-center justify-center rounded-[9px] border", isLight ? "border-cyan-200 bg-white text-cyan-700" : "border-cyan-300/20 bg-cyan-300/10 text-cyan-100")}>
+              <Search className="h-3.5 w-3.5" aria-hidden="true" />
+            </span>
+            <span>
+              <span className="block font-display text-[0.72rem]">All models</span>
+              <span className={cn("mt-1 block text-[8px] leading-[0.85rem]", isLight ? "text-[#71675d]" : "text-slate-400")}>
+                Browse the complete model catalog.
+              </span>
+            </span>
+          </button>
+        </div>
         {providerDescriptors.map((provider) => {
           const draft = resolveDraft(providerDrafts[provider.id]);
           const connection = draft.connection ?? resolveConnectionDetail(snapshot, provider.id);
