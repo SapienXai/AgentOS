@@ -3487,6 +3487,7 @@ export function MissionControlShell({
           onOpenAddModels={openAddModelsDialog}
           onOpenGatewayAuthSettings={openGatewayAuthSettings}
           onEnterAgentOS={enterAgentOS}
+          onSkipSetup={dismissOnboarding}
           onCreateWorkspace={runLaunchpadWorkspaceCreate}
           onContinueToModels={continueToModelSetup}
           onBackToSystem={() => setOnboardingStage("system")}
@@ -4347,6 +4348,7 @@ export function MissionControlShell({
             onOpenAddModels={openAddModelsDialog}
             onOpenGatewayAuthSettings={openGatewayAuthSettings}
             onEnterAgentOS={enterAgentOS}
+            onSkipSetup={dismissOnboarding}
             onCreateWorkspace={runLaunchpadWorkspaceCreate}
             onContinueToModels={continueToModelSetup}
             onBackToSystem={() => setOnboardingStage("system")}
