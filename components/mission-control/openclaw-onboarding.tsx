@@ -79,6 +79,7 @@ export function OpenClawOnboarding({
   onOpenGatewayAuthSettings,
   onCreateWorkspace,
   onEnterAgentOS,
+  onSkipSetup,
   onContinueToModels,
   onBackToSystem,
   onSelectStage,
@@ -117,6 +118,7 @@ export function OpenClawOnboarding({
   onOpenGatewayAuthSettings: () => void;
   onCreateWorkspace: () => void;
   onEnterAgentOS: () => void;
+  onSkipSetup: () => void;
   onContinueToModels: () => void;
   onBackToSystem: () => void;
   onSelectStage: (stage: WizardStage) => void;
@@ -455,7 +457,7 @@ export function OpenClawOnboarding({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={onEnterAgentOS}
+                      onClick={onSkipSetup}
                       disabled={stageRun.runState === "running"}
                       title="Skip setup and enter AgentOS with degraded OpenClaw readiness."
                       className={cn("h-10 rounded-full px-4 text-[13px]", ghostActionClassName(surfaceTheme))}
