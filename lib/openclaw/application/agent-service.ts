@@ -361,6 +361,11 @@ export async function updateAgent(input: AgentUpdateInput) {
       : agent.modelId === "unassigned"
         ? resolveSnapshotDefaultAgentModelId(snapshot)
         : agent.modelId;
+
+  if (input.modelId !== undefined) {
+    assertAgentModelReadyForAssignment(snapshot, nextModelId);
+  }
+
   const onlyModelChanged =
     input.modelId !== undefined &&
     input.name === undefined &&
@@ -657,6 +662,17 @@ function isSnapshotModelUsable(snapshot: MissionControlSnapshot, modelId: string
   }
 
   return model.missing !== true && model.available !== false;
+}
+
+export function assertAgentModelReadyForAssignment(
+  snapshot: MissionControlSnapshot,
+  modelId: string | undefined
+) {
+  const readinessError = resolveAgentCreationReadinessError(snapshot, modelId);
+
+  if (readinessError) {
+    throw new Error(readinessError);
+  }
 }
 
 function assertAgentIdAvailable(

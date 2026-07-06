@@ -1386,7 +1386,18 @@ export interface AddModelsProviderConnectionStatus {
   canConnect: boolean;
   needsTerminal: boolean;
   detail: string | null;
-  source?: "model-status" | "gateway-config" | "explicit-provider-config" | "local-provider" | "cli-fallback" | "unsupported" | "unknown";
+  source:
+    | "gateway"
+    | "openclaw-config"
+    | "legacy-file"
+    | "local-runtime"
+    | "agentos-sidecar"
+    | "cache"
+    | "unsupported"
+    | "unknown";
+  degraded: boolean;
+  stale: boolean;
+  recovery?: string | null;
 }
 
 export interface AddModelsEmptyState {
@@ -1403,6 +1414,7 @@ export type AddModelsProviderAction =
   | "discover"
   | "add-models"
   | "set-default"
+  | "remove-model-impact"
   | "remove-model"
   | "disconnect-impact"
   | "disconnect";
@@ -1420,6 +1432,21 @@ export interface AddModelsProviderDisconnectImpact {
   replacementModelId: string | null;
   blockedReason: string | null;
   credentialCleanup: "removed" | "not-required" | "retained-unsupported";
+}
+
+export interface AddModelsModelRemoveImpact {
+  modelId: string;
+  provider: AddModelsProviderId;
+  affectedAgents: Array<{
+    id: string;
+    name: string;
+    modelId: string;
+  }>;
+  activeAgentIds: string[];
+  defaultModelAffected: boolean;
+  currentDefaultModelId: string | null;
+  replacementModelId: string | null;
+  blockedReason: string | null;
 }
 
 export type AddModelsProviderActionRequest =
@@ -1456,6 +1483,11 @@ export type AddModelsProviderActionRequest =
       modelId: string;
     }
   | {
+      action: "remove-model-impact";
+      provider: AddModelsProviderId;
+      modelId: string;
+    }
+  | {
       action: "remove-model";
       provider: AddModelsProviderId;
       modelId: string;
@@ -1486,6 +1518,7 @@ export interface AddModelsProviderActionResult {
     via: "gateway" | "legacy-file";
   };
   disconnectImpact?: AddModelsProviderDisconnectImpact;
+  modelRemoveImpact?: AddModelsModelRemoveImpact;
   snapshot?: MissionControlSnapshot;
 }
 

@@ -65,6 +65,10 @@ export function buildModelStatusConnectionStatus(
     connected,
     canConnect: true,
     needsTerminal: descriptor.connectKind === "oauth",
+    source: "gateway",
+    degraded: false,
+    stale: false,
+    recovery: connected ? null : `Connect ${descriptor.shortLabel} in OpenClaw, then refresh model discovery.`,
     detail: resolveConnectionDetail({
       provider,
       descriptor,

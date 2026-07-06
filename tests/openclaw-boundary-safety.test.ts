@@ -93,6 +93,7 @@ test("OpenClaw direct CLI JSON usage remains in documented fallback/discovery fi
 test("OpenClaw direct CLI command usage remains in documented fallback/provisioning files", () => {
   const allowed = new Set([
     "lib/openclaw/application/gateway-service.ts",
+    "lib/openclaw/application/mission-control/diagnostics.ts",
     "lib/openclaw/client/cli-gateway-client.ts",
     "lib/openclaw/reset.ts"
   ]);
@@ -191,8 +192,11 @@ test("Model Library catalog requests are bounded and retain real OpenClaw fallba
   const source = readFileSync(path.join(rootDir, "app/api/models/catalog/route.ts"), "utf8");
 
   assert.match(source, /listOpenClawModels\(\{ all: true \}, \{ timeoutMs: OPENCLAW_CATALOG_TIMEOUT_MS \}\)/);
-  assert.match(source, /lastSuccessfulCatalog/);
+  assert.match(source, /readModelCatalogCache/);
+  assert.match(source, /writeModelCatalogCache/);
+  assert.match(source, /resolveModelCatalogCacheAgeMs/);
   assert.match(source, /source: "openclaw-cache"/);
+  assert.match(source, /age:/);
   assert.match(source, /getMissionControlSnapshot\(\{ loadProfile: "system" \}\)/);
   assert.match(source, /readOpenClawConfiguredModelIds\(\)/);
   assert.match(source, /markConfiguredCatalogModels\(result\.models, configuredModelIds\)/);

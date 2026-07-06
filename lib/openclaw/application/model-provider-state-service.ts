@@ -64,6 +64,8 @@ export type OpenClawProviderModelsEntry = Record<string, unknown> & {
   baseURL?: string;
   apiKey?: string;
   api?: string;
+  name?: string;
+  label?: string;
 };
 
 export type OpenClawProviderModelEntry = Record<string, unknown> & {
@@ -178,6 +180,12 @@ export async function buildOpenClawFileBasedProviderConnectionStatus(
     connected,
     canConnect: true,
     needsTerminal: descriptor.connectKind === "oauth",
+    source: "legacy-file",
+    degraded: true,
+    stale: true,
+    recovery: connected
+      ? "Reconnect this provider through Gateway-backed OpenClaw auth so AgentOS can verify live readiness."
+      : `Connect ${descriptor.shortLabel} through OpenClaw Gateway before using these configured models.`,
     detail:
       connected
         ? `${configuredCount} configured model${configuredCount === 1 ? "" : "s"} in AgentOS.${customEndpoint ? ` Custom endpoint: ${customEndpoint}.` : ""}`
@@ -291,6 +299,11 @@ export async function persistOpenClawExplicitProviderConfig(
   delete nextProviderConfig.baseURL;
   nextProviderConfig.apiKey = input.apiKey.trim();
   nextProviderConfig.api = input.api?.trim() || "openai-completions";
+  const providerName = input.providerName?.trim();
+  if (providerName) {
+    nextProviderConfig.name = providerName;
+    nextProviderConfig.label = providerName;
+  }
 
   if (input.models?.length) {
     nextProviderConfig.models = mergeProviderModelEntries(nextProviderConfig.models ?? [], input.models);
@@ -1314,13 +1327,17 @@ function sanitizeProviderConfigForOpenClaw(entry: OpenClawProviderModelsEntry): 
   const baseUrl = readProviderConfigBaseUrl(entry) ?? undefined;
   const apiKey = typeof entry.apiKey === "string" && entry.apiKey.trim() ? entry.apiKey.trim() : undefined;
   const api = typeof entry.api === "string" && entry.api.trim() ? entry.api.trim() : undefined;
+  const name = typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : undefined;
+  const label = typeof entry.label === "string" && entry.label.trim() ? entry.label.trim() : name;
   const models = mergeProviderModelEntries([], entry.models ?? []);
 
   return {
     ...(models.length > 0 ? { models } : {}),
     ...(baseUrl ? { baseUrl } : {}),
     ...(apiKey ? { apiKey } : {}),
-    ...(api ? { api } : {})
+    ...(api ? { api } : {}),
+    ...(name ? { name } : {}),
+    ...(label ? { label } : {})
   };
 }
 

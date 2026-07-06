@@ -75,6 +75,7 @@ export type {
   AddModelsProviderConnectKind,
   AddModelsProviderConnectionStatus,
   AddModelsProviderDisconnectImpact,
+  AddModelsModelRemoveImpact,
   AddModelsProviderId,
   AgentBootstrapFileInput,
   AgentBootstrapFilePath,

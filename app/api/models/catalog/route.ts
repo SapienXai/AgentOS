@@ -9,6 +9,14 @@ import {
   addOpenClawModelsToConfig,
   readOpenClawConfiguredModelIds
 } from "@/lib/openclaw/application/model-provider-state-service";
+import {
+  clearModelCatalogCache,
+  readModelCatalogCache,
+  resolveModelCatalogCacheAgeMs,
+  type GlobalCatalogModel,
+  type ModelCatalogCacheSource,
+  writeModelCatalogCache
+} from "@/lib/openclaw/application/model-catalog-cache-service";
 import { normalizeOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
 import { markConfiguredCatalogModels } from "@/lib/openclaw/domains/model-catalog-projection";
 import {
@@ -16,24 +24,22 @@ import {
   runWithGatewayAuthSetupRecovery
 } from "@/lib/openclaw/model-setup-recovery";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
-import type { AddModelsCatalogModel, MissionControlSnapshot } from "@/lib/agentos/contracts";
+import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type { ModelsPayload, ModelsStatusPayload } from "@/lib/openclaw/client/gateway-client";
 import type { AddModelsProviderId } from "@/lib/openclaw/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type GlobalCatalogModel = Omit<AddModelsCatalogModel, "alreadyAdded">;
-type CatalogSource = "openclaw" | "openclaw-cache" | "snapshot";
 type CatalogReadResult = {
   models: GlobalCatalogModel[];
-  source: CatalogSource;
+  source: ModelCatalogCacheSource;
+  age: number | null;
   warning?: string;
 };
 
 const OPENCLAW_CATALOG_TIMEOUT_MS = 8_000;
 const SNAPSHOT_FALLBACK_TIMEOUT_MS = 8_000;
-let lastSuccessfulCatalog: GlobalCatalogModel[] | null = null;
 
 const catalogAddSchema = z.object({
   provider: z.string().trim().min(1),
@@ -89,6 +95,7 @@ export async function POST(request: Request) {
     );
 
     const snapshot = await getMissionControlSnapshot({ force: true });
+    clearModelCatalogCache();
 
     return NextResponse.json(
       {
@@ -120,13 +127,15 @@ async function readGlobalCatalog(): Promise<CatalogReadResult> {
       readModelStatus()
     ]);
     const models = normalizeCatalogModels(payload.models, modelStatus);
-    lastSuccessfulCatalog = models;
-    return { models, source: "openclaw" };
+    writeModelCatalogCache(models);
+    return { models, source: "openclaw", age: 0 };
   } catch (catalogError) {
-    if (lastSuccessfulCatalog) {
+    const cachedCatalog = readModelCatalogCache();
+    if (cachedCatalog) {
       return {
-        models: lastSuccessfulCatalog,
+        models: cachedCatalog.models,
         source: "openclaw-cache",
+        age: resolveModelCatalogCacheAgeMs(),
         warning: "OpenClaw catalog refresh failed. Showing the last successful catalog response."
       };
     }
@@ -138,10 +147,11 @@ async function readGlobalCatalog(): Promise<CatalogReadResult> {
         "OpenClaw snapshot fallback timed out."
       );
       const models = normalizeSnapshotModels(snapshot);
-      lastSuccessfulCatalog = models;
+      writeModelCatalogCache(models);
       return {
         models,
         source: "snapshot",
+        age: 0,
         warning: "OpenClaw catalog refresh failed. Showing models from the latest OpenClaw snapshot."
       };
     } catch {
