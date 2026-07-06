@@ -404,7 +404,7 @@ test("CLI Gateway client does not fake successful agent updates", async () => {
   );
 });
 
-test("OpenClaw adapter queues the latest config mutation during Gateway config cooldown", async () => {
+test("OpenClaw adapter queues the latest config mutation during Gateway config cooldown", { concurrency: false }, async () => {
   setConfigUpdatePacingForTesting({ mode: "respect-gateway", minimumIntervalMs: null });
   const appliedValues: unknown[] = [];
   let attempt = 0;
@@ -437,7 +437,7 @@ test("OpenClaw adapter queues the latest config mutation during Gateway config c
   ]);
 });
 
-test("OpenClaw adapter persists pending config mutations and resumes retry after restart", async () => {
+test("OpenClaw adapter persists pending config mutations and resumes retry after restart", { concurrency: false }, async () => {
   setConfigUpdatePacingForTesting({ mode: "respect-gateway", minimumIntervalMs: null });
   let attempt = 0;
   const adapter = new GatewayBackedOpenClawAdapter(() => ({
@@ -488,7 +488,7 @@ test("OpenClaw adapter persists pending config mutations and resumes retry after
   assert.equal((await getConfigUpdatePacingSnapshot()).pending, false);
 });
 
-test("OpenClaw adapter falls back safely when the persistent config queue is corrupt", async () => {
+test("OpenClaw adapter falls back safely when the persistent config queue is corrupt", { concurrency: false }, async () => {
   await mkdir(path.dirname(configPacingQueuePath), { recursive: true });
   await writeFile(configPacingQueuePath, "{invalid", { encoding: "utf8", mode: 0o600 });
 
