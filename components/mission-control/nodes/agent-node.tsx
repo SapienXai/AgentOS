@@ -800,50 +800,50 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
 
       {isAttentionActive ? (
         <>
-          <div aria-hidden="true" className="agent-node__composer-glow pointer-events-none absolute inset-[-1px] z-0 rounded-[13px]" />
+          <div aria-hidden="true" className="agent-node__composer-glow pointer-events-none absolute inset-[-3px] z-0 rounded-[15px]" />
           <svg
             aria-hidden="true"
-            className="agent-node__composer-svg pointer-events-none absolute inset-[-1px] z-20 h-[calc(100%+2px)] w-[calc(100%+2px)] overflow-hidden rounded-[13px]"
+            className="agent-node__composer-svg pointer-events-none absolute inset-[-3px] z-20 h-[calc(100%+6px)] w-[calc(100%+6px)] overflow-visible rounded-[15px]"
             viewBox="0 0 100 100"
             preserveAspectRatio="none"
           >
             <rect
-              x="0"
-              y="0"
-              width="100"
-              height="100"
-              rx="8.5"
-              ry="8.5"
+              x="1"
+              y="1"
+              width="98"
+              height="98"
+              rx="4.4"
+              ry="4.4"
               pathLength={100}
               className="agent-node__composer-rail"
             />
             <rect
-              x="0"
-              y="0"
-              width="100"
-              height="100"
-              rx="8.5"
-              ry="8.5"
+              x="1"
+              y="1"
+              width="98"
+              height="98"
+              rx="4.4"
+              ry="4.4"
               pathLength={100}
               className="agent-node__composer-trace agent-node__composer-trace--glow"
             />
             <rect
-              x="0"
-              y="0"
-              width="100"
-              height="100"
-              rx="8.5"
-              ry="8.5"
+              x="1"
+              y="1"
+              width="98"
+              height="98"
+              rx="4.4"
+              ry="4.4"
               pathLength={100}
               className="agent-node__composer-trace agent-node__composer-trace--tail"
             />
             <rect
-              x="0"
-              y="0"
-              width="100"
-              height="100"
-              rx="8.5"
-              ry="8.5"
+              x="1"
+              y="1"
+              width="98"
+              height="98"
+              rx="4.4"
+              ry="4.4"
               pathLength={100}
               className="agent-node__composer-trace agent-node__composer-trace--core"
             />
