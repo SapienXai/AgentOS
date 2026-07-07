@@ -1169,7 +1169,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
 
             {menuOpen ? (
               <div
-                className="absolute right-0 top-[calc(100%+8px)] z-50 min-w-[136px] rounded-[14px] border border-white/[0.1] bg-slate-950/96 p-1.5 shadow-[0_20px_44px_rgba(0,0,0,0.42)] backdrop-blur-xl"
+                className="agent-node__action-menu absolute right-0 top-[calc(100%+8px)] z-50 min-w-[136px] rounded-[14px] border border-white/[0.1] bg-slate-950/96 p-1.5 shadow-[0_20px_44px_rgba(0,0,0,0.42)] backdrop-blur-xl"
                 onClick={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
               >
@@ -1685,7 +1685,7 @@ function AgentMenuButton({
     <button
       type="button"
       className={cn(
-        "nodrag nopan flex w-full items-center rounded-[10px] px-2.5 py-2 text-left text-[11px] transition-colors",
+        "agent-node__action-menu-button nodrag nopan flex w-full items-center rounded-[10px] px-2.5 py-2 text-left text-[11px] transition-colors",
         danger
           ? "text-rose-200 hover:bg-rose-400/10 hover:text-rose-100"
           : "text-slate-200 hover:bg-white/[0.06] hover:text-white"
