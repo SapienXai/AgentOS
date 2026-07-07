@@ -1,5 +1,14 @@
 export type AgentProfileVisualStyle = Record<string, string>;
 
+export type AgentVisualThemeOption = {
+  value: string;
+  label: string;
+  accentA: string;
+  accentB: string;
+  accentC: string;
+  glowRgb: string;
+};
+
 type AgentProfileTheme = {
   accentA: string;
   accentB: string;
@@ -144,28 +153,117 @@ const AGENT_PROFILE_THEMES: AgentProfileTheme[] = [
   }
 ];
 
-export function resolveAgentProfileVisual(agentId: string, fallbackName = ""): AgentProfileVisual {
+export const AGENT_VISUAL_THEME_OPTIONS: AgentVisualThemeOption[] = [
+  {
+    value: "rose-red",
+    label: "Rose Red",
+    accentA: "255, 35, 83",
+    accentB: "251, 113, 133",
+    accentC: "255, 228, 232",
+    glowRgb: "255, 35, 83"
+  },
+  {
+    value: "violet",
+    label: "Violet",
+    accentA: "139, 92, 246",
+    accentB: "196, 181, 253",
+    accentC: "245, 243, 255",
+    glowRgb: "139, 92, 246"
+  },
+  {
+    value: "green-lantern",
+    label: "Green Lantern",
+    accentA: "34, 197, 94",
+    accentB: "134, 239, 172",
+    accentC: "240, 253, 244",
+    glowRgb: "34, 197, 94"
+  },
+  {
+    value: "amber-orange",
+    label: "Amber Orange",
+    accentA: "245, 158, 11",
+    accentB: "251, 146, 60",
+    accentC: "255, 251, 235",
+    glowRgb: "245, 158, 11"
+  },
+  {
+    value: "blue-eyes",
+    label: "Blue Eyes",
+    accentA: "14, 165, 233",
+    accentB: "125, 211, 252",
+    accentC: "240, 249, 255",
+    glowRgb: "14, 165, 233"
+  },
+  {
+    value: "yellow-snake",
+    label: "Yellow Snake",
+    accentA: "234, 179, 8",
+    accentB: "253, 224, 71",
+    accentC: "254, 252, 232",
+    glowRgb: "234, 179, 8"
+  }
+];
+
+export function resolveAgentProfileVisual(agentId: string, fallbackName = "", themeValue = ""): AgentProfileVisual {
   const variant = stableAgentProfileVariant(agentId || fallbackName);
-  const theme = AGENT_PROFILE_THEMES[variant];
+  const fallbackTheme = AGENT_PROFILE_THEMES[variant];
+  const visualTheme = resolveAgentVisualTheme(themeValue);
 
   return {
     videoSrc: `/assets/agentProfiles/agent${variant + 1}.webm`,
     style: {
-      "--agent-profile-accent-a": theme.accentA,
-      "--agent-profile-accent-b": theme.accentB,
-      "--agent-profile-accent-c": theme.accentC,
-      "--agent-profile-orb-a-x": theme.orbAX,
-      "--agent-profile-orb-a-y": theme.orbAY,
-      "--agent-profile-orb-b-x": theme.orbBX,
-      "--agent-profile-orb-b-y": theme.orbBY,
-      "--agent-profile-motion-speed": theme.motionSpeed,
-      "--agent-profile-glass-angle": theme.glassAngle,
-      "--agent-profile-glass-blur": theme.glassBlur,
-      "--agent-profile-glass-alpha": theme.glassAlpha,
-      "--agent-profile-glass-opacity": theme.glassOpacity,
-      "--agent-profile-dark-wash": theme.darkWash
+      "--agent-profile-accent-a": visualTheme?.accentA ?? fallbackTheme.accentA,
+      "--agent-profile-accent-b": visualTheme?.accentB ?? fallbackTheme.accentB,
+      "--agent-profile-accent-c": visualTheme?.accentC ?? fallbackTheme.accentC,
+      "--agent-profile-orb-a-x": fallbackTheme.orbAX,
+      "--agent-profile-orb-a-y": fallbackTheme.orbAY,
+      "--agent-profile-orb-b-x": fallbackTheme.orbBX,
+      "--agent-profile-orb-b-y": fallbackTheme.orbBY,
+      "--agent-profile-motion-speed": fallbackTheme.motionSpeed,
+      "--agent-profile-glass-angle": fallbackTheme.glassAngle,
+      "--agent-profile-glass-blur": fallbackTheme.glassBlur,
+      "--agent-profile-glass-alpha": fallbackTheme.glassAlpha,
+      "--agent-profile-glass-opacity": fallbackTheme.glassOpacity,
+      "--agent-profile-dark-wash": fallbackTheme.darkWash,
+      "--agent-theme-rgb": visualTheme?.glowRgb ?? fallbackTheme.accentA
     }
   };
+}
+
+export function resolveAgentVisualTheme(value: string | null | undefined) {
+  const normalized = normalizeAgentVisualThemeValue(value);
+
+  return AGENT_VISUAL_THEME_OPTIONS.find((theme) => theme.value === normalized) ?? null;
+}
+
+export function normalizeAgentVisualThemeValue(value: string | null | undefined) {
+  const normalized = (value ?? "").trim().toLowerCase().replace(/[_\s]+/g, "-");
+
+  if (normalized === "rose" || normalized === "red" || normalized === "rose-red") {
+    return "rose-red";
+  }
+
+  if (normalized === "green" || normalized === "emerald" || normalized === "green-lantern") {
+    return "green-lantern";
+  }
+
+  if (normalized === "amber" || normalized === "orange" || normalized === "amber-orange") {
+    return "amber-orange";
+  }
+
+  if (normalized === "blue" || normalized === "cyan" || normalized === "sky" || normalized === "blue-eyes") {
+    return "blue-eyes";
+  }
+
+  if (normalized === "yellow" || normalized === "yellow-snake") {
+    return "yellow-snake";
+  }
+
+  if (normalized === "purple" || normalized === "violet") {
+    return "violet";
+  }
+
+  return normalized;
 }
 
 function stableAgentProfileVariant(value: string) {

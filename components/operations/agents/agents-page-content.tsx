@@ -326,10 +326,11 @@ function AgentCard({
   const roleLabel = agent.source?.policy.preset ? toTitleCase(agent.source.policy.preset) : agent.policyLabel;
   const statusVariant = toAgentBadgeVariant(agent.statusTone);
   const onlineLabel = agent.online ? "Online" : "Offline";
-  const profileVisual = resolveAgentProfileVisual(agent.id, agent.name);
+  const profileVisual = resolveAgentProfileVisual(agent.id, agent.name, agent.source?.identity.theme);
 
   return (
     <div
+      style={profileVisual.style as CSSProperties}
       role="button"
       tabIndex={0}
       onClick={onSelect}
@@ -351,7 +352,7 @@ function AgentCard({
       </div>
 
       <div
-        className={cn("agent-profile-media relative overflow-hidden border-b border-white/[0.12] bg-[linear-gradient(180deg,rgba(14,16,20,0.98),rgba(8,10,14,0.95))]", list ? "h-full min-h-[210px] rounded-l-[24px] md:rounded-r-none" : "h-[154px] rounded-t-[24px]")}
+        className={cn("agent-profile-media relative overflow-hidden border-b border-white/[0.12] bg-[linear-gradient(180deg,rgba(14,16,20,0.98),rgba(8,10,14,0.95))]", list ? "h-full min-h-[210px] rounded-l-[12px] md:rounded-r-none" : "h-[154px] rounded-t-[12px]")}
         style={profileVisual.style as CSSProperties}
       >
         <video
