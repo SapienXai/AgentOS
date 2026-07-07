@@ -533,14 +533,14 @@ export function MissionSidebar({
 
           {agentDeleteTarget ? (
             <div className="flex flex-col gap-4">
-              <div className="rounded-[20px] border border-rose-400/20 bg-rose-500/[0.08] px-4 py-3.5">
+              <div className="rounded-[20px] border border-rose-300/55 bg-rose-50/80 px-4 py-3.5 dark:border-rose-400/20 dark:bg-rose-500/[0.08]">
                 <div className="flex items-start gap-3">
-                  <div className="mt-0.5 rounded-full border border-rose-300/20 bg-rose-400/10 p-2 text-rose-200">
+                  <div className="mt-0.5 rounded-full border border-rose-300/70 bg-rose-100 p-2 text-rose-700 dark:border-rose-300/20 dark:bg-rose-400/10 dark:text-rose-200">
                     <AlertTriangle className="h-4 w-4" />
                   </div>
-                  <div className="flex flex-col gap-1.5 text-sm text-rose-50">
+                  <div className="flex flex-col gap-1.5 text-sm text-rose-950 dark:text-rose-50">
                     <p className="font-medium">This action cannot be undone.</p>
-                    <p className="text-rose-100/80">
+                    <p className="text-rose-800 dark:text-rose-100/80">
                       OpenClaw will delete this agent, remove its config entry, remove its manifest record, and clean
                       up agent-specific policy/state files. Shared workspace docs and files will remain.
                     </p>
