@@ -1417,6 +1417,94 @@ html:not(.dark) .agent-node > div:last-child > div:last-child {
   opacity: 0.12;
 }
 
+.agent-profile-media__caption {
+  background: transparent;
+}
+
+.agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 {
+  background: transparent;
+}
+
+.agent-profile-media__caption-kicker,
+.agent-profile-media__caption-title,
+.agent-profile-media__caption-theme {
+  text-shadow:
+    0 1px 2px rgba(2, 6, 23, 0.92),
+    0 0 18px rgba(2, 6, 23, 0.46);
+}
+
+.agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 p,
+.agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-white\/65,
+.agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-amber-200\/90 {
+  text-shadow:
+    0 1px 2px rgba(2, 6, 23, 0.92),
+    0 0 18px rgba(2, 6, 23, 0.46);
+}
+
+.agent-profile-media__caption-kicker {
+  color: rgba(255, 255, 255, 0.84) !important;
+}
+
+.agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-white\/65 {
+  color: rgba(255, 255, 255, 0.84) !important;
+}
+
+.agent-profile-media__caption-title {
+  color: rgb(255, 255, 255) !important;
+}
+
+.agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 p {
+  color: rgb(255, 255, 255) !important;
+}
+
+.agent-profile-media__caption-theme {
+  color: rgb(255 236 179 / 0.96) !important;
+}
+
+.agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-amber-200\/90 {
+  color: rgb(255 236 179 / 0.96) !important;
+}
+
+html:not(.dark) .agent-profile-media__caption {
+  background: transparent;
+}
+
+html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 {
+  background: transparent;
+}
+
+html:not(.dark) .agent-profile-media__caption-kicker,
+html:not(.dark) .agent-profile-media__caption-title,
+html:not(.dark) .agent-profile-media__caption-theme {
+  text-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.94),
+    0 0 16px rgba(15, 23, 42, 0.62);
+}
+
+html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 p,
+html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-white\/65,
+html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-amber-200\/90 {
+  text-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.94),
+    0 0 16px rgba(15, 23, 42, 0.62);
+}
+
+html:not(.dark) .agent-profile-media__caption-kicker {
+  color: rgb(255 255 255 / 0.9) !important;
+}
+
+html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-white\/65 {
+  color: rgb(255 255 255 / 0.9) !important;
+}
+
+html:not(.dark) .agent-profile-media__caption-theme {
+  color: rgb(254 243 199 / 0.98) !important;
+}
+
+html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-amber-200\/90 {
+  color: rgb(254 243 199 / 0.98) !important;
+}
+
 @keyframes agent-profile-float-glow {
   from {
     transform: translate3d(-1%, -1%, 0) scale(1);

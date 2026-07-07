@@ -956,16 +956,16 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               </div>
             </TooltipProvider>
 
-            <div className="absolute inset-x-0 bottom-0 z-30 p-3.5">
+            <div className="agent-profile-media__caption absolute inset-x-0 bottom-0 z-30 p-3.5">
               <div className="max-w-[80%]">
-                <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.22em] text-white/65">
+                <div className="agent-profile-media__caption-kicker flex items-center gap-1.5 text-[9px] uppercase tracking-[0.22em] text-white/65">
                   <StatusDot tone={dotTone} pulse={data.agent.status === "engaged" || data.agent.status === "monitoring"} />
                   {isPendingCreation ? "Agent birth" : "Agent"}
                 </div>
-                <p className="mt-1 truncate font-display text-[1.08rem] leading-5 text-white">
+                <p className="agent-profile-media__caption-title mt-1 truncate font-display text-[1.08rem] leading-5 text-white">
                   <AnimatedAgentName label={agentLabel} />
                 </p>
-                <p className="mt-0.5 truncate text-[10px] uppercase tracking-[0.16em] text-amber-200/90">
+                <p className="agent-profile-media__caption-theme mt-0.5 truncate text-[10px] uppercase tracking-[0.16em] text-amber-200/90">
                   {themeLabel}
                 </p>
               </div>
