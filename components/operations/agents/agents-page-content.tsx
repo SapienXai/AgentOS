@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useMemo, useState, type CSSProperties, type Dispatch, type SetStateAction } from "react";
 import { Activity, Bot, CircleCheck, Clock3, Chrome, Filter, Folder, Globe2, Import, MessageSquare, Play, Plus, Plug, ShieldCheck, SlidersHorizontal, Sparkles, Star, Terminal } from "lucide-react";
 
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
@@ -8,6 +8,7 @@ import { AccountIcon } from "@/components/mission-control/account-icon";
 import { AgentCapabilityEditorDialog } from "@/components/mission-control/agent-capability-editor-dialog";
 import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
 import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
+import { resolveAgentProfileVisual } from "@/components/mission-control/agent-profile-visuals";
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -325,6 +326,7 @@ function AgentCard({
   const roleLabel = agent.source?.policy.preset ? toTitleCase(agent.source.policy.preset) : agent.policyLabel;
   const statusVariant = toAgentBadgeVariant(agent.statusTone);
   const onlineLabel = agent.online ? "Online" : "Offline";
+  const profileVisual = resolveAgentProfileVisual(agent.id, agent.name);
 
   return (
     <div
@@ -348,9 +350,12 @@ function AgentCard({
         <div className="absolute inset-y-4 left-0 w-[3px] rounded-r-full bg-[linear-gradient(180deg,hsl(var(--primary)/0.86),hsl(var(--primary)/0.12))]" />
       </div>
 
-      <div className={cn("relative overflow-hidden border-b border-white/[0.12] bg-[linear-gradient(180deg,rgba(14,16,20,0.98),rgba(8,10,14,0.95))]", list ? "h-full min-h-[210px] rounded-l-[24px] md:rounded-r-none" : "h-[154px] rounded-t-[24px]")}>
+      <div
+        className={cn("agent-profile-media relative overflow-hidden border-b border-white/[0.12] bg-[linear-gradient(180deg,rgba(14,16,20,0.98),rgba(8,10,14,0.95))]", list ? "h-full min-h-[210px] rounded-l-[24px] md:rounded-r-none" : "h-[154px] rounded-t-[24px]")}
+        style={profileVisual.style as CSSProperties}
+      >
         <video
-          className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center brightness-[0.88] contrast-[1.04] saturate-[0.92]"
+          className="pointer-events-none absolute inset-0 h-full w-full scale-[1.06] object-cover object-center brightness-[0.74] contrast-[1.12] saturate-[0.9] transition-[filter,transform] duration-300 group-hover:scale-[1.04] group-hover:brightness-[0.92] group-hover:contrast-[1.1] group-hover:saturate-[1.08]"
           autoPlay
           loop
           muted
@@ -358,9 +363,11 @@ function AgentCard({
           preload="metadata"
           aria-hidden="true"
         >
-          <source src="/assets/agent.mp4" type="video/mp4" />
+          <source src={profileVisual.videoSrc} type="video/webm" />
         </video>
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(3,4,7,0.42),rgba(3,4,7,0.88)),radial-gradient(circle_at_center,transparent_38%,rgba(3,4,7,0.34)_100%),radial-gradient(circle_at_20%_10%,hsl(var(--primary)/0.08),transparent_34%),radial-gradient(circle_at_82%_18%,rgba(251,191,36,0.05),transparent_28%)]" />
+        <div className="agent-profile-media__refraction" />
+        <div className="agent-profile-media__glow" />
+        <div className="agent-profile-media__grain" />
         <div className="absolute left-3 top-3 z-20 flex flex-col gap-1.5">
           <div className="flex min-w-0 items-center gap-2">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-slate-950/70 text-primary shadow-[0_12px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl">

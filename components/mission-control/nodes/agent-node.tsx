@@ -1,12 +1,13 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { Handle, Position, type Node as FlowNode, type NodeProps } from "@xyflow/react";
 import { BrainCircuit, ChevronDown, KeyRound, Layers3, LocateFixed, MessageCircle, MoreHorizontal, Plus, SendHorizontal, Sparkles, Wrench } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 
 import { AccountIcon } from "@/components/mission-control/account-icon";
+import { resolveAgentProfileVisual } from "@/components/mission-control/agent-profile-visuals";
 import type { AgentDetailFocus, AgentNodeData } from "@/components/mission-control/canvas-types";
 import {
   AGENT_NODE_ATTENTION_CLASSES,
@@ -512,6 +513,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
         : "Status unknown; click to allow this agent as a cross-agent participant");
   const currentActionLabel = typeof data.agent.currentAction === "string" ? data.agent.currentAction.trim() : "";
   const purposeLabel = data.agent.profile?.purpose?.trim() || currentActionLabel || "OpenClaw operator";
+  const profileVisual = resolveAgentProfileVisual(data.agent.id, agentLabel);
   const visibleSkills = effectiveSkills.slice(0, 4);
   const visibleDeclaredTools = effectiveTools.slice(0, 3);
   const visibleObservedTools = observedTools.slice(0, 3);
@@ -757,7 +759,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   return (
     <div
       className={cn(
-        "agent-node dark relative isolate w-[272px] overflow-visible rounded-[24px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(18,20,26,0.96),rgba(9,11,15,0.96))] pt-0 pb-0 shadow-[0_20px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl",
+        "agent-node dark group relative isolate w-[272px] overflow-visible rounded-[24px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(18,20,26,0.96),rgba(9,11,15,0.96))] pt-0 pb-0 shadow-[0_20px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl",
         data.emphasis ? "opacity-100" : "opacity-72",
         isPendingCreation && "border-cyan-200/22 shadow-[0_20px_54px_rgba(34,211,238,0.16),0_18px_46px_rgba(0,0,0,0.36)]",
         selected && AGENT_NODE_SELECTED_CLASSES,
@@ -863,13 +865,14 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
         />
 
         <div className="relative rounded-t-[24px]">
-          <div className="relative h-[144px] overflow-hidden rounded-t-[24px] border-b border-white/[0.12] bg-[linear-gradient(180deg,rgba(14,16,20,0.98),rgba(8,10,14,0.95))]">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(34,211,238,0.22),transparent_34%),radial-gradient(circle_at_82%_18%,rgba(251,191,36,0.16),transparent_30%)]" />
+          <div
+            className="agent-profile-media relative h-[144px] overflow-hidden rounded-t-[24px] border-b border-white/[0.12] bg-[linear-gradient(180deg,rgba(14,16,20,0.98),rgba(8,10,14,0.95))]"
+            style={profileVisual.style as CSSProperties}
+          >
             <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/10" />
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-[linear-gradient(180deg,transparent,rgba(8,10,14,0.82))]" />
 
             <video
-              className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center brightness-[0.88] contrast-[1.04] saturate-[0.92]"
+              className="pointer-events-none absolute inset-0 h-full w-full scale-[1.06] object-cover object-center brightness-[0.74] contrast-[1.12] saturate-[0.9] transition-[filter,transform] duration-300 group-hover:scale-[1.04] group-hover:brightness-[0.92] group-hover:contrast-[1.1] group-hover:saturate-[1.08]"
               autoPlay
               loop
               muted
@@ -877,16 +880,12 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               preload="metadata"
               aria-hidden="true"
             >
-              <source src="/assets/agent.mp4" type="video/mp4" />
+              <source src={profileVisual.videoSrc} type="video/webm" />
             </video>
 
-            <motion.div
-              aria-hidden="true"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.8, ease: "easeOut" }}
-              className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(3,4,7,0.48),rgba(3,4,7,0.84)),radial-gradient(circle_at_center,transparent_38%,rgba(3,4,7,0.34)_100%),radial-gradient(circle_at_20%_10%,rgba(34,211,238,0.07),transparent_34%),radial-gradient(circle_at_82%_18%,rgba(251,191,36,0.04),transparent_28%)]"
-            />
+            <div className="agent-profile-media__refraction" />
+            <div className="agent-profile-media__glow" />
+            <div className="agent-profile-media__grain" />
 
             <div
               aria-hidden="true"
@@ -1203,22 +1202,23 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <Badge
                 variant={isPendingCreation ? "default" : statusBadgeVariant}
-                className={agentHeaderChipClassName}
+                data-agent-status={statusLabel.toLowerCase()}
+                className={cn(agentHeaderChipClassName, "agent-node__light-status-badge")}
               >
                 {statusLabel}
               </Badge>
               {data.taskFocused ? (
-                <Badge variant="default" className={agentHeaderChipClassName}>
+                <Badge variant="default" data-agent-status="working" className={cn(agentHeaderChipClassName, "agent-node__light-status-badge")}>
                   Working now
                 </Badge>
               ) : null}
               {showLiveTaskChip ? (
-                <Badge variant="success" className={agentHeaderChipClassName}>
+                <Badge variant="success" data-agent-status="live" className={cn(agentHeaderChipClassName, "agent-node__light-status-badge")}>
                   {activeTaskCount} live task{activeTaskCount === 1 ? "" : "s"}
                 </Badge>
               ) : null}
               {creationWarning ? (
-                <Badge variant="warning" className={agentHeaderChipClassName}>
+                <Badge variant="warning" data-agent-status="warning" className={cn(agentHeaderChipClassName, "agent-node__light-status-badge")}>
                   Model warning
                 </Badge>
               ) : null}
@@ -1228,7 +1228,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                 title={`Change model for ${agentLabel}`}
                 disabled={isPendingCreation || !data.onConfigureModel}
                 className={cn(
-                  "nodrag nopan inline-flex h-5 max-w-[142px] items-center rounded-[7px] border border-white/[0.08] bg-white/[0.055] px-2 text-[8px] font-medium uppercase leading-none tracking-[0.13em] text-slate-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/35",
+                  "agent-node__light-button-text nodrag nopan inline-flex h-5 max-w-[142px] items-center rounded-[7px] border border-white/[0.08] bg-white/[0.055] px-2 text-[8px] font-medium uppercase leading-none tracking-[0.13em] text-slate-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/35",
                   isPendingCreation || !data.onConfigureModel
                     ? "cursor-default"
                     : "hover:border-cyan-200/18 hover:bg-cyan-300/[0.08] hover:text-cyan-100"
@@ -1293,7 +1293,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               }
               disabled={!canMessage}
               className={cn(
-                "nodrag nopan relative inline-flex h-10 items-center justify-center gap-1.5 rounded-[11px] border px-3.5 text-[12px] transition-colors",
+                "agent-node__light-button-text nodrag nopan relative inline-flex h-10 items-center justify-center gap-1.5 rounded-[11px] border px-3.5 text-[12px] transition-colors",
                 !canMessage
                   ? "cursor-not-allowed border-emerald-300/12 bg-emerald-300/[0.04] text-emerald-100/48 shadow-none hover:bg-emerald-300/[0.04] hover:text-emerald-100/48"
                   : isMessageActive
@@ -1325,7 +1325,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               type="button"
               disabled={isPendingCreation || !data.onFocus}
               className={cn(
-                "nodrag nopan inline-flex h-10 items-center justify-center gap-1.5 rounded-[11px] border px-3.5 text-[12px] transition-colors",
+                "agent-node__light-button-text nodrag nopan inline-flex h-10 items-center justify-center gap-1.5 rounded-[11px] border px-3.5 text-[12px] transition-colors",
                 isPendingCreation
                   ? "cursor-not-allowed border-cyan-300/14 bg-cyan-300/[0.05] text-cyan-100/62 shadow-[0_10px_24px_rgba(34,211,238,0.08)]"
                   : data.focused
@@ -1356,7 +1356,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
             }
             disabled={!canCreateTask}
             className={cn(
-              "nodrag nopan mt-2.5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-[12px] border px-4 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200/45",
+              "agent-node__light-button-text nodrag nopan mt-2.5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-[12px] border px-4 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200/45",
               !canCreateTask
                 ? "cursor-not-allowed border-rose-300/12 bg-rose-300/[0.04] text-rose-100/48 shadow-none hover:bg-rose-300/[0.04] hover:text-rose-100/48"
                 : data.composerFocused
@@ -1422,15 +1422,15 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                   <ScrollArea className="h-[116px] w-full pr-2">
                     <div className="space-y-2">
                       <div className="flex flex-wrap gap-1.5">
-                        <Badge variant="muted" className="px-2 py-1 text-[9px] normal-case tracking-normal">
+                        <Badge variant="muted" className="agent-node__light-detail-badge px-2 py-1 text-[9px] normal-case tracking-normal">
                           Skills {skillCount}
                         </Badge>
-                        <Badge variant="muted" className="px-2 py-1 text-[9px] normal-case tracking-normal">
+                        <Badge variant="muted" className="agent-node__light-detail-badge px-2 py-1 text-[9px] normal-case tracking-normal">
                           Tools {declaredToolCount}
                         </Badge>
                         <Badge
                           variant={presetMeta.badgeVariant}
-                          className="px-2 py-1 text-[9px] normal-case tracking-normal"
+                          className="agent-node__light-detail-badge px-2 py-1 text-[9px] normal-case tracking-normal"
                         >
                           {formatAgentPresetLabel(data.agent.policy.preset)}
                         </Badge>
@@ -1441,17 +1441,17 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                         <div className="flex flex-wrap gap-1">
                           {visibleSkills.length > 0 ? (
                             visibleSkills.map((skill) => (
-                              <Badge key={skill} variant="muted" className="max-w-full truncate text-[10px]">
+                              <Badge key={skill} variant="muted" className="agent-node__light-detail-badge max-w-full truncate text-[10px]">
                                 {formatCapabilityLabel(skill)}
                               </Badge>
                             ))
                           ) : (
-                            <Badge variant="muted" className="text-[10px]">
+                            <Badge variant="muted" className="agent-node__light-detail-badge text-[10px]">
                               No explicit skills
                             </Badge>
                           )}
                           {remainingSkills > 0 ? (
-                            <Badge variant="muted" className="text-[10px]">
+                            <Badge variant="muted" className="agent-node__light-detail-badge text-[10px]">
                               +{remainingSkills}
                             </Badge>
                           ) : null}
@@ -1463,17 +1463,17 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                         <div className="flex flex-wrap gap-1">
                           {visibleDeclaredTools.length > 0 ? (
                             visibleDeclaredTools.map((tool) => (
-                              <Badge key={tool} variant="warning" className="max-w-full truncate text-[10px]">
+                              <Badge key={tool} variant="warning" className="agent-node__light-detail-badge max-w-full truncate text-[10px]">
                                 {formatCapabilityLabel(tool)}
                               </Badge>
                             ))
                           ) : (
-                            <Badge variant="muted" className="text-[10px]">
+                            <Badge variant="muted" className="agent-node__light-detail-badge text-[10px]">
                               No explicit tools
                             </Badge>
                           )}
                           {remainingDeclaredTools > 0 ? (
-                            <Badge variant="muted" className="text-[10px]">
+                            <Badge variant="muted" className="agent-node__light-detail-badge text-[10px]">
                               +{remainingDeclaredTools}
                             </Badge>
                           ) : null}
@@ -1486,17 +1486,17 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                           <div className="flex flex-wrap gap-1">
                             {visibleObservedTools.length > 0 ? (
                               visibleObservedTools.map((tool) => (
-                                <Badge key={tool} variant="default" className="max-w-full truncate text-[10px]">
+                                <Badge key={tool} variant="default" className="agent-node__light-detail-badge max-w-full truncate text-[10px]">
                                   {formatCapabilityLabel(tool)}
                                 </Badge>
                               ))
                             ) : (
-                              <Badge variant="muted" className="text-[10px]">
+                              <Badge variant="muted" className="agent-node__light-detail-badge text-[10px]">
                                 None recorded
                               </Badge>
                             )}
                             {remainingObservedTools > 0 ? (
-                              <Badge variant="muted" className="text-[10px]">
+                              <Badge variant="muted" className="agent-node__light-detail-badge text-[10px]">
                                 +{remainingObservedTools}
                               </Badge>
                             ) : null}
@@ -1507,16 +1507,16 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
                       <div>
                         <p className="mb-1 text-[8px] uppercase tracking-[0.22em] text-slate-500">Policy</p>
                         <div className="flex flex-wrap gap-1.5">
-                          <Badge variant="muted" className="px-2 py-1 text-[9px] normal-case tracking-normal">
+                          <Badge variant="muted" className="agent-node__light-detail-badge px-2 py-1 text-[9px] normal-case tracking-normal">
                             Missing {formatAgentMissingToolBehaviorLabel(data.agent.policy.missingToolBehavior)}
                           </Badge>
-                          <Badge variant="muted" className="px-2 py-1 text-[9px] normal-case tracking-normal">
+                          <Badge variant="muted" className="agent-node__light-detail-badge px-2 py-1 text-[9px] normal-case tracking-normal">
                             File {formatAgentFileAccessLabel(data.agent.policy.fileAccess)}
                           </Badge>
-                          <Badge variant="muted" className="px-2 py-1 text-[9px] normal-case tracking-normal">
+                          <Badge variant="muted" className="agent-node__light-detail-badge px-2 py-1 text-[9px] normal-case tracking-normal">
                             Network {formatAgentNetworkAccessLabel(data.agent.policy.networkAccess)}
                           </Badge>
-                          <Badge variant="muted" className="px-2 py-1 text-[9px] normal-case tracking-normal">
+                          <Badge variant="muted" className="agent-node__light-detail-badge px-2 py-1 text-[9px] normal-case tracking-normal">
                             Install {formatAgentInstallScopeLabel(data.agent.policy.installScope)}
                           </Badge>
                         </div>
@@ -1574,7 +1574,7 @@ function AgentStatTile({
       <button
         type="button"
         aria-label={ariaLabel ?? label}
-        className="nodrag nopan w-full rounded-[16px] border border-white/[0.08] bg-white/[0.03] px-2.5 py-2 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-300/18 hover:bg-cyan-400/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0"
+        className="agent-node__light-button-text nodrag nopan w-full rounded-[16px] border border-white/[0.08] bg-white/[0.03] px-2.5 py-2 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-300/18 hover:bg-cyan-400/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/40 focus-visible:ring-offset-0"
         onClick={(event) => {
           event.stopPropagation();
           onClick();

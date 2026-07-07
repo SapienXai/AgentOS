@@ -1176,6 +1176,253 @@
   animation: workspace-architect-chip-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+html:not(.dark) .agent-node {
+  color: rgb(15 23 42);
+}
+
+html:not(.dark) .agent-node.dark,
+html:not(.dark) .agent-node {
+  border-color: rgb(226 232 240 / 0.85) !important;
+  background:
+    radial-gradient(circle at 18% 10%, rgb(8 145 178 / 0.12), transparent 36%),
+    radial-gradient(circle at 84% 18%, rgb(16 185 129 / 0.08), transparent 28%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.97), rgb(244 247 251 / 0.96)) !important;
+  box-shadow: 0 18px 42px rgb(15 23 42 / 0.14) !important;
+}
+
+html:not(.dark) .agent-node.dark p.line-clamp-2,
+html:not(.dark) .agent-node p.line-clamp-2 {
+  color: rgb(51 65 85) !important;
+}
+
+html:not(.dark) .agent-node.dark button[aria-label^="Change model"],
+html:not(.dark) .agent-node button[aria-label^="Change model"] {
+  border-color: rgb(203 213 225 / 0.75) !important;
+  background: rgb(255 255 255 / 0.8) !important;
+  color: rgb(15 23 42) !important;
+}
+
+html:not(.dark) .agent-node .agent-node__light-button-text,
+html:not(.dark) .agent-node.dark .agent-node__light-button-text {
+  color: rgb(15 23 42) !important;
+}
+
+html:not(.dark) .agent-node .agent-node__light-button-text span,
+html:not(.dark) .agent-node .agent-node__light-button-text svg,
+html:not(.dark) .agent-node.dark .agent-node__light-button-text span,
+html:not(.dark) .agent-node.dark .agent-node__light-button-text svg {
+  color: rgb(15 23 42) !important;
+  stroke: currentColor;
+}
+
+html:not(.dark) .agent-node .agent-node__light-button-text:disabled,
+html:not(.dark) .agent-node.dark .agent-node__light-button-text:disabled,
+html:not(.dark) .agent-node .agent-node__light-button-text[aria-disabled="true"],
+html:not(.dark) .agent-node.dark .agent-node__light-button-text[aria-disabled="true"] {
+  color: rgb(71 85 105) !important;
+}
+
+html:not(.dark) .agent-node .agent-node__light-button-text:disabled span,
+html:not(.dark) .agent-node .agent-node__light-button-text:disabled svg,
+html:not(.dark) .agent-node.dark .agent-node__light-button-text:disabled span,
+html:not(.dark) .agent-node.dark .agent-node__light-button-text:disabled svg {
+  color: rgb(71 85 105) !important;
+}
+
+html:not(.dark) .agent-node .agent-node__light-detail-badge,
+html:not(.dark) .agent-node.dark .agent-node__light-detail-badge {
+  border-color: rgb(203 213 225 / 0.8) !important;
+  background: rgb(255 255 255 / 0.78) !important;
+  color: rgb(15 23 42) !important;
+}
+
+html:not(.dark) .agent-node .agent-node__light-status-badge,
+html:not(.dark) .agent-node.dark .agent-node__light-status-badge {
+  border-color: rgb(203 213 225 / 0.86) !important;
+  background: rgb(248 250 252 / 0.84) !important;
+  color: rgb(51 65 85) !important;
+}
+
+html:not(.dark) .agent-node .agent-node__light-status-badge[data-agent-status="monitoring"],
+html:not(.dark) .agent-node.dark .agent-node__light-status-badge[data-agent-status="monitoring"],
+html:not(.dark) .agent-node .agent-node__light-status-badge[data-agent-status="live"],
+html:not(.dark) .agent-node.dark .agent-node__light-status-badge[data-agent-status="live"] {
+  border-color: rgb(110 231 183 / 0.62) !important;
+  background: rgb(236 253 245 / 0.88) !important;
+  color: rgb(6 95 70) !important;
+}
+
+html:not(.dark) .agent-node .agent-node__light-status-badge[data-agent-status="standby"],
+html:not(.dark) .agent-node.dark .agent-node__light-status-badge[data-agent-status="standby"] {
+  border-color: rgb(148 163 184 / 0.5) !important;
+  background: rgb(241 245 249 / 0.86) !important;
+  color: rgb(51 65 85) !important;
+}
+
+html:not(.dark) .agent-node .agent-node__light-status-badge[data-agent-status="engaged"],
+html:not(.dark) .agent-node.dark .agent-node__light-status-badge[data-agent-status="engaged"],
+html:not(.dark) .agent-node .agent-node__light-status-badge[data-agent-status="working"],
+html:not(.dark) .agent-node.dark .agent-node__light-status-badge[data-agent-status="working"] {
+  border-color: rgb(103 232 249 / 0.58) !important;
+  background: rgb(236 254 255 / 0.88) !important;
+  color: rgb(14 116 144) !important;
+}
+
+html:not(.dark) .agent-node .agent-node__light-status-badge[data-agent-status="ready"],
+html:not(.dark) .agent-node.dark .agent-node__light-status-badge[data-agent-status="ready"],
+html:not(.dark) .agent-node .agent-node__light-status-badge[data-agent-status="warning"],
+html:not(.dark) .agent-node.dark .agent-node__light-status-badge[data-agent-status="warning"] {
+  border-color: rgb(252 211 77 / 0.7) !important;
+  background: rgb(255 251 235 / 0.9) !important;
+  color: rgb(146 64 14) !important;
+}
+
+html:not(.dark) .agent-node .agent-node__light-status-badge[data-agent-status="offline"],
+html:not(.dark) .agent-node.dark .agent-node__light-status-badge[data-agent-status="offline"] {
+  border-color: rgb(253 164 175 / 0.68) !important;
+  background: rgb(255 241 242 / 0.9) !important;
+  color: rgb(190 18 60) !important;
+}
+
+html:not(.dark) .agent-node.dark button[aria-label^="Open skills"],
+html:not(.dark) .agent-node.dark button[aria-label^="Open tools"],
+html:not(.dark) .agent-node.dark button[aria-label^="Open sessions"],
+html:not(.dark) .agent-node button[aria-label^="Open skills"],
+html:not(.dark) .agent-node button[aria-label^="Open tools"],
+html:not(.dark) .agent-node button[aria-label^="Open sessions"] {
+  border-color: rgb(226 232 240 / 0.9) !important;
+  background: rgb(255 255 255 / 0.75) !important;
+  color: rgb(15 23 42) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.72) !important;
+}
+
+html:not(.dark) .agent-node.dark button[aria-label^="Open skills"] p:first-child,
+html:not(.dark) .agent-node.dark button[aria-label^="Open tools"] p:first-child,
+html:not(.dark) .agent-node.dark button[aria-label^="Open sessions"] p:first-child,
+html:not(.dark) .agent-node button[aria-label^="Open skills"] p:first-child,
+html:not(.dark) .agent-node button[aria-label^="Open tools"] p:first-child,
+html:not(.dark) .agent-node button[aria-label^="Open sessions"] p:first-child {
+  color: rgb(15 23 42) !important;
+}
+
+html:not(.dark) .agent-node.dark button[aria-label^="Open skills"] p:last-child,
+html:not(.dark) .agent-node.dark button[aria-label^="Open tools"] p:last-child,
+html:not(.dark) .agent-node.dark button[aria-label^="Open sessions"] p:last-child,
+html:not(.dark) .agent-node button[aria-label^="Open skills"] p:last-child,
+html:not(.dark) .agent-node button[aria-label^="Open tools"] p:last-child,
+html:not(.dark) .agent-node button[aria-label^="Open sessions"] p:last-child {
+  color: rgb(71 85 105) !important;
+}
+
+html:not(.dark) .agent-node.dark > div:last-child > div:last-child,
+html:not(.dark) .agent-node > div:last-child > div:last-child {
+  border-color: rgb(226 232 240 / 0.85) !important;
+  background: rgb(248 250 252 / 0.9) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.82) !important;
+}
+
+.agent-profile-media {
+  --agent-profile-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cfilter id='agent-profile-noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23agent-profile-noise)' opacity='0.42'/%3E%3C/svg%3E");
+  box-shadow:
+    inset 0 0 34px rgba(0, 0, 0, 0.36),
+    inset 0 0 0 1px rgba(var(--agent-profile-accent-b), 0.24),
+    inset 0 -42px 78px rgba(var(--agent-profile-accent-a), 0.22);
+}
+
+.agent-profile-media::before,
+.agent-profile-media::after,
+.agent-profile-media__refraction,
+.agent-profile-media__glow,
+.agent-profile-media__grain {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.agent-profile-media::before {
+  z-index: 2;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, var(--agent-profile-dark-wash)), rgba(0, 0, 0, calc(var(--agent-profile-dark-wash) * 0.64))),
+    radial-gradient(circle at var(--agent-profile-orb-a-x) var(--agent-profile-orb-a-y), rgba(var(--agent-profile-accent-a), 0.92), transparent 24%),
+    radial-gradient(circle at var(--agent-profile-orb-b-x) var(--agent-profile-orb-b-y), rgba(var(--agent-profile-accent-b), 0.74), transparent 28%),
+    linear-gradient(var(--agent-profile-glass-angle), rgba(var(--agent-profile-accent-a), 0.5), rgba(var(--agent-profile-accent-b), 0.34) 48%, transparent 78%);
+  filter: blur(16px) saturate(1.7);
+  mix-blend-mode: screen;
+  opacity: 0.72;
+  animation: agent-profile-float-glow var(--agent-profile-motion-speed) ease-in-out infinite alternate;
+}
+
+.agent-profile-media::after {
+  z-index: 4;
+  background:
+    linear-gradient(transparent 0 33%, rgba(255, 255, 255, 0.13) 34%, transparent 35% 48%, rgba(255, 255, 255, 0.05) 49%, transparent 50% 68%, rgba(255, 255, 255, 0.1) 69%, transparent 70%),
+    linear-gradient(var(--agent-profile-glass-angle), transparent 18%, rgba(var(--agent-profile-accent-a), 0.34) 34%, rgba(var(--agent-profile-accent-b), 0.28) 54%, transparent 74%);
+  background-position: 0 0, 50% 50%;
+  background-size: 100% 100%, 180% 180%;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.95), rgba(0, 0, 0, 0.2));
+  mix-blend-mode: screen;
+  opacity: 0.4;
+  animation: agent-profile-sweep calc(var(--agent-profile-motion-speed) * 1.2) linear infinite;
+}
+
+.agent-profile-media__refraction {
+  inset: -10px;
+  z-index: 3;
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, calc(var(--agent-profile-dark-wash) * 0.82)), transparent 62%),
+    radial-gradient(circle at var(--agent-profile-orb-a-x) var(--agent-profile-orb-a-y), rgba(var(--agent-profile-accent-a), var(--agent-profile-glass-alpha)), transparent 34%),
+    radial-gradient(circle at var(--agent-profile-orb-b-x) var(--agent-profile-orb-b-y), rgba(var(--agent-profile-accent-b), calc(var(--agent-profile-glass-alpha) * 0.9)), transparent 38%),
+    linear-gradient(var(--agent-profile-glass-angle), rgba(var(--agent-profile-accent-a), calc(var(--agent-profile-glass-alpha) * 0.68)), rgba(255, 255, 255, 0.08) 34%, rgba(var(--agent-profile-accent-b), calc(var(--agent-profile-glass-alpha) * 0.56)) 68%, rgba(255, 255, 255, 0.05));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(var(--agent-profile-accent-b), 0.14);
+  opacity: var(--agent-profile-glass-opacity);
+  backdrop-filter: blur(var(--agent-profile-glass-blur)) saturate(1.95) contrast(1.05);
+}
+
+.agent-profile-media__glow {
+  inset: auto -8% -14% -8%;
+  z-index: 5;
+  height: 54%;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(var(--agent-profile-accent-a), 0.78), transparent 32%),
+    radial-gradient(circle at 68% 28%, rgba(var(--agent-profile-accent-b), 0.58), transparent 34%),
+    linear-gradient(180deg, transparent, rgba(var(--agent-profile-accent-c), 0.08) 48%, rgba(0, 0, 0, 0.4));
+  filter: blur(20px);
+  mix-blend-mode: screen;
+  opacity: 0.76;
+}
+
+.agent-profile-media__grain {
+  z-index: 6;
+  background-image: var(--agent-profile-noise);
+  background-size: 240px 240px;
+  mix-blend-mode: soft-light;
+  opacity: 0.12;
+}
+
+@keyframes agent-profile-float-glow {
+  from {
+    transform: translate3d(-1%, -1%, 0) scale(1);
+  }
+
+  to {
+    transform: translate3d(1.5%, 1.1%, 0) scale(1.03);
+  }
+}
+
+@keyframes agent-profile-sweep {
+  from {
+    background-position: 0 0, 0% 50%;
+  }
+
+  to {
+    background-position: 0 0, 180% 50%;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .agent-node__composer-glow {
     animation: none !important;
@@ -1209,6 +1456,11 @@
 
   .openclaw-onboarding-backdrop::before,
   .openclaw-onboarding-backdrop::after {
+    animation: none !important;
+  }
+
+  .agent-profile-media::before,
+  .agent-profile-media::after {
     animation: none !important;
   }
 }
