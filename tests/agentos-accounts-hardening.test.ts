@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { afterEach, test } from "node:test";
 
 import type { AccountAccessPermission, AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
@@ -225,18 +227,40 @@ test("browser profile service recovers a login tab when OpenClaw open times out 
 
 test("browser profile service redacts unsupported browser.request errors", async () => {
   setOpenClawAdapterForTesting(createBrowserAdapter(async () => {
-    throw new Error("INVALID_REQUEST: unknown method browser.request token=query-secret password=plain-secret");
+    throw new Error("GatewayClientRequestError: unknown method: browser.request token=query-secret password=plain-secret");
   }));
 
   await assert.rejects(
     () => listOpenClawBrowserProfiles(),
     (error) => {
       assert.ok(error instanceof Error);
-      assert.match(error.message, /browser\.request/);
-      assert.doesNotMatch(error.message, /query-secret|plain-secret/);
+      assert.match(error.message, /does not expose the browser\.request Gateway method/);
+      assert.match(error.message, /Account browser-profile connection is unavailable/);
+      assert.doesNotMatch(error.message, /unknown method|query-secret|plain-secret/);
       return true;
     }
   );
+});
+
+test("browser profile unavailable UI exposes real OpenClaw recovery actions", () => {
+  const accountsSource = readFileSync(
+    path.join(process.cwd(), "components/operations/accounts/accounts-page-content.tsx"),
+    "utf8"
+  );
+  const missionActionsSource = readFileSync(
+    path.join(process.cwd(), "components/mission-control/use-mission-control-workspace-actions.ts"),
+    "utf8"
+  );
+
+  assert.match(accountsSource, /Open Diagnostics/);
+  assert.match(accountsSource, /href="\/settings#diagnostics"/);
+  assert.match(accountsSource, /Update OpenClaw/);
+  assert.match(accountsSource, /href="\/updates"/);
+  assert.match(accountsSource, /Restart Gateway/);
+  assert.match(accountsSource, /Recovery path: update OpenClaw/);
+  assert.match(accountsSource, /\/api\/gateway\/control/);
+  assert.match(missionActionsSource, /\/api\/gateway\/control/);
+  assert.match(missionActionsSource, /action: "restart"/);
 });
 
 test("browser profile service explains DNS failures without saving fake browser success", async () => {

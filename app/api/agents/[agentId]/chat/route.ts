@@ -13,6 +13,7 @@ import {
   isStaleAgentChatContextRecoveryText
 } from "@/lib/openclaw/agent-chat-guards";
 import {
+  conflictedAgentChatSessionMessage,
   completedEmptyAgentChatResponseMessage,
   emptyAgentChatResponseMessage,
   extractAgentChatEmptyResponseDiagnosticText,
@@ -66,6 +67,9 @@ const chatSchema = z.object({
   history: z.array(chatHistoryEntrySchema).optional(),
   thinking: z.enum(["off", "minimal", "low", "medium", "high"]).optional()
 });
+
+const activeAgentChatSessionTurns = new Map<string, { lockId: symbol; startedAt: number }>();
+const agentChatSessionTurnLockTtlMs = 130_000;
 
 type AgentChatPayloadEntry = {
   text?: string;
@@ -415,105 +419,121 @@ export async function POST(
           agentId,
           workspacePath: agent.workspacePath
         });
-        await recordAgentChatSession({
-          agentId,
-          sessionId,
-          workspacePath: agent.workspacePath
-        });
-        const commandPromise = getOpenClawAdapter().streamAgentTurn(
-          {
-            agentId,
-            sessionId,
-            message,
-            thinking: input.thinking ?? "low",
-            timeoutSeconds: 90,
-            workspace: agent.workspacePath,
-            local: !snapshot.diagnostics.rpcOk
-          },
-          {
-            onStdout: handleCommandStdout
-          },
-          {
-            timeoutMs: 120000,
-            signal: request.signal
-          }
-        ) as Promise<AgentChatCommandPayload>;
 
-        void (async () => {
-          while (keepPolling && !request.signal.aborted) {
-            try {
-              await pollTranscript(agentId, sessionId, agent.workspacePath);
-            } catch {
-              // Ignore transient transcript reads while the session is still booting.
-            }
-
-            await wait(250);
-          }
-        })();
-
-        const result = await commandPromise;
-        if (streamStdoutBuffer.trim()) {
-          await emitAssistantText(extractAssistantTextFromAgentChatStreamLine(streamStdoutBuffer));
-          streamStdoutBuffer = "";
-        }
-        stopPolling();
-
-        try {
-          await pollTranscript(agentId, sessionId, agent.workspacePath);
-        } catch {
-          // Ignore a last transient read failure.
-        }
-
-        let response = toAgentChatResponse(agentId, result);
-        if (isEmptyAgentChatResponse(response) && !latestAssistantText) {
-          await waitForLateAssistantText(agentId, sessionId, agent.workspacePath);
-        }
-
-        if (latestAssistantText && response.payloads.length === 0) {
-          response = {
-            ...response,
-            summary: latestAssistantText,
-            payloads: [
-              {
-                text: latestAssistantText,
-                mediaUrl: null
-              }
-            ]
-          };
-        }
-        const emptyResponseDiagnosticMessage = resolveEmptyAgentChatDiagnosticMessage(result, {
-          modelId: activeAgentModelId
-        });
-        response = recoverSilentOpenAiCodexChatFailure(response, activeAgentModelId);
-        response = recoverDirectIdentityResponse(response, formatAgentDisplayName(agent), operatorMessage);
-        response = attachStreamMissionControlAction(response, latestStreamAction);
-        response = recoverCompletedEmptyAgentChatResponse(response, emptyResponseDiagnosticMessage);
-        if (isEmptyAgentChatResponse(response)) {
+        const inFlightKey = createAgentChatSessionInFlightKey(agentId, sessionId);
+        const inFlightLock = acquireAgentChatSessionTurnLock(inFlightKey);
+        if (!inFlightLock) {
           await send({
             type: "done",
             ok: false,
-            message: emptyResponseDiagnosticMessage ?? emptyAgentChatResponseMessage
+            message: conflictedAgentChatSessionMessage
           });
           return;
         }
 
-        const action = readMissionControlAction(response.meta);
-
-        if (action?.type === "rename_agent") {
-          await updateAgent({
-            id: agentId,
-            name: action.name
+        try {
+          await recordAgentChatSession({
+            agentId,
+            sessionId,
+            workspacePath: agent.workspacePath
           });
+          const commandPromise = getOpenClawAdapter().streamAgentTurn(
+            {
+              agentId,
+              sessionId,
+              message,
+              thinking: input.thinking,
+              timeoutSeconds: 90,
+              workspace: agent.workspacePath,
+              local: !snapshot.diagnostics.rpcOk
+            },
+            {
+              onStdout: handleCommandStdout
+            },
+            {
+              timeoutMs: 120000,
+              signal: request.signal
+            }
+          ) as Promise<AgentChatCommandPayload>;
+
+          void (async () => {
+            while (keepPolling && !request.signal.aborted) {
+              try {
+                await pollTranscript(agentId, sessionId, agent.workspacePath);
+              } catch {
+                // Ignore transient transcript reads while the session is still booting.
+              }
+
+              await wait(250);
+            }
+          })();
+
+          const result = await commandPromise;
+          if (streamStdoutBuffer.trim()) {
+            await emitAssistantText(extractAssistantTextFromAgentChatStreamLine(streamStdoutBuffer));
+            streamStdoutBuffer = "";
+          }
+          stopPolling();
+
+          try {
+            await pollTranscript(agentId, sessionId, agent.workspacePath);
+          } catch {
+            // Ignore a last transient read failure.
+          }
+
+          let response = toAgentChatResponse(agentId, result);
+          if (isEmptyAgentChatResponse(response) && !latestAssistantText) {
+            await waitForLateAssistantText(agentId, sessionId, agent.workspacePath);
+          }
+
+          if (latestAssistantText && response.payloads.length === 0) {
+            response = {
+              ...response,
+              summary: latestAssistantText,
+              payloads: [
+                {
+                  text: latestAssistantText,
+                  mediaUrl: null
+                }
+              ]
+            };
+          }
+          const emptyResponseDiagnosticMessage = resolveEmptyAgentChatDiagnosticMessage(result, {
+            modelId: activeAgentModelId
+          });
+          response = recoverSilentOpenAiCodexChatFailure(response, activeAgentModelId);
+          response = recoverDirectIdentityResponse(response, formatAgentDisplayName(agent), operatorMessage);
+          response = attachStreamMissionControlAction(response, latestStreamAction);
+          response = recoverCompletedEmptyAgentChatResponse(response, emptyResponseDiagnosticMessage);
+          if (isEmptyAgentChatResponse(response)) {
+            await send({
+              type: "done",
+              ok: false,
+              message: emptyResponseDiagnosticMessage ?? emptyAgentChatResponseMessage
+            });
+            return;
+          }
+
+          const action = readMissionControlAction(response.meta);
+
+          if (action?.type === "rename_agent") {
+            await updateAgent({
+              id: agentId,
+              name: action.name
+            });
+          }
+
+          clearMissionControlCaches();
+
+          await send({
+            type: "done",
+            ok: true,
+            message: response.summary,
+            response: applyMissionControlActionMetadata(response, action)
+          });
+        } finally {
+          releaseAgentChatSessionTurnLock(inFlightKey, inFlightLock);
         }
-
-        clearMissionControlCaches();
-
-        await send({
-          type: "done",
-          ok: true,
-          message: response.summary,
-          response: applyMissionControlActionMetadata(response, action)
-        });
       } catch (error) {
         stopPolling();
 
@@ -739,6 +759,33 @@ function toAgentChatResponse(agentId: string, payload: AgentChatCommandPayload):
 
 function isEmptyAgentChatResponse(response: MissionResponse) {
   return response.meta?.emptyAgentChatResponse === true;
+}
+
+function createAgentChatSessionInFlightKey(agentId: string, sessionId: string) {
+  return `${agentId.trim()}:${sessionId.trim()}`;
+}
+
+function acquireAgentChatSessionTurnLock(key: string) {
+  const now = Date.now();
+  const existing = activeAgentChatSessionTurns.get(key);
+
+  if (existing && now - existing.startedAt < agentChatSessionTurnLockTtlMs) {
+    return null;
+  }
+
+  const lockId = Symbol(key);
+  activeAgentChatSessionTurns.set(key, {
+    lockId,
+    startedAt: now
+  });
+
+  return lockId;
+}
+
+function releaseAgentChatSessionTurnLock(key: string, lockId: symbol) {
+  if (activeAgentChatSessionTurns.get(key)?.lockId === lockId) {
+    activeAgentChatSessionTurns.delete(key);
+  }
 }
 
 function recoverCompletedEmptyAgentChatResponse(

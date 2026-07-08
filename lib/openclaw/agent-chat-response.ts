@@ -12,6 +12,9 @@ export const completedEmptyAgentChatResponseMessage =
 export const incompleteAgentChatConfirmationMessage =
   "OpenClaw/Codex stopped before AgentOS received the final turn-complete confirmation. This is a runtime confirmation problem, not a normal assistant reply. AgentOS cannot verify whether the final reply was saved; retry the message, refresh state, or ask the agent for a summary if the workspace changed.";
 
+export const conflictedAgentChatSessionMessage =
+  "OpenClaw is already initializing a reply for this agent session. Wait for the current reply to finish, then retry this message. If no reply appears, restart the Gateway or start a fresh chat session.";
+
 export type AgentChatHistoryMessage = {
   id: string | null;
   role: "user" | "assistant";
@@ -133,6 +136,10 @@ export function resolveAgentChatRuntimeFailureMessage(rawFailure: string) {
     /completed without returning a response/i.test(normalizedFailure)
   ) {
     return incompleteAgentChatConfirmationMessage;
+  }
+
+  if (/reply session initialization conflicted/i.test(normalizedFailure)) {
+    return conflictedAgentChatSessionMessage;
   }
 
   return null;

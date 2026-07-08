@@ -142,8 +142,7 @@ export function sendAgentChatMessage({
   const payload = {
     message: trimmedText,
     rawMessage: trimmedText,
-    history: promptHistory,
-    thinking: "low" as const
+    history: promptHistory
   };
 
   run.promise = runAgentChatTurn({
@@ -179,7 +178,7 @@ async function runAgentChatTurn({
     message: string;
     rawMessage: string;
     history: Array<{ role: "user" | "assistant"; text: string }>;
-    thinking: "low";
+    thinking?: "off" | "minimal" | "low" | "medium" | "high";
   };
   agentName: string;
   userMessageId: string;

@@ -217,9 +217,9 @@ function validateOpenClawVersions(context, openClawVersions) {
     context.issues.push(`${OPENCLAW_VERSIONS_FILE}: missing OPENCLAW_SUPPORTED_BASELINE_VERSION`);
   }
 
-  if (recommended && supportedBaseline && recommended !== supportedBaseline) {
+  if (recommended && supportedBaseline && compareVersionStrings(recommended, supportedBaseline) < 0) {
     context.issues.push(
-      `${OPENCLAW_VERSIONS_FILE}: OPENCLAW_RECOMMENDED_VERSION (${recommended}) must match OPENCLAW_SUPPORTED_BASELINE_VERSION (${supportedBaseline})`
+      `${OPENCLAW_VERSIONS_FILE}: OPENCLAW_RECOMMENDED_VERSION (${recommended}) must be greater than or equal to OPENCLAW_SUPPORTED_BASELINE_VERSION (${supportedBaseline})`
     );
   }
 }
@@ -588,6 +588,32 @@ function readJson(context, relativePath) {
 function readTypeScriptStringConstant(source, name) {
   const pattern = new RegExp(`export\\s+const\\s+${name}\\s*=\\s*"([^"]+)"\\s*;`);
   return source.match(pattern)?.[1] ?? null;
+}
+
+function compareVersionStrings(left, right) {
+  const leftParts = normalizeVersionParts(left);
+  const rightParts = normalizeVersionParts(right);
+  const length = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = leftParts[index] ?? 0;
+    const rightPart = rightParts[index] ?? 0;
+
+    if (leftPart !== rightPart) {
+      return leftPart > rightPart ? 1 : -1;
+    }
+  }
+
+  return 0;
+}
+
+function normalizeVersionParts(version) {
+  return String(version)
+    .trim()
+    .replace(/^v/i, "")
+    .split(/[.-]/)
+    .map((part) => Number.parseInt(part, 10))
+    .map((part) => (Number.isFinite(part) ? part : 0));
 }
 
 function expectFileExists(context, relativePath) {

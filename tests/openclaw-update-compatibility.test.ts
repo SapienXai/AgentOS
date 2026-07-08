@@ -12,7 +12,10 @@ import {
 } from "@/lib/openclaw/update-compatibility";
 import { buildOpenClawUpdatePreflightReport } from "@/lib/openclaw/update-safety";
 import type { MissionControlSnapshot } from "@/lib/openclaw/types";
-import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
+import {
+  OPENCLAW_RECOMMENDED_VERSION,
+  OPENCLAW_SUPPORTED_BASELINE_VERSION
+} from "@/lib/openclaw/versions";
 
 const manifest: OpenClawCompatibilityManifest = {
   schemaVersion: 1,
@@ -189,7 +192,13 @@ test("offline mode uses local fallback manifest", () => {
   assert.equal(snapshot.manifestSource, "local-fallback");
   assert.equal(snapshot.recommendedVersion, OPENCLAW_RECOMMENDED_VERSION);
   assert.equal(snapshot.recommendedDecision.status, "certified");
-  assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions[0]?.version, OPENCLAW_RECOMMENDED_VERSION);
+  assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions[0]?.version, OPENCLAW_SUPPORTED_BASELINE_VERSION);
+  assert.equal(
+    LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions.some(
+      (entry) => entry.version === OPENCLAW_RECOMMENDED_VERSION && entry.status === "certified"
+    ),
+    true
+  );
 });
 
 test("failed post-update verification keeps the target installed by default", () => {

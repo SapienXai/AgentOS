@@ -14,6 +14,7 @@ import {
   OPENCLAW_GATEWAY_BASELINE_VERSION,
   OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS
 } from "@/lib/openclaw/client/gateway-compatibility";
+import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
 import {
   OPENCLAW_RECOMMENDED_VERSION,
   OPENCLAW_SUPPORTED_BASELINE_VERSION
@@ -34,8 +35,9 @@ const staleBaselineCopyPattern = new RegExp([
 ].join("|"));
 
 test("setup smoke uses the centralized OpenClaw baseline constants", () => {
-  assert.equal(OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION);
-  assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.6.8");
+  assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.6.11");
+  assert.equal(OPENCLAW_SUPPORTED_BASELINE_VERSION, "2026.6.8");
+  assert.equal(compareVersionStrings(OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION) >= 0, true);
   assert.match(OPENCLAW_RECOMMENDED_VERSION, /^\d{4}\.\d+\.\d+$/);
   assert.equal(OPENCLAW_GATEWAY_BASELINE_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION);
 

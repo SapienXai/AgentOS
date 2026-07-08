@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  conflictedAgentChatSessionMessage,
   completedEmptyAgentChatResponseMessage,
   extractAgentChatEmptyResponseDiagnosticText,
   extractAgentChatMessagesFromSessionHistory,
@@ -234,4 +235,13 @@ test("agent chat response helper explains missing final turn confirmation", () =
     incompleteAgentChatConfirmationMessage
   );
   assert.equal(resolveAgentChatRuntimeFailureMessage("model provider returned rate limit"), null);
+});
+
+test("agent chat response helper explains OpenClaw reply session conflicts", () => {
+  assert.equal(
+    resolveAgentChatRuntimeFailureMessage(
+      "Error: reply session initialization conflicted for agent:main:explicit:677f5854-8281-4084-a857-14ce1bd11da4"
+    ),
+    conflictedAgentChatSessionMessage
+  );
 });

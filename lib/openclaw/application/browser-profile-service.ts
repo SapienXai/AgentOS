@@ -207,6 +207,10 @@ function normalizeBrowserRequestErrorMessage(error: unknown, params: BrowserRequ
     return `${profileLabel} could not be attached through OpenClaw. Keep Chrome open, approve the attach prompt, and retry. If OpenClaw asks for remote debugging, open chrome://inspect and enable it before retrying. If you do not need your signed-in browser session, use the managed "openclaw" profile instead.`;
   }
 
+  if (isUnsupportedBrowserRequestError(message)) {
+    return "OpenClaw does not expose the browser.request Gateway method in this installation. Account browser-profile connection is unavailable until OpenClaw adds or enables that Gateway capability.";
+  }
+
   const unresolvedHost = readUnresolvedHost(message);
   if (unresolvedHost) {
     return `OpenClaw could not resolve ${unresolvedHost}. Check DNS, VPN, firewall, or network filtering for this domain, then retry. AgentOS did not save the login target because the browser page was not confirmed open.`;
@@ -232,6 +236,10 @@ function isExistingChromeAttachError(message: string, params: BrowserRequestPara
   }
 
   return /Chrome MCP existing-session attach|DevToolsActivePort/i.test(message);
+}
+
+function isUnsupportedBrowserRequestError(message: string) {
+  return /unknown method:?\s+["']?browser\.request["']?|method\s+["']?browser\.request["']?\s+is not supported/i.test(message);
 }
 
 function normalizeBrowserProfile(value: unknown): OpenClawBrowserProfileView | null {
