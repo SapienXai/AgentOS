@@ -128,7 +128,12 @@ export async function readAgentChatSessionsForAgent(input: {
 export async function resolveAgentChatSessionId(input: {
   agentId: string;
   workspacePath?: string;
+  reuse?: boolean;
 }) {
+  if (input.reuse === false) {
+    return randomUUID();
+  }
+
   const existingSession = (await readAgentChatSessionsForAgent({
     agentId: input.agentId,
     workspacePath: input.workspacePath,

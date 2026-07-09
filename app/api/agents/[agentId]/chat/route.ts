@@ -243,6 +243,10 @@ export async function POST(
 
       const emitAssistantText = async (value: string | null | undefined) => {
         const sanitizedText = sanitizeAgentChatReplyText(value);
+        if (extractAgentChatSessionConflict(sanitizedText)) {
+          return;
+        }
+
         const extracted = extractMissionControlAction(sanitizedText);
         const currentText = sanitizeAgentChatVisibleText(sanitizedText);
 
@@ -460,7 +464,8 @@ export async function POST(
 
         const sessionId = await resolveAgentChatSessionId({
           agentId,
-          workspacePath: agent.workspacePath
+          workspacePath: agent.workspacePath,
+          reuse: false
         });
 
         const inFlightKey = createAgentChatSessionInFlightKey(agentId, sessionId);

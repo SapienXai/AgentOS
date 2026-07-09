@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  resolveAgentChatSessionId,
   selectReusableAgentChatSessions,
   type AgentChatSessionRecord
 } from "@/lib/openclaw/domains/agent-chat-sessions";
@@ -41,6 +42,23 @@ test("agent chat session reuse prefers the latest session for the same agent and
     }).map((session) => session.sessionId),
     ["latest-session", "old-session"]
   );
+});
+
+test("agent chat session resolver can force a fresh explicit session id", async () => {
+  const first = await resolveAgentChatSessionId({
+    agentId: "agent-1",
+    workspacePath: "/workspace",
+    reuse: false
+  });
+  const second = await resolveAgentChatSessionId({
+    agentId: "agent-1",
+    workspacePath: "/workspace",
+    reuse: false
+  });
+
+  assert.match(first, /^[0-9a-f-]{36}$/i);
+  assert.match(second, /^[0-9a-f-]{36}$/i);
+  assert.notEqual(first, second);
 });
 
 function createSession(overrides: Partial<AgentChatSessionRecord>): AgentChatSessionRecord {
