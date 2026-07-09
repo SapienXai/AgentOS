@@ -86,7 +86,6 @@ export function buildSystemSteps(
     options.gatewayReachable === true ||
     (!gatewayProbeResolved && !options.suppressGatewaySnapshot && !forcePending && snapshot.diagnostics.loaded) ||
     directGatewayRun ||
-    phase === "starting-gateway" ||
     phase === "verifying" ||
     phase === "ready";
   const liveComplete =
@@ -132,7 +131,11 @@ export function buildSystemSteps(
       ),
       state: resolveStepState(
         gatewayComplete,
-        !gatewayComplete && (phase === "installing-gateway" || (cliComplete && phase === "detecting"))
+        !gatewayComplete && (
+          phase === "installing-gateway" ||
+          phase === "starting-gateway" ||
+          (cliComplete && phase === "detecting")
+        )
       )
     },
     {
@@ -152,8 +155,7 @@ export function buildSystemSteps(
       state: resolveStepState(
         runtimeReady,
         !runtimeReady &&
-          (phase === "starting-gateway" ||
-            phase === "verifying" ||
+          (phase === "verifying" ||
             (gatewayComplete && phase === "detecting") ||
             gatewayComplete ||
             liveComplete)
