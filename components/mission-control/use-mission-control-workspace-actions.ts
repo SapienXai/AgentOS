@@ -37,6 +37,8 @@ export function useMissionControlWorkspaceActions({
   const [workspaceChannelsInitialSection, setWorkspaceChannelsInitialSection] = useState<WorkspaceDialogSection>("surfaces");
   const [isConnectAccountDialogOpen, setIsConnectAccountDialogOpen] = useState(false);
   const [accountBrowserProfiles, setAccountBrowserProfiles] = useState<OpenClawBrowserProfileView[]>([]);
+  const [accountBrowserProfilesError, setAccountBrowserProfilesError] = useState<string | null>(null);
+  const [accountBrowserProfileRecoveryBusy, setAccountBrowserProfileRecoveryBusy] = useState<"restart" | null>(null);
   const [accountTargets, setAccountTargets] = useState<AccountLoginTargetView[]>([]);
   const [accountAccessRules, setAccountAccessRules] = useState<AccountAccessRuleView[]>([]);
   const [workspaceFilesDialogId, setWorkspaceFilesDialogId] = useState<string | null>(null);
@@ -94,11 +96,10 @@ export function useMissionControlWorkspaceActions({
       }
 
       setAccountBrowserProfiles(payload.profiles);
+      setAccountBrowserProfilesError(null);
     } catch (error) {
       setAccountBrowserProfiles([]);
-      toast.error("Unable to read OpenClaw browser profiles.", {
-        description: readBrowserProfileError(error, "OpenClaw did not return browser profiles.")
-      });
+      setAccountBrowserProfilesError(readBrowserProfileError(error, "OpenClaw did not return browser profiles."));
     }
   }, []);
 
@@ -123,7 +124,36 @@ export function useMissionControlWorkspaceActions({
 
   const openConnectAccountDialog = useCallback(() => {
     setIsConnectAccountDialogOpen(true);
+    setAccountBrowserProfilesError(null);
     void loadAccountBrowserProfiles();
+  }, [loadAccountBrowserProfiles]);
+
+  const restartGatewayForAccountProfiles = useCallback(async () => {
+    setAccountBrowserProfileRecoveryBusy("restart");
+
+    try {
+      const response = await fetch("/api/gateway/control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "restart" })
+      });
+      const payload = await response.json().catch(() => null) as { message?: string; error?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Unable to restart the OpenClaw Gateway.");
+      }
+
+      toast.success(payload?.message ?? "Gateway restart requested.", {
+        description: "Retrying browser profile discovery after the Gateway restart."
+      });
+      await loadAccountBrowserProfiles();
+    } catch (error) {
+      toast.error("Gateway restart did not complete.", {
+        description: readBrowserProfileError(error, "Open diagnostics to inspect the OpenClaw Gateway state.")
+      });
+    } finally {
+      setAccountBrowserProfileRecoveryBusy(null);
+    }
   }, [loadAccountBrowserProfiles]);
 
   const connectAccount = useCallback(async (input: ConnectBrowserProfileInput) => {
@@ -214,11 +244,15 @@ export function useMissionControlWorkspaceActions({
     isConnectAccountDialogOpen,
     setIsConnectAccountDialogOpen,
     accountBrowserProfiles,
+    accountBrowserProfilesError,
+    accountBrowserProfileRecoveryBusy,
     accountTargets,
     setAccountTargets,
     accountAccessRules,
     setAccountAccessRules,
+    loadAccountBrowserProfiles,
     openConnectAccountDialog,
+    restartGatewayForAccountProfiles,
     connectAccount,
     workspaceFilesDialogId,
     openWorkspaceFiles,

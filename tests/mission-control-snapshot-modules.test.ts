@@ -171,6 +171,53 @@ test("workspace hydration keeps runtime-only workspace context visible during re
   assert.equal(hydrated.workspaces[0].totalSessions, 1);
 });
 
+test("workspace hydration dedupes provider-qualified and runtime model aliases", async () => {
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "agentos-model-alias-workspace-"));
+  tempRoots.push(workspaceRoot);
+  await mkdir(path.join(workspaceRoot, ".openclaw"), { recursive: true });
+
+  const bindings = createMissionControlWorkspaceBindings([
+    {
+      id: "agent-1",
+      workspace: workspaceRoot,
+      agentDir: path.join(workspaceRoot, ".openclaw", "agents", "agent-1", "agent"),
+      model: "entrim/Qwen/Qwen3.6-35B-A3B"
+    },
+    {
+      id: "agent-2",
+      workspace: workspaceRoot,
+      agentDir: path.join(workspaceRoot, ".openclaw", "agents", "agent-2", "agent"),
+      model: "entrim/Qwen/Qwen3.6-35B-A3B"
+    }
+  ]);
+  const hydrated = await hydrateMissionControlWorkspaceGraph({
+    bindings,
+    agentConfig: [
+      { id: "agent-1", workspace: workspaceRoot, model: "entrim/Qwen/Qwen3.6-35B-A3B" },
+      { id: "agent-2", workspace: workspaceRoot, model: "entrim/Qwen/Qwen3.6-35B-A3B" }
+    ],
+    sessions: [],
+    hasOpenClawSignal: true,
+    runtimes: [{
+      id: "runtime-1",
+      source: "turn",
+      key: "agent:agent-1:main",
+      title: "Gateway task",
+      subtitle: "OpenClaw task update",
+      status: "running",
+      updatedAt: 1_700_000_000_000,
+      ageMs: null,
+      agentId: "agent-1",
+      workspacePath: workspaceRoot,
+      modelId: "Qwen/Qwen3.6-35B-A3B",
+      metadata: {}
+    }]
+  });
+
+  assert.equal(hydrated.workspaces.length, 1);
+  assert.deepEqual(hydrated.workspaces[0].modelIds, ["entrim/Qwen/Qwen3.6-35B-A3B"]);
+});
+
 function createRuntimeRecord(
   id: string,
   updatedAt: number,

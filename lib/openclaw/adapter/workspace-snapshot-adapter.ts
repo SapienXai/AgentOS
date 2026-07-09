@@ -14,7 +14,7 @@ export function buildWorkspaceProjectEntry(input: {
   return {
     ...input.workspace,
     name: input.manifest?.name ?? input.workspace.name,
-    modelIds: unique(input.workspace.modelIds),
+    modelIds: dedupeWorkspaceModelIds(input.workspace.modelIds),
     activeRuntimeIds: unique(input.workspace.activeRuntimeIds),
     health: resolveWorkspaceHealth(input.workspace.agentIds, input.allAgents),
     bootstrap: input.metadata.bootstrap,
@@ -23,4 +23,23 @@ export function buildWorkspaceProjectEntry(input: {
     agentIds: input.workspace.agentIds,
     totalSessions: input.workspace.totalSessions
   };
+}
+
+function dedupeWorkspaceModelIds(modelIds: string[]) {
+  const normalizedModelIds = unique(modelIds.map((modelId) => modelId.trim()).filter(Boolean));
+  const canonicalIds = normalizedModelIds.map((modelId) => {
+    const candidates = normalizedModelIds.filter((candidate) => isQualifiedModelAlias(candidate, modelId));
+
+    return candidates.length === 1 ? candidates[0] : modelId;
+  });
+
+  return unique(canonicalIds);
+}
+
+function isQualifiedModelAlias(candidate: string, modelId: string) {
+  if (candidate === modelId || !candidate.endsWith(`/${modelId}`)) {
+    return false;
+  }
+
+  return candidate.split("/").length > modelId.split("/").length;
 }

@@ -659,11 +659,15 @@ export function MissionControlShell({
     isConnectAccountDialogOpen,
     setIsConnectAccountDialogOpen,
     accountBrowserProfiles,
+    accountBrowserProfilesError,
+    accountBrowserProfileRecoveryBusy,
     accountTargets,
     setAccountTargets,
     accountAccessRules,
     setAccountAccessRules,
+    loadAccountBrowserProfiles,
     openConnectAccountDialog,
+    restartGatewayForAccountProfiles,
     connectAccount,
     workspaceFilesDialogId,
     openWorkspaceFiles,
@@ -4264,6 +4268,10 @@ export function MissionControlShell({
           onOpenChange={setIsConnectAccountDialogOpen}
           onSubmit={connectAccount}
           profiles={accountBrowserProfiles}
+          profilesError={accountBrowserProfilesError}
+          onRetryProfiles={() => void loadAccountBrowserProfiles()}
+          onRestartGateway={() => void restartGatewayForAccountProfiles()}
+          restartGatewayBusy={accountBrowserProfileRecoveryBusy === "restart"}
         />
 
         <WorkspaceContextFilesDialog

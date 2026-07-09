@@ -777,8 +777,8 @@
 
 .agent-node__composer-glow {
   background:
-    radial-gradient(circle at 50% 50%, rgba(34, 211, 238, 0.16), transparent 60%),
-    radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.08), transparent 42%);
+    radial-gradient(circle at 50% 50%, rgba(var(--agent-theme-rgb, 34, 211, 238), 0.18), transparent 60%),
+    radial-gradient(circle at 50% 50%, rgba(var(--agent-theme-rgb, 56, 189, 248), 0.1), transparent 42%);
   filter: blur(16px);
   opacity: 0.52;
   transform-origin: center;
@@ -793,7 +793,7 @@
 .agent-node__composer-rail {
   fill: none;
   vector-effect: non-scaling-stroke;
-  stroke: rgba(186, 230, 253, 0.3);
+  stroke: rgba(var(--agent-theme-rgb, 186, 230, 253), 0.32);
   stroke-width: 2.3;
   opacity: 1;
 }
@@ -806,7 +806,7 @@
 }
 
 .agent-node__composer-trace--glow {
-  stroke: rgba(34, 211, 238, 0.4);
+  stroke: rgba(var(--agent-theme-rgb, 34, 211, 238), 0.42);
   opacity: 0.78;
   stroke-width: 10.4;
   stroke-dasharray: 20 80;
@@ -815,18 +815,18 @@
 }
 
 .agent-node__composer-trace--core {
-  stroke: rgba(186, 230, 253, 0.98);
+  stroke: rgba(var(--agent-theme-rgb, 186, 230, 253), 0.98);
   stroke-width: 3.2;
   stroke-dasharray: 7 93;
   animation: agent-composer-trace 1.85s linear infinite;
   filter:
-    drop-shadow(0 0 12px rgba(103, 232, 249, 0.94))
-    drop-shadow(0 0 22px rgba(34, 211, 238, 0.38))
-    drop-shadow(0 0 34px rgba(59, 130, 246, 0.18));
+    drop-shadow(0 0 12px rgba(var(--agent-theme-rgb, 103, 232, 249), 0.94))
+    drop-shadow(0 0 22px rgba(var(--agent-theme-rgb, 34, 211, 238), 0.38))
+    drop-shadow(0 0 34px rgba(var(--agent-theme-rgb, 59, 130, 246), 0.18));
 }
 
 .agent-node__composer-trace--tail {
-  stroke: rgba(103, 232, 249, 0.48);
+  stroke: rgba(var(--agent-theme-rgb, 103, 232, 249), 0.5);
   opacity: 0.92;
   stroke-width: 5.4;
   stroke-dasharray: 14 86;
@@ -842,8 +842,8 @@
 
 .mission-shell--light .agent-node__composer-glow {
   background:
-    radial-gradient(circle at 50% 50%, rgba(255, 35, 83, 0.24), transparent 58%),
-    radial-gradient(circle at 50% 50%, rgba(255, 83, 119, 0.14), transparent 42%);
+    radial-gradient(circle at 50% 50%, rgba(var(--agent-theme-rgb, 255, 35, 83), 0.26), transparent 58%),
+    radial-gradient(circle at 50% 50%, rgba(var(--agent-theme-rgb, 255, 83, 119), 0.15), transparent 42%);
   filter: blur(14px);
   opacity: 0.72;
 }
@@ -854,29 +854,29 @@
 }
 
 .mission-shell--light .agent-node__composer-rail {
-  stroke: rgba(255, 38, 83, 0.58);
+  stroke: rgba(var(--agent-theme-rgb, 255, 38, 83), 0.58);
   stroke-width: 2.45;
-  filter: drop-shadow(0 0 5px rgba(255, 38, 83, 0.24));
+  filter: drop-shadow(0 0 5px rgba(var(--agent-theme-rgb, 255, 38, 83), 0.24));
 }
 
 .mission-shell--light .agent-node__composer-trace--glow {
-  stroke: rgba(255, 38, 83, 0.62);
+  stroke: rgba(var(--agent-theme-rgb, 255, 38, 83), 0.62);
   opacity: 0.82;
   stroke-width: 9.2;
   filter: blur(6.5px);
 }
 
 .mission-shell--light .agent-node__composer-trace--core {
-  stroke: rgba(255, 56, 98, 0.98);
+  stroke: rgba(var(--agent-theme-rgb, 255, 56, 98), 0.98);
   stroke-width: 3.05;
   filter:
-    drop-shadow(0 0 10px rgba(255, 38, 83, 0.88))
-    drop-shadow(0 0 18px rgba(255, 38, 83, 0.38))
-    drop-shadow(0 0 30px rgba(255, 38, 83, 0.18));
+    drop-shadow(0 0 10px rgba(var(--agent-theme-rgb, 255, 38, 83), 0.88))
+    drop-shadow(0 0 18px rgba(var(--agent-theme-rgb, 255, 38, 83), 0.38))
+    drop-shadow(0 0 30px rgba(var(--agent-theme-rgb, 255, 38, 83), 0.18));
 }
 
 .mission-shell--light .agent-node__composer-trace--tail {
-  stroke: rgba(255, 56, 98, 0.72);
+  stroke: rgba(var(--agent-theme-rgb, 255, 56, 98), 0.72);
   opacity: 0.94;
   stroke-width: 4.9;
   filter: blur(2px);
@@ -1182,12 +1182,25 @@ html:not(.dark) .agent-node {
 
 html:not(.dark) .agent-node.dark,
 html:not(.dark) .agent-node {
+  border-radius: 12px !important;
   border-color: rgb(226 232 240 / 0.85) !important;
   background:
     radial-gradient(circle at 18% 10%, rgb(8 145 178 / 0.12), transparent 36%),
     radial-gradient(circle at 84% 18%, rgb(16 185 129 / 0.08), transparent 28%),
     linear-gradient(180deg, rgb(255 255 255 / 0.97), rgb(244 247 251 / 0.96)) !important;
   box-shadow: 0 18px 42px rgb(15 23 42 / 0.14) !important;
+}
+
+.mission-shell .react-flow__node-agent,
+.mission-shell .react-flow__node-agent .agent-node {
+  border-radius: 12px !important;
+}
+
+.mission-shell .react-flow__node-agent .agent-profile-media {
+  border-top-left-radius: 12px !important;
+  border-top-right-radius: 12px !important;
+  clip-path: inset(0 round 12px 12px 0 0);
+  contain: paint;
 }
 
 html:not(.dark) .agent-node.dark p.line-clamp-2,
@@ -1314,6 +1327,42 @@ html:not(.dark) .agent-node button[aria-label^="Open sessions"] p:last-child {
   color: rgb(71 85 105) !important;
 }
 
+.agent-node__action-menu,
+html:not(.dark) .agent-node__action-menu,
+html:not(.dark) .agent-node.dark .agent-node__action-menu {
+  border-color: rgb(255 255 255 / 0.14) !important;
+  background: linear-gradient(180deg, rgb(15 23 42 / 0.98), rgb(2 6 23 / 0.97)) !important;
+  box-shadow:
+    0 20px 44px rgb(2 6 23 / 0.46),
+    inset 0 1px 0 rgb(255 255 255 / 0.08) !important;
+}
+
+.agent-node__action-menu-button,
+html:not(.dark) .agent-node__action-menu-button,
+html:not(.dark) .agent-node.dark .agent-node__action-menu-button {
+  color: rgb(226 232 240) !important;
+}
+
+.agent-node__action-menu-button:hover,
+html:not(.dark) .agent-node__action-menu-button:hover,
+html:not(.dark) .agent-node.dark .agent-node__action-menu-button:hover {
+  background: rgb(255 255 255 / 0.08) !important;
+  color: rgb(255 255 255) !important;
+}
+
+.agent-node__action-menu-button.text-rose-200,
+html:not(.dark) .agent-node__action-menu-button.text-rose-200,
+html:not(.dark) .agent-node.dark .agent-node__action-menu-button.text-rose-200 {
+  color: rgb(254 205 211) !important;
+}
+
+.agent-node__action-menu-button.text-rose-200:hover,
+html:not(.dark) .agent-node__action-menu-button.text-rose-200:hover,
+html:not(.dark) .agent-node.dark .agent-node__action-menu-button.text-rose-200:hover {
+  background: rgb(244 63 94 / 0.14) !important;
+  color: rgb(255 228 230) !important;
+}
+
 html:not(.dark) .agent-node.dark > div:last-child > div:last-child,
 html:not(.dark) .agent-node > div:last-child > div:last-child {
   border-color: rgb(226 232 240 / 0.85) !important;
@@ -1337,6 +1386,7 @@ html:not(.dark) .agent-node > div:last-child > div:last-child {
   content: "";
   position: absolute;
   inset: 0;
+  border-radius: inherit;
   pointer-events: none;
 }
 
@@ -1367,9 +1417,9 @@ html:not(.dark) .agent-node > div:last-child > div:last-child {
 }
 
 .agent-profile-media__refraction {
-  inset: -10px;
+  inset: 0;
   z-index: 3;
-  border-radius: 0;
+  border-radius: inherit;
   background:
     linear-gradient(180deg, rgba(0, 0, 0, calc(var(--agent-profile-dark-wash) * 0.82)), transparent 62%),
     radial-gradient(circle at var(--agent-profile-orb-a-x) var(--agent-profile-orb-a-y), rgba(var(--agent-profile-accent-a), var(--agent-profile-glass-alpha)), transparent 34%),
@@ -1401,6 +1451,94 @@ html:not(.dark) .agent-node > div:last-child > div:last-child {
   background-size: 240px 240px;
   mix-blend-mode: soft-light;
   opacity: 0.12;
+}
+
+.agent-profile-media__caption {
+  background: transparent;
+}
+
+.agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 {
+  background: transparent;
+}
+
+.agent-profile-media__caption-kicker,
+.agent-profile-media__caption-title,
+.agent-profile-media__caption-theme {
+  text-shadow:
+    0 1px 2px rgba(2, 6, 23, 0.92),
+    0 0 18px rgba(2, 6, 23, 0.46);
+}
+
+.agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 p,
+.agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-white\/65,
+.agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-amber-200\/90 {
+  text-shadow:
+    0 1px 2px rgba(2, 6, 23, 0.92),
+    0 0 18px rgba(2, 6, 23, 0.46);
+}
+
+.agent-profile-media__caption-kicker {
+  color: rgba(255, 255, 255, 0.84) !important;
+}
+
+.agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-white\/65 {
+  color: rgba(255, 255, 255, 0.84) !important;
+}
+
+.agent-profile-media__caption-title {
+  color: rgb(255, 255, 255) !important;
+}
+
+.agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 p {
+  color: rgb(255, 255, 255) !important;
+}
+
+.agent-profile-media__caption-theme {
+  color: rgb(255 236 179 / 0.96) !important;
+}
+
+.agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-amber-200\/90 {
+  color: rgb(255 236 179 / 0.96) !important;
+}
+
+html:not(.dark) .agent-profile-media__caption {
+  background: transparent;
+}
+
+html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 {
+  background: transparent;
+}
+
+html:not(.dark) .agent-profile-media__caption-kicker,
+html:not(.dark) .agent-profile-media__caption-title,
+html:not(.dark) .agent-profile-media__caption-theme {
+  text-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.94),
+    0 0 16px rgba(15, 23, 42, 0.62);
+}
+
+html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 p,
+html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-white\/65,
+html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-amber-200\/90 {
+  text-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.94),
+    0 0 16px rgba(15, 23, 42, 0.62);
+}
+
+html:not(.dark) .agent-profile-media__caption-kicker {
+  color: rgb(255 255 255 / 0.9) !important;
+}
+
+html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-white\/65 {
+  color: rgb(255 255 255 / 0.9) !important;
+}
+
+html:not(.dark) .agent-profile-media__caption-theme {
+  color: rgb(254 243 199 / 0.98) !important;
+}
+
+html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute.inset-x-0.bottom-0.z-30 .text-amber-200\/90 {
+  color: rgb(254 243 199 / 0.98) !important;
 }
 
 @keyframes agent-profile-float-glow {

@@ -7,7 +7,7 @@ import { BrainCircuit, ChevronDown, KeyRound, Layers3, LocateFixed, MessageCircl
 import { AnimatePresence, motion } from "motion/react";
 
 import { AccountIcon } from "@/components/mission-control/account-icon";
-import { resolveAgentProfileVisual } from "@/components/mission-control/agent-profile-visuals";
+import { resolveAgentProfileVisual, resolveAgentVisualTheme } from "@/components/mission-control/agent-profile-visuals";
 import type { AgentDetailFocus, AgentNodeData } from "@/components/mission-control/canvas-types";
 import {
   AGENT_NODE_ATTENTION_CLASSES,
@@ -474,7 +474,8 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   };
   const modelBadgeLabel = data.modelLabel || formatModelLabel(data.agent.modelId);
   const statusLabel = isPendingCreation ? "Provisioning" : data.agent.status;
-  const themeLabel = data.agent.identity.theme ?? formatAgentPresetLabel(data.agent.policy.preset);
+  const visualTheme = resolveAgentVisualTheme(data.agent.identity.theme);
+  const themeLabel = visualTheme?.label ?? data.agent.identity.theme ?? formatAgentPresetLabel(data.agent.policy.preset);
   const skillCount = effectiveSkills.length;
   const heartbeatLabel = data.agent.heartbeat.enabled
     ? data.agent.heartbeat.every ??
@@ -513,7 +514,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
         : "Status unknown; click to allow this agent as a cross-agent participant");
   const currentActionLabel = typeof data.agent.currentAction === "string" ? data.agent.currentAction.trim() : "";
   const purposeLabel = data.agent.profile?.purpose?.trim() || currentActionLabel || "OpenClaw operator";
-  const profileVisual = resolveAgentProfileVisual(data.agent.id, agentLabel);
+  const profileVisual = resolveAgentProfileVisual(data.agent.id, agentLabel, data.agent.identity.theme);
   const visibleSkills = effectiveSkills.slice(0, 4);
   const visibleDeclaredTools = effectiveTools.slice(0, 3);
   const visibleObservedTools = observedTools.slice(0, 3);
@@ -758,8 +759,9 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
 
   return (
     <div
+      style={profileVisual.style as CSSProperties}
       className={cn(
-        "agent-node dark group relative isolate w-[272px] overflow-visible rounded-[24px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(18,20,26,0.96),rgba(9,11,15,0.96))] pt-0 pb-0 shadow-[0_20px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl",
+        "agent-node dark group relative isolate w-[272px] overflow-visible rounded-[12px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(18,20,26,0.96),rgba(9,11,15,0.96))] pt-0 pb-0 shadow-[0_20px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl",
         data.emphasis ? "opacity-100" : "opacity-72",
         isPendingCreation && "border-cyan-200/22 shadow-[0_20px_54px_rgba(34,211,238,0.16),0_18px_46px_rgba(0,0,0,0.36)]",
         selected && AGENT_NODE_SELECTED_CLASSES,
@@ -774,14 +776,14 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: [0, 1, 0.72, 0], scale: [0.96, 1.01, 1.015, 1.02] }}
           transition={{ duration: 1.7, times: [0, 0.16, 0.55, 1], ease: "easeOut" }}
-          className="pointer-events-none absolute inset-[-4px] z-[5] rounded-[28px]"
+          className="pointer-events-none absolute inset-[-4px] z-[5] rounded-[14px]"
         >
-          <div className="absolute inset-0 rounded-[28px] border border-cyan-300/60 bg-cyan-300/10 shadow-[0_0_0_1px_rgba(34,211,238,0.14),0_0_34px_rgba(34,211,238,0.28)]" />
-          <div className="absolute inset-[10px] rounded-[20px] bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.18),transparent_62%)] opacity-90" />
+          <div className="absolute inset-0 rounded-[14px] border border-cyan-300/60 bg-cyan-300/10 shadow-[0_0_0_1px_rgba(34,211,238,0.14),0_0_34px_rgba(34,211,238,0.28)]" />
+          <div className="absolute inset-[10px] rounded-[8px] bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.18),transparent_62%)] opacity-90" />
         </motion.div>
       ) : null}
 
-      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[24px]">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[12px]">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_10%,rgba(34,211,238,0.18),transparent_36%),radial-gradient(circle_at_84%_18%,rgba(16,185,129,0.08),transparent_28%)]" />
         <div className="pointer-events-none absolute inset-y-4 left-0 w-[3px] rounded-r-full bg-[linear-gradient(180deg,rgba(125,211,252,0.9),rgba(34,211,238,0.14))]" />
         <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-cyan-200/10" />
@@ -798,50 +800,50 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
 
       {isAttentionActive ? (
         <>
-          <div aria-hidden="true" className="agent-node__composer-glow pointer-events-none absolute inset-[-1px] z-0 rounded-[25px]" />
+          <div aria-hidden="true" className="agent-node__composer-glow pointer-events-none absolute inset-[-3px] z-0 rounded-[15px]" />
           <svg
             aria-hidden="true"
-            className="agent-node__composer-svg pointer-events-none absolute inset-[-1px] z-20 h-[calc(100%+2px)] w-[calc(100%+2px)] overflow-hidden rounded-[25px]"
+            className="agent-node__composer-svg pointer-events-none absolute inset-[-3px] z-20 h-[calc(100%+6px)] w-[calc(100%+6px)] overflow-visible rounded-[15px]"
             viewBox="0 0 100 100"
             preserveAspectRatio="none"
           >
             <rect
-              x="0"
-              y="0"
-              width="100"
-              height="100"
-              rx="8.5"
-              ry="8.5"
+              x="1"
+              y="1"
+              width="98"
+              height="98"
+              rx="4.4"
+              ry="4.4"
               pathLength={100}
               className="agent-node__composer-rail"
             />
             <rect
-              x="0"
-              y="0"
-              width="100"
-              height="100"
-              rx="8.5"
-              ry="8.5"
+              x="1"
+              y="1"
+              width="98"
+              height="98"
+              rx="4.4"
+              ry="4.4"
               pathLength={100}
               className="agent-node__composer-trace agent-node__composer-trace--glow"
             />
             <rect
-              x="0"
-              y="0"
-              width="100"
-              height="100"
-              rx="8.5"
-              ry="8.5"
+              x="1"
+              y="1"
+              width="98"
+              height="98"
+              rx="4.4"
+              ry="4.4"
               pathLength={100}
               className="agent-node__composer-trace agent-node__composer-trace--tail"
             />
             <rect
-              x="0"
-              y="0"
-              width="100"
-              height="100"
-              rx="8.5"
-              ry="8.5"
+              x="1"
+              y="1"
+              width="98"
+              height="98"
+              rx="4.4"
+              ry="4.4"
               pathLength={100}
               className="agent-node__composer-trace agent-node__composer-trace--core"
             />
@@ -864,9 +866,9 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
           className="!z-30 !h-2.5 !w-2.5 !border-0 !bg-cyan-100/90 shadow-[0_0_16px_rgba(125,211,252,0.5)]"
         />
 
-        <div className="relative rounded-t-[24px]">
+        <div className="relative rounded-t-[12px]">
           <div
-            className="agent-profile-media relative h-[144px] overflow-hidden rounded-t-[24px] border-b border-white/[0.12] bg-[linear-gradient(180deg,rgba(14,16,20,0.98),rgba(8,10,14,0.95))]"
+            className="agent-profile-media relative h-[144px] overflow-hidden rounded-t-[12px] border-b border-white/[0.12] bg-[linear-gradient(180deg,rgba(14,16,20,0.98),rgba(8,10,14,0.95))]"
             style={profileVisual.style as CSSProperties}
           >
             <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/10" />
@@ -954,16 +956,16 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
               </div>
             </TooltipProvider>
 
-            <div className="absolute inset-x-0 bottom-0 z-30 p-3.5">
+            <div className="agent-profile-media__caption absolute inset-x-0 bottom-0 z-30 p-3.5">
               <div className="max-w-[80%]">
-                <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.22em] text-white/65">
+                <div className="agent-profile-media__caption-kicker flex items-center gap-1.5 text-[9px] uppercase tracking-[0.22em] text-white/65">
                   <StatusDot tone={dotTone} pulse={data.agent.status === "engaged" || data.agent.status === "monitoring"} />
                   {isPendingCreation ? "Agent birth" : "Agent"}
                 </div>
-                <p className="mt-1 truncate font-display text-[1.08rem] leading-5 text-white">
+                <p className="agent-profile-media__caption-title mt-1 truncate font-display text-[1.08rem] leading-5 text-white">
                   <AnimatedAgentName label={agentLabel} />
                 </p>
-                <p className="mt-0.5 truncate text-[10px] uppercase tracking-[0.16em] text-amber-200/90">
+                <p className="agent-profile-media__caption-theme mt-0.5 truncate text-[10px] uppercase tracking-[0.16em] text-amber-200/90">
                   {themeLabel}
                 </p>
               </div>
@@ -1167,7 +1169,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
 
             {menuOpen ? (
               <div
-                className="absolute right-0 top-[calc(100%+8px)] z-50 min-w-[136px] rounded-[14px] border border-white/[0.1] bg-slate-950/96 p-1.5 shadow-[0_20px_44px_rgba(0,0,0,0.42)] backdrop-blur-xl"
+                className="agent-node__action-menu absolute right-0 top-[calc(100%+8px)] z-50 min-w-[136px] rounded-[14px] border border-white/[0.1] bg-slate-950/96 p-1.5 shadow-[0_20px_44px_rgba(0,0,0,0.42)] backdrop-blur-xl"
                 onClick={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
               >
@@ -1377,7 +1379,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
           </button>
         </div>
 
-        <div className="overflow-hidden rounded-b-[24px] border-t border-white/[0.08] bg-white/[0.03] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <div className="overflow-hidden rounded-b-[12px] border-t border-white/[0.08] bg-white/[0.03] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
           <button
             type="button"
             aria-expanded={drawerOpen}
@@ -1683,7 +1685,7 @@ function AgentMenuButton({
     <button
       type="button"
       className={cn(
-        "nodrag nopan flex w-full items-center rounded-[10px] px-2.5 py-2 text-left text-[11px] transition-colors",
+        "agent-node__action-menu-button nodrag nopan flex w-full items-center rounded-[10px] px-2.5 py-2 text-left text-[11px] transition-colors",
         danger
           ? "text-rose-200 hover:bg-rose-400/10 hover:text-rose-100"
           : "text-slate-200 hover:bg-white/[0.06] hover:text-white"

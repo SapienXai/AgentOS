@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 
 import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
+import { AgentThemePicker } from "@/components/mission-control/agent-theme-picker";
 import {
   MissionControlDialogChip,
   MissionControlDialogShell,
@@ -210,6 +211,7 @@ export function MissionSidebar({
   const pathname = usePathname();
   const [activeHash, setActiveHash] = useState("");
   const [isEditAgentOpen, setIsEditAgentOpen] = useState(false);
+  const [showEditIdentityDetails, setShowEditIdentityDetails] = useState(false);
   const [isEditAgentAdvancedOpen, setIsEditAgentAdvancedOpen] = useState(false);
   const [isSavingAgent, setIsSavingAgent] = useState(false);
   const [isDeleteAgentOpen, setIsDeleteAgentOpen] = useState(false);
@@ -280,6 +282,7 @@ export function MissionSidebar({
     if (!nextOpen) {
       setEditDraft(null);
       setEditChannelIdsBaseline([]);
+      setShowEditIdentityDetails(false);
       setIsEditAgentAdvancedOpen(false);
     }
   };
@@ -740,63 +743,77 @@ export function MissionSidebar({
                 </select>
               </FormField>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FormField label="Emoji" htmlFor="edit-agent-emoji">
-                  <Input
-                    id="edit-agent-emoji"
-                    value={editDraft.emoji}
-                    onChange={(event) =>
-                      setEditDraft((current) =>
-                        current
-                          ? {
-                              ...current,
-                              emoji: event.target.value
-                            }
-                          : current
-                      )
-                    }
-                    placeholder={getAgentPresetMeta(editDraft.policy.preset).defaultEmoji}
-                    className={missionControlDialogControlClassName()}
-                  />
-                </FormField>
+              <div className={missionControlDialogPanelClassName("p-3.5")}>
                 <FormField label="Theme" htmlFor="edit-agent-theme">
-                  <Input
-                    id="edit-agent-theme"
+                  <AgentThemePicker
                     value={editDraft.theme}
-                    onChange={(event) =>
+                    surfaceTheme={surfaceTheme}
+                    onChange={(theme) =>
                       setEditDraft((current) =>
                         current
                           ? {
                               ...current,
-                              theme: event.target.value
+                              theme
                             }
                           : current
                       )
                     }
-                    placeholder={getAgentPresetMeta(editDraft.policy.preset).defaultTheme}
-                    className={missionControlDialogControlClassName()}
                   />
                 </FormField>
-              </div>
 
-              <FormField label="Avatar URL" htmlFor="edit-agent-avatar">
-                <Input
-                  id="edit-agent-avatar"
-                  value={editDraft.avatar}
-                  onChange={(event) =>
-                    setEditDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            avatar: event.target.value
-                          }
-                        : current
-                    )
-                  }
-                  placeholder="https://example.com/avatar.png"
-                  className={missionControlDialogControlClassName()}
-                />
-              </FormField>
+                <button
+                  type="button"
+                  onClick={() => setShowEditIdentityDetails((current) => !current)}
+                  className="mt-3 inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.16em] text-slate-500 transition-colors hover:text-slate-300"
+                >
+                  <ChevronRight
+                    className={cn("h-3 w-3 transition-transform duration-200", showEditIdentityDetails && "rotate-90")}
+                  />
+                  {showEditIdentityDetails ? "Hide" : "Show"} emoji & avatar
+                </button>
+
+                {showEditIdentityDetails ? (
+                  <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                    <FormField label="Emoji" htmlFor="edit-agent-emoji">
+                      <Input
+                        id="edit-agent-emoji"
+                        value={editDraft.emoji}
+                        onChange={(event) =>
+                          setEditDraft((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  emoji: event.target.value
+                                }
+                              : current
+                          )
+                        }
+                        placeholder={getAgentPresetMeta(editDraft.policy.preset).defaultEmoji}
+                        className={missionControlDialogControlClassName()}
+                      />
+                    </FormField>
+
+                    <FormField label="Avatar URL" htmlFor="edit-agent-avatar">
+                      <Input
+                        id="edit-agent-avatar"
+                        value={editDraft.avatar}
+                        onChange={(event) =>
+                          setEditDraft((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  avatar: event.target.value
+                                }
+                              : current
+                          )
+                        }
+                        placeholder="https://example.com/avatar.png"
+                        className={missionControlDialogControlClassName()}
+                      />
+                    </FormField>
+                  </div>
+                ) : null}
+              </div>
 
               <ChannelBindingPicker
                 snapshot={snapshot}

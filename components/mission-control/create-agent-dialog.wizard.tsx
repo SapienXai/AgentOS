@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bot, ChevronRight, FileText, LoaderCircle, Plus, Sparkles, type LucideIcon } from "lucide-react";
 
 import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
+import { AgentThemePicker } from "@/components/mission-control/agent-theme-picker";
 import { AgentPolicySelect, AgentPresetCard, FormField } from "@/components/mission-control/create-agent-dialog.parts";
 import {
   MissionControlDialogChip,
@@ -936,27 +937,17 @@ export function CreateAgentDialog({
                     surfaceTheme={effectiveSurfaceTheme}
                   >
                     <div className="space-y-3.5">
-                      <FormField label="Emoji" htmlFor="create-agent-emoji" surfaceTheme={effectiveSurfaceTheme}>
-                        <div className="relative">
-                          <span
-                            aria-hidden="true"
-                            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 select-none text-base leading-none"
-                          >
-                            {draft.emoji || currentPresetMeta.defaultEmoji}
-                          </span>
-                          <Input
-                            id="create-agent-emoji"
-                            value={draft.emoji}
-                            onChange={(event) =>
-                              setDraft((current) => ({
-                                ...current,
-                                emoji: event.target.value
-                              }))
-                            }
-                            placeholder={currentPresetMeta.defaultEmoji}
-                            className={cn(getCreateAgentControlClassName(effectiveSurfaceTheme), "pl-9")}
-                          />
-                        </div>
+                      <FormField label="Theme" htmlFor="create-agent-theme" surfaceTheme={effectiveSurfaceTheme}>
+                        <AgentThemePicker
+                          value={draft.theme}
+                          surfaceTheme={effectiveSurfaceTheme}
+                          onChange={(theme) =>
+                            setDraft((current) => ({
+                              ...current,
+                              theme
+                            }))
+                          }
+                        />
                       </FormField>
 
                       <button
@@ -970,24 +961,32 @@ export function CreateAgentDialog({
                         <ChevronRight
                           className={cn("h-3 w-3 transition-transform duration-200", showAdvancedIdentity && "rotate-90")}
                         />
-                        {showAdvancedIdentity ? "Hide" : "Show"} theme &amp; avatar
+                        {showAdvancedIdentity ? "Hide" : "Show"} emoji &amp; avatar
                       </button>
 
                       {showAdvancedIdentity ? (
                         <div className="grid gap-3.5 sm:grid-cols-2">
-                          <FormField label="Theme" htmlFor="create-agent-theme" surfaceTheme={effectiveSurfaceTheme}>
-                            <Input
-                              id="create-agent-theme"
-                              value={draft.theme}
-                              onChange={(event) =>
-                                setDraft((current) => ({
-                                  ...current,
-                                  theme: event.target.value
-                                }))
-                              }
-                              placeholder={currentPresetMeta.defaultTheme}
-                              className={getCreateAgentControlClassName(effectiveSurfaceTheme)}
-                            />
+                          <FormField label="Emoji" htmlFor="create-agent-emoji" surfaceTheme={effectiveSurfaceTheme}>
+                            <div className="relative">
+                              <span
+                                aria-hidden="true"
+                                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 select-none text-base leading-none"
+                              >
+                                {draft.emoji || currentPresetMeta.defaultEmoji}
+                              </span>
+                              <Input
+                                id="create-agent-emoji"
+                                value={draft.emoji}
+                                onChange={(event) =>
+                                  setDraft((current) => ({
+                                    ...current,
+                                    emoji: event.target.value
+                                  }))
+                                }
+                                placeholder={currentPresetMeta.defaultEmoji}
+                                className={cn(getCreateAgentControlClassName(effectiveSurfaceTheme), "pl-9")}
+                              />
+                            </div>
                           </FormField>
 
                           <FormField label="Avatar URL" htmlFor="create-agent-avatar" surfaceTheme={effectiveSurfaceTheme}>

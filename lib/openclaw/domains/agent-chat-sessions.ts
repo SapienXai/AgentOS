@@ -70,6 +70,39 @@ export async function recordAgentChatSession(input: {
   );
 }
 
+export async function forgetAgentChatSession(input: {
+  agentId: string;
+  sessionId: string;
+}) {
+  const agentId = input.agentId.trim();
+  const sessionId = input.sessionId.trim();
+
+  if (!agentId || !sessionId) {
+    return;
+  }
+
+  const registry = await readAgentChatSessionRegistry();
+  const nextSessions = registry.sessions.filter((entry) => entry.agentId !== agentId || entry.sessionId !== sessionId);
+
+  if (nextSessions.length === registry.sessions.length) {
+    return;
+  }
+
+  await mkdir(missionControlRootPath, { recursive: true });
+  await writeFile(
+    agentChatSessionsPath,
+    `${JSON.stringify(
+      {
+        version: 1,
+        sessions: nextSessions
+      } satisfies AgentChatSessionRegistry,
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+}
+
 export async function readAgentChatSessionIndex() {
   const registry = await readAgentChatSessionRegistry();
   return new Map(registry.sessions.map((entry) => [createAgentChatSessionKey(entry.agentId, entry.sessionId), entry]));
@@ -95,7 +128,12 @@ export async function readAgentChatSessionsForAgent(input: {
 export async function resolveAgentChatSessionId(input: {
   agentId: string;
   workspacePath?: string;
+  reuse?: boolean;
 }) {
+  if (input.reuse === false) {
+    return randomUUID();
+  }
+
   const existingSession = (await readAgentChatSessionsForAgent({
     agentId: input.agentId,
     workspacePath: input.workspacePath,

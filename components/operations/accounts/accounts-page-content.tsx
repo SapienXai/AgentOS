@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Chrome, Filter, Fingerprint, Gauge, KeyRound, Play, RefreshCw, Search, SlidersHorizontal, SquareArrowOutUpRight, UserCog, X } from "lucide-react";
+import Link from "next/link";
 
 import { AccountIcon } from "@/components/mission-control/account-icon";
 import { EmptyState, EntityIcon, FilterChip, KeyValue, MiniBadge, OperationsPageLayout, PageHeader, SearchToolbar, SectionCard, StatCard, StatGrid, StatusBadge, ToolbarButton } from "@/components/operations/operations-ui";
@@ -56,6 +57,7 @@ export function AccountsPageContent({
   const [missionTarget, setMissionTarget] = useState<AccountLoginTargetView | null>(null);
   const [busyProfileName, setBusyProfileName] = useState<string | null>(null);
   const [busyLoginTargetId, setBusyLoginTargetId] = useState<string | null>(null);
+  const [recoveryActionBusy, setRecoveryActionBusy] = useState<"restart" | null>(null);
   const workspaceAgents = useMemo(
     () => snapshot.agents.filter((agent) => !activeWorkspaceId || agent.workspaceId === activeWorkspaceId),
     [activeWorkspaceId, snapshot.agents]
@@ -211,6 +213,34 @@ export function AccountsPageContent({
       });
     } finally {
       setBusyProfileName(null);
+    }
+  };
+
+  const restartGatewayForProfiles = async () => {
+    setRecoveryActionBusy("restart");
+
+    try {
+      const response = await fetch("/api/gateway/control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "restart" })
+      });
+      const payload = await response.json().catch(() => null) as { message?: string; error?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Unable to restart the OpenClaw Gateway.");
+      }
+
+      toast.success(payload?.message ?? "Gateway restart requested.", {
+        description: "Retrying browser profile discovery after the Gateway restart."
+      });
+      await loadProfiles();
+    } catch (restartError) {
+      toast.error("Gateway restart did not complete.", {
+        description: readBrowserProfileError(restartError, "Open diagnostics to inspect the OpenClaw Gateway state.")
+      });
+    } finally {
+      setRecoveryActionBusy(null);
     }
   };
 
@@ -425,18 +455,13 @@ export function AccountsPageContent({
 
             {error ? (
               <SectionCard>
-                <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <EntityIcon icon={AlertTriangle} label="OpenClaw browser unavailable" tone="warning" />
-                    <div className="min-w-0">
-                      <h2 className="text-sm font-semibold text-foreground">OpenClaw browser profiles are unavailable</h2>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{error}</p>
-                    </div>
-                  </div>
-                  <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => void loadProfiles()}>
-                    Retry
-                  </Button>
-                </div>
+                <BrowserProfileRecoveryPanel
+                  error={error}
+                  variant="section"
+                  restartBusy={recoveryActionBusy === "restart"}
+                  onRetry={() => void loadProfiles()}
+                  onRestartGateway={() => void restartGatewayForProfiles()}
+                />
               </SectionCard>
             ) : loading ? (
               <EmptyState title="Loading browser profiles" description="Reading OpenClaw browser profile state through the Gateway." />
@@ -469,6 +494,10 @@ export function AccountsPageContent({
         onOpenChange={setConnectDialogOpen}
         onSubmit={connectAccount}
         profiles={usableProfiles}
+        profilesError={error}
+        onRetryProfiles={() => void loadProfiles()}
+        onRestartGateway={() => void restartGatewayForProfiles()}
+        restartGatewayBusy={recoveryActionBusy === "restart"}
       />
       <ManageAccountAccessDialog
         open={Boolean(manageAccessTarget)}
@@ -1041,13 +1070,21 @@ export function ConnectAccountWizard({
   workspace,
   onOpenChange,
   onSubmit,
-  profiles
+  profiles,
+  profilesError = null,
+  onRetryProfiles,
+  onRestartGateway,
+  restartGatewayBusy = false
 }: {
   open: boolean;
   workspace: WorkspaceRecord | null;
   onOpenChange: (open: boolean) => void;
   onSubmit: (input: ConnectBrowserProfileInput) => Promise<void>;
   profiles: OpenClawBrowserProfileView[];
+  profilesError?: string | null;
+  onRetryProfiles?: () => void;
+  onRestartGateway?: () => void;
+  restartGatewayBusy?: boolean;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1056,6 +1093,10 @@ export function ConnectAccountWizard({
           key={workspace?.id ?? "no-workspace"}
           workspace={workspace}
           profiles={profiles}
+          profilesError={profilesError}
+          onRetryProfiles={onRetryProfiles}
+          onRestartGateway={onRestartGateway}
+          restartGatewayBusy={restartGatewayBusy}
           onCancel={() => onOpenChange(false)}
           onSubmit={onSubmit}
         />
@@ -1067,11 +1108,19 @@ export function ConnectAccountWizard({
 function ConnectAccountWizardContent({
   workspace,
   profiles,
+  profilesError,
+  onRetryProfiles,
+  onRestartGateway,
+  restartGatewayBusy,
   onCancel,
   onSubmit
 }: {
   workspace: WorkspaceRecord | null;
   profiles: OpenClawBrowserProfileView[];
+  profilesError: string | null;
+  onRetryProfiles?: () => void;
+  onRestartGateway?: () => void;
+  restartGatewayBusy: boolean;
   onCancel: () => void;
   onSubmit: (input: ConnectBrowserProfileInput) => Promise<void>;
 }) {
@@ -1102,7 +1151,8 @@ function ConnectAccountWizardContent({
     profileName: resolvedProfileName,
     existingProfileName,
     hasSignedInChromeProfile,
-    signedInChromeReady
+    signedInChromeReady,
+    profilesError
   });
 
   useEffect(() => {
@@ -1204,6 +1254,15 @@ function ConnectAccountWizardContent({
           title="Browser Profile"
           description="Select a profile reported by OpenClaw. AgentOS cannot create persistent browser profiles through the current Gateway browser request API."
         />
+        {profilesError ? (
+          <BrowserProfileRecoveryPanel
+            error={profilesError}
+            variant="inline"
+            restartBusy={restartGatewayBusy}
+            onRetry={onRetryProfiles}
+            onRestartGateway={onRestartGateway}
+          />
+        ) : null}
         <div className="grid gap-2 md:grid-cols-2">
           <ProfileModeOption
             active={mode === "existing"}
@@ -1349,6 +1408,69 @@ function ValidationMessage({ message }: { message: string | null }) {
   );
 }
 
+function BrowserProfileRecoveryPanel({
+  error,
+  variant,
+  restartBusy,
+  onRetry,
+  onRestartGateway
+}: {
+  error: string;
+  variant: "section" | "inline";
+  restartBusy: boolean;
+  onRetry?: () => void;
+  onRestartGateway?: () => void;
+}) {
+  const content = (
+    <>
+      <div className="flex min-w-0 items-start gap-3">
+        <EntityIcon icon={AlertTriangle} label="OpenClaw browser unavailable" tone="warning" />
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-foreground">OpenClaw browser profiles are unavailable</h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{error}</p>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">
+            Recovery path: update OpenClaw if this Gateway does not include browser.request, restart the Gateway after updating or enabling capabilities, then retry profile discovery.
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {onRetry ? (
+          <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={onRetry}>
+            Retry
+          </Button>
+        ) : null}
+        {onRestartGateway ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-8 rounded-[9px] text-xs"
+            disabled={restartBusy}
+            onClick={onRestartGateway}
+          >
+            {restartBusy ? "Restarting..." : "Restart Gateway"}
+          </Button>
+        ) : null}
+        <Button asChild variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs">
+          <Link href="/settings#diagnostics">Open Diagnostics</Link>
+        </Button>
+        <Button asChild variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs">
+          <Link href="/updates">Update OpenClaw</Link>
+        </Button>
+      </div>
+    </>
+  );
+
+  if (variant === "section") {
+    return <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">{content}</div>;
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-[12px] border border-[hsl(var(--status-warning)/0.24)] bg-[hsl(var(--status-warning)/0.10)] p-3">
+      {content}
+    </div>
+  );
+}
+
 function formatAccountTimestamp(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -1371,9 +1493,14 @@ function validateConnectBrowserProfileInput(input: {
   existingProfileName: string;
   hasSignedInChromeProfile: boolean;
   signedInChromeReady: boolean;
+  profilesError: string | null;
 }) {
   if (!input.workspace) {
     return "Select a workspace before connecting accounts.";
+  }
+
+  if (input.profilesError) {
+    return "OpenClaw browser profiles are unavailable. Connect Account is disabled until OpenClaw reports usable browser profiles.";
   }
 
   if (!input.website) {
