@@ -34,6 +34,7 @@ import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { ensureOpenAiCodexAuthOrderForAgent } from "@/lib/openclaw/application/model-auth-service";
 import { isOpenAiCodexBackedModel } from "@/lib/openclaw/domains/model-provider-connection";
 import {
+  forgetAgentChatSession,
   readAgentChatSessionsForAgent,
   recordAgentChatSession,
   resolveAgentChatSessionId
@@ -362,6 +363,52 @@ export async function POST(
           activeAgentModelId = agent.modelId;
         }
 
+        const submittedMessage = input.message.trim();
+        const rawMessage = input.rawMessage?.trim();
+        const operatorMessage = rawMessage || submittedMessage;
+        const history = normalizeAgentChatHistory(input.history ?? []).slice(-16);
+        const directRename = resolveDirectAgentRenameRequest(operatorMessage, history);
+        if (directRename) {
+          await updateAgent({
+            id: agentId,
+            name: directRename
+          });
+          clearMissionControlCaches();
+
+          const response = applyMissionControlActionMetadata(
+            {
+              runId: null,
+              agentId,
+              status: "completed",
+              summary: `Renamed agent to ${directRename}.`,
+              payloads: [
+                {
+                  text: `Renamed agent to ${directRename}.`,
+                  mediaUrl: null
+                }
+              ],
+              meta: {
+                missionControlAction: {
+                  type: "rename_agent",
+                  name: directRename
+                }
+              }
+            },
+            {
+              type: "rename_agent",
+              name: directRename
+            }
+          );
+
+          await send({
+            type: "done",
+            ok: true,
+            message: response.summary,
+            response
+          });
+          return;
+        }
+
         const runtimePreflightError = resolveOpenClawRuntimePreflightError(snapshot);
         if (runtimePreflightError) {
           await send({
@@ -395,15 +442,11 @@ export async function POST(
           agentDir: agent.agentDir
         });
 
-        const submittedMessage = input.message.trim();
-        const rawMessage = input.rawMessage?.trim();
-        const operatorMessage = rawMessage || submittedMessage;
         let message = submittedMessage;
 
         if (rawMessage || !isComposedAgentChatPrompt(submittedMessage)) {
           const workspaceTeamPrompt = buildWorkspaceTeamPrompt(snapshot, agent);
           const workspaceSurfacePrompt = renderWorkspaceSurfaceCoordinationMarkdownForAgent(agentId, snapshot);
-          const history = normalizeAgentChatHistory(input.history ?? []).slice(-16);
 
           message = buildAgentChatPrompt(history, operatorMessage, {
             agentId,
@@ -505,6 +548,20 @@ export async function POST(
           response = recoverDirectIdentityResponse(response, formatAgentDisplayName(agent), operatorMessage);
           response = attachStreamMissionControlAction(response, latestStreamAction);
           response = recoverCompletedEmptyAgentChatResponse(response, emptyResponseDiagnosticMessage);
+          const responseConflict = extractAgentChatSessionConflict(readAgentChatResponseDiagnosticText(response));
+          if (responseConflict) {
+            await forgetAgentChatSession({
+              agentId: responseConflict.agentId,
+              sessionId: responseConflict.sessionId
+            }).catch(() => {});
+            await send({
+              type: "done",
+              ok: false,
+              message: conflictedAgentChatSessionMessage
+            });
+            return;
+          }
+
           if (isEmptyAgentChatResponse(response)) {
             await send({
               type: "done",
@@ -550,6 +607,14 @@ export async function POST(
           (error instanceof Error
             ? redactSecretText(error.message)
             : "OpenClaw could not send the message right now. Please try again.");
+
+        const conflictedSession = extractAgentChatSessionConflict(rawFailure);
+        if (conflictedSession) {
+          await forgetAgentChatSession({
+            agentId: conflictedSession.agentId,
+            sessionId: conflictedSession.sessionId
+          }).catch(() => {});
+        }
 
         if (agentRegistryFailureMessage) {
           clearMissionControlCaches();
@@ -786,6 +851,97 @@ function releaseAgentChatSessionTurnLock(key: string, lockId: symbol) {
   if (activeAgentChatSessionTurns.get(key)?.lockId === lockId) {
     activeAgentChatSessionTurns.delete(key);
   }
+}
+
+function extractAgentChatSessionConflict(rawFailure: string) {
+  const match = rawFailure.match(/reply session initialization conflicted for agent:([^:\s]+):explicit:([0-9a-f-]+)/i);
+
+  if (!match?.[1] || !match[2]) {
+    return null;
+  }
+
+  return {
+    agentId: match[1],
+    sessionId: match[2]
+  };
+}
+
+function readAgentChatResponseDiagnosticText(response: MissionResponse) {
+  return [
+    response.summary,
+    ...response.payloads.map((entry) => entry.text)
+  ].join("\n");
+}
+
+function resolveDirectAgentRenameRequest(
+  operatorMessage: string,
+  history: Array<{ role: "user" | "assistant"; text: string }>
+) {
+  const explicitName = extractDirectAgentRenameName(operatorMessage);
+  if (explicitName) {
+    return explicitName;
+  }
+
+  if (!/\b(?:change|update|set)\b.*\b(?:card|display|name)\b/i.test(operatorMessage) &&
+    !/(?:kart|card).*(?:ad|name)|(?:ad|name).*(?:kart|card)/i.test(operatorMessage)) {
+    return null;
+  }
+
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const entry = history[index];
+    const historyName = extractDirectAgentRenameName(entry.text) || extractAcceptedAgentName(entry.text);
+
+    if (historyName) {
+      return historyName;
+    }
+  }
+
+  return null;
+}
+
+function extractDirectAgentRenameName(value: string) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  const patterns = [
+    /\b(?:rename (?:yourself|you|this agent|agent) to|set (?:your )?(?:display )?name to|call yourself)\s+(.{1,80})$/i,
+    /(?:ad(?:ı|i)n|ism(?:i|ı)n)\s+(.{1,80}?)(?:\s+olsun)?[.!?]*$/i,
+    /(?:ad(?:ı|i)n(?:ı|i)|ism(?:i|ı)n(?:i|ı))\s+(.{1,80}?)\s+(?:yap|koy|de(?:g|ğ)i(?:s|ş)tir)[.!?]*$/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    const name = normalizeDirectAgentRenameName(match?.[1]);
+
+    if (name) {
+      return name;
+    }
+  }
+
+  return null;
+}
+
+function extractAcceptedAgentName(value: string) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  const match = normalized.match(/(?:ad(?:ı|i)n|name)(?:\s+(?:is|art(?:ı|i)k))?\s+\*{0,2}(.{1,80}?)\*{0,2}(?:[.!?]|$)/i);
+
+  return normalizeDirectAgentRenameName(match?.[1]);
+}
+
+function normalizeDirectAgentRenameName(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const stripped = value
+    .replace(/<[^>]+>/g, "")
+    .replace(/[`*_#"“”‘’'.,!?]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!stripped || stripped.length > 48 || /\b(?:ne|what|who|kim|neden|why)\b/i.test(stripped)) {
+    return null;
+  }
+
+  return stripped;
 }
 
 function recoverCompletedEmptyAgentChatResponse(
