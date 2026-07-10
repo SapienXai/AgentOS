@@ -11,6 +11,7 @@ import { probeLocalGatewayRegistration } from "@/lib/openclaw/client/local-gatew
 import { probeLocalDefaultModel } from "@/lib/openclaw/state/local-model-status";
 import {
   getOpenClawBundledNodeBinPath,
+  buildOpenClawSpawnEnv,
   ensureOpenClawLocalBinOnPath,
   getOpenClawInstallCommand,
   getOpenClawLocalPrefixBinPath,
@@ -661,6 +662,17 @@ test("openclaw onboarding uses the official installer command", () => {
   assert.match(command, /--no-onboard/);
   assert.match(command, /\$HOME\/\.openclaw/);
   assert.doesNotMatch(command, /update\s+--tag/);
+});
+
+test("Windows OpenClaw commands request a hidden Gateway task launcher", () => {
+  if (process.platform !== "win32") {
+    return;
+  }
+
+  const env = buildOpenClawSpawnEnv({});
+
+  assert.equal(env.OPENCLAW_WINDOWS_TASK_HIDDEN_LAUNCHER, "1");
+  assert.match(env.NODE_OPTIONS ?? "", /openclaw-windows-hide\.cjs/);
 });
 
 test("openclaw path list helpers avoid duplicate terminal path entries", () => {
