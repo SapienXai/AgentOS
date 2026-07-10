@@ -379,17 +379,32 @@ export async function POST(request: Request) {
       }
 
       if (intent === "prepare") {
-        const [gatewayRegistered, configReady] = await Promise.all([
+        const [registrationProbe, configReady] = await Promise.all([
           probeLocalGatewayRegistration().catch(() => false),
           probeLocalGatewayConfiguration()
         ]);
+        let gatewayRegistered = registrationProbe === true;
 
-        if (!configReady) {
-          const tokenSyncResult = await syncGatewayAuthTokenBeforeFirstStart(openClawBin, send);
-          appendGatewayAuthSyncOutput(tokenSyncResult, appendOutput);
+        if (!gatewayRegistered) {
+          const registrationStatus = await readGatewayStatus(openClawBin).catch(() => null);
+          gatewayRegistered = registrationStatus?.service?.loaded === true;
         }
 
-        if (gatewayRegistered !== true) {
+        if (!configReady) {
+          try {
+            const tokenSyncResult = await syncGatewayAuthTokenBeforeFirstStart(openClawBin, send);
+            appendGatewayAuthSyncOutput(tokenSyncResult, appendOutput);
+          } catch (error) {
+            const message = redactErrorMessage(error, "Gateway configuration failed.");
+            aggregatedStderr = appendLine(aggregatedStderr, message);
+            await fail("installing-gateway", message, {
+              manualCommand: formatOpenClawCommand(openClawBin, ["gateway", "status", "--json"])
+            });
+            return;
+          }
+        }
+
+        if (!gatewayRegistered) {
           await send({
             type: "status",
             phase: "installing-gateway",
@@ -402,14 +417,17 @@ export async function POST(request: Request) {
           );
           appendOutput(gatewayInstallResult);
           if (gatewayInstallResult.errorMessage || gatewayInstallResult.timedOut || gatewayInstallResult.code !== 0) {
-            await failGatewayCommand(
-              "installing-gateway",
-              "Gateway installation failed.",
-              openClawBin,
-              gatewayInstallResult,
-              formatOpenClawCommand(openClawBin, ["gateway", "install", "--json"])
-            );
-            return;
+            const statusAfterInstall = await readGatewayStatus(openClawBin).catch(() => null);
+            if (statusAfterInstall?.service?.loaded !== true) {
+              await failGatewayCommand(
+                "installing-gateway",
+                "Gateway installation failed.",
+                openClawBin,
+                gatewayInstallResult,
+                formatOpenClawCommand(openClawBin, ["gateway", "install", "--json"])
+              );
+              return;
+            }
           }
         }
 
