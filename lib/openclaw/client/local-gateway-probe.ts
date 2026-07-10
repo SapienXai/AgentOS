@@ -120,8 +120,14 @@ export async function readLocalGatewayConfiguration(options: {
   env?: NodeJS.ProcessEnv;
 } = {}) {
   const env = options.env ?? process.env;
+  const stateDirOverride = env.OPENCLAW_STATE_DIR?.trim();
+  const stateDir = stateDirOverride
+    ? stateDirOverride.startsWith("~")
+      ? path.join(options.homeDir ?? os.homedir(), stateDirOverride.slice(1))
+      : stateDirOverride
+    : path.join(options.homeDir ?? os.homedir(), ".openclaw");
   const configPath = env.OPENCLAW_CONFIG_PATH?.trim()
-    || path.join(options.homeDir ?? os.homedir(), ".openclaw", "openclaw.json");
+    || path.join(stateDir, "openclaw.json");
 
   try {
     const config = JSON.parse(await readFile(configPath, "utf8")) as {
