@@ -20,6 +20,44 @@ const heartbeatSchema = z.object({
   every: z.string().optional()
 });
 
+const workerProfileSchema = z.object({
+  schemaVersion: z.literal(1),
+  identity: z.object({
+    displayName: z.string().nullable().optional(),
+    emoji: z.string().nullable().optional(),
+    theme: z.string().nullable().optional(),
+    avatar: z.string().nullable().optional()
+  }).optional(),
+  employment: z.object({
+    role: z.string().nullable().optional(),
+    mission: z.string().nullable().optional(),
+    behaviorInstructions: z.string().nullable().optional()
+  }).optional(),
+  operator: z.object({
+    labels: z.array(z.string()).optional()
+  }).optional()
+});
+
+const toolPolicySchema = z.object({
+  profile: z.enum(["minimal", "coding", "messaging", "full"]).nullable().optional(),
+  allow: z.array(z.string()).nullable().optional(),
+  deny: z.array(z.string()).nullable().optional(),
+  fs: z.object({
+    workspaceOnly: z.boolean().optional()
+  }).nullable().optional()
+});
+
+const sandboxSchema = z.object({
+  mode: z.enum(["off", "non-main", "all"]).nullable().optional(),
+  scope: z.enum(["session", "agent", "shared"]).nullable().optional(),
+  workspaceAccess: z.enum(["none", "ro", "rw"]).nullable().optional()
+});
+
+const memorySearchSchema = z.object({
+  enabled: z.boolean().nullable().optional(),
+  sources: z.array(z.enum(["memory", "sessions"])).nullable().optional()
+});
+
 const createAgentSchema = z.object({
   id: z.string().min(1),
   workspaceId: z.string().min(1),
@@ -32,7 +70,11 @@ const createAgentSchema = z.object({
   heartbeat: heartbeatSchema.optional(),
   channelIds: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
-  tools: z.array(z.string()).optional()
+  tools: z.array(z.string()).optional(),
+  workerProfile: workerProfileSchema.optional(),
+  toolPolicy: toolPolicySchema.nullable().optional(),
+  sandbox: sandboxSchema.nullable().optional(),
+  memorySearch: memorySearchSchema.nullable().optional()
 });
 
 const updateAgentSchema = z.object({
@@ -47,7 +89,11 @@ const updateAgentSchema = z.object({
   heartbeat: heartbeatSchema.optional(),
   channelIds: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
-  tools: z.array(z.string()).optional()
+  tools: z.array(z.string()).optional(),
+  workerProfile: workerProfileSchema.optional(),
+  toolPolicy: toolPolicySchema.nullable().optional(),
+  sandbox: sandboxSchema.nullable().optional(),
+  memorySearch: memorySearchSchema.nullable().optional()
 });
 
 const deleteAgentSchema = z.object({

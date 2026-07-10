@@ -20,9 +20,15 @@ export type AgentDraft = {
   emoji: string;
   theme: string;
   avatar: string;
+  role: string;
+  mission: string;
+  behaviorInstructions: string;
+  labels: string[];
   policy: AgentPolicy;
   heartbeat: AgentHeartbeatDraft;
   channelIds: string[];
+  skills: string[];
+  tools: string[];
 };
 
 export type {
@@ -45,13 +51,19 @@ export function buildAgentDraft(workspaceId: string, seed: Partial<AgentDraft> =
     emoji: seed.emoji ?? presetMeta.defaultEmoji,
     theme: seed.theme ?? presetMeta.defaultTheme,
     avatar: seed.avatar ?? "",
+    role: seed.role ?? presetMeta.label,
+    mission: seed.mission ?? "",
+    behaviorInstructions: seed.behaviorInstructions ?? "",
+    labels: Array.from(new Set((seed.labels ?? []).map((entry) => entry.trim()).filter(Boolean))),
     policy,
     heartbeat,
     channelIds: Array.from(
       new Set(
         (seed.channelIds ?? []).filter((entry): entry is string => typeof entry === "string" && Boolean(entry.trim()))
       )
-    )
+    ),
+    skills: normalizeDraftCapabilityIds(seed.skills ?? presetMeta.skillIds, "skill"),
+    tools: normalizeDraftCapabilityIds(seed.tools ?? presetMeta.tools, "tool")
   };
 }
 
@@ -162,9 +174,43 @@ export function applyAgentPreset(draft: AgentDraft, preset: AgentPreset): AgentD
     name: !draft.name || draft.name === previousMeta.defaultName ? nextMeta.defaultName : draft.name,
     emoji: !draft.emoji || draft.emoji === previousMeta.defaultEmoji ? nextMeta.defaultEmoji : draft.emoji,
     theme: !draft.theme || draft.theme === previousMeta.defaultTheme ? nextMeta.defaultTheme : draft.theme,
+    role: !draft.role || draft.role === previousMeta.label ? nextMeta.label : draft.role,
     policy: nextPolicy,
-    heartbeat: applyPresetHeartbeat(draft.heartbeat, draft.policy.preset, preset)
+    heartbeat: applyPresetHeartbeat(draft.heartbeat, draft.policy.preset, preset),
+    skills: [...nextMeta.skillIds],
+    tools: [...nextMeta.tools]
   };
+}
+
+export function normalizeAgentDraftCapabilities(
+  skills: string[],
+  tools: string[]
+) {
+  return {
+    skills: normalizeDraftCapabilityIds(skills, "skill"),
+    tools: normalizeDraftCapabilityIds(tools, "tool")
+  };
+}
+
+function normalizeDraftCapabilityIds(values: string[], kind: "skill" | "tool") {
+  return Array.from(
+    new Set(
+      values
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter((value) => {
+          if (!value) {
+            return false;
+          }
+
+          if (kind === "skill") {
+            return !/^agent-policy-/i.test(value);
+          }
+
+          return value !== "fs.workspaceOnly";
+        })
+    )
+  );
 }
 
 export { defaultHeartbeatForPreset };

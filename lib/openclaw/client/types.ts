@@ -1,4 +1,9 @@
 import type { CommandResult } from "@/lib/openclaw/cli";
+import type {
+  AgentMemorySearchConfig,
+  AgentSandboxConfig,
+  AgentToolPolicyConfig
+} from "@/lib/openclaw/types";
 
 export interface OpenClawCommandOptions {
   timeoutMs?: number;
@@ -331,6 +336,7 @@ export type OpenClawAgentListPayload = {
 export type AgentConfigPayload = Array<{
   id: string;
   name?: string;
+  description?: string;
   workspace: string;
   agentDir?: string;
   model?: string;
@@ -338,11 +344,9 @@ export type AgentConfigPayload = Array<{
     every?: string;
   };
   skills?: string[];
-  tools?: {
-    fs?: {
-      workspaceOnly?: boolean;
-    };
-  };
+  tools?: AgentToolPolicyConfig;
+  sandbox?: AgentSandboxConfig;
+  memorySearch?: AgentMemorySearchConfig;
   identity?: {
     name?: string;
     emoji?: string;

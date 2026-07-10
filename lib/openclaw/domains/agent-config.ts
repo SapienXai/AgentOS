@@ -11,27 +11,38 @@ import { measureTiming, type TimingCollector } from "@/lib/openclaw/timing";
 import type {
   AgentBootstrapFileInput,
   AgentHeartbeatInput,
+  AgentMemorySearchConfig,
+  AgentMemorySearchInput,
+  AgentSandboxConfig,
+  AgentSandboxInput,
+  AgentToolPolicyConfig,
+  AgentToolPolicyInput,
   MissionControlSnapshot,
   OpenClawAgent
 } from "@/lib/openclaw/types";
+
+export type MutableAgentToolsConfig = Omit<AgentToolPolicyConfig, "fs"> & {
+  fs?: ({
+    workspaceOnly?: boolean;
+  } & Record<string, unknown>);
+} & Record<string, unknown>;
+
+export type MutableAgentSandboxConfig = AgentSandboxConfig & Record<string, unknown>;
 
 export type MutableAgentConfigEntry = {
   id: string;
   workspace: string;
   agentDir?: string;
   name?: string;
+  description?: string;
   model?: string;
   heartbeat?: {
     every?: string;
   };
   skills?: string[];
-  tools?:
-    | {
-        fs?: {
-          workspaceOnly?: boolean;
-        };
-      }
-    | null;
+  tools?: MutableAgentToolsConfig;
+  sandbox?: MutableAgentSandboxConfig;
+  memorySearch?: AgentMemorySearchConfig;
   identity?: {
     name?: string;
     emoji?: string;
@@ -150,16 +161,13 @@ export async function upsertAgentConfigEntry(
   updates: {
     agentDir?: string | null;
     name?: string | null;
+    description?: string | null;
     model?: string | null;
     heartbeat?: { every?: string } | null;
     skills?: string[];
-    tools?:
-      | {
-          fs?: {
-            workspaceOnly?: boolean;
-          };
-        }
-      | null;
+    tools?: AgentToolPolicyInput | null;
+    sandbox?: AgentSandboxInput | null;
+    memorySearch?: AgentMemorySearchInput | null;
     identity?: {
       name?: string | null;
       emoji?: string | null;
@@ -201,6 +209,15 @@ export async function upsertAgentConfigEntry(
     }
   }
 
+  if (updates.description !== undefined) {
+    const nextDescription = normalizeOptionalValue(updates.description);
+    if (nextDescription) {
+      nextEntry.description = nextDescription;
+    } else {
+      delete nextEntry.description;
+    }
+  }
+
   if (updates.model !== undefined) {
     const nextModel = normalizeOptionalValue(updates.model);
     if (nextModel) {
@@ -224,10 +241,40 @@ export async function upsertAgentConfigEntry(
     delete nextEntry.skills;
   }
 
-  if (updates.tools) {
-    nextEntry.tools = updates.tools;
-  } else if (updates.tools === null) {
+  if (updates.tools === null) {
     delete nextEntry.tools;
+  } else if (updates.tools !== undefined) {
+    const nextTools = mergeAgentToolsConfig(nextEntry.tools, updates.tools);
+
+    if (nextTools) {
+      nextEntry.tools = nextTools;
+    } else {
+      delete nextEntry.tools;
+    }
+  }
+
+  if (updates.sandbox === null) {
+    delete nextEntry.sandbox;
+  } else if (updates.sandbox !== undefined) {
+    const nextSandbox = mergeAgentSandboxConfig(nextEntry.sandbox, updates.sandbox);
+
+    if (nextSandbox) {
+      nextEntry.sandbox = nextSandbox;
+    } else {
+      delete nextEntry.sandbox;
+    }
+  }
+
+  if (updates.memorySearch === null) {
+    delete nextEntry.memorySearch;
+  } else if (updates.memorySearch !== undefined) {
+    const nextMemorySearch = mergeAgentMemorySearchConfig(nextEntry.memorySearch, updates.memorySearch);
+
+    if (nextMemorySearch) {
+      nextEntry.memorySearch = nextMemorySearch;
+    } else {
+      delete nextEntry.memorySearch;
+    }
   }
 
   if (updates.identity !== undefined) {
@@ -275,6 +322,102 @@ function normalizeAgentIdentity(identity: {
     ...(theme ? { theme } : {}),
     ...(avatar ? { avatar } : {})
   };
+}
+
+function mergeAgentToolsConfig(
+  existing: MutableAgentToolsConfig | undefined,
+  patch: AgentToolPolicyInput
+): MutableAgentToolsConfig | null {
+  const next: MutableAgentToolsConfig = existing ? { ...existing } : {};
+
+  if (patch.profile !== undefined) {
+    if (patch.profile === null) {
+      delete next.profile;
+    } else {
+      next.profile = patch.profile;
+    }
+  }
+
+  if (patch.allow !== undefined) {
+    if (patch.allow === null) {
+      delete next.allow;
+    } else {
+      next.allow = uniqueStrings(patch.allow.map((entry) => entry.trim()).filter(Boolean));
+    }
+  }
+
+  if (patch.deny !== undefined) {
+    if (patch.deny === null) {
+      delete next.deny;
+    } else {
+      next.deny = uniqueStrings(patch.deny.map((entry) => entry.trim()).filter(Boolean));
+    }
+  }
+
+  if (patch.fs !== undefined) {
+    if (patch.fs === null) {
+      delete next.fs;
+    } else {
+      const nextFs = next.fs ? { ...next.fs } : {};
+
+      if (patch.fs.workspaceOnly !== undefined) {
+        nextFs.workspaceOnly = patch.fs.workspaceOnly;
+      }
+
+      if (Object.keys(nextFs).length > 0) {
+        next.fs = nextFs;
+      } else {
+        delete next.fs;
+      }
+    }
+  }
+
+  return Object.keys(next).length > 0 ? next : null;
+}
+
+function mergeAgentSandboxConfig(
+  existing: MutableAgentSandboxConfig | undefined,
+  patch: AgentSandboxInput
+): MutableAgentSandboxConfig | null {
+  const next: MutableAgentSandboxConfig = existing ? { ...existing } : {};
+
+  if (patch.mode === null) delete next.mode;
+  else if (patch.mode !== undefined) next.mode = patch.mode;
+
+  if (patch.scope === null) delete next.scope;
+  else if (patch.scope !== undefined) next.scope = patch.scope;
+
+  if (patch.workspaceAccess === null) delete next.workspaceAccess;
+  else if (patch.workspaceAccess !== undefined) next.workspaceAccess = patch.workspaceAccess;
+
+  return Object.keys(next).length > 0 ? next : null;
+}
+
+function mergeAgentMemorySearchConfig(
+  existing: AgentMemorySearchConfig | undefined,
+  patch: AgentMemorySearchInput
+): AgentMemorySearchConfig | null {
+  const next: AgentMemorySearchConfig = existing ? { ...existing } : {};
+
+  if (patch.enabled !== undefined) {
+    if (patch.enabled === null) {
+      delete next.enabled;
+    } else {
+      next.enabled = patch.enabled;
+    }
+  }
+
+  if (patch.sources !== undefined) {
+    if (patch.sources === null) {
+      delete next.sources;
+    } else {
+      next.sources = uniqueStrings(
+        patch.sources.filter((source): source is "memory" | "sessions" => source === "memory" || source === "sessions")
+      ) as Array<"memory" | "sessions">;
+    }
+  }
+
+  return Object.keys(next).length > 0 ? next : null;
 }
 
 export async function applyAgentIdentity(
@@ -397,10 +540,26 @@ function buildAgentConfigListFromSnapshot(snapshot: MissionControlSnapshot) {
 
     if (agent.tools.includes("fs.workspaceOnly")) {
       configEntry.tools = {
+        ...(agent.toolPolicy ?? {}),
         fs: {
+          ...(agent.toolPolicy?.fs ?? {}),
           workspaceOnly: true
         }
       };
+    } else if (agent.toolPolicy) {
+      configEntry.tools = agent.toolPolicy;
+    }
+
+    if (agent.sandbox) {
+      configEntry.sandbox = agent.sandbox;
+    }
+
+    if (agent.memorySearch) {
+      configEntry.memorySearch = agent.memorySearch;
+    }
+
+    if (agent.workerProfile?.employment.mission) {
+      configEntry.description = agent.workerProfile.employment.mission;
     }
 
     if (Object.keys(identity).length > 0) {

@@ -1,6 +1,10 @@
 import type { OpenClawCompatibilityReport } from "@/lib/openclaw/compat/types";
 import type { ConfigUpdatePacingSnapshot } from "@/lib/openclaw/config-pacing-types";
 import type { RuntimeIssue } from "@/lib/openclaw/runtime-issues";
+import type {
+  AgentOSWorkerProfile,
+  AgentOSWorkerProfileInput
+} from "@/lib/agentos/worker-profile";
 
 export type DiagnosticHealth = "healthy" | "degraded" | "offline";
 export type OpenClawBinarySelectionMode = "auto" | "local-prefix" | "global-path" | "custom";
@@ -28,6 +32,61 @@ export interface AgentPolicy {
   fileAccess: AgentFileAccess;
   networkAccess: AgentNetworkAccess;
 }
+
+export type AgentToolProfile = "minimal" | "coding" | "messaging" | "full";
+
+export type AgentToolPolicyConfig = {
+  profile?: AgentToolProfile;
+  allow?: string[];
+  deny?: string[];
+  fs?: {
+    workspaceOnly?: boolean;
+  };
+};
+
+/** A supported-field patch for an OpenClaw agents.list[].tools entry. */
+export type AgentToolPolicyInput = {
+  profile?: AgentToolProfile | null;
+  allow?: string[] | null;
+  deny?: string[] | null;
+  fs?: {
+    workspaceOnly?: boolean;
+  } | null;
+};
+
+export type AgentSandboxMode = "off" | "non-main" | "all";
+export type AgentSandboxScope = "session" | "agent" | "shared";
+export type AgentSandboxWorkspaceAccess = "none" | "ro" | "rw";
+
+export type AgentSandboxConfig = {
+  mode?: AgentSandboxMode;
+  scope?: AgentSandboxScope;
+  workspaceAccess?: AgentSandboxWorkspaceAccess;
+};
+
+/** A supported-field patch for an OpenClaw agents.list[].sandbox entry. */
+export type AgentSandboxInput = {
+  mode?: AgentSandboxMode | null;
+  scope?: AgentSandboxScope | null;
+  workspaceAccess?: AgentSandboxWorkspaceAccess | null;
+};
+
+export type AgentMemorySearchSource = "memory" | "sessions";
+
+/**
+ * Deliberately narrow subset of agents.list[].memorySearch. Provider, paths,
+ * and credential-backed settings stay in OpenClaw settings rather than an
+ * employee profile.
+ */
+export type AgentMemorySearchConfig = {
+  enabled?: boolean;
+  sources?: AgentMemorySearchSource[];
+};
+
+export type AgentMemorySearchInput = {
+  enabled?: boolean | null;
+  sources?: AgentMemorySearchSource[] | null;
+};
 
 export interface AgentHeartbeatInput {
   enabled: boolean;
@@ -908,6 +967,10 @@ export interface OpenClawAgent {
     outputPreference: string | null;
     sourceFiles: string[];
   };
+  workerProfile?: AgentOSWorkerProfile | null;
+  toolPolicy?: AgentToolPolicyConfig | null;
+  sandbox?: AgentSandboxConfig | null;
+  memorySearch?: AgentMemorySearchConfig | null;
   skills: string[];
   tools: string[];
   observedTools?: string[];
@@ -2000,6 +2063,10 @@ export interface AgentCreateInput {
   channelIds?: string[];
   skills?: string[];
   tools?: string[];
+  workerProfile?: AgentOSWorkerProfileInput;
+  toolPolicy?: AgentToolPolicyInput | null;
+  sandbox?: AgentSandboxInput | null;
+  memorySearch?: AgentMemorySearchInput | null;
 }
 
 export interface AgentUpdateInput {
@@ -2016,6 +2083,10 @@ export interface AgentUpdateInput {
   channelIds?: string[];
   skills?: string[];
   tools?: string[];
+  workerProfile?: AgentOSWorkerProfileInput;
+  toolPolicy?: AgentToolPolicyInput | null;
+  sandbox?: AgentSandboxInput | null;
+  memorySearch?: AgentMemorySearchInput | null;
 }
 
 export interface AgentDeleteInput {

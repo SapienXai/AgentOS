@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { KeyRound, LoaderCircle, SendHorizontal } from "lucide-react";
+import { ArrowDown, CircleDot, KeyRound, LoaderCircle, SendHorizontal, Sparkles } from "lucide-react";
 import { motion } from "motion/react";
 
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,17 @@ import { cn } from "@/lib/utils";
 
 type ChatMessage = AgentChatMessage;
 
+function formatChatTime(timestamp: number) {
+  if (!Number.isFinite(timestamp)) {
+    return "now";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(timestamp));
+}
+
 function TypingDots({ surfaceTheme }: { surfaceTheme: "dark" | "light" }) {
   return (
     <span className="inline-flex items-center gap-[3px] align-middle">
@@ -53,10 +64,12 @@ function TypingDots({ surfaceTheme }: { surfaceTheme: "dark" | "light" }) {
 function AssistantBubbleHeader({
   agentLabel,
   statusLabel,
+  timestamp,
   surfaceTheme
 }: {
   agentLabel: string;
   statusLabel: string | null;
+  timestamp: number;
   surfaceTheme: "dark" | "light";
 }) {
   return (
@@ -66,7 +79,7 @@ function AssistantBubbleHeader({
         surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-400"
       )}
     >
-      <span className="min-w-0 truncate">{agentLabel}</span>
+      <span className="min-w-0 truncate">{agentLabel} · {formatChatTime(timestamp)}</span>
       {statusLabel ? (
         <span className="inline-flex shrink-0 items-center gap-1.5">
           <span>{statusLabel}</span>
@@ -165,6 +178,121 @@ function AssistantThinkingActivity({
   );
 }
 
+function AgentChatSessionHeader({
+  agent,
+  agentLabel,
+  agentWorkLabel,
+  isRunning,
+  surfaceTheme
+}: {
+  agent: AgentRecord;
+  agentLabel: string;
+  agentWorkLabel: string;
+  isRunning: boolean;
+  surfaceTheme: "dark" | "light";
+}) {
+  const statusLabel = isRunning ? "Replying" : agent.status;
+
+  return (
+    <div
+      className={cn(
+        "rounded-[14px] border px-3 py-2.5 shadow-[0_8px_22px_rgba(0,0,0,0.08)] backdrop-blur-xl",
+        surfaceTheme === "light"
+          ? "border-[#e3d4c8] bg-[#fffaf6]/94"
+          : "border-white/[0.08] bg-slate-950/82"
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className={cn("text-[9px] font-semibold uppercase tracking-[0.2em]", surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-400")}>
+            Direct agent session
+          </p>
+          <p className={cn("mt-1 truncate text-[11px] font-semibold", surfaceTheme === "light" ? "text-[#3f2f24]" : "text-slate-100")}>
+            {agentLabel}
+          </p>
+        </div>
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em]",
+            isRunning
+              ? surfaceTheme === "light"
+                ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
+              : surfaceTheme === "light"
+                ? "border-[#e3d4c8] bg-white text-[#765b4b]"
+                : "border-white/[0.08] bg-white/[0.04] text-slate-300"
+          )}
+        >
+          <span className={cn("h-1.5 w-1.5 rounded-full", isRunning ? "bg-emerald-400 animate-pulse" : surfaceTheme === "light" ? "bg-[#b28f78]" : "bg-slate-500")} />
+          {statusLabel}
+        </span>
+      </div>
+      <div className={cn("mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[9px]", surfaceTheme === "light" ? "text-[#806657]" : "text-slate-400")}>
+        <span className="truncate">Model · {agent.modelId || "not reported"}</span>
+        <span>Sessions · {agent.sessionCount}</span>
+        <span className="min-w-0 truncate">Working on · {agentWorkLabel}</span>
+      </div>
+    </div>
+  );
+}
+
+function AgentChatWelcome({
+  agentLabel,
+  surfaceTheme,
+  onPrompt
+}: {
+  agentLabel: string;
+  surfaceTheme: "dark" | "light";
+  onPrompt: (text: string) => void;
+}) {
+  const prompts = [
+    { label: "Get a status update", text: "Summarize your current work, progress, and next step." },
+    { label: "Ask about blockers", text: "What is blocking you right now, if anything?" }
+  ];
+
+  return (
+    <div
+      className={cn(
+        "rounded-[16px] border px-3.5 py-4",
+        surfaceTheme === "light"
+          ? "border-[#e3d4c8] bg-[#fffaf6]"
+          : "border-white/[0.08] bg-white/[0.035]"
+      )}
+    >
+      <div className="flex items-start gap-2.5">
+        <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-[11px] border", surfaceTheme === "light" ? "border-[#e3d4c8] bg-[#fff2e8] text-[#8c6550]" : "border-cyan-200/15 bg-cyan-300/10 text-cyan-100")}>
+          <Sparkles className="h-4 w-4" />
+        </div>
+        <div className="min-w-0">
+          <p className={cn("text-[12px] font-semibold", surfaceTheme === "light" ? "text-[#3f2f24]" : "text-slate-100")}>
+            Start a direct conversation with {agentLabel}
+          </p>
+          <p className={cn("mt-1 text-[11px] leading-5", surfaceTheme === "light" ? "text-[#806657]" : "text-slate-400")}>
+            Use this channel for guidance, decisions, and status checks. Task continuation stays in the task workflow.
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {prompts.map((prompt) => (
+          <button
+            key={prompt.label}
+            type="button"
+            onClick={() => onPrompt(prompt.text)}
+            className={cn(
+              "rounded-full border px-2.5 py-1.5 text-[10px] font-semibold transition",
+              surfaceTheme === "light"
+                ? "border-[#e3d4c8] bg-white text-[#705345] hover:border-[#cda98f] hover:bg-[#fff7f1]"
+                : "border-white/[0.09] bg-white/[0.04] text-slate-300 hover:border-cyan-200/20 hover:text-cyan-50"
+            )}
+          >
+            {prompt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function AgentChatDrawer({
   agent,
   snapshot,
@@ -189,12 +317,53 @@ export function AgentChatDrawer({
   const [revealedAssistantTextById, setRevealedAssistantTextById] = useState<Record<string, string>>({});
   const [expandedThinkingById, setExpandedThinkingById] = useState<Record<string, boolean>>({});
   const [repairingGatewayMessageId, setRepairingGatewayMessageId] = useState<string | null>(null);
+  const [isNearBottom, setIsNearBottom] = useState(true);
+  const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const isVisibleRef = useRef(isVisible);
+  const isNearBottomRef = useRef(true);
   const rehydratedAgentRef = useRef<string | null>(null);
   const agentLabel = formatAgentDisplayName(agent);
   const inboxItems = snapshot.agentInbox.filter((item) => item.agentId === agent.id);
+  const agentWorkLabel = agent.currentAction?.trim() || "current work";
+  const quickPrompts = [
+    { label: "Status", text: "Summarize your current work, progress, and next step." },
+    { label: "Blockers", text: "What is blocking you right now, if anything?" },
+    { label: "Priorities", text: "What needs my attention or decision next?" }
+  ];
+
+  const scrollToLatest = () => {
+    const list = listRef.current;
+    if (!list) {
+      return;
+    }
+
+    list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+    isNearBottomRef.current = true;
+    setIsNearBottom(true);
+    setHasUnreadBelow(false);
+  };
+
+  const handleTimelineScroll = () => {
+    const list = listRef.current;
+    if (!list) {
+      return;
+    }
+
+    const nextIsNearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 48;
+    isNearBottomRef.current = nextIsNearBottom;
+    setIsNearBottom(nextIsNearBottom);
+
+    if (nextIsNearBottom) {
+      setHasUnreadBelow(false);
+    }
+  };
+
+  const applyQuickPrompt = (text: string) => {
+    setDraft(text);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
 
   useEffect(() => {
     isVisibleRef.current = isVisible;
@@ -213,6 +382,9 @@ export function AgentChatDrawer({
     setRevealingAssistantId(null);
     setRevealedAssistantTextById({});
     setExpandedThinkingById({});
+    isNearBottomRef.current = true;
+    setIsNearBottom(true);
+    setHasUnreadBelow(false);
 
     const handleChatStateChange = (event: Event) => {
       const detail = (event as CustomEvent<{ agentId?: string }>).detail;
@@ -350,36 +522,31 @@ export function AgentChatDrawer({
   }, [agent.id, messages, inboxItems, isVisible]);
 
   useEffect(() => {
-    if (!isVisible) {
+    if (!isVisible || !listRef.current) {
       return;
     }
 
-    if (!listRef.current) {
+    if (isNearBottomRef.current) {
+      listRef.current.scrollTop = listRef.current.scrollHeight;
       return;
     }
 
-    listRef.current.scrollTop = listRef.current.scrollHeight;
-  }, [messages, agent.id, runSnapshot, isVisible]);
+    if (messages.length > 0 || inboxItems.length > 0) {
+      setHasUnreadBelow(true);
+    }
+  }, [agent.id, inboxItems.length, isVisible, messages]);
 
   const canSend = Boolean(draft.trim()) && !runSnapshot.isRunning;
   const streamingAssistantId = runSnapshot.assistantMessageId;
 
-  const uiMessages = messages.length > 0
-    ? messages
-    : [
-        {
-          id: "system:empty",
-          role: "system" as const,
-          text: "Start a direct chat with this agent. Messages stay in this drawer and are stored locally in your browser.",
-          createdAt: Date.now()
-        }
-      ];
+  const hasConversation = messages.length > 0 || inboxItems.length > 0;
 
   const send = async () => {
     const text = draft.trim();
     if (!text || runSnapshot.isRunning) return;
 
     setDraft("");
+    scrollToLatest();
 
     try {
       await sendAgentChatMessage({
@@ -467,18 +634,35 @@ export function AgentChatDrawer({
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden",
+        "relative flex h-full min-h-0 flex-col overflow-hidden",
         surfaceTheme === "light" ? "text-[#4a382c]" : "text-slate-200"
       )}
     >
       <div
         ref={listRef}
+        onScroll={handleTimelineScroll}
         className={cn(
           "mission-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1",
           surfaceTheme === "light" ? "text-[#4a382c]" : "text-slate-200"
         )}
       >
-        <div className="space-y-2.5">
+        <div className="sticky top-0 z-10 mb-3">
+          <AgentChatSessionHeader
+            agent={agent}
+            agentLabel={agentLabel}
+            agentWorkLabel={agentWorkLabel}
+            isRunning={runSnapshot.isRunning}
+            surfaceTheme={surfaceTheme}
+          />
+        </div>
+        <div className="space-y-2.5 pb-1">
+          {!hasConversation ? (
+            <AgentChatWelcome
+              agentLabel={agentLabel}
+              surfaceTheme={surfaceTheme}
+              onPrompt={applyQuickPrompt}
+            />
+          ) : null}
           {inboxItems.map((item) => (
             <AgentInboxItemBubble
               key={item.id}
@@ -486,7 +670,7 @@ export function AgentChatDrawer({
               surfaceTheme={surfaceTheme}
             />
           ))}
-          {uiMessages.map((entry) => {
+          {messages.map((entry) => {
             const isUser = entry.role === "user";
             const isSystem = entry.role === "system";
             const isAssistant = entry.role === "assistant";
@@ -535,6 +719,7 @@ export function AgentChatDrawer({
                       <AssistantBubbleHeader
                         agentLabel={agentLabel}
                         statusLabel={assistantActivityLabel}
+                        timestamp={entry.createdAt}
                         surfaceTheme={surfaceTheme}
                       />
                       <AssistantThinkingActivity
@@ -555,9 +740,19 @@ export function AgentChatDrawer({
                         <AssistantBubbleHeader
                           agentLabel={agentLabel}
                           statusLabel={assistantActivityLabel}
+                          timestamp={entry.createdAt}
                           surfaceTheme={surfaceTheme}
                         />
-                      ) : null}
+                      ) : (
+                        <p
+                          className={cn(
+                            "text-[9px] font-semibold uppercase tracking-[0.18em]",
+                            surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-400"
+                          )}
+                        >
+                          {isUser ? "You" : "Direct session"} · {formatChatTime(entry.createdAt)}
+                        </p>
+                      )}
                       <p className={cn("whitespace-pre-wrap break-words [overflow-wrap:anywhere]", isAssistant && "mt-1.5")}>
                         {isAssistant ? visibleAssistantText : entry.text}
                       </p>
@@ -662,6 +857,22 @@ export function AgentChatDrawer({
         </div>
       </div>
 
+      {hasUnreadBelow && !isNearBottom ? (
+        <button
+          type="button"
+          onClick={scrollToLatest}
+          className={cn(
+            "absolute bottom-[142px] left-1/2 z-20 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[10px] font-semibold shadow-lg transition",
+            surfaceTheme === "light"
+              ? "border-[#d8bead] bg-[#fffaf6] text-[#5c4031] hover:bg-white"
+              : "border-cyan-200/20 bg-slate-900 text-cyan-50 hover:bg-slate-800"
+          )}
+        >
+          <ArrowDown className="h-3.5 w-3.5" />
+          New reply
+        </button>
+      ) : null}
+
       <div
         className={cn(
           "mt-2 shrink-0 rounded-[18px] border p-3",
@@ -675,6 +886,32 @@ export function AgentChatDrawer({
           textareaRef.current?.focus();
         }}
       >
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <CircleDot className={cn("h-3.5 w-3.5 shrink-0", runSnapshot.isRunning ? "text-emerald-400" : surfaceTheme === "light" ? "text-[#9c745f]" : "text-slate-500")} />
+            <span className={cn("truncate text-[9px] font-semibold uppercase tracking-[0.18em]", surfaceTheme === "light" ? "text-[#806657]" : "text-slate-400")}>
+              Direct session · {runSnapshot.isRunning ? "replying" : "ready"}
+            </span>
+          </div>
+          <div className="flex flex-wrap justify-end gap-1">
+            {quickPrompts.map((prompt) => (
+              <button
+                key={prompt.label}
+                type="button"
+                disabled={runSnapshot.isRunning}
+                onClick={() => applyQuickPrompt(prompt.text)}
+                className={cn(
+                  "rounded-full border px-2 py-1 text-[9px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
+                  surfaceTheme === "light"
+                    ? "border-[#e3d4c8] bg-white/70 text-[#765b4b] hover:border-[#cda98f] hover:bg-white"
+                    : "border-white/[0.09] bg-white/[0.04] text-slate-300 hover:border-cyan-200/20 hover:text-cyan-50"
+                )}
+              >
+                {prompt.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <Textarea
           ref={textareaRef}
           value={draft}
@@ -685,7 +922,7 @@ export function AgentChatDrawer({
               await send();
             }
           }}
-          placeholder={`Message to ${agentLabel}...`}
+          placeholder={`Ask ${agentLabel} about ${agentWorkLabel}…`}
           className={cn(
             "min-h-[60px] cursor-text resize-none border-0 bg-transparent px-3.5 py-2.5 text-[13px] leading-[1.5] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
             surfaceTheme === "light"
@@ -694,7 +931,10 @@ export function AgentChatDrawer({
           )}
         />
 
-        <div className="mt-1.5 flex items-center justify-end gap-1.5">
+        <div className="mt-1.5 flex items-center justify-between gap-2 px-1">
+          <p className={cn("text-[9px] leading-4", surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-500")}>
+            Enter to send · Shift+Enter for newline
+          </p>
           <Button
             disabled={!canSend}
             className={cn(

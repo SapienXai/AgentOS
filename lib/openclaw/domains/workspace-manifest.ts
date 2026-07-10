@@ -2,6 +2,10 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
+  parseAgentOSWorkerProfile,
+  type AgentOSWorkerProfile
+} from "@/lib/agentos/worker-profile";
+import {
   isAgentFileAccess,
   isAgentInstallScope,
   isAgentMissingToolBehavior,
@@ -39,6 +43,7 @@ export type WorkspaceProjectManifestAgent = {
   emoji: string | null;
   theme: string | null;
   channelIds: string[];
+  workerProfile?: AgentOSWorkerProfile | null;
 };
 
 export type WorkspaceProjectManifest = {
@@ -248,6 +253,13 @@ export function parseWorkspaceProjectManifestAgent(
     emoji: typeof value.emoji === "string" ? value.emoji : null,
     theme: typeof value.theme === "string" ? value.theme : null,
     policy: parseAgentPolicy(value.policy),
+    workerProfile: parseAgentOSWorkerProfile(value.workerProfile, {
+      name: typeof value.name === "string" ? value.name : null,
+      role: typeof value.role === "string" ? value.role : null,
+      emoji: typeof value.emoji === "string" ? value.emoji : null,
+      theme: typeof value.theme === "string" ? value.theme : null,
+      avatar: typeof value.avatar === "string" ? value.avatar : null
+    }),
     channelIds: Array.isArray(value.channelIds)
       ? value.channelIds.filter((entry): entry is string => typeof entry === "string" && Boolean(entry.trim()))
       : []

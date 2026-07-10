@@ -15,6 +15,9 @@ import type {
   AgentPayload
 } from "@/lib/openclaw/client/gateway-client";
 import type {
+  AgentMemorySearchConfig,
+  AgentSandboxConfig,
+  AgentToolPolicyConfig,
   OpenClawAgent,
   RelationshipRecord,
   RuntimeRecord
@@ -55,12 +58,14 @@ export function buildSnapshotAgentEntry(input: {
   profile: OpenClawAgent["profile"];
 }) {
   const configuredSkills = filterAgentPolicySkills(input.configured?.skills ?? []);
+  const workerProfile = input.manifestAgent?.workerProfile ?? null;
   const agentName = resolveSnapshotAgentDisplayName(
     input.rawAgent.id,
     [
       input.identityOverrides?.name,
       input.configured?.identity?.name,
       input.configured?.name,
+      workerProfile?.identity.displayName,
       input.manifestAgent?.name,
       input.rawAgent.identityName,
       input.rawAgent.name,
@@ -111,6 +116,7 @@ export function buildSnapshotAgentEntry(input: {
     heartbeatEnabled: Boolean(heartbeat?.enabled),
     lastActiveAt
   });
+  const profile = mergeWorkerProfileProjection(input.profile, workerProfile, input.configured?.description);
 
   const agent: OpenClawAgent = {
     id: input.rawAgent.id,
@@ -122,6 +128,7 @@ export function buildSnapshotAgentEntry(input: {
           input.identityOverrides?.name,
           input.configured?.identity?.name,
           input.rawAgent.identityName,
+          workerProfile?.identity.displayName,
           input.manifestAgent?.name
         ],
         {
@@ -151,17 +158,26 @@ export function buildSnapshotAgentEntry(input: {
     identity: {
       emoji:
         normalizeOptionalValue(input.identityOverrides?.emoji) ||
+        workerProfile?.identity.emoji ||
         input.manifestAgent?.emoji ||
         input.configured?.identity?.emoji ||
         input.rawAgent.identityEmoji,
       theme:
         normalizeOptionalValue(input.identityOverrides?.theme) ||
+        workerProfile?.identity.theme ||
         input.manifestAgent?.theme ||
         input.configured?.identity?.theme,
-      avatar: normalizeOptionalValue(input.identityOverrides?.avatar) || input.configured?.identity?.avatar,
+      avatar:
+        normalizeOptionalValue(input.identityOverrides?.avatar) ||
+        workerProfile?.identity.avatar ||
+        input.configured?.identity?.avatar,
       source: input.rawAgent.identitySource
     },
-    profile: input.profile,
+    profile,
+    workerProfile,
+    toolPolicy: normalizeAgentToolPolicyConfig(input.configured?.tools),
+    sandbox: normalizeAgentSandboxConfig(input.configured?.sandbox),
+    memorySearch: normalizeAgentMemorySearchConfig(input.configured?.memorySearch),
     skills: configuredSkills,
     tools: configuredTools,
     observedTools: observedToolNames,
@@ -201,6 +217,109 @@ export function buildSnapshotAgentEntry(input: {
     activeRuntimeIds,
     relationships
   } satisfies SnapshotAgentEntry;
+}
+
+function mergeWorkerProfileProjection(
+  profile: OpenClawAgent["profile"],
+  workerProfile: WorkspaceProjectManifestAgent["workerProfile"],
+  configuredDescription?: string
+): OpenClawAgent["profile"] {
+  const configuredMission = normalizeOptionalValue(configuredDescription);
+
+  if (!workerProfile) {
+    return configuredMission ? { ...profile, purpose: configuredMission } : profile;
+  }
+
+  const behaviorInstructions = normalizeOptionalValue(workerProfile.employment.behaviorInstructions);
+
+  return {
+    ...profile,
+    purpose:
+      normalizeOptionalValue(workerProfile.employment.mission) ||
+      configuredMission ||
+      normalizeOptionalValue(workerProfile.employment.role) ||
+      profile.purpose,
+    operatingInstructions: behaviorInstructions
+      ? unique([behaviorInstructions, ...profile.operatingInstructions])
+      : profile.operatingInstructions
+  };
+}
+
+function normalizeAgentToolPolicyConfig(
+  value: AgentConfigPayload[number]["tools"]
+): AgentToolPolicyConfig | null {
+  if (!value) {
+    return null;
+  }
+
+  const profile =
+    value.profile === "minimal" ||
+    value.profile === "coding" ||
+    value.profile === "messaging" ||
+    value.profile === "full"
+      ? value.profile
+      : undefined;
+  const allow = Array.isArray(value.allow) ? unique(value.allow.filter((entry) => typeof entry === "string")) : undefined;
+  const deny = Array.isArray(value.deny) ? unique(value.deny.filter((entry) => typeof entry === "string")) : undefined;
+  const workspaceOnly = typeof value.fs?.workspaceOnly === "boolean" ? value.fs.workspaceOnly : undefined;
+
+  if (profile === undefined && allow === undefined && deny === undefined && workspaceOnly === undefined) {
+    return null;
+  }
+
+  return {
+    ...(profile ? { profile } : {}),
+    ...(allow ? { allow } : {}),
+    ...(deny ? { deny } : {}),
+    ...(workspaceOnly !== undefined ? { fs: { workspaceOnly } } : {})
+  };
+}
+
+function normalizeAgentSandboxConfig(
+  value: AgentConfigPayload[number]["sandbox"]
+): AgentSandboxConfig | null {
+  if (!value) {
+    return null;
+  }
+
+  const mode = value.mode === "off" || value.mode === "non-main" || value.mode === "all" ? value.mode : undefined;
+  const scope = value.scope === "session" || value.scope === "agent" || value.scope === "shared" ? value.scope : undefined;
+  const workspaceAccess =
+    value.workspaceAccess === "none" || value.workspaceAccess === "ro" || value.workspaceAccess === "rw"
+      ? value.workspaceAccess
+      : undefined;
+
+  if (mode === undefined && scope === undefined && workspaceAccess === undefined) {
+    return null;
+  }
+
+  return {
+    ...(mode ? { mode } : {}),
+    ...(scope ? { scope } : {}),
+    ...(workspaceAccess ? { workspaceAccess } : {})
+  };
+}
+
+function normalizeAgentMemorySearchConfig(
+  value: AgentConfigPayload[number]["memorySearch"]
+): AgentMemorySearchConfig | null {
+  if (!value) {
+    return null;
+  }
+
+  const enabled = typeof value.enabled === "boolean" ? value.enabled : undefined;
+  const sources = Array.isArray(value.sources)
+    ? Array.from(new Set(value.sources.filter((source): source is "memory" | "sessions" => source === "memory" || source === "sessions")))
+    : undefined;
+
+  if (enabled === undefined && sources === undefined) {
+    return null;
+  }
+
+  return {
+    ...(enabled !== undefined ? { enabled } : {}),
+    ...(sources !== undefined ? { sources } : {})
+  };
 }
 
 export function resolveSnapshotAgentDisplayName(

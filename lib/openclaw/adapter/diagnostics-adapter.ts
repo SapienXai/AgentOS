@@ -265,7 +265,7 @@ export function buildGatewayDiagnostics(input: {
   });
   const updateAvailable = shouldShowDefaultOpenClawUpdate({
     currentVersion: input.versionDiagnostics.currentVersion,
-    decision: updateCompatibility.recommendedDecision
+    decision: updateCompatibility.latestDecision ?? updateCompatibility.recommendedDecision
   });
 
   return {

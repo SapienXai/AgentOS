@@ -16,6 +16,7 @@ import {
   serializeHeartbeatConfig
 } from "@/lib/openclaw/agent-heartbeat";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { mergeAgentOSWorkerProfile } from "@/lib/agentos/worker-profile";
 import {
   clearMissionControlRuntimeHistoryCache,
   getMissionControlSnapshot,
@@ -131,6 +132,14 @@ export async function createAgent(input: AgentCreateInput) {
     presetMeta.defaultTheme;
   const avatar = normalizeOptionalValue(input.avatar);
   const heartbeat = serializeHeartbeatConfig(resolveHeartbeatDraft(policy.preset, input.heartbeat));
+  const workerProfile = mergeAgentOSWorkerProfile(null, input.workerProfile, {
+    name: displayName,
+    role: formatAgentPresetLabel(policy.preset),
+    emoji,
+    theme,
+    avatar
+  });
+  const toolPolicy = resolveAgentToolPolicyInput(input.toolPolicy, policy.fileAccess, null);
   const setupAgentId =
     snapshot.agents.find((entry) => entry.workspaceId === resolvedWorkspaceId && entry.policy.preset === "setup")?.id ?? null;
   const agentDir = buildWorkspaceAgentStatePath(resolvedWorkspacePath, agentId);
@@ -151,6 +160,7 @@ export async function createAgent(input: AgentCreateInput) {
     agentId,
     agentName: displayName,
     policy,
+    behaviorInstructions: workerProfile.employment.behaviorInstructions,
     setupAgentId,
     snapshot
   });
@@ -165,17 +175,13 @@ export async function createAgent(input: AgentCreateInput) {
       {
         agentDir,
         name: displayName,
+        description: workerProfile.employment.mission,
         model: agentModelId,
         heartbeat,
         skills: uniqueStrings([...declaredSkillIds, policySkillId]),
-        tools:
-          policy.fileAccess === "workspace-only"
-            ? {
-                fs: {
-                  workspaceOnly: true
-                }
-              }
-            : null,
+        tools: toolPolicy,
+        sandbox: input.sandbox,
+        memorySearch: input.memorySearch,
         identity: {
           name: displayName,
           emoji,
@@ -192,7 +198,7 @@ export async function createAgent(input: AgentCreateInput) {
   await upsertWorkspaceProjectAgentMetadata(resolvedWorkspacePath, {
     id: agentId,
     name: displayName,
-    role: formatAgentPresetLabel(policy.preset),
+    role: workerProfile.employment.role ?? formatAgentPresetLabel(policy.preset),
     emoji,
     theme,
     enabled: true,
@@ -202,7 +208,8 @@ export async function createAgent(input: AgentCreateInput) {
     modelId: agentModelId,
     isPrimary: false,
     policy,
-    channelIds: input.channelIds ?? []
+    channelIds: input.channelIds ?? [],
+    workerProfile
   });
   await syncWorkspaceAgentsMarkdown(resolvedWorkspacePath);
   await pruneUnreferencedGeneratedWorkspaceSkills(
@@ -272,6 +279,22 @@ function normalizeAgentModelIdForUpdate(modelId: string | null | undefined) {
   return normalized && isOpenAiCodexBackedModel(normalized)
     ? normalizeOpenAiCodexModelId(normalized)
     : normalized;
+}
+
+function resolveAgentToolPolicyInput(
+  requested: AgentUpdateInput["toolPolicy"] | AgentCreateInput["toolPolicy"],
+  fileAccess: AgentPolicy["fileAccess"],
+  current: OpenClawAgent["toolPolicy"]
+) {
+  const baseline = requested === undefined ? current ?? {} : requested ?? {};
+
+  return {
+    ...baseline,
+    fs: {
+      ...(baseline.fs ?? {}),
+      workspaceOnly: fileAccess === "workspace-only"
+    }
+  };
 }
 
 async function prepareAgentModelRuntimeConfig(modelId: string | undefined) {
@@ -352,6 +375,13 @@ export async function updateAgent(input: AgentUpdateInput) {
       input.heartbeat ?? mapAgentHeartbeatToInput(agent.heartbeat)
     )
   );
+  const workerProfile = mergeAgentOSWorkerProfile(agent.workerProfile, input.workerProfile, {
+    name: normalizeOptionalValue(input.name) ?? currentName ?? agent.id,
+    role: formatAgentPresetLabel(policy.preset),
+    emoji: normalizeOptionalValue(input.emoji) ?? currentEmoji,
+    theme: normalizeOptionalValue(input.theme) ?? currentTheme,
+    avatar: normalizeOptionalValue(input.avatar) ?? agent.identity.avatar
+  });
   const setupAgentId =
     snapshot.agents.find((entry) => entry.workspaceId === resolvedWorkspaceId && entry.policy.preset === "setup" && entry.id !== agentId)?.id ??
     null;
@@ -376,7 +406,11 @@ export async function updateAgent(input: AgentUpdateInput) {
     input.heartbeat === undefined &&
     input.channelIds === undefined &&
     input.skills === undefined &&
-    input.tools === undefined;
+    input.tools === undefined &&
+    input.workerProfile === undefined &&
+    input.toolPolicy === undefined &&
+    input.sandbox === undefined &&
+    input.memorySearch === undefined;
 
   if (onlyModelChanged) {
     await prepareAgentModelRuntimeConfig(nextModelId);
@@ -395,6 +429,7 @@ export async function updateAgent(input: AgentUpdateInput) {
       resolvedWorkspacePath,
       {
         agentDir: agent.agentDir ?? buildWorkspaceAgentStatePath(resolvedWorkspacePath, agentId),
+        description: workerProfile.employment.mission,
         model: nextModelId
       },
       snapshot
@@ -408,7 +443,8 @@ export async function updateAgent(input: AgentUpdateInput) {
       enabled: true,
       modelId: nextModelId,
       isPrimary: agent.isDefault,
-      policy
+      policy,
+      workerProfile
     });
     await syncWorkspaceAgentsMarkdown(resolvedWorkspacePath);
     await removeLegacyAgentContextFiles(
@@ -430,6 +466,7 @@ export async function updateAgent(input: AgentUpdateInput) {
     agentId,
     agentName: normalizeOptionalValue(input.name) ?? currentName ?? agentId,
     policy,
+    behaviorInstructions: workerProfile.employment.behaviorInstructions,
     setupAgentId,
     snapshot
   });
@@ -469,23 +506,19 @@ export async function updateAgent(input: AgentUpdateInput) {
     resolvedWorkspacePath,
     {
       agentDir: agent.agentDir ?? buildWorkspaceAgentStatePath(resolvedWorkspacePath, agentId),
-      name: input.name !== undefined ? normalizeOptionalValue(input.name) : undefined,
+      name: workerProfile.identity.displayName ?? currentName ?? agentId,
+      description: workerProfile.employment.mission,
       model: nextModelId,
       heartbeat,
       skills: uniqueStrings([...nextDeclaredSkills, policySkillId]),
-      tools:
-        policy.fileAccess === "workspace-only"
-          ? {
-              fs: {
-                workspaceOnly: true
-              }
-            }
-          : null,
+      tools: resolveAgentToolPolicyInput(input.toolPolicy, policy.fileAccess, agent.toolPolicy),
+      sandbox: input.sandbox,
+      memorySearch: input.memorySearch,
       identity: {
-        name: normalizeOptionalValue(input.name) ?? currentName ?? agentId,
-        emoji: normalizeOptionalValue(input.emoji) ?? currentEmoji,
-        theme: normalizeOptionalValue(input.theme) ?? currentTheme,
-        avatar: normalizeOptionalValue(input.avatar)
+        name: workerProfile.identity.displayName ?? currentName ?? agentId,
+        emoji: workerProfile.identity.emoji ?? currentEmoji,
+        theme: workerProfile.identity.theme ?? currentTheme,
+        avatar: workerProfile.identity.avatar ?? agent.identity.avatar
       }
     },
     snapshot
@@ -499,9 +532,10 @@ export async function updateAgent(input: AgentUpdateInput) {
 
   await upsertWorkspaceProjectAgentMetadata(resolvedWorkspacePath, {
     id: agentId,
-    name: normalizeOptionalValue(input.name) ?? currentName ?? configEntry.name ?? agentId,
-    emoji: normalizeOptionalValue(input.emoji) ?? currentEmoji,
-    theme: normalizeOptionalValue(input.theme) ?? currentTheme,
+    name: workerProfile.identity.displayName ?? currentName ?? configEntry.name ?? agentId,
+    role: workerProfile.employment.role ?? formatAgentPresetLabel(policy.preset),
+    emoji: workerProfile.identity.emoji ?? currentEmoji,
+    theme: workerProfile.identity.theme ?? currentTheme,
     enabled: true,
     modelId: nextModelId,
     isPrimary: agent.isDefault,
@@ -509,7 +543,8 @@ export async function updateAgent(input: AgentUpdateInput) {
     channelIds: input.channelIds,
     skillId: nextDeclaredSkills[0] ?? null,
     skillIds: nextDeclaredSkills,
-    toolIds: nextDeclaredTools
+    toolIds: nextDeclaredTools,
+    workerProfile
   });
   await syncWorkspaceAgentsMarkdown(resolvedWorkspacePath);
   await pruneUnreferencedGeneratedWorkspaceSkills(
@@ -802,6 +837,7 @@ async function upsertWorkspaceProjectAgentMetadata(
     modelId?: string | null;
     policy: AgentPolicy;
     channelIds?: string[];
+    workerProfile?: OpenClawAgent["workerProfile"];
   }
 ) {
   const projectFilePath = path.join(workspacePath, ".openclaw", "project.json");
@@ -848,6 +884,7 @@ async function upsertWorkspaceProjectAgentMetadata(
       : existingAgent?.toolIds ?? [],
     modelId: agent.modelId ?? existingAgent?.modelId ?? null,
     policy: agent.policy,
+    workerProfile: agent.workerProfile ?? existingAgent?.workerProfile ?? null,
     channelIds: Array.isArray(agent.channelIds)
       ? Array.from(new Set(agent.channelIds.filter((entry) => typeof entry === "string" && entry.trim())))
       : existingAgent?.channelIds ?? []
