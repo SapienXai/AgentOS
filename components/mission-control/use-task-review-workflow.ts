@@ -113,10 +113,10 @@ export function useTaskReviewWorkflow({
 
   const acceptTaskReview = useCallback(
     (task: WorkItemRecord) => {
-      recordTaskReviewResolution(task, "accepted", "Accepted result");
+      recordTaskReviewResolution(task, "accepted", "Marked evidence accepted");
       closeTaskReview();
-      toast.success("Task result accepted.", {
-        description: "The review warning is marked as handled for this workspace."
+      toast.success("Captured evidence accepted.", {
+        description: "This browser now marks the review as handled; it does not re-verify OpenClaw delivery."
       });
     },
     [closeTaskReview, recordTaskReviewResolution]
@@ -124,18 +124,23 @@ export function useTaskReviewWorkflow({
 
   const dismissTaskReview = useCallback(
     (task: WorkItemRecord) => {
-      recordTaskReviewResolution(task, "dismissed", "Dismissed review");
+      recordTaskReviewResolution(task, "dismissed", "Acknowledged review");
       closeTaskReview();
-      toast.message("Task review dismissed.", {
-        description: "The warning remains available in the task evidence."
+      toast.message("Task review acknowledged.", {
+        description: "This browser stores the acknowledgement; the warning remains in task evidence."
       });
     },
     [closeTaskReview, recordTaskReviewResolution]
   );
 
   const continueTaskReview = useCallback(
-    async (task: WorkItemRecord, capturedOutput: string, operatorMessage?: string) => {
-      const message = buildTaskReviewContinuationPrompt(task, capturedOutput, operatorMessage);
+    async (
+      task: WorkItemRecord,
+      capturedOutput: string,
+      operatorMessage?: string,
+      capturedOutputLabel?: string
+    ) => {
+      const message = buildTaskReviewContinuationPrompt(task, capturedOutput, operatorMessage, capturedOutputLabel);
 
       try {
         const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/control`, {

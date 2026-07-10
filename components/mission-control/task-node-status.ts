@@ -2,6 +2,21 @@ import type { RuntimeStatus, TaskFeedEvent, WorkItemRecord } from "@/lib/agentos
 
 export type TaskCardPrimaryAction = "open-live-activity" | "view-result" | "review-result" | "view-details";
 
+export type TaskReviewPresentation = {
+  deliveryUnconfirmed: boolean;
+  technicalDetail: string | null;
+  badgeLabel: string | null;
+  footerLabel: string | null;
+  evidenceLabel: string;
+  followUpLabel: string;
+  followUpPlaceholder: string;
+};
+
+export type TaskCardEvidencePresentation = {
+  label: "Live activity" | "Last captured activity" | "Latest result";
+  prioritizeActivity: boolean;
+};
+
 export function resolveTaskCardPrimaryAction(input: {
   status: RuntimeStatus;
   completedNeedsReview?: boolean;
@@ -106,6 +121,55 @@ export function resolveTaskDispatchIssueDetail(
     typeof task.metadata.dispatchError === "string" ? task.metadata.dispatchError.trim() : "";
 
   return dispatchError || null;
+}
+
+export function isGatewayWaitTimeoutDetail(detail: string | null | undefined) {
+  return Boolean(detail && /OpenClaw Gateway wait timed out/i.test(detail));
+}
+
+export function resolveTaskReviewPresentation(
+  task: WorkItemRecord,
+  integrity?: { issues?: Array<{ id: string; detail?: string | null }> } | null
+): TaskReviewPresentation {
+  const technicalDetail = resolveTaskDispatchIssueDetail(task, integrity);
+  const deliveryUnconfirmed = isGatewayWaitTimeoutDetail(technicalDetail);
+
+  return {
+    deliveryUnconfirmed,
+    technicalDetail,
+    badgeLabel: deliveryUnconfirmed ? "delivery unconfirmed" : null,
+    footerLabel: deliveryUnconfirmed ? "delivery unconfirmed" : null,
+    evidenceLabel: deliveryUnconfirmed ? "Last captured response — unverified" : "Latest result",
+    followUpLabel: deliveryUnconfirmed ? "Ask agent to verify" : "Follow up",
+    followUpPlaceholder: deliveryUnconfirmed
+      ? "Ask the agent to verify whether delivery completed…"
+      : "Ask a follow-up…"
+  };
+}
+
+export function resolveTaskCardEvidencePresentation(input: {
+  hasActivity: boolean;
+  hasLiveActivity: boolean;
+  deliveryUnconfirmed: boolean;
+}): TaskCardEvidencePresentation {
+  if (input.deliveryUnconfirmed) {
+    return {
+      label: "Last captured activity",
+      prioritizeActivity: input.hasActivity
+    };
+  }
+
+  if (input.hasLiveActivity) {
+    return {
+      label: "Live activity",
+      prioritizeActivity: input.hasActivity
+    };
+  }
+
+  return {
+    label: "Latest result",
+    prioritizeActivity: false
+  };
 }
 
 export function isWaitingForOutputCopy(value: string) {

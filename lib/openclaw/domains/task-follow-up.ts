@@ -11,6 +11,7 @@ export type TaskFollowUpPromptInput = {
   task: TaskRecord;
   operatorMessage: string;
   latestResult?: string | null;
+  latestResultLabel?: string | null;
   createdFiles?: RuntimeCreatedFile[];
   outputSummary?: string | null;
 };
@@ -128,6 +129,7 @@ export function buildTaskFollowUpPrompt(input: TaskFollowUpPromptInput) {
       input.task.subtitle,
     SECTION_LIMITS.result
   );
+  const latestResultLabel = limitSection(input.latestResultLabel || "Latest result", 120) || "Latest result";
   const files = limitSection(formatCreatedFiles(input.task, input.createdFiles), SECTION_LIMITS.files);
   const outputSummary = limitSection(input.outputSummary ?? "", SECTION_LIMITS.result);
 
@@ -141,7 +143,7 @@ export function buildTaskFollowUpPrompt(input: TaskFollowUpPromptInput) {
       "Original mission:",
       mission,
       latestResult ? "" : null,
-      latestResult ? "Latest result:" : null,
+      latestResult ? `${latestResultLabel}:` : null,
       latestResult || null,
       outputSummary ? "" : null,
       outputSummary ? "Output context:" : null,

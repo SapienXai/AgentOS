@@ -235,8 +235,10 @@ export function ExpandableTaskResult({
 export function TaskFollowUpComposer({
   task,
   latestResult,
+  latestResultLabel,
   createdFiles,
   outputSummary,
+  placeholder,
   onSubmitted,
   onExpandRequest,
   textareaRef,
@@ -247,8 +249,10 @@ export function TaskFollowUpComposer({
 }: {
   task: TaskRecord;
   latestResult?: string | null;
+  latestResultLabel?: string | null;
   createdFiles?: RuntimeCreatedFile[];
   outputSummary?: string | null;
+  placeholder?: string;
   onSubmitted?: (followUp: SubmittedTaskFollowUp) => Promise<void> | void;
   onExpandRequest?: () => void;
   textareaRef?: Ref<HTMLTextAreaElement>;
@@ -280,6 +284,7 @@ export function TaskFollowUpComposer({
         task,
         operatorMessage: trimmedMessage,
         latestResult,
+        latestResultLabel,
         createdFiles,
         outputSummary
       });
@@ -358,7 +363,7 @@ export function TaskFollowUpComposer({
             value={message}
             maxLength={4000}
             disabled={submitting || !availability.available}
-            placeholder="Ask a follow-up..."
+            placeholder={placeholder ?? "Ask a follow-up…"}
             className={cn(
               "min-h-8 resize-none border-0 bg-transparent p-0 font-medium text-foreground caret-primary shadow-none placeholder:font-medium placeholder:text-muted-foreground focus-visible:ring-0 dark:text-slate-100 dark:caret-emerald-200 dark:placeholder:text-slate-400",
               dense ? "text-[13px] leading-5" : compact ? "text-base leading-7" : "text-[16px] leading-7",

@@ -14,13 +14,15 @@ function limitTaskReviewMessageSection(value: string, maxLength: number) {
 export function buildTaskReviewContinuationPrompt(
   task: TaskRecord,
   capturedOutput: string,
-  operatorMessage?: string
+  operatorMessage?: string,
+  capturedOutputLabel?: string
 ) {
   const followUp = operatorMessage?.trim() || "Continue from the captured output, finish the remaining work, and verify the result.";
 
   return buildTaskFollowUpPrompt({
     task,
     operatorMessage: followUp,
-    latestResult: limitTaskReviewMessageSection(capturedOutput, 7600)
+    latestResult: limitTaskReviewMessageSection(capturedOutput, 7600),
+    latestResultLabel: capturedOutputLabel
   });
 }

@@ -28,6 +28,18 @@ test("task follow-up prompt includes operator message, original mission, and lat
   assert.match(prompt, /Existing output\/files:\nreports\/smoke\.md/);
 });
 
+test("task follow-up prompt preserves an unverified evidence label", () => {
+  const prompt = buildTaskFollowUpPrompt({
+    task: createTaskRecord(),
+    operatorMessage: "Verify whether delivery completed.",
+    latestResult: "The work may have been sent.",
+    latestResultLabel: "Last captured response — unverified"
+  });
+
+  assert.match(prompt, /Last captured response — unverified:\nThe work may have been sent\./);
+  assert.doesNotMatch(prompt, /Latest result:\nThe work may have been sent\./);
+});
+
 test("task follow-up availability allows completed tasks with existing context", () => {
   const availability = resolveTaskFollowUpAvailability(createTaskRecord({ status: "completed" }));
 

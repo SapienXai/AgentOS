@@ -41,7 +41,9 @@ import {
   isWaitingForOutputCopy,
   readTaskResultPreview,
   resolveTaskCardPrimaryAction,
+  resolveTaskCardEvidencePresentation,
   resolveTaskDispatchIssueDetail,
+  resolveTaskReviewPresentation,
   resolveTaskBadgeLabel
 } from "@/components/mission-control/task-node-status";
 import {
@@ -139,6 +141,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   );
   const integrity = detail?.integrity ?? null;
   const dispatchIssueDetail = resolveTaskDispatchIssueDetail(displayTask, integrity);
+  const reviewPresentation = resolveTaskReviewPresentation(displayTask, integrity);
   const bootstrapStage =
     typeof displayTask.metadata.bootstrapStage === "string" ? displayTask.metadata.bootstrapStage : null;
   const dispatchSubmittedAt =
@@ -229,6 +232,8 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     ? resolveTaskReviewBadgeLabel(visibleReviewStatus)
     : missingFinalResponse
     ? "no result"
+    : reviewPresentation.badgeLabel && completedNeedsReview
+    ? reviewPresentation.badgeLabel
     : completedNeedsReview
       ? "needs review"
       : resolveTaskBadgeLabel(bootstrapStage, displayTask.status, isPendingCreation, isAborted, hasRuntimeOutputEvidence);
@@ -236,6 +241,8 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     ? resolveFollowUpFooterLabel(activeFollowUp, activeFollowUpRuntime, activeFollowUpOutput, activeFollowUpRuntimes)
     : visibleReviewStatus
     ? resolveTaskReviewFooterLabel(visibleReviewStatus)
+    : reviewPresentation.footerLabel && completedNeedsReview
+    ? reviewPresentation.footerLabel
     : stalledWithCapturedOutput
     ? "partial output needs review"
     : missingFinalResponse
@@ -294,7 +301,8 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const displayPromptText = activeFollowUp
     ? resolveTaskFollowUpDisplayMessage(activeFollowUp) ?? activeFollowUp.message
     : promptText;
-  const displayResultTitle = activeFollowUp ? "Follow-up result" : "Latest result";
+  const displayResultTitle = activeFollowUp ? "Follow-up result" : reviewPresentation.evidenceLabel;
+  const displayResultEvidenceLabel = activeFollowUp ? "Follow-up result" : reviewPresentation.evidenceLabel;
   const displayResultText = activeFollowUp
     ? resolveFollowUpResultText(activeFollowUp, activeFollowUpRuntime, activeFollowUpOutput)
     : resultPreview;
@@ -305,6 +313,23 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     isLiveTask || isPendingCreation ? activitySummary : displayResultText || activitySummary,
     164
   ) || activitySummary;
+  const cardEvidencePresentation = activeFollowUp
+    ? {
+        label: showsLiveActivity ? "Live activity" : "Latest result",
+        prioritizeActivity: showsLiveActivity && Boolean(latestFeedEvent)
+      }
+    : resolveTaskCardEvidencePresentation({
+        hasActivity: Boolean(latestFeedEvent),
+        hasLiveActivity: showsLiveActivity,
+        deliveryUnconfirmed: reviewPresentation.deliveryUnconfirmed
+      });
+  const activityPreview = compactMissionText(
+    [activityLabel, activitySummary].filter(Boolean).join(" · "),
+    164
+  );
+  const cardEvidenceText = cardEvidencePresentation.prioritizeActivity
+    ? activityPreview || cardSummary
+    : cardSummary;
 
   useEffect(() => {
     if (!expanded && !composerExpanded) {
@@ -588,12 +613,21 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           </div>
 
           {dispatchIssueDetail ? (
-            <p className={cn("mt-1.5 line-clamp-2 text-[10px] leading-4", surfaceTheme === "light" ? "text-amber-800" : "text-amber-100/90")}>{dispatchIssueDetail}</p>
+            <p className={cn("mt-1.5 line-clamp-2 text-[10px] leading-4", surfaceTheme === "light" ? "text-amber-800" : "text-amber-100/90")}>
+              {reviewPresentation.deliveryUnconfirmed
+                ? "AgentOS did not observe a terminal response before the Gateway wait expired."
+                : dispatchIssueDetail}
+            </p>
           ) : null}
 
-          <p className={cn("mt-2 line-clamp-2 text-[11px] leading-5", surfaceTheme === "light" ? "text-[#624f43]" : "text-slate-300")}>
-            {cardSummary}
-          </p>
+          <div className="mt-2">
+            <p className={cn("text-[9px] font-semibold uppercase tracking-[0.14em]", surfaceTheme === "light" ? "text-amber-700" : "text-amber-200/80")}>
+              {cardEvidencePresentation.label}
+            </p>
+            <p className={cn("mt-1 line-clamp-2 text-[11px] leading-5", surfaceTheme === "light" ? "text-[#624f43]" : "text-slate-300")}>
+              {cardEvidenceText}
+            </p>
+          </div>
 
           <div className="mt-3 flex items-center gap-1.5">
             <button
@@ -628,7 +662,9 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
               }}
               onPointerDown={(event) => event.stopPropagation()}
             >
-              Follow up
+              {reviewPresentation.deliveryUnconfirmed && !activeFollowUp
+                ? reviewPresentation.followUpLabel
+                : "Follow up"}
             </button>
             <button
               type="button"
@@ -681,6 +717,9 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
               className="mb-2"
             />
             <div>
+              <p className={cn("mb-2 text-[9px] font-semibold uppercase tracking-[0.14em]", surfaceTone.mutedText)}>
+                {reviewPresentation.deliveryUnconfirmed && !activeFollowUp ? "Captured activity feed" : "Activity feed"}
+              </p>
               {streamNotice ? (
                 <div className={cn("mb-2 rounded-[10px] border border-amber-400/20 bg-amber-400/10 px-2.5 py-2 text-[10px] leading-5", surfaceTheme === "light" ? "text-amber-800" : "text-amber-100")}>
                   {streamNotice}
@@ -738,8 +777,10 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
               <TaskFollowUpComposer
                 task={displayTask}
                 latestResult={displayResultText}
+                latestResultLabel={activeFollowUp ? undefined : displayResultEvidenceLabel}
                 createdFiles={detail?.createdFiles}
                 outputSummary={activitySummary}
+                placeholder={activeFollowUp ? undefined : reviewPresentation.followUpPlaceholder}
                 compact
                 density="dense"
                 expanded

@@ -25,7 +25,11 @@ import {
   resolveTaskReviewBadgeLabel,
   resolveTaskReviewSummary
 } from "@/components/mission-control/task-review-state";
-import { resolveTaskDispatchIssueDetail } from "@/components/mission-control/task-node-status";
+import {
+  isGatewayWaitTimeoutDetail,
+  resolveTaskDispatchIssueDetail,
+  resolveTaskReviewPresentation
+} from "@/components/mission-control/task-node-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,7 +58,12 @@ type TaskReviewDialogProps = {
   surfaceTheme: "dark" | "light";
   onOpenChange: (open: boolean) => void;
   onAccept: (task: WorkItemRecord) => Promise<void> | void;
-  onContinue: (task: WorkItemRecord, capturedOutput: string, operatorMessage?: string) => Promise<void> | void;
+  onContinue: (
+    task: WorkItemRecord,
+    capturedOutput: string,
+    operatorMessage?: string,
+    capturedOutputLabel?: string
+  ) => Promise<void> | void;
   onRetry: (task: WorkItemRecord) => Promise<void> | void;
   onDismiss: (task: WorkItemRecord) => Promise<void> | void;
   onOpenEvidence: (task: WorkItemRecord, target: "overview" | "output" | "files") => void;
@@ -101,10 +110,17 @@ export function TaskReviewDialog({
   const reviewedAt = currentTask ? readTaskReviewReviewedAt(currentTask) : null;
   const reviewAction = currentTask ? readTaskReviewAction(currentTask) : null;
   const capturedOutput = currentTask ? readCapturedTaskOutput(currentTask, integrity?.finalResponseText) : "";
+  const hasCapturedOutputEvidence = currentTask
+    ? hasExplicitCapturedTaskOutput(currentTask, integrity?.finalResponseText)
+    : false;
   const createdFiles = detail?.createdFiles ?? [];
   const originalPrompt = currentTask ? readTaskPromptText(currentTask) : "";
   const issue = integrity?.issues.find((entry) => entry.id === "partial-final-response") ?? integrity?.issues[0] ?? null;
   const dispatchIssueDetail = currentTask ? resolveTaskDispatchIssueDetail(currentTask, integrity) : null;
+  const reviewPresentation = currentTask
+    ? resolveTaskReviewPresentation(currentTask, integrity)
+    : null;
+  const isDeliveryUnconfirmed = reviewPresentation?.deliveryUnconfirmed ?? false;
   const isVerified = integrity?.status === "verified" && !issue;
   const statusLabel = reviewStatus ? resolveTaskReviewBadgeLabel(reviewStatus) : isVerified ? "verified" : "needs review";
   const issueSummary = reviewStatus
@@ -124,6 +140,13 @@ export function TaskReviewDialog({
       })
     : [];
   const reportedFileCount = createdFiles.length || currentTask?.artifactCount || 0;
+  const hasAcceptableEvidence = hasCapturedOutputEvidence || reportedFileCount > 0;
+  const capturedOutputLabel = isDeliveryUnconfirmed
+    ? "Last captured response — unverified"
+    : "Captured output";
+  const recommendedActionLabel = isDeliveryUnconfirmed
+    ? "Ask agent to verify delivery"
+    : "Continue task";
   const isLight = surfaceTheme === "light";
   const isActionPending = pendingAction !== null;
 
@@ -201,10 +224,15 @@ export function TaskReviewDialog({
             <div className="space-y-4">
               <ReviewSection
                 icon={FileText}
-                title="Captured output"
+                title={capturedOutputLabel}
                 tone={reviewStatus === "accepted" || isVerified ? "success" : "warning"}
                 isLight={isLight}
               >
+                {isDeliveryUnconfirmed ? (
+                  <p className={cn("mb-2 text-[11px] leading-5", isLight ? "text-amber-700" : "text-amber-100/85")}>
+                    This is the last response AgentOS captured before the Gateway wait expired. It is evidence, not confirmation that delivery completed.
+                  </p>
+                ) : null}
                 {capturedOutput ? (
                   <InteractiveContent
                     text={capturedOutput}
@@ -217,7 +245,12 @@ export function TaskReviewDialog({
                 )}
               </ReviewSection>
 
-              <ReviewSection icon={AlertTriangle} title="Review reason" tone="warning" isLight={isLight}>
+              <ReviewSection
+                icon={AlertTriangle}
+                title={isDeliveryUnconfirmed ? "What needs a decision" : "Review reason"}
+                tone="warning"
+                isLight={isLight}
+              >
                 <p className={cn("text-[12.5px] leading-6", isLight ? "text-slate-700" : "text-slate-200")}>
                   {issueSummary}
                 </p>
@@ -233,7 +266,12 @@ export function TaskReviewDialog({
                 ) : null}
               </ReviewSection>
 
-              <ReviewSection icon={ListChecks} title="What to review" tone="warning" isLight={isLight}>
+              <ReviewSection
+                icon={ListChecks}
+                title={isDeliveryUnconfirmed ? "Recommended next action" : "What to review"}
+                tone="warning"
+                isLight={isLight}
+              >
                 <ul className={cn("space-y-2 text-[12.5px] leading-5", isLight ? "text-slate-700" : "text-slate-200")}>
                   {reviewGuidance.map((item) => (
                     <li key={item} className="flex gap-2">
@@ -301,7 +339,9 @@ export function TaskReviewDialog({
                 <Textarea
                   value={operatorReply}
                   onChange={(event) => setOperatorReply(event.target.value)}
-                  placeholder="Answer the agent or add continuation instructions before continuing this task."
+                  placeholder={isDeliveryUnconfirmed
+                    ? "Ask the agent to verify whether delivery completed, or provide the next instruction…"
+                    : "Answer the agent or add continuation instructions before continuing this task."}
                   className={cn(
                     "min-h-[112px] resize-none text-[12.5px] leading-5",
                     isLight
@@ -321,7 +361,12 @@ export function TaskReviewDialog({
                     disabled={!currentTask || isActionPending}
                     onClick={() => void runAction("continue", () => {
                       if (currentTask) {
-                        return onContinue(currentTask, capturedOutput, operatorReply);
+                        return onContinue(
+                          currentTask,
+                          capturedOutput,
+                          operatorReply,
+                          isDeliveryUnconfirmed ? "Last captured response — unverified" : undefined
+                        );
                       }
                     })}
                   >
@@ -330,7 +375,7 @@ export function TaskReviewDialog({
                       ? "Continuing..."
                       : operatorReply.trim()
                         ? "Send reply and continue"
-                        : "Continue task"}
+                        : recommendedActionLabel}
                   </Button>
                 </div>
               </ReviewSection>
@@ -435,7 +480,7 @@ export function TaskReviewDialog({
             })}
           >
             {pendingAction === "dismiss" ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
-            {pendingAction === "dismiss" ? "Dismissing..." : "Dismiss"}
+            {pendingAction === "dismiss" ? "Acknowledging..." : "Mark review acknowledged"}
           </Button>
           <Button
             type="button"
@@ -449,7 +494,7 @@ export function TaskReviewDialog({
             })}
           >
             {pendingAction === "retry" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {pendingAction === "retry" ? "Preparing..." : "Retry"}
+            {pendingAction === "retry" ? "Preparing draft..." : "Draft retry"}
           </Button>
           <Button
             type="button"
@@ -458,17 +503,23 @@ export function TaskReviewDialog({
             disabled={!currentTask || isActionPending}
             onClick={() => void runAction("continue", () => {
               if (currentTask) {
-                return onContinue(currentTask, capturedOutput, operatorReply);
+                return onContinue(
+                  currentTask,
+                  capturedOutput,
+                  operatorReply,
+                  isDeliveryUnconfirmed ? "Last captured response — unverified" : undefined
+                );
               }
             })}
           >
             {pendingAction === "continue" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CornerDownRight className="h-4 w-4" />}
-            {pendingAction === "continue" ? "Continuing..." : "Continue task"}
+            {pendingAction === "continue" ? "Continuing..." : recommendedActionLabel}
           </Button>
           <Button
             type="button"
             className="gap-2 bg-emerald-400 text-slate-950 shadow-emerald-400/20 hover:bg-emerald-300"
-            disabled={!currentTask || isActionPending}
+            disabled={!currentTask || isActionPending || !hasAcceptableEvidence}
+            title={!hasAcceptableEvidence ? "No captured response or file evidence is available to accept." : "Mark this captured evidence as accepted in this browser."}
             onClick={() => void runAction("accept", () => {
               if (currentTask) {
                 return onAccept(currentTask);
@@ -476,7 +527,7 @@ export function TaskReviewDialog({
             })}
           >
             {pendingAction === "accept" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            {pendingAction === "accept" ? "Accepting..." : "Accept result"}
+            {pendingAction === "accept" ? "Accepting..." : "Mark evidence accepted"}
           </Button>
         </div>
       </DialogContent>
@@ -556,6 +607,21 @@ function readCapturedTaskOutput(task: WorkItemRecord, integrityFinalResponse?: s
   return finalResponse || metadataFinalResponse || resultPreview || subtitle;
 }
 
+function hasExplicitCapturedTaskOutput(task: WorkItemRecord, integrityFinalResponse?: string | null) {
+  const values = [
+    typeof integrityFinalResponse === "string" ? integrityFinalResponse.trim() : "",
+    typeof task.metadata.finalResponseText === "string" ? task.metadata.finalResponseText.trim() : "",
+    typeof task.metadata.resultPreview === "string" ? task.metadata.resultPreview.trim() : ""
+  ];
+
+  return values.some(
+    (value) =>
+      Boolean(value) &&
+      !/waiting for (the first )?(transcript|output)|working silently/i.test(value) &&
+      !/^(agent|chat|session\.message|sessions\.changed)$/i.test(value)
+  );
+}
+
 function resolveReviewIssueSummary(dispatchIssueDetail: string | null, integrityIssueDetail?: string | null) {
   const detail = dispatchIssueDetail || integrityIssueDetail || null;
 
@@ -564,7 +630,7 @@ function resolveReviewIssueSummary(dispatchIssueDetail: string | null, integrity
   }
 
   if (isGatewayWaitTimeoutDetail(detail)) {
-    return "OpenClaw accepted the task, but AgentOS did not capture a final agent answer before the Gateway wait window expired. Review the captured output and transcript; if the agent asked a question or the result is incomplete, send an operator reply or continuation.";
+    return "Delivery is unconfirmed. The Gateway wait expired before AgentOS observed a terminal task response. The last captured response below may be incomplete.";
   }
 
   return detail;
@@ -582,7 +648,7 @@ function resolveReviewGuidance(input: {
 
   if (hasGatewayTimeout) {
     guidance.push(
-      "The review is not asking you to approve the timeout itself. It is asking whether the captured work is complete enough to accept."
+      "Ask the agent to verify whether delivery completed. This continues the existing OpenClaw session; it does not start a retry."
     );
   } else {
     guidance.push("Review the captured work before marking this task handled.");
@@ -600,13 +666,13 @@ function resolveReviewGuidance(input: {
     guidance.push("Check the captured output for missing sections, unanswered questions, or instructions that still need an operator reply.");
   }
 
-  guidance.push("Accept the result if the work is good, send a reply and continue if context is missing, or retry if the run produced the wrong work.");
+  guidance.push(
+    hasGatewayTimeout
+      ? "Mark the captured evidence accepted only when the response or files are sufficient for the original mission. Draft a retry only if you intentionally want to start over."
+      : "Mark the evidence accepted if the work is good, send a reply and continue if context is missing, or draft a retry if the run produced the wrong work."
+  );
 
   return guidance;
-}
-
-function isGatewayWaitTimeoutDetail(detail: string) {
-  return /OpenClaw Gateway wait timed out/i.test(detail);
 }
 
 function readTaskPromptText(task: WorkItemRecord) {

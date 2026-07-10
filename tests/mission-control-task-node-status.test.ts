@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   hasTaskRuntimeOutputEvidence,
   readTaskResultPreview,
+  resolveTaskCardEvidencePresentation,
   resolveTaskDispatchIssueDetail,
+  resolveTaskReviewPresentation,
   resolveTaskBadgeLabel
 } from "@/components/mission-control/task-node-status";
 import type { TaskFeedEvent, WorkItemRecord } from "@/lib/agentos/contracts";
@@ -107,6 +109,54 @@ test("dispatch stall details use dispatch metadata without treating generic subt
     status: "stalled",
     subtitle: "AgentOS recovered partial evidence, but this result still needs operator review."
   })), null);
+});
+
+test("Gateway wait timeouts present captured output as unverified delivery evidence", () => {
+  const task = createTask({
+    status: "stalled",
+    metadata: {
+      dispatchError: "OpenClaw Gateway wait timed out during gateway_draining."
+    }
+  });
+
+  assert.deepEqual(resolveTaskReviewPresentation(task), {
+    deliveryUnconfirmed: true,
+    technicalDetail: "OpenClaw Gateway wait timed out during gateway_draining.",
+    badgeLabel: "delivery unconfirmed",
+    footerLabel: "delivery unconfirmed",
+    evidenceLabel: "Last captured response — unverified",
+    followUpLabel: "Ask agent to verify",
+    followUpPlaceholder: "Ask the agent to verify whether delivery completed…"
+  });
+});
+
+test("task card evidence favors activity for live and delivery-unconfirmed tasks", () => {
+  assert.deepEqual(resolveTaskCardEvidencePresentation({
+    hasActivity: true,
+    hasLiveActivity: true,
+    deliveryUnconfirmed: false
+  }), {
+    label: "Live activity",
+    prioritizeActivity: true
+  });
+
+  assert.deepEqual(resolveTaskCardEvidencePresentation({
+    hasActivity: true,
+    hasLiveActivity: false,
+    deliveryUnconfirmed: true
+  }), {
+    label: "Last captured activity",
+    prioritizeActivity: true
+  });
+
+  assert.deepEqual(resolveTaskCardEvidencePresentation({
+    hasActivity: true,
+    hasLiveActivity: false,
+    deliveryUnconfirmed: false
+  }), {
+    label: "Latest result",
+    prioritizeActivity: false
+  });
 });
 
 function createTask(overrides: Partial<WorkItemRecord> = {}): WorkItemRecord {
