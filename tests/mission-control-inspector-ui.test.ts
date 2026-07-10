@@ -12,6 +12,8 @@ test("inspector visual tones provide distinct light and dark compact surfaces", 
 
   assert.match(light.shell, /255,253,251/);
   assert.match(light.title, /#30251f/);
+  assert.match(light.primaryButton, /text-\[#fffaf4\]/);
+  assert.doesNotMatch(light.primaryButton, /text-white/);
   assert.match(dark.shell, /7,14,25/);
   assert.match(dark.title, /text-white/);
 });

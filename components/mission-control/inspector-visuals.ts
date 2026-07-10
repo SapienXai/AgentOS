@@ -37,7 +37,7 @@ export function resolveInspectorSurfaceTone(surfaceTheme: InspectorSurfaceTheme)
       section: "border-[#e6d7cd] bg-white/[0.72] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]",
       fact: "border-[#eadcd2] bg-[#fffdfa]/84",
       subtleButton: "border-[#e1d1c6] bg-white/[0.72] text-[#70594a] hover:border-[#cda98f] hover:bg-[#fbf1e9] hover:text-[#33271f]",
-      primaryButton: "bg-[#3a2c23] text-white hover:bg-[#50392d]",
+      primaryButton: "bg-[#3a2c23] text-[#fffaf4] hover:bg-[#50392d]",
       tabTrack: "border-[#e4d5cb] bg-white/[0.62]",
       tabActive: "border-[#d5bda9] bg-[#f8ebe1] text-[#3c2e24] shadow-[0_6px_16px_rgba(107,75,55,0.10)]",
       tabIdle: "text-[#816b5b] hover:bg-white/[0.72] hover:text-[#3d2e25]"
