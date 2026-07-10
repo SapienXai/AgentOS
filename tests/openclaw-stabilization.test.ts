@@ -1082,6 +1082,18 @@ test("lightweight Gateway config probe distinguishes prepared local auth", async
     "utf8"
   );
   assert.equal(await probeLocalGatewayConfiguration({ homeDir, env: {} }), true);
+
+  const customStateDir = path.join(homeDir, "custom-openclaw-state");
+  await mkdir(customStateDir, { recursive: true });
+  await writeFile(
+    path.join(customStateDir, "openclaw.json"),
+    JSON.stringify({ gateway: { mode: "local", auth: { mode: "token", token: "custom-token" } } }),
+    "utf8"
+  );
+  assert.equal(
+    await probeLocalGatewayConfiguration({ homeDir, env: { OPENCLAW_STATE_DIR: customStateDir } }),
+    true
+  );
 });
 
 test("local model probe reads the configured default without a full snapshot", async () => {

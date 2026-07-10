@@ -111,20 +111,35 @@ export async function probeLocalGatewayConfiguration(options: {
   homeDir?: string;
   env?: NodeJS.ProcessEnv;
 } = {}) {
+  const state = await readLocalGatewayConfiguration(options);
+  return state.modeLocal && state.authTokenMode && state.hasToken;
+}
+
+export async function readLocalGatewayConfiguration(options: {
+  homeDir?: string;
+  env?: NodeJS.ProcessEnv;
+} = {}) {
   const env = options.env ?? process.env;
+  const stateDirOverride = env.OPENCLAW_STATE_DIR?.trim();
+  const stateDir = stateDirOverride
+    ? stateDirOverride.startsWith("~")
+      ? path.join(options.homeDir ?? os.homedir(), stateDirOverride.slice(1))
+      : stateDirOverride
+    : path.join(options.homeDir ?? os.homedir(), ".openclaw");
   const configPath = env.OPENCLAW_CONFIG_PATH?.trim()
-    || path.join(options.homeDir ?? os.homedir(), ".openclaw", "openclaw.json");
+    || path.join(stateDir, "openclaw.json");
 
   try {
     const config = JSON.parse(await readFile(configPath, "utf8")) as {
       gateway?: { mode?: unknown; auth?: { mode?: unknown; token?: unknown } };
     };
-    return config.gateway?.mode === "local" &&
-      config.gateway?.auth?.mode === "token" &&
-      typeof config.gateway?.auth?.token === "string" &&
-      config.gateway.auth.token.trim().length > 0;
+    return {
+      modeLocal: config.gateway?.mode === "local",
+      authTokenMode: config.gateway?.auth?.mode === "token",
+      hasToken: typeof config.gateway?.auth?.token === "string" && config.gateway.auth.token.trim().length > 0
+    };
   } catch {
-    return false;
+    return { modeLocal: false, authTokenMode: false, hasToken: false };
   }
 }
 

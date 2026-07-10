@@ -12,7 +12,8 @@ import { createDefaultOpenClawBinarySelection, writeOpenClawBinarySelection } fr
 import {
   probeLocalGatewayConfiguration,
   probeLocalGatewayRegistration,
-  probeLocalGatewayStatus
+  probeLocalGatewayStatus,
+  readLocalGatewayConfiguration
 } from "@/lib/openclaw/client/local-gateway-probe";
 import { resolveLatestPendingDeviceRequestId } from "@/lib/openclaw/client/native-ws-gateway-protocol";
 import { settleAgentConfigFromStateFile } from "@/lib/openclaw/state/agent-config-payload";
@@ -379,17 +380,32 @@ export async function POST(request: Request) {
       }
 
       if (intent === "prepare") {
-        const [gatewayRegistered, configReady] = await Promise.all([
+        const [registrationProbe, configReady] = await Promise.all([
           probeLocalGatewayRegistration().catch(() => false),
           probeLocalGatewayConfiguration()
         ]);
+        let gatewayRegistered = registrationProbe === true;
 
-        if (!configReady) {
-          const tokenSyncResult = await syncGatewayAuthTokenBeforeFirstStart(openClawBin, send);
-          appendGatewayAuthSyncOutput(tokenSyncResult, appendOutput);
+        if (!gatewayRegistered) {
+          const registrationStatus = await readGatewayStatus(openClawBin).catch(() => null);
+          gatewayRegistered = registrationStatus?.service?.loaded === true;
         }
 
-        if (gatewayRegistered !== true) {
+        if (!configReady) {
+          try {
+            const tokenSyncResult = await syncGatewayAuthTokenBeforeFirstStart(openClawBin, send);
+            appendGatewayAuthSyncOutput(tokenSyncResult, appendOutput);
+          } catch (error) {
+            const message = redactErrorMessage(error, "Gateway configuration failed.");
+            aggregatedStderr = appendLine(aggregatedStderr, message);
+            await fail("installing-gateway", message, {
+              manualCommand: formatOpenClawCommand(openClawBin, ["gateway", "status", "--json"])
+            });
+            return;
+          }
+        }
+
+        if (!gatewayRegistered) {
           await send({
             type: "status",
             phase: "installing-gateway",
@@ -402,14 +418,17 @@ export async function POST(request: Request) {
           );
           appendOutput(gatewayInstallResult);
           if (gatewayInstallResult.errorMessage || gatewayInstallResult.timedOut || gatewayInstallResult.code !== 0) {
-            await failGatewayCommand(
-              "installing-gateway",
-              "Gateway installation failed.",
-              openClawBin,
-              gatewayInstallResult,
-              formatOpenClawCommand(openClawBin, ["gateway", "install", "--json"])
-            );
-            return;
+            const statusAfterInstall = await readGatewayStatus(openClawBin).catch(() => null);
+            if (statusAfterInstall?.service?.loaded !== true) {
+              await failGatewayCommand(
+                "installing-gateway",
+                "Gateway installation failed.",
+                openClawBin,
+                gatewayInstallResult,
+                formatOpenClawCommand(openClawBin, ["gateway", "install", "--json"])
+              );
+              return;
+            }
           }
         }
 
@@ -1189,23 +1208,39 @@ async function syncGatewayAuthTokenBeforeFirstStart(
   });
 
   const token = randomBytes(32).toString("base64url");
-  const gatewayModeResult = await runCommand(
-    openClawBin,
-    ["config", "set", "gateway.mode", "local"],
-    send,
-    { timeoutMs: 30_000 }
-  );
+  const currentConfig = await readLocalGatewayConfiguration();
+  const skippedResult = (message: string): CommandResult => ({
+    code: 0,
+    stdout: `${message}\n`,
+    stderr: "",
+    timedOut: false
+  });
+  const gatewayModeResult = currentConfig.modeLocal
+    ? skippedResult("gateway.mode is already local.")
+    : await runCommand(
+        openClawBin,
+        ["config", "set", "gateway.mode", "local"],
+        send,
+        { timeoutMs: 60_000 }
+      );
 
   if (gatewayModeResult.errorMessage || gatewayModeResult.timedOut || gatewayModeResult.code !== 0) {
-    throw new Error("AgentOS could not set OpenClaw gateway.mode=local.");
+    const detail = collectCommandOutput(gatewayModeResult).trim();
+    throw new Error(
+      detail
+        ? `AgentOS could not set OpenClaw gateway.mode=local. ${detail}`
+        : "AgentOS could not set OpenClaw gateway.mode=local."
+    );
   }
 
-  const authModeResult = await runCommand(
-    openClawBin,
-    ["config", "set", "gateway.auth.mode", "token"],
-    send,
-    { timeoutMs: 30_000 }
-  );
+  const authModeResult = currentConfig.authTokenMode
+    ? skippedResult("gateway.auth.mode is already token.")
+    : await runCommand(
+        openClawBin,
+        ["config", "set", "gateway.auth.mode", "token"],
+        send,
+        { timeoutMs: 60_000 }
+      );
 
   if (authModeResult.errorMessage || authModeResult.timedOut || authModeResult.code !== 0) {
     throw new Error("AgentOS could not set OpenClaw gateway.auth.mode=token.");
@@ -1215,7 +1250,7 @@ async function syncGatewayAuthTokenBeforeFirstStart(
     openClawBin,
     ["config", "set", "gateway.auth.token", token],
     send,
-    { timeoutMs: 30_000 }
+    { timeoutMs: 60_000 }
   );
 
   if (tokenResult.errorMessage || tokenResult.timedOut || tokenResult.code !== 0) {
