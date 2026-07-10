@@ -995,6 +995,26 @@ test("lightweight registration status completes the Gateway service step while s
   assert.equal(steps.find((step) => step.id === "runtime")?.state, "current");
 });
 
+test("gateway step stays current while startup can still fall back to installation", () => {
+  const snapshot = {
+    diagnostics: {
+      installed: true,
+      loaded: false,
+      rpcOk: false,
+      runtime: { stateWritable: true, sessionStoreWritable: true }
+    }
+  } as unknown as MissionControlSnapshot;
+
+  const steps = buildSystemSteps(snapshot, "starting-gateway", {
+    cliInstalled: true,
+    gatewayRegistered: false,
+    gatewayReachable: false
+  });
+
+  assert.equal(steps.find((step) => step.id === "gateway")?.state, "current");
+  assert.equal(steps.find((step) => step.id === "runtime")?.state, "pending");
+});
+
 test("fresh install setup ignores orphaned Gateway registration before CLI is confirmed", () => {
   const snapshot = {
     diagnostics: {
