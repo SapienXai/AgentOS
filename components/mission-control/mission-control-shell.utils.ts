@@ -544,15 +544,33 @@ export function resolveModelOnboardingActionCopy(intent: ModelOnboardingIntent) 
   };
 }
 
-export function resolveOnboardingAction(snapshot: MissionControlSnapshot) {
-  if (!snapshot.diagnostics.installed) {
+export function resolveOnboardingAction(
+  snapshot: MissionControlSnapshot,
+  status: {
+    cliInstalled?: boolean | null;
+    gatewayRegistered?: boolean | null;
+    gatewayConfigured?: boolean | null;
+    gatewayReady?: boolean | null;
+    runtimeWritable?: boolean | null;
+  } = {}
+) {
+  const cliInstalled = status.cliInstalled ?? snapshot.diagnostics.installed;
+  const gatewayRegistered = status.gatewayRegistered ?? snapshot.diagnostics.loaded;
+  const gatewayConfigured = status.gatewayConfigured ?? gatewayRegistered;
+  const gatewayReady = status.gatewayReady ?? snapshot.diagnostics.rpcOk;
+  const runtimeWritable = status.runtimeWritable ?? (
+    snapshot.diagnostics.runtime?.stateWritable === true &&
+    snapshot.diagnostics.runtime?.sessionStoreWritable === true
+  );
+
+  if (!cliInstalled) {
     return {
       label: "Install OpenClaw",
       description: `Download the CLI and get AgentOS ready. Recommended setup target: v${OPENCLAW_RECOMMENDED_VERSION}.`
     };
   }
 
-  if (isOpenClawOnboardingSystemReady(snapshot)) {
+  if (gatewayReady && runtimeWritable) {
     if (!hasAgentOSWorkspaceSetup(snapshot)) {
       return {
         label: "Continue setup",
@@ -566,14 +584,14 @@ export function resolveOnboardingAction(snapshot: MissionControlSnapshot) {
     };
   }
 
-  if (!snapshot.diagnostics.loaded) {
+  if (!gatewayRegistered || !gatewayConfigured) {
     return {
       label: "Prepare local gateway",
-      description: "Register and start the local gateway."
+      description: "Register and configure the local gateway."
     };
   }
 
-  if (!snapshot.diagnostics.rpcOk) {
+  if (!gatewayReady) {
     return {
       label: "Start OpenClaw",
       description: "Start the local gateway and wait for RPC."
