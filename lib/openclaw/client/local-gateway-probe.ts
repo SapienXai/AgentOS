@@ -1,7 +1,7 @@
 import "server-only";
 
 import { spawn } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -105,6 +105,27 @@ export async function probeLocalGatewayRegistration(options: {
     child.once("error", () => finish(false));
     child.once("exit", (code) => finish(code === 0));
   });
+}
+
+export async function probeLocalGatewayConfiguration(options: {
+  homeDir?: string;
+  env?: NodeJS.ProcessEnv;
+} = {}) {
+  const env = options.env ?? process.env;
+  const configPath = env.OPENCLAW_CONFIG_PATH?.trim()
+    || path.join(options.homeDir ?? os.homedir(), ".openclaw", "openclaw.json");
+
+  try {
+    const config = JSON.parse(await readFile(configPath, "utf8")) as {
+      gateway?: { mode?: unknown; auth?: { mode?: unknown; token?: unknown } };
+    };
+    return config.gateway?.mode === "local" &&
+      config.gateway?.auth?.mode === "token" &&
+      typeof config.gateway?.auth?.token === "string" &&
+      config.gateway.auth.token.trim().length > 0;
+  } catch {
+    return false;
+  }
 }
 
 async function probeGatewayReadyEndpoint(port: number, timeoutMs: number): Promise<boolean | null> {
