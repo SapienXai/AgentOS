@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo, useState, type CSSProperties, type Dispatch, type SetStateAction } from "react";
-import { Activity, Bot, CircleCheck, Clock3, Chrome, Filter, Folder, Globe2, Import, MessageSquare, Play, Plus, Plug, ShieldCheck, SlidersHorizontal, Sparkles, Star, Terminal } from "lucide-react";
+import { Activity, Bot, CircleCheck, Clock3, Chrome, Filter, Folder, Globe2, Import, MessageSquare, Play, Plus, Plug, ShieldCheck, SlidersHorizontal, Sparkles, Terminal } from "lucide-react";
 
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
 import { AccountIcon } from "@/components/mission-control/account-icon";
 import { AgentCapabilityEditorDialog } from "@/components/mission-control/agent-capability-editor-dialog";
 import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
 import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
+import { WorkerProfileDialog } from "@/components/operations/agents/worker-profile-dialog";
 import { resolveAgentProfileVisual } from "@/components/mission-control/agent-profile-visuals";
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +59,7 @@ export function AgentsPageContent({
   const [selectedId, setSelectedId] = useState(agents[0]?.id ?? "");
   const [chatAgentId, setChatAgentId] = useState<string | null>(null);
   const [modelAgentId, setModelAgentId] = useState<string | null>(null);
+  const [profileAgentId, setProfileAgentId] = useState<string | null>(null);
   const [capabilityAgentId, setCapabilityAgentId] = useState<string | null>(null);
   const [capabilityFocus, setCapabilityFocus] = useState<"skills" | "tools">("skills");
   const [dispatchAgent, setDispatchAgent] = useState<AgentView | null>(null);
@@ -220,6 +222,7 @@ export function AgentsPageContent({
                   onSelect={() => setSelectedId(agent.id)}
                   onMessage={() => setChatAgentId(agent.id)}
                   onRunTask={() => setDispatchAgent(agent)}
+                  onManageProfile={() => setProfileAgentId(agent.id)}
                 />
               ))}
             </div>
@@ -237,6 +240,7 @@ export function AgentsPageContent({
           onMessage={() => setChatAgentId(selectedAgent.id)}
           onRunTask={() => setDispatchAgent(selectedAgent)}
           onChangeModel={() => setModelAgentId(selectedAgent.id)}
+          onManageProfile={() => setProfileAgentId(selectedAgent.id)}
           onManagePolicy={() => openCapabilityEditor(selectedAgent.id, "skills")}
           onManageTools={() => openCapabilityEditor(selectedAgent.id, "tools")}
           onDelete={() => void deleteAgent(selectedAgent)}
@@ -275,6 +279,23 @@ export function AgentsPageContent({
         onOpenAddModels={() => setIsAddModelsDialogOpen(true)}
         surfaceTheme={surfaceTheme}
       />
+      <WorkerProfileDialog
+        open={Boolean(profileAgentId)}
+        agentId={profileAgentId}
+        snapshot={rootSnapshot}
+        onOpenChange={(open) => setProfileAgentId(open ? profileAgentId : null)}
+        onRefresh={refresh}
+        onSnapshotChange={setSnapshot}
+        onChangeModel={(agentId) => {
+          setProfileAgentId(null);
+          setModelAgentId(agentId);
+        }}
+        onManageCapabilities={(agentId, focus) => {
+          setProfileAgentId(null);
+          openCapabilityEditor(agentId, focus);
+        }}
+        surfaceTheme={surfaceTheme}
+      />
       <AddModelsDialog
         open={isAddModelsDialogOpen}
         onOpenChange={setIsAddModelsDialogOpen}
@@ -309,7 +330,8 @@ function AgentCard({
   list,
   onSelect,
   onMessage,
-  onRunTask
+  onRunTask,
+  onManageProfile
 }: {
   agent: AgentView;
   connectionBadges: AgentConnectionBadge[];
@@ -318,12 +340,13 @@ function AgentCard({
   onSelect: () => void;
   onMessage: () => void;
   onRunTask: () => void;
+  onManageProfile: () => void;
 }) {
   const Icon = agent.icon;
   const heartbeatLabel = agent.source?.heartbeat.enabled
     ? agent.source.heartbeat.every ?? "on"
     : "off";
-  const roleLabel = agent.source?.policy.preset ? toTitleCase(agent.source.policy.preset) : agent.policyLabel;
+  const roleLabel = agent.source?.workerProfile?.employment.role ?? (agent.source?.policy.preset ? toTitleCase(agent.source.policy.preset) : agent.policyLabel);
   const statusVariant = toAgentBadgeVariant(agent.statusTone);
   const onlineLabel = agent.online ? "Online" : "Offline";
   const profileVisual = resolveAgentProfileVisual(agent.id, agent.name, agent.source?.identity.theme);
@@ -454,11 +477,13 @@ function AgentCard({
             variant="secondary"
             size="sm"
             className="h-10 rounded-full border-border bg-muted/35 px-3 text-muted-foreground"
-            disabled
-            title="Following agents requires backend support."
-            onClick={(event) => event.stopPropagation()}
+            title="Open this worker's profile."
+            onClick={(event) => {
+              event.stopPropagation();
+              onManageProfile();
+            }}
           >
-            <Star className="h-3.5 w-3.5" />
+            <SlidersHorizontal className="h-3.5 w-3.5" />
           </Button>
         </div>
 
@@ -678,6 +703,7 @@ function AgentInspector({
   onMessage,
   onRunTask,
   onChangeModel,
+  onManageProfile,
   onManagePolicy,
   onManageTools,
   onDelete
@@ -687,6 +713,7 @@ function AgentInspector({
   onMessage: () => void;
   onRunTask: () => void;
   onChangeModel: () => void;
+  onManageProfile: () => void;
   onManagePolicy: () => void;
   onManageTools: () => void;
   onDelete: () => void;
@@ -725,9 +752,10 @@ function AgentInspector({
       </div>
 
       <div className="mt-4 rounded-[10px] border border-border bg-muted/35 px-3">
+        <KeyValue label="Worker Profile" value={agent.source?.workerProfile?.employment.role ?? "Role baseline"} action={<button className="text-primary" onClick={onManageProfile}>Manage</button>} />
         <KeyValue label="Role" value={agent.source?.policy.preset ? toTitleCase(agent.source.policy.preset) : agent.policyLabel} />
         <KeyValue label="Policy Mode" value={agent.policyLabel} action={<button className="text-primary" onClick={onManagePolicy}>Manage</button>} />
-        <KeyValue label="Workspace Scope" value={`${agent.workspaceName} (Full Access)`} />
+        <KeyValue label="Workspace Scope" value={agent.source?.toolPolicy?.fs?.workspaceOnly ? `${agent.workspaceName} (Workspace only)` : `${agent.workspaceName} (Policy controlled)`} />
         <KeyValue label="Default Model" value={agent.modelLabel} action={<button className="text-primary" onClick={onChangeModel}>Change</button>} />
         <KeyValue label="Tools Enabled" value={`${agent.toolsCount} tools`} action={<button className="text-primary" onClick={onManageTools}>Manage</button>} />
       </div>

@@ -2,7 +2,21 @@
 
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, ChevronRight, FileText, LoaderCircle, Plus, Sparkles, type LucideIcon } from "lucide-react";
+import {
+  Bot,
+  BrainCircuit,
+  BriefcaseBusiness,
+  ChevronRight,
+  Copy,
+  FileText,
+  LoaderCircle,
+  LockKeyhole,
+  Plus,
+  ShieldCheck,
+  Sparkles,
+  Wrench,
+  type LucideIcon
+} from "lucide-react";
 
 import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
 import { AgentThemePicker } from "@/components/mission-control/agent-theme-picker";
@@ -18,6 +32,7 @@ import type { PendingAgentProjection } from "@/components/mission-control/pendin
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import {
   AGENT_FILE_ACCESS_OPTIONS,
@@ -44,6 +59,7 @@ import {
   buildAgentDraft,
   buildUniqueAgentId,
   isSnapshotModelUsable,
+  normalizeAgentDraftCapabilities,
   resolveSuggestedAgentModelId,
   type AgentDraft
 } from "@/components/mission-control/create-agent-dialog.utils";
@@ -178,9 +194,9 @@ export function CreateAgentDialog({
   );
   const createProgressMessage =
     createProgress === "creating"
-      ? "Creating the agent and updating the workspace AGENTS.md role section."
+      ? "Creating the worker, saving its profile, and applying OpenClaw settings."
       : createProgress === "syncing"
-        ? "Agent created. Waiting for the canvas card to appear."
+        ? "Worker created. Waiting for the profile card to appear."
         : null;
   const resetWizardState = useCallback((workspaceId: string) => {
     const nextDraft = createCustomAgentDraft(workspaceId, snapshot);
@@ -416,9 +432,9 @@ export function CreateAgentDialog({
 
     if (label === "Start") {
       setStage("start");
-    } else if (label === "Preset") {
+    } else if (label === "Template") {
       setStage("preset");
-    } else if (label === "Import") {
+    } else if (label === "Clone") {
       setStage("import");
     }
   };
@@ -443,7 +459,24 @@ export function CreateAgentDialog({
         body: JSON.stringify({
           ...draft,
           modelId: effectiveModelId,
-          id: generatedAgentId
+          id: generatedAgentId,
+          workerProfile: {
+            schemaVersion: 1,
+            identity: {
+              displayName: draft.name || currentPresetMeta.defaultName,
+              emoji: draft.emoji || currentPresetMeta.defaultEmoji,
+              theme: draft.theme || currentPresetMeta.defaultTheme,
+              avatar: draft.avatar || null
+            },
+            employment: {
+              role: draft.role || currentPresetMeta.label,
+              mission: draft.mission || null,
+              behaviorInstructions: draft.behaviorInstructions || null
+            },
+            operator: {
+              labels: draft.labels
+            }
+          }
         })
       });
 
@@ -483,8 +516,8 @@ export function CreateAgentDialog({
           enabled: draft.heartbeat.enabled,
           every: draft.heartbeat.every
         },
-        skills: presetMeta.skillIds,
-        tools: presetMeta.tools,
+        skills: draft.skills,
+        tools: draft.tools,
         createdAt: Date.now(),
         warning: result.warning ?? result.warnings?.[0] ?? null
       });
@@ -531,8 +564,8 @@ export function CreateAgentDialog({
       onOpenChange={handleOpenChange}
       surfaceTheme={surfaceTheme}
       trigger={trigger}
-      title="Create New Agent"
-      description={stage === "start" ? "Choose a starting point." : getWizardStageHint(startPoint, stage)}
+      title="Create Worker Profile"
+      description={stage === "start" ? "Choose how to shape this digital employee." : getWizardStageHint(startPoint, stage)}
       icon={Bot}
       chips={
         <MissionControlDialogChip tone={stage === "details" ? "violet" : "muted"}>
@@ -595,7 +628,7 @@ export function CreateAgentDialog({
                       {createProgress === "syncing" ? "Syncing canvas..." : "Creating..."}
                     </>
                   ) : (
-                    "Create agent"
+                    "Create profile"
                   )
                 ) : stage === "start" ? (
                   startPoint === "empty" ? (
@@ -617,27 +650,27 @@ export function CreateAgentDialog({
                 <div className="grid w-full gap-3 md:grid-cols-3 lg:gap-3.5">
                   <StartPointCard
                     icon={Plus}
-                    title="Empty / Custom"
-                    description="Start from scratch."
-                    helper="Fastest if you know the shape."
+                    title="Custom profile"
+                    description="Shape a worker from the safe baseline."
+                    helper="Best when the role is unique."
                     selected={startPoint === "empty"}
                     surfaceTheme={effectiveSurfaceTheme}
                     onSelect={() => handleStartPointSelect("empty")}
                   />
                   <StartPointCard
                     icon={Sparkles}
-                    title="Preset Library"
-                    description="Use a role template."
-                    helper="Good for common worker roles."
+                    title="Role templates"
+                    description="Start with a proven worker profile."
+                    helper="Best for common roles."
                     selected={startPoint === "preset"}
                     surfaceTheme={effectiveSurfaceTheme}
                     onSelect={() => handleStartPointSelect("preset")}
                   />
                   <StartPointCard
-                    icon={Bot}
-                    title="Import Agent"
-                    description="Clone an existing agent."
-                    helper="Best when a baseline already exists."
+                    icon={Copy}
+                    title="Clone profile"
+                    description="Copy an existing worker profile."
+                    helper="Best when a baseline exists."
                     selected={startPoint === "import"}
                     surfaceTheme={effectiveSurfaceTheme}
                     onSelect={() => handleStartPointSelect("import")}
@@ -645,14 +678,14 @@ export function CreateAgentDialog({
                 </div>
 
                 <p className={cn("max-w-[760px] text-center text-[10px] leading-4", isLight ? "text-[#8c7664]" : "text-slate-500")}>
-                  Empty is the fastest path. Preset and import prefill the draft so you only adjust what matters.
+                  Templates and cloning prefill a Worker Profile so you only adjust what changes for this employee.
                 </p>
               </div>
             ) : stage === "preset" ? (
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
                 <PanelCard
-                  title="Browse presets"
-                  description="Choose the role that fits the first job."
+                  title="Choose a role template"
+                  description="Pick the closest operating profile. You can review every setting before creation."
                   surfaceTheme={effectiveSurfaceTheme}
                   className="min-w-0"
                 >
@@ -670,8 +703,8 @@ export function CreateAgentDialog({
                 </PanelCard>
 
                 <PanelCard
-                  title="Selected preset"
-                  description="This seeds the draft before details."
+                  title="Template preview"
+                  description="Role, capabilities, and check-in rhythm included in this profile."
                   surfaceTheme={effectiveSurfaceTheme}
                   className="xl:sticky xl:top-4 xl:self-start xl:h-fit"
                 >
@@ -707,6 +740,13 @@ export function CreateAgentDialog({
                       </Badge>
                     </div>
 
+                    <CapabilityPreview
+                      skills={getAgentPresetMeta(selectedPreset).skillIds}
+                      tools={getAgentPresetMeta(selectedPreset).tools}
+                      description="Declared capabilities included with this role template."
+                      surfaceTheme={effectiveSurfaceTheme}
+                    />
+
                     <AgentRootContextNotice surfaceTheme={effectiveSurfaceTheme} />
 
                     <div
@@ -717,7 +757,7 @@ export function CreateAgentDialog({
                           : "border-white/10 bg-white/[0.03] text-slate-400"
                       )}
                     >
-                      The preset seeds the draft. You can fine-tune the name, model, policy, and heartbeat next.
+                      The template provides a role baseline and declared capabilities. Access still depends on the connected OpenClaw runtime and its effective policy.
                     </div>
                   </div>
                 </PanelCard>
@@ -725,8 +765,8 @@ export function CreateAgentDialog({
             ) : stage === "import" ? (
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
                 <PanelCard
-                  title="Import an existing agent"
-                  description="Select an agent to clone."
+                  title="Clone a Worker Profile"
+                  description="Select a worker whose supported profile fields should seed the new draft."
                   surfaceTheme={effectiveSurfaceTheme}
                   className="min-w-0"
                 >
@@ -770,8 +810,8 @@ export function CreateAgentDialog({
                 </PanelCard>
 
                 <PanelCard
-                  title="Import summary"
-                  description="The selected agent seeds the draft."
+                  title="Clone preview"
+                  description="Review what will seed the new Worker Profile."
                   surfaceTheme={effectiveSurfaceTheme}
                   className="xl:sticky xl:top-4 xl:self-start xl:h-fit"
                 >
@@ -808,6 +848,13 @@ export function CreateAgentDialog({
                         </Badge>
                       </div>
 
+                      <CapabilityPreview
+                        skills={draft.skills}
+                        tools={draft.tools}
+                        description="Declared capabilities that will seed the cloned profile."
+                        surfaceTheme={effectiveSurfaceTheme}
+                      />
+
                       <AgentRootContextNotice surfaceTheme={effectiveSurfaceTheme} />
 
                       <div
@@ -818,7 +865,7 @@ export function CreateAgentDialog({
                             : "border-white/10 bg-white/[0.03] text-slate-400"
                         )}
                       >
-                        The cloned draft keeps the source baseline. You can adjust workspace-specific details next.
+                        Identity, model, heartbeat, operating guidance, and declared skills/tools seed the draft. Channel participation is copied only inside the same workspace.
                       </div>
                     </div>
                   ) : (
@@ -829,7 +876,7 @@ export function CreateAgentDialog({
                           isLight ? "border-[#e1d5c8] bg-white text-[#7f6958]" : "border-white/10 bg-white/[0.02] text-slate-400"
                         )}
                       >
-                        Choose an existing agent on the left. Its configuration will be cloned into the new draft.
+                        Choose an existing worker on the left. Credentials, connected accounts, and browser sessions are never copied.
                       </div>
 
                       <AgentRootContextNotice surfaceTheme={effectiveSurfaceTheme} />
@@ -841,11 +888,18 @@ export function CreateAgentDialog({
                     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
                 <div className="space-y-3.5">
                   <PanelCard
-                    title="Core details"
-                    description="Name, workspace, and model."
+                    title="Role & identity"
+                    description="Define who this worker is and how it appears to operators."
                     surfaceTheme={effectiveSurfaceTheme}
                   >
-                    <div className="grid gap-3.5 sm:grid-cols-2">
+                    <div className="space-y-4">
+                      <WorkerRoleBaseline
+                        emoji={draft.emoji || currentPresetMeta.defaultEmoji}
+                        label={currentPresetMeta.label}
+                        description={currentPresetMeta.description}
+                        surfaceTheme={effectiveSurfaceTheme}
+                      />
+
                       <FormField label="Display name" htmlFor="create-agent-name" surfaceTheme={effectiveSurfaceTheme}>
                         <Input
                           id="create-agent-name"
@@ -862,82 +916,37 @@ export function CreateAgentDialog({
                         />
                       </FormField>
 
-                      <FormField label="Workspace" htmlFor="create-agent-workspace" surfaceTheme={effectiveSurfaceTheme}>
-                        <select
-                          id="create-agent-workspace"
-                          value={draft.workspaceId}
-                          onChange={(event) =>
-                            setDraft((current) => ({
-                              ...current,
-                              workspaceId: event.target.value,
-                              modelId: current.modelId.trim()
-                                ? current.modelId
-                                : resolveSuggestedAgentModelId(snapshot, event.target.value),
-                              channelIds: []
-                            }))
-                          }
-                          style={isLight ? { colorScheme: "light" } : undefined}
+                      <FormField label="Role" htmlFor="create-agent-role" surfaceTheme={effectiveSurfaceTheme}>
+                        <Input
+                          id="create-agent-role"
+                          value={draft.role}
+                          onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value }))}
+                          placeholder={currentPresetMeta.label}
                           className={getCreateAgentControlClassName(effectiveSurfaceTheme)}
-                        >
-                          {snapshot.workspaces.map((workspace) => (
-                            <option key={workspace.id} value={workspace.id}>
-                              {workspace.name}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </FormField>
 
-                      <FormField label="Model" htmlFor="create-agent-model" surfaceTheme={effectiveSurfaceTheme}>
-                        <select
-                          id="create-agent-model"
-                          value={draft.modelId}
-                          onChange={(event) =>
-                            setDraft((current) => ({
-                              ...current,
-                              modelId: event.target.value
-                            }))
-                          }
-                          style={isLight ? { colorScheme: "light" } : undefined}
-                          className={getCreateAgentControlClassName(effectiveSurfaceTheme)}
-                        >
-                          <option value="">
-                            {snapshot.diagnostics.modelReadiness.defaultModelReady
-                              ? "Use OpenClaw default"
-                              : suggestedModelId
-                                ? `Use suggested model (${suggestedModelId})`
-                                : "Choose a model"}
-                          </option>
-                          {snapshot.models.map((model) => {
-                            const modelReady = isSnapshotModelUsable(snapshot, model.id);
-
-                            return (
-                              <option key={model.id} value={model.id}>
-                                {model.id}
-                                {modelReady ? "" : " (not ready)"}
-                              </option>
-                            );
-                          })}
-                        </select>
-                        {selectedModelReadinessMessage ? (
-                          <p className={cn("mt-2 text-[11px] leading-4", isLight ? "text-[#9b5f34]" : "text-amber-200/85")}>
-                            {selectedModelReadinessMessage}
-                          </p>
-                        ) : null}
+                      <FormField label="Mission" htmlFor="create-agent-mission" surfaceTheme={effectiveSurfaceTheme}>
+                        <Textarea
+                          id="create-agent-mission"
+                          value={draft.mission}
+                          onChange={(event) => setDraft((current) => ({ ...current, mission: event.target.value }))}
+                          placeholder="What outcome does this worker own?"
+                          className={cn(getCreateAgentControlClassName(effectiveSurfaceTheme), "min-h-[82px] resize-y")}
+                        />
                       </FormField>
 
-                      <p className={cn("text-[10px] leading-4", isLight ? "text-[#9a8070]" : "text-slate-500")}>
-                        OpenClaw generates the agent id automatically. Review it in the Summary panel.
-                      </p>
-                    </div>
-                  </PanelCard>
+                      <FormField label="Working guidance" htmlFor="create-agent-behavior" surfaceTheme={effectiveSurfaceTheme}>
+                        <Textarea
+                          id="create-agent-behavior"
+                          value={draft.behaviorInstructions}
+                          onChange={(event) => setDraft((current) => ({ ...current, behaviorInstructions: event.target.value }))}
+                          placeholder="Concise instructions specific to this worker."
+                          className={cn(getCreateAgentControlClassName(effectiveSurfaceTheme), "min-h-[82px] resize-y")}
+                        />
+                      </FormField>
 
-                  <PanelCard
-                    title="Visual identity"
-                    description="Emoji and display customization."
-                    surfaceTheme={effectiveSurfaceTheme}
-                  >
-                    <div className="space-y-3.5">
-                      <FormField label="Theme" htmlFor="create-agent-theme" surfaceTheme={effectiveSurfaceTheme}>
+                      <FormField label="Profile theme" htmlFor="create-agent-theme" surfaceTheme={effectiveSurfaceTheme}>
                         <AgentThemePicker
                           value={draft.theme}
                           surfaceTheme={effectiveSurfaceTheme}
@@ -952,7 +961,7 @@ export function CreateAgentDialog({
 
                       <button
                         type="button"
-                        onClick={() => setShowAdvancedIdentity((v) => !v)}
+                        onClick={() => setShowAdvancedIdentity((value) => !value)}
                         className={cn(
                           "inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.16em] transition-colors",
                           isLight ? "text-[#8b7462] hover:text-[#5d4331]" : "text-slate-500 hover:text-slate-300"
@@ -1008,38 +1017,91 @@ export function CreateAgentDialog({
                     </div>
                   </PanelCard>
 
-                  <ChannelBindingPicker
-                    snapshot={snapshot}
-                    workspaceId={draft.workspaceId}
-                    channelIds={draft.channelIds}
-                    isSaving={isSaving}
-                    surfaceTheme={effectiveSurfaceTheme}
-                    onChange={(channelIds) =>
-                      setDraft((current) => ({
-                        ...current,
-                        channelIds
-                      }))
-                    }
-                  />
-
                   <PanelCard
-                    title="Heartbeat and policy"
-                    description="Only override what you need."
+                    title="Work setup"
+                    description="Choose where the worker operates and which capabilities it starts with."
                     surfaceTheme={effectiveSurfaceTheme}
                   >
-                    <div className="space-y-3.5">
+                    <div className="space-y-4">
+                      <div className="grid gap-3.5 sm:grid-cols-2">
+                        <FormField label="Workspace" htmlFor="create-agent-workspace" surfaceTheme={effectiveSurfaceTheme}>
+                          <select
+                            id="create-agent-workspace"
+                            value={draft.workspaceId}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                workspaceId: event.target.value,
+                                modelId: current.modelId.trim()
+                                  ? current.modelId
+                                  : resolveSuggestedAgentModelId(snapshot, event.target.value),
+                                channelIds: []
+                              }))
+                            }
+                            style={isLight ? { colorScheme: "light" } : undefined}
+                            className={getCreateAgentControlClassName(effectiveSurfaceTheme)}
+                          >
+                            {snapshot.workspaces.map((workspace) => (
+                              <option key={workspace.id} value={workspace.id}>
+                                {workspace.name}
+                              </option>
+                            ))}
+                          </select>
+                        </FormField>
+
+                        <FormField label="Model" htmlFor="create-agent-model" surfaceTheme={effectiveSurfaceTheme}>
+                          <select
+                            id="create-agent-model"
+                            value={draft.modelId}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                modelId: event.target.value
+                              }))
+                            }
+                            style={isLight ? { colorScheme: "light" } : undefined}
+                            className={getCreateAgentControlClassName(effectiveSurfaceTheme)}
+                          >
+                            <option value="">
+                              {snapshot.diagnostics.modelReadiness.defaultModelReady
+                                ? "Use OpenClaw default"
+                                : suggestedModelId
+                                  ? `Use suggested model (${suggestedModelId})`
+                                  : "Choose a model"}
+                            </option>
+                            {snapshot.models.map((model) => {
+                              const modelReady = isSnapshotModelUsable(snapshot, model.id);
+
+                              return (
+                                <option key={model.id} value={model.id}>
+                                  {model.id}
+                                  {modelReady ? "" : " (not ready)"}
+                                </option>
+                              );
+                            })}
+                          </select>
+                          {selectedModelReadinessMessage ? (
+                            <p className={cn("mt-2 text-[11px] leading-4", isLight ? "text-[#9b5f34]" : "text-amber-200/85")}>
+                              {selectedModelReadinessMessage}
+                            </p>
+                          ) : null}
+                        </FormField>
+                      </div>
+
+                      <div className={cn("h-px", isLight ? "bg-[#eadfd4]" : "bg-white/10")} />
+
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className={cn("text-sm font-medium", isLight ? "text-[#3f2f24]" : "text-white")}>Heartbeat</p>
-                          <p className={cn("mt-1 text-xs leading-5", isLight ? "text-[#7f6958]" : "text-slate-400")}>
-                            Enable only for periodic watch or triage agents.
+                          <p className={cn("text-[12px] font-medium", isLight ? "text-[#3f2f24]" : "text-white")}>Scheduled check-ins</p>
+                          <p className={cn("mt-1 text-[11px] leading-4", isLight ? "text-[#7f6958]" : "text-slate-400")}>
+                            Enable heartbeat only for workers that should watch, triage, or report periodically.
                           </p>
                         </div>
                         <button
                           type="button"
                           role="switch"
                           aria-checked={draft.heartbeat.enabled}
-                          aria-label="Toggle heartbeat"
+                          aria-label="Toggle scheduled check-ins"
                           onClick={() =>
                             setDraft((current) => ({
                               ...current,
@@ -1073,7 +1135,7 @@ export function CreateAgentDialog({
                       </div>
 
                       {draft.heartbeat.enabled ? (
-                        <FormField label="Interval" htmlFor="create-agent-heartbeat-every" surfaceTheme={effectiveSurfaceTheme}>
+                        <FormField label="Check-in interval" htmlFor="create-agent-heartbeat-every" surfaceTheme={effectiveSurfaceTheme}>
                           <select
                             id="create-agent-heartbeat-every"
                             value={draft.heartbeat.every}
@@ -1098,41 +1160,28 @@ export function CreateAgentDialog({
                         </FormField>
                       ) : null}
 
+                      <CapabilityPreview
+                        skills={draft.skills}
+                        tools={draft.tools}
+                        surfaceTheme={effectiveSurfaceTheme}
+                        description={startPoint === "import"
+                          ? "Declared capabilities copied from the source profile."
+                          : "Declared capabilities included by this role baseline."}
+                      />
+                    </div>
+                  </PanelCard>
+
+                  <PanelCard
+                    title="Access & safety"
+                    description="Separate runtime-enforced boundaries from operating guidance."
+                    surfaceTheme={effectiveSurfaceTheme}
+                  >
+                    <div className="space-y-4">
+                      <PolicyBoundaryNotice surfaceTheme={effectiveSurfaceTheme} />
+
                       <div className="grid gap-3.5 sm:grid-cols-2">
                         <AgentPolicySelect
-                          label="Missing tool behavior"
-                          htmlFor="create-agent-missing-tools"
-                          value={draft.policy.missingToolBehavior}
-                          options={AGENT_MISSING_TOOL_BEHAVIOR_OPTIONS}
-                          surfaceTheme={effectiveSurfaceTheme}
-                          onChange={(value) =>
-                            setDraft((current) => ({
-                              ...current,
-                              policy: {
-                                ...current.policy,
-                                missingToolBehavior: value
-                              }
-                            }))
-                          }
-                        />
-                        <AgentPolicySelect
-                          label="Install scope"
-                          htmlFor="create-agent-install-scope"
-                          value={draft.policy.installScope}
-                          options={AGENT_INSTALL_SCOPE_OPTIONS}
-                          surfaceTheme={effectiveSurfaceTheme}
-                          onChange={(value) =>
-                            setDraft((current) => ({
-                              ...current,
-                              policy: {
-                                ...current.policy,
-                                installScope: value
-                              }
-                            }))
-                          }
-                        />
-                        <AgentPolicySelect
-                          label="File access"
+                          label="File boundary (enforced)"
                           htmlFor="create-agent-file-access"
                           value={draft.policy.fileAccess}
                           options={AGENT_FILE_ACCESS_OPTIONS}
@@ -1147,31 +1196,94 @@ export function CreateAgentDialog({
                             }))
                           }
                         />
-                        <AgentPolicySelect
-                          label="Network access"
-                          htmlFor="create-agent-network-access"
-                          value={draft.policy.networkAccess}
-                          options={AGENT_NETWORK_ACCESS_OPTIONS}
-                          surfaceTheme={effectiveSurfaceTheme}
-                          onChange={(value) =>
-                            setDraft((current) => ({
-                              ...current,
-                              policy: {
-                                ...current.policy,
-                                networkAccess: value
-                              }
-                            }))
-                          }
-                        />
                       </div>
+
+                      <div className={cn("rounded-[18px] border p-3", isLight ? "border-[#e2d5c9] bg-[#faf6f1]" : "border-white/10 bg-white/[0.025]")}>
+                        <div className="mb-3 flex items-start gap-2">
+                          <BriefcaseBusiness className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", isLight ? "text-[#8b6d56]" : "text-violet-200")} />
+                          <div>
+                            <p className={cn("text-[11px] font-medium", isLight ? "text-[#3f2f24]" : "text-slate-100")}>Operating guidance</p>
+                            <p className={cn("mt-1 text-[10px] leading-4", isLight ? "text-[#7b6657]" : "text-slate-400")}>
+                              These choices become agent instructions. They do not grant OS installs, network access, credentials, or tools beyond effective OpenClaw policy.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3.5 sm:grid-cols-2">
+                          <AgentPolicySelect
+                            label="Missing tool response"
+                            htmlFor="create-agent-missing-tools"
+                            value={draft.policy.missingToolBehavior}
+                            options={AGENT_MISSING_TOOL_BEHAVIOR_OPTIONS}
+                            surfaceTheme={effectiveSurfaceTheme}
+                            onChange={(value) =>
+                              setDraft((current) => ({
+                                ...current,
+                                policy: {
+                                  ...current.policy,
+                                  missingToolBehavior: value
+                                }
+                              }))
+                            }
+                          />
+                          <AgentPolicySelect
+                            label="Install guidance"
+                            htmlFor="create-agent-install-scope"
+                            value={draft.policy.installScope}
+                            options={AGENT_INSTALL_SCOPE_OPTIONS}
+                            surfaceTheme={effectiveSurfaceTheme}
+                            onChange={(value) =>
+                              setDraft((current) => ({
+                                ...current,
+                                policy: {
+                                  ...current.policy,
+                                  installScope: value
+                                }
+                              }))
+                            }
+                          />
+                          <AgentPolicySelect
+                            label="Network guidance"
+                            htmlFor="create-agent-network-access"
+                            value={draft.policy.networkAccess}
+                            options={AGENT_NETWORK_ACCESS_OPTIONS}
+                            surfaceTheme={effectiveSurfaceTheme}
+                            onChange={(value) =>
+                              setDraft((current) => ({
+                                ...current,
+                                policy: {
+                                  ...current.policy,
+                                  networkAccess: value
+                                }
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+
+                      <BrowserAccountLimitNotice surfaceTheme={effectiveSurfaceTheme} />
+
+                      <ChannelBindingPicker
+                        snapshot={snapshot}
+                        workspaceId={draft.workspaceId}
+                        channelIds={draft.channelIds}
+                        isSaving={isSaving}
+                        surfaceTheme={effectiveSurfaceTheme}
+                        onChange={(channelIds) =>
+                          setDraft((current) => ({
+                            ...current,
+                            channelIds
+                          }))
+                        }
+                      />
                     </div>
                   </PanelCard>
                 </div>
 
                 <div className="space-y-4">
                   <PanelCard
-                    title="Summary"
-                    description="Review the draft before creating."
+                    title="Profile review"
+                    description="What AgentOS will create for this worker."
                     surfaceTheme={effectiveSurfaceTheme}
                     className="xl:sticky xl:top-4 xl:self-start xl:h-fit"
                   >
@@ -1196,13 +1308,16 @@ export function CreateAgentDialog({
                       </div>
 
                       <div className="flex flex-wrap gap-2">
+                        <Badge variant="default" className="px-2 py-0.5 text-[9px] normal-case tracking-normal">
+                          {currentPresetMeta.label} role
+                        </Badge>
                         <Badge variant="muted" className="px-2 py-0.5 text-[9px] normal-case tracking-normal">
                           {startPoint === "empty"
-                            ? "Empty / Custom"
+                            ? "Custom profile"
                             : startPoint === "preset"
-                              ? `${getAgentPresetMeta(selectedPreset).label} preset`
+                              ? "Role template"
                               : startPoint === "import"
-                                ? "Imported agent"
+                                ? "Cloned profile"
                                 : "Start a flow"}
                         </Badge>
                         <Badge variant="muted" className="px-2 py-0.5 text-[9px] normal-case tracking-normal">
@@ -1210,6 +1325,12 @@ export function CreateAgentDialog({
                         </Badge>
                         <Badge variant={draft.heartbeat.enabled ? "success" : "muted"} className="px-2 py-0.5 text-[9px] normal-case tracking-normal">
                           Heartbeat {draft.heartbeat.enabled ? draft.heartbeat.every : "off"}
+                        </Badge>
+                        <Badge variant="muted" className="px-2 py-0.5 text-[9px] normal-case tracking-normal">
+                          {draft.skills.length} skills · {draft.tools.length} tools
+                        </Badge>
+                        <Badge variant={draft.policy.fileAccess === "workspace-only" ? "success" : "warning"} className="px-2 py-0.5 text-[9px] normal-case tracking-normal">
+                          Files: {draft.policy.fileAccess === "workspace-only" ? "workspace only" : "extended"}
                         </Badge>
                       </div>
 
@@ -1255,18 +1376,26 @@ function buildImportedAgentDraft(
   sourceAgent: MissionControlSnapshot["agents"][number],
   channelIds: string[]
 ): AgentDraft {
+  const capabilities = normalizeAgentDraftCapabilities(sourceAgent.skills, sourceAgent.tools);
+
   return buildAgentDraft(workspaceId, {
     modelId: sourceAgent.modelId === "unassigned" ? "" : sourceAgent.modelId,
     name: formatAgentDisplayName(sourceAgent),
     emoji: sourceAgent.identity.emoji ?? "",
     theme: sourceAgent.identity.theme ?? "",
     avatar: sourceAgent.identity.avatar ?? "",
+    role: sourceAgent.workerProfile?.employment.role ?? sourceAgent.policy.preset,
+    mission: sourceAgent.workerProfile?.employment.mission ?? sourceAgent.profile.purpose ?? "",
+    behaviorInstructions: sourceAgent.workerProfile?.employment.behaviorInstructions ?? "",
+    labels: sourceAgent.workerProfile?.operator.labels ?? [],
     policy: sourceAgent.policy,
     heartbeat: resolveHeartbeatDraft(sourceAgent.policy.preset, {
       enabled: sourceAgent.heartbeat.enabled,
       every: sourceAgent.heartbeat.every ?? undefined
     }),
-    channelIds
+    channelIds,
+    skills: capabilities.skills,
+    tools: capabilities.tools
   });
 }
 
@@ -1276,14 +1405,14 @@ function getWizardStepLabels(startPoint: StartPoint | null) {
   }
 
   if (startPoint === "empty") {
-    return ["Start", "Details"];
+    return ["Start", "Profile"];
   }
 
   if (startPoint === "preset") {
-    return ["Start", "Preset", "Details"];
+    return ["Start", "Template", "Profile"];
   }
 
-  return ["Start", "Import", "Details"];
+  return ["Start", "Clone", "Profile"];
 }
 
 function getWizardActiveStepIndex(startPoint: StartPoint | null, stage: WizardStage) {
@@ -1321,38 +1450,38 @@ function getCanAdvanceFromStage(
 function getWizardStageHint(startPoint: StartPoint | null, stage: WizardStage) {
   if (stage === "start") {
     if (startPoint === "empty") {
-      return "Empty / Custom is selected. Continue to details.";
+      return "Custom profile selected. Continue to shape the worker.";
     }
 
     if (startPoint === "preset") {
-      return "Preset Library is selected. Click Next to browse presets.";
+      return "Role templates selected. Continue to choose a baseline.";
     }
 
     if (startPoint === "import") {
-      return "Import Agent is selected. Click Next to choose a source agent.";
+      return "Clone profile selected. Continue to choose a source worker.";
     }
 
-    return "Choose a starting point.";
+    return "Choose how to shape this digital employee.";
   }
 
   if (stage === "preset") {
-    return "Pick a preset. Details come next.";
+    return "Choose a role baseline, then review the full Worker Profile.";
   }
 
   if (stage === "import") {
-    return "Select an existing agent to clone.";
+    return "Select an existing Worker Profile to clone.";
   }
 
   if (startPoint === "empty") {
-    return "Custom baseline loaded. Finish the details and create it.";
+    return "Define the role, work setup, and access posture.";
   }
 
   if (startPoint === "preset") {
-    return "Preset baseline loaded. Finish the details and create it.";
+    return "Template loaded. Review the role, work setup, and access posture.";
   }
 
   if (startPoint === "import") {
-    return "Imported baseline loaded. Review and create.";
+    return "Cloned baseline loaded. Review every field before creation.";
   }
 
   return "";
@@ -1661,7 +1790,7 @@ function ImportAgentCard({
 
       <div className="mt-3.5 flex items-center justify-between gap-3">
         <span className={cn("text-[10px] uppercase tracking-[0.16em]", isLight ? "text-[#8b7462]" : "text-slate-500")}>
-          Import this agent as a new draft
+          Clone as a new Worker Profile
         </span>
         <span className={cn("inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em]", isLight ? "text-[#7f6958]" : "text-slate-400")}>
           Select
@@ -1669,6 +1798,213 @@ function ImportAgentCard({
         </span>
       </div>
     </button>
+  );
+}
+
+function WorkerRoleBaseline({
+  emoji,
+  label,
+  description,
+  surfaceTheme
+}: {
+  emoji: string;
+  label: string;
+  description: string;
+  surfaceTheme: SurfaceTheme;
+}) {
+  const isLight = surfaceTheme === "light";
+
+  return (
+    <div
+      className={cn(
+        "rounded-[18px] border p-3",
+        isLight
+          ? "border-[#e2d5c9] bg-[#faf6f1]"
+          : "border-white/10 bg-white/[0.03]"
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <span
+          className={cn(
+            "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border text-[15px]",
+            isLight ? "border-[#ded0c2] bg-white text-[#7b604c]" : "border-white/10 bg-white/5"
+          )}
+        >
+          {emoji}
+        </span>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className={cn("text-[12px] font-medium", isLight ? "text-[#3f2f24]" : "text-slate-100")}>
+              {label} role baseline
+            </p>
+            <Badge variant="muted" className="px-2 py-0.5 text-[9px] normal-case tracking-normal">
+              Worker Profile
+            </Badge>
+          </div>
+          <p className={cn("mt-1 text-[10px] leading-4", isLight ? "text-[#7b6657]" : "text-slate-400")}>
+            {description}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CapabilityPreview({
+  skills,
+  tools,
+  description,
+  surfaceTheme
+}: {
+  skills: string[];
+  tools: string[];
+  description?: string;
+  surfaceTheme: SurfaceTheme;
+}) {
+  const isLight = surfaceTheme === "light";
+
+  return (
+    <div
+      className={cn(
+        "rounded-[18px] border p-3",
+        isLight
+          ? "border-[#e2d5c9] bg-[#fffdf9]"
+          : "border-white/10 bg-white/[0.025]"
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className={cn("text-[11px] font-medium", isLight ? "text-[#3f2f24]" : "text-slate-100")}>
+            Skills &amp; tools preview
+          </p>
+          {description ? (
+            <p className={cn("mt-1 text-[10px] leading-4", isLight ? "text-[#7b6657]" : "text-slate-400")}>
+              {description}
+            </p>
+          ) : null}
+        </div>
+        <Badge variant="muted" className="shrink-0 px-2 py-0.5 text-[9px] normal-case tracking-normal">
+          {skills.length + tools.length} declared
+        </Badge>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <CapabilityGroup
+          icon={BrainCircuit}
+          label="Skills"
+          values={skills}
+          emptyLabel="No preset skills"
+          surfaceTheme={surfaceTheme}
+        />
+        <CapabilityGroup
+          icon={Wrench}
+          label="Tools"
+          values={tools}
+          emptyLabel="No declared tools"
+          surfaceTheme={surfaceTheme}
+        />
+      </div>
+
+      <p className={cn("mt-3 text-[9px] leading-4", isLight ? "text-[#9a8070]" : "text-slate-500")}>
+        Skills are configured for this agent. Tool names describe the profile; actual availability comes from effective OpenClaw policy and the running environment.
+      </p>
+    </div>
+  );
+}
+
+function CapabilityGroup({
+  icon: Icon,
+  label,
+  values,
+  emptyLabel,
+  surfaceTheme
+}: {
+  icon: LucideIcon;
+  label: string;
+  values: string[];
+  emptyLabel: string;
+  surfaceTheme: SurfaceTheme;
+}) {
+  const isLight = surfaceTheme === "light";
+
+  return (
+    <div className="min-w-0">
+      <div className={cn("flex items-center gap-1.5 text-[9px] uppercase tracking-[0.16em]", isLight ? "text-[#8b7462]" : "text-slate-500")}>
+        <Icon className="h-3 w-3" />
+        <span>{label}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {values.length > 0 ? (
+          values.map((value) => (
+            <span
+              key={value}
+              className={cn(
+                "max-w-full break-all rounded-full border px-2 py-1 font-mono text-[9px] leading-3",
+                isLight
+                  ? "border-[#e1d5c8] bg-[#fbf7f2] text-[#6f5747]"
+                  : "border-white/10 bg-white/5 text-slate-300"
+              )}
+            >
+              {value}
+            </span>
+          ))
+        ) : (
+          <span className={cn("text-[10px]", isLight ? "text-[#9a8070]" : "text-slate-500")}>{emptyLabel}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PolicyBoundaryNotice({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
+  const isLight = surfaceTheme === "light";
+
+  return (
+    <div
+      className={cn(
+        "rounded-[18px] border p-3",
+        isLight
+          ? "border-emerald-200 bg-emerald-50/80 text-emerald-950"
+          : "border-emerald-300/15 bg-emerald-400/[0.06] text-emerald-50"
+      )}
+    >
+      <div className="flex items-start gap-2">
+        <ShieldCheck className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", isLight ? "text-emerald-700" : "text-emerald-200")} />
+        <div>
+          <p className="text-[11px] font-medium">OpenClaw-enforced boundary</p>
+          <p className={cn("mt-1 text-[10px] leading-4", isLight ? "text-emerald-900/75" : "text-emerald-100/70")}>
+            Workspace-only file access is compiled to OpenClaw&apos;s filesystem restriction. Extended access only removes that profile restriction; host and sandbox controls still apply.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BrowserAccountLimitNotice({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
+  const isLight = surfaceTheme === "light";
+
+  return (
+    <div
+      className={cn(
+        "rounded-[18px] border p-3",
+        isLight
+          ? "border-[#e2d5c9] bg-[#faf6f1] text-[#6f5849]"
+          : "border-white/10 bg-white/[0.03] text-slate-400"
+      )}
+    >
+      <div className="flex items-start gap-2">
+        <LockKeyhole className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", isLight ? "text-[#8b6d56]" : "text-amber-200")} />
+        <div>
+          <p className={cn("text-[11px] font-medium", isLight ? "text-[#3f2f24]" : "text-slate-100")}>
+            Accounts &amp; browser sessions stay separate
+          </p>
+          <p className="mt-1 text-[10px] leading-4">
+            Creating or cloning this profile never copies credentials, signs the worker into a browser, or assigns a browser profile. Eligible accounts are selected separately for supported tasks.
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1688,10 +2024,10 @@ function AgentRootContextNotice({ surfaceTheme }: { surfaceTheme: SurfaceTheme }
         <FileText className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", isLight ? "text-[#8b6d56]" : "text-cyan-200")} />
         <div className="min-w-0">
           <p className={cn("text-[12px] font-medium", isLight ? "text-[#3f2f24]" : "text-slate-100")}>
-            Workspace-root context
+            Profile &amp; runtime context
           </p>
           <p className="mt-1">
-            This agent profile is written to the workspace root <code>AGENTS.md</code>. OpenClaw loads that file as shared runtime context.
+            AgentOS saves profile metadata and compiles operating behavior into agent-specific instructions. Workspace <code>AGENTS.md</code> remains shared context and may include a concise role summary.
           </p>
         </div>
       </div>

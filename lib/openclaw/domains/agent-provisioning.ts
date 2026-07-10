@@ -251,6 +251,7 @@ export async function ensureAgentPolicySkill(params: {
   agentId: string;
   agentName: string;
   policy: AgentPolicy;
+  behaviorInstructions?: string | null;
   setupAgentId?: string | null;
   snapshot?: MissionControlSnapshot;
   channelRegistry?: ChannelRegistry;
@@ -273,7 +274,14 @@ export async function ensureAgentPolicySkill(params: {
   await measureTiming(params.timings, "agent-policy.write-skill", () =>
     writeTextFileEnsured(
       path.join(params.workspacePath, "skills", skillId, "SKILL.md"),
-      `${renderAgentPolicySkillMarkdown(params.agentName, params.policy, params.setupAgentId, team, coordination)}\n`
+      `${renderAgentPolicySkillMarkdown(
+        params.agentName,
+        params.policy,
+        params.setupAgentId,
+        team,
+        coordination,
+        params.behaviorInstructions
+      )}\n`
     )
   );
   return skillId;
@@ -663,11 +671,13 @@ function renderAgentPolicySkillMarkdown(
   policy: AgentPolicy,
   setupAgentId?: string | null,
   team?: WorkspaceTeamContext | null,
-  coordination?: TelegramCoordinationContext | null
+  coordination?: TelegramCoordinationContext | null,
+  behaviorInstructions?: string | null
 ) {
   const presetLabel = formatAgentPresetLabel(policy.preset);
   const teamSection = renderWorkspaceTeamMarkdown(team);
   const coordinationSection = renderTelegramCoordinationMarkdown(coordination);
+  const behavior = normalizeOptionalValue(behaviorInstructions);
 
   return `# ${agentName} Policy
 
@@ -682,7 +692,7 @@ Preset: ${presetLabel}
 ## Operating rules
 ${buildAgentPolicyPromptLines(policy, setupAgentId)
   .map((line) => line.replace(/^- /, "- "))
-  .join("\n")}
+  .join("\n")}${behavior ? `\n\n## Profile instructions\n${behavior}` : ""}
 ${teamSection ? `\n\n${teamSection}` : ""}${coordinationSection ? `\n\n${coordinationSection}` : ""}
 `;
 }

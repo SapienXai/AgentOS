@@ -13,9 +13,7 @@ import {
   FolderGit2,
   FolderKanban,
   Lock,
-  Maximize2,
   MessageSquareText,
-  Minimize2,
   MoreHorizontal,
   Radar,
   Pencil,
@@ -104,7 +102,7 @@ type InspectorPanelProps = {
   collapsed: boolean;
   onToggleCollapsed: () => void;
   detailExpanded: boolean;
-  onToggleDetail: () => void;
+  onExpandDetail: () => void;
   onSelectScope: (scope: InspectorScopeShortcut) => void;
   activeTab: "overview" | "chat" | "output" | "files" | "raw";
   onActiveTabChange: (tab: "overview" | "chat" | "output" | "files" | "raw") => void;
@@ -150,7 +148,7 @@ function InspectorPanelContent({
   collapsed,
   onToggleCollapsed,
   detailExpanded,
-  onToggleDetail,
+  onExpandDetail,
   onSelectScope,
   activeTab,
   onActiveTabChange
@@ -365,18 +363,9 @@ function InspectorPanelContent({
                 <div className="flex shrink-0 items-center gap-1">
                   <button
                     type="button"
-                    aria-label={detailExpanded ? "Use compact inspector" : "Expand inspector details"}
-                    aria-pressed={detailExpanded}
-                    onClick={onToggleDetail}
-                    className={cn("flex h-8 w-8 items-center justify-center rounded-[9px] border transition-colors", surfaceTone.subtleButton)}
-                  >
-                    {detailExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-                  </button>
-                  <button
-                    type="button"
                     aria-label="Open debug data"
                     onClick={() => {
-                      if (!detailExpanded) onToggleDetail();
+                      if (!detailExpanded) onExpandDetail();
                       onActiveTabChange("raw");
                     }}
                     className={cn("flex h-8 w-8 items-center justify-center rounded-[9px] border transition-colors", surfaceTone.subtleButton)}
@@ -434,7 +423,7 @@ function InspectorPanelContent({
                         runtimeOutputLoading={runtimeOutputLoading}
                         onOpenActivity={() => onActiveTabChange("output")}
                         onOpenChat={() => onActiveTabChange("chat")}
-                        onOpenDetail={onToggleDetail}
+                        onOpenDetail={onExpandDetail}
                         onReviewTask={onReviewTask}
                         onAbortTask={onAbortTask}
                         onControlComplete={onRefresh}

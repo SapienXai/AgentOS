@@ -4,7 +4,7 @@ import {
   EyeOff,
   RefreshCw,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
 import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
@@ -13,6 +13,12 @@ import { CommandBar } from "@/components/mission-control/command-bar";
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
 import { ContextEngineDialog } from "@/components/mission-control/context-engine-dialog";
 import { InspectorPanel } from "@/components/mission-control/inspector-panel";
+import {
+  clampInspectorWidth,
+  inspectorCompactWidth,
+  inspectorDetailWidth,
+  isInspectorDetailWidth
+} from "@/components/mission-control/inspector-resize";
 import { MissionControlShellDialogs } from "@/components/mission-control/mission-control-shell.dialogs";
 import { OpenClawOnboarding } from "@/components/mission-control/openclaw-onboarding";
 import type { ModelSwitchFeedback } from "@/components/mission-control/openclaw-onboarding.stages";
@@ -269,12 +275,50 @@ export function MissionControlShell({
   const [agentCreationWarnings, setAgentCreationWarnings] = useState<Record<string, string>>({});
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
-  const [isInspectorDetailExpanded, setIsInspectorDetailExpanded] = useState(false);
+  const [inspectorWidth, setInspectorWidth] = useState(inspectorCompactWidth);
+  const [isResizingInspector, setIsResizingInspector] = useState(false);
+  const inspectorResizeCleanupRef = useRef<(() => void) | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const isInspectorDetailExpanded = isInspectorDetailWidth(inspectorWidth);
 
-  useEffect(() => {
-    setIsInspectorDetailExpanded(false);
-  }, [selectedNodeId]);
+  const updateInspectorWidth = useCallback((nextWidth: number) => {
+    setInspectorWidth(clampInspectorWidth(nextWidth, window.innerWidth));
+  }, []);
+
+  const startInspectorResize = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    inspectorResizeCleanupRef.current?.();
+    setIsResizingInspector(true);
+
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handlePointerMove = (pointerEvent: PointerEvent) => {
+      updateInspectorWidth(window.innerWidth - pointerEvent.clientX);
+    };
+    const finishResize = () => {
+      document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerup", finishResize);
+      document.removeEventListener("pointercancel", finishResize);
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      inspectorResizeCleanupRef.current = null;
+      setIsResizingInspector(false);
+    };
+
+    inspectorResizeCleanupRef.current = finishResize;
+    document.addEventListener("pointermove", handlePointerMove);
+    document.addEventListener("pointerup", finishResize);
+    document.addEventListener("pointercancel", finishResize);
+  }, [updateInspectorWidth]);
+
+  useEffect(() => () => inspectorResizeCleanupRef.current?.(), []);
   const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
   const {
     resetDialogTarget,
@@ -3973,12 +4017,9 @@ export function MissionControlShell({
         className={cn(
           "pointer-events-none absolute top-0 z-40 hidden lg:block",
           isSidebarOpen ? "lg:left-[316px]" : "lg:left-[80px]",
-          isInspectorOpen
-            ? isInspectorDetailExpanded
-              ? "lg:right-[552px]"
-              : "lg:right-[412px]"
-            : "lg:right-[76px]"
+          !isInspectorOpen && "lg:right-[76px]"
         )}
+        style={isInspectorOpen ? { right: `${inspectorWidth + 32}px` } : undefined}
       >
         <MissionControlCanvasTopBar
           settingsRef={settingsRef}
@@ -4071,14 +4112,53 @@ export function MissionControlShell({
 
         <div
           className={cn(
-            "pointer-events-auto absolute right-0 top-0 z-30 h-[100dvh] overflow-visible mission-ease-smooth transition-[width] duration-500",
+            "pointer-events-auto absolute right-0 top-0 z-30 h-[100dvh] overflow-visible mission-ease-smooth",
             isInspectorOpen
-              ? isInspectorDetailExpanded
-                ? "w-[calc(100vw-52px)] max-w-[520px] lg:w-[520px] lg:max-w-none"
-                : "w-[calc(100vw-52px)] max-w-[380px] lg:w-[380px] lg:max-w-none"
-              : "w-[52px]"
+              ? cn(
+                  "w-[calc(100vw-52px)] max-w-[calc(100vw-52px)] lg:w-[var(--inspector-width)] lg:max-w-none",
+                  isResizingInspector ? "transition-none" : "transition-[width] duration-200"
+                )
+              : "w-[52px] transition-[width] duration-300"
           )}
+          style={{ "--inspector-width": `${inspectorWidth}px` } as CSSProperties}
         >
+          {isInspectorOpen ? (
+            <button
+              type="button"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize inspector"
+              aria-valuemin={340}
+              aria-valuemax={720}
+              aria-valuenow={inspectorWidth}
+              title="Drag to resize inspector. Use Left and Right arrow keys for precise resizing."
+              onPointerDown={startInspectorResize}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  updateInspectorWidth(inspectorWidth + 24);
+                } else if (event.key === "ArrowRight") {
+                  event.preventDefault();
+                  updateInspectorWidth(inspectorWidth - 24);
+                } else if (event.key === "Home") {
+                  event.preventDefault();
+                  updateInspectorWidth(340);
+                } else if (event.key === "End") {
+                  event.preventDefault();
+                  updateInspectorWidth(720);
+                }
+              }}
+              className={cn(
+                "group absolute -left-2 top-0 z-50 hidden h-full w-4 cursor-col-resize touch-none outline-none lg:block",
+                "focus-visible:bg-cyan-300/10"
+              )}
+            >
+              <span className={cn(
+                "absolute bottom-4 left-1/2 top-4 w-px -translate-x-1/2 rounded-full transition-colors",
+                isResizingInspector ? "bg-cyan-300" : "bg-transparent group-hover:bg-cyan-200/55 group-focus-visible:bg-cyan-300"
+              )} />
+            </button>
+          ) : null}
           <InspectorPanel
             snapshot={uiSnapshot}
             surfaceTheme={surfaceTheme}
@@ -4100,7 +4180,7 @@ export function MissionControlShell({
             onAbortTask={requestTaskAbort}
             onReviewTask={openTaskReview}
             detailExpanded={isInspectorDetailExpanded}
-            onToggleDetail={() => setIsInspectorDetailExpanded((current) => !current)}
+            onExpandDetail={() => setInspectorWidth((current) => Math.max(current, inspectorDetailWidth))}
           />
         </div>
 

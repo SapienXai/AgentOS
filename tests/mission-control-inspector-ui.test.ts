@@ -5,6 +5,11 @@ import {
   resolveInspectorSummaryAction,
   resolveInspectorSurfaceTone
 } from "@/components/mission-control/inspector-visuals";
+import {
+  clampInspectorWidth,
+  inspectorDetailWidth,
+  isInspectorDetailWidth
+} from "@/components/mission-control/inspector-resize";
 
 test("inspector visual tones provide distinct light and dark compact surfaces", () => {
   const light = resolveInspectorSurfaceTone("light");
@@ -24,4 +29,13 @@ test("inspector summary actions preserve task status priority", () => {
   assert.equal(resolveInspectorSummaryAction({ entity: "task", status: "completed" }), "view-result");
   assert.equal(resolveInspectorSummaryAction({ entity: "agent" }), "open-chat");
   assert.equal(resolveInspectorSummaryAction({ entity: "runtime" }), "view-activity");
+});
+
+test("inspector width stays within the usable canvas range", () => {
+  assert.equal(clampInspectorWidth(120, 1440), 340);
+  assert.equal(clampInspectorWidth(1000, 1440), 720);
+  assert.equal(clampInspectorWidth(520, 1440), inspectorDetailWidth);
+  assert.equal(clampInspectorWidth(720, 420), 340);
+  assert.equal(isInspectorDetailWidth(459), false);
+  assert.equal(isInspectorDetailWidth(460), true);
 });
