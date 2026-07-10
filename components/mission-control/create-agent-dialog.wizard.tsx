@@ -563,12 +563,13 @@ export function CreateAgentDialog({
       open={open}
       onOpenChange={handleOpenChange}
       surfaceTheme={surfaceTheme}
+      variant="worker-profile"
       trigger={trigger}
       title="Create Worker Profile"
       description={stage === "start" ? "Choose how to shape this digital employee." : getWizardStageHint(startPoint, stage)}
       icon={Bot}
       chips={
-        <MissionControlDialogChip tone={stage === "details" ? "violet" : "muted"}>
+        <MissionControlDialogChip tone={stage === "details" ? "violet" : "muted"} surfaceTheme={surfaceTheme}>
           Step {activeStepIndex + 1} / {stepLabels.length} · {stepLabels[activeStepIndex] ?? "Start"}
         </MissionControlDialogChip>
       }
@@ -577,7 +578,7 @@ export function CreateAgentDialog({
           <WizardStepper labels={stepLabels} activeIndex={activeStepIndex} surfaceTheme={effectiveSurfaceTheme} onStepClick={handleStepClick} />
         ) : null
       }
-      bodyClassName="px-4 py-3.5"
+      bodyClassName="px-4 py-3 sm:px-5 sm:py-4"
       disableOutsideDismiss
       footer={
         <div className="flex w-full flex-col gap-2">
@@ -595,7 +596,7 @@ export function CreateAgentDialog({
               size="sm"
               onClick={() => handleOpenChange(false)}
               disabled={isSaving}
-              className={missionControlDialogButtonClassName("secondary")}
+              className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-9 rounded-xl px-4")}
             >
               Cancel
             </Button>
@@ -608,7 +609,7 @@ export function CreateAgentDialog({
                   size="sm"
                   onClick={handleBack}
                   disabled={isSaving}
-                  className={missionControlDialogButtonClassName("secondary")}
+                  className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-9 rounded-xl px-4")}
                 >
                   Back
                 </Button>
@@ -619,7 +620,7 @@ export function CreateAgentDialog({
                 size="sm"
                 onClick={handlePrimaryAction}
                 disabled={!canAdvanceFromCurrentStage}
-                className={missionControlDialogButtonClassName("primary")}
+                className={cn(missionControlDialogButtonClassName("primary", surfaceTheme), "h-9 rounded-xl px-4")}
               >
                 {stage === "details" ? (
                   isSaving ? (
@@ -646,8 +647,29 @@ export function CreateAgentDialog({
       }
     >
             {stage === "start" ? (
-              <div className="mx-auto flex w-full max-w-[840px] flex-col gap-3 pt-8 md:pt-12">
-                <div className="grid w-full gap-3 md:grid-cols-3 lg:gap-3.5">
+              <div className="mx-auto flex w-full max-w-[980px] flex-col gap-3 py-1 md:py-2">
+                <div className={cn(
+                  "relative overflow-hidden rounded-[22px] border px-5 py-4 sm:px-6 sm:py-5",
+                  isLight
+                    ? "border-[#e4d7cb] bg-[radial-gradient(circle_at_88%_8%,rgba(200,158,115,0.20),transparent_29%),linear-gradient(135deg,#fffdf9,#f8f0e8)] shadow-[0_20px_54px_rgba(140,102,72,0.10)]"
+                    : "border-violet-300/18 bg-[radial-gradient(circle_at_88%_8%,rgba(168,85,247,0.22),transparent_29%),radial-gradient(circle_at_8%_100%,rgba(34,211,238,0.10),transparent_27%),linear-gradient(135deg,rgba(25,18,48,0.76),rgba(9,13,25,0.84))] shadow-[0_18px_54px_rgba(0,0,0,0.22)]"
+                )}>
+                  <div className="pointer-events-none absolute -right-12 -top-14 h-48 w-48 rounded-full border border-violet-300/20" />
+                  <div className="relative max-w-2xl">
+                    <div className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]", isLight ? "border-[#d8c1ac] bg-white/75 text-[#765640]" : "border-violet-300/25 bg-violet-400/10 text-violet-100")}>
+                      <Sparkles className="h-3 w-3" />
+                      Build a digital employee
+                    </div>
+                    <h2 className={cn("mt-3 font-display text-[22px] font-semibold tracking-[-0.035em] sm:text-[26px]", isLight ? "text-[#302219]" : "text-white")}>
+                      Start with the right foundation.
+                    </h2>
+                    <p className={cn("mt-2 max-w-xl text-xs leading-5", isLight ? "text-[#765f4f]" : "text-slate-300")}>
+                      Choose how this worker begins. You will review every meaningful setting before AgentOS creates it in OpenClaw.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid w-full gap-3 md:grid-cols-3">
                   <StartPointCard
                     icon={Plus}
                     title="Custom profile"
@@ -677,9 +699,10 @@ export function CreateAgentDialog({
                   />
                 </div>
 
-                <p className={cn("max-w-[760px] text-center text-[10px] leading-4", isLight ? "text-[#8c7664]" : "text-slate-500")}>
-                  Templates and cloning prefill a Worker Profile so you only adjust what changes for this employee.
-                </p>
+                <div className={cn("flex flex-col gap-1.5 rounded-xl border px-3 py-2 text-[11px] leading-4 sm:flex-row sm:items-center sm:justify-between", isLight ? "border-[#e5d9ce] bg-white/70 text-[#7c6554]" : "border-white/[0.08] bg-white/[0.025] text-slate-400")}>
+                  <span>Templates and cloning only prefill supported Worker Profile settings.</span>
+                  <span className={cn("shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em]", isLight ? "text-[#8a6b53]" : "text-violet-200")}>Safe baseline first</span>
+                </div>
               </div>
             ) : stage === "preset" ? (
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
@@ -1587,16 +1610,16 @@ function PanelCard({
   const isLight = surfaceTheme === "light";
 
   return (
-    <section className={missionControlDialogPanelClassName(cn("p-3.5", className))}>
+    <section className={missionControlDialogPanelClassName(cn("rounded-[18px] p-4", className))}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className={cn("text-[13px] font-medium", isLight ? "text-[#3f2f24]" : "text-white")}>{title}</p>
+          <p className={cn("text-[13px] font-semibold tracking-[-0.01em]", isLight ? "text-[#3f2f24]" : "text-white")}>{title}</p>
           {description ? (
             <p className={cn("mt-1 text-[11px] leading-4", isLight ? "text-[#7f6958]" : "text-slate-400")}>{description}</p>
           ) : null}
         </div>
       </div>
-      <div className="mt-3 min-w-0">{children}</div>
+      <div className="mt-3.5 min-w-0">{children}</div>
     </section>
   );
 }
@@ -1626,24 +1649,24 @@ function StartPointCard({
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "flex min-h-[220px] w-full flex-col rounded-[10px] border p-3.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 md:max-w-[248px]",
+        "group relative flex min-h-[185px] w-full flex-col overflow-hidden rounded-[18px] border p-4 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2",
         isLight
           ? "focus-visible:ring-[#c89e73]/30"
           : "focus-visible:ring-cyan-300/40",
         selected
           ? isLight
-            ? "border-[#d7c1ae] bg-[#fdf7ef] shadow-[0_14px_28px_rgba(161,125,101,0.08)]"
-            : "border-cyan-300/30 bg-cyan-400/10 shadow-[0_0_0_1px_rgba(34,211,238,0.1)]"
+            ? "border-[#cda781] bg-[#fff8ef] shadow-[0_18px_44px_rgba(161,125,101,0.15)]"
+            : "border-violet-300/35 bg-violet-400/10 shadow-[0_0_0_1px_rgba(167,139,250,0.12),0_18px_44px_rgba(0,0,0,0.18)]"
           : isLight
-            ? "border-[#e7dbcf] bg-[rgba(255,252,247,0.9)] shadow-[0_10px_24px_rgba(161,125,101,0.05)] hover:border-[#d9c7b8] hover:bg-[#fffdf9]"
-            : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]"
+            ? "border-[#e7dbcf] bg-[rgba(255,252,247,0.9)] shadow-[0_10px_24px_rgba(161,125,101,0.05)] hover:-translate-y-0.5 hover:border-[#d1b69e] hover:bg-[#fffdf9]"
+            : "border-white/10 bg-white/[0.03] hover:-translate-y-0.5 hover:border-violet-300/28 hover:bg-violet-400/[0.06]"
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div
           className={cn(
-            "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[18px] border",
-            isLight ? "border-[#e0d3c6] bg-[#faf6f0] text-[#7a5f4c]" : "border-white/10 bg-white/5 text-white"
+            "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border",
+            isLight ? "border-[#e0d3c6] bg-[#faf6f0] text-[#7a5f4c]" : "border-violet-300/18 bg-violet-400/10 text-violet-100"
           )}
         >
           <Icon className="h-[17px] w-[17px]" />
@@ -1663,12 +1686,12 @@ function StartPointCard({
         </Badge>
       </div>
 
-      <div className="mt-6 space-y-1.5">
-        <p className={cn("text-[15px] font-medium leading-5", isLight ? "text-[#413126]" : "text-white")}>{title}</p>
-        <p className={cn("text-[12px] leading-5", isLight ? "text-[#8a7463]" : "text-slate-400")}>{description}</p>
+      <div className="mt-5 space-y-1.5">
+        <p className={cn("text-sm font-semibold tracking-[-0.015em]", isLight ? "text-[#413126]" : "text-white")}>{title}</p>
+        <p className={cn("text-[11px] leading-4", isLight ? "text-[#8a7463]" : "text-slate-400")}>{description}</p>
       </div>
 
-      <div className="mt-auto pt-6">
+      <div className="mt-auto border-t border-current/10 pt-3.5">
         <div className="flex items-center justify-between gap-3">
           <span className={cn("max-w-[116px] text-[9px] uppercase leading-[1.35] tracking-[0.2em]", isLight ? "text-[#9a8572]" : "text-slate-500")}>
             {helper}

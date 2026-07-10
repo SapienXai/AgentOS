@@ -62,7 +62,7 @@ export function AgentPresetCard({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "flex h-full min-h-[200px] min-w-0 flex-col justify-between rounded-[24px] border p-4 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 snap-start",
+        "flex h-full min-h-[156px] min-w-0 flex-col justify-between rounded-[18px] border p-3.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 snap-start",
         isLight
           ? "border-[#e3d7cc] bg-white/92 shadow-[0_16px_34px_rgba(161,125,101,0.08)] focus-visible:ring-[#c89e73]/30 hover:border-[#d3c0b2] hover:bg-white"
           : "border-white/10 bg-white/[0.03] shadow-[0_12px_28px_rgba(0,0,0,0.22)] focus-visible:ring-cyan-300/40 hover:border-white/20 hover:bg-white/[0.05]",
@@ -72,22 +72,22 @@ export function AgentPresetCard({
             : "border-cyan-300/30 bg-cyan-400/10 shadow-[0_0_0_1px_rgba(34,211,238,0.08)]")
       )}
     >
-      <div className="space-y-3">
+      <div className="space-y-2">
         <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
+          <div className="flex min-w-0 items-start gap-2.5">
             <span
               className={cn(
-                "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border text-[15px]",
+                "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border text-[14px]",
                 isLight ? "border-[#ded0c2] bg-[#faf5ef] text-[#7b604c]" : "border-white/10 bg-white/5 text-white"
               )}
             >
               {meta.defaultEmoji ?? <Sparkles className="h-4 w-4" />}
             </span>
             <div className="min-w-0">
-              <p className={cn("line-clamp-2 break-words text-[14px] font-semibold leading-5", isLight ? "text-[#2f2016]" : "text-white")}>
+              <p className={cn("line-clamp-2 break-words text-[13px] font-semibold leading-4", isLight ? "text-[#2f2016]" : "text-white")}>
                 {meta.label}
               </p>
-              <p className={cn("mt-1 line-clamp-3 text-[12px] leading-5", isLight ? "text-[#6d5849]" : "text-slate-400")}>
+              <p className={cn("mt-1 line-clamp-2 text-[11px] leading-4", isLight ? "text-[#6d5849]" : "text-slate-400")}>
                 {meta.description}
               </p>
             </div>

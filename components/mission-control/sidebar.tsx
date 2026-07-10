@@ -153,6 +153,7 @@ type MissionSidebarProps = {
   pendingCreatedAgents?: PendingAgentProjection[];
   onAgentCreationPending?: (agent: PendingAgentProjection) => void;
   onAgentCreatedVisible?: (agentId: string) => void;
+  onAgentActionModalOpenChange?: (open: boolean) => void;
   settingsMode?: boolean;
 };
 
@@ -206,7 +207,8 @@ export function MissionSidebar({
   onSnapshotChange,
   pendingCreatedAgents = [],
   onAgentCreationPending,
-  onAgentCreatedVisible
+  onAgentCreatedVisible,
+  onAgentActionModalOpenChange
 }: MissionSidebarProps) {
   const pathname = usePathname();
   const [activeHash, setActiveHash] = useState("");
@@ -278,6 +280,7 @@ export function MissionSidebar({
 
   const handleEditAgentOpenChange = (nextOpen: boolean) => {
     setIsEditAgentOpen(nextOpen);
+    onAgentActionModalOpenChange?.(nextOpen);
 
     if (!nextOpen) {
       setEditDraft(null);
@@ -308,14 +311,16 @@ export function MissionSidebar({
     });
     setEditChannelIdsBaseline(nextChannelIds);
     setIsEditAgentAdvancedOpen(false);
+    onAgentActionModalOpenChange?.(true);
     setIsEditAgentOpen(true);
-  }, [snapshot]);
+  }, [onAgentActionModalOpenChange, snapshot]);
 
   const openDeleteAgent = useCallback((agent: MissionControlSnapshot["agents"][number]) => {
     setAgentDeleteTarget(agent);
     setAgentDeleteConfirmText("");
+    onAgentActionModalOpenChange?.(true);
     setIsDeleteAgentOpen(true);
-  }, []);
+  }, [onAgentActionModalOpenChange]);
 
   useEffect(() => {
     if (!requestedAgentAction || handledRequestedAgentActionIdRef.current === requestedAgentAction.requestId) {
@@ -427,6 +432,7 @@ export function MissionSidebar({
       }
 
       setIsDeleteAgentOpen(false);
+      onAgentActionModalOpenChange?.(false);
       setAgentDeleteTarget(null);
       setAgentDeleteConfirmText("");
       deletedAgentId = result.agentId || agentDeleteTarget.id;
@@ -525,7 +531,10 @@ export function MissionSidebar({
         </aside>
       )}
 
-      <Dialog open={isDeleteAgentOpen} onOpenChange={setIsDeleteAgentOpen}>
+      <Dialog open={isDeleteAgentOpen} onOpenChange={(nextOpen) => {
+        setIsDeleteAgentOpen(nextOpen);
+        onAgentActionModalOpenChange?.(nextOpen);
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete OpenClaw agent</DialogTitle>
@@ -619,27 +628,28 @@ export function MissionSidebar({
         open={isEditAgentOpen}
         onOpenChange={handleEditAgentOpenChange}
         surfaceTheme={surfaceTheme}
-        title="Edit OpenClaw agent"
-        description="Update identity, preset, model, and operating policy."
+        variant="worker-profile"
+        title="Edit agent settings"
+        description="Update the existing worker's identity, preset, model, and operating policy."
         icon={Bot}
         chips={
           editDraft ? (
             <>
-              <MissionControlDialogChip tone="violet">{getAgentPresetMeta(editDraft.policy.preset).label}</MissionControlDialogChip>
-              <MissionControlDialogChip tone="muted">
+              <MissionControlDialogChip tone="violet" surfaceTheme={surfaceTheme}>{getAgentPresetMeta(editDraft.policy.preset).label}</MissionControlDialogChip>
+              <MissionControlDialogChip tone="muted" surfaceTheme={surfaceTheme}>
                 {snapshot.workspaces.find((workspace) => workspace.id === editDraft.workspaceId)?.name || editDraft.workspaceId}
               </MissionControlDialogChip>
             </>
           ) : null
         }
-        bodyClassName="px-4 py-3"
+        bodyClassName="px-6 py-5 sm:px-8"
         footer={
           <>
             <Button
               variant="secondary"
               size="sm"
               onClick={() => handleEditAgentOpenChange(false)}
-              className={missionControlDialogButtonClassName("secondary")}
+              className={missionControlDialogButtonClassName("secondary", surfaceTheme)}
             >
               Cancel
             </Button>
@@ -647,7 +657,7 @@ export function MissionSidebar({
               size="sm"
               onClick={submitEditAgent}
               disabled={isSavingAgent || !editDraft}
-              className={missionControlDialogButtonClassName("primary")}
+              className={missionControlDialogButtonClassName("primary", surfaceTheme)}
             >
               {isSavingAgent ? "Saving..." : "Save changes"}
             </Button>
