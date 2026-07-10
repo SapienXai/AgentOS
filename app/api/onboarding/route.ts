@@ -371,9 +371,7 @@ export async function POST(request: Request) {
           message: "Starting the local gateway service..."
         });
 
-        let gatewayStartResult =
-          await startRegisteredWindowsGateway(send)
-          ?? await runCommand(openClawBin, ["gateway", "start", "--json"], send);
+        let gatewayStartResult = await startGatewayForOnboarding(openClawBin, send);
         appendOutput(gatewayStartResult);
         const gatewayStartPayload = parseGatewayCommandPayload(gatewayStartResult.stdout);
         const gatewayReportedNotLoaded = gatewayStartPayload?.result === "not-loaded";
@@ -437,7 +435,7 @@ export async function POST(request: Request) {
               message: "Starting the local gateway service after installation..."
             });
 
-            gatewayStartResult = await runCommand(openClawBin, ["gateway", "start", "--json"], send);
+            gatewayStartResult = await startGatewayForOnboarding(openClawBin, send);
             appendOutput(gatewayStartResult);
           }
 
@@ -990,6 +988,14 @@ async function restartGatewayForOnboarding(
   return await runCommand(openClawBin, ["gateway", "restart", "--force", "--json"], send, options);
 }
 
+async function startGatewayForOnboarding(
+  openClawBin: string,
+  send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>
+) {
+  return await startRegisteredWindowsGateway(send)
+    ?? await runCommand(openClawBin, ["gateway", "start", "--json"], send);
+}
+
 async function needsWindowsGatewayHiddenLauncherMigration(
   send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>
 ) {
@@ -1470,9 +1476,7 @@ async function waitForReadySnapshotAfterGatewayAuthRepair(
       message: "Gateway restart did not complete. Trying to start the local Gateway service..."
     });
 
-    const startResult = await runCommand(openClawBin, ["gateway", "start", "--json"], send, {
-      timeoutMs: 30_000
-    });
+    const startResult = await startGatewayForOnboarding(openClawBin, send);
     appendOutput(startResult);
   }
 
