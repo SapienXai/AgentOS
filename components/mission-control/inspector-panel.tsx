@@ -13,7 +13,10 @@ import {
   FolderGit2,
   FolderKanban,
   Lock,
+  Maximize2,
   MessageSquareText,
+  Minimize2,
+  MoreHorizontal,
   Radar,
   Pencil,
   TerminalSquare,
@@ -22,6 +25,10 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
+import {
+  resolveInspectorSummaryAction,
+  resolveInspectorSurfaceTone
+} from "@/components/mission-control/inspector-visuals";
 import { InteractiveContent } from "@/components/mission-control/interactive-content";
 import { RailTooltip } from "@/components/mission-control/rail-tooltip";
 import { AgentRuntimeSummaryPanel } from "@/components/mission-control/inspector/agent-panel";
@@ -93,8 +100,11 @@ type InspectorPanelProps = {
   onConfigureAgentCapabilities?: (agentId: string, focus: "skills" | "tools") => void;
   onConnectModelProvider?: (provider: string) => void;
   onAbortTask?: (task: WorkItemRecord) => void;
+  onReviewTask?: (task: WorkItemRecord) => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  detailExpanded: boolean;
+  onToggleDetail: () => void;
   onSelectScope: (scope: InspectorScopeShortcut) => void;
   activeTab: "overview" | "chat" | "output" | "files" | "raw";
   onActiveTabChange: (tab: "overview" | "chat" | "output" | "files" | "raw") => void;
@@ -136,8 +146,11 @@ function InspectorPanelContent({
   onConfigureAgentCapabilities,
   onConnectModelProvider,
   onAbortTask,
+  onReviewTask,
   collapsed,
   onToggleCollapsed,
+  detailExpanded,
+  onToggleDetail,
   onSelectScope,
   activeTab,
   onActiveTabChange
@@ -205,10 +218,12 @@ function InspectorPanelContent({
     activeTab === "chat" && !showChatTab
       ? "overview"
       : activeTab === "output" && !showOutputTab
-      ? "overview"
-      : activeTab === "files" && !showFilesTab
         ? "overview"
-        : activeTab;
+        : activeTab === "files" && !showFilesTab
+          ? "overview"
+          : activeTab === "raw" && !detailExpanded
+            ? "overview"
+            : activeTab;
   const isChatView = visibleActiveTab === "chat" && Boolean(selectedAgent);
   const outputTabLabel = selectedTask ? "Activity" : "Output";
   const selectedLabel =
@@ -236,37 +251,36 @@ function InspectorPanelContent({
   const detailTabs = useMemo(
     () =>
       [
-        { id: "overview", label: "Inspect", enabled: true },
+        { id: "overview", label: "Summary", enabled: true },
         { id: "chat", label: "Chat", enabled: showChatTab },
-        { id: "output", label: outputTabLabel, enabled: showOutputTab },
+        { id: "output", label: selectedTask ? "Activity" : outputTabLabel, enabled: showOutputTab },
         { id: "files", label: "Files", enabled: showFilesTab },
-        { id: "raw", label: "Raw", enabled: true }
+        { id: "raw", label: "Debug", enabled: detailExpanded && activeTab === "raw" }
       ] satisfies Array<{ id: InspectorPanelTab; label: string; enabled: boolean }>,
-    [outputTabLabel, showChatTab, showFilesTab, showOutputTab]
+    [activeTab, detailExpanded, outputTabLabel, selectedTask, showChatTab, showFilesTab, showOutputTab]
   );
   const visibleDetailTabs = useMemo(() => detailTabs.filter((item) => item.enabled), [detailTabs]);
-  const activeDetailTabIndex = Math.max(
-    0,
-    visibleDetailTabs.findIndex((item) => item.id === visibleActiveTab)
-  );
   const scopeItems = [
     { id: "workspace", label: "Workspace", icon: FolderKanban },
     { id: "agent", label: "Agent", icon: Bot },
     { id: "tasks", label: "Tasks", icon: ClipboardList }
   ] satisfies Array<{ id: InspectorScopeShortcut; label: string; icon: LucideIcon }>;
   const isLight = surfaceTheme === "light";
+  const surfaceTone = resolveInspectorSurfaceTone(surfaceTheme);
 
   return (
     <div
       className={cn(
-        "panel-surface panel-glow flex h-full flex-row-reverse overflow-hidden rounded-l-[22px] border border-r-0 border-sky-100/[0.09] bg-[radial-gradient(circle_at_22%_0%,rgba(125,211,252,0.055),transparent_34%),radial-gradient(circle_at_100%_18%,rgba(250,0,63,0.045),transparent_30%),linear-gradient(180deg,rgba(5,11,22,0.96),rgba(2,7,16,0.99))] shadow-[0_24px_70px_rgba(0,0,0,0.46)] backdrop-blur-2xl",
+        "panel-surface flex h-full flex-row-reverse overflow-hidden rounded-l-[22px] border border-r-0 backdrop-blur-2xl",
+        surfaceTone.shell,
         isLight && "mission-inspector-light"
       )}
     >
       <div
         className={cn(
-          "flex h-full shrink-0 flex-col items-center bg-[linear-gradient(180deg,rgba(4,10,20,0.92),rgba(2,6,13,0.98))] px-1.5 py-3",
-          collapsed ? "w-full rounded-l-[22px]" : "w-[52px] border-l border-sky-100/[0.09]"
+          "flex h-full shrink-0 flex-col items-center px-1.5 py-3",
+          surfaceTone.rail,
+          collapsed ? "w-full rounded-l-[22px]" : "w-[52px] border-l"
         )}
       >
         <div className="flex flex-1 flex-col items-center gap-1.5">
@@ -311,29 +325,29 @@ function InspectorPanelContent({
       </div>
 
       {!collapsed ? (
-        <div className="min-w-0 flex-1 bg-[linear-gradient(180deg,rgba(5,12,24,0.86),rgba(3,8,17,0.96))]">
+        <div className={cn("min-w-0 flex-1", surfaceTone.content)}>
           <div
             className={cn(
               "mission-scroll inspector-scroll flex h-full min-h-0 flex-col overscroll-contain",
               isChatView ? "overflow-hidden" : "overflow-y-auto"
             )}
           >
-            <div className="shrink-0 px-4 pb-3 pt-4">
+            <div className="shrink-0 px-3 pb-2 pt-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-sky-200/65">Inspect</p>
-                  <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
-                    <h2 className="min-w-0 max-w-full truncate font-display text-[1.35rem] leading-[1.08] text-white">
+                  <p className={cn("text-[9px] font-semibold uppercase tracking-[0.24em]", surfaceTone.eyebrow)}>{selectedDetail}</p>
+                  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+                    <h2 className={cn("min-w-0 max-w-full truncate font-display text-[1.08rem] leading-[1.15]", surfaceTone.title)}>
                       {selectedLabel}
                     </h2>
                     <Badge
                       variant="muted"
-                      className="h-5 shrink-0 rounded-full border-sky-100/[0.1] bg-white/[0.045] px-2 py-0 text-[8px] leading-none tracking-[0.14em] text-slate-100"
+                      className={cn("h-5 shrink-0 rounded-full px-2 py-0 text-[8px] leading-none tracking-[0.14em]", surfaceTone.fact, surfaceTone.title)}
                     >
                       {selectedDetail}
                     </Badge>
                   </div>
-                  <p className="mt-1.5 line-clamp-2 text-[12px] leading-[18px] text-slate-300/90">
+                  <p className={cn("mt-1 line-clamp-1 text-[11px] leading-4", surfaceTone.mutedText)}>
                     {selectedTask
                       ? `${selectedTask.runtimeCount} runs · ${selectedTask.liveRunCount} live · ${formatRelativeTime(selectedTask.updatedAt, relativeTimeReferenceMs)}`
                       : selectedRuntime
@@ -348,32 +362,48 @@ function InspectorPanelContent({
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  aria-label="Close inspector"
-                  onClick={onToggleCollapsed}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] border border-white/[0.09] bg-white/[0.04] text-slate-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-all hover:border-sky-100/[0.16] hover:bg-white/[0.065] hover:text-white"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    aria-label={detailExpanded ? "Use compact inspector" : "Expand inspector details"}
+                    aria-pressed={detailExpanded}
+                    onClick={onToggleDetail}
+                    className={cn("flex h-8 w-8 items-center justify-center rounded-[9px] border transition-colors", surfaceTone.subtleButton)}
+                  >
+                    {detailExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Open debug data"
+                    onClick={() => {
+                      if (!detailExpanded) onToggleDetail();
+                      onActiveTabChange("raw");
+                    }}
+                    className={cn("flex h-8 w-8 items-center justify-center rounded-[9px] border transition-colors", surfaceTone.subtleButton)}
+                  >
+                    <MoreHorizontal className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Close inspector"
+                    onClick={onToggleCollapsed}
+                    className={cn("flex h-8 w-8 items-center justify-center rounded-[9px] border transition-colors", surfaceTone.subtleButton)}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
 
               <div
-                className="relative mt-4 grid overflow-hidden rounded-[12px] border border-sky-100/[0.09] bg-slate-950/[0.34] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
+                className={cn("mt-3 grid overflow-hidden rounded-[10px] border p-1", surfaceTone.tabTrack)}
                 style={{ gridTemplateColumns: `repeat(${visibleDetailTabs.length}, minmax(0, 1fr))` }}
               >
-                <motion.div
-                  aria-hidden="true"
-                  className="absolute bottom-1 left-1 top-1 rounded-[9px] border border-sky-100/[0.12] bg-[linear-gradient(180deg,rgba(125,211,252,0.13),rgba(59,130,246,0.08))] shadow-[0_8px_22px_rgba(14,165,233,0.12),inset_0_1px_0_rgba(255,255,255,0.08)]"
-                  animate={{ x: `${activeDetailTabIndex * 100}%` }}
-                  transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                  style={{ width: `calc((100% - 8px) / ${visibleDetailTabs.length})` }}
-                />
                 {visibleDetailTabs.map((item) => (
                   <InspectorTabButton
                     key={item.id}
                     label={item.label}
                     active={visibleActiveTab === item.id}
+                    surfaceTone={surfaceTone}
                     onClick={() => onActiveTabChange(item.id)}
                   />
                 ))}
@@ -391,39 +421,59 @@ function InspectorPanelContent({
                 >
                   {visibleActiveTab === "overview" ? (
                     <>
-                      {selectedWorkspace ? <WorkspaceContent snapshot={snapshot} workspaceId={selectedWorkspace.id} /> : null}
-                      {selectedAgent ? (
-                        <AgentContent
-                          snapshot={snapshot}
-                          agentId={selectedAgent.id}
-                          focusSection={agentDetailFocus}
-                          onConfigureAgentCapabilities={onConfigureAgentCapabilities}
-                        />
+                      <InspectorSummary
+                        snapshot={snapshot}
+                        surfaceTheme={surfaceTheme}
+                        selectedWorkspace={selectedWorkspace}
+                        selectedAgent={selectedAgent}
+                        selectedTask={selectedTask}
+                        selectedRuntime={selectedRuntime}
+                        selectedModel={selectedModel}
+                        taskDetail={effectiveTaskDetail}
+                        runtimeOutput={resolvedRuntimeOutput}
+                        runtimeOutputLoading={runtimeOutputLoading}
+                        onOpenActivity={() => onActiveTabChange("output")}
+                        onOpenChat={() => onActiveTabChange("chat")}
+                        onOpenDetail={onToggleDetail}
+                        onReviewTask={onReviewTask}
+                        onAbortTask={onAbortTask}
+                        onControlComplete={onRefresh}
+                      />
+                      {detailExpanded ? (
+                        <>
+                          {selectedWorkspace ? <WorkspaceContent snapshot={snapshot} workspaceId={selectedWorkspace.id} /> : null}
+                          {selectedAgent ? (
+                            <AgentContent
+                              snapshot={snapshot}
+                              agentId={selectedAgent.id}
+                              focusSection={agentDetailFocus}
+                              onConfigureAgentCapabilities={onConfigureAgentCapabilities}
+                            />
+                          ) : null}
+                          {selectedTask ? (
+                            <TaskContent
+                              snapshot={snapshot}
+                              task={selectedTask}
+                              taskId={selectedTask.id}
+                              taskDetail={effectiveTaskDetail}
+                              taskDetailLoading={taskDetailLoading}
+                              taskDetailError={resolvedTaskDetailError}
+                              taskDetailNotice={resolvedTaskDetailNotice}
+                            />
+                          ) : null}
+                          {selectedRuntime ? (
+                            <RuntimeContent
+                              snapshot={snapshot}
+                              runtimeId={selectedRuntime.id}
+                              runtimeOutput={resolvedRuntimeOutput}
+                              runtimeOutputLoading={runtimeOutputLoading}
+                              runtimeOutputError={resolvedRuntimeOutputError}
+                            />
+                          ) : null}
+                          {selectedModel ? <ModelContent snapshot={snapshot} modelId={selectedModel.id} /> : null}
+                          {!selectedEntity ? <GatewayOverview snapshot={snapshot} lastMission={lastMission} /> : null}
+                        </>
                       ) : null}
-                      {selectedTask ? (
-                        <TaskContent
-                          snapshot={snapshot}
-                          task={selectedTask}
-                          taskId={selectedTask.id}
-                          taskDetail={effectiveTaskDetail}
-                          taskDetailLoading={taskDetailLoading}
-                          taskDetailError={resolvedTaskDetailError}
-                          taskDetailNotice={resolvedTaskDetailNotice}
-                          onAbortTask={onAbortTask}
-                          onControlComplete={onRefresh}
-                        />
-                      ) : null}
-                      {selectedRuntime ? (
-                        <RuntimeContent
-                          snapshot={snapshot}
-                          runtimeId={selectedRuntime.id}
-                          runtimeOutput={resolvedRuntimeOutput}
-                          runtimeOutputLoading={runtimeOutputLoading}
-                          runtimeOutputError={resolvedRuntimeOutputError}
-                        />
-                      ) : null}
-                      {selectedModel ? <ModelContent snapshot={snapshot} modelId={selectedModel.id} /> : null}
-                      {!selectedEntity ? <GatewayOverview snapshot={snapshot} lastMission={lastMission} /> : null}
                     </>
                   ) : null}
 
@@ -541,6 +591,195 @@ function InspectorPanelContent({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function InspectorSummary({
+  snapshot,
+  surfaceTheme,
+  selectedWorkspace,
+  selectedAgent,
+  selectedTask,
+  selectedRuntime,
+  selectedModel,
+  taskDetail,
+  runtimeOutput,
+  runtimeOutputLoading,
+  onOpenActivity,
+  onOpenChat,
+  onOpenDetail,
+  onReviewTask,
+  onAbortTask,
+  onControlComplete
+}: {
+  snapshot: MissionControlSnapshot;
+  surfaceTheme: "dark" | "light";
+  selectedWorkspace: MissionControlSnapshot["workspaces"][number] | undefined;
+  selectedAgent: MissionControlSnapshot["agents"][number] | undefined;
+  selectedTask: MissionControlSnapshot["tasks"][number] | undefined;
+  selectedRuntime: MissionControlSnapshot["runtimes"][number] | undefined;
+  selectedModel: MissionControlSnapshot["models"][number] | undefined;
+  taskDetail: TaskDetailRecord | null;
+  runtimeOutput: RuntimeOutputRecord | null;
+  runtimeOutputLoading: boolean;
+  onOpenActivity: () => void;
+  onOpenChat: () => void;
+  onOpenDetail: () => void;
+  onReviewTask?: (task: WorkItemRecord) => void;
+  onAbortTask?: (task: WorkItemRecord) => void;
+  onControlComplete?: () => Promise<void> | void;
+}) {
+  const tone = resolveInspectorSurfaceTone(surfaceTheme);
+  const referenceMs = resolveRelativeTimeReferenceMs(snapshot.generatedAt);
+  const entity = selectedTask
+    ? "task"
+    : selectedAgent
+      ? "agent"
+      : selectedRuntime
+        ? "runtime"
+        : selectedWorkspace
+          ? "workspace"
+          : selectedModel
+            ? "model"
+            : "overview";
+  const taskIntegrity = taskDetail?.integrity;
+  const taskNeedsReview = Boolean(
+    selectedTask &&
+      (selectedTask.warningCount > 0 ||
+        selectedTask.status === "stalled" ||
+        taskIntegrity?.status === "warning" ||
+        taskIntegrity?.status === "error")
+  );
+  const action = resolveInspectorSummaryAction({
+    entity,
+    status: selectedTask?.status,
+    needsReview: taskNeedsReview
+  });
+  const taskAgent = selectedTask
+    ? snapshot.agents.find((agent) => agent.id === selectedTask.primaryAgentId || selectedTask.agentIds.includes(agent.id))
+    : null;
+  const taskWorkspace = selectedTask
+    ? snapshot.workspaces.find((workspace) => workspace.id === selectedTask.workspaceId || workspace.agentIds.includes(taskAgent?.id ?? ""))
+    : null;
+  const workspaceTaskCount = selectedWorkspace
+    ? snapshot.tasks.filter((task) => task.workspaceId === selectedWorkspace.id).length
+    : 0;
+  const summary = selectedTask
+    ? readTaskResultPreview(taskDetail?.task ?? selectedTask) || selectedTask.subtitle || "Waiting for the first OpenClaw update."
+    : selectedAgent
+      ? selectedAgent.currentAction || "No active work reported."
+      : selectedRuntime
+        ? runtimeOutputLoading
+          ? "Loading the latest runtime evidence…"
+          : runtimeOutput?.finalText || runtimeOutput?.errorMessage || selectedRuntime.subtitle || "No assistant output captured yet."
+        : selectedWorkspace
+          ? `${selectedWorkspace.agentIds.length} agents · ${selectedWorkspace.activeRuntimeIds.length} active runs`
+          : selectedModel
+            ? `${selectedModel.provider} · ${selectedModel.available === false ? "unavailable" : "available"}`
+            : "Gateway context is ready for inspection.";
+  const facts = selectedTask
+    ? [
+        { label: "Agent", value: taskAgent ? formatAgentDisplayName(taskAgent) : "Unassigned" },
+        { label: "Updated", value: formatRelativeTime(selectedTask.updatedAt, referenceMs) },
+        { label: "Runs", value: String(selectedTask.runtimeCount) },
+        { label: "Files", value: String(selectedTask.artifactCount) }
+      ]
+    : selectedAgent
+      ? [
+          { label: "Status", value: selectedAgent.status },
+          { label: "Active", value: String(selectedAgent.activeRuntimeIds.length) },
+          { label: "Sessions", value: String(selectedAgent.sessionCount) },
+          { label: "Model", value: compactMissionText(selectedAgent.modelId, 18) || "None" }
+        ]
+      : selectedRuntime
+        ? [
+            { label: "Status", value: selectedRuntime.status },
+            { label: "Agent", value: selectedRuntime.agentId || "Unknown" },
+            { label: "Session", value: shortId(selectedRuntime.sessionId, 10) },
+            { label: "Files", value: String(runtimeOutput?.createdFiles.length ?? 0) }
+          ]
+        : selectedWorkspace
+          ? [
+              { label: "Health", value: selectedWorkspace.health },
+              { label: "Agents", value: String(selectedWorkspace.agentIds.length) },
+              { label: "Tasks", value: String(workspaceTaskCount) },
+              { label: "Active", value: String(selectedWorkspace.activeRuntimeIds.length) }
+            ]
+          : selectedModel
+            ? [
+                { label: "Provider", value: selectedModel.provider },
+                { label: "Context", value: formatContextWindow(selectedModel.contextWindow) },
+                { label: "Agents", value: String(selectedModel.usageCount) },
+                { label: "State", value: selectedModel.available === false ? "Unavailable" : "Available" }
+              ]
+            : [
+                { label: "Health", value: snapshot.diagnostics.health },
+                { label: "Agents", value: String(snapshot.agents.length) },
+                { label: "Tasks", value: String(snapshot.tasks.length) },
+                { label: "Live", value: String(snapshot.runtimes.filter((runtime) => runtime.status === "running").length) }
+              ];
+
+  return (
+    <section className={cn("rounded-[14px] border p-3", tone.section)}>
+      <div className="flex items-center justify-between gap-2">
+        <p className={cn("text-[9px] font-semibold uppercase tracking-[0.2em]", tone.eyebrow)}>Decision summary</p>
+        {selectedTask ? <Badge variant={badgeVariantForRuntimeStatus(selectedTask.status)}>{selectedTask.status}</Badge> : null}
+      </div>
+      <p className={cn("mt-2 line-clamp-3 text-[12px] leading-5", tone.title)}>{summary}</p>
+      <div className="mt-3 grid grid-cols-2 gap-1.5">
+        {facts.map((fact) => (
+          <div key={fact.label} className={cn("min-w-0 rounded-[10px] border px-2.5 py-2", tone.fact)}>
+            <p className={cn("text-[8px] font-semibold uppercase tracking-[0.16em]", tone.mutedText)}>{fact.label}</p>
+            <p className={cn("mt-1 truncate text-[11px] font-medium", tone.title)} title={fact.value}>{fact.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3">
+        {action === "steer-task" && selectedTask ? (
+          <RunningTaskControlBar compact task={selectedTask} onAbortTask={onAbortTask} onControlComplete={onControlComplete} />
+        ) : action === "review-result" && selectedTask ? (
+          onReviewTask ? (
+            <InspectorPrimaryAction label="Review result" tone={tone} onClick={() => onReviewTask(selectedTask)} />
+          ) : (
+            <InspectorPrimaryAction label="View result" tone={tone} onClick={onOpenActivity} />
+          )
+        ) : action === "view-result" || action === "view-activity" ? (
+          <InspectorPrimaryAction label={action === "view-result" ? "View result" : "Open activity"} tone={tone} onClick={onOpenActivity} />
+        ) : action === "open-chat" ? (
+          <InspectorPrimaryAction label="Open chat" tone={tone} onClick={onOpenChat} />
+        ) : (
+          <InspectorPrimaryAction label="Open details" tone={tone} onClick={onOpenDetail} />
+        )}
+      </div>
+
+      {taskNeedsReview ? (
+        <p className="mt-3 rounded-[10px] border border-amber-400/20 bg-amber-400/10 px-2.5 py-2 text-[11px] leading-4 text-amber-100">
+          This task has captured evidence that needs operator review.
+        </p>
+      ) : null}
+      {taskWorkspace ? <p className={cn("mt-2 truncate text-[10px]", tone.mutedText)}>{taskWorkspace.name}</p> : null}
+    </section>
+  );
+}
+
+function InspectorPrimaryAction({
+  label,
+  tone,
+  onClick
+}: {
+  label: string;
+  tone: ReturnType<typeof resolveInspectorSurfaceTone>;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn("inline-flex h-9 w-full items-center justify-center rounded-[10px] px-3 text-[11px] font-semibold transition-colors", tone.primaryButton)}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -1547,9 +1786,7 @@ function TaskContent({
   taskDetail,
   taskDetailLoading,
   taskDetailError,
-  taskDetailNotice,
-  onAbortTask,
-  onControlComplete
+  taskDetailNotice
 }: {
   snapshot: MissionControlSnapshot;
   task: MissionControlSnapshot["tasks"][number];
@@ -1558,8 +1795,6 @@ function TaskContent({
   taskDetailLoading: boolean;
   taskDetailError: string | null;
   taskDetailNotice: string | null;
-  onAbortTask?: (task: MissionControlSnapshot["tasks"][number]) => void;
-  onControlComplete?: () => Promise<void> | void;
 }) {
   const snapshotTask = snapshot.tasks.find((entry) => entry.id === taskId) ?? task;
   const selectedTask = taskDetail?.task
@@ -1619,11 +1854,6 @@ function TaskContent({
             { label: "Live", value: String(selectedTask.liveRunCount) },
             { label: "Tools", value: String(integrity.toolNames.length) }
           ]}
-        />
-        <RunningTaskControlBar
-          task={selectedTask}
-          onAbortTask={onAbortTask}
-          onControlComplete={onControlComplete}
         />
         <div className="flex flex-wrap gap-2">
           {workspace ? <Badge variant="muted">{workspace.name}</Badge> : null}
@@ -1923,15 +2153,18 @@ function TaskIntegrityCard({
 function RunningTaskControlBar({
   task,
   onAbortTask,
-  onControlComplete
+  onControlComplete,
+  compact = true
 }: {
   task: MissionControlSnapshot["tasks"][number];
   onAbortTask?: (task: MissionControlSnapshot["tasks"][number]) => void;
   onControlComplete?: () => Promise<void> | void;
+  compact?: boolean;
 }) {
   const [mode, setMode] = useState<RunningTaskControlMode | null>(null);
   const [message, setMessage] = useState("");
   const [pendingMode, setPendingMode] = useState<RunningTaskControlMode | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const isRunning = isTaskControlAvailable(task);
   const canAbortTask = Boolean(onAbortTask) && isTaskAbortable(task);
   const trimmedMessage = message.trim();
@@ -1988,9 +2221,64 @@ function RunningTaskControlBar({
   };
 
   return (
-    <div className="rounded-[16px] border border-sky-100/[0.08] bg-[linear-gradient(180deg,rgba(8,20,34,0.72),rgba(5,13,25,0.7))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-sky-200/60">Quick actions</p>
-      <div className="grid gap-2 sm:grid-cols-3">
+    <div className={cn("rounded-[12px] border border-sky-100/[0.08] bg-[linear-gradient(180deg,rgba(8,20,34,0.72),rgba(5,13,25,0.7))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]", compact ? "p-0" : "p-3")}>
+      {compact ? (
+        <div className="relative flex gap-1.5">
+          <Button
+            type="button"
+            variant={mode === "steer" ? "default" : "secondary"}
+            size="sm"
+            className={cn(
+              "h-9 flex-1 justify-center gap-2 rounded-[10px] border px-3 text-[11px]",
+              mode === "steer"
+                ? "border-sky-100/[0.18] bg-sky-200/[0.12] text-sky-50"
+                : "border-sky-100/[0.08] bg-white/[0.045] text-slate-100 hover:bg-white/[0.08]"
+            )}
+            onClick={() => openMode("steer")}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Steer task
+          </Button>
+          <button
+            type="button"
+            aria-label="More task controls"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((current) => !current)}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-sky-100/[0.08] bg-white/[0.045] text-slate-300 transition-colors hover:bg-white/[0.08] hover:text-white"
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </button>
+          {menuOpen ? (
+            <div className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[156px] rounded-[10px] border border-white/[0.1] bg-slate-950/96 p-1 shadow-[0_14px_32px_rgba(0,0,0,0.34)]">
+              <button
+                type="button"
+                onClick={() => {
+                  openMode("inject");
+                  setMenuOpen(false);
+                }}
+                className="flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left text-[11px] text-slate-200 hover:bg-white/[0.06]"
+              >
+                <MessageSquareText className="h-3.5 w-3.5 text-sky-200" />
+                Inject context
+              </button>
+              <button
+                type="button"
+                disabled={!canAbortTask}
+                onClick={() => {
+                  if (canAbortTask) onAbortTask?.(task);
+                }}
+                className="flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left text-[11px] text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <AlertTriangle className="h-3.5 w-3.5" />
+                Abort task
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <>
+          <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-sky-200/60">Quick actions</p>
+          <div className="grid gap-2 sm:grid-cols-3">
         <Button
           type="button"
           variant="destructive"
@@ -2038,7 +2326,9 @@ function RunningTaskControlBar({
           <MessageSquareText className="h-3.5 w-3.5" />
           Add context
         </Button>
-      </div>
+          </div>
+        </>
+      )}
 
       {mode ? (
         <div className="mt-3 space-y-2.5">
@@ -2909,10 +3199,12 @@ function InspectorRailButton({
 function InspectorTabButton({
   label,
   active,
+  surfaceTone,
   onClick
 }: {
   label: string;
   active: boolean;
+  surfaceTone: ReturnType<typeof resolveInspectorSurfaceTone>;
   onClick: () => void;
 }) {
   return (
@@ -2920,10 +3212,8 @@ function InspectorTabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "relative z-10 inline-flex min-w-0 items-center justify-center rounded-[9px] px-2 py-2 text-[10px] font-medium whitespace-nowrap transition-colors",
-        active
-          ? "text-sky-50"
-          : "text-slate-400 hover:text-slate-100"
+        "relative z-10 inline-flex min-w-0 items-center justify-center rounded-[7px] border border-transparent px-2 py-1.5 text-[10px] font-medium whitespace-nowrap transition-colors",
+        active ? surfaceTone.tabActive : surfaceTone.tabIdle
       )}
     >
       {label}

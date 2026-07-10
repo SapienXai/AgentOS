@@ -269,7 +269,12 @@ export function MissionControlShell({
   const [agentCreationWarnings, setAgentCreationWarnings] = useState<Record<string, string>>({});
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+  const [isInspectorDetailExpanded, setIsInspectorDetailExpanded] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    setIsInspectorDetailExpanded(false);
+  }, [selectedNodeId]);
   const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
   const {
     resetDialogTarget,
@@ -3939,7 +3944,11 @@ export function MissionControlShell({
         className={cn(
           "pointer-events-none absolute top-0 z-40 hidden lg:block",
           isSidebarOpen ? "lg:left-[316px]" : "lg:left-[80px]",
-          isInspectorOpen ? "lg:right-[492px]" : "lg:right-[76px]"
+          isInspectorOpen
+            ? isInspectorDetailExpanded
+              ? "lg:right-[552px]"
+              : "lg:right-[412px]"
+            : "lg:right-[76px]"
         )}
       >
         <MissionControlCanvasTopBar
@@ -4035,7 +4044,9 @@ export function MissionControlShell({
           className={cn(
             "pointer-events-auto absolute right-0 top-0 z-30 h-[100dvh] overflow-visible mission-ease-smooth transition-[width] duration-500",
             isInspectorOpen
-              ? "w-[calc(100vw-80px)] max-w-[460px] lg:w-[460px] lg:max-w-none"
+              ? isInspectorDetailExpanded
+                ? "w-[calc(100vw-52px)] max-w-[520px] lg:w-[520px] lg:max-w-none"
+                : "w-[calc(100vw-52px)] max-w-[380px] lg:w-[380px] lg:max-w-none"
               : "w-[52px]"
           )}
         >
@@ -4058,6 +4069,9 @@ export function MissionControlShell({
             activeTab={activeInspectorTab}
             onActiveTabChange={setActiveInspectorTab}
             onAbortTask={requestTaskAbort}
+            onReviewTask={openTaskReview}
+            detailExpanded={isInspectorDetailExpanded}
+            onToggleDetail={() => setIsInspectorDetailExpanded((current) => !current)}
           />
         </div>
 
