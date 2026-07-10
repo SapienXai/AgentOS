@@ -42,6 +42,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
   const [hasReceivedLiveSnapshot, setHasReceivedLiveSnapshot] = useState(false);
   const [gatewayReachable, setGatewayReachable] = useState<boolean | null>(null);
   const [gatewayRegistered, setGatewayRegistered] = useState<boolean | null>(null);
+  const [gatewayConfigured, setGatewayConfigured] = useState<boolean | null>(null);
   const [gatewayReady, setGatewayReady] = useState<boolean | null>(null);
   const [runtimeWritable, setRuntimeWritable] = useState<boolean | null>(null);
   const [localModelStatus, setLocalModelStatus] = useState<{
@@ -74,12 +75,14 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
         gatewayReachable?: boolean;
         gatewayReady?: boolean;
         gatewayRegistered?: boolean | null;
+        gatewayConfigured?: boolean | null;
         cliInstalled?: boolean;
         runtimeWritable?: boolean | null;
         modelStatus?: { checked?: boolean; defaultModelId?: string | null; modelIds?: string[] };
       };
       setGatewayReachable(status.gatewayReachable === true);
       setGatewayRegistered((current) => preserveConfirmedStatus(current, status.gatewayRegistered ?? null));
+      setGatewayConfigured((current) => preserveConfirmedStatus(current, status.gatewayConfigured ?? null));
       setGatewayReady((current) => preserveConfirmedStatus(current, status.gatewayReady === true));
       setCliInstalled(status.cliInstalled === true);
       setRuntimeWritable((current) => preserveConfirmedStatus(current, status.runtimeWritable ?? null));
@@ -137,6 +140,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
     hasReceivedLiveSnapshot,
     gatewayReachable,
     gatewayRegistered,
+    gatewayConfigured,
     gatewayReady,
     runtimeWritable,
     localModelStatus,

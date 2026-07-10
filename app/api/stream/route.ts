@@ -5,6 +5,7 @@ import {
 } from "@/lib/openclaw/application/event-bridge-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import {
+  probeLocalGatewayConfiguration,
   probeLocalGatewayRegistration,
   probeLocalGatewayStatus
 } from "@/lib/openclaw/client/local-gateway-probe";
@@ -23,8 +24,12 @@ export async function GET(request: Request) {
   let unsubscribeGatewayEvents: (() => void) | undefined;
   let closed = false;
   let snapshotTask: Promise<void> | null = null;
+  let systemStatusTask: Promise<void> | null = null;
   let cliInstalled: boolean | null = null;
+  let gatewayRegistered: boolean | null = null;
+  let gatewayConfigured: boolean | null = null;
   let runtimeWritable: boolean | null = null;
+  let modelStatus = { checked: false, defaultModelId: null as string | null, modelIds: [] as string[] };
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -122,21 +127,36 @@ export async function GET(request: Request) {
         }, delayMs);
       };
 
-      const sendSystemStatus = async () => {
-        const [gatewayStatus, gatewayRegistered, detectedCliInstalled, modelStatus] = await Promise.all([
+      const sendSystemStatus = () => {
+        if (systemStatusTask) {
+          return systemStatusTask;
+        }
+
+        systemStatusTask = (async () => {
+          const [gatewayStatus, detectedGatewayRegistered, detectedGatewayConfigured, detectedCliInstalled] = await Promise.all([
           probeLocalGatewayStatus().catch(() => null),
-          probeLocalGatewayRegistration().catch(() => null),
+          gatewayRegistered === true
+            ? Promise.resolve(true)
+            : probeLocalGatewayRegistration().catch(() => null),
+          gatewayConfigured === true
+            ? Promise.resolve(true)
+            : probeLocalGatewayConfiguration().catch(() => false),
           cliInstalled === true
             ? Promise.resolve(true)
             : import("@/lib/openclaw/cli")
                 .then(({ resolveOpenClawBin }) => resolveOpenClawBin().then(() => true).catch(() => false))
-                .catch(() => false),
-          import("@/lib/openclaw/state/local-model-status")
-            .then(({ probeLocalDefaultModel }) => probeLocalDefaultModel())
-            .catch(() => ({ checked: false, defaultModelId: null, modelIds: [] as string[] }))
+                .catch(() => false)
         ]);
         cliInstalled = detectedCliInstalled;
+        gatewayRegistered = detectedGatewayRegistered;
+        gatewayConfigured = detectedGatewayConfigured;
         const gatewayReady = gatewayStatus?.rpc?.ok === true;
+
+        if (gatewayReady && !modelStatus.checked) {
+          modelStatus = await import("@/lib/openclaw/state/local-model-status")
+            .then(({ probeLocalDefaultModel }) => probeLocalDefaultModel())
+            .catch(() => modelStatus);
+        }
 
         if (gatewayReady && runtimeWritable !== true) {
           runtimeWritable = await Promise.all([
@@ -152,14 +172,20 @@ export async function GET(request: Request) {
           }).catch(() => false);
         }
 
-        sendEvent("system-status", {
-          gatewayReachable: Boolean(gatewayStatus),
-          gatewayReady,
-          gatewayRegistered,
-          cliInstalled,
-          runtimeWritable,
-          modelStatus
+          sendEvent("system-status", {
+            gatewayReachable: Boolean(gatewayStatus),
+            gatewayReady,
+            gatewayRegistered,
+            gatewayConfigured,
+            cliInstalled,
+            runtimeWritable,
+            modelStatus
+          });
+        })().finally(() => {
+          systemStatusTask = null;
         });
+
+        return systemStatusTask;
       };
 
       unsubscribeGatewayEvents = subscribeOpenClawEventBridgeEvents(() => {
@@ -179,7 +205,7 @@ export async function GET(request: Request) {
       systemStatusInterval = setInterval(() => {
         void sendSystemStatus();
       }, 1_000);
-      void sendSnapshot();
+      scheduleSnapshot(5_000);
     },
     cancel() {
       closed = true;

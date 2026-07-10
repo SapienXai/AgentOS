@@ -86,7 +86,11 @@ export function buildOpenClawSpawnEnv(env: NodeJS.ProcessEnv = process.env) {
   const preloadOption = `--require=${JSON.stringify(preloadPath)}`;
   return {
     ...env,
-    NODE_OPTIONS: [env.NODE_OPTIONS?.trim(), preloadOption].filter(Boolean).join(" ")
+    NODE_OPTIONS: [env.NODE_OPTIONS?.trim(), preloadOption].filter(Boolean).join(" "),
+    // The Gateway task can invoke cmd helpers such as findstr. Launch its task
+    // through OpenClaw's VBS wrapper so those helpers never flash a console.
+    OPENCLAW_WINDOWS_TASK_HIDDEN_LAUNCHER:
+      env.OPENCLAW_WINDOWS_TASK_HIDDEN_LAUNCHER?.trim() || "1"
   };
 }
 

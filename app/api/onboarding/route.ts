@@ -10,6 +10,7 @@ import { z } from "zod";
 import { formatOpenClawCommand, resetOpenClawBinCache, resolveOpenClawBin } from "@/lib/openclaw/cli";
 import { createDefaultOpenClawBinarySelection, writeOpenClawBinarySelection } from "@/lib/openclaw/binary-selection";
 import {
+  probeLocalGatewayConfiguration,
   probeLocalGatewayRegistration,
   probeLocalGatewayStatus
 } from "@/lib/openclaw/client/local-gateway-probe";
@@ -61,12 +62,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const onboardingSchema = z.object({
-  intent: z.literal("auto")
+  intent: z.enum(["auto", "install", "prepare", "start"])
 });
 
 const docsUrl = OPENCLAW_INSTALL_DOCS_URL;
 const commandTimeoutMs = 10 * 60 * 1000;
 const gatewayStatusTimeoutMs = 3_000;
+const fastStartReadyTimeoutMs = 60_000;
 const readyTimeoutMs = 180_000;
 const postAuthRepairReadyTimeoutMs = 180_000;
 const readyPollIntervalMs = 250;
@@ -81,8 +83,9 @@ type CommandResult = {
 };
 
 export async function POST(request: Request) {
+  let intent: "auto" | "install" | "prepare" | "start";
   try {
-    onboardingSchema.parse(await request.json());
+    intent = onboardingSchema.parse(await request.json()).intent;
   } catch (error) {
     return NextResponse.json(
       {
@@ -274,6 +277,20 @@ export async function POST(request: Request) {
         openClawBin = installedOpenClawBin;
       }
 
+      if (intent === "install") {
+        await send({
+          type: "done",
+          ok: true,
+          phase: "installing-cli",
+          message: "OpenClaw CLI is installed. Prepare the local Gateway next.",
+          exitCode: 0,
+          stdout: aggregatedStdout,
+          stderr: aggregatedStderr
+        });
+        await closeWriter();
+        return;
+      }
+
       const runtimeState = await inspectOpenClawRuntimeState(openClawStateRootPath, [], { touch: true });
       if (!runtimeState.stateWritable) {
         const detail = runtimeState.issues[0] || `OpenClaw state root is not writable: ${openClawStateRootPath}`;
@@ -285,7 +302,159 @@ export async function POST(request: Request) {
         return;
       }
 
+      if (intent === "start") {
+        if (await needsWindowsGatewayHiddenLauncherMigration(send)) {
+          await send({
+            type: "status",
+            phase: "starting-gateway",
+            message: "Preparing the Windows Gateway launcher..."
+          });
+          const migrationResult = await runCommand(
+            openClawBin,
+            ["gateway", "install", "--force", "--json"],
+            send
+          );
+          appendOutput(migrationResult);
+          if (migrationResult.errorMessage || migrationResult.timedOut || migrationResult.code !== 0) {
+            await failGatewayCommand(
+              "starting-gateway",
+              "Gateway launcher preparation failed.",
+              openClawBin,
+              migrationResult,
+              formatOpenClawCommand(openClawBin, ["gateway", "install", "--force", "--json"])
+            );
+            return;
+          }
+        }
+
+        await send({
+          type: "status",
+          phase: "starting-gateway",
+          message: "Starting the local Gateway service..."
+        });
+
+        let localGatewayStatus = await probeLocalGatewayStatus().catch(() => null);
+        if (localGatewayStatus?.rpc?.ok !== true) {
+          const startResult = await startGatewayForOnboarding(openClawBin, send);
+          appendOutput(startResult);
+
+          if (startResult.errorMessage || startResult.timedOut || startResult.code !== 0) {
+            await failGatewayCommand(
+              "starting-gateway",
+              "Gateway failed to start.",
+              openClawBin,
+              startResult,
+              formatOpenClawCommand(openClawBin, ["gateway", "start", "--json"])
+            );
+            return;
+          }
+
+          await send({
+            type: "status",
+            phase: "verifying",
+            message: "Waiting for Gateway readiness..."
+          });
+          localGatewayStatus = await waitForLocalGatewayReady();
+        }
+
+        const readyRuntimeState = await inspectOpenClawRuntimeState(openClawStateRootPath, [], { touch: true });
+        if (!localGatewayStatus?.rpc?.ok || !readyRuntimeState.stateWritable) {
+          await fail("verifying", "OpenClaw Gateway did not become ready in time.", {
+            manualCommand: formatOpenClawCommand(openClawBin, ["gateway", "status", "--json"])
+          });
+          return;
+        }
+
+        await send({
+          type: "done",
+          ok: true,
+          phase: "ready",
+          message: "OpenClaw Gateway is ready. Continue to model setup.",
+          exitCode: 0,
+          stdout: aggregatedStdout,
+          stderr: aggregatedStderr
+        });
+        await closeWriter();
+        return;
+      }
+
+      if (intent === "prepare") {
+        const [gatewayRegistered, configReady] = await Promise.all([
+          probeLocalGatewayRegistration().catch(() => false),
+          probeLocalGatewayConfiguration()
+        ]);
+
+        if (!configReady) {
+          const tokenSyncResult = await syncGatewayAuthTokenBeforeFirstStart(openClawBin, send);
+          appendGatewayAuthSyncOutput(tokenSyncResult, appendOutput);
+        }
+
+        if (gatewayRegistered !== true) {
+          await send({
+            type: "status",
+            phase: "installing-gateway",
+            message: "Registering the local Gateway service..."
+          });
+          const gatewayInstallResult = await runCommand(
+            openClawBin,
+            ["gateway", "install", "--json"],
+            send
+          );
+          appendOutput(gatewayInstallResult);
+          if (gatewayInstallResult.errorMessage || gatewayInstallResult.timedOut || gatewayInstallResult.code !== 0) {
+            await failGatewayCommand(
+              "installing-gateway",
+              "Gateway installation failed.",
+              openClawBin,
+              gatewayInstallResult,
+              formatOpenClawCommand(openClawBin, ["gateway", "install", "--json"])
+            );
+            return;
+          }
+        }
+
+        await send({
+          type: "done",
+          ok: true,
+          phase: "installing-gateway",
+          message: "Local Gateway is registered and configured. Start OpenClaw to bring it online.",
+          exitCode: 0,
+          stdout: aggregatedStdout,
+          stderr: aggregatedStderr
+        });
+        await closeWriter();
+        return;
+      }
+
       let gatewayStatus = await readGatewayStatus(openClawBin);
+
+      if (await needsWindowsGatewayHiddenLauncherMigration(send)) {
+        await send({
+          type: "status",
+          phase: "installing-gateway",
+          message: "Updating the Windows gateway task to run without console windows..."
+        });
+
+        const gatewayInstallResult = await runCommand(
+          openClawBin,
+          ["gateway", "install", "--force", "--json"],
+          send
+        );
+        appendOutput(gatewayInstallResult);
+
+        if (gatewayInstallResult.errorMessage || gatewayInstallResult.timedOut || gatewayInstallResult.code !== 0) {
+          await failGatewayCommand(
+            "installing-gateway",
+            "Gateway installation failed.",
+            openClawBin,
+            gatewayInstallResult,
+            formatOpenClawCommand(openClawBin, ["gateway", "install", "--force", "--json"])
+          );
+          return;
+        }
+
+        gatewayStatus = await readGatewayStatus(openClawBin).catch(() => gatewayStatus);
+      }
 
       if (!gatewayStatus?.rpc?.ok && gatewayStatus && (await needsGatewayRegistrationRepair(gatewayStatus))) {
         await send({
@@ -343,9 +512,7 @@ export async function POST(request: Request) {
           message: "Starting the local gateway service..."
         });
 
-        let gatewayStartResult =
-          await startRegisteredWindowsGateway(send)
-          ?? await runCommand(openClawBin, ["gateway", "start", "--json"], send);
+        let gatewayStartResult = await startGatewayForOnboarding(openClawBin, send);
         appendOutput(gatewayStartResult);
         const gatewayStartPayload = parseGatewayCommandPayload(gatewayStartResult.stdout);
         const gatewayReportedNotLoaded = gatewayStartPayload?.result === "not-loaded";
@@ -409,7 +576,15 @@ export async function POST(request: Request) {
               message: "Starting the local gateway service after installation..."
             });
 
-            gatewayStartResult = await runCommand(openClawBin, ["gateway", "start", "--json"], send);
+            // gateway install already starts its registered service. Running a
+            // second CLI start on Windows can invoke OpenClaw's restart handoff
+            // and briefly expose its helper console.
+            gatewayStartResult = {
+              code: 0,
+              stdout: "Gateway service installation requested its initial start.\n",
+              stderr: "",
+              timedOut: false
+            };
             appendOutput(gatewayStartResult);
           }
 
@@ -435,7 +610,7 @@ export async function POST(request: Request) {
             message: "Gateway service is registered but stopped. Restarting it before readiness verification..."
           });
 
-          const restartResult = await runCommand(openClawBin, ["gateway", "restart", "--force", "--json"], send, {
+          const restartResult = await restartGatewayForOnboarding(openClawBin, send, {
             timeoutMs: 30_000
           });
           appendOutput(restartResult);
@@ -462,7 +637,7 @@ export async function POST(request: Request) {
         if (!gatewayStatus?.rpc?.ok && needsGatewayBootstrapConfigRepair(gatewayStatus)) {
           await send({
             type: "status",
-            phase: "starting-gateway",
+            phase: "installing-gateway",
             message: "Gateway service started without usable local config. Preparing Gateway auth, then restarting..."
           });
 
@@ -492,7 +667,7 @@ export async function POST(request: Request) {
             message: "Restarting the local gateway service with AgentOS Gateway auth..."
           });
 
-          const restartResult = await runCommand(openClawBin, ["gateway", "restart", "--force", "--json"], send, {
+          const restartResult = await restartGatewayForOnboarding(openClawBin, send, {
             timeoutMs: 30_000
           });
           appendOutput(restartResult);
@@ -734,6 +909,7 @@ async function runCommand(
   send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>,
   options: {
     timeoutMs?: number;
+    streamOutput?: boolean;
   } = {}
 ): Promise<CommandResult> {
   const invocation = resolveOpenClawSpawnInvocation(command, args);
@@ -767,6 +943,9 @@ async function runCommand(
     child.stdout.on("data", (chunk: Buffer | string) => {
       const text = chunk.toString();
       stdout += text;
+      if (options.streamOutput === false) {
+        return;
+      }
       void send({
         type: "log",
         stream: "stdout",
@@ -777,6 +956,9 @@ async function runCommand(
     child.stderr.on("data", (chunk: Buffer | string) => {
       const text = chunk.toString();
       stderr += text;
+      if (options.streamOutput === false) {
+        return;
+      }
       void send({
         type: "log",
         stream: "stderr",
@@ -906,7 +1088,7 @@ async function installOpenClawCli(
 async function startRegisteredWindowsGateway(
   send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>
 ): Promise<CommandResult | null> {
-  if (process.platform !== "win32" || !(await probeLocalGatewayRegistration())) {
+  if (process.platform !== "win32") {
     return null;
   }
 
@@ -923,6 +1105,67 @@ async function startRegisteredWindowsGateway(
 
   const result = await runCommand(executable, ["/Run", "/TN", taskName], send, { timeoutMs: 5_000 });
   return !result.errorMessage && !result.timedOut && result.code === 0 ? result : null;
+}
+
+async function restartGatewayForOnboarding(
+  openClawBin: string,
+  send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>,
+  options: { timeoutMs?: number } = {}
+) {
+  if (process.platform === "win32") {
+    const executable = process.env.SystemRoot
+      ? path.join(process.env.SystemRoot, "System32", "schtasks.exe")
+      : "schtasks.exe";
+    const taskName = process.env.OPENCLAW_WINDOWS_TASK_NAME?.trim() || "OpenClaw Gateway";
+
+    // OpenClaw's legacy restart handoff launches a cmd script that shells out
+    // to findstr. Calling the registered task directly avoids a visible helper
+    // console during System Setup while retaining the normal CLI fallback.
+    await runCommand(executable, ["/End", "/TN", taskName], send, {
+      timeoutMs: 5_000,
+      streamOutput: false
+    });
+    const taskRunResult = await runCommand(executable, ["/Run", "/TN", taskName], send, {
+      timeoutMs: options.timeoutMs ?? 30_000
+    });
+
+    if (!taskRunResult.errorMessage && !taskRunResult.timedOut && taskRunResult.code === 0) {
+      return taskRunResult;
+    }
+  }
+
+  return await runCommand(openClawBin, ["gateway", "restart", "--force", "--json"], send, options);
+}
+
+async function startGatewayForOnboarding(
+  openClawBin: string,
+  send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>
+) {
+  return await startRegisteredWindowsGateway(send)
+    ?? await runCommand(openClawBin, ["gateway", "start", "--json"], send, { timeoutMs: 15_000 });
+}
+
+async function needsWindowsGatewayHiddenLauncherMigration(
+  send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>
+) {
+  if (process.platform !== "win32" || !(await probeLocalGatewayRegistration())) {
+    return false;
+  }
+
+  const executable = process.env.SystemRoot
+    ? path.join(process.env.SystemRoot, "System32", "schtasks.exe")
+    : "schtasks.exe";
+  const taskName = process.env.OPENCLAW_WINDOWS_TASK_NAME?.trim() || "OpenClaw Gateway";
+  const result = await runCommand(executable, ["/Query", "/TN", taskName, "/XML"], send, {
+    timeoutMs: 5_000,
+    streamOutput: false
+  });
+
+  if (result.errorMessage || result.timedOut || result.code !== 0) {
+    return false;
+  }
+
+  return !/<Command>\s*[^<]*\.vbs\s*<\/Command>/i.test(result.stdout);
 }
 
 function resolveWindowsPowerShellExecutable() {
@@ -946,19 +1189,34 @@ async function syncGatewayAuthTokenBeforeFirstStart(
   });
 
   const token = randomBytes(32).toString("base64url");
-  const gatewayModeResult = await runCommand(openClawBin, ["config", "set", "gateway.mode", "local"], send);
+  const gatewayModeResult = await runCommand(
+    openClawBin,
+    ["config", "set", "gateway.mode", "local"],
+    send,
+    { timeoutMs: 30_000 }
+  );
 
   if (gatewayModeResult.errorMessage || gatewayModeResult.timedOut || gatewayModeResult.code !== 0) {
     throw new Error("AgentOS could not set OpenClaw gateway.mode=local.");
   }
 
-  const authModeResult = await runCommand(openClawBin, ["config", "set", "gateway.auth.mode", "token"], send);
+  const authModeResult = await runCommand(
+    openClawBin,
+    ["config", "set", "gateway.auth.mode", "token"],
+    send,
+    { timeoutMs: 30_000 }
+  );
 
   if (authModeResult.errorMessage || authModeResult.timedOut || authModeResult.code !== 0) {
     throw new Error("AgentOS could not set OpenClaw gateway.auth.mode=token.");
   }
 
-  const tokenResult = await runCommand(openClawBin, ["config", "set", "gateway.auth.token", token], send);
+  const tokenResult = await runCommand(
+    openClawBin,
+    ["config", "set", "gateway.auth.token", token],
+    send,
+    { timeoutMs: 30_000 }
+  );
 
   if (tokenResult.errorMessage || tokenResult.timedOut || tokenResult.code !== 0) {
     throw new Error("AgentOS could not write a fresh OpenClaw Gateway token.");
@@ -1063,6 +1321,21 @@ async function waitForReadySnapshot(
   throw new Error(`Readiness check exceeded ${Math.round(timeoutMs / 1000)} seconds.`);
 }
 
+async function waitForLocalGatewayReady() {
+  const deadline = Date.now() + fastStartReadyTimeoutMs;
+  let latestStatus: GatewayStatusPayload | null = null;
+
+  while (Date.now() < deadline) {
+    latestStatus = await probeLocalGatewayStatus().catch(() => latestStatus);
+    if (latestStatus?.rpc?.ok) {
+      return latestStatus;
+    }
+    await delay(readyPollIntervalMs);
+  }
+
+  return latestStatus;
+}
+
 async function waitForReadySnapshotWithGatewayAuthDetection(
   openClawBin: string,
   gatewayStatus: GatewayStatusPayload | null | undefined,
@@ -1155,7 +1428,7 @@ async function repairGatewayModeIfNeeded(
 
   await send({
     type: "status",
-    phase: "starting-gateway",
+    phase: "installing-gateway",
     message: "Configuring OpenClaw gateway for local AgentOS access..."
   });
 
@@ -1168,11 +1441,11 @@ async function repairGatewayModeIfNeeded(
 
   await send({
     type: "status",
-    phase: "starting-gateway",
+    phase: "installing-gateway",
     message: "Restarting the local gateway service with gateway.mode=local..."
   });
 
-  const restartResult = await runCommand(openClawBin, ["gateway", "restart", "--force", "--json"], send);
+  const restartResult = await restartGatewayForOnboarding(openClawBin, send);
   appendOutput(restartResult);
 
   if (restartResult.errorMessage || restartResult.timedOut || restartResult.code !== 0) {
@@ -1224,21 +1497,21 @@ async function repairGatewayAuthForSystemSetup(
 
   await send({
     type: "status",
-    phase: "verifying",
+    phase: "installing-gateway",
     message: buildSystemSetupGatewayAuthRepairStatus(gatewayStatusIssue.kind)
   });
 
   await repairGatewayAuthKindForSystemSetup(gatewayStatusIssue.kind, openClawBin, send, async () => {
     await send({
       type: "status",
-      phase: "verifying",
+      phase: "installing-gateway",
       message: "No pending device approval was available. Rotating the local Gateway token before system setup readiness..."
     });
   });
 
   await send({
     type: "status",
-    phase: "verifying",
+    phase: "installing-gateway",
     message: buildSystemSetupGatewayAuthRetryStatus(gatewayStatusIssue.kind)
   });
 
@@ -1257,7 +1530,7 @@ async function repairGatewayAuthKindForSystemSetup(
     }
 
     return syncGatewayAuthTokenBeforeFirstStart(openClawBin, send, {
-      phase: "verifying",
+      phase: "installing-gateway",
       message: "Gateway auth changed during setup. Rotating the local Gateway token before system setup readiness..."
     });
   }
@@ -1288,7 +1561,7 @@ async function repairGatewayDeviceAccessForSystemSetup(
     }
 
     return syncGatewayAuthTokenBeforeFirstStart(openClawBin, send, {
-      phase: "verifying",
+      phase: "installing-gateway",
       message: "Rotating the local Gateway token before system setup readiness..."
     });
   }
@@ -1355,10 +1628,10 @@ async function waitForReadySnapshotAfterGatewayAuthRepair(
 ) {
   await send({
     type: "status",
-    phase: "verifying",
+    phase: "installing-gateway",
     message: kind === "gateway-token"
-      ? "Gateway token repaired. Waiting for OpenClaw Gateway to reconnect..."
-      : "Gateway device access repaired. Waiting for OpenClaw Gateway to reconnect..."
+      ? "Gateway token repaired. Applying Gateway configuration..."
+      : "Gateway device access repaired. Applying Gateway configuration..."
   });
 
   clearMissionControlCaches();
@@ -1366,11 +1639,11 @@ async function waitForReadySnapshotAfterGatewayAuthRepair(
 
   await send({
     type: "status",
-    phase: "starting-gateway",
+    phase: "installing-gateway",
     message: "Restarting the local Gateway service after auth repair..."
   });
 
-  const restartResult = await runCommand(openClawBin, ["gateway", "restart", "--force", "--json"], send, {
+  const restartResult = await restartGatewayForOnboarding(openClawBin, send, {
     timeoutMs: 30_000
   });
   appendOutput(restartResult);
@@ -1378,13 +1651,11 @@ async function waitForReadySnapshotAfterGatewayAuthRepair(
   if (restartResult.errorMessage || restartResult.timedOut || restartResult.code !== 0) {
     await send({
       type: "status",
-      phase: "starting-gateway",
+      phase: "installing-gateway",
       message: "Gateway restart did not complete. Trying to start the local Gateway service..."
     });
 
-    const startResult = await runCommand(openClawBin, ["gateway", "start", "--json"], send, {
-      timeoutMs: 30_000
-    });
+    const startResult = await startGatewayForOnboarding(openClawBin, send);
     appendOutput(startResult);
   }
 
