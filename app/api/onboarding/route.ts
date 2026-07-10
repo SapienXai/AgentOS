@@ -61,7 +61,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const onboardingSchema = z.object({
-  intent: z.literal("auto")
+  intent: z.enum(["auto", "prepare"])
 });
 
 const docsUrl = OPENCLAW_INSTALL_DOCS_URL;
@@ -81,8 +81,9 @@ type CommandResult = {
 };
 
 export async function POST(request: Request) {
+  let intent: "auto" | "prepare";
   try {
-    onboardingSchema.parse(await request.json());
+    intent = onboardingSchema.parse(await request.json()).intent;
   } catch (error) {
     return NextResponse.json(
       {
@@ -363,6 +364,53 @@ export async function POST(request: Request) {
             });
             return;
           }
+        }
+
+        if (intent === "prepare") {
+          if (!gatewayStatus?.service?.loaded) {
+            await send({
+              type: "status",
+              phase: "installing-gateway",
+              message: "Registering the local gateway service..."
+            });
+
+            const gatewayInstallResult = await runCommand(
+              openClawBin,
+              ["gateway", "install", "--json"],
+              send
+            );
+            appendOutput(gatewayInstallResult);
+
+            if (gatewayInstallResult.errorMessage || gatewayInstallResult.timedOut || gatewayInstallResult.code !== 0) {
+              await failGatewayCommand(
+                "installing-gateway",
+                "Gateway installation failed.",
+                openClawBin,
+                gatewayInstallResult,
+                formatOpenClawCommand(openClawBin, ["gateway", "install", "--json"])
+              );
+              return;
+            }
+
+            const gatewayInstallPayload = parseGatewayCommandPayload(gatewayInstallResult.stdout);
+            if (gatewayInstallNeedsAgentOsTokenSync(gatewayInstallPayload)) {
+              const tokenSyncResult = await syncGatewayAuthTokenBeforeFirstStart(openClawBin, send);
+              appendGatewayAuthSyncOutput(tokenSyncResult, appendOutput);
+            }
+          }
+
+          snapshot = await loadSnapshot(true);
+          await send({
+            type: "done",
+            ok: true,
+            phase: "installing-gateway",
+            message: "Local Gateway is registered and configured. Start OpenClaw to bring it online.",
+            stdout: aggregatedStdout,
+            stderr: aggregatedStderr,
+            snapshot
+          });
+          await closeWriter();
+          return;
         }
 
         await send({
