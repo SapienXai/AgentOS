@@ -1,5 +1,26 @@
 import type { RuntimeStatus, TaskFeedEvent, WorkItemRecord } from "@/lib/agentos/contracts";
 
+export type TaskCardPrimaryAction = "open-live-activity" | "view-result" | "review-result" | "view-details";
+
+export function resolveTaskCardPrimaryAction(input: {
+  status: RuntimeStatus;
+  completedNeedsReview?: boolean;
+}): TaskCardPrimaryAction {
+  if (input.completedNeedsReview) {
+    return "review-result";
+  }
+
+  if (input.status === "running" || input.status === "queued") {
+    return "open-live-activity";
+  }
+
+  if (input.status === "completed") {
+    return "view-result";
+  }
+
+  return "view-details";
+}
+
 export function resolveTaskBadgeLabel(
   bootstrapStage: string | null,
   status: RuntimeStatus,

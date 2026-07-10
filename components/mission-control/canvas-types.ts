@@ -109,6 +109,8 @@ export type RuntimeNodeData = Record<string, unknown> & {
 
 export type TaskNodeData = Record<string, unknown> & {
   task: WorkItemRecord;
+  surfaceTheme?: "dark" | "light";
+  agentThemeRgb?: string;
   workspacePath?: string;
   emphasis: boolean;
   relativeTimeReferenceMs: number;
@@ -147,6 +149,7 @@ export type MissionEdgeData = {
   taskFocused?: boolean;
   surfaceTether?: boolean;
   surfaceAccentColor?: string | null;
+  agentThemeRgb?: string | null;
 };
 
 type WorkspaceCanvasNode = Node<WorkspaceNodeData, "workspace">;

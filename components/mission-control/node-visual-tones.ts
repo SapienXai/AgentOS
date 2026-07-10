@@ -7,6 +7,16 @@ import type { TaskReviewStatus } from "./task-review-state";
 type BadgeVariant = Exclude<BadgeProps["variant"], null | undefined>;
 
 export type TaskNodeToneKey = "aborted" | "review" | "live" | "success" | "fresh" | "default";
+export type TaskNodeSurfaceTheme = "dark" | "light";
+
+export type TaskNodeSurfaceTone = Readonly<{
+  outer: string;
+  panel: string;
+  menu: string;
+  text: string;
+  mutedText: string;
+  subtleButton: string;
+}>;
 
 export type TaskNodeToneInput = {
   completedNeedsReview?: boolean;
@@ -58,6 +68,28 @@ export const FRESH_NODE_BADGE_CLASSES = "gap-1 border-cyan-100/20 bg-cyan-100/12
 
 export const TASK_NODE_SELECTED_CLASSES =
   "border-cyan-300/[0.5] shadow-[0_22px_52px_rgba(34,211,238,0.18)]";
+
+export function resolveTaskNodeSurfaceTone(surfaceTheme: TaskNodeSurfaceTheme): TaskNodeSurfaceTone {
+  if (surfaceTheme === "light") {
+    return {
+      outer: "border-[#d8c5b8] bg-[linear-gradient(180deg,rgba(255,253,251,0.98),rgba(247,240,235,0.96))] shadow-[0_16px_38px_rgba(107,75,55,0.14)]",
+      panel: "border-[#e7d8ce] bg-white/[0.82] shadow-[inset_0_1px_0_rgba(255,255,255,0.92)]",
+      menu: "border-[#dfcfc4] bg-[#fffdfa]/98 shadow-[0_16px_34px_rgba(107,75,55,0.16)]",
+      text: "text-[#30251f]",
+      mutedText: "text-[#8f7868]",
+      subtleButton: "border-[#e4d4c9] bg-white/[0.72] text-[#70594a] hover:border-[#cda98f] hover:bg-[#fbf2eb] hover:text-[#33271f]"
+    };
+  }
+
+  return {
+    outer: "border-white/[0.09] bg-[linear-gradient(180deg,rgba(15,22,34,0.97),rgba(8,13,23,0.97))] shadow-[0_18px_52px_rgba(0,0,0,0.34)]",
+    panel: "border-white/[0.07] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
+    menu: "border-white/[0.1] bg-slate-950/96 shadow-[0_20px_44px_rgba(0,0,0,0.42)]",
+    text: "text-white",
+    mutedText: "text-slate-500",
+    subtleButton: "border-white/[0.08] bg-white/[0.04] text-slate-300 hover:border-white/[0.14] hover:bg-white/[0.08] hover:text-white"
+  };
+}
 
 export const TASK_NODE_REVIEW_ACTION_CLASSES = {
   button:

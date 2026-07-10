@@ -23,6 +23,7 @@ import {
   buildPendingAgentRecord,
   type PendingAgentProjection
 } from "@/components/mission-control/pending-agent-projection";
+import { resolveAgentThemeRgb } from "@/components/mission-control/agent-profile-visuals";
 import { getSurfaceCatalogEntry } from "@/lib/openclaw/surface-catalog";
 import { resolveAgentModelLabel } from "@/lib/openclaw/presenters";
 import type {
@@ -44,7 +45,7 @@ const agentGridColumnGap = 318;
 const idleAgentGridColumns = 3;
 const idleAgentGridRowHeight = 340;
 const taskLaneStartX = 390;
-const taskCardLaneHeight = 420;
+const taskCardLaneHeight = 300;
 const taskLaneBottomPadding = 44;
 
 export function buildCanvasGraph(
@@ -88,7 +89,8 @@ export function buildCanvasGraph(
   onReviewTask: (task: WorkItemRecord) => void,
   pendingCreatedAgents: PendingAgentProjection[],
   agentCreationWarnings: Record<string, string>,
-  persistedNodePositions: PersistedNodePositionMap
+  persistedNodePositions: PersistedNodePositionMap,
+  surfaceTheme: "dark" | "light" = "dark"
 ) {
   const safeHiddenRuntimeIds = Array.isArray(hiddenRuntimeIds) ? hiddenRuntimeIds : [];
   const safeHiddenTaskKeys = Array.isArray(hiddenTaskKeys) ? hiddenTaskKeys : [];
@@ -175,6 +177,7 @@ export function buildCanvasGraph(
     };
 
     workspaceAgents.forEach((agent, agentIndex) => {
+      const agentThemeRgb = resolveAgentThemeRgb(agent.id, agent.name, agent.identity.theme);
       const agentTasks = workspaceTasks
         .filter((task) => resolveTaskOwnerId(task) === agent.id)
         .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
@@ -338,7 +341,7 @@ export function buildCanvasGraph(
           selectable: true,
           position: resolvePersistedPosition(
             toPersistedTaskPositionKey(task),
-            { x: taskX, y: agentY + taskIndex * 420 + 10 },
+            { x: taskX, y: agentY + taskIndex * taskCardLaneHeight + 10 },
             persistedNodePositions,
             toLegacyPersistedTaskPositionKey(task.id)
           ),
@@ -346,6 +349,8 @@ export function buildCanvasGraph(
           selected: false,
           data: {
             task,
+            surfaceTheme,
+            agentThemeRgb,
             workspacePath: workspace.path,
             emphasis: isFocusMode ? true : !activeWorkspaceId || activeWorkspaceId === workspace.id,
             relativeTimeReferenceMs,
@@ -533,7 +538,7 @@ export function buildEdgesForNodes(
     const source = nodesById.get(ownerAgentId);
     const target = nodesById.get(task.id);
 
-    if (!source || !target) {
+    if (!source || source.type !== "agent" || !target) {
       continue;
     }
 
@@ -552,7 +557,8 @@ export function buildEdgesForNodes(
         (isComposerActive && ownerAgentId === composerTargetAgentId),
       data: {
         composerFocused: isComposerActive && ownerAgentId === composerTargetAgentId,
-        taskFocused: task.id === selectedNodeId || justCreatedTaskIds.includes(task.id)
+        taskFocused: task.id === selectedNodeId || justCreatedTaskIds.includes(task.id),
+        agentThemeRgb: resolveAgentThemeRgb(source.data.agent.id, source.data.agent.name, source.data.agent.identity.theme)
       },
       style: {
         strokeWidth:

@@ -230,6 +230,16 @@ export function resolveAgentProfileVisual(agentId: string, fallbackName = "", th
   };
 }
 
+export function resolveAgentThemeRgb(agentId: string, fallbackName = "", themeValue = "") {
+  const variant = stableAgentProfileVariant(agentId || fallbackName);
+  const fallbackTheme = AGENT_PROFILE_THEMES[variant];
+  const visualTheme = resolveAgentVisualTheme(themeValue);
+
+  // The neutral fallback profile starts with black as its primary accent, which is not readable as
+  // a canvas connection color. Its secondary slate accent still represents the same profile.
+  return visualTheme?.glowRgb ?? (fallbackTheme.accentA === "0, 0, 0" ? fallbackTheme.accentB : fallbackTheme.accentA);
+}
+
 export function resolveAgentVisualTheme(value: string | null | undefined) {
   const normalized = normalizeAgentVisualThemeValue(value);
 

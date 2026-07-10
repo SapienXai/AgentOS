@@ -3802,6 +3802,7 @@ export function MissionControlShell({
         <div className="absolute inset-0 z-10">
           <MissionCanvasView
             snapshot={uiSnapshot}
+            surfaceTheme={surfaceTheme}
             pendingCreatedAgents={pendingCreatedAgents}
             agentCreationWarnings={agentCreationWarnings}
             accountTargets={accountTargets}
@@ -4117,12 +4118,6 @@ export function MissionControlShell({
             onTargetAgentSelect={handleComposerTargetAgentSelect}
             onComposerActiveChange={handleComposerActiveChange}
             onRefresh={refresh}
-            onOpenWorkspaceCreate={() => {
-              openWorkspaceWizard("basic");
-            }}
-            onOpenWorkspaceChannels={openWorkspaceChannels}
-            onAgentCreationPending={handleAgentCreationPending}
-            onAgentCreatedVisible={handleCreatedAgentVisible}
             onMissionDispatchStart={(event) => {
               missionDispatchAbortControllersRef.current.set(event.requestId, event.abortController);
 

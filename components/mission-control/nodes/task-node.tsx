@@ -7,20 +7,16 @@ import {
   CheckCircle2,
   ClipboardList,
   ChevronDown,
-  ChevronUp,
   Copy,
   CornerDownLeft,
   EyeOff,
-  FolderOpenDot,
   Lock,
   LockOpen,
   MessageSquare,
   MoreHorizontal,
   Plus,
-  RefreshCw,
-  Rows3,
   Sparkles,
-  Users
+  X
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -29,10 +25,10 @@ import type { TaskCardInspectorContext, TaskNodeData } from "@/components/missio
 import { InteractiveContent } from "@/components/mission-control/interactive-content";
 import {
   FRESH_NODE_BADGE_CLASSES,
-  TASK_NODE_REVIEW_ACTION_CLASSES,
   TASK_NODE_SELECTED_CLASSES,
   type TaskNodeToneInput,
   resolveTaskNodeBadgeVariant,
+  resolveTaskNodeSurfaceTone,
   resolveTaskNodeTokenTone,
   resolveTaskNodeVisualTone
 } from "@/components/mission-control/node-visual-tones";
@@ -45,17 +41,15 @@ import {
   hasTaskRuntimeOutputEvidence,
   isWaitingForOutputCopy,
   readTaskResultPreview,
+  resolveTaskCardPrimaryAction,
   resolveTaskDispatchIssueDetail,
   resolveTaskBadgeLabel
 } from "@/components/mission-control/task-node-status";
 import {
   ExpandableTaskResult,
   TaskFollowUpComposer,
-  TaskMetricRow,
-  buildTaskFollowUpConfidenceMetric,
   formatFollowUpDetail,
-  type SubmittedTaskFollowUp,
-  type TaskMetricItem
+  type SubmittedTaskFollowUp
 } from "@/components/mission-control/task-follow-up";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -66,7 +60,8 @@ import {
   readTaskFollowUpsFromMetadata,
   resolveTaskFollowUpDisplayMessage
 } from "@/lib/openclaw/domains/task-follow-up-records";
-import { compactMissionText, formatTokens } from "@/lib/openclaw/presenters";
+import { resolveTaskFollowUpAvailability } from "@/lib/openclaw/domains/task-follow-up";
+import { compactMissionText } from "@/lib/openclaw/presenters";
 import { cn } from "@/lib/utils";
 
 type TaskFlowNode = Node<TaskNodeData, "task">;
@@ -89,7 +84,6 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [composerExpanded, setComposerExpanded] = useState(false);
-  const [titleExpanded, setTitleExpanded] = useState(false);
   const [localFollowUps, setLocalFollowUps] = useState<SubmittedTaskFollowUp[]>([]);
   const [activeFollowUpIndex, setActiveFollowUpIndex] = useState<number | null>(null);
   const basePersistedFollowUps = useMemo(
@@ -273,23 +267,19 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     : stalledWithCapturedOutput && isWaitingForOutputCopy(rawResultPreview)
       ? "Partial runtime evidence captured. Review the live feed for the latest tool output."
       : rawResultPreview;
-  const sessionCount = readTaskSessionCount(displayTask);
-  const turnCount = readTaskTurnCount(displayTask);
-  const displayedSessionCount = activeFollowUp
-    ? countUniqueStrings([activeFollowUp.sessionId ?? "", ...activeFollowUpRuntimes.map((runtime) => runtime.sessionId ?? "")])
-    : sessionCount;
-  const displayedTurnCount = activeFollowUp ? countUniqueStrings([activeFollowUp.runId ?? "", ...activeFollowUpRuntimes.map((runtime) => runtime.runId ?? runtime.id)]) : turnCount;
-  const displayedTokenLabel = activeFollowUp
-    ? formatTokens(sumRuntimeTokens(activeFollowUpRuntimes))
-    : formatTokens(displayTask.tokenUsage?.total);
-  const displayedRuntimeCount = activeFollowUp ? Math.max(activeFollowUpRuntimes.length, activeFollowUp.runId ? 1 : 0) : displayTask.runtimeCount;
-  const displayedArtifactCount = activeFollowUp
-    ? activeFollowUpOutputs.reduce((sum, output) => sum + output.createdFiles.length, 0)
-    : displayTask.artifactCount;
-  const provenanceLabel = formatTaskProvenanceLabel(displayTask.metadata.provenance);
-  const feedButtonCount = String(displayedFeed.length);
   const feedPanelId = `task-feed-${data.task.id}`;
   const visualTone = resolveTaskNodeVisualTone(displayedToneInput);
+  const surfaceTheme = data.surfaceTheme ?? "dark";
+  const surfaceTone = resolveTaskNodeSurfaceTone(surfaceTheme);
+  const agentThemeRgb = data.agentThemeRgb ?? "14, 165, 233";
+  const followUpAvailability = resolveTaskFollowUpAvailability(displayTask);
+  const resolvedPrimaryAction = resolveTaskCardPrimaryAction({
+    status: displayTask.status,
+    completedNeedsReview
+  });
+  const primaryAction = resolvedPrimaryAction === "review-result" && !data.onReviewTask
+    ? "view-details"
+    : resolvedPrimaryAction;
   const currentCardNumber = effectiveActiveFollowUpIndex === null ? 1 : effectiveActiveFollowUpIndex + 2;
   const displayPromptText = activeFollowUp
     ? resolveTaskFollowUpDisplayMessage(activeFollowUp) ?? activeFollowUp.message
@@ -301,6 +291,10 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const activeInspectorContext = activeFollowUp
     ? buildTaskCardInspectorContext(data.task.id, activeFollowUp, effectiveActiveFollowUpIndex ?? 0, currentCardNumber)
     : null;
+  const cardSummary = compactMissionText(
+    isLiveTask || isPendingCreation ? activitySummary : displayResultText || activitySummary,
+    164
+  ) || activitySummary;
 
   useEffect(() => {
     if (!composerExpanded) {
@@ -310,7 +304,6 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     const handlePointerDown = (event: PointerEvent) => {
       if (!cardRef.current?.contains(event.target as globalThis.Node)) {
         setComposerExpanded(false);
-        setTitleExpanded(false);
       }
     };
 
@@ -340,7 +333,6 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   ];
   const activeTabId = activeFollowUp ? activeFollowUp.runId || activeFollowUp.id : "task";
   const selectTaskTab = (nextIndex: number | null) => {
-    setTitleExpanded(false);
     setActiveFollowUpIndex(nextIndex);
     data.onActiveCardChange?.(
       data.task,
@@ -354,55 +346,6 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           )
     );
   };
-  const taskMetrics: TaskMetricItem[] = [
-    {
-      icon: ClipboardList,
-      label: "Source",
-      value: provenanceLabel
-    },
-    buildTaskFollowUpConfidenceMetric(displayTask),
-    {
-      icon: Users,
-      label: "Sessions",
-      value: displayedSessionCount
-    },
-    {
-      icon: RefreshCw,
-      label: "Turns",
-      value: displayedTurnCount
-    },
-    {
-      icon: Sparkles,
-      label: "Tokens",
-      value: displayedTokenLabel,
-      highlighted: true
-    },
-    {
-      icon: Rows3,
-      label: "Feed",
-      value: feedButtonCount,
-      active: expanded,
-      onClick: () => {
-        setExpanded((current) => !current);
-        if (data.onInspect) {
-          data.onInspect(data.task, "output", activeInspectorContext);
-        }
-      }
-    },
-    {
-      icon: FolderOpenDot,
-      label: "Runs",
-      value: displayedRuntimeCount,
-      onClick: () => data.onInspect?.(data.task, "overview", activeInspectorContext)
-    },
-    {
-      icon: Sparkles,
-      label: "Files",
-      value: displayedArtifactCount,
-      onClick: () => data.onInspect?.(data.task, "files", activeInspectorContext)
-    }
-  ];
-
   useEffect(() => {
     if (!menuOpen) {
       return;
@@ -444,58 +387,58 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           : undefined
       }
       className={cn(
-        "dark group relative w-[620px] max-w-[calc(100vw-32px)] origin-center transform-gpu overflow-visible rounded-[20px] border bg-[linear-gradient(180deg,rgba(12,19,33,0.97),rgba(5,10,20,0.97))] p-2 shadow-[0_18px_52px_rgba(0,0,0,0.34)] backdrop-blur-xl transition-[border-color,box-shadow,opacity,transform] duration-200",
-        visualTone.outer,
-        data.emphasis ? "opacity-100" : "opacity-72",
+        "group relative w-[400px] max-w-[calc(100vw-32px)] origin-center transform-gpu overflow-visible rounded-[18px] border p-1.5 backdrop-blur-xl transition-[border-color,box-shadow,opacity,transform] duration-200",
+        surfaceTone.outer,
+        surfaceTheme === "dark" && visualTone.outer,
+        surfaceTheme === "light" && resolveLightTaskAccentClass(visualTone.key),
+        data.emphasis ? "opacity-100" : "opacity-76",
         selected && TASK_NODE_SELECTED_CLASSES,
-        composerExpanded && "z-30 scale-[1.015] shadow-[0_24px_70px_rgba(0,0,0,0.46)]"
+        (composerExpanded || expanded) && "z-30 shadow-[0_22px_58px_rgba(0,0,0,0.3)]"
       )}
     >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[20px]">
-        <div className={cn("absolute inset-y-3 left-0 w-0.5 rounded-r-full", visualTone.rail)} />
-        <div className={cn("absolute inset-x-0 top-0 h-px", visualTone.topLine)} />
-        <div className={cn("absolute -right-8 -top-8 h-24 w-24 rounded-full blur-3xl", visualTone.glow)} />
-        <div className="absolute inset-x-3 bottom-0 h-px bg-white/[0.04]" />
+      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[18px]">
+        <div
+          className="absolute inset-y-3 left-0 w-0.5 rounded-r-full"
+          style={{ backgroundColor: `rgb(${agentThemeRgb})`, boxShadow: `0 0 14px rgba(${agentThemeRgb}, 0.46)` }}
+        />
+        <div
+          className="absolute inset-x-0 top-0 h-px"
+          style={{ backgroundColor: `rgba(${agentThemeRgb}, ${surfaceTheme === "light" ? 0.62 : 0.78})` }}
+        />
+        <div
+          className="absolute -right-8 -top-8 h-24 w-24 rounded-full blur-3xl"
+          style={{ backgroundColor: `rgba(${agentThemeRgb}, ${surfaceTheme === "light" ? 0.1 : 0.14})` }}
+        />
       </div>
 
       <div className="relative z-10">
-        <TaskWorkspaceTabs
-          activeTabId={activeTabId}
-          tabs={tabs}
-          onAdd={() => {
-            setComposerExpanded(true);
-            composerInputRef.current?.focus();
-          }}
-          onSelect={(tab) => selectTaskTab(tab.index)}
-        />
-
-      {isPendingCreation ? (
+        {isPendingCreation ? (
         <motion.div
-          className="pointer-events-none absolute inset-[-10px] rounded-[20px] border border-cyan-200/16"
+          className="pointer-events-none absolute inset-[-8px] rounded-[18px] border border-cyan-200/16"
           animate={{ opacity: [0.18, 0.42, 0.18], scale: [0.985, 1.02, 0.985] }}
           transition={{ duration: 1.8, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
         />
-      ) : null}
+        ) : null}
 
-      <Handle
-        type="target"
-        id="target-left"
-        position={Position.Left}
-        className={cn("!h-2.5 !w-2.5 !border-0", visualTone.handle)}
-      />
+        <Handle
+          type="target"
+          id="target-left"
+          position={Position.Left}
+          className={cn("!h-2.5 !w-2.5 !border-0", visualTone.handle)}
+        />
 
-      <div className="relative z-20 rounded-[16px] border border-white/[0.06] bg-[linear-gradient(180deg,rgba(11,19,34,0.68),rgba(5,10,20,0.68))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-        <div className="min-w-0">
+        <div className={cn("relative z-20 rounded-[13px] border px-3 py-2.5", surfaceTone.panel)}>
+          <div className="min-w-0">
           <div className="flex items-start justify-between gap-2.5">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span
                   className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border shadow-[0_0_14px_rgba(45,212,191,0.08)]",
-                    visualTone.icon
+                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] border",
+                    resolveTaskIconClass(visualTone.key, surfaceTheme)
                   )}
                 >
-                  <ClipboardList className="h-4 w-4" />
+                  <ClipboardList className="h-3.5 w-3.5" />
                 </span>
                 <span
                   className={cn(
@@ -504,12 +447,12 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                     showsLiveActivity && "motion-safe:animate-pulse"
                   )}
                 />
-                <span className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  {activeFollowUp ? "Follow-up" : "Task"} / <span className="text-emerald-300">{displayTask.primaryAgentName || "OpenClaw"}</span>
+                <span className={cn("truncate text-[10px] font-semibold uppercase tracking-[0.16em]", surfaceTone.mutedText)}>
+                  {activeFollowUp ? "Follow-up" : "Task"} · <span className={cn("normal-case tracking-normal", surfaceTone.text)}>{displayTask.primaryAgentName || "OpenClaw"}</span>
                 </span>
-                {data.locked ? <Lock className="h-3.5 w-3.5 text-slate-500" /> : null}
+                {data.locked ? <Lock className={cn("h-3 w-3", surfaceTone.mutedText)} /> : null}
               </div>
-              <p className="mt-0.5 truncate text-[10px] leading-4 text-slate-500">{activityLabel}</p>
+              <p className={cn("mt-0.5 truncate text-[10px] leading-4", surfaceTone.mutedText)}>{activityLabel}</p>
             </div>
 
             <div className="nodrag nopan relative flex shrink-0 items-center gap-1.5" ref={menuRef}>
@@ -524,14 +467,14 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                   setMenuOpen((current) => !current);
                 }}
                 onPointerDown={(event) => event.stopPropagation()}
-                className="nodrag nopan inline-flex h-7 w-7 items-center justify-center rounded-[10px] border border-white/[0.08] bg-white/[0.04] text-slate-300 transition-colors hover:border-white/[0.14] hover:bg-white/[0.08] hover:text-white"
+                className={cn("nodrag nopan inline-flex h-7 w-7 items-center justify-center rounded-[9px] border transition-colors", surfaceTone.subtleButton)}
               >
                 <MoreHorizontal className="h-3.5 w-3.5" />
               </button>
 
               {menuOpen ? (
                 <div
-                  className="nodrag nopan absolute right-0 top-[calc(100%+8px)] z-[70] min-w-[148px] rounded-[14px] border border-white/[0.1] bg-slate-950/96 p-1.5 shadow-[0_20px_44px_rgba(0,0,0,0.42)] backdrop-blur-xl"
+                  className={cn("nodrag nopan absolute right-0 top-[calc(100%+8px)] z-[70] min-w-[176px] rounded-[12px] border p-1.5 backdrop-blur-xl", surfaceTone.menu)}
                   onClick={(event) => event.stopPropagation()}
                   onPointerDown={(event) => event.stopPropagation()}
                 >
@@ -539,6 +482,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                     <TaskMenuButton
                       icon={hasReviewResolution ? CheckCircle2 : AlertTriangle}
                       label={hasReviewResolution ? "Review record" : "Review result"}
+                      surfaceTheme={surfaceTheme}
                       onClick={() => {
                         data.onReviewTask?.(displayTask);
                         setMenuOpen(false);
@@ -546,24 +490,27 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                     />
                   ) : null}
                   <TaskMenuButton
-                    icon={CornerDownLeft}
-                    label="Use prompt"
+                      icon={CornerDownLeft}
+                      label="Reuse as new task"
+                      surfaceTheme={surfaceTheme}
                     onClick={() => {
                       data.onReply?.(data.task);
                       setMenuOpen(false);
                     }}
                   />
                   <TaskMenuButton
-                    icon={Copy}
-                    label="Copy mission"
+                      icon={Copy}
+                      label="Copy & edit prompt"
+                      surfaceTheme={surfaceTheme}
                     onClick={() => {
                       data.onCopyPrompt?.(data.task);
                       setMenuOpen(false);
                     }}
                   />
                   <TaskMenuButton
-                    icon={EyeOff}
-                    label="Hide"
+                      icon={EyeOff}
+                      label="Hide"
+                      surfaceTheme={surfaceTheme}
                     onClick={() => {
                       data.onHide?.(data.task);
                       setMenuOpen(false);
@@ -575,6 +522,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                       label={isAborted ? "Aborted" : "Abort task"}
                       destructive
                       disabled={!isAbortable}
+                      surfaceTheme={surfaceTheme}
                       onClick={() => {
                         if (!isAbortable) {
                           return;
@@ -586,8 +534,9 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                     />
                   ) : null}
                   <TaskMenuButton
-                    icon={data.locked ? LockOpen : Lock}
-                    label={data.locked ? "Unlock" : "Lock"}
+                      icon={data.locked ? LockOpen : Lock}
+                      label={data.locked ? "Unlock" : "Lock"}
+                      surfaceTheme={surfaceTheme}
                     onClick={() => {
                       data.onToggleLock?.(data.task);
                       setMenuOpen(false);
@@ -598,28 +547,9 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
             </div>
           </div>
 
-          <button
-            type="button"
-            aria-expanded={titleExpanded}
-            className="nodrag nopan group mt-2.5 flex w-full items-start gap-2 text-left"
-            onClick={(event) => {
-              event.stopPropagation();
-              setTitleExpanded((current) => !current);
-            }}
-            onPointerDown={(event) => event.stopPropagation()}
-          >
-            <h3
-              className={cn(
-                "min-w-0 flex-1 font-display text-[1.16rem] font-semibold leading-[1.16] text-white md:text-[1.22rem]",
-                !titleExpanded && "line-clamp-2"
-              )}
-            >
-              {displayPromptText}
-            </h3>
-            <span className="mt-0.5 shrink-0 rounded-[9px] border border-white/[0.08] bg-white/[0.04] p-1 text-slate-400 transition-colors group-hover:border-cyan-200/20 group-hover:text-slate-100">
-              <ChevronDown className={cn("h-3 w-3 transition-transform", titleExpanded && "rotate-180")} />
-            </span>
-          </button>
+          <h3 className={cn("mt-2.5 line-clamp-2 font-display text-[1rem] font-semibold leading-[1.28]", surfaceTone.text)}>
+            {displayPromptText}
+          </h3>
 
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {displayTask.warningCount > 0 && !hasReviewResolution ? (
@@ -633,109 +563,130 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                 new
               </Badge>
             ) : null}
-            <span className={cn("text-[9px] uppercase tracking-[0.14em]", tone)}>
+            {followUps.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setExpanded(true)}
+                className={cn("nodrag nopan rounded-[7px] border px-1.5 py-1 text-[9px] font-medium", surfaceTone.subtleButton)}
+              >
+                {followUps.length} follow-up{followUps.length === 1 ? "" : "s"}
+              </button>
+            ) : null}
+            <span className={cn("text-[9px] uppercase tracking-[0.14em]", tone, surfaceTheme === "light" && resolveLightTaskStatusTextClass(visualTone.key))}>
               {footerLabel}
             </span>
           </div>
 
           {dispatchIssueDetail ? (
-            <p className="mt-1 text-[10px] leading-4 text-amber-100/90">{dispatchIssueDetail}</p>
+            <p className={cn("mt-1.5 line-clamp-2 text-[10px] leading-4", surfaceTheme === "light" ? "text-amber-800" : "text-amber-100/90")}>{dispatchIssueDetail}</p>
           ) : null}
 
-          <TaskMetricRow metrics={taskMetrics} compact surface="dark" density="dense" className="mt-2" />
+          <p className={cn("mt-2 line-clamp-2 text-[11px] leading-5", surfaceTheme === "light" ? "text-[#624f43]" : "text-slate-300")}>
+            {cardSummary}
+          </p>
 
-          <ExpandableTaskResult
-            title={displayResultTitle}
-            result={displayResultText}
-            compact
-            density="dense"
-            className={cn("mt-2", visualTone.resultBorder)}
-          />
-
-          {completedNeedsReview && data.onReviewTask ? (
+          <div className="mt-3 flex items-center gap-1.5">
             <button
               type="button"
-              className={TASK_NODE_REVIEW_ACTION_CLASSES.button}
+              className={cn("nodrag nopan inline-flex h-8 items-center rounded-[9px] px-2.5 text-[10px] font-semibold transition-colors", resolvePrimaryActionClass(primaryAction, surfaceTheme))}
               onClick={(event) => {
                 event.stopPropagation();
-                data.onReviewTask?.(displayTask);
+                if (primaryAction === "review-result") {
+                  data.onReviewTask?.(displayTask);
+                  return;
+                }
+
+                data.onInspect?.(data.task, primaryAction === "view-details" ? "overview" : "output", activeInspectorContext);
               }}
               onPointerDown={(event) => event.stopPropagation()}
             >
-              <span className="flex min-w-0 items-center gap-2">
-                <span className={TASK_NODE_REVIEW_ACTION_CLASSES.icon}>
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[10px] font-medium uppercase tracking-[0.18em]">
-                    Review result
-                  </span>
-                  <span className={TASK_NODE_REVIEW_ACTION_CLASSES.detail}>
-                    Accept, continue, retry, or dismiss.
-                  </span>
-                </span>
-              </span>
-              <ChevronDown className={TASK_NODE_REVIEW_ACTION_CLASSES.chevron} />
+              {formatPrimaryActionLabel(primaryAction)}
             </button>
-          ) : null}
-
-        </div>
-      </div>
-
-        {expanded ? (
-          <div className="mt-2 rounded-[13px] border border-white/[0.07] bg-white/[0.025] px-2 py-1.5 pb-2">
+            <button
+              type="button"
+              disabled={!followUpAvailability.available}
+              title={followUpAvailability.reason ?? followUpAvailability.warning ?? "Continue this task in its existing OpenClaw session."}
+              className={cn(
+                "nodrag nopan inline-flex h-8 items-center rounded-[9px] border px-2.5 text-[10px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45",
+                surfaceTone.subtleButton
+              )}
+              onClick={(event) => {
+                event.stopPropagation();
+                setExpanded(true);
+                setComposerExpanded(true);
+                requestAnimationFrame(() => composerInputRef.current?.focus());
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              Follow up
+            </button>
             <button
               type="button"
               aria-expanded={expanded}
               aria-controls={feedPanelId}
-              className="nodrag nopan group flex w-full items-start justify-between gap-2.5 rounded-[9px] border border-transparent px-1 py-1 text-left transition-colors hover:bg-white/[0.035]"
+              className={cn("nodrag nopan ml-auto inline-flex h-8 w-8 items-center justify-center rounded-[9px] border transition-colors", surfaceTone.subtleButton)}
+              title={expanded ? "Hide activity" : "Show activity and details"}
               onClick={(event) => {
                 event.stopPropagation();
                 setExpanded((current) => !current);
               }}
               onPointerDown={(event) => event.stopPropagation()}
             >
-              <div className="min-w-0">
-                <p className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.18em] text-slate-500 transition-colors group-hover:text-slate-400">
-                  {showsLiveActivity ? (
-                    <span className={cn("inline-flex h-1.5 w-1.5 rounded-full shadow-[0_0_10px_rgba(34,211,238,0.7)]", visualTone.dot, "motion-safe:animate-pulse")} />
-                  ) : null}
-                  <span>Live feed</span>
-                </p>
-                <p className="mt-0.5 truncate text-[10px] text-slate-300">{activityLabel}</p>
-                <p className="mt-1 truncate text-[10px] text-slate-500">{activitySummary}</p>
-              </div>
-              <div className="mt-0.5 shrink-0 rounded-[8px] border border-white/[0.08] bg-white/[0.035] p-1 text-slate-400 transition-colors group-hover:border-white/[0.12] group-hover:text-slate-200">
-                <ChevronUp className="h-3 w-3" />
-              </div>
+              {expanded ? <X className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
             </button>
+          </div>
 
+          </div>
+        </div>
+
+        {expanded ? (
           <motion.div
             id={feedPanelId}
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="nodrag nopan overflow-hidden nowheel"
+            className={cn("nodrag nopan mt-1.5 overflow-hidden rounded-[13px] border px-2.5 py-2.5 nowheel", surfaceTone.panel)}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="pt-2.5">
+            {followUps.length > 0 ? (
+              <TaskWorkspaceTabs
+                activeTabId={activeTabId}
+                tabs={tabs}
+                surfaceTheme={surfaceTheme}
+                addDisabled={!followUpAvailability.available}
+                addTitle={followUpAvailability.reason ?? followUpAvailability.warning ?? "Continue this task in its existing OpenClaw session."}
+                onAdd={() => {
+                  setComposerExpanded(true);
+                  requestAnimationFrame(() => composerInputRef.current?.focus());
+                }}
+                onSelect={(tab) => selectTaskTab(tab.index)}
+              />
+            ) : null}
+            <ExpandableTaskResult
+              title={displayResultTitle}
+              result={displayResultText}
+              compact
+              density="dense"
+              className="mb-2"
+            />
+            <div>
               {streamNotice ? (
-                <div className="mb-2 rounded-[12px] border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-[10px] leading-5 text-amber-100">
+                <div className={cn("mb-2 rounded-[10px] border border-amber-400/20 bg-amber-400/10 px-2.5 py-2 text-[10px] leading-5", surfaceTheme === "light" ? "text-amber-800" : "text-amber-100")}>
                   {streamNotice}
                 </div>
               ) : null}
-              <ScrollArea className="h-[84px] w-full pr-3">
+              <ScrollArea className="h-[108px] w-full pr-3">
                 {loading && displayedFeed.length === 0 ? (
-                  <div className="py-4 text-center text-[10px] text-slate-500">
+                  <div className={cn("py-4 text-center text-[10px]", surfaceTone.mutedText)}>
                     Connecting to feed...
                   </div>
                 ) : error && displayedFeed.length === 0 ? (
-                  <div className="rounded-[12px] border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-[10px] leading-5 text-amber-100">
+                  <div className={cn("rounded-[10px] border border-amber-400/20 bg-amber-400/10 px-2.5 py-2 text-[10px] leading-5", surfaceTheme === "light" ? "text-amber-800" : "text-amber-100")}>
                     {error}
                   </div>
                 ) : displayedFeed.length === 0 ? (
-                  <div className="py-4 text-center text-[10px] text-slate-500">
+                  <div className={cn("py-4 text-center text-[10px]", surfaceTone.mutedText)}>
                     {activeFollowUp ? "No follow-up events yet." : "No events yet."}
                   </div>
                 ) : (
@@ -749,17 +700,17 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                           )}
                         />
                         <div className="flex items-baseline justify-between gap-2">
-                          <span className="text-[10px] font-medium text-slate-300">
+                          <span className={cn("text-[10px] font-medium", surfaceTheme === "light" ? "text-[#514136]" : "text-slate-300")}>
                             {event.title}
                           </span>
-                          <span className="shrink-0 text-[9px] text-slate-600">
+                          <span className={cn("shrink-0 text-[9px]", surfaceTone.mutedText)}>
                             {formatTimeOnly(event.timestamp)}
                           </span>
                         </div>
                         <div className="mt-0.5">
                           <InteractiveContent
                             text={event.detail}
-                            className="text-[10px] leading-relaxed text-slate-400 group-hover/item:text-slate-300"
+                            className={cn("text-[10px] leading-relaxed", surfaceTheme === "light" ? "text-[#806958] group-hover/item:text-[#514136]" : "text-slate-400 group-hover/item:text-slate-300")}
                             url={"url" in event ? event.url : null}
                             filePath={"filePath" in event ? event.filePath : null}
                             displayPath={"displayPath" in event ? event.displayPath : null}
@@ -773,31 +724,27 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                 )}
               </ScrollArea>
             </div>
+            {composerExpanded ? (
+              <TaskFollowUpComposer
+                task={displayTask}
+                latestResult={displayResultText}
+                createdFiles={detail?.createdFiles}
+                outputSummary={activitySummary}
+                compact
+                density="dense"
+                expanded
+                textareaRef={composerInputRef}
+                className="nodrag nopan mt-2"
+                onSubmitted={(followUp) => {
+                  const nextIndex = followUps.length;
+                  setLocalFollowUps((current) => mergeTaskFollowUps(current, [followUp]));
+                  setActiveFollowUpIndex(nextIndex);
+                  data.onActiveCardChange?.(data.task, buildTaskCardInspectorContext(data.task.id, followUp, nextIndex, nextIndex + 2));
+                }}
+              />
+            ) : null}
           </motion.div>
-          </div>
         ) : null}
-      <TaskFollowUpComposer
-        task={displayTask}
-        latestResult={displayResultText}
-        createdFiles={detail?.createdFiles}
-        outputSummary={activitySummary}
-        compact
-        density="dense"
-        expanded={composerExpanded}
-        onExpandRequest={() => setComposerExpanded(true)}
-        textareaRef={composerInputRef}
-        className="nodrag nopan mt-2"
-        onSubmitted={(followUp) => {
-          const nextIndex = followUps.length;
-          setLocalFollowUps((current) => mergeTaskFollowUps(current, [followUp]));
-          setActiveFollowUpIndex(nextIndex);
-          data.onActiveCardChange?.(
-            data.task,
-            buildTaskCardInspectorContext(data.task.id, followUp, nextIndex, nextIndex + 2)
-          );
-          setExpanded(true);
-        }}
-      />
       </div>
     </motion.div>
   );
@@ -807,12 +754,18 @@ function TaskWorkspaceTabs({
   activeTabId,
   tabs,
   onAdd,
-  onSelect
+  onSelect,
+  surfaceTheme,
+  addDisabled = false,
+  addTitle = "Focus follow-up composer"
 }: {
   activeTabId: string;
   tabs: TaskWorkspaceTab[];
   onAdd: () => void;
   onSelect: (tab: TaskWorkspaceTab) => void;
+  surfaceTheme: "dark" | "light";
+  addDisabled?: boolean;
+  addTitle?: string;
 }) {
   const activeIndex = Math.max(tabs.findIndex((tab) => tab.id === activeTabId), 0);
   const selectByOffset = (offset: number) => {
@@ -839,6 +792,7 @@ function TaskWorkspaceTabs({
         {tabs.map((tab) => {
           const active = tab.id === activeTabId;
           const Icon = tab.kind === "task" ? ClipboardList : MessageSquare;
+          const isLight = surfaceTheme === "light";
 
           return (
             <button
@@ -852,8 +806,12 @@ function TaskWorkspaceTabs({
                 "group/tab relative flex h-[50px] cursor-grab items-center gap-2 rounded-t-[14px] border px-2.5 text-left outline-none transition-all duration-200 active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-cyan-200/45",
                 tabs.length <= 7 ? "min-w-0 w-full" : "min-w-[150px] max-w-[220px] shrink-0",
                 active
-                  ? "border-cyan-200/28 bg-cyan-300/[0.09] text-white shadow-[0_-10px_34px_rgba(45,212,191,0.13)]"
-                  : "border-white/[0.075] bg-white/[0.025] text-slate-300 hover:border-cyan-200/16 hover:bg-white/[0.045]"
+                  ? isLight
+                    ? "border-[#b9a18d] bg-[#f9eee6] text-[#3b2d24] shadow-[0_-8px_24px_rgba(107,75,55,0.10)]"
+                    : "border-cyan-200/28 bg-cyan-300/[0.09] text-white shadow-[0_-10px_34px_rgba(45,212,191,0.13)]"
+                  : isLight
+                    ? "border-[#e6d7cd] bg-white/[0.58] text-[#7d6656] hover:border-[#cda98f] hover:bg-[#faf1ea]"
+                    : "border-white/[0.075] bg-white/[0.025] text-slate-300 hover:border-cyan-200/16 hover:bg-white/[0.045]"
               )}
               onClick={() => onSelect(tab)}
               onKeyDown={(event) => {
@@ -881,28 +839,32 @@ function TaskWorkspaceTabs({
                 className={cn(
                   "flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] border transition-colors",
                   active
-                    ? "border-emerald-200/24 bg-emerald-300/[0.12] text-emerald-100"
-                    : "border-white/[0.08] bg-white/[0.035] text-slate-400 group-hover/tab:text-slate-200"
+                    ? isLight
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-emerald-200/24 bg-emerald-300/[0.12] text-emerald-100"
+                    : isLight
+                      ? "border-[#e7d8ce] bg-white/60 text-[#927968] group-hover/tab:text-[#5d493c]"
+                      : "border-white/[0.08] bg-white/[0.035] text-slate-400 group-hover/tab:text-slate-200"
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className={cn("flex items-center gap-1.5 text-[10px] font-semibold", active ? "text-emerald-200" : "text-slate-400")}>
+                <span className={cn("flex items-center gap-1.5 text-[10px] font-semibold", active ? (isLight ? "text-emerald-700" : "text-emerald-200") : (isLight ? "text-[#8d7463]" : "text-slate-400"))}>
                   {tab.hasLiveActivity ? (
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.75)] motion-safe:animate-pulse" />
                   ) : null}
                   <span className="truncate">{tab.label}</span>
                   <span className={cn("h-1 w-1 rounded-full", tabStatusDotClassName(tab.statusLabel))} />
                 </span>
-                <span className="mt-0.5 block truncate text-[10px] font-semibold leading-4 text-slate-100">
+                <span className={cn("mt-0.5 block truncate text-[10px] font-semibold leading-4", isLight ? "text-[#413229]" : "text-slate-100")}>
                   {tab.title}
                 </span>
               </span>
               <span
                 className={cn(
                   "absolute inset-x-3 bottom-0 h-0.5 rounded-full transition-all duration-200",
-                  active ? "bg-emerald-300 shadow-[0_0_16px_rgba(52,211,153,0.75)]" : "bg-transparent"
+                  active ? (isLight ? "bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.34)]" : "bg-emerald-300 shadow-[0_0_16px_rgba(52,211,153,0.75)]") : "bg-transparent"
                 )}
               />
             </button>
@@ -911,9 +873,15 @@ function TaskWorkspaceTabs({
       </div>
       <button
         type="button"
+        disabled={addDisabled}
         aria-label="Focus follow-up composer"
-        title="Focus follow-up composer"
-        className="nodrag nopan mb-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-white/[0.08] bg-white/[0.045] text-slate-200 shadow-[0_8px_18px_rgba(0,0,0,0.16)] outline-none transition-all duration-200 hover:border-cyan-200/22 hover:bg-cyan-300/[0.08] hover:text-cyan-100 focus-visible:ring-2 focus-visible:ring-cyan-200/45"
+        title={addTitle}
+        className={cn(
+          "nodrag nopan mb-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-cyan-200/45 disabled:cursor-not-allowed disabled:opacity-45",
+          surfaceTheme === "light"
+            ? "border-[#e1d1c6] bg-white/70 text-[#70594a] hover:border-[#cda98f] hover:bg-[#fbf1e9]"
+            : "border-white/[0.08] bg-white/[0.045] text-slate-200 shadow-[0_8px_18px_rgba(0,0,0,0.16)] hover:border-cyan-200/22 hover:bg-cyan-300/[0.08] hover:text-cyan-100"
+        )}
         onClick={onAdd}
         onPointerDown={(event) => event.stopPropagation()}
       >
@@ -974,36 +942,6 @@ function resolveTaskFooterLabel(bootstrapStage: string | null, liveRunCount: num
 
 function readTaskPromptText(task: TaskFlowNode["data"]["task"]) {
   return task.mission?.trim() || task.title.trim() || "Untitled task";
-}
-
-function readTaskSessionCount(task: TaskFlowNode["data"]["task"]) {
-  const metadataCount = task.metadata.sessionCount;
-  return typeof metadataCount === "number" && Number.isFinite(metadataCount)
-    ? metadataCount
-    : task.sessionIds.length;
-}
-
-function readTaskTurnCount(task: TaskFlowNode["data"]["task"]) {
-  const metadataCount = task.metadata.turnCount;
-  return typeof metadataCount === "number" && Number.isFinite(metadataCount)
-    ? metadataCount
-    : task.runtimeCount;
-}
-
-function formatTaskProvenanceLabel(value: unknown) {
-  if (value === "native-task") {
-    return "native";
-  }
-
-  if (value === "dispatch-derived") {
-    return "dispatch";
-  }
-
-  if (value === "runtime-derived") {
-    return "runtime";
-  }
-
-  return "unknown";
 }
 
 function formatElapsedFromIso(value: string | null, referenceTimeMs: number) {
@@ -1278,15 +1216,6 @@ function hasMeaningfulRuntimeSubtitle(runtime: RuntimeActivityRecord) {
   return Boolean(value && !["chat", "agent", "sessions.changed", "session.message", "openclaw runtime event", "gateway runtime event"].includes(value));
 }
 
-function countUniqueStrings(values: string[]) {
-  return new Set(values.map((value) => value.trim()).filter(Boolean)).size;
-}
-
-function sumRuntimeTokens(runtimes: RuntimeActivityRecord[]) {
-  const total = runtimes.reduce((sum, runtime) => sum + (runtime.tokenUsage?.total ?? 0), 0);
-  return total || undefined;
-}
-
 function resolveFeedEventColor(kind: string, isError?: boolean) {
   if (isError) return "bg-red-400";
   switch (kind) {
@@ -1390,18 +1319,117 @@ function findLatestOutputEvidenceEvent(feed: TaskFeedEvent[]) {
     .find((event) => event.kind === "assistant" || event.kind === "tool" || event.kind === "artifact") ?? null;
 }
 
+function resolveLightTaskAccentClass(key: ReturnType<typeof resolveTaskNodeVisualTone>["key"]) {
+  switch (key) {
+    case "aborted":
+      return "border-rose-200";
+    case "review":
+      return "border-amber-200";
+    case "live":
+      return "border-cyan-200";
+    case "success":
+      return "border-emerald-200";
+    case "fresh":
+      return "border-sky-200";
+    default:
+      return "border-[#d8c5b8]";
+  }
+}
+
+function resolveTaskIconClass(key: ReturnType<typeof resolveTaskNodeVisualTone>["key"], surfaceTheme: "dark" | "light") {
+  if (surfaceTheme === "dark") {
+    return resolveDarkTaskIconClass(key);
+  }
+
+  switch (key) {
+    case "aborted":
+      return "border-rose-200 bg-rose-50 text-rose-600";
+    case "review":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "live":
+      return "border-cyan-200 bg-cyan-50 text-cyan-700";
+    case "success":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "fresh":
+      return "border-sky-200 bg-sky-50 text-sky-700";
+    default:
+      return "border-[#e2d1c5] bg-[#faf2eb] text-[#70594a]";
+  }
+}
+
+function resolveDarkTaskIconClass(key: ReturnType<typeof resolveTaskNodeVisualTone>["key"]) {
+  switch (key) {
+    case "aborted":
+      return "border-rose-300/20 bg-rose-400/[0.09] text-rose-100";
+    case "review":
+      return "border-amber-300/[0.22] bg-amber-400/[0.1] text-amber-100";
+    case "live":
+      return "border-cyan-300/20 bg-cyan-300/[0.09] text-cyan-100";
+    case "success":
+      return "border-emerald-300/[0.18] bg-emerald-300/[0.07] text-emerald-100";
+    case "fresh":
+      return "border-sky-300/20 bg-sky-300/[0.08] text-sky-100";
+    default:
+      return "border-white/[0.08] bg-white/[0.045] text-slate-200";
+  }
+}
+
+function resolveLightTaskStatusTextClass(key: ReturnType<typeof resolveTaskNodeVisualTone>["key"]) {
+  switch (key) {
+    case "aborted":
+      return "text-rose-700";
+    case "review":
+      return "text-amber-700";
+    case "live":
+      return "text-cyan-700";
+    case "success":
+      return "text-emerald-700";
+    case "fresh":
+      return "text-sky-700";
+    default:
+      return "text-[#8f7868]";
+  }
+}
+
+function formatPrimaryActionLabel(action: ReturnType<typeof resolveTaskCardPrimaryAction>) {
+  switch (action) {
+    case "open-live-activity":
+      return "Open live activity";
+    case "view-result":
+      return "View result";
+    case "review-result":
+      return "Review result";
+    default:
+      return "View details";
+  }
+}
+
+function resolvePrimaryActionClass(action: ReturnType<typeof resolveTaskCardPrimaryAction>, surfaceTheme: "dark" | "light") {
+  if (action === "review-result") {
+    return surfaceTheme === "light"
+      ? "bg-amber-600 text-white hover:bg-amber-700"
+      : "bg-amber-300 text-amber-950 hover:bg-amber-200";
+  }
+
+  return surfaceTheme === "light"
+    ? "bg-[#342820] text-white hover:bg-[#4b382d]"
+    : "bg-white text-slate-950 hover:bg-slate-100";
+}
+
 function TaskMenuButton({
   icon: Icon,
   label,
   destructive = false,
   disabled = false,
-  onClick
+  onClick,
+  surfaceTheme
 }: {
   icon: typeof MoreHorizontal;
   label: string;
   destructive?: boolean;
   disabled?: boolean;
   onClick: () => void;
+  surfaceTheme: "dark" | "light";
 }) {
   return (
     <button
@@ -1412,12 +1440,16 @@ function TaskMenuButton({
         disabled
           ? "cursor-not-allowed text-slate-500"
           : destructive
-            ? "text-rose-100 hover:bg-rose-400/10 hover:text-rose-50"
-            : "text-slate-200 hover:bg-white/[0.06] hover:text-white"
+            ? surfaceTheme === "light"
+              ? "text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+              : "text-rose-100 hover:bg-rose-400/10 hover:text-rose-50"
+            : surfaceTheme === "light"
+              ? "text-[#513f33] hover:bg-[#f8eee7] hover:text-[#2f241d]"
+              : "text-slate-200 hover:bg-white/[0.06] hover:text-white"
       )}
       onClick={onClick}
     >
-      <Icon className={cn("h-3.5 w-3.5", destructive ? "text-rose-300" : "text-cyan-300")} />
+      <Icon className={cn("h-3.5 w-3.5", destructive ? (surfaceTheme === "light" ? "text-rose-500" : "text-rose-300") : (surfaceTheme === "light" ? "text-[#9b745d]" : "text-cyan-300"))} />
       <span>{label}</span>
     </button>
   );

@@ -3,18 +3,13 @@
 import {
   ChevronDown,
   LoaderCircle,
-  RefreshCcw,
   SendHorizontal,
   SlidersHorizontal,
-  Sparkles,
   X
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
-import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
-import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot, MissionResponse, MissionSubmission } from "@/lib/agentos/contracts";
@@ -57,14 +52,6 @@ type RecentPrompt = {
   workspaceName: string | null;
   submittedAt: number;
 };
-type InlineSuggestion = {
-  id: string;
-  label: string;
-  mission?: string;
-  thinking?: ThinkingLevel;
-  action?: "apply-mission" | "open-workspace-create";
-};
-
 const composerDraftStoragePrefix = "mission-control-composer-draft";
 const recentPromptsStorageKey = "mission-control-recent-prompts";
 const maxRecentPrompts = 6;
@@ -80,13 +67,9 @@ export function CommandBar({
   onTargetAgentSelect,
   onComposerActiveChange,
   onRefresh,
-  onOpenWorkspaceCreate,
-  onOpenWorkspaceChannels,
   onMissionDispatchStart,
   onMissionDispatchFailure,
-  onMissionResponse,
-  onAgentCreationPending,
-  onAgentCreatedVisible
+  onMissionResponse
 }: {
   snapshot: MissionControlSnapshot;
   surfaceTheme: "dark" | "light";
@@ -98,29 +81,21 @@ export function CommandBar({
   onTargetAgentSelect?: (agentId: string) => void;
   onComposerActiveChange?: (active: boolean) => void;
   onRefresh: () => Promise<void>;
-  onOpenWorkspaceCreate: () => void;
-  onOpenWorkspaceChannels: (workspaceId?: string) => void;
   onMissionDispatchStart: (event: MissionDispatchStart) => void;
   onMissionDispatchFailure: (requestId: string, message: string) => void;
   onMissionResponse: (result: MissionResponse, context: { requestId: string }) => void;
-  onAgentCreationPending?: (agent: PendingAgentProjection) => void;
-  onAgentCreatedVisible?: (agentId: string) => void;
 }) {
   const [mission, setMission] = useState("");
   const [targetAgentId, setTargetAgentId] = useState<string>("");
   const [thinking, setThinking] = useState<ThinkingLevel>("medium");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [isDesktopLayout, setIsDesktopLayout] = useState(false);
   const [isDockHovered, setIsDockHovered] = useState(false);
   const [isCompactAfterSubmit, setIsCompactAfterSubmit] = useState(false);
-  const [isMounted, setIsMounted] = useState(false);
-  const [isCreateAgentDialogOpen, setIsCreateAgentDialogOpen] = useState(false);
   const [composeSuggestion, setComposeSuggestion] = useState<ComposerSuggestion | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const autoSelectionScopeRef = useRef<string | null>(null);
-  const preferredCreatedAgentIdRef = useRef<string | null>(null);
   const handledComposeIntentIdRef = useRef<string | null>(null);
   const skipDraftSaveRef = useRef(false);
   const suspendDraftHydrationForScopeRef = useRef<string | null>(null);
@@ -141,8 +116,7 @@ export function CommandBar({
   const draftScopeKey = buildDraftScopeKey(targetWorkspace?.id ?? activeWorkspaceId ?? null, effectiveTargetAgentId);
   const canSubmit = Boolean(mission.trim() && effectiveTargetAgentId && !isSubmitting);
   const dynamicPlaceholder = selectedAgentLabel ? `Compose for ${selectedAgentLabel}...` : "Compose a mission...";
-  const inlineSuggestions = buildInlineSuggestions();
-  const showSuggestions = inlineSuggestions.length > 0;
+  const isLightTheme = surfaceTheme === "light";
   const isComposerEmpty =
     !isComposerActive &&
     !isAdvancedOpen &&
@@ -164,16 +138,6 @@ export function CommandBar({
   useEffect(() => {
     const selectionScope = `${activeWorkspaceId ?? "all"}:${selectedNodeId ?? "none"}:${availableAgents.map((agent) => agent.id).join(",")}`;
     const preferredAgent = resolvePreferredAgentId(snapshot, activeWorkspaceId, selectedNodeId);
-    const createdAgentId = preferredCreatedAgentIdRef.current;
-
-    if (createdAgentId && availableAgents.some((agent) => agent.id === createdAgentId)) {
-      if (targetAgentId !== createdAgentId) {
-        setTargetAgentId(createdAgentId);
-      }
-      preferredCreatedAgentIdRef.current = null;
-      return;
-    }
-
     if (autoSelectionScopeRef.current !== selectionScope) {
       autoSelectionScopeRef.current = selectionScope;
 
@@ -208,10 +172,6 @@ export function CommandBar({
     return () => {
       mediaQuery.removeEventListener("change", syncDesktopLayout);
     };
-  }, []);
-
-  useEffect(() => {
-    setIsMounted(true);
   }, []);
 
   useEffect(() => {
@@ -520,22 +480,42 @@ export function CommandBar({
                 textareaRef.current?.focus();
               });
             }}
-            className="w-full overflow-hidden rounded-full border border-white/[0.08] bg-[linear-gradient(180deg,rgba(10,16,26,0.96),rgba(6,10,18,0.94))] p-2 text-left shadow-[0_24px_72px_rgba(0,0,0,0.22)] isolate"
+            className={cn(
+              "w-full overflow-hidden rounded-2xl border p-1.5 text-left backdrop-blur-xl transition-[border-color,box-shadow] isolate",
+              isLightTheme
+                ? "border-[#d9c9bc]/90 bg-[#fdfaf7]/95 text-[#342c28] shadow-[0_16px_38px_rgba(116,79,54,0.12)] hover:border-[#cbb2a0]"
+                : "border-white/[0.09] bg-[linear-gradient(180deg,rgba(15,22,34,0.96),rgba(8,13,23,0.94))] text-slate-100 shadow-[0_20px_58px_rgba(0,0,0,0.28)] hover:border-white/[0.15]"
+            )}
           >
-            <div className="flex items-center gap-2 rounded-full border border-white/[0.07] bg-[linear-gradient(180deg,rgba(20,28,43,0.9),rgba(11,17,28,0.88))] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              <span className="inline-flex h-7 items-center rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 text-[11px] text-slate-300">
+            <div className={cn(
+              "flex items-center gap-2 rounded-xl border px-2.5 py-2",
+              isLightTheme
+                ? "border-[#eadfd6] bg-white/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
+                : "border-white/[0.07] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+            )}>
+              <span className={cn(
+                "inline-flex h-6 max-w-[132px] items-center truncate rounded-lg border px-2 text-[11px] font-medium",
+                isLightTheme
+                  ? "border-[#e6d8ce] bg-[#f8f1eb] text-[#795f4e]"
+                  : "border-white/[0.08] bg-white/[0.05] text-slate-300"
+              )}>
                 {selectedAgentLabel || "No agent"}
               </span>
-              <p className="min-w-0 flex-1 truncate text-[13px] text-[#f6eee5]/58">
+              <p className={cn(
+                "min-w-0 flex-1 truncate text-[13px]",
+                isLightTheme ? "text-[#9b8373]" : "text-slate-400"
+              )}>
                 {isSubmitting ? "Creating task..." : dynamicPlaceholder}
               </p>
-              <span className="inline-flex h-8 items-center rounded-full bg-white px-3 text-[12px] font-medium text-slate-950">
+              <span className={cn(
+                "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+                isLightTheme ? "bg-[#2e2520] text-white" : "bg-white text-slate-950"
+              )}>
                 {isSubmitting ? (
-                  <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <SendHorizontal className="mr-1.5 h-3.5 w-3.5" />
+                  <SendHorizontal className="h-3.5 w-3.5" />
                 )}
-                {isSubmitting ? "Creating" : "Create task"}
               </span>
             </div>
           </motion.button>
@@ -545,7 +525,12 @@ export function CommandBar({
             initial={{ opacity: 0, y: 8, scale: 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.985 }}
-            className="overflow-hidden rounded-[26px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(10,16,26,0.96),rgba(6,10,18,0.94))] p-2.5 shadow-[0_24px_72px_rgba(0,0,0,0.26)] isolate"
+            className={cn(
+              "overflow-hidden rounded-2xl border p-1.5 backdrop-blur-xl isolate",
+              isLightTheme
+                ? "border-[#d9c9bc]/90 bg-[#fdfaf7]/95 text-[#342c28] shadow-[0_18px_48px_rgba(116,79,54,0.14)]"
+                : "border-white/[0.09] bg-[linear-gradient(180deg,rgba(15,22,34,0.97),rgba(8,13,23,0.96))] text-slate-100 shadow-[0_24px_72px_rgba(0,0,0,0.3)]"
+            )}
           >
             <AnimatePresence initial={false}>
               {composeSuggestion ? (
@@ -553,12 +538,12 @@ export function CommandBar({
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
-                  className="mb-2 flex flex-wrap items-center gap-2 px-1 text-[12px] text-slate-400"
+                  className={cn("mb-1.5 flex flex-wrap items-center gap-2 px-1 text-[11px]", isLightTheme ? "text-[#8b7464]" : "text-slate-400")}
                 >
                   <span className="truncate">From {composeSuggestion.sourceLabel}</span>
                   <button
                     type="button"
-                    className="text-slate-200 transition-colors hover:text-white"
+                    className={cn("transition-colors", isLightTheme ? "text-[#5d4535] hover:text-[#241a14]" : "text-slate-200 hover:text-white")}
                     onClick={() =>
                       applyMissionSnippet(composeSuggestion.mission, {
                         mode: "replace"
@@ -569,14 +554,17 @@ export function CommandBar({
                   </button>
                   <button
                     type="button"
-                    className="text-slate-200 transition-colors hover:text-white"
+                    className={cn("transition-colors", isLightTheme ? "text-[#5d4535] hover:text-[#241a14]" : "text-slate-200 hover:text-white")}
                     onClick={() => applyMissionSnippet(composeSuggestion.mission)}
                   >
                     Append
                   </button>
                   <button
                     type="button"
-                    className="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-white"
+                    className={cn(
+                      "inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors",
+                      isLightTheme ? "text-[#957e6e] hover:bg-[#f3e9e2] hover:text-[#241a14]" : "text-slate-400 hover:bg-white/[0.06] hover:text-white"
+                    )}
                     onClick={() => setComposeSuggestion(null)}
                     aria-label="Dismiss runtime suggestion"
                   >
@@ -588,9 +576,14 @@ export function CommandBar({
 
             <div
               className={cn(
-                "rounded-[22px] border border-white/[0.07] bg-[linear-gradient(180deg,rgba(20,28,43,0.92),rgba(10,16,26,0.9))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200",
+                "rounded-[14px] border transition-all duration-200",
+                isLightTheme
+                  ? "border-[#e6d8ce] bg-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
+                  : "border-white/[0.07] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
                 isComposerActive &&
-                  "border-white/[0.14] bg-[linear-gradient(180deg,rgba(24,34,50,0.94),rgba(12,18,30,0.92))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                  (isLightTheme
+                    ? "border-[#cda98f] bg-white shadow-[0_0_0_3px_rgba(185,123,83,0.10)]"
+                    : "border-rose-200/28 bg-white/[0.055] shadow-[0_0_0_3px_rgba(244,63,94,0.08)]")
               )}
               onFocusCapture={() => {
                 setIsCompactAfterSubmit(false);
@@ -607,50 +600,19 @@ export function CommandBar({
                 }
               }}
             >
-              <div className="flex items-center gap-2 px-2.5 pb-1 pt-2.5">
+              <div className="flex items-center gap-2 px-2.5 pb-0.5 pt-2">
                 {selectedAgent ? (
                   <AgentSelectorChip
                     value={targetAgentId}
                     options={agentOptions}
                     onChange={handleTargetAgentChange}
+                    surfaceTheme={surfaceTheme}
                   />
                 ) : (
-                  <SubtlePill>No agent</SubtlePill>
+                  <SubtlePill surfaceTheme={surfaceTheme}>No agent</SubtlePill>
                 )}
 
-                <div className="ml-auto flex items-center gap-1">
-                  <IconButton
-                    label="Refresh AgentOS"
-                    onClick={async () => {
-                      setIsRefreshing(true);
-                      await onRefresh();
-                      setIsRefreshing(false);
-                    }}
-                  >
-                    {isRefreshing ? (
-                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <RefreshCcw className="h-3.5 w-3.5" />
-                    )}
-                  </IconButton>
-
-                  <IconButton label="Create workspace" onClick={onOpenWorkspaceCreate}>
-                    <Sparkles className="h-3.5 w-3.5" />
-                  </IconButton>
-
-                  <IconButton
-                    label="Composer settings"
-                    onClick={() => setIsAdvancedOpen((current) => !current)}
-                    active={isAdvancedOpen || thinking !== "medium"}
-                  >
-                    <span className="relative inline-flex">
-                      <SlidersHorizontal className="h-3.5 w-3.5" />
-                      {thinking !== "medium" ? (
-                        <span className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-white/80" />
-                      ) : null}
-                    </span>
-                  </IconButton>
-                </div>
+                <span className={cn("ml-auto text-[10px]", isLightTheme ? "text-[#9b8373]" : "text-slate-500")}>Task draft</span>
               </div>
 
               <div className="px-2.5 pt-0.5">
@@ -678,65 +640,38 @@ export function CommandBar({
                     }
                   }}
                   placeholder={dynamicPlaceholder}
-                  className="min-h-[50px] max-h-[150px] resize-none overflow-y-auto border-0 bg-transparent px-0 py-0.5 text-[15px] leading-[1.6] text-white placeholder:text-[#f6eee5]/60 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                  className={cn(
+                    "min-h-[54px] max-h-[120px] resize-none overflow-y-auto border-0 bg-transparent px-0 py-1 text-[14px] leading-6 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
+                    isLightTheme ? "text-[#342c28] placeholder:text-[#a88f7d]" : "text-slate-100 placeholder:text-slate-500"
+                  )}
                 />
               </div>
 
-              <div className="flex items-end justify-between gap-2.5 px-2.5 pb-2.5 pt-1.5">
-                <AnimatePresence initial={false}>
-                  {showSuggestions ? (
-                      <motion.div
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 4 }}
-                        className="flex min-w-0 flex-wrap items-center gap-1.5"
-                    >
-                      {inlineSuggestions.map((suggestion) => (
-                        <SuggestionChip
-                          key={suggestion.id}
-                          label={suggestion.label}
-                          onClick={() => {
-                            if (suggestion.action === "open-workspace-create") {
-                              onOpenWorkspaceCreate();
-                              return;
-                            }
-
-                            if (!suggestion.mission) {
-                              return;
-                            }
-
-                            applyMissionSnippet(suggestion.mission, {
-                              thinking: suggestion.thinking
-                            });
-                          }}
-                        />
-                      ))}
-                      {targetWorkspace ? (
-                          <button
-                            type="button"
-                            onClick={() => setIsCreateAgentDialogOpen(true)}
-                            className="inline-flex h-8 items-center rounded-full border border-white/[0.08] bg-white/[0.04] px-3 text-[12px] text-slate-300 transition-all hover:bg-white/[0.08] hover:text-white"
-                          >
-                            + Create Agent
-                          </button>
-                      ) : null}
-                      {isMounted && targetWorkspace ? (
-                        <button
-                          type="button"
-                          onClick={() => onOpenWorkspaceChannels()}
-                          className="inline-flex h-8 items-center rounded-full border border-cyan-300/18 bg-cyan-400/[0.1] px-3 text-[12px] text-cyan-50 transition-all hover:border-cyan-300/28 hover:bg-cyan-400/[0.14] hover:text-white"
-                        >
-                          Manage Integrations
-                        </button>
-                      ) : null}
-                    </motion.div>
-                  ) : (
-                    <div />
+              <div className="flex items-center justify-between gap-2 px-2.5 pb-2 pt-1">
+                <button
+                  type="button"
+                  aria-label="Composer settings"
+                  title="Thinking level and draft controls"
+                  onClick={() => setIsAdvancedOpen((current) => !current)}
+                  className={cn(
+                    "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 text-[10px] font-medium transition-colors",
+                    isLightTheme
+                      ? "border-[#e7d9cf] text-[#806856] hover:border-[#cfad96] hover:bg-[#f8f0ea]"
+                      : "border-white/[0.08] text-slate-400 hover:border-white/[0.14] hover:bg-white/[0.06] hover:text-slate-200"
                   )}
-                </AnimatePresence>
-
-                <Button
-                  className="h-9 rounded-full bg-white px-3.5 text-slate-950 shadow-none hover:bg-white/92"
+                >
+                  <SlidersHorizontal className="h-3 w-3" />
+                  {thinking === "medium" ? "Balanced" : `Thinking: ${thinking}`}
+                </button>
+                <span className={cn("text-[10px]", isLightTheme ? "text-[#a18978]" : "text-slate-500")}>⌘↵ to send</span>
+                <button
+                  type="button"
+                  aria-label="Create task"
+                  title="Create task"
+                  className={cn(
+                    "inline-flex h-8 w-8 items-center justify-center rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-40",
+                    isLightTheme ? "bg-[#332720] text-white hover:bg-[#4a382d]" : "bg-white text-slate-950 hover:bg-slate-100"
+                  )}
                   disabled={!canSubmit}
                   onClick={async () => {
                     if (!effectiveTargetAgentId) {
@@ -752,12 +687,11 @@ export function CommandBar({
                   }}
                 >
                   {isSubmitting ? (
-                    <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <SendHorizontal className="mr-1.5 h-3.5 w-3.5" />
+                    <SendHorizontal className="h-3.5 w-3.5" />
                   )}
-                  Create task
-                </Button>
+                </button>
               </div>
             </div>
 
@@ -767,10 +701,15 @@ export function CommandBar({
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -6 }}
-                  className="mt-2 flex justify-end"
+                  className="mt-1.5 flex justify-end"
                 >
-                  <div className="w-full max-w-[232px] rounded-[20px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(14,20,31,0.96),rgba(10,15,24,0.94))] p-3 shadow-[0_16px_32px_rgba(0,0,0,0.22)]">
-                    <p className="text-[11px] text-slate-300">Thinking</p>
+                  <div className={cn(
+                    "w-full max-w-[208px] rounded-xl border p-2.5",
+                    isLightTheme
+                      ? "border-[#dfcfc3] bg-[#fffcf9] shadow-[0_14px_32px_rgba(116,79,54,0.12)]"
+                      : "border-white/[0.08] bg-[#0d1420]/96 shadow-[0_16px_32px_rgba(0,0,0,0.26)]"
+                  )}>
+                    <p className={cn("text-[10px] font-medium", isLightTheme ? "text-[#806856]" : "text-slate-300")}>Thinking</p>
                     <div className="mt-2">
                       <InlineSelectChip
                         ariaLabel="Select thinking level"
@@ -783,11 +722,12 @@ export function CommandBar({
                           { label: "high", value: "high" }
                         ]}
                         onChange={(value) => setThinking(value as ThinkingLevel)}
+                        surfaceTheme={surfaceTheme}
                       />
                     </div>
                     <button
                       type="button"
-                      className="mt-3 text-[12px] text-slate-400 transition-colors hover:text-white"
+                      className={cn("mt-2.5 text-[11px] transition-colors", isLightTheme ? "text-[#9b8373] hover:text-[#332720]" : "text-slate-400 hover:text-white")}
                       onClick={clearCurrentDraft}
                     >
                       Clear draft
@@ -801,22 +741,6 @@ export function CommandBar({
       </AnimatePresence>
       </div>
 
-      {targetWorkspace ? (
-        <CreateAgentDialog
-          open={isCreateAgentDialogOpen}
-          onOpenChange={setIsCreateAgentDialogOpen}
-          snapshot={snapshot}
-          defaultWorkspaceId={targetWorkspace.id}
-          onRefresh={onRefresh}
-          onAgentCreationPending={onAgentCreationPending}
-          onAgentCreated={(agentId) => {
-            preferredCreatedAgentIdRef.current = agentId;
-            setTargetAgentId(agentId);
-          }}
-          onAgentCreatedVisible={onAgentCreatedVisible}
-          surfaceTheme={surfaceTheme}
-        />
-      ) : null}
     </>
   );
 }
@@ -832,23 +756,30 @@ function isMissingTranscriptActivityMessage(value: string | null | undefined) {
 function AgentSelectorChip({
   value,
   options,
-  onChange
+  onChange,
+  surfaceTheme
 }: {
   value: string;
   options: AgentOption[];
   onChange: (value: string) => void;
+  surfaceTheme: "dark" | "light";
 }) {
   const selected = options.find((option) => option.value === value) ?? options[0];
   const isInteractive = options.length > 1;
 
   return (
-    <div className="relative inline-flex items-center rounded-full border border-white/[0.08] bg-white/[0.04] text-slate-100">
+    <div className={cn(
+      "relative inline-flex max-w-[220px] items-center rounded-lg border",
+      surfaceTheme === "light"
+        ? "border-[#e5d7cd] bg-[#f9f2ec] text-[#705947]"
+        : "border-white/[0.08] bg-white/[0.04] text-slate-100"
+    )}>
       {isInteractive ? (
         <select
           aria-label="Select mission agent"
           value={selected?.value ?? ""}
           onChange={(event) => onChange(event.target.value)}
-          className="h-8 appearance-none bg-transparent pl-3 pr-8 text-[12px] outline-none"
+          className="h-7 max-w-[220px] appearance-none bg-transparent pl-2.5 pr-7 text-[11px] outline-none"
         >
           {options.map((option) => (
             <option key={option.value} value={option.value}>
@@ -857,11 +788,11 @@ function AgentSelectorChip({
           ))}
         </select>
       ) : (
-        <span className="px-3 text-[12px]">{selected?.label || "No agent"}</span>
+        <span className="truncate px-2.5 text-[11px]">{selected?.label || "No agent"}</span>
       )}
 
       {isInteractive ? (
-        <ChevronDown className="pointer-events-none absolute right-3 h-3.5 w-3.5 text-slate-400" />
+        <ChevronDown className={cn("pointer-events-none absolute right-2.5 h-3 w-3", surfaceTheme === "light" ? "text-[#9a806e]" : "text-slate-400")} />
       ) : null}
     </div>
   );
@@ -871,22 +802,29 @@ function InlineSelectChip({
   ariaLabel,
   value,
   options,
-  onChange
+  onChange,
+  surfaceTheme
 }: {
   ariaLabel: string;
   value: string;
   options: AgentOption[];
   onChange: (value: string) => void;
+  surfaceTheme: "dark" | "light";
 }) {
   const selected = options.find((option) => option.value === value) ?? options[0];
 
   return (
-    <div className="relative inline-flex w-full items-center rounded-full border border-white/[0.08] bg-white/[0.04] text-slate-100">
+    <div className={cn(
+      "relative inline-flex w-full items-center rounded-lg border",
+      surfaceTheme === "light"
+        ? "border-[#e3d3c8] bg-[#faf4ee] text-[#674f3f]"
+        : "border-white/[0.08] bg-white/[0.04] text-slate-100"
+    )}>
       <select
         aria-label={ariaLabel}
         value={selected?.value ?? ""}
         onChange={(event) => onChange(event.target.value)}
-        className="h-9 w-full appearance-none bg-transparent pl-3 pr-9 text-[12px] outline-none"
+        className="h-8 w-full appearance-none bg-transparent pl-2.5 pr-8 text-[11px] outline-none"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -894,59 +832,19 @@ function InlineSelectChip({
           </option>
         ))}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-3 h-3.5 w-3.5 text-slate-400" />
+      <ChevronDown className={cn("pointer-events-none absolute right-2.5 h-3 w-3", surfaceTheme === "light" ? "text-[#9a806e]" : "text-slate-400")} />
     </div>
   );
 }
 
-function IconButton({
-  label,
-  active = false,
-  onClick,
-  children
-}: {
-  label: string;
-  active?: boolean;
-  onClick?: () => void | Promise<void>;
-  children: ReactNode;
-}) {
+function SubtlePill({ children, surfaceTheme }: { children: ReactNode; surfaceTheme: "dark" | "light" }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-8 w-8 items-center justify-center rounded-full border border-transparent text-slate-400 transition-all hover:border-white/[0.08] hover:bg-white/[0.06] hover:text-white",
-        active && "border-white/[0.08] bg-white/[0.06] text-white"
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function SuggestionChip({
-  label,
-  onClick
-}: {
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex h-8 items-center rounded-full border border-white/[0.08] bg-white/[0.04] px-3 text-[12px] text-slate-300 transition-all hover:bg-white/[0.08] hover:text-white"
-    >
-      {label}
-    </button>
-  );
-}
-
-function SubtlePill({ children }: { children: ReactNode }) {
-  return (
-    <div className="inline-flex h-8 items-center rounded-full border border-white/[0.08] bg-white/[0.04] px-3 text-[12px] text-slate-300">
+    <div className={cn(
+      "inline-flex h-7 items-center rounded-lg border px-2.5 text-[11px]",
+      surfaceTheme === "light"
+        ? "border-[#e5d7cd] bg-[#f9f2ec] text-[#705947]"
+        : "border-white/[0.08] bg-white/[0.04] text-slate-300"
+    )}>
       {children}
     </div>
   );
@@ -977,30 +875,6 @@ function resolvePreferredAgentId(
   );
 
   return workspaceAgents.find((agent) => agent.isDefault)?.id || workspaceAgents[0]?.id || snapshot.agents[0]?.id;
-}
-
-function buildInlineSuggestions() {
-  const suggestions: InlineSuggestion[] = [];
-
-  suggestions.push({
-    id: "workspace-create",
-    label: "Create workspace",
-    action: "open-workspace-create"
-  });
-
-  const seen = new Set<string>();
-
-  return suggestions
-    .filter((item) => {
-      const key = `${item.action || "mission"}:${item.mission?.trim().toLowerCase() || item.label.toLowerCase()}`;
-      if (seen.has(key)) {
-        return false;
-      }
-
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 3);
 }
 
 function buildDraftScopeKey(workspaceId: string | null, agentId: string | null) {

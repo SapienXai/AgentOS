@@ -52,6 +52,7 @@ import { cn } from "@/lib/utils";
 
 export function MissionCanvas({
   snapshot,
+  surfaceTheme = "dark",
   pendingCreatedAgents,
   agentCreationWarnings,
   accountTargets,
@@ -95,6 +96,7 @@ export function MissionCanvas({
   className
 }: {
   snapshot: MissionControlSnapshot;
+  surfaceTheme?: "dark" | "light";
   pendingCreatedAgents?: PendingAgentProjection[];
   agentCreationWarnings?: Record<string, string>;
   accountTargets: AccountLoginTargetView[];
@@ -302,7 +304,8 @@ export function MissionCanvas({
       onReviewTask,
       pendingCreatedAgents ?? [],
       agentCreationWarnings ?? {},
-      persistedNodePositionsRef.current
+      persistedNodePositionsRef.current,
+      surfaceTheme
     );
     const scopeChanged = lastCanvasScopeKeyRef.current !== canvasScopeKey;
     lastCanvasScopeKeyRef.current = canvasScopeKey;
@@ -356,6 +359,7 @@ export function MissionCanvas({
     onReviewTask,
     pendingCreatedAgents,
     agentCreationWarnings,
+    surfaceTheme,
     relativeTimeReferenceMs,
     canvasScopeKey,
     setEdges,

@@ -148,9 +148,15 @@ test("canvas places agent-owned tasks when task workspace id is missing", () => 
 
   assert.ok(graph.nodes.some((node) => node.id === "task-1" && node.type === "task"));
   const agentNode = graph.nodes.find((node) => node.id === "agent-1");
+  const taskNode = graph.nodes.find((node) => node.id === "task-1" && node.type === "task");
+  const taskEdge = graph.edges.find((edge) => edge.id === "edge:agent-1:task-1");
   const surfaceTetherEdge = graph.edges.find((edge) => edge.id.startsWith("edge:agent-1:surface-module-v1:"));
 
   assert.ok(agentNode);
+  assert.ok(taskNode);
+  assert.ok(taskEdge);
+  assert.equal(taskNode.data.agentThemeRgb, taskEdge.data?.agentThemeRgb);
+  assert.match(taskNode.data.agentThemeRgb ?? "", /^\d{1,3},\s*\d{1,3},\s*\d{1,3}$/);
   assert.ok(surfaceTetherEdge);
   assert.equal(surfaceTetherEdge.zIndex, 8);
   assert.ok((surfaceTetherEdge.zIndex ?? 0) < (agentNode.zIndex ?? 0));

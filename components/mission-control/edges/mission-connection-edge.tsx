@@ -61,6 +61,8 @@ export function MissionConnectionEdge({
         ]
       : [];
   const tetherPalette = surfaceTether ? buildSurfaceTetherPalette(data?.surfaceAccentColor) : null;
+  const agentTaskPalette = !surfaceTether ? buildAgentTaskPalette(data?.agentThemeRgb) : null;
+  const edgePalette = tetherPalette ?? agentTaskPalette;
 
   const glowStyle: CSSProperties = {
     ...style,
@@ -68,7 +70,7 @@ export function MissionConnectionEdge({
     pointerEvents: "none",
     strokeDasharray: "none",
     strokeWidth: glowStrokeWidth,
-    ...(tetherPalette ?? {})
+    ...(edgePalette ?? {})
   };
 
   const coreStyle: CSSProperties = {
@@ -77,7 +79,7 @@ export function MissionConnectionEdge({
     pointerEvents: "none",
     strokeDasharray: "none",
     strokeWidth,
-    ...(tetherPalette ?? {})
+    ...(edgePalette ?? {})
   };
 
   return (
@@ -178,6 +180,22 @@ function buildSurfaceTetherPalette(color: string | null | undefined) {
   } as CSSProperties;
 }
 
+function buildAgentTaskPalette(rgb: string | null | undefined) {
+  const normalized = normalizeRgbColor(rgb);
+
+  if (!normalized) {
+    return null;
+  }
+
+  return {
+    "--mission-edge-core": `rgba(${normalized}, 0.68)`,
+    "--mission-edge-core-active": `rgba(${normalized}, 0.98)`,
+    "--mission-edge-glow": `rgba(${normalized}, 0.24)`,
+    "--mission-edge-glow-active": `rgba(${normalized}, 0.44)`,
+    "--mission-edge-packet": `rgb(${normalized})`
+  } as CSSProperties;
+}
+
 function normalizeHexColor(value: string | null | undefined) {
   if (!value) {
     return null;
@@ -189,4 +207,13 @@ function normalizeHexColor(value: string | null | undefined) {
   }
 
   return null;
+}
+
+function normalizeRgbColor(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return /^\d{1,3},\s*\d{1,3},\s*\d{1,3}$/.test(trimmed) ? trimmed : null;
 }

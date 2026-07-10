@@ -16,11 +16,13 @@ import {
   resolveRuntimeNodeTokenTone,
   resolveSurfaceRoleDotClasses,
   resolveTaskNodeBadgeVariant,
+  resolveTaskNodeSurfaceTone,
   resolveTaskNodeTokenTone,
   resolveTaskNodeToneKey,
   resolveTaskNodeVisualTone,
   resolveWorkspaceHealthBadgeClasses
 } from "@/components/mission-control/node-visual-tones";
+import { resolveTaskCardPrimaryAction } from "@/components/mission-control/task-node-status";
 import {
   resolveDiagnosticHealthBadgeClasses,
   resolveDiagnosticHealthDotClasses,
@@ -102,6 +104,25 @@ test("task node tone resolver is deterministic", () => {
 
   assert.equal(resolveTaskNodeToneKey(input), resolveTaskNodeToneKey(input));
   assert.strictEqual(resolveTaskNodeVisualTone(input), resolveTaskNodeVisualTone(input));
+});
+
+test("task node surface resolver provides distinct light and dark canvas treatments", () => {
+  const light = resolveTaskNodeSurfaceTone("light");
+  const dark = resolveTaskNodeSurfaceTone("dark");
+
+  assert.match(light.outer, /rgba\(255,253,251/);
+  assert.match(light.text, /#30251f/);
+  assert.match(dark.outer, /rgba\(15,22,34/);
+  assert.match(dark.text, /text-white/);
+});
+
+test("task card primary action follows operator status priority", () => {
+  assert.equal(resolveTaskCardPrimaryAction({ status: "running" }), "open-live-activity");
+  assert.equal(resolveTaskCardPrimaryAction({ status: "queued" }), "open-live-activity");
+  assert.equal(resolveTaskCardPrimaryAction({ status: "completed" }), "view-result");
+  assert.equal(resolveTaskCardPrimaryAction({ status: "completed", completedNeedsReview: true }), "review-result");
+  assert.equal(resolveTaskCardPrimaryAction({ status: "stalled" }), "view-details");
+  assert.equal(resolveTaskCardPrimaryAction({ status: "cancelled" }), "view-details");
 });
 
 test("runtime node status dot resolver keeps existing runtime tones", () => {
