@@ -19,13 +19,12 @@ import {
   X
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 
 import type { TaskCardInspectorContext, TaskNodeData } from "@/components/mission-control/canvas-types";
 import { InteractiveContent } from "@/components/mission-control/interactive-content";
 import {
   FRESH_NODE_BADGE_CLASSES,
-  TASK_NODE_SELECTED_CLASSES,
   type TaskNodeToneInput,
   resolveTaskNodeBadgeVariant,
   resolveTaskNodeSurfaceTone,
@@ -272,6 +271,17 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const surfaceTheme = data.surfaceTheme ?? "dark";
   const surfaceTone = resolveTaskNodeSurfaceTone(surfaceTheme);
   const agentThemeRgb = data.agentThemeRgb ?? "14, 165, 233";
+  const taskCardStyle = {
+    borderColor: `rgba(${agentThemeRgb}, ${selected ? 0.62 : surfaceTheme === "light" ? 0.32 : 0.28})`,
+    ...(selected
+      ? {
+          boxShadow:
+            surfaceTheme === "light"
+              ? `0 0 0 1px rgba(${agentThemeRgb}, 0.18), 0 22px 52px rgba(${agentThemeRgb}, 0.18)`
+              : `0 0 0 1px rgba(${agentThemeRgb}, 0.2), 0 22px 52px rgba(${agentThemeRgb}, 0.24)`
+        }
+      : {})
+  } as CSSProperties;
   const followUpAvailability = resolveTaskFollowUpAvailability(displayTask);
   const resolvedPrimaryAction = resolveTaskCardPrimaryAction({
     status: displayTask.status,
@@ -297,19 +307,20 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   ) || activitySummary;
 
   useEffect(() => {
-    if (!composerExpanded) {
+    if (!expanded && !composerExpanded) {
       return;
     }
 
     const handlePointerDown = (event: PointerEvent) => {
       if (!cardRef.current?.contains(event.target as globalThis.Node)) {
+        setExpanded(false);
         setComposerExpanded(false);
       }
     };
 
     window.addEventListener("pointerdown", handlePointerDown, true);
     return () => window.removeEventListener("pointerdown", handlePointerDown, true);
-  }, [composerExpanded]);
+  }, [expanded, composerExpanded]);
 
   const tabs: TaskWorkspaceTab[] = [
     {
@@ -389,12 +400,10 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       className={cn(
         "group relative w-[400px] max-w-[calc(100vw-32px)] origin-center transform-gpu overflow-visible rounded-[18px] border p-1.5 backdrop-blur-xl transition-[border-color,box-shadow,opacity,transform] duration-200",
         surfaceTone.outer,
-        surfaceTheme === "dark" && visualTone.outer,
-        surfaceTheme === "light" && resolveLightTaskAccentClass(visualTone.key),
         data.emphasis ? "opacity-100" : "opacity-76",
-        selected && TASK_NODE_SELECTED_CLASSES,
         (composerExpanded || expanded) && "z-30 shadow-[0_22px_58px_rgba(0,0,0,0.3)]"
       )}
+      style={taskCardStyle}
     >
       <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[18px]">
         <div
@@ -414,7 +423,8 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
       <div className="relative z-10">
         {isPendingCreation ? (
         <motion.div
-          className="pointer-events-none absolute inset-[-8px] rounded-[18px] border border-cyan-200/16"
+          className="pointer-events-none absolute inset-[-8px] rounded-[18px] border"
+          style={{ borderColor: `rgba(${agentThemeRgb}, 0.28)` }}
           animate={{ opacity: [0.18, 0.42, 0.18], scale: [0.985, 1.02, 0.985] }}
           transition={{ duration: 1.8, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
         />
@@ -1317,23 +1327,6 @@ function findLatestOutputEvidenceEvent(feed: TaskFeedEvent[]) {
   return [...feed]
     .reverse()
     .find((event) => event.kind === "assistant" || event.kind === "tool" || event.kind === "artifact") ?? null;
-}
-
-function resolveLightTaskAccentClass(key: ReturnType<typeof resolveTaskNodeVisualTone>["key"]) {
-  switch (key) {
-    case "aborted":
-      return "border-rose-200";
-    case "review":
-      return "border-amber-200";
-    case "live":
-      return "border-cyan-200";
-    case "success":
-      return "border-emerald-200";
-    case "fresh":
-      return "border-sky-200";
-    default:
-      return "border-[#d8c5b8]";
-  }
 }
 
 function resolveTaskIconClass(key: ReturnType<typeof resolveTaskNodeVisualTone>["key"], surfaceTheme: "dark" | "light") {
