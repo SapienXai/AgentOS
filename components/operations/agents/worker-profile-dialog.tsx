@@ -1,11 +1,30 @@
 "use client";
 
 import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
-import { BrainCircuit, Database, FolderLock, KeyRound, LoaderCircle, ShieldCheck, Wrench, type LucideIcon } from "lucide-react";
+import {
+  Bot,
+  BrainCircuit,
+  Check,
+  Database,
+  FolderLock,
+  KeyRound,
+  Layers3,
+  LoaderCircle,
+  RotateCcw,
+  Save,
+  ShieldCheck,
+  Sparkles,
+  Wrench,
+  type LucideIcon
+} from "lucide-react";
 
 import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  MissionControlDialogChip,
+  MissionControlDialogShell,
+  missionControlDialogButtonClassName
+} from "@/components/mission-control/mission-control-dialog-shell";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,7 +40,7 @@ type SandboxMode = "" | "off" | "non-main" | "all";
 type SandboxScope = "" | "session" | "agent" | "shared";
 type WorkspaceAccess = "" | "none" | "ro" | "rw";
 
-const profileSelectClassName = "h-10 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/15";
+const profileSelectClassName = "h-9 w-full rounded-lg border border-input bg-background px-3 text-xs text-foreground shadow-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/15";
 
 type WorkerProfileDialogProps = {
   open: boolean;
@@ -73,7 +92,6 @@ export function WorkerProfileDialog({
   const workspace = snapshot.workspaces.find((entry) => entry.id === agent?.workspaceId) ?? null;
   const [draft, setDraft] = useState<WorkerProfileDraft | null>(null);
   const [saving, setSaving] = useState(false);
-  const isLight = surfaceTheme === "light";
 
   useEffect(() => {
     if (!open || !agent) {
@@ -93,6 +111,9 @@ export function WorkerProfileDialog({
       ? "Browser-capable. Account and browser-profile use remains governed by AgentOS account-access rules per supported task."
       : "No browser capability is declared. Account and browser-profile assignment is unavailable for this worker."
   }, [agent]);
+
+  const baselineDraft = useMemo(() => agent ? buildDraft(agent, snapshot) : null, [agent, snapshot]);
+  const hasChanges = Boolean(draft && baselineDraft && !areSameDraft(draft, baselineDraft));
 
   if (!agent || !workspace || !draft) {
     return null;
@@ -190,41 +211,46 @@ export function WorkerProfileDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn("flex max-h-[calc(100dvh-1.5rem)] w-[min(1180px,calc(100vw-1.5rem))] max-w-none flex-col overflow-hidden rounded-[28px] border-border/80 p-0", isLight && "agentos-light-modal")}>
-        <DialogHeader className="border-b border-border/80 px-5 py-5 pr-14 sm:px-7">
-          <div className="flex items-start gap-3">
-            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-lg shadow-sm">{draft.emoji || "🤖"}</span>
-            <div className="min-w-0">
-              <DialogTitle className="truncate text-lg">Worker Profile · {formatAgentDisplayName(agent)}</DialogTitle>
-              <DialogDescription className="mt-1 max-w-3xl leading-5">
-                One clear place for this worker&apos;s identity, operating guidance, runtime access, and connected channels.
-              </DialogDescription>
-            </div>
-          </div>
-        </DialogHeader>
-
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto grid max-w-[1180px] gap-7 px-5 py-6 sm:px-7 lg:grid-cols-[238px_minmax(0,1fr)] lg:gap-10 lg:px-8">
+    <MissionControlDialogShell
+      open={open}
+      onOpenChange={onOpenChange}
+      surfaceTheme={surfaceTheme}
+      variant="worker-profile"
+      title={formatAgentDisplayName(agent)}
+      description="Design this worker's identity, operating context, capabilities, and safety boundaries without raw configuration."
+      icon={Bot}
+      chips={<><MissionControlDialogChip tone="violet" surfaceTheme={surfaceTheme}><Sparkles className="mr-1 h-3 w-3" />Worker profile</MissionControlDialogChip><MissionControlDialogChip tone={hasChanges ? "amber" : "emerald"} surfaceTheme={surfaceTheme}><Check className="mr-1 h-3 w-3" />{hasChanges ? "Unsaved changes" : "Profile in sync"}</MissionControlDialogChip></>}
+      bodyClassName="px-0 py-0"
+      footer={
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="mr-auto hidden items-center gap-2 text-xs text-slate-400 sm:flex"><span className={cn("h-2 w-2 rounded-full", hasChanges ? "bg-amber-400" : "bg-emerald-400")} />{hasChanges ? "Review and save your profile changes" : "No pending profile changes"}</div>
+          {hasChanges ? <Button variant="secondary" size="sm" onClick={() => setDraft(buildDraft(agent, snapshot))} disabled={saving} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}><RotateCcw className="mr-1.5 h-3.5 w-3.5" />Reset changes</Button> : null}
+          <Button variant="secondary" size="sm" onClick={() => onOpenChange(false)} disabled={saving} className={missionControlDialogButtonClassName("secondary", surfaceTheme)}>Cancel</Button>
+          <Button size="sm" onClick={() => void save()} disabled={saving || !draft.name.trim() || !hasChanges} className={missionControlDialogButtonClassName("primary", surfaceTheme)}>{saving ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1.5 h-3.5 w-3.5" />}{saving ? "Saving profile" : "Save Worker Profile"}</Button>
+        </div>
+      }
+    >
+          <div className="mx-auto grid max-w-[1120px] gap-5 px-4 py-4 sm:px-6 lg:grid-cols-[232px_minmax(0,1fr)] lg:gap-6 lg:px-7 lg:py-5">
             <aside className="lg:sticky lg:top-0 lg:self-start">
-              <ProfileSummary agent={agent} workspace={workspace} draft={draft} />
+              <ProfileSummary agent={agent} workspace={workspace} draft={draft} hasChanges={hasChanges} />
+              <ProfileNavigation />
             </aside>
 
-            <div className="min-w-0 space-y-8 pb-2">
-              <ProfileSection icon={KeyRound} title="Identity & role" description="How operators recognize this worker and the outcome it owns.">
-                <div className="grid gap-4 sm:grid-cols-2">
+            <div className="min-w-0 space-y-4 pb-1">
+              <ProfileSection id="worker-profile-identity" eyebrow="01 · Employment record" icon={KeyRound} title="Identity & role" description="Give this worker a clear professional identity and a specific outcome to own.">
+                <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Display name"><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></Field>
                 <Field label="Role"><Input value={draft.role} placeholder="e.g. Research analyst" onChange={(event) => setDraft({ ...draft, role: event.target.value })} /></Field>
                 <Field label="Emoji"><Input value={draft.emoji} onChange={(event) => setDraft({ ...draft, emoji: event.target.value })} /></Field>
                 <Field label="Theme"><Input value={draft.theme} placeholder="slate" onChange={(event) => setDraft({ ...draft, theme: event.target.value })} /></Field>
-                  <Field className="sm:col-span-2" label="Mission"><Textarea className="min-h-24 resize-y" value={draft.mission} placeholder="What outcome does this worker own?" onChange={(event) => setDraft({ ...draft, mission: event.target.value })} /></Field>
-                  <Field className="sm:col-span-2" label="Behavior instructions"><Textarea className="min-h-28 resize-y" value={draft.behaviorInstructions} placeholder="Concise, reviewable working guidance for this worker." onChange={(event) => setDraft({ ...draft, behaviorInstructions: event.target.value })} /></Field>
+                  <Field className="sm:col-span-2" label="Mission"><Textarea className="min-h-20 resize-y" value={draft.mission} placeholder="What outcome does this worker own?" onChange={(event) => setDraft({ ...draft, mission: event.target.value })} /></Field>
+                  <Field className="sm:col-span-2" label="Behavior instructions"><Textarea className="min-h-20 resize-y" value={draft.behaviorInstructions} placeholder="Concise, reviewable working guidance for this worker." onChange={(event) => setDraft({ ...draft, behaviorInstructions: event.target.value })} /></Field>
                   <Field className="sm:col-span-2" label="Operator labels"><Input value={draft.labels} placeholder="research, customer-facing" onChange={(event) => setDraft({ ...draft, labels: event.target.value })} /></Field>
                 </div>
               </ProfileSection>
 
-              <ProfileSection icon={BrainCircuit} title="Work setup" description="OpenClaw workspace, model, memory, and heartbeat settings.">
-                <div className="grid gap-4 sm:grid-cols-2">
+              <ProfileSection id="worker-profile-work" eyebrow="02 · Operating context" icon={BrainCircuit} title="Work setup" description="The workspace, model, recall, and cadence that shape how this worker operates.">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <ReadOnlyField label="Workspace" value={workspace.name} detail={workspace.path} />
                   <ReadOnlyField label="Model & auth" value={agent.modelId === "unassigned" ? "OpenClaw default" : agent.modelId} detail="Credentials remain in OpenClaw and are never shown or copied here." action={<Button size="sm" variant="secondary" onClick={() => onChangeModel(agent.id)}>Change model</Button>} />
                 <Field label="Heartbeat"><select value={draft.heartbeatEnabled ? "on" : "off"} className={profileSelectClassName} onChange={(event) => setDraft({ ...draft, heartbeatEnabled: event.target.value === "on" })}><option value="off">Off</option><option value="on">On</option></select></Field>
@@ -236,8 +262,8 @@ export function WorkerProfileDialog({
                 </div>
               </ProfileSection>
 
-              <ProfileSection icon={Wrench} title="Capabilities" description="What this worker may use, within global OpenClaw policy and installed plugins.">
-                <div className="grid gap-4 sm:grid-cols-2">
+              <ProfileSection id="worker-profile-capabilities" eyebrow="03 · Capability envelope" icon={Wrench} title="Capabilities" description="Grant the smallest useful tool surface; global OpenClaw policy still applies.">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Tool profile"><select value={draft.toolProfile} className={profileSelectClassName} onChange={(event) => setDraft({ ...draft, toolProfile: event.target.value as ToolProfile })}><option value="">Inherit OpenClaw default</option><option value="minimal">Minimal</option><option value="coding">Coding</option><option value="messaging">Messaging</option><option value="full">Full</option></select></Field>
                   <Field label="File boundary"><select value={draft.policy.fileAccess} className={profileSelectClassName} onChange={(event) => updatePolicy("fileAccess", event.target.value as AgentPolicy["fileAccess"])}><option value="workspace-only">Workspace only</option><option value="extended">Extended</option></select></Field>
                   <Field label="Additional allowed tools"><Input value={draft.toolAllow} placeholder="browser, web_search" onChange={(event) => setDraft({ ...draft, toolAllow: event.target.value })} /></Field>
@@ -246,22 +272,15 @@ export function WorkerProfileDialog({
                 <div className="flex flex-wrap gap-2 pt-1"><Button variant="secondary" size="sm" onClick={() => onManageCapabilities(agent.id, "skills")}>Manage skills ({agent.skills.length})</Button><Button variant="secondary" size="sm" onClick={() => onManageCapabilities(agent.id, "tools")}>Manage declared tools</Button></div>
               </ProfileSection>
 
-              <ProfileSection icon={ShieldCheck} title="Access & safety" description="Supported sandbox controls and connected channels. Browser sessions and credentials remain separate.">
-                <div className="grid gap-4 sm:grid-cols-3"><Field label="Sandbox mode"><select value={draft.sandboxMode} className={profileSelectClassName} onChange={(event) => setDraft({ ...draft, sandboxMode: event.target.value as SandboxMode })}><option value="">Inherit</option><option value="off">Off</option><option value="non-main">Non-main</option><option value="all">All sessions</option></select></Field><Field label="Scope"><select value={draft.sandboxScope} className={profileSelectClassName} onChange={(event) => setDraft({ ...draft, sandboxScope: event.target.value as SandboxScope })}><option value="">Inherit</option><option value="session">Session</option><option value="agent">Agent</option><option value="shared">Shared</option></select></Field><Field label="Workspace in sandbox"><select value={draft.workspaceAccess} className={profileSelectClassName} onChange={(event) => setDraft({ ...draft, workspaceAccess: event.target.value as WorkspaceAccess })}><option value="">Inherit</option><option value="none">No access</option><option value="ro">Read only</option><option value="rw">Read/write</option></select></Field></div>
+              <ProfileSection id="worker-profile-safety" eyebrow="04 · Guardrails & reach" icon={ShieldCheck} title="Access & safety" description="Set supported sandbox limits and connect the worker to the channels it may serve.">
+                <div className="grid gap-3 sm:grid-cols-3"><Field label="Sandbox mode"><select value={draft.sandboxMode} className={profileSelectClassName} onChange={(event) => setDraft({ ...draft, sandboxMode: event.target.value as SandboxMode })}><option value="">Inherit</option><option value="off">Off</option><option value="non-main">Non-main</option><option value="all">All sessions</option></select></Field><Field label="Scope"><select value={draft.sandboxScope} className={profileSelectClassName} onChange={(event) => setDraft({ ...draft, sandboxScope: event.target.value as SandboxScope })}><option value="">Inherit</option><option value="session">Session</option><option value="agent">Agent</option><option value="shared">Shared</option></select></Field><Field label="Workspace in sandbox"><select value={draft.workspaceAccess} className={profileSelectClassName} onChange={(event) => setDraft({ ...draft, workspaceAccess: event.target.value as WorkspaceAccess })}><option value="">Inherit</option><option value="none">No access</option><option value="ro">Read only</option><option value="rw">Read/write</option></select></Field></div>
                 <div className="rounded-2xl border border-amber-300/25 bg-amber-400/5 px-4 py-3 text-xs leading-5 text-muted-foreground"><FolderLock className="mr-1.5 inline h-4 w-4 text-amber-500" />Sandbox changes can alter the worker&apos;s visible workspace and may recreate its runtime on the next turn.</div>
                 <div className="rounded-2xl border border-border bg-muted/25 p-4"><p className="text-sm font-medium">Accounts & browser profiles</p><p className="mt-1.5 text-xs leading-5 text-muted-foreground">{accountSummary}</p></div>
                 <ChannelBindingPicker snapshot={snapshot} workspaceId={workspace.id} agentId={agent.id} channelIds={draft.channelIds} isSaving={saving} surfaceTheme={surfaceTheme} onChange={(channelIds) => setDraft({ ...draft, channelIds })} />
               </ProfileSection>
             </div>
           </div>
-        </div>
-
-        <DialogFooter className="border-t border-border/80 bg-muted/20 px-5 py-4 sm:flex-row sm:px-7">
-          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={() => void save()} disabled={saving || !draft.name.trim()}>{saving ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}Save Worker Profile</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </MissionControlDialogShell>
   );
 }
 
@@ -295,35 +314,61 @@ function buildDraft(agent: MissionControlSnapshot["agents"][number], snapshot: M
 function ProfileSummary({
   agent,
   workspace,
-  draft
+  draft,
+  hasChanges
 }: {
   agent: MissionControlSnapshot["agents"][number];
   workspace: MissionControlSnapshot["workspaces"][number];
   draft: WorkerProfileDraft;
+  hasChanges: boolean;
 }) {
   const identity = draft.emoji || "🤖";
   const role = draft.role.trim() || "Worker profile";
   const model = agent.modelId === "unassigned" ? "OpenClaw default" : agent.modelId;
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
-      <div className="border-b border-border bg-muted/30 p-5">
-        <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-2xl shadow-sm">{identity}</span>
-        <p className="mt-4 truncate text-base font-semibold">{draft.name || formatAgentDisplayName(agent)}</p>
-        <p className="mt-1 truncate text-sm text-primary">{role}</p>
+    <div className="overflow-hidden rounded-[18px] border border-border bg-card shadow-[0_10px_28px_rgba(0,0,0,0.07)]">
+      <div className="relative overflow-hidden border-b border-border bg-[linear-gradient(145deg,hsl(var(--primary)/0.12),transparent_68%)] p-4">
+        <div className="absolute -right-7 -top-7 h-24 w-24 rounded-full border border-primary/15" />
+        <span className="relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-primary/25 bg-background/75 text-lg shadow-lg shadow-primary/10">{identity}</span>
+        <p className="relative mt-3 truncate text-sm font-semibold tracking-[-0.015em]">{draft.name || formatAgentDisplayName(agent)}</p>
+        <p className="relative mt-1 truncate text-sm text-primary">{role}</p>
+        <span className={cn("relative mt-2.5 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[9px] font-semibold", hasChanges ? "bg-amber-400/10 text-amber-600 dark:text-amber-300" : "bg-emerald-400/10 text-emerald-700 dark:text-emerald-300")}><span className={cn("h-1.5 w-1.5 rounded-full", hasChanges ? "bg-amber-400" : "bg-emerald-400")} />{hasChanges ? "Draft updated" : "Saved profile"}</span>
       </div>
-      <div className="space-y-4 p-5">
+      <div className="space-y-3 p-4">
         <SummaryItem label="Workspace" value={workspace.name} />
         <SummaryItem label="Model" value={model} />
-        <div className="grid grid-cols-2 gap-3 border-t border-border pt-4">
+        <div className="grid grid-cols-2 gap-3 border-t border-border pt-3">
           <SummaryItem label="Skills" value={String(agent.skills.length)} />
           <SummaryItem label="Tools" value={String(agent.tools.length)} />
         </div>
-        <div className="rounded-2xl bg-primary/5 px-3 py-3 text-xs leading-5 text-muted-foreground">
-          Settings save to the real worker profile and supported OpenClaw runtime configuration.
+        <div className="flex gap-2 rounded-xl border border-primary/10 bg-primary/5 px-2.5 py-2 text-[11px] leading-4 text-muted-foreground">
+          <Layers3 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+          <span>Changes compile into the supported OpenClaw worker runtime and AgentOS profile.</span>
         </div>
       </div>
     </div>
+  );
+}
+
+function ProfileNavigation() {
+  const items = [
+    ["worker-profile-identity", "Identity & role"],
+    ["worker-profile-work", "Work setup"],
+    ["worker-profile-capabilities", "Capabilities"],
+    ["worker-profile-safety", "Access & safety"]
+  ] as const;
+
+  return (
+    <nav aria-label="Worker Profile sections" className="mt-4 hidden rounded-2xl border border-border/80 bg-muted/20 p-2 lg:block">
+      <p className="px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Profile sections</p>
+      {items.map(([id, label]) => (
+        <a key={id} href={`#${id}`} className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground">
+          <span className="h-1.5 w-1.5 rounded-full bg-primary/50" />
+          {label}
+        </a>
+      ))}
+    </nav>
   );
 }
 
@@ -331,8 +376,8 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
   return <div className="min-w-0"><p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</p><p className="mt-1 truncate text-xs font-medium">{value}</p></div>;
 }
 
-function ProfileSection({ icon: Icon, title, description, children }: { icon: LucideIcon; title: string; description: string; children: ReactNode }) {
-  return <section className="space-y-5 border-b border-border/80 pb-8 last:border-b-0 last:pb-0"><div className="flex max-w-2xl gap-3"><span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Icon className="h-4 w-4" /></span><div><h3 className="text-base font-semibold tracking-[-0.01em]">{title}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p></div></div>{children}</section>;
+function ProfileSection({ id, eyebrow, icon: Icon, title, description, children }: { id: string; eyebrow: string; icon: LucideIcon; title: string; description: string; children: ReactNode }) {
+  return <section id={id} className="scroll-mt-4 space-y-4 rounded-[18px] border border-border/80 bg-[linear-gradient(150deg,hsl(var(--card)),hsl(var(--muted)/0.18))] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.03)]"><div className="flex max-w-2xl gap-3"><span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 text-primary shadow-sm"><Icon className="h-4 w-4" /></span><div><p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-primary/80">{eyebrow}</p><h3 className="mt-0.5 text-base font-semibold tracking-[-0.015em]">{title}</h3><p className="mt-1 text-xs leading-4 text-muted-foreground">{description}</p></div></div>{children}</section>;
 }
 
 function Field({ label, className, children }: { label: string; className?: string; children: ReactNode }) { return <div className={cn("space-y-2", className)}><Label className="text-xs font-medium text-foreground/85">{label}</Label>{children}</div>; }
@@ -344,3 +389,4 @@ function ToggleChip({ label, active, onClick }: { label: string; active: boolean
 function splitList(value: string) { return Array.from(new Set(value.split(",").map((entry) => entry.trim()).filter(Boolean))); }
 function toggleValue(values: Array<"memory" | "sessions">, value: "memory" | "sessions") { return values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value]; }
 function areSameValues(left: string[], right: string[]) { return left.length === right.length && left.every((value) => right.includes(value)); }
+function areSameDraft(left: WorkerProfileDraft, right: WorkerProfileDraft) { return JSON.stringify(left) === JSON.stringify(right); }

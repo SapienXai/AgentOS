@@ -9,6 +9,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Maximize2, Minus, Plus } from "lucide-react";
 
 import {
   arePersistedNodePositionsEqual,
@@ -57,6 +58,7 @@ export function MissionCanvas({
   agentCreationWarnings,
   accountTargets,
   accountAccessRules,
+  sidebarOpen,
   activeWorkspaceId,
   selectedNodeId,
   focusedAgentId,
@@ -101,6 +103,7 @@ export function MissionCanvas({
   agentCreationWarnings?: Record<string, string>;
   accountTargets: AccountLoginTargetView[];
   accountAccessRules: AccountAccessRuleView[];
+  sidebarOpen: boolean;
   activeWorkspaceId: string | null;
   selectedNodeId: string | null;
   focusedAgentId: string | null;
@@ -154,6 +157,7 @@ export function MissionCanvas({
   const [justCreatedTaskIds, setJustCreatedTaskIds] = useState<string[]>([]);
   const [elevatedAgentMenuId, setElevatedAgentMenuId] = useState<string | null>(null);
   const [focusTaskAnchor, setFocusTaskAnchor] = useState<FocusTaskAnchor | null>(null);
+  const [canvasZoom, setCanvasZoom] = useState(0.9);
   const canvasScopeKey = focusedAgentId
     ? `focus:${focusedAgentId}`
     : activeWorkspaceId
@@ -554,7 +558,7 @@ export function MissionCanvas({
       });
       creationTimeouts.clear();
     };
-  }, []);
+  }, [setCanvasZoom]);
 
   useEffect(() => {
     if (!focusTaskAnchor || !reactFlowRef.current) {
@@ -654,15 +658,45 @@ export function MissionCanvas({
     writeToLocalStorage(getNodePositionsStorageKey(canvasScopeKey), JSON.stringify(mergedPositions));
   }, [canvasScopeKey, nodes]);
 
+  const adjustCanvasZoom = useCallback((delta: number) => {
+    const reactFlow = reactFlowRef.current;
+
+    if (!reactFlow) {
+      return;
+    }
+
+    const nextZoom = Math.min(1.2, Math.max(0.42, reactFlow.getZoom() + delta));
+    setCanvasZoom(nextZoom);
+    void reactFlow.zoomTo(nextZoom, { duration: 180 });
+  }, [setCanvasZoom]);
+
+  const fitCanvasToView = useCallback(() => {
+    const reactFlow = reactFlowRef.current;
+
+    if (!reactFlow) {
+      return;
+    }
+
+    void reactFlow.fitView({
+      padding: focusedAgentId ? 0.2 : 0.14,
+      duration: 260,
+      maxZoom: focusedAgentId ? 1.05 : 0.9
+    });
+  }, [focusedAgentId]);
+
+  const zoomPercent = Math.round(canvasZoom * 100);
+
   return (
-    <div ref={containerRef} className={cn("h-full w-full", className)}>
+    <div ref={containerRef} className={cn("relative h-full w-full", className)}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         onInit={(instance) => {
           reactFlowRef.current = instance;
+          setCanvasZoom(instance.getZoom());
         }}
+        onMove={(_, viewport) => setCanvasZoom(viewport.zoom)}
         onPointerDownCapture={(event) => {
           if (!(event.target instanceof Element)) {
             return;
@@ -704,6 +738,57 @@ export function MissionCanvas({
         proOptions={{ hideAttribution: true }}
         className="h-full w-full rounded-[inherit]"
       />
+      <div
+        className={cn(
+          "nodrag nopan absolute bottom-5 z-20 flex items-center overflow-hidden rounded-xl border p-1 shadow-[0_12px_30px_rgba(0,0,0,0.20)] backdrop-blur-xl transition-[left] duration-500",
+          sidebarOpen
+            ? "left-[calc(min(86vw,292px)+16px)] lg:left-[308px]"
+            : "left-[72px]",
+          surfaceTheme === "light"
+            ? "border-border bg-card/90 text-foreground"
+            : "border-white/10 bg-slate-950/78 text-slate-100"
+        )}
+      >
+        <button
+          type="button"
+          aria-label="Zoom out"
+          title="Zoom out"
+          disabled={canvasZoom <= 0.42}
+          onClick={() => adjustCanvasZoom(-0.1)}
+          className={cn(
+            "inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-35",
+            surfaceTheme === "light" ? "hover:bg-muted" : "hover:bg-white/[0.09]"
+          )}
+        >
+          <Minus className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          aria-label="Fit canvas to view"
+          title="Fit canvas to view"
+          onClick={fitCanvasToView}
+          className={cn(
+            "flex h-8 min-w-12 items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-semibold tabular-nums transition-colors",
+            surfaceTheme === "light" ? "hover:bg-muted" : "hover:bg-white/[0.09]"
+          )}
+        >
+          <Maximize2 className="h-3.5 w-3.5" />
+          {zoomPercent}%
+        </button>
+        <button
+          type="button"
+          aria-label="Zoom in"
+          title="Zoom in"
+          disabled={canvasZoom >= 1.2}
+          onClick={() => adjustCanvasZoom(0.1)}
+          className={cn(
+            "inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-35",
+            surfaceTheme === "light" ? "hover:bg-muted" : "hover:bg-white/[0.09]"
+          )}
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import {
   deleteAgent as deleteApplicationAgent,
   formatPostCreateAgentConfigSyncWarning,
   resolveAgentCreateModelSelection,
+  resolveWorkerProfileUpdatePatch,
   updateAgent as updateApplicationAgent
 } from "@/lib/openclaw/application/agent-service";
 import {
@@ -166,4 +167,32 @@ test("agent model assignment rejects unavailable and missing models", () => {
     /OpenClaw|not ready|Configure/
   );
   assert.doesNotThrow(() => assertAgentModelReadyForAssignment(snapshot, "openai/gpt-5.5"));
+});
+
+test("legacy identity updates also patch the AgentOS Worker Profile", () => {
+  const patch = resolveWorkerProfileUpdatePatch({
+    id: "research-worker",
+    theme: "violet",
+    name: "Research Worker"
+  });
+
+  assert.deepEqual(patch?.identity, {
+    displayName: "Research Worker",
+    emoji: undefined,
+    theme: "violet",
+    avatar: undefined
+  });
+});
+
+test("explicit Worker Profile identity values take precedence over legacy fields", () => {
+  const patch = resolveWorkerProfileUpdatePatch({
+    id: "research-worker",
+    theme: "violet",
+    workerProfile: {
+      schemaVersion: 1,
+      identity: { theme: null }
+    }
+  });
+
+  assert.equal(patch?.identity?.theme, null);
 });

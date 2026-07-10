@@ -157,13 +157,6 @@ type ModelOnboardingRunOptions = {
   verifyProvider?: AddModelsProviderId;
 };
 type InspectorScopeShortcut = "workspace" | "agent" | "tasks";
-function shouldKeepSidebarOpenForPortal(target: EventTarget | null) {
-  if (target instanceof Element && target.closest('[role="dialog"], [data-radix-popper-content-wrapper]')) {
-    return true;
-  }
-
-  return typeof document !== "undefined" && Boolean(document.querySelector('[role="dialog"]'));
-}
 
 const modelAuthTerminalAutoOpenCooldownMs = 2 * 60 * 1000;
 const modelAuthStatusPollDelaysMs = [4_000, 8_000, 15_000, 30_000, 45_000, 60_000];
@@ -448,7 +441,17 @@ export function MissionControlShell({
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
   const [isAddModelsDialogOpen, setIsAddModelsDialogOpen] = useState(false);
   const [isSidebarCreateAgentDialogOpen, setIsSidebarCreateAgentDialogOpen] = useState(false);
+  const [isSidebarAgentActionModalOpen, setIsSidebarAgentActionModalOpen] = useState(false);
   const [initialAddModelsProvider, setInitialAddModelsProvider] = useState<AddModelsProviderId | null>(null);
+
+  useEffect(() => {
+    if (isSidebarCreateAgentDialogOpen) {
+      setIsSidebarOpen(false);
+    }
+  }, [isSidebarCreateAgentDialogOpen]);
+
+  const isSidebarHoverLocked = isSidebarCreateAgentDialogOpen || isSidebarAgentActionModalOpen;
+
   const [pendingWorkspaceOpenId, setPendingWorkspaceOpenId] = useState<string | null>(null);
   const [loadedWorkspaceSelectionRoot, setLoadedWorkspaceSelectionRoot] = useState<string | null>(null);
   const fallbackSnapshotRecoveryKeyRef = useRef<string | null>(null);
@@ -549,6 +552,13 @@ export function MissionControlShell({
     setIsInspectorOpen,
     onClearComposerTarget: () => setComposerTargetAgentId(null)
   });
+
+  useEffect(() => {
+    if (agentActionRequest) {
+      setIsSidebarOpen(false);
+    }
+  }, [agentActionRequest]);
+
   const activeTaskCardTaskId = activeTaskCardContext?.taskId ?? null;
   const selectInspectorScope = useCallback(
     (scope: InspectorScopeShortcut) => {
@@ -3718,24 +3728,12 @@ export function MissionControlShell({
               ? "w-[calc(100vw-96px)] max-w-[292px] lg:w-[292px] lg:max-w-none"
               : "w-[56px]"
           )}
-          onMouseEnter={() => setIsSidebarOpen(true)}
-          onMouseLeave={(event) => {
-            if (shouldKeepSidebarOpenForPortal(event.relatedTarget)) {
-              return;
-            }
-
-            setIsSidebarOpen(false);
-          }}
-          onFocusCapture={() => setIsSidebarOpen(true)}
-          onBlurCapture={(event) => {
-            if (shouldKeepSidebarOpenForPortal(event.relatedTarget)) {
-              return;
-            }
-
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-              setIsSidebarOpen(false);
+          onMouseEnter={() => {
+            if (!isSidebarHoverLocked) {
+              setIsSidebarOpen(true);
             }
           }}
+          onMouseLeave={() => setIsSidebarOpen(false)}
         >
           <MissionSidebar
             snapshot={uiSnapshot}
@@ -3756,7 +3754,7 @@ export function MissionControlShell({
               systemReady: isOpenClawOnboardingSystemReady
             }}
             onExpandCollapsed={() => setIsSidebarOpen(true)}
-            onToggleCollapsed={() => setIsSidebarOpen((current) => !current)}
+            onToggleCollapsed={() => setIsSidebarOpen(false)}
             onSelectWorkspace={(workspaceId) => {
               openWorkspaceOnCanvas(workspaceId);
             }}
@@ -3768,7 +3766,7 @@ export function MissionControlShell({
             onOpenModelSetup={() => openSetupWizard()}
             onOpenAddModels={openAddModelsDialog}
             onOpenCreateAgent={() => {
-              setIsSidebarOpen(true);
+              setIsSidebarOpen(false);
               setIsSidebarCreateAgentDialogOpen(true);
             }}
             onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
@@ -3777,6 +3775,12 @@ export function MissionControlShell({
             pendingCreatedAgents={pendingCreatedAgents}
             onAgentCreationPending={handleAgentCreationPending}
             onAgentCreatedVisible={handleCreatedAgentVisible}
+            onAgentActionModalOpenChange={(open) => {
+              setIsSidebarAgentActionModalOpen(open);
+              if (open) {
+                setIsSidebarOpen(false);
+              }
+            }}
           />
         </div>
 
@@ -3819,7 +3823,7 @@ export function MissionControlShell({
               systemReady: isOpenClawOnboardingSystemReady
             }}
             onExpandCollapsed={() => setIsSidebarOpen(true)}
-            onToggleCollapsed={() => setIsSidebarOpen((current) => !current)}
+            onToggleCollapsed={() => setIsSidebarOpen(false)}
             onSelectWorkspace={(workspaceId) => {
               openWorkspaceOnCanvas(workspaceId);
             }}
@@ -3831,7 +3835,7 @@ export function MissionControlShell({
             onOpenModelSetup={() => openSetupWizard()}
             onOpenAddModels={openAddModelsDialog}
             onOpenCreateAgent={() => {
-              setIsSidebarOpen(true);
+              setIsSidebarOpen(false);
               setIsSidebarCreateAgentDialogOpen(true);
             }}
             onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
@@ -3840,6 +3844,12 @@ export function MissionControlShell({
             pendingCreatedAgents={pendingCreatedAgents}
             onAgentCreationPending={handleAgentCreationPending}
             onAgentCreatedVisible={handleCreatedAgentVisible}
+            onAgentActionModalOpenChange={(open) => {
+              setIsSidebarAgentActionModalOpen(open);
+              if (open) {
+                setIsSidebarOpen(false);
+              }
+            }}
           />
         </div>
 
@@ -3885,6 +3895,7 @@ export function MissionControlShell({
             agentCreationWarnings={agentCreationWarnings}
             accountTargets={accountTargets}
             accountAccessRules={accountAccessRules}
+            sidebarOpen={isSidebarOpen}
             activeWorkspaceId={activeWorkspaceId}
             selectedNodeId={selectedNodeId}
             focusedAgentId={focusedAgentId}
@@ -3900,6 +3911,7 @@ export function MissionControlShell({
             onToggleWorkspaceTaskCards={toggleWorkspaceTaskCards}
             className="rounded-none"
             onEditAgent={(agentId) => {
+              setIsSidebarOpen(false);
               selectNode(agentId);
               setAgentActionRequest({
                 requestId: `edit:${agentId}:${Date.now()}`,
@@ -3908,6 +3920,7 @@ export function MissionControlShell({
               });
             }}
             onDeleteAgent={(agentId) => {
+              setIsSidebarOpen(false);
               selectNode(agentId);
               setAgentActionRequest({
                 requestId: `delete:${agentId}:${Date.now()}`,
@@ -4050,24 +4063,12 @@ export function MissionControlShell({
               ? "w-[calc(100vw-96px)] max-w-[292px] lg:w-[292px] lg:max-w-none"
               : "w-[56px]"
           )}
-          onMouseEnter={() => setIsSidebarOpen(true)}
-          onMouseLeave={(event) => {
-            if (shouldKeepSidebarOpenForPortal(event.relatedTarget)) {
-              return;
-            }
-
-            setIsSidebarOpen(false);
-          }}
-          onFocusCapture={() => setIsSidebarOpen(true)}
-          onBlurCapture={(event) => {
-            if (shouldKeepSidebarOpenForPortal(event.relatedTarget)) {
-              return;
-            }
-
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-              setIsSidebarOpen(false);
+          onMouseEnter={() => {
+            if (!isSidebarHoverLocked) {
+              setIsSidebarOpen(true);
             }
           }}
+          onMouseLeave={() => setIsSidebarOpen(false)}
         >
           <MissionSidebar
             snapshot={uiSnapshot}
@@ -4087,7 +4088,7 @@ export function MissionControlShell({
               systemReady: isOpenClawOnboardingSystemReady
             }}
             onExpandCollapsed={() => setIsSidebarOpen(true)}
-            onToggleCollapsed={() => setIsSidebarOpen((current) => !current)}
+            onToggleCollapsed={() => setIsSidebarOpen(false)}
             onSelectWorkspace={(workspaceId) => {
               openWorkspaceOnCanvas(workspaceId);
             }}
@@ -4099,7 +4100,7 @@ export function MissionControlShell({
             onOpenModelSetup={() => openSetupWizard()}
             onOpenAddModels={openAddModelsDialog}
             onOpenCreateAgent={() => {
-              setIsSidebarOpen(true);
+              setIsSidebarOpen(false);
               setIsSidebarCreateAgentDialogOpen(true);
             }}
             onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
@@ -4107,6 +4108,12 @@ export function MissionControlShell({
             onSnapshotChange={setSnapshot}
             onAgentCreationPending={handleAgentCreationPending}
             onAgentCreatedVisible={handleCreatedAgentVisible}
+            onAgentActionModalOpenChange={(open) => {
+              setIsSidebarAgentActionModalOpen(open);
+              if (open) {
+                setIsSidebarOpen(false);
+              }
+            }}
           />
         </div>
 

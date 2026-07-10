@@ -16,7 +16,11 @@ import {
   serializeHeartbeatConfig
 } from "@/lib/openclaw/agent-heartbeat";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
-import { mergeAgentOSWorkerProfile } from "@/lib/agentos/worker-profile";
+import {
+  AGENTOS_WORKER_PROFILE_SCHEMA_VERSION,
+  mergeAgentOSWorkerProfile,
+  type AgentOSWorkerProfileInput
+} from "@/lib/agentos/worker-profile";
 import {
   clearMissionControlRuntimeHistoryCache,
   getMissionControlSnapshot,
@@ -375,7 +379,7 @@ export async function updateAgent(input: AgentUpdateInput) {
       input.heartbeat ?? mapAgentHeartbeatToInput(agent.heartbeat)
     )
   );
-  const workerProfile = mergeAgentOSWorkerProfile(agent.workerProfile, input.workerProfile, {
+  const workerProfile = mergeAgentOSWorkerProfile(agent.workerProfile, resolveWorkerProfileUpdatePatch(input), {
     name: normalizeOptionalValue(input.name) ?? currentName ?? agent.id,
     role: formatAgentPresetLabel(policy.preset),
     emoji: normalizeOptionalValue(input.emoji) ?? currentEmoji,
@@ -943,6 +947,27 @@ async function removeWorkspaceProjectAgentMetadata(workspacePath: string, agentI
 
 function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
+}
+
+export function resolveWorkerProfileUpdatePatch(input: AgentUpdateInput): AgentOSWorkerProfileInput | undefined {
+  const identity = input.workerProfile?.identity;
+  const nextIdentity = {
+    displayName: identity?.displayName !== undefined ? identity.displayName : input.name,
+    emoji: identity?.emoji !== undefined ? identity.emoji : input.emoji,
+    theme: identity?.theme !== undefined ? identity.theme : input.theme,
+    avatar: identity?.avatar !== undefined ? identity.avatar : input.avatar
+  };
+  const hasIdentityPatch = Object.values(nextIdentity).some((value) => value !== undefined);
+
+  if (!input.workerProfile && !hasIdentityPatch) {
+    return undefined;
+  }
+
+  return {
+    schemaVersion: AGENTOS_WORKER_PROFILE_SCHEMA_VERSION,
+    ...input.workerProfile,
+    ...(hasIdentityPatch ? { identity: nextIdentity } : {})
+  };
 }
 
 function areSameStringSet(left: string[], right: string[]) {
