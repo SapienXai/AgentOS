@@ -69,7 +69,7 @@ const onboardingSchema = z.object({
 const docsUrl = OPENCLAW_INSTALL_DOCS_URL;
 const commandTimeoutMs = 10 * 60 * 1000;
 const gatewayStatusTimeoutMs = 3_000;
-const fastStartReadyTimeoutMs = 60_000;
+const fastStartReadyTimeoutMs = 120_000;
 const readyTimeoutMs = 180_000;
 const postAuthRepairReadyTimeoutMs = 180_000;
 const readyPollIntervalMs = 250;
@@ -356,6 +356,13 @@ export async function POST(request: Request) {
             message: "Waiting for Gateway readiness..."
           });
           localGatewayStatus = await waitForLocalGatewayReady();
+        }
+
+        if (localGatewayStatus?.rpc?.ok !== true) {
+          const authoritativeStatus = await readGatewayStatus(openClawBin).catch(() => null);
+          if (authoritativeStatus?.rpc?.ok) {
+            localGatewayStatus = authoritativeStatus;
+          }
         }
 
         const readyRuntimeState = await inspectOpenClawRuntimeState(openClawStateRootPath, [], { touch: true });
