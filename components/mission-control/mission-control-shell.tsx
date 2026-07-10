@@ -215,7 +215,7 @@ export function MissionControlShell({
   initialSnapshot: MissionControlSnapshot;
   mode?: "mission" | "settings";
 }) {
-  const { snapshot, connectionState, hasReceivedLiveSnapshot, gatewayReachable, gatewayRegistered, gatewayReady, runtimeWritable, localModelStatus, cliInstalled, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
+  const { snapshot, connectionState, hasReceivedLiveSnapshot, gatewayReachable, gatewayRegistered, gatewayConfigured, gatewayReady, runtimeWritable, localModelStatus, cliInstalled, refresh, refreshSnapshot, setSnapshot } = useMissionControlData(initialSnapshot);
   const {
     activeWorkspaceId,
     setActiveWorkspaceId,
@@ -698,7 +698,13 @@ export function MissionControlShell({
   );
   const hasWorkspaceSetup = hasAgentOSWorkspaceSetup(snapshot);
   const openClawInstallSummary = resolveOpenClawInstallSummary(snapshot);
-  const onboardingAction = resolveOnboardingAction(snapshot);
+  const onboardingAction = resolveOnboardingAction(snapshot, {
+    cliInstalled,
+    gatewayRegistered,
+    gatewayConfigured,
+    gatewayReady,
+    runtimeWritable
+  });
   const hasActiveMissionWork = activeRuntimeCount > 0 || optimisticMissionTasks.length > 0;
   const shouldShowLaunchpadReadyState = shouldShowOnboardingLaunchpad(snapshot, {
     hasSeenMissionReady,
@@ -1804,7 +1810,11 @@ export function MissionControlShell({
   };
 
   const runOpenClawOnboarding = async () => {
-    const prepareGatewayOnly = onboardingAction.label === "Prepare local gateway";
+    const setupIntent = onboardingAction.label === "Install OpenClaw"
+      ? "install"
+      : onboardingAction.label === "Prepare local gateway"
+        ? "prepare"
+        : "start";
     setIsOnboardingDismissed(false);
     resetOnboardingProgressState();
     setOnboardingStage("system");
@@ -1823,7 +1833,7 @@ export function MissionControlShell({
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          intent: prepareGatewayOnly ? "prepare" : "auto"
+          intent: setupIntent
         })
       });
 
@@ -1867,19 +1877,20 @@ export function MissionControlShell({
               appendOnboardingLog(event.text);
             } else {
               sawDone = true;
-              const gatewayPrepared = prepareGatewayOnly && event.ok && event.phase === "installing-gateway";
+              const stepCompleted = event.ok && event.phase !== "ready";
               setOnboardingPhase(event.phase);
               setOnboardingResultMessage(event.message);
               setOnboardingManualCommand(event.manualCommand ?? null);
               setOnboardingDocsUrl(event.docsUrl ?? null);
-              if (gatewayPrepared) {
+              if (stepCompleted) {
                 if (event.snapshot) {
                   setSnapshot(event.snapshot);
                 }
                 setRequiresFreshInstallSystemSetup(false);
               } else if (event.ok) {
-                setOnboardingStatusMessage("Refreshing model status...");
-                await refreshOnboardingModelSnapshot(event.snapshot ?? null);
+                if (event.snapshot) {
+                  setSnapshot(event.snapshot);
+                }
                 setRequiresFreshInstallSystemSetup(false);
               } else {
                 setOnboardingStatusMessage(null);
@@ -1888,10 +1899,10 @@ export function MissionControlShell({
                 }
               }
               setOnboardingStatusMessage(null);
-              setOnboardingRunState(gatewayPrepared ? "idle" : event.ok ? "success" : "error");
+              setOnboardingRunState(stepCompleted ? "idle" : event.ok ? "success" : "error");
 
-              if (gatewayPrepared) {
-                toast.success("Local Gateway prepared.", {
+              if (stepCompleted) {
+                toast.success(setupIntent === "install" ? "OpenClaw installed." : "Local Gateway prepared.", {
                   description: event.message
                 });
               } else if (event.ok) {
@@ -1917,19 +1928,20 @@ export function MissionControlShell({
 
         if (event.type === "done") {
           sawDone = true;
-          const gatewayPrepared = prepareGatewayOnly && event.ok && event.phase === "installing-gateway";
+          const stepCompleted = event.ok && event.phase !== "ready";
           setOnboardingPhase(event.phase);
           setOnboardingResultMessage(event.message);
           setOnboardingManualCommand(event.manualCommand ?? null);
           setOnboardingDocsUrl(event.docsUrl ?? null);
-          if (gatewayPrepared) {
+          if (stepCompleted) {
             if (event.snapshot) {
               setSnapshot(event.snapshot);
             }
             setRequiresFreshInstallSystemSetup(false);
           } else if (event.ok) {
-            setOnboardingStatusMessage("Refreshing model status...");
-            await refreshOnboardingModelSnapshot(event.snapshot ?? null);
+            if (event.snapshot) {
+              setSnapshot(event.snapshot);
+            }
             setRequiresFreshInstallSystemSetup(false);
           } else {
             setOnboardingStatusMessage(null);
@@ -1938,7 +1950,7 @@ export function MissionControlShell({
             }
           }
           setOnboardingStatusMessage(null);
-          setOnboardingRunState(gatewayPrepared ? "idle" : event.ok ? "success" : "error");
+          setOnboardingRunState(stepCompleted ? "idle" : event.ok ? "success" : "error");
         }
       }
 
