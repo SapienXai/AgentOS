@@ -7,7 +7,10 @@ import { test } from "node:test";
 import { normalizeControlPlaneSnapshot } from "@/lib/agentos/acl/openclaw";
 import { mergeOllamaCatalogModels, parseOllamaListModelNames } from "@/lib/openclaw/domains/model-provider-catalog";
 import { getOpenClawBinCandidates, parseOpenClawVersion } from "@/lib/openclaw/cli";
-import { probeLocalGatewayRegistration } from "@/lib/openclaw/client/local-gateway-probe";
+import {
+  probeLocalGatewayConfiguration,
+  probeLocalGatewayRegistration
+} from "@/lib/openclaw/client/local-gateway-probe";
 import { probeLocalDefaultModel } from "@/lib/openclaw/state/local-model-status";
 import {
   getOpenClawBundledNodeBinPath,
@@ -1065,6 +1068,20 @@ test("macOS lightweight registration probe detects the OpenClaw LaunchAgent", as
     await probeLocalGatewayRegistration({ platform: "darwin", homeDir, env: { NODE_ENV: "test" } }),
     true
   );
+});
+
+test("lightweight Gateway config probe distinguishes prepared local auth", async () => {
+  const homeDir = await mkdtemp(path.join(os.tmpdir(), "agentos-gateway-config-"));
+  const stateDir = path.join(homeDir, ".openclaw");
+  await mkdir(stateDir, { recursive: true });
+
+  assert.equal(await probeLocalGatewayConfiguration({ homeDir, env: {} }), false);
+  await writeFile(
+    path.join(stateDir, "openclaw.json"),
+    JSON.stringify({ gateway: { mode: "local", auth: { mode: "token", token: "test-token" } } }),
+    "utf8"
+  );
+  assert.equal(await probeLocalGatewayConfiguration({ homeDir, env: {} }), true);
 });
 
 test("local model probe reads the configured default without a full snapshot", async () => {
