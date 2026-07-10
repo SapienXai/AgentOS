@@ -287,6 +287,34 @@ export async function POST(request: Request) {
 
       let gatewayStatus = await readGatewayStatus(openClawBin);
 
+      if (await needsWindowsGatewayHiddenLauncherMigration(send)) {
+        await send({
+          type: "status",
+          phase: "installing-gateway",
+          message: "Updating the Windows gateway task to run without console windows..."
+        });
+
+        const gatewayInstallResult = await runCommand(
+          openClawBin,
+          ["gateway", "install", "--force", "--json"],
+          send
+        );
+        appendOutput(gatewayInstallResult);
+
+        if (gatewayInstallResult.errorMessage || gatewayInstallResult.timedOut || gatewayInstallResult.code !== 0) {
+          await failGatewayCommand(
+            "installing-gateway",
+            "Gateway installation failed.",
+            openClawBin,
+            gatewayInstallResult,
+            formatOpenClawCommand(openClawBin, ["gateway", "install", "--force", "--json"])
+          );
+          return;
+        }
+
+        gatewayStatus = await readGatewayStatus(openClawBin).catch(() => gatewayStatus);
+      }
+
       if (!gatewayStatus?.rpc?.ok && gatewayStatus && (await needsGatewayRegistrationRepair(gatewayStatus))) {
         await send({
           type: "status",
@@ -734,6 +762,7 @@ async function runCommand(
   send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>,
   options: {
     timeoutMs?: number;
+    streamOutput?: boolean;
   } = {}
 ): Promise<CommandResult> {
   const invocation = resolveOpenClawSpawnInvocation(command, args);
@@ -767,6 +796,9 @@ async function runCommand(
     child.stdout.on("data", (chunk: Buffer | string) => {
       const text = chunk.toString();
       stdout += text;
+      if (options.streamOutput === false) {
+        return;
+      }
       void send({
         type: "log",
         stream: "stdout",
@@ -777,6 +809,9 @@ async function runCommand(
     child.stderr.on("data", (chunk: Buffer | string) => {
       const text = chunk.toString();
       stderr += text;
+      if (options.streamOutput === false) {
+        return;
+      }
       void send({
         type: "log",
         stream: "stderr",
@@ -923,6 +958,29 @@ async function startRegisteredWindowsGateway(
 
   const result = await runCommand(executable, ["/Run", "/TN", taskName], send, { timeoutMs: 5_000 });
   return !result.errorMessage && !result.timedOut && result.code === 0 ? result : null;
+}
+
+async function needsWindowsGatewayHiddenLauncherMigration(
+  send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>
+) {
+  if (process.platform !== "win32" || !(await probeLocalGatewayRegistration())) {
+    return false;
+  }
+
+  const executable = process.env.SystemRoot
+    ? path.join(process.env.SystemRoot, "System32", "schtasks.exe")
+    : "schtasks.exe";
+  const taskName = process.env.OPENCLAW_WINDOWS_TASK_NAME?.trim() || "OpenClaw Gateway";
+  const result = await runCommand(executable, ["/Query", "/TN", taskName, "/XML"], send, {
+    timeoutMs: 5_000,
+    streamOutput: false
+  });
+
+  if (result.errorMessage || result.timedOut || result.code !== 0) {
+    return false;
+  }
+
+  return !/<Command>\s*[^<]*\.vbs\s*<\/Command>/i.test(result.stdout);
 }
 
 function resolveWindowsPowerShellExecutable() {
