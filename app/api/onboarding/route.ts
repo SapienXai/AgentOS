@@ -463,7 +463,7 @@ export async function POST(request: Request) {
             message: "Gateway service is registered but stopped. Restarting it before readiness verification..."
           });
 
-          const restartResult = await runCommand(openClawBin, ["gateway", "restart", "--force", "--json"], send, {
+          const restartResult = await restartGatewayForOnboarding(openClawBin, send, {
             timeoutMs: 30_000
           });
           appendOutput(restartResult);
@@ -520,7 +520,7 @@ export async function POST(request: Request) {
             message: "Restarting the local gateway service with AgentOS Gateway auth..."
           });
 
-          const restartResult = await runCommand(openClawBin, ["gateway", "restart", "--force", "--json"], send, {
+          const restartResult = await restartGatewayForOnboarding(openClawBin, send, {
             timeoutMs: 30_000
           });
           appendOutput(restartResult);
@@ -960,6 +960,36 @@ async function startRegisteredWindowsGateway(
   return !result.errorMessage && !result.timedOut && result.code === 0 ? result : null;
 }
 
+async function restartGatewayForOnboarding(
+  openClawBin: string,
+  send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>,
+  options: { timeoutMs?: number } = {}
+) {
+  if (process.platform === "win32" && (await probeLocalGatewayRegistration())) {
+    const executable = process.env.SystemRoot
+      ? path.join(process.env.SystemRoot, "System32", "schtasks.exe")
+      : "schtasks.exe";
+    const taskName = process.env.OPENCLAW_WINDOWS_TASK_NAME?.trim() || "OpenClaw Gateway";
+
+    // OpenClaw's legacy restart handoff launches a cmd script that shells out
+    // to findstr. Calling the registered task directly avoids a visible helper
+    // console during System Setup while retaining the normal CLI fallback.
+    await runCommand(executable, ["/End", "/TN", taskName], send, {
+      timeoutMs: 5_000,
+      streamOutput: false
+    });
+    const taskRunResult = await runCommand(executable, ["/Run", "/TN", taskName], send, {
+      timeoutMs: options.timeoutMs ?? 30_000
+    });
+
+    if (!taskRunResult.errorMessage && !taskRunResult.timedOut && taskRunResult.code === 0) {
+      return taskRunResult;
+    }
+  }
+
+  return await runCommand(openClawBin, ["gateway", "restart", "--force", "--json"], send, options);
+}
+
 async function needsWindowsGatewayHiddenLauncherMigration(
   send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>
 ) {
@@ -1230,7 +1260,7 @@ async function repairGatewayModeIfNeeded(
     message: "Restarting the local gateway service with gateway.mode=local..."
   });
 
-  const restartResult = await runCommand(openClawBin, ["gateway", "restart", "--force", "--json"], send);
+  const restartResult = await restartGatewayForOnboarding(openClawBin, send);
   appendOutput(restartResult);
 
   if (restartResult.errorMessage || restartResult.timedOut || restartResult.code !== 0) {
@@ -1428,7 +1458,7 @@ async function waitForReadySnapshotAfterGatewayAuthRepair(
     message: "Restarting the local Gateway service after auth repair..."
   });
 
-  const restartResult = await runCommand(openClawBin, ["gateway", "restart", "--force", "--json"], send, {
+  const restartResult = await restartGatewayForOnboarding(openClawBin, send, {
     timeoutMs: 30_000
   });
   appendOutput(restartResult);
