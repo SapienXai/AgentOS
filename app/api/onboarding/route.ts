@@ -1225,7 +1225,12 @@ async function syncGatewayAuthTokenBeforeFirstStart(
       );
 
   if (gatewayModeResult.errorMessage || gatewayModeResult.timedOut || gatewayModeResult.code !== 0) {
-    throw new Error("AgentOS could not set OpenClaw gateway.mode=local.");
+    const detail = collectCommandOutput(gatewayModeResult).trim();
+    throw new Error(
+      detail
+        ? `AgentOS could not set OpenClaw gateway.mode=local. ${detail}`
+        : "AgentOS could not set OpenClaw gateway.mode=local."
+    );
   }
 
   const authModeResult = currentConfig.authTokenMode
