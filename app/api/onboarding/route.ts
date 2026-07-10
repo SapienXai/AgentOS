@@ -435,7 +435,15 @@ export async function POST(request: Request) {
               message: "Starting the local gateway service after installation..."
             });
 
-            gatewayStartResult = await startGatewayForOnboarding(openClawBin, send);
+            // gateway install already starts its registered service. Running a
+            // second CLI start on Windows can invoke OpenClaw's restart handoff
+            // and briefly expose its helper console.
+            gatewayStartResult = {
+              code: 0,
+              stdout: "Gateway service installation requested its initial start.\n",
+              stderr: "",
+              timedOut: false
+            };
             appendOutput(gatewayStartResult);
           }
 
@@ -939,7 +947,7 @@ async function installOpenClawCli(
 async function startRegisteredWindowsGateway(
   send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>
 ): Promise<CommandResult | null> {
-  if (process.platform !== "win32" || !(await probeLocalGatewayRegistration())) {
+  if (process.platform !== "win32") {
     return null;
   }
 
@@ -963,7 +971,7 @@ async function restartGatewayForOnboarding(
   send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>,
   options: { timeoutMs?: number } = {}
 ) {
-  if (process.platform === "win32" && (await probeLocalGatewayRegistration())) {
+  if (process.platform === "win32") {
     const executable = process.env.SystemRoot
       ? path.join(process.env.SystemRoot, "System32", "schtasks.exe")
       : "schtasks.exe";
