@@ -244,6 +244,24 @@ test("control plane helpers normalize snapshot and onboarding fallback", () => {
   assert.equal(resolveGatewayDraft(gatewaySnapshot), "ws://127.0.0.1:18789");
   assert.equal(resolveOnboardingAction(onboardingSnapshot).label, "Install OpenClaw");
   assert.match(resolveOnboardingAction(onboardingSnapshot).description, new RegExp(OPENCLAW_RECOMMENDED_VERSION));
+  assert.equal(
+    resolveOnboardingAction(onboardingSnapshot, {
+      cliInstalled: true,
+      gatewayRegistered: false,
+      gatewayReady: false,
+      runtimeWritable: false
+    }).label,
+    "Prepare local gateway"
+  );
+  assert.equal(
+    resolveOnboardingAction(onboardingSnapshot, {
+      cliInstalled: true,
+      gatewayRegistered: true,
+      gatewayReady: false,
+      runtimeWritable: false
+    }).label,
+    "Start OpenClaw"
+  );
 
   const onlineWithoutWorkspace = {
     workspaces: [],
