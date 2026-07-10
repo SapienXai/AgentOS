@@ -496,7 +496,7 @@ export async function POST(request: Request) {
         if (!gatewayStatus?.rpc?.ok && needsGatewayBootstrapConfigRepair(gatewayStatus)) {
           await send({
             type: "status",
-            phase: "starting-gateway",
+            phase: "installing-gateway",
             message: "Gateway service started without usable local config. Preparing Gateway auth, then restarting..."
           });
 
@@ -1257,7 +1257,7 @@ async function repairGatewayModeIfNeeded(
 
   await send({
     type: "status",
-    phase: "starting-gateway",
+    phase: "installing-gateway",
     message: "Configuring OpenClaw gateway for local AgentOS access..."
   });
 
@@ -1270,7 +1270,7 @@ async function repairGatewayModeIfNeeded(
 
   await send({
     type: "status",
-    phase: "starting-gateway",
+    phase: "installing-gateway",
     message: "Restarting the local gateway service with gateway.mode=local..."
   });
 
@@ -1326,21 +1326,21 @@ async function repairGatewayAuthForSystemSetup(
 
   await send({
     type: "status",
-    phase: "verifying",
+    phase: "installing-gateway",
     message: buildSystemSetupGatewayAuthRepairStatus(gatewayStatusIssue.kind)
   });
 
   await repairGatewayAuthKindForSystemSetup(gatewayStatusIssue.kind, openClawBin, send, async () => {
     await send({
       type: "status",
-      phase: "verifying",
+      phase: "installing-gateway",
       message: "No pending device approval was available. Rotating the local Gateway token before system setup readiness..."
     });
   });
 
   await send({
     type: "status",
-    phase: "verifying",
+    phase: "installing-gateway",
     message: buildSystemSetupGatewayAuthRetryStatus(gatewayStatusIssue.kind)
   });
 
@@ -1359,7 +1359,7 @@ async function repairGatewayAuthKindForSystemSetup(
     }
 
     return syncGatewayAuthTokenBeforeFirstStart(openClawBin, send, {
-      phase: "verifying",
+      phase: "installing-gateway",
       message: "Gateway auth changed during setup. Rotating the local Gateway token before system setup readiness..."
     });
   }
@@ -1390,7 +1390,7 @@ async function repairGatewayDeviceAccessForSystemSetup(
     }
 
     return syncGatewayAuthTokenBeforeFirstStart(openClawBin, send, {
-      phase: "verifying",
+      phase: "installing-gateway",
       message: "Rotating the local Gateway token before system setup readiness..."
     });
   }
@@ -1457,10 +1457,10 @@ async function waitForReadySnapshotAfterGatewayAuthRepair(
 ) {
   await send({
     type: "status",
-    phase: "verifying",
+    phase: "installing-gateway",
     message: kind === "gateway-token"
-      ? "Gateway token repaired. Waiting for OpenClaw Gateway to reconnect..."
-      : "Gateway device access repaired. Waiting for OpenClaw Gateway to reconnect..."
+      ? "Gateway token repaired. Applying Gateway configuration..."
+      : "Gateway device access repaired. Applying Gateway configuration..."
   });
 
   clearMissionControlCaches();
@@ -1468,7 +1468,7 @@ async function waitForReadySnapshotAfterGatewayAuthRepair(
 
   await send({
     type: "status",
-    phase: "starting-gateway",
+    phase: "installing-gateway",
     message: "Restarting the local Gateway service after auth repair..."
   });
 
@@ -1480,7 +1480,7 @@ async function waitForReadySnapshotAfterGatewayAuthRepair(
   if (restartResult.errorMessage || restartResult.timedOut || restartResult.code !== 0) {
     await send({
       type: "status",
-      phase: "starting-gateway",
+      phase: "installing-gateway",
       message: "Gateway restart did not complete. Trying to start the local Gateway service..."
     });
 
