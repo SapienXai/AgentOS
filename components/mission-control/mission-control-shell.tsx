@@ -1804,6 +1804,7 @@ export function MissionControlShell({
   };
 
   const runOpenClawOnboarding = async () => {
+    const prepareGatewayOnly = onboardingAction.label === "Prepare local gateway";
     setIsOnboardingDismissed(false);
     resetOnboardingProgressState();
     setOnboardingStage("system");
@@ -1822,7 +1823,7 @@ export function MissionControlShell({
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          intent: "auto"
+          intent: prepareGatewayOnly ? "prepare" : "auto"
         })
       });
 
@@ -1866,11 +1867,17 @@ export function MissionControlShell({
               appendOnboardingLog(event.text);
             } else {
               sawDone = true;
+              const gatewayPrepared = prepareGatewayOnly && event.ok && event.phase === "installing-gateway";
               setOnboardingPhase(event.phase);
               setOnboardingResultMessage(event.message);
               setOnboardingManualCommand(event.manualCommand ?? null);
               setOnboardingDocsUrl(event.docsUrl ?? null);
-              if (event.ok) {
+              if (gatewayPrepared) {
+                if (event.snapshot) {
+                  setSnapshot(event.snapshot);
+                }
+                setRequiresFreshInstallSystemSetup(false);
+              } else if (event.ok) {
                 setOnboardingStatusMessage("Refreshing model status...");
                 await refreshOnboardingModelSnapshot(event.snapshot ?? null);
                 setRequiresFreshInstallSystemSetup(false);
@@ -1881,9 +1888,13 @@ export function MissionControlShell({
                 }
               }
               setOnboardingStatusMessage(null);
-              setOnboardingRunState(event.ok ? "success" : "error");
+              setOnboardingRunState(gatewayPrepared ? "idle" : event.ok ? "success" : "error");
 
-              if (event.ok) {
+              if (gatewayPrepared) {
+                toast.success("Local Gateway prepared.", {
+                  description: event.message
+                });
+              } else if (event.ok) {
                 toast.success("System setup ready.", {
                   description: event.message
                 });
@@ -1906,11 +1917,17 @@ export function MissionControlShell({
 
         if (event.type === "done") {
           sawDone = true;
+          const gatewayPrepared = prepareGatewayOnly && event.ok && event.phase === "installing-gateway";
           setOnboardingPhase(event.phase);
           setOnboardingResultMessage(event.message);
           setOnboardingManualCommand(event.manualCommand ?? null);
           setOnboardingDocsUrl(event.docsUrl ?? null);
-          if (event.ok) {
+          if (gatewayPrepared) {
+            if (event.snapshot) {
+              setSnapshot(event.snapshot);
+            }
+            setRequiresFreshInstallSystemSetup(false);
+          } else if (event.ok) {
             setOnboardingStatusMessage("Refreshing model status...");
             await refreshOnboardingModelSnapshot(event.snapshot ?? null);
             setRequiresFreshInstallSystemSetup(false);
@@ -1921,7 +1938,7 @@ export function MissionControlShell({
             }
           }
           setOnboardingStatusMessage(null);
-          setOnboardingRunState(event.ok ? "success" : "error");
+          setOnboardingRunState(gatewayPrepared ? "idle" : event.ok ? "success" : "error");
         }
       }
 
