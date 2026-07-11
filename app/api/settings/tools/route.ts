@@ -11,7 +11,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const toolSettingsSchema = z.object({
-  browserEnabled: z.boolean()
+  browserEnabled: z.boolean(),
+  webFetchEnabled: z.boolean(),
+  webSearchEnabled: z.boolean()
 });
 
 export async function GET() {
