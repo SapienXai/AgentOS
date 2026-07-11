@@ -199,39 +199,39 @@ function resolveSystemStepDescription(
 ) {
   if (stepId === "cli") {
     if (!forcePending && cliComplete) {
-      return `Installed${snapshot.diagnostics.version ? ` · v${snapshot.diagnostics.version}` : ""}`;
+      return `Ready${snapshot.diagnostics.version ? ` · v${snapshot.diagnostics.version}` : ""}`;
     }
 
     if (phase === "installing-cli") {
-      return "Installing the CLI and local wrapper.";
+      return "Installing OpenClaw CLI.";
     }
 
     if (phase === "detecting" || forcePending || !snapshot.diagnostics.installed) {
-      return "Checking whether the CLI is already installed.";
+      return "Checking CLI installation.";
     }
 
-    return "Install the OpenClaw CLI.";
+    return "Install OpenClaw CLI.";
   }
 
   if (stepId === "gateway") {
     if (gatewayRegistered === true || (!forcePending && snapshot.diagnostics.loaded)) {
-      return "Gateway is already registered.";
+      return "Registered and configured.";
     }
 
     if (phase === "installing-gateway") {
-      return "Registering the gateway service.";
+      return "Applying local Gateway configuration.";
     }
 
     if (phase === "starting-gateway") {
-      return "Starting the gateway service.";
+      return "Starting the Gateway service.";
     }
 
     if (phase === "detecting" && cliComplete) {
-      return "Checking gateway registration.";
+      return "Checking Gateway configuration.";
     }
 
     if (liveComplete) {
-      return "Gateway is up and waiting on RPC.";
+      return "Gateway started; waiting for RPC.";
     }
 
     if (phase === "verifying") {
@@ -243,33 +243,33 @@ function resolveSystemStepDescription(
     }
 
     if (gatewayComplete) {
-      return "Gateway responds on the local port; full verification continues.";
+      return "Gateway is reachable.";
     }
 
-    return "Register the gateway service once.";
+    return "Register and configure the local Gateway.";
   }
 
   if (runtimeReady) {
-    return "RPC, state, and session store are ready.";
+    return "RPC and runtime storage are ready.";
   }
 
   if (phase === "verifying") {
-    return "Verifying RPC, state writes, and session store access.";
+    return "Verifying RPC and runtime storage.";
   }
 
   if (phase === "starting-gateway") {
-    return "Starting the gateway and waiting for RPC.";
+    return "Starting Gateway and waiting for RPC.";
   }
 
   if (gatewayComplete) {
-    return "Gateway is up; verify RPC and runtime state.";
+    return "Gateway is ready for runtime checks.";
   }
 
   if (liveComplete) {
-    return "RPC is online; final runtime checks continue.";
+    return "RPC is online; checking runtime storage.";
   }
 
-  return "Start the gateway and verify RPC.";
+  return "Start Gateway and verify runtime readiness.";
 }
 
 export function resolvePrimaryAction(params: {
