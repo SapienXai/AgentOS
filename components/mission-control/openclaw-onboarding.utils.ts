@@ -74,12 +74,13 @@ export function buildSystemSteps(
     !forcePending &&
     snapshot.diagnostics.rpcOk &&
     !snapshot.diagnostics.loaded;
-  const cliComplete =
-    (!forcePending && installedFromStatus) ||
-    phase === "installing-gateway" ||
-    phase === "starting-gateway" ||
-    phase === "verifying" ||
-    phase === "ready";
+  const cliComplete = phase === "installing-cli"
+    ? false
+    : (!forcePending && installedFromStatus) ||
+      phase === "installing-gateway" ||
+      phase === "starting-gateway" ||
+      phase === "verifying" ||
+      phase === "ready";
   const hasConfirmedGatewayRegistration = !forcePending && cliComplete && options.gatewayRegistered === true;
   const gatewayComplete =
     hasConfirmedGatewayRegistration ||
