@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
+  Activity,
   AlertTriangle,
   Bot,
   ChevronDown,
@@ -167,6 +168,7 @@ const sidebarItems: SidebarItem[] = [
   { label: "Mission Control", href: "/", icon: Gauge, section: "overview" },
   { label: "Dashboard", href: "/dashboard", icon: Inbox, section: "overview" },
   { label: "Agents", href: "/agents", icon: Bot, section: "operations" },
+  { label: "Operations", href: "/operations", icon: Activity, section: "operations" },
   { label: "Tasks", href: "/tasks", icon: ClipboardList, section: "operations" },
   { label: "Files", href: "/files", icon: FileText, section: "operations" },
   { label: "Accounts", href: "/accounts", icon: KeyRound, section: "operations" },

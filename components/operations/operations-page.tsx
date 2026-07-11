@@ -9,9 +9,10 @@ import { ModelsPageContent } from "@/components/operations/models/models-page-co
 import { OperationsShell } from "@/components/operations/operations-shell";
 import { TasksPageContent } from "@/components/operations/tasks/tasks-page-content";
 import { UpdatesPageContent } from "@/components/operations/updates/updates-page-content";
+import { OperationsJobsPageContent } from "@/components/operations/operations/operations-jobs-page-content";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 
-export type OperationsPageId = "dashboard" | "agents" | "tasks" | "files" | "accounts" | "models" | "integrations" | "updates";
+export type OperationsPageId = "dashboard" | "agents" | "tasks" | "files" | "accounts" | "models" | "integrations" | "updates" | "operations";
 
 export function OperationsPage({
   initialSnapshot,
@@ -60,6 +61,10 @@ export function OperationsPage({
               refresh={context.refresh}
             />
           );
+        }
+
+        if (page === "operations") {
+          return <OperationsJobsPageContent snapshot={context.rootSnapshot} activeWorkspaceId={context.activeWorkspaceId} surfaceTheme={context.surfaceTheme} />;
         }
 
         if (page === "files") {

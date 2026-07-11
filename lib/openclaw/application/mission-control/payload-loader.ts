@@ -79,12 +79,20 @@ export async function settleSessionsPayloadFromOpenClaw(
     return {
       status: "fulfilled",
       value: {
-        sessions: payload.sessions as SessionsPayload["sessions"]
+        sessions: (payload.sessions as SessionsPayload["sessions"]).map(annotateGatewaySessionAgent)
       }
     };
   } catch {
     return settleSessionsPayloadFromSessionCatalogs(agentConfig, openClawStateRootPath);
   }
+}
+
+/** Gateway sessions.list commonly encodes the owner only in `agent:<id>:…` keys. */
+export function annotateGatewaySessionAgent(session: SessionsPayload["sessions"][number]) {
+  if (session.agentId) return session;
+  const key = typeof session.key === "string" ? session.key : "";
+  const match = key.match(/^agent:([^:]+):/);
+  return match?.[1] ? { ...session, agentId: match[1] } : session;
 }
 
 export function normalizeGatewayRemoteUrlConfigValue(value: unknown) {

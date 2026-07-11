@@ -22,6 +22,7 @@ const workspaceSelectionStorageAllValue = "__all__";
 export type OptimisticMissionTask = {
   requestId: string;
   dispatchId: string | null;
+  operationJobId?: string | null;
   task: WorkItemRecord;
 };
 
@@ -286,6 +287,9 @@ export function findReplacementTaskForOptimisticTask(tasks: WorkItemRecord[], op
 }
 
 export function matchesOptimisticTaskReplacement(task: WorkItemRecord, optimisticTask: OptimisticMissionTask) {
+  if (optimisticTask.operationJobId) {
+    return task.metadata.operationJobId === optimisticTask.operationJobId;
+  }
   const dispatchId = optimisticTask.dispatchId?.trim();
 
   if (!dispatchId) {
@@ -293,6 +297,38 @@ export function matchesOptimisticTaskReplacement(task: WorkItemRecord, optimisti
   }
 
   return task.dispatchId === dispatchId || task.key === `dispatch:${dispatchId}`;
+}
+
+export function createOptimisticScheduledTaskRecord(input: {
+  jobId: string;
+  mission: string;
+  agentId: string;
+  workspaceId: string | null;
+  scheduleLabel: string;
+  snapshot: MissionControlSnapshot;
+}): OptimisticMissionTask {
+  const agent = input.snapshot.agents.find((entry) => entry.id === input.agentId);
+  const now = Date.now();
+  return {
+    requestId: `operation:${input.jobId}`,
+    dispatchId: null,
+    operationJobId: input.jobId,
+    task: {
+      id: `operation:${input.jobId}`,
+      key: `openclaw-cron:${input.jobId}`,
+      title: summarizeTaskTitle(input.mission, 86),
+      mission: input.mission,
+      subtitle: `Scheduled · ${input.scheduleLabel}`,
+      status: "queued",
+      updatedAt: now,
+      ageMs: 0,
+      workspaceId: input.workspaceId ?? undefined,
+      primaryAgentId: input.agentId,
+      primaryAgentName: formatAgentDisplayName(agent ?? { name: "OpenClaw" }),
+      runtimeIds: [], agentIds: [input.agentId], sessionIds: [], runIds: [], runtimeCount: 0, updateCount: 0, liveRunCount: 0, artifactCount: 0, warningCount: 0,
+      metadata: { optimistic: true, operationJobId: input.jobId, source: "openclaw-cron", scheduleLabel: input.scheduleLabel, operationStatus: "scheduled" }
+    }
+  };
 }
 
 export function createOptimisticMissionTaskRecord(

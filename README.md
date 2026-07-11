@@ -92,6 +92,16 @@ First thing to try:
 If OpenClaw is already installed, AgentOS connects to the live control plane and shows the current Gateway, models, agents, and runtimes.
 If OpenClaw is missing or not ready yet, AgentOS opens in an explicit unavailable/onboarding state instead of showing a fake live state.
 
+## Operations & Jobs
+
+`/operations` projects the OpenClaw Gateway cron scheduler into an operator console. OpenClaw remains the source of truth for job definitions, execution, retries, run history, sessions, and restart recovery; AgentOS keeps only operator metadata, safety decisions, and a bounded audit trail under `.mission-control/operations/`.
+
+- AgentOS creates and controls jobs only when the Gateway advertises native `cron.add`, `cron.update`, `cron.run`, and related methods. It deliberately does not substitute a local scheduler or silently use an unverified CLI mutation path.
+- Cron and interval schedules are sent to OpenClaw with IANA timezone data. One-off jobs are retained after a successful run so their operational record remains visible.
+- Gateway retry/backoff, missed/skip state, pending runtime state, and run history are shown as OpenClaw projections. Scheduled per-run approval and cancellation are not represented as working controls because the current documented cron RPC does not expose an AgentOS policy hook or run-cancel operation.
+- Planner automations and Operations both provision into the same OpenClaw cron runtime; they do not introduce a second AgentOS scheduler.
+- In Mission Control, use an agent card’s **Create Task** action, open the command-bar settings, and choose **now**, **cron**, **interval**, or **once**. Cron-backed tasks reappear as read-only task cards with their cadence, timezone, and next run; runtime output remains OpenClaw-owned.
+
 ## Product Highlights
 
 The screenshots below show the current product flow in the order a new visitor is most likely to explore it.
