@@ -1874,16 +1874,34 @@ export function MissionControlShell({
           ? "prepare"
           : "start"
     );
+    const isContinuation = requestedIntent != null;
+    const setupStepNumber = setupIntent === "install" ? 1 : setupIntent === "prepare" ? 2 : 3;
+    const setupStepLabel = setupIntent === "install"
+      ? "Install OpenClaw"
+      : setupIntent === "prepare"
+        ? "Prepare local Gateway"
+        : "Start and verify Gateway";
+    const initialStatusMessage = setupIntent === "install"
+      ? "Checking OpenClaw CLI..."
+      : setupIntent === "prepare"
+        ? "Checking Gateway configuration..."
+        : "Starting OpenClaw Gateway...";
     setIsOnboardingDismissed(false);
-    resetOnboardingProgressState();
+    if (!isContinuation) {
+      resetOnboardingProgressState();
+    }
     setOnboardingStage("system");
     setOnboardingRunState("running");
     setOnboardingPhase("detecting");
-    setOnboardingStatusMessage("Checking local OpenClaw status...");
+    setOnboardingStatusMessage(initialStatusMessage);
     setOnboardingResultMessage(null);
     setOnboardingManualCommand(null);
     setOnboardingDocsUrl(null);
-    setOnboardingLog("");
+    if (isContinuation) {
+      appendOnboardingLog(`\n[${setupStepNumber}/3] ${setupStepLabel}\n`);
+    } else {
+      setOnboardingLog(`[${setupStepNumber}/3] ${setupStepLabel}\n`);
+    }
 
     try {
       const response = await fetch("/api/onboarding", {
