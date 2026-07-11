@@ -31,6 +31,9 @@ export function mergeOperationTaskProjections(
       : null;
     return {
       ...task,
+      // Keep the canvas/Inspector identity stable while OpenClaw creates and later removes per-run runtime tasks.
+      id: `operation:${job.id}`,
+      key: `openclaw-cron:${job.id}`,
       status,
       subtitle: detail ?? `${task.subtitle} · ${describeSchedule(job)}`,
       liveRunCount: status === "running" ? task.liveRunCount : 0,
@@ -45,7 +48,21 @@ export function mergeOperationTaskProjections(
     };
   });
   const projections = buildOperationTaskProjections(snapshot, agents);
-  return [...mergedRuntimeTasks, ...projections.filter((task) => !runtimeJobIds.has(String(task.metadata.operationJobId)))];
+  return [...dedupeCanonicalOperationTasks(mergedRuntimeTasks), ...projections.filter((task) => !runtimeJobIds.has(String(task.metadata.operationJobId)))];
+}
+
+function dedupeCanonicalOperationTasks(tasks: TaskRecord[]) {
+  const byId = new Map<string, TaskRecord>();
+  for (const task of tasks) {
+    const existing = byId.get(task.id);
+    if (!existing || operationTaskPriority(task) > operationTaskPriority(existing)) byId.set(task.id, task);
+  }
+  return Array.from(byId.values());
+}
+
+function operationTaskPriority(task: TaskRecord) {
+  const live = task.status === "running" || task.liveRunCount > 0 ? 1_000_000_000_000_000 : 0;
+  return live + (task.updatedAt ?? 0);
 }
 
 function buildOperationTaskProjection(job: OperationJob, agentNames: Map<string, string>, runs: OperationRun[]): TaskRecord {
@@ -76,7 +93,7 @@ function operationMetadata(job: OperationJob, runs: OperationRun[]) {
     recurrence: job.trigger?.kind ?? null, concurrency: job.safety?.concurrency ?? null, nextRunAt: job.nextRunAt,
     triggerAt: job.trigger?.kind === "at" ? job.trigger.at : null, intervalMs: job.trigger?.kind === "every" ? job.trigger.everyMs : null,
     resultPreview: job.latestOutput ?? null, openClawSessionKey: job.sessionKey ?? null, openClawSessionId: job.sessionId ?? null,
-    operationFeed: job.recentResults?.map((result) => ({ id: `operation:${job.id}:${result.id}`, kind: "assistant", timestamp: result.timestamp, title: "Scheduled result", detail: result.text })) ?? [],
+    operationFeed: job.recentResults?.map((result) => ({ id: `operation:${job.id}:${result.timestamp}:${result.id}`, kind: "assistant", timestamp: result.timestamp, title: "Scheduled result", detail: result.text })) ?? [],
     operationRunHistory: operationRuns };
 }
 
@@ -84,7 +101,15 @@ function operationJobIdForRuntimeTask(task: TaskRecord, jobsById: Map<string, Op
   const direct = typeof task.metadata.operationJobId === "string" ? task.metadata.operationJobId : null;
   if (direct && jobsById.has(direct)) return direct;
   const runIds = [...task.runIds, typeof task.metadata.openClawRunId === "string" ? task.metadata.openClawRunId : ""];
-  return [...jobsById.keys()].find((jobId) => runIds.some((runId) => runId.startsWith(`cron:${jobId}:`))) ?? null;
+  const sessionKeys = [
+    typeof task.metadata.openClawSessionKey === "string" ? task.metadata.openClawSessionKey : "",
+    typeof task.metadata.continuationSessionKey === "string" ? task.metadata.continuationSessionKey : "",
+    task.key
+  ];
+  return [...jobsById.keys()].find((jobId) =>
+    runIds.some((runId) => runId.startsWith(`cron:${jobId}:`)) ||
+    sessionKeys.some((sessionKey) => sessionKey.includes(`:cron:${jobId}`))
+  ) ?? null;
 }
 
 function latestOperationRun(runs: OperationRun[], jobId: string) {

@@ -11,7 +11,12 @@ import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getOpenClawCapabilityMatrix } from "@/lib/openclaw/application/capability-matrix-service";
 import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 
-type Registry = { version: 1; jobs: Record<string, { workspaceId: string; safety: NonNullable<OperationJob["safety"]> }>; audit: OperationAuditEntry[] };
+type Registry = {
+  version: 1;
+  jobs: Record<string, { workspaceId: string; safety: NonNullable<OperationJob["safety"]> }>;
+  audit: OperationAuditEntry[];
+  results: Record<string, OperationResult[]>;
+};
 const registryPath = path.join(missionControlRootPath, "operations", "registry.json");
 const operationOutputCache = new Map<string, { value: Pick<OperationJob, "latestOutput" | "recentResults" | "sessionKey" | "sessionId">; expiresAt: number }>();
 const operationOutputCacheTtlMs = 5 * 60_000;
@@ -33,7 +38,10 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
       ? (await Promise.all(jobs.map(async (job) => normalizeOpenClawOperationRuns(await adapter.call<unknown>("cron.runs", { jobId: job.id, limit: 50 }), job.id)))).flat()
       : [];
     const reconciledJobs = jobs.map((job) => reconcileJobWithRuns(job, runs.filter((run) => run.jobId === job.id)));
-    const hydratedJobs = await Promise.all(reconciledJobs.map((job) => hydrateCompletedOperationOutput(job, adapter)));
+    const hydratedJobs = await Promise.all(
+      reconciledJobs.map((job) => hydrateCompletedOperationOutput(job, adapter, registry.results[job.id] ?? []))
+    );
+    if (mergeProjectedResults(registry.results, hydratedJobs)) await writeRegistry(registry);
     return {
       generatedAt: new Date().toISOString(), source: "openclaw.cron",
       scheduler: { enabled: typeof status.enabled === "boolean" ? status.enabled : null, nextWakeAt: iso(status.nextWakeAtMs), state: "available" },
@@ -81,7 +89,10 @@ export async function operateOperation(action: Exclude<OperationAction, "create"
       : action === "run" || action === "retry" ? ["cron.run", { jobId, mode: "force" }]
       : ["cron.update", { jobId, patch: { enabled: action === "resume" } }];
     await getOpenClawAdapter().call<unknown>(call[0], call[1]);
-    if (action === "delete") delete registry.jobs[jobId];
+    if (action === "delete") {
+      delete registry.jobs[jobId];
+      delete registry.results[jobId];
+    }
     registry.audit.unshift(audit(action, jobId, "accepted", `OpenClaw ${call[0]} accepted.`, requestId));
     await writeRegistry(registry);
     return { ok: true, requestId };
@@ -152,7 +163,11 @@ function reconcileJobWithRuns(job: OperationJob, runs: OperationRun[]): Operatio
   const reconciled = { ...job, status } as OperationJob;
   return { ...reconciled, health: healthFor(reconciled, sorted) };
 }
-async function hydrateCompletedOperationOutput(job: OperationJob, adapter: ReturnType<typeof getOpenClawAdapter>): Promise<OperationJob> {
+async function hydrateCompletedOperationOutput(
+  job: OperationJob,
+  adapter: ReturnType<typeof getOpenClawAdapter>,
+  storedResults: OperationResult[]
+): Promise<OperationJob> {
   if (!job.lastRunStatus || !job.agentId || !job.lastRunAt) return job;
   const cacheKey = `${job.id}:${job.lastRunAt}`;
   const cached = operationOutputCache.get(cacheKey);
@@ -160,7 +175,7 @@ async function hydrateCompletedOperationOutput(job: OperationJob, adapter: Retur
   const sessionKey = `agent:${job.agentId}:cron:${job.id}`;
   try {
     const payload = await adapter.getSessionHistory({ sessionKey, limit: 200 }, { timeoutMs: 8_000 });
-    const recentResults = extractAgentChatMessagesFromSessionHistory(payload)
+    const gatewayResults = extractAgentChatMessagesFromSessionHistory(payload)
       .filter((message) => message.role === "assistant" && message.text.trim())
       .slice(-24)
       .map((message, index): OperationResult => ({
@@ -168,6 +183,7 @@ async function hydrateCompletedOperationOutput(job: OperationJob, adapter: Retur
         timestamp: operationResultTimestamp(message.timestamp),
         text: message.text.trim()
       }));
+    const recentResults = mergeOperationResults(storedResults, gatewayResults);
     const latestOutput = recentResults.at(-1)?.text ?? null;
     const sessionId = string(payload.sessionId) ?? string(record(payload.sessionInfo).sessionId);
     const value = { latestOutput, recentResults, sessionKey, sessionId };
@@ -177,6 +193,28 @@ async function hydrateCompletedOperationOutput(job: OperationJob, adapter: Retur
     // A missing/unsupported history capability must not turn a real completed cron job into a fake result.
     return job;
   }
+}
+function mergeOperationResults(...groups: OperationResult[][]) {
+  const byEvidence = new Map<string, OperationResult>();
+  for (const result of groups.flat()) {
+    if (!result?.text?.trim() || !result.timestamp || Number.isNaN(Date.parse(result.timestamp))) continue;
+    const evidenceKey = `${result.timestamp}\u0000${result.text.trim()}`;
+    byEvidence.set(evidenceKey, { ...result, text: result.text.trim() });
+  }
+  return [...byEvidence.values()]
+    .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
+    .slice(-24);
+}
+function mergeProjectedResults(target: Registry["results"], jobs: OperationJob[]) {
+  let changed = false;
+  for (const job of jobs) {
+    const next = mergeOperationResults(target[job.id] ?? [], job.recentResults ?? []);
+    if (JSON.stringify(next) !== JSON.stringify(target[job.id] ?? [])) {
+      target[job.id] = next;
+      changed = true;
+    }
+  }
+  return changed;
 }
 function operationResultTimestamp(value: string | number | null) {
   if (typeof value === "number" && Number.isFinite(value)) return new Date(value).toISOString();
@@ -189,7 +227,7 @@ function runStatus(value: string | null): OperationRun["status"] { return value 
 function normalizeSafety(input: OperationJobInput["safety"]): NonNullable<OperationJob["safety"]> { return { accountTargetId: input?.accountTargetId?.trim() || null, requiresApproval: input?.requiresApproval === true, fileLease: input?.fileLease?.trim() || null, concurrency: input?.concurrency ?? "forbid" }; }
 function unavailableSnapshot(audit: OperationAuditEntry[], detail: string): OperationsSnapshot { return { generatedAt: new Date().toISOString(), source: "unavailable", scheduler: { enabled: null, nextWakeAt: null, state: "unsupported" }, jobs: [], runs: [], audit, notices: [{ severity: "warning", title: "Operations unavailable", detail }] }; }
 function audit(action: OperationAction, jobId: string | null, outcome: OperationAuditEntry["outcome"], detail: string, requestId: string): OperationAuditEntry { return { id: randomUUID(), at: new Date().toISOString(), action, jobId, outcome, detail, requestId }; }
-async function readRegistry(): Promise<Registry> { try { const value = JSON.parse(await readFile(registryPath, "utf8")) as Partial<Registry>; return { version: 1, jobs: value.jobs ?? {}, audit: Array.isArray(value.audit) ? value.audit.slice(0, 500) : [] }; } catch (error) { if (record(error).code === "ENOENT") return { version: 1, jobs: {}, audit: [] }; throw error; } }
+async function readRegistry(): Promise<Registry> { try { const value = JSON.parse(await readFile(registryPath, "utf8")) as Partial<Registry>; return { version: 1, jobs: value.jobs ?? {}, audit: Array.isArray(value.audit) ? value.audit.slice(0, 500) : [], results: value.results && typeof value.results === "object" ? value.results : {} }; } catch (error) { if (record(error).code === "ENOENT") return { version: 1, jobs: {}, audit: [], results: {} }; throw error; } }
 async function writeRegistry(registry: Registry) { await mkdir(path.dirname(registryPath), { recursive: true, mode: 0o700 }); const temp = `${registryPath}.${process.pid}.${randomUUID()}.tmp`; await writeFile(temp, `${JSON.stringify({ ...registry, audit: registry.audit.slice(0, 500) }, null, 2)}\n`, { mode: 0o600 }); await rename(temp, registryPath); }
 async function appendAudit(entry: OperationAuditEntry) { const registry = await readRegistry(); registry.audit.unshift(entry); await writeRegistry(registry); }
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }

@@ -632,6 +632,7 @@ function InspectorSummary({
             ? "model"
             : "overview";
   const taskIntegrity = taskDetail?.integrity;
+  const operationRunCount = selectedTask ? readOperationRunCount(taskDetail?.task ?? selectedTask) : 0;
   const taskNeedsReview = Boolean(
     selectedTask &&
       (selectedTask.warningCount > 0 ||
@@ -670,7 +671,7 @@ function InspectorSummary({
     ? [
         { label: "Agent", value: taskAgent ? formatAgentDisplayName(taskAgent) : "Unassigned" },
         { label: "Updated", value: formatRelativeTime(selectedTask.updatedAt, referenceMs) },
-        { label: "Runs", value: String(selectedTask.runtimeCount) },
+        { label: "Runs", value: String(Math.max(selectedTask.runtimeCount, operationRunCount)) },
         { label: "Files", value: String(selectedTask.artifactCount) }
       ]
     : selectedAgent
@@ -1813,6 +1814,7 @@ function TaskContent({
   const latestOutput = readTaskResultPreview(selectedTask);
   const sessionCount = readTaskSummaryCount(selectedTask.metadata.sessionCount, selectedTask.sessionIds.length);
   const turnCount = readTaskSummaryCount(selectedTask.metadata.turnCount, runs.length);
+  const operationRunCount = readOperationRunCount(selectedTask);
   const runnerLogs = readTaskRunnerLogEvents(taskDetail?.liveFeed ?? []);
   const runnerLogFile = readTaskRunnerLogFile(runnerLogs);
   const sessionView = buildInspectorTaskSessionView({ snapshot, task: selectedTask, taskDetail });
@@ -1838,7 +1840,7 @@ function TaskContent({
           items={[
             { label: "Sessions", value: String(sessionCount) },
             { label: "Turns", value: String(turnCount) },
-            { label: "Runs", value: String(selectedTask.runtimeCount) },
+            { label: "Runs", value: String(Math.max(selectedTask.runtimeCount, operationRunCount)) },
             { label: "Files", value: String(selectedTask.artifactCount) },
             { label: "Live", value: String(selectedTask.liveRunCount) },
             { label: "Tools", value: String(integrity.toolNames.length) }
@@ -1916,8 +1918,9 @@ function TaskContent({
         )}
       </InfoCard>
 
-      <InfoCard icon={TerminalSquare} title="Runs" value={String(runs.length)}>
-        {runs.length === 0 ? <p>No OpenClaw runs have been grouped into this task yet.</p> : null}
+      <InfoCard icon={TerminalSquare} title="Runs" value={String(Math.max(runs.length, operationRunCount))}>
+        {runs.length === 0 && operationRunCount === 0 ? <p>No OpenClaw runs have been grouped into this task yet.</p> : null}
+        {operationRunCount > 0 ? <OperationRunHistory task={selectedTask} compact /> : null}
         <div className="space-y-2">
           {runs.map((runtime) => (
             <div
@@ -2434,7 +2437,13 @@ function TaskFeedContent({
   const integrity = taskDetail?.integrity ?? createOptimisticTaskIntegrity(task);
 
   return (
-    <InfoCard icon={TerminalSquare} title="Live feed" value={String(visibleLiveFeed.length)}>
+    <>
+      {readOperationRunCount(taskDetail?.task ?? task) > 0 ? (
+        <InfoCard icon={ClipboardList} title="Run history" value={String(readOperationRunCount(taskDetail?.task ?? task))}>
+          <OperationRunHistory task={taskDetail?.task ?? task} />
+        </InfoCard>
+      ) : null}
+      <InfoCard icon={TerminalSquare} title="Live feed" value={String(visibleLiveFeed.length)}>
       <RunningTaskControlBar
         task={taskDetail?.task ?? task}
         onAbortTask={onAbortTask}
@@ -2484,8 +2493,101 @@ function TaskFeedContent({
           </div>
         ))}
       </div>
-    </InfoCard>
+      </InfoCard>
+    </>
   );
+}
+
+type OperationRunHistoryEntry = {
+  id: string;
+  timestamp: string;
+  status: string;
+  output: string | null;
+  error: string | null;
+  durationMs: number | null;
+};
+
+function OperationRunHistory({
+  task,
+  compact = false
+}: {
+  task: MissionControlSnapshot["tasks"][number];
+  compact?: boolean;
+}) {
+  const entries = readOperationRunHistory(task).slice(0, compact ? 6 : 24);
+  const nextRunAt = typeof task.metadata.nextRunAt === "string" ? task.metadata.nextRunAt : null;
+
+  return (
+    <div className="space-y-2">
+      {nextRunAt ? (
+        <div className="flex items-center justify-between gap-3 rounded-[12px] border border-current/10 bg-current/[0.025] px-3 py-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-55">Next run</span>
+          <span className="text-right text-[11px] font-medium opacity-80">{new Date(nextRunAt).toLocaleString()}</span>
+        </div>
+      ) : null}
+      {entries.map((entry) => (
+        <div key={entry.id} className="rounded-[12px] border border-current/10 bg-current/[0.025] px-3 py-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className={cn(
+                "h-2 w-2 rounded-full",
+                entry.status === "error" ? "bg-rose-500" : entry.status === "running" || entry.status === "queued" ? "bg-amber-500" : "bg-emerald-500"
+              )} />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">{entry.status}</span>
+            </div>
+            <span className="text-[10px] uppercase tracking-[0.12em] opacity-50">{new Date(entry.timestamp).toLocaleString()}</span>
+          </div>
+          {entry.error || entry.output ? (
+            <p className="mt-2 line-clamp-3 text-[12px] leading-5 opacity-75">{entry.error || entry.output}</p>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function readOperationRunCount(task: MissionControlSnapshot["tasks"][number]) {
+  return readOperationRunHistory(task).length;
+}
+
+function readOperationRunHistory(task: MissionControlSnapshot["tasks"][number]): OperationRunHistoryEntry[] {
+  const rawRuns = Array.isArray(task.metadata.operationRunHistory) ? task.metadata.operationRunHistory : [];
+  const byId = new Map<string, OperationRunHistoryEntry>();
+
+  for (const value of rawRuns) {
+    if (!value || typeof value !== "object") continue;
+    const run = value as Partial<OperationRunHistoryEntry>;
+    if (typeof run.id !== "string" || typeof run.timestamp !== "string" || typeof run.status !== "string") continue;
+    byId.set(run.id, {
+      id: run.id,
+      timestamp: run.timestamp,
+      status: run.status,
+      output: typeof run.output === "string" ? run.output : null,
+      error: typeof run.error === "string" ? run.error : null,
+      durationMs: typeof run.durationMs === "number" ? run.durationMs : null
+    });
+  }
+
+  for (const event of readTaskFeedEvents(task.metadata.operationFeed)) {
+    if (event.kind !== "assistant") continue;
+    const eventTime = Date.parse(event.timestamp);
+    const matchingRun = [...byId.values()].find((run) => {
+      const runTime = Date.parse(run.timestamp);
+      return Number.isFinite(eventTime) && Number.isFinite(runTime) && Math.abs(eventTime - runTime) <= 90_000;
+    });
+    if (matchingRun) {
+      byId.set(matchingRun.id, { ...matchingRun, output: matchingRun.output || event.detail });
+      continue;
+    }
+    const id = `result:${event.id}`;
+    if (!byId.has(id)) {
+      byId.set(id, { id, timestamp: event.timestamp, status: "completed", output: event.detail, error: null, durationMs: null });
+    }
+  }
+
+  return [...byId.values()]
+    .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
+    .slice(0, 24);
 }
 
 function TaskFilesContent({

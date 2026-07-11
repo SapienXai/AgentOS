@@ -39,6 +39,46 @@ test("task detail includes follow-up runtimes from the same session context", as
   assert.equal(detail.task.runtimeCount, 2);
 });
 
+test("scheduled operation history is accepted as Gateway result evidence", async () => {
+  const resultAt = "2026-07-11T12:48:18.000Z";
+  const task = createTask({
+    id: "operation:job-1",
+    key: "openclaw-cron:job-1",
+    dispatchId: undefined,
+    primaryRuntimeId: undefined,
+    runtimeIds: [],
+    runIds: [],
+    sessionIds: [],
+    runtimeCount: 0,
+    metadata: {
+      operationJobId: "job-1",
+      resultPreview: "The current time is 15:48.",
+      operationFeed: [{
+        id: "operation:job-1:result-1",
+        kind: "assistant",
+        timestamp: resultAt,
+        title: "Scheduled result",
+        detail: "The current time is 15:48."
+      }]
+    }
+  });
+  const snapshot = {
+    runtimes: [],
+    agents: [],
+    tasks: [task],
+    workspaces: []
+  } as unknown as MissionControlSnapshot;
+
+  const detail = await buildTaskDetailFromTaskRecord(task, snapshot, null);
+
+  assert.equal(detail.integrity.status, "verified");
+  assert.equal(detail.integrity.finalResponseText, "The current time is 15:48.");
+  assert.equal(detail.integrity.finalResponseSource, "dispatch");
+  assert.equal(detail.integrity.issues.some((issue) => issue.id === "missing-final-response"), false);
+  assert.equal(detail.integrity.issues.some((issue) => issue.id === "missing-transcript"), false);
+  assert.equal(detail.liveFeed.some((event) => event.id === "operation:job-1:result-1"), true);
+});
+
 test("task detail links follow-up runtimes by normalized session and continue run id", async () => {
   const baseRuntime = createRuntime({
     id: "runtime-base",

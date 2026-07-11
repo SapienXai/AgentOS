@@ -1,4 +1,4 @@
-import type { MissionControlSnapshot, RuntimeRecord, TaskDetailRecord, TaskRecord } from "@/lib/openclaw/types";
+import type { MissionControlSnapshot, RuntimeRecord, TaskDetailRecord, TaskFeedEvent, TaskRecord } from "@/lib/openclaw/types";
 import type { MissionDispatchRecord } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
 import {
   buildTaskIntegrityRecord as buildTaskIntegrityRecordFromMissionDispatch
@@ -93,7 +93,7 @@ async function buildTaskDetailFromResolvedRuns(
   const enrichedTask = enrichTaskRecordWithRuntimeOutputs(reconciledTask, runs, outputs, createdFiles, warnings);
   const bootstrapFeed = await buildMissionDispatchFeedFromDomain(enrichedTask, dispatchRecord, snapshot);
   const runtimeFeed = buildTaskFeedFromDomain(enrichedTask, runs, outputByRuntimeId, snapshot);
-  const integrity = await buildTaskIntegrityRecordFromMissionDispatch({
+  const rawIntegrity = await buildTaskIntegrityRecordFromMissionDispatch({
     task: enrichedTask,
     runs,
     outputs,
@@ -101,16 +101,71 @@ async function buildTaskDetailFromResolvedRuns(
     dispatchRecord,
     snapshot
   });
+  const operationFeed = readOperationFeed(enrichedTask.metadata.operationFeed);
+  const integrity = reconcileOperationIntegrity(enrichedTask, rawIntegrity, operationFeed);
 
   return {
     task: enrichedTask,
     runs,
     outputs,
-    liveFeed: mergeTaskFeedEventsFromDomain(bootstrapFeed, runtimeFeed),
+    liveFeed: mergeTaskFeedEventsFromDomain(bootstrapFeed, runtimeFeed, operationFeed),
     createdFiles,
     warnings,
     integrity
   };
+}
+
+function reconcileOperationIntegrity(
+  task: TaskRecord,
+  integrity: TaskDetailRecord["integrity"],
+  operationFeed: TaskFeedEvent[]
+): TaskDetailRecord["integrity"] {
+  const operationJobId = typeof task.metadata.operationJobId === "string"
+    ? task.metadata.operationJobId.trim()
+    : "";
+  if (!operationJobId) return integrity;
+
+  const resultPreview = typeof task.metadata.resultPreview === "string"
+    ? task.metadata.resultPreview.trim()
+    : "";
+  const latestResult = [...operationFeed]
+    .filter((event) => event.kind === "assistant" && event.detail.trim())
+    .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))[0];
+  const finalResponseText = latestResult?.detail.trim() || resultPreview || null;
+  if (!finalResponseText) return integrity;
+
+  const issues = integrity.issues.filter(
+    (issue) => issue.id !== "missing-final-response" && issue.id !== "missing-transcript"
+  );
+  return {
+    ...integrity,
+    status: issues.some((issue) => issue.severity === "error")
+      ? "error"
+      : issues.length > 0
+        ? "warning"
+        : "verified",
+    transcriptTurnCount: Math.max(integrity.transcriptTurnCount, operationFeed.length),
+    matchingTranscriptTurnCount: Math.max(integrity.matchingTranscriptTurnCount, operationFeed.length),
+    finalResponseText,
+    // OpenClaw chat.history is Gateway evidence associated with the cron dispatch.
+    finalResponseSource: "dispatch",
+    issues
+  };
+}
+
+function readOperationFeed(value: unknown): TaskFeedEvent[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is TaskFeedEvent => {
+    if (!entry || typeof entry !== "object") return false;
+    const candidate = entry as Partial<TaskFeedEvent>;
+    return Boolean(
+      typeof candidate.id === "string" &&
+      typeof candidate.kind === "string" &&
+      typeof candidate.timestamp === "string" &&
+      typeof candidate.title === "string" &&
+      typeof candidate.detail === "string"
+    );
+  });
 }
 
 function enrichTaskRecordWithRuntimeOutputs(
