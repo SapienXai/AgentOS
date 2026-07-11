@@ -25,7 +25,8 @@ export function mergeOperationTaskProjections(
     runtimeJobIds.add(jobId);
     const job = jobsById.get(jobId)!;
     const latestRun = latestOperationRun(snapshot.runs, jobId);
-    const status = terminalTaskStatus(job, latestRun) ?? task.status;
+    const status = terminalTaskStatus(job, latestRun) ?? reconcileRecurringTaskStatus(job, task.status);
+    const recoveredSchedule = isRecoveredRecurringSchedule(job, status);
     const detail = latestRun?.status === "error" ? latestRun.error ?? "OpenClaw cron run failed."
       : latestRun?.status === "ok" ? latestRun.output ?? "OpenClaw cron run completed."
       : null;
@@ -37,7 +38,9 @@ export function mergeOperationTaskProjections(
       status,
       subtitle: detail ?? `${task.subtitle} · ${describeSchedule(job)}`,
       liveRunCount: status === "running" ? task.liveRunCount : 0,
-      warningCount: Math.max(task.warningCount, job.health.degraded || status === "stalled" ? 1 : 0),
+      warningCount: recoveredSchedule
+        ? (job.health.degraded ? 1 : 0)
+        : Math.max(task.warningCount, job.health.degraded || status === "stalled" ? 1 : 0),
       metadata: {
         ...task.metadata,
         ...operationMetadata(job, snapshot.runs),
@@ -121,6 +124,26 @@ function terminalTaskStatus(job: OperationJob, latestRun: OperationRun | null): 
   if (latestRun?.status === "ok" && job.trigger?.kind === "at") return "completed";
   if (job.status === "completed") return "completed";
   return null;
+}
+
+function reconcileRecurringTaskStatus(job: OperationJob, runtimeStatus: TaskRecord["status"]): TaskRecord["status"] {
+  const recurring = job.trigger?.kind === "every" || job.trigger?.kind === "cron";
+  if (!recurring) return runtimeStatus;
+  if (job.status === "running" || runtimeStatus === "running") return "running";
+  if (job.status === "paused") return "cancelled";
+  // A laptop sleep/network interruption can leave a stale terminal runtime in
+  // the Gateway task snapshot. The live cron job remains authoritative: when
+  // it has a next run, keep the operation scheduled and retain the interrupted
+  // run only as history evidence.
+  if ((job.status === "active" || job.status === "scheduled") && job.nextRunAt) return "queued";
+  return runtimeStatus;
+}
+
+function isRecoveredRecurringSchedule(job: OperationJob, status: TaskRecord["status"]) {
+  return status === "queued" &&
+    (job.trigger?.kind === "every" || job.trigger?.kind === "cron") &&
+    (job.status === "active" || job.status === "scheduled") &&
+    Boolean(job.nextRunAt);
 }
 
 function taskStatus(job: OperationJob): TaskRecord["status"] {
