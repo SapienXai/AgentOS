@@ -8,6 +8,8 @@ import { resolveLocalGatewayConfigPath } from "@/lib/openclaw/client/local-gatew
 
 export type OpenClawToolSettings = {
   browserEnabled: boolean;
+  webFetchEnabled: boolean;
+  webSearchEnabled: boolean;
   configPath: string;
 };
 
@@ -22,30 +24,60 @@ export async function readOpenClawToolSettings(
   const configPath = resolveLocalGatewayConfigPath(options);
   const config = await readConfig(configPath);
   const browser = asRecord(config.browser);
+  const tools = asRecord(config.tools);
+  const web = asRecord(tools.web);
+  const fetch = asRecord(web.fetch);
+  const search = asRecord(web.search);
 
   return {
     browserEnabled: browser.enabled === true,
+    webFetchEnabled: fetch.enabled === true,
+    webSearchEnabled: search.enabled === true,
     configPath
   };
 }
 
 export async function updateOpenClawToolSettings(
-  input: { browserEnabled: boolean },
+  input: {
+    browserEnabled: boolean;
+    webFetchEnabled: boolean;
+    webSearchEnabled: boolean;
+  },
   options: ToolSettingsOptions = {}
 ): Promise<OpenClawToolSettings> {
   const configPath = resolveLocalGatewayConfigPath(options);
   const config = await readConfig(configPath);
   const browser = asRecord(config.browser);
+  const tools = asRecord(config.tools);
+  const web = asRecord(tools.web);
+  const fetch = asRecord(web.fetch);
+  const search = asRecord(web.search);
 
   config.browser = {
     ...browser,
     enabled: input.browserEnabled
+  };
+  config.tools = {
+    ...tools,
+    web: {
+      ...web,
+      fetch: {
+        ...fetch,
+        enabled: input.webFetchEnabled
+      },
+      search: {
+        ...search,
+        enabled: input.webSearchEnabled
+      }
+    }
   };
 
   await writeConfig(configPath, config);
 
   return {
     browserEnabled: input.browserEnabled,
+    webFetchEnabled: input.webFetchEnabled,
+    webSearchEnabled: input.webSearchEnabled,
     configPath
   };
 }
