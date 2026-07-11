@@ -2425,7 +2425,11 @@ function TaskFeedContent({
     );
   }
 
-  const liveFeed = mergeTaskFeedEvents(taskDetail?.liveFeed ?? [], readTaskFeedEvents(task.metadata.reviewEvents));
+  const liveFeed = mergeTaskFeedEvents(
+    taskDetail?.liveFeed ?? [],
+    readTaskFeedEvents(task.metadata.operationFeed),
+    readTaskFeedEvents(task.metadata.reviewEvents)
+  );
   const visibleLiveFeed = liveFeed.filter((event) => !isRunnerLogTaskEvent(event));
   const integrity = taskDetail?.integrity ?? createOptimisticTaskIntegrity(task);
 
@@ -2669,6 +2673,7 @@ function readOptimisticTaskFeed(task: MissionControlSnapshot["tasks"][number]) {
 
   for (const event of [
     ...readTaskFeedEvents(task.metadata.optimisticEvents),
+    ...readTaskFeedEvents(task.metadata.operationFeed),
     ...readTaskFeedEvents(task.metadata.reviewEvents)
   ]) {
     byId.set(event.id, event);

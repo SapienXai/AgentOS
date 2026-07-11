@@ -63,6 +63,18 @@ test("Gateway sessions.list failure falls back to local session catalogs", async
   assert.equal(fallbackSession.agentId, "agent-1");
 });
 
+test("Gateway session keys contribute to their owning agent session count", async () => {
+  setOpenClawAdapterForTesting({
+    async listSessions() {
+      return { sessions: [{ key: "agent:agent-1:cron:job-1", sessionId: "session-1", updatedAt: 1_700_000_000_000 }] };
+    }
+  } as unknown as OpenClawAdapter);
+
+  const result = await settleSessionsPayloadFromOpenClaw([]);
+  assert.equal(result.status, "fulfilled");
+  assert.equal(result.value.sessions[0]?.agentId, "agent-1");
+});
+
 test("runtime history merge preserves ordering, dedupes, and can be cleared", () => {
   const historyStore = createMissionControlRuntimeHistoryStore();
   const older = createRuntimeRecord("runtime-older", 1_700_000_000_000, "running");

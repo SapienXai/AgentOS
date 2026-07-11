@@ -66,7 +66,8 @@ function operationMetadata(job: OperationJob) {
     dueLabel: job.nextRunAt ? `Next run ${new Date(job.nextRunAt).toLocaleString()}` : "No next run reported", cronExpression: job.trigger?.kind === "cron" ? job.trigger.expression : null,
     timezone: job.trigger?.kind === "cron" ? job.trigger.timezone : null, lastRunStatus: job.lastRunStatus, operationStatus: job.status,
     recurrence: job.trigger?.kind ?? null, concurrency: job.safety?.concurrency ?? null, nextRunAt: job.nextRunAt,
-    resultPreview: job.latestOutput ?? null, openClawSessionKey: job.sessionKey ?? null, openClawSessionId: job.sessionId ?? null };
+    resultPreview: job.latestOutput ?? null, openClawSessionKey: job.sessionKey ?? null, openClawSessionId: job.sessionId ?? null,
+    operationFeed: job.recentResults?.map((result) => ({ id: `operation:${job.id}:${result.id}`, kind: "assistant", timestamp: result.timestamp, title: "Scheduled result", detail: result.text })) ?? [] };
 }
 
 function operationJobIdForRuntimeTask(task: TaskRecord, jobsById: Map<string, OperationJob>) {

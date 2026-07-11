@@ -60,10 +60,11 @@ test("scheduled OpenClaw jobs become read-only task cards with a visible cadence
 test("completed operations expose the Gateway transcript result on their task card", () => {
   const [task] = buildOperationTaskProjections({
     generatedAt: "2026-07-11T00:00:00.000Z", source: "openclaw.cron", scheduler: { enabled: true, nextWakeAt: null, state: "available" }, runs: [], audit: [], notices: [],
-    jobs: [{ id: "job-result", name: "Rate", description: null, enabled: false, status: "completed", agentId: "ops", workspaceId: "workspace-a", prompt: "Rate", model: null, thinking: null, trigger: { kind: "at", at: "2026-07-11T00:00:00.000Z" }, nextRunAt: null, lastRunAt: "2026-07-11T00:01:00.000Z", lastRunStatus: "ok", latestOutput: "1 GBP is 62.99 TRY", sessionKey: "agent:ops:cron:job-result", sessionId: "session-1", safety: null, health: { consecutiveFailures: 0, successRate: 1, degraded: false }, capabilities: { readable: true, mutable: true, runHistory: true, reason: null } }]
+    jobs: [{ id: "job-result", name: "Rate", description: null, enabled: false, status: "completed", agentId: "ops", workspaceId: "workspace-a", prompt: "Rate", model: null, thinking: null, trigger: { kind: "at", at: "2026-07-11T00:00:00.000Z" }, nextRunAt: null, lastRunAt: "2026-07-11T00:01:00.000Z", lastRunStatus: "ok", latestOutput: "1 GBP is 62.99 TRY", recentResults: [{ id: "answer-1", timestamp: "2026-07-11T00:01:00.000Z", text: "1 GBP is 62.99 TRY" }], sessionKey: "agent:ops:cron:job-result", sessionId: "session-1", safety: null, health: { consecutiveFailures: 0, successRate: 1, degraded: false }, capabilities: { readable: true, mutable: true, runHistory: true, reason: null } }]
   }, [{ id: "ops", name: "Ops", workspaceId: "workspace-a" } as never]);
   assert.equal(task.metadata.resultPreview, "1 GBP is 62.99 TRY");
   assert.equal(task.metadata.openClawSessionKey, "agent:ops:cron:job-result");
+  assert.deepEqual(task.metadata.operationFeed, [{ id: "operation:job-result:answer-1", kind: "assistant", timestamp: "2026-07-11T00:01:00.000Z", title: "Scheduled result", detail: "1 GBP is 62.99 TRY" }]);
 });
 
 test("a cron runtime and its schedule projection reconcile into one terminal task card", () => {

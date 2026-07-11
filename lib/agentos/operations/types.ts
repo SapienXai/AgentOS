@@ -29,6 +29,7 @@ export type OperationJob = {
   lastRunStatus: string | null;
   /** Gateway transcript projection for the most recent completed cron turn. */
   latestOutput?: string | null;
+  recentResults?: OperationResult[];
   sessionKey?: string | null;
   sessionId?: string | null;
   safety: OperationSafety | null;
@@ -49,6 +50,12 @@ export type OperationRun = {
   tokens: number | null;
   cost: number | null;
   artifacts: string[];
+};
+
+export type OperationResult = {
+  id: string;
+  timestamp: string;
+  text: string;
 };
 
 export type OperationAuditEntry = {

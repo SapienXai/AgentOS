@@ -5,15 +5,15 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { resolveAccountAccessDecision } from "@/lib/agentos/application/account-access-policy-service";
-import type { OperationAction, OperationAuditEntry, OperationJob, OperationJobInput, OperationRun, OperationsSnapshot } from "@/lib/agentos/operations/types";
-import { extractLatestAssistantTextFromSessionHistory, sanitizeAgentChatVisibleText } from "@/lib/openclaw/agent-chat-response";
+import type { OperationAction, OperationAuditEntry, OperationJob, OperationJobInput, OperationResult, OperationRun, OperationsSnapshot } from "@/lib/agentos/operations/types";
+import { extractAgentChatMessagesFromSessionHistory } from "@/lib/openclaw/agent-chat-response";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getOpenClawCapabilityMatrix } from "@/lib/openclaw/application/capability-matrix-service";
 import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 
 type Registry = { version: 1; jobs: Record<string, { workspaceId: string; safety: NonNullable<OperationJob["safety"]> }>; audit: OperationAuditEntry[] };
 const registryPath = path.join(missionControlRootPath, "operations", "registry.json");
-const operationOutputCache = new Map<string, { value: Pick<OperationJob, "latestOutput" | "sessionKey" | "sessionId">; expiresAt: number }>();
+const operationOutputCache = new Map<string, { value: Pick<OperationJob, "latestOutput" | "recentResults" | "sessionKey" | "sessionId">; expiresAt: number }>();
 const operationOutputCacheTtlMs = 5 * 60_000;
 
 export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
@@ -157,16 +157,29 @@ async function hydrateCompletedOperationOutput(job: OperationJob, adapter: Retur
   if (cached && cached.expiresAt > Date.now()) return { ...job, ...cached.value };
   const sessionKey = `agent:${job.agentId}:cron:${job.id}`;
   try {
-    const payload = await adapter.getSessionHistory({ sessionKey, limit: 50 }, { timeoutMs: 8_000 });
-    const latestOutput = sanitizeAgentChatVisibleText(extractLatestAssistantTextFromSessionHistory(payload) ?? "") || null;
+    const payload = await adapter.getSessionHistory({ sessionKey, limit: 200 }, { timeoutMs: 8_000 });
+    const recentResults = extractAgentChatMessagesFromSessionHistory(payload)
+      .filter((message) => message.role === "assistant" && message.text.trim())
+      .slice(-24)
+      .map((message, index): OperationResult => ({
+        id: message.id ?? `${job.id}:${index}`,
+        timestamp: operationResultTimestamp(message.timestamp),
+        text: message.text.trim()
+      }));
+    const latestOutput = recentResults.at(-1)?.text ?? null;
     const sessionId = string(payload.sessionId) ?? string(record(payload.sessionInfo).sessionId);
-    const value = { latestOutput, sessionKey, sessionId };
+    const value = { latestOutput, recentResults, sessionKey, sessionId };
     operationOutputCache.set(cacheKey, { value, expiresAt: Date.now() + operationOutputCacheTtlMs });
     return { ...job, ...value };
   } catch {
     // A missing/unsupported history capability must not turn a real completed cron job into a fake result.
     return job;
   }
+}
+function operationResultTimestamp(value: string | number | null) {
+  if (typeof value === "number" && Number.isFinite(value)) return new Date(value).toISOString();
+  if (typeof value === "string" && !Number.isNaN(Date.parse(value))) return new Date(value).toISOString();
+  return new Date().toISOString();
 }
 function healthFor(job: OperationJob, runs: OperationRun[]) { const terminal = runs.filter((run) => run.status === "ok" || run.status === "error" || run.status === "skipped"); let failures = 0; for (const run of runs) { if (run.status === "error") failures += 1; else if (run.status === "ok") break; } return { consecutiveFailures: failures, successRate: terminal.length ? terminal.filter((run) => run.status === "ok").length / terminal.length : null, degraded: failures >= 2 || job.status === "failed" }; }
 function status(value: string | null, enabled: boolean, running: number | null): OperationJob["status"] { if (running) return "running"; if (value === "ok") return "completed"; if (value === "error") return "failed"; if (!enabled) return "paused"; if (value === "skipped") return "scheduled"; return "active"; }

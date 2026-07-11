@@ -117,6 +117,10 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     () => readTaskFeedEvents(data.task.metadata.reviewEvents),
     [data.task.metadata.reviewEvents]
   );
+  const operationFeed = useMemo(
+    () => readTaskFeedEvents(data.task.metadata.operationFeed),
+    [data.task.metadata.operationFeed]
+  );
   const latestLocalEvent =
     reviewFeed.length > 0 && isTaskFeedEvent(reviewFeed[reviewFeed.length - 1])
       ? reviewFeed[reviewFeed.length - 1]
@@ -128,8 +132,8 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     optimisticFeed
   });
   const mergedFeed = useMemo(
-    () => mergeTaskFeedEvents(feed, reviewFeed),
-    [feed, reviewFeed]
+    () => mergeTaskFeedEvents(feed, reviewFeed, operationFeed),
+    [feed, reviewFeed, operationFeed]
   );
   const visibleFeed = useMemo(
     () => mergedFeed.filter((event) => !isRunnerLogTaskEvent(event)),
@@ -179,12 +183,13 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const visibleReviewStatus =
     reviewStatus && reviewStatus === "continued" && isLiveTask ? null : reviewStatus;
   const hasReviewResolution = Boolean(reviewStatus);
-  const hasReviewableIntegrity =
+  const hasReviewableIntegrity = !hasOperationResult && (
     integrity
       ? integrity.status === "warning" ||
         integrity.status === "error" ||
         (displayTask.status === "stalled" && hasRuntimeOutputEvidence)
-      : stalledWithCapturedOutput;
+      : stalledWithCapturedOutput
+  );
   const completedNeedsReview = Boolean(
     (displayTask.status === "completed" || stalledWithCapturedOutput) &&
       hasReviewableIntegrity &&
