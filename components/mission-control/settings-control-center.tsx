@@ -256,9 +256,7 @@ export function SettingsControlCenter(
   const [isSavingConfigUpdatePacing, setIsSavingConfigUpdatePacing] = useState(false);
   const [configUpdatePacingTick, setConfigUpdatePacingTick] = useState(0);
   const [browserToolEnabled, setBrowserToolEnabled] = useState<boolean | null>(null);
-  const [browserToolConfigPath, setBrowserToolConfigPath] = useState<string | null>(null);
   const [toolSettingsError, setToolSettingsError] = useState<string | null>(null);
-  const [toolSettingsMessage, setToolSettingsMessage] = useState<string | null>(null);
   const [isLoadingToolSettings, setIsLoadingToolSettings] = useState(false);
   const [isSavingToolSettings, setIsSavingToolSettings] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => resolveInitialSettingsSection());
@@ -652,7 +650,6 @@ export function SettingsControlCenter(
   const refreshToolSettings = useCallback(async () => {
     setIsLoadingToolSettings(true);
     setToolSettingsError(null);
-    setToolSettingsMessage(null);
 
     try {
       const response = await fetch("/api/settings/tools", { cache: "no-store" });
@@ -666,7 +663,6 @@ export function SettingsControlCenter(
       }
 
       setBrowserToolEnabled(payload.toolSettings.browserEnabled);
-      setBrowserToolConfigPath(payload.toolSettings.configPath);
     } catch (error) {
       setToolSettingsError(error instanceof Error ? error.message : "Unable to read OpenClaw tool settings.");
     } finally {
@@ -757,7 +753,6 @@ export function SettingsControlCenter(
 
     setIsSavingToolSettings(true);
     setToolSettingsError(null);
-    setToolSettingsMessage(null);
 
     try {
       const response = await fetch("/api/settings/tools", {
@@ -775,8 +770,6 @@ export function SettingsControlCenter(
       }
 
       setBrowserToolEnabled(payload.toolSettings.browserEnabled);
-      setBrowserToolConfigPath(payload.toolSettings.configPath);
-      setToolSettingsMessage("Browser tool setting saved to OpenClaw config.");
     } catch (error) {
       setToolSettingsError(error instanceof Error ? error.message : "Unable to save OpenClaw tool settings.");
     } finally {
@@ -1742,9 +1735,9 @@ export function SettingsControlCenter(
                 <Card title="Tools" icon={Wrench} surfaceTheme={surfaceTheme}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className={labelClassName(surfaceTheme)}>Browser tool</p>
+                      <p className={labelClassName(surfaceTheme)}>Browser</p>
                       <p className={cn("mt-1 max-w-2xl text-xs leading-5", mutedTextClassName(surfaceTheme))}>
-                        Controls the global OpenClaw browser runtime. System Setup keeps it disabled by default.
+                        Allow OpenClaw to use browser tools.
                       </p>
                     </div>
                     <StatusPill
@@ -1758,10 +1751,7 @@ export function SettingsControlCenter(
                     <button
                       type="button"
                       disabled={isLoadingToolSettings || browserToolEnabled === null}
-                      onClick={() => {
-                        setBrowserToolEnabled(false);
-                        setToolSettingsMessage(null);
-                      }}
+                      onClick={() => setBrowserToolEnabled(false)}
                       className={segmentedButtonClassName(surfaceTheme, browserToolEnabled === false)}
                     >
                       Disabled
@@ -1769,54 +1759,31 @@ export function SettingsControlCenter(
                     <button
                       type="button"
                       disabled={isLoadingToolSettings || browserToolEnabled === null}
-                      onClick={() => {
-                        setBrowserToolEnabled(true);
-                        setToolSettingsMessage(null);
-                      }}
+                      onClick={() => setBrowserToolEnabled(true)}
                       className={segmentedButtonClassName(surfaceTheme, browserToolEnabled === true)}
                     >
                       Enabled
                     </button>
                   </div>
 
-                  <InfoRows
-                    surfaceTheme={surfaceTheme}
-                    rows={[
-                      ["Config key", "browser.enabled"],
-                      ["Config file", browserToolConfigPath ? shortPath(browserToolConfigPath, 80) : "Loading..."]
-                    ]}
-                  />
-
-                  {toolSettingsError || toolSettingsMessage ? (
+                  {toolSettingsError ? (
                     <p className={cn(
                       "mt-3 text-xs leading-5",
-                      toolSettingsError
-                        ? surfaceTheme === "light" ? "text-red-700" : "text-rose-300"
-                        : surfaceTheme === "light" ? "text-emerald-700" : "text-emerald-200"
+                      surfaceTheme === "light" ? "text-red-700" : "text-rose-300"
                     )}>
-                      {toolSettingsError || toolSettingsMessage}
+                      {toolSettingsError}
                     </p>
                   ) : null}
 
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => void refreshToolSettings()}
-                      disabled={isLoadingToolSettings || isSavingToolSettings}
-                      className={secondaryButtonClassName(surfaceTheme)}
-                    >
-                      {isLoadingToolSettings ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                      Refresh
-                    </Button>
+                  <div className="mt-4">
                     <Button
                       type="button"
                       onClick={() => void saveToolSettings()}
                       disabled={browserToolEnabled === null || isLoadingToolSettings || isSavingToolSettings}
-                      className="h-9 rounded-full bg-primary text-xs text-primary-foreground hover:bg-primary/90"
+                      className="h-9 w-full rounded-full bg-primary text-xs text-primary-foreground hover:bg-primary/90"
                     >
                       {isSavingToolSettings ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                      Save browser setting
+                      Save
                     </Button>
                   </div>
                 </Card>
