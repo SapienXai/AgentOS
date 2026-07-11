@@ -337,32 +337,31 @@ export async function POST(request: Request) {
         await send({
           type: "status",
           phase: "starting-gateway",
-          message: "Starting the local Gateway service..."
+          message: "Applying Gateway configuration and starting the service..."
         });
 
-        let localGatewayStatus = await probeLocalGatewayStatus().catch(() => null);
-        if (localGatewayStatus?.rpc?.ok !== true) {
-          const startResult = await startGatewayForOnboarding(openClawBin, send);
-          appendOutput(startResult);
+        const restartResult = await restartGatewayForOnboarding(openClawBin, send, {
+          timeoutMs: 30_000
+        });
+        appendOutput(restartResult);
 
-          if (startResult.errorMessage || startResult.timedOut || startResult.code !== 0) {
-            await failGatewayCommand(
-              "starting-gateway",
-              "Gateway failed to start.",
-              openClawBin,
-              startResult,
-              formatOpenClawCommand(openClawBin, ["gateway", "start", "--json"])
-            );
-            return;
-          }
-
-          await send({
-            type: "status",
-            phase: "verifying",
-            message: "Waiting for Gateway readiness..."
-          });
-          localGatewayStatus = await waitForLocalGatewayReady();
+        if (restartResult.errorMessage || restartResult.timedOut || restartResult.code !== 0) {
+          await failGatewayCommand(
+            "starting-gateway",
+            "Gateway failed to start.",
+            openClawBin,
+            restartResult,
+            formatOpenClawCommand(openClawBin, ["gateway", "restart", "--force", "--json"])
+          );
+          return;
         }
+
+        await send({
+          type: "status",
+          phase: "verifying",
+          message: "Waiting for Gateway readiness..."
+        });
+        let localGatewayStatus = await waitForLocalGatewayReady();
 
         if (localGatewayStatus?.rpc?.ok !== true) {
           const authoritativeStatus = await readGatewayStatus(openClawBin).catch(() => null);
