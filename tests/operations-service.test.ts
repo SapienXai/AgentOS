@@ -150,3 +150,28 @@ test("a live cron session merges before OpenClaw publishes its run id", () => {
   assert.equal(tasks[0].id, "operation:job-live");
   assert.equal(tasks[0].status, "running");
 });
+
+test("a recovered recurring schedule outranks a stale stalled runtime", () => {
+  const snapshot = {
+    generatedAt: "2026-07-11T13:35:00.000Z", source: "openclaw.cron" as const,
+    scheduler: { enabled: true, nextWakeAt: null, state: "available" as const }, audit: [], notices: [], runs: [],
+    jobs: [{ id: "job-recovered", name: "Clock", description: null, enabled: true, status: "scheduled" as const,
+      agentId: "ops", workspaceId: "workspace-a", prompt: "Tell time", model: null, thinking: null,
+      trigger: { kind: "every" as const, everyMs: 60_000 }, nextRunAt: "2026-07-11T13:36:00.000Z",
+      lastRunAt: "2026-07-11T13:35:00.000Z", lastRunStatus: "ok", safety: null,
+      health: { consecutiveFailures: 0, successRate: 1, degraded: false },
+      capabilities: { readable: true, mutable: true, runHistory: true, reason: null } }]
+  };
+  const staleRuntime = { id: "task:stale", key: "task:stale", title: "Clock", mission: "Tell time",
+    subtitle: "Partial output", status: "stalled" as const, updatedAt: Date.parse("2026-07-11T13:20:00.000Z"), ageMs: null,
+    runtimeIds: [], agentIds: ["ops"], sessionIds: [], runIds: [], runtimeCount: 1, updateCount: 0,
+    liveRunCount: 0, artifactCount: 0, warningCount: 1,
+    metadata: { openClawSessionKey: "agent:ops:cron:job-recovered", resultPreview: "Partial output" } };
+
+  const [task] = mergeOperationTaskProjections(snapshot, [staleRuntime], [{ id: "ops", name: "Ops" } as never]);
+
+  assert.equal(task.status, "queued");
+  assert.equal(task.warningCount, 0);
+  assert.equal(task.metadata.operationStatus, "scheduled");
+  assert.equal(task.metadata.nextRunAt, "2026-07-11T13:36:00.000Z");
+});
