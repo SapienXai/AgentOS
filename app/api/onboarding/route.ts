@@ -229,7 +229,13 @@ export async function POST(request: Request) {
       await send({
         type: "status",
         phase: "detecting",
-        message: "Checking local OpenClaw status..."
+        message: intent === "install"
+          ? "Checking OpenClaw CLI..."
+          : intent === "prepare"
+            ? "Checking Gateway registration and configuration..."
+            : intent === "start"
+              ? "Checking Gateway runtime..."
+              : "Checking OpenClaw system status..."
       });
 
       let resolveErrorMessage: string | null = null;
