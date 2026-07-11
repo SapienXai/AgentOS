@@ -362,6 +362,7 @@ export function buildCanvasGraph(
             onHide: onHideTask,
             onToggleLock: onToggleTaskLock,
             onAbortTask,
+            onRefresh,
             onInspect: onInspectTask,
             onActiveCardChange: onActiveTaskCardChange,
             onReviewTask

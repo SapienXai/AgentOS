@@ -17,7 +17,7 @@ const createSchema = z.object({
   context: z.object({ sessionTarget: z.union([z.literal("isolated"), z.literal("main"), z.string().regex(/^session:[^\s]+$/)]).optional(), lightContext: z.boolean().optional() }).optional(),
   safety: z.object({ accountTargetId: z.string().optional().nullable(), requiresApproval: z.boolean().optional(), fileLease: z.string().max(500).optional().nullable(), concurrency: z.enum(["allow", "forbid", "replace"]).optional() }).optional()
 });
-const actionSchema = z.object({ action: z.enum(["run", "pause", "resume", "cancel", "retry", "disable"]), jobId: z.string().min(1) });
+const actionSchema = z.object({ action: z.enum(["run", "pause", "resume", "cancel", "retry", "disable", "delete"]), jobId: z.string().min(1) });
 const updateSchema = z.object({ action: z.literal("update"), jobId: z.string().min(1), trigger });
 
 export async function GET() {

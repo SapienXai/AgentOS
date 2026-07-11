@@ -11,7 +11,12 @@ import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getOpenClawCapabilityMatrix } from "@/lib/openclaw/application/capability-matrix-service";
 import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 
-type Registry = { version: 1; jobs: Record<string, { workspaceId: string; safety: NonNullable<OperationJob["safety"]> }>; audit: OperationAuditEntry[] };
+type Registry = {
+  version: 1;
+  jobs: Record<string, { workspaceId: string; safety: NonNullable<OperationJob["safety"]> }>;
+  audit: OperationAuditEntry[];
+  results: Record<string, OperationResult[]>;
+};
 const registryPath = path.join(missionControlRootPath, "operations", "registry.json");
 const operationOutputCache = new Map<string, { value: Pick<OperationJob, "latestOutput" | "recentResults" | "sessionKey" | "sessionId">; expiresAt: number }>();
 const operationOutputCacheTtlMs = 5 * 60_000;
@@ -33,7 +38,10 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
       ? (await Promise.all(jobs.map(async (job) => normalizeOpenClawOperationRuns(await adapter.call<unknown>("cron.runs", { jobId: job.id, limit: 50 }), job.id)))).flat()
       : [];
     const reconciledJobs = jobs.map((job) => reconcileJobWithRuns(job, runs.filter((run) => run.jobId === job.id)));
-    const hydratedJobs = await Promise.all(reconciledJobs.map((job) => hydrateCompletedOperationOutput(job, adapter)));
+    const hydratedJobs = await Promise.all(
+      reconciledJobs.map((job) => hydrateCompletedOperationOutput(job, adapter, registry.results[job.id] ?? []))
+    );
+    if (mergeProjectedResults(registry.results, hydratedJobs)) await writeRegistry(registry);
     return {
       generatedAt: new Date().toISOString(), source: "openclaw.cron",
       scheduler: { enabled: typeof status.enabled === "boolean" ? status.enabled : null, nextWakeAt: iso(status.nextWakeAtMs), state: "available" },
@@ -77,9 +85,14 @@ export async function operateOperation(action: Exclude<OperationAction, "create"
     const metadata = registry.jobs[jobId];
     if (metadata) await assertSafetyForManualRun(action, metadata.safety, jobId);
     if (action === "cancel") throw new Error("OpenClaw does not advertise a documented cron run-cancel operation. The job was not changed.");
-    const call: [string, Record<string, unknown>] = action === "run" || action === "retry" ? ["cron.run", { jobId, mode: "force" }]
+    const call: [string, Record<string, unknown>] = action === "delete" ? ["cron.remove", { jobId }]
+      : action === "run" || action === "retry" ? ["cron.run", { jobId, mode: "force" }]
       : ["cron.update", { jobId, patch: { enabled: action === "resume" } }];
     await getOpenClawAdapter().call<unknown>(call[0], call[1]);
+    if (action === "delete") {
+      delete registry.jobs[jobId];
+      delete registry.results[jobId];
+    }
     registry.audit.unshift(audit(action, jobId, "accepted", `OpenClaw ${call[0]} accepted.`, requestId));
     await writeRegistry(registry);
     return { ok: true, requestId };
@@ -138,7 +151,7 @@ export function normalizeOpenClawOperationJob(value: unknown, sidecar: Registry[
   const raw = record(value); const id = string(raw.jobId) ?? string(raw.id) ?? "unknown"; const schedule = record(raw.schedule); const state = record(raw.state); const payload = record(raw.payload); const side = sidecar[id];
   const trigger = schedule.kind === "at" && string(schedule.at) ? { kind: "at" as const, at: string(schedule.at)!, timezone: null } : schedule.kind === "every" && number(schedule.everyMs) ? { kind: "every" as const, everyMs: number(schedule.everyMs)! } : schedule.kind === "cron" && string(schedule.expr) ? { kind: "cron" as const, expression: string(schedule.expr)!, timezone: string(schedule.tz) } : null;
   const enabled = raw.enabled !== false; const rawStatus = string(raw.status) ?? string(state.lastRunStatus);
-  return { id, name: string(raw.name) ?? id, description: string(raw.description), enabled, status: status(rawStatus, enabled, number(state.runningAtMs)), agentId: string(raw.agentId), workspaceId: side?.workspaceId ?? null, prompt: string(payload.message), model: string(payload.model), thinking: string(payload.thinking), trigger, nextRunAt: iso(raw.nextRunAtMs) ?? iso(state.nextRunAtMs), lastRunAt: iso(state.lastRunAtMs), lastRunStatus: rawStatus ?? null, safety: side?.safety ?? null, health: { consecutiveFailures: 0, successRate: null, degraded: false }, capabilities: { readable: true, mutable, runHistory: history, reason: mutable ? null : "Gateway cron mutations are not advertised." } };
+  return { id, name: string(raw.name) ?? id, description: string(raw.description), enabled, status: status(rawStatus, enabled, number(state.runningAtMs), trigger), agentId: string(raw.agentId), workspaceId: side?.workspaceId ?? null, prompt: string(payload.message), model: string(payload.model), thinking: string(payload.thinking), trigger, nextRunAt: iso(raw.nextRunAtMs) ?? iso(state.nextRunAtMs), lastRunAt: iso(state.lastRunAtMs), lastRunStatus: rawStatus ?? null, safety: side?.safety ?? null, health: { consecutiveFailures: 0, successRate: null, degraded: false }, capabilities: { readable: true, mutable, runHistory: history, reason: mutable ? null : "Gateway cron mutations are not advertised." } };
 }
 export function normalizeOpenClawOperationRuns(value: unknown, jobId: string): OperationRun[] { const raw = record(value); const list = Array.isArray(raw.runs) ? raw.runs : Array.isArray(value) ? value : []; return list.map((entry) => { const run = record(entry); const startedAt = iso(run.startedAtMs) ?? string(run.startedAt); const endedAt = iso(run.endedAtMs) ?? string(run.endedAt); return { id: string(run.runId) ?? string(run.id) ?? randomUUID(), jobId, status: runStatus(string(run.status)), startedAt, endedAt, durationMs: number(run.durationMs) ?? (startedAt && endedAt ? Date.parse(endedAt) - Date.parse(startedAt) : null), sessionId: string(run.sessionId) ?? string(run.sessionKey), output: string(run.output) ?? string(run.summary), error: string(run.error), tokens: number(record(run.usage).tokens), cost: number(record(run.usage).cost), artifacts: Array.isArray(run.artifacts) ? run.artifacts.map(String) : [] }; }); }
 function reconcileJobWithRuns(job: OperationJob, runs: OperationRun[]): OperationJob {
@@ -150,15 +163,19 @@ function reconcileJobWithRuns(job: OperationJob, runs: OperationRun[]): Operatio
   const reconciled = { ...job, status } as OperationJob;
   return { ...reconciled, health: healthFor(reconciled, sorted) };
 }
-async function hydrateCompletedOperationOutput(job: OperationJob, adapter: ReturnType<typeof getOpenClawAdapter>): Promise<OperationJob> {
-  if (job.lastRunStatus !== "ok" || !job.agentId || !job.lastRunAt) return job;
+async function hydrateCompletedOperationOutput(
+  job: OperationJob,
+  adapter: ReturnType<typeof getOpenClawAdapter>,
+  storedResults: OperationResult[]
+): Promise<OperationJob> {
+  if (!job.lastRunStatus || !job.agentId || !job.lastRunAt) return job;
   const cacheKey = `${job.id}:${job.lastRunAt}`;
   const cached = operationOutputCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return { ...job, ...cached.value };
   const sessionKey = `agent:${job.agentId}:cron:${job.id}`;
   try {
     const payload = await adapter.getSessionHistory({ sessionKey, limit: 200 }, { timeoutMs: 8_000 });
-    const recentResults = extractAgentChatMessagesFromSessionHistory(payload)
+    const gatewayResults = extractAgentChatMessagesFromSessionHistory(payload)
       .filter((message) => message.role === "assistant" && message.text.trim())
       .slice(-24)
       .map((message, index): OperationResult => ({
@@ -166,6 +183,7 @@ async function hydrateCompletedOperationOutput(job: OperationJob, adapter: Retur
         timestamp: operationResultTimestamp(message.timestamp),
         text: message.text.trim()
       }));
+    const recentResults = mergeOperationResults(storedResults, gatewayResults);
     const latestOutput = recentResults.at(-1)?.text ?? null;
     const sessionId = string(payload.sessionId) ?? string(record(payload.sessionInfo).sessionId);
     const value = { latestOutput, recentResults, sessionKey, sessionId };
@@ -176,18 +194,40 @@ async function hydrateCompletedOperationOutput(job: OperationJob, adapter: Retur
     return job;
   }
 }
+function mergeOperationResults(...groups: OperationResult[][]) {
+  const byEvidence = new Map<string, OperationResult>();
+  for (const result of groups.flat()) {
+    if (!result?.text?.trim() || !result.timestamp || Number.isNaN(Date.parse(result.timestamp))) continue;
+    const evidenceKey = `${result.timestamp}\u0000${result.text.trim()}`;
+    byEvidence.set(evidenceKey, { ...result, text: result.text.trim() });
+  }
+  return [...byEvidence.values()]
+    .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
+    .slice(-24);
+}
+function mergeProjectedResults(target: Registry["results"], jobs: OperationJob[]) {
+  let changed = false;
+  for (const job of jobs) {
+    const next = mergeOperationResults(target[job.id] ?? [], job.recentResults ?? []);
+    if (JSON.stringify(next) !== JSON.stringify(target[job.id] ?? [])) {
+      target[job.id] = next;
+      changed = true;
+    }
+  }
+  return changed;
+}
 function operationResultTimestamp(value: string | number | null) {
   if (typeof value === "number" && Number.isFinite(value)) return new Date(value).toISOString();
   if (typeof value === "string" && !Number.isNaN(Date.parse(value))) return new Date(value).toISOString();
   return new Date().toISOString();
 }
 function healthFor(job: OperationJob, runs: OperationRun[]) { const terminal = runs.filter((run) => run.status === "ok" || run.status === "error" || run.status === "skipped"); let failures = 0; for (const run of runs) { if (run.status === "error") failures += 1; else if (run.status === "ok") break; } return { consecutiveFailures: failures, successRate: terminal.length ? terminal.filter((run) => run.status === "ok").length / terminal.length : null, degraded: failures >= 2 || job.status === "failed" }; }
-function status(value: string | null, enabled: boolean, running: number | null): OperationJob["status"] { if (running) return "running"; if (value === "ok") return "completed"; if (value === "error") return "failed"; if (!enabled) return "paused"; if (value === "skipped") return "scheduled"; return "active"; }
+function status(value: string | null, enabled: boolean, running: number | null, trigger: OperationJob["trigger"]): OperationJob["status"] { if (running) return "running"; if (!enabled && trigger?.kind === "at" && value === "ok") return "completed"; if (!enabled && trigger?.kind === "at" && value === "error") return "failed"; if (!enabled) return "paused"; if (value === "ok") return trigger?.kind === "at" ? "completed" : "scheduled"; if (value === "error") return "failed"; if (value === "skipped") return "scheduled"; return "active"; }
 function runStatus(value: string | null): OperationRun["status"] { return value === "ok" || value === "error" || value === "skipped" || value === "queued" || value === "running" ? value : "unknown"; }
 function normalizeSafety(input: OperationJobInput["safety"]): NonNullable<OperationJob["safety"]> { return { accountTargetId: input?.accountTargetId?.trim() || null, requiresApproval: input?.requiresApproval === true, fileLease: input?.fileLease?.trim() || null, concurrency: input?.concurrency ?? "forbid" }; }
 function unavailableSnapshot(audit: OperationAuditEntry[], detail: string): OperationsSnapshot { return { generatedAt: new Date().toISOString(), source: "unavailable", scheduler: { enabled: null, nextWakeAt: null, state: "unsupported" }, jobs: [], runs: [], audit, notices: [{ severity: "warning", title: "Operations unavailable", detail }] }; }
 function audit(action: OperationAction, jobId: string | null, outcome: OperationAuditEntry["outcome"], detail: string, requestId: string): OperationAuditEntry { return { id: randomUUID(), at: new Date().toISOString(), action, jobId, outcome, detail, requestId }; }
-async function readRegistry(): Promise<Registry> { try { const value = JSON.parse(await readFile(registryPath, "utf8")) as Partial<Registry>; return { version: 1, jobs: value.jobs ?? {}, audit: Array.isArray(value.audit) ? value.audit.slice(0, 500) : [] }; } catch (error) { if (record(error).code === "ENOENT") return { version: 1, jobs: {}, audit: [] }; throw error; } }
+async function readRegistry(): Promise<Registry> { try { const value = JSON.parse(await readFile(registryPath, "utf8")) as Partial<Registry>; return { version: 1, jobs: value.jobs ?? {}, audit: Array.isArray(value.audit) ? value.audit.slice(0, 500) : [], results: value.results && typeof value.results === "object" ? value.results : {} }; } catch (error) { if (record(error).code === "ENOENT") return { version: 1, jobs: {}, audit: [], results: {} }; throw error; } }
 async function writeRegistry(registry: Registry) { await mkdir(path.dirname(registryPath), { recursive: true, mode: 0o700 }); const temp = `${registryPath}.${process.pid}.${randomUUID()}.tmp`; await writeFile(temp, `${JSON.stringify({ ...registry, audit: registry.audit.slice(0, 500) }, null, 2)}\n`, { mode: 0o600 }); await rename(temp, registryPath); }
 async function appendAudit(entry: OperationAuditEntry) { const registry = await readRegistry(); registry.audit.unshift(entry); await writeRegistry(registry); }
 function record(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }

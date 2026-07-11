@@ -15,8 +15,11 @@ import {
   LockOpen,
   MessageSquare,
   MoreHorizontal,
+  Pause,
+  Play,
   Plus,
   Sparkles,
+  Trash2,
   X
 } from "lucide-react";
 import { motion } from "motion/react";
@@ -81,6 +84,7 @@ type TaskWorkspaceTab = {
 
 export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [operationAction, setOperationAction] = useState<"pause" | "resume" | "delete" | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -98,6 +102,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     typeof data.task.metadata.scheduleLabel === "string" ? data.task.metadata.scheduleLabel : null;
   const operationJobId =
     typeof data.task.metadata.operationJobId === "string" ? data.task.metadata.operationJobId : null;
+  const operationPaused = data.task.metadata.operationStatus === "paused";
   const shouldStreamFeed =
     expanded ||
     selected ||
@@ -113,6 +118,22 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     () => readTaskFeedEvents(data.task.metadata.optimisticEvents),
     [data.task.metadata.optimisticEvents]
   );
+  const operateSchedule = async (action: "pause" | "resume" | "delete") => {
+    if (!operationJobId) return;
+    if (action === "delete" && !window.confirm("Delete this schedule permanently? This removes the OpenClaw job and cannot be undone.")) return;
+    setOperationAction(action);
+    try {
+      const response = await fetch("/api/operations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, jobId: operationJobId }) });
+      const result = await response.json() as { error?: string };
+      if (!response.ok || result.error) throw new Error(result.error || "OpenClaw rejected the schedule change.");
+      setMenuOpen(false);
+      await data.onRefresh?.();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Schedule action failed.");
+    } finally {
+      setOperationAction(null);
+    }
+  };
   const reviewFeed = useMemo(
     () => readTaskFeedEvents(data.task.metadata.reviewEvents),
     [data.task.metadata.reviewEvents]
@@ -120,6 +141,10 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const operationFeed = useMemo(
     () => readTaskFeedEvents(data.task.metadata.operationFeed),
     [data.task.metadata.operationFeed]
+  );
+  const operationRunHistory = useMemo(
+    () => readOperationRunTimeline(data.task.metadata.operationFeed, data.task.metadata.operationRunHistory),
+    [data.task.metadata.operationFeed, data.task.metadata.operationRunHistory]
   );
   const latestLocalEvent =
     reviewFeed.length > 0 && isTaskFeedEvent(reviewFeed[reviewFeed.length - 1])
@@ -164,6 +189,9 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const isAborted = isTaskAborted(displayTask);
   const isAbortable = isTaskAbortable(displayTask);
   const isLiveTask = displayTask.status === "running" || displayTask.status === "queued" || displayTask.liveRunCount > 0;
+  const isRecurringOperation =
+    (displayTask.metadata.recurrence === "every" || displayTask.metadata.recurrence === "cron") &&
+    displayTask.metadata.operationStatus === "scheduled";
   const hasOperationResult = typeof displayTask.metadata.resultPreview === "string" && displayTask.metadata.resultPreview.trim().length > 0;
   const missingFinalResponse = !hasOperationResult && Boolean(
     integrity?.issues.some((issue) => issue.id === "missing-final-response")
@@ -241,6 +269,10 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     ? resolveTaskBadgeLabel(null, activeFollowUpStatus, false, activeFollowUpStatus === "cancelled", Boolean(activeFollowUpOutput?.finalText || activeFollowUp?.summary))
     : visibleReviewStatus
     ? resolveTaskReviewBadgeLabel(visibleReviewStatus)
+    : operationPaused
+    ? "paused"
+    : isRecurringOperation && !isLiveTask
+    ? "scheduled"
     : missingFinalResponse
     ? "no result"
     : reviewPresentation.badgeLabel && completedNeedsReview
@@ -252,6 +284,10 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     ? resolveFollowUpFooterLabel(activeFollowUp, activeFollowUpRuntime, activeFollowUpOutput, activeFollowUpRuntimes)
     : visibleReviewStatus
     ? resolveTaskReviewFooterLabel(visibleReviewStatus)
+    : operationPaused
+    ? "schedule paused"
+    : isRecurringOperation && !isLiveTask
+    ? "scheduled · next run pending"
     : reviewPresentation.footerLabel && completedNeedsReview
     ? reviewPresentation.footerLabel
     : stalledWithCapturedOutput
@@ -562,6 +598,23 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                       setMenuOpen(false);
                     }}
                   />
+                  {operationJobId ? <>
+                    <TaskMenuButton
+                      icon={operationPaused ? Play : Pause}
+                      label={operationAction === (operationPaused ? "resume" : "pause") ? "Updating…" : operationPaused ? "Resume schedule" : "Pause schedule"}
+                      disabled={operationAction !== null}
+                      surfaceTheme={surfaceTheme}
+                      onClick={() => void operateSchedule(operationPaused ? "resume" : "pause")}
+                    />
+                    <TaskMenuButton
+                      icon={Trash2}
+                      label={operationAction === "delete" ? "Deleting…" : "Delete schedule"}
+                      destructive
+                      disabled={operationAction !== null}
+                      surfaceTheme={surfaceTheme}
+                      onClick={() => void operateSchedule("delete")}
+                    />
+                  </> : null}
                   {data.onAbortTask && (isAbortable || isAborted) ? (
                     <TaskMenuButton
                       icon={Ban}
@@ -689,6 +742,9 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                 label={operationSchedule}
                 cronExpression={typeof data.task.metadata.cronExpression === "string" ? data.task.metadata.cronExpression : null}
                 timezone={typeof data.task.metadata.timezone === "string" ? data.task.metadata.timezone : null}
+                scheduleKind={data.task.metadata.recurrence === "at" || data.task.metadata.recurrence === "every" || data.task.metadata.recurrence === "cron" ? data.task.metadata.recurrence : null}
+                triggerAt={typeof data.task.metadata.triggerAt === "string" ? data.task.metadata.triggerAt : null}
+                intervalMs={typeof data.task.metadata.intervalMs === "number" ? data.task.metadata.intervalMs : null}
                 surfaceTheme={surfaceTheme}
                 onSaved={() => data.onInspect?.(data.task, "overview", activeInspectorContext)}
               />
@@ -743,6 +799,14 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
               density="dense"
               className="mb-2"
             />
+            {operationJobId ? (
+              <OperationRunTimeline
+                entries={operationRunHistory}
+                nextRunAt={typeof data.task.metadata.nextRunAt === "string" ? data.task.metadata.nextRunAt : null}
+                scheduleLabel={operationSchedule}
+                surfaceTheme={surfaceTheme}
+              />
+            ) : null}
             <div>
               <p className={cn("mb-2 text-[9px] font-semibold uppercase tracking-[0.14em]", surfaceTone.mutedText)}>
                 {reviewPresentation.deliveryUnconfirmed && !activeFollowUp ? "Captured activity feed" : "Activity feed"}
@@ -1477,32 +1541,145 @@ function resolvePrimaryActionClass(action: ReturnType<typeof resolveTaskCardPrim
     : "bg-white text-slate-950 hover:bg-slate-100";
 }
 
-function OperationScheduleControl({ jobId, label, cronExpression, timezone, surfaceTheme, onSaved }: { jobId: string; label: string; cronExpression: string | null; timezone: string | null; surfaceTheme: "dark" | "light"; onSaved: () => void }) {
+type OperationRunTimelineEntry = {
+  id: string;
+  at: string;
+  status: "completed" | "failed" | "skipped";
+  detail: string;
+};
+
+function OperationRunTimeline({ entries, nextRunAt, scheduleLabel, surfaceTheme }: {
+  entries: OperationRunTimelineEntry[];
+  nextRunAt: string | null;
+  scheduleLabel: string | null;
+  surfaceTheme: "dark" | "light";
+}) {
+  const isLight = surfaceTheme === "light";
+  return (
+    <div className={cn("mb-2 rounded-[11px] border px-2.5 py-2.5", isLight ? "border-[#eadbd0] bg-[#fffcf9]" : "border-white/[0.08] bg-white/[0.025]")}>
+      <div className="flex items-center justify-between gap-3">
+        <div><p className={cn("text-[10px] font-semibold", isLight ? "text-[#514136]" : "text-slate-200")}>Run history</p><p className={cn("mt-0.5 text-[9px]", isLight ? "text-[#9b745d]" : "text-slate-500")}>{scheduleLabel ?? "OpenClaw schedule"}</p></div>
+        {nextRunAt ? <span className={cn("rounded-full border px-2 py-1 text-[9px]", isLight ? "border-primary/20 bg-primary/5 text-[#806856]" : "border-primary/20 bg-primary/10 text-primary")}>Next {formatTimelineDate(nextRunAt)}</span> : null}
+      </div>
+      {entries.length === 0 ? <p className={cn("mt-3 text-[10px]", isLight ? "text-[#806856]" : "text-slate-400")}>No completed run has been reported by OpenClaw yet.</p> : (
+        <ScrollArea className="mt-3 h-[150px] w-full pr-3">
+          <div className="space-y-2.5">
+            {entries.map((entry) => <div key={entry.id} className="relative pl-3"><span className={cn("absolute left-0 top-1.5 h-1.5 w-1.5 rounded-full", entry.status === "failed" ? "bg-rose-400" : entry.status === "skipped" ? "bg-amber-400" : "bg-emerald-400")} /><div className="flex items-baseline justify-between gap-2"><span className={cn("text-[10px] font-medium", isLight ? "text-[#514136]" : "text-slate-200")}>{entry.status === "failed" ? "Failed" : entry.status === "skipped" ? "Skipped" : "Completed"}</span><span className={cn("shrink-0 text-[9px]", isLight ? "text-[#9b745d]" : "text-slate-500")}>{formatTimelineDate(entry.at)}</span></div><InteractiveContent text={entry.detail} className={cn("mt-0.5 text-[10px] leading-relaxed", isLight ? "text-[#806958]" : "text-slate-400")} compact /></div>)}
+          </div>
+        </ScrollArea>
+      )}
+    </div>
+  );
+}
+
+function readOperationRunTimeline(feedValue: unknown, runHistoryValue: unknown): OperationRunTimelineEntry[] {
+  const entries: OperationRunTimelineEntry[] = readTaskFeedEvents(feedValue).map((event) => ({ id: event.id, at: event.timestamp, status: "completed", detail: event.detail }));
+  if (Array.isArray(runHistoryValue)) {
+    for (const value of runHistoryValue) {
+      if (!value || typeof value !== "object") continue;
+      const record = value as Record<string, unknown>;
+      const status = record.status;
+      if (status !== "error" && status !== "skipped") continue;
+      const at = typeof record.timestamp === "string" ? record.timestamp : null;
+      if (!at) continue;
+      entries.push({
+        id: typeof record.id === "string" ? `run:${record.id}` : `run:${at}:${status}`,
+        at,
+        status: status === "error" ? "failed" : "skipped",
+        detail: typeof record.error === "string" && record.error.trim() ? record.error : status === "error" ? "OpenClaw reported a failed run without an error detail." : "OpenClaw skipped this scheduled run."
+      });
+    }
+  }
+  return Array.from(new Map(entries.map((entry) => [entry.id, entry])).values()).sort((left, right) => Date.parse(right.at) - Date.parse(left.at)).slice(0, 24);
+}
+
+function formatTimelineDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "unknown time" : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function OperationScheduleControl({ jobId, label, cronExpression, timezone, scheduleKind, triggerAt, intervalMs, surfaceTheme, onSaved }: {
+  jobId: string; label: string; cronExpression: string | null; timezone: string | null; scheduleKind: "at" | "every" | "cron" | null; triggerAt: string | null; intervalMs: number | null; surfaceTheme: "dark" | "light"; onSaved: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const controlRef = useRef<HTMLDivElement | null>(null);
   const [recurrence, setRecurrence] = useState<"weekdays" | "daily" | "weekly" | "custom">(inferRecurrence(cronExpression));
   const [time, setTime] = useState(inferCronTime(cronExpression));
   const [customCron, setCustomCron] = useState(cronExpression ?? "0 9 * * 1-5");
   const [zone, setZone] = useState(timezone ?? (Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"));
+  const [atValue, setAtValue] = useState(toDateTimeLocalValue(triggerAt));
+  const [intervalSeconds, setIntervalSeconds] = useState(String(Math.max(1, Math.round((intervalMs ?? 60_000) / 1_000))));
+  const [kind, setKind] = useState<"at" | "every" | "cron">(scheduleKind ?? "cron");
+  const isLight = surfaceTheme === "light";
+  const panelClass = isLight
+    ? "border-[#dfcfc3] bg-[#fffcf9] text-[#46352b] shadow-[0_16px_34px_rgba(79,55,39,0.16)]"
+    : "border-white/[0.1] bg-[#17111a] text-slate-100 shadow-[0_16px_34px_rgba(0,0,0,0.4)]";
+  const mutedTextClass = isLight ? "text-slate-500" : "text-slate-400";
+  const inputClass = isLight
+    ? "border-[#e7d9cf] bg-white text-[#46352b] focus:border-primary/45"
+    : "border-white/[0.1] bg-white/[0.05] text-slate-100 focus:border-primary/50 focus:bg-white/[0.08]";
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof globalThis.Node) || !controlRef.current?.contains(target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown, true);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointerDown, true);
+  }, [open]);
   const save = async () => {
-    const expression = recurrence === "custom" ? customCron.trim() : recurringCron(recurrence, time);
-    if (!expression) return;
+    let trigger: { kind: "every"; everyMs: number } | { kind: "at"; at: string } | { kind: "cron"; expression: string; timezone?: string };
+    if (kind === "every") {
+      const everyMs = Number(intervalSeconds) * 1_000;
+      if (!Number.isFinite(everyMs) || everyMs < 1_000) return;
+      trigger = { kind: "every", everyMs };
+    } else if (kind === "at") {
+      if (!atValue || Number.isNaN(Date.parse(atValue))) return;
+      trigger = { kind: "at", at: new Date(atValue).toISOString() };
+    } else {
+      const expression = recurrence === "custom" ? customCron.trim() : recurringCron(recurrence, time);
+      if (!expression) return;
+      trigger = { kind: "cron", expression, timezone: zone.trim() || undefined };
+    }
     setSaving(true);
     try {
-      const response = await fetch("/api/operations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "update", jobId, trigger: { kind: "cron", expression, timezone: zone } }) });
+      const response = await fetch("/api/operations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "update", jobId, trigger }) });
       const result = await response.json() as { error?: string };
       if (!response.ok || result.error) throw new Error(result.error || "OpenClaw rejected the schedule update.");
-      setOpen(false); onSaved();
+      setOpen(false);
+      onSaved();
     } catch (error) { window.alert(error instanceof Error ? error.message : "Schedule update failed."); }
     finally { setSaving(false); }
   };
-  return <div className="nodrag nopan relative"><button type="button" title={label} onClick={(event) => { event.stopPropagation(); setOpen((current) => !current); }} onPointerDown={(event) => event.stopPropagation()} className={cn("inline-flex h-8 max-w-[138px] items-center gap-1.5 rounded-[9px] border px-2 text-[10px] font-semibold transition-colors", surfaceTheme === "light" ? "border-cyan-700/35 bg-cyan-50 text-cyan-900 hover:bg-cyan-100" : "border-cyan-300/20 bg-cyan-300/[0.07] text-cyan-100 hover:bg-cyan-300/[0.13]")}><CalendarClock className="h-3.5 w-3.5 shrink-0" /><span className="truncate">Schedule</span></button>{open ? <div onClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} className="absolute bottom-[calc(100%+8px)] right-0 z-[80] w-[280px] rounded-[12px] border border-white/[0.12] bg-[#101826] p-3 shadow-[0_18px_42px_rgba(0,0,0,0.38)]"><div className="flex items-center justify-between"><p className="text-[10px] font-semibold text-slate-100">Edit schedule</p><span className="text-[9px] text-slate-500">OpenClaw cron</span></div><div className="mt-2 grid grid-cols-2 gap-1"><ScheduleEditChoice label="Weekdays" active={recurrence === "weekdays"} onClick={() => setRecurrence("weekdays")} /><ScheduleEditChoice label="Every day" active={recurrence === "daily"} onClick={() => setRecurrence("daily")} /><ScheduleEditChoice label="Monday" active={recurrence === "weekly"} onClick={() => setRecurrence("weekly")} /><ScheduleEditChoice label="Custom" active={recurrence === "custom"} onClick={() => setRecurrence("custom")} /></div>{recurrence === "custom" ? <input aria-label="Custom cron expression" value={customCron} onChange={(event) => setCustomCron(event.target.value)} className="mt-2 h-8 w-full rounded-lg border border-white/[0.1] bg-white/[0.04] px-2 text-[10px] text-slate-100 outline-none" /> : <input aria-label="Recurring run time" type="time" value={time} onChange={(event) => setTime(event.target.value)} className="mt-2 h-8 w-full rounded-lg border border-white/[0.1] bg-white/[0.04] px-2 text-[10px] text-slate-100 outline-none" />}<input aria-label="Schedule timezone" value={zone} onChange={(event) => setZone(event.target.value)} className="mt-1.5 h-8 w-full rounded-lg border border-white/[0.1] bg-white/[0.04] px-2 text-[10px] text-slate-100 outline-none" /><div className="mt-3 flex justify-end gap-1.5"><button type="button" onClick={() => setOpen(false)} className="h-7 rounded-md px-2 text-[10px] text-slate-400 hover:bg-white/[0.06]">Cancel</button><button type="button" disabled={saving} onClick={() => void save()} className="h-7 rounded-md bg-cyan-300 px-2.5 text-[10px] font-semibold text-slate-950 disabled:opacity-50">{saving ? "Saving" : "Save"}</button></div></div> : null}</div>;
+  return (
+    <div ref={controlRef} className="nodrag nopan relative">
+      <button type="button" title={label} onClick={(event) => { event.stopPropagation(); setOpen((current) => !current); }} onPointerDown={(event) => event.stopPropagation()} className="inline-flex h-8 max-w-[138px] items-center gap-1.5 rounded-[9px] border border-primary/35 bg-primary/10 px-2 text-[10px] font-semibold text-primary transition-colors hover:bg-primary/16">
+        <CalendarClock className="h-3.5 w-3.5 shrink-0" /><span className="truncate">Schedule</span>
+      </button>
+      {open ? <div onClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} className={cn("absolute bottom-[calc(100%+8px)] right-0 z-[80] w-[320px] rounded-[13px] border p-3", panelClass)}>
+        <div className="flex items-center justify-between gap-3"><div><p className="text-[11px] font-semibold">Change schedule</p><p className={cn("mt-0.5 text-[9px]", mutedTextClass)}>{label}</p></div><CalendarClock className={cn("h-4 w-4", isLight ? "text-[#9b745d]" : "text-primary/80")} /></div>
+        <div className={cn("mt-2.5 grid grid-cols-3 gap-1 rounded-[9px] border p-1", isLight ? "border-[#e7d9cf] bg-white" : "border-white/[0.08] bg-black/15")}>
+          <ScheduleEditChoice label="Once" active={kind === "at"} onClick={() => setKind("at")} surfaceTheme={surfaceTheme} />
+          <ScheduleEditChoice label="Interval" active={kind === "every"} onClick={() => setKind("every")} surfaceTheme={surfaceTheme} />
+          <ScheduleEditChoice label="Recurring" active={kind === "cron"} onClick={() => setKind("cron")} surfaceTheme={surfaceTheme} />
+        </div>
+        <div className="mt-2.5">
+          {kind === "every" ? <label className="block"><span className={cn("text-[9px] font-semibold uppercase tracking-[0.12em]", mutedTextClass)}>Repeat every</span><div className="mt-1.5 flex items-center gap-2"><input aria-label="Interval in seconds" type="number" min="1" value={intervalSeconds} onChange={(event) => setIntervalSeconds(event.target.value)} className={cn("h-9 w-20 rounded-[9px] border px-2 text-[11px] outline-none", inputClass)} /><span className={cn("text-[11px]", mutedTextClass)}>seconds</span></div></label> : null}
+          {kind === "at" ? <label className="block"><span className={cn("text-[9px] font-semibold uppercase tracking-[0.12em]", mutedTextClass)}>Run at</span><input aria-label="One-time run date and time" type="datetime-local" value={atValue} onChange={(event) => setAtValue(event.target.value)} className={cn("mt-1.5 h-9 w-full rounded-[9px] border px-2 text-[11px] outline-none", inputClass)} /></label> : null}
+          {kind === "cron" ? <><div className="grid grid-cols-4 gap-1"><ScheduleEditChoice label="Weekdays" active={recurrence === "weekdays"} onClick={() => setRecurrence("weekdays")} surfaceTheme={surfaceTheme} /><ScheduleEditChoice label="Daily" active={recurrence === "daily"} onClick={() => setRecurrence("daily")} surfaceTheme={surfaceTheme} /><ScheduleEditChoice label="Monday" active={recurrence === "weekly"} onClick={() => setRecurrence("weekly")} surfaceTheme={surfaceTheme} /><ScheduleEditChoice label="Custom" active={recurrence === "custom"} onClick={() => setRecurrence("custom")} surfaceTheme={surfaceTheme} /></div>{recurrence === "custom" ? <input aria-label="Custom cron expression" value={customCron} onChange={(event) => setCustomCron(event.target.value)} placeholder="Cron expression" className={cn("mt-2 h-8 w-full rounded-[8px] border px-2 text-[10px] outline-none", inputClass)} /> : <div className="mt-2 flex items-center gap-2"><span className={cn("text-[10px]", mutedTextClass)}>At</span><input aria-label="Recurring run time" type="time" value={time} onChange={(event) => setTime(event.target.value)} className={cn("h-8 flex-1 rounded-[8px] border px-2 text-[10px] outline-none", inputClass)} /></div>}<input aria-label="Schedule timezone" value={zone} onChange={(event) => setZone(event.target.value)} placeholder="Timezone" className={cn("mt-2 h-8 w-full rounded-[8px] border px-2 text-[10px] outline-none", inputClass)} /></> : null}
+        </div>
+        <div className="mt-3 flex items-center justify-end gap-2"><button type="button" onClick={() => setOpen(false)} className={cn("h-8 rounded-[8px] px-2.5 text-[10px] font-medium transition-colors", isLight ? "text-[#806856] hover:bg-[#f8f0ea]" : "text-slate-400 hover:bg-white/[0.06]")}>Cancel</button><button type="button" disabled={saving} onClick={() => void save()} className="h-8 rounded-[8px] bg-primary px-3 text-[10px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50">{saving ? "Saving…" : "Save changes"}</button></div>
+      </div> : null}
+    </div>
+  );
 }
 
-function ScheduleEditChoice({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) { return <button type="button" onClick={onClick} className={cn("h-7 rounded-md border px-2 text-left text-[9px]", active ? "border-cyan-300/30 bg-cyan-300/[0.1] text-cyan-100" : "border-white/[0.08] text-slate-400 hover:bg-white/[0.05]")}>{label}</button>; }
+function ScheduleEditChoice({ label, active, onClick, surfaceTheme }: { label: string; active: boolean; onClick: () => void; surfaceTheme: "dark" | "light" }) { return <button type="button" onClick={onClick} className={cn("h-7 rounded-[6px] border px-1 text-center text-[9px] font-medium transition-colors", active ? "border-primary/35 bg-primary/10 text-primary" : surfaceTheme === "light" ? "border-transparent text-[#806856] hover:bg-[#f8f0ea] hover:text-[#46352b]" : "border-transparent text-slate-400 hover:bg-white/[0.06] hover:text-slate-200")}>{label}</button>; }
 function inferRecurrence(value: string | null) { if (value?.endsWith("1-5")) return "weekdays"; if (value?.endsWith(" *")) return "daily"; if (value?.endsWith(" 1")) return "weekly"; return "custom"; }
 function inferCronTime(value: string | null) { const parts = value?.trim().split(/\s+/) ?? []; return parts.length >= 2 ? `${String(parts[1]).padStart(2, "0")}:${String(parts[0]).padStart(2, "0")}` : "09:00"; }
 function recurringCron(recurrence: "weekdays" | "daily" | "weekly" | "custom", time: string) { const [hour = "9", minute = "0"] = time.split(":"); return recurrence === "daily" ? `${Number(minute)} ${Number(hour)} * * *` : recurrence === "weekly" ? `${Number(minute)} ${Number(hour)} * * 1` : `${Number(minute)} ${Number(hour)} * * 1-5`; }
+function toDateTimeLocalValue(value: string | null) { if (!value || Number.isNaN(Date.parse(value))) return ""; const date = new Date(value); const offset = date.getTimezoneOffset() * 60_000; return new Date(date.getTime() - offset).toISOString().slice(0, 16); }
 
 function TaskMenuButton({
   icon: Icon,

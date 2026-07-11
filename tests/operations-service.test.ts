@@ -37,6 +37,30 @@ test("operations projects runtime job state without becoming a scheduler", () =>
   assert.equal(job.capabilities.mutable, true);
 });
 
+test("recurring jobs remain scheduled after an individual run succeeds", () => {
+  const job = normalizeOpenClawOperationJob({
+    jobId: "job-recurring", name: "Recurring", enabled: true, status: "ok", agentId: "ops",
+    schedule: { kind: "every", everyMs: 60_000 }, state: { lastRunStatus: "ok" }, payload: { message: "check" }
+  }, {}, true, true);
+  assert.equal(job.status, "scheduled");
+});
+
+test("disabled recurring jobs are paused even when their last run succeeded", () => {
+  const job = normalizeOpenClawOperationJob({
+    jobId: "job-paused", name: "Paused", enabled: false, status: "ok", agentId: "ops",
+    schedule: { kind: "every", everyMs: 60_000 }, state: { lastRunStatus: "ok" }, payload: { message: "check" }
+  }, {}, true, true);
+  assert.equal(job.status, "paused");
+});
+
+test("completed one-time jobs remain completed after OpenClaw disables them", () => {
+  const job = normalizeOpenClawOperationJob({
+    jobId: "job-once", name: "One time", enabled: false, status: "ok", agentId: "ops",
+    schedule: { kind: "at", at: "2026-07-11T00:00:00.000Z" }, state: { lastRunStatus: "ok" }, payload: { message: "check" }
+  }, {}, true, true);
+  assert.equal(job.status, "completed");
+});
+
 test("operations normalizes retry, error, and recovery evidence from cron.runs", () => {
   const runs = normalizeOpenClawOperationRuns({ runs: [
     { runId: "run-error", status: "error", startedAtMs: 1_700_000_000_000, endedAtMs: 1_700_000_030_000, error: "network timeout" },
@@ -64,7 +88,40 @@ test("completed operations expose the Gateway transcript result on their task ca
   }, [{ id: "ops", name: "Ops", workspaceId: "workspace-a" } as never]);
   assert.equal(task.metadata.resultPreview, "1 GBP is 62.99 TRY");
   assert.equal(task.metadata.openClawSessionKey, "agent:ops:cron:job-result");
-  assert.deepEqual(task.metadata.operationFeed, [{ id: "operation:job-result:answer-1", kind: "assistant", timestamp: "2026-07-11T00:01:00.000Z", title: "Scheduled result", detail: "1 GBP is 62.99 TRY" }]);
+  assert.deepEqual(task.metadata.operationFeed, [{ id: "operation:job-result:2026-07-11T00:01:00.000Z:answer-1", kind: "assistant", timestamp: "2026-07-11T00:01:00.000Z", title: "Scheduled result", detail: "1 GBP is 62.99 TRY" }]);
+});
+
+test("recurring results keep unique feed ids when OpenClaw reuses message ids", () => {
+  const baseJob = {
+    id: "job-recurring-results", name: "Clock", description: null, enabled: true, status: "scheduled" as const,
+    agentId: "ops", workspaceId: "workspace-a", prompt: "Time", model: null, thinking: null,
+    trigger: { kind: "every" as const, everyMs: 60_000 }, nextRunAt: "2026-07-11T00:03:00.000Z",
+    lastRunAt: "2026-07-11T00:02:00.000Z", lastRunStatus: "ok", safety: null,
+    health: { consecutiveFailures: 0, successRate: 1, degraded: false },
+    capabilities: { readable: true, mutable: true, runHistory: true, reason: null },
+    recentResults: [
+      { id: "history:assistant:1", timestamp: "2026-07-11T00:01:00.000Z", text: "First" },
+      { id: "history:assistant:1", timestamp: "2026-07-11T00:02:00.000Z", text: "Second" }
+    ]
+  };
+  const [task] = buildOperationTaskProjections({
+    generatedAt: "2026-07-11T00:02:00.000Z", source: "openclaw.cron",
+    scheduler: { enabled: true, nextWakeAt: null, state: "available" },
+    jobs: [baseJob], runs: [], audit: [], notices: []
+  }, [{ id: "ops", name: "Ops", workspaceId: "workspace-a" } as never]);
+  const feed = task.metadata.operationFeed as Array<{ id: string }>;
+
+  assert.equal(feed.length, 2);
+  assert.notEqual(feed[0]?.id, feed[1]?.id);
+});
+
+test("operation task cards retain Gateway run failure evidence for their timeline", () => {
+  const [task] = buildOperationTaskProjections({
+    generatedAt: "2026-07-11T00:00:00.000Z", source: "openclaw.cron", scheduler: { enabled: true, nextWakeAt: null, state: "available" }, audit: [], notices: [],
+    jobs: [{ id: "job-error", name: "Check", description: null, enabled: true, status: "failed", agentId: "ops", workspaceId: "workspace-a", prompt: "Check", model: null, thinking: null, trigger: { kind: "every", everyMs: 60_000 }, nextRunAt: "2026-07-11T00:02:00.000Z", lastRunAt: "2026-07-11T00:01:00.000Z", lastRunStatus: "error", safety: null, health: { consecutiveFailures: 1, successRate: 0, degraded: true }, capabilities: { readable: true, mutable: true, runHistory: true, reason: null } }],
+    runs: [{ id: "run-error", jobId: "job-error", status: "error", startedAt: "2026-07-11T00:00:55.000Z", endedAt: "2026-07-11T00:01:00.000Z", durationMs: 5_000, sessionId: null, output: null, error: "provider timeout", tokens: null, cost: null, artifacts: [] }]
+  }, [{ id: "ops", name: "Ops", workspaceId: "workspace-a" } as never]);
+  assert.deepEqual(task.metadata.operationRunHistory, [{ id: "run-error", timestamp: "2026-07-11T00:01:00.000Z", status: "error", output: null, error: "provider timeout", durationMs: 5_000 }]);
 });
 
 test("a cron runtime and its schedule projection reconcile into one terminal task card", () => {
@@ -74,9 +131,22 @@ test("a cron runtime and its schedule projection reconcile into one terminal tas
     runs: [{ id: "cron:job-1:run", jobId: "job-1", status: "error" as const, startedAt: "2026-07-11T00:00:00.000Z", endedAt: "2026-07-11T00:00:03.000Z", durationMs: 3000, sessionId: null, output: null, error: "provider timeout", tokens: null, cost: null, artifacts: [] }]
   };
   const runtime = { id: "task:1", key: "task:1", title: "Exchange rate", mission: "Rate", subtitle: "running", status: "running" as const, updatedAt: null, ageMs: null, runtimeIds: [], agentIds: ["ops"], sessionIds: [], runIds: ["cron:job-1:run"], runtimeCount: 1, updateCount: 0, liveRunCount: 1, artifactCount: 0, warningCount: 0, metadata: { openClawRunId: "cron:job-1:run" } };
-  const tasks = mergeOperationTaskProjections(snapshot, [runtime], [{ id: "ops", name: "Ops" } as never]);
+  const tasks = mergeOperationTaskProjections(snapshot, [runtime, { ...runtime, id: "task:stale", key: "task:stale", status: "completed", liveRunCount: 0 }], [{ id: "ops", name: "Ops" } as never]);
   assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].id, "operation:job-1");
   assert.equal(tasks[0].status, "stalled");
   assert.equal(tasks[0].metadata.operationJobId, "job-1");
   assert.match(tasks[0].subtitle, /provider timeout/);
+});
+
+test("a live cron session merges before OpenClaw publishes its run id", () => {
+  const snapshot = {
+    generatedAt: "2026-07-11T00:00:00.000Z", source: "openclaw.cron" as const, scheduler: { enabled: true, nextWakeAt: null, state: "available" as const }, audit: [], notices: [], runs: [],
+    jobs: [{ id: "job-live", name: "Clock", description: null, enabled: true, status: "running" as const, agentId: "ops", workspaceId: "workspace-a", prompt: "Tell time", model: null, thinking: null, trigger: { kind: "every" as const, everyMs: 60_000 }, nextRunAt: "2026-07-11T00:01:00.000Z", lastRunAt: null, lastRunStatus: null, safety: null, health: { consecutiveFailures: 0, successRate: null, degraded: false }, capabilities: { readable: true, mutable: true, runHistory: true, reason: null } }]
+  };
+  const runtime = { id: "task:ephemeral", key: "task:ephemeral", title: "Clock", mission: "Tell time", subtitle: "running", status: "running" as const, updatedAt: null, ageMs: null, runtimeIds: [], agentIds: ["ops"], sessionIds: [], runIds: [], runtimeCount: 1, updateCount: 0, liveRunCount: 1, artifactCount: 0, warningCount: 0, metadata: { openClawSessionKey: "agent:ops:cron:job-live" } };
+  const tasks = mergeOperationTaskProjections(snapshot, [runtime], [{ id: "ops", name: "Ops" } as never]);
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].id, "operation:job-live");
+  assert.equal(tasks[0].status, "running");
 });
