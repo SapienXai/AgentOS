@@ -832,7 +832,7 @@ test("system setup verifies the installed CLI before advancing to Gateway setup"
   assert.match(source, /await delay\(cliPostInstallResolveIntervalMs\);/);
 });
 
-test("Gateway preparation disables the browser tool by default", () => {
+test("Gateway preparation disables browser and web tools by default", () => {
   const source = readFileSync(path.join(rootDir, "app/api/onboarding/route.ts"), "utf8");
   const configWriterStart = source.indexOf("async function writeLocalGatewayBootstrapConfig");
   const configWriterEnd = source.indexOf("function asRecord", configWriterStart);
@@ -840,6 +840,8 @@ test("Gateway preparation disables the browser tool by default", () => {
 
   assert.match(configWriter, /const browser = asRecord\(config\.browser\);/);
   assert.match(configWriter, /config\.browser = \{[\s\S]*enabled: false/);
+  assert.match(configWriter, /config\.tools = \{[\s\S]*fetch: \{[\s\S]*enabled: false/);
+  assert.match(configWriter, /config\.tools = \{[\s\S]*search: \{[\s\S]*enabled: false/);
 });
 
 test("system setup restarts a stopped Gateway service before readiness polling", () => {
