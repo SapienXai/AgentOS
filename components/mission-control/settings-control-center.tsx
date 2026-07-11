@@ -117,6 +117,7 @@ type SettingsSectionId =
   | "overview"
   | "openclaw"
   | "gateway"
+  | "tools"
   | "capabilities"
   | "models"
   | "workspace"
@@ -136,6 +137,7 @@ const settingsSections: SettingsSection[] = [
   { id: "overview", label: "Overview", icon: Settings2 },
   { id: "openclaw", label: "OpenClaw", icon: Activity },
   { id: "gateway", label: "Gateway", icon: ShieldCheck },
+  { id: "tools", label: "Tools", icon: Wrench },
   { id: "capabilities", label: "Capabilities", icon: ListChecks },
   { id: "models", label: "Models", icon: Box },
   { id: "workspace", label: "Workspace", icon: Folder },
@@ -149,6 +151,7 @@ const settingsSectionDescriptions: Record<SettingsSectionId, string> = {
   overview: "System configuration, runtime health, and operator controls.",
   openclaw: "Source-of-truth runtime state, update flow, and local binary selection.",
   gateway: "Connection state, auth repair, endpoint control, and native transport health.",
+  tools: "Global OpenClaw tool availability and browser runtime control.",
   capabilities: "Native coverage, fallback surface, and protocol contract detail.",
   models: "Default model, provider readiness, and model set management.",
   workspace: "Workspace root, project defaults, and local workspace context.",
@@ -159,10 +162,11 @@ const settingsSectionDescriptions: Record<SettingsSectionId, string> = {
 };
 
 const relatedSettingsSections: Record<SettingsSectionId, SettingsSectionId[]> = {
-  overview: ["openclaw", "gateway", "diagnostics"],
+  overview: ["openclaw", "gateway", "tools"],
   openclaw: ["gateway", "diagnostics", "advanced"],
-  gateway: ["openclaw", "capabilities", "diagnostics"],
-  capabilities: ["gateway", "diagnostics", "advanced"],
+  gateway: ["openclaw", "tools", "diagnostics"],
+  tools: ["gateway", "capabilities", "agents"],
+  capabilities: ["gateway", "tools", "advanced"],
   models: ["gateway", "workspace", "agents"],
   workspace: ["models", "agents", "diagnostics"],
   agents: ["workspace", "models", "diagnostics"],
@@ -251,6 +255,12 @@ export function SettingsControlCenter(
   const [configUpdatePacingError, setConfigUpdatePacingError] = useState<string | null>(null);
   const [isSavingConfigUpdatePacing, setIsSavingConfigUpdatePacing] = useState(false);
   const [configUpdatePacingTick, setConfigUpdatePacingTick] = useState(0);
+  const [browserToolEnabled, setBrowserToolEnabled] = useState<boolean | null>(null);
+  const [browserToolConfigPath, setBrowserToolConfigPath] = useState<string | null>(null);
+  const [toolSettingsError, setToolSettingsError] = useState<string | null>(null);
+  const [toolSettingsMessage, setToolSettingsMessage] = useState<string | null>(null);
+  const [isLoadingToolSettings, setIsLoadingToolSettings] = useState(false);
+  const [isSavingToolSettings, setIsSavingToolSettings] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => resolveInitialSettingsSection());
   const [settingsHashHydrated, setSettingsHashHydrated] = useState(false);
   const renderedActiveSection = settingsHashHydrated ? activeSection : resolveInitialSettingsSection();
@@ -639,9 +649,48 @@ export function SettingsControlCenter(
     }
   }, []);
 
+  const refreshToolSettings = useCallback(async () => {
+    setIsLoadingToolSettings(true);
+    setToolSettingsError(null);
+    setToolSettingsMessage(null);
+
+    try {
+      const response = await fetch("/api/settings/tools", { cache: "no-store" });
+      const payload = await response.json() as {
+        error?: string;
+        toolSettings?: { browserEnabled: boolean; configPath: string };
+      };
+
+      if (!response.ok || !payload.toolSettings) {
+        throw new Error(payload.error || "Unable to read OpenClaw tool settings.");
+      }
+
+      setBrowserToolEnabled(payload.toolSettings.browserEnabled);
+      setBrowserToolConfigPath(payload.toolSettings.configPath);
+    } catch (error) {
+      setToolSettingsError(error instanceof Error ? error.message : "Unable to read OpenClaw tool settings.");
+    } finally {
+      setIsLoadingToolSettings(false);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshGatewayAuthStatus();
   }, [refreshGatewayAuthStatus]);
+
+  useEffect(() => {
+    if (
+      renderedActiveSection === "tools" &&
+      browserToolEnabled === null &&
+      !isLoadingToolSettings &&
+      !toolSettingsError
+    ) {
+      const timer = window.setTimeout(() => {
+        void refreshToolSettings();
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [browserToolEnabled, isLoadingToolSettings, refreshToolSettings, renderedActiveSection, toolSettingsError]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -698,6 +747,40 @@ export function SettingsControlCenter(
       setGatewayAuthError(error instanceof Error ? error.message : "Unable to save Gateway credential.");
     } finally {
       setIsSavingGatewayAuthCredential(false);
+    }
+  };
+
+  const saveToolSettings = async () => {
+    if (browserToolEnabled === null) {
+      return;
+    }
+
+    setIsSavingToolSettings(true);
+    setToolSettingsError(null);
+    setToolSettingsMessage(null);
+
+    try {
+      const response = await fetch("/api/settings/tools", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ browserEnabled: browserToolEnabled })
+      });
+      const payload = await response.json() as {
+        error?: string;
+        toolSettings?: { browserEnabled: boolean; configPath: string };
+      };
+
+      if (!response.ok || !payload.toolSettings) {
+        throw new Error(payload.error || "Unable to save OpenClaw tool settings.");
+      }
+
+      setBrowserToolEnabled(payload.toolSettings.browserEnabled);
+      setBrowserToolConfigPath(payload.toolSettings.configPath);
+      setToolSettingsMessage("Browser tool setting saved to OpenClaw config.");
+    } catch (error) {
+      setToolSettingsError(error instanceof Error ? error.message : "Unable to save OpenClaw tool settings.");
+    } finally {
+      setIsSavingToolSettings(false);
     }
   };
 
@@ -1649,6 +1732,92 @@ export function SettingsControlCenter(
                         {gatewayAuthError || gatewayAuthSaveMessage || gatewayAuthStatus?.native.issue}
                       </p>
                     ) : null}
+                  </div>
+                </Card>
+              </section>
+              ) : null}
+
+              {renderedActiveSection === "tools" ? (
+              <section id="tools" className="scroll-mt-24">
+                <Card title="Tools" icon={Wrench} surfaceTheme={surfaceTheme}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className={labelClassName(surfaceTheme)}>Browser tool</p>
+                      <p className={cn("mt-1 max-w-2xl text-xs leading-5", mutedTextClassName(surfaceTheme))}>
+                        Controls the global OpenClaw browser runtime. System Setup keeps it disabled by default.
+                      </p>
+                    </div>
+                    <StatusPill
+                      label={isLoadingToolSettings || browserToolEnabled === null ? "Loading" : browserToolEnabled ? "Enabled" : "Disabled"}
+                      tone={browserToolEnabled ? "success" : "neutral"}
+                      surfaceTheme={surfaceTheme}
+                    />
+                  </div>
+
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      disabled={isLoadingToolSettings || browserToolEnabled === null}
+                      onClick={() => {
+                        setBrowserToolEnabled(false);
+                        setToolSettingsMessage(null);
+                      }}
+                      className={segmentedButtonClassName(surfaceTheme, browserToolEnabled === false)}
+                    >
+                      Disabled
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLoadingToolSettings || browserToolEnabled === null}
+                      onClick={() => {
+                        setBrowserToolEnabled(true);
+                        setToolSettingsMessage(null);
+                      }}
+                      className={segmentedButtonClassName(surfaceTheme, browserToolEnabled === true)}
+                    >
+                      Enabled
+                    </button>
+                  </div>
+
+                  <InfoRows
+                    surfaceTheme={surfaceTheme}
+                    rows={[
+                      ["Config key", "browser.enabled"],
+                      ["Config file", browserToolConfigPath ? shortPath(browserToolConfigPath, 80) : "Loading..."]
+                    ]}
+                  />
+
+                  {toolSettingsError || toolSettingsMessage ? (
+                    <p className={cn(
+                      "mt-3 text-xs leading-5",
+                      toolSettingsError
+                        ? surfaceTheme === "light" ? "text-red-700" : "text-rose-300"
+                        : surfaceTheme === "light" ? "text-emerald-700" : "text-emerald-200"
+                    )}>
+                      {toolSettingsError || toolSettingsMessage}
+                    </p>
+                  ) : null}
+
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => void refreshToolSettings()}
+                      disabled={isLoadingToolSettings || isSavingToolSettings}
+                      className={secondaryButtonClassName(surfaceTheme)}
+                    >
+                      {isLoadingToolSettings ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                      Refresh
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => void saveToolSettings()}
+                      disabled={browserToolEnabled === null || isLoadingToolSettings || isSavingToolSettings}
+                      className="h-9 rounded-full bg-primary text-xs text-primary-foreground hover:bg-primary/90"
+                    >
+                      {isSavingToolSettings ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                      Save browser setting
+                    </Button>
                   </div>
                 </Card>
               </section>
@@ -5357,6 +5526,8 @@ function resolveSettingsSectionStatus(
       return context.snapshot.diagnostics.loaded || context.snapshot.diagnostics.rpcOk
         ? { label: "Online", tone: "success" }
         : { label: "Offline", tone: "danger" };
+    case "tools":
+      return { label: "Configured", tone: "neutral" };
     case "capabilities":
       return context.compatibilityReport
         ? { label: formatCompatibilityReportStatus(context.compatibilityReport.status), tone: context.compatibilityReport.status === "compatible" ? "success" : "warning" }
@@ -5403,6 +5574,8 @@ function resolveHashSettingsSection(): SettingsSectionId {
       return "overview";
     case "gateway":
       return "gateway";
+    case "tools":
+      return "tools";
     case "capabilities":
       return "capabilities";
     case "models":
