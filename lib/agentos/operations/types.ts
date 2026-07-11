@@ -3,7 +3,7 @@ export type OperationTrigger =
   | { kind: "cron"; expression: string; timezone?: string | null }
   | { kind: "every"; everyMs: number };
 
-export type OperationAction = "create" | "update" | "run" | "pause" | "resume" | "cancel" | "retry" | "disable";
+export type OperationAction = "create" | "update" | "run" | "pause" | "resume" | "cancel" | "retry" | "disable" | "delete";
 
 export type OperationSafety = {
   accountTargetId?: string | null;

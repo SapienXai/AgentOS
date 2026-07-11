@@ -125,6 +125,7 @@ export type TaskNodeData = Record<string, unknown> & {
   onHide?: (task: WorkItemRecord) => void;
   onToggleLock?: (task: WorkItemRecord) => void;
   onAbortTask?: (task: WorkItemRecord) => void;
+  onRefresh?: () => Promise<void> | void;
 };
 
 export type TaskCardInspectorContext = {
