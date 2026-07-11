@@ -1318,6 +1318,7 @@ async function writeLocalGatewayBootstrapConfig(token: string) {
 
   const gateway = asRecord(config.gateway);
   const auth = asRecord(gateway.auth);
+  const browser = asRecord(config.browser);
   config.gateway = {
     ...gateway,
     mode: "local",
@@ -1327,12 +1328,16 @@ async function writeLocalGatewayBootstrapConfig(token: string) {
       token
     }
   };
+  config.browser = {
+    ...browser,
+    enabled: false
+  };
 
   await mkdir(path.dirname(configPath), { recursive: true });
   const temporaryPath = `${configPath}.agentos-${randomBytes(8).toString("hex")}.tmp`;
   await writeFile(temporaryPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   await rename(temporaryPath, configPath);
-  return "Gateway local mode and token auth saved.";
+  return "Gateway local mode, token auth, and disabled browser default saved.";
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
