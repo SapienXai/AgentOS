@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { access } from "node:fs/promises";
+import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -13,7 +13,7 @@ import {
   probeLocalGatewayConfiguration,
   probeLocalGatewayRegistration,
   probeLocalGatewayStatus,
-  readLocalGatewayConfiguration
+  resolveLocalGatewayConfigPath
 } from "@/lib/openclaw/client/local-gateway-probe";
 import { resolveLatestPendingDeviceRequestId } from "@/lib/openclaw/client/native-ws-gateway-protocol";
 import { settleAgentConfigFromStateFile } from "@/lib/openclaw/state/agent-config-payload";
@@ -1221,54 +1221,10 @@ async function syncGatewayAuthTokenBeforeFirstStart(
   });
 
   const token = randomBytes(32).toString("base64url");
-  const currentConfig = await readLocalGatewayConfiguration();
-  const skippedResult = (message: string): CommandResult => ({
-    code: 0,
-    stdout: `${message}\n`,
-    stderr: "",
-    timedOut: false
-  });
-  const gatewayModeResult = currentConfig.modeLocal
-    ? skippedResult("gateway.mode is already local.")
-    : await runCommand(
-        openClawBin,
-        ["config", "set", "gateway.mode", "local"],
-        send,
-        { timeoutMs: 60_000 }
-      );
-
-  if (gatewayModeResult.errorMessage || gatewayModeResult.timedOut || gatewayModeResult.code !== 0) {
-    const detail = collectCommandOutput(gatewayModeResult).trim();
-    throw new Error(
-      detail
-        ? `AgentOS could not set OpenClaw gateway.mode=local. ${detail}`
-        : "AgentOS could not set OpenClaw gateway.mode=local."
-    );
-  }
-
-  const authModeResult = currentConfig.authTokenMode
-    ? skippedResult("gateway.auth.mode is already token.")
-    : await runCommand(
-        openClawBin,
-        ["config", "set", "gateway.auth.mode", "token"],
-        send,
-        { timeoutMs: 60_000 }
-      );
-
-  if (authModeResult.errorMessage || authModeResult.timedOut || authModeResult.code !== 0) {
-    throw new Error("AgentOS could not set OpenClaw gateway.auth.mode=token.");
-  }
-
-  const tokenResult = await runCommand(
-    openClawBin,
-    ["config", "set", "gateway.auth.token", token],
-    send,
-    { timeoutMs: 60_000 }
-  );
-
-  if (tokenResult.errorMessage || tokenResult.timedOut || tokenResult.code !== 0) {
-    throw new Error("AgentOS could not write a fresh OpenClaw Gateway token.");
-  }
+  const configResult = await writeLocalGatewayBootstrapConfig(token);
+  const gatewayModeResult: CommandResult = { code: 0, stdout: `${configResult}\n`, stderr: "", timedOut: false };
+  const authModeResult: CommandResult = { code: 0, stdout: "gateway.auth.mode set to token.\n", stderr: "", timedOut: false };
+  const tokenResult: CommandResult = { code: 0, stdout: "gateway.auth.token updated.\n", stderr: "", timedOut: false };
 
   await saveGatewayNativeAuthCredential({
     kind: "token",
@@ -1290,6 +1246,47 @@ function appendGatewayAuthSyncOutput(
   appendOutput(result.gatewayModeResult);
   appendOutput(result.authModeResult);
   appendOutput(result.tokenResult);
+}
+
+async function writeLocalGatewayBootstrapConfig(token: string) {
+  const configPath = resolveLocalGatewayConfigPath();
+  let config: Record<string, unknown> = {};
+
+  try {
+    const parsed = JSON.parse(await readFile(configPath, "utf8")) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      config = parsed as Record<string, unknown>;
+    }
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? error.code : null;
+    if (code !== "ENOENT") {
+      throw new Error(`AgentOS could not read OpenClaw config at ${configPath}.`);
+    }
+  }
+
+  const gateway = asRecord(config.gateway);
+  const auth = asRecord(gateway.auth);
+  config.gateway = {
+    ...gateway,
+    mode: "local",
+    auth: {
+      ...auth,
+      mode: "token",
+      token
+    }
+  };
+
+  await mkdir(path.dirname(configPath), { recursive: true });
+  const temporaryPath = `${configPath}.agentos-${randomBytes(8).toString("hex")}.tmp`;
+  await writeFile(temporaryPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  await rename(temporaryPath, configPath);
+  return "Gateway local mode and token auth saved.";
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }
 
 async function resolveRuntimeAgentIdFromState() {
