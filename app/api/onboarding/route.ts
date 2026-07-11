@@ -68,6 +68,8 @@ const onboardingSchema = z.object({
 
 const docsUrl = OPENCLAW_INSTALL_DOCS_URL;
 const commandTimeoutMs = 10 * 60 * 1000;
+const cliPostInstallResolveTimeoutMs = 30_000;
+const cliPostInstallResolveIntervalMs = 500;
 const gatewayStatusTimeoutMs = 3_000;
 const fastStartReadyTimeoutMs = 240_000;
 const initialGatewayStartSettleTimeoutMs = 45_000;
@@ -1133,10 +1135,37 @@ async function installOpenClawCli(
     }
   }
 
-  try {
-    return await resolveOpenClawBin();
-  } catch {
-    return null;
+  await send({
+    type: "status",
+    phase: "installing-cli",
+    message: "Finalizing the OpenClaw CLI installation..."
+  });
+
+  return await waitForInstalledOpenClawBin();
+}
+
+async function waitForInstalledOpenClawBin() {
+  const deadline = Date.now() + cliPostInstallResolveTimeoutMs;
+
+  while (true) {
+    // On Windows the official installer can exit just before npm publishes the
+    // command shim. Resolve it only after that final file operation completes,
+    // rather than handing the next setup step a transient command path.
+    resetOpenClawBinCache();
+
+    if (process.platform === "win32") {
+      await repairOpenClawWindowsNpmShims().catch(() => null);
+    }
+
+    try {
+      return await resolveOpenClawBin();
+    } catch {
+      if (Date.now() >= deadline) {
+        return null;
+      }
+    }
+
+    await delay(cliPostInstallResolveIntervalMs);
   }
 }
 
