@@ -269,6 +269,8 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     ? resolveTaskBadgeLabel(null, activeFollowUpStatus, false, activeFollowUpStatus === "cancelled", Boolean(activeFollowUpOutput?.finalText || activeFollowUp?.summary))
     : visibleReviewStatus
     ? resolveTaskReviewBadgeLabel(visibleReviewStatus)
+    : operationPaused
+    ? "paused"
     : isRecurringOperation && !isLiveTask
     ? "scheduled"
     : missingFinalResponse
@@ -282,6 +284,8 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     ? resolveFollowUpFooterLabel(activeFollowUp, activeFollowUpRuntime, activeFollowUpOutput, activeFollowUpRuntimes)
     : visibleReviewStatus
     ? resolveTaskReviewFooterLabel(visibleReviewStatus)
+    : operationPaused
+    ? "schedule paused"
     : isRecurringOperation && !isLiveTask
     ? "scheduled · next run pending"
     : reviewPresentation.footerLabel && completedNeedsReview

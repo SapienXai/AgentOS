@@ -45,6 +45,22 @@ test("recurring jobs remain scheduled after an individual run succeeds", () => {
   assert.equal(job.status, "scheduled");
 });
 
+test("disabled recurring jobs are paused even when their last run succeeded", () => {
+  const job = normalizeOpenClawOperationJob({
+    jobId: "job-paused", name: "Paused", enabled: false, status: "ok", agentId: "ops",
+    schedule: { kind: "every", everyMs: 60_000 }, state: { lastRunStatus: "ok" }, payload: { message: "check" }
+  }, {}, true, true);
+  assert.equal(job.status, "paused");
+});
+
+test("completed one-time jobs remain completed after OpenClaw disables them", () => {
+  const job = normalizeOpenClawOperationJob({
+    jobId: "job-once", name: "One time", enabled: false, status: "ok", agentId: "ops",
+    schedule: { kind: "at", at: "2026-07-11T00:00:00.000Z" }, state: { lastRunStatus: "ok" }, payload: { message: "check" }
+  }, {}, true, true);
+  assert.equal(job.status, "completed");
+});
+
 test("operations normalizes retry, error, and recovery evidence from cron.runs", () => {
   const runs = normalizeOpenClawOperationRuns({ runs: [
     { runId: "run-error", status: "error", startedAtMs: 1_700_000_000_000, endedAtMs: 1_700_000_030_000, error: "network timeout" },
