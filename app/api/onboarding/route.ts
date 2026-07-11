@@ -69,7 +69,8 @@ const onboardingSchema = z.object({
 const docsUrl = OPENCLAW_INSTALL_DOCS_URL;
 const commandTimeoutMs = 10 * 60 * 1000;
 const gatewayStatusTimeoutMs = 3_000;
-const fastStartReadyTimeoutMs = 120_000;
+const fastStartReadyTimeoutMs = 240_000;
+const initialGatewayStartSettleTimeoutMs = 45_000;
 const readyTimeoutMs = 180_000;
 const postAuthRepairReadyTimeoutMs = 180_000;
 const readyPollIntervalMs = 250;
@@ -228,7 +229,13 @@ export async function POST(request: Request) {
     try {
       await send({
         type: "status",
-        phase: "detecting",
+        phase: intent === "install"
+          ? "detecting"
+          : intent === "prepare"
+            ? "installing-gateway"
+            : intent === "start"
+              ? "starting-gateway"
+              : "detecting",
         message: intent === "install"
           ? "Checking OpenClaw CLI..."
           : intent === "prepare"
@@ -336,32 +343,49 @@ export async function POST(request: Request) {
 
         await send({
           type: "status",
-          phase: "starting-gateway",
-          message: "Applying Gateway configuration and starting the service..."
+          phase: "verifying",
+          message: "Waiting for the Gateway service to finish starting..."
         });
 
-        const restartResult = await restartGatewayForOnboarding(openClawBin, send, {
-          timeoutMs: 30_000
-        });
-        appendOutput(restartResult);
+        let localGatewayStatus = await probeLocalGatewayStatus().catch(() => null);
+        const initialGatewayStatus = localGatewayStatus?.rpc?.ok
+          ? null
+          : await readGatewayStatus(openClawBin).catch(() => null);
 
-        if (restartResult.errorMessage || restartResult.timedOut || restartResult.code !== 0) {
-          await failGatewayCommand(
-            "starting-gateway",
-            "Gateway failed to start.",
-            openClawBin,
-            restartResult,
-            formatOpenClawCommand(openClawBin, ["gateway", "restart", "--force", "--json"])
-          );
-          return;
+        if (localGatewayStatus?.rpc?.ok !== true && !isGatewayServiceStopped(initialGatewayStatus)) {
+          localGatewayStatus = await waitForLocalGatewayReady(initialGatewayStartSettleTimeoutMs);
         }
 
-        await send({
-          type: "status",
-          phase: "verifying",
-          message: "Waiting for Gateway readiness..."
-        });
-        let localGatewayStatus = await waitForLocalGatewayReady();
+        if (localGatewayStatus?.rpc?.ok !== true) {
+          await send({
+            type: "status",
+            phase: "starting-gateway",
+            message: "Applying Gateway configuration and restarting the service..."
+          });
+
+          const restartResult = await restartGatewayForOnboarding(openClawBin, send, {
+            timeoutMs: 30_000
+          });
+          appendOutput(restartResult);
+
+          if (restartResult.errorMessage || restartResult.timedOut || restartResult.code !== 0) {
+            await failGatewayCommand(
+              "starting-gateway",
+              "Gateway failed to start.",
+              openClawBin,
+              restartResult,
+              formatOpenClawCommand(openClawBin, ["gateway", "restart", "--force", "--json"])
+            );
+            return;
+          }
+
+          await send({
+            type: "status",
+            phase: "verifying",
+            message: "Waiting for Gateway readiness..."
+          });
+          localGatewayStatus = await waitForLocalGatewayReady();
+        }
 
         if (localGatewayStatus?.rpc?.ok !== true) {
           const authoritativeStatus = await readGatewayStatus(openClawBin).catch(() => null);
@@ -1365,8 +1389,8 @@ async function waitForReadySnapshot(
   throw new Error(`Readiness check exceeded ${Math.round(timeoutMs / 1000)} seconds.`);
 }
 
-async function waitForLocalGatewayReady() {
-  const deadline = Date.now() + fastStartReadyTimeoutMs;
+async function waitForLocalGatewayReady(timeoutMs = fastStartReadyTimeoutMs) {
+  const deadline = Date.now() + timeoutMs;
   let latestStatus: GatewayStatusPayload | null = null;
 
   while (Date.now() < deadline) {
