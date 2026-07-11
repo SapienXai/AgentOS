@@ -1319,6 +1319,10 @@ async function writeLocalGatewayBootstrapConfig(token: string) {
   const gateway = asRecord(config.gateway);
   const auth = asRecord(gateway.auth);
   const browser = asRecord(config.browser);
+  const tools = asRecord(config.tools);
+  const web = asRecord(tools.web);
+  const webFetch = asRecord(web.fetch);
+  const webSearch = asRecord(web.search);
   config.gateway = {
     ...gateway,
     mode: "local",
@@ -1332,12 +1336,26 @@ async function writeLocalGatewayBootstrapConfig(token: string) {
     ...browser,
     enabled: false
   };
+  config.tools = {
+    ...tools,
+    web: {
+      ...web,
+      fetch: {
+        ...webFetch,
+        enabled: false
+      },
+      search: {
+        ...webSearch,
+        enabled: false
+      }
+    }
+  };
 
   await mkdir(path.dirname(configPath), { recursive: true });
   const temporaryPath = `${configPath}.agentos-${randomBytes(8).toString("hex")}.tmp`;
   await writeFile(temporaryPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   await rename(temporaryPath, configPath);
-  return "Gateway local mode, token auth, and disabled browser default saved.";
+  return "Gateway local mode, token auth, and disabled browser/web tool defaults saved.";
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
