@@ -819,6 +819,19 @@ test("system setup starts Gateway before requesting a full readiness snapshot", 
   assert.match(source, /const gatewayStatusTimeoutMs = 3_000;/);
 });
 
+test("system setup verifies the installed CLI before advancing to Gateway setup", () => {
+  const source = readFileSync(path.join(rootDir, "app/api/onboarding/route.ts"), "utf8");
+  const installFunctionStart = source.indexOf("async function installOpenClawCli(");
+  const installFunctionEnd = source.indexOf("async function startRegisteredWindowsGateway", installFunctionStart);
+  const installBody = source.slice(installFunctionStart, installFunctionEnd);
+
+  assert.match(installBody, /Finalizing the OpenClaw CLI installation/);
+  assert.match(installBody, /return await waitForInstalledOpenClawBin\(\);/);
+  assert.match(source, /const cliPostInstallResolveTimeoutMs = 30_000;/);
+  assert.match(source, /await repairOpenClawWindowsNpmShims\(\)\.catch\(\(\) => null\);/);
+  assert.match(source, /await delay\(cliPostInstallResolveIntervalMs\);/);
+});
+
 test("system setup restarts a stopped Gateway service before readiness polling", () => {
   const source = readFileSync(path.join(rootDir, "app/api/onboarding/route.ts"), "utf8");
   const postStartIndex = source.indexOf("const postStartGatewayStatus = await readGatewayStatus(openClawBin)");

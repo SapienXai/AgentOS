@@ -989,6 +989,22 @@ test("lightweight CLI status overrides a stale installed snapshot", () => {
   assert.equal(missingSteps.find((step) => step.id === "cli")?.state, "pending");
 });
 
+test("CLI remains active while the installer is still running", () => {
+  const snapshot = {
+    diagnostics: {
+      installed: true,
+      loaded: false,
+      rpcOk: false,
+      runtime: { stateWritable: false, sessionStoreWritable: false }
+    }
+  } as unknown as MissionControlSnapshot;
+
+  const steps = buildSystemSteps(snapshot, "installing-cli", { cliInstalled: true });
+
+  assert.equal(steps.find((step) => step.id === "cli")?.state, "current");
+  assert.equal(steps.find((step) => step.id === "cli")?.description, "Installing OpenClaw CLI.");
+});
+
 test("lightweight registration status completes the Gateway service step while stopped", () => {
   const snapshot = {
     diagnostics: {
