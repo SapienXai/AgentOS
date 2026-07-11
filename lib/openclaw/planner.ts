@@ -2113,24 +2113,15 @@ function buildAutomationProvisionInput(
     thinking: automation.thinking,
     timeoutSeconds: 120,
     schedule: automation.scheduleKind === "every"
-      ? {
-          kind: "every" as const,
-          value: automation.scheduleValue
-        }
-      : {
-          kind: "cron" as const,
-          value: automation.scheduleValue
-        },
+      ? { kind: "every" as const, value: automation.scheduleValue }
+      : { kind: "cron" as const, value: automation.scheduleValue },
     announce: null as { channel: string; target?: string | null } | null
   };
 
   if (automation.announce && automation.channelId) {
     const channel = plan.operations.channels.find((entry) => entry.id === automation.channelId);
     if (channel && channel.type !== "internal") {
-      provisioningInput.announce = {
-        channel: channel.type,
-        target: channel.target ?? null
-      };
+      provisioningInput.announce = { channel: channel.type, target: channel.target ?? null };
     }
   }
 

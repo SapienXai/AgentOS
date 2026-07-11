@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CalendarClock,
   ChevronDown,
   LoaderCircle,
   SendHorizontal,
@@ -17,6 +18,7 @@ import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import { cn } from "@/lib/utils";
 
 type ThinkingLevel = NonNullable<MissionSubmission["thinking"]>;
+type ScheduleMode = "now" | "cron" | "every" | "at";
 type AgentOption = { label: string; value: string };
 type ComposeIntent = {
   id: string;
@@ -43,6 +45,7 @@ type MissionDispatchStart = {
   submittedAt: number;
   abortController: AbortController;
 };
+type ScheduledOperationStart = { jobId: string; mission: string; agentId: string; workspaceId: string | null; scheduleLabel: string };
 type RecentPrompt = {
   id: string;
   mission: string;
@@ -69,7 +72,8 @@ export function CommandBar({
   onRefresh,
   onMissionDispatchStart,
   onMissionDispatchFailure,
-  onMissionResponse
+  onMissionResponse,
+  onOperationScheduled
 }: {
   snapshot: MissionControlSnapshot;
   surfaceTheme: "dark" | "light";
@@ -84,17 +88,28 @@ export function CommandBar({
   onMissionDispatchStart: (event: MissionDispatchStart) => void;
   onMissionDispatchFailure: (requestId: string, message: string) => void;
   onMissionResponse: (result: MissionResponse, context: { requestId: string }) => void;
+  onOperationScheduled?: (event: ScheduledOperationStart) => void;
 }) {
   const [mission, setMission] = useState("");
   const [targetAgentId, setTargetAgentId] = useState<string>("");
   const [thinking, setThinking] = useState<ThinkingLevel>("medium");
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("now");
+  const [cronExpression, setCronExpression] = useState("0 9 * * 1-5");
+  const [recurrence, setRecurrence] = useState<"weekdays" | "daily" | "weekly" | "custom">("weekdays");
+  const [recurrenceTime, setRecurrenceTime] = useState("09:00");
+  const [intervalMinutes, setIntervalMinutes] = useState("60");
+  const [runAt, setRunAt] = useState("");
+  const [timezone, setTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [isDesktopLayout, setIsDesktopLayout] = useState(false);
   const [isDockHovered, setIsDockHovered] = useState(false);
   const [isCompactAfterSubmit, setIsCompactAfterSubmit] = useState(false);
   const [composeSuggestion, setComposeSuggestion] = useState<ComposerSuggestion | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const commandBarRef = useRef<HTMLDivElement | null>(null);
+  const pointerDownInsideRef = useRef(false);
   const autoSelectionScopeRef = useRef<string | null>(null);
   const handledComposeIntentIdRef = useRef<string | null>(null);
   const skipDraftSaveRef = useRef(false);
@@ -120,6 +135,7 @@ export function CommandBar({
   const isComposerEmpty =
     !isComposerActive &&
     !isAdvancedOpen &&
+    !isScheduleOpen &&
     mission.trim().length === 0 &&
     composeSuggestion === null;
   const shouldForceCollapsedComposer =
@@ -400,6 +416,38 @@ export function CommandBar({
     }
   };
 
+  const submitTask = async () => {
+    if (!effectiveTargetAgentId || !mission.trim()) return;
+    if (scheduleMode === "now") {
+      await submitMission({ mission, agentId: effectiveTargetAgentId, workspaceId: activeWorkspaceId ?? undefined, thinking });
+      return;
+    }
+    const invalid = (scheduleMode === "cron" && !cronExpression.trim()) ||
+      (scheduleMode === "every" && (!Number.isFinite(Number(intervalMinutes)) || Number(intervalMinutes) < 1)) ||
+      (scheduleMode === "at" && Number.isNaN(Date.parse(runAt)));
+    if (invalid) { toast.error("Schedule is invalid."); return; }
+    const trigger = scheduleMode === "cron"
+      ? { kind: "cron", expression: buildRecurringCronExpression(recurrence, recurrenceTime, cronExpression), timezone }
+      : scheduleMode === "every"
+        ? { kind: "every", everyMs: Number(intervalMinutes) * 60_000 }
+        : { kind: "at", at: new Date(runAt).toISOString(), timezone };
+    setIsSubmitting(true);
+    try {
+      const response = await fetch("/api/operations", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create", name: mission.trim().slice(0, 120), prompt: mission.trim(), agentId: effectiveTargetAgentId, workspaceId: targetWorkspace?.id ?? activeWorkspaceId, thinking, trigger, safety: { concurrency: "forbid" } })
+      });
+      const result = await response.json() as { error?: string; jobId?: string };
+      if (!response.ok || result.error) throw new Error(result.error || "OpenClaw rejected the scheduled task.");
+      if (!result.jobId) throw new Error("OpenClaw did not return a scheduled job id.");
+      onOperationScheduled?.({ jobId: result.jobId, mission: mission.trim(), agentId: effectiveTargetAgentId, workspaceId: targetWorkspace?.id ?? activeWorkspaceId, scheduleLabel: formatScheduleButtonLabel({ mode: scheduleMode, recurrence, recurrenceTime, intervalMinutes, runAt }) });
+      toast.success("Scheduled task created in OpenClaw.");
+      setMission(""); setIsAdvancedOpen(false); setIsScheduleOpen(false); setIsCompactAfterSubmit(true); await onRefresh();
+    } catch (error) {
+      toast.error("Scheduled task was not created.", { description: error instanceof Error ? error.message : "Unknown error." });
+    } finally { setIsSubmitting(false); }
+  };
+
   const applyMissionSnippet = (
     snippet: string,
     options: {
@@ -424,21 +472,10 @@ export function CommandBar({
     });
   };
 
-  const clearCurrentDraft = () => {
-    setIsCompactAfterSubmit(false);
-    setMission("");
-    setThinking("medium");
-    setComposeSuggestion(null);
-    skipDraftSaveRef.current = true;
-
-    if (draftScopeKey && typeof globalThis.localStorage !== "undefined") {
-      globalThis.localStorage.removeItem(draftScopeKey);
-    }
-  };
-
   return (
     <>
       <div
+        ref={commandBarRef}
         className={cn(
           "mx-auto w-full transition-[width,max-width] duration-300",
           shouldRenderCollapsedComposer && "max-w-[360px]",
@@ -451,6 +488,24 @@ export function CommandBar({
         }}
         onMouseLeave={() => {
           if (isDesktopLayout && !isSubmitting) {
+            setIsDockHovered(false);
+          }
+        }}
+        onPointerDownCapture={() => {
+          pointerDownInsideRef.current = true;
+          queueMicrotask(() => { pointerDownInsideRef.current = false; });
+        }}
+        onFocusCapture={() => {
+          setIsCompactAfterSubmit(false);
+          onComposerActiveChange?.(true);
+        }}
+        onBlurCapture={(event) => {
+          const nextTarget = event.relatedTarget;
+          if (pointerDownInsideRef.current || (nextTarget instanceof Node && commandBarRef.current?.contains(nextTarget))) return;
+          setIsAdvancedOpen(false);
+          setIsScheduleOpen(false);
+          onComposerActiveChange?.(false);
+          if (!isDesktopLayout && mission.trim().length === 0 && !isAdvancedOpen && !isScheduleOpen && composeSuggestion === null) {
             setIsDockHovered(false);
           }
         }}
@@ -585,20 +640,6 @@ export function CommandBar({
                     ? "border-[#cda98f] bg-white shadow-[0_0_0_3px_rgba(185,123,83,0.10)]"
                     : "border-rose-200/28 bg-white/[0.055] shadow-[0_0_0_3px_rgba(244,63,94,0.08)]")
               )}
-              onFocusCapture={() => {
-                setIsCompactAfterSubmit(false);
-                onComposerActiveChange?.(true);
-              }}
-              onBlurCapture={(event) => {
-                const nextTarget = event.relatedTarget;
-                if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
-                  onComposerActiveChange?.(false);
-
-                  if (!isDesktopLayout && mission.trim().length === 0 && !isAdvancedOpen && composeSuggestion === null) {
-                    setIsDockHovered(false);
-                  }
-                }
-              }}
             >
               <div className="flex items-center gap-2 px-2.5 pb-0.5 pt-2">
                 {selectedAgent ? (
@@ -631,12 +672,7 @@ export function CommandBar({
                         return;
                       }
 
-                      await submitMission({
-                        mission,
-                        agentId: effectiveTargetAgentId,
-                        workspaceId: activeWorkspaceId ?? undefined,
-                        thinking
-                      });
+                      await submitTask();
                     }
                   }}
                   placeholder={dynamicPlaceholder}
@@ -648,22 +684,29 @@ export function CommandBar({
               </div>
 
               <div className="flex items-center justify-between gap-2 px-2.5 pb-2 pt-1">
-                <button
-                  type="button"
-                  aria-label="Composer settings"
-                  title="Thinking level and draft controls"
-                  onClick={() => setIsAdvancedOpen((current) => !current)}
-                  className={cn(
-                    "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 text-[10px] font-medium transition-colors",
-                    isLightTheme
-                      ? "border-[#e7d9cf] text-[#806856] hover:border-[#cfad96] hover:bg-[#f8f0ea]"
-                      : "border-white/[0.08] text-slate-400 hover:border-white/[0.14] hover:bg-white/[0.06] hover:text-slate-200"
-                  )}
-                >
-                  <SlidersHorizontal className="h-3 w-3" />
-                  {thinking === "medium" ? "Balanced" : `Thinking: ${thinking}`}
-                </button>
-                <span className={cn("text-[10px]", isLightTheme ? "text-[#a18978]" : "text-slate-500")}>⌘↵ to send</span>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <button
+                    type="button"
+                    aria-label="Thinking level"
+                    title="Choose thinking level"
+                    onClick={() => { setIsAdvancedOpen((current) => !current); setIsScheduleOpen(false); }}
+                    className={cn("inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 text-[10px] font-medium transition-colors", isLightTheme ? "border-[#e7d9cf] text-[#806856] hover:border-[#cfad96] hover:bg-[#f8f0ea]" : "border-white/[0.08] text-slate-400 hover:border-white/[0.14] hover:bg-white/[0.06] hover:text-slate-200")}
+                  >
+                    <SlidersHorizontal className="h-3 w-3" />
+                    {thinking === "medium" ? "Balanced" : `Thinking: ${thinking}`}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Task schedule"
+                    title="Choose when this task runs"
+                    onClick={() => { setIsScheduleOpen((current) => !current); setIsAdvancedOpen(false); }}
+                    className={cn("inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 text-[10px] font-medium transition-colors", scheduleMode !== "now" && (isLightTheme ? "border-[#cfad96] bg-[#f8f0ea] text-[#654735]" : "border-cyan-300/25 bg-cyan-300/[0.08] text-cyan-100"), isLightTheme ? "border-[#e7d9cf] text-[#806856] hover:border-[#cfad96] hover:bg-[#f8f0ea]" : "border-white/[0.08] text-slate-400 hover:border-white/[0.14] hover:bg-white/[0.06] hover:text-slate-200")}
+                  >
+                    <CalendarClock className="h-3 w-3" />
+                    {formatScheduleButtonLabel({ mode: scheduleMode, recurrence, recurrenceTime, intervalMinutes, runAt })}
+                  </button>
+                </div>
+                <span className={cn("hidden text-[10px] sm:inline", isLightTheme ? "text-[#a18978]" : "text-slate-500")}>⌘↵ to send</span>
                 <button
                   type="button"
                   aria-label="Create task"
@@ -678,12 +721,7 @@ export function CommandBar({
                       return;
                     }
 
-                    await submitMission({
-                      mission,
-                      agentId: effectiveTargetAgentId,
-                      workspaceId: activeWorkspaceId ?? undefined,
-                      thinking
-                    });
+                    await submitTask();
                   }}
                 >
                   {isSubmitting ? (
@@ -701,40 +739,20 @@ export function CommandBar({
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -6 }}
-                  className="mt-1.5 flex justify-end"
+                  className="mt-1.5"
                 >
                   <div className={cn(
-                    "w-full max-w-[208px] rounded-xl border p-2.5",
+                    "flex flex-wrap items-center gap-2 rounded-[10px] border px-2.5 py-2",
                     isLightTheme
-                      ? "border-[#dfcfc3] bg-[#fffcf9] shadow-[0_14px_32px_rgba(116,79,54,0.12)]"
-                      : "border-white/[0.08] bg-[#0d1420]/96 shadow-[0_16px_32px_rgba(0,0,0,0.26)]"
+                      ? "border-[#dfcfc3] bg-[#fffcf9]"
+                      : "border-white/[0.08] bg-white/[0.025]"
                   )}>
-                    <p className={cn("text-[10px] font-medium", isLightTheme ? "text-[#806856]" : "text-slate-300")}>Thinking</p>
-                    <div className="mt-2">
-                      <InlineSelectChip
-                        ariaLabel="Select thinking level"
-                        value={thinking}
-                        options={[
-                          { label: "off", value: "off" },
-                          { label: "minimal", value: "minimal" },
-                          { label: "low", value: "low" },
-                          { label: "medium", value: "medium" },
-                          { label: "high", value: "high" }
-                        ]}
-                        onChange={(value) => setThinking(value as ThinkingLevel)}
-                        surfaceTheme={surfaceTheme}
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      className={cn("mt-2.5 text-[11px] transition-colors", isLightTheme ? "text-[#9b8373] hover:text-[#332720]" : "text-slate-400 hover:text-white")}
-                      onClick={clearCurrentDraft}
-                    >
-                      Clear draft
-                    </button>
+                    <span className={cn("mr-1 text-[10px] font-semibold", isLightTheme ? "text-[#806856]" : "text-slate-300")}>Thinking</span>
+                    {(["off", "minimal", "low", "medium", "high"] as ThinkingLevel[]).map((level) => <button key={level} type="button" onClick={() => setThinking(level)} className={cn("h-7 rounded-md border px-2 text-[10px] font-medium transition-colors", thinking === level ? "border-primary/35 bg-primary/10 text-primary" : isLightTheme ? "border-[#e7d9cf] text-[#806856] hover:bg-[#f8f0ea]" : "border-white/[0.08] text-slate-400 hover:bg-white/[0.06]")}>{level === "medium" ? "Balanced" : level}</button>)}
                   </div>
                 </motion.div>
               ) : null}
+              {isScheduleOpen ? <SchedulePopover mode={scheduleMode} recurrence={recurrence} recurrenceTime={recurrenceTime} cronExpression={cronExpression} timezone={timezone} intervalMinutes={intervalMinutes} runAt={runAt} surfaceTheme={surfaceTheme} onModeChange={setScheduleMode} onRecurrenceChange={setRecurrence} onRecurrenceTimeChange={setRecurrenceTime} onCronChange={setCronExpression} onTimezoneChange={setTimezone} onIntervalChange={setIntervalMinutes} onRunAtChange={setRunAt} /> : null}
             </AnimatePresence>
           </motion.div>
         )}
@@ -743,6 +761,38 @@ export function CommandBar({
 
     </>
   );
+}
+
+function SchedulePopover({ mode, recurrence, recurrenceTime, cronExpression, timezone, intervalMinutes, runAt, surfaceTheme, onModeChange, onRecurrenceChange, onRecurrenceTimeChange, onCronChange, onTimezoneChange, onIntervalChange, onRunAtChange }: {
+  mode: ScheduleMode; recurrence: "weekdays" | "daily" | "weekly" | "custom"; recurrenceTime: string; cronExpression: string; timezone: string; intervalMinutes: string; runAt: string; surfaceTheme: "dark" | "light";
+  onModeChange: (value: ScheduleMode) => void; onRecurrenceChange: (value: "weekdays" | "daily" | "weekly" | "custom") => void; onRecurrenceTimeChange: (value: string) => void; onCronChange: (value: string) => void; onTimezoneChange: (value: string) => void; onIntervalChange: (value: string) => void; onRunAtChange: (value: string) => void;
+}) {
+  const isLight = surfaceTheme === "light";
+  const inputClass = cn("h-7 rounded-md border bg-transparent px-2 text-[10px] outline-none focus:ring-2 focus:ring-primary/20", isLight ? "border-[#e7d9cf] text-[#46352b]" : "border-white/[0.1] text-slate-100");
+  const optionClass = isLight ? "border-[#e7d9cf] text-[#806856] hover:bg-[#f8f0ea]" : "border-white/[0.08] text-slate-400 hover:bg-white/[0.06]";
+  return <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className={cn("mt-1.5 flex flex-wrap items-center gap-1.5 rounded-[10px] border px-2.5 py-2", isLight ? "border-[#dfcfc3] bg-[#fffcf9]" : "border-white/[0.08] bg-white/[0.025]")}><span className={cn("mr-1 text-[10px] font-semibold", isLight ? "text-[#806856]" : "text-slate-300")}>Schedule</span><ScheduleChoice label="Now" active={mode === "now"} onClick={() => onModeChange("now")} surfaceTheme={surfaceTheme} /><ScheduleChoice label="Once" active={mode === "at"} onClick={() => onModeChange("at")} surfaceTheme={surfaceTheme} /><ScheduleChoice label="Recurring" active={mode === "cron"} onClick={() => onModeChange("cron")} surfaceTheme={surfaceTheme} /><ScheduleChoice label="Interval" active={mode === "every"} onClick={() => onModeChange("every")} surfaceTheme={surfaceTheme} />{mode === "cron" ? <><span className={cn("ml-1 text-[10px]", isLight ? "text-[#9b8373]" : "text-slate-500")}>Repeat</span>{([ ["Weekdays", "weekdays"], ["Daily", "daily"], ["Monday", "weekly"], ["Custom", "custom"] ] as const).map(([label, value]) => <button key={value} type="button" onClick={() => onRecurrenceChange(value)} className={cn("h-7 rounded-md border px-2 text-[10px]", recurrence === value ? "border-primary/35 bg-primary/10 text-primary" : optionClass)}>{label}</button>)}{recurrence === "custom" ? <input aria-label="Cron expression" value={cronExpression} onChange={(event) => onCronChange(event.target.value)} className={cn(inputClass, "w-[112px]")} /> : <input aria-label="Recurring time" type="time" value={recurrenceTime} onChange={(event) => onRecurrenceTimeChange(event.target.value)} className={inputClass} />}<input aria-label="Schedule timezone" value={timezone} onChange={(event) => onTimezoneChange(event.target.value)} className={cn(inputClass, "w-[132px]")} /></> : null}{mode === "every" ? <><span className={cn("ml-1 text-[10px]", isLight ? "text-[#9b8373]" : "text-slate-500")}>Every</span><input aria-label="Interval minutes" type="number" min="1" value={intervalMinutes} onChange={(event) => onIntervalChange(event.target.value)} className={cn(inputClass, "w-16")} /><span className={cn("text-[10px]", isLight ? "text-[#9b8373]" : "text-slate-500")}>minutes</span></> : null}{mode === "at" ? <><span className={cn("ml-1 text-[10px]", isLight ? "text-[#9b8373]" : "text-slate-500")}>Run at</span><input aria-label="Run at" type="datetime-local" value={runAt} onChange={(event) => onRunAtChange(event.target.value)} className={inputClass} /></> : null}{mode === "now" ? <span className={cn("text-[10px]", isLight ? "text-[#9b8373]" : "text-slate-500")}>Dispatches immediately</span> : null}</motion.div>;
+}
+
+function ScheduleChoice({ label, active, onClick, surfaceTheme }: { label: string; active: boolean; onClick: () => void; surfaceTheme: "dark" | "light" }) {
+  return <button type="button" onClick={onClick} className={cn("h-7 rounded-md border px-2 text-[10px] font-medium transition-colors", active ? "border-primary/35 bg-primary/10 text-primary" : surfaceTheme === "light" ? "border-[#e7d9cf] text-[#806856] hover:bg-[#f8f0ea]" : "border-white/[0.08] text-slate-400 hover:bg-white/[0.06] hover:text-slate-200")}>{label}</button>;
+}
+
+function buildRecurringCronExpression(
+  recurrence: "weekdays" | "daily" | "weekly" | "custom",
+  time: string,
+  customExpression: string
+) {
+  if (recurrence === "custom") return customExpression;
+  const [hour = "9", minute = "0"] = time.split(":");
+  return recurrence === "daily" ? `${Number(minute)} ${Number(hour)} * * *` : recurrence === "weekly" ? `${Number(minute)} ${Number(hour)} * * 1` : `${Number(minute)} ${Number(hour)} * * 1-5`;
+}
+
+function formatScheduleButtonLabel(input: { mode: ScheduleMode; recurrence: "weekdays" | "daily" | "weekly" | "custom"; recurrenceTime: string; intervalMinutes: string; runAt: string }) {
+  if (input.mode === "now") return "Schedule";
+  if (input.mode === "every") return `Every ${input.intervalMinutes}m`;
+  if (input.mode === "at") return input.runAt ? `Once · ${new Date(input.runAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : "One time";
+  const label = input.recurrence === "daily" ? "Daily" : input.recurrence === "weekly" ? "Monday" : input.recurrence === "custom" ? "Custom" : "Weekdays";
+  return `${label} · ${input.recurrenceTime}`;
 }
 
 function isMissingTranscriptActivityMessage(value: string | null | undefined) {
@@ -794,45 +844,6 @@ function AgentSelectorChip({
       {isInteractive ? (
         <ChevronDown className={cn("pointer-events-none absolute right-2.5 h-3 w-3", surfaceTheme === "light" ? "text-[#9a806e]" : "text-slate-400")} />
       ) : null}
-    </div>
-  );
-}
-
-function InlineSelectChip({
-  ariaLabel,
-  value,
-  options,
-  onChange,
-  surfaceTheme
-}: {
-  ariaLabel: string;
-  value: string;
-  options: AgentOption[];
-  onChange: (value: string) => void;
-  surfaceTheme: "dark" | "light";
-}) {
-  const selected = options.find((option) => option.value === value) ?? options[0];
-
-  return (
-    <div className={cn(
-      "relative inline-flex w-full items-center rounded-lg border",
-      surfaceTheme === "light"
-        ? "border-[#e3d3c8] bg-[#faf4ee] text-[#674f3f]"
-        : "border-white/[0.08] bg-white/[0.04] text-slate-100"
-    )}>
-      <select
-        aria-label={ariaLabel}
-        value={selected?.value ?? ""}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-8 w-full appearance-none bg-transparent pl-2.5 pr-8 text-[11px] outline-none"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <ChevronDown className={cn("pointer-events-none absolute right-2.5 h-3 w-3", surfaceTheme === "light" ? "text-[#9a806e]" : "text-slate-400")} />
     </div>
   );
 }

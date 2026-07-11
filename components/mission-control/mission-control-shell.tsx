@@ -64,6 +64,7 @@ import {
 import type { MissionControlShellSettingsPanelProps } from "@/components/mission-control/mission-control-shell.settings";
 import {
   createOptimisticMissionTaskRecord,
+  createOptimisticScheduledTaskRecord,
   findReplacementTaskForOptimisticTask,
   buildLaunchpadWorkspaceHandoffProgress,
   hasAgentOSWorkspaceSetup,
@@ -4290,6 +4291,13 @@ export function MissionControlShell({
                     : entry
                 )
               );
+            }}
+            onOperationScheduled={(event) => {
+              const optimisticTask = createOptimisticScheduledTaskRecord({ ...event, snapshot });
+              setOptimisticMissionTasks((current) => [optimisticTask, ...current.filter((entry) => entry.operationJobId !== event.jobId)]);
+              if (event.workspaceId) setActiveWorkspaceId(event.workspaceId);
+              selectNode(optimisticTask.task.id);
+              setIsInspectorOpen(true);
             }}
             onMissionResponse={(result, context) => {
               missionDispatchAbortControllersRef.current.delete(context.requestId);

@@ -62,6 +62,8 @@ import {
   type StatusPayload
 } from "@/lib/openclaw/client/gateway-client";
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
+import { mergeOperationTaskProjections } from "@/lib/openclaw/domains/operation-task-projection";
+import { getOperationsSnapshot } from "@/lib/agentos/application/operations-service";
 import { buildAgentInboxItems } from "@/lib/openclaw/domains/agent-inbox";
 import {
   type SessionsPayload
@@ -466,8 +468,13 @@ async function loadMissionControlSnapshots({
       isWorkspaceHidden: (workspace) => Boolean(manifestByWorkspace.get(workspace.path)?.hidden)
     });
 
-    const tasks = buildTaskRecords(runtimes, agents);
-    const visibleTasks = buildTaskRecords(visibleRuntimes, visibleAgents);
+    const [runtimeTasks, visibleRuntimeTasks, operations] = await Promise.all([
+      Promise.resolve(buildTaskRecords(runtimes, agents)),
+      Promise.resolve(buildTaskRecords(visibleRuntimes, visibleAgents)),
+      getOperationsSnapshot()
+    ]);
+    const tasks = mergeOperationTaskProjections(operations, runtimeTasks, agents);
+    const visibleTasks = mergeOperationTaskProjections(operations, visibleRuntimeTasks, visibleAgents);
     const agentInbox = buildAgentInboxItems(tasks, runtimes, agents);
     const visibleAgentInbox = buildAgentInboxItems(visibleTasks, visibleRuntimes, visibleAgents);
     const runtimeDiagnostics = await runtimeDiagnosticsPromise;
