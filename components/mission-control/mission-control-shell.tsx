@@ -1892,7 +1892,13 @@ export function MissionControlShell({
     }
     setOnboardingStage("system");
     setOnboardingRunState("running");
-    setOnboardingPhase("detecting");
+    setOnboardingPhase(
+      setupIntent === "install"
+        ? "detecting"
+        : setupIntent === "prepare"
+          ? "installing-gateway"
+          : "starting-gateway"
+    );
     setOnboardingStatusMessage(initialStatusMessage);
     setOnboardingResultMessage(null);
     setOnboardingManualCommand(null);
