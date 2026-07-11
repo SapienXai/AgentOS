@@ -119,15 +119,7 @@ export async function readLocalGatewayConfiguration(options: {
   homeDir?: string;
   env?: NodeJS.ProcessEnv;
 } = {}) {
-  const env = options.env ?? process.env;
-  const stateDirOverride = env.OPENCLAW_STATE_DIR?.trim();
-  const stateDir = stateDirOverride
-    ? stateDirOverride.startsWith("~")
-      ? path.join(options.homeDir ?? os.homedir(), stateDirOverride.slice(1))
-      : stateDirOverride
-    : path.join(options.homeDir ?? os.homedir(), ".openclaw");
-  const configPath = env.OPENCLAW_CONFIG_PATH?.trim()
-    || path.join(stateDir, "openclaw.json");
+  const configPath = resolveLocalGatewayConfigPath(options);
 
   try {
     const config = JSON.parse(await readFile(configPath, "utf8")) as {
@@ -141,6 +133,20 @@ export async function readLocalGatewayConfiguration(options: {
   } catch {
     return { modeLocal: false, authTokenMode: false, hasToken: false };
   }
+}
+
+export function resolveLocalGatewayConfigPath(options: {
+  homeDir?: string;
+  env?: NodeJS.ProcessEnv;
+} = {}) {
+  const env = options.env ?? process.env;
+  const stateDirOverride = env.OPENCLAW_STATE_DIR?.trim();
+  const stateDir = stateDirOverride
+    ? stateDirOverride.startsWith("~")
+      ? path.join(options.homeDir ?? os.homedir(), stateDirOverride.slice(1))
+      : stateDirOverride
+    : path.join(options.homeDir ?? os.homedir(), ".openclaw");
+  return env.OPENCLAW_CONFIG_PATH?.trim() || path.join(stateDir, "openclaw.json");
 }
 
 async function probeGatewayReadyEndpoint(port: number, timeoutMs: number): Promise<boolean | null> {

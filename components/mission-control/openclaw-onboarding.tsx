@@ -216,11 +216,23 @@ export function OpenClawOnboarding({
     visualStage === "system" &&
     !onboardingSystemReady &&
     (cliInstalled == null || (gatewayReachable == null && gatewayRegistered == null));
-  const completedProgressUnits =
+  const systemProgressUnits =
     systemSteps.filter((step) => step.state === "complete").length +
-    (onboardingModelReady ? 1 : 0) +
-    (hasWorkspaceSetup || showReadyState ? 1 : 0);
-  const progressPercent = Math.max(0, Math.min(100, Math.round((completedProgressUnits / 5) * 100)));
+    (systemSteps.some((step) => step.state === "current") ? 0.5 : 0);
+  const modelProgressUnits = onboardingModelReady
+    ? 1
+    : visualStage === "models" && modelRun.runState === "running"
+      ? 0.5
+      : 0;
+  const workspaceProgressUnits = hasWorkspaceSetup || showReadyState
+    ? 1
+    : launchpadCreateRunState === "running"
+      ? 0.5
+      : 0;
+  const progressPercent = Math.max(
+    0,
+    Math.min(100, Math.round(((systemProgressUnits + modelProgressUnits + workspaceProgressUnits) / 5) * 100))
+  );
   const activeStepNumber = visualStage === "finish" ? 3 : visualStage === "models" ? 2 : 1;
 
   useEffect(() => {

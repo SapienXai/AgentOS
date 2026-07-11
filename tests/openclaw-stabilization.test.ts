@@ -1006,7 +1006,7 @@ test("lightweight registration status completes the Gateway service step while s
   });
 
   assert.equal(steps.find((step) => step.id === "gateway")?.state, "complete");
-  assert.equal(steps.find((step) => step.id === "gateway")?.description, "Gateway is already registered.");
+  assert.equal(steps.find((step) => step.id === "gateway")?.description, "Registered and configured.");
   assert.equal(steps.find((step) => step.id === "runtime")?.state, "current");
 });
 
@@ -1189,7 +1189,7 @@ test("lightweight RPC and runtime probes complete the Runtime step", () => {
   assert.equal(steps.find((step) => step.id === "runtime")?.state, "complete");
   assert.equal(
     steps.find((step) => step.id === "runtime")?.description,
-    "RPC, state, and session store are ready."
+    "RPC and runtime storage are ready."
   );
 });
 
