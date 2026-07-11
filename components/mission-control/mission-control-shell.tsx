@@ -1863,12 +1863,16 @@ export function MissionControlShell({
     }
   };
 
-  const runOpenClawOnboarding = async () => {
-    const setupIntent = onboardingAction.label === "Install OpenClaw"
-      ? "install"
-      : onboardingAction.label === "Prepare local gateway"
-        ? "prepare"
-        : "start";
+  const runOpenClawOnboarding = async (
+    requestedIntent?: "install" | "prepare" | "start"
+  ): Promise<void> => {
+    const setupIntent = requestedIntent ?? (
+      onboardingAction.label === "Install OpenClaw"
+        ? "install"
+        : onboardingAction.label === "Prepare local gateway"
+          ? "prepare"
+          : "start"
+    );
     setIsOnboardingDismissed(false);
     resetOnboardingProgressState();
     setOnboardingStage("system");
@@ -1904,6 +1908,7 @@ export function MissionControlShell({
       const decoder = new TextDecoder();
       let buffer = "";
       let sawDone = false;
+      let nextSetupIntent: "prepare" | "start" | null = null;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -1932,6 +1937,13 @@ export function MissionControlShell({
             } else {
               sawDone = true;
               const stepCompleted = event.ok && event.phase !== "ready";
+              if (stepCompleted) {
+                nextSetupIntent = setupIntent === "install"
+                  ? "prepare"
+                  : setupIntent === "prepare"
+                    ? "start"
+                    : null;
+              }
               setOnboardingPhase(event.phase);
               setOnboardingResultMessage(event.message);
               setOnboardingManualCommand(event.manualCommand ?? null);
@@ -1983,6 +1995,13 @@ export function MissionControlShell({
         if (event.type === "done") {
           sawDone = true;
           const stepCompleted = event.ok && event.phase !== "ready";
+          if (stepCompleted) {
+            nextSetupIntent = setupIntent === "install"
+              ? "prepare"
+              : setupIntent === "prepare"
+                ? "start"
+                : null;
+          }
           setOnboardingPhase(event.phase);
           setOnboardingResultMessage(event.message);
           setOnboardingManualCommand(event.manualCommand ?? null);
@@ -2010,6 +2029,10 @@ export function MissionControlShell({
 
       if (!sawDone) {
         throw new Error("OpenClaw onboarding stream ended unexpectedly.");
+      }
+
+      if (nextSetupIntent) {
+        await runOpenClawOnboarding(nextSetupIntent);
       }
     } catch (error) {
       setOnboardingRunState("error");
