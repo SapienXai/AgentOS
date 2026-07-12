@@ -339,8 +339,11 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   private cliFallbackDisabledError(operation: string, error: unknown) {
     this.recordNativeFailure(operation, error);
     const normalized = normalizeClientError(error);
+    const recovery = normalized.kind === "unsupported"
+      ? `Update OpenClaw to a version that advertises the native ${operation} Gateway method.`
+      : resolveGatewayRecoveryMessage(normalized);
     return new OpenClawGatewayClientError(
-      `${normalized.message} Gateway-native operation failed; CLI fallback disabled for this operation. Recovery: ${resolveGatewayRecoveryMessage(normalized)}`,
+      `${normalized.message} Gateway-native operation failed; CLI fallback disabled for this operation. Recovery: ${recovery}`,
       normalized.kind,
       { cause: error }
     );
@@ -775,33 +778,15 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   }
 
   getToolsCatalog(input: OpenClawToolsCatalogInput = {}, options: OpenClawCommandOptions = {}) {
-    return this.gatewayFirst<OpenClawToolsCatalogPayload>(
-      "tools.catalog",
-      { ...input },
-      options,
-      (payload) => parseObjectGatewayPayload<OpenClawToolsCatalogPayload>("tools.catalog", payload),
-      () => this.fallback.getToolsCatalog(input, options)
-    );
+    return this.gatewaySurfaceCall<OpenClawToolsCatalogPayload>("tools", "tools.catalog", { ...input }, options);
   }
 
-  getEffectiveTools(input: OpenClawToolsEffectiveInput = {}, options: OpenClawCommandOptions = {}) {
-    return this.gatewayFirst<OpenClawToolsEffectivePayload>(
-      "tools.effective",
-      { ...input },
-      options,
-      (payload) => parseObjectGatewayPayload<OpenClawToolsEffectivePayload>("tools.effective", payload),
-      () => this.fallback.getEffectiveTools(input, options)
-    );
+  getEffectiveTools(input: OpenClawToolsEffectiveInput, options: OpenClawCommandOptions = {}) {
+    return this.gatewaySurfaceCall<OpenClawToolsEffectivePayload>("tools", "tools.effective", { ...input }, options);
   }
 
   invokeTool(input: OpenClawToolInvokeInput, options: OpenClawCommandOptions = {}) {
-    return this.gatewayFirst<OpenClawToolInvokePayload>(
-      "tools.invoke",
-      { ...input },
-      options,
-      (payload) => parseObjectGatewayPayload<OpenClawToolInvokePayload>("tools.invoke", payload),
-      () => this.fallback.invokeTool(input, options)
-    );
+    return this.gatewaySurfaceCall<OpenClawToolInvokePayload>("tools", "tools.invoke", { ...input }, options, "mutation");
   }
 
   listCommands(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
@@ -1756,7 +1741,14 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     options: OpenClawCommandOptions = {},
     safety: OpenClawGatewayRequestPolicy["safety"] = "read"
   ): Promise<TPayload> {
+    const operation = getOpenClawGatewayCompatibilityOperation(operationId);
     if (this.options.forceCli || options.forceCli || isCliGatewayClientForcedByEnv()) {
+      if (operation.fallbackAllowed === false) {
+        throw new OpenClawGatewayClientError(
+          `${operation.label} requires native OpenClaw Gateway support; CLI fallback is disabled for this operation.`,
+          "unsupported"
+        );
+      }
       return this.fallback.call<TPayload>(method, params, options);
     }
 
@@ -1771,7 +1763,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       return parseObjectGatewayPayload<TPayload>(method, payload);
     } catch (error) {
       this.options.onNativeFailure?.(error, operationId);
-      throw this.cliFallbackDisabledError(operationId, error);
+      throw this.cliFallbackDisabledError(method, error);
     }
   }
 

@@ -672,7 +672,7 @@ test("Windows OpenClaw commands request a hidden Gateway task launcher", () => {
     return;
   }
 
-  const env = buildOpenClawSpawnEnv({});
+  const env = buildOpenClawSpawnEnv({ NODE_ENV: "test" });
 
   assert.equal(env.OPENCLAW_WINDOWS_TASK_HIDDEN_LAUNCHER, "1");
   assert.match(env.NODE_OPTIONS ?? "", /openclaw-windows-hide\.cjs/);

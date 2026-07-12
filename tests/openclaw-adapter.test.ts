@@ -131,15 +131,15 @@ function createMockGatewayClient(overrides: Partial<OpenClawGatewayClient> = {})
     },
     async getToolsCatalog(_input, options?: OpenClawCommandOptions) {
       calls.push({ method: "getToolsCatalog", options });
-      return { tools: [] };
+      return { agentId: "agent-1", profiles: [], groups: [] };
     },
     async getEffectiveTools(_input, options?: OpenClawCommandOptions) {
       calls.push({ method: "getEffectiveTools", options });
-      return { tools: [] };
+      return { agentId: "agent-1", profile: "full", groups: [] };
     },
     async invokeTool(input, options?: OpenClawCommandOptions) {
-      calls.push({ method: "invokeTool", action: input.toolName, options });
-      return { ok: true };
+      calls.push({ method: "invokeTool", action: input.name, options });
+      return { ok: true, toolName: input.name };
     },
     async subscribeRuntimeEvents(_input, _callbacks, options?: OpenClawCommandOptions) {
       calls.push({ method: "subscribeRuntimeEvents", options });
@@ -531,8 +531,8 @@ test("OpenClaw adapter exposes catalog, config, agent turn, and probe methods", 
   await adapter.deleteArtifact({ artifactId: "artifact-1" }, { timeoutMs: 4 });
   await adapter.getRuntimeSnapshot({ includeTasks: true }, { timeoutMs: 4 });
   await adapter.getToolsCatalog({ agentId: "agent-1" }, { timeoutMs: 4 });
-  await adapter.getEffectiveTools({ agentId: "agent-1" }, { timeoutMs: 4 });
-  await adapter.invokeTool({ toolName: "shell", input: { command: "pwd" } }, { timeoutMs: 4 });
+  await adapter.getEffectiveTools({ agentId: "agent-1", sessionKey: "agent:agent-1:main" }, { timeoutMs: 4 });
+  await adapter.invokeTool({ name: "shell", args: { command: "pwd" } }, { timeoutMs: 4 });
   const subscription = await adapter.subscribeRuntimeEvents(
     { includeSessions: false, includeTasks: true },
     { onEvent: () => {} },

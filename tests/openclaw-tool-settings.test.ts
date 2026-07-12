@@ -28,7 +28,7 @@ test("browser tool settings preserve unrelated OpenClaw config", async (context)
     }
   }), "utf8");
 
-  assert.deepEqual(await readOpenClawToolSettings({ homeDir, env: {} }), {
+  assert.deepEqual(await readOpenClawToolSettings({ homeDir, env: { NODE_ENV: "test" } }), {
     browserEnabled: true,
     webFetchEnabled: true,
     webSearchEnabled: true,
@@ -38,7 +38,7 @@ test("browser tool settings preserve unrelated OpenClaw config", async (context)
     browserEnabled: false,
     webFetchEnabled: false,
     webSearchEnabled: false
-  }, { homeDir, env: {} });
+  }, { homeDir, env: { NODE_ENV: "test" } });
 
   const config = JSON.parse(await readFile(configPath, "utf8")) as {
     gateway: { mode: string };
@@ -68,7 +68,7 @@ test("missing browser config reads as disabled", async (context) => {
   const homeDir = await mkdtemp(path.join(os.tmpdir(), "agentos-tool-settings-empty-"));
   context.after(() => rm(homeDir, { recursive: true, force: true }));
 
-  const settings = await readOpenClawToolSettings({ homeDir, env: {} });
+  const settings = await readOpenClawToolSettings({ homeDir, env: { NODE_ENV: "test" } });
   assert.equal(settings.browserEnabled, false);
   assert.equal(settings.webFetchEnabled, false);
   assert.equal(settings.webSearchEnabled, false);

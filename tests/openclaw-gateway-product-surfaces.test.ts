@@ -323,8 +323,12 @@ function fakePayloadForMethod(method: string) {
     return { commands: [] };
   }
 
-  if (method === "tools.catalog" || method === "tools.effective") {
-    return { tools: [] };
+  if (method === "tools.catalog") {
+    return { agentId: "agent-1", profiles: [], groups: [] };
+  }
+
+  if (method === "tools.effective") {
+    return { agentId: "agent-1", profile: "full", groups: [] };
   }
 
   if (method === "cron.list") {

@@ -327,17 +327,17 @@ export class RecordingFallbackGatewayClient implements OpenClawGatewayClient {
 
   async getToolsCatalog() {
     this.calls.push({ method: "getToolsCatalog" });
-    return { tools: [] };
+    return { agentId: "agent-1", profiles: [], groups: [] };
   }
 
   async getEffectiveTools() {
     this.calls.push({ method: "getEffectiveTools" });
-    return { tools: [] };
+    return { agentId: "agent-1", profile: "full", groups: [] };
   }
 
   async invokeTool() {
     this.calls.push({ method: "invokeTool" });
-    return { ok: true };
+    return { ok: true, toolName: "shell" };
   }
 
   async subscribeRuntimeEvents() {

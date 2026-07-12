@@ -103,13 +103,13 @@ function createSettingsAdapter(config: Record<string, unknown> = {}): OpenClawAd
       return {};
     },
     async getToolsCatalog() {
-      return { tools: [] };
+      return { agentId: "agent-1", profiles: [], groups: [] };
     },
     async getEffectiveTools() {
-      return { tools: [] };
+      return { agentId: "agent-1", profile: "full", groups: [] };
     },
     async invokeTool() {
-      return {};
+      return { ok: true, toolName: "shell" };
     },
     async subscribeRuntimeEvents() {
       return {

@@ -123,7 +123,7 @@ export interface OpenClawAdapter {
     options?: OpenClawCommandOptions
   ): Promise<OpenClawRuntimeSnapshotPayload>;
     getToolsCatalog(input?: OpenClawToolsCatalogInput, options?: OpenClawCommandOptions): Promise<OpenClawToolsCatalogPayload>;
-    getEffectiveTools(input?: OpenClawToolsEffectiveInput, options?: OpenClawCommandOptions): Promise<OpenClawToolsEffectivePayload>;
+    getEffectiveTools(input: OpenClawToolsEffectiveInput, options?: OpenClawCommandOptions): Promise<OpenClawToolsEffectivePayload>;
     invokeTool(input: OpenClawToolInvokeInput, options?: OpenClawCommandOptions): Promise<OpenClawToolInvokePayload>;
     listCommands?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
     getUsageStatus?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
@@ -320,7 +320,7 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
     return this.getClient().getToolsCatalog(input, options);
   }
 
-  getEffectiveTools(input: OpenClawToolsEffectiveInput = {}, options: OpenClawCommandOptions = {}) {
+  getEffectiveTools(input: OpenClawToolsEffectiveInput, options: OpenClawCommandOptions = {}) {
     return this.getClient().getEffectiveTools(input, options);
   }
 

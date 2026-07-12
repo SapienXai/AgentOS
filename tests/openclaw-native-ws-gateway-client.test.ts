@@ -157,17 +157,17 @@ class FallbackGatewayClient implements OpenClawGatewayClient {
 
   async getToolsCatalog() {
     this.calls.push({ method: "getToolsCatalog" });
-    return { tools: [] };
+    return { agentId: "agent-1", profiles: [], groups: [] };
   }
 
   async getEffectiveTools() {
     this.calls.push({ method: "getEffectiveTools" });
-    return { tools: [] };
+    return { agentId: "agent-1", profile: "full", groups: [] };
   }
 
   async invokeTool() {
     this.calls.push({ method: "invokeTool" });
-    return { ok: true };
+    return { ok: true, toolName: "shell" };
   }
 
   async subscribeRuntimeEvents() {
@@ -3745,10 +3745,12 @@ test("native WS gateway client exposes Phase 2 runtime Gateway methods", async (
                       : frame.method === "artifacts.list"
                         ? { artifacts: [{ id: "artifact-1" }] }
                         : frame.method === "tools.catalog"
-                          ? { tools: [{ name: "shell" }] }
+                          ? { agentId: "agent-1", profiles: [], groups: [] }
                           : frame.method === "tools.effective"
-                            ? { tools: [{ name: "shell" }] }
-                            : { ok: true }
+                            ? { agentId: "agent-1", profile: "full", groups: [] }
+                            : frame.method === "tools.invoke"
+                              ? { ok: true, toolName: "shell" }
+                              : { ok: true }
       });
     });
   });
@@ -3780,9 +3782,20 @@ test("native WS gateway client exposes Phase 2 runtime Gateway methods", async (
     tasks: [{ id: "task-1" }],
     artifacts: []
   });
-  assert.deepEqual(await client.getToolsCatalog({ agentId: "agent-1" }), { tools: [{ name: "shell" }] });
-  assert.deepEqual(await client.getEffectiveTools({ agentId: "agent-1" }), { tools: [{ name: "shell" }] });
-  assert.deepEqual(await client.invokeTool({ toolName: "shell", input: { command: "pwd" } }), { ok: true });
+  assert.deepEqual(await client.getToolsCatalog({ agentId: "agent-1", includePlugins: true }), {
+    agentId: "agent-1",
+    profiles: [],
+    groups: []
+  });
+  assert.deepEqual(await client.getEffectiveTools({ agentId: "agent-1", sessionKey: "agent:agent-1:main" }), {
+    agentId: "agent-1",
+    profile: "full",
+    groups: []
+  });
+  assert.deepEqual(await client.invokeTool({ name: "shell", args: { command: "pwd" } }), {
+    ok: true,
+    toolName: "shell"
+  });
 
   assert.deepEqual(sentFrames.map((frame) => frame.method), [
     "connect",
@@ -3807,9 +3820,46 @@ test("native WS gateway client exposes Phase 2 runtime Gateway methods", async (
     taskId: "task-1"
   });
   assert.deepEqual(sentFrames[13]?.params, {
-    toolName: "shell",
-    input: { command: "pwd" }
+    name: "shell",
+    args: { command: "pwd" }
   });
+  assert.deepEqual(sentFrames[11]?.params, {
+    agentId: "agent-1",
+    includePlugins: true
+  });
+  assert.deepEqual(sentFrames[12]?.params, {
+    agentId: "agent-1",
+    sessionKey: "agent:agent-1:main"
+  });
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway client does not CLI-fallback stable tool methods", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? { protocol: 4, features: { methods: ["health"] } }
+          : { ok: true }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await assert.rejects(
+    () => client.getToolsCatalog({ agentId: "agent-1" }),
+    /CLI fallback disabled.*Update OpenClaw.*tools\.catalog/
+  );
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect"]);
   assert.deepEqual(fallback.calls, []);
 });
 

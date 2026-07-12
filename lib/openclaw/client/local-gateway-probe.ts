@@ -50,7 +50,7 @@ export async function probeLocalGatewayStatus(port = 18789): Promise<GatewayStat
 
 export async function probeLocalGatewayRegistration(options: {
   platform?: NodeJS.Platform;
-  env?: NodeJS.ProcessEnv;
+  env?: Partial<NodeJS.ProcessEnv>;
   homeDir?: string;
 } = {}): Promise<boolean | null> {
   const platform = options.platform ?? process.platform;
@@ -109,7 +109,7 @@ export async function probeLocalGatewayRegistration(options: {
 
 export async function probeLocalGatewayConfiguration(options: {
   homeDir?: string;
-  env?: NodeJS.ProcessEnv;
+  env?: Partial<NodeJS.ProcessEnv>;
 } = {}) {
   const state = await readLocalGatewayConfiguration(options);
   return state.modeLocal && state.authTokenMode && state.hasToken;
@@ -117,7 +117,7 @@ export async function probeLocalGatewayConfiguration(options: {
 
 export async function readLocalGatewayConfiguration(options: {
   homeDir?: string;
-  env?: NodeJS.ProcessEnv;
+  env?: Partial<NodeJS.ProcessEnv>;
 } = {}) {
   const configPath = resolveLocalGatewayConfigPath(options);
 
@@ -137,7 +137,7 @@ export async function readLocalGatewayConfiguration(options: {
 
 export function resolveLocalGatewayConfigPath(options: {
   homeDir?: string;
-  env?: NodeJS.ProcessEnv;
+  env?: Partial<NodeJS.ProcessEnv>;
 } = {}) {
   const env = options.env ?? process.env;
   const stateDirOverride = env.OPENCLAW_STATE_DIR?.trim();

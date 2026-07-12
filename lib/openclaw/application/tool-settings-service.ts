@@ -15,7 +15,7 @@ export type OpenClawToolSettings = {
 
 type ToolSettingsOptions = {
   homeDir?: string;
-  env?: NodeJS.ProcessEnv;
+  env?: Partial<NodeJS.ProcessEnv>;
 };
 
 export async function readOpenClawToolSettings(

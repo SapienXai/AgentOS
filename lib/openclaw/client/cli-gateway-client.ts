@@ -568,7 +568,7 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
     return this.call<OpenClawToolsCatalogPayload>("tools.catalog", { ...input }, options);
   }
 
-  getEffectiveTools(input: OpenClawToolsEffectiveInput = {}, options: OpenClawCommandOptions = {}) {
+  getEffectiveTools(input: OpenClawToolsEffectiveInput, options: OpenClawCommandOptions = {}) {
     return this.call<OpenClawToolsEffectivePayload>("tools.effective", { ...input }, options);
   }
 

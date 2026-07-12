@@ -596,36 +596,88 @@ export type OpenClawRuntimeSnapshotPayload = Record<string, unknown> & {
 
 export interface OpenClawToolsCatalogInput {
   agentId?: string;
-  workspace?: string;
-  includeDisabled?: boolean;
+  includePlugins?: boolean;
 }
 
 export interface OpenClawToolsEffectiveInput {
   agentId?: string;
-  sessionId?: string;
-  workspace?: string;
+  sessionKey: string;
 }
 
 export interface OpenClawToolInvokeInput {
-  toolName: string;
-  agentId?: string;
-  sessionId?: string;
-  input?: unknown;
+  name: string;
   args?: Record<string, unknown>;
+  sessionKey?: string;
+  agentId?: string;
+  confirm?: boolean;
+  idempotencyKey?: string;
 }
 
-export type OpenClawToolsCatalogPayload = Record<string, unknown> & {
-  tools?: unknown[];
+export type OpenClawToolCatalogEntry = {
+  id: string;
+  label: string;
+  description: string;
+  source: "core" | "plugin";
+  pluginId?: string;
+  optional?: boolean;
+  risk?: "low" | "medium" | "high";
+  tags?: string[];
+  defaultProfiles: Array<"minimal" | "coding" | "messaging" | "full">;
 };
 
-export type OpenClawToolsEffectivePayload = Record<string, unknown> & {
-  tools?: unknown[];
+export type OpenClawToolsCatalogPayload = {
+  agentId: string;
+  profiles: Array<{
+    id: "minimal" | "coding" | "messaging" | "full";
+    label: string;
+  }>;
+  groups: Array<{
+    id: string;
+    label: string;
+    source: "core" | "plugin";
+    pluginId?: string;
+    tools: OpenClawToolCatalogEntry[];
+  }>;
 };
 
-export type OpenClawToolInvokePayload = Record<string, unknown> & {
-  ok?: boolean;
-  result?: unknown;
+export type OpenClawToolsEffectivePayload = {
+  agentId: string;
+  profile: string;
+  groups: Array<{
+    id: "core" | "plugin" | "channel" | "mcp";
+    label: string;
+    source: "core" | "plugin" | "channel" | "mcp";
+    tools: Array<{
+      id: string;
+      label: string;
+      description: string;
+      rawDescription: string;
+      source: "core" | "plugin" | "channel" | "mcp";
+      pluginId?: string;
+      channelId?: string;
+      risk?: "low" | "medium" | "high";
+      tags?: string[];
+    }>;
+  }>;
+  notices?: Array<{
+    id: string;
+    severity: "info" | "warning";
+    message: string;
+  }>;
+};
+
+export type OpenClawToolInvokePayload = {
+  ok: boolean;
+  toolName: string;
   output?: unknown;
+  requiresApproval?: boolean;
+  approvalId?: string;
+  source?: string;
+  error?: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
 };
 
 export type OpenClawGatewaySurfaceInput = Record<string, unknown>;
@@ -930,7 +982,7 @@ export interface OpenClawGatewayClient {
     options?: OpenClawCommandOptions
   ): Promise<OpenClawRuntimeSnapshotPayload>;
   getToolsCatalog(input?: OpenClawToolsCatalogInput, options?: OpenClawCommandOptions): Promise<OpenClawToolsCatalogPayload>;
-  getEffectiveTools(input?: OpenClawToolsEffectiveInput, options?: OpenClawCommandOptions): Promise<OpenClawToolsEffectivePayload>;
+  getEffectiveTools(input: OpenClawToolsEffectiveInput, options?: OpenClawCommandOptions): Promise<OpenClawToolsEffectivePayload>;
   invokeTool(input: OpenClawToolInvokeInput, options?: OpenClawCommandOptions): Promise<OpenClawToolInvokePayload>;
   listCommands?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   getUsageStatus?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
