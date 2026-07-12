@@ -114,10 +114,10 @@ type CompatibilityReport = NonNullable<
   MissionControlShellSettingsPanelProps["snapshot"]["diagnostics"]["compatibilityReport"]
 >;
 type SettingsSectionId =
+  | "general"
   | "overview"
   | "openclaw"
   | "gateway"
-  | "tools"
   | "capabilities"
   | "models"
   | "workspace"
@@ -134,10 +134,10 @@ type SettingsSection = {
 };
 
 const settingsSections: SettingsSection[] = [
+  { id: "general", label: "General", icon: Wrench },
   { id: "overview", label: "Overview", icon: Settings2 },
   { id: "openclaw", label: "OpenClaw", icon: Activity },
   { id: "gateway", label: "Gateway", icon: ShieldCheck },
-  { id: "tools", label: "Tools", icon: Wrench },
   { id: "capabilities", label: "Capabilities", icon: ListChecks },
   { id: "models", label: "Models", icon: Box },
   { id: "workspace", label: "Workspace", icon: Folder },
@@ -148,10 +148,10 @@ const settingsSections: SettingsSection[] = [
 ];
 
 const settingsSectionDescriptions: Record<SettingsSectionId, string> = {
+  general: "Global OpenClaw tool availability and browser runtime control.",
   overview: "System configuration, runtime health, and operator controls.",
   openclaw: "Source-of-truth runtime state, update flow, and local binary selection.",
   gateway: "Connection state, auth repair, endpoint control, and native transport health.",
-  tools: "Global OpenClaw tool availability and browser runtime control.",
   capabilities: "Native coverage, fallback surface, and protocol contract detail.",
   models: "Default model, provider readiness, and model set management.",
   workspace: "Workspace root, project defaults, and local workspace context.",
@@ -162,11 +162,11 @@ const settingsSectionDescriptions: Record<SettingsSectionId, string> = {
 };
 
 const relatedSettingsSections: Record<SettingsSectionId, SettingsSectionId[]> = {
-  overview: ["openclaw", "gateway", "tools"],
+  general: ["gateway", "capabilities", "agents"],
+  overview: ["general", "openclaw", "gateway"],
   openclaw: ["gateway", "diagnostics", "advanced"],
-  gateway: ["openclaw", "tools", "diagnostics"],
-  tools: ["gateway", "capabilities", "agents"],
-  capabilities: ["gateway", "tools", "advanced"],
+  gateway: ["openclaw", "general", "diagnostics"],
+  capabilities: ["gateway", "general", "advanced"],
   models: ["gateway", "workspace", "agents"],
   workspace: ["models", "agents", "diagnostics"],
   agents: ["workspace", "models", "diagnostics"],
@@ -684,7 +684,7 @@ export function SettingsControlCenter(
 
   useEffect(() => {
     if (
-      renderedActiveSection === "tools" &&
+      renderedActiveSection === "general" &&
       browserToolEnabled === null &&
       !isLoadingToolSettings &&
       !toolSettingsError
@@ -1771,9 +1771,9 @@ export function SettingsControlCenter(
               </section>
               ) : null}
 
-              {renderedActiveSection === "tools" ? (
-              <section id="tools" className="scroll-mt-24">
-                <Card title="Tools" icon={Wrench} surfaceTheme={surfaceTheme}>
+              {renderedActiveSection === "general" ? (
+              <section id="general" className="scroll-mt-24">
+                <Card title="General" icon={Wrench} surfaceTheme={surfaceTheme}>
                   <div className="space-y-4">
                     {toolControls.map((tool) => (
                       <div key={tool.id} className={cn(
@@ -5542,7 +5542,7 @@ function resolveSettingsSectionStatus(
       return context.snapshot.diagnostics.loaded || context.snapshot.diagnostics.rpcOk
         ? { label: "Online", tone: "success" }
         : { label: "Offline", tone: "danger" };
-    case "tools":
+    case "general":
       return { label: "Configured", tone: "neutral" };
     case "capabilities":
       return context.compatibilityReport
@@ -5577,7 +5577,7 @@ function resolveSettingsSectionStatus(
 }
 
 function resolveInitialSettingsSection(): SettingsSectionId {
-  return "overview";
+  return "general";
 }
 
 function resolveHashSettingsSection(): SettingsSectionId {
@@ -5590,8 +5590,9 @@ function resolveHashSettingsSection(): SettingsSectionId {
       return "overview";
     case "gateway":
       return "gateway";
+    case "general":
     case "tools":
-      return "tools";
+      return "general";
     case "capabilities":
       return "capabilities";
     case "models":
