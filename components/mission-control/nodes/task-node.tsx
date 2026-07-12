@@ -18,6 +18,7 @@ import {
   Pause,
   Play,
   Plus,
+  RefreshCw,
   Sparkles,
   Trash2,
   X
@@ -84,7 +85,7 @@ type TaskWorkspaceTab = {
 
 export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [operationAction, setOperationAction] = useState<"pause" | "resume" | "delete" | null>(null);
+  const [operationAction, setOperationAction] = useState<"run" | "retry" | "pause" | "resume" | "delete" | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -118,7 +119,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     () => readTaskFeedEvents(data.task.metadata.optimisticEvents),
     [data.task.metadata.optimisticEvents]
   );
-  const operateSchedule = async (action: "pause" | "resume" | "delete") => {
+  const operateSchedule = async (action: "run" | "retry" | "pause" | "resume" | "delete") => {
     if (!operationJobId) return;
     if (action === "delete" && !window.confirm("Delete this schedule permanently? This removes the OpenClaw job and cannot be undone.")) return;
     setOperationAction(action);
@@ -143,8 +144,8 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     [data.task.metadata.operationFeed]
   );
   const operationRunHistory = useMemo(
-    () => readOperationRunTimeline(data.task.metadata.operationFeed, data.task.metadata.operationRunHistory),
-    [data.task.metadata.operationFeed, data.task.metadata.operationRunHistory]
+    () => readOperationRunTimeline(data.task.metadata.operationFeed, data.task.metadata.operationRunHistory, data.task.metadata.operationRecoveryHistory),
+    [data.task.metadata.operationFeed, data.task.metadata.operationRunHistory, data.task.metadata.operationRecoveryHistory]
   );
   const latestLocalEvent =
     reviewFeed.length > 0 && isTaskFeedEvent(reviewFeed[reviewFeed.length - 1])
@@ -538,9 +539,27 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
             </div>
 
             <div className="nodrag nopan relative flex shrink-0 items-center gap-1.5" ref={menuRef}>
-              <Badge variant={badgeVariant} className="max-w-[132px] truncate rounded-[8px] px-2 py-1 text-[9px]">
-                {badgeLabel}
-              </Badge>
+              {data.onReviewTask && (completedNeedsReview || hasReviewResolution || badgeLabel === "needs review") ? (
+                <button
+                  type="button"
+                  aria-label={`${hasReviewResolution ? "Open review record" : "Review task result"}: ${displayTask.title}`}
+                  title={hasReviewResolution ? "Open review record" : "See what needs review and choose an action"}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    data.onReviewTask?.(displayTask);
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  className="nodrag nopan rounded-[8px] transition-[filter,transform] hover:brightness-95 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                >
+                  <Badge variant={badgeVariant} className="max-w-[132px] cursor-pointer truncate rounded-[8px] px-2 py-1 text-[9px]">
+                    {badgeLabel}
+                  </Badge>
+                </button>
+              ) : (
+                <Badge variant={badgeVariant} className="max-w-[132px] truncate rounded-[8px] px-2 py-1 text-[9px]">
+                  {badgeLabel}
+                </Badge>
+              )}
               <button
                 type="button"
                 aria-label="Task actions"
@@ -560,7 +579,7 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                   onClick={(event) => event.stopPropagation()}
                   onPointerDown={(event) => event.stopPropagation()}
                 >
-                  {data.onReviewTask && (completedNeedsReview || hasReviewResolution) ? (
+                  {data.onReviewTask && (completedNeedsReview || hasReviewResolution || badgeLabel === "needs review") ? (
                     <TaskMenuButton
                       icon={hasReviewResolution ? CheckCircle2 : AlertTriangle}
                       label={hasReviewResolution ? "Review record" : "Review result"}
@@ -599,6 +618,22 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                     }}
                   />
                   {operationJobId ? <>
+                    <TaskMenuButton
+                      icon={Play}
+                      label={operationAction === "run" ? "Starting…" : "Run now"}
+                      disabled={operationAction !== null || operationPaused}
+                      surfaceTheme={surfaceTheme}
+                      onClick={() => void operateSchedule("run")}
+                    />
+                    {(displayTask.metadata.lastRunStatus === "error" || displayTask.metadata.operationLastError) ? (
+                      <TaskMenuButton
+                        icon={RefreshCw}
+                        label={operationAction === "retry" ? "Retrying…" : "Retry failed run"}
+                        disabled={operationAction !== null || operationPaused}
+                        surfaceTheme={surfaceTheme}
+                        onClick={() => void operateSchedule("retry")}
+                      />
+                    ) : null}
                     <TaskMenuButton
                       icon={operationPaused ? Play : Pause}
                       label={operationAction === (operationPaused ? "resume" : "pause") ? "Updating…" : operationPaused ? "Resume schedule" : "Pause schedule"}
@@ -1544,7 +1579,7 @@ function resolvePrimaryActionClass(action: ReturnType<typeof resolveTaskCardPrim
 type OperationRunTimelineEntry = {
   id: string;
   at: string;
-  status: "completed" | "failed" | "skipped";
+  status: "completed" | "failed" | "skipped" | "missed" | "recovered";
   detail: string;
 };
 
@@ -1564,7 +1599,7 @@ function OperationRunTimeline({ entries, nextRunAt, scheduleLabel, surfaceTheme 
       {entries.length === 0 ? <p className={cn("mt-3 text-[10px]", isLight ? "text-[#806856]" : "text-slate-400")}>No completed run has been reported by OpenClaw yet.</p> : (
         <ScrollArea className="mt-3 h-[150px] w-full pr-3">
           <div className="space-y-2.5">
-            {entries.map((entry) => <div key={entry.id} className="relative pl-3"><span className={cn("absolute left-0 top-1.5 h-1.5 w-1.5 rounded-full", entry.status === "failed" ? "bg-rose-400" : entry.status === "skipped" ? "bg-amber-400" : "bg-emerald-400")} /><div className="flex items-baseline justify-between gap-2"><span className={cn("text-[10px] font-medium", isLight ? "text-[#514136]" : "text-slate-200")}>{entry.status === "failed" ? "Failed" : entry.status === "skipped" ? "Skipped" : "Completed"}</span><span className={cn("shrink-0 text-[9px]", isLight ? "text-[#9b745d]" : "text-slate-500")}>{formatTimelineDate(entry.at)}</span></div><InteractiveContent text={entry.detail} className={cn("mt-0.5 text-[10px] leading-relaxed", isLight ? "text-[#806958]" : "text-slate-400")} compact /></div>)}
+            {entries.map((entry) => <div key={entry.id} className="relative pl-3"><span className={cn("absolute left-0 top-1.5 h-1.5 w-1.5 rounded-full", entry.status === "failed" ? "bg-rose-400" : entry.status === "skipped" || entry.status === "missed" ? "bg-amber-400" : "bg-emerald-400")} /><div className="flex items-baseline justify-between gap-2"><span className={cn("text-[10px] font-medium", isLight ? "text-[#514136]" : "text-slate-200")}>{entry.status === "failed" ? "Failed" : entry.status === "skipped" ? "Skipped" : entry.status === "missed" ? "Possible missed run" : entry.status === "recovered" ? "Recovered automatically" : "Completed"}</span><span className={cn("shrink-0 text-[9px]", isLight ? "text-[#9b745d]" : "text-slate-500")}>{formatTimelineDate(entry.at)}</span></div><InteractiveContent text={entry.detail} className={cn("mt-0.5 text-[10px] leading-relaxed", isLight ? "text-[#806958]" : "text-slate-400")} compact /></div>)}
           </div>
         </ScrollArea>
       )}
@@ -1572,7 +1607,7 @@ function OperationRunTimeline({ entries, nextRunAt, scheduleLabel, surfaceTheme 
   );
 }
 
-function readOperationRunTimeline(feedValue: unknown, runHistoryValue: unknown): OperationRunTimelineEntry[] {
+function readOperationRunTimeline(feedValue: unknown, runHistoryValue: unknown, recoveryHistoryValue: unknown): OperationRunTimelineEntry[] {
   const entries: OperationRunTimelineEntry[] = readTaskFeedEvents(feedValue).map((event) => ({ id: event.id, at: event.timestamp, status: "completed", detail: event.detail }));
   if (Array.isArray(runHistoryValue)) {
     for (const value of runHistoryValue) {
@@ -1588,6 +1623,15 @@ function readOperationRunTimeline(feedValue: unknown, runHistoryValue: unknown):
         status: status === "error" ? "failed" : "skipped",
         detail: typeof record.error === "string" && record.error.trim() ? record.error : status === "error" ? "OpenClaw reported a failed run without an error detail." : "OpenClaw skipped this scheduled run."
       });
+    }
+  }
+  if (Array.isArray(recoveryHistoryValue)) {
+    for (const value of recoveryHistoryValue) {
+      if (!value || typeof value !== "object") continue;
+      const record = value as Record<string, unknown>;
+      if (record.status !== "missed" && record.status !== "recovered") continue;
+      if (typeof record.id !== "string" || typeof record.timestamp !== "string" || typeof record.detail !== "string") continue;
+      entries.push({ id: record.id, at: record.timestamp, status: record.status, detail: record.detail });
     }
   }
   return Array.from(new Map(entries.map((entry) => [entry.id, entry])).values()).sort((left, right) => Date.parse(right.at) - Date.parse(left.at)).slice(0, 24);

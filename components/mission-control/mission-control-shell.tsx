@@ -4482,6 +4482,9 @@ export function MissionControlShell({
           onRetry={retryTaskReview}
           onDismiss={dismissTaskReview}
           onOpenEvidence={openTaskReviewEvidence}
+          onOperationComplete={async () => {
+            await refreshSnapshot({ force: true });
+          }}
         />
 
         {shouldShowOnboarding ? (

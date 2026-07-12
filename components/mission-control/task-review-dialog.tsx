@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { InteractiveContent } from "@/components/mission-control/interactive-content";
 import {
@@ -67,8 +68,9 @@ type TaskReviewDialogProps = {
   onRetry: (task: WorkItemRecord) => Promise<void> | void;
   onDismiss: (task: WorkItemRecord) => Promise<void> | void;
   onOpenEvidence: (task: WorkItemRecord, target: "overview" | "output" | "files") => void;
+  onOperationComplete?: () => Promise<void> | void;
 };
-type TaskReviewPendingAction = "accept" | "continue" | "retry" | "dismiss" | null;
+type TaskReviewPendingAction = "accept" | "continue" | "retry" | "run" | "pause" | "resume" | "dismiss" | null;
 
 export function TaskReviewDialog({
   open,
@@ -80,7 +82,8 @@ export function TaskReviewDialog({
   onContinue,
   onRetry,
   onDismiss,
-  onOpenEvidence
+  onOpenEvidence,
+  onOperationComplete
 }: TaskReviewDialogProps) {
   const [pendingAction, setPendingAction] = useState<TaskReviewPendingAction>(null);
   const [operatorReply, setOperatorReply] = useState("");
@@ -149,6 +152,31 @@ export function TaskReviewDialog({
     : "Continue task";
   const isLight = surfaceTheme === "light";
   const isActionPending = pendingAction !== null;
+  const operationJobId = currentTask && typeof currentTask.metadata.operationJobId === "string"
+    ? currentTask.metadata.operationJobId
+    : null;
+  const isScheduledOperation = Boolean(operationJobId);
+  const operationPaused = currentTask?.metadata.operationStatus === "paused";
+  const operationFailed = currentTask?.metadata.lastRunStatus === "error" || Boolean(currentTask?.metadata.operationLastError);
+  const operationLastError = typeof currentTask?.metadata.operationLastError === "string"
+    ? currentTask.metadata.operationLastError
+    : null;
+  const operationScheduleLabel = typeof currentTask?.metadata.scheduleLabel === "string"
+    ? currentTask.metadata.scheduleLabel
+    : "Scheduled operation";
+
+  const performOperationAction = async (action: "run" | "retry" | "pause" | "resume") => {
+    if (!operationJobId) return;
+    const response = await fetch("/api/operations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, jobId: operationJobId })
+    });
+    const payload = await response.json().catch(() => null) as { error?: string } | null;
+    if (!response.ok || payload?.error) throw new Error(payload?.error || "OpenClaw rejected the operation action.");
+    await onOperationComplete?.();
+    onOpenChange(false);
+  };
 
   useEffect(() => {
     setOperatorReply("");
@@ -163,10 +191,102 @@ export function TaskReviewDialog({
 
     try {
       await callback();
+    } catch (actionError) {
+      toast.error("Review action failed.", {
+        description: actionError instanceof Error ? actionError.message : "The requested action could not be completed."
+      });
     } finally {
       setPendingAction(null);
     }
   };
+
+  if (isScheduledOperation) {
+    const incompleteRun = currentTask?.status === "stalled" || operationFailed;
+    const reviewReason = operationLastError || rawIssueDetail || (incompleteRun
+      ? "The scheduled run stopped after producing an intermediate response. No final completion was confirmed."
+      : "The latest scheduled result needs an operator decision.");
+    const nextRunAt = typeof currentTask?.metadata.nextRunAt === "string" ? currentTask.metadata.nextRunAt : null;
+
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent
+          className={cn(
+            "w-[calc(100vw-24px)] max-w-[680px] gap-0 overflow-hidden rounded-[20px] border p-0",
+            isLight
+              ? "border-slate-200 bg-white text-slate-950 shadow-[0_20px_65px_rgba(15,23,42,0.2)]"
+              : "border-white/[0.1] bg-slate-950 text-white shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+          )}
+          closeClassName={isLight ? "text-slate-500 hover:bg-slate-950/5 hover:text-slate-900" : undefined}
+        >
+          <div className={cn("border-b px-5 py-4 pr-12", isLight ? "border-slate-200" : "border-white/[0.08]")}>
+            <div className="flex items-start gap-3">
+              <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] border", incompleteRun ? "border-amber-400/25 bg-amber-400/10 text-amber-500" : "border-primary/20 bg-primary/10 text-primary")}>
+                {incompleteRun ? <AlertTriangle className="h-4 w-4" /> : <ClipboardList className="h-4 w-4" />}
+              </div>
+              <DialogHeader className="min-w-0 flex-1 space-y-1 text-left">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={incompleteRun ? "warning" : "muted"}>{incompleteRun ? "run incomplete" : "review result"}</Badge>
+                  <span className={cn("text-[10px]", isLight ? "text-slate-500" : "text-slate-400")}>{operationScheduleLabel}</span>
+                </div>
+                <DialogTitle className={cn("line-clamp-2 text-[16px] leading-6", isLight && "text-slate-950")}>
+                  {currentTask?.title.trim() || "Scheduled run review"}
+                </DialogTitle>
+                <DialogDescription className={isLight ? "text-slate-500" : "text-slate-400"}>
+                  {workspace?.name || "Workspace"}{agent ? ` · ${formatAgentDisplayName(agent)}` : ""}
+                </DialogDescription>
+              </DialogHeader>
+            </div>
+          </div>
+
+          <div className="space-y-3 px-5 py-4">
+            <section className={cn("rounded-[14px] border px-3.5 py-3", incompleteRun ? isLight ? "border-amber-200 bg-amber-50" : "border-amber-300/20 bg-amber-400/[0.08]" : isLight ? "border-slate-200 bg-slate-50" : "border-white/[0.08] bg-white/[0.035]")}>
+              <p className={cn("text-[10px] font-semibold uppercase tracking-[0.16em]", incompleteRun ? "text-amber-700" : isLight ? "text-slate-500" : "text-slate-400")}>What needs review</p>
+              <p className={cn("mt-1.5 text-[13px] leading-5", isLight ? "text-slate-800" : "text-slate-100")}>{reviewReason}</p>
+            </section>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <section className={cn("min-w-0 rounded-[14px] border p-3.5", isLight ? "border-slate-200 bg-white" : "border-white/[0.08] bg-white/[0.025]")}>
+                <p className={cn("text-[10px] font-semibold uppercase tracking-[0.16em]", isLight ? "text-slate-500" : "text-slate-400")}>Last captured output</p>
+                <div className="mt-2 max-h-[132px] overflow-y-auto pr-1">
+                  <InteractiveContent
+                    text={capturedOutput || "No assistant output was captured before the run stopped."}
+                    className={cn("text-[12.5px] leading-5", isLight ? "text-slate-700" : "text-slate-200")}
+                    compact
+                  />
+                </div>
+              </section>
+              <section className={cn("min-w-0 rounded-[14px] border p-3.5", isLight ? "border-slate-200 bg-slate-50" : "border-white/[0.08] bg-white/[0.025]")}>
+                <p className={cn("text-[10px] font-semibold uppercase tracking-[0.16em]", isLight ? "text-slate-500" : "text-slate-400")}>Expected outcome</p>
+                <p className={cn("mt-2 line-clamp-5 text-[12.5px] leading-5", isLight ? "text-slate-700" : "text-slate-200")}>{originalPrompt || "No original prompt was captured."}</p>
+              </section>
+            </div>
+
+            <div className={cn("flex flex-wrap items-center justify-between gap-2 rounded-[12px] border px-3 py-2", isLight ? "border-slate-200 bg-slate-50 text-slate-600" : "border-white/[0.08] bg-white/[0.025] text-slate-400")}>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                <span>Status: <strong className={isLight ? "text-slate-800" : "text-slate-200"}>{operationPaused ? "paused" : currentTask?.status ?? "unknown"}</strong></span>
+                <span>{nextRunAt ? `Next: ${new Date(nextRunAt).toLocaleString()}` : operationPaused ? "No future runs while paused" : "Next run unavailable"}</span>
+              </div>
+              <button type="button" className="text-[11px] font-semibold text-primary hover:underline" onClick={() => currentTask && onOpenEvidence(currentTask, "output")}>Open full evidence</button>
+            </div>
+          </div>
+
+          <div className={cn("flex flex-wrap items-center justify-end gap-2 border-t px-5 py-3.5", isLight ? "border-slate-200 bg-slate-50" : "border-white/[0.08] bg-white/[0.025]")}>
+            <Button type="button" variant="ghost" disabled={!currentTask || isActionPending} onClick={() => void runAction("dismiss", () => {
+              if (currentTask) return onDismiss(currentTask);
+            })}>
+              {pendingAction === "dismiss" ? "Acknowledging..." : "Acknowledge"}
+            </Button>
+            <Button type="button" variant="secondary" disabled={isActionPending} onClick={() => void runAction(operationPaused ? "resume" : "pause", () => performOperationAction(operationPaused ? "resume" : "pause"))}>
+              {pendingAction === "pause" || pendingAction === "resume" ? "Updating..." : operationPaused ? "Resume schedule" : "Pause schedule"}
+            </Button>
+            <Button type="button" className="bg-primary text-primary-foreground hover:bg-primary/90" disabled={isActionPending || operationPaused} onClick={() => void runAction(incompleteRun ? "retry" : "run", () => performOperationAction(incompleteRun ? "retry" : "run"))}>
+              {pendingAction === "retry" || pendingAction === "run" ? "Starting..." : incompleteRun ? "Retry run" : "Run now"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -335,7 +455,7 @@ export function TaskReviewDialog({
                 </Button>
               </ReviewSection>
 
-              <ReviewSection icon={MessageSquare} title="Operator reply" isLight={isLight}>
+              {!isScheduledOperation ? <ReviewSection icon={MessageSquare} title="Operator reply" isLight={isLight}>
                 <Textarea
                   value={operatorReply}
                   onChange={(event) => setOperatorReply(event.target.value)}
@@ -378,7 +498,16 @@ export function TaskReviewDialog({
                         : recommendedActionLabel}
                   </Button>
                 </div>
-              </ReviewSection>
+              </ReviewSection> : (
+                <ReviewSection icon={RefreshCw} title="Scheduled operation recovery" tone="warning" isLight={isLight}>
+                  <p className={cn("text-[12.5px] leading-6", isLight ? "text-slate-700" : "text-slate-200")}>
+                    This review belongs to one scheduled run. The OpenClaw schedule is managed separately, so you can rerun the job or pause future runs without creating a duplicate task.
+                  </p>
+                  {operationPaused ? (
+                    <p className={cn("mt-2 text-[11px] leading-5", isLight ? "text-amber-700" : "text-amber-100/85")}>No future runs will start until the schedule is resumed.</p>
+                  ) : null}
+                </ReviewSection>
+              )}
 
               <ReviewSection icon={ClipboardList} title="Original prompt" isLight={isLight}>
                 <InteractiveContent
@@ -468,6 +597,41 @@ export function TaskReviewDialog({
             isLight ? "border-slate-200 bg-slate-50/85" : "border-white/[0.08] bg-white/[0.03]"
           )}
         >
+          {isScheduledOperation ? (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                className={cn("gap-2", isLight && "border-slate-200 bg-white text-slate-800 hover:bg-slate-100")}
+                disabled={isActionPending}
+                onClick={() => void runAction(operationPaused ? "resume" : "pause", () => performOperationAction(operationPaused ? "resume" : "pause"))}
+              >
+                {pendingAction === "pause" || pendingAction === "resume" ? <Loader2 className="h-4 w-4 animate-spin" /> : operationPaused ? <RefreshCw className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                {pendingAction === "pause" || pendingAction === "resume" ? "Updating..." : operationPaused ? "Resume schedule" : "Pause schedule"}
+              </Button>
+              {operationFailed ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className={cn("gap-2", isLight && "border-slate-200 bg-white text-slate-800 hover:bg-slate-100")}
+                  disabled={isActionPending || operationPaused}
+                  onClick={() => void runAction("retry", () => performOperationAction("retry"))}
+                >
+                  {pendingAction === "retry" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  {pendingAction === "retry" ? "Retrying..." : "Retry failed run"}
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+                disabled={isActionPending || operationPaused}
+                onClick={() => void runAction("run", () => performOperationAction("run"))}
+              >
+                {pendingAction === "run" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {pendingAction === "run" ? "Starting..." : "Run now"}
+              </Button>
+            </>
+          ) : <>
           <Button
             type="button"
             variant="ghost"
@@ -515,6 +679,7 @@ export function TaskReviewDialog({
             {pendingAction === "continue" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CornerDownRight className="h-4 w-4" />}
             {pendingAction === "continue" ? "Continuing..." : recommendedActionLabel}
           </Button>
+          </>}
           <Button
             type="button"
             className="gap-2 bg-emerald-400 text-slate-950 shadow-emerald-400/20 hover:bg-emerald-300"

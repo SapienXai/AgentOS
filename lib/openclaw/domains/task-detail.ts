@@ -137,6 +137,14 @@ function reconcileOperationIntegrity(
   const issues = integrity.issues.filter(
     (issue) => issue.id !== "missing-final-response" && issue.id !== "missing-transcript"
   );
+  if (task.status === "stalled" && !issues.some((issue) => issue.id === "partial-final-response")) {
+    issues.unshift({
+      id: "partial-final-response",
+      severity: "warning",
+      title: "Scheduled run stopped before completion",
+      detail: "OpenClaw captured an intermediate assistant response, but the run stopped before a final result was confirmed. Review the partial output, then retry or acknowledge this run."
+    });
+  }
   return {
     ...integrity,
     status: issues.some((issue) => issue.severity === "error")

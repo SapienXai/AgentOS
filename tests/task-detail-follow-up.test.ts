@@ -79,6 +79,39 @@ test("scheduled operation history is accepted as Gateway result evidence", async
   assert.equal(detail.liveFeed.some((event) => event.id === "operation:job-1:result-1"), true);
 });
 
+test("a stalled scheduled operation keeps captured output as partial evidence", async () => {
+  const task = createTask({
+    id: "operation:job-stalled",
+    key: "openclaw-cron:job-stalled",
+    status: "stalled",
+    dispatchId: undefined,
+    primaryRuntimeId: undefined,
+    runtimeIds: [],
+    runIds: [],
+    sessionIds: [],
+    runtimeCount: 0,
+    metadata: {
+      operationJobId: "job-stalled",
+      resultPreview: "Browser is running; checking login status.",
+      operationFeed: [{
+        id: "operation:job-stalled:partial",
+        kind: "assistant",
+        timestamp: "2026-07-12T10:20:00.000Z",
+        title: "Scheduled result",
+        detail: "Browser is running; checking login status."
+      }]
+    }
+  });
+  const snapshot = { runtimes: [], agents: [], tasks: [task], workspaces: [] } as unknown as MissionControlSnapshot;
+
+  const detail = await buildTaskDetailFromTaskRecord(task, snapshot, null);
+
+  assert.equal(detail.integrity.status, "warning");
+  assert.equal(detail.integrity.finalResponseText, "Browser is running; checking login status.");
+  assert.equal(detail.integrity.issues[0]?.id, "partial-final-response");
+  assert.match(detail.integrity.issues[0]?.detail ?? "", /stopped before a final result/);
+});
+
 test("task detail links follow-up runtimes by normalized session and continue run id", async () => {
   const baseRuntime = createRuntime({
     id: "runtime-base",

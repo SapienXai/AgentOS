@@ -97,7 +97,45 @@ function operationMetadata(job: OperationJob, runs: OperationRun[]) {
     triggerAt: job.trigger?.kind === "at" ? job.trigger.at : null, intervalMs: job.trigger?.kind === "every" ? job.trigger.everyMs : null,
     resultPreview: job.latestOutput ?? null, openClawSessionKey: job.sessionKey ?? null, openClawSessionId: job.sessionId ?? null,
     operationFeed: job.recentResults?.map((result) => ({ id: `operation:${job.id}:${result.timestamp}:${result.id}`, kind: "assistant", timestamp: result.timestamp, title: "Scheduled result", detail: result.text })) ?? [],
-    operationRunHistory: operationRuns };
+    operationRunHistory: operationRuns,
+    operationRecoveryHistory: buildOperationRecoveryHistory(job) };
+}
+
+function buildOperationRecoveryHistory(job: OperationJob) {
+  if (job.trigger?.kind !== "every" || !job.recentResults || job.recentResults.length < 2) return [];
+  const intervalMs = job.trigger.everyMs;
+  const results = [...job.recentResults]
+    .filter((result) => Number.isFinite(Date.parse(result.timestamp)))
+    .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+  const events: Array<{ id: string; timestamp: string; status: "missed" | "recovered"; detail: string; missedCount: number }> = [];
+
+  for (let index = 1; index < results.length; index += 1) {
+    const previous = results[index - 1];
+    const current = results[index];
+    if (!previous || !current) continue;
+    const previousAt = Date.parse(previous.timestamp);
+    const currentAt = Date.parse(current.timestamp);
+    const gapMs = currentAt - previousAt;
+    if (gapMs < intervalMs * 1.75) continue;
+    const missedCount = Math.max(1, Math.round(gapMs / intervalMs) - 1);
+    const firstExpectedAt = new Date(previousAt + intervalMs).toISOString();
+    events.push({
+      id: `missed:${job.id}:${firstExpectedAt}`,
+      timestamp: firstExpectedAt,
+      status: "missed",
+      missedCount,
+      detail: `Possible missed schedule: AgentOS observed no Gateway result for ${missedCount} expected run${missedCount === 1 ? "" : "s"}. The device, network, Gateway, or provider may have been unavailable; OpenClaw did not provide a definitive missed-run record.`
+    });
+    events.push({
+      id: `recovered:${job.id}:${current.timestamp}`,
+      timestamp: current.timestamp,
+      status: "recovered",
+      missedCount,
+      detail: `Schedule recovered automatically when the next Gateway result arrived. ${job.nextRunAt ? `The next run is ${new Date(job.nextRunAt).toLocaleString()}.` : "No next run is currently reported."}`
+    });
+  }
+
+  return events.slice(-12);
 }
 
 function operationJobIdForRuntimeTask(task: TaskRecord, jobsById: Map<string, OperationJob>) {

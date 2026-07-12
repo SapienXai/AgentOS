@@ -633,6 +633,12 @@ function InspectorSummary({
             : "overview";
   const taskIntegrity = taskDetail?.integrity;
   const operationRunCount = selectedTask ? readOperationRunCount(taskDetail?.task ?? selectedTask) : 0;
+  const operationJobId = selectedTask && typeof selectedTask.metadata.operationJobId === "string"
+    ? selectedTask.metadata.operationJobId
+    : null;
+  const operationLastError = selectedTask && typeof selectedTask.metadata.operationLastError === "string"
+    ? selectedTask.metadata.operationLastError
+    : null;
   const taskNeedsReview = Boolean(
     selectedTask &&
       (selectedTask.warningCount > 0 ||
@@ -729,7 +735,9 @@ function InspectorSummary({
         {action === "steer-task" && selectedTask ? (
           <RunningTaskControlBar compact task={selectedTask} onAbortTask={onAbortTask} onControlComplete={onControlComplete} />
         ) : action === "review-result" && selectedTask ? (
-          onReviewTask ? (
+          operationJobId ? (
+            <InspectorPrimaryAction label="Open recovery" tone={tone} onClick={onOpenActivity} />
+          ) : onReviewTask ? (
             <InspectorPrimaryAction label="Review result" tone={tone} onClick={() => onReviewTask(selectedTask)} />
           ) : (
             <InspectorPrimaryAction label="View result" tone={tone} onClick={onOpenActivity} />
@@ -745,7 +753,9 @@ function InspectorSummary({
 
       {taskNeedsReview ? (
         <p className="mt-3 rounded-[10px] border border-amber-400/20 bg-amber-400/10 px-2.5 py-2 text-[11px] leading-4 text-amber-100">
-          This task has captured evidence that needs operator review.
+          {operationJobId
+            ? operationLastError || "The latest scheduled run needs attention. Open recovery to retry it or manage the schedule."
+            : "This task has captured evidence that needs operator review."}
         </p>
       ) : null}
       {taskWorkspace ? <p className={cn("mt-2 truncate text-[10px]", tone.mutedText)}>{taskWorkspace.name}</p> : null}
@@ -2440,6 +2450,7 @@ function TaskFeedContent({
     <>
       {readOperationRunCount(taskDetail?.task ?? task) > 0 ? (
         <InfoCard icon={ClipboardList} title="Run history" value={String(readOperationRunCount(taskDetail?.task ?? task))}>
+          <OperationRecoveryControls task={taskDetail?.task ?? task} onComplete={onControlComplete} />
           <OperationRunHistory task={taskDetail?.task ?? task} />
         </InfoCard>
       ) : null}
@@ -2507,6 +2518,57 @@ type OperationRunHistoryEntry = {
   durationMs: number | null;
 };
 
+function OperationRecoveryControls({
+  task,
+  onComplete
+}: {
+  task: MissionControlSnapshot["tasks"][number];
+  onComplete?: () => Promise<void> | void;
+}) {
+  const [pending, setPending] = useState<"run" | "retry" | "pause" | "resume" | null>(null);
+  const jobId = typeof task.metadata.operationJobId === "string" ? task.metadata.operationJobId : null;
+  const paused = task.metadata.operationStatus === "paused";
+  const hasFailure = task.metadata.lastRunStatus === "error" || Boolean(task.metadata.operationLastError);
+  if (!jobId) return null;
+
+  const perform = async (action: "run" | "retry" | "pause" | "resume") => {
+    if (pending) return;
+    setPending(action);
+    try {
+      const response = await fetch("/api/operations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, jobId })
+      });
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      if (!response.ok || payload?.error) throw new Error(payload?.error || "OpenClaw rejected the recovery action.");
+      toast.success(action === "run" || action === "retry" ? "Run accepted by OpenClaw." : action === "pause" ? "Schedule paused." : "Schedule resumed.");
+      await onComplete?.();
+    } catch (error) {
+      toast.error("Recovery action failed.", { description: error instanceof Error ? error.message : "Unknown error." });
+    } finally {
+      setPending(null);
+    }
+  };
+
+  return (
+    <div className="mb-3 grid grid-cols-2 gap-2">
+      <Button size="sm" disabled={Boolean(pending) || paused} onClick={() => void perform("run")}>
+        {pending === "run" ? "Starting…" : "Run now"}
+      </Button>
+      <Button size="sm" variant="secondary" disabled={Boolean(pending)} onClick={() => void perform(paused ? "resume" : "pause")}>
+        {pending === "pause" || pending === "resume" ? "Updating…" : paused ? "Resume schedule" : "Pause schedule"}
+      </Button>
+      {hasFailure ? (
+        <Button className="col-span-2" size="sm" variant="secondary" disabled={Boolean(pending) || paused} onClick={() => void perform("retry")}>
+          {pending === "retry" ? "Retrying…" : "Retry failed run"}
+        </Button>
+      ) : null}
+      {paused ? <p className="col-span-2 text-[11px] leading-4 opacity-60">No future runs will start until this schedule is resumed.</p> : null}
+    </div>
+  );
+}
+
 function OperationRunHistory({
   task,
   compact = false
@@ -2531,7 +2593,11 @@ function OperationRunHistory({
             <div className="flex items-center gap-2">
               <span className={cn(
                 "h-2 w-2 rounded-full",
-                entry.status === "error" ? "bg-rose-500" : entry.status === "running" || entry.status === "queued" ? "bg-amber-500" : "bg-emerald-500"
+                entry.status === "error"
+                  ? "bg-rose-500"
+                  : entry.status === "running" || entry.status === "queued" || entry.status === "possible missed"
+                    ? "bg-amber-500"
+                    : "bg-emerald-500"
               )} />
               <span className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">{entry.status}</span>
             </div>
@@ -2547,7 +2613,9 @@ function OperationRunHistory({
 }
 
 function readOperationRunCount(task: MissionControlSnapshot["tasks"][number]) {
-  return readOperationRunHistory(task).length;
+  return readOperationRunHistory(task)
+    .filter((entry) => entry.status !== "possible missed" && entry.status !== "recovered")
+    .length;
 }
 
 function readOperationRunHistory(task: MissionControlSnapshot["tasks"][number]): OperationRunHistoryEntry[] {
@@ -2583,6 +2651,24 @@ function readOperationRunHistory(task: MissionControlSnapshot["tasks"][number]):
     if (!byId.has(id)) {
       byId.set(id, { id, timestamp: event.timestamp, status: "completed", output: event.detail, error: null, durationMs: null });
     }
+  }
+
+  const recoveryEvents = Array.isArray(task.metadata.operationRecoveryHistory)
+    ? task.metadata.operationRecoveryHistory
+    : [];
+  for (const value of recoveryEvents) {
+    if (!value || typeof value !== "object") continue;
+    const event = value as Record<string, unknown>;
+    if (event.status !== "missed" && event.status !== "recovered") continue;
+    if (typeof event.id !== "string" || typeof event.timestamp !== "string" || typeof event.detail !== "string") continue;
+    byId.set(event.id, {
+      id: event.id,
+      timestamp: event.timestamp,
+      status: event.status === "missed" ? "possible missed" : "recovered",
+      output: event.detail,
+      error: null,
+      durationMs: null
+    });
   }
 
   return [...byId.values()]

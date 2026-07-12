@@ -115,6 +115,29 @@ test("recurring results keep unique feed ids when OpenClaw reuses message ids", 
   assert.notEqual(feed[0]?.id, feed[1]?.id);
 });
 
+test("interval history marks an observed result gap as possible missed and recovered", () => {
+  const [task] = buildOperationTaskProjections({
+    generatedAt: "2026-07-11T00:15:00.000Z", source: "openclaw.cron",
+    scheduler: { enabled: true, nextWakeAt: null, state: "available" }, runs: [], audit: [], notices: [],
+    jobs: [{ id: "job-gap", name: "Clock", description: null, enabled: true, status: "scheduled", agentId: "ops",
+      workspaceId: "workspace-a", prompt: "Time", model: null, thinking: null,
+      trigger: { kind: "every", everyMs: 60_000 }, nextRunAt: "2026-07-11T00:16:00.000Z",
+      lastRunAt: "2026-07-11T00:15:00.000Z", lastRunStatus: "ok", safety: null,
+      health: { consecutiveFailures: 0, successRate: null, degraded: false },
+      capabilities: { readable: true, mutable: true, runHistory: true, reason: null },
+      recentResults: [
+        { id: "first", timestamp: "2026-07-11T00:01:00.000Z", text: "First" },
+        { id: "second", timestamp: "2026-07-11T00:15:00.000Z", text: "Second" }
+      ] }]
+  }, [{ id: "ops", name: "Ops", workspaceId: "workspace-a" } as never]);
+  const recovery = task.metadata.operationRecoveryHistory as Array<{ status: string; missedCount: number; detail: string }>;
+
+  assert.deepEqual(recovery.map((entry) => entry.status), ["missed", "recovered"]);
+  assert.equal(recovery[0]?.missedCount, 13);
+  assert.match(recovery[0]?.detail ?? "", /Possible missed schedule/);
+  assert.match(recovery[1]?.detail ?? "", /recovered automatically/);
+});
+
 test("operation task cards retain Gateway run failure evidence for their timeline", () => {
   const [task] = buildOperationTaskProjections({
     generatedAt: "2026-07-11T00:00:00.000Z", source: "openclaw.cron", scheduler: { enabled: true, nextWakeAt: null, state: "available" }, audit: [], notices: [],
