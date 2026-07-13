@@ -39,6 +39,50 @@ test("task detail includes follow-up runtimes from the same session context", as
   assert.equal(detail.task.runtimeCount, 2);
 });
 
+test("task detail does not join another dispatch through the synthetic gateway session", async () => {
+  const currentRuntime = createRuntime({
+    id: "runtime-current",
+    runId: "dispatch-current",
+    sessionId: "gateway",
+    subtitle: "Current dispatch timed out.",
+    updatedAt: 2000,
+    metadata: {
+      dispatchId: "dispatch-current",
+      mission: "Send the current message"
+    }
+  });
+  const previousRuntime = createRuntime({
+    id: "runtime-previous",
+    runId: undefined,
+    sessionId: "gateway",
+    subtitle: "Previous dispatch result.",
+    updatedAt: 1000,
+    metadata: {
+      dispatchId: "dispatch-previous",
+      mission: "Send the previous message"
+    }
+  });
+  const task = createTask({
+    mission: "Send the current message",
+    dispatchId: "dispatch-current",
+    runtimeIds: [currentRuntime.id],
+    runIds: ["dispatch-current"],
+    sessionIds: ["gateway"]
+  });
+  const snapshot = {
+    runtimes: [currentRuntime, previousRuntime],
+    agents: [],
+    tasks: [task],
+    workspaces: []
+  } as unknown as MissionControlSnapshot;
+
+  const detail = await buildTaskDetailFromTaskRecord(task, snapshot, null);
+
+  assert.deepEqual(detail.runs.map((runtime) => runtime.id), ["runtime-current"]);
+  assert.equal(detail.task.runtimeIds.includes("runtime-previous"), false);
+  assert.deepEqual(detail.task.sessionIds, []);
+});
+
 test("scheduled operation history is accepted as Gateway result evidence", async () => {
   const resultAt = "2026-07-11T12:48:18.000Z";
   const task = createTask({

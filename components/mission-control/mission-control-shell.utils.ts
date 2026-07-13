@@ -290,6 +290,13 @@ export function matchesOptimisticTaskReplacement(task: WorkItemRecord, optimisti
   if (optimisticTask.operationJobId) {
     return task.metadata.operationJobId === optimisticTask.operationJobId;
   }
+  const clientRequestId =
+    typeof task.metadata.clientRequestId === "string" ? task.metadata.clientRequestId.trim() : "";
+
+  if (clientRequestId && clientRequestId === optimisticTask.requestId) {
+    return true;
+  }
+
   const dispatchId = optimisticTask.dispatchId?.trim();
 
   if (!dispatchId) {

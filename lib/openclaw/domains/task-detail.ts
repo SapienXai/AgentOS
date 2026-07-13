@@ -16,7 +16,8 @@ import {
   buildTaskRecord,
   dedupeCreatedFiles,
   extractCreatedFilesFromRuntimeMetadata,
-  extractWarningsFromRuntimeMetadata
+  extractWarningsFromRuntimeMetadata,
+  normalizeTaskSessionReferences
 } from "@/lib/openclaw/domains/task-records";
 import {
   buildObservedMissionDispatchRuntime,
@@ -223,7 +224,9 @@ function reconcileTaskRecordWithRuns(
   const latestRuntime = sortedRuns[0] ?? null;
   const runtimeIds = sortedRuns.map((runtime) => runtime.id);
   const runIds = uniqueStrings(sortedRuns.flatMap((runtime) => (runtime.runId ? [runtime.runId] : [])));
-  const sessionIds = uniqueStrings(sortedRuns.flatMap((runtime) => (runtime.sessionId ? [runtime.sessionId] : [])));
+  const sessionIds = uniqueStrings(
+    sortedRuns.flatMap((runtime) => normalizeTaskSessionReferences(runtime.sessionId))
+  );
 
   return {
     ...task,
@@ -344,7 +347,7 @@ function collectTaskDetailRuns(
 ) {
   const byId = new Map(directRuns.map((runtime) => [runtime.id, runtime]));
   const dispatchId = task.dispatchId?.trim() || null;
-  const sessionIds = new Set(task.sessionIds.flatMap((value) => normalizeSessionReferences(value)));
+  const sessionIds = new Set(task.sessionIds.flatMap((value) => normalizeTaskSessionReferences(value)));
   const runIds = new Set(task.runIds.map((value) => value.trim()).filter(Boolean));
   const agentIds = new Set(task.agentIds.map((value) => value.trim()).filter(Boolean));
   if (task.primaryAgentId) {
@@ -404,7 +407,7 @@ function runtimeMatchesTaskContext(
     return true;
   }
 
-  const sessionIds = normalizeSessionReferences(runtime.sessionId);
+  const sessionIds = normalizeTaskSessionReferences(runtime.sessionId);
   if (sessionIds.length === 0 || !sessionIds.some((sessionId) => context.sessionIds.has(sessionId))) {
     return false;
   }
@@ -414,16 +417,6 @@ function runtimeMatchesTaskContext(
   }
 
   return Boolean(runtime.agentId && context.agentIds.has(runtime.agentId));
-}
-
-function normalizeSessionReferences(value: string | null | undefined) {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return [];
-  }
-
-  const match = trimmed.match(/^agent:([^:]+):explicit:(.+)$/);
-  return match ? [trimmed, match[2] ?? ""] : [trimmed];
 }
 
 function readRuntimeMetadataString(runtime: RuntimeRecord, key: string) {

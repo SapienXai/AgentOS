@@ -64,7 +64,11 @@ export function buildTaskRecord(
   const warnings = uniqueStrings(sortedRuntimes.flatMap((runtime) => extractWarningsFromRuntimeMetadata(runtime)));
   const tokenUsage = aggregateRuntimeTokenUsage(sortedRuntimes);
   const agentIds = uniqueStrings(sortedRuntimes.flatMap((runtime) => (runtime.agentId ? [runtime.agentId] : [])));
-  const sessionIds = uniqueStrings(sortedRuntimes.flatMap((runtime) => (runtime.sessionId ? [runtime.sessionId] : [])));
+  const sessionIds = uniqueStrings(
+    sortedRuntimes.flatMap((runtime) =>
+      runtime.sessionId && isUsableTaskSessionReference(runtime.sessionId) ? [runtime.sessionId] : []
+    )
+  );
   const runIds = uniqueStrings(sortedRuntimes.flatMap((runtime) => (runtime.runId ? [runtime.runId] : [])));
   const modelIds = uniqueStrings(sortedRuntimes.flatMap((runtime) => (runtime.modelId ? [runtime.modelId] : [])));
   const turnCount = countTaskTurns(sortedRuntimes);
@@ -113,6 +117,10 @@ export function buildTaskRecord(
       provenance,
       source: provenance,
       dispatchId: dispatchId ?? null,
+      clientRequestId:
+        sortedRuntimes
+          .map((runtime) => runtime.metadata.clientRequestId)
+          .find((value): value is string => typeof value === "string" && value.trim().length > 0) ?? null,
       openClawTaskId,
       openClawSessionId: sessionId,
       openClawSessionKey: sessionKey,
@@ -472,7 +480,7 @@ function resolveRuntimeTaskLinks(runtime: RuntimeRecord) {
   const dispatchId =
     typeof runtime.metadata.dispatchId === "string" ? runtime.metadata.dispatchId.trim() : "";
   const agentId = runtime.agentId?.trim() || "unknown";
-  const sessionIds = normalizeRuntimeSessionReferences(runtime.sessionId);
+  const sessionIds = normalizeTaskSessionReferences(runtime.sessionId);
 
   if (dispatchId) {
     links.add(`dispatch:${dispatchId}`);
@@ -489,14 +497,16 @@ function resolveRuntimeTaskLinks(runtime: RuntimeRecord) {
   return [...links];
 }
 
-function normalizeRuntimeSessionReferences(value: string | null | undefined) {
+export function normalizeTaskSessionReferences(value: string | null | undefined) {
   const trimmed = value?.trim();
-  if (!trimmed) {
+  if (!trimmed || !isUsableTaskSessionReference(trimmed)) {
     return [];
   }
 
   const match = trimmed.match(/^agent:([^:]+):explicit:(.+)$/);
-  return match ? uniqueStrings([trimmed, match[2] ?? ""]) : [trimmed];
+  return match
+    ? uniqueStrings([trimmed, match[2] ?? ""]).filter(isUsableTaskSessionReference)
+    : [trimmed];
 }
 
 function resolveRuntimeMissionText(runtime: RuntimeRecord) {
@@ -681,7 +691,7 @@ function resolveTaskSessionId(runtimes: RuntimeRecord[], sessionIds: string[], s
             ? runtime.metadata.gatewaySessionId.trim()
             : "";
 
-    if (metadataSessionId) {
+    if (metadataSessionId && isUsableTaskSessionReference(metadataSessionId)) {
       return extractExplicitSessionId(metadataSessionId) ?? metadataSessionId;
     }
   }
@@ -721,6 +731,11 @@ function extractExplicitSessionId(value: string | null | undefined) {
   }
 
   return normalized.slice(markerIndex + marker.length).trim() || null;
+}
+
+function isUsableTaskSessionReference(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return Boolean(normalized) && !["gateway", "unknown", "none", "null", "n/a"].includes(normalized);
 }
 
 function isNativeTaskRuntime(runtime: RuntimeRecord) {

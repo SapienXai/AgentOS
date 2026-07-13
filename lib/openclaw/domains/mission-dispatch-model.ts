@@ -22,6 +22,7 @@ type MissionCommandPayloadLike = {
 
 export type MissionDispatchRecordLike = {
   id: string;
+  clientRequestId?: string | null;
   status: MissionDispatchStatus | string;
   agentId: string;
   sessionId: string | null;
@@ -295,6 +296,7 @@ export function reconcileTaskRecordWithDispatchRecord(task: TaskRecord, record: 
     metadata: {
       ...task.metadata,
       bootstrapStage,
+      clientRequestId: record.clientRequestId ?? null,
       dispatchStatus: record.status,
       requestedModelId: extractMissionDispatchRequestedModelId(record),
       dispatchSubmittedAt: record.submittedAt,

@@ -89,6 +89,7 @@ export async function submitMissionDispatch(
   );
 
   let dispatchRecord = createMissionDispatchRecord({
+    clientRequestId: input.requestId?.trim() || null,
     agentId,
     mission,
     routedMission,

@@ -342,6 +342,7 @@ export function CommandBar({
         signal: abortController.signal,
         body: JSON.stringify({
           ...payload,
+          requestId,
           mission: submittedMission
         })
       });

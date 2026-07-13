@@ -53,6 +53,7 @@ type MissionDispatchCommandPayloadLike = {
 };
 
 export type MissionDispatchPayload = {
+  clientRequestId: string | null;
   agentId: string;
   mission: string;
   routedMission: string;
@@ -96,6 +97,7 @@ export function createMissionDispatchRecord(payload: MissionDispatchPayload): Mi
 
   return {
     id: dispatchId,
+    clientRequestId: payload.clientRequestId,
     status: "queued",
     agentId: payload.agentId,
     sessionId: randomUUID(),
@@ -930,6 +932,7 @@ async function readMissionDispatchRecord(filePath: string): Promise<MissionDispa
 
     return {
       id: parsed.id,
+      clientRequestId: typeof parsed.clientRequestId === "string" ? parsed.clientRequestId : null,
       status,
       agentId: parsed.agentId,
       sessionId: typeof parsed.sessionId === "string" ? parsed.sessionId : null,

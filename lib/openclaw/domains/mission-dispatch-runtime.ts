@@ -311,6 +311,7 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
     metadata: {
       ...runtime.metadata,
       dispatchId: record.id,
+      clientRequestId: record.clientRequestId ?? null,
       dispatchStatus: record.status,
       dispatchSubmittedAt: record.submittedAt,
       requestedModelId: record.requestedModelId ?? null,
@@ -361,6 +362,7 @@ export function buildMissionDispatchTranscriptRuntime(
     metadata: {
       mission: record.mission,
       dispatchId: record.id,
+      clientRequestId: record.clientRequestId ?? null,
       routedMission: record.routedMission,
       outputDir: record.outputDir,
       outputDirRelative: record.outputDirRelative,
@@ -412,6 +414,7 @@ export function createMissionDispatchRuntime(
     tokenUsage,
     metadata: {
       dispatchId: record.id,
+      clientRequestId: record.clientRequestId ?? null,
       mission: record.mission,
       routedMission: record.routedMission,
       outputDir: record.outputDir,

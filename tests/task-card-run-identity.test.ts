@@ -7,6 +7,7 @@ import type { OpenClawAgent, RuntimeRecord } from "@/lib/openclaw/types";
 
 test("mission dispatch records snapshot the requested model at submission", () => {
   const record = createMissionDispatchRecord({
+    clientRequestId: "request-1",
     agentId: "agent-1",
     mission: "Check inbox",
     routedMission: "Check inbox",
@@ -20,6 +21,7 @@ test("mission dispatch records snapshot the requested model at submission", () =
   });
 
   assert.equal(record.requestedModelId, "openai/gpt-5.5");
+  assert.equal(record.clientRequestId, "request-1");
 });
 
 test("same-prompt tasks keep separate run, model, and start metadata", () => {

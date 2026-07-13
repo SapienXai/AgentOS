@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 
 const missionSchema = z.object({
   mission: z.string().min(1),
+  requestId: z.string().min(1).max(160).regex(/^[A-Za-z0-9:_-]+$/).optional(),
   agentId: z.string().optional(),
   workspaceId: z.string().optional(),
   accountTargetId: z.string().optional(),

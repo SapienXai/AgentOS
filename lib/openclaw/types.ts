@@ -1253,6 +1253,7 @@ export interface DiscoveredSurfaceRoute {
 
 export interface MissionSubmission {
   mission: string;
+  requestId?: string;
   agentId?: string;
   workspaceId?: string;
   thinking?: "off" | "minimal" | "low" | "medium" | "high";

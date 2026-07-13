@@ -297,6 +297,28 @@ test("control plane helpers normalize snapshot and onboarding fallback", () => {
 
   assert.equal(merged.tasks.length, 1);
   assert.equal(merged.tasks[0].key, "optimistic:req-1");
+
+  const realTask = {
+    ...optimisticTask.task,
+    id: "task-real",
+    key: "dispatch:dispatch-real",
+    dispatchId: "dispatch-real",
+    metadata: {
+      ...optimisticTask.task.metadata,
+      optimistic: false,
+      clientRequestId: "req-1"
+    }
+  };
+  const snapshotWithEarlyRuntime = {
+    ...emptySnapshot,
+    tasks: [realTask]
+  };
+  const reconciled = mergeSnapshotWithOptimisticTasks(
+    snapshotWithEarlyRuntime,
+    [{ requestId: "req-1", dispatchId: null, task: optimisticTask.task }]
+  );
+
+  assert.deepEqual(reconciled.tasks.map((task) => task.id), ["task-real"]);
 });
 
 test("install summary reflects the active install family and root", () => {
