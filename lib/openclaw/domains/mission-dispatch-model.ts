@@ -28,6 +28,7 @@ export type MissionDispatchRecordLike = {
   mission: string;
   routedMission: string;
   thinking: NonNullable<MissionSubmission["thinking"]>;
+  requestedModelId?: string | null;
   workspaceId: string | null;
   workspacePath: string | null;
   submittedAt: string;
@@ -64,6 +65,10 @@ export function extractMissionDispatchSessionId(record: MissionDispatchRecordLik
 
 export function extractMissionDispatchModelId(record: MissionDispatchRecordLike) {
   return extractMissionDispatchString(extractMissionDispatchAgentMeta(record), "model");
+}
+
+export function extractMissionDispatchRequestedModelId(record: MissionDispatchRecordLike) {
+  return record.requestedModelId?.trim() || null;
 }
 
 export function extractMissionDispatchTokenUsage(record: MissionDispatchRecordLike): RuntimeRecord["tokenUsage"] | undefined {
@@ -291,6 +296,7 @@ export function reconcileTaskRecordWithDispatchRecord(task: TaskRecord, record: 
       ...task.metadata,
       bootstrapStage,
       dispatchStatus: record.status,
+      requestedModelId: extractMissionDispatchRequestedModelId(record),
       dispatchSubmittedAt: record.submittedAt,
       dispatchRunnerStartedAt: record.runner.startedAt,
       dispatchHeartbeatAt: record.runner.lastHeartbeatAt,

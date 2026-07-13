@@ -10,6 +10,7 @@ import {
   ChevronDown,
   Copy,
   CornerDownLeft,
+  Cpu,
   EyeOff,
   Lock,
   LockOpen,
@@ -183,6 +184,16 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     typeof displayTask.metadata.dispatchSubmittedAt === "string"
       ? displayTask.metadata.dispatchSubmittedAt
       : null;
+  const observedModelId =
+    typeof displayTask.metadata.modelId === "string" && displayTask.metadata.modelId.trim()
+      ? displayTask.metadata.modelId.trim()
+      : null;
+  const requestedModelId =
+    typeof displayTask.metadata.requestedModelId === "string" && displayTask.metadata.requestedModelId.trim()
+      ? displayTask.metadata.requestedModelId.trim()
+      : null;
+  const taskModelId = observedModelId ?? requestedModelId;
+  const taskRunReference = formatTaskRunReference(displayTask.dispatchId, displayTask.runIds[0]);
   const isPendingCreation = detail
     ? isPendingTaskBootstrapStage(bootstrapStage)
     : Boolean(data.pendingCreation || isPendingTaskBootstrapStage(bootstrapStage));
@@ -685,6 +696,29 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
             {displayPromptText}
           </h3>
 
+          <div className={cn("mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[9px]", surfaceTone.mutedText)}>
+            {dispatchSubmittedAt ? (
+              <span title={new Date(dispatchSubmittedAt).toLocaleString()}>
+                Started <span className={surfaceTone.text}>{formatTimelineDate(dispatchSubmittedAt)}</span>
+              </span>
+            ) : null}
+            {taskModelId ? (
+              <span className="inline-flex min-w-0 items-center gap-1" title={`${observedModelId ? "Runtime model" : "Requested model (runtime did not confirm usage)"}: ${taskModelId}`}>
+                <Cpu className="h-3 w-3 shrink-0" />
+                <span className="max-w-[160px] truncate text-current">
+                  {observedModelId ? "Model" : "Requested"} <span className={surfaceTone.text}>{taskModelId}</span>
+                </span>
+              </span>
+            ) : (
+              <span title="OpenClaw did not expose a model for this run.">Model unavailable</span>
+            )}
+            {taskRunReference ? (
+              <span title={displayTask.dispatchId ?? displayTask.runIds[0] ?? undefined}>
+                Run <span className={cn("font-mono", surfaceTone.text)}>{taskRunReference}</span>
+              </span>
+            ) : null}
+          </div>
+
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {displayTask.warningCount > 0 && !hasReviewResolution ? (
               <Badge variant="warning" className="rounded-[8px] px-2 py-1 text-[9px]">
@@ -718,11 +752,16 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
           </div>
 
           {dispatchIssueDetail ? (
-            <p className={cn("mt-1.5 line-clamp-2 text-[10px] leading-4", surfaceTheme === "light" ? "text-amber-800" : "text-amber-100/90")}>
-              {reviewPresentation.deliveryUnconfirmed
-                ? "AgentOS did not observe a terminal response before the Gateway wait expired."
-                : dispatchIssueDetail}
-            </p>
+            <div className="mt-2">
+              <p className={cn("text-[9px] font-semibold uppercase tracking-[0.14em]", surfaceTheme === "light" ? "text-amber-700" : "text-amber-200/80")}>
+                Why review
+              </p>
+              <p className={cn("mt-1 line-clamp-2 text-[10px] leading-4", surfaceTheme === "light" ? "text-amber-800" : "text-amber-100/90")}>
+                {reviewPresentation.deliveryUnconfirmed
+                  ? "No final response was confirmed before the Gateway wait expired."
+                  : dispatchIssueDetail}
+              </p>
+            </div>
           ) : null}
 
           <div className="mt-2">
@@ -1640,6 +1679,16 @@ function readOperationRunTimeline(feedValue: unknown, runHistoryValue: unknown, 
 function formatTimelineDate(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "unknown time" : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function formatTaskRunReference(dispatchId: string | undefined, runId: string | undefined) {
+  const value = dispatchId?.trim() || runId?.trim();
+
+  if (!value) {
+    return null;
+  }
+
+  return value.replace(/^dispatch-/, "").slice(0, 8);
 }
 
 function OperationScheduleControl({ jobId, label, cronExpression, timezone, scheduleKind, triggerAt, intervalMs, surfaceTheme, onSaved }: {

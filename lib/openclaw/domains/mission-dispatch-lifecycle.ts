@@ -57,6 +57,7 @@ export type MissionDispatchPayload = {
   mission: string;
   routedMission: string;
   thinking: NonNullable<MissionSubmission["thinking"]>;
+  requestedModelId: string | null;
   workspaceId: string | null;
   workspacePath: string | null;
   outputDir: string | null;
@@ -101,6 +102,7 @@ export function createMissionDispatchRecord(payload: MissionDispatchPayload): Mi
     mission: payload.mission,
     routedMission: payload.routedMission,
     thinking: payload.thinking,
+    requestedModelId: payload.requestedModelId,
     workspaceId: payload.workspaceId,
     workspacePath: payload.workspacePath,
     submittedAt: now,
@@ -934,6 +936,7 @@ async function readMissionDispatchRecord(filePath: string): Promise<MissionDispa
       mission: parsed.mission,
       routedMission: parsed.routedMission,
       thinking: normalizeMissionThinking(parsed.thinking),
+      requestedModelId: typeof parsed.requestedModelId === "string" ? parsed.requestedModelId : null,
       workspaceId: typeof parsed.workspaceId === "string" ? parsed.workspaceId : null,
       workspacePath: typeof parsed.workspacePath === "string" ? parsed.workspacePath : null,
       submittedAt: parsed.submittedAt,

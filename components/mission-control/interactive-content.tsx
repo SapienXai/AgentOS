@@ -54,7 +54,7 @@ export function InteractiveContent({
             target="_blank"
             rel="noreferrer"
             className={cn(
-                "nodrag nopan inline-flex max-w-full items-center gap-1 rounded-full border border-cyan-300/16 bg-cyan-400/[0.08] px-2 py-1 text-[10px] text-cyan-100 transition-colors hover:border-cyan-200/30 hover:bg-cyan-400/[0.14]",
+                "nodrag nopan inline-flex max-w-full items-center gap-1 rounded-full border border-primary/25 bg-primary/[0.08] px-2 py-1 text-[10px] font-medium text-primary transition-colors hover:border-primary/40 hover:bg-primary/[0.14] dark:border-cyan-300/16 dark:bg-cyan-400/[0.08] dark:text-cyan-100 dark:hover:border-cyan-200/30 dark:hover:bg-cyan-400/[0.14]",
                 compact && "px-1.5 py-[3px] text-[9px]"
               )}
             onClick={(event) => event.stopPropagation()}
@@ -68,7 +68,7 @@ export function InteractiveContent({
             key={email}
             href={`mailto:${email}`}
             className={cn(
-                "nodrag nopan inline-flex max-w-full items-center gap-1 rounded-full border border-sky-300/16 bg-sky-400/[0.08] px-2 py-1 text-[10px] text-sky-50 transition-colors hover:border-sky-200/30 hover:bg-sky-400/[0.14]",
+                "nodrag nopan inline-flex max-w-full items-center gap-1 rounded-full border border-primary/25 bg-primary/[0.08] px-2 py-1 text-[10px] font-medium text-primary transition-colors hover:border-primary/40 hover:bg-primary/[0.14] dark:border-sky-300/16 dark:bg-sky-400/[0.08] dark:text-sky-50 dark:hover:border-sky-200/30 dark:hover:bg-sky-400/[0.14]",
                 compact && "px-1.5 py-[3px] text-[9px]"
               )}
             onClick={(event) => event.stopPropagation()}
@@ -82,7 +82,7 @@ export function InteractiveContent({
             key={`${reference.path}:${reference.label}`}
             type="button"
             className={cn(
-                "nodrag nopan inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-300/16 bg-emerald-400/[0.08] px-2 py-1 text-[10px] text-emerald-50 transition-colors hover:border-emerald-200/30 hover:bg-emerald-400/[0.14]",
+                "nodrag nopan inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-700/20 bg-emerald-700/[0.07] px-2 py-1 text-[10px] font-medium text-emerald-800 transition-colors hover:border-emerald-700/35 hover:bg-emerald-700/[0.12] dark:border-emerald-300/16 dark:bg-emerald-400/[0.08] dark:text-emerald-50 dark:hover:border-emerald-200/30 dark:hover:bg-emerald-400/[0.14]",
                 compact && "px-1.5 py-[3px] text-[9px]"
               )}
             onClick={(event) => {
@@ -123,7 +123,7 @@ function renderTextWithLinks(text: string) {
         href={match}
         target="_blank"
         rel="noreferrer"
-        className="nodrag nopan text-cyan-100 underline decoration-cyan-200/45 underline-offset-2 transition-colors hover:text-cyan-50 hover:decoration-cyan-100"
+        className="nodrag nopan font-medium text-primary underline decoration-primary/40 underline-offset-2 transition-colors hover:text-primary/80 hover:decoration-primary/70 dark:text-cyan-100 dark:decoration-cyan-200/45 dark:hover:text-cyan-50 dark:hover:decoration-cyan-100"
         onClick={(event) => event.stopPropagation()}
       >
         {match}

@@ -93,6 +93,7 @@ export async function submitMissionDispatch(
     mission,
     routedMission,
     thinking,
+    requestedModelId: missionAgent?.modelId && missionAgent.modelId !== "unassigned" ? missionAgent.modelId : null,
     workspaceId: missionWorkspace?.id ?? null,
     workspacePath: missionWorkspace?.path ?? null,
     outputDir: outputPlan?.absoluteOutputDir ?? null,

@@ -66,6 +66,7 @@ export function buildTaskRecord(
   const agentIds = uniqueStrings(sortedRuntimes.flatMap((runtime) => (runtime.agentId ? [runtime.agentId] : [])));
   const sessionIds = uniqueStrings(sortedRuntimes.flatMap((runtime) => (runtime.sessionId ? [runtime.sessionId] : [])));
   const runIds = uniqueStrings(sortedRuntimes.flatMap((runtime) => (runtime.runId ? [runtime.runId] : [])));
+  const modelIds = uniqueStrings(sortedRuntimes.flatMap((runtime) => (runtime.modelId ? [runtime.modelId] : [])));
   const turnCount = countTaskTurns(sortedRuntimes);
   const dispatchStatus = resolveTaskDispatchStatus(sortedRuntimes);
   const primaryAgentId = primaryRuntime?.agentId || agentIds[0];
@@ -116,6 +117,12 @@ export function buildTaskRecord(
       openClawSessionId: sessionId,
       openClawSessionKey: sessionKey,
       openClawRunId: runIds[0] ?? null,
+      modelId: primaryRuntime?.modelId ?? modelIds[0] ?? null,
+      modelIds,
+      requestedModelId:
+        sortedRuntimes
+          .map((runtime) => runtime.metadata.requestedModelId)
+          .find((value): value is string => typeof value === "string" && value.trim().length > 0) ?? null,
       continuationAvailable: Boolean(primaryAgentId && (sessionKey || sessionId)),
       continuationConfidence,
       continuationSessionId: sessionId,
