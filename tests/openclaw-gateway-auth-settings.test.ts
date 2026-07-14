@@ -36,6 +36,17 @@ test("Gateway settings expose OpenClaw doctor repair through Gateway control", (
   assert.match(serviceSource, /runOpenClaw\(\["doctor", "--fix"\]/);
 });
 
+test("OpenClaw Control UI opens through the CLI bootstrap flow", () => {
+  const settingsSource = readFileSync(join(process.cwd(), "components/mission-control/settings-control-center.tsx"), "utf8");
+  const routeSource = readFileSync(join(process.cwd(), "app/api/openclaw/dashboard/route.ts"), "utf8");
+  const serviceSource = readFileSync(join(process.cwd(), "lib/openclaw/application/gateway-service.ts"), "utf8");
+
+  assert.match(settingsSource, /fetch\("\/api\/openclaw\/dashboard"/);
+  assert.match(routeSource, /openOpenClawDashboard/);
+  assert.match(serviceSource, /runOpenClaw\(\["dashboard"\]/);
+  assert.doesNotMatch(settingsSource, /href=\{snapshot\.diagnostics\.dashboardUrl\}/);
+});
+
 function createSettingsAdapter(config: Record<string, unknown> = {}): OpenClawAdapter {
   const mutableConfig = { ...config };
   return {

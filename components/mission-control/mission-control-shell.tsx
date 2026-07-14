@@ -10,6 +10,7 @@ import { AddModelsDialog } from "@/components/mission-control/add-models/add-mod
 import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
 import { AgentCapabilityEditorDialog } from "@/components/mission-control/agent-capability-editor-dialog";
 import { CommandBar } from "@/components/mission-control/command-bar";
+import { workspaceTaskCardFiltersStorageKey } from "@/components/mission-control/canvas.persistence";
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
 import { ContextEngineDialog } from "@/components/mission-control/context-engine-dialog";
 import { InspectorPanel } from "@/components/mission-control/inspector-panel";
@@ -3254,6 +3255,7 @@ export function MissionControlShell({
       missionControlPreferenceStorageKeys.hiddenRuntimeIds,
       missionControlPreferenceStorageKeys.hiddenTaskKeys,
       missionControlPreferenceStorageKeys.lockedTaskKeys,
+      workspaceTaskCardFiltersStorageKey,
       "mission-control-workspace-plan-id",
       "mission-control-recent-prompts",
       "mission-control-node-positions",

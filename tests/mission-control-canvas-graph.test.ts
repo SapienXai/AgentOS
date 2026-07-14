@@ -1,8 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildCanvasGraph } from "@/components/mission-control/canvas.graph";
-import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
+import {
+  buildCanvasGraph,
+  filterWorkspaceTasksForCanvas,
+  isActiveTaskForCanvas
+} from "@/components/mission-control/canvas.graph";
+import type { MissionControlSnapshot, WorkItemRecord } from "@/lib/agentos/contracts";
+
+test("Active Runs keeps scheduled, running, and review tasks only", () => {
+  const tasks = (["queued", "running", "stalled", "completed", "cancelled", "idle"] as const).map(
+    (status) => ({ id: status, status }) as WorkItemRecord
+  );
+
+  assert.deepEqual(
+    filterWorkspaceTasksForCanvas(tasks, "active").map((task) => task.id),
+    ["queued", "running", "stalled"]
+  );
+  assert.equal(tasks.filter(isActiveTaskForCanvas).length, 3);
+  assert.equal(filterWorkspaceTasksForCanvas(tasks, "all").length, 6);
+  assert.equal(filterWorkspaceTasksForCanvas(tasks, "hidden").length, 0);
+});
 
 test("canvas places agent-owned tasks when task workspace id is missing", () => {
   const snapshot = {

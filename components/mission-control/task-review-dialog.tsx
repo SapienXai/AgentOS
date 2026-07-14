@@ -2,34 +2,32 @@
 
 import {
   AlertTriangle,
+  ChevronDown,
   CheckCircle2,
   ClipboardList,
   CornerDownRight,
   Eye,
-  FileText,
-  Files,
-  ListChecks,
   Loader2,
-  MessageSquare,
   RefreshCw,
   XCircle
 } from "lucide-react";
-import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { InteractiveContent } from "@/components/mission-control/interactive-content";
 import {
   readTaskReviewAction,
-  readTaskReviewReviewedAt,
   resolveEffectiveTaskReviewStatus,
   resolveTaskReviewBadgeLabel,
   resolveTaskReviewSummary
 } from "@/components/mission-control/task-review-state";
 import {
+  findLatestTaskRuntimeFailure,
+  isBrowserTabUnavailableDetail,
   isGatewayWaitTimeoutDetail,
   resolveTaskDispatchIssueDetail,
-  resolveTaskReviewPresentation
+  resolveTaskReviewPresentation,
+  resolveTaskRuntimeFailureSummary
 } from "@/components/mission-control/task-node-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,11 +38,9 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { useTaskFeed } from "@/hooks/use-task-feed";
 import type { MissionControlSnapshot, TaskFeedEvent, WorkItemRecord } from "@/lib/agentos/contracts";
-import type { RuntimeCreatedFile } from "@/lib/openclaw/types";
 import {
   formatAgentDisplayName,
   formatRelativeTime,
@@ -87,6 +83,7 @@ export function TaskReviewDialog({
 }: TaskReviewDialogProps) {
   const [pendingAction, setPendingAction] = useState<TaskReviewPendingAction>(null);
   const [operatorReply, setOperatorReply] = useState("");
+  const [activityExpanded, setActivityExpanded] = useState(false);
   const localFeed = useMemo(
     () => readTaskFeedEvents(task?.metadata.optimisticEvents),
     [task?.metadata.optimisticEvents]
@@ -104,15 +101,16 @@ export function TaskReviewDialog({
     ? snapshot.agents.find((entry) => entry.id === currentTask.primaryAgentId) ?? null
     : null;
   const latestEvidenceEvent = findLatestOutputEvidenceEvent(detail?.liveFeed ?? []);
+  const latestRuntimeFailure = findLatestTaskRuntimeFailure(detail?.liveFeed ?? []);
+  const latestRuntimeFailureDetail = latestRuntimeFailure?.detail.trim() || null;
   const reviewStatus = currentTask
     ? resolveEffectiveTaskReviewStatus(currentTask, {
         hasLiveActivity: currentTask.status === "running" || currentTask.status === "queued" || currentTask.liveRunCount > 0,
         latestEvidenceAt: latestEvidenceEvent?.timestamp ?? null
       })
     : null;
-  const reviewedAt = currentTask ? readTaskReviewReviewedAt(currentTask) : null;
   const reviewAction = currentTask ? readTaskReviewAction(currentTask) : null;
-  const capturedOutput = currentTask ? readCapturedTaskOutput(currentTask, integrity?.finalResponseText) : "";
+  const capturedTaskOutput = currentTask ? readCapturedTaskOutput(currentTask, integrity?.finalResponseText) : "";
   const hasCapturedOutputEvidence = currentTask
     ? hasExplicitCapturedTaskOutput(currentTask, integrity?.finalResponseText)
     : false;
@@ -124,32 +122,43 @@ export function TaskReviewDialog({
     ? resolveTaskReviewPresentation(currentTask, integrity)
     : null;
   const isDeliveryUnconfirmed = reviewPresentation?.deliveryUnconfirmed ?? false;
+  const browserTabUnavailable = isBrowserTabUnavailableDetail(latestRuntimeFailureDetail);
+  const capturedOutput = latestRuntimeFailureDetail || capturedTaskOutput;
   const isVerified = integrity?.status === "verified" && !issue;
   const statusLabel = reviewStatus ? resolveTaskReviewBadgeLabel(reviewStatus) : isVerified ? "verified" : "needs review";
-  const issueSummary = reviewStatus
+  const issueSummary = latestRuntimeFailureDetail
+    ? resolveTaskRuntimeFailureSummary(latestRuntimeFailureDetail)
+    : reviewStatus
     ? resolveTaskReviewSummary(reviewStatus)
     : resolveReviewIssueSummary(dispatchIssueDetail, issue?.detail) ||
       (isVerified
         ? "AgentOS recovered a matching completed response and no review issues remain."
         : "The captured task evidence needs an operator decision before AgentOS treats the result as handled.");
-  const rawIssueDetail = dispatchIssueDetail || issue?.detail || null;
+  const rawIssueDetail = latestRuntimeFailureDetail || dispatchIssueDetail || issue?.detail || null;
   const shouldShowRawIssueDetail = rawIssueDetail && rawIssueDetail !== issueSummary;
-  const reviewGuidance = currentTask
-    ? resolveReviewGuidance({
-        task: currentTask,
-        createdFiles,
-        capturedOutput,
-        rawIssueDetail
-      })
-    : [];
   const reportedFileCount = createdFiles.length || currentTask?.artifactCount || 0;
   const hasAcceptableEvidence = hasCapturedOutputEvidence || reportedFileCount > 0;
-  const capturedOutputLabel = isDeliveryUnconfirmed
+  const capturedOutputLabel = latestRuntimeFailureDetail
+    ? "Latest runtime error"
+    : isDeliveryUnconfirmed
     ? "Last captured response — unverified"
     : "Captured output";
-  const recommendedActionLabel = isDeliveryUnconfirmed
-    ? "Ask agent to verify delivery"
-    : "Continue task";
+  const browserRecoveryInstruction = browserTabUnavailable
+    ? "List the currently available browser tabs first. If the previous tab is gone, reopen the required page and continue from the current task state. Before sending or changing anything, verify whether the requested external action already happened so it is not duplicated."
+    : "";
+  const taskModel = currentTask && typeof currentTask.metadata.modelId === "string"
+    ? currentTask.metadata.modelId
+    : currentTask && typeof currentTask.metadata.requestedModelId === "string"
+      ? currentTask.metadata.requestedModelId
+      : agent?.modelId && agent.modelId !== "unassigned"
+        ? agent.modelId
+        : "Model unavailable";
+  const lastActivity = latestEvidenceEvent?.detail.trim() || capturedOutput || "No meaningful agent or tool activity was captured.";
+  const recommendedAction = browserTabUnavailable
+    ? "Continue the existing session after refreshing available tabs, and verify the external action was not already completed."
+    : isDeliveryUnconfirmed
+      ? "Continue the existing session and ask the agent to verify delivery before considering a retry."
+      : "Continue with a focused instruction; retry only if the current run cannot be recovered safely.";
   const isLight = surfaceTheme === "light";
   const isActionPending = pendingAction !== null;
   const operationJobId = currentTask && typeof currentTask.metadata.operationJobId === "string"
@@ -180,6 +189,7 @@ export function TaskReviewDialog({
 
   useEffect(() => {
     setOperatorReply("");
+    setActivityExpanded(false);
   }, [open, task?.id]);
 
   const runAction = async (action: Exclude<TaskReviewPendingAction, null>, callback: () => Promise<void> | void) => {
@@ -280,7 +290,7 @@ export function TaskReviewDialog({
               {pendingAction === "pause" || pendingAction === "resume" ? "Updating..." : operationPaused ? "Resume schedule" : "Pause schedule"}
             </Button>
             <Button type="button" className="bg-primary text-primary-foreground hover:bg-primary/90" disabled={isActionPending || operationPaused} onClick={() => void runAction(incompleteRun ? "retry" : "run", () => performOperationAction(incompleteRun ? "retry" : "run"))}>
-              {pendingAction === "retry" || pendingAction === "run" ? "Starting..." : incompleteRun ? "Retry run" : "Run now"}
+              {pendingAction === "retry" || pendingAction === "run" ? "Starting..." : incompleteRun ? "Retry failed run" : "Run now"}
             </Button>
           </div>
         </DialogContent>
@@ -288,477 +298,100 @@ export function TaskReviewDialog({
     );
   }
 
+  const hasLongActivity = lastActivity.length > 280;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className={cn(
-          "flex h-[min(780px,calc(100dvh-32px))] w-[calc(100vw-24px)] max-w-[900px] flex-col gap-0 overflow-hidden rounded-[26px] border-white/10 p-0",
-          isLight
-            ? "bg-white/95 text-slate-950 shadow-[0_24px_80px_rgba(15,23,42,0.22)]"
-            : "bg-[linear-gradient(180deg,rgba(8,13,24,0.98),rgba(4,7,14,0.98))] text-white"
-        )}
-        closeClassName={isLight ? "text-slate-500 hover:bg-slate-950/5 hover:text-slate-900" : undefined}
-      >
-        <div
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent
           className={cn(
-            "border-b px-5 py-4",
-            isLight ? "border-slate-200/80 bg-slate-50/85" : "border-white/[0.08] bg-white/[0.03]"
+            "w-[calc(100vw-24px)] max-w-[620px] gap-0 overflow-hidden rounded-[22px] border p-0",
+            isLight
+              ? "border-slate-200 bg-white text-slate-950 shadow-[0_20px_65px_rgba(15,23,42,0.2)]"
+              : "border-white/[0.1] bg-slate-950 text-white shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
           )}
+          closeClassName={isLight ? "text-slate-500 hover:bg-slate-950/5 hover:text-slate-900" : undefined}
         >
-          <div className="flex items-start gap-3 pr-9">
-            <div
-              className={cn(
-                "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border",
+          <div className={cn("border-b px-5 py-4 pr-12", isLight ? "border-slate-200" : "border-white/[0.08]") }>
+            <div className="flex items-start gap-3">
+              <div className={cn(
+                "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border",
                 reviewStatus === "accepted" || isVerified
-                  ? "border-emerald-300/30 bg-emerald-400/12 text-emerald-200"
-                  : "border-amber-300/30 bg-amber-400/12 text-amber-100"
-              )}
-            >
-              {reviewStatus === "accepted" || isVerified ? (
-                <CheckCircle2 className="h-4 w-4" />
-              ) : (
-                <AlertTriangle className="h-4 w-4" />
-              )}
+                  ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-500"
+                  : "border-amber-400/25 bg-amber-400/10 text-amber-500"
+              )}>
+                {reviewStatus === "accepted" || isVerified ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+              </div>
+              <DialogHeader className="min-w-0 flex-1 space-y-1 text-left">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={reviewStatus === "accepted" || isVerified ? "success" : "warning"}>{statusLabel}</Badge>
+                  <span className={cn("truncate text-[11px]", isLight ? "text-slate-500" : "text-slate-400")}>{agent ? formatAgentDisplayName(agent) : "Unknown agent"}</span>
+                  <span aria-hidden="true" className={isLight ? "text-slate-300" : "text-slate-700"}>·</span>
+                  <span className={cn("max-w-[190px] truncate text-[11px]", isLight ? "text-slate-500" : "text-slate-400")}>{taskModel}</span>
+                </div>
+                <DialogTitle className={cn("line-clamp-2 text-[17px] leading-6", isLight && "text-slate-950")}>{currentTask?.title.trim() || "Task review"}</DialogTitle>
+                <DialogDescription className={isLight ? "text-slate-500" : "text-slate-400"}>{workspace?.name || "Workspace"}</DialogDescription>
+              </DialogHeader>
             </div>
-            <DialogHeader className="min-w-0 flex-1 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={reviewStatus === "accepted" || isVerified ? "success" : reviewStatus ? "muted" : "warning"}>
-                  {statusLabel}
-                </Badge>
-                {currentTask?.dispatchId ? (
-                  <Badge variant="muted">dispatch {shortId(currentTask.dispatchId, 8)}</Badge>
-                ) : null}
-              </div>
-              <DialogTitle className={cn("truncate text-lg", isLight && "text-slate-950")}>
-                {currentTask?.title.trim() || "Task review"}
-              </DialogTitle>
-              <DialogDescription className={isLight ? "text-slate-600" : undefined}>
-                {workspace?.name || "Workspace"}{agent ? ` · ${formatAgentDisplayName(agent)}` : ""}
-              </DialogDescription>
-            </DialogHeader>
           </div>
-        </div>
 
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_290px]">
-            <div className="space-y-4">
-              <ReviewSection
-                icon={FileText}
-                title={capturedOutputLabel}
-                tone={reviewStatus === "accepted" || isVerified ? "success" : "warning"}
-                isLight={isLight}
-              >
-                {isDeliveryUnconfirmed ? (
-                  <p className={cn("mb-2 text-[11px] leading-5", isLight ? "text-amber-700" : "text-amber-100/85")}>
-                    This is the last response AgentOS captured before the Gateway wait expired. It is evidence, not confirmation that delivery completed.
-                  </p>
-                ) : null}
-                {capturedOutput ? (
-                  <InteractiveContent
-                    text={capturedOutput}
-                    className={cn("text-[12.5px] leading-6", isLight ? "text-slate-800" : "text-slate-100")}
-                  />
-                ) : (
-                  <p className={cn("text-[12.5px] leading-6", isLight ? "text-slate-500" : "text-slate-400")}>
-                    No captured assistant output is available yet.
-                  </p>
-                )}
-              </ReviewSection>
+          <div className="max-h-[calc(100dvh-190px)] space-y-4 overflow-y-auto px-5 py-4">
+            <section>
+              <p className={cn("text-[10px] font-semibold uppercase tracking-[0.17em]", isLight ? "text-slate-500" : "text-slate-400")}>What happened</p>
+              <p className={cn("mt-1.5 text-[13px] leading-5", isLight ? "text-slate-800" : "text-slate-100")}>{issueSummary}</p>
+            </section>
 
-              <ReviewSection
-                icon={AlertTriangle}
-                title={isDeliveryUnconfirmed ? "What needs a decision" : "Review reason"}
-                tone="warning"
-                isLight={isLight}
-              >
-                <p className={cn("text-[12.5px] leading-6", isLight ? "text-slate-700" : "text-slate-200")}>
-                  {issueSummary}
-                </p>
-                {shouldShowRawIssueDetail ? (
-                  <p className={cn("mt-2 text-[11px] leading-5", isLight ? "text-slate-500" : "text-slate-400")}>
-                    OpenClaw detail: {rawIssueDetail}
-                  </p>
-                ) : null}
-                {reviewAction ? (
-                  <p className={cn("mt-2 text-[11px]", isLight ? "text-slate-500" : "text-slate-500")}>
-                    Last operator action: {reviewAction}
-                  </p>
-                ) : null}
-              </ReviewSection>
-
-              <ReviewSection
-                icon={ListChecks}
-                title={isDeliveryUnconfirmed ? "Recommended next action" : "What to review"}
-                tone="warning"
-                isLight={isLight}
-              >
-                <ul className={cn("space-y-2 text-[12.5px] leading-5", isLight ? "text-slate-700" : "text-slate-200")}>
-                  {reviewGuidance.map((item) => (
-                    <li key={item} className="flex gap-2">
-                      <span className={cn("mt-2 h-1.5 w-1.5 shrink-0 rounded-full", isLight ? "bg-amber-500" : "bg-amber-200")} />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </ReviewSection>
-
-              <ReviewSection icon={Files} title="Files to inspect" tone={reportedFileCount > 0 ? "success" : "neutral"} isLight={isLight}>
-                {createdFiles.length > 0 ? (
-                  <div className="space-y-2">
-                    {createdFiles.slice(0, 6).map((file) => (
-                      <div
-                        key={`${file.path}:${file.displayPath}`}
-                        className={cn(
-                          "min-w-0 border-b pb-2 last:border-b-0 last:pb-0",
-                          isLight ? "border-slate-100" : "border-white/[0.08]"
-                        )}
-                      >
-                        <p className={cn("truncate font-mono text-[12px]", isLight ? "text-slate-800" : "text-slate-100")}>
-                          {file.displayPath || file.path}
-                        </p>
-                        {file.path && file.path !== file.displayPath ? (
-                          <p className={cn("mt-0.5 truncate text-[11px]", isLight ? "text-slate-500" : "text-slate-400")}>
-                            {file.path}
-                          </p>
-                        ) : null}
-                      </div>
-                    ))}
-                    {createdFiles.length > 6 ? (
-                      <p className={cn("text-[11px]", isLight ? "text-slate-500" : "text-slate-400")}>
-                        {createdFiles.length - 6} more file{createdFiles.length - 6 === 1 ? "" : "s"} in the task evidence.
-                      </p>
-                    ) : null}
-                  </div>
-                ) : (
-                  <p className={cn("text-[12.5px] leading-5", isLight ? "text-slate-600" : "text-slate-300")}>
-                    {reportedFileCount > 0
-                      ? `This task reports ${reportedFileCount} generated file${reportedFileCount === 1 ? "" : "s"}, but the detailed file list has not loaded yet.`
-                      : "OpenClaw did not report generated files for this task. Use the files evidence view if the agent appears to have written workspace files."}
-                  </p>
-                )}
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className={cn(
-                    "mt-3 w-full justify-start gap-2 sm:w-auto",
-                    isLight && "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100"
-                  )}
-                  disabled={!currentTask || isActionPending}
-                  onClick={() => {
-                    if (currentTask) {
-                      onOpenEvidence(currentTask, "files");
-                    }
-                  }}
-                >
-                  <Eye className="h-4 w-4" />
-                  Open files
-                </Button>
-              </ReviewSection>
-
-              {!isScheduledOperation ? <ReviewSection icon={MessageSquare} title="Operator reply" isLight={isLight}>
-                <Textarea
-                  value={operatorReply}
-                  onChange={(event) => setOperatorReply(event.target.value)}
-                  placeholder={isDeliveryUnconfirmed
-                    ? "Ask the agent to verify whether delivery completed, or provide the next instruction…"
-                    : "Answer the agent or add continuation instructions before continuing this task."}
-                  className={cn(
-                    "min-h-[112px] resize-none text-[12.5px] leading-5",
-                    isLight
-                      ? "border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-300"
-                      : "border-white/[0.08] bg-black/20 text-slate-100 placeholder:text-slate-500 focus-visible:ring-cyan-300/25"
-                  )}
-                  disabled={!currentTask || isActionPending}
-                />
-                <div className="mt-3 flex justify-end">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className={cn(
-                      "w-full gap-2 sm:w-auto",
-                      isLight && "border-slate-200 bg-white text-slate-800 hover:bg-slate-100"
-                    )}
-                    disabled={!currentTask || isActionPending}
-                    onClick={() => void runAction("continue", () => {
-                      if (currentTask) {
-                        return onContinue(
-                          currentTask,
-                          capturedOutput,
-                          operatorReply,
-                          isDeliveryUnconfirmed ? "Last captured response — unverified" : undefined
-                        );
-                      }
-                    })}
-                  >
-                    {pendingAction === "continue" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CornerDownRight className="h-4 w-4" />}
-                    {pendingAction === "continue"
-                      ? "Continuing..."
-                      : operatorReply.trim()
-                        ? "Send reply and continue"
-                        : recommendedActionLabel}
-                  </Button>
-                </div>
-              </ReviewSection> : (
-                <ReviewSection icon={RefreshCw} title="Scheduled operation recovery" tone="warning" isLight={isLight}>
-                  <p className={cn("text-[12.5px] leading-6", isLight ? "text-slate-700" : "text-slate-200")}>
-                    This review belongs to one scheduled run. The OpenClaw schedule is managed separately, so you can rerun the job or pause future runs without creating a duplicate task.
-                  </p>
-                  {operationPaused ? (
-                    <p className={cn("mt-2 text-[11px] leading-5", isLight ? "text-amber-700" : "text-amber-100/85")}>No future runs will start until the schedule is resumed.</p>
-                  ) : null}
-                </ReviewSection>
-              )}
-
-              <ReviewSection icon={ClipboardList} title="Original prompt" isLight={isLight}>
-                <InteractiveContent
-                  text={originalPrompt || "No original prompt was captured."}
-                  className={cn("text-[12.5px] leading-6", isLight ? "text-slate-700" : "text-slate-200")}
-                />
-              </ReviewSection>
-            </div>
-
-            <aside className="space-y-4">
-              <div
-                className={cn(
-                  "rounded-[18px] border p-3",
-                  isLight ? "border-slate-200 bg-white" : "border-white/[0.08] bg-white/[0.035]"
-                )}
-              >
-                <p className={cn("text-[10px] uppercase tracking-[0.2em]", isLight ? "text-slate-500" : "text-slate-500")}>
-                  Evidence
-                </p>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <ReviewMetric label="Runs" value={String(currentTask?.runtimeCount ?? 0)} isLight={isLight} />
-                  <ReviewMetric label="Turns" value={String(readTaskTurnCount(currentTask))} isLight={isLight} />
-                  <ReviewMetric label="Files" value={String(currentTask?.artifactCount ?? 0)} isLight={isLight} />
-                  <ReviewMetric label="Issues" value={String(integrity?.issues.length ?? currentTask?.warningCount ?? 0)} isLight={isLight} />
-                </div>
-                {loading ? (
-                  <div className={cn("mt-3 flex items-center gap-2 text-[11px]", isLight ? "text-slate-500" : "text-slate-400")}>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Loading live evidence...
-                  </div>
-                ) : null}
-                {error ? (
-                  <p className="mt-3 rounded-[12px] border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-[11px] leading-5 text-amber-100">
-                    {error}
-                  </p>
-                ) : null}
+            <section className={cn("rounded-[14px] border p-3.5", isLight ? "border-slate-200 bg-slate-50" : "border-white/[0.08] bg-white/[0.035]") }>
+              <div className="flex items-center justify-between gap-3">
+                <p className={cn("text-[10px] font-semibold uppercase tracking-[0.17em]", isLight ? "text-slate-500" : "text-slate-400")}>Last activity</p>
+                {latestEvidenceEvent?.timestamp ? <span className={cn("text-[10px]", isLight ? "text-slate-400" : "text-slate-500")}>{formatRelativeTime(Date.parse(latestEvidenceEvent.timestamp))}</span> : null}
               </div>
+              <div className={cn("mt-2 text-[12.5px] leading-5", !activityExpanded && "line-clamp-4", isLight ? "text-slate-700" : "text-slate-200")}>
+                <InteractiveContent text={lastActivity} compact />
+              </div>
+              {hasLongActivity ? <button type="button" className="mt-2 text-[11px] font-semibold text-primary hover:underline" onClick={() => setActivityExpanded((value) => !value)}>{activityExpanded ? "Show less" : "Show full activity"}</button> : null}
+            </section>
 
-              <div
-                className={cn(
-                  "rounded-[18px] border p-3",
-                  isLight ? "border-slate-200 bg-white" : "border-white/[0.08] bg-white/[0.035]"
-                )}
-              >
-                <p className={cn("text-[10px] uppercase tracking-[0.2em]", isLight ? "text-slate-500" : "text-slate-500")}>
-                  Task state
-                </p>
-                <div className="mt-3 space-y-2 text-[12px]">
-                  <ReviewLine label="Status" value={currentTask?.status ?? "unknown"} isLight={isLight} />
-                  <ReviewLine
-                    label="Updated"
-                    value={currentTask?.updatedAt ? formatRelativeTime(currentTask.updatedAt) : "unknown"}
-                    isLight={isLight}
-                  />
-                  <ReviewLine
-                    label="Reviewed"
-                    value={reviewedAt ? formatRelativeTime(Date.parse(reviewedAt)) : "not yet"}
-                    isLight={isLight}
-                  />
+            <section className={cn("rounded-[14px] border px-3.5 py-3", isLight ? "border-primary/20 bg-primary/[0.055]" : "border-primary/20 bg-primary/[0.08]") }>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-primary">Recommended action</p>
+              <p className={cn("mt-1.5 text-[12.5px] leading-5", isLight ? "text-slate-800" : "text-slate-100")}>{recommendedAction}</p>
+            </section>
+
+            <details className={cn("group rounded-[14px] border", isLight ? "border-slate-200 bg-white" : "border-white/[0.08] bg-white/[0.02]") }>
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3.5 py-3 text-[12px] font-medium text-foreground">
+                Technical details
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-180" />
+              </summary>
+              <div className={cn("space-y-3 border-t px-3.5 py-3", isLight ? "border-slate-200" : "border-white/[0.08]") }>
+                {shouldShowRawIssueDetail ? <div><p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground">Runtime detail</p><p className="mt-1 break-words font-mono text-[11px] leading-5 text-foreground">{rawIssueDetail}</p></div> : null}
+                {latestRuntimeFailureDetail && dispatchIssueDetail && dispatchIssueDetail !== latestRuntimeFailureDetail ? <div><p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground">Gateway observation</p><p className="mt-1 text-[11px] leading-5 text-muted-foreground">{isGatewayWaitTimeoutDetail(dispatchIssueDetail) ? "AgentOS stopped waiting for a terminal Gateway response. This did not cancel the underlying OpenClaw run." : dispatchIssueDetail}</p></div> : null}
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[11px]">
+                  <span className="text-muted-foreground">Task status</span><span className="text-right text-foreground">{currentTask?.status ?? "unknown"}</span>
+                  <span className="text-muted-foreground">Dispatch</span><span className="truncate text-right font-mono text-foreground">{currentTask?.dispatchId ? shortId(currentTask.dispatchId.replace(/^dispatch-/, ""), 10) : "unavailable"}</span>
+                  <span className="text-muted-foreground">Files</span><span className="text-right text-foreground">{reportedFileCount}</span>
+                  {reviewAction ? <><span className="text-muted-foreground">Last decision</span><span className="text-right text-foreground">{reviewAction}</span></> : null}
+                </div>
+                {error ? <p className="rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-[11px] leading-5 text-amber-700 dark:text-amber-200">{error}</p> : null}
+                {loading ? <div className="flex items-center gap-2 text-[11px] text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Refreshing evidence…</div> : null}
+                <div>
+                  <p className="mb-1.5 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">Continuation instruction <span className="normal-case tracking-normal">(optional)</span></p>
+                  <Textarea value={operatorReply} onChange={(event) => setOperatorReply(event.target.value)} placeholder="Add a precise instruction before continuing…" className="min-h-[72px] resize-y text-xs" disabled={!currentTask || isActionPending} />
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" size="sm" variant="ghost" disabled={!currentTask || isActionPending} onClick={() => currentTask && onOpenEvidence(currentTask, "output")}><Eye className="mr-1.5 h-3.5 w-3.5" />Open activity</Button>
+                  {reportedFileCount > 0 ? <Button type="button" size="sm" variant="ghost" disabled={!currentTask || isActionPending} onClick={() => currentTask && onOpenEvidence(currentTask, "files")}>Open files</Button> : null}
+                  {hasAcceptableEvidence ? <Button type="button" size="sm" variant="ghost" disabled={!currentTask || isActionPending} onClick={() => void runAction("accept", () => currentTask ? onAccept(currentTask) : undefined)}>{pendingAction === "accept" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />}Accept evidence</Button> : null}
                 </div>
               </div>
-
-              <Button
-                type="button"
-                variant="secondary"
-                className={cn(
-                  "w-full justify-start gap-2",
-                  isLight && "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100"
-                )}
-                disabled={!currentTask || isActionPending}
-                onClick={() => {
-                  if (currentTask) {
-                    onOpenEvidence(currentTask, "output");
-                  }
-                }}
-              >
-                <Eye className="h-4 w-4" />
-                Open evidence
-              </Button>
-            </aside>
+            </details>
           </div>
-        </ScrollArea>
 
-        <div
-          className={cn(
-            "flex flex-col gap-2 border-t px-5 py-4 sm:flex-row sm:items-center sm:justify-end",
-            isLight ? "border-slate-200 bg-slate-50/85" : "border-white/[0.08] bg-white/[0.03]"
-          )}
-        >
-          {isScheduledOperation ? (
-            <>
-              <Button
-                type="button"
-                variant="secondary"
-                className={cn("gap-2", isLight && "border-slate-200 bg-white text-slate-800 hover:bg-slate-100")}
-                disabled={isActionPending}
-                onClick={() => void runAction(operationPaused ? "resume" : "pause", () => performOperationAction(operationPaused ? "resume" : "pause"))}
-              >
-                {pendingAction === "pause" || pendingAction === "resume" ? <Loader2 className="h-4 w-4 animate-spin" /> : operationPaused ? <RefreshCw className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-                {pendingAction === "pause" || pendingAction === "resume" ? "Updating..." : operationPaused ? "Resume schedule" : "Pause schedule"}
-              </Button>
-              {operationFailed ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className={cn("gap-2", isLight && "border-slate-200 bg-white text-slate-800 hover:bg-slate-100")}
-                  disabled={isActionPending || operationPaused}
-                  onClick={() => void runAction("retry", () => performOperationAction("retry"))}
-                >
-                  {pendingAction === "retry" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  {pendingAction === "retry" ? "Retrying..." : "Retry failed run"}
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-                disabled={isActionPending || operationPaused}
-                onClick={() => void runAction("run", () => performOperationAction("run"))}
-              >
-                {pendingAction === "run" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                {pendingAction === "run" ? "Starting..." : "Run now"}
-              </Button>
-            </>
-          ) : <>
-          <Button
-            type="button"
-            variant="ghost"
-            className={cn("gap-2", isLight && "text-slate-700 hover:bg-slate-950/5 hover:text-slate-950")}
-            disabled={!currentTask || isActionPending}
-            onClick={() => void runAction("dismiss", () => {
-              if (currentTask) {
-                return onDismiss(currentTask);
-              }
-            })}
-          >
-            {pendingAction === "dismiss" ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
-            {pendingAction === "dismiss" ? "Acknowledging..." : "Mark review acknowledged"}
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            className={cn("gap-2", isLight && "border-slate-200 bg-white text-slate-800 hover:bg-slate-100")}
-            disabled={!currentTask || isActionPending}
-            onClick={() => void runAction("retry", () => {
-              if (currentTask) {
-                return onRetry(currentTask);
-              }
-            })}
-          >
-            {pendingAction === "retry" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {pendingAction === "retry" ? "Preparing draft..." : "Draft retry"}
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            className={cn("gap-2", isLight && "border-slate-200 bg-white text-slate-800 hover:bg-slate-100")}
-            disabled={!currentTask || isActionPending}
-            onClick={() => void runAction("continue", () => {
-              if (currentTask) {
-                return onContinue(
-                  currentTask,
-                  capturedOutput,
-                  operatorReply,
-                  isDeliveryUnconfirmed ? "Last captured response — unverified" : undefined
-                );
-              }
-            })}
-          >
-            {pendingAction === "continue" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CornerDownRight className="h-4 w-4" />}
-            {pendingAction === "continue" ? "Continuing..." : recommendedActionLabel}
-          </Button>
-          </>}
-          <Button
-            type="button"
-            className="gap-2 bg-emerald-400 text-slate-950 shadow-emerald-400/20 hover:bg-emerald-300"
-            disabled={!currentTask || isActionPending || !hasAcceptableEvidence}
-            title={!hasAcceptableEvidence ? "No captured response or file evidence is available to accept." : "Mark this captured evidence as accepted in this browser."}
-            onClick={() => void runAction("accept", () => {
-              if (currentTask) {
-                return onAccept(currentTask);
-              }
-            })}
-          >
-            {pendingAction === "accept" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            {pendingAction === "accept" ? "Accepting..." : "Mark evidence accepted"}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ReviewSection({
-  icon: Icon,
-  title,
-  tone = "neutral",
-  isLight,
-  children
-}: {
-  icon: typeof AlertTriangle;
-  title: string;
-  tone?: "neutral" | "warning" | "success";
-  isLight: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <section
-      className={cn(
-        "rounded-[18px] border p-3.5",
-        isLight ? "border-slate-200 bg-white" : "border-white/[0.08] bg-white/[0.035]"
-      )}
-    >
-      <div className="mb-3 flex items-center gap-2">
-        <div
-          className={cn(
-            "flex h-7 w-7 items-center justify-center rounded-[10px] border",
-            tone === "success"
-              ? "border-emerald-300/30 bg-emerald-400/12 text-emerald-200"
-              : tone === "warning"
-                ? "border-amber-300/30 bg-amber-400/12 text-amber-100"
-                : isLight
-                  ? "border-slate-200 bg-slate-50 text-slate-600"
-                  : "border-white/[0.08] bg-white/[0.05] text-slate-300"
-          )}
-        >
-          <Icon className="h-3.5 w-3.5" />
-        </div>
-        <p className={cn("text-[10px] uppercase tracking-[0.2em]", isLight ? "text-slate-500" : "text-slate-500")}>
-          {title}
-        </p>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function ReviewMetric({ label, value, isLight }: { label: string; value: string; isLight: boolean }) {
-  return (
-    <div className={cn("rounded-[12px] border px-3 py-2", isLight ? "border-slate-200 bg-slate-50" : "border-white/[0.08] bg-white/[0.04]")}>
-      <p className={cn("text-[9px] uppercase tracking-[0.16em]", isLight ? "text-slate-500" : "text-slate-500")}>{label}</p>
-      <p className={cn("mt-1 font-mono text-[13px]", isLight ? "text-slate-900" : "text-white")}>{value}</p>
-    </div>
-  );
-}
-
-function ReviewLine({ label, value, isLight }: { label: string; value: string; isLight: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className={isLight ? "text-slate-500" : "text-slate-500"}>{label}</span>
-      <span className={cn("min-w-0 truncate text-right", isLight ? "text-slate-900" : "text-slate-100")}>{value}</span>
-    </div>
+          <div className={cn("flex flex-col-reverse gap-2 border-t px-5 py-3.5 sm:flex-row sm:items-center sm:justify-end", isLight ? "border-slate-200 bg-slate-50" : "border-white/[0.08] bg-white/[0.025]") }>
+            <Button type="button" variant="ghost" disabled={!currentTask || isActionPending} onClick={() => void runAction("dismiss", () => currentTask ? onDismiss(currentTask) : undefined)}>{pendingAction === "dismiss" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <XCircle className="mr-1.5 h-3.5 w-3.5" />}{pendingAction === "dismiss" ? "Acknowledging…" : "Acknowledge"}</Button>
+            <Button type="button" variant="secondary" disabled={!currentTask || isActionPending} onClick={() => void runAction("retry", () => currentTask ? onRetry(currentTask) : undefined)}>{pendingAction === "retry" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}{pendingAction === "retry" ? "Preparing…" : "Retry"}</Button>
+            <Button type="button" className="bg-primary text-primary-foreground hover:bg-primary/90" disabled={!currentTask || isActionPending} onClick={() => void runAction("continue", () => currentTask ? onContinue(currentTask, capturedOutput, operatorReply.trim() || browserRecoveryInstruction, capturedOutputLabel) : undefined)}>{pendingAction === "continue" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <CornerDownRight className="mr-1.5 h-3.5 w-3.5" />}{pendingAction === "continue" ? "Continuing…" : "Continue safely"}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
   );
 }
 
@@ -801,56 +434,8 @@ function resolveReviewIssueSummary(dispatchIssueDetail: string | null, integrity
   return detail;
 }
 
-function resolveReviewGuidance(input: {
-  task: WorkItemRecord;
-  createdFiles: RuntimeCreatedFile[];
-  capturedOutput: string;
-  rawIssueDetail: string | null;
-}) {
-  const fileCount = input.createdFiles.length || input.task.artifactCount;
-  const hasGatewayTimeout = input.rawIssueDetail ? isGatewayWaitTimeoutDetail(input.rawIssueDetail) : false;
-  const guidance: string[] = [];
-
-  if (hasGatewayTimeout) {
-    guidance.push(
-      "Ask the agent to verify whether delivery completed. This continues the existing OpenClaw session; it does not start a retry."
-    );
-  } else {
-    guidance.push("Review the captured work before marking this task handled.");
-  }
-
-  if (fileCount > 0) {
-    guidance.push(
-      `Inspect the ${fileCount} generated file${fileCount === 1 ? "" : "s"} and decide whether they satisfy the original prompt.`
-    );
-  } else {
-    guidance.push("If the agent appears to have written files, open the files evidence view and verify the workspace output directly.");
-  }
-
-  if (input.capturedOutput.trim()) {
-    guidance.push("Check the captured output for missing sections, unanswered questions, or instructions that still need an operator reply.");
-  }
-
-  guidance.push(
-    hasGatewayTimeout
-      ? "Mark the captured evidence accepted only when the response or files are sufficient for the original mission. Draft a retry only if you intentionally want to start over."
-      : "Mark the evidence accepted if the work is good, send a reply and continue if context is missing, or draft a retry if the run produced the wrong work."
-  );
-
-  return guidance;
-}
-
 function readTaskPromptText(task: WorkItemRecord) {
   return task.mission?.trim() || task.title.trim() || "Untitled task";
-}
-
-function readTaskTurnCount(task: WorkItemRecord | null) {
-  if (!task) {
-    return 0;
-  }
-
-  const metadataCount = task.metadata.turnCount;
-  return typeof metadataCount === "number" && Number.isFinite(metadataCount) ? metadataCount : task.runtimeCount;
 }
 
 function readTaskFeedEvents(value: unknown) {

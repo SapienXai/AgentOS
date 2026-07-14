@@ -127,6 +127,29 @@ export function isGatewayWaitTimeoutDetail(detail: string | null | undefined) {
   return Boolean(detail && /OpenClaw Gateway wait timed out/i.test(detail));
 }
 
+export function isBrowserTabUnavailableDetail(detail: string | null | undefined) {
+  return Boolean(detail && /tab not found:\s*browser tab/i.test(detail));
+}
+
+export function findLatestTaskRuntimeFailure(feed: TaskFeedEvent[]) {
+  return [...feed]
+    .reverse()
+    .find(
+      (event) =>
+        event.kind === "tool" &&
+        event.isError === true &&
+        !isGatewayWaitTimeoutDetail(event.detail)
+    ) ?? null;
+}
+
+export function resolveTaskRuntimeFailureSummary(detail: string) {
+  if (isBrowserTabUnavailableDetail(detail)) {
+    return "The agent tried to continue with a browser tab that was no longer registered. The external action was not confirmed, so the agent should refresh the tab list or reopen the page before continuing.";
+  }
+
+  return detail;
+}
+
 export function resolveTaskReviewPresentation(
   task: WorkItemRecord,
   integrity?: { issues?: Array<{ id: string; detail?: string | null }> } | null

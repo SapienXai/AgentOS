@@ -227,6 +227,8 @@ export function SettingsControlCenter(
   const [isSavingGatewayAuthCredential, setIsSavingGatewayAuthCredential] = useState(false);
   const [isGeneratingGatewayAuthToken, setIsGeneratingGatewayAuthToken] = useState(false);
   const [isRepairingGatewayDeviceAccess, setIsRepairingGatewayDeviceAccess] = useState(false);
+  const [isOpeningControlUi, setIsOpeningControlUi] = useState(false);
+  const [controlUiOpenError, setControlUiOpenError] = useState<string | null>(null);
   const [compatibilitySmokeReport, setCompatibilitySmokeReport] = useState<CompatibilitySmokeReport | null>(
     () => snapshot.diagnostics.compatibilitySmokeTest ?? null
   );
@@ -381,6 +383,27 @@ export function SettingsControlCenter(
       ? "Authenticated"
       : formatGatewayAuthIssue(gatewayAuthStatus.native.kind)
     : "Unknown";
+
+  const openControlUi = async () => {
+    setIsOpeningControlUi(true);
+    setControlUiOpenError(null);
+
+    try {
+      const response = await fetch("/api/openclaw/dashboard", {
+        method: "POST",
+        cache: "no-store"
+      });
+      const result = (await response.json().catch(() => null)) as { error?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(result?.error || "Unable to open the OpenClaw Control UI.");
+      }
+    } catch (error) {
+      setControlUiOpenError(error instanceof Error ? error.message : "Unable to open the OpenClaw Control UI.");
+    } finally {
+      setIsOpeningControlUi(false);
+    }
+  };
 
   const runUpdatePreflight = async (
     targetVersion = defaultUpdateTargetVersion,
@@ -1251,7 +1274,23 @@ export function SettingsControlCenter(
                         Source of truth for runtime and control state.
                       </p>
                     </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => void openControlUi()}
+                      disabled={!snapshot.diagnostics.loaded || isOpeningControlUi}
+                      title={snapshot.diagnostics.loaded ? "Open the OpenClaw Control UI." : "Start the OpenClaw Gateway to open its Control UI."}
+                      className={secondaryButtonClassName(surfaceTheme, "shrink-0")}
+                    >
+                      {isOpeningControlUi ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
+                      {isOpeningControlUi ? "Opening…" : "Open Control UI"}
+                    </Button>
                   </div>
+                  {controlUiOpenError ? (
+                    <p className={cn("mt-3 text-xs", surfaceTheme === "light" ? "text-destructive" : "text-rose-300")} role="alert">
+                      {controlUiOpenError}
+                    </p>
+                  ) : null}
 
                   <div className="mt-5 grid grid-cols-2 gap-3">
                     <Metric

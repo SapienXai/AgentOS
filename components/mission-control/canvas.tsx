@@ -21,6 +21,7 @@ import {
   mergeNodePositions,
   nodeTypes,
   readPersistedNodePositions,
+  readWorkspaceTaskCardFilters,
   resolveNodeZIndex,
   resolveSurfaceModuleAnchorPosition,
   stepSurfaceModuleSpring,
@@ -28,12 +29,14 @@ import {
   toLegacyPersistedTaskPositionKey,
   toPersistedAgentPositionKey,
   toPersistedTaskPositionKey,
-  writeToLocalStorage
+  writeToLocalStorage,
+  writeWorkspaceTaskCardFilters
 } from "@/components/mission-control/canvas.utils";
 import {
   buildCanvasGraph,
   isTaskHidden,
-  resolveTaskOwnerId
+  resolveTaskOwnerId,
+  resolveTaskWorkspaceId
 } from "@/components/mission-control/canvas.graph";
 import type {
   AgentDetailFocus,
@@ -42,7 +45,8 @@ import type {
   FocusTaskAnchor,
   PersistedNodePositionMap,
   SpringVelocity,
-  TaskNodeData
+  TaskNodeData,
+  WorkspaceTaskCardFilter
 } from "@/components/mission-control/canvas-types";
 import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
 import { resolveRelativeTimeReferenceMs } from "@/lib/openclaw/presenters";
@@ -158,11 +162,25 @@ export function MissionCanvas({
   const [elevatedAgentMenuId, setElevatedAgentMenuId] = useState<string | null>(null);
   const [focusTaskAnchor, setFocusTaskAnchor] = useState<FocusTaskAnchor | null>(null);
   const [canvasZoom, setCanvasZoom] = useState(0.9);
+  const [workspaceTaskCardFilters, setWorkspaceTaskCardFilters] = useState<Record<string, WorkspaceTaskCardFilter>>({});
+  const [workspaceTaskCardFiltersHydrated, setWorkspaceTaskCardFiltersHydrated] = useState(false);
   const canvasScopeKey = focusedAgentId
     ? `focus:${focusedAgentId}`
     : activeWorkspaceId
       ? `workspace:${activeWorkspaceId}`
       : "all";
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      setWorkspaceTaskCardFilters(readWorkspaceTaskCardFilters());
+      setWorkspaceTaskCardFiltersHydrated(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceTaskCardFiltersHydrated) return;
+    writeWorkspaceTaskCardFilters(workspaceTaskCardFilters);
+  }, [workspaceTaskCardFilters, workspaceTaskCardFiltersHydrated]);
 
   const handleAgentConnectionMenuOpenChange = useCallback((agentId: string, open: boolean) => {
     setElevatedAgentMenuId((current) => {
@@ -173,6 +191,24 @@ export function MissionCanvas({
       return current === agentId ? null : current;
     });
   }, []);
+
+  const handleWorkspaceTaskCardFilterChange = useCallback((workspaceId: string, filter: WorkspaceTaskCardFilter) => {
+    const workspaceTasks = snapshot.tasks.filter(
+      (task) => resolveTaskWorkspaceId(task, snapshot.agents) === workspaceId
+    );
+    const toggleableTasks = workspaceTasks.filter((task) => !lockedTaskKeys.includes(task.key));
+    const allHidden = toggleableTasks.length > 0 && toggleableTasks.every(
+      (task) => isTaskHidden(task, hiddenRuntimeIds, hiddenTaskKeys, lockedTaskKeys)
+    );
+
+    if ((filter === "all" || filter === "active") && allHidden) {
+      onToggleWorkspaceTaskCards(workspaceId);
+    } else if (filter === "hidden" && !allHidden && toggleableTasks.length > 0) {
+      onToggleWorkspaceTaskCards(workspaceId);
+    }
+
+    setWorkspaceTaskCardFilters((current) => ({ ...current, [workspaceId]: filter }));
+  }, [hiddenRuntimeIds, hiddenTaskKeys, lockedTaskKeys, onToggleWorkspaceTaskCards, snapshot.agents, snapshot.tasks]);
 
   const initialGraph = buildCanvasGraph(
     snapshot,
@@ -215,7 +251,10 @@ export function MissionCanvas({
     onReviewTask,
     pendingCreatedAgents ?? [],
     agentCreationWarnings ?? {},
-    emptyPersistedNodePositions
+    emptyPersistedNodePositions,
+    surfaceTheme,
+    workspaceTaskCardFilters,
+    handleWorkspaceTaskCardFilterChange
   );
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(initialGraph.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<CanvasEdge>(initialGraph.edges);
@@ -309,7 +348,9 @@ export function MissionCanvas({
       pendingCreatedAgents ?? [],
       agentCreationWarnings ?? {},
       persistedNodePositionsRef.current,
-      surfaceTheme
+      surfaceTheme,
+      workspaceTaskCardFilters,
+      handleWorkspaceTaskCardFilterChange
     );
     const scopeChanged = lastCanvasScopeKeyRef.current !== canvasScopeKey;
     lastCanvasScopeKeyRef.current = canvasScopeKey;
@@ -364,6 +405,8 @@ export function MissionCanvas({
     pendingCreatedAgents,
     agentCreationWarnings,
     surfaceTheme,
+    workspaceTaskCardFilters,
+    handleWorkspaceTaskCardFilterChange,
     relativeTimeReferenceMs,
     canvasScopeKey,
     setEdges,

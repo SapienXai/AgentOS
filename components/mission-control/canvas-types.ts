@@ -14,10 +14,14 @@ export type WorkspaceNodeData = Record<string, unknown> & {
   workspace: WorkspaceRecord;
   emphasis: boolean;
   taskCardCount: number;
+  activeTaskCardCount: number;
   taskCardsHidden: boolean;
-  onToggleTaskCards?: () => void;
+  taskCardFilter: WorkspaceTaskCardFilter;
+  onTaskCardFilterChange?: (filter: WorkspaceTaskCardFilter) => void;
   onOpenWorkspaceFiles?: (workspaceId: string) => void;
 };
+
+export type WorkspaceTaskCardFilter = "all" | "active" | "hidden";
 
 export type AgentDetailFocus = "skills" | "tools" | "sessions";
 

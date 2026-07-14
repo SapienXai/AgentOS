@@ -1,7 +1,7 @@
 "use client";
 
 import type { Node, NodeProps } from "@xyflow/react";
-import { Eye, EyeOff, FolderKanban, Layers3, Orbit } from "lucide-react";
+import { Activity, ChevronDown, Eye, EyeOff, FolderKanban, Layers3, Orbit } from "lucide-react";
 import { motion } from "motion/react";
 
 import type { WorkspaceNodeData } from "@/components/mission-control/canvas-types";
@@ -95,11 +95,11 @@ export function WorkspaceNode({ data, selected }: NodeProps<WorkspaceFlowNode>) 
           <div className="flex flex-wrap justify-end gap-1.5">
             <Metric icon={Orbit} label="Agents" value={String(data.workspace.agentIds.length)} />
             <Metric icon={Layers3} label="Models" value={String(data.workspace.modelIds.length)} />
-            <TaskToggleMetric
-              value={String(data.workspace.activeRuntimeIds.length)}
-              taskCardsHidden={data.taskCardsHidden}
-              disabled={data.taskCardCount === 0 || !data.onToggleTaskCards}
-              onToggle={() => data.onToggleTaskCards?.()}
+            <TaskFilterMetric
+              value={String(data.taskCardFilter === "active" ? data.activeTaskCardCount : data.taskCardCount)}
+              filter={data.taskCardFilter}
+              disabled={data.taskCardCount === 0 || !data.onTaskCardFilterChange}
+              onChange={(filter) => data.onTaskCardFilterChange?.(filter)}
             />
           </div>
         </div>
@@ -128,47 +128,44 @@ function Metric({
   );
 }
 
-function TaskToggleMetric({
+function TaskFilterMetric({
   value,
-  taskCardsHidden,
+  filter,
   disabled,
-  onToggle
+  onChange
 }: {
   value: string;
-  taskCardsHidden: boolean;
+  filter: WorkspaceNodeData["taskCardFilter"];
   disabled: boolean;
-  onToggle: () => void;
+  onChange: (filter: WorkspaceNodeData["taskCardFilter"]) => void;
 }) {
+  const label = filter === "active" ? "Active Runs" : filter === "hidden" ? "Runs Hidden" : "Runs";
+  const Icon = filter === "active" ? Activity : filter === "hidden" ? EyeOff : Eye;
+
   return (
-    <button
-      type="button"
-      aria-pressed={taskCardsHidden}
-      aria-label={taskCardsHidden ? "Show task cards in this workspace" : "Hide task cards in this workspace"}
-      title={taskCardsHidden ? "Show task cards in this workspace" : "Hide task cards in this workspace"}
-      disabled={disabled}
-      onClick={(event) => {
-        event.stopPropagation();
-        onToggle();
-      }}
-      onPointerDown={(event) => event.stopPropagation()}
+    <div
       className={cn(
-        "workspace-node__chip workspace-node__task-toggle nodrag nopan inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 focus-visible:outline-none disabled:cursor-default disabled:opacity-50",
-        disabled && "pointer-events-none"
+        "workspace-node__chip workspace-node__task-toggle nodrag nopan relative inline-flex items-center gap-1.5 rounded-full border py-1 pl-2.5 pr-2 focus-within:ring-2 focus-within:ring-primary/35",
+        disabled && "pointer-events-none opacity-50"
       )}
+      title="Filter workspace task cards"
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
     >
-      {taskCardsHidden ? (
-        <EyeOff className="workspace-node__chip-icon h-3 w-3 text-inherit" />
-      ) : (
-        <Eye className="workspace-node__chip-icon h-3 w-3 text-inherit" />
-      )}
-      <span
-        className={cn(
-          "workspace-node__chip-label text-[9px] uppercase tracking-[0.16em] text-inherit"
-        )}
+      <Icon className="workspace-node__chip-icon h-3 w-3 shrink-0 text-inherit" />
+      <select
+        aria-label={`Filter workspace task cards: ${label}`}
+        value={filter}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value as WorkspaceNodeData["taskCardFilter"])}
+        className="workspace-node__chip-label max-w-[84px] cursor-pointer appearance-none bg-transparent pr-1 text-[9px] uppercase tracking-[0.13em] text-inherit outline-none disabled:cursor-default"
       >
-        Runs
-      </span>
+        <option value="all">All Runs</option>
+        <option value="active">Active Runs</option>
+        <option value="hidden">Hide Runs</option>
+      </select>
       <span className="workspace-node__chip-value font-display text-[12px] text-inherit">{value}</span>
-    </button>
+      <ChevronDown className="pointer-events-none h-3 w-3 shrink-0 text-inherit opacity-70" />
+    </div>
   );
 }

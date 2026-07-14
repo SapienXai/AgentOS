@@ -246,6 +246,12 @@ export async function persistMissionDispatchObservation(record: MissionDispatchR
   await writeMissionDispatchRecord({
     ...latestRecord,
     updatedAt: maxIsoTimestamp(latestRecord.updatedAt, observedAt),
+    runner: latestRecord.status === "running"
+      ? {
+          ...latestRecord.runner,
+          lastHeartbeatAt: maxIsoTimestamp(latestRecord.runner.lastHeartbeatAt, observedAt)
+        }
+      : latestRecord.runner,
     observation: {
       runtimeId: runtime.id,
       observedAt

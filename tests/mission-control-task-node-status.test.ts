@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  findLatestTaskRuntimeFailure,
   hasTaskRuntimeOutputEvidence,
+  isBrowserTabUnavailableDetail,
   readTaskResultPreview,
   resolveTaskCardEvidencePresentation,
   resolveTaskDispatchIssueDetail,
   resolveTaskReviewPresentation,
-  resolveTaskBadgeLabel
+  resolveTaskBadgeLabel,
+  resolveTaskRuntimeFailureSummary
 } from "@/components/mission-control/task-node-status";
 import type { TaskFeedEvent, WorkItemRecord } from "@/lib/agentos/contracts";
 
@@ -157,6 +160,32 @@ test("task card evidence favors activity for live and delivery-unconfirmed tasks
     label: "Latest result",
     prioritizeActivity: false
   });
+});
+
+test("review evidence prefers a concrete browser tool failure over a Gateway wait timeout", () => {
+  const feed = [
+    createFeedEvent({
+      id: "gateway-wait",
+      kind: "warning",
+      timestamp: "2026-07-13T17:48:52.000Z",
+      detail: "OpenClaw Gateway wait timed out during gateway_draining.",
+      isError: true
+    }),
+    createFeedEvent({
+      id: "browser-failure",
+      kind: "tool",
+      timestamp: "2026-07-13T17:53:19.000Z",
+      title: "Tool · bash",
+      detail: "GatewayClientRequestError: tab not found: browser tab \"reddit-messages\" not found.",
+      isError: true
+    })
+  ];
+
+  const failure = findLatestTaskRuntimeFailure(feed);
+
+  assert.equal(failure?.id, "browser-failure");
+  assert.equal(isBrowserTabUnavailableDetail(failure?.detail), true);
+  assert.match(resolveTaskRuntimeFailureSummary(failure?.detail ?? ""), /refresh the tab list/i);
 });
 
 function createTask(overrides: Partial<WorkItemRecord> = {}): WorkItemRecord {

@@ -153,7 +153,45 @@ export function normalizeOpenClawOperationJob(value: unknown, sidecar: Registry[
   const enabled = raw.enabled !== false; const rawStatus = string(raw.status) ?? string(state.lastRunStatus);
   return { id, name: string(raw.name) ?? id, description: string(raw.description), enabled, status: status(rawStatus, enabled, number(state.runningAtMs), trigger), agentId: string(raw.agentId), workspaceId: side?.workspaceId ?? null, prompt: string(payload.message), model: string(payload.model), thinking: string(payload.thinking), trigger, nextRunAt: iso(raw.nextRunAtMs) ?? iso(state.nextRunAtMs), lastRunAt: iso(state.lastRunAtMs), lastRunStatus: rawStatus ?? null, safety: side?.safety ?? null, health: { consecutiveFailures: 0, successRate: null, degraded: false }, capabilities: { readable: true, mutable, runHistory: history, reason: mutable ? null : "Gateway cron mutations are not advertised." } };
 }
-export function normalizeOpenClawOperationRuns(value: unknown, jobId: string): OperationRun[] { const raw = record(value); const list = Array.isArray(raw.runs) ? raw.runs : Array.isArray(value) ? value : []; return list.map((entry) => { const run = record(entry); const startedAt = iso(run.startedAtMs) ?? string(run.startedAt); const endedAt = iso(run.endedAtMs) ?? string(run.endedAt); return { id: string(run.runId) ?? string(run.id) ?? randomUUID(), jobId, status: runStatus(string(run.status)), startedAt, endedAt, durationMs: number(run.durationMs) ?? (startedAt && endedAt ? Date.parse(endedAt) - Date.parse(startedAt) : null), sessionId: string(run.sessionId) ?? string(run.sessionKey), output: string(run.output) ?? string(run.summary), error: string(run.error), tokens: number(record(run.usage).tokens), cost: number(record(run.usage).cost), artifacts: Array.isArray(run.artifacts) ? run.artifacts.map(String) : [] }; }); }
+export function normalizeOpenClawOperationRuns(value: unknown, jobId: string): OperationRun[] {
+  const raw = record(value);
+  const list = Array.isArray(raw.entries)
+    ? raw.entries
+    : Array.isArray(raw.runs)
+      ? raw.runs
+      : Array.isArray(value)
+        ? value
+        : [];
+
+  return list.map((entry, index) => {
+    const run = record(entry);
+    const usage = record(run.usage);
+    const startedAt = iso(run.runAtMs) ?? iso(run.startedAtMs) ?? string(run.startedAt);
+    const endedAt = iso(run.endedAtMs) ?? string(run.endedAt) ?? iso(run.ts);
+    const inputTokens = number(usage.input_tokens) ?? number(usage.inputTokens);
+    const outputTokens = number(usage.output_tokens) ?? number(usage.outputTokens);
+    const reportedTotalTokens = number(usage.total_tokens) ?? number(usage.totalTokens) ?? number(usage.tokens);
+    const tokens = reportedTotalTokens ?? (inputTokens !== null || outputTokens !== null
+      ? (inputTokens ?? 0) + (outputTokens ?? 0)
+      : null);
+    const stableTimestamp = number(run.runAtMs) ?? number(run.startedAtMs) ?? number(run.ts) ?? index;
+
+    return {
+      id: string(run.runId) ?? string(run.id) ?? string(run.sessionId) ?? `${jobId}:${stableTimestamp}`,
+      jobId,
+      status: runStatus(string(run.status)),
+      startedAt,
+      endedAt,
+      durationMs: number(run.durationMs) ?? (startedAt && endedAt ? Date.parse(endedAt) - Date.parse(startedAt) : null),
+      sessionId: string(run.sessionId) ?? string(run.sessionKey),
+      output: string(run.output) ?? string(run.summary),
+      error: string(run.error),
+      tokens,
+      cost: number(usage.cost) ?? number(run.cost),
+      artifacts: Array.isArray(run.artifacts) ? run.artifacts.map(String) : []
+    };
+  });
+}
 function reconcileJobWithRuns(job: OperationJob, runs: OperationRun[]): OperationJob {
   const sorted = [...runs].sort((left, right) => Date.parse(right.endedAt ?? right.startedAt ?? "") - Date.parse(left.endedAt ?? left.startedAt ?? ""));
   const active = sorted.find((run) => run.status === "queued" || run.status === "running");

@@ -146,7 +146,12 @@ export async function submitMissionDispatch(
         { timeoutMs: 60_000 }
       );
       const now = new Date().toISOString();
-      const nextStatus = resolveGatewayMissionDispatchStatus(payload.status);
+      // OpenClaw documents agent.wait as a bounded observation call: a wait timeout
+      // does not stop the underlying agent run. gateway_draining is therefore not
+      // a terminal mission failure; later Gateway/session evidence owns completion.
+      const nextStatus = isGatewayWaitOnlyTimeout(payload)
+        ? "running"
+        : resolveGatewayMissionDispatchStatus(payload.status);
       dispatchRecord = {
         ...dispatchRecord,
         status: nextStatus,
@@ -399,6 +404,13 @@ function resolveGatewayMissionDispatchStatus(status: string | undefined): Missio
   }
 
   return "running";
+}
+
+function isGatewayWaitOnlyTimeout(payload: { status?: string; timeoutPhase?: string }) {
+  const status = payload.status?.trim().toLowerCase();
+  const timeoutPhase = payload.timeoutPhase?.trim().toLowerCase();
+
+  return (status === "timeout" || status === "timed_out") && timeoutPhase === "gateway_draining";
 }
 
 function resolveGatewayMissionDispatchError(payload: { status?: string; summary?: string }) {

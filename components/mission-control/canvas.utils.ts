@@ -5,7 +5,9 @@ import {
   extractPersistedNodePositions,
   getNodePositionsStorageKey,
   parsePersistedNodePositions,
+  parseWorkspaceTaskCardFilters,
   readPersistedNodePositions,
+  readWorkspaceTaskCardFilters,
   readFromLocalStorage,
   resolveNodePersistedPositionKey,
   resolvePersistedPosition,
@@ -13,7 +15,9 @@ import {
   toLegacyPersistedTaskPositionKey,
   toPersistedAgentPositionKey,
   toPersistedTaskPositionKey,
-  writeToLocalStorage
+  writeToLocalStorage,
+  writeWorkspaceTaskCardFilters,
+  workspaceTaskCardFiltersStorageKey
 } from "@/components/mission-control/canvas.persistence";
 import {
   resolveSurfaceActionAnchorPosition,
@@ -55,7 +59,9 @@ export {
   extractPersistedNodePositions,
   getNodePositionsStorageKey,
   parsePersistedNodePositions,
+  parseWorkspaceTaskCardFilters,
   readPersistedNodePositions,
+  readWorkspaceTaskCardFilters,
   readFromLocalStorage,
   markTaskAsJustCreated,
   mergeNodePositions,
@@ -72,5 +78,7 @@ export {
   toPersistedTaskPositionKey,
   toSurfaceActionNodeId,
   toSurfaceTetherNodeId,
-  writeToLocalStorage
+  writeToLocalStorage,
+  writeWorkspaceTaskCardFilters,
+  workspaceTaskCardFiltersStorageKey
 };

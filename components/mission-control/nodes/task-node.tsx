@@ -10,10 +10,12 @@ import {
   ChevronDown,
   Copy,
   CornerDownLeft,
+  Coins,
   Cpu,
   EyeOff,
   Lock,
   LockOpen,
+  History,
   MessageSquare,
   MoreHorizontal,
   Pause,
@@ -48,7 +50,6 @@ import {
   readTaskResultPreview,
   resolveTaskCardPrimaryAction,
   resolveTaskCardEvidencePresentation,
-  resolveTaskDispatchIssueDetail,
   resolveTaskReviewPresentation,
   resolveTaskBadgeLabel
 } from "@/components/mission-control/task-node-status";
@@ -167,6 +168,9 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     [mergedFeed]
   );
   const displayTask = mergeLocalTaskReviewMetadata(detail?.task, data.task);
+  const operationRunCount = readNonNegativeMetric(displayTask.metadata.operationRunCount);
+  const taskRunCount = operationRunCount ?? displayTask.runtimeCount;
+  const taskTokenCount = displayTask.tokenUsage?.total;
   const persistedFollowUps = useMemo(
     () => readTaskFollowUpsFromMetadata(displayTask.metadata),
     [displayTask.metadata]
@@ -176,7 +180,6 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
     [localFollowUps, persistedFollowUps]
   );
   const integrity = detail?.integrity ?? null;
-  const dispatchIssueDetail = resolveTaskDispatchIssueDetail(displayTask, integrity);
   const reviewPresentation = resolveTaskReviewPresentation(displayTask, integrity);
   const bootstrapStage =
     typeof displayTask.metadata.bootstrapStage === "string" ? displayTask.metadata.bootstrapStage : null;
@@ -717,6 +720,14 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
                 Run <span className={cn("font-mono", surfaceTone.text)}>{taskRunReference}</span>
               </span>
             ) : null}
+            <span className="inline-flex items-center gap-1" title={`${taskRunCount} OpenClaw run${taskRunCount === 1 ? "" : "s"} observed for this task`}>
+              <History className="h-3 w-3 shrink-0" />
+              <span className={surfaceTone.text}>{formatCompactTaskMetric(taskRunCount)}</span> run{taskRunCount === 1 ? "" : "s"}
+            </span>
+            <span className="inline-flex items-center gap-1" title={typeof taskTokenCount === "number" ? `${taskTokenCount.toLocaleString()} tokens reported by OpenClaw` : "OpenClaw did not report token usage for this task"}>
+              <Coins className="h-3 w-3 shrink-0" />
+              {typeof taskTokenCount === "number" ? <><span className={surfaceTone.text}>{formatCompactTaskMetric(taskTokenCount)}</span> tokens</> : "Tokens not reported"}
+            </span>
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -750,19 +761,6 @@ export function TaskNode({ data, selected }: NodeProps<TaskFlowNode>) {
               {footerLabel}
             </span>
           </div>
-
-          {dispatchIssueDetail ? (
-            <div className="mt-2">
-              <p className={cn("text-[9px] font-semibold uppercase tracking-[0.14em]", surfaceTheme === "light" ? "text-amber-700" : "text-amber-200/80")}>
-                Why review
-              </p>
-              <p className={cn("mt-1 line-clamp-2 text-[10px] leading-4", surfaceTheme === "light" ? "text-amber-800" : "text-amber-100/90")}>
-                {reviewPresentation.deliveryUnconfirmed
-                  ? "No final response was confirmed before the Gateway wait expired."
-                  : dispatchIssueDetail}
-              </p>
-            </div>
-          ) : null}
 
           <div className="mt-2">
             <p className={cn("text-[9px] font-semibold uppercase tracking-[0.14em]", surfaceTheme === "light" ? "text-amber-700" : "text-amber-200/80")}>
@@ -1811,6 +1809,17 @@ function TaskMenuButton({
       <span>{label}</span>
     </button>
   );
+}
+
+function readNonNegativeMetric(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function formatCompactTaskMetric(value: number) {
+  return new Intl.NumberFormat(undefined, {
+    notation: value >= 1_000 ? "compact" : "standard",
+    maximumFractionDigits: value >= 1_000 ? 1 : 0
+  }).format(value);
 }
 
 function resolveTaskDispatchStatus(task: TaskFlowNode["data"]["task"]) {

@@ -71,6 +71,39 @@ test("operations normalizes retry, error, and recovery evidence from cron.runs",
   assert.equal(runs[1].output, "Recovered");
 });
 
+test("operations normalizes the OpenClaw 2026.6 cron.runs entries shape", () => {
+  const runs = normalizeOpenClawOperationRuns({ entries: [{
+    ts: 1_700_000_050_000,
+    jobId: "job-live",
+    action: "finished",
+    status: "ok",
+    summary: "Completed from Gateway",
+    runAtMs: 1_700_000_000_000,
+    durationMs: 50_000,
+    sessionId: "session-live",
+    usage: { input_tokens: 1_200, output_tokens: 300, total_tokens: 2_100 }
+  }] }, "job-live");
+
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].id, "session-live");
+  assert.equal(runs[0].startedAt, "2023-11-14T22:13:20.000Z");
+  assert.equal(runs[0].endedAt, "2023-11-14T22:14:10.000Z");
+  assert.equal(runs[0].durationMs, 50_000);
+  assert.equal(runs[0].tokens, 2_100);
+  assert.equal(runs[0].output, "Completed from Gateway");
+});
+
+test("operations derives token usage when cron.runs omits a total", () => {
+  const [run] = normalizeOpenClawOperationRuns({ entries: [{
+    status: "ok",
+    runAtMs: 1_700_000_000_000,
+    usage: { input_tokens: 900, output_tokens: 100 }
+  }] }, "job-token-fallback");
+
+  assert.equal(run.tokens, 1_000);
+  assert.equal(run.id, "job-token-fallback:1700000000000");
+});
+
 test("scheduled OpenClaw jobs become read-only task cards with a visible cadence", () => {
   const tasks = buildOperationTaskProjections({
     generatedAt: "2026-07-11T00:00:00.000Z", source: "openclaw.cron", scheduler: { enabled: true, nextWakeAt: null, state: "available" }, runs: [], audit: [], notices: [],
@@ -144,7 +177,22 @@ test("operation task cards retain Gateway run failure evidence for their timelin
     jobs: [{ id: "job-error", name: "Check", description: null, enabled: true, status: "failed", agentId: "ops", workspaceId: "workspace-a", prompt: "Check", model: null, thinking: null, trigger: { kind: "every", everyMs: 60_000 }, nextRunAt: "2026-07-11T00:02:00.000Z", lastRunAt: "2026-07-11T00:01:00.000Z", lastRunStatus: "error", safety: null, health: { consecutiveFailures: 1, successRate: 0, degraded: true }, capabilities: { readable: true, mutable: true, runHistory: true, reason: null } }],
     runs: [{ id: "run-error", jobId: "job-error", status: "error", startedAt: "2026-07-11T00:00:55.000Z", endedAt: "2026-07-11T00:01:00.000Z", durationMs: 5_000, sessionId: null, output: null, error: "provider timeout", tokens: null, cost: null, artifacts: [] }]
   }, [{ id: "ops", name: "Ops", workspaceId: "workspace-a" } as never]);
-  assert.deepEqual(task.metadata.operationRunHistory, [{ id: "run-error", timestamp: "2026-07-11T00:01:00.000Z", status: "error", output: null, error: "provider timeout", durationMs: 5_000 }]);
+  assert.deepEqual(task.metadata.operationRunHistory, [{ id: "run-error", timestamp: "2026-07-11T00:01:00.000Z", status: "error", output: null, error: "provider timeout", durationMs: 5_000, tokens: null }]);
+});
+
+test("operation task cards expose observed run count and reported token usage", () => {
+  const [task] = buildOperationTaskProjections({
+    generatedAt: "2026-07-11T00:02:00.000Z", source: "openclaw.cron", scheduler: { enabled: true, nextWakeAt: null, state: "available" }, audit: [], notices: [],
+    jobs: [{ id: "job-metrics", name: "Brief", description: null, enabled: true, status: "scheduled", agentId: "ops", workspaceId: "workspace-a", prompt: "Brief", model: null, thinking: null, trigger: { kind: "every", everyMs: 60_000 }, nextRunAt: "2026-07-11T00:03:00.000Z", lastRunAt: "2026-07-11T00:02:00.000Z", lastRunStatus: "ok", safety: null, health: { consecutiveFailures: 0, successRate: 1, degraded: false }, capabilities: { readable: true, mutable: true, runHistory: true, reason: null } }],
+    runs: [
+      { id: "run-1", jobId: "job-metrics", status: "ok", startedAt: "2026-07-11T00:00:00.000Z", endedAt: "2026-07-11T00:00:10.000Z", durationMs: 10_000, sessionId: null, output: "One", error: null, tokens: 1_200, cost: null, artifacts: [] },
+      { id: "run-2", jobId: "job-metrics", status: "ok", startedAt: "2026-07-11T00:01:00.000Z", endedAt: "2026-07-11T00:01:10.000Z", durationMs: 10_000, sessionId: null, output: "Two", error: null, tokens: 800, cost: null, artifacts: [] }
+    ]
+  }, [{ id: "ops", name: "Ops", workspaceId: "workspace-a" } as never]);
+
+  assert.equal(task.runtimeCount, 2);
+  assert.equal(task.metadata.operationRunCount, 2);
+  assert.equal(task.tokenUsage?.total, 2_000);
 });
 
 test("a cron runtime and its schedule projection reconcile into one terminal task card", () => {

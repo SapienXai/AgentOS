@@ -5,7 +5,8 @@ import type {
   CanvasEdge,
   CanvasNode,
   PersistedNodePositionMap,
-  TaskNodeData
+  TaskNodeData,
+  WorkspaceTaskCardFilter
 } from "@/components/mission-control/canvas-types";
 import {
   resolveSurfaceModuleAnchorPosition,
@@ -64,7 +65,7 @@ export function buildCanvasGraph(
   hiddenRuntimeIds: string[],
   hiddenTaskKeys: string[],
   lockedTaskKeys: string[],
-  onToggleWorkspaceTaskCards: (workspaceId: string) => void,
+  _onToggleWorkspaceTaskCards: (workspaceId: string) => void,
   onMessageAgent: ((agentId: string) => void) | undefined,
   onCreateTaskAgent: ((agentId: string) => void) | undefined,
   onEditAgent: (agentId: string) => void,
@@ -90,7 +91,9 @@ export function buildCanvasGraph(
   pendingCreatedAgents: PendingAgentProjection[],
   agentCreationWarnings: Record<string, string>,
   persistedNodePositions: PersistedNodePositionMap,
-  surfaceTheme: "dark" | "light" = "dark"
+  surfaceTheme: "dark" | "light" = "dark",
+  workspaceTaskCardFilters: Record<string, WorkspaceTaskCardFilter> = {},
+  onWorkspaceTaskCardFilterChange?: (workspaceId: string, filter: WorkspaceTaskCardFilter) => void
 ) {
   const safeHiddenRuntimeIds = Array.isArray(hiddenRuntimeIds) ? hiddenRuntimeIds : [];
   const safeHiddenTaskKeys = Array.isArray(hiddenTaskKeys) ? hiddenTaskKeys : [];
@@ -150,17 +153,24 @@ export function buildCanvasGraph(
     const workspaceToggleTasks = isFocusMode
       ? []
       : workspaceTaskRecords.filter((task) => !safeLockedTaskKeys.includes(task.key));
-    const workspaceTasks = isFocusMode
-      ? workspaceTaskRecords
-      : workspaceTaskRecords.filter(
-          (task) => !isTaskHidden(task, safeHiddenRuntimeIds, safeHiddenTaskKeys, safeLockedTaskKeys)
-        );
     const workspaceTaskCardsHidden =
       !isFocusMode &&
       workspaceToggleTasks.length > 0 &&
       workspaceToggleTasks.every((task) =>
         isTaskHidden(task, safeHiddenRuntimeIds, safeHiddenTaskKeys, safeLockedTaskKeys)
       );
+    const requestedTaskCardFilter = workspaceTaskCardFilters[workspace.id] ?? "all";
+    const taskCardFilter: WorkspaceTaskCardFilter = workspaceTaskCardsHidden
+      ? "hidden"
+      : requestedTaskCardFilter;
+    const visibleWorkspaceTasks = isFocusMode
+      ? workspaceTaskRecords
+      : workspaceTaskRecords.filter(
+          (task) => !isTaskHidden(task, safeHiddenRuntimeIds, safeHiddenTaskKeys, safeLockedTaskKeys)
+        );
+    const workspaceTasks = isFocusMode
+      ? visibleWorkspaceTasks
+      : filterWorkspaceTasksForCanvas(visibleWorkspaceTasks, taskCardFilter);
     const workspaceColumn = workspaceIndex % 2;
     const groupX = workspaceColumn * workspaceColumnGap + 44;
     const groupY = rowTopY;
@@ -403,10 +413,14 @@ export function buildCanvasGraph(
           workspace,
           emphasis: !activeWorkspaceId || activeWorkspaceId === workspace.id,
           taskCardCount: workspaceToggleTasks.length,
+          activeTaskCardCount: workspaceToggleTasks.filter(isActiveTaskForCanvas).length,
           taskCardsHidden: workspaceTaskCardsHidden,
+          taskCardFilter,
           onOpenWorkspaceFiles,
-          onToggleTaskCards:
-            workspaceToggleTasks.length > 0 ? () => onToggleWorkspaceTaskCards(workspace.id) : undefined
+          onTaskCardFilterChange:
+            workspaceToggleTasks.length > 0 && onWorkspaceTaskCardFilterChange
+              ? (filter) => onWorkspaceTaskCardFilterChange(workspace.id, filter)
+              : undefined
         }
       });
 
@@ -674,6 +688,23 @@ export function resolveTaskWorkspaceId(task: WorkItemRecord, agents: AgentRecord
 
 export function isLiveTask(task: WorkItemRecord) {
   return task.status === "queued" || task.status === "running";
+}
+
+/**
+ * Canvas "Active Runs" includes work that is executing, scheduled to execute,
+ * or blocked on an operator decision. Terminal and passive records stay out.
+ */
+export function isActiveTaskForCanvas(task: WorkItemRecord) {
+  return task.status === "queued" || task.status === "running" || task.status === "stalled";
+}
+
+export function filterWorkspaceTasksForCanvas(
+  tasks: WorkItemRecord[],
+  filter: WorkspaceTaskCardFilter
+) {
+  if (filter === "hidden") return [];
+  if (filter === "active") return tasks.filter(isActiveTaskForCanvas);
+  return tasks;
 }
 
 export function buildAgentSurfaceBadges(

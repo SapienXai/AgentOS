@@ -25,6 +25,8 @@ export function mergeOperationTaskProjections(
     runtimeJobIds.add(jobId);
     const job = jobsById.get(jobId)!;
     const latestRun = latestOperationRun(snapshot.runs, jobId);
+    const operationRuns = snapshot.runs.filter((run) => run.jobId === jobId);
+    const operationTokenUsage = aggregateOperationTokenUsage(operationRuns);
     const status = terminalTaskStatus(job, latestRun) ?? reconcileRecurringTaskStatus(job, task.status);
     const recoveredSchedule = isRecoveredRecurringSchedule(job, status);
     const detail = latestRun?.status === "error" ? latestRun.error ?? "OpenClaw cron run failed."
@@ -37,6 +39,8 @@ export function mergeOperationTaskProjections(
       key: `openclaw-cron:${job.id}`,
       status,
       subtitle: detail ?? `${task.subtitle} · ${describeSchedule(job)}`,
+      runtimeCount: Math.max(task.runtimeCount, operationRuns.length),
+      tokenUsage: operationTokenUsage ?? task.tokenUsage,
       liveRunCount: status === "running" ? task.liveRunCount : 0,
       warningCount: recoveredSchedule
         ? (job.health.degraded ? 1 : 0)
@@ -70,13 +74,15 @@ function operationTaskPriority(task: TaskRecord) {
 
 function buildOperationTaskProjection(job: OperationJob, agentNames: Map<string, string>, runs: OperationRun[]): TaskRecord {
   const updatedAt = job.lastRunAt ? Date.parse(job.lastRunAt) : job.nextRunAt ? Date.parse(job.nextRunAt) : null;
+  const operationRuns = runs.filter((run) => run.jobId === job.id);
   return {
     id: `operation:${job.id}`, key: `openclaw-cron:${job.id}`, title: job.name, mission: job.prompt,
     subtitle: describeSchedule(job), status: taskStatus(job), updatedAt: Number.isFinite(updatedAt) ? updatedAt : null, ageMs: null,
     workspaceId: job.workspaceId ?? undefined, primaryAgentId: job.agentId ?? undefined,
     primaryAgentName: job.agentId ? agentNames.get(job.agentId) ?? job.agentId : null,
-    runtimeIds: [], agentIds: job.agentId ? [job.agentId] : [], sessionIds: [], runIds: [], runtimeCount: 0, updateCount: 0,
+    runtimeIds: [], agentIds: job.agentId ? [job.agentId] : [], sessionIds: [], runIds: [], runtimeCount: operationRuns.length, updateCount: 0,
     liveRunCount: job.status === "running" ? 1 : 0, artifactCount: 0, warningCount: job.health.degraded ? 1 : 0,
+    tokenUsage: aggregateOperationTokenUsage(operationRuns),
     metadata: operationMetadata(job, runs)
   };
 }
@@ -86,9 +92,9 @@ function operationMetadata(job: OperationJob, runs: OperationRun[]) {
     .filter((run) => run.jobId === job.id)
     .sort((left, right) => Date.parse(right.endedAt ?? right.startedAt ?? "") - Date.parse(left.endedAt ?? left.startedAt ?? ""))
     .slice(0, 24)
-    .map((run) => ({ id: run.id, timestamp: run.endedAt ?? run.startedAt ?? new Date().toISOString(), status: run.status, output: run.output, error: run.error, durationMs: run.durationMs }));
+    .map((run) => ({ id: run.id, timestamp: run.endedAt ?? run.startedAt ?? new Date().toISOString(), status: run.status, output: run.output, error: run.error, durationMs: run.durationMs, tokens: run.tokens }));
   if (operationRuns.length === 0 && job.lastRunStatus === "error" && job.lastRunAt) {
-    operationRuns.push({ id: `last-error:${job.id}:${job.lastRunAt}`, timestamp: job.lastRunAt, status: "error", output: null, error: null, durationMs: null });
+    operationRuns.push({ id: `last-error:${job.id}:${job.lastRunAt}`, timestamp: job.lastRunAt, status: "error", output: null, error: null, durationMs: null, tokens: null });
   }
   return { source: "openclaw-cron", operationJobId: job.id, scheduleLabel: describeSchedule(job), scheduledAt: job.nextRunAt,
     dueLabel: job.nextRunAt ? `Next run ${new Date(job.nextRunAt).toLocaleString()}` : "No next run reported", cronExpression: job.trigger?.kind === "cron" ? job.trigger.expression : null,
@@ -98,7 +104,16 @@ function operationMetadata(job: OperationJob, runs: OperationRun[]) {
     resultPreview: job.latestOutput ?? null, openClawSessionKey: job.sessionKey ?? null, openClawSessionId: job.sessionId ?? null,
     operationFeed: job.recentResults?.map((result) => ({ id: `operation:${job.id}:${result.timestamp}:${result.id}`, kind: "assistant", timestamp: result.timestamp, title: "Scheduled result", detail: result.text })) ?? [],
     operationRunHistory: operationRuns,
+    operationRunCount: runs.filter((run) => run.jobId === job.id).length,
     operationRecoveryHistory: buildOperationRecoveryHistory(job) };
+}
+
+function aggregateOperationTokenUsage(runs: OperationRun[]): TaskRecord["tokenUsage"] {
+  const reported = runs
+    .map((run) => run.tokens)
+    .filter((tokens): tokens is number => typeof tokens === "number" && Number.isFinite(tokens));
+  if (reported.length === 0) return undefined;
+  return { input: 0, output: 0, total: reported.reduce((total, tokens) => total + tokens, 0) };
 }
 
 function buildOperationRecoveryHistory(job: OperationJob) {

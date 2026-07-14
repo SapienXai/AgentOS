@@ -1,7 +1,8 @@
 import type {
   CanvasNode,
   PersistedNodePosition,
-  PersistedNodePositionMap
+  PersistedNodePositionMap,
+  WorkspaceTaskCardFilter
 } from "@/components/mission-control/canvas-types";
 import type { AgentRecord, WorkItemRecord } from "@/lib/agentos/contracts";
 
@@ -9,6 +10,35 @@ export const emptyPersistedNodePositions: PersistedNodePositionMap = {};
 
 const nodePositionsStorageKey = "mission-control-node-positions:v3";
 const legacyNodePositionsStorageKey = "mission-control-node-positions";
+export const workspaceTaskCardFiltersStorageKey = "mission-control-workspace-task-card-filters:v1";
+
+export function parseWorkspaceTaskCardFilters(raw: string | null) {
+  if (!raw) return {} as Record<string, WorkspaceTaskCardFilter>;
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {} as Record<string, WorkspaceTaskCardFilter>;
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (entry): entry is [string, WorkspaceTaskCardFilter] =>
+          Boolean(entry[0]) && (entry[1] === "all" || entry[1] === "active" || entry[1] === "hidden")
+      )
+    );
+  } catch {
+    return {} as Record<string, WorkspaceTaskCardFilter>;
+  }
+}
+
+export function readWorkspaceTaskCardFilters() {
+  return parseWorkspaceTaskCardFilters(readFromLocalStorage(workspaceTaskCardFiltersStorageKey));
+}
+
+export function writeWorkspaceTaskCardFilters(filters: Record<string, WorkspaceTaskCardFilter>) {
+  writeToLocalStorage(workspaceTaskCardFiltersStorageKey, JSON.stringify(filters));
+}
 
 export function readPersistedNodePositions(scopeKey: string) {
   const scopedRaw = readFromLocalStorage(getNodePositionsStorageKey(scopeKey));
