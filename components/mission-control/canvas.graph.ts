@@ -381,7 +381,8 @@ export function buildCanvasGraph(
         zIndex: 0,
         style: {
           width: workspaceGroupWidth,
-          height: workspaceHeight
+          height: workspaceHeight,
+          cursor: "default"
         },
         selectable: true,
         selected: false,

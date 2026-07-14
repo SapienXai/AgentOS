@@ -15,7 +15,13 @@ export function mergeNodePositions(previousNodes: CanvasNode[], nextNodes: Canva
     }
 
     if (node.type === "workspace") {
-      return node;
+      return {
+        ...node,
+        width: previous.width ?? node.width,
+        height: previous.height ?? node.height,
+        measured: previous.measured ?? node.measured,
+        selected: previous.selected ?? node.selected
+      };
     }
 
     const selected = previous.selected ?? node.selected;

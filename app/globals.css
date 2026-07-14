@@ -551,6 +551,7 @@
   --workspace-chip-text-hover: rgba(255, 255, 255, 0.98);
   --workspace-chip-shadow: 0 10px 18px rgba(var(--workspace-accent-rgb), 0.08);
   --workspace-chip-focus: rgba(var(--workspace-accent-rgb), 0.38);
+  cursor: default;
   color: var(--workspace-node-text);
   border-color: var(--workspace-node-border);
   background:
@@ -558,6 +559,11 @@
     radial-gradient(circle at 16% 0%, var(--workspace-node-accent-wash), transparent 36%),
     radial-gradient(circle at 86% 8%, var(--workspace-node-accent-spot), transparent 28%);
   box-shadow: var(--workspace-node-shadow);
+}
+
+.mission-shell .react-flow__node-workspace,
+.mission-shell .react-flow__node-workspace.selectable {
+  cursor: default;
 }
 
 .workspace-node::before {

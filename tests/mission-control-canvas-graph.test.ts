@@ -486,6 +486,7 @@ test("buildCanvasGraph keeps a fixed workspace and stacks idle agents with visib
 
   assert.equal(workspaceWithOneAgent?.style?.width, 1200);
   assert.equal(workspaceWithOneAgent?.style?.height, 900);
+  assert.equal(workspaceWithOneAgent?.style?.cursor, "default");
   assert.equal(workspaceWithThreeAgents?.style?.width, 1200);
   assert.equal(workspaceWithThreeAgents?.style?.height, 900);
   assert.equal(workspaceWithTenAgents?.style?.width, 1200);

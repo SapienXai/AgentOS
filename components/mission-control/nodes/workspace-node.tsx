@@ -2,7 +2,6 @@
 
 import type { Node, NodeProps } from "@xyflow/react";
 import { Activity, ChevronDown, Eye, EyeOff, FolderKanban, Layers3, Orbit } from "lucide-react";
-import { motion } from "motion/react";
 
 import type { WorkspaceNodeData } from "@/components/mission-control/canvas-types";
 import { resolveWorkspaceHealthBadgeClasses } from "@/components/mission-control/node-visual-tones";
@@ -17,19 +16,17 @@ export function WorkspaceNode({ data, selected }: NodeProps<WorkspaceFlowNode>) 
   const canOpenWorkspaceFiles = Boolean(data.onOpenWorkspaceFiles);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
+    <div
       style={getWorkspaceNodeStyle(data.workspace.id)}
       className={cn(
-        "workspace-node relative isolate h-full overflow-hidden rounded-[26px] border p-3 backdrop-blur-xl",
+        "workspace-node relative isolate h-full overflow-hidden rounded-[26px] border p-3",
         data.emphasis ? "opacity-100" : "opacity-[0.92]",
         selected && "workspace-node--selected"
       )}
     >
       <div className="relative z-10 flex items-start justify-between gap-4">
         {canOpenWorkspaceFiles ? (
-          <motion.button
+          <button
             type="button"
             aria-label={`Open workspace files for ${data.workspace.name}`}
             title="Open workspace files"
@@ -38,9 +35,6 @@ export function WorkspaceNode({ data, selected }: NodeProps<WorkspaceFlowNode>) 
               data.onOpenWorkspaceFiles?.(data.workspace.id);
             }}
             onPointerDown={(event) => event.stopPropagation()}
-            whileHover={{ scale: 1.025, y: -1 }}
-            whileTap={{ scale: 0.985 }}
-            transition={{ type: "spring", stiffness: 420, damping: 30 }}
             className="workspace-node__workspace-action nodrag nopan group block min-w-0 max-w-[330px] space-y-1.5 text-left focus-visible:outline-none"
           >
             <span className="workspace-node__header inline-flex max-w-full items-center gap-2 rounded-full px-2.5 py-1.5">
@@ -60,7 +54,7 @@ export function WorkspaceNode({ data, selected }: NodeProps<WorkspaceFlowNode>) 
             <span className="workspace-node__path block max-w-[300px] truncate pl-1 text-[9px] uppercase tracking-[0.16em]">
               {compactPath(data.workspace.path)}
             </span>
-          </motion.button>
+          </button>
         ) : (
           <div className="min-w-0 space-y-1.5">
             <div className="workspace-node__header inline-flex items-center gap-2 rounded-full px-2.5 py-1.5">
@@ -104,7 +98,7 @@ export function WorkspaceNode({ data, selected }: NodeProps<WorkspaceFlowNode>) 
           </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
