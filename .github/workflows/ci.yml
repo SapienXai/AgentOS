@@ -115,6 +115,7 @@ jobs:
           AGENTOS_SMOKE_JSON_OUTPUT: .smoke/mission-control-smoke.json
         run: |
           mkdir -p .smoke
+          export AGENTOS_API_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')"
           pnpm start > .smoke/agentos-server.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
