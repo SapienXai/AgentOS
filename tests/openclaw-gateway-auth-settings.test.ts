@@ -284,6 +284,7 @@ test("Gateway settings read the current bind through native config without expos
   assert.match(routeSource, /gatewayBind: await getGatewayBindMode\(\)/);
   assert.match(settingsSource, /fetch\("\/api\/settings\/gateway\?view=bind", \{ cache: "no-store" \}\)/);
   assert.match(settingsSource, /\["Gateway bind", displayedGatewayBind\]/);
+  assert.match(settingsSource, /OPENCLAW_DEFAULT_GATEWAY_BIND_MODE/);
   assert.match(settingsSource, /document\.addEventListener\("visibilitychange", refreshWhenVisible\)/);
   assert.doesNotMatch(settingsSource, /refreshInterval/);
 });
