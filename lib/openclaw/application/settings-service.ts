@@ -40,11 +40,11 @@ import type {
   GatewayNativeAuthIssueKind,
   GatewayNativeAuthStatus
 } from "@/lib/openclaw/gateway-auth";
+import { OPENCLAW_DEFAULT_GATEWAY_BIND_MODE } from "@/lib/openclaw/gateway-defaults";
 import { redactErrorMessage } from "@/lib/security/redaction";
 
 const GATEWAY_REMOTE_URL_CONFIG_KEY = "gateway.remote.url";
 const GATEWAY_BIND_CONFIG_KEY = "gateway.bind";
-const DEFAULT_GATEWAY_BIND_MODE = "loopback";
 const REDACTED_OPENCLAW_SECRET = "__OPENCLAW_REDACTED__";
 const GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS = 2_500;
 const GATEWAY_AUTH_ENV_FILE_NAME = ".env.local";
@@ -82,7 +82,7 @@ export async function getGatewayBindMode(
     timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
   });
 
-  return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_GATEWAY_BIND_MODE;
+  return typeof value === "string" && value.trim() ? value.trim() : OPENCLAW_DEFAULT_GATEWAY_BIND_MODE;
 }
 
 type GatewayNativeDeviceAccessRepairOptions = {
