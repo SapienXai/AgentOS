@@ -56,6 +56,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GatewayProductSurfacePanel } from "@/components/mission-control/gateway-surface-panel";
+import { OpenClawAppConnectDialog } from "@/components/mission-control/openclaw-app-connect-dialog";
 import {
   RuntimeGatewayInlineWarning,
   RuntimeInboxPanel
@@ -229,6 +230,7 @@ export function SettingsControlCenter(
   const [isRepairingGatewayDeviceAccess, setIsRepairingGatewayDeviceAccess] = useState(false);
   const [isOpeningControlUi, setIsOpeningControlUi] = useState(false);
   const [controlUiOpenError, setControlUiOpenError] = useState<string | null>(null);
+  const [isOpenClawAppConnectOpen, setIsOpenClawAppConnectOpen] = useState(false);
   const [compatibilitySmokeReport, setCompatibilitySmokeReport] = useState<CompatibilitySmokeReport | null>(
     () => snapshot.diagnostics.compatibilitySmokeTest ?? null
   );
@@ -1274,23 +1276,42 @@ export function SettingsControlCenter(
                         Source of truth for runtime and control state.
                       </p>
                     </div>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => void openControlUi()}
-                      disabled={!snapshot.diagnostics.loaded || isOpeningControlUi}
-                      title={snapshot.diagnostics.loaded ? "Open the OpenClaw Control UI." : "Start the OpenClaw Gateway to open its Control UI."}
-                      className={secondaryButtonClassName(surfaceTheme, "shrink-0")}
-                    >
-                      {isOpeningControlUi ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-                      {isOpeningControlUi ? "Opening…" : "Open Control UI"}
-                    </Button>
+                    <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => void openControlUi()}
+                        disabled={!snapshot.diagnostics.loaded || isOpeningControlUi}
+                        title={snapshot.diagnostics.loaded ? "Open the OpenClaw Control UI." : "Start the OpenClaw Gateway to open its Control UI."}
+                        className={secondaryButtonClassName(surfaceTheme)}
+                      >
+                        {isOpeningControlUi ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
+                        {isOpeningControlUi ? "Opening…" : "Open Control UI"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setIsOpenClawAppConnectOpen(true)}
+                        disabled={!snapshot.diagnostics.loaded}
+                        title={snapshot.diagnostics.loaded ? "Pair the OpenClaw mobile app." : "Start the OpenClaw Gateway to pair a mobile app."}
+                        className={secondaryButtonClassName(surfaceTheme)}
+                      >
+                        Connect OpenClaw App
+                      </Button>
+                    </div>
                   </div>
                   {controlUiOpenError ? (
                     <p className={cn("mt-3 text-xs", surfaceTheme === "light" ? "text-destructive" : "text-rose-300")} role="alert">
                       {controlUiOpenError}
                     </p>
                   ) : null}
+                  <OpenClawAppConnectDialog
+                    open={isOpenClawAppConnectOpen}
+                    onOpenChange={setIsOpenClawAppConnectOpen}
+                    surfaceTheme={surfaceTheme}
+                    bindMode={snapshot.diagnostics.bindMode}
+                    configuredGatewayUrl={snapshot.diagnostics.configuredGatewayUrl}
+                  />
 
                   <div className="mt-5 grid grid-cols-2 gap-3">
                     <Metric

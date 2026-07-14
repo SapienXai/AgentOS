@@ -16,6 +16,7 @@ export const dynamic = "force-dynamic";
 const encoder = new TextEncoder();
 const STREAM_RECONCILIATION_INTERVAL_MS = 60_000;
 const STREAM_EVENT_DEBOUNCE_MS = 300;
+const STREAM_SYSTEM_STATUS_INTERVAL_MS = 10_000;
 
 export async function GET(request: Request) {
   let interval: ReturnType<typeof setInterval> | undefined;
@@ -204,7 +205,7 @@ export async function GET(request: Request) {
       void sendSystemStatus();
       systemStatusInterval = setInterval(() => {
         void sendSystemStatus();
-      }, 1_000);
+      }, STREAM_SYSTEM_STATUS_INTERVAL_MS);
       scheduleSnapshot(5_000);
     },
     cancel() {

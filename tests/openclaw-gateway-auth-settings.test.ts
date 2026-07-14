@@ -47,6 +47,22 @@ test("OpenClaw Control UI opens through the CLI bootstrap flow", () => {
   assert.doesNotMatch(settingsSource, /href=\{snapshot\.diagnostics\.dashboardUrl\}/);
 });
 
+test("mobile pairing verifies auth before enabling LAN and returns only the QR projection", () => {
+  const serviceSource = readFileSync(join(process.cwd(), "lib/openclaw/application/mobile-pairing-service.ts"), "utf8");
+  const routeSource = readFileSync(join(process.cwd(), "app/api/openclaw/mobile-pairing/route.ts"), "utf8");
+  const dialogSource = readFileSync(join(process.cwd(), "components/mission-control/openclaw-app-connect-dialog.tsx"), "utf8");
+
+  assert.match(serviceSource, /getGatewayNativeAuthStatus\(\)/);
+  assert.match(serviceSource, /hasVerifiedGatewayAuthentication/);
+  assert.match(serviceSource, /setConfig\(gatewayBindConfigKey, "lan"/);
+  assert.match(serviceSource, /controlGateway\("restart"\)/);
+  assert.match(serviceSource, /"device\.pair\.setupCode"/);
+  assert.match(serviceSource, /runOpenClawJson<OpenClawSetupCodePayload>\(\["qr", "--json"\]/);
+  assert.doesNotMatch(routeSource, /setupCode/);
+  assert.match(dialogSource, /Connect OpenClaw App/);
+  assert.match(dialogSource, /Pair your OpenClaw mobile app with this AgentOS workspace\./);
+});
+
 function createSettingsAdapter(config: Record<string, unknown> = {}): OpenClawAdapter {
   const mutableConfig = { ...config };
   return {

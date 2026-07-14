@@ -118,13 +118,18 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
       cache: "no-store"
     });
     const nextSnapshot = (await response.json()) as ControlPlaneSnapshot;
+    const snapshotPending = response.headers.get("X-AgentOS-Snapshot-Pending") === "true";
 
     startTransition(() => {
       setSnapshot((currentSnapshot) =>
         isNewerSnapshot(nextSnapshot, currentSnapshot) ? nextSnapshot : currentSnapshot
       );
-      setHasReceivedLiveSnapshot(true);
-      setConnectionState("live");
+      if (!snapshotPending) {
+        setHasReceivedLiveSnapshot(true);
+        setConnectionState("live");
+      } else {
+        setConnectionState("connecting");
+      }
     });
 
     return nextSnapshot;

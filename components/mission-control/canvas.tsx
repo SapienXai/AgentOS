@@ -151,6 +151,9 @@ export function MissionCanvas({
   const handledDispatchIdsRef = useRef<Set<string>>(new Set());
   const creationTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const surfaceSpringVelocitiesRef = useRef<Map<string, SpringVelocity>>(new Map());
+  const surfaceAnimationFrameRef = useRef<number | null>(null);
+  const surfaceAnimationPreviousTimeRef = useRef(0);
+  const surfaceAnimationRunnerRef = useRef<(time: number) => void>(() => {});
   const persistedNodePositionsRef = useRef<PersistedNodePositionMap>({});
   const hasHydratedPersistedNodePositionsRef = useRef(false);
   const skipNextPersistRef = useRef(false);
@@ -438,82 +441,112 @@ export function MissionCanvas({
     );
   }, [selectedNodeId, composerTargetAgentId, isComposerActive, elevatedAgentMenuId, setNodes]);
 
-  useEffect(() => {
-    let frameId = 0;
-    let previousTime = performance.now();
+  const runSurfaceAnimationFrame = useCallback((time: number) => {
+    surfaceAnimationFrameRef.current = null;
+    const currentNodes = reactFlowRef.current?.getNodes();
 
-    const tick = (time: number) => {
-      const dtSeconds = Math.min(0.032, Math.max(0.008, (time - previousTime) / 1000));
-      previousTime = time;
+    if (!currentNodes) {
+      return;
+    }
 
-      setNodes((currentNodes) => {
-        let didUpdate = false;
-        const nodesById = new Map(currentNodes.map((node) => [node.id, node]));
-        const nextNodes = currentNodes.map((node) => {
-          if (node.type !== "surface-module") {
-            return node;
-          }
+    const previousTime = surfaceAnimationPreviousTimeRef.current || time;
+    const dtSeconds = Math.min(0.032, Math.max(0.008, (time - previousTime) / 1000));
+    surfaceAnimationPreviousTimeRef.current = time;
+    let didUpdate = false;
+    let shouldContinue = false;
+    const nodesById = new Map(currentNodes.map((node) => [node.id, node]));
+    const nextNodes = currentNodes.map((node) => {
+      if (node.type !== "surface-module") {
+        return node;
+      }
 
-          const agentNode = nodesById.get(node.data.agent.id);
-          if (!agentNode || agentNode.type !== "agent") {
-            surfaceSpringVelocitiesRef.current.delete(node.id);
-            return node;
-          }
+      const agentNode = nodesById.get(node.data.agent.id);
+      if (!agentNode || agentNode.type !== "agent") {
+        surfaceSpringVelocitiesRef.current.delete(node.id);
+        return node;
+      }
 
-          const targetPosition = resolveSurfaceModuleAnchorPosition(
-            agentNode.position,
-            node.data.anchorIndex,
-            node.data.anchorCount,
-            agentNode.width ?? agentNode.measured?.width,
-            agentNode.height ?? agentNode.measured?.height
-          );
-          const springVelocity = surfaceSpringVelocitiesRef.current.get(node.id) ?? { x: 0, y: 0 };
-          const nextPosition = stepSurfaceModuleSpring(
-            node.position,
-            targetPosition,
-            springVelocity,
-            dtSeconds
-          );
+      const targetPosition = resolveSurfaceModuleAnchorPosition(
+        agentNode.position,
+        node.data.anchorIndex,
+        node.data.anchorCount,
+        agentNode.width ?? agentNode.measured?.width,
+        agentNode.height ?? agentNode.measured?.height
+      );
+      const springVelocity = surfaceSpringVelocitiesRef.current.get(node.id) ?? { x: 0, y: 0 };
+      const nextPosition = stepSurfaceModuleSpring(
+        node.position,
+        targetPosition,
+        springVelocity,
+        dtSeconds
+      );
 
-          if (nextPosition.settled) {
-            surfaceSpringVelocitiesRef.current.delete(node.id);
+      if (nextPosition.settled) {
+        surfaceSpringVelocitiesRef.current.delete(node.id);
 
-            if (node.position.x === targetPosition.x && node.position.y === targetPosition.y) {
-              return node;
-            }
+        if (node.position.x === targetPosition.x && node.position.y === targetPosition.y) {
+          return node;
+        }
 
-            didUpdate = true;
-            return {
-              ...node,
-              position: targetPosition
-            };
-          }
+        didUpdate = true;
+        return {
+          ...node,
+          position: targetPosition
+        };
+      }
 
-          surfaceSpringVelocitiesRef.current.set(node.id, springVelocity);
+      shouldContinue = true;
+      surfaceSpringVelocitiesRef.current.set(node.id, springVelocity);
 
-          if (
-            Math.abs(nextPosition.position.x - node.position.x) < 0.001 &&
-            Math.abs(nextPosition.position.y - node.position.y) < 0.001
-          ) {
-            return node;
-          }
+      if (
+        Math.abs(nextPosition.position.x - node.position.x) < 0.001 &&
+        Math.abs(nextPosition.position.y - node.position.y) < 0.001
+      ) {
+        return node;
+      }
 
-          didUpdate = true;
-          return {
-            ...node,
-            position: nextPosition.position
-          };
-        });
+      didUpdate = true;
+      return {
+        ...node,
+        position: nextPosition.position
+      };
+    });
 
-        return didUpdate ? nextNodes : currentNodes;
+    if (didUpdate) {
+      setNodes(nextNodes);
+    }
+
+    if (shouldContinue) {
+      surfaceAnimationFrameRef.current = window.requestAnimationFrame((nextTime) => {
+        surfaceAnimationRunnerRef.current(nextTime);
       });
-
-      frameId = window.requestAnimationFrame(tick);
-    };
-
-    frameId = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frameId);
+    }
   }, [setNodes]);
+
+  useEffect(() => {
+    surfaceAnimationRunnerRef.current = runSurfaceAnimationFrame;
+  }, [runSurfaceAnimationFrame]);
+
+  useEffect(() => {
+    if (
+      surfaceAnimationFrameRef.current !== null ||
+      !nodes.some((node) => node.type === "surface-module")
+    ) {
+      return;
+    }
+
+    surfaceAnimationPreviousTimeRef.current = performance.now();
+    surfaceAnimationFrameRef.current = window.requestAnimationFrame((time) => {
+      surfaceAnimationRunnerRef.current(time);
+    });
+  }, [nodes]);
+
+  useEffect(() => () => {
+    if (surfaceAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(surfaceAnimationFrameRef.current);
+      surfaceAnimationFrameRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     if (!reactFlowRef.current) {
