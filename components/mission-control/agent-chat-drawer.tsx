@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { ArrowDown, CircleDot, KeyRound, LoaderCircle, SendHorizontal, Sparkles } from "lucide-react";
+import { ArrowDown, Bot, KeyRound, LoaderCircle, SendHorizontal } from "lucide-react";
 import { motion } from "motion/react";
 
 import { Button } from "@/components/ui/button";
@@ -44,50 +44,6 @@ function formatChatTime(timestamp: number) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(new Date(timestamp));
-}
-
-function TypingDots({ surfaceTheme }: { surfaceTheme: "dark" | "light" }) {
-  return (
-    <span className="inline-flex items-center gap-[3px] align-middle">
-      {[0, 1, 2].map((index) => (
-        <motion.span
-          key={index}
-          animate={{ opacity: [0.35, 1, 0.35], y: [0, -1, 0] }}
-          transition={{ duration: 1.1, repeat: Infinity, delay: index * 0.14, ease: "easeInOut" }}
-          className={cn("h-1.5 w-1.5 rounded-full", surfaceTheme === "light" ? "bg-[#8f7263]" : "bg-cyan-300")}
-        />
-      ))}
-    </span>
-  );
-}
-
-function AssistantBubbleHeader({
-  agentLabel,
-  statusLabel,
-  timestamp,
-  surfaceTheme
-}: {
-  agentLabel: string;
-  statusLabel: string | null;
-  timestamp: number;
-  surfaceTheme: "dark" | "light";
-}) {
-  return (
-    <div
-      className={cn(
-        "flex min-w-0 items-center justify-between gap-3 text-[9px] uppercase tracking-[0.24em]",
-        surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-400"
-      )}
-    >
-      <span className="min-w-0 truncate">{agentLabel} · {formatChatTime(timestamp)}</span>
-      {statusLabel ? (
-        <span className="inline-flex shrink-0 items-center gap-1.5">
-          <span>{statusLabel}</span>
-          <TypingDots surfaceTheme={surfaceTheme} />
-        </span>
-      ) : null}
-    </div>
-  );
 }
 
 function AssistantThinkingActivity({
@@ -178,108 +134,52 @@ function AssistantThinkingActivity({
   );
 }
 
-function AgentChatSessionHeader({
-  agent,
-  agentLabel,
-  agentWorkLabel,
-  isRunning,
-  surfaceTheme
-}: {
-  agent: AgentRecord;
-  agentLabel: string;
-  agentWorkLabel: string;
-  isRunning: boolean;
-  surfaceTheme: "dark" | "light";
-}) {
-  const statusLabel = isRunning ? "Replying" : agent.status;
-
-  return (
-    <div
-      className={cn(
-        "rounded-[14px] border px-3 py-2.5 shadow-[0_8px_22px_rgba(0,0,0,0.08)] backdrop-blur-xl",
-        surfaceTheme === "light"
-          ? "border-[#e3d4c8] bg-[#fffaf6]/94"
-          : "border-white/[0.08] bg-slate-950/82"
-      )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className={cn("text-[9px] font-semibold uppercase tracking-[0.2em]", surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-400")}>
-            Direct agent session
-          </p>
-          <p className={cn("mt-1 truncate text-[11px] font-semibold", surfaceTheme === "light" ? "text-[#3f2f24]" : "text-slate-100")}>
-            {agentLabel}
-          </p>
-        </div>
-        <span
-          className={cn(
-            "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em]",
-            isRunning
-              ? surfaceTheme === "light"
-                ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                : "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
-              : surfaceTheme === "light"
-                ? "border-[#e3d4c8] bg-white text-[#765b4b]"
-                : "border-white/[0.08] bg-white/[0.04] text-slate-300"
-          )}
-        >
-          <span className={cn("h-1.5 w-1.5 rounded-full", isRunning ? "bg-emerald-400 animate-pulse" : surfaceTheme === "light" ? "bg-[#b28f78]" : "bg-slate-500")} />
-          {statusLabel}
-        </span>
-      </div>
-      <div className={cn("mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[9px]", surfaceTheme === "light" ? "text-[#806657]" : "text-slate-400")}>
-        <span className="truncate">Model · {agent.modelId || "not reported"}</span>
-        <span>Sessions · {agent.sessionCount}</span>
-        <span className="min-w-0 truncate">Working on · {agentWorkLabel}</span>
-      </div>
-    </div>
-  );
-}
-
 function AgentChatWelcome({
   agentLabel,
   surfaceTheme,
+  prompts,
   onPrompt
 }: {
   agentLabel: string;
   surfaceTheme: "dark" | "light";
+  prompts: Array<{ label: string; text: string }>;
   onPrompt: (text: string) => void;
 }) {
-  const prompts = [
-    { label: "Get a status update", text: "Summarize your current work, progress, and next step." },
-    { label: "Ask about blockers", text: "What is blocking you right now, if anything?" }
-  ];
-
   return (
     <div
       className={cn(
-        "rounded-[16px] border px-3.5 py-4",
+        "w-full max-w-[292px] rounded-[18px] border px-4 py-4 text-center shadow-[0_14px_34px_rgba(0,0,0,0.08)]",
         surfaceTheme === "light"
           ? "border-[#e3d4c8] bg-[#fffaf6]"
           : "border-white/[0.08] bg-white/[0.035]"
       )}
     >
-      <div className="flex items-start gap-2.5">
-        <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-[11px] border", surfaceTheme === "light" ? "border-[#e3d4c8] bg-[#fff2e8] text-[#8c6550]" : "border-cyan-200/15 bg-cyan-300/10 text-cyan-100")}>
-          <Sparkles className="h-4 w-4" />
-        </div>
-        <div className="min-w-0">
-          <p className={cn("text-[12px] font-semibold", surfaceTheme === "light" ? "text-[#3f2f24]" : "text-slate-100")}>
-            Start a direct conversation with {agentLabel}
-          </p>
-          <p className={cn("mt-1 text-[11px] leading-5", surfaceTheme === "light" ? "text-[#806657]" : "text-slate-400")}>
-            Use this channel for guidance, decisions, and status checks. Task continuation stays in the task workflow.
-          </p>
-        </div>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-1.5">
+      <motion.div
+        animate={{ y: [0, -2, 0], opacity: [0.72, 1, 0.72] }}
+        transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
+        className={cn(
+          "mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-[12px] border",
+          surfaceTheme === "light"
+            ? "border-[#e3d4c8] bg-[#fff2e8] text-[#8c6550]"
+            : "border-cyan-200/15 bg-cyan-300/10 text-cyan-100"
+        )}
+      >
+        <Bot className="h-4 w-4" />
+      </motion.div>
+      <p className={cn("text-[13px] font-semibold", surfaceTheme === "light" ? "text-[#3f2f24]" : "text-slate-100")}>
+        Start a conversation
+      </p>
+      <p className={cn("mt-1.5 text-[11px] leading-5", surfaceTheme === "light" ? "text-[#806657]" : "text-slate-400")}>
+        Ask {agentLabel} for a status update, a decision, or help with the next step.
+      </p>
+      <div className="mt-3 flex flex-wrap justify-center gap-1.5">
         {prompts.map((prompt) => (
           <button
             key={prompt.label}
             type="button"
             onClick={() => onPrompt(prompt.text)}
             className={cn(
-              "rounded-full border px-2.5 py-1.5 text-[10px] font-semibold transition",
+              "rounded-full border px-2.5 py-1 text-[10px] font-semibold transition",
               surfaceTheme === "light"
                 ? "border-[#e3d4c8] bg-white text-[#705345] hover:border-[#cda98f] hover:bg-[#fff7f1]"
                 : "border-white/[0.09] bg-white/[0.04] text-slate-300 hover:border-cyan-200/20 hover:text-cyan-50"
@@ -646,20 +546,12 @@ export function AgentChatDrawer({
           surfaceTheme === "light" ? "text-[#4a382c]" : "text-slate-200"
         )}
       >
-        <div className="sticky top-0 z-10 mb-3">
-          <AgentChatSessionHeader
-            agent={agent}
-            agentLabel={agentLabel}
-            agentWorkLabel={agentWorkLabel}
-            isRunning={runSnapshot.isRunning}
-            surfaceTheme={surfaceTheme}
-          />
-        </div>
-        <div className="space-y-2.5 pb-1">
+        <div className={cn(hasConversation ? "space-y-2.5 pb-1" : "flex min-h-full items-center justify-center pb-3")}>
           {!hasConversation ? (
             <AgentChatWelcome
               agentLabel={agentLabel}
               surfaceTheme={surfaceTheme}
+              prompts={quickPrompts.slice(0, 2)}
               onPrompt={applyQuickPrompt}
             />
           ) : null}
@@ -682,7 +574,6 @@ export function AgentChatDrawer({
             const isRevealingAssistant =
               isAssistant && Boolean(revealedAssistantText) && visibleAssistantText !== entry.text;
             const showAssistantActivity = isActiveAssistant || isRevealingAssistant;
-            const assistantActivityLabel = isPendingAssistant ? "Thinking" : showAssistantActivity ? "Replying" : null;
             const isPendingUser = entry.role === "user" && entry.id === runSnapshot.userMessageId && runSnapshot.isRunning;
             const showInlineStatus = entry.status === "sending" && isPendingUser;
             const errorMessage = entry.errorMessage?.trim();
@@ -715,47 +606,32 @@ export function AgentChatDrawer({
                   )}
                 >
                   {isPendingAssistant ? (
-                    <>
-                      <AssistantBubbleHeader
-                        agentLabel={agentLabel}
-                        statusLabel={assistantActivityLabel}
-                        timestamp={entry.createdAt}
-                        surfaceTheme={surfaceTheme}
-                      />
-                      <AssistantThinkingActivity
-                        statusMessage={runSnapshot.statusMessage}
-                        expanded={Boolean(expandedThinkingById[entry.id])}
-                        onToggle={() =>
-                          setExpandedThinkingById((current) => ({
-                            ...current,
-                            [entry.id]: !current[entry.id]
-                          }))
-                        }
-                        surfaceTheme={surfaceTheme}
-                      />
-                    </>
+                    <AssistantThinkingActivity
+                      statusMessage={runSnapshot.statusMessage}
+                      expanded={Boolean(expandedThinkingById[entry.id])}
+                      onToggle={() =>
+                        setExpandedThinkingById((current) => ({
+                          ...current,
+                          [entry.id]: !current[entry.id]
+                        }))
+                      }
+                      surfaceTheme={surfaceTheme}
+                    />
                   ) : (
                     <>
-                      {isAssistant ? (
-                        <AssistantBubbleHeader
-                          agentLabel={agentLabel}
-                          statusLabel={assistantActivityLabel}
-                          timestamp={entry.createdAt}
-                          surfaceTheme={surfaceTheme}
-                        />
-                      ) : (
-                        <p
-                          className={cn(
-                            "text-[9px] font-semibold uppercase tracking-[0.18em]",
-                            surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-400"
-                          )}
-                        >
-                          {isUser ? "You" : "Direct session"} · {formatChatTime(entry.createdAt)}
-                        </p>
-                      )}
-                      <p className={cn("whitespace-pre-wrap break-words [overflow-wrap:anywhere]", isAssistant && "mt-1.5")}>
+                      <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                         {isAssistant ? visibleAssistantText : entry.text}
                       </p>
+                      <time
+                        dateTime={Number.isFinite(entry.createdAt) ? new Date(entry.createdAt).toISOString() : undefined}
+                        className={cn(
+                          "mt-1 block text-[9px] leading-3",
+                          isUser ? "text-right" : "text-left",
+                          surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-500"
+                        )}
+                      >
+                        {formatChatTime(entry.createdAt)}
+                      </time>
                       {showAssistantActivity ? (
                         <motion.span
                           aria-hidden="true"
@@ -875,7 +751,7 @@ export function AgentChatDrawer({
 
       <div
         className={cn(
-          "mt-2 shrink-0 rounded-[18px] border p-3",
+          "relative mt-2 shrink-0 overflow-hidden rounded-[14px] border",
           surfaceTheme === "light"
             ? "border-[#e3d4c8] bg-[#fffaf6]"
             : "border-white/[0.08] bg-[linear-gradient(180deg,rgba(11,18,32,0.86),rgba(8,13,24,0.82))]"
@@ -886,32 +762,6 @@ export function AgentChatDrawer({
           textareaRef.current?.focus();
         }}
       >
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <CircleDot className={cn("h-3.5 w-3.5 shrink-0", runSnapshot.isRunning ? "text-emerald-400" : surfaceTheme === "light" ? "text-[#9c745f]" : "text-slate-500")} />
-            <span className={cn("truncate text-[9px] font-semibold uppercase tracking-[0.18em]", surfaceTheme === "light" ? "text-[#806657]" : "text-slate-400")}>
-              Direct session · {runSnapshot.isRunning ? "replying" : "ready"}
-            </span>
-          </div>
-          <div className="flex flex-wrap justify-end gap-1">
-            {quickPrompts.map((prompt) => (
-              <button
-                key={prompt.label}
-                type="button"
-                disabled={runSnapshot.isRunning}
-                onClick={() => applyQuickPrompt(prompt.text)}
-                className={cn(
-                  "rounded-full border px-2 py-1 text-[9px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
-                  surfaceTheme === "light"
-                    ? "border-[#e3d4c8] bg-white/70 text-[#765b4b] hover:border-[#cda98f] hover:bg-white"
-                    : "border-white/[0.09] bg-white/[0.04] text-slate-300 hover:border-cyan-200/20 hover:text-cyan-50"
-                )}
-              >
-                {prompt.label}
-              </button>
-            ))}
-          </div>
-        </div>
         <Textarea
           ref={textareaRef}
           value={draft}
@@ -924,35 +774,30 @@ export function AgentChatDrawer({
           }}
           placeholder={`Ask ${agentLabel} about ${agentWorkLabel}…`}
           className={cn(
-            "min-h-[60px] cursor-text resize-none border-0 bg-transparent px-3.5 py-2.5 text-[13px] leading-[1.5] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
+            "min-h-[96px] w-full cursor-text resize-none border-0 bg-transparent px-3 py-3 pr-20 text-[13px] leading-[1.5] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
             surfaceTheme === "light"
               ? "text-[#3f2f24] placeholder:text-[#8f7664]"
               : "text-white placeholder:text-slate-500"
           )}
         />
 
-        <div className="mt-1.5 flex items-center justify-between gap-2 px-1">
-          <p className={cn("text-[9px] leading-4", surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-500")}>
-            Enter to send · Shift+Enter for newline
-          </p>
-          <Button
-            disabled={!canSend}
-            className={cn(
-              "h-8 rounded-full px-3 shadow-none",
-              surfaceTheme === "light"
-                ? "bg-[#4a382c] text-[#fffaf6] hover:bg-[#3f2f24]"
-                : "bg-white text-slate-950 hover:bg-white/92"
-            )}
-            onClick={send}
-          >
-            {runSnapshot.isRunning ? (
-              <LoaderCircle className="mr-[5px] h-[13px] w-[13px] animate-spin" />
-            ) : (
-              <SendHorizontal className="mr-[5px] h-[13px] w-[13px]" />
-            )}
-            Send
-          </Button>
-        </div>
+        <Button
+          disabled={!canSend}
+          className={cn(
+            "absolute right-3 top-3 h-8 rounded-full px-3 shadow-none",
+            surfaceTheme === "light"
+              ? "bg-[#4a382c] text-[#fffaf6] hover:bg-[#3f2f24]"
+              : "bg-white text-slate-950 hover:bg-white/92"
+          )}
+          onClick={send}
+        >
+          {runSnapshot.isRunning ? (
+            <LoaderCircle className="mr-[5px] h-[13px] w-[13px] animate-spin" />
+          ) : (
+            <SendHorizontal className="mr-[5px] h-[13px] w-[13px]" />
+          )}
+          Send
+        </Button>
       </div>
     </div>
   );

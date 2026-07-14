@@ -23,6 +23,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
+import { resolveAgentStatusDotTone } from "@/components/mission-control/node-visual-tones";
 import {
   resolveInspectorSummaryAction,
   resolveInspectorSurfaceTone
@@ -330,23 +331,37 @@ function InspectorPanelContent({
               isChatView ? "overflow-hidden" : "overflow-y-auto"
             )}
           >
-            <div className="shrink-0 px-3 pb-2 pt-3">
+            <div className={cn("shrink-0 px-3", isChatView ? "pb-1 pt-2" : "pb-2 pt-3")}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className={cn("text-[9px] font-semibold uppercase tracking-[0.24em]", surfaceTone.eyebrow)}>{selectedDetail}</p>
-                  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+                  {!isChatView ? (
+                    <p className={cn("text-[9px] font-semibold uppercase tracking-[0.24em]", surfaceTone.eyebrow)}>{selectedDetail}</p>
+                  ) : null}
+                  <div className={cn("flex min-w-0 flex-wrap items-center gap-1.5", !isChatView && "mt-1")}>
                     <h2 className={cn("min-w-0 max-w-full truncate font-display text-[1.08rem] leading-[1.15]", surfaceTone.title)}>
                       {selectedLabel}
                     </h2>
-                    <Badge
-                      variant="muted"
-                      className={cn("h-5 shrink-0 rounded-full px-2 py-0 text-[8px] leading-none tracking-[0.14em]", surfaceTone.fact, surfaceTone.title)}
-                    >
-                      {selectedDetail}
-                    </Badge>
+                    {isChatView ? (
+                      <span
+                        aria-label={selectedAgent?.status ?? "unknown"}
+                        title={selectedAgent?.status ?? "unknown"}
+                        className={cn(
+                          "h-2 w-2 shrink-0 rounded-full",
+                          selectedAgent ? resolveAgentStatusDotTone(selectedAgent.status) : "bg-slate-500"
+                        )}
+                      />
+                    ) : (
+                      <Badge
+                        variant="muted"
+                        className={cn("h-5 shrink-0 rounded-full px-2 py-0 text-[8px] leading-none tracking-[0.14em]", surfaceTone.fact, surfaceTone.title)}
+                      >
+                        {selectedDetail}
+                      </Badge>
+                    )}
                   </div>
-                  <p className={cn("mt-1 line-clamp-1 text-[11px] leading-4", surfaceTone.mutedText)}>
-                    {selectedTask
+                  {!isChatView ? (
+                    <p className={cn("mt-1 line-clamp-1 text-[11px] leading-4", surfaceTone.mutedText)}>
+                      {selectedTask
                       ? `${selectedTask.runtimeCount} runs · ${selectedTask.liveRunCount} live · ${formatRelativeTime(selectedTask.updatedAt, relativeTimeReferenceMs)}`
                       : selectedRuntime
                         ? `Run ${shortId(selectedRuntime.runId || selectedRuntime.id, 10)} · ${selectedRuntime.status} · ${formatRelativeTime(selectedRuntime.updatedAt, relativeTimeReferenceMs)}`
@@ -357,11 +372,13 @@ function InspectorPanelContent({
                             : selectedModel
                               ? `${selectedModel.provider} model`
                               : "Live gateway context"}
-                  </p>
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="flex shrink-0 items-center gap-1">
-                  <button
+                  {!isChatView ? (
+                    <button
                     type="button"
                     aria-label="Open debug data"
                     onClick={() => {
@@ -371,7 +388,8 @@ function InspectorPanelContent({
                     className={cn("flex h-8 w-8 items-center justify-center rounded-[9px] border transition-colors", surfaceTone.subtleButton)}
                   >
                     <MoreHorizontal className="h-3.5 w-3.5" />
-                  </button>
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     aria-label="Close inspector"
@@ -384,7 +402,7 @@ function InspectorPanelContent({
               </div>
 
               <div
-                className={cn("mt-3 grid overflow-hidden rounded-[10px] border p-1", surfaceTone.tabTrack)}
+                className={cn("grid overflow-hidden rounded-[10px] border p-1", isChatView ? "mt-2" : "mt-3", surfaceTone.tabTrack)}
                 style={{ gridTemplateColumns: `repeat(${visibleDetailTabs.length}, minmax(0, 1fr))` }}
               >
                 {visibleDetailTabs.map((item) => (
