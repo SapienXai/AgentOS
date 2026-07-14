@@ -30,6 +30,7 @@ import {
 import {
   generateGatewayNativeAuthToken,
   getCrossAgentMessageSettings,
+  getGatewayBindMode,
   getGatewayNativeAuthStatus,
   repairGatewayNativeDeviceAccess,
   saveGatewayNativeAuthCredential,
@@ -89,6 +90,7 @@ export {
   generateGatewayNativeAuthToken,
   getCrossAgentMessageSettings,
   getChannelRegistry,
+  getGatewayBindMode,
   getGatewayNativeAuthStatus,
   getRuntimeOutput,
   getTaskDetail,
