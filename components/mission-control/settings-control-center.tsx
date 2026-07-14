@@ -1585,7 +1585,7 @@ export function SettingsControlCenter(
                       ["Status", `${resolveGatewayLocality(snapshot)} / ${snapshot.diagnostics.loaded || snapshot.diagnostics.rpcOk ? "Online" : "Offline"}`],
                       ["Native Gateway", transportSummary.statusLabel],
                       ["Gateway mode", transportSummary.gatewayModeLabel],
-                      ["CLI fallback used", `${transportSummary.fallbackTotal} operations`],
+                      ["Gateway bind", snapshot.diagnostics.bindMode || "Unknown"],
                       ["Endpoint", snapshot.diagnostics.gatewayUrl || "Not configured"],
                       ["Auth status", nativeAuthLabel],
                       ["Protocol", `${transportSummary.protocolRangeLabel}, connected: ${transportSummary.protocolLabel}`],
@@ -2062,7 +2062,11 @@ export function SettingsControlCenter(
                       variant="full"
                       onSnapshotChange={onSnapshotChange}
                     />
-                    <TransportDiagnosticsPanel summary={transportSummary} surfaceTheme={surfaceTheme} />
+                    <TransportDiagnosticsPanel
+                      summary={transportSummary}
+                      gatewayBind={snapshot.diagnostics.bindMode}
+                      surfaceTheme={surfaceTheme}
+                    />
                     {gatewayFallbackDiagnostics.length ? (
                       <div
                         className={cn(
@@ -4137,9 +4141,11 @@ function CompatibilityPanel({
 
 function TransportDiagnosticsPanel({
   summary,
+  gatewayBind,
   surfaceTheme
 }: {
   summary: TransportDiagnosticsSummary;
+  gatewayBind?: string;
   surfaceTheme: SurfaceTheme;
 }) {
   return (
@@ -4183,9 +4189,8 @@ function TransportDiagnosticsPanel({
           compact
         />
         <Metric
-          label="CLI fallback used"
-          value={String(summary.fallbackTotal)}
-          badge={summary.fallbackTotal > 0 ? "Used" : "Clean"}
+          label="Gateway bind"
+          value={gatewayBind || "Unknown"}
           surfaceTheme={surfaceTheme}
           dark={surfaceTheme === "dark"}
           compact
