@@ -284,7 +284,8 @@ test("Gateway settings read the current bind through native config without expos
   assert.match(routeSource, /gatewayBind: await getGatewayBindMode\(\)/);
   assert.match(settingsSource, /fetch\("\/api\/settings\/gateway\?view=bind", \{ cache: "no-store" \}\)/);
   assert.match(settingsSource, /\["Gateway bind", displayedGatewayBind\]/);
-  assert.match(settingsSource, /5_000/);
+  assert.match(settingsSource, /document\.addEventListener\("visibilitychange", refreshWhenVisible\)/);
+  assert.doesNotMatch(settingsSource, /refreshInterval/);
 });
 
 test("Gateway native auth token generation configures OpenClaw and local env without exposing the token", async () => {
