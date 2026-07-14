@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   generateGatewayNativeAuthToken,
+  getGatewayBindMode,
   getGatewayNativeAuthStatus,
   repairGatewayNativeDeviceAccess,
   saveGatewayNativeAuthCredential,
@@ -32,8 +33,16 @@ const gatewayAuthRepairSchema = z.object({
   scopes: z.array(z.string().min(1)).optional()
 });
 
-export async function GET() {
+export async function GET(request: Request) {
+  const bindOnly = new URL(request.url).searchParams.get("view") === "bind";
+
   try {
+    if (bindOnly) {
+      return NextResponse.json({
+        gatewayBind: await getGatewayBindMode()
+      });
+    }
+
     const authStatus = await getGatewayNativeAuthStatus();
 
     return NextResponse.json({
@@ -42,7 +51,12 @@ export async function GET() {
   } catch (error) {
     return NextResponse.json(
       {
-        error: redactErrorMessage(error, "Unable to inspect the OpenClaw gateway auth status.")
+        error: redactErrorMessage(
+          error,
+          bindOnly
+            ? "Unable to inspect the current OpenClaw Gateway bind value."
+            : "Unable to inspect the OpenClaw gateway auth status."
+        )
       },
       { status: 500 }
     );
