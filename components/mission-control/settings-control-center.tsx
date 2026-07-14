@@ -1058,7 +1058,7 @@ export function SettingsControlCenter(
                   <SummaryTile
                     label="Gateway"
                     value={snapshot.diagnostics.loaded || snapshot.diagnostics.rpcOk ? "Online" : "Offline"}
-                    detail={transportSummary.statusLabel}
+                    detail={`Bind: ${displayedGatewayBind}`}
                     surfaceTheme={surfaceTheme}
                     compact
                   />
