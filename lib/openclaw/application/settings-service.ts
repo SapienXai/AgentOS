@@ -43,6 +43,7 @@ import type {
 import { redactErrorMessage } from "@/lib/security/redaction";
 
 const GATEWAY_REMOTE_URL_CONFIG_KEY = "gateway.remote.url";
+const GATEWAY_BIND_CONFIG_KEY = "gateway.bind";
 const REDACTED_OPENCLAW_SECRET = "__OPENCLAW_REDACTED__";
 const GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS = 2_500;
 const GATEWAY_AUTH_ENV_FILE_NAME = ".env.local";
@@ -72,6 +73,16 @@ type GatewayNativeAuthStatusOptions = {
   isNativeDisabled?: () => boolean;
   cwd?: string;
 };
+
+export async function getGatewayBindMode(
+  adapter: OpenClawAdapter = getOpenClawAdapter()
+): Promise<string | null> {
+  const value = await adapter.getConfig<unknown>(GATEWAY_BIND_CONFIG_KEY, {
+    timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
+  });
+
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
 
 type GatewayNativeDeviceAccessRepairOptions = {
   nativeProbe?: () => Promise<unknown>;
