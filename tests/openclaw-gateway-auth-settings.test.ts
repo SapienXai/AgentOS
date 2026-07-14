@@ -275,6 +275,9 @@ test("Gateway settings read the current bind through native config without expos
 
   assert.equal(await getGatewayBindMode(), "lan");
 
+  setOpenClawAdapterForTesting(createSettingsAdapter());
+  assert.equal(await getGatewayBindMode(), "loopback");
+
   const routeSource = readFileSync(join(process.cwd(), "app/api/settings/gateway/route.ts"), "utf8");
   const settingsSource = readFileSync(join(process.cwd(), "components/mission-control/settings-control-center.tsx"), "utf8");
 
