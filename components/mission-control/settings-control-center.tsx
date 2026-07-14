@@ -271,11 +271,13 @@ export function SettingsControlCenter(
     useState<"idle" | "refreshing" | "ready" | "error">("idle");
   const [settingsHashHydrated, setSettingsHashHydrated] = useState(false);
   const renderedActiveSection = settingsHashHydrated ? activeSection : resolveInitialSettingsSection();
-  const displayedGatewayBind = gatewayBindRefreshState === "refreshing" && currentGatewayBind === null
-    ? "Refreshing..."
-    : gatewayBindRefreshState === "error"
-      ? "Unavailable"
-      : currentGatewayBind || snapshot.diagnostics.bindMode || "Unknown";
+  const displayedGatewayBind = currentGatewayBind || snapshot.diagnostics.bindMode || (
+    gatewayBindRefreshState === "refreshing"
+      ? "Refreshing..."
+      : gatewayBindRefreshState === "error"
+        ? "Unavailable"
+        : "Unknown"
+  );
   const updateCompatibility = snapshot.diagnostics.updateCompatibility;
   const currentVersion = snapshot.diagnostics.version || "unknown";
   const updateInfo = snapshot.diagnostics.updateInfo?.trim() || null;
@@ -741,9 +743,6 @@ export function SettingsControlCenter(
     const refreshTimer = window.setTimeout(() => {
       void refreshGatewayBind();
     }, 0);
-    const refreshInterval = window.setInterval(() => {
-      void refreshGatewayBind();
-    }, 5_000);
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") {
         void refreshGatewayBind();
@@ -753,7 +752,6 @@ export function SettingsControlCenter(
 
     return () => {
       window.clearTimeout(refreshTimer);
-      window.clearInterval(refreshInterval);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [refreshGatewayBind, renderedActiveSection]);
