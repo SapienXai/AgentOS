@@ -20,6 +20,7 @@ import {
   workspaceTaskCardFiltersStorageKey
 } from "@/components/mission-control/canvas.persistence";
 import {
+  mergeSurfaceModulePositions,
   resolveSurfaceActionAnchorPosition,
   resolveSurfaceModuleAnchorPosition,
   stepSurfaceModuleSpring,
@@ -64,6 +65,7 @@ export {
   readWorkspaceTaskCardFilters,
   readFromLocalStorage,
   markTaskAsJustCreated,
+  mergeSurfaceModulePositions,
   mergeNodePositions,
   resolveNodePersistedPositionKey,
   resolvePersistedPosition,

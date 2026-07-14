@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { mergeSurfaceModulePositions } from "@/components/mission-control/canvas.motion";
+import type { CanvasNode } from "@/components/mission-control/canvas-types";
+
 test("initial pages render before a slow OpenClaw snapshot blocks navigation", async () => {
   const source = await readFile("lib/agentos/initial-snapshot.ts", "utf8");
   const timeout = source.match(/INITIAL_SNAPSHOT_TIMEOUT_MS\s*=\s*([\d_]+)/)?.[1];
@@ -38,4 +41,29 @@ test("surface spring animation sleeps after nodes settle", async () => {
   assert.match(source, /if \(shouldContinue\) \{[\s\S]*?requestAnimationFrame/);
   assert.match(source, /surfaceAnimationFrameRef\.current = null/);
   assert.doesNotMatch(source, /frameId = window\.requestAnimationFrame\(tick\)/);
+});
+
+test("surface animation never overwrites live agent drag positions", () => {
+  const agentNode = {
+    id: "agent:dragging",
+    type: "agent",
+    position: { x: 420, y: 240 },
+    dragging: true,
+    data: {},
+  } as unknown as CanvasNode;
+  const surfaceNode = {
+    id: "surface:following",
+    type: "surface-module",
+    position: { x: 100, y: 100 },
+    data: {},
+  } as unknown as CanvasNode;
+
+  const merged = mergeSurfaceModulePositions(
+    [agentNode, surfaceNode],
+    new Map([[surfaceNode.id, { x: 130, y: 140 }]]),
+  );
+
+  assert.equal(merged[0], agentNode);
+  assert.deepEqual(merged[0]?.position, { x: 420, y: 240 });
+  assert.deepEqual(merged[1]?.position, { x: 130, y: 140 });
 });

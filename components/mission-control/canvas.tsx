@@ -18,6 +18,7 @@ import {
   extractPersistedNodePositions,
   getNodePositionsStorageKey,
   markTaskAsJustCreated,
+  mergeSurfaceModulePositions,
   mergeNodePositions,
   nodeTypes,
   readPersistedNodePositions,
@@ -452,18 +453,18 @@ export function MissionCanvas({
     const previousTime = surfaceAnimationPreviousTimeRef.current || time;
     const dtSeconds = Math.min(0.032, Math.max(0.008, (time - previousTime) / 1000));
     surfaceAnimationPreviousTimeRef.current = time;
-    let didUpdate = false;
     let shouldContinue = false;
+    const surfacePositionUpdates = new Map<string, { x: number; y: number }>();
     const nodesById = new Map(currentNodes.map((node) => [node.id, node]));
-    const nextNodes = currentNodes.map((node) => {
+    currentNodes.forEach((node) => {
       if (node.type !== "surface-module") {
-        return node;
+        return;
       }
 
       const agentNode = nodesById.get(node.data.agent.id);
       if (!agentNode || agentNode.type !== "agent") {
         surfaceSpringVelocitiesRef.current.delete(node.id);
-        return node;
+        return;
       }
 
       const targetPosition = resolveSurfaceModuleAnchorPosition(
@@ -485,14 +486,11 @@ export function MissionCanvas({
         surfaceSpringVelocitiesRef.current.delete(node.id);
 
         if (node.position.x === targetPosition.x && node.position.y === targetPosition.y) {
-          return node;
+          return;
         }
 
-        didUpdate = true;
-        return {
-          ...node,
-          position: targetPosition
-        };
+        surfacePositionUpdates.set(node.id, targetPosition);
+        return;
       }
 
       shouldContinue = true;
@@ -502,18 +500,14 @@ export function MissionCanvas({
         Math.abs(nextPosition.position.x - node.position.x) < 0.001 &&
         Math.abs(nextPosition.position.y - node.position.y) < 0.001
       ) {
-        return node;
+        return;
       }
 
-      didUpdate = true;
-      return {
-        ...node,
-        position: nextPosition.position
-      };
+      surfacePositionUpdates.set(node.id, nextPosition.position);
     });
 
-    if (didUpdate) {
-      setNodes(nextNodes);
+    if (surfacePositionUpdates.size > 0) {
+      setNodes((latestNodes) => mergeSurfaceModulePositions(latestNodes, surfacePositionUpdates));
     }
 
     if (shouldContinue) {

@@ -1,5 +1,6 @@
 import type {
   AgentSurfaceBadge,
+  CanvasNode,
   PersistedNodePosition,
   SpringVelocity
 } from "@/components/mission-control/canvas-types";
@@ -8,6 +9,34 @@ import type { AgentRecord } from "@/lib/agentos/contracts";
 const surfaceModuleSpringStiffness = 220;
 const surfaceModuleSpringDamping = 20;
 const surfaceModuleSettlingThreshold = 0.35;
+
+export function mergeSurfaceModulePositions(
+  nodes: CanvasNode[],
+  positions: ReadonlyMap<string, PersistedNodePosition>
+) {
+  let didUpdate = false;
+  const nextNodes = nodes.map((node) => {
+    if (node.type !== "surface-module") {
+      return node;
+    }
+
+    const position = positions.get(node.id);
+    if (
+      !position ||
+      (node.position.x === position.x && node.position.y === position.y)
+    ) {
+      return node;
+    }
+
+    didUpdate = true;
+    return {
+      ...node,
+      position
+    };
+  });
+
+  return didUpdate ? nextNodes : nodes;
+}
 
 export function toSurfaceTetherNodeId(agent: AgentRecord, provider: AgentSurfaceBadge["provider"] | string) {
   return `surface-module-v1:${agent.workspaceId}:${agent.id}:${provider}`;
