@@ -1065,7 +1065,7 @@ test("fresh install setup ignores orphaned Gateway registration before CLI is co
 
   assert.equal(steps.find((step) => step.id === "cli")?.state, "pending");
   assert.equal(steps.find((step) => step.id === "gateway")?.state, "pending");
-  assert.equal(steps.find((step) => step.id === "gateway")?.description, "Register the gateway service once.");
+  assert.equal(steps.find((step) => step.id === "gateway")?.description, "Register and configure the local Gateway.");
   assert.equal(steps.find((step) => step.id === "runtime")?.state, "pending");
 });
 

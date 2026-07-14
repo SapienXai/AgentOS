@@ -195,6 +195,14 @@ function isMissingTranscriptActivityMessage(value: string | null | undefined) {
   );
 }
 
+function shouldKeepSidebarOpenForPortal(target: EventTarget | null) {
+  if (target instanceof Element && target.closest('[role="dialog"], [data-radix-popper-content-wrapper]')) {
+    return true;
+  }
+
+  return typeof document !== "undefined" && Boolean(document.querySelector('[role="dialog"]'));
+}
+
 function wait(ms: number) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -3514,10 +3522,11 @@ export function MissionControlShell({
     openSetupWizard("system");
   };
 
-  const continueToModelSetup = () => {
+  const continueToModelSetup = async () => {
     setOnboardingStatusMessage(null);
     setRequiresFreshInstallSystemSetup(false);
     setShowOnboardingReadyState(false);
+    await refreshOnboardingModelSnapshot(snapshot);
     setOnboardingStage("models");
   };
 
@@ -3783,7 +3792,23 @@ export function MissionControlShell({
               setIsSidebarOpen(true);
             }
           }}
-          onMouseLeave={() => setIsSidebarOpen(false)}
+          onMouseLeave={(event) => {
+            if (shouldKeepSidebarOpenForPortal(event.relatedTarget)) {
+              return;
+            }
+
+            setIsSidebarOpen(false);
+          }}
+          onFocusCapture={() => setIsSidebarOpen(true)}
+          onBlurCapture={(event) => {
+            if (shouldKeepSidebarOpenForPortal(event.relatedTarget)) {
+              return;
+            }
+
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setIsSidebarOpen(false);
+            }
+          }}
         >
           <MissionSidebar
             snapshot={uiSnapshot}
@@ -4118,7 +4143,23 @@ export function MissionControlShell({
               setIsSidebarOpen(true);
             }
           }}
-          onMouseLeave={() => setIsSidebarOpen(false)}
+          onMouseLeave={(event) => {
+            if (shouldKeepSidebarOpenForPortal(event.relatedTarget)) {
+              return;
+            }
+
+            setIsSidebarOpen(false);
+          }}
+          onFocusCapture={() => setIsSidebarOpen(true)}
+          onBlurCapture={(event) => {
+            if (shouldKeepSidebarOpenForPortal(event.relatedTarget)) {
+              return;
+            }
+
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setIsSidebarOpen(false);
+            }
+          }}
         >
           <MissionSidebar
             snapshot={uiSnapshot}

@@ -80,6 +80,7 @@ test("OpenClaw direct CLI JSON usage remains in documented fallback/discovery fi
   const allowed = new Set([
     "lib/openclaw/cli.ts",
     "lib/openclaw/client/cli-gateway-client.ts",
+    "lib/openclaw/application/mobile-pairing-service.ts",
     "lib/openclaw/application/task-health-service.ts"
   ]);
   const offenders = readProjectSourceFiles(["lib/openclaw"])
@@ -387,8 +388,9 @@ test("system onboarding repairs Gateway auth before runtime state verification",
   assert.match(source, /Preparing Gateway auth for AgentOS before first start/);
   assert.match(source, /needsGatewayBootstrapConfigRepair/);
   assert.match(source, /\["config", "set", "gateway\.mode", "local"\]/);
-  assert.match(source, /\["config", "set", "gateway\.auth\.mode", "token"\]/);
-  assert.match(source, /\["config", "set", "gateway\.auth\.token", token\]/);
+  assert.match(source, /writeLocalGatewayBootstrapConfig\(token\)/);
+  assert.match(source, /auth:\s*\{[\s\S]*?mode: "token",[\s\S]*?token/);
+  assert.doesNotMatch(source, /\["config", "set", "gateway\.auth\.token", token\]/);
   assert.match(source, /Rotating the local Gateway token before system setup readiness/);
   assert.doesNotMatch(source, /generateGatewayNativeAuthToken/);
   assert.match(source, /AgentOS repaired local Gateway token auth during system setup verification/);
@@ -601,7 +603,8 @@ test("mission shell opens the sidebar on hover and closes it on exit", () => {
   assert.match(source, /function shouldKeepSidebarOpenForPortal\(target: EventTarget \| null\)/);
   assert.match(source, /target\.closest\('\[role="dialog"\], \[data-radix-popper-content-wrapper\]'\)/);
   assert.match(source, /document\.querySelector\('\[role="dialog"\]'\)/);
-  assert.match(source, /onMouseEnter=\{\(\) => setIsSidebarOpen\(true\)\}/);
+  assert.match(source, /const isSidebarHoverLocked = isSidebarCreateAgentDialogOpen \|\| isSidebarAgentActionModalOpen;/);
+  assert.match(source, /onMouseEnter=\{\(\) => \{\s*if \(!isSidebarHoverLocked\) \{\s*setIsSidebarOpen\(true\);/);
   assert.match(
     source,
     /onMouseLeave=\{\(event\) => \{\s*if \(shouldKeepSidebarOpenForPortal\(event\.relatedTarget\)\) \{\s*return;\s*\}\s*setIsSidebarOpen\(false\);/
@@ -668,7 +671,8 @@ test("settings control center renders a single hash-selected section", () => {
   assert.match(source, /type SettingsSectionId =[\s\S]*?"danger-zone";/);
   assert.match(source, /const \[activeSection, setActiveSection\] = useState<SettingsSectionId>\(\(\) => resolveInitialSettingsSection\(\)\)/);
   assert.match(source, /window\.addEventListener\("hashchange", syncActiveSectionFromHash\)/);
-  assert.doesNotMatch(source, /\bGeneral\b/);
+  assert.match(source, /\{ id: "general", label: "General", icon: Wrench \}/);
+  assert.match(source, /case "general":\s*case "tools":\s*return "general"/);
 });
 
 test("update check treats loading registry status as loading instead of up to date", () => {
@@ -775,8 +779,8 @@ test("onboarding refreshes full model snapshot before entering model setup", () 
   const source = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
 
   assert.match(source, /const refreshOnboardingModelSnapshot = useCallback/);
-  assert.match(source, /await refreshOnboardingModelSnapshot\(event\.snapshot \?\? null\)/);
-  assert.match(source, /const continueToModelSetup = \(\) => \{/);
+  assert.match(source, /const continueToModelSetup = async \(\) => \{/);
+  assert.match(source, /await refreshOnboardingModelSnapshot\(snapshot\);/);
   assert.match(source, /onContinueToModels=\{continueToModelSetup\}/);
   assert.doesNotMatch(source, /onContinueToModels=\{\(\) => setOnboardingStage\("models"\)\}/);
 });
@@ -812,11 +816,12 @@ test("full uninstall reset reopens onboarding at system setup", () => {
 test("system setup starts Gateway before requesting a full readiness snapshot", () => {
   const source = readFileSync(path.join(rootDir, "app/api/onboarding/route.ts"), "utf8");
   const statusIndex = source.indexOf("let gatewayStatus = await readGatewayStatus(openClawBin);");
-  const startIndex = source.indexOf('runCommand(openClawBin, ["gateway", "start", "--json"]', statusIndex);
+  const startIndex = source.indexOf("let gatewayStartResult = await startGatewayForOnboarding", statusIndex);
   const snapshotIndex = source.indexOf("snapshot = await loadSnapshot(true);", statusIndex);
 
   assert.equal(statusIndex >= 0 && startIndex > statusIndex, true);
   assert.equal(snapshotIndex === -1 || snapshotIndex > startIndex, true);
+  assert.match(source, /async function startGatewayForOnboarding[\s\S]*?runCommand\(openClawBin, \["gateway", "start", "--json"\]/);
   assert.match(source, /const gatewayStatusTimeoutMs = 3_000;/);
 });
 
