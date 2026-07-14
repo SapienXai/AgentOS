@@ -7,6 +7,7 @@ import { afterEach, test } from "node:test";
 
 import {
   generateGatewayNativeAuthToken,
+  getGatewayBindMode,
   getGatewayNativeAuthStatus,
   repairGatewayNativeDeviceAccess,
   saveGatewayNativeAuthCredential
@@ -265,6 +266,22 @@ afterEach(() => {
   delete process.env.AGENTOS_PACKAGE_RUNTIME;
   delete process.env.AGENTOS_RUNTIME_DIR;
   delete process.env.OPENCLAW_STATE_DIR;
+});
+
+test("Gateway settings read the current bind through native config without exposing the config snapshot", async () => {
+  setOpenClawAdapterForTesting(createSettingsAdapter({
+    "gateway.bind": "lan"
+  }));
+
+  assert.equal(await getGatewayBindMode(), "lan");
+
+  const routeSource = readFileSync(join(process.cwd(), "app/api/settings/gateway/route.ts"), "utf8");
+  const settingsSource = readFileSync(join(process.cwd(), "components/mission-control/settings-control-center.tsx"), "utf8");
+
+  assert.match(routeSource, /gatewayBind: await getGatewayBindMode\(\)/);
+  assert.match(settingsSource, /fetch\("\/api\/settings\/gateway\?view=bind", \{ cache: "no-store" \}\)/);
+  assert.match(settingsSource, /\["Gateway bind", displayedGatewayBind\]/);
+  assert.match(settingsSource, /5_000/);
 });
 
 test("Gateway native auth token generation configures OpenClaw and local env without exposing the token", async () => {
