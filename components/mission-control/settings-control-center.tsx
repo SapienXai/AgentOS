@@ -266,8 +266,16 @@ export function SettingsControlCenter(
   const [isLoadingToolSettings, setIsLoadingToolSettings] = useState(false);
   const [isSavingToolSettings, setIsSavingToolSettings] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => resolveInitialSettingsSection());
+  const [currentGatewayBind, setCurrentGatewayBind] = useState<string | null>(null);
+  const [gatewayBindRefreshState, setGatewayBindRefreshState] =
+    useState<"idle" | "refreshing" | "ready" | "error">("idle");
   const [settingsHashHydrated, setSettingsHashHydrated] = useState(false);
   const renderedActiveSection = settingsHashHydrated ? activeSection : resolveInitialSettingsSection();
+  const displayedGatewayBind = gatewayBindRefreshState === "refreshing" && currentGatewayBind === null
+    ? "Refreshing..."
+    : gatewayBindRefreshState === "error"
+      ? "Unavailable"
+      : currentGatewayBind || snapshot.diagnostics.bindMode || "Unknown";
   const updateCompatibility = snapshot.diagnostics.updateCompatibility;
   const currentVersion = snapshot.diagnostics.version || "unknown";
   const updateInfo = snapshot.diagnostics.updateInfo?.trim() || null;
@@ -674,6 +682,24 @@ export function SettingsControlCenter(
     }
   }, []);
 
+  const refreshGatewayBind = useCallback(async () => {
+    setGatewayBindRefreshState("refreshing");
+
+    try {
+      const response = await fetch("/api/settings/gateway?view=bind", { cache: "no-store" });
+      const payload = await response.json() as { error?: string; gatewayBind?: string | null };
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to read the current Gateway bind value.");
+      }
+
+      setCurrentGatewayBind(payload.gatewayBind?.trim() || null);
+      setGatewayBindRefreshState("ready");
+    } catch {
+      setGatewayBindRefreshState("error");
+    }
+  }, []);
+
   const refreshToolSettings = useCallback(async () => {
     setIsLoadingToolSettings(true);
     setToolSettingsError(null);
@@ -706,6 +732,31 @@ export function SettingsControlCenter(
   useEffect(() => {
     void refreshGatewayAuthStatus();
   }, [refreshGatewayAuthStatus]);
+
+  useEffect(() => {
+    if (renderedActiveSection !== "gateway") {
+      return;
+    }
+
+    const refreshTimer = window.setTimeout(() => {
+      void refreshGatewayBind();
+    }, 0);
+    const refreshInterval = window.setInterval(() => {
+      void refreshGatewayBind();
+    }, 5_000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshGatewayBind();
+      }
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    return () => {
+      window.clearTimeout(refreshTimer);
+      window.clearInterval(refreshInterval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [refreshGatewayBind, renderedActiveSection]);
 
   useEffect(() => {
     if (
@@ -1585,7 +1636,7 @@ export function SettingsControlCenter(
                       ["Status", `${resolveGatewayLocality(snapshot)} / ${snapshot.diagnostics.loaded || snapshot.diagnostics.rpcOk ? "Online" : "Offline"}`],
                       ["Native Gateway", transportSummary.statusLabel],
                       ["Gateway mode", transportSummary.gatewayModeLabel],
-                      ["CLI fallback used", `${transportSummary.fallbackTotal} operations`],
+                      ["Gateway bind", displayedGatewayBind],
                       ["Endpoint", snapshot.diagnostics.gatewayUrl || "Not configured"],
                       ["Auth status", nativeAuthLabel],
                       ["Protocol", `${transportSummary.protocolRangeLabel}, connected: ${transportSummary.protocolLabel}`],
