@@ -77,6 +77,7 @@ import type {
   OpenClawUpdateDecision,
   OpenClawUpdateSafetyReport
 } from "@/lib/openclaw/types";
+import { OPENCLAW_DEFAULT_GATEWAY_BIND_MODE } from "@/lib/openclaw/gateway-defaults";
 import type {
   OpenClawCodexFixBundle,
   OpenClawCompatibilityCertificationPromotion,
@@ -266,7 +267,11 @@ export function SettingsControlCenter(
   const [isLoadingToolSettings, setIsLoadingToolSettings] = useState(false);
   const [isSavingToolSettings, setIsSavingToolSettings] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => resolveInitialSettingsSection());
-  const [currentGatewayBind, setCurrentGatewayBind] = useState<string | null>(null);
+  const [currentGatewayBind, setCurrentGatewayBind] = useState<string | null>(() =>
+    snapshot.diagnostics.bindMode || (
+      snapshot.diagnostics.configuredGatewayUrl ? null : OPENCLAW_DEFAULT_GATEWAY_BIND_MODE
+    )
+  );
   const [gatewayBindRefreshState, setGatewayBindRefreshState] =
     useState<"idle" | "refreshing" | "ready" | "error">("idle");
   const [settingsHashHydrated, setSettingsHashHydrated] = useState(false);
