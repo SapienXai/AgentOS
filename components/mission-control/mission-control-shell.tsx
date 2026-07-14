@@ -3264,7 +3264,7 @@ export function MissionControlShell({
     ];
     const prefixKeys = [
       "mission-control-active-workspace-id:",
-      "mission-control-node-positions:v2:",
+      "mission-control-node-positions:v",
       "mission-control-composer-draft:",
       "mission-control-agent-chat:v1:",
       "mission-control-agent-chat-seen:v1:"

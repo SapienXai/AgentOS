@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  getNodePositionsStorageKey,
   parseWorkspaceTaskCardFilters,
   workspaceTaskCardFiltersStorageKey
 } from "@/components/mission-control/canvas.persistence";
@@ -23,6 +24,7 @@ test("workspace task filters retain valid per-workspace selections", () => {
   );
   assert.deepEqual(parseWorkspaceTaskCardFilters("not-json"), {});
   assert.match(workspaceTaskCardFiltersStorageKey, /^mission-control-/);
+  assert.match(getNodePositionsStorageKey("all"), /node-positions:v4:all$/);
 });
 
 test("Mission Canvas hydrates and persists the workspace run filter", async () => {

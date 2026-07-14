@@ -36,18 +36,19 @@ import type {
 import type { AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
 import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-types";
 
-const workspaceGroupWidth = 1060;
-const workspaceColumnGap = 1160;
-const workspaceMinHeight = 700;
+const workspaceGroupWidth = 1200;
+const workspaceColumnGap = 1300;
+const workspaceHeight = 900;
 const workspaceHeaderOffsetY = 118;
-const workspaceContentBottomPadding = 112;
 const agentGridStartX = 52;
-const agentGridColumnGap = 318;
-const idleAgentGridColumns = 3;
-const idleAgentGridRowHeight = 340;
-const taskLaneStartX = 390;
-const taskCardLaneHeight = 300;
-const taskLaneBottomPadding = 44;
+const agentStackOffsetX = 14;
+const agentStackPreferredOffsetY = 124;
+const agentStackAvailableY = 620;
+const taskLaneStartX = 380;
+const taskStackColumns = 2;
+const taskStackColumnGap = 400;
+const taskStackPreferredOffsetY = 142;
+const taskStackAvailableY = 650;
 
 export function buildCanvasGraph(
   snapshot: MissionControlSnapshot,
@@ -174,34 +175,18 @@ export function buildCanvasGraph(
     const workspaceColumn = workspaceIndex % 2;
     const groupX = workspaceColumn * workspaceColumnGap + 44;
     const groupY = rowTopY;
-    let laneY = groupY + workspaceHeaderOffsetY;
-    let idleAgentGridColumn = 0;
-
-    const flushIdleAgentGridRow = () => {
-      if (idleAgentGridColumn === 0) {
-        return;
-      }
-
-      laneY += idleAgentGridRowHeight;
-      idleAgentGridColumn = 0;
-    };
+    const agentStackOffsetY = resolveStackOffset(workspaceAgents.length, agentStackPreferredOffsetY, agentStackAvailableY);
+    const taskStackRows = Math.ceil(workspaceTasks.length / taskStackColumns);
+    const taskStackOffsetY = resolveStackOffset(taskStackRows, taskStackPreferredOffsetY, taskStackAvailableY);
+    let taskStackIndex = 0;
 
     workspaceAgents.forEach((agent, agentIndex) => {
       const agentThemeRgb = resolveAgentThemeRgb(agent.id, agent.name, agent.identity.theme);
       const agentTasks = workspaceTasks
         .filter((task) => resolveTaskOwnerId(task) === agent.id)
         .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
-      const hasVisibleTaskLane = agentTasks.length > 0;
-
-      if (hasVisibleTaskLane) {
-        flushIdleAgentGridRow();
-      }
-
-      const agentX = hasVisibleTaskLane
-        ? groupX + agentGridStartX
-        : groupX + agentGridStartX + idleAgentGridColumn * agentGridColumnGap;
-      const agentY = laneY + (hasVisibleTaskLane ? agentIndex * 4 : 0);
-      const taskX = groupX + taskLaneStartX;
+      const agentX = groupX + agentGridStartX + (agentIndex % 3) * agentStackOffsetX;
+      const agentY = groupY + workspaceHeaderOffsetY + agentIndex * agentStackOffsetY;
       const isComposerHighlightedAgent = isComposerActive && composerTargetAgentId === agent.id;
       const hasJustCreatedTask = agentTasks.some((task) => justCreatedTaskIds.includes(task.id));
       const isTaskFocusedAgent = selectedTaskAgentId === agent.id || hasJustCreatedTask;
@@ -234,8 +219,8 @@ export function buildCanvasGraph(
               : isTaskFocusedAgent
                 ? 48
                 : activeTaskCount > 0
-                  ? 24
-                  : 10,
+                  ? 24 + agentIndex
+                  : 10 + agentIndex,
         selected: false,
         data: {
           agent,
@@ -334,7 +319,12 @@ export function buildCanvasGraph(
 
       graphTasks.push(...agentTasks);
 
-      agentTasks.forEach((task, taskIndex) => {
+      agentTasks.forEach((task) => {
+        const stackIndex = taskStackIndex++;
+        const stackColumn = stackIndex % taskStackColumns;
+        const stackRow = Math.floor(stackIndex / taskStackColumns);
+        const taskX = groupX + taskLaneStartX + stackColumn * taskStackColumnGap;
+        const taskY = groupY + workspaceHeaderOffsetY + 10 + stackRow * taskStackOffsetY;
         const bootstrapStage = typeof task.metadata.bootstrapStage === "string" ? task.metadata.bootstrapStage : null;
         const isBootstrapTask =
           bootstrapStage === "submitting" ||
@@ -351,11 +341,11 @@ export function buildCanvasGraph(
           selectable: true,
           position: resolvePersistedPosition(
             toPersistedTaskPositionKey(task),
-            { x: taskX, y: agentY + taskIndex * taskCardLaneHeight + 10 },
+            { x: taskX, y: taskY },
             persistedNodePositions,
             toLegacyPersistedTaskPositionKey(task.id)
           ),
-          zIndex: isBootstrapTask ? 40 : isJustCreatedTask ? 28 : 10,
+          zIndex: isBootstrapTask ? 80 + stackIndex : isJustCreatedTask ? 60 + stackIndex : 30 + stackIndex,
           selected: false,
           data: {
             task,
@@ -380,23 +370,9 @@ export function buildCanvasGraph(
         });
       });
 
-      if (hasVisibleTaskLane) {
-        laneY += Math.max(taskCardLaneHeight, agentTasks.length * taskCardLaneHeight + taskLaneBottomPadding);
-        return;
-      }
-
-      idleAgentGridColumn += 1;
-
-      if (idleAgentGridColumn >= idleAgentGridColumns) {
-        flushIdleAgentGridRow();
-      }
     });
 
-    flushIdleAgentGridRow();
-
     if (!isFocusMode) {
-      const workspaceHeight = Math.max(laneY - groupY + workspaceContentBottomPadding, workspaceMinHeight);
-
       workspaceNodes.push({
         id: workspace.id,
         type: "workspace",
@@ -705,6 +681,11 @@ export function filterWorkspaceTasksForCanvas(
   if (filter === "hidden") return [];
   if (filter === "active") return tasks.filter(isActiveTaskForCanvas);
   return tasks;
+}
+
+function resolveStackOffset(itemCount: number, preferredOffset: number, availableSpan: number) {
+  if (itemCount <= 1) return 0;
+  return Math.min(preferredOffset, availableSpan / (itemCount - 1));
 }
 
 export function buildAgentSurfaceBadges(

@@ -8,7 +8,7 @@ import type { AgentRecord, WorkItemRecord } from "@/lib/agentos/contracts";
 
 export const emptyPersistedNodePositions: PersistedNodePositionMap = {};
 
-const nodePositionsStorageKey = "mission-control-node-positions:v3";
+const nodePositionsStorageKey = "mission-control-node-positions:v4";
 const legacyNodePositionsStorageKey = "mission-control-node-positions";
 export const workspaceTaskCardFiltersStorageKey = "mission-control-workspace-task-card-filters:v1";
 

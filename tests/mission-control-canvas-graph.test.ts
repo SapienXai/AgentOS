@@ -368,7 +368,7 @@ test("buildCanvasGraph renders pending workspace agents before the workspace sna
   assert.equal(agentNode?.data.pendingCreation, true);
 });
 
-test("buildCanvasGraph packs idle workspace agents without growing the workspace for every agent", () => {
+test("buildCanvasGraph keeps a fixed workspace and stacks idle agents with visible banner offsets", () => {
   const buildGraphForAgentCount = (agentCount: number) => {
     const agents = Array.from({ length: agentCount }, (_, index) => ({
       id: `agent-${index + 1}`,
@@ -476,16 +476,23 @@ test("buildCanvasGraph packs idle workspace agents without growing the workspace
 
   const oneAgentGraph = buildGraphForAgentCount(1);
   const threeAgentGraph = buildGraphForAgentCount(3);
+  const tenAgentGraph = buildGraphForAgentCount(10);
   const workspaceWithOneAgent = oneAgentGraph.nodes.find((node) => node.id === "workspace-1");
   const workspaceWithThreeAgents = threeAgentGraph.nodes.find((node) => node.id === "workspace-1");
+  const workspaceWithTenAgents = tenAgentGraph.nodes.find((node) => node.id === "workspace-1");
   const firstAgentNode = threeAgentGraph.nodes.find((node) => node.id === "agent-1");
   const secondAgentNode = threeAgentGraph.nodes.find((node) => node.id === "agent-2");
   const thirdAgentNode = threeAgentGraph.nodes.find((node) => node.id === "agent-3");
 
-  assert.equal(workspaceWithOneAgent?.style?.height, 700);
-  assert.equal(workspaceWithThreeAgents?.style?.height, 700);
-  assert.equal(firstAgentNode?.position.y, secondAgentNode?.position.y);
-  assert.equal(secondAgentNode?.position.y, thirdAgentNode?.position.y);
+  assert.equal(workspaceWithOneAgent?.style?.width, 1200);
+  assert.equal(workspaceWithOneAgent?.style?.height, 900);
+  assert.equal(workspaceWithThreeAgents?.style?.width, 1200);
+  assert.equal(workspaceWithThreeAgents?.style?.height, 900);
+  assert.equal(workspaceWithTenAgents?.style?.width, 1200);
+  assert.equal(workspaceWithTenAgents?.style?.height, 900);
+  assert.ok((secondAgentNode?.position.y ?? 0) > (firstAgentNode?.position.y ?? 0));
+  assert.ok((thirdAgentNode?.position.y ?? 0) > (secondAgentNode?.position.y ?? 0));
+  assert.equal((secondAgentNode?.position.y ?? 0) - (firstAgentNode?.position.y ?? 0), 124);
   assert.ok((secondAgentNode?.position.x ?? 0) > (firstAgentNode?.position.x ?? 0));
   assert.ok((thirdAgentNode?.position.x ?? 0) > (secondAgentNode?.position.x ?? 0));
 });
