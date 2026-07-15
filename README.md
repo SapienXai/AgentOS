@@ -1,574 +1,367 @@
 <div align="center">
-  <img src="public/assets/screenshots/hero.jpeg" alt="AgentOS control-plane interface" width="100%" />
+  <img src="public/assets/screenshots/hero.jpeg" alt="AgentOS digital workforce operating interface" width="100%" />
 
 <h1 style="font-size:3.75rem; line-height:0.95; margin:0 0 0.25rem;">
   <strong>Agent<span style="color:#d7263d;">OS</span></strong>
 </h1>
 
-<p style="font-size:1.4rem; line-height:1.15; margin:0 0 0.75rem;"><strong>Run agents like a company.</strong></p>
+<p style="font-size:1.45rem; line-height:1.15; margin:0 0 0.35rem;"><strong>Build your AI workforce.</strong></p>
+<p style="font-size:1.15rem; line-height:1.15; margin:0 0 0.85rem;"><strong>Run it like a company.</strong></p>
 
-<p>AgentOS is the native control plane for OpenClaw — an operations layer for creating, coordinating, and supervising AI agents from one workspace.</p>
+<p>
+  AgentOS is an open-source operating layer for building and running teams of digital workers.
+  Create workspaces, give workers context and tools, assign real work, inspect execution, and scale autonomy with human oversight.
+</p>
 
-<p>It turns OpenClaw into a manageable system for real work: agents, tasks, models, context, approvals, runtime visibility, and human oversight.</p>
+<p>
+  Powered by <a href="https://github.com/openclaw/openclaw"><strong>OpenClaw</strong></a> as the agent runtime.
+  AgentOS turns its underlying capabilities into a coherent system for people operating AI teams.
+</p>
 
 <p>
   <a href="https://sapienx.app/agentos"><strong>Website</strong></a>
   ·
   <a href="https://youtu.be/ribFHZuKRos"><strong>Watch Demo</strong></a>
   ·
-  <a href="#try-agentos-in-5-minutes"><strong>Try in 5 minutes</strong></a>
+  <a href="#get-started-in-5-minutes"><strong>Get Started</strong></a>
   ·
-  <a href="#why-agentos"><strong>Why AgentOS</strong></a>
+  <a href="#what-agentos-does"><strong>Features</strong></a>
   ·
-  <a href="#architecture"><strong>Architecture</strong></a>
+  <a href="#how-it-works"><strong>Architecture</strong></a>
   ·
-  <a href="#product-highlights"><strong>Highlights</strong></a>
-  ·
-  <a href="#setup-and-development"><strong>Setup</strong></a>
-  ·
-  <a href="#roadmap"><strong>Roadmap</strong></a>
+  <a href="#development"><strong>Development</strong></a>
 </p>
 
 <p align="center">
-  <a href="https://nextjs.org" target="_blank" rel="noreferrer" title="Next.js" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px; margin:0 8px 5px 0; font-size:0.86rem; line-height:1;">
+  <a href="https://nextjs.org" target="_blank" rel="noreferrer" title="Next.js">
     <img src="https://cdn.simpleicons.org/nextdotjs/000000" alt="Next.js" height="18" />
-    <strong>Next.js</strong>
   </a>
-  <a href="https://react.dev" target="_blank" rel="noreferrer" title="React" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px; margin:0 8px 5px 0; font-size:0.86rem; line-height:1;">
+  &nbsp;
+  <a href="https://react.dev" target="_blank" rel="noreferrer" title="React">
     <img src="https://cdn.simpleicons.org/react/61DAFB" alt="React" height="18" />
-    <strong>React</strong>
   </a>
-  <a href="https://www.typescriptlang.org" target="_blank" rel="noreferrer" title="TypeScript" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px; margin:0 8px 5px 0; font-size:0.86rem; line-height:1;">
+  &nbsp;
+  <a href="https://www.typescriptlang.org" target="_blank" rel="noreferrer" title="TypeScript">
     <img src="https://cdn.simpleicons.org/typescript/3178C6" alt="TypeScript" height="18" />
-    <strong>TypeScript</strong>
   </a>
-  <a href="https://github.com/openclaw/openclaw" target="_blank" rel="noreferrer" title="OpenClaw" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px; margin:0 8px 5px 0; font-size:0.86rem; line-height:1;">
+  &nbsp;
+  <a href="https://github.com/openclaw/openclaw" target="_blank" rel="noreferrer" title="OpenClaw">
     <img src="public/assets/openclaw.png" alt="OpenClaw" height="18" />
   </a>
-  <a href="https://pnpm.io" target="_blank" rel="noreferrer" title="pnpm" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px; margin:0 8px 5px 0; font-size:0.86rem; line-height:1;">
+  &nbsp;
+  <a href="https://pnpm.io" target="_blank" rel="noreferrer" title="pnpm">
     <img src="https://cdn.simpleicons.org/pnpm/F69220" alt="pnpm" height="18" />
-    <strong>pnpm</strong>
   </a>
 </p>
 
 </div>
 
-## Try AgentOS in 5 minutes
+## The operating layer for digital workers
 
-Install AgentOS:
+Running one AI agent is easy.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | bash
-```
+Running many agents across real projects, accounts, models, schedules, files, and approval boundaries is an operating problem.
 
-Or use a package manager:
+AgentOS gives a human operator one place to:
 
-```bash
-pnpm add -g @sapienx/agentos
-```
+- create and organize digital workers;
+- give each worker identity, context, memory, policies, tools, and model access;
+- assign immediate, scheduled, recurring, or one-off work;
+- inspect live activity, transcripts, outputs, token usage, and created files;
+- connect workspaces to channels and browser-based accounts;
+- review system health, capabilities, fallbacks, and failures;
+- keep humans in control of sensitive actions.
 
-Open the UI:
+The goal is not another chat interface. It is a practical operating system for AI-native work.
 
-```bash
-agentos start --open
-```
+## Why AgentOS
 
-Verify the local runtime:
+AI agents are becoming cheaper, more capable, and more persistent. The next bottleneck is no longer generating a response. It is designing and operating the organization around them.
 
-```bash
-agentos status
-agentos doctor
-```
+Digital workers need more than prompts:
 
-First thing to try:
+- **Structure** — clear workspaces, roles, goals, and ownership.
+- **Context** — project files, memory, policies, accounts, and operating instructions.
+- **Execution** — models, tools, channels, automations, and real runtime access.
+- **Coordination** — tasks, handoffs, schedules, shared visibility, and recoverable state.
+- **Control** — approvals, diagnostics, auditability, and human intervention.
 
-- Open the AgentOS UI.
-- Check the OpenClaw onboarding state.
-- Create or inspect a workspace.
-- Create an agent or use the guided workspace flow.
-- Dispatch a mission.
-- Inspect the runtime output or transcript.
+AgentOS is being built for that layer: the place where a person can turn individual agents into a functioning digital team.
 
-If OpenClaw is already installed, AgentOS connects to the live control plane and shows the current Gateway, models, agents, and runtimes.
-If OpenClaw is missing or not ready yet, AgentOS opens in an explicit unavailable/onboarding state instead of showing a fake live state.
-
-## Operations & Jobs
-
-`/operations` projects the OpenClaw Gateway cron scheduler into an operator console. OpenClaw remains the source of truth for job definitions, execution, retries, run history, sessions, and restart recovery; AgentOS keeps only operator metadata, safety decisions, and a bounded audit trail under `.mission-control/operations/`.
-
-- AgentOS creates and controls jobs only when the Gateway advertises native `cron.add`, `cron.update`, `cron.run`, and related methods. It deliberately does not substitute a local scheduler or silently use an unverified CLI mutation path.
-- Cron and interval schedules are sent to OpenClaw with IANA timezone data. One-off jobs are retained after a successful run so their operational record remains visible.
-- Gateway retry/backoff, missed/skip state, pending runtime state, and run history are shown as OpenClaw projections. Scheduled per-run approval and cancellation are not represented as working controls because the current documented cron RPC does not expose an AgentOS policy hook or run-cancel operation.
-- Planner automations and Operations both provision into the same OpenClaw cron runtime; they do not introduce a second AgentOS scheduler.
-- In Mission Control, use an agent card’s **Create Task** action, open the command-bar settings, and choose **now**, **cron**, **interval**, or **once**. Cron-backed tasks reappear as read-only task cards with their cadence, timezone, and next run; runtime output remains OpenClaw-owned.
-
-## Product Highlights
-
-The screenshots below show the current product flow in the order a new visitor is most likely to explore it.
+## Product tour
 
 <table>
   <tr>
     <td valign="top" width="50%">
-      <img src="public/assets/screenshots/1.jpeg" alt="AgentOS launchpad onboarding flow" width="100%" />
+      <img src="public/assets/screenshots/1.jpeg" alt="AgentOS guided launchpad" width="100%" />
       <strong>Launchpad</strong><br />
-      Guided onboarding for OpenClaw, models, and the first workspace.
+      Prepare OpenClaw, connect a model, and create the first workspace without starting from a blank terminal.
     </td>
     <td valign="top" width="50%">
-      <img src="public/assets/screenshots/2.jpeg" alt="AgentOS control plane overview" width="100%" />
-      <strong>Control Plane</strong><br />
-      Live graph, task flow, and inspector visibility in one place.
-    </td>
-  </tr>
-  <tr>
-    <td valign="top" width="50%">
-      <img src="public/assets/screenshots/3.jpeg" alt="AgentOS agent builder flow" width="100%" />
-      <strong>Agent Builder</strong><br />
-      Create agents from scratch, presets, or imports.
-    </td>
-    <td valign="top" width="50%">
-      <img src="public/assets/screenshots/4_1.jpeg" alt="AgentOS agent chat flow" width="100%" />
-      <strong>Agent Chat</strong><br />
-      Talk to agents directly and turn intent into action.
+      <img src="public/assets/screenshots/2.jpeg" alt="AgentOS workforce overview" width="100%" />
+      <strong>Workforce overview</strong><br />
+      See workspaces, workers, tasks, runtimes, and health from one operator surface.
     </td>
   </tr>
   <tr>
     <td valign="top" width="50%">
-      <img src="public/assets/screenshots/5.jpeg" alt="AgentOS model setup flow" width="100%" />
-      <strong>Add Models</strong><br />
-      Connect providers and discover models without leaving AgentOS.
+      <img src="public/assets/screenshots/3.jpeg" alt="AgentOS digital worker builder" width="100%" />
+      <strong>Digital worker builder</strong><br />
+      Create workers from presets or from scratch, then define identity, policies, model, heartbeat, and access.
     </td>
     <td valign="top" width="50%">
-      <img src="public/assets/screenshots/6.jpeg" alt="AgentOS workspace wizard flow" width="100%" />
-      <strong>Workspace Wizard</strong><br />
-      Shape a workspace from one prompt and a guided flow.
+      <img src="public/assets/screenshots/4_1.jpeg" alt="AgentOS direct worker conversation" width="100%" />
+      <strong>Direct worker conversations</strong><br />
+      Guide a worker, request status, resolve blockers, and turn intent into action.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top" width="50%">
+      <img src="public/assets/screenshots/5.jpeg" alt="AgentOS model setup" width="100%" />
+      <strong>Models and providers</strong><br />
+      Connect providers, discover available models, and verify readiness from the same interface.
+    </td>
+    <td valign="top" width="50%">
+      <img src="public/assets/screenshots/6.jpeg" alt="AgentOS workspace wizard" width="100%" />
+      <strong>Workspace design</strong><br />
+      Turn a business or project idea into a structured workspace, team, operating plan, and first missions.
     </td>
   </tr>
   <tr>
     <td colspan="2" valign="top">
-      <img src="public/assets/screenshots/7.jpeg" alt="AgentOS workspace surfaces flow" width="100%" />
-      <strong>Workspace Surfaces</strong><br />
-      Connect Telegram, Discord, Slack, and more to every workspace.
+      <img src="public/assets/screenshots/7.jpeg" alt="AgentOS workspace channels and surfaces" width="100%" />
+      <strong>Connected work surfaces</strong><br />
+      Bring channels, integrations, accounts, and automations into the workspace where the team operates.
     </td>
   </tr>
 </table>
 
-## Why AgentOS
-
-As AI agents become cheaper to run, the bottleneck shifts from raw orchestration to human control.
-Someone still has to decide what matters, inspect active work, route missions, review outputs, and keep multiple projects legible.
-
-Most agent systems expose runtimes, sessions, and CLI primitives.
-AgentOS adds the missing operating layer above them: a control-plane interface for humans coordinating teams of agents across real workspaces.
-
-This repository contains the current AgentOS control plane: a Next.js application that sits above OpenClaw and turns live agent state into an operator-facing system for planning, execution, inspection, and workspace management.
-
-## The Problem It Solves
-
-Running one agent is not the hard part.
-Operating many agents across many projects is.
-
-AgentOS is built for that coordination problem:
-
-- A human operator needs one place to see workspaces, agents, models, runtimes, and health.
-- Missions should map to real project folders, not ephemeral chat threads.
-- Runtime output should be inspectable after the fact, including created files and transcript history.
-- Agent teams need structure: presets, policies, memory, workspace scaffolds, and repeatable operating conventions.
-- As the "one-person company" model emerges, the human needs a control layer, not just an orchestration engine.
-
-## Quick Start
-
-Use the packaged launcher:
-
-```bash
-pnpm add -g @sapienx/agentos
-agentos start --open
-agentos doctor
-```
-
-Run the app locally from this repository:
-
-```bash
-pnpm install
-pnpm dev
-```
-
-If OpenClaw is not ready yet, AgentOS starts in an explicit onboarding or fallback path instead of pretending a live control plane exists.
-
-## Architecture
-
-```mermaid
-flowchart TD
-    Human["Human Operator"] --> AgentOS["AgentOS<br/>control layer / operating layer"]
-    AgentOS --> OpenClaw["OpenClaw<br/>agent orchestration kernel"]
-    OpenClaw --> Runtime["LLMs, tools, channels, automations, agents"]
-```
-
-### Layer Responsibilities
-
-| Layer | Responsibility |
-| --- | --- |
-| Human operator | Sets direction, reviews work, approves risky actions, and steers the system |
-| AgentOS | Presents topology, planning, inspection, workspace bootstrap, settings, and mission dispatch |
-| OpenClaw | Owns agent orchestration, gateway state, models, sessions, channels, and execution surfaces |
-| LLMs and tools | Perform the underlying reasoning and tool-backed work |
-
-### Control Plane Shape
-
-```mermaid
-flowchart LR
-    UI["AgentOS UI<br/>Sidebar / Canvas / Inspector / Command Bar / Planner"] --> API["Next.js App Router + API routes"]
-    API --> APP["OpenClaw application services<br/>workspace, agent, mission, runtime, settings"]
-    APP --> ADAPTER["OpenClawAdapter<br/>stable compatibility boundary"]
-    ADAPTER --> CLIENT["OpenClawGatewayClient<br/>Gateway-first client"]
-    CLIENT --> GATEWAY["OpenClaw Gateway RPC + WebSocket events"]
-    CLIENT --> CLI["OpenClaw CLI fallback<br/>install, recovery, unsupported operations"]
-    GATEWAY --> STATE["Gateway state<br/>models, agents, sessions, channels, skills, approvals, config"]
-    CLI --> STATE
-    APP --> FS["Workspace filesystem + .mission-control state"]
-    API --> STREAM["SSE snapshot stream"]
-    STREAM --> UI
-```
-
-## AgentOS and OpenClaw
-
-OpenClaw is the kernel.
-It handles the underlying agent runtime, CLI, gateway, models, sessions, automations, and execution primitives.
-
-AgentOS is the operating layer above it.
-It does not replace OpenClaw.
-Instead, it reads live OpenClaw state, normalizes it into a control-plane snapshot, and gives the human operator a coherent surface for acting on that state.
-
-In practice, that means:
-
-- OpenClaw remains the source of truth for gateway state, models, agents, sessions, channels, skills, approvals, config, and runtime execution.
-- AgentOS uses native OpenClaw Gateway RPC first for supported operations.
-- AgentOS keeps the OpenClaw CLI as fallback for install, recovery, gateway process control, and unsupported or older Gateway methods.
-- AgentOS translates UI actions into OpenClaw Gateway calls, documented CLI fallbacks, and real filesystem changes.
-- AgentOS is intentionally not a mock dashboard; it is a control surface over live operational state.
-
-## Compatibility / Tested Runtime
-
-AgentOS is Gateway-first on top of OpenClaw. Use `agentos doctor` and the in-app diagnostics panel to confirm the installed OpenClaw version, Gateway protocol range, native auth state, model readiness, and fallback activity before dispatching real missions.
-
-The 0.7.5 release expects Node.js 24 or newer and OpenClaw 2026.6.8 or newer. If compatibility is degraded, update OpenClaw, repair Gateway token/device access, restart the Gateway, and re-run `agentos doctor --deep`.
-
-### Safe OpenClaw Updates
-
-AgentOS does not treat the latest detected OpenClaw version as automatically safe. The Settings -> OpenClaw Update Center prefers the compatibility manifest's certified/recommended version and classifies each target as:
-
-- `certified`: allowed through the normal update path after preflight.
-- `candidate`: visible, but requires explicit operator opt-in.
-- `unknown`: hidden from the normal path and only allowed through advanced risk acceptance.
-- `blocked`: disabled with the manifest reason or required AgentOS upgrade.
-
-Run preflight before applying an update. Preflight does not mutate the active OpenClaw install; it checks the current installed version, required OpenClaw 2026.6.8+ baseline, target manifest decision, required AgentOS version, Gateway reachability, protocol compatibility, native method coverage, fallback/degraded/unsupported surfaces, config patch support, model readiness, pending scope issues, Runtime Inbox issues, and rollback metadata. It returns safe checks, warnings, blockers, unknowns, and an exact recommended next action.
-
-The "Test target safely" action is intentionally conservative. Until OpenClaw exposes a stable non-mutating staged target installer/probe command, AgentOS only probes the active binary and compatibility decision, reports that limitation, and never replaces the active OpenClaw binary during the probe.
-
-When an update is applied, AgentOS creates rollback metadata before mutation, including the previous OpenClaw version, binary path, config hash/config snapshot when readable, the compatibility decision, and the preflight summary. The updater uses `openclaw update status --json`, `openclaw update --dry-run --json`, `openclaw update --channel stable --yes --json` for the stable baseline path, `openclaw update --tag <version> --yes --json` for pinned targets, `openclaw doctor --lint --json`, and `openclaw gateway status --deep --json`. Postflight immediately rechecks version, Gateway readiness, compatibility, capability matrix, model readiness, config support, and runtime smoke status. Failed postflight creates a Runtime Inbox issue and triggers rollback where possible. Rollback restores the previous known version/config snapshot and must validate before AgentOS reports success.
-
-Useful local checks:
-
-```bash
-agentos doctor --deep
-pnpm openclaw:compat
-AGENTOS_RUNTIME_SMOKE=1 pnpm smoke:runtime-golden
-```
-
-`AGENTOS_RUNTIME_SMOKE=1 pnpm smoke:runtime-golden` dispatches real OpenClaw work and should only run on a local operator machine with Gateway auth, scopes, model credentials, and runtime state ready.
-
-### Current Compatibility Notes
-
-- AgentOS uses OpenClaw Gateway-first transport by default. CLI fallback remains explicit and visible for install, recovery, Gateway process control, older or unsupported Gateway methods, malformed responses, scope limits, and unavailable native auth.
-- Accounts and browser profiles are an MVP bridge. AgentOS can read OpenClaw browser profiles, start or attach a reported profile, open a login target, and enforce AgentOS access rules before account-target task launch. OpenClaw does not yet expose typed browser-profile dispatch, verified website account identity, or a direct browser-profile parameter for mission dispatch, so AgentOS passes selected profile/session context to eligible browser-capable agents.
-- `requires_approval` account access rules are intentionally blocked until approval dispatch exists. They are persisted as policy state but cannot run a task yet.
-- Surface repair is preview-first. Apply only after reviewing the dry-run audit, backup path, affected config paths, and restore instructions.
-- `agentos doctor --deep` is the release-readiness diagnostic for Gateway protocol, native auth, scopes, required methods, config access, schema/patch support, channel status, model readiness, fallback count, and the last native failure.
-- Package release checks are covered by `pnpm check:release` and `pnpm smoke:agentos-package`; use the clean-install smoke checklist before publishing or announcing a release.
-
-## Security Model
-
-AgentOS is local-first and is intended to bind to loopback by default. Packaged AgentOS generates an API token under the local runtime directory, starts the server with token authentication, and the launcher opens an authenticated local URL. API routes are protected centrally before route handlers run. Remote OpenClaw Gateway URLs are blocked by default unless `AGENTOS_ALLOW_REMOTE_GATEWAY_URL=1` is set explicitly. Sensitive local config/auth files are written with owner-only permissions where applicable. Do not expose AgentOS publicly without your own network controls, access policy, and monitoring.
-
-## How The System Works
-
-1. AgentOS detects the OpenClaw version, Gateway protocol, auth mode, and advertised RPC capabilities.
-2. AgentOS reads live OpenClaw surfaces through Gateway-first RPC calls, with CLI fallback when the Gateway is unavailable, scope-limited, malformed, or does not support a method yet.
-3. The application layer normalizes gateway state, sessions, local transcripts, workspace metadata, and AgentOS sidecar state into a single `MissionControlSnapshot`.
-4. The UI renders that snapshot as a control-plane surface with a topology canvas, sidebar, inspector, and command bar.
-5. Operator actions such as mission dispatch, workspace creation, agent updates, planner deploys, gateway changes, or file reveal calls pass through the OpenClaw adapter boundary before touching Gateway RPC, CLI fallback, or local filesystem state.
-6. Gateway WebSocket events and Server-Sent Events keep runtime and task views close to live OpenClaw activity without replacing existing snapshot rendering.
-
-## Key Features
-
-- Live topology canvas for real workspace -> agent -> runtime relationships.
-- Gateway-first mission dispatch that targets real OpenClaw agents and supports thinking levels.
-- Transcript-backed runtime inspection, including final output, warnings, token usage, and created files.
-- Persistent Gateway event bridge for chat, tool, log, session, and approval activity where supported by OpenClaw.
-- File reveal actions from the inspector for artifacts written to the local filesystem.
-- Workspace wizard with basic create flow and advanced planner mode, including source modes (`empty`, `clone`, `existing`), templates, team presets, model profiles, and kickoff missions.
-- Structured workspace scaffolding with `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `MEMORY.md`, `docs/`, `memory/`, `deliverables/`, `skills/`, and `.openclaw/project-shell/`.
-- Agent creation and editing with policy presets (`worker`, `setup`, `browser`, `monitoring`, `custom`) plus heartbeat, file-access, install-scope, and network controls.
-- Guided workspace planner that models company, product, workspace, team, operations, and deploy decisions inside the workspace wizard.
-- Planner deploy flows that can turn a plan into a live workspace, agent team, automations, channels, and first missions.
-- OpenClaw onboarding, model setup, Gateway diagnostics, native auth repair, reset, and update flows directly from the UI.
-- Capability diagnostics for Gateway protocol, auth mode, supported RPC methods, config schema/patch support, channel support, skills support, approvals support, and update support.
-- Gateway-first config reads and patch/apply writes with base-hash concurrency protection and redacted-secret safety.
-- Configurable gateway endpoint and default workspace root from settings.
-- Explicit fallback mode when OpenClaw is unavailable, rather than pretending live control exists.
-
-## What works today / What is coming next
-
-### What works today
-
-- Local AgentOS control plane built with Next.js.
-- OpenClaw-aware onboarding and fallback state.
-- Workspace overview and live control-plane snapshot.
-- Agent creation and editing with presets and policies.
-- Workspace creation and guided workspace wizard.
-- Gateway-first mission dispatch to OpenClaw-backed agents.
-- Runtime and transcript inspection.
-- Gateway event bridge for supported OpenClaw chat, tool, log, session, and approval events.
-- Gateway diagnostics, capability matrix, native auth repair, and control actions.
-- Local-first settings for gateway endpoint and workspace root.
-- Accounts page for OpenClaw browser-profile login targets, with AgentOS-side access rules and clear browser-profile dispatch limitations.
-- Install paths through the release installer and package manager.
-
-### What is coming next
-
-- Deeper Telegram and Discord operation jobs.
-- More complete approval history and audit trails.
-- Stronger recurring workflow and job management.
-- Richer model and provider setup guidance.
-- More workspace and agent preset examples.
-- Better remote or multi-host OpenClaw management.
-- More durable analytics and historical runtime views.
-
-## UI Surfaces
-
-| Surface | Purpose |
-| --- | --- |
-| `MissionSidebar` | Gateway diagnostics, workspace navigation, models, agents, and workspace or agent CRUD |
-| `MissionCanvas` | Visual topology for workspaces, agents, and runtimes with selection and mission feedback |
-| `InspectorPanel` | Detailed inspection of selected entities, transcript output, raw payloads, and created files |
-| `CommandBar` | Mission composition, agent targeting, thinking level selection, refresh, and quick suggestions |
-| `WorkspaceWizardDialog` | Handle both basic workspace creation and advanced planner-driven workspace design and deploy |
-| `OpenClawOnboarding` | Detect, install, start, verify OpenClaw, and guide model readiness when the local machine is not ready |
-| `ResetDialog` | Preview AgentOS reset or full uninstall actions and stream execution progress and logs |
-
-## Repository Map (Key Files)
-
-```text
-app/
-  api/
-    agents/
-    diagnostics/
-    files/reveal/
-    gateway/control/
-    mission/
-    onboarding/
-    onboarding/models/
-    planner/
-    reset/
-    runtimes/[runtimeId]/
-    settings/
-    snapshot/
-    stream/
-    system/open-terminal/
-    update/
-    workspaces/
-  layout.tsx
-  page.tsx
-
-components/mission-control/
-  canvas.tsx
-  command-bar.tsx
-  create-agent-dialog.tsx
-  inspector-panel.tsx
-  mission-control-shell.tsx
-  openclaw-onboarding.tsx
-  operation-progress.tsx
-  reset-dialog.tsx
-  sidebar.tsx
-  nodes/
-  workspace-wizard/
-    workspace-wizard-dialog.tsx
-    workspace-wizard-draft-pane.tsx
-    workspace-wizard-header.tsx
-    wizard-composer.tsx
-    wizard-message-list.tsx
-    wizard-suggestion-chips.tsx
-
-hooks/
-  use-mission-control-data.ts
-  use-workspace-wizard-draft.ts
-
-lib/openclaw/
-  agent-heartbeat.ts
-  agent-presets.ts
-  cli.ts
-  fallback.ts
-  operation-progress.ts
-  planner.ts
-  planner-core.ts
-  planner-presenters.ts
-  presenters.ts
-  readiness.ts
-  reset.ts
-  service.ts
-  types.ts
-  adapter/
-  application/
-  client/
-  domains/
-  state/
-  workspace-presets.ts
-  workspace-wizard-inference.ts
-  workspace-wizard-mappers.ts
-
-packages/agentos/
-  bin/
-  scripts/
-  README.md
-  package.json
-```
-
-This is a representative map of the current control-plane code, not an exhaustive file listing.
-Many internal files still use legacy `mission-control` naming.
-
-## Setup And Development
-
-### Prerequisites
-
-- Node.js 24 or newer
-- `pnpm`
-- OpenClaw installed locally and reachable on `PATH`
-
-If OpenClaw is installed in a non-standard location:
-
-```bash
-export OPENCLAW_BIN=/absolute/path/to/openclaw
-```
+## Get started in 5 minutes
 
 ### Install
 
-GitHub Release installer:
-
-macOS / Linux:
+macOS or Linux:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | bash
-agentos start --open
-agentos stop
-agentos doctor
 ```
 
 Windows PowerShell:
 
 ```powershell
 iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
-agentos start --open
-agentos stop
-agentos doctor
 ```
 
-Install a specific published version:
-
-macOS / Linux:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.7.5 bash
-```
-
-Windows PowerShell:
-
-```powershell
-$env:AGENTOS_VERSION='0.7.5'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
-```
-
-Package manager install:
+Or install with a package manager:
 
 ```bash
 pnpm add -g @sapienx/agentos
 # or
 npm install -g @sapienx/agentos
+```
 
+### Start AgentOS
+
+```bash
 agentos start --open
-agentos stop
-agentos doctor
 ```
 
-Stop a running server:
+Verify the local environment:
 
 ```bash
-agentos stop
+agentos status
+agentos doctor --deep
 ```
 
-Uninstall:
+Then:
+
+1. complete OpenClaw and model onboarding;
+2. create or select a workspace;
+3. create a digital worker;
+4. assign a mission or scheduled task;
+5. inspect the runtime, transcript, and output.
+
+If OpenClaw is already installed, AgentOS connects to the live Gateway and projects its real state. If OpenClaw is missing or unhealthy, AgentOS shows an explicit setup or unavailable state instead of presenting fake operational data.
+
+## What AgentOS does
+
+### Build digital workers
+
+- Create and edit workers with role presets such as `worker`, `setup`, `browser`, `monitoring`, and `custom`.
+- Configure identity, model, heartbeat, file access, install scope, network policy, and operating instructions.
+- Maintain workspace context through `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `MEMORY.md`, `docs/`, `memory/`, `deliverables/`, and `skills/`.
+- Start from presets, import existing setups, or build a worker from scratch.
+
+### Organize real work
+
+- Create project-backed workspaces instead of disposable chat threads.
+- Dispatch missions to real OpenClaw agents.
+- Create work that runs now, on a cron schedule, at an interval, or once at a future time.
+- Inspect task history, retries, runtime state, transcripts, final output, warnings, token usage, and created files.
+- Use the guided planner to move from company and product context to a deployed workspace, team, automations, channels, and first missions.
+
+### Connect the workforce
+
+- Discover and configure local or remote models through supported providers.
+- Connect workspace surfaces such as Telegram, Discord, and Slack where supported by OpenClaw.
+- Work with OpenClaw browser profiles and account targets through AgentOS access rules.
+- Configure the Gateway endpoint and default workspace root.
+- Use native Gateway capabilities first, with explicit CLI fallback only where required.
+
+### Operate with control
+
+- Inspect Gateway health, protocol compatibility, auth state, scopes, models, sessions, channels, skills, approvals, and supported methods.
+- Review native versus fallback execution instead of hiding degraded paths.
+- Apply Gateway config changes with concurrency protection and secret redaction.
+- Use update preflight, compatibility decisions, postflight checks, and rollback metadata for safer OpenClaw updates.
+- Keep risky or unsupported actions blocked rather than pretending they are available.
+
+## How it works
+
+```mermaid
+flowchart TD
+    Human["Human operator"] --> AgentOS["AgentOS<br/>digital workforce operating layer"]
+    AgentOS --> OpenClaw["OpenClaw<br/>agent runtime and orchestration kernel"]
+    OpenClaw --> Runtime["Models, tools, channels, automations, agents"]
+```
+
+### Responsibilities
+
+| Layer | Responsibility |
+| --- | --- |
+| Human operator | Sets direction, reviews work, approves sensitive actions, and steers the organization |
+| AgentOS | Organizes workers and workspaces, presents live state, dispatches work, and provides control and diagnostics |
+| OpenClaw | Owns the Gateway, agent runtime, models, sessions, channels, automations, and execution primitives |
+| Models and tools | Perform reasoning and tool-backed work |
+
+### Runtime architecture
+
+```mermaid
+flowchart LR
+    UI["AgentOS UI"] --> API["Next.js App Router and API routes"]
+    API --> APP["Application services"]
+    APP --> ADAPTER["OpenClaw adapter<br/>compatibility boundary"]
+    ADAPTER --> CLIENT["Gateway-first client"]
+    CLIENT --> GATEWAY["OpenClaw Gateway RPC<br/>and WebSocket events"]
+    CLIENT --> CLI["Explicit CLI fallback"]
+    GATEWAY --> STATE["Agents, models, sessions,<br/>channels, approvals, config"]
+    CLI --> STATE
+    APP --> FS["Workspace filesystem<br/>and AgentOS sidecar state"]
+    API --> STREAM["SSE snapshot stream"]
+    STREAM --> UI
+```
+
+AgentOS does not replace OpenClaw. OpenClaw is the kernel; AgentOS is the human operating layer above it.
+
+OpenClaw remains the source of truth for Gateway state and execution. AgentOS reads that state, normalizes it into an operator-facing snapshot, and translates UI actions into native Gateway calls, documented CLI fallbacks, or real filesystem changes.
+
+## Operations and scheduled work
+
+The Operations surface projects OpenClaw's cron runtime into an operator console.
+
+- OpenClaw remains the source of truth for job definitions, execution, retries, run history, sessions, and restart recovery.
+- AgentOS stores only bounded operator metadata, safety decisions, and audit information under `.mission-control/operations/`.
+- Native cron methods are used only when the Gateway advertises them.
+- Planner automations and Operations share the same OpenClaw scheduler; AgentOS does not introduce a second hidden scheduler.
+- Unsupported controls, including capabilities not exposed by the current OpenClaw RPC, remain visibly unavailable.
+
+## Local-first security
+
+AgentOS currently targets trusted operator machines and local environments.
+
+- The packaged launcher binds locally, generates an API token, starts AgentOS with authentication, and opens an authenticated local URL.
+- API routes are protected before route handlers run.
+- Remote Gateway URLs are blocked by default unless `AGENTOS_ALLOW_REMOTE_GATEWAY_URL=1` is explicitly enabled.
+- Sensitive values are redacted from diagnostics and compatibility reports.
+- Local auth and config files use owner-only permissions where applicable.
+- AgentOS should not be exposed publicly without an external network boundary, access policy, and monitoring.
+
+Several operations spawn local processes, inspect transcript files, or write to workspace directories. This makes the current release suitable for operator workstations and trusted hosts, not serverless-only deployment.
+
+## Compatibility
+
+The current `0.7.5` package expects:
+
+- Node.js 24 or newer;
+- OpenClaw `2026.6.8` or newer;
+- a reachable Gateway with valid local authentication;
+- at least one ready model for real mission execution.
+
+Run the release-readiness diagnostic before assigning real work:
 
 ```bash
-agentos uninstall
+agentos doctor --deep
 ```
 
-If AgentOS was installed with `pnpm` or `npm`, remove it with your package manager instead:
+Useful contributor checks:
 
 ```bash
-pnpm remove -g @sapienx/agentos
-# or
-npm uninstall -g @sapienx/agentos
+pnpm openclaw:compat
+AGENTOS_RUNTIME_SMOKE=1 pnpm smoke:runtime-golden
 ```
 
-Local development:
+The runtime golden-path smoke dispatches real OpenClaw work. Run it only on a trusted operator machine with Gateway authentication, scopes, model credentials, and writable runtime state ready.
+
+### Safe OpenClaw updates
+
+AgentOS does not assume that the newest detected OpenClaw build is automatically safe.
+
+The Update Center classifies versions as:
+
+- `certified` — allowed through the normal update path after preflight;
+- `candidate` — visible with explicit operator opt-in;
+- `unknown` — available only through advanced risk acceptance;
+- `blocked` — disabled with a compatibility reason or required AgentOS upgrade.
+
+Preflight checks version requirements, Gateway reachability, protocol compatibility, native method coverage, fallback surfaces, config support, model readiness, pending scope issues, and rollback metadata before mutation.
+
+## Current status
+
+AgentOS already supports:
+
+- guided OpenClaw and model onboarding;
+- workspace creation and project scaffolding;
+- worker creation, editing, presets, and policies;
+- Gateway-first mission dispatch;
+- direct worker chat;
+- runtime, transcript, task, and file inspection;
+- live Gateway event projection where supported;
+- scheduled and recurring operations;
+- diagnostics, capability visibility, auth recovery, reset, and update flows;
+- accounts and browser-profile access rules with clearly surfaced runtime limitations;
+- packaged installation for macOS, Linux, and Windows.
+
+Some boundaries remain intentionally explicit:
+
+- account-target browser dispatch is an MVP bridge until OpenClaw exposes typed browser-profile dispatch;
+- `requires_approval` account tasks stay blocked until approval dispatch is available;
+- some recovery and unsupported operations still require visible CLI fallback;
+- remote and multi-host management is not yet the primary deployment model.
+
+## Development
+
+### Prerequisites
+
+- Node.js 24 or newer
+- `pnpm`
+- OpenClaw installed locally and available on `PATH`
+
+For a non-standard OpenClaw installation:
+
+```bash
+export OPENCLAW_BIN=/absolute/path/to/openclaw
+```
+
+### Run locally
 
 ```bash
 pnpm install
-openclaw --version
-openclaw gateway status --json
-```
-
-If the gateway service is missing or not loaded:
-
-```bash
-openclaw gateway install --json
-openclaw gateway status --json
-```
-
-### Releases
-
-Push a tag in the format below to build platform-specific release assets on GitHub Releases:
-
-```bash
-pnpm check:release
-pnpm smoke:agentos-package
-git tag agentos-v0.7.5
-git push origin agentos-v0.7.5
-```
-
-`packages/agentos/package.json` is the published CLI/package version source. The root package is private and may keep a separate workspace app version.
-
-The release workflow uploads:
-
-- `agentos-darwin-arm64.tgz`
-- `agentos-darwin-x64.tgz`
-- `agentos-linux-x64.tgz`
-- `agentos-win32-x64.tgz`
-- matching `.sha256` files
-
-### Run The App
-
-```bash
 pnpm dev
 ```
 
-Open the URL printed by Next.js, typically:
+Open the URL printed by Next.js, usually `http://localhost:3000`.
 
-```text
-http://localhost:3000
-```
-
-If OpenClaw is unavailable when the app starts, AgentOS shows an explicit unavailable/onboarding state and tells the operator what to repair before write actions can run.
-
-### Quality Checks
+### Quality checks
 
 ```bash
 pnpm lint
@@ -580,142 +373,72 @@ pnpm check:release
 pnpm smoke:agentos-package
 ```
 
-Mission Control browser smoke exercises the running AgentOS server. This manual
-token setup is for contributors running `pnpm start` directly from the repository.
-End users should start packaged AgentOS with `agentos start`; the launcher generates
-the local API token, starts the server with that token, and opens an authenticated
-local URL automatically.
+For a real local release rehearsal, follow [`docs/agentos-clean-install-smoke-checklist.md`](docs/agentos-clean-install-smoke-checklist.md).
 
-For manual repository smoke runs, API routes require the same API token on both the
-server and the smoke client. Add a local-only token to `.env.local`:
+### Package and release
 
-```env
-AGENTOS_API_TOKEN=<long-random-local-token>
-```
-
-Generate a suitable local token with:
+`packages/agentos/package.json` is the published CLI version source.
 
 ```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+pnpm check:release
+pnpm smoke:agentos-package
+git tag agentos-v0.7.5
+git push origin agentos-v0.7.5
 ```
 
-Then start AgentOS with the local environment loaded:
+The release workflow builds and smoke-tests packages for:
 
-```bash
-set -a
-source .env.local
-set +a
-pnpm start
+- macOS Apple Silicon;
+- macOS Intel;
+- Linux x64;
+- Windows x64.
+
+## Repository map
+
+```text
+app/                         Next.js routes and API surfaces
+components/mission-control/  Main operator interface
+components/operations/       Workers, jobs, models, and operational views
+hooks/                       Client data and workflow hooks
+lib/agentos/                 AgentOS application, policy, and integration layers
+lib/openclaw/                Gateway client, adapters, compatibility, domains, and state
+packages/agentos/            CLI launcher and distributable package
+scripts/                     Compatibility, browser, package, and runtime smoke checks
+tests/                       Unit, integration, compatibility, and security tests
+docs/                        Architecture, migration, release, and operational documentation
 ```
 
-In a second terminal, run the smoke against that server:
-
-```bash
-set -a
-source .env.local
-set +a
-AGENTOS_SMOKE_BASE_URL=http://127.0.0.1:3000 \
-AGENTOS_SMOKE_ALLOW_DATA_BLOCKED=1 \
-AGENTOS_SMOKE_JSON_OUTPUT=.smoke/mission-control-smoke.json \
-pnpm smoke:mission-control
-```
-
-`AGENTOS_SMOKE_ALLOW_DATA_BLOCKED=1` allows missing real agent/task/context data to
-remain an explicit `BLOCKED` smoke artifact. Server, API, or authentication failures
-still fail the smoke instead of producing a fake pass.
-
-For contributor-only local testing where token auth gets in the way, you can opt out
-for the repository server with:
-
-```env
-AGENTOS_UNSAFE_DISABLE_API_AUTH=1
-```
-
-This opt-out is intentionally named unsafe. Use it only on a trusted local machine,
-do not use it for packaged AgentOS, and do not expose that server beyond localhost.
-Packaged AgentOS ignores this repository opt-out and keeps launcher-managed API token
-authentication.
-
-For a real local release rehearsal, run the clean-install smoke checklist in
-[`docs/agentos-clean-install-smoke-checklist.md`](docs/agentos-clean-install-smoke-checklist.md).
-
-## Operational Notes
-
-- AgentOS is currently local-first. Several API routes spawn local processes, inspect transcript files, and mutate workspace directories.
-- This makes the current implementation best suited for operator workstations or trusted environments, not serverless-only deployments.
-- OpenClaw remains the runtime source of truth; AgentOS adds operator-facing control-plane state rather than a separate orchestration database.
-- The OpenClaw integration is Gateway-first through a stable adapter/client boundary. CLI fallback remains intentional for install, recovery, gateway process control, and unsupported Gateway operations.
-- The app is configured for standalone Next.js output via `next.config.mjs`.
-
-## Control-Plane APIs
-
-| Route | Method | Purpose |
-| --- | --- | --- |
-| `/api/snapshot` | `GET` | Return the normalized AgentOS snapshot |
-| `/api/stream` | `GET` | Stream snapshot updates over SSE |
-| `/api/diagnostics` | `GET` | Return gateway diagnostics, capabilities, and presence |
-| `/api/mission` | `POST` | Dispatch a mission to a real OpenClaw agent |
-| `/api/agents` | `GET`, `POST`, `PATCH`, `DELETE` | Read and mutate agents |
-| `/api/workspaces` | `GET`, `POST`, `PATCH`, `DELETE` | Read and mutate workspace projects |
-| `/api/runtimes/:runtimeId` | `GET` | Load transcript-backed runtime output |
-| `/api/onboarding` | `POST` | Install or start OpenClaw and verify readiness |
-| `/api/onboarding/models` | `POST` | Discover models, refresh readiness, set a default model, or guide provider login |
-| `/api/update` | `POST` | Run `openclaw update` and stream output |
-| `/api/gateway/control` | `POST` | Start, stop, or restart the OpenClaw gateway |
-| `/api/planner` | `POST` | Create a new workspace planning draft |
-| `/api/planner/:planId` | `GET`, `PUT` | Load or save a planning draft |
-| `/api/planner/:planId/turn` | `POST` | Process a planner conversation turn |
-| `/api/planner/:planId/simulate` | `POST` | Simulate the planner team |
-| `/api/planner/:planId/deploy` | `POST` | Deploy a planned workspace |
-| `/api/reset` | `POST` | Preview or execute an AgentOS reset or full uninstall flow |
-| `/api/settings/gateway` | `PATCH` | Update the OpenClaw gateway endpoint |
-| `/api/settings/workspace-root` | `PATCH` | Update the default workspace root |
-| `/api/system/open-terminal` | `POST` | Open a supported OpenClaw command in Terminal on macOS |
-| `/api/files/reveal` | `POST` | Reveal a local file in Finder, Explorer, or the platform file manager |
-
-## Local State And Persistence
-
-AgentOS keeps most durable operational state close to the workspace and to OpenClaw itself.
-
-- OpenClaw-backed runtime state comes from Gateway status, agent config, models, sessions, presence, Gateway events, and transcript files.
-- Gateway event bridge state is stored under `.mission-control/gateway-events/` and merged into runtime/task snapshots when available.
-- AgentOS settings are stored under the legacy `.mission-control/settings.json` path.
-- Planner drafts and planner runtime assets are stored under the legacy `.mission-control/planner/` path.
-- Planner deploys write workspace-specific planning artifacts under `.openclaw/planner/`, including `blueprint.json` and `deploy-report.json`.
-- Browser convenience state such as theme, draft missions, recent prompts, and the last planner id is stored in `localStorage`.
-- When OpenClaw is unavailable, AgentOS returns an explicit unavailable snapshot and keeps write actions blocked until setup is healthy.
-
-## Screens And Workflows Worth Exploring
-
-- Create a workspace from scratch and inspect the generated scaffold files.
-- Open the workspace wizard in advanced mode and move from company context to deploy.
-- Create agents with different presets and heartbeat policies.
-- Dispatch a mission, then inspect runtime output and created files from the inspector.
-- Change the gateway endpoint or workspace root from settings and watch the live snapshot refresh.
+Some internal files still use the legacy `mission-control` name.
 
 ## Roadmap
 
-This repository already shows the shape of a broader operating system for AI work.
-Directionally, the next layer looks like this:
+The direction is larger than managing isolated agents. AgentOS is moving toward persistent digital organizations that can operate continuously while remaining understandable and controllable by people.
 
-- Deeper company-level operations above individual project workspaces.
-- Richer provisioning for channels, automations, hooks, and recurring operational loops.
-- Stronger governance, permissions, approvals, and audit trails for multi-agent work.
-- Better remote and multi-host control over OpenClaw-backed environments.
-- More durable historical views for runtime analytics, operational memory, and handoff quality.
+Current priorities include:
+
+- stronger worker-to-worker coordination and handoffs;
+- durable approval history and audit trails;
+- richer recurring workflows and operational recovery;
+- multi-user identity, permissions, and workspace isolation;
+- remote and multi-host OpenClaw management;
+- deeper channel, integration, and account execution;
+- long-term worker memory, performance, cost, and reliability analytics;
+- company-level views above individual workspaces.
 
 ## Contributing
 
 Contributions are welcome.
-If you want to extend the control plane, the planner, the workspace bootstrap flow, or the OpenClaw integration, open an issue or pull request.
 
-Please keep contributions aligned with the current design principles:
+Please keep changes aligned with the core principles:
 
-- Keep the project developer-focused and operationally grounded.
-- Prefer real OpenClaw-backed behavior over front-end-only mocks.
-- Keep user-facing copy and documentation in English.
-- Run `pnpm lint`, `pnpm typecheck`, and `pnpm build` before opening a PR.
-- Prefer concise English commit messages; Conventional Commits are a good fit here.
+- build real OpenClaw-backed behavior instead of front-end-only simulations;
+- make degraded or unsupported states explicit;
+- protect local credentials, files, and operator control;
+- keep compatibility boundaries stable as OpenClaw evolves;
+- use concise English copy and commit messages;
+- run the relevant quality checks before opening a pull request.
+
+Open an issue for design discussions or submit a pull request for focused improvements.
 
 ## License
 
