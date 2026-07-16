@@ -1662,6 +1662,15 @@ export interface WorkspaceCreateInput {
   docOverrides?: WorkspaceDocOverride[];
   agents?: WorkspaceAgentBlueprintInput[];
   contextSources?: PlannerContextSource[];
+  creation?: WorkspaceCreationContext;
+}
+
+export type WorkspaceCreationSource = "api" | "quick-create" | "launchpad" | "planner-deploy" | "planner-runtime";
+
+export interface WorkspaceCreationContext {
+  source: WorkspaceCreationSource;
+  planId?: string;
+  idempotencyKey?: string;
 }
 
 export interface WorkspaceEditSeed {

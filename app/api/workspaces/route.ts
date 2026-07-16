@@ -31,6 +31,12 @@ const docOverrideSchema = z.object({
   content: z.string()
 });
 
+const workspaceCreationSchema = z.object({
+  source: z.enum(["api", "quick-create", "launchpad", "planner-deploy", "planner-runtime"]),
+  planId: z.string().min(1).optional(),
+  idempotencyKey: z.string().min(1).max(200).optional()
+});
+
 const workspaceSchema = z.object({
   name: z.string().min(1),
   brief: z.string().optional(),
@@ -51,6 +57,7 @@ const workspaceSchema = z.object({
     })
     .optional(),
   docOverrides: z.array(docOverrideSchema).optional(),
+  creation: workspaceCreationSchema.optional(),
   agents: z
     .array(
       z.object({

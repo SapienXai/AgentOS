@@ -744,10 +744,12 @@ export function resolveWorkspaceBootstrapInput(input: WorkspaceCreateInput): Res
     ...DEFAULT_WORKSPACE_RULES,
     ...(input.rules ?? {})
   };
-  const normalizedAgents = (input.agents?.length
-    ? input.agents
-    : buildDefaultWorkspaceAgents(template, teamPreset, name)
-  ).map((agent) => {
+  // Omitting agents opts into the selected preset. An explicit empty list means
+  // the caller selected no agents and must be rejected by the creation service.
+  const requestedAgents = input.agents === undefined
+    ? buildDefaultWorkspaceAgents(template, teamPreset, name)
+    : input.agents;
+  const normalizedAgents = requestedAgents.map((agent) => {
     const skillIds = normalizeWorkspaceAgentSkillIds(agent);
     const inferredPreset = agent.policy?.preset ??
       inferAgentPresetFromContext({

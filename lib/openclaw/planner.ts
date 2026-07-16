@@ -791,7 +791,11 @@ async function ensurePlannerRuntime(plan: WorkspacePlan) {
           generateMemory: false,
           kickoffMission: false
         },
-        agents: plannerRuntimeAgentBlueprints
+        agents: plannerRuntimeAgentBlueprints,
+        creation: {
+          source: "planner-runtime",
+          planId: plan.id
+        }
       });
       await configurePlannerRuntimeWorkspace(plannerRuntimeWorkspacePath);
       snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
@@ -1790,7 +1794,12 @@ function buildWorkspaceCreateInput(plan: WorkspacePlan): WorkspaceCreateInput {
       ...plan.workspace.rules,
       workspaceOnly: plan.operations.sandbox.workspaceOnly
     },
-    agents: enabledAgents.map(mapPlannerAgentToWorkspaceAgent)
+    agents: enabledAgents.map(mapPlannerAgentToWorkspaceAgent),
+    creation: {
+      source: "planner-deploy",
+      planId: plan.id,
+      idempotencyKey: `planner-deploy:${plan.id}`
+    }
   };
 }
 

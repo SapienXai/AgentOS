@@ -174,7 +174,10 @@ export function buildWorkspaceCreateInputFromPlan(
     modelProfile: plan.workspace.modelProfile || "balanced",
     docOverrides: plan.workspace.docOverrides,
     rules: normalizeWorkspaceWizardQuickCreateRules(plan.workspace.rules),
-    contextSources: plan.intake.sources
+    contextSources: plan.intake.sources,
+    creation: {
+      source: "quick-create"
+    }
   };
 }
 

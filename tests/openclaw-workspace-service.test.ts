@@ -100,6 +100,13 @@ test("workspace application service preserves create validation shape", async ()
   );
 });
 
+test("workspace creation rejects an explicit empty agent list", async () => {
+  assert.equal(
+    await readErrorMessage(() => createApplicationWorkspaceProject({ name: "No Agents", agents: [] })),
+    "Enable at least one agent for the workspace."
+  );
+});
+
 test("workspace application service preserves update validation shape", async () => {
   const input = {
     workspaceId: " "

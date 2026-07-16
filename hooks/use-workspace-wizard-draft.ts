@@ -503,6 +503,10 @@ export function useWorkspaceWizardDraft({
           ...buildWorkspaceCreateInputFromPlan(ensuredPlan, {
             teamPreset: basicTeamPreset
           }),
+          creation: {
+            source: "quick-create",
+            idempotencyKey: crypto.randomUUID()
+          },
           stream: true
         })
       });

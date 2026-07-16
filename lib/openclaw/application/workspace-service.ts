@@ -76,6 +76,12 @@ import {
 import { readWorkspaceProjectManifest } from "@/lib/openclaw/domains/workspace-manifest";
 import type { WorkspaceProjectManifestAgent } from "@/lib/openclaw/domains/workspace-manifest";
 import { syncWorkspaceAgentsMarkdown } from "@/lib/openclaw/domains/workspace-agents-document-sync";
+import {
+  completeWorkspaceCreateAudit,
+  failWorkspaceCreateAudit,
+  readCompletedWorkspaceCreateResult,
+  startWorkspaceCreateAudit
+} from "@/lib/openclaw/domains/workspace-create-audit";
 import { normalizeOptionalValue } from "@/lib/openclaw/domains/control-plane-normalization";
 import {
   getConfiguredWorkspaceRoot
@@ -119,6 +125,31 @@ function invalidateSnapshotCache() {
 }
 
 export async function createWorkspaceProject(
+  input: WorkspaceCreateInput,
+  options: WorkspaceCreateOptions = {}
+): Promise<WorkspaceCreateResult> {
+  const existingResult = await readCompletedWorkspaceCreateResult(input);
+
+  if (existingResult) {
+    return existingResult;
+  }
+
+  let audit: Awaited<ReturnType<typeof startWorkspaceCreateAudit>> | null = null;
+
+  try {
+    audit = await startWorkspaceCreateAudit(input);
+    const result = await createWorkspaceProjectInternal(input, options);
+    await completeWorkspaceCreateAudit(audit.auditPath, audit.audit, result);
+    return result;
+  } catch (error) {
+    if (audit) {
+      await failWorkspaceCreateAudit(audit.auditPath, audit.audit, error).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+async function createWorkspaceProjectInternal(
   input: WorkspaceCreateInput,
   options: WorkspaceCreateOptions = {}
 ): Promise<WorkspaceCreateResult> {

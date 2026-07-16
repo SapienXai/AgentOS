@@ -2785,6 +2785,10 @@ export function MissionControlShell({
             generateMemory: true,
             kickoffMission: true
           },
+          creation: {
+            source: "launchpad",
+            idempotencyKey: crypto.randomUUID()
+          },
           stream: true
         })
       });
