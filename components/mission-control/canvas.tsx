@@ -90,6 +90,8 @@ export function MissionCanvas({
   onOpenWorkspaceChannels,
   onOpenAccounts,
   onOpenWorkspaceFiles,
+  onCreateWorkspaceAgent,
+  onAddWorkspaceModel,
   onReplyTask,
   onCopyTaskPrompt,
   onHideTask,
@@ -135,6 +137,8 @@ export function MissionCanvas({
   onOpenWorkspaceChannels?: (workspaceId?: string, agentId?: string) => void;
   onOpenAccounts?: (workspaceId?: string, agentId?: string) => void;
   onOpenWorkspaceFiles?: (workspaceId: string) => void;
+  onCreateWorkspaceAgent?: (workspaceId: string) => void;
+  onAddWorkspaceModel?: (workspaceId: string) => void;
   onReplyTask: (task: WorkItemRecord) => void;
   onCopyTaskPrompt: (task: WorkItemRecord) => void;
   onHideTask: (task: WorkItemRecord) => void;
@@ -258,7 +262,10 @@ export function MissionCanvas({
     emptyPersistedNodePositions,
     surfaceTheme,
     workspaceTaskCardFilters,
-    handleWorkspaceTaskCardFilterChange
+    handleWorkspaceTaskCardFilterChange,
+    onCreateWorkspaceAgent,
+    onAddWorkspaceModel,
+    onSelectNode
   );
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(initialGraph.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<CanvasEdge>(initialGraph.edges);
@@ -354,7 +361,10 @@ export function MissionCanvas({
       persistedNodePositionsRef.current,
       surfaceTheme,
       workspaceTaskCardFilters,
-      handleWorkspaceTaskCardFilterChange
+      handleWorkspaceTaskCardFilterChange,
+      onCreateWorkspaceAgent,
+      onAddWorkspaceModel,
+      onSelectNode
     );
     const scopeChanged = lastCanvasScopeKeyRef.current !== canvasScopeKey;
     lastCanvasScopeKeyRef.current = canvasScopeKey;
@@ -411,6 +421,9 @@ export function MissionCanvas({
     surfaceTheme,
     workspaceTaskCardFilters,
     handleWorkspaceTaskCardFilterChange,
+    onCreateWorkspaceAgent,
+    onAddWorkspaceModel,
+    onSelectNode,
     relativeTimeReferenceMs,
     canvasScopeKey,
     setEdges,

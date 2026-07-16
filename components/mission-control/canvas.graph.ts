@@ -94,7 +94,10 @@ export function buildCanvasGraph(
   persistedNodePositions: PersistedNodePositionMap,
   surfaceTheme: "dark" | "light" = "dark",
   workspaceTaskCardFilters: Record<string, WorkspaceTaskCardFilter> = {},
-  onWorkspaceTaskCardFilterChange?: (workspaceId: string, filter: WorkspaceTaskCardFilter) => void
+  onWorkspaceTaskCardFilterChange?: (workspaceId: string, filter: WorkspaceTaskCardFilter) => void,
+  onCreateWorkspaceAgent?: (workspaceId: string) => void,
+  onAddWorkspaceModel?: (workspaceId: string) => void,
+  onSelectWorkspaceEntity?: (entityId: string) => void
 ) {
   const safeHiddenRuntimeIds = Array.isArray(hiddenRuntimeIds) ? hiddenRuntimeIds : [];
   const safeHiddenTaskKeys = Array.isArray(hiddenTaskKeys) ? hiddenTaskKeys : [];
@@ -144,6 +147,11 @@ export function buildCanvasGraph(
         .map((agent) => [agent.id, agent.warning ?? ""])
     );
     const workspaceAgents = [...liveWorkspaceAgents, ...pendingWorkspaceAgents];
+    const workspaceModelIds = new Set([
+      ...workspace.modelIds,
+      ...workspaceAgents.map((agent) => agent.modelId).filter((modelId): modelId is string => Boolean(modelId))
+    ]);
+    const workspaceModels = snapshot.models.filter((model) => workspaceModelIds.has(model.id));
     const workspaceTaskRecords = isFocusMode
       ? snapshot.tasks.filter(
           (task) =>
@@ -388,12 +396,18 @@ export function buildCanvasGraph(
         selected: false,
         data: {
           workspace,
+          surfaceTheme,
           emphasis: !activeWorkspaceId || activeWorkspaceId === workspace.id,
           taskCardCount: workspaceToggleTasks.length,
           activeTaskCardCount: workspaceToggleTasks.filter(isActiveTaskForCanvas).length,
           taskCardsHidden: workspaceTaskCardsHidden,
           taskCardFilter,
+          agents: workspaceAgents,
+          models: workspaceModels,
           onOpenWorkspaceFiles,
+          onCreateAgent: onCreateWorkspaceAgent,
+          onAddModel: onAddWorkspaceModel,
+          onSelectEntity: onSelectWorkspaceEntity,
           onTaskCardFilterChange:
             workspaceToggleTasks.length > 0 && onWorkspaceTaskCardFilterChange
               ? (filter) => onWorkspaceTaskCardFilterChange(workspace.id, filter)

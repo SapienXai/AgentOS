@@ -1,7 +1,9 @@
 "use client";
 
 import type { Node, NodeProps } from "@xyflow/react";
-import { Activity, ChevronDown, Eye, EyeOff, FolderKanban, Layers3, Orbit } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Activity, Bot, ChevronDown, Cpu, Eye, EyeOff, FolderKanban, Layers3, Orbit, Plus } from "lucide-react";
 
 import type { WorkspaceNodeData } from "@/components/mission-control/canvas-types";
 import { resolveWorkspaceHealthBadgeClasses } from "@/components/mission-control/node-visual-tones";
@@ -19,7 +21,7 @@ export function WorkspaceNode({ data, selected }: NodeProps<WorkspaceFlowNode>) 
     <div
       style={getWorkspaceNodeStyle(data.workspace.id)}
       className={cn(
-        "workspace-node relative isolate h-full overflow-hidden rounded-[26px] border p-3",
+        "workspace-node relative isolate h-full overflow-visible rounded-[26px] border p-3",
         data.emphasis ? "opacity-100" : "opacity-[0.92]",
         selected && "workspace-node--selected"
       )}
@@ -87,8 +89,36 @@ export function WorkspaceNode({ data, selected }: NodeProps<WorkspaceFlowNode>) 
           </Badge>
 
           <div className="flex flex-wrap justify-end gap-1.5">
-            <Metric icon={Orbit} label="Agents" value={String(data.workspace.agentIds.length)} />
-            <Metric icon={Layers3} label="Models" value={String(data.workspace.modelIds.length)} />
+            <WorkspaceCollectionMenu
+              icon={Orbit}
+              label="Agents"
+              value={String(data.agents.length)}
+              entries={data.agents.map((agent) => ({ id: agent.id, label: agent.name || agent.id, detail: agent.modelId || "No model" }))}
+              emptyLabel="No agents in this workspace"
+              actionLabel="Create agent"
+              surfaceTheme={data.surfaceTheme ?? "dark"}
+              onSelect={(agentId) => {
+                data.onSelectEntity?.(agentId);
+              }}
+              onAction={() => {
+                data.onCreateAgent?.(data.workspace.id);
+              }}
+            />
+            <WorkspaceCollectionMenu
+              icon={Layers3}
+              label="Models"
+              value={String(data.models.length)}
+              entries={data.models.map((model) => ({ id: model.id, label: model.name || model.id, detail: model.provider }))}
+              emptyLabel="No models used in this workspace"
+              actionLabel="Add model"
+              surfaceTheme={data.surfaceTheme ?? "dark"}
+              onSelect={(modelId) => {
+                data.onSelectEntity?.(modelId);
+              }}
+              onAction={() => {
+                data.onAddModel?.(data.workspace.id);
+              }}
+            />
             <TaskFilterMetric
               value={String(data.taskCardFilter === "active" ? data.activeTaskCardCount : data.taskCardCount)}
               filter={data.taskCardFilter}
@@ -102,22 +132,152 @@ export function WorkspaceNode({ data, selected }: NodeProps<WorkspaceFlowNode>) 
   );
 }
 
-function Metric({
+function WorkspaceCollectionMenu({
   icon: Icon,
   label,
-  value
+  value,
+  entries,
+  emptyLabel,
+  actionLabel,
+  surfaceTheme,
+  onSelect,
+  onAction
 }: {
   icon: typeof FolderKanban;
   label: string;
   value: string;
+  entries: Array<{ id: string; label: string; detail: string }>;
+  emptyLabel: string;
+  actionLabel: string;
+  surfaceTheme: "dark" | "light";
+  onSelect: (id: string) => void;
+  onAction: () => void;
 }) {
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [locallyOpen, setLocallyOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
+  const visible = locallyOpen;
+  const isLight = surfaceTheme === "light" || (typeof document !== "undefined" && Boolean(document.querySelector(".mission-shell--light")));
+
+  useEffect(() => {
+    if (!visible) return;
+
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target as globalThis.Node | null;
+      if (target && (triggerRef.current?.contains(target) || menuRef.current?.contains(target))) return;
+
+      setLocallyOpen(false);
+      setMenuPosition(null);
+    };
+
+    document.addEventListener("pointerdown", handleOutsidePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handleOutsidePointerDown, true);
+  }, [visible]);
+
+  const closeMenu = () => {
+    setLocallyOpen(false);
+    setMenuPosition(null);
+  };
+
   return (
-    <div className="workspace-node__chip inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1">
-      <Icon className="workspace-node__chip-icon h-3 w-3 text-inherit" />
-      <span className="workspace-node__chip-label text-[9px] uppercase tracking-[0.16em] text-inherit">
-        {label}
-      </span>
-      <span className="workspace-node__chip-value font-display text-[12px] text-inherit">{value}</span>
+    <div className="nodrag nopan relative" onPointerDown={(event) => event.stopPropagation()}>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-expanded={visible}
+        aria-haspopup="menu"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          const nextOpen = !visible;
+          if (nextOpen) {
+            const rect = event.currentTarget.getBoundingClientRect();
+            setMenuPosition({
+              left: Math.max(8, Math.min(window.innerWidth - 212, rect.right - 204)),
+              top: rect.bottom + 220 > window.innerHeight ? Math.max(8, rect.top - 212) : rect.bottom + 8
+            });
+          } else {
+            setMenuPosition(null);
+          }
+          setLocallyOpen(nextOpen);
+        }}
+        className="workspace-node__chip inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition hover:brightness-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
+      >
+        <Icon className="workspace-node__chip-icon h-3 w-3 text-inherit" />
+        <span className="workspace-node__chip-label text-[9px] uppercase tracking-[0.16em] text-inherit">{label}</span>
+        <span className="workspace-node__chip-value font-display text-[12px] text-inherit">{value}</span>
+      </button>
+      {visible && menuPosition ? createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={`${label} in this workspace`}
+          style={{
+            left: menuPosition.left,
+            top: menuPosition.top,
+            width: 204,
+            zIndex: 10000,
+            color: isLight ? "#3f2f24" : "#f1f5f9",
+            background: isLight ? "rgba(255, 250, 246, 0.98)" : "rgba(2, 6, 23, 0.95)",
+            borderColor: isLight ? "#ddcdbf" : "rgba(255, 255, 255, 0.1)",
+            boxShadow: isLight ? "0 18px 42px rgba(82, 60, 46, 0.18)" : "0 18px 42px rgba(0, 0, 0, 0.42)"
+          }}
+          className={cn(
+            "fixed z-[10000] w-[204px] overflow-hidden rounded-[12px] border p-1 backdrop-blur-xl",
+            isLight
+              ? "border-[#ddcdbf] bg-[#fffaf6]/98 text-[#3f2f24] shadow-[0_18px_42px_rgba(82,60,46,0.18)]"
+              : "border-white/[0.1] bg-slate-950/95 text-slate-100 shadow-[0_18px_42px_rgba(0,0,0,0.42)]"
+          )}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="max-h-[156px] space-y-0.5 overflow-y-auto">
+            {entries.length > 0 ? (
+              entries.map((entry) => (
+                <button
+                  key={entry.id}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    closeMenu();
+                    onSelect(entry.id);
+                  }}
+                  className={cn(
+                    "flex w-full items-center gap-1.5 rounded-[8px] px-2 py-1.5 text-left transition",
+                    isLight ? "hover:bg-[#f4e9e0]" : "hover:bg-white/[0.07]"
+                  )}
+                >
+                  {label === "Agents" ? <Bot className={cn("h-3.5 w-3.5 shrink-0", isLight ? "text-[#7f5e4b]" : "text-cyan-200")} /> : <Cpu className={cn("h-3.5 w-3.5 shrink-0", isLight ? "text-[#7b5b83]" : "text-violet-200")} />}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[10px] font-medium">{entry.label}</span>
+                    <span className={cn("block truncate text-[9px]", isLight ? "text-[#806657]" : "text-slate-400")}>{entry.detail}</span>
+                  </span>
+                </button>
+              ))
+            ) : (
+              <p className={cn("px-2 py-2.5 text-center text-[9px]", isLight ? "text-[#806657]" : "text-slate-400")}>{emptyLabel}</p>
+            )}
+          </div>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              closeMenu();
+              onAction();
+            }}
+            className={cn(
+              "mt-1 flex w-full items-center justify-center gap-1.5 rounded-[8px] border px-2 py-1.5 text-[9px] font-semibold transition",
+              isLight
+                ? "border-[#ddcdbf] bg-[#f7eee8] text-[#4f3d31] hover:bg-[#efe0d5]"
+                : "border-white/[0.1] bg-white/[0.05] text-white hover:bg-white/[0.1]"
+            )}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {actionLabel}
+          </button>
+        </div>,
+        document.body
+      ) : null}
     </div>
   );
 }

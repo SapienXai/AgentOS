@@ -12,13 +12,19 @@ import type {
 
 export type WorkspaceNodeData = Record<string, unknown> & {
   workspace: WorkspaceRecord;
+  surfaceTheme?: "dark" | "light";
   emphasis: boolean;
   taskCardCount: number;
   activeTaskCardCount: number;
   taskCardsHidden: boolean;
   taskCardFilter: WorkspaceTaskCardFilter;
+  agents: AgentRecord[];
+  models: ModelRecord[];
   onTaskCardFilterChange?: (filter: WorkspaceTaskCardFilter) => void;
   onOpenWorkspaceFiles?: (workspaceId: string) => void;
+  onCreateAgent?: (workspaceId: string) => void;
+  onAddModel?: (workspaceId: string) => void;
+  onSelectEntity?: (entityId: string) => void;
 };
 
 export type WorkspaceTaskCardFilter = "all" | "active" | "hidden";

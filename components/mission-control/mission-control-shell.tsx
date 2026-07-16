@@ -4015,6 +4015,11 @@ export function MissionControlShell({
             onOpenWorkspaceChannels={openWorkspaceChannels}
             onOpenAccounts={openAccountsConnect}
             onOpenWorkspaceFiles={openWorkspaceFiles}
+            onCreateWorkspaceAgent={(workspaceId) => {
+              setActiveWorkspaceId(workspaceId);
+              setIsSidebarCreateAgentDialogOpen(true);
+            }}
+            onAddWorkspaceModel={() => openAddModelsDialog()}
             onMessageAgent={(agentId) => {
               const agent = uiSnapshot.agents.find((entry) => entry.id === agentId);
 
