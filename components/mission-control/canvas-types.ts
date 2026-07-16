@@ -20,6 +20,8 @@ export type WorkspaceNodeData = Record<string, unknown> & {
   taskCardFilter: WorkspaceTaskCardFilter;
   agents: AgentRecord[];
   models: ModelRecord[];
+  openMenu: WorkspaceMenuState | null;
+  onMenuChange?: (menu: WorkspaceMenuState | null) => void;
   onTaskCardFilterChange?: (filter: WorkspaceTaskCardFilter) => void;
   onOpenWorkspaceFiles?: (workspaceId: string) => void;
   onCreateAgent?: (workspaceId: string) => void;
@@ -28,6 +30,14 @@ export type WorkspaceNodeData = Record<string, unknown> & {
 };
 
 export type WorkspaceTaskCardFilter = "all" | "active" | "hidden";
+
+export type WorkspaceMenuKind = "agents" | "models" | "runs";
+
+export type WorkspaceMenuState = {
+  workspaceId: string;
+  kind: WorkspaceMenuKind;
+  position: { left: number; top: number };
+};
 
 export type AgentDetailFocus = "skills" | "tools" | "sessions";
 

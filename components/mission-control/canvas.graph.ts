@@ -6,6 +6,7 @@ import type {
   CanvasNode,
   PersistedNodePositionMap,
   TaskNodeData,
+  WorkspaceMenuState,
   WorkspaceTaskCardFilter
 } from "@/components/mission-control/canvas-types";
 import {
@@ -97,7 +98,9 @@ export function buildCanvasGraph(
   onWorkspaceTaskCardFilterChange?: (workspaceId: string, filter: WorkspaceTaskCardFilter) => void,
   onCreateWorkspaceAgent?: (workspaceId: string) => void,
   onAddWorkspaceModel?: (workspaceId: string) => void,
-  onSelectWorkspaceEntity?: (entityId: string) => void
+  onSelectWorkspaceEntity?: (entityId: string) => void,
+  openWorkspaceMenu: WorkspaceMenuState | null = null,
+  onWorkspaceMenuChange?: (menu: WorkspaceMenuState | null) => void
 ) {
   const safeHiddenRuntimeIds = Array.isArray(hiddenRuntimeIds) ? hiddenRuntimeIds : [];
   const safeHiddenTaskKeys = Array.isArray(hiddenTaskKeys) ? hiddenTaskKeys : [];
@@ -404,6 +407,8 @@ export function buildCanvasGraph(
           taskCardFilter,
           agents: workspaceAgents,
           models: workspaceModels,
+          openMenu: openWorkspaceMenu,
+          onMenuChange: onWorkspaceMenuChange,
           onOpenWorkspaceFiles,
           onCreateAgent: onCreateWorkspaceAgent,
           onAddModel: onAddWorkspaceModel,

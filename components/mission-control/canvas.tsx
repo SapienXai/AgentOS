@@ -47,6 +47,7 @@ import type {
   PersistedNodePositionMap,
   SpringVelocity,
   TaskNodeData,
+  WorkspaceMenuState,
   WorkspaceTaskCardFilter
 } from "@/components/mission-control/canvas-types";
 import type { PendingAgentProjection } from "@/components/mission-control/pending-agent-projection";
@@ -172,6 +173,7 @@ export function MissionCanvas({
   const [canvasZoom, setCanvasZoom] = useState(0.9);
   const [workspaceTaskCardFilters, setWorkspaceTaskCardFilters] = useState<Record<string, WorkspaceTaskCardFilter>>({});
   const [workspaceTaskCardFiltersHydrated, setWorkspaceTaskCardFiltersHydrated] = useState(false);
+  const [openWorkspaceMenu, setOpenWorkspaceMenu] = useState<WorkspaceMenuState | null>(null);
   const canvasScopeKey = focusedAgentId
     ? `focus:${focusedAgentId}`
     : activeWorkspaceId
@@ -217,6 +219,10 @@ export function MissionCanvas({
 
     setWorkspaceTaskCardFilters((current) => ({ ...current, [workspaceId]: filter }));
   }, [hiddenRuntimeIds, hiddenTaskKeys, lockedTaskKeys, onToggleWorkspaceTaskCards, snapshot.agents, snapshot.tasks]);
+
+  const handleWorkspaceMenuChange = useCallback((menu: WorkspaceMenuState | null) => {
+    setOpenWorkspaceMenu(menu);
+  }, []);
 
   const initialGraph = buildCanvasGraph(
     snapshot,
@@ -265,7 +271,9 @@ export function MissionCanvas({
     handleWorkspaceTaskCardFilterChange,
     onCreateWorkspaceAgent,
     onAddWorkspaceModel,
-    onSelectNode
+    onSelectNode,
+    openWorkspaceMenu,
+    handleWorkspaceMenuChange
   );
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(initialGraph.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<CanvasEdge>(initialGraph.edges);
@@ -364,7 +372,9 @@ export function MissionCanvas({
       handleWorkspaceTaskCardFilterChange,
       onCreateWorkspaceAgent,
       onAddWorkspaceModel,
-      onSelectNode
+      onSelectNode,
+      openWorkspaceMenu,
+      handleWorkspaceMenuChange
     );
     const scopeChanged = lastCanvasScopeKeyRef.current !== canvasScopeKey;
     lastCanvasScopeKeyRef.current = canvasScopeKey;
@@ -424,6 +434,8 @@ export function MissionCanvas({
     onCreateWorkspaceAgent,
     onAddWorkspaceModel,
     onSelectNode,
+    openWorkspaceMenu,
+    handleWorkspaceMenuChange,
     relativeTimeReferenceMs,
     canvasScopeKey,
     setEdges,
