@@ -741,10 +741,6 @@ export function SettingsControlCenter(
   }, [refreshGatewayAuthStatus]);
 
   useEffect(() => {
-    if (renderedActiveSection !== "gateway") {
-      return;
-    }
-
     const refreshTimer = window.setTimeout(() => {
       void refreshGatewayBind();
     }, 0);
@@ -759,7 +755,7 @@ export function SettingsControlCenter(
       window.clearTimeout(refreshTimer);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [refreshGatewayBind, renderedActiveSection]);
+  }, [refreshGatewayBind]);
 
   useEffect(() => {
     if (
@@ -1365,6 +1361,7 @@ export function SettingsControlCenter(
                     surfaceTheme={surfaceTheme}
                     bindMode={snapshot.diagnostics.bindMode}
                     configuredGatewayUrl={snapshot.diagnostics.configuredGatewayUrl}
+                    onPairingPrepared={() => void refreshGatewayBind()}
                   />
 
                   <div className="mt-5 grid grid-cols-2 gap-3">

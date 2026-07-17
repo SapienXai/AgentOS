@@ -48,20 +48,33 @@ test("OpenClaw Control UI opens through the CLI bootstrap flow", () => {
   assert.doesNotMatch(settingsSource, /href=\{snapshot\.diagnostics\.dashboardUrl\}/);
 });
 
-test("mobile pairing verifies auth before enabling LAN and returns only the QR projection", () => {
+test("mobile pairing verifies auth before enabling LAN and exposes short-lived fallback data", () => {
   const serviceSource = readFileSync(join(process.cwd(), "lib/openclaw/application/mobile-pairing-service.ts"), "utf8");
   const routeSource = readFileSync(join(process.cwd(), "app/api/openclaw/mobile-pairing/route.ts"), "utf8");
   const dialogSource = readFileSync(join(process.cwd(), "components/mission-control/openclaw-app-connect-dialog.tsx"), "utf8");
+  const settingsSource = readFileSync(join(process.cwd(), "components/mission-control/settings-control-center.tsx"), "utf8");
 
   assert.match(serviceSource, /getGatewayNativeAuthStatus\(\)/);
   assert.match(serviceSource, /hasVerifiedGatewayAuthentication/);
   assert.match(serviceSource, /setConfig\(gatewayBindConfigKey, "lan"/);
   assert.match(serviceSource, /controlGateway\("restart"\)/);
+  assert.match(serviceSource, /waitForMobilePairingSetupCode/);
+  assert.match(serviceSource, /gatewayRestartReadyTimeoutMs = 30_000/);
+  assert.match(serviceSource, /gateway starting\|retry shortly/);
   assert.match(serviceSource, /"device\.pair\.setupCode"/);
   assert.match(serviceSource, /runOpenClawJson<OpenClawSetupCodePayload>\(\["qr", "--json"\]/);
+  assert.match(serviceSource, /decodeOpenClawMobileSetupCode\(setupCode\)/);
   assert.doesNotMatch(routeSource, /setupCode/);
+  assert.doesNotMatch(routeSource, /bootstrapToken|pairingToken/);
+  assert.match(routeSource, /"Cache-Control": "private, no-store, max-age=0"/);
   assert.match(dialogSource, /Connect OpenClaw App/);
   assert.match(dialogSource, /Pair your OpenClaw mobile app with this AgentOS workspace\./);
+  assert.match(dialogSource, /Setup code fallback/);
+  assert.match(dialogSource, /Manual setup/);
+  assert.match(dialogSource, /leave Password blank/);
+  assert.doesNotMatch(dialogSource, /Device connected/);
+  assert.match(dialogSource, /onPairingPrepared\?\.\(\)/);
+  assert.match(settingsSource, /onPairingPrepared=\{\(\) => void refreshGatewayBind\(\)\}/);
 });
 
 function createSettingsAdapter(config: Record<string, unknown> = {}): OpenClawAdapter {

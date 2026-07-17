@@ -5,18 +5,22 @@ import { toDataURL } from "qrcode";
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { controlGateway } from "@/lib/openclaw/application/gateway-service";
+import { resetOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import { getGatewayNativeAuthStatus } from "@/lib/openclaw/application/settings-service";
 import { runOpenClawJson } from "@/lib/openclaw/cli";
+import { decodeOpenClawMobileSetupCode, type OpenClawMobileManualSetup } from "@/lib/openclaw/mobile-pairing-projection";
 import { redactErrorMessage } from "@/lib/security/redaction";
 
 export type OpenClawMobilePairingNetwork = "current" | "lan";
 
 export type OpenClawMobilePairingResult = {
   qrDataUrl: string;
+  setupCode: string;
   gatewayUrl: string;
   gatewayUrls: string[];
   auth: string | null;
   urlSource: string | null;
+  manual: OpenClawMobileManualSetup | null;
   restarted: boolean;
 };
 
@@ -30,6 +34,8 @@ type OpenClawSetupCodePayload = {
 };
 
 const gatewayBindConfigKey = "gateway.bind";
+const gatewayRestartReadyTimeoutMs = 30_000;
+const gatewayRestartPollIntervalMs = 750;
 
 export async function prepareOpenClawMobilePairing(input: {
   network: OpenClawMobilePairingNetwork;
@@ -49,35 +55,62 @@ export async function prepareOpenClawMobilePairing(input: {
   if (needsLanBind) {
     await getOpenClawAdapter().setConfig(gatewayBindConfigKey, "lan", { timeoutMs: 10_000 });
     await controlGateway("restart");
+    resetOpenClawGatewayClient("Gateway restarted for mobile pairing");
   }
 
   try {
-    const payload = await getOpenClawAdapter().call<OpenClawSetupCodePayload>(
-      "device.pair.setupCode",
-      {},
-      { timeoutMs: 15_000 }
-    );
+    const payload = await waitForMobilePairingSetupCode();
     const nativeQrDataUrl = readPngDataUrl(payload.qrDataUrl);
     const nativeGatewayUrl = readString(payload.gatewayUrl);
-    const fallback = nativeQrDataUrl && nativeGatewayUrl ? null : await createCliQrFallback();
-    const qrDataUrl = nativeQrDataUrl ?? fallback?.qrDataUrl ?? null;
-    const gatewayUrl = nativeGatewayUrl ?? fallback?.gatewayUrl ?? null;
+    const nativeSetupCode = readString(payload.setupCode);
+    const hasCompleteNativePayload = Boolean(nativeQrDataUrl && nativeGatewayUrl && nativeSetupCode);
+    const fallback = hasCompleteNativePayload ? null : await createCliQrFallback();
+    const qrDataUrl = hasCompleteNativePayload ? nativeQrDataUrl : fallback?.qrDataUrl ?? null;
+    const setupCode = hasCompleteNativePayload ? nativeSetupCode : fallback?.setupCode ?? null;
+    const gatewayUrl = hasCompleteNativePayload ? nativeGatewayUrl : fallback?.gatewayUrl ?? null;
 
-    if (!qrDataUrl || !gatewayUrl) {
+    if (!qrDataUrl || !setupCode || !gatewayUrl) {
       throw new Error("OpenClaw did not return a scannable mobile pairing code.");
     }
 
     return {
       qrDataUrl,
+      setupCode,
       gatewayUrl,
       gatewayUrls: readStringArray(payload.gatewayUrls).length ? readStringArray(payload.gatewayUrls) : fallback?.gatewayUrls ?? [],
       auth: readString(payload.auth) ?? fallback?.auth ?? null,
       urlSource: readString(payload.urlSource) ?? fallback?.urlSource ?? null,
+      manual: decodeOpenClawMobileSetupCode(setupCode),
       restarted: needsLanBind
     };
   } catch (error) {
     throw new Error(resolveMobilePairingError(error));
   }
+}
+
+async function waitForMobilePairingSetupCode() {
+  const deadline = Date.now() + gatewayRestartReadyTimeoutMs;
+  let lastError: unknown = null;
+
+  do {
+    try {
+      return await getOpenClawAdapter().call<OpenClawSetupCodePayload>(
+        "device.pair.setupCode",
+        {},
+        { timeoutMs: 15_000 }
+      );
+    } catch (error) {
+      lastError = error;
+      if (!isGatewayRestartingError(error) || Date.now() >= deadline) {
+        throw error;
+      }
+
+      resetOpenClawGatewayClient("Waiting for Gateway restart before mobile pairing");
+      await delay(gatewayRestartPollIntervalMs);
+    }
+  } while (Date.now() < deadline);
+
+  throw lastError ?? new Error("OpenClaw Gateway did not become ready after restart.");
 }
 
 async function createCliQrFallback() {
@@ -90,6 +123,7 @@ async function createCliQrFallback() {
   }
 
   return {
+    setupCode,
     qrDataUrl: await toDataURL(setupCode, {
       errorCorrectionLevel: "M",
       margin: 2,
@@ -140,6 +174,21 @@ function resolveMobilePairingError(error: unknown) {
   if (/wss:|public|tailscale|reachable|loopback/i.test(message)) {
     return "OpenClaw could not find a secure route your mobile device can reach. Configure a LAN, Tailscale, or public WSS Gateway route, then retry.";
   }
+  if (isGatewayRestartingMessage(message)) {
+    return "OpenClaw restarted for mobile pairing but did not become ready in time. Wait a moment, check Gateway Diagnostics, then retry. AgentOS did not use a CLI fallback for this Gateway operation.";
+  }
 
   return message;
+}
+
+function isGatewayRestartingError(error: unknown) {
+  return isGatewayRestartingMessage(redactErrorMessage(error, ""));
+}
+
+function isGatewayRestartingMessage(message: string) {
+  return /gateway starting|retry shortly|gateway.*(?:not ready|unreachable)|connection (?:is )?not ready|ECONNREFUSED|ECONNRESET|connection closed/i.test(message);
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
