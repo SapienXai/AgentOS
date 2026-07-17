@@ -22,16 +22,20 @@ import {
   Inbox,
   KeyRound,
   LifeBuoy,
+  LockKeyhole,
   LogOut,
   Pencil,
   Plug,
   Plus,
   Settings2,
+  ShieldCheck,
   Trash2,
   UserRound
 } from "lucide-react";
 
 import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
+import { InstanceProtectionDialog } from "@/components/auth/instance-protection-dialog";
+import { useInstanceProtection } from "@/components/auth/instance-protection-provider";
 import { ConnectChannelsDialog } from "@/components/mission-control/connect-channels-dialog";
 import { AgentThemePicker } from "@/components/mission-control/agent-theme-picker";
 import {
@@ -2099,6 +2103,8 @@ function SidebarUserMenu({
   const [open, setOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
+  const [protectionOpen, setProtectionOpen] = useState(false);
+  const { status: protectionStatus, lock } = useInstanceProtection();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const displayName = resolveOperatorDisplayName(operatorProfile);
   const displayDetail = resolveOperatorDisplayDetail(operatorProfile);
@@ -2168,9 +2174,38 @@ function SidebarUserMenu({
               }}
             />
             <SidebarUserMenuLink href="/settings" icon={Settings2} label="Settings" onNavigate={() => setOpen(false)} />
+            <SidebarUserMenuAction
+              icon={ShieldCheck}
+              label="Login & Protection"
+              onSelect={() => {
+                setOpen(false);
+                setProtectionOpen(true);
+              }}
+            />
+            {protectionStatus?.protectionEnabled ? (
+              <SidebarUserMenuAction
+                icon={LockKeyhole}
+                label="Lock AgentOS"
+                onSelect={() => {
+                  setOpen(false);
+                  void lock().catch(() => toast.error("AgentOS could not be locked."));
+                }}
+              />
+            ) : null}
             <div className="my-1.5 h-px bg-border" />
             <SidebarUserMenuDisabled icon={LifeBuoy} label="Help" reason="Help center is coming soon" />
-            <SidebarUserMenuDisabled icon={LogOut} label="Log out" reason="Authentication is not configured" />
+            {protectionStatus?.protectionEnabled ? (
+              <SidebarUserMenuAction
+                icon={LogOut}
+                label="Log out"
+                onSelect={() => {
+                  setOpen(false);
+                  void lock().catch(() => toast.error("AgentOS could not be locked."));
+                }}
+              />
+            ) : (
+              <SidebarUserMenuDisabled icon={LogOut} label="Log out" reason="Authentication is not configured" />
+            )}
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -2209,6 +2244,7 @@ function SidebarUserMenu({
         activeWorkspaceId={activeWorkspaceId}
         onRefresh={onRefresh}
       />
+      <InstanceProtectionDialog open={protectionOpen} onOpenChange={setProtectionOpen} />
     </>
   );
 }

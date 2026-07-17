@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
 
 import { Toaster } from "@/components/ui/sonner";
+import { InstanceProtectionProvider } from "@/components/auth/instance-protection-provider";
+import { getInstanceProtectionStatus, INSTANCE_PROTECTION_COOKIE } from "@/lib/security/instance-protection";
 
 import "@/app/globals.css";
 
@@ -54,16 +57,23 @@ export const metadata: Metadata = {
   }
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const initialProtectionStatus = await getInstanceProtectionStatus(
+    cookieStore.get(INSTANCE_PROTECTION_COOKIE)?.value ?? null
+  );
+
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body>
-        {children}
-        <Toaster theme="dark" richColors closeButton />
+        <InstanceProtectionProvider initialStatus={initialProtectionStatus}>
+          {children}
+          <Toaster theme="system" richColors closeButton />
+        </InstanceProtectionProvider>
       </body>
     </html>
   );

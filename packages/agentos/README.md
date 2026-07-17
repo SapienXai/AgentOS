@@ -30,6 +30,7 @@ agentos update --check
 agentos stop
 agentos stop --port 3000 --force
 agentos status
+agentos auth reset
 agentos doctor
 agentos uninstall
 ```
@@ -43,6 +44,8 @@ AGENTOS_OPEN=1
 ```
 
 `agentos status` prints a concise local dashboard for Gateway, runtime, model, channel, and server readiness.
+
+`agentos auth reset` removes only the local Instance Protection credential and invalidates protected browser sessions. It does not change workspaces, agents, tasks, accounts, integrations, or OpenClaw data.
 
 `agentos doctor` prints deeper install diagnostics: effective URL, bundle status, Node.js compatibility, OpenClaw detection, Gateway reachability, and browser auto-open support.
 

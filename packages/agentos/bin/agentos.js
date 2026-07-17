@@ -23,6 +23,7 @@ const defaultBinDir = path.join(os.homedir(), ".local", "bin");
 const runtimeInstallRoot = resolveRuntimeInstallRoot();
 const runtimeStateDir = path.join(runtimeInstallRoot, "run");
 const apiTokenPath = path.join(runtimeInstallRoot, "api-token");
+const instanceProtectionPath = path.join(runtimeInstallRoot, "instance-protection.json");
 const updateCacheDir = path.join(runtimeInstallRoot, "cache");
 const updateCachePath = path.join(updateCacheDir, "update-check.json");
 const stopPollIntervalMs = 100;
@@ -114,6 +115,18 @@ async function main() {
 
     runStatus(args.slice(1));
     return;
+  }
+
+  if (firstArg === "auth") {
+    if (args[1] === "--help" || args[1] === "-h" || args[1] === "help" || !args[1]) {
+      printAuthHelp();
+      return;
+    }
+    if (args[1] === "reset" && args.length === 2) {
+      resetInstanceProtection();
+      return;
+    }
+    throw new Error(`Unknown auth command: ${args.slice(1).join(" ")}`);
   }
 
   if (firstArg === "update") {
@@ -1746,6 +1759,7 @@ Usage:
   agentos start --port 3000 --host 127.0.0.1 --open
   agentos dev --plain
   agentos status
+  agentos auth reset
   agentos update [--check]
   agentos stop --port 3000 [--force]
   agentos doctor
@@ -1764,6 +1778,28 @@ Options:
   stop:  --port, -p   Port to stop (default: 3000)
   stop:  --force, -f  Send SIGKILL if SIGTERM does not stop the server
 `);
+}
+
+function printAuthHelp() {
+  console.log(`Manage local AgentOS Instance Protection.
+
+Usage:
+  agentos auth reset
+
+Commands:
+  reset   Remove Instance Protection credentials and invalidate all browser sessions.
+
+Notes:
+  This does not modify workspaces, agents, tasks, accounts, integrations, or OpenClaw data.
+`);
+}
+
+function resetInstanceProtection() {
+  const existed = existsSync(instanceProtectionPath);
+  rmSync(instanceProtectionPath, { force: true });
+  console.log(existed
+    ? "AgentOS Instance Protection was reset. Credentials were removed and all sessions were invalidated."
+    : "AgentOS Instance Protection is already disabled. No other data was changed.");
 }
 
 function printDoctorHelp() {

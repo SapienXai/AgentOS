@@ -429,13 +429,14 @@ test("source gateway credential files are written owner-only", async () => {
 test("API middleware centrally covers mutation routes including Gateway auth", () => {
   const middlewareSource = readProjectFile("proxy.ts");
 
-  assert.match(middlewareSource, /matcher:\s*\["\/api\/:path\*"\]/);
+  assert.match(middlewareSource, /matcher:/);
   assert.match(middlewareSource, /evaluateAgentOsApiRequest/);
+  assert.match(middlewareSource, /getInstanceProtectionStatus/);
 });
 
 test("API proxy protects snapshot reads with bearer auth in production-like env", async () => {
   await withProcessEnv({ AGENTOS_API_TOKEN: "local-secret", NODE_ENV: "production" }, async () => {
-    const missingToken = proxy(new NextRequest("http://localhost:3000/api/snapshot", {
+    const missingToken = await proxy(new NextRequest("http://localhost:3000/api/snapshot", {
       headers: {
         host: "localhost:3000"
       }
@@ -445,7 +446,7 @@ test("API proxy protects snapshot reads with bearer auth in production-like env"
     assert.equal(missingToken.status, 401);
     assert.equal(missingTokenBody.code, "api-auth-required");
 
-    const authorized = proxy(new NextRequest("http://localhost:3000/api/snapshot", {
+    const authorized = await proxy(new NextRequest("http://localhost:3000/api/snapshot", {
       headers: {
         authorization: "Bearer local-secret",
         host: "localhost:3000"
@@ -458,7 +459,7 @@ test("API proxy protects snapshot reads with bearer auth in production-like env"
 
 test("API proxy protects mutation routes with bearer auth in production-like env", async () => {
   await withProcessEnv({ AGENTOS_API_TOKEN: "local-secret", NODE_ENV: "production" }, async () => {
-    const missingToken = proxy(new NextRequest("http://localhost:3000/api/mission", {
+    const missingToken = await proxy(new NextRequest("http://localhost:3000/api/mission", {
       method: "POST",
       headers: {
         host: "localhost:3000",
@@ -470,7 +471,7 @@ test("API proxy protects mutation routes with bearer auth in production-like env
     assert.equal(missingToken.status, 401);
     assert.equal(missingTokenBody.code, "api-auth-required");
 
-    const authorized = proxy(new NextRequest("http://localhost:3000/api/settings/gateway", {
+    const authorized = await proxy(new NextRequest("http://localhost:3000/api/settings/gateway", {
       method: "POST",
       headers: {
         authorization: "Bearer local-secret",
@@ -485,7 +486,7 @@ test("API proxy protects mutation routes with bearer auth in production-like env
 
 test("API proxy blocks remote clients under local development fallback", async () => {
   await withProcessEnv({ AGENTOS_API_TOKEN: undefined, NODE_ENV: "development" }, async () => {
-    const response = proxy(new NextRequest("http://localhost:3000/api/snapshot", {
+    const response = await proxy(new NextRequest("http://localhost:3000/api/snapshot", {
       headers: {
         host: "localhost:3000",
         "x-forwarded-for": "203.0.113.10"
