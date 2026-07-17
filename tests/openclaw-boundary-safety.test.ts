@@ -589,19 +589,23 @@ test("sidebar keeps its header and user footer fixed around scrollable navigatio
 
   assert.match(source, /<div className="shrink-0">[\s\S]*?<SidebarBrand[\s\S]*?<WorkspaceSwitcher[\s\S]*?<SidebarCreateAgentAction/);
   assert.match(source, /<nav aria-label="Primary" className="sidebar-scroll mt-6 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">/);
-  assert.match(source, /<SidebarUserMenu \/>/);
-  assert.match(source, /function SidebarUserMenu\(\)/);
+  assert.match(source, /<SidebarUserMenu[\s\S]*?snapshot=\{snapshot\}[\s\S]*?activeWorkspaceId=\{activeWorkspaceId\}/);
+  assert.match(source, /function SidebarUserMenu\(\{/);
   assert.match(source, /aria-haspopup="menu"/);
   assert.match(source, /aria-label="User menu"/);
   assert.match(source, /aria-label="Expand sidebar to user menu"/);
-  assert.match(source, /<RailTooltip label="User" side="right" surfaceTheme=\{surfaceTheme\}>[\s\S]*?<UserAvatar \/>/);
+  assert.match(source, /fetch\("\/api\/profile", \{ cache: "no-store", signal: controller\.signal \}\)/);
+  assert.match(source, /<RailTooltip label=\{resolveOperatorDisplayName\(operatorProfile\)\}[\s\S]*?<UserAvatar profile=\{operatorProfile\} \/>/);
+  assert.match(source, /profile\.avatarDataUrl \? \([\s\S]*?src=\{profile\.avatarDataUrl\}/);
   assert.match(source, /label=\{pinned \? "Close sidebar" : "Keep sidebar open"\}/);
   assert.match(source, /aria-pressed=\{pinned\}/);
   assert.match(source, /<SidebarPanelToggleIcon filled=\{pinned\} \/>/);
   assert.match(source, /filled \? "fill-slate-950 dark:fill-slate-100" : "fill-transparent"/);
   assert.match(source, /const collapsedSidebarItems = sidebarItems\.slice\([\s\S]*?item\.label === "Accounts"[\s\S]*?\);/);
   assert.match(source, /\{collapsedSidebarItems[\s\S]*?\.filter\(\(item\) => item\.section === section\.id\)/);
-  assert.match(source, /Personal account/);
+  assert.match(source, /profile\.email\.trim\(\) \|\| \(profile\.username\.trim\(\) \? `@\$\{profile\.username\.trim\(\)\}` : "Personal account"\)/);
+  assert.match(source, /<UserProfileDialog[\s\S]*?open=\{profileOpen\}/);
+  assert.match(source, /onProfileSaved=\{onProfileSaved\}/);
 });
 
 test("settings shell no longer hardcodes a light-only wrapper", () => {

@@ -507,11 +507,11 @@ test("packaged launcher provisions API tokens outside source config", () => {
   assert.match(launcherSource, /agentos_token/);
 });
 
-test("API auth fragment bootstrap runs before hydration without inline script content", () => {
+test("API auth fragment bootstrap runs through Next client instrumentation before hydration", () => {
   const layoutSource = readProjectFile("app/layout.tsx");
-  const bootstrapSource = readProjectFile("public/agentos-api-auth-bootstrap.js");
+  const bootstrapSource = readProjectFile("instrumentation-client.ts");
 
-  assert.match(layoutSource, /<Script src="\/agentos-api-auth-bootstrap\.js" strategy="beforeInteractive" \/>/);
+  assert.doesNotMatch(layoutSource, /next\/script|<Script|<script/);
   assert.doesNotMatch(layoutSource, /dangerouslySetInnerHTML/);
   assert.match(bootstrapSource, /params\.get\("agentos_token"\)/);
   assert.match(bootstrapSource, /agentos_api_token=\$\{encodeURIComponent\(token\)\}/);

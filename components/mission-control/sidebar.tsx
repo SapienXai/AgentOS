@@ -49,6 +49,10 @@ import {
 import { RailTooltip } from "@/components/mission-control/rail-tooltip";
 import { StatusDot } from "@/components/mission-control/status-dot";
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
+import {
+  UserProfileDialog,
+  type OperatorProfileSummary
+} from "@/components/mission-control/user-profile-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -188,6 +192,12 @@ const collapsedSidebarItems = sidebarItems.slice(
 );
 
 const agentOsLogoSrc = "/assets/logo.webp";
+const emptyOperatorProfile: OperatorProfileSummary = {
+  fullName: "",
+  username: "",
+  email: "",
+  avatarDataUrl: null
+};
 
 type WorkspaceMenuEntry = (
   | {
@@ -234,7 +244,29 @@ export function MissionSidebar({
   const [editChannelIdsBaseline, setEditChannelIdsBaseline] = useState<string[]>([]);
   const [agentDeleteTarget, setAgentDeleteTarget] = useState<MissionControlSnapshot["agents"][number] | null>(null);
   const [agentDeleteConfirmText, setAgentDeleteConfirmText] = useState("");
+  const [operatorProfile, setOperatorProfile] = useState<OperatorProfileSummary>(emptyOperatorProfile);
   const handledRequestedAgentActionIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void fetch("/api/profile", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const result = (await response.json()) as OperatorProfileSummary & { error?: string };
+        if (!response.ok || result.error) {
+          throw new Error(result.error || "Operator profile could not be loaded.");
+        }
+        setOperatorProfile({
+          fullName: result.fullName,
+          username: result.username,
+          email: result.email,
+          avatarDataUrl: result.avatarDataUrl
+        });
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const syncHash = () => setActiveHash(window.location.hash.replace(/^#/, ""));
@@ -486,6 +518,7 @@ export function MissionSidebar({
           onAgentCreatedVisible={onAgentCreatedVisible}
           onItemNavigate={handleNavigate}
           onExpandCollapsed={onExpandCollapsed ?? onToggleCollapsed}
+          operatorProfile={operatorProfile}
         />
       ) : (
         <aside className="relative flex h-full w-full flex-col overflow-hidden border-r border-border bg-card text-card-foreground shadow-panel">
@@ -544,7 +577,12 @@ export function MissionSidebar({
               </div>
             </nav>
 
-            <SidebarUserMenu />
+            <SidebarUserMenu
+              snapshot={snapshot}
+              activeWorkspaceId={activeWorkspaceId}
+              operatorProfile={operatorProfile}
+              onProfileSaved={setOperatorProfile}
+            />
           </div>
         </aside>
       )}
@@ -2044,9 +2082,22 @@ function SidebarNavItem({
   );
 }
 
-function SidebarUserMenu() {
+function SidebarUserMenu({
+  snapshot,
+  activeWorkspaceId,
+  operatorProfile,
+  onProfileSaved
+}: {
+  snapshot: MissionControlSnapshot;
+  activeWorkspaceId: string | null;
+  operatorProfile: OperatorProfileSummary;
+  onProfileSaved: (profile: OperatorProfileSummary) => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const displayName = resolveOperatorDisplayName(operatorProfile);
+  const displayDetail = resolveOperatorDisplayDetail(operatorProfile);
 
   useEffect(() => {
     if (!open) {
@@ -2074,7 +2125,8 @@ function SidebarUserMenu() {
   }, [open]);
 
   return (
-    <div ref={menuRef} className="relative mt-4 shrink-0 border-t border-border pt-4">
+    <>
+      <div ref={menuRef} className="relative mt-4 shrink-0 border-t border-border pt-4">
       <AnimatePresence>
         {open ? (
           <motion.div
@@ -2087,16 +2139,23 @@ function SidebarUserMenu() {
             aria-label="User menu"
           >
             <div className="flex items-center gap-3 px-2.5 py-2.5">
-              <UserAvatar />
+              <UserAvatar profile={operatorProfile} />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-foreground">User</p>
-                <p className="truncate text-xs text-muted-foreground">Personal account</p>
+                <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
+                <p className="truncate text-xs text-muted-foreground">{displayDetail}</p>
               </div>
             </div>
 
             <div className="my-1.5 h-px bg-border" />
             <SidebarUserMenuLink href="/settings#general" icon={Palette} label="Personalization" onNavigate={() => setOpen(false)} />
-            <SidebarUserMenuLink href="/accounts" icon={UserRound} label="Profile" onNavigate={() => setOpen(false)} />
+            <SidebarUserMenuAction
+              icon={UserRound}
+              label="Profile"
+              onSelect={() => {
+                setOpen(false);
+                setProfileOpen(true);
+              }}
+            />
             <SidebarUserMenuLink href="/settings" icon={Settings2} label="Settings" onNavigate={() => setOpen(false)} />
             <div className="my-1.5 h-px bg-border" />
             <SidebarUserMenuDisabled icon={LifeBuoy} label="Help" reason="Help center is coming soon" />
@@ -2117,23 +2176,59 @@ function SidebarUserMenu() {
             : "border-transparent bg-muted/55 hover:border-border hover:bg-accent"
         )}
       >
-        <UserAvatar />
+        <UserAvatar profile={operatorProfile} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[0.84rem] font-semibold text-foreground">User</span>
-          <span className="block truncate text-xs text-muted-foreground">Personal account</span>
+          <span className="block truncate text-[0.84rem] font-semibold text-foreground">{displayName}</span>
+          <span className="block truncate text-xs text-muted-foreground">{displayDetail}</span>
         </span>
         <ChevronRight className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "-rotate-90")} />
       </button>
-    </div>
+      </div>
+      <UserProfileDialog
+        open={profileOpen}
+        onOpenChange={setProfileOpen}
+        snapshot={snapshot}
+        activeWorkspaceId={activeWorkspaceId}
+        onProfileSaved={onProfileSaved}
+      />
+    </>
   );
 }
 
-function UserAvatar() {
+function UserAvatar({ profile }: { profile: OperatorProfileSummary }) {
+  const displayName = resolveOperatorDisplayName(profile);
+  const initials = displayName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+
   return (
-    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(145deg,hsl(var(--primary)),hsl(var(--primary)/0.55))] text-primary-foreground shadow-[inset_0_0_0_1px_hsl(var(--primary-foreground)/0.16)]">
-      <UserRound className="h-[18px] w-[18px]" />
+    <span className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[linear-gradient(145deg,hsl(var(--primary)),hsl(var(--primary)/0.55))] text-xs font-semibold text-primary-foreground shadow-[inset_0_0_0_1px_hsl(var(--primary-foreground)/0.16)]">
+      {profile.avatarDataUrl ? (
+        <Image
+          src={profile.avatarDataUrl}
+          alt={`${displayName} profile photo`}
+          width={36}
+          height={36}
+          className="h-full w-full object-cover"
+          unoptimized
+        />
+      ) : initials && displayName !== "User" ? (
+        <span aria-hidden="true">{initials}</span>
+      ) : (
+        <UserRound className="h-[18px] w-[18px]" aria-hidden="true" />
+      )}
     </span>
   );
+}
+
+function resolveOperatorDisplayName(profile: OperatorProfileSummary) {
+  return profile.fullName.trim() || profile.username.trim() || "User";
+}
+
+function resolveOperatorDisplayDetail(profile: OperatorProfileSummary) {
+  return profile.email.trim() || (profile.username.trim() ? `@${profile.username.trim()}` : "Personal account");
 }
 
 function SidebarUserMenuLink({
@@ -2157,6 +2252,28 @@ function SidebarUserMenuLink({
       <Icon className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
       <span>{label}</span>
     </Link>
+  );
+}
+
+function SidebarUserMenuAction({
+  icon: Icon,
+  label,
+  onSelect
+}: {
+  icon: LucideIcon;
+  label: string;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onSelect}
+      className="flex h-10 w-full items-center gap-3 rounded-lg px-2.5 text-left text-sm font-medium text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+    >
+      <Icon className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
+      <span>{label}</span>
+    </button>
   );
 }
 
@@ -2198,7 +2315,8 @@ function CollapsedSidebar({
   onAgentCreatedVisible,
   onOpenCreateAgent,
   onItemNavigate,
-  onExpandCollapsed
+  onExpandCollapsed,
+  operatorProfile
 }: {
   activeHash: string;
   pathname: string;
@@ -2214,6 +2332,7 @@ function CollapsedSidebar({
   onOpenCreateAgent?: () => void;
   onItemNavigate: (item: SidebarItem) => void;
   onExpandCollapsed: () => void;
+  operatorProfile: OperatorProfileSummary;
 }) {
   return (
     <aside className="relative flex h-full w-full flex-col items-center overflow-hidden border-r border-border bg-card px-1 py-4 text-card-foreground shadow-panel">
@@ -2309,14 +2428,14 @@ function CollapsedSidebar({
         ))}
       </nav>
 
-      <RailTooltip label="User" side="right" surfaceTheme={surfaceTheme}>
+      <RailTooltip label={resolveOperatorDisplayName(operatorProfile)} side="right" surfaceTheme={surfaceTheme}>
         <button
           type="button"
           onClick={onExpandCollapsed}
           aria-label="Expand sidebar to user menu"
           className="mt-4 inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-transparent bg-muted/65 outline-none transition-all hover:border-border hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
         >
-          <UserAvatar />
+          <UserAvatar profile={operatorProfile} />
         </button>
       </RailTooltip>
     </aside>
