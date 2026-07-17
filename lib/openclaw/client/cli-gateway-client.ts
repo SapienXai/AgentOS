@@ -33,6 +33,10 @@ import type {
   OpenClawChannelAccountRemoveInput,
   OpenClawChannelStatusInput,
   OpenClawChannelStatusPayload,
+  OpenClawChannelLogoutInput,
+  OpenClawWebLoginResult,
+  OpenClawWebLoginStartInput,
+  OpenClawWebLoginWaitInput,
   OpenClawChannelLogsInput,
   OpenClawChannelLogsPayload,
   OpenClawAgentListPayload,
@@ -679,6 +683,22 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
     return this.call<OpenClawChannelStatusPayload>("channels.status", { ...input }, options);
   }
 
+  startWebLogin(input: OpenClawWebLoginStartInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawWebLoginResult>("web.login.start", { ...input }, options);
+  }
+
+  waitForWebLogin(input: OpenClawWebLoginWaitInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawWebLoginResult>("web.login.wait", { ...input }, options);
+  }
+
+  logoutChannel(input: OpenClawChannelLogoutInput, options: OpenClawCommandOptions = {}) {
+    return this.call<Record<string, unknown>>(
+      "channels.logout",
+      { channel: input.channel, accountId: input.accountId },
+      options
+    );
+  }
+
   getChannelLogs(input: OpenClawChannelLogsInput, options: OpenClawCommandOptions = {}) {
     const args = [
       "channels",
@@ -706,6 +726,7 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
     appendOptionalCliFlag(args, "--account", input.account);
     appendOptionalCliFlag(args, "--token", input.token);
     appendOptionalCliFlag(args, "--bot-token", input.botToken);
+    appendOptionalCliFlag(args, "--app-token", input.appToken);
     appendOptionalCliFlag(args, "--webhook-url", input.webhookUrl);
     appendOptionalCliFlag(args, "--name", input.name);
 

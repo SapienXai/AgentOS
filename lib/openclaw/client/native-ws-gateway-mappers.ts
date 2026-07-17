@@ -29,6 +29,7 @@ export function buildChannelAccountProvisionParams(input: OpenClawChannelAccount
     name: input.name?.trim() || undefined,
     token: input.token?.trim() || undefined,
     botToken: input.botToken?.trim() || undefined,
+    appToken: input.appToken?.trim() || undefined,
     webhookUrl: input.webhookUrl?.trim() || undefined
   };
 }

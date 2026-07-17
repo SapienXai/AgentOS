@@ -36,6 +36,18 @@ export type SurfaceCatalogEntry = {
 
 export const OPENCLAW_SURFACE_CATALOG: SurfaceCatalogEntry[] = [
   {
+    provider: "whatsapp",
+    label: "WhatsApp",
+    kind: "chat",
+    description: "QR-linked WhatsApp accounts owned by OpenClaw.",
+    iconKey: "siWhatsapp",
+    accentColor: "#25D366",
+    supportsProvisioning: false,
+    provisionFields: [],
+    supportsRouteDiscovery: false,
+    providerManagedByOpenClaw: true
+  },
+  {
     provider: "telegram",
     label: "Telegram",
     kind: "chat",
@@ -96,6 +108,16 @@ export const OPENCLAW_SURFACE_CATALOG: SurfaceCatalogEntry[] = [
         secret: true,
         required: true,
         section: "basic"
+      },
+      {
+        key: "appToken",
+        label: "App token",
+        placeholder: "xapp-...",
+        inputType: "password",
+        secret: true,
+        required: true,
+        helpText: "Create an app-level token with connections:write for Socket Mode.",
+        section: "basic"
       }
     ],
     supportsRouteDiscovery: false,
@@ -105,21 +127,35 @@ export const OPENCLAW_SURFACE_CATALOG: SurfaceCatalogEntry[] = [
     provider: "googlechat",
     label: "Google Chat",
     kind: "chat",
-    description: "Spaces and enterprise chat integrations backed by OpenClaw.",
+    description: "Google Cloud Chat apps using a service account and public HTTPS webhook.",
     iconKey: "siGooglechat",
     accentColor: "#34A853",
-    supportsProvisioning: true,
-    provisionFields: [
-      {
-        key: "webhookUrl",
-        label: "Webhook URL",
-        placeholder: "https://chat.googleapis.com/...",
-        inputType: "url",
-        secret: true,
-        required: true,
-        section: "basic"
-      }
-    ],
+    supportsProvisioning: false,
+    provisionFields: [],
+    supportsRouteDiscovery: false,
+    providerManagedByOpenClaw: true
+  },
+  {
+    provider: "signal",
+    label: "Signal",
+    kind: "chat",
+    description: "Signal accounts connected through an external signal-cli runtime.",
+    iconKey: "siSignal",
+    accentColor: "#3A76F0",
+    supportsProvisioning: false,
+    provisionFields: [],
+    supportsRouteDiscovery: false,
+    providerManagedByOpenClaw: true
+  },
+  {
+    provider: "imessage",
+    label: "iMessage",
+    kind: "chat",
+    description: "Messages accounts available on a permissioned macOS Gateway host.",
+    iconKey: "siApple",
+    accentColor: "#A3AAAE",
+    supportsProvisioning: false,
+    provisionFields: [],
     supportsRouteDiscovery: false,
     providerManagedByOpenClaw: true
   },

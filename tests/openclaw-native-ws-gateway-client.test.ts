@@ -1875,6 +1875,53 @@ test("native WS gateway client surfaces malformed channel status without CLI fal
   assert.match(client.getDiagnostics().lastNativeError ?? "", /malformed response/);
 });
 
+test("native WS gateway client runs channel QR login and logout through Gateway", async () => {
+  const fallback = new FallbackGatewayClient();
+  const qrDataUrl = "data:image/png;base64,cXItY29kZQ==";
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      const payload = frame.method === "connect"
+        ? { protocol: 4 }
+        : frame.method === "web.login.start"
+          ? { connected: false, qrDataUrl }
+          : frame.method === "web.login.wait"
+            ? { connected: true, message: "linked" }
+            : { channel: "whatsapp", accountId: "default", loggedOut: true };
+      socket.emitMessage({ type: "res", id: frame.id, ok: true, payload });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  assert.deepEqual(await client.startWebLogin({ force: true, accountId: "default" }), {
+    connected: false,
+    qrDataUrl
+  });
+  assert.deepEqual(await client.waitForWebLogin({ accountId: "default", currentQrDataUrl: qrDataUrl }), {
+    connected: true,
+    message: "linked"
+  });
+  assert.deepEqual(await client.logoutChannel({ channel: "whatsapp", accountId: "default" }), {
+    channel: "whatsapp",
+    accountId: "default",
+    loggedOut: true
+  });
+  assert.deepEqual(sentFrames.map((frame) => frame.method), [
+    "connect",
+    "web.login.start",
+    "web.login.wait",
+    "channels.logout"
+  ]);
+  assert.deepEqual(sentFrames[1]?.params, { force: true, accountId: "default" });
+  assert.deepEqual(sentFrames[2]?.params, { accountId: "default", currentQrDataUrl: qrDataUrl });
+  assert.deepEqual(sentFrames[3]?.params, { channel: "whatsapp", accountId: "default" });
+  assert.deepEqual(fallback.calls, []);
+});
+
 test("native WS gateway client reads channel logs through Gateway before CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {

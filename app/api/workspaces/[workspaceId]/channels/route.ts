@@ -41,6 +41,7 @@ const createChannelSchema = z.object({
   config: z.record(z.any()).optional(),
   token: z.string().optional(),
   botToken: z.string().optional(),
+  appToken: z.string().optional(),
   webhookUrl: z.string().optional(),
   primaryAgentId: z.string().nullable().optional(),
   agentId: z.string().nullable().optional(),
@@ -105,6 +106,7 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
             config: input.config,
             token: input.token,
             botToken: input.botToken,
+            appToken: input.appToken,
             webhookUrl: input.webhookUrl
           },
           timings

@@ -23,7 +23,6 @@ import {
   KeyRound,
   LifeBuoy,
   LogOut,
-  Palette,
   Pencil,
   Plug,
   Plus,
@@ -33,6 +32,7 @@ import {
 } from "lucide-react";
 
 import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
+import { ConnectChannelsDialog } from "@/components/mission-control/connect-channels-dialog";
 import { AgentThemePicker } from "@/components/mission-control/agent-theme-picker";
 import {
   MissionControlDialogChip,
@@ -582,6 +582,7 @@ export function MissionSidebar({
               activeWorkspaceId={activeWorkspaceId}
               operatorProfile={operatorProfile}
               onProfileSaved={setOperatorProfile}
+              onRefresh={onRefresh}
             />
           </div>
         </aside>
@@ -2086,15 +2087,18 @@ function SidebarUserMenu({
   snapshot,
   activeWorkspaceId,
   operatorProfile,
-  onProfileSaved
+  onProfileSaved,
+  onRefresh
 }: {
   snapshot: MissionControlSnapshot;
   activeWorkspaceId: string | null;
   operatorProfile: OperatorProfileSummary;
   onProfileSaved: (profile: OperatorProfileSummary) => void;
+  onRefresh: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const displayName = resolveOperatorDisplayName(operatorProfile);
   const displayDetail = resolveOperatorDisplayDetail(operatorProfile);
@@ -2147,7 +2151,14 @@ function SidebarUserMenu({
             </div>
 
             <div className="my-1.5 h-px bg-border" />
-            <SidebarUserMenuLink href="/settings#general" icon={Palette} label="Personalization" onNavigate={() => setOpen(false)} />
+            <SidebarUserMenuAction
+              icon={Plug}
+              label="Connect"
+              onSelect={() => {
+                setOpen(false);
+                setConnectOpen(true);
+              }}
+            />
             <SidebarUserMenuAction
               icon={UserRound}
               label="Profile"
@@ -2190,6 +2201,13 @@ function SidebarUserMenu({
         snapshot={snapshot}
         activeWorkspaceId={activeWorkspaceId}
         onProfileSaved={onProfileSaved}
+      />
+      <ConnectChannelsDialog
+        open={connectOpen}
+        onOpenChange={setConnectOpen}
+        snapshot={snapshot}
+        activeWorkspaceId={activeWorkspaceId}
+        onRefresh={onRefresh}
       />
     </>
   );

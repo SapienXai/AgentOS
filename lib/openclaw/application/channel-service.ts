@@ -629,6 +629,7 @@ export async function createManagedChatChannelAccount(input: {
   accountId?: string;
   token?: string;
   botToken?: string;
+  appToken?: string;
   webhookUrl?: string;
 }, timings?: TimingCollector) {
   if (input.provider === "telegram") {
@@ -668,10 +669,14 @@ export async function createManagedChatChannelAccount(input: {
         if (!input.botToken?.trim()) {
           throw new Error("Slack bot token is required.");
         }
+        if (!input.appToken?.trim()) {
+          throw new Error("Slack app token is required for Socket Mode.");
+        }
         return {
           channel: "slack",
           account: accountId,
           botToken: input.botToken,
+          appToken: input.appToken,
           name: input.name
         };
       case "googlechat":
@@ -719,6 +724,7 @@ export async function createManagedSurfaceAccount(input: {
   accountId?: string;
   token?: string;
   botToken?: string;
+  appToken?: string;
   webhookUrl?: string;
   config?: Record<string, unknown>;
 }, timings?: TimingCollector) {
@@ -729,6 +735,7 @@ export async function createManagedSurfaceAccount(input: {
       accountId: input.accountId,
       token: input.token,
       botToken: input.botToken,
+      appToken: input.appToken,
       webhookUrl: input.webhookUrl
     }, timings);
   }

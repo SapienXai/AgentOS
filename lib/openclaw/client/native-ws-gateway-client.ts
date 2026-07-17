@@ -113,6 +113,10 @@ import type {
   OpenClawChannelAccountRemoveInput,
   OpenClawChannelStatusInput,
   OpenClawChannelStatusPayload,
+  OpenClawChannelLogoutInput,
+  OpenClawWebLoginResult,
+  OpenClawWebLoginStartInput,
+  OpenClawWebLoginWaitInput,
   OpenClawChannelLogsInput,
   OpenClawChannelLogsPayload,
   OpenClawAgentListPayload,
@@ -888,6 +892,36 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         payload
       ),
       () => this.fallback.getChannelStatus(input, options)
+    );
+  }
+
+  startWebLogin(input: OpenClawWebLoginStartInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.gatewayFirst(
+      "web.login.start",
+      { ...input },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawWebLoginResult>("web.login.start", payload),
+      () => this.fallback.startWebLogin!(input, options)
+    );
+  }
+
+  waitForWebLogin(input: OpenClawWebLoginWaitInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.gatewayFirst(
+      "web.login.wait",
+      { ...input },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawWebLoginResult>("web.login.wait", payload),
+      () => this.fallback.waitForWebLogin!(input, options)
+    );
+  }
+
+  logoutChannel(input: OpenClawChannelLogoutInput, options: OpenClawCommandOptions = {}) {
+    return this.gatewayFirst(
+      "channels.logout",
+      { channel: input.channel, accountId: input.accountId },
+      options,
+      (payload) => parseObjectGatewayPayload<Record<string, unknown>>("channels.logout", payload),
+      () => this.fallback.logoutChannel!(input, options)
     );
   }
 

@@ -397,8 +397,21 @@ export function normalizePluginsPayload(payload: unknown): OpenClawPluginListPay
       id: readNonEmptyString(entry.id) ?? readNonEmptyString(entry.pluginId) ?? readNonEmptyString(entry.name) ?? "unknown",
       name: readNonEmptyString(entry.name) ?? readNonEmptyString(entry.label) ?? readNonEmptyString(entry.id) ?? "Unknown plugin",
       status: readNonEmptyString(entry.status) ?? undefined,
+      enabled: typeof entry.enabled === "boolean" ? entry.enabled : undefined,
+      origin: readNonEmptyString(entry.origin) ?? undefined,
+      channelIds: Array.isArray(entry.channelIds)
+        ? entry.channelIds.filter((channelId): channelId is string => typeof channelId === "string")
+        : undefined,
       toolNames: Array.isArray(entry.toolNames)
         ? entry.toolNames.filter((toolName): toolName is string => typeof toolName === "string")
+        : undefined,
+      dependencyStatus: isObjectRecord(entry.dependencyStatus)
+        ? {
+            installed: typeof entry.dependencyStatus.installed === "boolean" ? entry.dependencyStatus.installed : undefined,
+            requiredInstalled: typeof entry.dependencyStatus.requiredInstalled === "boolean"
+              ? entry.dependencyStatus.requiredInstalled
+              : undefined
+          }
         : undefined
     }))
   };

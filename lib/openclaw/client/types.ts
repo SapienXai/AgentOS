@@ -164,6 +164,7 @@ export interface OpenClawChannelAccountProvisionInput {
   name?: string | null;
   token?: string | null;
   botToken?: string | null;
+  appToken?: string | null;
   webhookUrl?: string | null;
 }
 
@@ -387,7 +388,14 @@ export type OpenClawPluginListPayload = {
     id: string;
     name: string;
     status?: string;
+    enabled?: boolean;
+    origin?: string;
+    channelIds?: string[];
     toolNames?: string[];
+    dependencyStatus?: {
+      installed?: boolean;
+      requiredInstalled?: boolean;
+    };
   }>;
 };
 
@@ -726,6 +734,30 @@ export interface OpenClawChannelStatusInput {
   timeoutMs?: number;
 }
 
+export interface OpenClawWebLoginStartInput {
+  accountId?: string;
+  force?: boolean;
+  timeoutMs?: number;
+  verbose?: boolean;
+}
+
+export interface OpenClawWebLoginWaitInput {
+  accountId?: string;
+  timeoutMs?: number;
+  currentQrDataUrl?: string;
+}
+
+export type OpenClawWebLoginResult = Record<string, unknown> & {
+  connected?: boolean;
+  qrDataUrl?: string;
+  message?: string;
+};
+
+export interface OpenClawChannelLogoutInput {
+  channel: string;
+  accountId?: string;
+}
+
 export type ModelsStatusPayload = {
   agentDir?: string | null;
   defaultModel?: string | null;
@@ -1015,6 +1047,9 @@ export interface OpenClawGatewayClient {
     input?: OpenClawChannelStatusInput,
     options?: OpenClawCommandOptions
   ): Promise<OpenClawChannelStatusPayload>;
+  startWebLogin?(input?: OpenClawWebLoginStartInput, options?: OpenClawCommandOptions): Promise<OpenClawWebLoginResult>;
+  waitForWebLogin?(input?: OpenClawWebLoginWaitInput, options?: OpenClawCommandOptions): Promise<OpenClawWebLoginResult>;
+  logoutChannel?(input: OpenClawChannelLogoutInput, options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
   getChannelLogs(input: OpenClawChannelLogsInput, options?: OpenClawCommandOptions): Promise<OpenClawChannelLogsPayload>;
   provisionChannelAccount(input: OpenClawChannelAccountProvisionInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   removeChannelAccount(input: OpenClawChannelAccountRemoveInput, options?: OpenClawCommandOptions): Promise<CommandResult>;

@@ -722,6 +722,10 @@ export function WorkspaceChannelsDialog({
           payload.botToken = config.botToken;
         }
 
+        if (field.key === "appToken" && typeof config.appToken === "string") {
+          payload.appToken = config.appToken;
+        }
+
         if (field.key === "webhookUrl" && typeof config.webhookUrl === "string") {
           payload.webhookUrl = config.webhookUrl;
         }

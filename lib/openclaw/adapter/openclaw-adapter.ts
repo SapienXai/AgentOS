@@ -26,6 +26,10 @@ import type {
   OpenClawChannelAccountRemoveInput,
   OpenClawChannelStatusInput,
   OpenClawChannelStatusPayload,
+  OpenClawChannelLogoutInput,
+  OpenClawWebLoginResult,
+  OpenClawWebLoginStartInput,
+  OpenClawWebLoginWaitInput,
   OpenClawChannelLogsInput,
   OpenClawChannelLogsPayload,
   OpenClawConfigSchemaPayload,
@@ -156,6 +160,9 @@ export interface OpenClawAdapter {
     input?: OpenClawChannelStatusInput,
     options?: OpenClawCommandOptions
   ): Promise<OpenClawChannelStatusPayload>;
+  startWebLogin?(input?: OpenClawWebLoginStartInput, options?: OpenClawCommandOptions): Promise<OpenClawWebLoginResult>;
+  waitForWebLogin?(input?: OpenClawWebLoginWaitInput, options?: OpenClawCommandOptions): Promise<OpenClawWebLoginResult>;
+  logoutChannel?(input: OpenClawChannelLogoutInput, options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
   getChannelLogs(input: OpenClawChannelLogsInput, options?: OpenClawCommandOptions): Promise<OpenClawChannelLogsPayload>;
   provisionChannelAccount(input: OpenClawChannelAccountProvisionInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   removeChannelAccount(input: OpenClawChannelAccountRemoveInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
@@ -455,6 +462,25 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
 
   getChannelStatus(input: OpenClawChannelStatusInput = {}, options: OpenClawCommandOptions = {}) {
     return this.getClient().getChannelStatus(input, options);
+  }
+
+  startWebLogin(input: OpenClawWebLoginStartInput = {}, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    return client.startWebLogin?.(input, options) ?? client.call<OpenClawWebLoginResult>("web.login.start", { ...input }, options);
+  }
+
+  waitForWebLogin(input: OpenClawWebLoginWaitInput = {}, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    return client.waitForWebLogin?.(input, options) ?? client.call<OpenClawWebLoginResult>("web.login.wait", { ...input }, options);
+  }
+
+  logoutChannel(input: OpenClawChannelLogoutInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    return client.logoutChannel?.(input, options) ?? client.call<Record<string, unknown>>(
+      "channels.logout",
+      { channel: input.channel, accountId: input.accountId },
+      options
+    );
   }
 
   getChannelLogs(input: OpenClawChannelLogsInput, options: OpenClawCommandOptions = {}) {

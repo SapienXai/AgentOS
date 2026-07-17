@@ -27,7 +27,7 @@ export function SurfaceIcon({
   return (
     <div
       className={cn(
-        "flex items-center justify-center rounded-full border border-white/12 bg-slate-950/72 text-white shadow-[0_8px_18px_rgba(0,0,0,0.28)] backdrop-blur-xl",
+        "flex items-center justify-center rounded-full border border-white/[0.12] bg-slate-950/[0.72] text-white shadow-[0_8px_18px_rgba(0,0,0,0.28)] backdrop-blur-xl",
         className
       )}
       aria-hidden="true"
@@ -41,7 +41,7 @@ export function SurfaceIcon({
           <path d={icon.path} />
         </svg>
       ) : (
-        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/88">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/[0.88]">
           {catalogEntry.label.slice(0, 1)}
         </span>
       )}
