@@ -5,7 +5,7 @@ import {
   isPluginApiVersionMismatch,
   resolveChannelPluginActivation
 } from "@/lib/openclaw/application/channel-plugin-compat";
-import { resolveOpenClawVersion, runOpenClaw } from "@/lib/openclaw/cli";
+import { resolveOpenClawVersion, runOpenClaw, runOpenClawJson } from "@/lib/openclaw/cli";
 import type { OpenClawChannelStatusPayload } from "@/lib/openclaw/client/types";
 import { OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 import { redactErrorMessage } from "@/lib/security/redaction";
@@ -31,6 +31,8 @@ export type ChannelConnectProviderView = {
   setupLabel: string;
   pluginInstalled: boolean;
   pluginEnabled: boolean;
+  pluginStateSource: "gateway" | "cli-fallback" | "inferred";
+  pluginStateError: string | null;
   configured: boolean;
   connected: boolean;
   running: boolean;
@@ -153,6 +155,18 @@ export async function getChannelConnectOverview(): Promise<ChannelConnectOvervie
 
   const status = statusResult.value;
   const plugins = pluginsResult.value?.plugins ?? [];
+  const bundledPluginInspections = new Map<ChannelConnectProviderId, BundledPluginInspection>();
+  const bundledProvidersMissingFromGateway = PROVIDERS.filter(
+    (definition) => definition.implemented
+      && definition.bundledPluginId
+      && !plugins.some(
+        (candidate) => candidate.id === definition.id || candidate.channelIds?.includes(definition.id)
+      )
+  );
+
+  await Promise.all(bundledProvidersMissingFromGateway.map(async (definition) => {
+    bundledPluginInspections.set(definition.id, await inspectBundledPlugin(definition.bundledPluginId!));
+  }));
 
   return {
     installedOpenClawVersion: version,
@@ -165,10 +179,18 @@ export async function getChannelConnectOverview(): Promise<ChannelConnectOvervie
       const plugin = plugins.find(
         (candidate) => candidate.id === definition.id || candidate.channelIds?.includes(definition.id)
       );
+      const bundledInspection = bundledPluginInspections.get(definition.id);
+      const inspectedPlugin = bundledInspection?.plugin ?? null;
       const accounts = normalizeAccounts(status, definition.id);
-      const pluginInstalled = Boolean(plugin || definition.bundledPluginId) || accounts.length > 0;
+      const pluginInstalled = Boolean(plugin || inspectedPlugin || definition.bundledPluginId) || accounts.length > 0;
       const pluginEnabled = Boolean(
-        accounts.length > 0 || plugin?.enabled || plugin?.status === "loaded" || plugin?.status === "enabled"
+        accounts.length > 0
+          || plugin?.enabled
+          || plugin?.status === "loaded"
+          || plugin?.status === "enabled"
+          || inspectedPlugin?.enabled
+          || inspectedPlugin?.status === "loaded"
+          || inspectedPlugin?.status === "enabled"
       );
 
       return {
@@ -179,6 +201,8 @@ export async function getChannelConnectOverview(): Promise<ChannelConnectOvervie
         setupLabel: definition.setupLabel,
         pluginInstalled,
         pluginEnabled,
+        pluginStateSource: plugin ? "gateway" : inspectedPlugin ? "cli-fallback" : "inferred",
+        pluginStateError: bundledInspection?.error ?? null,
         configured: accounts.some((account) => account.configured),
         connected: accounts.some((account) => account.connected || account.linked),
         running: accounts.some((account) => account.running),
@@ -401,4 +425,33 @@ function resolveProviderAddress(status: OpenClawChannelStatusPayload | null, pro
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+type BundledPluginInspection = {
+  plugin: {
+    enabled?: boolean;
+    status?: string;
+  } | null;
+  error: string | null;
+};
+
+async function inspectBundledPlugin(pluginId: string): Promise<BundledPluginInspection> {
+  try {
+    const payload = await runOpenClawJson<{
+      plugin?: {
+        enabled?: boolean;
+        status?: string;
+      };
+    }>(["plugins", "inspect", pluginId, "--json"], { timeoutMs: 15_000 });
+
+    return {
+      plugin: payload.plugin ?? null,
+      error: null
+    };
+  } catch (error) {
+    return {
+      plugin: null,
+      error: redactErrorMessage(error, `OpenClaw could not inspect the bundled ${pluginId} plugin.`)
+    };
+  }
 }

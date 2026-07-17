@@ -46,6 +46,8 @@ type ProviderView = {
   setupLabel: string;
   pluginInstalled: boolean;
   pluginEnabled: boolean;
+  pluginStateSource: "gateway" | "cli-fallback" | "inferred";
+  pluginStateError: string | null;
   configured: boolean;
   connected: boolean;
   running: boolean;

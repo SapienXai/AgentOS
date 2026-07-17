@@ -105,6 +105,9 @@ test("Telegram falls back to its bundled plugin when discovery omits disabled pl
 
   assert.match(source, /id: "telegram",[\s\S]*?bundledPluginId: "telegram"/);
   assert.match(source, /plugin\?\.id \?\? definition\.bundledPluginId \?\? null/);
+  assert.match(source, /\["plugins", "inspect", pluginId, "--json"\]/);
+  assert.match(source, /inspectedPlugin\?\.status === "loaded"/);
+  assert.match(source, /pluginStateSource: plugin \? "gateway" : inspectedPlugin \? "cli-fallback" : "inferred"/);
 });
 
 test("WhatsApp sender pairing stays behind an explicit redacted CLI fallback", () => {
