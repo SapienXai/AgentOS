@@ -584,6 +584,26 @@ test("sidebar resolves active nav items from path and hash", () => {
   assert.match(source, /pathname === "\/" && Boolean\(item\.hash\) && activeHash === item\.hash/);
 });
 
+test("sidebar keeps its header and user footer fixed around scrollable navigation", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/sidebar.tsx"), "utf8");
+
+  assert.match(source, /<div className="shrink-0">[\s\S]*?<SidebarBrand[\s\S]*?<WorkspaceSwitcher[\s\S]*?<SidebarCreateAgentAction/);
+  assert.match(source, /<nav aria-label="Primary" className="sidebar-scroll mt-6 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">/);
+  assert.match(source, /<SidebarUserMenu \/>/);
+  assert.match(source, /function SidebarUserMenu\(\)/);
+  assert.match(source, /aria-haspopup="menu"/);
+  assert.match(source, /aria-label="User menu"/);
+  assert.match(source, /aria-label="Expand sidebar to user menu"/);
+  assert.match(source, /<RailTooltip label="User" side="right" surfaceTheme=\{surfaceTheme\}>[\s\S]*?<UserAvatar \/>/);
+  assert.match(source, /label=\{pinned \? "Close sidebar" : "Keep sidebar open"\}/);
+  assert.match(source, /aria-pressed=\{pinned\}/);
+  assert.match(source, /<SidebarPanelToggleIcon filled=\{pinned\} \/>/);
+  assert.match(source, /filled \? "fill-slate-950 dark:fill-slate-100" : "fill-transparent"/);
+  assert.match(source, /const collapsedSidebarItems = sidebarItems\.slice\([\s\S]*?item\.label === "Accounts"[\s\S]*?\);/);
+  assert.match(source, /\{collapsedSidebarItems[\s\S]*?\.filter\(\(item\) => item\.section === section\.id\)/);
+  assert.match(source, /Personal account/);
+});
+
 test("settings shell no longer hardcodes a light-only wrapper", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
 
@@ -596,24 +616,29 @@ test("settings shell no longer hardcodes a light-only wrapper", () => {
   assert.match(source, /isSidebarOpen \? "lg:left-\[316px\]" : "lg:left-\[80px\]"/);
 });
 
-test("mission shell opens the sidebar on hover and closes it on exit", () => {
+test("mission shell supports hover and pinned sidebar modes", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
 
   assert.match(source, /const \[isSidebarOpen, setIsSidebarOpen\] = useState\(false\);/);
+  assert.match(source, /const \[isSidebarPinned, setIsSidebarPinned\] = useState\(false\);/);
   assert.match(source, /function shouldKeepSidebarOpenForPortal\(target: EventTarget \| null\)/);
   assert.match(source, /target\.closest\('\[role="dialog"\], \[data-radix-popper-content-wrapper\]'\)/);
   assert.match(source, /document\.querySelector\('\[role="dialog"\]'\)/);
-  assert.match(source, /const isSidebarHoverLocked = isSidebarCreateAgentDialogOpen \|\| isSidebarAgentActionModalOpen;/);
+  assert.match(source, /const handleSidebarPinToggle = useCallback\(\(\) => \{/);
+  assert.match(source, /window\.matchMedia\("\(max-width: 1023px\)"\)\.matches/);
+  assert.match(source, /setIsSidebarPinned\(\(current\) => \{[\s\S]*?setIsSidebarOpen\(nextPinned\);/);
+  assert.match(source, /const isSidebarHoverLocked =\s*isSidebarPinned \|\| isSidebarCreateAgentDialogOpen \|\| isSidebarAgentActionModalOpen;/);
   assert.match(source, /onMouseEnter=\{\(\) => \{\s*if \(!isSidebarHoverLocked\) \{\s*setIsSidebarOpen\(true\);/);
   assert.match(
     source,
-    /onMouseLeave=\{\(event\) => \{\s*if \(shouldKeepSidebarOpenForPortal\(event\.relatedTarget\)\) \{\s*return;\s*\}\s*setIsSidebarOpen\(false\);/
+    /onMouseLeave=\{\(event\) => \{\s*if \(isSidebarPinned \|\| shouldKeepSidebarOpenForPortal\(event\.relatedTarget\)\) \{\s*return;\s*\}\s*setIsSidebarOpen\(false\);/
   );
-  assert.match(source, /onFocusCapture=\{\(\) => setIsSidebarOpen\(true\)\}/);
+  assert.match(source, /onFocusCapture=\{\(\) => \{\s*if \(!isSidebarPinned\) \{\s*setIsSidebarOpen\(true\);/);
   assert.match(
     source,
-    /onBlurCapture=\{\(event\) => \{\s*if \(shouldKeepSidebarOpenForPortal\(event\.relatedTarget\)\) \{\s*return;\s*\}\s*if \(!event\.currentTarget\.contains\(event\.relatedTarget as Node \| null\)\) \{\s*setIsSidebarOpen\(false\);/
+    /onBlurCapture=\{\(event\) => \{\s*if \(isSidebarPinned \|\| shouldKeepSidebarOpenForPortal\(event\.relatedTarget\)\) \{\s*return;\s*\}\s*if \(!event\.currentTarget\.contains\(event\.relatedTarget as Node \| null\)\) \{\s*setIsSidebarOpen\(false\);/
   );
+  assert.match(source, /sidebarPinned=\{isSidebarPinned\}[\s\S]*?onToggleCollapsed=\{handleSidebarPinToggle\}/);
   assert.doesNotMatch(source, /sidebarOpenStorageKey/);
 });
 

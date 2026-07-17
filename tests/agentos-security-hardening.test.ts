@@ -507,6 +507,19 @@ test("packaged launcher provisions API tokens outside source config", () => {
   assert.match(launcherSource, /agentos_token/);
 });
 
+test("API auth fragment bootstrap runs before hydration without inline script content", () => {
+  const layoutSource = readProjectFile("app/layout.tsx");
+  const bootstrapSource = readProjectFile("public/agentos-api-auth-bootstrap.js");
+
+  assert.match(layoutSource, /<Script src="\/agentos-api-auth-bootstrap\.js" strategy="beforeInteractive" \/>/);
+  assert.doesNotMatch(layoutSource, /dangerouslySetInnerHTML/);
+  assert.match(bootstrapSource, /params\.get\("agentos_token"\)/);
+  assert.match(bootstrapSource, /agentos_api_token=\$\{encodeURIComponent\(token\)\}/);
+  assert.match(bootstrapSource, /SameSite=Strict/);
+  assert.match(bootstrapSource, /params\.delete\("agentos_token"\)/);
+  assert.doesNotMatch(bootstrapSource, /console\./);
+});
+
 test("OpenClaw CLI execution keeps argument-array spawn boundaries", () => {
   const cliSource = readProjectFile("lib/openclaw/cli.ts");
   const cliGatewaySource = readProjectFile("lib/openclaw/client/cli-gateway-client.ts");

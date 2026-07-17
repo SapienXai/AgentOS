@@ -9,7 +9,7 @@ type SurfaceTheme = "dark" | "light";
 
 type RailTooltipProps = {
   label: string;
-  side: "left" | "right";
+  side: "left" | "right" | "bottom";
   surfaceTheme: SurfaceTheme;
   children: ReactNode;
 };

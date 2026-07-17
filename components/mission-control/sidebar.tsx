@@ -12,7 +12,6 @@ import {
   AlertTriangle,
   Bot,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   ClipboardList,
   Cpu,
@@ -22,11 +21,15 @@ import {
   Home,
   Inbox,
   KeyRound,
+  LifeBuoy,
+  LogOut,
+  Palette,
   Pencil,
   Plug,
   Plus,
   Settings2,
-  Trash2
+  Trash2,
+  UserRound
 } from "lucide-react";
 
 import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
@@ -127,6 +130,7 @@ type MissionSidebarProps = {
   } | null;
   connectionState: "connecting" | "live" | "retrying";
   collapsed: boolean;
+  sidebarPinned?: boolean;
   modelManager: {
     runState: "idle" | "running" | "success" | "error";
     statusMessage: string | null;
@@ -178,6 +182,11 @@ const sidebarItems: SidebarItem[] = [
   { label: "Settings", href: "/settings", icon: Settings2, section: "system" },
 ];
 
+const collapsedSidebarItems = sidebarItems.slice(
+  0,
+  sidebarItems.findIndex((item) => item.label === "Accounts") + 1
+);
+
 const agentOsLogoSrc = "/assets/logo.webp";
 
 type WorkspaceMenuEntry = (
@@ -199,6 +208,7 @@ export function MissionSidebar({
   requestedAgentAction,
   connectionState,
   collapsed,
+  sidebarPinned = false,
   onExpandCollapsed,
   onToggleCollapsed,
   onSelectWorkspace,
@@ -465,7 +475,6 @@ export function MissionSidebar({
         <CollapsedSidebar
           activeHash={activeHash}
           pathname={pathname}
-          statusTone={statusTone}
           surfaceTheme={surfaceTheme}
           workspaceLabel={activeWorkspaceId === null ? "All workspaces" : activeWorkspace?.name || "No workspace"}
           workspaceDetail={activeWorkspaceId === null ? `${workspaceCount} workspaces` : activePendingWorkspace ? "Creating workspace" : "Workspace"}
@@ -487,33 +496,39 @@ export function MissionSidebar({
           <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-px bg-border" />
 
           <div className="relative flex h-full min-h-0 flex-col px-4 py-5">
-            <SidebarBrand onToggleCollapsed={onToggleCollapsed} />
+            <div className="shrink-0">
+              <SidebarBrand
+                pinned={sidebarPinned}
+                surfaceTheme={surfaceTheme}
+                onToggleCollapsed={onToggleCollapsed}
+              />
 
-            <WorkspaceSwitcher
-              activeWorkspaceId={activeWorkspaceId}
-              snapshot={snapshot}
-              workspace={activeWorkspace}
-              workspaceMenuEntries={workspaceMenuEntries}
-              workspaceCount={workspaceCount}
-              activeWorkspaceIsPending={Boolean(activePendingWorkspace)}
-              statusLabel={statusLabel}
-              statusTone={statusTone}
-              onSelectWorkspace={onSelectWorkspace}
-              onOpenWorkspaceCreate={onOpenWorkspaceCreate}
-              onEditWorkspace={onEditWorkspace}
-              onRefresh={onRefresh}
-            />
+              <WorkspaceSwitcher
+                activeWorkspaceId={activeWorkspaceId}
+                snapshot={snapshot}
+                workspace={activeWorkspace}
+                workspaceMenuEntries={workspaceMenuEntries}
+                workspaceCount={workspaceCount}
+                activeWorkspaceIsPending={Boolean(activePendingWorkspace)}
+                statusLabel={statusLabel}
+                statusTone={statusTone}
+                onSelectWorkspace={onSelectWorkspace}
+                onOpenWorkspaceCreate={onOpenWorkspaceCreate}
+                onEditWorkspace={onEditWorkspace}
+                onRefresh={onRefresh}
+              />
 
-            <SidebarCreateAgentAction
-              snapshot={snapshot}
-              activeWorkspaceId={activeWorkspace?.id ?? null}
-              surfaceTheme={surfaceTheme}
-              onRefresh={onRefresh}
-              onSnapshotChange={onSnapshotChange}
-              onAgentCreationPending={onAgentCreationPending}
-              onAgentCreatedVisible={onAgentCreatedVisible}
-              onOpenCreateAgent={onOpenCreateAgent}
-            />
+              <SidebarCreateAgentAction
+                snapshot={snapshot}
+                activeWorkspaceId={activeWorkspace?.id ?? null}
+                surfaceTheme={surfaceTheme}
+                onRefresh={onRefresh}
+                onSnapshotChange={onSnapshotChange}
+                onAgentCreationPending={onAgentCreationPending}
+                onAgentCreatedVisible={onAgentCreatedVisible}
+                onOpenCreateAgent={onOpenCreateAgent}
+              />
+            </div>
 
             <nav aria-label="Primary" className="sidebar-scroll mt-6 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
               <div className="flex flex-col gap-5">
@@ -529,6 +544,7 @@ export function MissionSidebar({
               </div>
             </nav>
 
+            <SidebarUserMenu />
           </div>
         </aside>
       )}
@@ -1024,7 +1040,15 @@ export function MissionSidebar({
   );
 }
 
-function SidebarBrand({ onToggleCollapsed }: { onToggleCollapsed: () => void }) {
+function SidebarBrand({
+  pinned,
+  surfaceTheme,
+  onToggleCollapsed
+}: {
+  pinned: boolean;
+  surfaceTheme: "dark" | "light";
+  onToggleCollapsed: () => void;
+}) {
   return (
     <div className="flex items-center justify-between gap-3">
       <Link
@@ -1049,15 +1073,43 @@ function SidebarBrand({ onToggleCollapsed }: { onToggleCollapsed: () => void }) 
         </span>
       </Link>
 
-      <button
-        type="button"
-        onClick={onToggleCollapsed}
-        aria-label="Collapse sidebar"
-        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-card/75 text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      <RailTooltip
+        label={pinned ? "Close sidebar" : "Keep sidebar open"}
+        side="bottom"
+        surfaceTheme={surfaceTheme}
       >
-        <ChevronLeft className="h-4 w-4" />
-      </button>
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          aria-label={pinned ? "Close sidebar" : "Keep sidebar open"}
+          aria-pressed={pinned}
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center text-muted-foreground outline-none transition-[color,transform] hover:scale-105 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          <SidebarPanelToggleIcon filled={pinned} />
+        </button>
+      </RailTooltip>
     </div>
+  );
+}
+
+function SidebarPanelToggleIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-6 w-6"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M6.5 4.5H9v15H6.5A2.5 2.5 0 0 1 4 17V7a2.5 2.5 0 0 1 2.5-2.5Z"
+        className={cn(
+          "transition-colors duration-200",
+          filled ? "fill-slate-950 dark:fill-slate-100" : "fill-transparent"
+        )}
+      />
+      <rect x="3.5" y="4.5" width="17" height="15" rx="3" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M9 4.75v14.5" stroke="currentColor" strokeWidth="1.7" />
+    </svg>
   );
 }
 
@@ -1992,10 +2044,149 @@ function SidebarNavItem({
   );
 }
 
+function SidebarUserMenu() {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={menuRef} className="relative mt-4 shrink-0 border-t border-border pt-4">
+      <AnimatePresence>
+        {open ? (
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-full overflow-hidden rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-[0_20px_50px_hsl(var(--foreground)/0.16)]"
+            role="menu"
+            aria-label="User menu"
+          >
+            <div className="flex items-center gap-3 px-2.5 py-2.5">
+              <UserAvatar />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-foreground">User</p>
+                <p className="truncate text-xs text-muted-foreground">Personal account</p>
+              </div>
+            </div>
+
+            <div className="my-1.5 h-px bg-border" />
+            <SidebarUserMenuLink href="/settings#general" icon={Palette} label="Personalization" onNavigate={() => setOpen(false)} />
+            <SidebarUserMenuLink href="/accounts" icon={UserRound} label="Profile" onNavigate={() => setOpen(false)} />
+            <SidebarUserMenuLink href="/settings" icon={Settings2} label="Settings" onNavigate={() => setOpen(false)} />
+            <div className="my-1.5 h-px bg-border" />
+            <SidebarUserMenuDisabled icon={LifeBuoy} label="Help" reason="Help center is coming soon" />
+            <SidebarUserMenuDisabled icon={LogOut} label="Log out" reason="Authentication is not configured" />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={cn(
+          "flex w-full items-center gap-3 rounded-xl border px-2.5 py-2 text-left outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring/50",
+          open
+            ? "border-primary/25 bg-primary/10"
+            : "border-transparent bg-muted/55 hover:border-border hover:bg-accent"
+        )}
+      >
+        <UserAvatar />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[0.84rem] font-semibold text-foreground">User</span>
+          <span className="block truncate text-xs text-muted-foreground">Personal account</span>
+        </span>
+        <ChevronRight className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "-rotate-90")} />
+      </button>
+    </div>
+  );
+}
+
+function UserAvatar() {
+  return (
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(145deg,hsl(var(--primary)),hsl(var(--primary)/0.55))] text-primary-foreground shadow-[inset_0_0_0_1px_hsl(var(--primary-foreground)/0.16)]">
+      <UserRound className="h-[18px] w-[18px]" />
+    </span>
+  );
+}
+
+function SidebarUserMenuLink({
+  href,
+  icon: Icon,
+  label,
+  onNavigate
+}: {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  onNavigate: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      role="menuitem"
+      onClick={onNavigate}
+      className="flex h-10 items-center gap-3 rounded-lg px-2.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+    >
+      <Icon className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
+      <span>{label}</span>
+    </Link>
+  );
+}
+
+function SidebarUserMenuDisabled({
+  icon: Icon,
+  label,
+  reason
+}: {
+  icon: LucideIcon;
+  label: string;
+  reason: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled
+      title={reason}
+      className="flex h-10 w-full cursor-not-allowed items-center gap-3 rounded-lg px-2.5 text-left text-sm font-medium text-muted-foreground opacity-55"
+    >
+      <Icon className="h-[18px] w-[18px] shrink-0" />
+      <span>{label}</span>
+      <span className="ml-auto text-[0.6rem] uppercase tracking-[0.12em]">Soon</span>
+    </button>
+  );
+}
+
 function CollapsedSidebar({
   activeHash,
   pathname,
-  statusTone,
   surfaceTheme,
   workspaceLabel,
   workspaceDetail,
@@ -2011,7 +2202,6 @@ function CollapsedSidebar({
 }: {
   activeHash: string;
   pathname: string;
-  statusTone: string;
   surfaceTheme: "dark" | "light";
   workspaceLabel: string;
   workspaceDetail: string;
@@ -2077,7 +2267,7 @@ function CollapsedSidebar({
       <nav aria-label="Primary" className="sidebar-scroll mt-6 flex min-h-0 w-12 flex-1 flex-col items-center gap-4 overflow-y-auto overscroll-contain">
         {sidebarSections.map((section) => (
           <div key={section.id} className="flex flex-col items-center gap-1.5">
-            {sidebarItems
+            {collapsedSidebarItems
               .filter((item) => item.section === section.id)
               .map((item) => {
                 const active = isSidebarItemActive(item, pathname, activeHash);
@@ -2119,17 +2309,16 @@ function CollapsedSidebar({
         ))}
       </nav>
 
-      <div className="mt-4 flex flex-col items-center gap-3">
-        <StatusDot tone={statusTone} pulse={statusTone === "bg-emerald-400"} />
+      <RailTooltip label="User" side="right" surfaceTheme={surfaceTheme}>
         <button
           type="button"
           onClick={onExpandCollapsed}
-          aria-label="Expand sidebar"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card/75 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          aria-label="Expand sidebar to user menu"
+          className="mt-4 inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-transparent bg-muted/65 outline-none transition-all hover:border-border hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
         >
-          <ChevronRight className="h-4 w-4" />
+          <UserAvatar />
         </button>
-      </div>
+      </RailTooltip>
     </aside>
   );
 }
