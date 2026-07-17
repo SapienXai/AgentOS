@@ -26,6 +26,7 @@ import type { ModelSwitchFeedback } from "@/components/mission-control/openclaw-
 import { ResetDialog } from "@/components/mission-control/reset-dialog";
 import { SettingsControlCenter } from "@/components/mission-control/settings-control-center";
 import { MissionSidebar } from "@/components/mission-control/sidebar";
+import { useSidebarPinning } from "@/components/mission-control/use-sidebar-pinning";
 import { TaskReviewDialog } from "@/components/mission-control/task-review-dialog";
 import {
   applyTaskReviewStateToSnapshot,
@@ -276,8 +277,9 @@ export function MissionControlShell({
   const [recentCreatedAgentId, setRecentCreatedAgentId] = useState<string | null>(null);
   const [pendingCreatedAgents, setPendingCreatedAgents] = useState<PendingAgentProjection[]>(loadPendingAgentProjections);
   const [agentCreationWarnings, setAgentCreationWarnings] = useState<Record<string, string>>({});
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isSidebarPinned, setIsSidebarPinned] = useState(false);
+  const [isSidebarOpenState, setIsSidebarOpen] = useState(false);
+  const { isSidebarPinned, setIsSidebarPinned } = useSidebarPinning();
+  const isSidebarOpen = isSidebarPinned || isSidebarOpenState;
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [inspectorWidth, setInspectorWidth] = useState(inspectorCompactWidth);
   const [isResizingInspector, setIsResizingInspector] = useState(false);
@@ -472,7 +474,7 @@ export function MissionControlShell({
       setIsSidebarOpen(nextPinned);
       return nextPinned;
     });
-  }, []);
+  }, [setIsSidebarPinned]);
 
   const isSidebarHoverLocked =
     isSidebarPinned || isSidebarCreateAgentDialogOpen || isSidebarAgentActionModalOpen;

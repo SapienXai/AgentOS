@@ -80,6 +80,7 @@ test("OpenClaw direct CLI JSON usage remains in documented fallback/discovery fi
   const allowed = new Set([
     "lib/openclaw/cli.ts",
     "lib/openclaw/client/cli-gateway-client.ts",
+    "lib/openclaw/application/channel-connect-service.ts",
     "lib/openclaw/application/mobile-pairing-service.ts",
     "lib/openclaw/application/task-health-service.ts"
   ]);
@@ -624,8 +625,9 @@ test("settings shell no longer hardcodes a light-only wrapper", () => {
 test("mission shell supports hover and pinned sidebar modes", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
 
-  assert.match(source, /const \[isSidebarOpen, setIsSidebarOpen\] = useState\(false\);/);
-  assert.match(source, /const \[isSidebarPinned, setIsSidebarPinned\] = useState\(false\);/);
+  assert.match(source, /const \[isSidebarOpenState, setIsSidebarOpen\] = useState\(false\);/);
+  assert.match(source, /const isSidebarOpen = isSidebarPinned \|\| isSidebarOpenState;/);
+  assert.match(source, /const \{ isSidebarPinned, setIsSidebarPinned \} = useSidebarPinning\(\);/);
   assert.match(source, /function shouldKeepSidebarOpenForPortal\(target: EventTarget \| null\)/);
   assert.match(source, /target\.closest\('\[role="dialog"\], \[data-radix-popper-content-wrapper\]'\)/);
   assert.match(source, /document\.querySelector\('\[role="dialog"\]'\)/);
@@ -645,6 +647,21 @@ test("mission shell supports hover and pinned sidebar modes", () => {
   );
   assert.match(source, /sidebarPinned=\{isSidebarPinned\}[\s\S]*?onToggleCollapsed=\{handleSidebarPinToggle\}/);
   assert.doesNotMatch(source, /sidebarOpenStorageKey/);
+});
+
+test("operations shell shares the persistent pinned sidebar behavior", () => {
+  const source = readFileSync(path.join(rootDir, "components/operations/operations-shell.tsx"), "utf8");
+  const pinningSource = readFileSync(
+    path.join(rootDir, "components/mission-control/use-sidebar-pinning.ts"),
+    "utf8"
+  );
+
+  assert.match(source, /const \{ isSidebarPinned, setIsSidebarPinned \} = useSidebarPinning\(\);/);
+  assert.match(source, /sidebarPinned=\{isSidebarPinned\}/);
+  assert.match(source, /onToggleCollapsed=\{handleSidebarPinToggle\}/);
+  assert.match(source, /if \(!isSidebarPinned\) setSidebarExpanded\(false\);/);
+  assert.match(pinningSource, /agentos\.sidebar\.pinned/);
+  assert.match(pinningSource, /window\.localStorage\.setItem\(sidebarPinnedStorageKey, String\(nextPinned\)\)/);
 });
 
 test("command bar collapses when empty on mobile and desktop", () => {

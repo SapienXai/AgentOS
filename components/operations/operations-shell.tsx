@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
 import { MissionSidebar } from "@/components/mission-control/sidebar";
+import { useSidebarPinning } from "@/components/mission-control/use-sidebar-pinning";
 import {
   buildPendingAgentRecord,
   buildPendingAgentsForWorkspaceResult,
@@ -102,7 +103,9 @@ export function OperationsShell({
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
     initialSnapshot.workspaces[0]?.id ?? null
   );
-  const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [sidebarExpandedState, setSidebarExpanded] = useState(false);
+  const { isSidebarPinned, setIsSidebarPinned } = useSidebarPinning();
+  const sidebarExpanded = isSidebarPinned || sidebarExpandedState;
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [loadedWorkspaceSelectionRoot, setLoadedWorkspaceSelectionRoot] = useState<string | null>(null);
   const [isWorkspaceWizardOpen, setIsWorkspaceWizardOpen] = useState(false);
@@ -153,6 +156,12 @@ export function OperationsShell({
     () => scopeMissionControlSnapshot(uiSnapshot, activeWorkspaceId),
     [activeWorkspaceId, uiSnapshot]
   );
+
+  const handleSidebarPinToggle = useCallback(() => {
+    const nextPinned = !isSidebarPinned;
+    setIsSidebarPinned(nextPinned);
+    setSidebarExpanded(nextPinned);
+  }, [isSidebarPinned, setIsSidebarPinned]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -306,11 +315,17 @@ export function OperationsShell({
             ? "w-[calc(100vw-96px)] max-w-[292px] lg:w-[292px] lg:max-w-none"
             : "w-[56px]"
         )}
-        onMouseEnter={() => setSidebarExpanded(true)}
-        onMouseLeave={() => setSidebarExpanded(false)}
-        onFocusCapture={() => setSidebarExpanded(true)}
+        onMouseEnter={() => {
+          if (!isSidebarPinned) setSidebarExpanded(true);
+        }}
+        onMouseLeave={() => {
+          if (!isSidebarPinned) setSidebarExpanded(false);
+        }}
+        onFocusCapture={() => {
+          if (!isSidebarPinned) setSidebarExpanded(true);
+        }}
         onBlurCapture={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget)) {
+          if (!isSidebarPinned && !event.currentTarget.contains(event.relatedTarget)) {
             setSidebarExpanded(false);
           }
         }}
@@ -323,6 +338,7 @@ export function OperationsShell({
           requestedAgentAction={null}
           connectionState={connectionState}
           collapsed={!sidebarExpanded}
+          sidebarPinned={isSidebarPinned}
           modelManager={{
             runState: "idle",
             statusMessage: null,
@@ -334,7 +350,7 @@ export function OperationsShell({
             systemReady: snapshot.diagnostics.health === "healthy"
           }}
           onExpandCollapsed={() => setSidebarExpanded(true)}
-          onToggleCollapsed={() => setSidebarExpanded((current) => !current)}
+          onToggleCollapsed={handleSidebarPinToggle}
           onSelectWorkspace={setActiveWorkspaceId}
           onRefresh={refresh}
           onRunModelRefresh={() => toast.message("Model refresh is available from Mission Control setup.")}
