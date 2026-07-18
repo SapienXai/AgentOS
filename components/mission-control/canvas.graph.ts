@@ -151,7 +151,7 @@ export function buildCanvasGraph(
     );
     const workspaceAgents = [...liveWorkspaceAgents, ...pendingWorkspaceAgents];
     const workspaceModelIds = new Set([
-      ...workspace.modelIds,
+      ...(workspace.modelIds ?? []),
       ...workspaceAgents.map((agent) => agent.modelId).filter((modelId): modelId is string => Boolean(modelId))
     ]);
     const workspaceModels = snapshot.models.filter((model) => workspaceModelIds.has(model.id));

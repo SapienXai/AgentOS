@@ -160,6 +160,20 @@ pnpm add -g @sapienx/agentos
 npm install -g @sapienx/agentos
 ```
 
+Install a specific published version:
+
+macOS or Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.7.6 bash
+```
+
+Windows PowerShell:
+
+```powershell
+$env:AGENTOS_VERSION='0.7.6'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
+```
+
 ### Start AgentOS
 
 ```bash
@@ -206,14 +220,17 @@ If OpenClaw is already installed, AgentOS connects to the live Gateway and proje
 - Connect workspace surfaces such as Telegram, Discord, and Slack where supported by OpenClaw.
 - Work with OpenClaw browser profiles and account targets through AgentOS access rules.
 - Configure the Gateway endpoint and default workspace root.
-- Use native Gateway capabilities first, with explicit CLI fallback only where required.
+- Accounts and browser profiles are an MVP bridge. OpenClaw does not yet expose typed browser-profile dispatch.
+- Use native Gateway capabilities first; CLI fallback remains explicit and visible only where required.
 
 ### Operate with control
 
 - Inspect Gateway health, protocol compatibility, auth state, scopes, models, sessions, channels, skills, approvals, and supported methods.
 - Review native versus fallback execution instead of hiding degraded paths.
 - Apply Gateway config changes with concurrency protection and secret redaction.
+- Surface repair is preview-first.
 - Use update preflight, compatibility decisions, postflight checks, and rollback metadata for safer OpenClaw updates.
+- `requires_approval` account access rules are intentionally blocked until approval dispatch exists.
 - Keep risky or unsupported actions blocked rather than pretending they are available.
 
 ## How it works
@@ -280,14 +297,14 @@ Several operations spawn local processes, inspect transcript files, or write to 
 
 ## Compatibility
 
-The current `0.7.5` package expects:
+The current `0.7.6` package expects OpenClaw 2026.6.8 or newer:
 
 - Node.js 24 or newer;
 - OpenClaw `2026.6.8` or newer;
 - a reachable Gateway with valid local authentication;
 - at least one ready model for real mission execution.
 
-Run the release-readiness diagnostic before assigning real work:
+`agentos doctor --deep` is the release-readiness diagnostic. Run it before assigning real work:
 
 ```bash
 agentos doctor --deep
@@ -382,8 +399,8 @@ For a real local release rehearsal, follow [`docs/agentos-clean-install-smoke-ch
 ```bash
 pnpm check:release
 pnpm smoke:agentos-package
-git tag agentos-v0.7.5
-git push origin agentos-v0.7.5
+git tag agentos-v0.7.6
+git push origin agentos-v0.7.6
 ```
 
 The release workflow builds and smoke-tests packages for:

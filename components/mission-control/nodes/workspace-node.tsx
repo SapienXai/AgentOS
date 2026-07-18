@@ -250,7 +250,7 @@ function WorkspaceCollectionMenu({
             boxShadow: isLight ? "0 18px 42px rgba(82, 60, 46, 0.18)" : "0 18px 42px rgba(0, 0, 0, 0.42)"
           }}
           className={cn(
-            "fixed z-[10000] w-[204px] overflow-hidden rounded-[12px] border p-1 backdrop-blur-xl",
+            "fixed z-[10000] w-[204px] overflow-hidden rounded-[12px] border p-1",
             isLight
               ? "border-[#ddcdbf] bg-[#fffaf6]/98 text-[#3f2f24] shadow-[0_18px_42px_rgba(82,60,46,0.18)]"
               : "border-white/[0.1] bg-slate-950/95 text-slate-100 shadow-[0_18px_42px_rgba(0,0,0,0.42)]"
@@ -419,7 +419,7 @@ function TaskFilterMetric({
             boxShadow: isLight ? "0 18px 42px rgba(82, 60, 46, 0.18)" : "0 18px 42px rgba(0, 0, 0, 0.42)"
           }}
           className={cn(
-            "fixed z-[10000] w-[204px] overflow-hidden rounded-[12px] border p-1 backdrop-blur-xl",
+            "fixed z-[10000] w-[204px] overflow-hidden rounded-[12px] border p-1",
             isLight
               ? "border-[#ddcdbf] bg-[#fffaf6]/98 text-[#3f2f24] shadow-[0_18px_42px_rgba(82,60,46,0.18)]"
               : "border-white/[0.1] bg-slate-950/95 text-slate-100 shadow-[0_18px_42px_rgba(0,0,0,0.42)]"

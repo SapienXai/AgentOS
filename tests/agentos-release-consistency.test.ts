@@ -25,7 +25,8 @@ const releaseCheckFiles = [
   "packages/agentos/scripts/check-release-consistency.mjs",
   "packages/agentos/scripts/prepare-bundle.mjs",
   "packages/agentos/scripts/run-prepack.mjs",
-  "packages/agentos/scripts/smoke-package.mjs"
+  "packages/agentos/scripts/smoke-package.mjs",
+  "lib/openclaw/versions.ts"
 ];
 
 test("AgentOS release metadata stays consistent", () => {
@@ -75,7 +76,7 @@ test("AgentOS release check rejects vague README Node prerequisites", async () =
   const tempRoot = await copyReleaseCheckFixture();
   const readmePath = path.join(tempRoot, "README.md");
   const readme = await readFile(readmePath, "utf8");
-  await writeFile(readmePath, readme.replace("- Node.js 24 or newer", "- A recent Node.js runtime"), "utf8");
+  await writeFile(readmePath, readme.replaceAll("- Node.js 24 or newer", "- A recent Node.js runtime"), "utf8");
 
   const result = runReleaseCheck(tempRoot);
 
