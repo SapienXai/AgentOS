@@ -110,13 +110,19 @@ export function ProtectedLogin() {
       </header>
 
       <div className="relative z-10 mx-auto grid min-h-[calc(100vh-80px)] w-full max-w-[1180px] items-center gap-12 px-5 pb-10 sm:px-8 lg:grid-cols-[minmax(0,480px)_1fr] lg:gap-20 lg:pb-8">
-        <motion.section initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }} className="w-full" aria-labelledby="protected-title">
-          <div className="mb-5 text-center lg:mb-4">
+        <motion.section initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }} className="-mt-4 w-full lg:mt-0" aria-labelledby="protected-title">
+          <div className="mb-5 -translate-y-5 text-center lg:mb-4 lg:translate-y-0">
             <h1 id="protected-title" className="font-display text-[2.35rem] font-semibold leading-none tracking-[-0.06em] sm:whitespace-nowrap sm:text-[2.65rem] lg:text-[2.75rem]">AgentOS is Protected</h1>
-            <p className="mx-auto mt-2 max-w-[430px] text-sm leading-5 text-muted-foreground">Unlock the control plane to continue to your AgentOS workspace.</p>
+            <p className="mx-auto mt-2 max-w-[430px] whitespace-nowrap text-xs leading-5 text-muted-foreground sm:text-sm">Unlock the control plane to access AgentOS.</p>
           </div>
 
-          <div className="rounded-[26px] border border-border/80 bg-card/[0.88] p-5 shadow-[0_28px_90px_hsl(var(--foreground)/0.12)] backdrop-blur-2xl dark:border-white/[0.10] dark:bg-[hsl(220_18%_15%/0.94)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_30px_90px_rgba(0,0,0,0.36)]">
+          <div className="relative mt-12 rounded-[26px] border border-border/80 bg-card/[0.88] p-5 pt-16 shadow-[0_28px_90px_hsl(var(--foreground)/0.12)] backdrop-blur-2xl dark:border-white/[0.10] dark:bg-[hsl(220_18%_15%/0.94)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_30px_90px_rgba(0,0,0,0.36)] lg:mt-0 lg:pt-5">
+            <div className="absolute left-1/2 top-[-1px] z-10 h-[116px] w-[116px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-br from-white/90 via-primary/45 to-sky-400/40 p-0.5 shadow-[0_0_22px_hsl(var(--primary)/0.28),0_20px_46px_hsl(var(--foreground)/0.20)] dark:from-white/30 dark:via-primary/50 dark:to-sky-400/35 lg:hidden">
+              <div className="relative h-full w-full overflow-hidden rounded-full border border-white/70 bg-background shadow-[inset_0_0_18px_hsl(var(--foreground)/0.16)] dark:border-white/25">
+                <video src="/assets/agentProfiles/piko.webm" autoPlay muted loop playsInline preload="auto" aria-label="Piko agent profile" className="h-full w-full object-cover" />
+                <div aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_34%_24%,rgba(255,255,255,0.22),transparent_30%),linear-gradient(to_bottom,transparent_62%,hsl(var(--foreground)/0.12))]" />
+              </div>
+            </div>
             <div className="mb-4 flex items-center justify-between gap-4 border-b border-border/70 pb-3">
               <div><p className="text-sm font-semibold">Operator access</p><p className="mt-0.5 text-[11px] text-muted-foreground">Authenticate to unlock this session.</p></div>
               <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background/70 text-muted-foreground"><KeyRound className="h-4 w-4" /></span>
