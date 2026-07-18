@@ -103,46 +103,61 @@ export function InstanceProtectionDialog({ open, onOpenChange }: { open: boolean
   return (
     <>
       <Dialog open={open} onOpenChange={(next) => !submitting && onOpenChange(next)}>
-        <DialogContent className="max-h-[min(88vh,760px)] max-w-[540px] overflow-y-auto p-0">
-          <div className="border-b border-border/70 px-6 pb-5 pt-6">
-            <DialogHeader>
-              <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary"><LockKeyhole className="h-5 w-5" /></div>
-              <DialogTitle>Login &amp; Protection</DialogTitle>
-              <DialogDescription>Protect access to this AgentOS instance without changing OpenClaw, workspaces, agents, or tasks.</DialogDescription>
+        <DialogContent className="max-w-[620px] gap-0 overflow-hidden rounded-2xl p-0">
+          <div className="border-b border-border/70 bg-muted/20 px-5 py-4 pr-14">
+            <DialogHeader className="space-y-0">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary"><LockKeyhole className="h-4 w-4" /></div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <DialogTitle className="text-base tracking-[-0.02em]">Login &amp; Protection</DialogTitle>
+                    {status?.protectionEnabled ? <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-300"><ShieldCheck className="h-3 w-3" />Protected</span> : null}
+                  </div>
+                  <DialogDescription className="mt-0.5 text-xs">Secure access to this AgentOS instance.</DialogDescription>
+                </div>
+              </div>
             </DialogHeader>
           </div>
 
           {loading || !status ? (
-            <div className="flex items-center justify-center gap-2 px-6 py-16 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading protection settings…</div>
+            <div className="flex items-center justify-center gap-2 px-5 py-12 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading protection settings…</div>
           ) : (
-            <form onSubmit={submit} className="space-y-5 px-6 py-5">
+            <form onSubmit={submit} className="space-y-4 px-5 py-4">
               {!status.protectionEnabled ? (
                 <>
-                  <section className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-muted/35 p-4">
-                    <div><p className="text-sm font-semibold">Instance Protection</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Require a username and password before AgentOS can be opened.</p></div>
+                  <section className="flex items-center justify-between gap-4 rounded-xl border border-border/80 bg-muted/35 px-3.5 py-3">
+                    <div><p className="text-sm font-semibold">Enable protection</p><p className="mt-0.5 text-[11px] text-muted-foreground">Require credentials before opening AgentOS.</p></div>
                     <Switch checked={enabledSwitch} onChange={setEnabledSwitch} label="Enable Instance Protection" />
                   </section>
-                  <CredentialFields username={username} setUsername={setUsername} password={password} setPassword={setPassword} confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword} showPasswords={showPasswords} setShowPasswords={setShowPasswords} errors={errors} passwordLabel="Password" passwordAutoComplete="new-password" />
-                  <p className="rounded-xl border border-border/70 bg-background px-3.5 py-3 text-xs leading-5 text-muted-foreground">This only protects access to the AgentOS instance running on this machine. It does not create a multi-user account or modify OpenClaw data.</p>
-                  <Button type="submit" className="w-full" disabled={submitting || !enabledSwitch}>{submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save &amp; Enable Protection</Button>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="sm:col-span-2"><Field label="Username" htmlFor="protection-username" error={errors.username}><CompactInput id="protection-username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></Field></div>
+                    <Field label="Password" htmlFor="protection-password" error={errors.password}><PasswordInput id="protection-password" value={password} onChange={setPassword} visible={showPasswords} onToggle={() => setShowPasswords(!showPasswords)} autoComplete="new-password" /></Field>
+                    <Field label="Confirm password" htmlFor="protection-confirm-password" error={errors.confirmPassword}><PasswordInput id="protection-confirm-password" value={confirmPassword} onChange={setConfirmPassword} visible={showPasswords} onToggle={() => setShowPasswords(!showPasswords)} autoComplete="new-password" /></Field>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 border-t border-border/70 pt-3">
+                    <p className="max-w-[330px] text-[11px] leading-4 text-muted-foreground">Protects this instance only. OpenClaw and workspace data stay unchanged.</p>
+                    <Button type="submit" size="sm" disabled={submitting || !enabledSwitch}>{submitting && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}Save &amp; Enable</Button>
+                  </div>
                 </>
               ) : (
                 <>
-                  <SectionTitle title="Account" detail="Changing credentials invalidates all previous sessions." />
-                  <CredentialFields username={username} setUsername={setUsername} password={password} setPassword={setPassword} confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword} showPasswords={showPasswords} setShowPasswords={setShowPasswords} errors={errors} passwordLabel="New password (optional)" passwordAutoComplete="new-password" />
-                  <Field label="Current password" htmlFor="protection-current-password" error={errors.currentPassword}>
-                    <Input id="protection-current-password" type={showPasswords ? "text" : "password"} autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
-                  </Field>
-                  <Button type="submit" className="w-full" disabled={submitting}>{submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update Credentials</Button>
-
-                  <div className="h-px bg-border" />
-                  <SectionTitle title="Protection" detail="Protection is active for this AgentOS instance." />
-                  <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.07] p-4">
-                    <ShieldCheck className="h-5 w-5 text-emerald-500" /><div><p className="text-sm font-semibold">Protected</p><p className="text-xs text-muted-foreground">Signed session required</p></div>
+                  <div className="flex items-end justify-between gap-3">
+                    <div><h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Account</h3><p className="mt-1 text-[11px] text-muted-foreground">Credential changes sign out other sessions.</p></div>
+                    <Button type="submit" size="sm" disabled={submitting}>{submitting && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}Update Credentials</Button>
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <Button type="button" variant="secondary" onClick={() => void lock()}><LockKeyhole className="mr-2 h-4 w-4" />Lock AgentOS Now</Button>
-                    <Button type="button" variant="destructive" onClick={() => { setDisablePassword(""); setDisableError(null); setDisableOpen(true); }}><ShieldOff className="mr-2 h-4 w-4" />Disable Protection</Button>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Username" htmlFor="protection-username" error={errors.username}><CompactInput id="protection-username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></Field>
+                    <Field label="Current password" htmlFor="protection-current-password" error={errors.currentPassword}><CompactInput id="protection-current-password" type={showPasswords ? "text" : "password"} autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></Field>
+                    <Field label="New password (optional)" htmlFor="protection-password" error={errors.password}><PasswordInput id="protection-password" value={password} onChange={setPassword} visible={showPasswords} onToggle={() => setShowPasswords(!showPasswords)} autoComplete="new-password" /></Field>
+                    <Field label="Confirm new password" htmlFor="protection-confirm-password" error={errors.confirmPassword}><PasswordInput id="protection-confirm-password" value={confirmPassword} onChange={setConfirmPassword} visible={showPasswords} onToggle={() => setShowPasswords(!showPasswords)} autoComplete="new-password" /></Field>
+                  </div>
+
+                  <div className="flex flex-col gap-3 rounded-xl border border-border/80 bg-muted/25 px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-2.5"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-500"><ShieldCheck className="h-4 w-4" /></span><div><p className="text-xs font-semibold">Protection active</p><p className="text-[10px] text-muted-foreground">Signed session required</p></div></div>
+                    <div className="flex gap-2">
+                      <Button type="button" size="sm" variant="secondary" onClick={() => void lock()}><LockKeyhole className="mr-1.5 h-3.5 w-3.5" />Lock now</Button>
+                      <Button type="button" size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => { setDisablePassword(""); setDisableError(null); setDisableOpen(true); }}><ShieldOff className="mr-1.5 h-3.5 w-3.5" />Disable</Button>
+                    </div>
                   </div>
                 </>
               )}
@@ -164,24 +179,16 @@ export function InstanceProtectionDialog({ open, onOpenChange }: { open: boolean
   );
 }
 
-function CredentialFields(props: { username: string; setUsername: (value: string) => void; password: string; setPassword: (value: string) => void; confirmPassword: string; setConfirmPassword: (value: string) => void; showPasswords: boolean; setShowPasswords: (value: boolean) => void; errors: FieldErrors; passwordLabel: string; passwordAutoComplete: string }) {
-  return <div className="space-y-4">
-    <Field label="Username" htmlFor="protection-username" error={props.errors.username}><Input id="protection-username" autoComplete="username" value={props.username} onChange={(event) => props.setUsername(event.target.value)} /></Field>
-    <Field label={props.passwordLabel} htmlFor="protection-password" error={props.errors.password}><PasswordInput id="protection-password" value={props.password} onChange={props.setPassword} visible={props.showPasswords} onToggle={() => props.setShowPasswords(!props.showPasswords)} autoComplete={props.passwordAutoComplete} /></Field>
-    <Field label="Confirm password" htmlFor="protection-confirm-password" error={props.errors.confirmPassword}><PasswordInput id="protection-confirm-password" value={props.confirmPassword} onChange={props.setConfirmPassword} visible={props.showPasswords} onToggle={() => props.setShowPasswords(!props.showPasswords)} autoComplete={props.passwordAutoComplete} /></Field>
-  </div>;
-}
-
 function PasswordInput({ id, value, onChange, visible, onToggle, autoComplete }: { id: string; value: string; onChange: (value: string) => void; visible: boolean; onToggle: () => void; autoComplete: string }) {
-  return <div className="relative"><Input id={id} type={visible ? "text" : "password"} autoComplete={autoComplete} value={value} onChange={(event) => onChange(event.target.value)} className="pr-12" /><button type="button" onClick={onToggle} aria-label={visible ? "Hide password" : "Show password"} className="absolute right-1.5 top-1.5 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">{visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div>;
+  return <div className="relative"><CompactInput id={id} type={visible ? "text" : "password"} autoComplete={autoComplete} value={value} onChange={(event) => onChange(event.target.value)} className="pr-10" /><button type="button" onClick={onToggle} aria-label={visible ? "Hide password" : "Show password"} className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">{visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}</button></div>;
 }
 
 function Field({ label, htmlFor, error, children }: { label: string; htmlFor: string; error?: string; children: React.ReactNode }) {
-  return <div className="space-y-2"><Label htmlFor={htmlFor}>{label}</Label>{children}{error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}</div>;
+  return <div className="space-y-1.5"><Label htmlFor={htmlFor} className="text-[11px] font-medium text-muted-foreground">{label}</Label>{children}{error ? <p role="alert" className="text-[11px] text-destructive">{error}</p> : null}</div>;
 }
 
-function SectionTitle({ title, detail }: { title: string; detail: string }) {
-  return <div><h3 className="text-sm font-semibold">{title}</h3><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div>;
+function CompactInput(props: React.ComponentProps<typeof Input>) {
+  return <Input {...props} className={cn("h-9 rounded-lg px-3 text-xs", props.className)} />;
 }
 
 function Switch({ checked, onChange, label }: { checked: boolean; onChange: (checked: boolean) => void; label: string }) {
