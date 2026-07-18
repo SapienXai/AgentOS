@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import { NextRequest } from "next/server";
 
+import { POST as loginRoute } from "@/app/api/auth/login/route";
 import {
   disableInstanceProtection,
   enableInstanceProtection,
@@ -100,7 +101,7 @@ test("proxy protects UI, setup, and sensitive APIs while leaving auth endpoints 
   setEnv("NODE_ENV", "production");
 
   try {
-    await enableInstanceProtection({ username: "operator", password: "secure password" });
+    const enabled = await enableInstanceProtection({ username: "operator", password: "secure password" });
     const ui = await proxy(new NextRequest("http://localhost:3000/settings"));
     assert.equal(ui.status, 307);
     assert.match(ui.headers.get("location") ?? "", /\/login\?returnTo=%2Fsettings/);
@@ -112,9 +113,23 @@ test("proxy protects UI, setup, and sensitive APIs while leaving auth endpoints 
     assert.equal(setup.headers.get("x-agentos-auth-required"), "instance");
 
     const status = await proxy(new NextRequest("http://localhost:3000/api/auth/status", {
-      headers: { authorization: "Bearer test-api-token" }
+      headers: { host: "localhost:3000" }
     }));
     assert.equal(status.status, 200);
+
+    const login = await proxy(new NextRequest("http://localhost:3000/api/auth/login", {
+      method: "POST",
+      headers: { host: "localhost:3000", origin: "http://localhost:3000" }
+    }));
+    assert.equal(login.status, 200);
+
+    const sessionOnly = await proxy(new NextRequest("http://localhost:3000/api/snapshot", {
+      headers: {
+        cookie: `agentos_instance_session=${encodeURIComponent(enabled.session)}`,
+        host: "localhost:3000"
+      }
+    }));
+    assert.equal(sessionOnly.status, 200);
 
     await writeFile(resolveInstanceProtectionPath(), "{corrupt", { mode: 0o600 });
     const failClosed = await proxy(new NextRequest("http://localhost:3000/api/snapshot", {
@@ -126,6 +141,76 @@ test("proxy protects UI, setup, and sensitive APIs while leaving auth endpoints 
     await resetInstanceProtection();
     restoreEnv("AGENTOS_RUNTIME_DIR", previous.runtime);
     restoreEnv("AGENTOS_API_TOKEN", previous.token);
+    restoreEnv("NODE_ENV", previous.nodeEnv);
+  }
+});
+
+test("trusted remote browsers can use password sessions without API token bootstrap", async () => {
+  const runtimeDir = await mkdtemp(path.join(tmpdir(), "agentos-instance-remote-"));
+  const previous = {
+    runtime: process.env.AGENTOS_RUNTIME_DIR,
+    token: process.env.AGENTOS_API_TOKEN,
+    trustedOrigins: process.env.AGENTOS_TRUSTED_OPERATOR_ORIGINS,
+    nodeEnv: process.env.NODE_ENV
+  };
+  setEnv("AGENTOS_RUNTIME_DIR", runtimeDir);
+  setEnv("AGENTOS_API_TOKEN", "test-api-token");
+  setEnv("AGENTOS_TRUSTED_OPERATOR_ORIGINS", "https://agentos.example.com");
+  setEnv("NODE_ENV", "production");
+
+  try {
+    await enableInstanceProtection({ username: "operator", password: "secure password" });
+    const loginRequest = new NextRequest("https://agentos.example.com/api/auth/login", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        host: "agentos.example.com",
+        origin: "https://agentos.example.com",
+        "x-forwarded-for": "203.0.113.10",
+        "x-forwarded-host": "agentos.example.com",
+        "x-forwarded-proto": "https"
+      },
+      body: JSON.stringify({ username: "operator", password: "secure password" })
+    });
+    const loginGate = await proxy(loginRequest);
+    assert.equal(loginGate.status, 200);
+    const login = await loginRoute(loginRequest);
+    assert.equal(login.status, 200);
+    const sessionCookie = login.headers.get("set-cookie")?.split(";")[0];
+    assert.ok(sessionCookie);
+
+    const mutation = await proxy(new NextRequest("https://agentos.example.com/api/mission", {
+      method: "POST",
+      headers: {
+        cookie: sessionCookie,
+        host: "agentos.example.com",
+        origin: "https://agentos.example.com",
+        "x-forwarded-for": "203.0.113.10",
+        "x-forwarded-host": "agentos.example.com",
+        "x-forwarded-proto": "https"
+      }
+    }));
+    assert.equal(mutation.status, 200);
+
+    setEnv("AGENTOS_TRUSTED_OPERATOR_ORIGINS", "https://other.example.com");
+    const untrustedMutation = await proxy(new NextRequest("https://agentos.example.com/api/mission", {
+      method: "POST",
+      headers: {
+        cookie: sessionCookie,
+        host: "agentos.example.com",
+        origin: "https://agentos.example.com",
+        "x-forwarded-for": "203.0.113.10",
+        "x-forwarded-host": "agentos.example.com",
+        "x-forwarded-proto": "https"
+      }
+    }));
+    assert.equal(untrustedMutation.status, 403);
+    assert.equal((await untrustedMutation.json()).code, "unsafe-local-api");
+  } finally {
+    await resetInstanceProtection();
+    restoreEnv("AGENTOS_RUNTIME_DIR", previous.runtime);
+    restoreEnv("AGENTOS_API_TOKEN", previous.token);
+    restoreEnv("AGENTOS_TRUSTED_OPERATOR_ORIGINS", previous.trustedOrigins);
     restoreEnv("NODE_ENV", previous.nodeEnv);
   }
 });

@@ -49,21 +49,7 @@ export function evaluateAgentOsApiRequest(input: {
     const providedToken = readBearerToken(input.headers) ?? readApiTokenCookie(input.headers);
 
     if (providedToken && constantTimeStringEqual(providedToken, configuredToken)) {
-      const localDecision = evaluateLocalOperatorRequest({
-        method: input.method,
-        url: input.url,
-        headers: input.headers,
-        env
-      });
-
-      return localDecision.ok
-        ? { ok: true }
-        : {
-            ok: false,
-            status: localDecision.status,
-            code: "unsafe-local-api",
-            message: localDecision.message
-          };
+      return evaluateAuthenticatedAgentOsApiRequest({ ...input, env });
     }
 
     return {
@@ -99,6 +85,29 @@ export function evaluateAgentOsApiRequest(input: {
     code: "api-auth-required",
     message: `Set ${AGENTOS_API_TOKEN_ENV} before exposing AgentOS API routes.`
   };
+}
+
+export function evaluateAuthenticatedAgentOsApiRequest(input: {
+  method: string;
+  url: string;
+  headers: Headers;
+  env?: Record<string, string | undefined>;
+}): ApiAuthDecision {
+  const localDecision = evaluateLocalOperatorRequest({
+    method: input.method,
+    url: input.url,
+    headers: input.headers,
+    env: input.env ?? process.env
+  });
+
+  return localDecision.ok
+    ? { ok: true }
+    : {
+        ok: false,
+        status: localDecision.status,
+        code: "unsafe-local-api",
+        message: localDecision.message
+      };
 }
 
 function readBearerToken(headers: Headers) {

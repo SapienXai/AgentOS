@@ -66,7 +66,8 @@ Security:
 
 - AgentOS is intended to bind locally by default; avoid exposing it publicly without your own network controls.
 - Packaged AgentOS uses API token authentication and opens an authenticated local URL from the launcher.
-- Remote mutations are disabled by default. `AGENTOS_TRUSTED_OPERATOR_ORIGINS` can opt in exact, comma-separated HTTPS origins; wildcards and HTTP origins are rejected, and API token authentication remains required.
+- Remote mutations are disabled by default. `AGENTOS_TRUSTED_OPERATOR_ORIGINS` can opt in exact, comma-separated HTTPS origins; wildcards and HTTP origins are rejected, and authenticated AgentOS access remains required.
+- After Instance Protection is enabled, trusted browsers and mobile devices can authenticate with the configured username and password without receiving an `#agentos_token` bootstrap URL. API token authentication remains the bootstrap boundary while Instance Protection is disabled.
 - API routes are centrally protected, and remote Gateway URLs are blocked by default unless explicitly allowed with `AGENTOS_ALLOW_REMOTE_GATEWAY_URL=1`.
 - Sensitive local config/auth files are written with owner-only permissions where applicable.
 
