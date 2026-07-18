@@ -32,7 +32,7 @@ export function CanvasTitlePill({ surfaceTheme }: { surfaceTheme: SurfaceTheme }
   return (
     <div
       className={cn(
-        "flex h-11 items-center gap-3 rounded-full border px-4 shadow-[0_18px_50px_rgba(0,0,0,0.24)] backdrop-blur-xl",
+        "flex h-11 items-center gap-2 rounded-full border px-3 shadow-[0_18px_50px_rgba(0,0,0,0.24)] backdrop-blur-xl sm:gap-3 sm:px-4",
         surfaceTheme === "light"
           ? "border-[#d9c9bc]/90 bg-[#f8f5f0]/86 shadow-[0_18px_42px_rgba(161,125,101,0.14)]"
           : "border-cyan-300/10 bg-slate-950/45"
@@ -70,11 +70,11 @@ export function CanvasTitlePill({ surfaceTheme }: { surfaceTheme: SurfaceTheme }
       </div>
       <span
         aria-hidden="true"
-        className={cn("h-4 w-px", surfaceTheme === "light" ? "bg-[#cdb7a8]/80" : "bg-white/[0.08]")}
+        className={cn("hidden h-4 w-px sm:block", surfaceTheme === "light" ? "bg-[#cdb7a8]/80" : "bg-white/[0.08]")}
       />
       <h2
         className={cn(
-          "font-display text-[0.88rem]",
+          "hidden font-display text-[0.88rem] sm:block",
           surfaceTheme === "light" ? "text-[#816958]/80" : "text-slate-400/75"
         )}
       >

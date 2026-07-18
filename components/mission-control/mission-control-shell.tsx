@@ -2,6 +2,8 @@
 
 import {
   EyeOff,
+  Menu,
+  PanelRightOpen,
   RefreshCw,
 } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -279,13 +281,23 @@ export function MissionControlShell({
   const [agentCreationWarnings, setAgentCreationWarnings] = useState<Record<string, string>>({});
   const [isSidebarOpenState, setIsSidebarOpen] = useState(false);
   const { isSidebarPinned, setIsSidebarPinned } = useSidebarPinning();
-  const isSidebarOpen = isSidebarPinned || isSidebarOpenState;
+  const [isCompactViewport, setIsCompactViewport] = useState(false);
+  const isSidebarOpen = isSidebarOpenState || (isSidebarPinned && !isCompactViewport);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [inspectorWidth, setInspectorWidth] = useState(inspectorCompactWidth);
   const [isResizingInspector, setIsResizingInspector] = useState(false);
   const inspectorResizeCleanupRef = useRef<(() => void) | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const isInspectorDetailExpanded = isInspectorDetailWidth(inspectorWidth);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 1023px)");
+    const syncViewport = () => setIsCompactViewport(mediaQuery.matches);
+
+    syncViewport();
+    mediaQuery.addEventListener("change", syncViewport);
+    return () => mediaQuery.removeEventListener("change", syncViewport);
+  }, []);
 
   const updateInspectorWidth = useCallback((nextWidth: number) => {
     setInspectorWidth(clampInspectorWidth(nextWidth, window.innerWidth));
@@ -3896,11 +3908,29 @@ export function MissionControlShell({
           />
         ) : null}
 
+        {!isSidebarOpen ? (
+          <button
+            type="button"
+            aria-label="Open navigation"
+            aria-expanded="false"
+            onClick={() => setIsSidebarOpen(true)}
+            className={cn(
+              "fixed left-3 top-3 z-[60] inline-flex h-11 w-11 items-center justify-center rounded-full border shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur-xl lg:hidden",
+              surfaceTheme === "light"
+                ? "border-[#d9c9bc]/90 bg-[#f8f5f0]/92 text-[#6f5a4b]"
+                : "border-cyan-300/10 bg-slate-950/82 text-slate-200"
+            )}
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        ) : null}
+
         <div
           className={cn(
-            "pointer-events-auto fixed left-0 top-0 z-50 h-[100dvh] overflow-hidden mission-ease-smooth bg-[#050a12] shadow-[18px_0_60px_rgba(0,0,0,0.42)] transition-[width] duration-300 lg:hidden",
-            isSidebarOpen ? "w-[min(86vw,292px)]" : "w-[56px]"
+            "pointer-events-auto fixed inset-y-0 left-0 z-50 w-[min(88vw,320px)] overflow-hidden mission-ease-smooth bg-[#050a12] shadow-[18px_0_60px_rgba(0,0,0,0.42)] transition-transform duration-300 lg:hidden",
+            isSidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
+          inert={!isSidebarOpen}
           onClickCapture={(event) => {
             if (isSidebarOpen && event.target instanceof Element && event.target.closest("a")) {
               setIsSidebarOpen(false);
@@ -3914,6 +3944,7 @@ export function MissionControlShell({
             requestedAgentAction={agentActionRequest}
             connectionState={connectionState}
             collapsed={!isSidebarOpen}
+            sidebarPinned
             settingsMode
             modelManager={{
               runState: modelOnboardingRunState,
@@ -4155,9 +4186,43 @@ export function MissionControlShell({
         />
       </div>
 
-      <div className="relative z-20 min-h-screen pointer-events-none lg:h-screen">
-        <div className="pointer-events-none absolute left-1/2 top-4 z-30 -translate-x-1/2 lg:hidden">
+      <div className="relative z-20 min-h-[100dvh] pointer-events-none lg:h-screen">
+        <div className="pointer-events-none fixed inset-x-0 top-3 z-[60] flex items-center justify-between px-3 lg:hidden">
+          <button
+            type="button"
+            aria-label={isSidebarOpen ? "Close navigation" : "Open navigation"}
+            aria-expanded={isSidebarOpen}
+            onClick={() => {
+              setIsInspectorOpen(false);
+              setIsSidebarOpen((current) => !current);
+            }}
+            className={cn(
+              "pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full border shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur-xl",
+              surfaceTheme === "light"
+                ? "border-[#d9c9bc]/90 bg-[#f8f5f0]/92 text-[#6f5a4b]"
+                : "border-cyan-300/10 bg-slate-950/82 text-slate-200"
+            )}
+          >
+            <Menu className="h-5 w-5" />
+          </button>
           <MissionControlCanvasTitlePill surfaceTheme={surfaceTheme} />
+          <button
+            type="button"
+            aria-label={isInspectorOpen ? "Close inspector" : "Open inspector"}
+            aria-expanded={isInspectorOpen}
+            onClick={() => {
+              setIsSidebarOpen(false);
+              setIsInspectorOpen((current) => !current);
+            }}
+            className={cn(
+              "pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full border shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur-xl",
+              surfaceTheme === "light"
+                ? "border-[#d9c9bc]/90 bg-[#f8f5f0]/92 text-[#6f5a4b]"
+                : "border-cyan-300/10 bg-slate-950/82 text-slate-200"
+            )}
+          >
+            <PanelRightOpen className="h-5 w-5" />
+          </button>
         </div>
 
         <div className="pointer-events-none absolute left-[80px] top-6 z-10 hidden lg:block">
@@ -4166,7 +4231,7 @@ export function MissionControlShell({
 
         <div
           className={cn(
-            "pointer-events-auto absolute left-0 top-0 z-30 h-[100dvh] overflow-visible mission-ease-smooth transition-[width] duration-500",
+            "pointer-events-auto absolute left-0 top-0 z-30 hidden h-[100dvh] overflow-visible mission-ease-smooth transition-[width] duration-500 lg:block",
             isSidebarOpen
               ? "w-[calc(100vw-96px)] max-w-[292px] lg:w-[292px] lg:max-w-none"
               : "w-[56px]"
@@ -4248,17 +4313,97 @@ export function MissionControlShell({
           />
         </div>
 
+        {isSidebarOpen ? (
+          <button
+            type="button"
+            aria-label="Close navigation"
+            className="pointer-events-auto fixed inset-0 z-40 bg-black/62 backdrop-blur-[2px] lg:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        ) : null}
+
         <div
           className={cn(
-            "pointer-events-auto absolute right-0 top-0 z-30 h-[100dvh] overflow-visible mission-ease-smooth",
+            "pointer-events-auto fixed inset-y-0 left-0 z-50 w-[min(88vw,320px)] overflow-hidden bg-[#050a12] shadow-[18px_0_60px_rgba(0,0,0,0.42)] transition-transform duration-300 lg:hidden",
+            isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+          )}
+          aria-hidden={!isSidebarOpen}
+          inert={!isSidebarOpen}
+          onClickCapture={(event) => {
+            if (isSidebarOpen && event.target instanceof Element && event.target.closest("a")) {
+              setIsSidebarOpen(false);
+            }
+          }}
+        >
+          <MissionSidebar
+            snapshot={uiSnapshot}
+            surfaceTheme={surfaceTheme}
+            activeWorkspaceId={activeWorkspaceId}
+            requestedAgentAction={agentActionRequest}
+            connectionState={connectionState}
+            collapsed={false}
+            sidebarPinned
+            modelManager={{
+              runState: modelOnboardingRunState,
+              statusMessage: modelOnboardingStatusMessage,
+              resultMessage: modelOnboardingResultMessage,
+              log: modelOnboardingLog,
+              manualCommand: modelOnboardingManualCommand,
+              docsUrl: modelOnboardingDocsUrl,
+              discoveredModels,
+              systemReady: isOpenClawOnboardingSystemReady
+            }}
+            onToggleCollapsed={() => setIsSidebarOpen(false)}
+            onSelectWorkspace={(workspaceId) => {
+              openWorkspaceOnCanvas(workspaceId);
+              setIsSidebarOpen(false);
+            }}
+            onRefresh={refresh}
+            onRunModelRefresh={runModelRefresh}
+            onRunModelDiscover={runModelDiscover}
+            onRunModelSetDefault={runModelSetDefault}
+            onConnectModelProvider={runModelProviderLogin}
+            onOpenModelSetup={() => openSetupWizard()}
+            onOpenAddModels={openAddModelsDialog}
+            onOpenCreateAgent={() => {
+              setIsSidebarOpen(false);
+              setIsSidebarCreateAgentDialogOpen(true);
+            }}
+            onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
+            onEditWorkspace={openWorkspaceWizardForEdit}
+            onSnapshotChange={setSnapshot}
+            onAgentCreationPending={handleAgentCreationPending}
+            onAgentCreatedVisible={handleCreatedAgentVisible}
+            onAgentActionModalOpenChange={(open) => {
+              setIsSidebarAgentActionModalOpen(open);
+              if (open) {
+                setIsSidebarOpen(false);
+              }
+            }}
+          />
+        </div>
+
+        {isInspectorOpen ? (
+          <button
+            type="button"
+            aria-label="Close inspector"
+            className="pointer-events-auto fixed inset-0 z-40 bg-black/55 backdrop-blur-[2px] lg:hidden"
+            onClick={() => setIsInspectorOpen(false)}
+          />
+        ) : null}
+
+        <div
+          className={cn(
+            "pointer-events-auto fixed inset-x-0 bottom-0 z-50 h-[min(78dvh,720px)] overflow-hidden rounded-t-[24px] transition-transform duration-300 lg:absolute lg:inset-x-auto lg:right-0 lg:top-0 lg:z-30 lg:h-[100dvh] lg:overflow-visible lg:rounded-none lg:transition-none",
             isInspectorOpen
               ? cn(
-                  "w-[calc(100vw-52px)] max-w-[calc(100vw-52px)] lg:w-[var(--inspector-width)] lg:max-w-none",
-                  isResizingInspector ? "transition-none" : "transition-[width] duration-200"
+                  "translate-y-0 w-full max-w-full lg:w-[var(--inspector-width)] lg:max-w-none lg:translate-y-0",
+                  isResizingInspector ? "transition-none" : "transition-[width,transform] duration-200"
                 )
-              : "w-[52px] transition-[width] duration-300"
+              : "translate-y-full w-full lg:w-[52px] lg:translate-y-0 lg:transition-[width] lg:duration-300"
           )}
           style={{ "--inspector-width": `${inspectorWidth}px` } as CSSProperties}
+          inert={!isInspectorOpen && isCompactViewport}
         >
           {isInspectorOpen ? (
             <button
@@ -4346,7 +4491,12 @@ export function MissionControlShell({
           surfaceTheme={surfaceTheme}
         />
 
-        <div className="pointer-events-auto absolute bottom-[calc(env(safe-area-inset-bottom)+12px)] left-4 right-4 z-40 lg:bottom-6 lg:left-1/2 lg:right-auto lg:w-[min(800px,calc(100vw-320px))] lg:-translate-x-1/2">
+        <div
+          className={cn(
+            "pointer-events-auto absolute bottom-[calc(env(safe-area-inset-bottom)+12px)] left-4 right-4 z-40 lg:bottom-6 lg:left-1/2 lg:right-auto lg:block lg:w-[min(800px,calc(100vw-320px))] lg:-translate-x-1/2",
+            isInspectorOpen && "hidden"
+          )}
+        >
           <div className="mx-auto mb-1 flex w-fit flex-col items-start gap-1">
             {hiddenScopedTaskCount > 0 ? (
               <div className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-[linear-gradient(180deg,rgba(10,16,26,0.96),rgba(6,10,18,0.94))] px-3 py-1 text-[8px] text-slate-200 shadow-[0_10px_24px_rgba(0,0,0,0.14)]">

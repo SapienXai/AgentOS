@@ -1036,7 +1036,7 @@ export function SettingsControlCenter(
     >
         <section
           className={cn(
-            "min-w-0 pb-8 pl-[64px] pr-3 pt-[86px] sm:pl-[72px] sm:pr-4 lg:px-4 xl:px-5 2xl:px-6",
+            "min-w-0 px-3 pb-8 pt-[86px] sm:px-4 lg:px-4 xl:px-5 2xl:px-6",
             sidebarOpen ? "lg:ml-[308px]" : "lg:ml-[72px]"
           )}
         >

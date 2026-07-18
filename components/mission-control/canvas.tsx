@@ -837,8 +837,8 @@ export function MissionCanvas({
         className={cn(
           "nodrag nopan absolute bottom-5 z-20 flex items-center overflow-hidden rounded-xl border p-1 shadow-[0_12px_30px_rgba(0,0,0,0.20)] backdrop-blur-xl transition-[left] duration-500",
           sidebarOpen
-            ? "left-[calc(min(86vw,292px)+16px)] lg:left-[308px]"
-            : "left-[72px]",
+            ? "left-4 lg:left-[308px]"
+            : "left-4 lg:left-[72px]",
           surfaceTheme === "light"
             ? "border-border bg-card/90 text-foreground"
             : "border-white/10 bg-slate-950/78 text-slate-100"

@@ -626,7 +626,8 @@ test("mission shell supports hover and pinned sidebar modes", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
 
   assert.match(source, /const \[isSidebarOpenState, setIsSidebarOpen\] = useState\(false\);/);
-  assert.match(source, /const isSidebarOpen = isSidebarPinned \|\| isSidebarOpenState;/);
+  assert.match(source, /const \[isCompactViewport, setIsCompactViewport\] = useState\(false\);/);
+  assert.match(source, /const isSidebarOpen = isSidebarOpenState \|\| \(isSidebarPinned && !isCompactViewport\);/);
   assert.match(source, /const \{ isSidebarPinned, setIsSidebarPinned \} = useSidebarPinning\(\);/);
   assert.match(source, /function shouldKeepSidebarOpenForPortal\(target: EventTarget \| null\)/);
   assert.match(source, /target\.closest\('\[role="dialog"\], \[data-radix-popper-content-wrapper\]'\)/);
@@ -646,6 +647,9 @@ test("mission shell supports hover and pinned sidebar modes", () => {
     /onBlurCapture=\{\(event\) => \{\s*if \(isSidebarPinned \|\| shouldKeepSidebarOpenForPortal\(event\.relatedTarget\)\) \{\s*return;\s*\}\s*if \(!event\.currentTarget\.contains\(event\.relatedTarget as Node \| null\)\) \{\s*setIsSidebarOpen\(false\);/
   );
   assert.match(source, /sidebarPinned=\{isSidebarPinned\}[\s\S]*?onToggleCollapsed=\{handleSidebarPinToggle\}/);
+  assert.match(source, /aria-label=\{isSidebarOpen \? "Close navigation" : "Open navigation"\}/);
+  assert.match(source, /isSidebarOpen \? "translate-x-0" : "-translate-x-full"/);
+  assert.match(source, /aria-label=\{isInspectorOpen \? "Close inspector" : "Open inspector"\}/);
   assert.doesNotMatch(source, /sidebarOpenStorageKey/);
 });
 
