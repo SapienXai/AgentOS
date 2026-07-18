@@ -59,6 +59,17 @@ export function TasksPageContent({
   const [activeFollowUpByTaskId, setActiveFollowUpByTaskId] = useState<Record<string, SubmittedTaskFollowUp | null>>({});
   const [auditActivity, setAuditActivity] = useState<TaskAuditActivity | null>(null);
   const [dispatchOpen, setDispatchOpen] = useState(false);
+  const [showAllMobileTasks, setShowAllMobileTasks] = useState(true);
+
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 639px)").matches) {
+      const frame = window.requestAnimationFrame(() => {
+        setView("list");
+        setShowAllMobileTasks(false);
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+  }, []);
 
   const filteredTasks = tasks.filter((task) => {
     const query = search.trim().toLowerCase();
@@ -69,6 +80,7 @@ export function TasksPageContent({
     return matchesSearch && matchesFilter;
   }).sort((left, right) => sortTaskViews(left, right, sort));
   const selectedTask = tasks.find((task) => task.id === selectedId) ?? filteredTasks[0] ?? null;
+  const visibleListTasks = showAllMobileTasks ? filteredTasks : filteredTasks.slice(0, 8);
   const selectedTaskVisible = Boolean(selectedTask && filteredTasks.some((task) => task.id === selectedTask.id));
   const selectedFollowUp = selectedTask ? activeFollowUpByTaskId[selectedTask.id] ?? null : null;
   const statusCounts: Record<TaskView["status"], number> = {
@@ -286,7 +298,7 @@ export function TasksPageContent({
           ) : (
             <SectionCard>
               <div className="flex flex-col gap-3 p-3">
-                {filteredTasks.map((task) => (
+                {visibleListTasks.map((task) => (
                   <TaskCard
                     key={task.id}
                     task={task}
@@ -300,6 +312,11 @@ export function TasksPageContent({
                     }}
                   />
                 ))}
+                {!showAllMobileTasks && filteredTasks.length > visibleListTasks.length ? (
+                  <Button variant="secondary" className="h-11 w-full rounded-xl text-xs" onClick={() => setShowAllMobileTasks(true)}>
+                    Show {filteredTasks.length - visibleListTasks.length} more tasks
+                  </Button>
+                ) : null}
               </div>
             </SectionCard>
           )}
@@ -356,7 +373,7 @@ function TaskColumn({
 }) {
   const Icon = taskStatusIcons[status];
   return (
-    <section className={cn("rounded-[12px] p-2.5", pageSurface)}>
+    <section className={cn("rounded-[12px] p-2.5", tasks.length === 0 && "hidden sm:block", pageSurface)}>
       <div className="flex items-center justify-between gap-2 px-1 pb-2.5">
         <div className="flex items-center gap-2">
           <Icon className="h-3.5 w-3.5 text-primary" />
@@ -415,6 +432,7 @@ function TaskCard({
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [composerExpanded, setComposerExpanded] = useState(false);
   const [titleExpanded, setTitleExpanded] = useState(false);
+  const [mobileDetailsExpanded, setMobileDetailsExpanded] = useState(false);
   const [localFollowUps, setLocalFollowUps] = useState<SubmittedTaskFollowUp[]>([]);
   const [activeFollowUpIndex, setActiveFollowUpIndex] = useState<number | null>(null);
   const persistedFollowUps = useMemo(
@@ -498,15 +516,17 @@ function TaskCard({
       )}
     >
       <div className="pointer-events-none absolute inset-y-5 left-0 w-1 rounded-r-full bg-primary/50" />
-      <TaskCardTabs
-        activeTabId={activeTabId}
-        tabs={tabs}
-        onAdd={() => {
-          setComposerExpanded(true);
-          composerInputRef.current?.focus();
-        }}
-        onSelect={(tab) => selectTaskTab(tab.index)}
-      />
+      <div className={cn("hidden sm:block", mobileDetailsExpanded && "block")}>
+        <TaskCardTabs
+          activeTabId={activeTabId}
+          tabs={tabs}
+          onAdd={() => {
+            setComposerExpanded(true);
+            composerInputRef.current?.focus();
+          }}
+          onSelect={(tab) => selectTaskTab(tab.index)}
+        />
+      </div>
       <div className="min-w-0 rounded-[16px] border border-border bg-muted/25 p-3.5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -540,7 +560,7 @@ function TaskCard({
           >
             <h3
               className={cn(
-                "min-w-0 flex-1 font-display text-[1.45rem] font-semibold leading-tight text-foreground",
+                "min-w-0 flex-1 font-display text-lg font-semibold leading-tight text-foreground sm:text-[1.45rem]",
                 !titleExpanded && "line-clamp-2"
               )}
             >
@@ -551,7 +571,9 @@ function TaskCard({
             </span>
           </button>
 
-          <TaskMetricRow metrics={metrics} compact className="mt-3" />
+          <div className={cn("hidden sm:block", mobileDetailsExpanded && "block")}>
+            <TaskMetricRow metrics={metrics} compact className="mt-3" />
+          </div>
 
           {task.status === "running" ? (
             <div className="mt-3">
@@ -563,7 +585,9 @@ function TaskCard({
             </div>
           ) : null}
 
-          <ExpandableTaskResult title={displayResultTitle} result={displayResultText} compact className="mt-3" />
+          <div className={cn("hidden sm:block", mobileDetailsExpanded && "block")}>
+            <ExpandableTaskResult title={displayResultTitle} result={displayResultText} compact className="mt-3" />
+          </div>
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <span className="text-[0.68rem] text-muted-foreground">{task.dueLabel}</span>
@@ -579,8 +603,21 @@ function TaskCard({
               Cancel
             </Button>
           </div>
+          <Button
+            type="button"
+            variant="ghost"
+            className="mt-2 h-11 w-full rounded-xl text-xs sm:hidden"
+            onClick={(event) => {
+              event.stopPropagation();
+              setMobileDetailsExpanded((current) => !current);
+            }}
+          >
+            {mobileDetailsExpanded ? "Hide task details" : "Show task details"}
+            <ChevronDown className={cn("ml-2 h-4 w-4 transition-transform", mobileDetailsExpanded && "rotate-180")} />
+          </Button>
       </div>
       {task.source ? (
+      <div className={cn("hidden sm:block", mobileDetailsExpanded && "block")}>
       <TaskFollowUpComposer
         task={task.source}
         latestResult={displayResultText}
@@ -595,8 +632,9 @@ function TaskCard({
             setLocalFollowUps((current) => mergeTaskFollowUps(current, [followUp]));
             onActiveFollowUpChange(followUp);
             return onFollowUpComplete();
-          }}
-        />
+        }}
+      />
+      </div>
       ) : null}
     </div>
   );

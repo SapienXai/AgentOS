@@ -72,7 +72,7 @@ function OperationJobRow({ job, runs, snapshot, surfaceTheme, expanded, selected
     "group overflow-hidden rounded-xl border bg-card transition-all duration-200",
     selected ? "border-primary/30 shadow-[0_8px_28px_hsl(var(--primary)/0.09)] ring-1 ring-primary/10" : "border-border hover:border-primary/20 hover:shadow-sm"
   )}>
-    <div className="flex items-center gap-2 px-3 py-3 sm:px-4">
+    <div className="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:px-4">
       <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left outline-none" onClick={() => { onSelect(); onToggle(); }} aria-expanded={expanded}>
         <span className={cn("relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border", statusIconTone(job.status))}>
           {job.status === "running" ? <Activity className="h-4 w-4" /> : job.enabled ? <CalendarClock className="h-4 w-4" /> : <CirclePause className="h-4 w-4" />}
@@ -98,7 +98,7 @@ function OperationJobRow({ job, runs, snapshot, surfaceTheme, expanded, selected
       </button>
 
       <TooltipProvider delayDuration={140}>
-        <div className="flex shrink-0 items-center gap-1" onClick={(event) => event.stopPropagation()}>
+        <div className="flex w-full shrink-0 items-center justify-end gap-1 border-t border-border/70 pt-2 sm:w-auto sm:border-0 sm:pt-0" onClick={(event) => event.stopPropagation()}>
           <JobActionTooltip label={activeRun ? "Run unavailable" : "Run once now"} detail={activeRun ? "This job already has an active OpenClaw run." : mutableReason ?? "Start one immediate run without changing the schedule."}>
             <Button type="button" variant="ghost" size="sm" className="h-8 w-8 rounded-lg p-0" disabled={runDisabled} aria-label={`Run ${job.name} once now`} onClick={() => void onAction("run", job)}>{isBusy && busyAction?.action === "run" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}</Button>
           </JobActionTooltip>
@@ -211,7 +211,7 @@ function CreateOperationForm({ snapshot, activeWorkspaceId, onClose, onCreated }
           </div>
         </div>
 
-        <div className="max-h-[calc(100dvh-190px)] space-y-5 overflow-y-auto px-6 py-5">
+        <div className="max-h-[calc(100dvh-190px)] space-y-5 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           {!agents.length ? <div className="rounded-xl border border-[hsl(var(--status-warning)/0.3)] bg-[hsl(var(--status-warning)/0.08)] px-4 py-3 text-sm text-muted-foreground">This workspace has no available agent. Create or attach an agent before scheduling a job.</div> : null}
 
           <section className="space-y-3">
@@ -235,7 +235,7 @@ function CreateOperationForm({ snapshot, activeWorkspaceId, onClose, onCreated }
 
           <section className="space-y-3 border-t border-border pt-5">
             <div className="flex items-center gap-2 text-xs font-semibold text-foreground"><Clock3 className="h-3.5 w-3.5 text-primary" />Schedule</div>
-            <div className="grid grid-cols-3 gap-2">{presets.map((preset) => <button key={preset.value} type="button" onClick={() => setExpression(preset.value)} className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${expression === preset.value ? "border-primary/35 bg-primary/10 text-primary" : "border-border bg-card text-foreground hover:bg-accent"}`}><span className="block text-xs font-semibold">{preset.label}</span><span className="mt-0.5 block text-[10px] text-muted-foreground">{preset.detail}</span></button>)}</div>
+            <div className="grid gap-2 sm:grid-cols-3">{presets.map((preset) => <button key={preset.value} type="button" onClick={() => setExpression(preset.value)} className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${expression === preset.value ? "border-primary/35 bg-primary/10 text-primary" : "border-border bg-card text-foreground hover:bg-accent"}`}><span className="block text-xs font-semibold">{preset.label}</span><span className="mt-0.5 block text-[10px] text-muted-foreground">{preset.detail}</span></button>)}</div>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Cron expression"><Input value={expression} onChange={(event) => setExpression(event.target.value)} className="font-mono" required /></Field>
               <Field label="Timezone"><Input value={timezone} onChange={(event) => setTimezone(event.target.value)} placeholder="Europe/Istanbul" required /></Field>

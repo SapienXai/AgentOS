@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { Menu } from "lucide-react";
 
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
 import { MissionSidebar } from "@/components/mission-control/sidebar";
@@ -176,6 +177,27 @@ export function OperationsShell({
       root.style.colorScheme = previousColorScheme;
     };
   }, [surfaceTheme]);
+
+  useEffect(() => {
+    if (!mobileSidebarOpen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileSidebarOpen(false);
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [mobileSidebarOpen]);
 
   useEffect(() => {
     const workspaceRoot = snapshot.diagnostics.workspaceRoot;
@@ -382,9 +404,11 @@ export function OperationsShell({
 
       <div
         className={cn(
-          "pointer-events-auto fixed left-0 top-0 z-50 h-[100dvh] overflow-hidden mission-ease-smooth bg-[#050a12] shadow-[18px_0_60px_rgba(0,0,0,0.42)] transition-[width] duration-300 lg:hidden",
-          mobileSidebarOpen ? "w-[min(86vw,292px)]" : "w-[56px]"
+          "pointer-events-auto fixed left-0 top-0 z-50 h-[100dvh] w-[min(86vw,292px)] overflow-hidden mission-ease-smooth bg-[#050a12] shadow-[18px_0_60px_rgba(0,0,0,0.42)] transition-transform duration-300 [&_button]:min-h-11 lg:hidden",
+          mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
+        aria-hidden={!mobileSidebarOpen}
+        inert={!mobileSidebarOpen}
         onClickCapture={(event) => {
           if (mobileSidebarOpen && event.target instanceof Element && event.target.closest("a")) {
             setMobileSidebarOpen(false);
@@ -398,7 +422,7 @@ export function OperationsShell({
           pendingCreatedAgents={visiblePendingCreatedAgents}
           requestedAgentAction={null}
           connectionState={connectionState}
-          collapsed={!mobileSidebarOpen}
+          collapsed={false}
           modelManager={{
             runState: "idle",
             statusMessage: null,
@@ -433,21 +457,49 @@ export function OperationsShell({
 
       <main
         className={cn(
-          "operations-content mission-ease-smooth relative z-20 min-h-screen pb-4 pl-[68px] pr-3 pt-4 transition-[padding] duration-500 sm:pl-[76px] sm:pr-5 lg:pr-4",
+          "operations-content mission-ease-smooth relative z-20 min-h-screen px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-0 transition-[padding] duration-500 [&_a]:inline-flex [&_a]:min-h-11 [&_a]:min-w-11 [&_a]:items-center [&_button]:min-h-11 [&_button]:min-w-11 [&_input]:min-h-11 [&_select]:min-h-11 sm:px-5 sm:[&_a]:min-h-0 sm:[&_a]:min-w-0 sm:[&_button]:min-h-0 sm:[&_button]:min-w-0 sm:[&_input]:min-h-0 sm:[&_select]:min-h-0 lg:pb-4 lg:pr-4 lg:pt-4",
           sidebarExpanded ? "lg:pl-[316px]" : "lg:pl-[80px]"
         )}
       >
         <div className="mx-auto flex w-full max-w-[1880px] flex-col gap-3">
-          <OperationsTopBar
-            snapshot={snapshot}
-            connectionState={connectionState}
-            surfaceTheme={surfaceTheme}
-            onRefresh={() => {
-              void refresh();
-            }}
-            onSnapshotChange={setSnapshot}
-            onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
-          />
+          <div className="sticky top-0 z-30 -mx-3 flex min-h-14 items-center gap-3 border-b border-border bg-background/92 px-3 backdrop-blur-xl sm:-mx-5 sm:px-5 lg:hidden">
+            <button
+              type="button"
+              aria-label="Open navigation"
+              aria-expanded={mobileSidebarOpen}
+              onClick={() => setMobileSidebarOpen(true)}
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-card/80 text-foreground shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-semibold text-foreground">{activeWorkspace?.name ?? "All workspaces"}</p>
+              <p className="truncate text-[0.65rem] text-muted-foreground">AgentOS operations</p>
+            </div>
+            <OperationsTopBar
+              compact
+              snapshot={snapshot}
+              connectionState={connectionState}
+              surfaceTheme={surfaceTheme}
+              onRefresh={() => {
+                void refresh();
+              }}
+              onSnapshotChange={setSnapshot}
+              onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
+            />
+          </div>
+          <div className="hidden lg:block">
+            <OperationsTopBar
+              snapshot={snapshot}
+              connectionState={connectionState}
+              surfaceTheme={surfaceTheme}
+              onRefresh={() => {
+                void refresh();
+              }}
+              onSnapshotChange={setSnapshot}
+              onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
+            />
+          </div>
           {children({
             snapshot: scopedSnapshot,
             rootSnapshot: uiSnapshot,

@@ -217,7 +217,7 @@ export function FilesPageContent({
 
           <div className="grid gap-2.5 xl:grid-cols-[180px_minmax(0,1fr)]">
             <SectionCard title="Collections" action={<button className="text-muted-foreground" disabled title="Custom collections are not exposed by the workspace file API."><Plus className="h-3.5 w-3.5" /></button>}>
-              <div className="flex flex-col gap-1 p-2.5">
+              <div className="flex gap-1 overflow-x-auto p-2.5 xl:flex-col xl:overflow-visible">
                 {collectionItems.map((item) => {
                   const Icon = fileCollectionIcons[item] ?? Folder;
                   const count = item === "All Files" ? fileViews.length : fileViews.filter((file) => file.collection === item).length;
@@ -226,7 +226,7 @@ export function FilesPageContent({
                       type="button"
                       key={item}
                       onClick={() => setCollection(item)}
-                      className={cn("flex items-center justify-between gap-2 rounded-[9px] px-2.5 py-2 text-left text-xs transition-colors", collection === item ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}
+                      className={cn("flex shrink-0 items-center justify-between gap-2 rounded-[9px] px-2.5 py-2 text-left text-xs transition-colors xl:w-full", collection === item ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}
                     >
                       <span className="flex min-w-0 items-center gap-2">
                         <Icon className="h-3.5 w-3.5 shrink-0" />
@@ -237,7 +237,7 @@ export function FilesPageContent({
                   );
                 })}
               </div>
-              <div className="mt-auto border-t border-border p-3">
+              <div className="mt-auto hidden border-t border-border p-3 xl:block">
                 <div className="mb-2 flex items-center justify-between text-[0.68rem] text-muted-foreground">
                   <span>Storage</span>
                   <span>{fileViews.some((file) => file.sizeBytes != null) ? "Reported" : "Unknown"}</span>
@@ -312,8 +312,50 @@ function FilesTable({
   onPreview: (file: FileView) => void;
   onReveal: (file: FileView) => void;
 }) {
+  const [showAllMobileFiles, setShowAllMobileFiles] = useState(false);
+  const visibleMobileFiles = showAllMobileFiles ? files : files.slice(0, 10);
+
   return (
-    <div className="overflow-x-auto">
+    <div>
+      <div className="space-y-2 p-2.5 sm:hidden">
+        {visibleMobileFiles.map((file) => (
+          <article
+            key={file.id}
+            className={cn(
+              "rounded-xl border bg-card p-3",
+              file.id === selectedId ? "border-primary/60 bg-primary/10" : "border-border"
+            )}
+          >
+            <button type="button" className="flex w-full items-start gap-3 text-left" onClick={() => onSelect(file.id)}>
+              <EntityIcon icon={file.icon} label={file.name} tone={file.iconTone} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold text-foreground">{file.name}</span>
+                <span className="mt-0.5 block truncate text-xs text-muted-foreground">{file.workspaceName}</span>
+                <span className="mt-2 line-clamp-2 break-all text-[0.68rem] leading-4 text-muted-foreground">{file.path}</span>
+                <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.68rem] text-muted-foreground">
+                  <span>{file.updatedLabel}</span>
+                  <span>{file.sizeLabel}</span>
+                  <span>{file.owner}</span>
+                </span>
+              </span>
+            </button>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Button variant="secondary" size="sm" className="h-11 rounded-xl text-xs" disabled={!file.source?.exists} title={file.source?.exists ? "Preview" : "File is not created yet."} onClick={() => onPreview(file)}>
+                <Eye className="mr-1.5 h-4 w-4" /> Preview
+              </Button>
+              <Button variant="secondary" size="sm" className="h-11 rounded-xl text-xs" disabled={!file.workspacePath} title={file.workspacePath ? "Reveal in Finder" : "Reveal requires a workspace path."} onClick={() => onReveal(file)}>
+                <FolderOpen className="mr-1.5 h-4 w-4" /> Reveal
+              </Button>
+            </div>
+          </article>
+        ))}
+        {!showAllMobileFiles && files.length > visibleMobileFiles.length ? (
+          <Button variant="secondary" className="h-11 w-full rounded-xl text-xs" onClick={() => setShowAllMobileFiles(true)}>
+            Show {files.length - visibleMobileFiles.length} more files
+          </Button>
+        ) : null}
+      </div>
+      <div className="hidden overflow-x-auto sm:block">
       <table className="w-full min-w-[660px] text-left text-[0.72rem]">
         <thead className="border-b border-border text-[0.56rem] uppercase tracking-[0.14em] text-muted-foreground">
           <tr>
@@ -369,6 +411,7 @@ function FilesTable({
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

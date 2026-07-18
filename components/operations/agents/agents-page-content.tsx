@@ -375,7 +375,7 @@ function AgentCard({
       </div>
 
       <div
-        className={cn("agent-profile-media relative overflow-hidden border-b border-white/[0.12] bg-[linear-gradient(180deg,rgba(14,16,20,0.98),rgba(8,10,14,0.95))]", list ? "h-full min-h-[210px] rounded-l-[12px] md:rounded-r-none" : "h-[154px] rounded-t-[12px]")}
+        className={cn("agent-profile-media relative overflow-hidden border-b border-white/[0.12] bg-[linear-gradient(180deg,rgba(14,16,20,0.98),rgba(8,10,14,0.95))]", list ? "h-full min-h-[210px] rounded-l-[12px] md:rounded-r-none" : "h-[124px] rounded-t-[12px] sm:h-[154px]")}
         style={profileVisual.style as CSSProperties}
       >
         <video
@@ -435,13 +435,13 @@ function AgentCard({
         </div>
 
         <div className="mt-2.5">
-          <p className="line-clamp-2 min-h-10 text-[12px] leading-5 text-foreground/80">{agent.purpose}</p>
-          <p className="mt-2 truncate text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
+          <p className="line-clamp-1 text-[12px] leading-5 text-foreground/80 sm:line-clamp-2 sm:min-h-10">{agent.purpose}</p>
+          <p className="mt-2 hidden truncate text-[9px] uppercase tracking-[0.18em] text-muted-foreground sm:block">
             Heartbeat {heartbeatLabel} · Last seen {agent.lastActiveLabel}
           </p>
         </div>
 
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-3 hidden grid-cols-3 gap-2 sm:grid">
           <AgentCardStat label="Tools" value={agent.toolsCount} />
           <AgentCardStat label="Sessions" value={agent.sessionsCount} />
           <AgentCardStat label="Policy" value={agent.policyLabel} />
@@ -807,7 +807,23 @@ function RecentAgentActivity({ snapshot, agents }: { snapshot: MissionControlSna
       {rows.length === 0 ? (
         <EmptyState title="No runtime activity" description="No agent runtime events were reported in the current AgentOS snapshot." />
       ) : (
-      <div className="overflow-x-auto">
+      <div>
+        <div className="divide-y divide-border sm:hidden">
+          {rows.map((row, index) => (
+            <div key={`${row.agent}-${row.task}-${index}`} className="p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground">{row.agent}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{row.event}</p>
+                </div>
+                <StatusBadge label={row.status} tone={row.status === "completed" ? "success" : row.status === "running" ? "info" : "warning"} />
+              </div>
+              <p className="mt-2 line-clamp-2 text-xs leading-5 text-foreground/80">{row.task}</p>
+              <p className="mt-1 text-[0.68rem] text-muted-foreground">{row.time}</p>
+            </div>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[680px] text-left text-xs">
           <thead className="border-b border-border text-[0.58rem] uppercase tracking-[0.14em] text-muted-foreground">
             <tr>
@@ -830,6 +846,7 @@ function RecentAgentActivity({ snapshot, agents }: { snapshot: MissionControlSna
             ))}
           </tbody>
         </table>
+        </div>
       </div>
       )}
     </SectionCard>

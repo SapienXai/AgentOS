@@ -61,7 +61,8 @@ export function OperationsTopBar({
   surfaceTheme,
   onRefresh,
   onToggleTheme,
-  onSnapshotChange
+  onSnapshotChange,
+  compact = false
 }: {
   snapshot: MissionControlSnapshot;
   connectionState: "connecting" | "live" | "retrying";
@@ -69,6 +70,7 @@ export function OperationsTopBar({
   onRefresh: () => void;
   onToggleTheme: () => void;
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
+  compact?: boolean;
 }) {
   const version = snapshot.diagnostics.version ?? snapshot.diagnostics.latestVersion ?? "unknown";
   const streamLive = connectionState === "live";
@@ -77,21 +79,22 @@ export function OperationsTopBar({
   const ThemeIcon = surfaceTheme === "light" ? SunMedium : Moon;
 
   return (
-    <div className="flex items-center justify-end gap-2 text-[0.58rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+    <div className={cn("flex items-center justify-end text-[0.58rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground", compact ? "gap-1" : "gap-2")}>
       <span className="hidden sm:inline">OpenClaw</span>
       <span className="hidden font-mono text-muted-foreground/80 sm:inline">
         v{version}
       </span>
       <span
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 tracking-[0.16em]",
+          "inline-flex items-center gap-1.5 rounded-full border tracking-[0.16em]",
+          compact ? "h-11 px-3" : "px-2.5 py-1",
           online ? toneStyles.success : toneStyles.warning
         )}
       >
         <span
           className={cn("h-1.5 w-1.5 rounded-full", online ? dotStyles.success : dotStyles.warning)}
         />
-        {label}
+        <span className={compact ? "sr-only" : undefined}>{label}</span>
       </span>
       <RuntimeIssueIndicator
         snapshot={snapshot}
@@ -99,14 +102,18 @@ export function OperationsTopBar({
         onSnapshotChange={onSnapshotChange}
         onRefresh={onRefresh}
       />
-      <IconButton ariaLabel="Refresh status" icon={Clock3} surfaceTheme={surfaceTheme} onClick={onRefresh} />
-      <IconButton
-        ariaLabel={surfaceTheme === "light" ? "Switch to dark theme" : "Switch to light theme"}
-        icon={ThemeIcon}
-        surfaceTheme={surfaceTheme}
-        active={surfaceTheme === "light"}
-        onClick={onToggleTheme}
-      />
+      {!compact ? (
+        <>
+          <IconButton ariaLabel="Refresh status" icon={Clock3} surfaceTheme={surfaceTheme} onClick={onRefresh} />
+          <IconButton
+            ariaLabel={surfaceTheme === "light" ? "Switch to dark theme" : "Switch to light theme"}
+            icon={ThemeIcon}
+            surfaceTheme={surfaceTheme}
+            active={surfaceTheme === "light"}
+            onClick={onToggleTheme}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -131,7 +138,7 @@ export function PageHeader({
   const SecondaryIcon = secondaryAction?.icon;
 
   return (
-    <header className="border-b border-border pb-4">
+    <header className="border-b border-border pb-4 pt-1 sm:pt-0">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
         <div className="min-w-0">
           <h1
@@ -143,14 +150,14 @@ export function PageHeader({
             {subtitle}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 [&>button]:flex-1 sm:w-auto sm:[&>button]:flex-none">
           {actions ?? (
             <>
               {secondaryAction ? (
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="h-8 rounded-lg px-3 text-xs"
+                  className="h-11 flex-1 rounded-xl px-3 text-xs sm:h-8 sm:flex-none sm:rounded-lg"
                   onClick={secondaryAction.onClick}
                 >
                   {SecondaryIcon ? <SecondaryIcon className="mr-1.5 h-3.5 w-3.5" /> : null}
@@ -160,7 +167,7 @@ export function PageHeader({
               {primaryAction ? (
                 <Button
                   size="sm"
-                  className="h-8 rounded-lg px-3 text-xs"
+                  className="h-11 flex-1 rounded-xl px-3 text-xs sm:h-8 sm:flex-none sm:rounded-lg"
                   onClick={primaryAction.onClick}
                   disabled={primaryAction.disabled}
                   title={primaryAction.title}
@@ -192,7 +199,7 @@ export function StatCard({
   tone?: StatusTone;
 }) {
   return (
-    <div className={cn("flex min-h-[72px] items-center gap-3 rounded-lg p-3", pageSurface)}>
+    <div className={cn("flex min-h-[84px] items-center gap-2 rounded-xl p-2.5 sm:min-h-[72px] sm:gap-3 sm:rounded-lg sm:p-3", pageSurface)}>
       <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border shadow-sm", iconToneStyles[tone])}>
         <Icon className="h-4 w-4" />
       </span>
@@ -201,7 +208,7 @@ export function StatCard({
           {label}
         </span>
         <span className="mt-1 block truncate text-[1.05rem] font-semibold leading-none text-foreground">{value}</span>
-        <span className="mt-1 block truncate text-[0.63rem] text-muted-foreground">{detail}</span>
+        <span className="mt-1 hidden truncate text-[0.63rem] text-muted-foreground sm:block">{detail}</span>
       </span>
     </div>
   );
@@ -215,7 +222,7 @@ export function StatGrid({ children, columns = 5 }: { children: ReactNode; colum
         ? "xl:grid-cols-4"
         : "xl:grid-cols-5";
 
-  return <div className={cn("grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3", columnsClass)}>{children}</div>;
+  return <div className={cn("grid grid-cols-2 gap-2.5 lg:grid-cols-3", columnsClass)}>{children}</div>;
 }
 
 export function SearchToolbar({
@@ -235,7 +242,7 @@ export function SearchToolbar({
   return (
     <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative min-w-[220px] flex-1">
+        <div className="relative min-w-0 flex-1">
           <Search
             className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
           />
@@ -243,7 +250,7 @@ export function SearchToolbar({
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={searchPlaceholder}
-            className="h-8 rounded-lg bg-card/80 pl-8 pr-11 text-[0.74rem]"
+            className="h-11 rounded-xl bg-card/80 pl-8 pr-11 text-base sm:h-8 sm:rounded-lg sm:text-[0.74rem]"
           />
           <span
             className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 items-center gap-1 rounded-md border border-border bg-muted px-1.5 py-0.5 font-mono text-[0.56rem] text-muted-foreground sm:flex"
@@ -251,9 +258,9 @@ export function SearchToolbar({
             <Command className="h-2.5 w-2.5" /> K
           </span>
         </div>
-        {children}
+        {children ? <div className="flex max-w-full items-center gap-2 overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">{children}</div> : null}
       </div>
-      {right ? <div className="flex items-center gap-2">{right}</div> : null}
+      {right ? <div className="flex items-center justify-end gap-2">{right}</div> : null}
     </div>
   );
 }
@@ -292,7 +299,7 @@ export function ToolbarButton({
       disabled={disabled}
       title={title}
       className={cn(
-        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[0.74rem] font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-[0.74rem] font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-8 sm:rounded-lg sm:px-2.5",
         disabled
           ? "cursor-not-allowed border-border bg-muted/75 text-muted-foreground/60"
           : active
@@ -319,14 +326,14 @@ export function ViewToggle({
 }) {
   return (
     <div
-      className="inline-flex h-8 items-center rounded-lg border border-border bg-card/75 p-0.5"
+      className="inline-flex h-11 items-center rounded-xl border border-border bg-card/75 p-0.5 sm:h-8 sm:rounded-lg"
     >
       <button
         type="button"
         aria-label={labels[0]}
         onClick={() => onChange("grid")}
         className={cn(
-          "inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground",
+          "inline-flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground sm:h-6 sm:w-6 sm:rounded-md",
           (value === "grid" || value === "board") && "bg-primary/10 text-primary"
         )}
       >
@@ -337,7 +344,7 @@ export function ViewToggle({
         aria-label={labels[1]}
         onClick={() => onChange("list")}
         className={cn(
-          "inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground",
+          "inline-flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground sm:h-6 sm:w-6 sm:rounded-md",
           value === "list" && "bg-primary/10 text-primary"
         )}
       >
@@ -366,7 +373,7 @@ export function FilterChip({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[0.72rem] font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        "inline-flex min-h-11 items-center gap-1.5 rounded-xl border px-3 text-[0.72rem] font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:min-h-7 sm:rounded-lg sm:px-2.5",
         active ? toneStyles[tone] : "border-border bg-card/75 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       )}
     >
@@ -553,7 +560,7 @@ export function IconButton({
       disabled={disabled}
       title={title}
       className={cn(
-        "relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        "relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-8 sm:w-8 sm:rounded-lg",
         disabled
           ? "cursor-not-allowed border-border bg-muted/75 text-muted-foreground/60"
           : active

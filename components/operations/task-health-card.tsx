@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock3, History, RotateCw, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -154,6 +155,14 @@ function TaskIssueGroups({
 }) {
   const referenceMs = resolveRelativeTimeReferenceMs(snapshot.generatedAt);
   const groups = health.groups.slice(0, 8);
+  const [showGroups, setShowGroups] = useState(true);
+
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 639px)").matches) {
+      const frame = window.requestAnimationFrame(() => setShowGroups(false));
+      return () => window.cancelAnimationFrame(frame);
+    }
+  }, []);
 
   if (groups.length === 0) {
     return (
@@ -165,13 +174,22 @@ function TaskIssueGroups({
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-        <History className="h-3.5 w-3.5" />
-        Historical task failure groups
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <History className="h-3.5 w-3.5" />
+          Historical task failure groups
+        </div>
+        <Button variant="secondary" size="sm" className="h-11 rounded-xl px-3 text-[0.68rem] sm:hidden" onClick={() => setShowGroups((current) => !current)}>
+          {showGroups ? "Hide" : `Review ${groups.length}`}
+        </Button>
       </div>
-      {groups.map((group) => (
-        <TaskIssueGroupRow key={group.id} group={group} referenceMs={referenceMs} onOpenTask={onOpenTask} />
-      ))}
+      {showGroups ? groups.map((group) => (
+          <TaskIssueGroupRow key={group.id} group={group} referenceMs={referenceMs} onOpenTask={onOpenTask} />
+        )) : (
+          <p className="rounded-xl border border-border bg-muted/25 p-3 text-xs leading-5 text-muted-foreground sm:hidden">
+            {health.historical.issueCount} historical failures across {groups.length} groups. Open the review only when you need run-level details.
+          </p>
+        )}
     </div>
   );
 }

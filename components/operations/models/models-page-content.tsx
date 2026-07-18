@@ -180,7 +180,7 @@ export function ModelsPageContent({
             </SectionCard>
             <SectionCard title="Model Usage">
               <div className="p-3">
-                <div className="grid grid-cols-3 gap-3 text-xs">
+                <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
                   <MetricMini label="Requests" value="Not reported" />
                   <MetricMini label="Total Tokens" value={formatBigNumber(tokenTotal)} />
                   <MetricMini label="Avg Latency" value="Not reported" />
@@ -234,7 +234,46 @@ function ModelsTable({
   onSetDefault: (model: ModelView) => void;
 }) {
   return (
-    <div className="overflow-x-auto">
+    <div>
+      <div className="space-y-2 p-2.5 sm:hidden">
+        {models.map((model) => (
+          <article
+            key={model.id}
+            className={cn(
+              "rounded-xl border bg-card p-3",
+              model.id === selectedId ? "border-primary/60 bg-primary/10" : "border-border"
+            )}
+          >
+            <button type="button" className="flex w-full items-start gap-3 text-left" onClick={() => onSelect(model.id)}>
+              <EntityIcon icon={BrainCircuit} label={model.name} tone={model.statusTone} />
+              <span className="min-w-0 flex-1">
+                <span className="flex items-start justify-between gap-2">
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-foreground">{model.name}</span>
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">{model.provider}</span>
+                  </span>
+                  <StatusBadge label={model.statusLabel} tone={model.statusTone} />
+                </span>
+                <span className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <span><span className="block text-[0.6rem] uppercase tracking-wider text-muted-foreground">Role</span><span className="mt-1 block font-medium text-foreground">{model.role}</span></span>
+                  <span><span className="block text-[0.6rem] uppercase tracking-wider text-muted-foreground">Context</span><span className="mt-1 block font-medium text-foreground">{model.contextLabel}</span></span>
+                </span>
+              </span>
+            </button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="mt-3 h-11 w-full rounded-xl text-xs"
+              disabled={settingDefaultId === model.id || model.role === "Primary" || model.statusTone === "danger"}
+              title={model.role === "Primary" ? "This model is already the default." : model.statusTone === "danger" ? "Unavailable models cannot be selected as default." : "Set this configured model as the AgentOS default."}
+              onClick={() => onSetDefault(model)}
+            >
+              {settingDefaultId === model.id ? "Saving..." : model.role === "Primary" ? "Current Default" : "Set Default"}
+            </Button>
+          </article>
+        ))}
+      </div>
+      <div className="hidden overflow-x-auto sm:block">
       <table className="w-full min-w-[900px] text-left text-xs">
         <thead className="border-b border-border text-[0.56rem] uppercase tracking-[0.14em] text-muted-foreground">
           <tr>
@@ -275,6 +314,7 @@ function ModelsTable({
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

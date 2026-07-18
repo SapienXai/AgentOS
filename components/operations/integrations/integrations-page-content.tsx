@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { BellRing, CircleCheck, Clock3, Gauge, Import, Layers3, Plus, Plug, RefreshCw, SearchCheck, ShieldCheck, SlidersHorizontal, Sparkles, Workflow, X } from "lucide-react";
 
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
@@ -36,8 +36,16 @@ export function IntegrationsPageContent({
   const [status, setStatus] = useState<"All Statuses" | IntegrationStatus>("All Statuses");
   const [sort, setSort] = useState<IntegrationSortMode>("last-active");
   const [view, setView] = useState<"grid" | "list">("grid");
+  const [showAllMobileIntegrations, setShowAllMobileIntegrations] = useState(true);
   const [selectedId, setSelectedId] = useState(baseIntegrations[0]?.id ?? "");
   const [runningAction, setRunningAction] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 639px)").matches) {
+      const frame = window.requestAnimationFrame(() => setShowAllMobileIntegrations(false));
+      return () => window.cancelAnimationFrame(frame);
+    }
+  }, []);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isChannelsDialogOpen, setIsChannelsDialogOpen] = useState(false);
@@ -112,6 +120,7 @@ export function IntegrationsPageContent({
     integration.status === "needs-authentication"
   ).length;
   const failedCount = filteredIntegrations.filter((integration) => integration.status === "failed").length;
+  const visibleIntegrations = showAllMobileIntegrations ? filteredIntegrations : filteredIntegrations.slice(0, 6);
 
   const openSurfaceSetup = (surfaceProvider: IntegrationView["surfaceProvider"] | null = null) => {
     if (!activeWorkspaceId) {
@@ -399,11 +408,11 @@ export function IntegrationsPageContent({
               />
             ) : (
               <div className="space-y-3">
-                {Array.from(new Set(filteredIntegrations.map((integration) => integration.category))).map((section) => (
+                {Array.from(new Set(visibleIntegrations.map((integration) => integration.category))).map((section) => (
                   <section key={section}>
                     <h2 className="mb-2 text-[0.62rem] font-bold uppercase tracking-[0.16em] text-muted-foreground">{section} ({filteredIntegrations.filter((integration) => integration.category === section).length})</h2>
                     <div className={cn(view === "grid" ? "grid gap-2.5 lg:grid-cols-2 min-[1400px]:grid-cols-3" : "flex flex-col gap-2.5")}>
-                      {filteredIntegrations.filter((integration) => integration.category === section).map((integration) => (
+                      {visibleIntegrations.filter((integration) => integration.category === section).map((integration) => (
                         <IntegrationCard
                           key={integration.id}
                           integration={integration}
@@ -418,6 +427,11 @@ export function IntegrationsPageContent({
                     </div>
                   </section>
                 ))}
+                {!showAllMobileIntegrations && filteredIntegrations.length > visibleIntegrations.length ? (
+                  <Button variant="secondary" className="h-11 w-full rounded-xl text-xs" onClick={() => setShowAllMobileIntegrations(true)}>
+                    Show {filteredIntegrations.length - visibleIntegrations.length} more integrations
+                  </Button>
+                ) : null}
               </div>
             )}
 
@@ -522,12 +536,12 @@ function IntegrationCard({
             </div>
             <StatusBadge label={integration.statusLabel} tone={integration.statusTone} />
           </div>
-          <div className="mt-2.5 flex items-center justify-between gap-2">
+          <div className="mt-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 flex-wrap gap-1.5">
               <MiniBadge>{integration.category.split(" ")[0]}</MiniBadge>
               <MiniBadge>{integration.managedBy}</MiniBadge>
             </div>
-            <div className="flex gap-2">
+            <div className="flex justify-end gap-2">
               <Button
                 variant="secondary"
                 size="sm"

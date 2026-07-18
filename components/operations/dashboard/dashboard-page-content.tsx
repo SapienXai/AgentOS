@@ -15,6 +15,7 @@ import {
   Gauge,
   Inbox,
   KeyRound,
+  Plug,
   Plus,
   RefreshCw,
   Search,
@@ -191,7 +192,7 @@ export function DashboardPageContent({
         <header className="border-b border-border/80 pb-4">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="hidden flex-wrap items-center gap-2 sm:flex">
                 <HeaderStatusPill
                   label="OpenClaw"
                   value={resolveOpenClawStatus(rootSnapshot).label}
@@ -211,7 +212,7 @@ export function DashboardPageContent({
                   title="Last snapshot update"
                 />
               </div>
-              <h1 className="mt-4 font-display text-[1.7rem] font-semibold leading-tight tracking-normal text-foreground">
+              <h1 className="mt-1 font-display text-[1.7rem] font-semibold leading-tight tracking-normal text-foreground sm:mt-4">
                 Dashboard
               </h1>
               <p className="mt-1.5 max-w-3xl text-[0.8rem] leading-5 text-muted-foreground">
@@ -226,11 +227,11 @@ export function DashboardPageContent({
                 onChange={setDashboardSearch}
                 onClear={() => setDashboardSearch("")}
               />
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex">
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="h-9 rounded-lg px-3 text-xs"
+                  className="h-11 rounded-xl px-3 text-xs sm:h-9 sm:rounded-lg"
                   onClick={() => void refresh()}
                 >
                   <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
@@ -238,7 +239,7 @@ export function DashboardPageContent({
                 </Button>
                 <Button
                   size="sm"
-                  className="h-9 rounded-lg px-3 text-xs"
+                  className="h-11 rounded-xl px-3 text-xs sm:h-9 sm:rounded-lg"
                   onClick={() => setDispatchOpen(true)}
                 >
                   <Plus className="mr-1.5 h-3.5 w-3.5" />
@@ -258,7 +259,7 @@ export function DashboardPageContent({
           <StatCard label="Tokens" value={tokenTotal > 0 ? formatBigNumber(tokenTotal) : "None"} detail={tokenTotal > 0 ? "Reported usage" : "No usage reported"} icon={Sparkles} tone="purple" />
         </StatGrid>
 
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-5">
           <QuickAction icon={Bot} label="Add Agent" href="/agents" />
           <QuickAction icon={KeyRound} label="Connect Account" href="/accounts" />
           <QuickAction icon={BrainCircuit} label="Manage Models" href="/models" />
@@ -441,7 +442,7 @@ export function DashboardPageContent({
           <SectionCard
             title="OpenClaw Runtime"
             action={<PanelLink href="/settings#diagnostics" label="Diagnostics" />}
-            className={cn(dashboardPanelClassName, "xl:col-span-8")}
+            className={cn(dashboardPanelClassName, "hidden sm:block xl:col-span-8")}
           >
             <div className="space-y-3 p-3">
               <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_minmax(0,1fr)]">
@@ -498,7 +499,20 @@ export function DashboardPageContent({
             </div>
           </SectionCard>
 
-          <div className="grid gap-3 lg:col-span-2 lg:grid-cols-2 xl:col-span-4 xl:grid-cols-1">
+          <SectionCard
+            title="System Details"
+            action={<PanelLink href="/settings#diagnostics" label="Diagnostics" />}
+            className={cn(dashboardPanelClassName, "sm:hidden")}
+          >
+            <div className="grid grid-cols-2 gap-2 p-3">
+              <QuickAction icon={TerminalSquare} label="Runtime" href="/operations" />
+              <QuickAction icon={BrainCircuit} label="Models" href="/models" />
+              <QuickAction icon={KeyRound} label="Accounts" href="/accounts" />
+              <QuickAction icon={Plug} label="Integrations" href="/integrations" />
+            </div>
+          </SectionCard>
+
+          <div className="hidden gap-3 sm:grid lg:col-span-2 lg:grid-cols-2 xl:col-span-4 xl:grid-cols-1">
             <SectionCard
               title="Models"
               action={<PanelLink href="/models" label="Manage" />}
