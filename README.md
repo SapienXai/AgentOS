@@ -288,10 +288,20 @@ AgentOS currently targets trusted operator machines and local environments.
 
 - The packaged launcher binds locally, generates an API token, starts AgentOS with authentication, and opens an authenticated local URL.
 - API routes are protected before route handlers run.
+- Remote write access remains disabled by default. Operators may opt in exact HTTPS origins with `AGENTOS_TRUSTED_OPERATOR_ORIGINS`; API token authentication remains required.
 - Remote Gateway URLs are blocked by default unless `AGENTOS_ALLOW_REMOTE_GATEWAY_URL=1` is explicitly enabled.
 - Sensitive values are redacted from diagnostics and compatibility reports.
 - Local auth and config files use owner-only permissions where applicable.
 - AgentOS should not be exposed publicly without an external network boundary, access policy, and monitoring.
+
+For an intentionally remote operator deployment, configure a strong API token and an exact, comma-separated HTTPS origin allowlist:
+
+```bash
+AGENTOS_API_TOKEN=<secret>
+AGENTOS_TRUSTED_OPERATOR_ORIGINS=https://agentos.example.com
+```
+
+Wildcards, HTTP origins, paths, query strings, and fragments are rejected. Keep AgentOS behind HTTPS and an authenticated reverse proxy, and preserve the public `Host`, `Origin`, `X-Forwarded-Host`, and `X-Forwarded-Proto` values. Origin allowlisting is an additional mutation boundary, not a substitute for authentication.
 
 Several operations spawn local processes, inspect transcript files, or write to workspace directories. This makes the current release suitable for operator workstations and trusted hosts, not serverless-only deployment.
 

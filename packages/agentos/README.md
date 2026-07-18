@@ -41,6 +41,7 @@ Optional environment variables:
 AGENTOS_HOST=127.0.0.1
 AGENTOS_PORT=3000
 AGENTOS_OPEN=1
+AGENTOS_TRUSTED_OPERATOR_ORIGINS=https://agentos.example.com
 ```
 
 `agentos status` prints a concise local dashboard for Gateway, runtime, model, channel, and server readiness.
@@ -65,6 +66,7 @@ Security:
 
 - AgentOS is intended to bind locally by default; avoid exposing it publicly without your own network controls.
 - Packaged AgentOS uses API token authentication and opens an authenticated local URL from the launcher.
+- Remote mutations are disabled by default. `AGENTOS_TRUSTED_OPERATOR_ORIGINS` can opt in exact, comma-separated HTTPS origins; wildcards and HTTP origins are rejected, and API token authentication remains required.
 - API routes are centrally protected, and remote Gateway URLs are blocked by default unless explicitly allowed with `AGENTOS_ALLOW_REMOTE_GATEWAY_URL=1`.
 - Sensitive local config/auth files are written with owner-only permissions where applicable.
 

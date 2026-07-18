@@ -31,7 +31,8 @@ export function evaluateAgentOsApiRequest(input: {
       method: input.method,
       url: input.url,
       headers: input.headers,
-      allowSafeMethods: false
+      allowSafeMethods: false,
+      allowTrustedRemote: false
     });
 
     return localDecision.ok
@@ -48,7 +49,21 @@ export function evaluateAgentOsApiRequest(input: {
     const providedToken = readBearerToken(input.headers) ?? readApiTokenCookie(input.headers);
 
     if (providedToken && constantTimeStringEqual(providedToken, configuredToken)) {
-      return { ok: true };
+      const localDecision = evaluateLocalOperatorRequest({
+        method: input.method,
+        url: input.url,
+        headers: input.headers,
+        env
+      });
+
+      return localDecision.ok
+        ? { ok: true }
+        : {
+            ok: false,
+            status: localDecision.status,
+            code: "unsafe-local-api",
+            message: localDecision.message
+          };
     }
 
     return {
@@ -64,7 +79,8 @@ export function evaluateAgentOsApiRequest(input: {
       method: input.method,
       url: input.url,
       headers: input.headers,
-      allowSafeMethods: false
+      allowSafeMethods: false,
+      allowTrustedRemote: false
     });
 
     return localDecision.ok

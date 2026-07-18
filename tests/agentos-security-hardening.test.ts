@@ -22,13 +22,14 @@ const rootDir = process.cwd();
 
 async function withProcessEnv(
   env: Partial<
-    Record<"AGENTOS_API_TOKEN" | "AGENTOS_PACKAGE_RUNTIME" | "AGENTOS_UNSAFE_DISABLE_API_AUTH" | "NODE_ENV", string | undefined>
+    Record<"AGENTOS_API_TOKEN" | "AGENTOS_PACKAGE_RUNTIME" | "AGENTOS_TRUSTED_OPERATOR_ORIGINS" | "AGENTOS_UNSAFE_DISABLE_API_AUTH" | "NODE_ENV", string | undefined>
   >,
   callback: () => Promise<void> | void
 ) {
   const previous = {
     AGENTOS_API_TOKEN: process.env.AGENTOS_API_TOKEN,
     AGENTOS_PACKAGE_RUNTIME: process.env.AGENTOS_PACKAGE_RUNTIME,
+    AGENTOS_TRUSTED_OPERATOR_ORIGINS: process.env.AGENTOS_TRUSTED_OPERATOR_ORIGINS,
     AGENTOS_UNSAFE_DISABLE_API_AUTH: process.env.AGENTOS_UNSAFE_DISABLE_API_AUTH,
     NODE_ENV: process.env.NODE_ENV
   };
@@ -93,6 +94,126 @@ test("unsafe remote origin mutation requests are blocked", () => {
 
   assert.equal(decision.ok, false);
   assert.equal(decision.ok ? null : decision.code, "unsafe-host");
+});
+
+test("an exact trusted HTTPS operator origin allows remote mutations", () => {
+  const decision = evaluateLocalOperatorRequest({
+    method: "POST",
+    url: "https://agentos.panel.sapienx.app/api/auth/logout",
+    headers: new Headers({
+      host: "agentos.panel.sapienx.app",
+      origin: "https://agentos.panel.sapienx.app",
+      "x-forwarded-for": "203.0.113.10",
+      "x-forwarded-host": "agentos.panel.sapienx.app",
+      "x-forwarded-proto": "https"
+    }),
+    env: {
+      AGENTOS_TRUSTED_OPERATOR_ORIGINS: "https://admin.example.com, https://agentos.panel.sapienx.app"
+    }
+  });
+
+  assert.deepEqual(decision, { ok: true });
+});
+
+test("trusted operator origins require exact HTTPS origins", () => {
+  for (const configuredOrigin of [
+    "http://agentos.example.com",
+    "https://*.example.com",
+    "https://agentos.example.com/path"
+  ]) {
+    const decision = evaluateLocalOperatorRequest({
+      method: "POST",
+      url: "https://agentos.example.com/api/auth/logout",
+      headers: new Headers({
+        host: "agentos.example.com",
+        origin: "https://agentos.example.com"
+      }),
+      env: {
+        AGENTOS_TRUSTED_OPERATOR_ORIGINS: configuredOrigin
+      }
+    });
+
+    assert.equal(decision.ok, false);
+    assert.equal(decision.ok ? null : decision.code, "unsafe-host");
+  }
+});
+
+test("trusted remote mutations reject missing origins and mismatched hosts", () => {
+  const env = {
+    AGENTOS_TRUSTED_OPERATOR_ORIGINS: "https://agentos.example.com"
+  };
+  const missingOrigin = evaluateLocalOperatorRequest({
+    method: "POST",
+    url: "https://agentos.example.com/api/auth/logout",
+    headers: new Headers({ host: "agentos.example.com" }),
+    env
+  });
+  const mismatchedHost = evaluateLocalOperatorRequest({
+    method: "POST",
+    url: "https://evil.example/api/auth/logout",
+    headers: new Headers({
+      host: "evil.example",
+      origin: "https://agentos.example.com",
+      "x-forwarded-host": "agentos.example.com",
+      "x-forwarded-proto": "https"
+    }),
+    env
+  });
+
+  assert.equal(missingOrigin.ok, false);
+  assert.equal(mismatchedHost.ok, false);
+});
+
+test("trusted operator origins do not bypass API token authentication", () => {
+  const decision = evaluateAgentOsApiRequest({
+    method: "POST",
+    url: "https://agentos.example.com/api/auth/logout",
+    headers: new Headers({
+      host: "agentos.example.com",
+      origin: "https://agentos.example.com"
+    }),
+    env: {
+      AGENTOS_TRUSTED_OPERATOR_ORIGINS: "https://agentos.example.com",
+      NODE_ENV: "production"
+    }
+  });
+
+  assert.equal(decision.ok, false);
+  assert.equal(decision.ok ? null : decision.code, "api-auth-required");
+});
+
+test("API tokens require a trusted operator origin for remote mutations", () => {
+  const headers = new Headers({
+    authorization: "Bearer local-secret",
+    host: "agentos.example.com",
+    origin: "https://agentos.example.com",
+    "x-forwarded-for": "203.0.113.10",
+    "x-forwarded-host": "agentos.example.com",
+    "x-forwarded-proto": "https"
+  });
+  const blocked = evaluateAgentOsApiRequest({
+    method: "POST",
+    url: "https://agentos.example.com/api/mission",
+    headers,
+    env: {
+      AGENTOS_API_TOKEN: "local-secret",
+      NODE_ENV: "production"
+    }
+  });
+  const allowed = evaluateAgentOsApiRequest({
+    method: "POST",
+    url: "https://agentos.example.com/api/mission",
+    headers,
+    env: {
+      AGENTOS_API_TOKEN: "local-secret",
+      AGENTOS_TRUSTED_OPERATOR_ORIGINS: "https://agentos.example.com",
+      NODE_ENV: "production"
+    }
+  });
+
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.ok ? null : blocked.code, "unsafe-local-api");
+  assert.deepEqual(allowed, { ok: true });
 });
 
 test("cross-origin localhost mutation requests are blocked", () => {
@@ -182,6 +303,7 @@ test("explicit repository auth opt-out still blocks forwarded remote clients", (
       "x-forwarded-for": "203.0.113.10"
     }),
     env: {
+      AGENTOS_TRUSTED_OPERATOR_ORIGINS: "https://agentos.example.com",
       AGENTOS_UNSAFE_DISABLE_API_AUTH: "1",
       NODE_ENV: "production"
     }
