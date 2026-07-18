@@ -299,6 +299,27 @@ export function MissionControlShell({
     return () => mediaQuery.removeEventListener("change", syncViewport);
   }, []);
 
+  useEffect(() => {
+    if (mode !== "settings" || !isCompactViewport || !isSidebarOpenState) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsSidebarOpen(false);
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isCompactViewport, isSidebarOpenState, mode]);
+
   const updateInspectorWidth = useCallback((nextWidth: number) => {
     setInspectorWidth(clampInspectorWidth(nextWidth, window.innerWidth));
   }, []);
@@ -3909,25 +3930,53 @@ export function MissionControlShell({
         ) : null}
 
         {!isSidebarOpen ? (
-          <button
-            type="button"
-            aria-label="Open navigation"
-            aria-expanded="false"
-            onClick={() => setIsSidebarOpen(true)}
+          <div
             className={cn(
-              "fixed left-3 top-3 z-[60] inline-flex h-11 w-11 items-center justify-center rounded-full border shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur-xl lg:hidden",
+              "fixed inset-x-0 top-0 z-[60] flex min-h-16 items-center gap-3 border-b px-3 backdrop-blur-xl lg:hidden",
               surfaceTheme === "light"
-                ? "border-[#d9c9bc]/90 bg-[#f8f5f0]/92 text-[#6f5a4b]"
-                : "border-cyan-300/10 bg-slate-950/82 text-slate-200"
+                ? "border-[#d9c9bc]/80 bg-[#f8f5f0]/94 text-[#2d211b]"
+                : "border-white/[0.08] bg-[#07101c]/94 text-slate-100"
             )}
           >
-            <Menu className="h-5 w-5" />
-          </button>
+            <button
+              type="button"
+              aria-label="Open navigation"
+              aria-expanded="false"
+              onClick={() => setIsSidebarOpen(true)}
+              className={cn(
+                "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border shadow-sm",
+                surfaceTheme === "light"
+                  ? "border-[#d9c9bc]/90 bg-white/80 text-[#6f5a4b]"
+                  : "border-cyan-300/10 bg-slate-950/82 text-slate-200"
+              )}
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold">Settings</p>
+              <p className={cn("truncate text-[0.68rem]", surfaceTheme === "light" ? "text-[#7a6658]" : "text-slate-400")}>System control center</p>
+            </div>
+            <span
+              className={cn(
+                "inline-flex h-11 items-center gap-2 rounded-xl border px-3 text-[0.65rem] font-semibold uppercase tracking-[0.12em]",
+                connectionState === "live"
+                  ? surfaceTheme === "light"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
+                  : surfaceTheme === "light"
+                    ? "border-amber-200 bg-amber-50 text-amber-700"
+                    : "border-amber-300/20 bg-amber-300/10 text-amber-100"
+              )}
+            >
+              <span className={cn("h-2 w-2 rounded-full", connectionState === "live" ? "bg-emerald-500" : "bg-amber-400")} />
+              <span className="sr-only sm:not-sr-only">{connectionState === "live" ? "Online" : connectionState === "retrying" ? "Retrying" : "Connecting"}</span>
+            </span>
+          </div>
         ) : null}
 
         <div
           className={cn(
-            "pointer-events-auto fixed inset-y-0 left-0 z-50 w-[min(88vw,320px)] overflow-hidden mission-ease-smooth bg-[#050a12] shadow-[18px_0_60px_rgba(0,0,0,0.42)] transition-transform duration-300 lg:hidden",
+            "pointer-events-auto fixed inset-y-0 left-0 z-50 w-[min(88vw,320px)] overflow-hidden mission-ease-smooth bg-[#050a12] shadow-[18px_0_60px_rgba(0,0,0,0.42)] transition-transform duration-300 [&_button]:min-h-11 lg:hidden",
             isSidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
           inert={!isSidebarOpen}

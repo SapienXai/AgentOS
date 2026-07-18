@@ -1003,6 +1003,13 @@ export function SettingsControlCenter(
 
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+  const selectSettingsSection = (sectionId: SettingsSectionId) => {
+    setActiveSection(sectionId);
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", `/settings#${sectionId}`);
+    }
+    scrollSettingsToTop();
+  };
   const toolControls = [
     {
       id: "browser",
@@ -1030,19 +1037,19 @@ export function SettingsControlCenter(
   return (
     <main
       className={cn(
-        "relative z-10 min-h-screen",
+        "relative z-10 min-h-screen [&_a]:inline-flex [&_a]:min-h-11 [&_a]:min-w-11 [&_a]:items-center [&_button]:min-h-11 [&_button]:min-w-11 [&_input]:min-h-11 [&_select]:min-h-11 sm:[&_a]:min-h-0 sm:[&_a]:min-w-0 sm:[&_button]:min-h-0 sm:[&_button]:min-w-0 sm:[&_input]:min-h-0 sm:[&_select]:min-h-0",
         surfaceTheme === "light" ? "text-foreground" : "text-slate-100"
       )}
     >
         <section
           className={cn(
-            "min-w-0 px-3 pb-8 pt-[86px] sm:px-4 lg:px-4 xl:px-5 2xl:px-6",
+            "min-w-0 px-3 pb-[calc(2rem+env(safe-area-inset-bottom))] pt-[76px] sm:px-4 lg:px-4 lg:pb-8 lg:pt-[86px] xl:px-5 2xl:px-6",
             sidebarOpen ? "lg:ml-[308px]" : "lg:ml-[72px]"
           )}
         >
           <div className="mx-auto max-w-[1680px] space-y-5">
-            <section className="space-y-5">
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[1.05fr_0.9fr_0.9fr_1.45fr_0.7fr_0.72fr]">
+            <section className="flex flex-col gap-5">
+              <div className="order-2 grid grid-cols-2 gap-2 sm:grid-cols-2 xl:grid-cols-[1.05fr_0.9fr_0.9fr_1.45fr_0.7fr_0.72fr]">
                   <SummaryTile
                     label="OpenClaw"
                     value={snapshot.diagnostics.version ? `v${snapshot.diagnostics.version}` : "Unknown"}
@@ -1088,7 +1095,7 @@ export function SettingsControlCenter(
                   />
               </div>
 
-              <div className="flex flex-col gap-1.5">
+              <div className="order-1 flex flex-col gap-1.5">
                 <h1 className={cn("font-display text-[1.45rem] leading-tight sm:text-[1.85rem]", surfaceTheme === "light" ? "text-[#1f1712]" : "text-slate-50")}>
                   Settings
                 </h1>
@@ -1097,10 +1104,24 @@ export function SettingsControlCenter(
                 </p>
               </div>
 
+              <label className="order-3 sm:hidden">
+                <span className={cn("mb-1.5 block text-[0.65rem] font-semibold uppercase tracking-[0.14em]", mutedTextClassName(surfaceTheme))}>Settings section</span>
+                <select
+                  value={renderedActiveSection}
+                  onChange={(event) => selectSettingsSection(event.target.value as SettingsSectionId)}
+                  className={cn(
+                    "h-11 w-full rounded-xl border px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-ring/40",
+                    surfaceTheme === "light" ? "border-border bg-card text-foreground" : "border-border bg-[#0b111c] text-slate-100"
+                  )}
+                >
+                  {settingsSections.map((section) => <option key={section.id} value={section.id}>{section.label}</option>)}
+                </select>
+              </label>
+
               <nav
                 aria-label="Settings sections"
                 className={cn(
-                  "flex gap-1 overflow-x-auto rounded-[18px] border p-1 shadow-[0_18px_44px_rgba(15,23,42,0.10)]",
+                  "order-3 hidden gap-1 overflow-x-auto rounded-[18px] border p-1 shadow-[0_18px_44px_rgba(15,23,42,0.10)] sm:flex",
                   surfaceTheme === "light"
                     ? "border-border bg-card"
                     : "border-border bg-[#0b111c] shadow-[0_18px_48px_rgba(0,0,0,0.36)]"
@@ -1143,7 +1164,7 @@ export function SettingsControlCenter(
                 <div className="flex flex-col gap-4">
               {renderedActiveSection === "overview" ? (
               <section id="overview" className="scroll-mt-24 space-y-5">
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <Card title="OpenClaw" icon={Activity} surfaceTheme={surfaceTheme}>
                     <Metric
                       label="Current version"
@@ -2439,7 +2460,7 @@ export function SettingsControlCenter(
               </div>
             </div>
           </section>
-            <div className="grid gap-4 xl:grid-cols-3">
+            <div className="hidden gap-4 xl:grid xl:grid-cols-3">
               <Card title="Context" icon={activeSectionConfig.icon} surfaceTheme={surfaceTheme}>
                 <InfoRows
                   surfaceTheme={surfaceTheme}
@@ -2591,7 +2612,7 @@ function SummaryTile({
         {value}
       </p>
       {detail ? (
-        <p className={cn(compact ? "mt-0.5 text-[10px] leading-4" : "mt-1 text-[11px] leading-4", mutedTextClassName(surfaceTheme))}>{detail}</p>
+        <p className={cn(compact ? "mt-0.5 hidden text-[10px] leading-4 sm:block" : "mt-1 text-[11px] leading-4", mutedTextClassName(surfaceTheme))}>{detail}</p>
       ) : null}
     </div>
   );
@@ -3086,6 +3107,7 @@ function CapabilityMatrixPanel({
   contractComparison: AgentOsOpenClawContractComparison;
   surfaceTheme: SurfaceTheme;
 }) {
+  const [showAllMobileCapabilityRows, setShowAllMobileCapabilityRows] = useState(false);
   const [surfaceSnapshot, setSurfaceSnapshot] = useState<GatewayProductSurfaceSnapshot | null>(null);
   const [surfaceSnapshotError, setSurfaceSnapshotError] = useState<string | null>(null);
   const [isLoadingSurfaceSnapshot, setIsLoadingSurfaceSnapshot] = useState(false);
@@ -3167,26 +3189,44 @@ function CapabilityMatrixPanel({
         />
       </div>
 
-      <CapabilityBaselineComparisonPanel
-        diff={updateCapabilityDiff}
-        scorecard={updateCertificationScorecard}
-        snapshot={snapshot}
-        summary={summary}
+      <MobileSettingsDisclosure
+        title="Certified baseline"
+        description="Version delta, certification blockers, and update evidence."
         surfaceTheme={surfaceTheme}
-      />
+      >
+        <CapabilityBaselineComparisonPanel
+          diff={updateCapabilityDiff}
+          scorecard={updateCertificationScorecard}
+          snapshot={snapshot}
+          summary={summary}
+          surfaceTheme={surfaceTheme}
+        />
+      </MobileSettingsDisclosure>
 
-      <ContractComparisonPanel
-        comparison={contractComparison}
+      <MobileSettingsDisclosure
+        title="Contract registry"
+        description={`${contractComparison.rows.length} OpenClaw contract operations with baseline and target evidence.`}
         surfaceTheme={surfaceTheme}
-      />
+      >
+        <ContractComparisonPanel
+          comparison={contractComparison}
+          surfaceTheme={surfaceTheme}
+        />
+      </MobileSettingsDisclosure>
 
-      <GatewayProductSurfacePanel
-        snapshot={surfaceSnapshot}
-        error={surfaceSnapshotError}
-        loading={isLoadingSurfaceSnapshot}
+      <MobileSettingsDisclosure
+        title="Gateway product surfaces"
+        description="Native product coverage, runtime inbox, and recovery paths."
         surfaceTheme={surfaceTheme}
-        onRefresh={() => void loadSurfaceSnapshot()}
-      />
+      >
+        <GatewayProductSurfacePanel
+          snapshot={surfaceSnapshot}
+          error={surfaceSnapshotError}
+          loading={isLoadingSurfaceSnapshot}
+          surfaceTheme={surfaceTheme}
+          onRefresh={() => void loadSurfaceSnapshot()}
+        />
+      </MobileSettingsDisclosure>
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Metric
@@ -3223,13 +3263,19 @@ function CapabilityMatrixPanel({
         ]}
       />
 
+      <MobileSettingsDisclosure
+        title="Capability operations"
+        description={`${rows.length} normalized operations grouped by native, fallback, and degraded state.`}
+        surfaceTheme={surfaceTheme}
+      >
       {rows.length > 0 ? (
         <div className="space-y-2">
-          {rows.map((row) => (
+          {rows.map((row, index) => (
             <details
               key={row.id}
               className={cn(
                 "group rounded-[18px] border",
+                index >= 8 && !showAllMobileCapabilityRows ? "hidden sm:block" : null,
                 surfaceTheme === "light"
                   ? "border-border bg-card"
                   : "border-white/[0.08] bg-[#101a2a]/92"
@@ -3299,6 +3345,11 @@ function CapabilityMatrixPanel({
               </div>
             </details>
           ))}
+          {!showAllMobileCapabilityRows && rows.length > 8 ? (
+            <Button type="button" variant="secondary" className="h-11 w-full rounded-xl text-xs sm:hidden" onClick={() => setShowAllMobileCapabilityRows(true)}>
+              Show {rows.length - 8} more capability operations
+            </Button>
+          ) : null}
         </div>
       ) : (
         <EmptyState
@@ -3307,7 +3358,33 @@ function CapabilityMatrixPanel({
           surfaceTheme={surfaceTheme}
         />
       )}
+      </MobileSettingsDisclosure>
     </div>
+  );
+}
+
+function MobileSettingsDisclosure({
+  title,
+  description,
+  surfaceTheme,
+  children
+}: {
+  title: string;
+  description: string;
+  surfaceTheme: SurfaceTheme;
+  children: ReactNode;
+}) {
+  return (
+    <details className={cn("group rounded-[18px] border sm:border-0", surfaceTheme === "light" ? "border-border bg-card sm:bg-transparent" : "border-white/[0.08] bg-[#0f1826] sm:bg-transparent")}>
+      <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 px-3 py-3 sm:hidden">
+        <span className="min-w-0 flex-1">
+          <span className={cn("block text-sm font-semibold", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>{title}</span>
+          <span className={cn("mt-1 block text-xs leading-5", mutedTextClassName(surfaceTheme))}>{description}</span>
+        </span>
+        <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform group-open:rotate-180", mutedTextClassName(surfaceTheme))} />
+      </summary>
+      <div className="p-3 pt-0 sm:!block sm:p-0">{children}</div>
+    </details>
   );
 }
 
@@ -3456,7 +3533,7 @@ function ContractSummaryStats({
         surfaceTheme === "light" ? "border-slate-200 bg-slate-50/70" : "border-white/[0.08] bg-white/[0.035]"
       )}
     >
-      <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4 xl:grid-cols-8">
+      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8">
         {stats.map((stat) => (
           <ContractSummaryStat key={stat.label} {...stat} surfaceTheme={surfaceTheme} />
         ))}
@@ -3494,7 +3571,7 @@ function ContractSummaryStat({
   surfaceTheme: SurfaceTheme;
 }) {
   return (
-    <div className="min-w-0 px-4 py-4">
+    <div className={cn("min-w-0 border-b border-r px-3 py-3 sm:px-4 sm:py-4", surfaceTheme === "light" ? "border-slate-200" : "border-white/[0.08]")}>
       <div className="flex items-center gap-2">
         <Icon className={cn("h-4 w-4 shrink-0", contractToneTextClassName(tone, surfaceTheme))} />
         <p className={cn("truncate text-[11px] font-semibold uppercase tracking-[0.14em]", surfaceTheme === "light" ? "text-slate-500" : "text-slate-400")}>
@@ -3518,7 +3595,7 @@ function ContractFilterChips({
   surfaceTheme: SurfaceTheme;
 }) {
   return (
-    <div className="mt-8 flex flex-wrap gap-2">
+    <div className="mt-6 flex gap-2 overflow-x-auto pb-1 sm:mt-8 sm:flex-wrap sm:overflow-visible sm:pb-0">
       {contractComparisonFilters.map((entry) => {
         const Icon = entry.icon;
         const selected = filter === entry.id;
@@ -3557,9 +3634,61 @@ function ContractComparisonTable({
   rows: AgentOsOpenClawContractComparison["rows"];
   surfaceTheme: SurfaceTheme;
 }) {
+  const [showAllMobileContractRows, setShowAllMobileContractRows] = useState(false);
+  const mobileContractRows = showAllMobileContractRows ? rows : rows.slice(0, 8);
+
   return (
     <div className={cn("mt-5 overflow-hidden rounded-[12px] border shadow-[0_12px_30px_rgba(15,23,42,0.04)]", surfaceTheme === "light" ? "border-slate-200 bg-white" : "border-white/[0.08] bg-[#0f1826]")}>
-      <div className="overflow-x-auto">
+      <div className="divide-y divide-border sm:hidden">
+        {rows.length > 0 ? mobileContractRows.map((row) => {
+          const OperationIcon = resolveContractOperationIcon(row.areaId);
+          return (
+            <details key={row.operationId} className={cn("group", row.blocksCertification ? surfaceTheme === "light" ? "bg-rose-50/35" : "bg-rose-300/[0.045]" : null)}>
+              <summary className="flex min-h-14 cursor-pointer list-none items-start gap-3 px-3 py-3">
+                <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border", surfaceTheme === "light" ? "border-slate-200 bg-slate-50 text-slate-600" : "border-white/10 bg-white/[0.04] text-slate-300")}>
+                  <OperationIcon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className={cn("block text-sm font-semibold", surfaceTheme === "light" ? "text-slate-950" : "text-slate-50")}>{row.label}</span>
+                  <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <RequirementBadge requirement={row.requirement} status={row.status} surfaceTheme={surfaceTheme} />
+                    <ContractStatusBadge status={row.status} surfaceTheme={surfaceTheme} />
+                    {row.blocksCertification ? <BlocksBadge blocks surfaceTheme={surfaceTheme} /> : null}
+                  </span>
+                </span>
+                <ChevronDown className="mt-2 h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="grid gap-2 px-3 pb-3">
+                <div className={cn("rounded-xl border p-3", surfaceTheme === "light" ? "border-slate-200 bg-slate-50/70" : "border-white/[0.08] bg-black/10")}>
+                  <p className={cn("text-[0.62rem] font-semibold uppercase tracking-[0.12em]", surfaceTheme === "light" ? "text-slate-500" : "text-slate-400")}>Baseline expected</p>
+                  <EvidenceSummaryCell evidence={buildBaselineEvidence(row)} surfaceTheme={surfaceTheme} />
+                </div>
+                <div className={cn("rounded-xl border p-3", surfaceTheme === "light" ? "border-slate-200 bg-slate-50/70" : "border-white/[0.08] bg-black/10")}>
+                  <p className={cn("text-[0.62rem] font-semibold uppercase tracking-[0.12em]", surfaceTheme === "light" ? "text-slate-500" : "text-slate-400")}>Installed actual</p>
+                  <EvidenceSummaryCell evidence={buildInstalledEvidence(row)} surfaceTheme={surfaceTheme} />
+                </div>
+                <div className={cn("rounded-xl border p-3", surfaceTheme === "light" ? "border-slate-200 bg-slate-50/70" : "border-white/[0.08] bg-black/10")}>
+                  <p className={cn("text-[0.62rem] font-semibold uppercase tracking-[0.12em]", surfaceTheme === "light" ? "text-slate-500" : "text-slate-400")}>Target actual</p>
+                  <EvidenceSummaryCell evidence={buildTargetEvidence(row, comparison.targetEvidenceLabel)} surfaceTheme={surfaceTheme} />
+                </div>
+              </div>
+            </details>
+          );
+        }) : (
+          <div className="p-3">
+            <EmptyState title="Evidence missing" detail="No contract operations matched this filter. Missing evidence is not treated as passing." surfaceTheme={surfaceTheme} />
+          </div>
+        )}
+        {!showAllMobileContractRows && rows.length > mobileContractRows.length ? (
+          <div className="p-3">
+            <Button type="button" variant="secondary" className="h-11 w-full rounded-xl text-xs" onClick={() => setShowAllMobileContractRows(true)}>
+              Show {rows.length - mobileContractRows.length} more contract operations
+            </Button>
+          </div>
+        ) : null}
+        {rows.length > 0 ? <div className={cn("px-3 py-3 text-center text-xs", surfaceTheme === "light" ? "text-slate-500" : "text-slate-400")}>Showing {rows.length} of {comparison.rows.length} operations</div> : null}
+      </div>
+      <div className="hidden overflow-x-auto sm:block">
         <div className="min-w-[1120px]">
           <div className={cn(
             "grid grid-cols-[1.35fr_0.75fr_1.28fr_1.28fr_1.28fr_0.8fr_0.55fr] border-b px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.12em]",
