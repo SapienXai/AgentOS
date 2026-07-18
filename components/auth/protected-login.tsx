@@ -209,10 +209,6 @@ function VaultVisual() {
         <OrbitingVaultLabel phase={55} icon={KeyRound} label="Hashed credential" />
         <OrbitingVaultLabel phase={175} icon={ShieldCheck} label="Signed session" />
       </div>
-      <div className="absolute bottom-2 left-1/2 w-full max-w-[460px] -translate-x-1/2 text-center">
-        <p className="font-display text-lg font-semibold tracking-[-0.025em]">Private operator boundary</p>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">Your control plane remains inaccessible until this instance is unlocked.</p>
-      </div>
     </motion.aside>
   );
 }
