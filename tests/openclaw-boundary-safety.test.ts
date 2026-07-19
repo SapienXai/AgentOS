@@ -626,6 +626,23 @@ test("settings shell no longer hardcodes a light-only wrapper", () => {
   assert.match(source, /isSidebarOpen \? "lg:left-\[316px\]" : "lg:left-\[80px\]"/);
 });
 
+test("workspace creation provides a compact mobile-first basic flow", () => {
+  const source = readFileSync(
+    path.join(rootDir, "components/mission-control/workspace-wizard/workspace-wizard-dialog.tsx"),
+    "utf8"
+  );
+
+  assert.match(source, /contentClassName="h-\[100dvh\] max-h-\[100dvh\] w-screen rounded-none/);
+  assert.match(source, /<MobileWorkspaceCreateForm/);
+  assert.match(source, /id="mobile-workspace-name"/);
+  assert.match(source, /id="mobile-workspace-goal"/);
+  assert.match(source, /id="mobile-workspace-source"/);
+  assert.match(source, /id="mobile-workspace-template"/);
+  assert.match(source, /Core team · Balanced model · Standard setup/);
+  assert.match(source, /className="flex w-full items-center gap-2 md:hidden"/);
+  assert.match(source, /onClick=\{\(\) => void onCreateWorkspace\(\)\}/);
+});
+
 test("mission shell supports hover and pinned sidebar modes", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
 
@@ -654,6 +671,7 @@ test("mission shell supports hover and pinned sidebar modes", () => {
   assert.match(source, /aria-label=\{isSidebarOpen \? "Close navigation" : "Open navigation"\}/);
   assert.match(source, /isSidebarOpen \? "translate-x-0" : "-translate-x-full"/);
   assert.match(source, /aria-label=\{isInspectorOpen \? "Close inspector" : "Open inspector"\}/);
+  assert.equal(source.match(/<MissionControlCanvasTitlePill surfaceTheme=\{surfaceTheme\} \/>/g)?.length, 1);
   assert.doesNotMatch(source, /sidebarOpenStorageKey/);
 });
 

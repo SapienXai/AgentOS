@@ -4256,7 +4256,6 @@ export function MissionControlShell({
           >
             <Menu className="h-5 w-5" />
           </button>
-          <MissionControlCanvasTitlePill surfaceTheme={surfaceTheme} />
           <button
             type="button"
             aria-label={isInspectorOpen ? "Close inspector" : "Open inspector"}

@@ -28,6 +28,9 @@ type MissionControlDialogShellProps = {
   children: ReactNode;
   bodyClassName?: string;
   contentClassName?: string;
+  headerClassName?: string;
+  footerClassName?: string;
+  footerInnerClassName?: string;
   variant?: "default" | "worker-profile";
   disableOutsideDismiss?: boolean;
 };
@@ -46,6 +49,9 @@ export function MissionControlDialogShell({
   children,
   bodyClassName,
   contentClassName,
+  headerClassName,
+  footerClassName,
+  footerInnerClassName,
   variant = "default",
   disableOutsideDismiss = false
 }: MissionControlDialogShellProps) {
@@ -76,7 +82,8 @@ export function MissionControlDialogShell({
           className={cn(
             "relative space-y-0 border-b px-6 pb-2 pt-3",
             isWorkerProfile && "overflow-hidden px-5 pb-3.5 pt-4 sm:px-7",
-            isLight ? "border-[#e7dfd4]" : "border-white/[0.06]"
+            isLight ? "border-[#e7dfd4]" : "border-white/[0.06]",
+            headerClassName
           )}
         >
           {isWorkerProfile ? (
@@ -125,8 +132,8 @@ export function MissionControlDialogShell({
         <div className={cn("min-h-0 overflow-y-auto px-4 py-3", isWorkerProfile && "bg-[linear-gradient(180deg,rgba(255,255,255,0.018),transparent_24%)]", bodyClassName)}>{children}</div>
 
         {footer ? (
-          <DialogFooter className={cn("gap-0 border-t px-4 py-1.5", isWorkerProfile && "px-5 py-2 sm:px-7", isLight ? "border-[#e7dfd4]" : "border-white/[0.07]")}>
-            <div className={cn("flex w-full items-center justify-between rounded-[8px] px-1.5 py-1", isWorkerProfile && "rounded-xl px-1.5 py-1", isLight ? "bg-white/45" : "bg-white/[0.018]")}>
+          <DialogFooter className={cn("gap-0 border-t px-4 py-1.5", isWorkerProfile && "px-5 py-2 sm:px-7", isLight ? "border-[#e7dfd4]" : "border-white/[0.07]", footerClassName)}>
+            <div className={cn("flex w-full items-center justify-between rounded-[8px] px-1.5 py-1", isWorkerProfile && "rounded-xl px-1.5 py-1", isLight ? "bg-white/45" : "bg-white/[0.018]", footerInnerClassName)}>
               {footer}
             </div>
           </DialogFooter>
