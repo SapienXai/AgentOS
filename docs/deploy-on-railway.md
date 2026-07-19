@@ -86,16 +86,17 @@ Back up the Railway volume before risky upgrades. A service with an attached vol
 
 OpenClaw is pinned in `Dockerfile.railway`. Upgrade it only together with AgentOS compatibility checks and update the pin, recommended version, and deployment documentation in the same change.
 
-## Publishing the one-click button
+## Published one-click template
 
-Railway assigns the template code only after the template is created in the Railway workspace. Once created and test-deployed:
+The official AgentOS template is published in the Railway marketplace:
 
-1. Publish the template.
-2. Copy its template code from Railway.
-3. Add Railway's official button to the README, replacing `<TEMPLATE_CODE>`:
+- Template page: [railway.com/deploy/agentos-1](https://railway.com/deploy/agentos-1)
+- Direct deployment: [railway.com/new/template/agentos-1](https://railway.com/new/template/agentos-1)
+
+The README uses Railway's official button:
 
 ```md
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/<TEMPLATE_CODE>?utm_medium=integration&utm_source=template&utm_campaign=agentos)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/agentos-1?utm_medium=integration&utm_source=button&utm_campaign=agentos)
 ```
 
-Do not merge a placeholder template code. Verify the button in a signed-out browser and complete a clean deployment before calling the one-click flow available.
+When the runtime contract changes, update the Railway template and this guide together. Verify the public template page, deploy form, required password field, generated secrets, `/data` volume, and healthcheck before publishing an update.
