@@ -140,9 +140,11 @@ AgentOS is being built for that layer: the place where a person can turn individ
 
 ### Deploy on Railway
 
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/agentos-1?utm_medium=integration&utm_source=button&utm_campaign=agentos)
+
 AgentOS includes a production-oriented Railway deployment path that runs AgentOS and the pinned OpenClaw Gateway together in one service. The deployment uses one persistent `/data` volume, keeps the Gateway on container loopback, initializes Instance Protection from the username and password supplied during deployment, and waits for both runtimes before passing Railway's healthcheck.
 
-The public one-click button requires a published Railway template code. Until the official template is published, use the exact template composer specification in [`docs/deploy-on-railway.md`](docs/deploy-on-railway.md). Do not deploy this repository as a stateless service: the `/data` volume and generated internal tokens are required.
+The official published Railway template provisions the required `/data` volume and generates the internal AgentOS and OpenClaw tokens automatically. The only required operator input is the initial administrator password. See [`docs/deploy-on-railway.md`](docs/deploy-on-railway.md) for the complete runtime and security model.
 
 After the first deployment:
 
