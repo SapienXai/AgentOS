@@ -57,6 +57,4 @@ ENV NODE_ENV=production \
     OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789 \
     CHROME_BIN=/usr/bin/chromium
 
-EXPOSE 3000
-
 ENTRYPOINT ["tini", "-s", "--", "/agentos/scripts/railway-entrypoint.sh"]
