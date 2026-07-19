@@ -84,18 +84,17 @@ export function OperationsTopBar({
       <span className="hidden font-mono text-muted-foreground/80 sm:inline">
         v{version}
       </span>
-      <span
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-full border tracking-[0.16em]",
-          compact ? "h-11 px-3" : "px-2.5 py-1",
-          online ? toneStyles.success : toneStyles.warning
-        )}
-      >
+      {!compact ? (
         <span
-          className={cn("h-1.5 w-1.5 rounded-full", online ? dotStyles.success : dotStyles.warning)}
-        />
-        <span className={compact ? "sr-only" : undefined}>{label}</span>
-      </span>
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 tracking-[0.16em]",
+            online ? toneStyles.success : toneStyles.warning
+          )}
+        >
+          <span className={cn("h-1.5 w-1.5 rounded-full", online ? dotStyles.success : dotStyles.warning)} />
+          <span>{label}</span>
+        </span>
+      ) : null}
       <RuntimeIssueIndicator
         snapshot={snapshot}
         surfaceTheme={surfaceTheme}

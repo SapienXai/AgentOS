@@ -645,6 +645,8 @@ test("workspace creation provides a compact mobile-first basic flow", () => {
 
 test("mission shell supports hover and pinned sidebar modes", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
+  const mobileSettingsHeaderStart = source.indexOf('"fixed inset-x-0 top-0 z-[60] flex min-h-16');
+  const mobileSettingsHeaderEnd = source.indexOf('"pointer-events-auto fixed inset-y-0 left-0 z-50', mobileSettingsHeaderStart);
 
   assert.match(source, /const \[isSidebarOpenState, setIsSidebarOpen\] = useState\(false\);/);
   assert.match(source, /const \[isCompactViewport, setIsCompactViewport\] = useState\(false\);/);
@@ -672,11 +674,14 @@ test("mission shell supports hover and pinned sidebar modes", () => {
   assert.match(source, /isSidebarOpen \? "translate-x-0" : "-translate-x-full"/);
   assert.match(source, /aria-label=\{isInspectorOpen \? "Close inspector" : "Open inspector"\}/);
   assert.equal(source.match(/<MissionControlCanvasTitlePill surfaceTheme=\{surfaceTheme\} \/>/g)?.length, 1);
+  assert.ok(mobileSettingsHeaderStart >= 0 && mobileSettingsHeaderEnd > mobileSettingsHeaderStart);
+  assert.doesNotMatch(source.slice(mobileSettingsHeaderStart, mobileSettingsHeaderEnd), /connectionState/);
   assert.doesNotMatch(source, /sidebarOpenStorageKey/);
 });
 
 test("operations shell shares the persistent pinned sidebar behavior", () => {
   const source = readFileSync(path.join(rootDir, "components/operations/operations-shell.tsx"), "utf8");
+  const operationsUiSource = readFileSync(path.join(rootDir, "components/operations/operations-ui.tsx"), "utf8");
   const pinningSource = readFileSync(
     path.join(rootDir, "components/mission-control/use-sidebar-pinning.ts"),
     "utf8"
@@ -688,6 +693,8 @@ test("operations shell shares the persistent pinned sidebar behavior", () => {
   assert.match(source, /if \(!isSidebarPinned\) setSidebarExpanded\(false\);/);
   assert.match(pinningSource, /agentos\.sidebar\.pinned/);
   assert.match(pinningSource, /window\.localStorage\.setItem\(sidebarPinnedStorageKey, String\(nextPinned\)\)/);
+  assert.match(operationsUiSource, /\{!compact \? \(\s*<span/);
+  assert.doesNotMatch(operationsUiSource, /compact \? "h-11 px-3"/);
 });
 
 test("command bar collapses when empty on mobile and desktop", () => {
