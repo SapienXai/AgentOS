@@ -8,8 +8,7 @@ RUN corepack enable
 WORKDIR /build
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN --mount=type=cache,id=agentos-pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm build
@@ -18,9 +17,7 @@ FROM ghcr.io/openclaw/openclaw:2026.6.11@sha256:3814fb1f62f9cfc5944de088c5817c68
 
 USER root
 
-RUN --mount=type=cache,id=agentos-bookworm-apt,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,id=agentos-bookworm-apt-lists,target=/var/lib/apt/lists,sharing=locked \
-    apt-get update && \
+RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       chromium \
       chromium-sandbox \
