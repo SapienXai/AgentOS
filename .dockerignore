@@ -1,0 +1,12 @@
+.git
+.next
+.mission-control
+node_modules
+packages/agentos/bundle
+deliverables
+docs
+tests
+*.log
+.env
+.env.*
+!.env.example

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, stat, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -22,17 +22,21 @@ const rootDir = process.cwd();
 
 async function withProcessEnv(
   env: Partial<
-    Record<"AGENTOS_API_TOKEN" | "AGENTOS_PACKAGE_RUNTIME" | "AGENTOS_TRUSTED_OPERATOR_ORIGINS" | "AGENTOS_UNSAFE_DISABLE_API_AUTH" | "NODE_ENV", string | undefined>
+    Record<"AGENTOS_API_TOKEN" | "AGENTOS_PACKAGE_RUNTIME" | "AGENTOS_RUNTIME_DIR" | "AGENTOS_TRUSTED_OPERATOR_ORIGINS" | "AGENTOS_UNSAFE_DISABLE_API_AUTH" | "NODE_ENV", string | undefined>
   >,
   callback: () => Promise<void> | void
 ) {
+  const isolatedRuntimeDir = await mkdtemp(path.join(tmpdir(), "agentos-security-runtime-"));
   const previous = {
     AGENTOS_API_TOKEN: process.env.AGENTOS_API_TOKEN,
     AGENTOS_PACKAGE_RUNTIME: process.env.AGENTOS_PACKAGE_RUNTIME,
+    AGENTOS_RUNTIME_DIR: process.env.AGENTOS_RUNTIME_DIR,
     AGENTOS_TRUSTED_OPERATOR_ORIGINS: process.env.AGENTOS_TRUSTED_OPERATOR_ORIGINS,
     AGENTOS_UNSAFE_DISABLE_API_AUTH: process.env.AGENTOS_UNSAFE_DISABLE_API_AUTH,
     NODE_ENV: process.env.NODE_ENV
   };
+
+  process.env.AGENTOS_RUNTIME_DIR = env.AGENTOS_RUNTIME_DIR ?? isolatedRuntimeDir;
 
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined) {
@@ -52,6 +56,7 @@ async function withProcessEnv(
         process.env[key] = value;
       }
     }
+    await rm(isolatedRuntimeDir, { recursive: true, force: true });
   }
 }
 
@@ -66,6 +71,38 @@ test("local same-origin mutation requests are allowed", () => {
   });
 
   assert.deepEqual(decision, { ok: true });
+});
+
+test("Railway public domain is treated as an exact trusted HTTPS operator origin", () => {
+  const decision = evaluateLocalOperatorRequest({
+    method: "POST",
+    url: "https://agentos-production.up.railway.app/api/mission",
+    headers: new Headers({
+      host: "agentos-production.up.railway.app",
+      origin: "https://agentos-production.up.railway.app",
+      "x-forwarded-for": "203.0.113.20",
+      "x-forwarded-host": "agentos-production.up.railway.app",
+      "x-forwarded-proto": "https"
+    }),
+    env: { RAILWAY_PUBLIC_DOMAIN: "agentos-production.up.railway.app" }
+  });
+
+  assert.deepEqual(decision, { ok: true });
+
+  const mismatchedOrigin = evaluateLocalOperatorRequest({
+    method: "POST",
+    url: "https://agentos-production.up.railway.app/api/mission",
+    headers: new Headers({
+      host: "agentos-production.up.railway.app",
+      origin: "https://attacker.example.com",
+      "x-forwarded-for": "203.0.113.20",
+      "x-forwarded-host": "agentos-production.up.railway.app",
+      "x-forwarded-proto": "https"
+    }),
+    env: { RAILWAY_PUBLIC_DOMAIN: "agentos-production.up.railway.app" }
+  });
+
+  assert.equal(mismatchedOrigin.ok, false);
 });
 
 test("forwarded loopback mutation requests are allowed", () => {

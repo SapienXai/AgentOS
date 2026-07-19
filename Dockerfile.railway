@@ -1,0 +1,65 @@
+FROM node:24-bookworm@sha256:3a09aa6354567619221ef6c45a5051b671f953f0a1924d1f819ffb236e520e6b AS agentos-build
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=/pnpm:$PATH
+
+RUN corepack enable
+
+WORKDIR /build
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN --mount=type=cache,id=agentos-pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile
+
+COPY . .
+RUN pnpm build
+
+FROM ghcr.io/openclaw/openclaw:2026.6.11@sha256:3814fb1f62f9cfc5944de088c5817c68c88b5d721feebe36420b666a90a61ce7
+
+USER root
+
+RUN --mount=type=cache,id=agentos-bookworm-apt,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=agentos-bookworm-apt-lists,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      chromium \
+      chromium-sandbox \
+      git \
+      gosu && \
+    rm -f /var/lib/apt/lists/lock /var/cache/apt/archives/lock
+
+WORKDIR /agentos
+
+COPY --from=agentos-build --chown=node:node /build/.next/standalone ./
+COPY --from=agentos-build --chown=node:node /build/.next/static ./.next/static
+COPY --from=agentos-build --chown=node:node /build/public ./public
+COPY --chown=node:node scripts/railway-supervisor.mjs ./scripts/railway-supervisor.mjs
+COPY scripts/railway-entrypoint.sh ./scripts/railway-entrypoint.sh
+
+RUN chmod 0755 ./scripts/railway-entrypoint.sh && \
+    rm -rf /home/node/.openclaw /home/node/.config/openclaw && \
+    mkdir -p /home/node/.config /home/node/Documents/Shared && \
+    ln -s /data/agentos/mission-control /agentos/.mission-control && \
+    ln -s /data/openclaw /home/node/.openclaw && \
+    ln -s /data/openclaw-config /home/node/.config/openclaw && \
+    ln -s /data/workspaces /home/node/Documents/Shared/projects && \
+    chown -h node:node \
+      /agentos/.mission-control \
+      /home/node/.openclaw \
+      /home/node/.config/openclaw \
+      /home/node/Documents/Shared/projects
+
+ENV NODE_ENV=production \
+    HOSTNAME=0.0.0.0 \
+    HOME=/home/node \
+    AGENTOS_PACKAGE_RUNTIME=1 \
+    AGENTOS_DEPLOYMENT_PLATFORM=railway \
+    AGENTOS_RUNTIME_DIR=/data/agentos \
+    OPENCLAW_STATE_DIR=/data/openclaw \
+    OPENCLAW_CONFIG_PATH=/data/openclaw/openclaw.json \
+    OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789 \
+    CHROME_BIN=/usr/bin/chromium
+
+EXPOSE 3000
+
+ENTRYPOINT ["tini", "-s", "--", "/agentos/scripts/railway-entrypoint.sh"]

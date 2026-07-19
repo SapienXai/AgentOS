@@ -32,7 +32,7 @@ const startupGracePeriodMs = 15_000;
 const updateCacheTtlMs = 24 * 60 * 60 * 1000;
 const updateWarningCooldownMs = 24 * 60 * 60 * 1000;
 const updateRequestTimeoutMs = 5_000;
-const openClawGatewayProbeTimeoutMs = 1_500;
+const openClawGatewayProbeTimeoutMs = 3_000;
 const cliSmokeTestMode = process.env.AGENTOS_CLI_TEST === "1";
 const requiredOpenClawGatewayProtocolVersion = 4;
 const requiredOpenClawGatewayMethods = [

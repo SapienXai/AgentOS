@@ -3,7 +3,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { evaluateAgentOsApiRequest, evaluateAuthenticatedAgentOsApiRequest } from "@/lib/security/api-auth";
 import { getInstanceProtectionStatus, readInstanceSessionCookie } from "@/lib/security/instance-protection";
 
-const publicInstanceApiPaths = new Set(["/api/auth/status", "/api/auth/login", "/api/auth/logout"]);
+const publicInstanceApiPaths = new Set([
+  "/api/auth/status",
+  "/api/auth/login",
+  "/api/auth/logout",
+  "/api/health"
+]);
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
