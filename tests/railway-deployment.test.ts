@@ -22,10 +22,11 @@ test("Railway config uses the dedicated container and readiness endpoint", async
   assert.equal(config.deploy?.drainingSeconds, 30);
 });
 
-test("Railway image pins OpenClaw and maps every mutable runtime root to the volume", async () => {
+test("Railway image pins OpenClaw, avoids service-bound cache mounts, and maps every mutable runtime root to the volume", async () => {
   const dockerfile = await read("Dockerfile.railway");
 
   assert.match(dockerfile, /ghcr\.io\/openclaw\/openclaw:2026\.6\.11@sha256:[a-f0-9]{64}/);
+  assert.doesNotMatch(dockerfile, /--mount=type=cache/);
   assert.match(dockerfile, /AGENTOS_RUNTIME_DIR=\/data\/agentos/);
   assert.match(dockerfile, /OPENCLAW_STATE_DIR=\/data\/openclaw/);
   assert.match(dockerfile, /\/data\/agentos\/mission-control/);
