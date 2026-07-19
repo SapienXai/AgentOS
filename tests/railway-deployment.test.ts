@@ -29,7 +29,7 @@ test("Railway image pins OpenClaw, avoids service-bound cache mounts, and maps e
   assert.doesNotMatch(dockerfile, /--mount=type=cache/);
   assert.match(dockerfile, /AGENTOS_RUNTIME_DIR=\/data\/agentos/);
   assert.match(dockerfile, /OPENCLAW_STATE_DIR=\/data\/openclaw/);
-  assert.doesNotMatch(dockerfile, /EXPOSE\s+3000/);
+  assert.match(dockerfile, /EXPOSE\s+3000/);
   assert.match(dockerfile, /\/data\/agentos\/mission-control/);
   assert.match(dockerfile, /\/data\/workspaces/);
   assert.match(dockerfile, /gosu/);
@@ -40,6 +40,7 @@ test("Railway supervisor keeps Gateway private and excludes the bootstrap passwo
   const entrypoint = await read("scripts/railway-entrypoint.sh");
 
   assert.match(supervisor, /delete gatewayEnv\.AGENTOS_INITIAL_ADMIN_PASSWORD/);
+  assert.match(supervisor, /PORT:\s*"3000"/);
   assert.match(supervisor, /"--bind",\s*"loopback"/);
   assert.match(supervisor, /"--auth",\s*"token"/);
   assert.doesNotMatch(supervisor, /"--token"/);

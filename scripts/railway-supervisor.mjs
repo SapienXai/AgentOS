@@ -52,7 +52,10 @@ if (gateway.exitCode !== null) {
 }
 
 agentos = spawn(process.execPath, ["/agentos/server.js"], {
-  env: process.env,
+  env: {
+    ...process.env,
+    PORT: "3000"
+  },
   stdio: "inherit"
 });
 
