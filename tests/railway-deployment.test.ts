@@ -8,13 +8,18 @@ const rootDir = process.cwd();
 test("Railway config uses the dedicated container and readiness endpoint", async () => {
   const config = JSON.parse(await read("railway.json")) as {
     build?: { builder?: string; dockerfilePath?: string };
-    deploy?: { healthcheckPath?: string; restartPolicyType?: string };
+    deploy?: {
+      healthcheckPath?: string;
+      restartPolicyType?: string;
+      drainingSeconds?: number;
+    };
   };
 
   assert.equal(config.build?.builder, "DOCKERFILE");
   assert.equal(config.build?.dockerfilePath, "Dockerfile.railway");
   assert.equal(config.deploy?.healthcheckPath, "/api/health");
   assert.equal(config.deploy?.restartPolicyType, "ON_FAILURE");
+  assert.equal(config.deploy?.drainingSeconds, 30);
 });
 
 test("Railway image pins OpenClaw and maps every mutable runtime root to the volume", async () => {
