@@ -24,11 +24,13 @@ import {
   LifeBuoy,
   LockKeyhole,
   LogOut,
+  Moon,
   Pencil,
   Plug,
   Plus,
   Settings2,
   ShieldCheck,
+  SunMedium,
   Trash2,
   UserRound
 } from "lucide-react";
@@ -151,6 +153,7 @@ type MissionSidebarProps = {
   };
   onExpandCollapsed?: () => void;
   onToggleCollapsed: () => void;
+  onToggleTheme: () => void;
   onSelectWorkspace: (workspaceId: string | null) => void;
   onRefresh: () => Promise<void>;
   onRunModelRefresh: () => void;
@@ -225,6 +228,7 @@ export function MissionSidebar({
   sidebarPinned = false,
   onExpandCollapsed,
   onToggleCollapsed,
+  onToggleTheme,
   onSelectWorkspace,
   onRefresh,
   onOpenCreateAgent,
@@ -584,9 +588,11 @@ export function MissionSidebar({
             <SidebarUserMenu
               snapshot={snapshot}
               activeWorkspaceId={activeWorkspaceId}
+              surfaceTheme={surfaceTheme}
               operatorProfile={operatorProfile}
               onProfileSaved={setOperatorProfile}
               onRefresh={onRefresh}
+              onToggleTheme={onToggleTheme}
             />
           </div>
         </aside>
@@ -2090,15 +2096,19 @@ function SidebarNavItem({
 function SidebarUserMenu({
   snapshot,
   activeWorkspaceId,
+  surfaceTheme,
   operatorProfile,
   onProfileSaved,
-  onRefresh
+  onRefresh,
+  onToggleTheme
 }: {
   snapshot: MissionControlSnapshot;
   activeWorkspaceId: string | null;
+  surfaceTheme: "dark" | "light";
   operatorProfile: OperatorProfileSummary;
   onProfileSaved: (profile: OperatorProfileSummary) => void;
   onRefresh: () => Promise<void>;
+  onToggleTheme: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -2174,6 +2184,7 @@ function SidebarUserMenu({
               }}
             />
             <SidebarUserMenuLink href="/settings" icon={Settings2} label="Settings" onNavigate={() => setOpen(false)} />
+            <SidebarThemeMenuAction surfaceTheme={surfaceTheme} onToggle={onToggleTheme} />
             <SidebarUserMenuAction
               icon={ShieldCheck}
               label="Login & Protection"
@@ -2246,6 +2257,46 @@ function SidebarUserMenu({
       />
       <InstanceProtectionDialog open={protectionOpen} onOpenChange={setProtectionOpen} />
     </>
+  );
+}
+
+function SidebarThemeMenuAction({
+  surfaceTheme,
+  onToggle
+}: {
+  surfaceTheme: "dark" | "light";
+  onToggle: () => void;
+}) {
+  const isDark = surfaceTheme === "dark";
+  const Icon = isDark ? Moon : SunMedium;
+
+  return (
+    <button
+      type="button"
+      role="menuitemcheckbox"
+      aria-checked={isDark}
+      aria-label={`Appearance: ${isDark ? "dark" : "light"} theme. Switch to ${isDark ? "light" : "dark"} theme`}
+      onClick={onToggle}
+      className="flex h-10 w-full items-center gap-3 rounded-lg px-2.5 text-left text-sm font-medium text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+    >
+      <Icon className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
+      <span>Appearance</span>
+      <span className="ml-auto text-xs font-medium text-muted-foreground">{isDark ? "Dark" : "Light"}</span>
+      <span
+        aria-hidden="true"
+        className={cn(
+          "relative h-5 w-9 shrink-0 rounded-full border transition-colors",
+          isDark ? "border-primary/40 bg-primary/80" : "border-border bg-muted"
+        )}
+      >
+        <span
+          className={cn(
+            "absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform",
+            isDark ? "translate-x-[17px]" : "translate-x-0.5"
+          )}
+        />
+      </span>
+    </button>
   );
 }
 

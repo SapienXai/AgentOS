@@ -608,6 +608,10 @@ test("sidebar keeps its header and user footer fixed around scrollable navigatio
   assert.match(source, /profile\.email\.trim\(\) \|\| \(profile\.username\.trim\(\) \? `@\$\{profile\.username\.trim\(\)\}` : "Personal account"\)/);
   assert.match(source, /<UserProfileDialog[\s\S]*?open=\{profileOpen\}/);
   assert.match(source, /onProfileSaved=\{onProfileSaved\}/);
+  assert.match(source, /<SidebarThemeMenuAction surfaceTheme=\{surfaceTheme\} onToggle=\{onToggleTheme\} \/>/);
+  assert.match(source, /role="menuitemcheckbox"/);
+  assert.match(source, /aria-checked=\{isDark\}/);
+  assert.match(source, /<span>Appearance<\/span>/);
 });
 
 test("settings shell no longer hardcodes a light-only wrapper", () => {

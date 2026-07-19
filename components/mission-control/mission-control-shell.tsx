@@ -3871,6 +3871,7 @@ export function MissionControlShell({
           <MissionSidebar
             snapshot={uiSnapshot}
             surfaceTheme={surfaceTheme}
+            onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
             activeWorkspaceId={activeWorkspaceId}
             requestedAgentAction={agentActionRequest}
             connectionState={connectionState}
@@ -3989,6 +3990,7 @@ export function MissionControlShell({
           <MissionSidebar
             snapshot={uiSnapshot}
             surfaceTheme={surfaceTheme}
+            onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
             activeWorkspaceId={activeWorkspaceId}
             requestedAgentAction={agentActionRequest}
             connectionState={connectionState}
@@ -4315,6 +4317,7 @@ export function MissionControlShell({
           <MissionSidebar
             snapshot={uiSnapshot}
             surfaceTheme={surfaceTheme}
+            onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
             activeWorkspaceId={activeWorkspaceId}
             requestedAgentAction={agentActionRequest}
             connectionState={connectionState}
@@ -4387,6 +4390,7 @@ export function MissionControlShell({
           <MissionSidebar
             snapshot={uiSnapshot}
             surfaceTheme={surfaceTheme}
+            onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
             activeWorkspaceId={activeWorkspaceId}
             requestedAgentAction={agentActionRequest}
             connectionState={connectionState}
