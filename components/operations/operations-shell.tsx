@@ -355,6 +355,7 @@ export function OperationsShell({
         <MissionSidebar
           snapshot={snapshot}
           surfaceTheme={surfaceTheme}
+          onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
           activeWorkspaceId={activeWorkspaceId}
           pendingCreatedAgents={visiblePendingCreatedAgents}
           requestedAgentAction={null}
@@ -418,6 +419,7 @@ export function OperationsShell({
         <MissionSidebar
           snapshot={snapshot}
           surfaceTheme={surfaceTheme}
+          onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
           activeWorkspaceId={activeWorkspaceId}
           pendingCreatedAgents={visiblePendingCreatedAgents}
           requestedAgentAction={null}

@@ -1,0 +1,41 @@
+#!/bin/sh
+set -eu
+
+umask 077
+
+if [ "${RAILWAY_ENVIRONMENT_ID:-}" != "" ] && [ "${RAILWAY_VOLUME_MOUNT_PATH:-}" != "/data" ]; then
+  echo "AgentOS requires a Railway volume mounted at /data." >&2
+  exit 1
+fi
+
+if [ "${OPENCLAW_GATEWAY_TOKEN:-}" = "" ]; then
+  echo "OPENCLAW_GATEWAY_TOKEN is required. Configure it with a generated Railway template secret." >&2
+  exit 1
+fi
+
+if [ "${AGENTOS_API_TOKEN:-}" = "" ]; then
+  echo "AGENTOS_API_TOKEN is required. Configure it with a generated Railway template secret." >&2
+  exit 1
+fi
+
+mkdir -p /data/agentos/mission-control /data/openclaw /data/openclaw-config /data/workspaces
+chown node:node \
+  /data \
+  /data/agentos \
+  /data/agentos/mission-control \
+  /data/openclaw \
+  /data/openclaw-config \
+  /data/workspaces
+chmod 0700 \
+  /data/agentos \
+  /data/agentos/mission-control \
+  /data/openclaw \
+  /data/openclaw-config \
+  /data/workspaces
+
+if [ ! -s /data/agentos/instance-protection.json ] && [ "${AGENTOS_INITIAL_ADMIN_PASSWORD:-}" = "" ]; then
+  echo "AGENTOS_INITIAL_ADMIN_PASSWORD is required for the first deployment." >&2
+  exit 1
+fi
+
+exec gosu node:node node /agentos/scripts/railway-supervisor.mjs

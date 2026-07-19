@@ -138,6 +138,20 @@ AgentOS is being built for that layer: the place where a person can turn individ
 
 ## Get started in 5 minutes
 
+### Deploy on Railway
+
+AgentOS includes a production-oriented Railway deployment path that runs AgentOS and the pinned OpenClaw Gateway together in one service. The deployment uses one persistent `/data` volume, keeps the Gateway on container loopback, initializes Instance Protection from the username and password supplied during deployment, and waits for both runtimes before passing Railway's healthcheck.
+
+The public one-click button requires a published Railway template code. Until the official template is published, use the exact template composer specification in [`docs/deploy-on-railway.md`](docs/deploy-on-railway.md). Do not deploy this repository as a stateless service: the `/data` volume and generated internal tokens are required.
+
+After the first deployment:
+
+1. Open the generated Railway domain and sign in with the initial admin credentials.
+2. Connect a model/provider from AgentOS Setup Center.
+3. Create the first workspace. AgentOS and OpenClaw state will persist across redeploys.
+
+The initial password only creates the account when no Instance Protection state exists. Changing that Railway variable later does not reset or replace the administrator account; use AgentOS account settings to change credentials. After the first successful sign-in, you may remove `AGENTOS_INITIAL_ADMIN_PASSWORD` from Railway because the protected account is already stored on the volume.
+
 ### Install
 
 macOS or Linux:
@@ -284,7 +298,7 @@ The Operations surface projects OpenClaw's cron runtime into an operator console
 
 ## Local-first security
 
-AgentOS currently targets trusted operator machines and local environments.
+AgentOS supports trusted operator machines and an explicitly configured hosted deployment.
 
 - The packaged launcher binds locally, generates an API token, starts AgentOS with authentication, and opens an authenticated local URL.
 - API routes are protected before route handlers run.
@@ -292,20 +306,20 @@ AgentOS currently targets trusted operator machines and local environments.
 - Remote Gateway URLs are blocked by default unless `AGENTOS_ALLOW_REMOTE_GATEWAY_URL=1` is explicitly enabled.
 - Sensitive values are redacted from diagnostics and compatibility reports.
 - Local auth and config files use owner-only permissions where applicable.
-- AgentOS should not be exposed publicly without an external network boundary, access policy, and monitoring.
+- Source and package installs should not be exposed publicly without an external network boundary, access policy, and monitoring. The Railway deployment uses Instance Protection, exact same-origin mutation checks, generated internal tokens, and a loopback-only OpenClaw Gateway as its minimum hosted boundary.
 
-For an intentionally remote operator deployment, configure a strong API token and an exact, comma-separated HTTPS origin allowlist:
+For a custom intentionally remote operator deployment, configure a strong API token and an exact, comma-separated HTTPS origin allowlist:
 
 ```bash
 AGENTOS_API_TOKEN=<secret>
 AGENTOS_TRUSTED_OPERATOR_ORIGINS=https://agentos.example.com
 ```
 
-Wildcards, HTTP origins, paths, query strings, and fragments are rejected. Keep AgentOS behind HTTPS and an authenticated reverse proxy, and preserve the public `Host`, `Origin`, `X-Forwarded-Host`, and `X-Forwarded-Proto` values. Origin allowlisting is an additional mutation boundary, not a substitute for authentication.
+Wildcards, HTTP origins, paths, query strings, and fragments are rejected. Keep AgentOS behind HTTPS and an authenticated reverse proxy, and preserve the public `Host`, `Origin`, `X-Forwarded-Host`, and `X-Forwarded-Proto` values. Origin allowlisting is an additional mutation boundary, not a substitute for authentication. Railway's generated `RAILWAY_PUBLIC_DOMAIN` is accepted automatically as one exact HTTPS operator origin; custom domains must still be listed explicitly.
 
 When Instance Protection is enabled, each trusted browser or mobile device can sign in with the configured username and password. The signed Instance Protection session authenticates subsequent API requests, so new devices do not need an `#agentos_token` bootstrap URL. The API token remains required while Instance Protection is disabled and for initial protected-instance setup.
 
-Several operations spawn local processes, inspect transcript files, or write to workspace directories. This makes the current release suitable for operator workstations and trusted hosts, not serverless-only deployment.
+Several operations spawn local processes, inspect transcript files, or write to workspace directories. This makes the current release suitable for operator workstations and persistent trusted hosts, including the documented Railway container, but not serverless-only deployment. Desktop-only actions such as revealing a host file in Finder do not become remote desktop features on Railway.
 
 ## Compatibility
 

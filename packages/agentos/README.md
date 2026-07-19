@@ -62,6 +62,8 @@ If AgentOS was installed with `pnpm` or `npm`, update commands only print the ma
 
 AgentOS is designed to work with a local OpenClaw installation. If OpenClaw is missing, AgentOS still starts and guides onboarding in the UI.
 
+For a hosted installation, use the repository's documented Railway deployment instead of exposing the local package launcher. It runs the pinned OpenClaw Gateway on container loopback, requires Instance Protection, and persists runtime state on a Railway volume. See `docs/deploy-on-railway.md` in the AgentOS repository.
+
 Security:
 
 - AgentOS is intended to bind locally by default; avoid exposing it publicly without your own network controls.

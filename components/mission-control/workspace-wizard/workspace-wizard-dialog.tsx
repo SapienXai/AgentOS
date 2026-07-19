@@ -320,15 +320,16 @@ export function WorkspaceWizardDialog({
       }
       icon={Bot}
       chips={headerBadges.map((badge) => (
-        <MissionControlDialogChip
-          key={badge.id}
-          tone={badge.tone === "success" ? "emerald" : badge.tone === "warning" ? "amber" : "muted"}
-        >
-          {badge.label}
-        </MissionControlDialogChip>
+        <span key={badge.id} className="hidden md:contents">
+          <MissionControlDialogChip
+            tone={badge.tone === "success" ? "emerald" : badge.tone === "warning" ? "amber" : "muted"}
+          >
+            {badge.label}
+          </MissionControlDialogChip>
+        </span>
       ))}
       headerActions={
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="hidden flex-wrap items-center gap-2 md:flex">
           {!isEditingWorkspace ? (
             <div className="inline-flex rounded-[8px] border border-white/10 bg-white/[0.04] p-0.5">
               {(["basic", "advanced"] as WorkspaceWizardMode[]).map((mode) => (
@@ -371,9 +372,14 @@ export function WorkspaceWizardDialog({
           ) : null}
         </div>
       }
+      contentClassName="h-[100dvh] max-h-[100dvh] w-screen rounded-none border-x-0 md:h-[min(calc(100vh-72px),760px)] md:max-h-[calc(100vh-72px)] md:w-[min(90vw,1060px)] md:rounded-2xl md:border-x"
+      headerClassName="px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:px-6 md:pb-2 md:pt-3"
       bodyClassName="p-0 overflow-hidden"
+      footerClassName="px-3 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 md:px-4 md:py-1.5"
+      footerInnerClassName="p-0 md:px-1.5 md:py-1"
       footer={
         <WorkspaceWizardFooterActions
+          surfaceTheme={surfaceTheme}
           wizardMode={wizard.mode}
           basicStep={basicStep}
           isEditingWorkspace={isEditingWorkspace}
@@ -419,32 +425,49 @@ export function WorkspaceWizardDialog({
                         />
                       ) : null}
 
-                      {wizard.isPlanLoading ? <LoadingGreeting surfaceTheme={effectiveSurfaceTheme} /> : <BasicGreeting surfaceTheme={effectiveSurfaceTheme} />}
+                      <div className="md:hidden">
+                        <MobileWorkspaceCreateForm
+                          surfaceTheme={effectiveSurfaceTheme}
+                          name={wizard.basicDraft.name}
+                          goal={wizard.basicDraft.goal}
+                          source={wizard.basicDraft.source}
+                          template={wizard.basicTemplate}
+                          disabled={isArchitectBusy}
+                          onNameChange={wizard.setBasicName}
+                          onGoalChange={wizard.setBasicGoal}
+                          onSourceChange={wizard.setBasicSource}
+                          onTemplateChange={wizard.setBasicTemplate}
+                        />
+                      </div>
 
-                      <WorkspaceWizardBasicFlow
-                        surfaceTheme={effectiveSurfaceTheme}
-                        step={basicStep}
-                        isBusy={isArchitectBusy}
-                        basicDraft={wizard.basicDraft}
-                        basicTemplate={wizard.basicTemplate}
-                        basicTeamPreset={wizard.basicTeamPreset}
-                        basicModelProfile={wizard.basicModelProfile}
-                        basicRules={wizard.basicRules}
-                        basicPreset={wizard.basicPreset}
-                        resolvedName={resolvedName}
-                        resolvedTemplate={resolvedTemplate}
-                        sourceAnalysis={wizard.sourceAnalysis}
-                        workspacePath={workspacePath}
-                        onStepChange={setBasicStep}
-                        onBasicNameChange={wizard.setBasicName}
-                        onBasicGoalChange={wizard.setBasicGoal}
-                        onBasicSourceChange={wizard.setBasicSource}
-                        onBasicTemplateChange={wizard.setBasicTemplate}
-                        onBasicTeamPresetChange={wizard.setBasicTeamPreset}
-                        onBasicModelProfileChange={wizard.setBasicModelProfile}
-                        onBasicPresetChange={wizard.setBasicPreset}
-                        onBasicRuleToggle={wizard.toggleBasicRule}
-                      />
+                      <div className="hidden md:block">
+                        {wizard.isPlanLoading ? <LoadingGreeting surfaceTheme={effectiveSurfaceTheme} /> : <BasicGreeting surfaceTheme={effectiveSurfaceTheme} />}
+
+                        <WorkspaceWizardBasicFlow
+                          surfaceTheme={effectiveSurfaceTheme}
+                          step={basicStep}
+                          isBusy={isArchitectBusy}
+                          basicDraft={wizard.basicDraft}
+                          basicTemplate={wizard.basicTemplate}
+                          basicTeamPreset={wizard.basicTeamPreset}
+                          basicModelProfile={wizard.basicModelProfile}
+                          basicRules={wizard.basicRules}
+                          basicPreset={wizard.basicPreset}
+                          resolvedName={resolvedName}
+                          resolvedTemplate={resolvedTemplate}
+                          sourceAnalysis={wizard.sourceAnalysis}
+                          workspacePath={workspacePath}
+                          onStepChange={setBasicStep}
+                          onBasicNameChange={wizard.setBasicName}
+                          onBasicGoalChange={wizard.setBasicGoal}
+                          onBasicSourceChange={wizard.setBasicSource}
+                          onBasicTemplateChange={wizard.setBasicTemplate}
+                          onBasicTeamPresetChange={wizard.setBasicTeamPreset}
+                          onBasicModelProfileChange={wizard.setBasicModelProfile}
+                          onBasicPresetChange={wizard.setBasicPreset}
+                          onBasicRuleToggle={wizard.toggleBasicRule}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -723,6 +746,7 @@ export function WorkspaceWizardDialog({
 type WorkspaceWizardController = ReturnType<typeof useWorkspaceWizardDraft>;
 
 function WorkspaceWizardFooterActions({
+  surfaceTheme,
   wizardMode,
   basicStep,
   isEditingWorkspace,
@@ -735,6 +759,7 @@ function WorkspaceWizardFooterActions({
   onBasicStepBack,
   onBasicStepPrimary
 }: {
+  surfaceTheme: SurfaceTheme;
   wizardMode: WorkspaceWizardMode;
   basicStep: WorkspaceCreateStep;
   isEditingWorkspace: boolean;
@@ -758,9 +783,34 @@ function WorkspaceWizardFooterActions({
 
   return (
     <>
-      <p className="min-w-0 truncate pr-3 text-[11px] text-slate-400">{statusLabel}</p>
+      {!isEditingWorkspace && wizardMode === "basic" ? (
+        <div className="flex w-full items-center gap-2 md:hidden">
+          <Button
+            variant="secondary"
+            className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-11 flex-1 rounded-xl text-[13px]")}
+            onClick={() => void wizard.switchMode("advanced")}
+            disabled={wizard.isCreating || wizard.isSending || wizard.isPlanLoading}
+          >
+            Advanced
+          </Button>
+          <Button
+            className={cn(missionControlDialogButtonClassName("primary", surfaceTheme), "h-11 flex-[1.6] rounded-xl text-[13px]")}
+            onClick={() => void onCreateWorkspace()}
+            disabled={!hasDraftToCreate || wizard.isCreating || wizard.isSending || wizard.isPlanLoading}
+          >
+            {wizard.isCreating ? (
+              <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="mr-1.5 h-4 w-4" />
+            )}
+            {wizard.isCreating ? "Creating..." : "Create workspace"}
+          </Button>
+        </div>
+      ) : null}
 
-      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+      <p className={cn("min-w-0 truncate pr-3 text-[11px] text-slate-400", !isEditingWorkspace && wizardMode === "basic" && "hidden md:block")}>{statusLabel}</p>
+
+      <div className={cn("flex shrink-0 flex-wrap items-center justify-end gap-2", !isEditingWorkspace && wizardMode === "basic" && "hidden md:flex")}>
         <Button
           variant="secondary"
           size="sm"
@@ -873,6 +923,125 @@ function WorkspaceWizardFooterActions({
         )}
       </div>
     </>
+  );
+}
+
+function MobileWorkspaceCreateForm({
+  surfaceTheme,
+  name,
+  goal,
+  source,
+  template,
+  disabled,
+  onNameChange,
+  onGoalChange,
+  onSourceChange,
+  onTemplateChange
+}: {
+  surfaceTheme: SurfaceTheme;
+  name: string;
+  goal: string;
+  source: string;
+  template: WorkspaceTemplate;
+  disabled: boolean;
+  onNameChange: (value: string) => void;
+  onGoalChange: (value: string) => void;
+  onSourceChange: (value: string) => void;
+  onTemplateChange: (value: WorkspaceTemplate) => void;
+}) {
+  const isLight = surfaceTheme === "light";
+  const controlClassName = cn(
+    "h-12 rounded-xl text-[16px] shadow-none",
+    isLight
+      ? "border-[#e1d7cc] bg-white text-[#1c1916] placeholder:text-[#9b948c] focus-visible:ring-[#b8ada1]"
+      : "border-white/10 bg-[rgba(4,8,15,0.72)] text-slate-100 placeholder:text-slate-500 focus-visible:ring-cyan-300/60"
+  );
+
+  return (
+    <section className="mx-auto w-full max-w-lg pb-2">
+      <div className="mb-5">
+        <p className={cn("text-[11px] font-medium uppercase tracking-[0.2em]", isLight ? "text-[#8b7262]" : "text-cyan-200/70")}>
+          Quick setup
+        </p>
+        <h2 className={cn("mt-2 text-[25px] font-semibold tracking-[-0.035em]", isLight ? "text-[#201a16]" : "text-white")}>
+          What are you building?
+        </h2>
+        <p className={cn("mt-2 text-[14px] leading-6", isLight ? "text-[#766e64]" : "text-slate-400")}>
+          Add the essentials now. AgentOS will use sensible defaults for the team, model, and workspace files.
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        <label className="block space-y-1.5" htmlFor="mobile-workspace-name">
+          <span className={cn("text-[12px] font-medium", isLight ? "text-[#5f554d]" : "text-slate-300")}>Workspace name</span>
+          <Input
+            id="mobile-workspace-name"
+            value={name}
+            onChange={(event) => onNameChange(event.target.value)}
+            placeholder="e.g. Product launch"
+            disabled={disabled}
+            autoComplete="off"
+            className={controlClassName}
+          />
+        </label>
+
+        <label className="block space-y-1.5" htmlFor="mobile-workspace-goal">
+          <span className={cn("text-[12px] font-medium", isLight ? "text-[#5f554d]" : "text-slate-300")}>Main goal</span>
+          <Textarea
+            id="mobile-workspace-goal"
+            value={goal}
+            onChange={(event) => onGoalChange(event.target.value)}
+            placeholder="What should this workspace help you accomplish?"
+            disabled={disabled}
+            className={cn(controlClassName, "min-h-[112px] resize-none py-3 leading-6")}
+          />
+        </label>
+
+        <label className="block space-y-1.5" htmlFor="mobile-workspace-source">
+          <span className={cn("flex items-center gap-1.5 text-[12px] font-medium", isLight ? "text-[#5f554d]" : "text-slate-300")}>
+            Starting point
+            <span className={cn("font-normal", isLight ? "text-[#9a8f84]" : "text-slate-500")}>(optional)</span>
+          </span>
+          <Input
+            id="mobile-workspace-source"
+            value={source}
+            onChange={(event) => onSourceChange(event.target.value)}
+            placeholder="Repository, website, or folder path"
+            disabled={disabled}
+            autoCapitalize="none"
+            autoCorrect="off"
+            className={controlClassName}
+          />
+        </label>
+
+        <label className="block space-y-1.5" htmlFor="mobile-workspace-template">
+          <span className={cn("text-[12px] font-medium", isLight ? "text-[#5f554d]" : "text-slate-300")}>Workspace type</span>
+          <select
+            id="mobile-workspace-template"
+            value={template}
+            onChange={(event) => onTemplateChange(event.target.value as WorkspaceTemplate)}
+            disabled={disabled}
+            className={cn(controlClassName, "w-full appearance-none px-3 outline-none")}
+          >
+            {WORKSPACE_TEMPLATE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className={cn("mt-5 flex items-center gap-3 rounded-2xl border px-3.5 py-3", isLight ? "border-[#e7ddd2] bg-[#faf6f1]" : "border-white/10 bg-white/[0.035]")}>
+        <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", isLight ? "bg-white text-[#8a6547]" : "bg-violet-400/10 text-violet-200")}>
+          <Bot className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <p className={cn("text-[12px] font-medium", isLight ? "text-[#3e342c]" : "text-slate-200")}>Ready with recommended defaults</p>
+          <p className={cn("mt-0.5 truncate text-[11px]", isLight ? "text-[#84786d]" : "text-slate-500")}>Core team · Balanced model · Standard setup</p>
+        </div>
+      </div>
+    </section>
   );
 }
 

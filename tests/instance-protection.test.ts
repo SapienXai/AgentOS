@@ -8,6 +8,7 @@ import { test } from "node:test";
 import { NextRequest } from "next/server";
 
 import { POST as loginRoute } from "@/app/api/auth/login/route";
+import { bootstrapInitialInstanceProtection } from "@/lib/security/initial-instance-bootstrap";
 import {
   disableInstanceProtection,
   enableInstanceProtection,
@@ -18,6 +19,38 @@ import {
   updateInstanceCredentials
 } from "@/lib/security/instance-protection";
 import { proxy } from "@/proxy";
+
+test("deployment bootstrap creates Instance Protection once and removes the password from process state", async () => {
+  const runtimeDir = await mkdtemp(path.join(tmpdir(), "agentos-instance-bootstrap-"));
+  const env = {
+    ...process.env,
+    AGENTOS_RUNTIME_DIR: runtimeDir,
+    AGENTOS_INITIAL_ADMIN_USERNAME: "railway-owner",
+    AGENTOS_INITIAL_ADMIN_PASSWORD: "initial secure password"
+  };
+
+  assert.deepEqual(await bootstrapInitialInstanceProtection(env), { status: "created" });
+  assert.equal(env.AGENTOS_INITIAL_ADMIN_PASSWORD, undefined);
+
+  const login = await loginToInstance({
+    username: "railway-owner",
+    password: "initial secure password",
+    rateKey: "bootstrap-login"
+  }, env);
+  assert.equal(login.status.authenticated, true);
+
+  env.AGENTOS_INITIAL_ADMIN_PASSWORD = "replacement password";
+  assert.deepEqual(await bootstrapInitialInstanceProtection(env), { status: "already-configured" });
+  assert.equal(env.AGENTOS_INITIAL_ADMIN_PASSWORD, undefined);
+  await assert.rejects(
+    loginToInstance({
+      username: "railway-owner",
+      password: "replacement password",
+      rateKey: "bootstrap-replacement"
+    }, env),
+    /Invalid username or password/
+  );
+});
 
 test("instance protection lifecycle hashes credentials and invalidates old sessions", async () => {
   const runtimeDir = await mkdtemp(path.join(tmpdir(), "agentos-instance-protection-"));
@@ -122,6 +155,9 @@ test("proxy protects UI, setup, and sensitive APIs while leaving auth endpoints 
       headers: { host: "localhost:3000", origin: "http://localhost:3000" }
     }));
     assert.equal(login.status, 200);
+
+    const health = await proxy(new NextRequest("http://healthcheck.railway.app/api/health"));
+    assert.equal(health.status, 200);
 
     const sessionOnly = await proxy(new NextRequest("http://localhost:3000/api/snapshot", {
       headers: {

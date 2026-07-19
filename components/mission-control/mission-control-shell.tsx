@@ -3871,6 +3871,7 @@ export function MissionControlShell({
           <MissionSidebar
             snapshot={uiSnapshot}
             surfaceTheme={surfaceTheme}
+            onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
             activeWorkspaceId={activeWorkspaceId}
             requestedAgentAction={agentActionRequest}
             connectionState={connectionState}
@@ -3956,21 +3957,6 @@ export function MissionControlShell({
               <p className="truncate text-sm font-semibold">Settings</p>
               <p className={cn("truncate text-[0.68rem]", surfaceTheme === "light" ? "text-[#7a6658]" : "text-slate-400")}>System control center</p>
             </div>
-            <span
-              className={cn(
-                "inline-flex h-11 items-center gap-2 rounded-xl border px-3 text-[0.65rem] font-semibold uppercase tracking-[0.12em]",
-                connectionState === "live"
-                  ? surfaceTheme === "light"
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : "border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
-                  : surfaceTheme === "light"
-                    ? "border-amber-200 bg-amber-50 text-amber-700"
-                    : "border-amber-300/20 bg-amber-300/10 text-amber-100"
-              )}
-            >
-              <span className={cn("h-2 w-2 rounded-full", connectionState === "live" ? "bg-emerald-500" : "bg-amber-400")} />
-              <span className="sr-only sm:not-sr-only">{connectionState === "live" ? "Online" : connectionState === "retrying" ? "Retrying" : "Connecting"}</span>
-            </span>
           </div>
         ) : null}
 
@@ -3989,6 +3975,7 @@ export function MissionControlShell({
           <MissionSidebar
             snapshot={uiSnapshot}
             surfaceTheme={surfaceTheme}
+            onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
             activeWorkspaceId={activeWorkspaceId}
             requestedAgentAction={agentActionRequest}
             connectionState={connectionState}
@@ -4254,7 +4241,6 @@ export function MissionControlShell({
           >
             <Menu className="h-5 w-5" />
           </button>
-          <MissionControlCanvasTitlePill surfaceTheme={surfaceTheme} />
           <button
             type="button"
             aria-label={isInspectorOpen ? "Close inspector" : "Open inspector"}
@@ -4315,6 +4301,7 @@ export function MissionControlShell({
           <MissionSidebar
             snapshot={uiSnapshot}
             surfaceTheme={surfaceTheme}
+            onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
             activeWorkspaceId={activeWorkspaceId}
             requestedAgentAction={agentActionRequest}
             connectionState={connectionState}
@@ -4387,6 +4374,7 @@ export function MissionControlShell({
           <MissionSidebar
             snapshot={uiSnapshot}
             surfaceTheme={surfaceTheme}
+            onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
             activeWorkspaceId={activeWorkspaceId}
             requestedAgentAction={agentActionRequest}
             connectionState={connectionState}

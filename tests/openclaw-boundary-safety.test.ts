@@ -608,6 +608,10 @@ test("sidebar keeps its header and user footer fixed around scrollable navigatio
   assert.match(source, /profile\.email\.trim\(\) \|\| \(profile\.username\.trim\(\) \? `@\$\{profile\.username\.trim\(\)\}` : "Personal account"\)/);
   assert.match(source, /<UserProfileDialog[\s\S]*?open=\{profileOpen\}/);
   assert.match(source, /onProfileSaved=\{onProfileSaved\}/);
+  assert.match(source, /<SidebarThemeMenuAction surfaceTheme=\{surfaceTheme\} onToggle=\{onToggleTheme\} \/>/);
+  assert.match(source, /role="menuitemcheckbox"/);
+  assert.match(source, /aria-checked=\{isDark\}/);
+  assert.match(source, /<span>Appearance<\/span>/);
 });
 
 test("settings shell no longer hardcodes a light-only wrapper", () => {
@@ -622,8 +626,27 @@ test("settings shell no longer hardcodes a light-only wrapper", () => {
   assert.match(source, /isSidebarOpen \? "lg:left-\[316px\]" : "lg:left-\[80px\]"/);
 });
 
+test("workspace creation provides a compact mobile-first basic flow", () => {
+  const source = readFileSync(
+    path.join(rootDir, "components/mission-control/workspace-wizard/workspace-wizard-dialog.tsx"),
+    "utf8"
+  );
+
+  assert.match(source, /contentClassName="h-\[100dvh\] max-h-\[100dvh\] w-screen rounded-none/);
+  assert.match(source, /<MobileWorkspaceCreateForm/);
+  assert.match(source, /id="mobile-workspace-name"/);
+  assert.match(source, /id="mobile-workspace-goal"/);
+  assert.match(source, /id="mobile-workspace-source"/);
+  assert.match(source, /id="mobile-workspace-template"/);
+  assert.match(source, /Core team · Balanced model · Standard setup/);
+  assert.match(source, /className="flex w-full items-center gap-2 md:hidden"/);
+  assert.match(source, /onClick=\{\(\) => void onCreateWorkspace\(\)\}/);
+});
+
 test("mission shell supports hover and pinned sidebar modes", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
+  const mobileSettingsHeaderStart = source.indexOf('"fixed inset-x-0 top-0 z-[60] flex min-h-16');
+  const mobileSettingsHeaderEnd = source.indexOf('"pointer-events-auto fixed inset-y-0 left-0 z-50', mobileSettingsHeaderStart);
 
   assert.match(source, /const \[isSidebarOpenState, setIsSidebarOpen\] = useState\(false\);/);
   assert.match(source, /const \[isCompactViewport, setIsCompactViewport\] = useState\(false\);/);
@@ -650,11 +673,15 @@ test("mission shell supports hover and pinned sidebar modes", () => {
   assert.match(source, /aria-label=\{isSidebarOpen \? "Close navigation" : "Open navigation"\}/);
   assert.match(source, /isSidebarOpen \? "translate-x-0" : "-translate-x-full"/);
   assert.match(source, /aria-label=\{isInspectorOpen \? "Close inspector" : "Open inspector"\}/);
+  assert.equal(source.match(/<MissionControlCanvasTitlePill surfaceTheme=\{surfaceTheme\} \/>/g)?.length, 1);
+  assert.ok(mobileSettingsHeaderStart >= 0 && mobileSettingsHeaderEnd > mobileSettingsHeaderStart);
+  assert.doesNotMatch(source.slice(mobileSettingsHeaderStart, mobileSettingsHeaderEnd), /connectionState/);
   assert.doesNotMatch(source, /sidebarOpenStorageKey/);
 });
 
 test("operations shell shares the persistent pinned sidebar behavior", () => {
   const source = readFileSync(path.join(rootDir, "components/operations/operations-shell.tsx"), "utf8");
+  const operationsUiSource = readFileSync(path.join(rootDir, "components/operations/operations-ui.tsx"), "utf8");
   const pinningSource = readFileSync(
     path.join(rootDir, "components/mission-control/use-sidebar-pinning.ts"),
     "utf8"
@@ -666,6 +693,8 @@ test("operations shell shares the persistent pinned sidebar behavior", () => {
   assert.match(source, /if \(!isSidebarPinned\) setSidebarExpanded\(false\);/);
   assert.match(pinningSource, /agentos\.sidebar\.pinned/);
   assert.match(pinningSource, /window\.localStorage\.setItem\(sidebarPinnedStorageKey, String\(nextPinned\)\)/);
+  assert.match(operationsUiSource, /\{!compact \? \(\s*<span/);
+  assert.doesNotMatch(operationsUiSource, /compact \? "h-11 px-3"/);
 });
 
 test("command bar collapses when empty on mobile and desktop", () => {

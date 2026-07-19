@@ -11,6 +11,7 @@ export type LocalOperatorGuardDecision =
 
 export const SAFE_API_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 export const AGENTOS_TRUSTED_OPERATOR_ORIGINS_ENV = "AGENTOS_TRUSTED_OPERATOR_ORIGINS";
+export const RAILWAY_PUBLIC_DOMAIN_ENV = "RAILWAY_PUBLIC_DOMAIN";
 type LocalOperatorBlockCode = Extract<LocalOperatorGuardDecision, { ok: false }>["code"];
 
 export function evaluateLocalOperatorRequest(input: {
@@ -108,6 +109,12 @@ function readTrustedOperatorOrigins(env: Record<string, string | undefined>) {
   for (const value of (env[AGENTOS_TRUSTED_OPERATOR_ORIGINS_ENV] ?? "").split(",")) {
     const parsed = parseHttpsOrigin(value);
     if (parsed) origins.add(parsed.origin);
+  }
+
+  const railwayDomain = env[RAILWAY_PUBLIC_DOMAIN_ENV]?.trim();
+  const railwayOrigin = railwayDomain ? parseHttpsOrigin(`https://${railwayDomain}`) : null;
+  if (railwayOrigin) {
+    origins.add(railwayOrigin.origin);
   }
 
   return origins;
