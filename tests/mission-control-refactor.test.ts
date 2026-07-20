@@ -29,6 +29,7 @@ import {
   serializeWorkspaceSelection,
   shouldShowOnboardingLaunchpad,
   resolveWorkspaceSelection,
+  resolveWorkspaceContextEngineAgent,
   shouldDeferWorkspaceSelectionHydration
 } from "@/components/mission-control/mission-control-shell.utils";
 import { resolveInitialOnboardingModelId } from "@/components/mission-control/openclaw-onboarding.utils";
@@ -48,6 +49,20 @@ test("agent draft helpers keep create flows stable", () => {
   assert.equal(buildScopedAgentId("My Workspace", "Agent Name"), "my-workspace-agent-name");
   assert.equal(buildUniqueAgentId(existingAgents, "My Workspace", "Agent Name"), "my-workspace-agent-name-2");
   assert.equal(applyAgentPreset(draft, "setup").policy.preset, "setup");
+});
+
+test("workspace Context Engine selects only the preferred agent in that workspace", () => {
+  const agents = [
+    { id: "other-default", workspaceId: "other", isDefault: true, status: "engaged" },
+    { id: "workspace-idle", workspaceId: "workspace", isDefault: false, status: "idle" },
+    { id: "workspace-engaged", workspaceId: "workspace", isDefault: false, status: "engaged" },
+    { id: "workspace-default", workspaceId: "workspace", isDefault: true, status: "idle" }
+  ] as MissionControlSnapshot["agents"];
+
+  assert.equal(resolveWorkspaceContextEngineAgent(agents, "workspace")?.id, "workspace-default");
+  assert.equal(resolveWorkspaceContextEngineAgent(agents.slice(0, 3), "workspace")?.id, "workspace-engaged");
+  assert.equal(resolveWorkspaceContextEngineAgent(agents.slice(0, 2), "workspace")?.id, "workspace-idle");
+  assert.equal(resolveWorkspaceContextEngineAgent(agents, "missing"), null);
 });
 
 test("pending agent projections survive remount while live snapshot catches up", () => {
@@ -741,6 +756,53 @@ test("Mission Control shell delegates operator workflow state to focused hooks",
   assert.doesNotMatch(source, /const \[resetDialogTarget, setResetDialogTarget\] = useState/);
   assert.doesNotMatch(source, /const \[resetPreviewState, setResetPreviewState\] = useState/);
   assert.doesNotMatch(source, /const \[resetRunState, setResetRunState\] = useState/);
+});
+
+test("Context Engine follows the Mission Control surface theme with semantic contrast tokens", () => {
+  const shellSource = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
+  const dialogSource = readFileSync(path.join(rootDir, "components/mission-control/context-engine-dialog.tsx"), "utf8");
+
+  assert.match(shellSource, /<ContextEngineDialog[\s\S]*surfaceTheme=\{surfaceTheme\}/);
+  assert.match(dialogSource, /const contextEngineThemeStyles: Record<ContextEngineSurfaceTheme/);
+  assert.match(dialogSource, /light: \{/);
+  assert.match(dialogSource, /dark: \{/);
+  assert.match(dialogSource, /--ce-text-strong/);
+  assert.match(dialogSource, /--ce-border-subtle/);
+  assert.match(dialogSource, /--ce-success-text/);
+  assert.match(dialogSource, /style=\{contextEngineThemeStyles\[surfaceTheme\]\}/);
+});
+
+test("mobile inspector moves scope controls into the header and reserves the rail for desktop", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/inspector-panel.tsx"), "utf8");
+  const visualsSource = readFileSync(path.join(rootDir, "components/mission-control/inspector-visuals.ts"), "utf8");
+  const globalStyles = readFileSync(path.join(rootDir, "app/globals.css"), "utf8");
+  const shellSource = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
+
+  assert.match(source, /hidden h-full shrink-0 flex-col items-center px-1\.5 py-3 lg:flex/);
+  assert.match(source, /aria-label="Inspector scope"/);
+  assert.match(source, /mt-3 grid grid-cols-3[\s\S]*lg:hidden/);
+  assert.match(source, /aria-label=\{`Show \$\{item\.label\} inspector`\}/);
+  assert.match(source, /style=\{isLight \? \{ backdropFilter: "none", WebkitBackdropFilter: "none" \} : undefined\}/);
+  assert.match(source, /isLight \? "backdrop-blur-none" : "backdrop-blur-2xl"/);
+  assert.match(source, /mission-inspector panel-surface[\s\S]*rounded-none border-0 lg:rounded-l-\[22px\] lg:border lg:border-r-0/);
+  assert.match(visualsSource, /shell: "border-\[#ddcec3\] bg-\[#fbf7f3\]/);
+  assert.match(visualsSource, /content: "bg-\[#fffdfa\]"/);
+  assert.match(globalStyles, /@media \(max-width: 1023px\)[\s\S]*\.mission-shell--light \.mission-inspector-light[\s\S]*background: #fbf7f3 !important;[\s\S]*backdrop-filter: none !important;/);
+  assert.match(globalStyles, /\.mission-inspector \{[\s\S]*border-width: 0 !important;[\s\S]*border-radius: 0 !important;/);
+  assert.match(shellSource, /fixed inset-0 z-50 h-\[100dvh\] w-full overflow-hidden rounded-none/);
+  assert.match(shellSource, /!isInspectorOpen \? \([\s\S]*fixed inset-x-0 top-3 z-\[60\]/);
+  assert.doesNotMatch(shellSource, /h-\[min\(78dvh,720px\)\]/);
+  assert.doesNotMatch(shellSource, /rounded-t-\[24px\]/);
+});
+
+test("mobile light sidebar uses an opaque surface and hides its launcher while open", () => {
+  const shellSource = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
+  const sidebarSource = readFileSync(path.join(rootDir, "components/mission-control/sidebar.tsx"), "utf8");
+
+  assert.match(shellSource, /!isSidebarOpen \? \(/);
+  assert.match(shellSource, /aria-label="Open navigation"/);
+  assert.match(shellSource, /surfaceTheme === "light"[\s\S]*bg-\[#fbf7f3\] shadow-\[18px_0_60px_rgba\(76,54,40,0\.22\)\]/);
+  assert.match(sidebarSource, /surfaceTheme === "light" \? "bg-\[#fbf7f3\] lg:bg-card" : "bg-card"/);
 });
 
 test("Inspector uses focused panel modules for task, agent, and runtime truth", () => {

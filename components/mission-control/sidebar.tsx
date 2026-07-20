@@ -529,7 +529,12 @@ export function MissionSidebar({
           operatorProfile={operatorProfile}
         />
       ) : (
-        <aside className="relative flex h-full w-full flex-col overflow-hidden border-r border-border bg-card text-card-foreground shadow-panel">
+        <aside
+          className={cn(
+            "relative flex h-full w-full flex-col overflow-hidden border-r border-border text-card-foreground shadow-panel",
+            surfaceTheme === "light" ? "bg-[#fbf7f3] lg:bg-card" : "bg-card"
+          )}
+        >
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,hsl(var(--foreground)/0.035),transparent_38%),radial-gradient(circle_at_55%_0%,hsl(var(--primary)/0.10),transparent_30%)]"

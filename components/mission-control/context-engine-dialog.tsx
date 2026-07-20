@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import {
   Ban,
   Bot,
@@ -61,6 +62,67 @@ import { cn } from "@/lib/utils";
 
 type ContextEngineTab = "overview" | "project" | "skills" | "memory" | "attachments" | "preview";
 type InspectorMode = "preview" | "edit";
+type ContextEngineSurfaceTheme = "dark" | "light";
+type ContextEngineThemeStyle = CSSProperties & Record<`--ce-${string}`, string>;
+
+const contextEngineThemeStyles: Record<ContextEngineSurfaceTheme, ContextEngineThemeStyle> = {
+  dark: {
+    "--ce-surface": "radial-gradient(circle at 10% 0%, rgba(124,58,237,0.16), transparent 28%), linear-gradient(135deg, rgba(16,20,31,0.99), rgba(8,11,19,0.99) 62%, rgba(13,15,25,0.99))",
+    "--ce-panel": "rgba(255,255,255,0.04)",
+    "--ce-panel-strong": "rgba(2,6,23,0.62)",
+    "--ce-panel-hover": "rgba(255,255,255,0.085)",
+    "--ce-border": "rgba(255,255,255,0.11)",
+    "--ce-border-subtle": "rgba(255,255,255,0.07)",
+    "--ce-text-strong": "#f8fafc",
+    "--ce-text": "#dbe4f0",
+    "--ce-text-muted": "#9ba9ba",
+    "--ce-text-subtle": "#69788b",
+    "--ce-accent": "#c4b5fd",
+    "--ce-accent-strong": "#a78bfa",
+    "--ce-accent-soft": "rgba(139,92,246,0.17)",
+    "--ce-blue": "#bae6fd",
+    "--ce-success-bg": "rgba(52,211,153,0.11)",
+    "--ce-success-border": "rgba(110,231,183,0.3)",
+    "--ce-success-text": "#a7f3d0",
+    "--ce-warning-bg": "rgba(251,191,36,0.1)",
+    "--ce-warning-border": "rgba(252,211,77,0.28)",
+    "--ce-warning-text": "#fde68a",
+    "--ce-danger-bg": "rgba(244,63,94,0.1)",
+    "--ce-danger-border": "rgba(253,164,175,0.3)",
+    "--ce-danger-text": "#fecdd3",
+    "--ce-neutral-bg": "rgba(100,116,139,0.24)",
+    "--ce-neutral-border": "rgba(148,163,184,0.26)",
+    "--ce-neutral-text": "#cbd5e1"
+  },
+  light: {
+    "--ce-surface": "radial-gradient(circle at 10% 0%, rgba(124,58,237,0.1), transparent 30%), linear-gradient(135deg, rgba(255,253,251,0.99), rgba(248,244,240,0.99) 62%, rgba(252,249,246,0.99))",
+    "--ce-panel": "rgba(255,255,255,0.72)",
+    "--ce-panel-strong": "rgba(255,255,255,0.92)",
+    "--ce-panel-hover": "rgba(109,40,217,0.09)",
+    "--ce-border": "rgba(91,70,57,0.2)",
+    "--ce-border-subtle": "rgba(91,70,57,0.13)",
+    "--ce-text-strong": "#241b16",
+    "--ce-text": "#493a31",
+    "--ce-text-muted": "#736258",
+    "--ce-text-subtle": "#927f73",
+    "--ce-accent": "#6d28d9",
+    "--ce-accent-strong": "#7c3aed",
+    "--ce-accent-soft": "rgba(109,40,217,0.1)",
+    "--ce-blue": "#0369a1",
+    "--ce-success-bg": "#dcfce7",
+    "--ce-success-border": "#86efac",
+    "--ce-success-text": "#166534",
+    "--ce-warning-bg": "#fef3c7",
+    "--ce-warning-border": "#fcd34d",
+    "--ce-warning-text": "#854d0e",
+    "--ce-danger-bg": "#ffe4e6",
+    "--ce-danger-border": "#fda4af",
+    "--ce-danger-text": "#9f1239",
+    "--ce-neutral-bg": "#f1f5f9",
+    "--ce-neutral-border": "#cbd5e1",
+    "--ce-neutral-text": "#475569"
+  }
+};
 
 const tabItems: Array<{
   id: ContextEngineTab;
@@ -76,11 +138,11 @@ const tabItems: Array<{
 ];
 
 const statusTone: Record<ContextEngineFileStatus, string> = {
-  enabled: "border-emerald-300/25 bg-emerald-400/10 text-emerald-200",
-  disabled: "border-slate-500/25 bg-slate-700/40 text-slate-300",
-  missing: "border-rose-300/30 bg-rose-400/10 text-rose-200",
-  truncated: "border-amber-300/30 bg-amber-400/10 text-amber-200",
-  error: "border-rose-300/30 bg-rose-400/10 text-rose-200"
+  enabled: "border-[var(--ce-success-border)] bg-[var(--ce-success-bg)] text-[var(--ce-success-text)]",
+  disabled: "border-[var(--ce-neutral-border)] bg-[var(--ce-neutral-bg)] text-[var(--ce-neutral-text)]",
+  missing: "border-[var(--ce-danger-border)] bg-[var(--ce-danger-bg)] text-[var(--ce-danger-text)]",
+  truncated: "border-[var(--ce-warning-border)] bg-[var(--ce-warning-bg)] text-[var(--ce-warning-text)]",
+  error: "border-[var(--ce-danger-border)] bg-[var(--ce-danger-bg)] text-[var(--ce-danger-text)]"
 };
 
 const budgetIcons: Record<ContextEngineBudgetItem["id"], typeof TerminalSquare> = {
@@ -93,16 +155,18 @@ const budgetIcons: Record<ContextEngineBudgetItem["id"], typeof TerminalSquare> 
 };
 
 const contextEditorTextareaClassName =
-  "!border-white/[0.12] !bg-slate-950/90 !text-slate-100 caret-violet-200 placeholder:!text-slate-500 selection:bg-violet-500/35 disabled:!text-slate-400 disabled:!opacity-70";
+  "!border-[var(--ce-border)] !bg-[var(--ce-panel-strong)] !text-[var(--ce-text-strong)] caret-[var(--ce-accent)] placeholder:!text-[var(--ce-text-subtle)] selection:bg-violet-500/25 disabled:!text-[var(--ce-text-muted)] disabled:!opacity-70";
 
 export function ContextEngineDialog({
   agentId,
   open,
-  onOpenChange
+  onOpenChange,
+  surfaceTheme = "dark"
 }: {
   agentId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  surfaceTheme?: ContextEngineSurfaceTheme;
 }) {
   const [engineSnapshot, setEngineSnapshot] = useState<ContextEngineSnapshot | null>(null);
   const [activeTab, setActiveTab] = useState<ContextEngineTab>("project");
@@ -383,37 +447,43 @@ export function ContextEngineDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        data-testid="context-engine-dialog"
+        style={contextEngineThemeStyles[surfaceTheme]}
         overlayClassName="bg-black/78 backdrop-blur-lg"
-        closeClassName="right-3 top-3 h-7 w-7 text-slate-300 hover:bg-white/[0.06] hover:text-white"
-        className="grid h-[min(calc(100vh-72px),760px)] max-h-[calc(100vh-72px)] w-[min(90vw,1060px)] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-2xl border border-violet-300/28 bg-[radial-gradient(circle_at_10%_0%,rgba(124,58,237,0.16),transparent_28%),linear-gradient(135deg,rgba(16,20,31,0.98),rgba(8,11,19,0.98)_62%,rgba(13,15,25,0.98))] p-0 text-slate-100 shadow-[0_0_0_1px_rgba(167,139,250,0.14),0_24px_80px_rgba(0,0,0,0.68)]"
+        closeClassName="right-3 top-3 z-20 h-9 w-9 text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] hover:text-[var(--ce-text-strong)] sm:h-8 sm:w-8"
+        className="grid h-[100dvh] max-h-[100dvh] w-screen max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-none border-x-0 border-y border-[var(--ce-border)] bg-[image:var(--ce-surface)] p-0 text-[var(--ce-text)] shadow-[0_0_0_1px_rgba(124,58,237,0.12),0_24px_80px_rgba(0,0,0,0.42)] sm:h-[calc(100dvh-24px)] sm:max-h-[calc(100dvh-24px)] sm:w-[calc(100vw-24px)] sm:rounded-2xl sm:border lg:h-[min(calc(100dvh-72px),760px)] lg:max-h-[calc(100dvh-72px)] lg:w-[min(90vw,1060px)]"
       >
-        <DialogHeader className="relative space-y-0 border-b border-white/[0.06] px-6 pb-2 pt-3">
-          <div className="flex items-start justify-between gap-5 pr-9">
+        <DialogHeader className="relative space-y-0 border-b border-[var(--ce-border-subtle)] px-4 py-3 sm:px-6 sm:pb-2 sm:pt-3">
+          <div className="flex items-start justify-between gap-3 pr-10 sm:gap-5 sm:pr-9">
             <div className="flex min-w-0 items-start gap-3">
-              <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-violet-500/15 text-violet-200 shadow-[0_0_20px_rgba(124,58,237,0.3)]">
-                <Hexagon className="h-6 w-6 fill-violet-500/55 stroke-violet-300" />
-                <span className="absolute h-1.5 w-1.5 rounded-full bg-violet-200 shadow-[0_0_12px_rgba(196,181,253,0.8)]" />
+              <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[var(--ce-accent-soft)] text-[var(--ce-accent)] shadow-[0_0_20px_rgba(124,58,237,0.2)]">
+                <Hexagon className="h-6 w-6 fill-[var(--ce-accent-soft)] stroke-[var(--ce-accent)]" />
+                <span className="absolute h-1.5 w-1.5 rounded-full bg-[var(--ce-accent)] shadow-[0_0_12px_rgba(124,58,237,0.55)]" />
               </div>
               <div className="min-w-0">
-                <DialogTitle className="font-display text-[17px] font-semibold leading-5 text-white">
+                <DialogTitle className="font-display text-[17px] font-semibold leading-5 text-[var(--ce-text-strong)]">
                   Context Engine
                 </DialogTitle>
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <DialogDescription className="text-xs text-slate-300/78">
-                    Control what this agent sees
+                <div className="mt-0.5 flex min-w-0 items-center gap-x-2 gap-y-1 sm:mt-1 sm:flex-wrap">
+                  <DialogDescription className="text-xs text-[var(--ce-text-muted)]">
+                    {engineSnapshot
+                      ? `Control what ${formatAgentDisplayName(engineSnapshot.agent)} sees`
+                      : "Control what this agent sees"}
                   </DialogDescription>
-                  <HeaderChip icon={<Sparkles className="h-3 w-3" />} value={engineSnapshot?.model.label ?? "Unknown model"} tone="violet" />
-                  <HeaderChip icon={<Grid2X2 className="h-3 w-3" />} value={engineSnapshot?.model.contextWindow ? `${formatContextWindow(engineSnapshot.model.contextWindow)} window` : "Unknown window"} tone="blue" />
-                  <HeaderChip icon={<Clock3 className="h-3 w-3" />} value={formatContextUsage(engineSnapshot)} tone={engineSnapshot?.budget.usedPercent == null ? "muted" : "amber"} />
-                  <HeaderChip
-                    icon={<FileText className="h-3 w-3" />}
-                    value={formatConfigurationPersistence(engineSnapshot)}
-                    tone={engineSnapshot?.configuration.persistenceStatus === "recovered" ? "amber" : "muted"}
-                  />
+                  <div className="hidden flex-wrap items-center gap-1.5 sm:flex">
+                    <HeaderChip icon={<Sparkles className="h-3 w-3" />} value={engineSnapshot?.model.label ?? "Unknown model"} tone="violet" />
+                    <HeaderChip icon={<Grid2X2 className="h-3 w-3" />} value={engineSnapshot?.model.contextWindow ? `${formatContextWindow(engineSnapshot.model.contextWindow)} window` : "Unknown window"} tone="blue" />
+                    <HeaderChip icon={<Clock3 className="h-3 w-3" />} value={formatContextUsage(engineSnapshot)} tone={engineSnapshot?.budget.usedPercent == null ? "muted" : "amber"} />
+                    <HeaderChip
+                      icon={<FileText className="h-3 w-3" />}
+                      value={formatConfigurationPersistence(engineSnapshot)}
+                      tone={engineSnapshot?.configuration.persistenceStatus === "recovered" ? "amber" : "muted"}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="hidden shrink-0 items-center gap-2 lg:flex">
               <TopActionButton
                 icon={<Eye className="h-3.5 w-3.5" />}
                 label="Effective Context"
@@ -438,9 +508,9 @@ export function ContextEngineDialog({
           </div>
         </DialogHeader>
 
-        <div className="grid min-h-0 grid-cols-[180px_minmax(0,1fr)] gap-4 overflow-y-auto px-4 py-3">
-          <aside className="min-h-[465px] rounded-[10px] border border-white/[0.09] bg-black/18 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-            <nav className="space-y-1">
+        <div className="flex min-h-0 flex-col overflow-hidden lg:grid lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-4 lg:px-4 lg:py-3">
+          <aside className="shrink-0 border-b border-[var(--ce-border)] bg-[var(--ce-panel)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] lg:min-h-[465px] lg:rounded-[10px] lg:border lg:py-4">
+            <nav className="flex overflow-x-auto px-2 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:block lg:space-y-1 lg:overflow-visible lg:px-0 lg:py-0">
               {tabItems.map((item) => {
                 const Icon = item.icon;
                 const selected = activeTab === item.id;
@@ -450,15 +520,15 @@ export function ContextEngineDialog({
                     key={item.id}
                     type="button"
                     className={cn(
-                      "group relative flex h-12 w-full items-center gap-2.5 px-4 text-left text-sm transition-colors",
+                      "group relative flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-left text-xs transition-colors lg:h-12 lg:w-full lg:gap-2.5 lg:rounded-none lg:px-4 lg:text-sm",
                       selected
-                        ? "bg-violet-500/18 text-violet-100"
-                        : "text-slate-300 hover:bg-white/[0.045] hover:text-white"
+                        ? "bg-[var(--ce-accent-soft)] text-[var(--ce-accent)]"
+                        : "text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] hover:text-[var(--ce-text-strong)]"
                     )}
                     onClick={() => setActiveTab(item.id)}
                   >
-                    {selected ? <span className="absolute left-0 top-1.5 h-9 w-1 rounded-r-full bg-violet-400 shadow-[0_0_18px_rgba(167,139,250,0.65)]" /> : null}
-                    <Icon className={cn("h-[18px] w-[18px]", selected ? "text-violet-200" : "text-slate-400 group-hover:text-slate-200")} />
+                    {selected ? <span className="absolute bottom-0 left-3 right-3 h-0.5 rounded-t-full bg-violet-400 shadow-[0_0_18px_rgba(167,139,250,0.65)] lg:bottom-auto lg:left-0 lg:right-auto lg:top-1.5 lg:h-9 lg:w-1 lg:rounded-r-full" /> : null}
+                    <Icon className={cn("h-4 w-4 lg:h-[18px] lg:w-[18px]", selected ? "text-[var(--ce-accent)]" : "text-[var(--ce-text-muted)] group-hover:text-[var(--ce-text)]")} />
                     <span>{item.label}</span>
                   </button>
                 );
@@ -466,9 +536,10 @@ export function ContextEngineDialog({
             </nav>
           </aside>
 
-          <main className="h-full min-h-[465px]">
+          <main className="min-h-0 flex-1 overflow-y-auto p-3 lg:h-full lg:min-h-[465px] lg:overflow-visible lg:p-0">
             {activeTab === "project" ? (
               <ProjectContextTab
+                surfaceTheme={surfaceTheme}
                 snapshot={engineSnapshot}
                 files={projectFiles}
                 selectedPath={selectedPath}
@@ -514,12 +585,12 @@ export function ContextEngineDialog({
           </main>
         </div>
 
-        <DialogFooter className="gap-0 border-t border-white/[0.07] px-4 py-1.5">
-          <div className="flex w-full items-center justify-between rounded-[8px] bg-white/[0.018] px-1.5 py-1">
+        <DialogFooter className="gap-0 border-t border-[var(--ce-border-subtle)] px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:py-1.5">
+          <div className="flex w-full items-center justify-between rounded-[8px] bg-[var(--ce-panel)] px-1.5 py-1">
             <Button
               type="button"
               variant="secondary"
-              className="h-7 rounded-[7px] border-white/10 bg-white/[0.05] px-2.5 text-[11px] text-slate-300 hover:bg-white/[0.09] hover:text-white"
+              className="h-9 rounded-[7px] border-[var(--ce-border)] bg-[var(--ce-panel)] px-3 text-xs text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] hover:text-[var(--ce-text-strong)] sm:h-7 sm:px-2.5 sm:text-[11px]"
               disabled={!engineSnapshot || !hasContextChanges || isSavingContext}
               onClick={resetDraft}
             >
@@ -528,7 +599,7 @@ export function ContextEngineDialog({
             </Button>
             <Button
               type="button"
-              className="h-7 rounded-[7px] border border-violet-200/35 bg-[linear-gradient(180deg,rgba(139,92,246,0.98),rgba(109,40,217,0.96))] px-3 text-[11px] text-white shadow-[0_6px_16px_rgba(124,58,237,0.28)] hover:bg-violet-500"
+              className="h-9 rounded-[7px] border border-violet-200/35 bg-[linear-gradient(180deg,rgba(139,92,246,0.98),rgba(109,40,217,0.96))] px-4 text-xs text-white shadow-[0_6px_16px_rgba(124,58,237,0.28)] hover:bg-violet-500 sm:h-7 sm:px-3 sm:text-[11px]"
               disabled={!engineSnapshot || isSavingContext || !hasContextChanges}
               onClick={() => void saveContext()}
             >
@@ -543,6 +614,7 @@ export function ContextEngineDialog({
 }
 
 function ProjectContextTab({
+  surfaceTheme,
   snapshot,
   files,
   selectedPath,
@@ -573,6 +645,7 @@ function ProjectContextTab({
   onRevertFile,
   onSaveFile
 }: {
+  surfaceTheme: ContextEngineSurfaceTheme;
   snapshot: ContextEngineSnapshot | null;
   files: ContextEngineFile[];
   selectedPath: string | null;
@@ -604,36 +677,36 @@ function ProjectContextTab({
   onSaveFile: () => void;
 }) {
   return (
-    <div className="grid h-full min-h-0 grid-rows-[96px_minmax(0,1fr)] gap-3">
+    <div className="flex min-h-0 flex-col gap-3 lg:h-full xl:grid xl:grid-rows-[96px_minmax(0,1fr)]">
       <ContextBudgetCard snapshot={snapshot} />
-      <div className="grid min-h-0 grid-cols-[minmax(0,1.22fr)_minmax(285px,0.95fr)] gap-3">
-        <section className="min-h-0 rounded-[10px] border border-white/[0.1] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-          <div className="flex items-start justify-between gap-3 border-b border-white/[0.07] px-4 py-3">
+      <div className="grid min-h-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.22fr)_minmax(285px,0.95fr)]">
+        <section className="min-h-0 overflow-hidden rounded-[10px] border border-[var(--ce-border)] bg-[var(--ce-panel)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--ce-border-subtle)] px-3 py-2.5 sm:items-start sm:px-4 sm:py-3">
             <div>
-              <h3 className="text-[15px] font-semibold text-white">B. Project Context Files</h3>
-              <p className="mt-0.5 text-xs text-slate-400">Files injected into the agent context</p>
+              <h3 className="text-sm font-semibold text-[var(--ce-text-strong)] sm:text-[15px]">Project Context Files</h3>
+              <p className="mt-0.5 hidden text-xs text-[var(--ce-text-muted)] sm:block">Files injected into the agent context</p>
             </div>
             <Button
               type="button"
               variant="secondary"
-              className="h-8 rounded-[8px] border-white/10 bg-white/[0.055] px-3 text-xs text-slate-100 hover:bg-white/[0.09]"
+              className="h-9 rounded-[8px] border-[var(--ce-border)] bg-[var(--ce-panel)] px-3 text-xs text-[var(--ce-text-strong)] hover:bg-[var(--ce-panel-hover)] sm:h-8"
               disabled={!createableMissingFile}
               title={createableMissingFile ? `Create ${createableMissingFile.path}` : "No createable missing context files."}
               onClick={onAddFile}
             >
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
-              Add File
+              <Plus className="h-4 w-4 sm:mr-1.5 sm:h-3.5 sm:w-3.5" />
+              <span className="sr-only sm:not-sr-only">Add File</span>
             </Button>
           </div>
-          <div className="grid grid-cols-[minmax(150px,1fr)_105px_132px_32px] border-b border-white/[0.07] px-3 py-2 text-[11px] text-slate-400">
+          <div className="hidden grid-cols-[minmax(150px,1fr)_105px_132px_32px] border-b border-[var(--ce-border-subtle)] px-3 py-2 text-[11px] text-[var(--ce-text-muted)] sm:grid">
             <span>File</span>
             <span>Tokens</span>
             <span>State</span>
             <span />
           </div>
-          <ScrollArea className="h-[calc(100%-112px)]">
+          <ScrollArea className="max-h-[42dvh] sm:max-h-[360px] xl:h-[calc(100%-112px)] xl:max-h-none">
             {isLoadingSnapshot && files.length === 0 ? (
-              <div className="flex h-40 items-center justify-center gap-2 text-sm text-slate-400">
+              <div className="flex h-40 items-center justify-center gap-2 text-sm text-[var(--ce-text-muted)]">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading context files
               </div>
@@ -671,11 +744,11 @@ function ProjectContextTab({
               </div>
             )}
           </ScrollArea>
-          <div className="grid grid-cols-[minmax(150px,1fr)_105px_132px_32px] items-center border-t border-white/[0.07] px-3 py-2 text-xs text-slate-400">
+          <div className="flex items-center justify-between border-t border-[var(--ce-border-subtle)] px-3 py-2 text-xs text-[var(--ce-text-muted)] sm:grid sm:grid-cols-[minmax(150px,1fr)_105px_132px_32px]">
             <span className="text-[11px] uppercase tracking-[0.18em]">Total</span>
-            <span className="font-semibold text-white">{formatTokenValue(enabledProjectTokenTotal)} tokens</span>
-            <span />
-            <span />
+            <span className="font-semibold text-[var(--ce-text-strong)]">{formatTokenValue(enabledProjectTokenTotal)} tokens</span>
+            <span className="hidden sm:block" />
+            <span className="hidden sm:block" />
           </div>
         </section>
 
@@ -697,6 +770,7 @@ function ProjectContextTab({
           onSaveFile={onSaveFile}
         />
         <ExpandedFileEditorDialog
+          surfaceTheme={surfaceTheme}
           open={expandedFileOpen}
           onOpenChange={onExpandedFileOpenChange}
           file={activeFile}
@@ -727,20 +801,20 @@ function ContextBudgetCard({ snapshot }: { snapshot: ContextEngineSnapshot | nul
   const percent = budget?.usedPercent ?? 0;
 
   return (
-    <section className="rounded-[9px] border border-white/[0.1] bg-white/[0.035] px-4 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="grid grid-cols-[max-content_minmax(220px,1fr)] items-center gap-4">
-        <h3 className="whitespace-nowrap text-[13px] font-semibold text-white">A. Context Budget</h3>
-        <div className="relative h-5 overflow-hidden rounded-full border border-white/[0.07] bg-slate-800/80">
+    <section className="rounded-[9px] border border-[var(--ce-border)] bg-[var(--ce-panel)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:px-4 sm:py-2">
+      <div className="grid gap-2 sm:grid-cols-[max-content_minmax(220px,1fr)] sm:items-center sm:gap-4">
+        <h3 className="whitespace-nowrap text-xs font-semibold text-[var(--ce-text-strong)] sm:text-[13px]">Context Budget</h3>
+        <div className="relative h-5 overflow-hidden rounded-full border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)]">
           <div
             className="h-full rounded-full bg-[linear-gradient(90deg,#8b5cf6,#c084fc,#fb7185,#fb923c)] transition-[width]"
             style={{ width: `${Math.max(3, Math.min(100, percent))}%` }}
           />
-          <span className="absolute inset-0 flex items-center justify-center px-3 text-[11px] font-semibold leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]">
+          <span className="absolute inset-0 flex items-center justify-center px-3 text-[11px] font-semibold leading-none text-[var(--ce-text-strong)] drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]">
             {usedLabel} / {limitLabel} tokens
           </span>
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-6 gap-2">
+      <div className="mt-2 hidden grid-cols-3 gap-2 sm:grid lg:grid-cols-6">
         {(budget?.items ?? defaultBudgetItems()).map((item) => (
           <BudgetPill key={item.id} item={item} />
         ))}
@@ -757,22 +831,22 @@ function BudgetPill({ item }: { item: ContextEngineBudgetItem }) {
   const hasTokenValue = typeof item.tokens === "number";
 
   return (
-    <div className="rounded-[7px] border border-white/[0.1] bg-slate-950/36 px-2 py-1">
+    <div className="rounded-[7px] border border-[var(--ce-border)] bg-[var(--ce-panel-strong)] px-2 py-1">
       <div className="flex items-center gap-1.5">
         <Icon className={cn("h-3 w-3 shrink-0", tone)} />
-        <p className="truncate text-[10px] leading-3 text-slate-300">{item.label}</p>
+        <p className="truncate text-[10px] leading-3 text-[var(--ce-text)]">{item.label}</p>
       </div>
       <p
         className={cn(
           "mt-0.5 truncate text-center font-semibold leading-4",
-          hasTokenValue ? "text-[11px] text-white" : "text-[10px] text-slate-300"
+          hasTokenValue ? "text-[11px] text-[var(--ce-text-strong)]" : "text-[10px] text-[var(--ce-text)]"
         )}
         title={valueLabel}
       >
         {valueLabel}
       </p>
       {sourceLabel ? (
-        <p className="truncate text-center text-[7px] uppercase tracking-[0.1em] text-slate-500">{sourceLabel}</p>
+        <p className="truncate text-center text-[7px] uppercase tracking-[0.1em] text-[var(--ce-text-subtle)]">{sourceLabel}</p>
       ) : null}
     </div>
   );
@@ -802,23 +876,26 @@ function ContextFileRow({
   return (
     <div
       className={cn(
-        "relative grid min-h-11 grid-cols-[minmax(150px,1fr)_105px_132px_32px] items-center px-3 text-xs transition-colors",
-        selected ? "bg-violet-500/16 shadow-[inset_3px_0_0_rgba(139,92,246,0.95)]" : "hover:bg-white/[0.035]"
+        "relative grid min-h-[60px] grid-cols-[minmax(0,1fr)_auto_40px] items-center gap-2 px-3 py-2 text-xs transition-colors sm:min-h-11 sm:grid-cols-[minmax(150px,1fr)_105px_132px_32px] sm:gap-0 sm:py-0",
+        selected ? "bg-[var(--ce-accent-soft)] shadow-[inset_3px_0_0_var(--ce-accent-strong)]" : "hover:bg-[var(--ce-panel-hover)]"
       )}
       onClick={onSelect}
     >
       <div className="flex min-w-0 items-center gap-2">
         <ContextFileListIcon file={file} />
         <div className="min-w-0">
-          <p className="truncate font-medium text-white">{file.label}</p>
-          <p className="truncate font-mono text-[10px] text-slate-500">{file.path}</p>
+          <p className="truncate font-medium text-[var(--ce-text-strong)]">{file.label}</p>
+          <p className="truncate font-mono text-[10px] text-[var(--ce-text-subtle)]">{file.path}</p>
+          <p className="mt-0.5 text-[10px] text-[var(--ce-text-muted)] sm:hidden">
+            {file.rawTokens == null ? "Tokens unknown" : `${formatTokenValue(file.rawTokens)} tokens`}
+          </p>
         </div>
       </div>
-      <span className="text-slate-300">{file.rawTokens == null ? "-" : `${formatTokenValue(file.rawTokens)} tokens`}</span>
+      <span className="hidden text-[var(--ce-text)] sm:block">{file.rawTokens == null ? "-" : `${formatTokenValue(file.rawTokens)} tokens`}</span>
       <ContextFileStateControl file={file} onToggle={onToggle} />
       <button
         type="button"
-        className="relative flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/[0.08] hover:text-white"
+        className="relative flex h-9 w-9 items-center justify-center rounded-lg text-[var(--ce-text-muted)] transition-colors hover:bg-[var(--ce-panel-hover)] hover:text-[var(--ce-text-strong)] sm:h-7 sm:w-7"
         onClick={(event) => {
           event.stopPropagation();
           onActionMenu();
@@ -829,7 +906,7 @@ function ContextFileRow({
       </button>
       {actionMenuOpen ? (
         <div
-          className="absolute right-2 top-9 z-20 w-40 rounded-[10px] border border-white/[0.1] bg-slate-950 p-1.5 shadow-[0_20px_44px_rgba(0,0,0,0.45)]"
+          className="absolute right-2 top-12 z-20 w-44 rounded-[10px] border border-[var(--ce-border)] bg-[var(--ce-panel-strong)] p-1.5 shadow-[0_20px_44px_rgba(0,0,0,0.45)] sm:top-9 sm:w-40"
           onClick={(event) => event.stopPropagation()}
         >
           <ActionMenuButton label="Preview" icon={<Eye className="h-4 w-4" />} onClick={onPreview} />
@@ -843,21 +920,21 @@ function ContextFileRow({
 
 function ContextFileListIcon({ file }: { file: ContextEngineFile }) {
   if (file.scope === "agent") {
-    return <Bot className="h-4 w-4 shrink-0 text-violet-200" />;
+    return <Bot className="h-4 w-4 shrink-0 text-[var(--ce-accent)]" />;
   }
 
   if (file.scope === "workspace") {
-    return <Home className="h-4 w-4 shrink-0 text-sky-200" />;
+    return <Home className="h-4 w-4 shrink-0 text-[var(--ce-blue)]" />;
   }
 
-  return <FileText className="h-4 w-4 shrink-0 text-slate-300" />;
+  return <FileText className="h-4 w-4 shrink-0 text-[var(--ce-text)]" />;
 }
 
 function ContextFileStateControl({ file, onToggle }: { file: ContextEngineFile; onToggle: () => void }) {
   if (file.status === "missing") {
     return (
       <span
-        className="inline-flex h-7 w-fit items-center rounded-full border border-rose-300/24 bg-rose-500/12 px-2.5 text-[11px] font-medium text-rose-200"
+        className="inline-flex h-9 w-fit items-center rounded-full border border-[var(--ce-danger-border)] bg-[var(--ce-danger-bg)] px-2.5 text-[11px] font-medium text-[var(--ce-danger-text)] sm:h-7"
         title={file.statusReason ?? "This context file is missing."}
       >
         Missing
@@ -876,10 +953,10 @@ function ContextFileStateControl({ file, onToggle }: { file: ContextEngineFile; 
       title={file.canToggle ? "Toggle context inclusion" : file.statusReason ?? "This file cannot be toggled."}
       aria-label={`Context file state: ${enabled ? "Enabled" : "Disabled"}`}
       className={cn(
-        "inline-flex w-[64px] flex-col items-start justify-center gap-0.5 rounded-[7px] px-1 py-0.5 text-[10px] font-medium leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+        "inline-flex h-10 w-12 flex-col items-center justify-center gap-0.5 rounded-[7px] px-1 py-0.5 text-[10px] font-medium leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-60 sm:h-auto sm:w-[64px] sm:items-start",
         enabled
-          ? "text-emerald-200 hover:bg-emerald-500/8"
-          : "text-slate-300 hover:bg-slate-500/8"
+          ? "text-[var(--ce-success-text)] hover:bg-[var(--ce-success-bg)]"
+          : "text-[var(--ce-neutral-text)] hover:bg-[var(--ce-neutral-bg)]"
       )}
       onClick={(event) => {
         event.stopPropagation();
@@ -889,7 +966,9 @@ function ContextFileStateControl({ file, onToggle }: { file: ContextEngineFile; 
       <span
         className={cn(
           "relative h-4 w-8 rounded-full border transition-colors",
-          enabled ? "border-emerald-300/35 bg-emerald-500" : "border-slate-500/45 bg-slate-700"
+          enabled
+            ? "border-[var(--ce-success-border)] bg-emerald-500"
+            : "border-[var(--ce-neutral-border)] bg-slate-500"
         )}
       >
         <span
@@ -899,7 +978,7 @@ function ContextFileStateControl({ file, onToggle }: { file: ContextEngineFile; 
           )}
         />
       </span>
-      <span>{enabled ? "Enabled" : "Disabled"}</span>
+      <span className="hidden sm:inline">{enabled ? "Enabled" : "Disabled"}</span>
     </button>
   );
 }
@@ -938,9 +1017,9 @@ function SelectedFileInspector({
   onSaveFile: () => void;
 }) {
   return (
-    <section className="min-h-0 rounded-[10px] border border-white/[0.1] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="border-b border-white/[0.07] px-3 py-2">
-        <h3 className="text-[13px] font-semibold text-white">C. Selected File</h3>
+    <section className="min-h-0 overflow-hidden rounded-[10px] border border-[var(--ce-border)] bg-[var(--ce-panel)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="border-b border-[var(--ce-border-subtle)] px-3 py-2">
+        <h3 className="text-[13px] font-semibold text-[var(--ce-text-strong)]">Selected File</h3>
       </div>
       {!file ? (
         <EmptyState title="No file selected" detail="Select a context file to inspect the exact source and preview." />
@@ -948,18 +1027,18 @@ function SelectedFileInspector({
         <div className="flex h-[calc(100%-37px)] min-h-0 flex-col">
           <div className="px-3 py-2">
             <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-slate-200" />
+              <FileText className="h-4 w-4 text-[var(--ce-text)]" />
               <div className="min-w-0">
-                <h4 className="truncate text-sm font-semibold leading-4 text-white">{file.label}</h4>
-                <p className="truncate font-mono text-[9px] leading-3 text-slate-500">{file.path}</p>
+                <h4 className="truncate text-sm font-semibold leading-4 text-[var(--ce-text-strong)]">{file.label}</h4>
+                <p className="truncate font-mono text-[9px] leading-3 text-[var(--ce-text-subtle)]">{file.path}</p>
               </div>
             </div>
-            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] leading-4">
+            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] leading-4 [&>*:nth-child(n+5)]:hidden sm:[&>*:nth-child(n+5)]:grid">
               <CompactInspectorItem label="Status">
                 <StatusBadge status={file.status} compact />
               </CompactInspectorItem>
               <CompactInspectorItem label="Scope">
-                <span className="capitalize text-white">{file.scope}</span>
+                <span className="capitalize text-[var(--ce-text-strong)]">{file.scope}</span>
               </CompactInspectorItem>
               <CompactInspectorItem label="Raw">
                 <InspectorValue value={file.rawTokens == null ? "Unknown" : formatTokenValue(file.rawTokens)} source={file.tokenSource} compact />
@@ -968,26 +1047,26 @@ function SelectedFileInspector({
                 <InspectorValue value={file.injectedTokens == null ? "Unknown" : formatTokenValue(file.injectedTokens)} source={file.tokenSource} compact />
               </CompactInspectorItem>
               <CompactInspectorItem label="Preference">
-                <span className="text-white">{formatPreferenceSource(file)}</span>
+                <span className="text-[var(--ce-text-strong)]">{formatPreferenceSource(file)}</span>
               </CompactInspectorItem>
               <CompactInspectorItem label="Runtime">
-                <span className="text-white">{formatRuntimeInclusionSource(file)}</span>
+                <span className="text-[var(--ce-text-strong)]">{formatRuntimeInclusionSource(file)}</span>
               </CompactInspectorItem>
             </div>
             {file.statusReason ? (
-              <p className="mt-1.5 rounded-[8px] border border-amber-300/16 bg-amber-400/[0.07] px-2 py-1 text-[10px] leading-[14px] text-amber-100/85">
+              <p className="mt-1.5 rounded-[8px] border border-[var(--ce-warning-border)] bg-[var(--ce-warning-bg)] px-2 py-1 text-[10px] leading-[14px] text-[var(--ce-warning-text)]">
                 {file.statusReason}
               </p>
             ) : null}
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col border-t border-white/[0.07] px-3 py-2">
+          <div className="flex min-h-[180px] flex-1 flex-col border-t border-[var(--ce-border-subtle)] px-3 py-2 xl:min-h-0">
             <div className="mb-1.5 flex items-center justify-between">
-              <p className="text-[11px] text-slate-400">{inspectorMode === "edit" ? "Edit" : "Preview"}</p>
-              {isLoadingFile ? <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" /> : null}
+              <p className="text-[11px] text-[var(--ce-text-muted)]">{inspectorMode === "edit" ? "Edit" : "Preview"}</p>
+              {isLoadingFile ? <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--ce-text-subtle)]" /> : null}
             </div>
             {error ? (
-              <p className="mb-1.5 rounded-[8px] border border-rose-300/18 bg-rose-400/[0.08] px-2 py-1 text-[10px] text-rose-100">
+              <p className="mb-1.5 rounded-[8px] border border-[var(--ce-danger-border)] bg-[var(--ce-danger-bg)] px-2 py-1 text-[10px] text-[var(--ce-danger-text)]">
                 {error}
               </p>
             ) : null}
@@ -1010,13 +1089,13 @@ function SelectedFileInspector({
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-1.5 border-t border-white/[0.07] px-3 py-2">
+          <div className="grid grid-cols-3 gap-2 border-t border-[var(--ce-border-subtle)] px-3 py-2">
             {inspectorMode === "edit" ? (
               <>
                 <Button
                   type="button"
                   variant="secondary"
-                  className="h-7 min-w-0 rounded-[7px] border-white/10 bg-white/[0.055] px-2 text-[11px] text-slate-200 hover:bg-white/[0.09]"
+                  className="h-9 min-w-0 rounded-[7px] border-[var(--ce-border)] bg-[var(--ce-panel)] px-2 text-[11px] text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] sm:h-7"
                   disabled={!hasUnsavedFileChanges || isSavingFile}
                   onClick={onRevertFile}
                 >
@@ -1026,7 +1105,7 @@ function SelectedFileInspector({
                 <Button
                   type="button"
                   variant="secondary"
-                  className="h-7 min-w-0 rounded-[7px] border-white/10 bg-white/[0.055] px-2 text-[11px] text-slate-200 hover:bg-white/[0.09]"
+                  className="h-9 min-w-0 rounded-[7px] border-[var(--ce-border)] bg-[var(--ce-panel)] px-2 text-[11px] text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] sm:h-7"
                   onClick={onOpenExpandedFile}
                 >
                   <Maximize2 className="mr-1 h-3 w-3" />
@@ -1034,7 +1113,7 @@ function SelectedFileInspector({
                 </Button>
                 <Button
                   type="button"
-                  className="h-7 min-w-0 rounded-[7px] bg-violet-500 px-2 text-[11px] text-white hover:bg-violet-400"
+                  className="h-9 min-w-0 rounded-[7px] bg-violet-600 px-2 text-[11px] text-white hover:bg-violet-500 sm:h-7"
                   disabled={!hasUnsavedFileChanges || !canEditActiveFile || isSavingFile}
                   onClick={onSaveFile}
                 >
@@ -1047,7 +1126,7 @@ function SelectedFileInspector({
                 <Button
                   type="button"
                   variant="secondary"
-                  className="h-7 min-w-0 rounded-[7px] border-white/10 bg-white/[0.055] px-2 text-[11px] text-slate-200 hover:bg-white/[0.09]"
+                  className="h-9 min-w-0 rounded-[7px] border-[var(--ce-border)] bg-[var(--ce-panel)] px-2 text-[11px] text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] sm:h-7"
                   disabled={!file.editable}
                   onClick={onEdit}
                 >
@@ -1057,7 +1136,7 @@ function SelectedFileInspector({
                 <Button
                   type="button"
                   variant="secondary"
-                  className="h-7 min-w-0 rounded-[7px] border-white/10 bg-white/[0.055] px-2 text-[11px] text-slate-200 hover:bg-white/[0.09]"
+                  className="h-9 min-w-0 rounded-[7px] border-[var(--ce-border)] bg-[var(--ce-panel)] px-2 text-[11px] text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] sm:h-7"
                   onClick={onOpenExpandedFile}
                 >
                   <Maximize2 className="mr-1 h-3 w-3" />
@@ -1066,7 +1145,7 @@ function SelectedFileInspector({
                 <Button
                   type="button"
                   variant="destructive"
-                  className="h-7 min-w-0 rounded-[7px] border border-rose-300/25 bg-rose-500/15 px-2 text-[11px] text-rose-200 hover:bg-rose-500/22"
+                  className="h-9 min-w-0 rounded-[7px] border border-[var(--ce-danger-border)] bg-[var(--ce-danger-bg)] px-2 text-[11px] text-[var(--ce-danger-text)] hover:brightness-95 sm:h-7"
                   disabled={!file.canToggle || !file.enabled}
                   onClick={onExclude}
                 >
@@ -1083,6 +1162,7 @@ function SelectedFileInspector({
 }
 
 function ExpandedFileEditorDialog({
+  surfaceTheme,
   open,
   onOpenChange,
   file,
@@ -1101,6 +1181,7 @@ function ExpandedFileEditorDialog({
   onRevertFile,
   onSaveFile
 }: {
+  surfaceTheme: ContextEngineSurfaceTheme;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   file: ContextEngineFile | null;
@@ -1124,27 +1205,28 @@ function ExpandedFileEditorDialog({
   return (
     <Dialog open={open && Boolean(file)} onOpenChange={onOpenChange}>
       <DialogContent
+        style={contextEngineThemeStyles[surfaceTheme]}
         overlayClassName="bg-black/70 backdrop-blur-md"
-        closeClassName="right-3 top-3 h-7 w-7 text-slate-300 hover:bg-white/[0.06] hover:text-white"
-        className="grid h-[min(calc(100vh-56px),820px)] max-h-[calc(100vh-56px)] w-[min(calc(100vw-40px),1120px)] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-[14px] border border-violet-300/22 bg-[linear-gradient(135deg,rgba(13,17,28,0.99),rgba(7,10,18,0.99))] p-0 text-slate-100 shadow-[0_24px_90px_rgba(0,0,0,0.72)]"
+        closeClassName="right-3 top-3 z-20 h-9 w-9 text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] hover:text-[var(--ce-text-strong)] sm:h-8 sm:w-8"
+        className="grid h-[100dvh] max-h-[100dvh] w-screen max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-none border-x-0 border-y border-[var(--ce-border)] bg-[image:var(--ce-surface)] p-0 text-[var(--ce-text)] shadow-[0_24px_90px_rgba(0,0,0,0.45)] sm:h-[calc(100dvh-24px)] sm:max-h-[calc(100dvh-24px)] sm:w-[calc(100vw-24px)] sm:rounded-[14px] sm:border lg:h-[min(calc(100dvh-56px),820px)] lg:max-h-[calc(100dvh-56px)] lg:w-[min(calc(100vw-40px),1120px)]"
       >
-        <DialogHeader className="space-y-0 border-b border-white/[0.07] px-4 py-3 pr-12">
+        <DialogHeader className="space-y-0 border-b border-[var(--ce-border-subtle)] px-4 py-3 pr-12">
           <div className="flex items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-2.5">
-              <FileText className="h-4 w-4 shrink-0 text-violet-200" />
+              <FileText className="h-4 w-4 shrink-0 text-[var(--ce-accent)]" />
               <div className="min-w-0">
-                <DialogTitle className="truncate text-sm font-semibold leading-5 text-white">
+                <DialogTitle className="truncate text-sm font-semibold leading-5 text-[var(--ce-text-strong)]">
                   {file?.label ?? "Context file"}
                 </DialogTitle>
-                <DialogDescription className="truncate font-mono text-[10px] leading-4 text-slate-500">
+                <DialogDescription className="truncate font-mono text-[10px] leading-4 text-[var(--ce-text-subtle)]">
                   {file?.path ?? "No file selected"}
                 </DialogDescription>
               </div>
             </div>
             {file ? (
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="hidden shrink-0 items-center gap-2 sm:flex">
                 <StatusBadge status={file.status} compact />
-                <span className="rounded-full border border-white/[0.08] bg-white/[0.035] px-2 py-1 text-[10px] capitalize text-slate-300">
+                <span className="rounded-full border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] px-2 py-1 text-[10px] capitalize text-[var(--ce-text)]">
                   {file.scope}
                 </span>
               </div>
@@ -1152,8 +1234,8 @@ function ExpandedFileEditorDialog({
           </div>
         </DialogHeader>
 
-        <div className="grid min-h-0 grid-cols-[220px_minmax(0,1fr)] gap-0">
-          <aside className="border-r border-white/[0.07] bg-white/[0.025] p-4">
+        <div className="grid min-h-0 grid-cols-1 gap-0 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <aside className="hidden border-r border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] p-4 lg:block">
             {file ? (
               <div className="space-y-3">
                 <div className="grid gap-2 text-[11px] leading-4">
@@ -1164,27 +1246,27 @@ function ExpandedFileEditorDialog({
                     <InspectorValue value={file.injectedTokens == null ? "Unknown" : formatTokenValue(file.injectedTokens)} source={file.tokenSource} compact />
                   </CompactInspectorItem>
                   <CompactInspectorItem label="Updated">
-                    <span className="text-white">{formatRelativeTime(file.lastUpdatedAt)}</span>
+                    <span className="text-[var(--ce-text-strong)]">{formatRelativeTime(file.lastUpdatedAt)}</span>
                   </CompactInspectorItem>
                   <CompactInspectorItem label="Preference">
-                    <span className="text-white">{formatPreferenceSource(file)}</span>
+                    <span className="text-[var(--ce-text-strong)]">{formatPreferenceSource(file)}</span>
                   </CompactInspectorItem>
                   <CompactInspectorItem label="Runtime source">
-                    <span className="text-white">{formatRuntimeInclusionSource(file)}</span>
+                    <span className="text-[var(--ce-text-strong)]">{formatRuntimeInclusionSource(file)}</span>
                   </CompactInspectorItem>
                   <CompactInspectorItem label="Editable">
-                    <span className={file.editable ? "text-emerald-200" : "text-slate-400"}>
+                    <span className={file.editable ? "text-[var(--ce-success-text)]" : "text-[var(--ce-text-muted)]"}>
                       {file.editable ? "Yes" : "Read only"}
                     </span>
                   </CompactInspectorItem>
                 </div>
                 {file.statusReason ? (
-                  <p className="rounded-[8px] border border-amber-300/16 bg-amber-400/[0.07] px-2 py-1.5 text-[10px] leading-[15px] text-amber-100/85">
+                  <p className="rounded-[8px] border border-[var(--ce-warning-border)] bg-[var(--ce-warning-bg)] px-2 py-1.5 text-[10px] leading-[15px] text-[var(--ce-warning-text)]">
                     {file.statusReason}
                   </p>
                 ) : null}
                 {hasUnsavedFileChanges ? (
-                  <p className="rounded-[8px] border border-violet-300/18 bg-violet-400/[0.08] px-2 py-1.5 text-[10px] leading-[15px] text-violet-100">
+                  <p className="rounded-[8px] border border-[var(--ce-accent-strong)] bg-[var(--ce-accent-soft)] px-2 py-1.5 text-[10px] leading-[15px] text-[var(--ce-accent)]">
                     Unsaved file edits are only written when Save File succeeds.
                   </p>
                 ) : null}
@@ -1192,18 +1274,18 @@ function ExpandedFileEditorDialog({
             ) : null}
           </aside>
 
-          <section className="flex min-h-0 flex-col p-4">
+          <section className="flex min-h-0 flex-col p-3 sm:p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-medium text-white">{inspectorMode === "edit" ? "Edit file" : "Preview injected content"}</p>
-                <p className="mt-0.5 text-[11px] text-slate-500">
+                <p className="text-xs font-medium text-[var(--ce-text-strong)]">{inspectorMode === "edit" ? "Edit file" : "Preview injected content"}</p>
+                <p className="mt-0.5 hidden text-[11px] text-[var(--ce-text-subtle)] sm:block">
                   {inspectorMode === "edit" ? "Changes use the same safe file validation as the compact inspector." : "Preview includes the metadata wrapper AgentOS shows for this context file."}
                 </p>
               </div>
-              {isLoadingFile ? <Loader2 className="h-4 w-4 animate-spin text-slate-500" /> : null}
+              {isLoadingFile ? <Loader2 className="h-4 w-4 animate-spin text-[var(--ce-text-subtle)]" /> : null}
             </div>
             {error ? (
-              <p className="mb-3 rounded-[8px] border border-rose-300/18 bg-rose-400/[0.08] px-2.5 py-2 text-[11px] text-rose-100">
+              <p className="mb-3 rounded-[8px] border border-[var(--ce-danger-border)] bg-[var(--ce-danger-bg)] px-2.5 py-2 text-[11px] text-[var(--ce-danger-text)]">
                 {error}
               </p>
             ) : null}
@@ -1231,20 +1313,20 @@ function ExpandedFileEditorDialog({
           </section>
         </div>
 
-        <DialogFooter className="border-t border-white/[0.07] px-4 py-3">
+        <DialogFooter className="border-t border-[var(--ce-border-subtle)] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-4 sm:py-3">
           <div className="flex w-full items-center justify-between gap-3">
-            <div className="min-w-0 text-[11px] text-slate-500">
+            <div className="hidden min-w-0 text-[11px] text-[var(--ce-text-subtle)] sm:block">
               {file ? (
                 <span className="truncate">
                   {hasUnsavedFileChanges ? "Unsaved changes" : "No unsaved changes"} · {file.enabled ? "Enabled" : "Disabled"}
                 </span>
               ) : null}
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:shrink-0 sm:items-center">
               <Button
                 type="button"
                 variant="secondary"
-                className="h-8 rounded-[8px] border-white/10 bg-white/[0.055] px-3 text-xs text-slate-200 hover:bg-white/[0.09]"
+                className="h-10 rounded-[8px] border-[var(--ce-border)] bg-[var(--ce-panel)] px-3 text-xs text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] sm:h-8"
                 disabled={!hasUnsavedFileChanges || isSavingFile}
                 onClick={onRevertFile}
               >
@@ -1254,7 +1336,7 @@ function ExpandedFileEditorDialog({
               <Button
                 type="button"
                 variant="secondary"
-                className="h-8 rounded-[8px] border-white/10 bg-white/[0.055] px-3 text-xs text-slate-200 hover:bg-white/[0.09]"
+                className="h-10 rounded-[8px] border-[var(--ce-border)] bg-[var(--ce-panel)] px-3 text-xs text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] sm:h-8"
                 disabled={inspectorMode === "preview" && !file?.editable}
                 onClick={inspectorMode === "edit" ? onPreview : onEdit}
               >
@@ -1264,7 +1346,7 @@ function ExpandedFileEditorDialog({
               <Button
                 type="button"
                 variant="destructive"
-                className="h-8 rounded-[8px] border border-rose-300/25 bg-rose-500/15 px-3 text-xs text-rose-200 hover:bg-rose-500/22"
+                className="h-10 rounded-[8px] border border-[var(--ce-danger-border)] bg-[var(--ce-danger-bg)] px-3 text-xs text-[var(--ce-danger-text)] hover:brightness-95 sm:h-8"
                 disabled={!file?.canToggle || !file.enabled}
                 onClick={onExclude}
               >
@@ -1273,7 +1355,7 @@ function ExpandedFileEditorDialog({
               </Button>
               <Button
                 type="button"
-                className="h-8 rounded-[8px] bg-violet-500 px-3 text-xs text-white hover:bg-violet-400"
+                className="h-10 rounded-[8px] bg-violet-600 px-3 text-xs text-white hover:bg-violet-500 sm:h-8"
                 disabled={!hasUnsavedFileChanges || !canEditActiveFile || isSavingFile}
                 onClick={onSaveFile}
               >
@@ -1301,7 +1383,7 @@ function SecondaryTabPanel({
 }) {
   if (isLoading && !snapshot) {
     return (
-      <div className="flex h-full items-center justify-center gap-2 rounded-[10px] border border-white/[0.08] bg-white/[0.035] text-slate-400">
+      <div className="flex h-full items-center justify-center gap-2 rounded-[10px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] text-[var(--ce-text-muted)]">
         <Loader2 className="h-4 w-4 animate-spin" />
         Loading context data
       </div>
@@ -1311,7 +1393,7 @@ function SecondaryTabPanel({
   if (tab === "overview") {
     return (
       <InfoPanel title="Overview" subtitle="Current agent, workspace, model, and runtime report state.">
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
           <OverviewMetric label="Agent" value={snapshot ? formatAgentDisplayName(snapshot.agent) : "Unknown"} />
           <OverviewMetric label="Workspace" value={snapshot?.workspace.name ?? "Unknown"} detail={snapshot?.workspace.path ? compactPath(snapshot.workspace.path) : undefined} />
           <OverviewMetric label="Model" value={snapshot?.model.label ?? "Unknown"} detail={snapshot?.model.provider ?? undefined} />
@@ -1365,15 +1447,15 @@ function SecondaryTabPanel({
   return (
     <InfoPanel title="Effective Context" subtitle="What AgentOS can verify about the next model context, grouped by source of truth.">
       <div className="grid gap-3 xl:grid-cols-[1fr_280px]">
-        <div className="grid gap-2 md:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           {(snapshot?.effectiveContext.sections ?? []).map((section) => (
             <EffectiveContextSectionCard key={section.id} section={section} />
           ))}
         </div>
-        <div className="rounded-[9px] border border-white/[0.08] bg-slate-950/42 p-3">
-          <p className="text-xs font-medium text-white">Effective context total</p>
-          <p className="mt-2 text-2xl font-semibold text-white">{formatTokenValue(snapshot?.preview.totalTokens ?? null)}</p>
-          <p className="mt-1.5 text-xs text-slate-400">
+        <div className="rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3">
+          <p className="text-xs font-medium text-[var(--ce-text-strong)]">Effective context total</p>
+          <p className="mt-2 text-2xl font-semibold text-[var(--ce-text-strong)]">{formatTokenValue(snapshot?.preview.totalTokens ?? null)}</p>
+          <p className="mt-1.5 text-xs text-[var(--ce-text-muted)]">
             {snapshot?.effectiveContext.status === "exact" ? "Exact OpenClaw context report" : "Estimated by AgentOS from available metadata"}
           </p>
           <DiagnosticsList diagnostics={snapshot?.effectiveContext.diagnostics ?? []} />
@@ -1385,26 +1467,26 @@ function SecondaryTabPanel({
 
 function EffectiveContextSectionCard({ section }: { section: ContextEngineEffectiveContextSection }) {
   return (
-    <div className="min-w-0 rounded-[9px] border border-white/[0.08] bg-slate-950/42 p-3">
+    <div className="min-w-0 rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-white">{section.label}</p>
-          <p className="mt-1 text-[10px] uppercase tracking-[0.14em] text-slate-500">{formatEffectiveContextSource(section.source)}</p>
+          <p className="truncate text-xs font-medium text-[var(--ce-text-strong)]">{section.label}</p>
+          <p className="mt-1 text-[10px] uppercase tracking-[0.14em] text-[var(--ce-text-subtle)]">{formatEffectiveContextSource(section.source)}</p>
         </div>
         <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[9px] uppercase tracking-[0.12em]", effectiveContextStatusClassName(section.status))}>
           {section.status}
         </span>
       </div>
-      <p className="mt-2 text-xs leading-5 text-slate-300">{section.detail}</p>
+      <p className="mt-2 text-xs leading-5 text-[var(--ce-text)]">{section.detail}</p>
       {section.items.length > 0 ? (
         <ul className="mt-2 max-h-28 space-y-1 overflow-y-auto pr-1">
           {section.items.slice(0, 8).map((item) => (
-            <li key={item} className="truncate rounded-[7px] border border-white/[0.06] bg-white/[0.03] px-2 py-1 font-mono text-[10px] text-slate-300" title={item}>
+            <li key={item} className="truncate rounded-[7px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] px-2 py-1 font-mono text-[10px] text-[var(--ce-text)]" title={item}>
               {item}
             </li>
           ))}
           {section.items.length > 8 ? (
-            <li className="px-2 text-[10px] text-slate-500">+{section.items.length - 8} more</li>
+            <li className="px-2 text-[10px] text-[var(--ce-text-subtle)]">+{section.items.length - 8} more</li>
           ) : null}
         </ul>
       ) : null}
@@ -1428,11 +1510,11 @@ function formatEffectiveContextSource(source: ContextEngineEffectiveContextSecti
 function effectiveContextStatusClassName(status: ContextEngineEffectiveContextSection["status"]) {
   switch (status) {
     case "exact":
-      return "border-emerald-300/25 bg-emerald-400/10 text-emerald-200";
+      return "border-[var(--ce-success-border)] bg-[var(--ce-success-bg)] text-[var(--ce-success-text)]";
     case "estimated":
-      return "border-amber-300/25 bg-amber-400/10 text-amber-200";
+      return "border-[var(--ce-warning-border)] bg-[var(--ce-warning-bg)] text-[var(--ce-warning-text)]";
     case "unavailable":
-      return "border-slate-500/25 bg-slate-700/40 text-slate-300";
+      return "border-[var(--ce-neutral-border)] bg-[var(--ce-neutral-bg)] text-[var(--ce-neutral-text)]";
   }
 }
 
@@ -1448,11 +1530,11 @@ function HeaderChip({
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center gap-1 rounded-[6px] border bg-white/[0.035] px-2 text-[10px] font-medium",
-        tone === "violet" && "border-violet-300/18 text-violet-200",
-        tone === "blue" && "border-blue-300/18 text-blue-200",
-        tone === "amber" && "border-amber-300/18 text-amber-200",
-        tone === "muted" && "border-slate-500/18 text-slate-400"
+        "inline-flex h-5 items-center gap-1 rounded-[6px] border bg-[var(--ce-panel)] px-2 text-[10px] font-medium",
+        tone === "violet" && "border-[var(--ce-accent-strong)] text-[var(--ce-accent)]",
+        tone === "blue" && "border-[var(--ce-border)] text-[var(--ce-blue)]",
+        tone === "amber" && "border-[var(--ce-warning-border)] bg-[var(--ce-warning-bg)] text-[var(--ce-warning-text)]",
+        tone === "muted" && "border-[var(--ce-border)] text-[var(--ce-text-muted)]"
       )}
     >
       {icon}
@@ -1478,7 +1560,7 @@ function TopActionButton({
     <Button
       type="button"
       variant="secondary"
-      className="h-8 rounded-[8px] border-white/10 bg-white/[0.045] px-3 text-xs text-slate-100 hover:bg-white/[0.08]"
+      className="h-8 rounded-[8px] border-[var(--ce-border)] bg-[var(--ce-panel)] px-3 text-xs text-[var(--ce-text-strong)] hover:bg-[var(--ce-panel-hover)]"
       disabled={disabled}
       title={title}
       onClick={onClick}
@@ -1523,7 +1605,9 @@ function ActionMenuButton({
       disabled={disabled}
       className={cn(
         "flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 text-left text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-45",
-        danger ? "text-rose-200 hover:bg-rose-400/10" : "text-slate-200 hover:bg-white/[0.07]"
+        danger
+          ? "text-[var(--ce-danger-text)] hover:bg-[var(--ce-danger-bg)]"
+          : "text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)]"
       )}
       onClick={onClick}
     >
@@ -1537,7 +1621,7 @@ function LoadingFilePreview({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "flex min-h-[104px] flex-1 items-center justify-center gap-2 rounded-[8px] border border-white/[0.1] bg-slate-950/62 p-2.5 text-[11px] leading-4 text-slate-400",
+        "flex min-h-[104px] flex-1 items-center justify-center gap-2 rounded-[8px] border border-[var(--ce-border)] bg-[var(--ce-panel-strong)] p-2.5 text-[11px] leading-4 text-[var(--ce-text-muted)]",
         className
       )}
     >
@@ -1561,14 +1645,14 @@ function CodePreview({
   return (
     <div
       className={cn(
-        "min-h-[104px] flex-1 overflow-auto rounded-[8px] border border-white/[0.1] bg-slate-950/62 p-2.5 font-mono text-[11px] leading-4 text-slate-300",
+        "min-h-[104px] flex-1 overflow-auto rounded-[8px] border border-[var(--ce-border)] bg-[var(--ce-panel-strong)] p-2.5 font-mono text-[11px] leading-4 text-[var(--ce-text)]",
         className
       )}
     >
       {lines.map((line, index) => (
         <div key={`${index}:${line}`} className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2">
-          <span className="select-none text-right text-slate-600">{index + 1}</span>
-          <span className={cn(lineLimit <= 12 ? "truncate" : "whitespace-pre-wrap break-words", index === 0 && "text-violet-200")}>
+          <span className="select-none text-right text-[var(--ce-text-subtle)]">{index + 1}</span>
+          <span className={cn(lineLimit <= 12 ? "truncate" : "whitespace-pre-wrap break-words", index === 0 && "text-[var(--ce-accent)]")}>
             {line || " "}
           </span>
         </div>
@@ -1587,10 +1671,10 @@ function InfoPanel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="h-full rounded-[10px] border border-white/[0.1] bg-white/[0.035] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <h3 className="text-base font-semibold text-white">{title}</h3>
-      <p className="mt-1 text-xs text-slate-400">{subtitle}</p>
-      <div className="mt-4">{children}</div>
+    <section className="min-h-full rounded-[10px] border border-[var(--ce-border)] bg-[var(--ce-panel)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-4 lg:h-full">
+      <h3 className="text-sm font-semibold text-[var(--ce-text-strong)] sm:text-base">{title}</h3>
+      <p className="mt-1 text-xs text-[var(--ce-text-muted)]">{subtitle}</p>
+      <div className="mt-3 sm:mt-4">{children}</div>
     </section>
   );
 }
@@ -1605,10 +1689,10 @@ function OverviewMetric({
   detail?: string;
 }) {
   return (
-    <div className="rounded-[9px] border border-white/[0.08] bg-slate-950/42 p-3">
-      <p className="text-[10px] uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className="mt-1.5 truncate text-base font-semibold text-white">{value}</p>
-      {detail ? <p className="mt-1 truncate text-xs text-slate-500">{detail}</p> : null}
+    <div className="rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3">
+      <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--ce-text-subtle)]">{label}</p>
+      <p className="mt-1.5 truncate text-base font-semibold text-[var(--ce-text-strong)]">{value}</p>
+      {detail ? <p className="mt-1 truncate text-xs text-[var(--ce-text-subtle)]">{detail}</p> : null}
     </div>
   );
 }
@@ -1625,7 +1709,7 @@ function TwoColumnList({
   rightValues: string[];
 }) {
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <CapabilityList title={leftTitle} values={leftValues} />
       <CapabilityList title={rightTitle} values={rightValues} />
     </div>
@@ -1634,17 +1718,17 @@ function TwoColumnList({
 
 function CapabilityList({ title, values }: { title: string; values: string[] }) {
   return (
-    <div className="rounded-[9px] border border-white/[0.08] bg-slate-950/42 p-3">
-      <p className="text-xs font-medium text-white">{title}</p>
+    <div className="rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3">
+      <p className="text-xs font-medium text-[var(--ce-text-strong)]">{title}</p>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {values.length > 0 ? (
           values.map((value) => (
-            <Badge key={value} className="rounded-[7px] border-white/[0.08] bg-white/[0.055] text-[10px] text-slate-300">
+            <Badge key={value} className="rounded-[7px] border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] text-[10px] text-[var(--ce-text)]">
               {value}
             </Badge>
           ))
         ) : (
-          <span className="text-xs text-slate-500">No values available.</span>
+          <span className="text-xs text-[var(--ce-text-subtle)]">No values available.</span>
         )}
       </div>
     </div>
@@ -1653,15 +1737,15 @@ function CapabilityList({ title, values }: { title: string; values: string[] }) 
 
 function FileSummaryList({ files, empty }: { files: ContextEngineFile[]; empty: string }) {
   if (files.length === 0) {
-    return <p className="mt-2 rounded-[9px] border border-white/[0.08] bg-slate-950/42 p-3 text-xs text-slate-500">{empty}</p>;
+    return <p className="mt-2 rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3 text-xs text-[var(--ce-text-subtle)]">{empty}</p>;
   }
 
   return (
-    <div className="mt-2 divide-y divide-white/[0.06] rounded-[9px] border border-white/[0.08] bg-slate-950/42">
+    <div className="mt-2 divide-y divide-white/[0.06] rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)]">
       {files.map((file) => (
         <div key={file.path} className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
-          <span className="truncate text-slate-200">{file.path}</span>
-          <span className="shrink-0 text-slate-500">{formatTokenValue(file.injectedTokens)} tokens</span>
+          <span className="truncate text-[var(--ce-text)]">{file.path}</span>
+          <span className="shrink-0 text-[var(--ce-text-subtle)]">{formatTokenValue(file.injectedTokens)} tokens</span>
         </div>
       ))}
     </div>
@@ -1676,7 +1760,7 @@ function DiagnosticsList({ diagnostics }: { diagnostics: string[] }) {
   return (
     <div className="mt-4 space-y-1.5">
       {diagnostics.slice(0, 4).map((diagnostic) => (
-        <p key={diagnostic} className="rounded-[9px] border border-amber-300/16 bg-amber-400/[0.07] px-2.5 py-1.5 text-[11px] leading-4 text-amber-100/82">
+        <p key={diagnostic} className="rounded-[9px] border border-[var(--ce-warning-border)] bg-[var(--ce-warning-bg)] px-2.5 py-1.5 text-[11px] leading-4 text-[var(--ce-warning-text)]">
           {diagnostic}
         </p>
       ))}
@@ -1686,9 +1770,9 @@ function DiagnosticsList({ diagnostics }: { diagnostics: string[] }) {
 
 function UnavailableState({ title, detail }: { title: string; detail: string }) {
   return (
-    <div className="rounded-[10px] border border-white/[0.08] bg-slate-950/42 p-6">
-      <p className="text-base font-medium text-white">{title}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-400">{detail}</p>
+    <div className="rounded-[10px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-4 sm:p-6">
+      <p className="text-sm font-medium text-[var(--ce-text-strong)] sm:text-base">{title}</p>
+      <p className="mt-2 text-xs leading-5 text-[var(--ce-text-muted)] sm:text-sm sm:leading-6">{detail}</p>
     </div>
   );
 }
@@ -1696,8 +1780,8 @@ function UnavailableState({ title, detail }: { title: string; detail: string }) 
 function EmptyState({ title, detail }: { title: string; detail: string }) {
   return (
     <div className="flex h-40 flex-col items-center justify-center px-6 text-center">
-      <p className="text-sm font-medium text-slate-200">{title}</p>
-      <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">{detail}</p>
+      <p className="text-sm font-medium text-[var(--ce-text)]">{title}</p>
+      <p className="mt-1 max-w-sm text-xs leading-5 text-[var(--ce-text-subtle)]">{detail}</p>
     </div>
   );
 }
@@ -1705,7 +1789,7 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
 function CompactInspectorItem({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="grid min-w-0 grid-cols-[52px_minmax(0,1fr)] items-center gap-1">
-      <span className="text-slate-500">{label}</span>
+      <span className="text-[var(--ce-text-subtle)]">{label}</span>
       <span className="min-w-0 truncate">{children}</span>
     </div>
   );
@@ -1721,10 +1805,10 @@ function InspectorValue({
   compact?: boolean;
 }) {
   return (
-    <span className="text-white">
+    <span className="text-[var(--ce-text-strong)]">
       {value}
       {source !== "reported" ? (
-        <span className={cn("uppercase text-slate-500", compact ? "ml-1 text-[8px] tracking-[0.08em]" : "ml-2 text-[10px] tracking-[0.12em]")}>
+        <span className={cn("uppercase text-[var(--ce-text-subtle)]", compact ? "ml-1 text-[8px] tracking-[0.08em]" : "ml-2 text-[10px] tracking-[0.12em]")}>
           {source}
         </span>
       ) : null}
@@ -1784,21 +1868,21 @@ function defaultBudgetItems(): ContextEngineBudgetItem[] {
 
 function resolveBudgetTone(id: ContextEngineBudgetItem["id"]) {
   if (id === "system") {
-    return "text-violet-300";
+    return "text-[var(--ce-accent)]";
   }
   if (id === "project") {
-    return "text-blue-300";
+    return "text-[var(--ce-blue)]";
   }
   if (id === "skills") {
-    return "text-emerald-300";
+    return "text-[var(--ce-success-text)]";
   }
   if (id === "tools") {
-    return "text-amber-300";
+    return "text-[var(--ce-warning-text)]";
   }
   if (id === "history") {
-    return "text-cyan-300";
+    return "text-[var(--ce-blue)]";
   }
-  return "text-fuchsia-300";
+  return "text-[var(--ce-accent)]";
 }
 
 function formatContextUsage(snapshot: ContextEngineSnapshot | null) {

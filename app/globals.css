@@ -289,6 +289,19 @@
   box-shadow: 0 24px 72px rgba(61, 47, 36, 0.18) !important;
 }
 
+@media (max-width: 1023px) {
+  .mission-inspector {
+    border-width: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  .mission-shell--light .mission-inspector-light {
+    background: #fbf7f3 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
 .agentos-light-modal [class*="bg-[linear-gradient"],
 .mission-shell--light .mission-inspector-light [class*="bg-[linear-gradient"] {
   background: linear-gradient(180deg, rgba(255, 252, 248, 0.96), rgba(246, 241, 235, 0.92)) !important;

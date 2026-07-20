@@ -28,9 +28,9 @@ export type InspectorSurfaceTone = Readonly<{
 export function resolveInspectorSurfaceTone(surfaceTheme: InspectorSurfaceTheme): InspectorSurfaceTone {
   if (surfaceTheme === "light") {
     return {
-      shell: "border-[#ddcec3] bg-[linear-gradient(180deg,rgba(255,253,251,0.98),rgba(247,240,235,0.98))] shadow-[0_22px_60px_rgba(107,75,55,0.16)]",
+      shell: "border-[#ddcec3] bg-[#fbf7f3] shadow-[0_22px_60px_rgba(107,75,55,0.16)]",
       rail: "border-[#e5d6cc] bg-[#fbf4ee]",
-      content: "bg-[linear-gradient(180deg,rgba(255,253,251,0.94),rgba(249,243,238,0.98))]",
+      content: "bg-[#fffdfa]",
       eyebrow: "text-[#98765f]",
       title: "text-[#30251f]",
       mutedText: "text-[#826d5d]",

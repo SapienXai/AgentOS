@@ -41,7 +41,6 @@ export function useMissionControlWorkspaceActions({
   const [accountBrowserProfileRecoveryBusy, setAccountBrowserProfileRecoveryBusy] = useState<"restart" | null>(null);
   const [accountTargets, setAccountTargets] = useState<AccountLoginTargetView[]>([]);
   const [accountAccessRules, setAccountAccessRules] = useState<AccountAccessRuleView[]>([]);
-  const [workspaceFilesDialogId, setWorkspaceFilesDialogId] = useState<string | null>(null);
 
   const openWorkspaceWizard = useCallback((mode: "basic" | "advanced" = "basic") => {
     setWorkspaceWizardEditId(null);
@@ -212,20 +211,6 @@ export function useMissionControlWorkspaceActions({
     }
   }, [activeWorkspace, loadAccountBindings, loadAccountBrowserProfiles]);
 
-  const openWorkspaceFiles = useCallback(
-    (workspaceId: string) => {
-      openWorkspaceOnCanvas(workspaceId);
-      setWorkspaceFilesDialogId(workspaceId);
-    },
-    [openWorkspaceOnCanvas]
-  );
-
-  const handleWorkspaceFilesOpenChange = useCallback((nextOpen: boolean) => {
-    if (!nextOpen) {
-      setWorkspaceFilesDialogId(null);
-    }
-  }, []);
-
   return {
     isWorkspaceWizardOpen,
     workspaceWizardInitialMode,
@@ -253,10 +238,7 @@ export function useMissionControlWorkspaceActions({
     loadAccountBrowserProfiles,
     openConnectAccountDialog,
     restartGatewayForAccountProfiles,
-    connectAccount,
-    workspaceFilesDialogId,
-    openWorkspaceFiles,
-    handleWorkspaceFilesOpenChange
+    connectAccount
   };
 }
 

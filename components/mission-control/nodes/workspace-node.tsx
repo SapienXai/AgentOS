@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 type WorkspaceFlowNode = Node<WorkspaceNodeData, "workspace">;
 
 export function WorkspaceNode({ data, selected }: NodeProps<WorkspaceFlowNode>) {
-  const canOpenWorkspaceFiles = Boolean(data.onOpenWorkspaceFiles);
+  const canOpenWorkspaceContextEngine = Boolean(data.onOpenWorkspaceContextEngine);
 
   return (
     <div
@@ -27,14 +27,14 @@ export function WorkspaceNode({ data, selected }: NodeProps<WorkspaceFlowNode>) 
       )}
     >
       <div className="relative z-10 flex items-start justify-between gap-4">
-        {canOpenWorkspaceFiles ? (
+        {canOpenWorkspaceContextEngine ? (
           <button
             type="button"
-            aria-label={`Open workspace files for ${data.workspace.name}`}
-            title="Open workspace files"
+            aria-label={`Open Context Engine for ${data.workspace.name}`}
+            title="Open Context Engine"
             onClick={(event) => {
               event.stopPropagation();
-              data.onOpenWorkspaceFiles?.(data.workspace.id);
+              data.onOpenWorkspaceContextEngine?.(data.workspace.id);
             }}
             onPointerDown={(event) => event.stopPropagation()}
             className="workspace-node__workspace-action nodrag nopan group block min-w-0 max-w-[330px] space-y-1.5 text-left focus-visible:outline-none"

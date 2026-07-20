@@ -23,7 +23,7 @@ export type WorkspaceNodeData = Record<string, unknown> & {
   openMenu: WorkspaceMenuState | null;
   onMenuChange?: (menu: WorkspaceMenuState | null) => void;
   onTaskCardFilterChange?: (filter: WorkspaceTaskCardFilter) => void;
-  onOpenWorkspaceFiles?: (workspaceId: string) => void;
+  onOpenWorkspaceContextEngine?: (workspaceId: string) => void;
   onCreateAgent?: (workspaceId: string) => void;
   onAddModel?: (workspaceId: string) => void;
   onSelectEntity?: (entityId: string) => void;

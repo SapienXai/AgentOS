@@ -269,17 +269,19 @@ function InspectorPanelContent({
 
   return (
     <div
+      style={isLight ? { backdropFilter: "none", WebkitBackdropFilter: "none" } : undefined}
       className={cn(
-        "panel-surface flex h-full flex-row-reverse overflow-hidden rounded-l-[22px] border border-r-0 backdrop-blur-2xl",
+        "mission-inspector panel-surface flex h-full flex-row-reverse overflow-hidden rounded-none border-0 lg:rounded-l-[22px] lg:border lg:border-r-0",
+        isLight ? "backdrop-blur-none" : "backdrop-blur-2xl",
         surfaceTone.shell,
         isLight && "mission-inspector-light"
       )}
     >
       <div
         className={cn(
-          "flex h-full shrink-0 flex-col items-center px-1.5 py-3",
+          "hidden h-full shrink-0 flex-col items-center px-1.5 py-3 lg:flex",
           surfaceTone.rail,
-          collapsed ? "w-full rounded-l-[22px]" : "w-[52px] border-l"
+          collapsed ? "w-full lg:rounded-l-[22px]" : "w-[52px] border-l"
         )}
       >
         <div className="flex flex-1 flex-col items-center gap-1.5">
@@ -399,6 +401,36 @@ function InspectorPanelContent({
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
+              </div>
+
+              <div
+                aria-label="Inspector scope"
+                className={cn(
+                  "mt-3 grid grid-cols-3 gap-1 rounded-[10px] border p-1 lg:hidden",
+                  surfaceTone.tabTrack
+                )}
+              >
+                {scopeItems.map((item) => {
+                  const Icon = item.icon;
+                  const active = activeScope === item.id;
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      aria-label={`Show ${item.label} inspector`}
+                      aria-pressed={active}
+                      className={cn(
+                        "inline-flex min-w-0 items-center justify-center gap-1.5 rounded-[7px] border border-transparent px-2 py-2 text-[10px] font-medium transition-colors",
+                        active ? surfaceTone.tabActive : surfaceTone.tabIdle
+                      )}
+                      onClick={() => onSelectScope(item.id)}
+                    >
+                      <Icon className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{item.label}</span>
+                    </button>
+                  );
+                })}
               </div>
 
               <div

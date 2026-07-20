@@ -37,6 +37,20 @@ export type LaunchpadWorkspaceSetupReadiness = {
   expectedAgentCount: number;
 };
 
+export function resolveWorkspaceContextEngineAgent(
+  agents: MissionControlSnapshot["agents"],
+  workspaceId: string
+) {
+  const workspaceAgents = agents.filter((agent) => agent.workspaceId === workspaceId);
+
+  return (
+    workspaceAgents.find((agent) => agent.isDefault) ??
+    workspaceAgents.find((agent) => agent.status === "engaged") ??
+    workspaceAgents[0] ??
+    null
+  );
+}
+
 const launchpadCanvasHandoffStepId = "canvas-handoff";
 
 type MissionDispatchStart = {

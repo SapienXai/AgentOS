@@ -46,7 +46,6 @@ import { useMissionControlTaskActions } from "@/components/mission-control/use-m
 import { useMissionControlWorkspaceActions } from "@/components/mission-control/use-mission-control-workspace-actions";
 import { useTaskReviewWorkflow } from "@/components/mission-control/use-task-review-workflow";
 import { WorkspaceChannelsDialog } from "@/components/mission-control/workspace-channels-dialog";
-import { WorkspaceContextFilesDialog } from "@/components/mission-control/workspace-context-files-dialog";
 import { WorkspaceWizardDialog } from "@/components/mission-control/workspace-wizard/workspace-wizard-dialog";
 import { resolveSuggestedAgentModelId } from "@/components/mission-control/create-agent-dialog.utils";
 import {
@@ -86,6 +85,7 @@ import {
   buildWorkspaceSelectionStorageKey,
   resolveWorkspaceRootDraft,
   resolveWorkspaceSelection,
+  resolveWorkspaceContextEngineAgent,
   serializeWorkspaceSelection,
   shouldShowOnboardingLaunchpad,
   shouldDeferWorkspaceSelectionHydration,
@@ -760,6 +760,22 @@ export function MissionControlShell({
     },
     [selectNode, setActiveWorkspaceId, setFocusedAgentId]
   );
+  const openWorkspaceContextEngine = useCallback(
+    (workspaceId: string) => {
+      const targetAgent = resolveWorkspaceContextEngineAgent(uiSnapshot.agents, workspaceId);
+
+      if (!targetAgent) {
+        openWorkspaceOnCanvas(workspaceId);
+        toast.error("Context Engine needs a workspace agent.", {
+          description: "Create or connect an agent in this workspace before managing its context."
+        });
+        return;
+      }
+
+      openAgentContextEngine(targetAgent.id);
+    },
+    [openAgentContextEngine, openWorkspaceOnCanvas, uiSnapshot.agents]
+  );
   const {
     isWorkspaceWizardOpen,
     workspaceWizardInitialMode,
@@ -787,10 +803,7 @@ export function MissionControlShell({
     loadAccountBrowserProfiles,
     openConnectAccountDialog,
     restartGatewayForAccountProfiles,
-    connectAccount,
-    workspaceFilesDialogId,
-    openWorkspaceFiles,
-    handleWorkspaceFilesOpenChange
+    connectAccount
   } = useMissionControlWorkspaceActions({
     activeWorkspace: activeWorkspaceForDialogs,
     openWorkspaceOnCanvas
@@ -4109,7 +4122,7 @@ export function MissionControlShell({
             onInspectAgentDetail={handleInspectAgentDetail}
             onOpenWorkspaceChannels={openWorkspaceChannels}
             onOpenAccounts={openAccountsConnect}
-            onOpenWorkspaceFiles={openWorkspaceFiles}
+            onOpenWorkspaceContextEngine={openWorkspaceContextEngine}
             onCreateWorkspaceAgent={(workspaceId) => {
               setActiveWorkspaceId(workspaceId);
               setIsSidebarCreateAgentDialogOpen(true);
@@ -4223,24 +4236,29 @@ export function MissionControlShell({
       </div>
 
       <div className="relative z-20 min-h-[100dvh] pointer-events-none lg:h-screen">
-        <div className="pointer-events-none fixed inset-x-0 top-3 z-[60] flex items-center justify-between px-3 lg:hidden">
-          <button
-            type="button"
-            aria-label={isSidebarOpen ? "Close navigation" : "Open navigation"}
-            aria-expanded={isSidebarOpen}
-            onClick={() => {
-              setIsInspectorOpen(false);
-              setIsSidebarOpen((current) => !current);
-            }}
-            className={cn(
-              "pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full border shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur-xl",
-              surfaceTheme === "light"
-                ? "border-[#d9c9bc]/90 bg-[#f8f5f0]/92 text-[#6f5a4b]"
-                : "border-cyan-300/10 bg-slate-950/82 text-slate-200"
-            )}
-          >
-            <Menu className="h-5 w-5" />
-          </button>
+        {!isInspectorOpen ? (
+          <div className="pointer-events-none fixed inset-x-0 top-3 z-[60] flex items-center justify-between px-3 lg:hidden">
+          {!isSidebarOpen ? (
+            <button
+              type="button"
+              aria-label="Open navigation"
+              aria-expanded={false}
+              onClick={() => {
+                setIsInspectorOpen(false);
+                setIsSidebarOpen(true);
+              }}
+              className={cn(
+                "pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full border shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur-xl",
+                surfaceTheme === "light"
+                  ? "border-[#d9c9bc]/90 bg-[#f8f5f0]/92 text-[#6f5a4b]"
+                  : "border-cyan-300/10 bg-slate-950/82 text-slate-200"
+              )}
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          ) : (
+            <span aria-hidden="true" className="h-11 w-11" />
+          )}
           <button
             type="button"
             aria-label={isInspectorOpen ? "Close inspector" : "Open inspector"}
@@ -4258,7 +4276,8 @@ export function MissionControlShell({
           >
             <PanelRightOpen className="h-5 w-5" />
           </button>
-        </div>
+          </div>
+        ) : null}
 
         <div className="pointer-events-none absolute left-[80px] top-6 z-10 hidden lg:block">
           <MissionControlCanvasTitlePill surfaceTheme={surfaceTheme} />
@@ -4360,7 +4379,10 @@ export function MissionControlShell({
 
         <div
           className={cn(
-            "pointer-events-auto fixed inset-y-0 left-0 z-50 w-[min(88vw,320px)] overflow-hidden bg-[#050a12] shadow-[18px_0_60px_rgba(0,0,0,0.42)] transition-transform duration-300 lg:hidden",
+            "pointer-events-auto fixed inset-y-0 left-0 z-50 w-[min(88vw,320px)] overflow-hidden transition-transform duration-300 lg:hidden",
+            surfaceTheme === "light"
+              ? "bg-[#fbf7f3] shadow-[18px_0_60px_rgba(76,54,40,0.22)]"
+              : "bg-[#050a12] shadow-[18px_0_60px_rgba(0,0,0,0.42)]",
             isSidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
           aria-hidden={!isSidebarOpen}
@@ -4431,7 +4453,7 @@ export function MissionControlShell({
 
         <div
           className={cn(
-            "pointer-events-auto fixed inset-x-0 bottom-0 z-50 h-[min(78dvh,720px)] overflow-hidden rounded-t-[24px] transition-transform duration-300 lg:absolute lg:inset-x-auto lg:right-0 lg:top-0 lg:z-30 lg:h-[100dvh] lg:overflow-visible lg:rounded-none lg:transition-none",
+            "pointer-events-auto fixed inset-0 z-50 h-[100dvh] w-full overflow-hidden rounded-none transition-transform duration-300 lg:absolute lg:inset-x-auto lg:bottom-auto lg:right-0 lg:top-0 lg:z-30 lg:w-auto lg:overflow-visible lg:transition-none",
             isInspectorOpen
               ? cn(
                   "translate-y-0 w-full max-w-full lg:w-[var(--inspector-width)] lg:max-w-none lg:translate-y-0",
@@ -4724,17 +4746,11 @@ export function MissionControlShell({
           restartGatewayBusy={accountBrowserProfileRecoveryBusy === "restart"}
         />
 
-        <WorkspaceContextFilesDialog
-          snapshot={uiSnapshot}
-          workspaceId={workspaceFilesDialogId}
-          open={workspaceFilesDialogId !== null}
-          onOpenChange={handleWorkspaceFilesOpenChange}
-        />
-
         <ContextEngineDialog
           agentId={contextEngineAgentId}
           open={contextEngineAgentId !== null}
           onOpenChange={handleContextEngineOpenChange}
+          surfaceTheme={surfaceTheme}
         />
 
         <TaskReviewDialog

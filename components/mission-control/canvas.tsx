@@ -90,7 +90,7 @@ export function MissionCanvas({
   onInspectAgentDetail,
   onOpenWorkspaceChannels,
   onOpenAccounts,
-  onOpenWorkspaceFiles,
+  onOpenWorkspaceContextEngine,
   onCreateWorkspaceAgent,
   onAddWorkspaceModel,
   onReplyTask,
@@ -137,7 +137,7 @@ export function MissionCanvas({
   onInspectAgentDetail?: (agentId: string, focus: AgentDetailFocus) => void;
   onOpenWorkspaceChannels?: (workspaceId?: string, agentId?: string) => void;
   onOpenAccounts?: (workspaceId?: string, agentId?: string) => void;
-  onOpenWorkspaceFiles?: (workspaceId: string) => void;
+  onOpenWorkspaceContextEngine?: (workspaceId: string) => void;
   onCreateWorkspaceAgent?: (workspaceId: string) => void;
   onAddWorkspaceModel?: (workspaceId: string) => void;
   onReplyTask: (task: WorkItemRecord) => void;
@@ -254,7 +254,7 @@ export function MissionCanvas({
     onInspectAgentDetail,
     onOpenWorkspaceChannels,
     onOpenAccounts,
-    onOpenWorkspaceFiles,
+    onOpenWorkspaceContextEngine,
     onReplyTask,
     onCopyTaskPrompt,
     onHideTask,
@@ -355,7 +355,7 @@ export function MissionCanvas({
       onInspectAgentDetail,
       onOpenWorkspaceChannels,
       onOpenAccounts,
-      onOpenWorkspaceFiles,
+      onOpenWorkspaceContextEngine,
       onReplyTask,
       onCopyTaskPrompt,
       onHideTask,
@@ -417,7 +417,7 @@ export function MissionCanvas({
     onInspectAgentDetail,
     onOpenWorkspaceChannels,
     onOpenAccounts,
-    onOpenWorkspaceFiles,
+    onOpenWorkspaceContextEngine,
     onReplyTask,
     onCopyTaskPrompt,
     onHideTask,
