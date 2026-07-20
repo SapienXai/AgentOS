@@ -29,9 +29,13 @@ test("protected login composes a theme-aware glass access card", async () => {
   assert.match(source, /<CardContent/);
   assert.match(source, /<CardFooter/);
   assert.equal(source.match(/className="lock-glass-input/g)?.length, 2);
-  assert.match(styles, /--lock-glass-surface-alpha: 0\.18/);
-  assert.match(styles, /\.dark[\s\S]+--lock-glass-surface-alpha: 0\.22/);
-  assert.match(styles, /backdrop-filter: blur\(11px\) saturate\(1\.28\)/);
+  assert.match(styles, /--lock-glass-surface-alpha: 0\.22/);
+  assert.match(styles, /\.dark[\s\S]+--lock-glass-surface-alpha: 0\.36/);
+  assert.match(styles, /--lock-glass-foreground: 17 27 47/);
+  assert.match(styles, /\.dark[\s\S]+--lock-glass-foreground: 244 248 255/);
+  assert.match(styles, /backdrop-filter: blur\(20px\) saturate\(1\.52\)/);
+  assert.match(source, /className="lock-glass-chip/);
+  assert.match(styles, /\.lock-glass-chip \{/);
 });
 
 test("celestial moon renders as a complete luminous sphere", async () => {

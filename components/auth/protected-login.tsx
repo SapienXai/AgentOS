@@ -222,7 +222,7 @@ function OrbitingVaultLabel({ phase, icon: Icon, label }: { phase: number; icon:
     <motion.div initial={{ rotate: phase }} animate={{ rotate: phase + 360 }} transition={orbitTransition} className="pointer-events-none absolute inset-[30px] z-20 rounded-full">
       <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2">
         <motion.div initial={{ rotate: -phase }} animate={{ rotate: -phase - 360 }} transition={orbitTransition}>
-          <div className="flex whitespace-nowrap items-center gap-2 rounded-full border border-border/80 bg-card/80 px-3 py-2 text-[10px] font-medium text-muted-foreground shadow-lg backdrop-blur-xl">
+          <div className="lock-glass-chip flex items-center gap-2 whitespace-nowrap rounded-full border px-3 py-2 text-[10px] font-medium">
             <Icon className="h-3.5 w-3.5 text-primary" />{label}
           </div>
         </motion.div>

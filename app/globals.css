@@ -50,15 +50,19 @@
     --status-muted-foreground: 220 10% 42%;
     --status-purple: 264 58% 54%;
     --status-purple-foreground: 264 48% 42%;
-    --lock-glass-surface: 255 255 255;
-    --lock-glass-surface-alpha: 0.18;
+    --lock-glass-surface: 238 244 255;
+    --lock-glass-surface-alpha: 0.22;
     --lock-glass-border: 255 255 255;
-    --lock-glass-border-alpha: 0.46;
+    --lock-glass-border-alpha: 0.52;
     --lock-glass-input: 255 255 255;
-    --lock-glass-input-alpha: 0.32;
+    --lock-glass-input-alpha: 0.4;
     --lock-glass-shadow: 15 23 42;
-    --lock-glass-shadow-alpha: 0.2;
-    --lock-glass-sheen-alpha: 0.22;
+    --lock-glass-shadow-alpha: 0.24;
+    --lock-glass-sheen-alpha: 0.28;
+    --lock-glass-foreground: 17 27 47;
+    --lock-glass-muted: 55 68 91;
+    --lock-glass-label: 65 78 102;
+    --lock-glass-backdrop-brightness: 1.02;
   }
 
   .dark {
@@ -104,15 +108,19 @@
     --status-muted-foreground: 218 13% 74%;
     --status-purple: 264 70% 64%;
     --status-purple-foreground: 264 82% 82%;
-    --lock-glass-surface: 4 9 21;
-    --lock-glass-surface-alpha: 0.22;
+    --lock-glass-surface: 2 7 17;
+    --lock-glass-surface-alpha: 0.36;
     --lock-glass-border: 255 255 255;
-    --lock-glass-border-alpha: 0.18;
-    --lock-glass-input: 2 6 17;
-    --lock-glass-input-alpha: 0.36;
+    --lock-glass-border-alpha: 0.16;
+    --lock-glass-input: 4 10 24;
+    --lock-glass-input-alpha: 0.5;
     --lock-glass-shadow: 0 0 0;
-    --lock-glass-shadow-alpha: 0.42;
-    --lock-glass-sheen-alpha: 0.1;
+    --lock-glass-shadow-alpha: 0.52;
+    --lock-glass-sheen-alpha: 0.12;
+    --lock-glass-foreground: 244 248 255;
+    --lock-glass-muted: 183 196 218;
+    --lock-glass-label: 166 180 205;
+    --lock-glass-backdrop-brightness: 0.9;
   }
 
   * {
@@ -139,16 +147,18 @@
 
 .lock-glass-card {
   isolation: isolate;
+  color: rgb(var(--lock-glass-foreground));
   border-color: rgb(var(--lock-glass-border) / var(--lock-glass-border-alpha));
   background:
-    linear-gradient(145deg, rgb(255 255 255 / var(--lock-glass-sheen-alpha)) 0%, transparent 24%, rgb(var(--lock-glass-surface) / 0.08) 100%),
+    radial-gradient(circle at 12% 0%, rgb(255 255 255 / calc(var(--lock-glass-sheen-alpha) * 0.9)), transparent 38%),
+    linear-gradient(138deg, rgb(255 255 255 / calc(var(--lock-glass-sheen-alpha) * 0.58)) 0%, transparent 32%, rgb(var(--lock-glass-surface) / 0.1) 100%),
     rgb(var(--lock-glass-surface) / var(--lock-glass-surface-alpha));
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / calc(var(--lock-glass-sheen-alpha) * 0.92)),
-    inset 0 -1px 0 rgb(var(--lock-glass-border) / calc(var(--lock-glass-border-alpha) * 0.42)),
-    0 30px 90px rgb(var(--lock-glass-shadow) / var(--lock-glass-shadow-alpha));
-  -webkit-backdrop-filter: blur(11px) saturate(1.28) contrast(1.02);
-  backdrop-filter: blur(11px) saturate(1.28) contrast(1.02);
+    inset 0 1px 0 rgb(255 255 255 / calc(var(--lock-glass-sheen-alpha) * 0.96)),
+    inset 0 -1px 0 rgb(var(--lock-glass-border) / calc(var(--lock-glass-border-alpha) * 0.36)),
+    0 34px 100px rgb(var(--lock-glass-shadow) / var(--lock-glass-shadow-alpha));
+  -webkit-backdrop-filter: blur(20px) saturate(1.52) brightness(var(--lock-glass-backdrop-brightness));
+  backdrop-filter: blur(20px) saturate(1.52) brightness(var(--lock-glass-backdrop-brightness));
 }
 
 .lock-glass-card::before {
@@ -157,8 +167,8 @@
   inset: 1px;
   border-radius: 25px;
   background:
-    radial-gradient(circle at 12% 0%, rgb(255 255 255 / calc(var(--lock-glass-sheen-alpha) * 0.68)), transparent 31%),
-    linear-gradient(112deg, rgb(255 255 255 / calc(var(--lock-glass-sheen-alpha) * 0.3)), transparent 22% 76%, rgb(255 255 255 / calc(var(--lock-glass-sheen-alpha) * 0.16)));
+    radial-gradient(circle at 10% 0%, rgb(255 255 255 / calc(var(--lock-glass-sheen-alpha) * 0.74)), transparent 34%),
+    linear-gradient(112deg, rgb(255 255 255 / calc(var(--lock-glass-sheen-alpha) * 0.34)), transparent 24% 74%, rgb(255 255 255 / calc(var(--lock-glass-sheen-alpha) * 0.18)));
   clip-path: inset(0 round 25px);
   content: "";
   pointer-events: none;
@@ -171,8 +181,37 @@
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / calc(var(--lock-glass-sheen-alpha) * 0.62)),
     0 8px 24px rgb(var(--lock-glass-shadow) / calc(var(--lock-glass-shadow-alpha) * 0.34));
-  -webkit-backdrop-filter: blur(14px) saturate(1.18);
-  backdrop-filter: blur(14px) saturate(1.18);
+  -webkit-backdrop-filter: blur(18px) saturate(1.24);
+  backdrop-filter: blur(18px) saturate(1.24);
+}
+
+.lock-glass-card .text-muted-foreground {
+  color: rgb(var(--lock-glass-muted));
+}
+
+.lock-glass-card label.text-muted-foreground {
+  color: rgb(var(--lock-glass-label));
+}
+
+.lock-glass-card .lock-glass-input {
+  color: rgb(var(--lock-glass-foreground));
+}
+
+.lock-glass-card .lock-glass-input::placeholder {
+  color: rgb(var(--lock-glass-muted) / 0.72);
+}
+
+.lock-glass-chip {
+  color: rgb(var(--lock-glass-muted));
+  border-color: rgb(var(--lock-glass-border) / calc(var(--lock-glass-border-alpha) * 0.92));
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / calc(var(--lock-glass-sheen-alpha) * 0.72)), transparent 42%),
+    rgb(var(--lock-glass-surface) / calc(var(--lock-glass-surface-alpha) * 0.84));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / calc(var(--lock-glass-sheen-alpha) * 0.82)),
+    0 12px 34px rgb(var(--lock-glass-shadow) / calc(var(--lock-glass-shadow-alpha) * 0.7));
+  -webkit-backdrop-filter: blur(16px) saturate(1.46) brightness(var(--lock-glass-backdrop-brightness));
+  backdrop-filter: blur(16px) saturate(1.46) brightness(var(--lock-glass-backdrop-brightness));
 }
 
 .lock-glass-divider {
