@@ -8,6 +8,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { broadcastAuthChange, useInstanceProtection } from "@/components/auth/instance-protection-provider";
 import { CelestialLockBackground } from "@/components/auth/celestial-lock-background";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -115,53 +116,55 @@ export function ProtectedLogin() {
             <p className="mx-auto mt-2 max-w-[430px] whitespace-nowrap text-xs leading-5 text-white/70 sm:text-sm">Unlock the control plane to access AgentOS.</p>
           </div>
 
-          <div className="relative mt-12 rounded-[26px] border border-border/80 bg-card/[0.88] p-5 pt-16 text-card-foreground shadow-[0_28px_90px_rgba(2,6,23,.26)] backdrop-blur-2xl dark:border-white/[0.10] dark:bg-[hsl(220_18%_15%/0.90)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_30px_90px_rgba(0,0,0,0.36)] lg:mt-0 lg:pt-5">
+          <Card className="lock-glass-card relative mt-12 rounded-[26px] p-5 pt-16 text-card-foreground lg:mt-0 lg:pt-5">
             <div className="absolute left-1/2 top-[-1px] z-10 h-[116px] w-[116px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-br from-white/90 via-primary/45 to-sky-400/40 p-0.5 shadow-[0_0_22px_hsl(var(--primary)/0.28),0_20px_46px_hsl(var(--foreground)/0.20)] dark:from-white/30 dark:via-primary/50 dark:to-sky-400/35 lg:hidden">
               <div className="relative h-full w-full overflow-hidden rounded-full border border-white/70 bg-background shadow-[inset_0_0_18px_hsl(var(--foreground)/0.16)] dark:border-white/25">
                 <video src="/assets/agentProfiles/piko.webm" autoPlay muted loop playsInline preload="auto" aria-label="Piko agent profile" className="h-full w-full object-cover" />
                 <div aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_34%_24%,rgba(255,255,255,0.22),transparent_30%),linear-gradient(to_bottom,transparent_62%,hsl(var(--foreground)/0.12))]" />
               </div>
             </div>
-            <div className="mb-4 flex items-center justify-between gap-4 border-b border-border/70 pb-3">
+            <CardHeader className="lock-glass-divider mb-4 flex-row items-center justify-between gap-4 border-b p-0 pb-3">
               <div><p className="text-sm font-semibold">Operator access</p><p className="mt-0.5 text-[11px] text-muted-foreground">Authenticate to unlock this session.</p></div>
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background/70 text-muted-foreground"><KeyRound className="h-4 w-4" /></span>
-            </div>
+              <span className="lock-glass-control flex size-9 items-center justify-center rounded-xl border text-muted-foreground"><KeyRound className="size-4" /></span>
+            </CardHeader>
 
-            <form className="space-y-3.5" onSubmit={submit}>
-              <div className="space-y-1.5">
-                <Label htmlFor="instance-username" className="text-[11px] font-medium text-muted-foreground">Username</Label>
-                <div className="relative">
-                  <UserRound className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input ref={usernameRef} id="instance-username" name="username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required disabled={submitting} className="h-11 rounded-xl bg-background/70 pl-10" />
+            <CardContent className="p-0">
+              <form className="flex flex-col gap-3.5" onSubmit={submit}>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="instance-username" className="text-[11px] font-medium text-muted-foreground">Username</Label>
+                  <div className="relative">
+                    <UserRound className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input ref={usernameRef} id="instance-username" name="username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required disabled={submitting} className="lock-glass-input h-11 rounded-xl pl-10" />
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="instance-password" className="text-[11px] font-medium text-muted-foreground">Password</Label>
-                <div className="relative">
-                  <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input id="instance-password" name="password" type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required disabled={submitting} className="h-11 rounded-xl bg-background/70 pl-10 pr-12" />
-                  <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Hide password" : "Show password"} className="absolute right-1.5 top-1.5 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="instance-password" className="text-[11px] font-medium text-muted-foreground">Password</Label>
+                  <div className="relative">
+                    <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input id="instance-password" name="password" type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required disabled={submitting} className="lock-glass-input h-11 rounded-xl pl-10 pr-12" />
+                    <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Hide password" : "Show password"} className="absolute right-1.5 top-1.5 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <AnimatePresence initial={false}>
-                {error ? <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} role="alert" className="rounded-xl border border-destructive/25 bg-destructive/[0.08] px-3 py-2.5 text-xs text-destructive">{error}</motion.p> : null}
-              </AnimatePresence>
+                <AnimatePresence initial={false}>
+                  {error ? <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} role="alert" className="rounded-xl border border-destructive/25 bg-destructive/[0.08] px-3 py-2.5 text-xs text-destructive">{error}</motion.p> : null}
+                </AnimatePresence>
 
-              <Button type="submit" className="group h-11 w-full rounded-xl" disabled={submitting || !username.trim() || !password}>
-                {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LockKeyhole className="mr-2 h-4 w-4" />}
-                {submitting ? "Unlocking…" : "Unlock AgentOS"}
-                {!submitting ? <ArrowRight className="ml-auto h-4 w-4 transition-transform group-hover:translate-x-0.5" /> : null}
-              </Button>
-            </form>
+                <Button type="submit" className="group h-11 w-full rounded-xl" disabled={submitting || !username.trim() || !password}>
+                  {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LockKeyhole className="mr-2 h-4 w-4" />}
+                  {submitting ? "Unlocking…" : "Unlock AgentOS"}
+                  {!submitting ? <ArrowRight className="ml-auto h-4 w-4 transition-transform group-hover:translate-x-0.5" /> : null}
+                </Button>
+              </form>
+            </CardContent>
 
-            <div className="mt-4 flex items-center justify-between gap-3 text-[10px] text-muted-foreground">
+            <CardFooter className="mt-4 flex items-center justify-between gap-3 p-0 text-[10px] text-muted-foreground">
               <span className="flex min-w-0 items-center gap-1.5"><ArrowRight className="h-3 w-3 shrink-0" /><span className="truncate">Return to {formatReturnPath(returnTo)}</span></span>
               <span className="shrink-0">12h session</span>
-            </div>
-          </div>
+            </CardFooter>
+          </Card>
 
           <div className="mt-3 px-1 text-center text-[10px] leading-4 text-white/70 [text-shadow:0_1px_12px_rgba(2,6,23,.55)]">
             <p className="lg:whitespace-nowrap">Forgot your credentials? Run <code className="rounded-md border border-white/20 bg-slate-950/20 px-1.5 py-0.5 text-white">agentos auth reset</code> on the machine running AgentOS.</p>

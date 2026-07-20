@@ -25,6 +25,18 @@ test("celestial bodies travel across separate daylight and night arcs", () => {
   assert.ok(midnight.starOpacity > 0.7);
 });
 
+test("stars emerge gradually through late afternoon and sunset", () => {
+  const afternoon = getCelestialSkyAtMinute(990);
+  const goldenHour = getCelestialSkyAtMinute(1110);
+  const sunset = getCelestialSkyAtMinute(1200);
+  const blueHour = getCelestialSkyAtMinute(1290);
+
+  assert.ok(afternoon.starOpacity > 0);
+  assert.ok(goldenHour.starOpacity > afternoon.starOpacity);
+  assert.ok(sunset.starOpacity > goldenHour.starOpacity);
+  assert.ok(blueHour.starOpacity > sunset.starOpacity);
+});
+
 test("celestial sky wraps safely across midnight", () => {
   assert.deepEqual(getCelestialSkyAtMinute(-1), getCelestialSkyAtMinute(1439));
   assert.deepEqual(getCelestialSkyAtMinute(1441), getCelestialSkyAtMinute(1));

@@ -5,16 +5,29 @@ import { useEffect, useState } from "react";
 
 import { getCelestialSky, getCelestialSkyAtMinute } from "@/lib/agentos/celestial-sky";
 
-const STAR_FIELD = [
+const BRIGHT_STAR_FIELD = [
   "radial-gradient(circle at 8% 18%, rgba(255,255,255,.95) 0 1px, transparent 1.6px)",
-  "radial-gradient(circle at 18% 42%, rgba(214,228,255,.8) 0 1px, transparent 1.5px)",
   "radial-gradient(circle at 29% 11%, rgba(255,255,255,.9) 0 1.2px, transparent 1.8px)",
-  "radial-gradient(circle at 43% 31%, rgba(226,235,255,.75) 0 .8px, transparent 1.4px)",
   "radial-gradient(circle at 55% 9%, rgba(255,255,255,.88) 0 1px, transparent 1.6px)",
+  "radial-gradient(circle at 78% 13%, rgba(255,255,255,.92) 0 1.2px, transparent 1.8px)"
+].join(",");
+
+const SOFT_STAR_FIELD = [
+  "radial-gradient(circle at 18% 42%, rgba(214,228,255,.8) 0 1px, transparent 1.5px)",
+  "radial-gradient(circle at 43% 31%, rgba(226,235,255,.75) 0 .8px, transparent 1.4px)",
   "radial-gradient(circle at 67% 26%, rgba(210,224,255,.78) 0 1px, transparent 1.5px)",
-  "radial-gradient(circle at 78% 13%, rgba(255,255,255,.92) 0 1.2px, transparent 1.8px)",
   "radial-gradient(circle at 91% 37%, rgba(222,233,255,.8) 0 .9px, transparent 1.5px)"
 ].join(",");
+
+const FINE_STAR_FIELD = [
+  "radial-gradient(circle, rgba(255,255,255,.92) 0 .55px, transparent .85px)",
+  "radial-gradient(circle, rgba(210,226,255,.78) 0 .5px, transparent .8px)",
+  "radial-gradient(circle, rgba(255,243,218,.72) 0 .45px, transparent .75px)",
+  "radial-gradient(circle, rgba(228,235,255,.84) 0 .6px, transparent .9px)"
+].join(",");
+
+const FINE_STAR_SIZES = "137px 163px, 211px 179px, 173px 229px, 257px 197px";
+const FINE_STAR_POSITIONS = "12px 19px, 71px 43px, 31px 97px, 119px 67px";
 
 export function CelestialLockBackground() {
   const reduceMotion = useReducedMotion();
@@ -51,7 +64,33 @@ export function CelestialLockBackground() {
         style={{ background: `radial-gradient(circle, ${sky.accent} 0%, transparent 69%)`, opacity: sky.auroraOpacity * 0.7 }}
       />
 
-      <div className="absolute inset-0 transition-opacity duration-[4000ms] motion-reduce:transition-none" style={{ backgroundImage: STAR_FIELD, opacity: sky.starOpacity }} />
+      <div
+        className="absolute inset-0 transition-opacity duration-[4000ms] motion-reduce:transition-none"
+        style={{ opacity: sky.starOpacity }}
+      >
+        <motion.div
+          className="absolute inset-0 mix-blend-screen"
+          animate={reduceMotion ? undefined : { opacity: [0.7, 1, 0.76, 0.92, 0.7] }}
+          transition={{ duration: 8.5, ease: "easeInOut", repeat: Infinity }}
+          style={{ backgroundImage: BRIGHT_STAR_FIELD }}
+        />
+        <motion.div
+          className="absolute inset-0 mix-blend-screen"
+          animate={reduceMotion ? undefined : { opacity: [0.92, 0.68, 0.88, 0.74, 0.92] }}
+          transition={{ duration: 11.5, ease: "easeInOut", repeat: Infinity }}
+          style={{ backgroundImage: SOFT_STAR_FIELD }}
+        />
+        <motion.div
+          className="absolute inset-0 mix-blend-screen"
+          animate={reduceMotion ? undefined : { opacity: [0.5, 0.72, 0.58, 0.68, 0.5] }}
+          transition={{ duration: 14, ease: "easeInOut", repeat: Infinity }}
+          style={{
+            backgroundImage: FINE_STAR_FIELD,
+            backgroundPosition: FINE_STAR_POSITIONS,
+            backgroundSize: FINE_STAR_SIZES
+          }}
+        />
+      </div>
 
       <div
         className="absolute inset-0 mix-blend-screen transition-[background,opacity] duration-[4000ms] ease-linear motion-reduce:transition-none"
@@ -85,7 +124,7 @@ export function CelestialLockBackground() {
       <div
         className="absolute inset-0 mix-blend-screen transition-[background,opacity] duration-[4000ms] ease-linear motion-reduce:transition-none"
         style={{
-          background: `radial-gradient(circle at ${sky.moonX}% ${sky.moonY}%, rgba(220,232,255,.22) 0%, rgba(151,178,236,.09) 14%, rgba(105,135,210,.035) 32%, transparent 47%)`,
+          background: `radial-gradient(circle at ${sky.moonX}% ${sky.moonY}%, rgba(242,247,255,.34) 0%, rgba(188,209,250,.15) 13%, rgba(116,150,224,.055) 31%, transparent 48%)`,
           opacity: sky.moonOpacity
         }}
       />
@@ -94,15 +133,27 @@ export function CelestialLockBackground() {
         style={{ left: `${sky.moonX}%`, top: `${sky.moonY}%`, opacity: sky.moonOpacity }}
       >
         <motion.div
-          className="absolute h-[clamp(190px,23vw,350px)] w-[clamp(190px,23vw,350px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(233,241,255,.31)_0%,rgba(181,203,250,.17)_22%,rgba(116,145,216,.065)_46%,transparent_70%)] blur-[10px] mix-blend-screen"
-          animate={reduceMotion ? undefined : { opacity: [0.72, 0.94, 0.8, 0.72], scale: [0.98, 1.035, 1, 0.98] }}
-          transition={{ duration: 14, ease: "easeInOut", repeat: Infinity }}
+          className="absolute h-[clamp(230px,28vw,430px)] w-[clamp(230px,28vw,430px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(244,248,255,.4)_0%,rgba(194,214,253,.2)_20%,rgba(124,156,228,.075)_45%,transparent_71%)] blur-[8px] mix-blend-screen"
+          animate={reduceMotion ? undefined : { opacity: [0.78, 1, 0.86, 0.78], scale: [0.98, 1.045, 1.01, 0.98] }}
+          transition={{ duration: 12, ease: "easeInOut", repeat: Infinity }}
         />
       </div>
-      <div
-        className="absolute h-[clamp(36px,4vw,58px)] w-[clamp(36px,4vw,58px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_34%_28%,#ffffff_0%,#edf3ff_38%,#b8c8eb_72%,#8397ca_100%)] shadow-[0_0_18px_6px_rgba(229,238,255,.56),0_0_55px_22px_rgba(157,184,241,.27),0_0_115px_48px_rgba(101,132,207,.12)] transition-[left,top,opacity] duration-[4000ms] ease-linear motion-reduce:transition-none after:absolute after:-right-[18%] after:-top-[8%] after:h-[92%] after:w-[92%] after:rounded-full after:bg-[#101b38] after:shadow-[-7px_5px_13px_rgba(234,241,255,.12)] after:content-['']"
+      <motion.div
+        data-celestial-body="moon"
+        className="absolute h-[clamp(50px,5.3vw,78px)] w-[clamp(50px,5.3vw,78px)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full bg-[radial-gradient(circle_at_32%_26%,#ffffff_0%,#fbfdff_28%,#e8effc_62%,#b6c7e5_100%)] shadow-[0_0_20px_8px_rgba(246,249,255,.82),0_0_62px_28px_rgba(190,213,255,.4),0_0_150px_65px_rgba(113,151,226,.2)] transition-[left,top,opacity] duration-[4000ms] ease-linear motion-reduce:transition-none"
         style={{ left: `${sky.moonX}%`, top: `${sky.moonY}%`, opacity: sky.moonOpacity }}
-      />
+        animate={reduceMotion ? undefined : { filter: ["brightness(1)", "brightness(1.08)", "brightness(1.025)", "brightness(1)"], scale: [1, 1.025, 1.008, 1] }}
+        transition={{ duration: 10.5, ease: "easeInOut", repeat: Infinity }}
+      >
+        <div
+          className="absolute inset-0 rounded-full opacity-55"
+          style={{
+            background:
+              "radial-gradient(circle at 29% 42%, rgba(137,157,193,.28) 0 5%, transparent 6%), radial-gradient(circle at 63% 29%, rgba(151,169,202,.2) 0 4%, transparent 5%), radial-gradient(circle at 58% 67%, rgba(126,147,186,.24) 0 7%, transparent 8%), radial-gradient(circle at 78% 53%, rgba(255,255,255,.42) 0 4%, transparent 5%)"
+          }}
+        />
+        <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_28%_20%,rgba(255,255,255,.72),transparent_42%)]" />
+      </motion.div>
 
       <motion.div
         className="absolute bottom-[17%] left-[-18%] h-[13%] w-[84%] rounded-[50%] bg-white/15 blur-[34px]"

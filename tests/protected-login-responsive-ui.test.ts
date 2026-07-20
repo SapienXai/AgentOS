@@ -19,3 +19,37 @@ test("protected login title scales down fluidly on small screens", async () => {
   assert.match(source, /sm:text-\[2\.5rem\]/);
   assert.match(source, /lg:text-\[2\.75rem\]/);
 });
+
+test("protected login composes a theme-aware glass access card", async () => {
+  const source = await readFile(path.join(rootDir, "components/auth/protected-login.tsx"), "utf8");
+  const styles = await readFile(path.join(rootDir, "app/globals.css"), "utf8");
+
+  assert.match(source, /<Card className="lock-glass-card/);
+  assert.match(source, /<CardHeader[^>]+lock-glass-divider/);
+  assert.match(source, /<CardContent/);
+  assert.match(source, /<CardFooter/);
+  assert.equal(source.match(/className="lock-glass-input/g)?.length, 2);
+  assert.match(styles, /--lock-glass-surface-alpha: 0\.18/);
+  assert.match(styles, /\.dark[\s\S]+--lock-glass-surface-alpha: 0\.22/);
+  assert.match(styles, /backdrop-filter: blur\(11px\) saturate\(1\.28\)/);
+});
+
+test("celestial moon renders as a complete luminous sphere", async () => {
+  const source = await readFile(path.join(rootDir, "components/auth/celestial-lock-background.tsx"), "utf8");
+
+  assert.match(source, /data-celestial-body="moon"/);
+  assert.match(source, /#ffffff_0%,#fbfdff_28%,#e8effc_62%,#b6c7e5_100%/);
+  assert.doesNotMatch(source, /after:bg-\[#101b38\]/);
+});
+
+test("celestial stars twinkle in independent reduced-motion-aware layers", async () => {
+  const source = await readFile(path.join(rootDir, "components/auth/celestial-lock-background.tsx"), "utf8");
+
+  assert.match(source, /BRIGHT_STAR_FIELD/);
+  assert.match(source, /SOFT_STAR_FIELD/);
+  assert.match(source, /FINE_STAR_FIELD/);
+  assert.ok((source.match(/animate=\{reduceMotion \? undefined/g) ?? []).length >= 3);
+  assert.match(source, /duration: 8\.5/);
+  assert.match(source, /duration: 11\.5/);
+  assert.match(source, /duration: 14/);
+});

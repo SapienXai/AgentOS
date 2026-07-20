@@ -34,10 +34,10 @@ const SKY_STOPS: readonly SkyStop[] = [
   { minute: 420, label: "Sunrise", top: "#3d78b4", middle: "#8eb9d2", bottom: "#f7c59d", horizon: "#fff0c2", accent: "#ffb35c", starOpacity: 0, auroraOpacity: 0.08 },
   { minute: 570, label: "Morning", top: "#197ac3", middle: "#62b5dc", bottom: "#b9dfe9", horizon: "#e9f5e8", accent: "#7dd7f2", starOpacity: 0, auroraOpacity: 0.08 },
   { minute: 750, label: "Solar noon", top: "#086db7", middle: "#51acd4", bottom: "#b5dde2", horizon: "#eef2d8", accent: "#8be4ef", starOpacity: 0, auroraOpacity: 0.06 },
-  { minute: 990, label: "Late afternoon", top: "#1767aa", middle: "#69a7c6", bottom: "#ecc5a3", horizon: "#ffe2a2", accent: "#f6c66f", starOpacity: 0, auroraOpacity: 0.1 },
-  { minute: 1110, label: "Golden hour", top: "#344f88", middle: "#b6758d", bottom: "#f18769", horizon: "#ffd27c", accent: "#ff8b5b", starOpacity: 0.04, auroraOpacity: 0.16 },
-  { minute: 1200, label: "Sunset", top: "#17294f", middle: "#68466d", bottom: "#c95d68", horizon: "#f6a064", accent: "#ff6f61", starOpacity: 0.18, auroraOpacity: 0.24 },
-  { minute: 1290, label: "Blue hour", top: "#09162f", middle: "#1e3155", bottom: "#554b70", horizon: "#a55e7b", accent: "#7d8dff", starOpacity: 0.52, auroraOpacity: 0.34 },
+  { minute: 990, label: "Late afternoon", top: "#1767aa", middle: "#69a7c6", bottom: "#ecc5a3", horizon: "#ffe2a2", accent: "#f6c66f", starOpacity: 0.015, auroraOpacity: 0.1 },
+  { minute: 1110, label: "Golden hour", top: "#344f88", middle: "#b6758d", bottom: "#f18769", horizon: "#ffd27c", accent: "#ff8b5b", starOpacity: 0.12, auroraOpacity: 0.16 },
+  { minute: 1200, label: "Sunset", top: "#17294f", middle: "#68466d", bottom: "#c95d68", horizon: "#f6a064", accent: "#ff6f61", starOpacity: 0.32, auroraOpacity: 0.24 },
+  { minute: 1290, label: "Blue hour", top: "#09162f", middle: "#1e3155", bottom: "#554b70", horizon: "#a55e7b", accent: "#7d8dff", starOpacity: 0.66, auroraOpacity: 0.34 },
   { minute: 1440, label: "Midnight", top: "#020611", middle: "#081329", bottom: "#172443", horizon: "#293654", accent: "#7c8cff", starOpacity: 0.78, auroraOpacity: 0.3 }
 ] as const;
 
