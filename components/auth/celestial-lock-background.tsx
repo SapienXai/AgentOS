@@ -52,14 +52,55 @@ export function CelestialLockBackground() {
       />
 
       <div className="absolute inset-0 transition-opacity duration-[4000ms] motion-reduce:transition-none" style={{ backgroundImage: STAR_FIELD, opacity: sky.starOpacity }} />
-      <motion.div
-        className="absolute h-[clamp(54px,6vw,86px)] w-[clamp(54px,6vw,86px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_36%_32%,#fffde8_0%,#ffe58a_35%,#ffad4e_72%)] shadow-[0_0_35px_12px_rgba(255,221,128,.48),0_0_120px_55px_rgba(255,167,80,.22)] transition-[left,top,opacity] duration-[4000ms] ease-linear motion-reduce:transition-none"
-        style={{ left: `${sky.sunX}%`, top: `${sky.sunY}%`, opacity: sky.sunOpacity }}
-        animate={reduceMotion ? undefined : { scale: [1, 1.035, 1] }}
-        transition={{ duration: 7, ease: "easeInOut", repeat: Infinity }}
+
+      <div
+        className="absolute inset-0 mix-blend-screen transition-[background,opacity] duration-[4000ms] ease-linear motion-reduce:transition-none"
+        style={{
+          background: `radial-gradient(circle at ${sky.sunX}% ${sky.sunY}%, rgba(255,247,207,.34) 0%, rgba(255,201,112,.16) 10%, rgba(255,148,76,.07) 25%, transparent 48%)`,
+          opacity: sky.sunOpacity
+        }}
       />
       <div
-        className="absolute h-[clamp(36px,4vw,58px)] w-[clamp(36px,4vw,58px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_38%_32%,#ffffff_0%,#dce7ff_55%,#9eadd7_100%)] shadow-[0_0_24px_6px_rgba(187,207,255,.28),0_0_80px_25px_rgba(113,138,207,.14)] transition-[left,top,opacity] duration-[4000ms] ease-linear motion-reduce:transition-none after:absolute after:-right-[18%] after:-top-[8%] after:h-[92%] after:w-[92%] after:rounded-full after:bg-[#101b38] after:content-['']"
+        className="absolute transition-[left,top,opacity] duration-[4000ms] ease-linear motion-reduce:transition-none"
+        style={{ left: `${sky.sunX}%`, top: `${sky.sunY}%`, opacity: sky.sunOpacity }}
+      >
+        <motion.div
+          className="absolute h-[clamp(270px,31vw,470px)] w-[clamp(270px,31vw,470px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,252,226,.38)_0%,rgba(255,221,150,.24)_13%,rgba(255,172,91,.12)_34%,rgba(255,128,70,.045)_54%,transparent_72%)] blur-[12px] mix-blend-screen"
+          animate={reduceMotion ? undefined : { opacity: [0.76, 1, 0.82, 0.76], scale: [0.97, 1.04, 1, 0.97] }}
+          transition={{ duration: 11, ease: "easeInOut", repeat: Infinity }}
+        />
+        <motion.div
+          className="absolute h-[clamp(130px,15vw,230px)] w-[clamp(130px,15vw,230px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,255,236,.62)_0%,rgba(255,215,130,.31)_27%,rgba(255,157,82,.08)_57%,transparent_72%)] blur-[5px] mix-blend-screen"
+          animate={reduceMotion ? undefined : { opacity: [0.84, 1, 0.9, 0.84], scale: [1, 1.055, 1.02, 1] }}
+          transition={{ duration: 7.5, ease: "easeInOut", repeat: Infinity }}
+        />
+      </div>
+      <motion.div
+        className="absolute h-[clamp(54px,6vw,86px)] w-[clamp(54px,6vw,86px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_34%_28%,#fffff4_0%,#fff1ad_22%,#ffc467_58%,#f58b4a_100%)] shadow-[0_0_24px_8px_rgba(255,248,199,.68),0_0_68px_28px_rgba(255,200,112,.38),0_0_150px_72px_rgba(255,141,76,.2)] transition-[left,top,opacity] duration-[4000ms] ease-linear motion-reduce:transition-none"
+        style={{ left: `${sky.sunX}%`, top: `${sky.sunY}%`, opacity: sky.sunOpacity }}
+        animate={reduceMotion ? undefined : { filter: ["brightness(1)", "brightness(1.09)", "brightness(1.025)", "brightness(1)"], scale: [1, 1.045, 1.015, 1] }}
+        transition={{ duration: 8.5, ease: "easeInOut", repeat: Infinity }}
+      />
+
+      <div
+        className="absolute inset-0 mix-blend-screen transition-[background,opacity] duration-[4000ms] ease-linear motion-reduce:transition-none"
+        style={{
+          background: `radial-gradient(circle at ${sky.moonX}% ${sky.moonY}%, rgba(220,232,255,.22) 0%, rgba(151,178,236,.09) 14%, rgba(105,135,210,.035) 32%, transparent 47%)`,
+          opacity: sky.moonOpacity
+        }}
+      />
+      <div
+        className="absolute transition-[left,top,opacity] duration-[4000ms] ease-linear motion-reduce:transition-none"
+        style={{ left: `${sky.moonX}%`, top: `${sky.moonY}%`, opacity: sky.moonOpacity }}
+      >
+        <motion.div
+          className="absolute h-[clamp(190px,23vw,350px)] w-[clamp(190px,23vw,350px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(233,241,255,.31)_0%,rgba(181,203,250,.17)_22%,rgba(116,145,216,.065)_46%,transparent_70%)] blur-[10px] mix-blend-screen"
+          animate={reduceMotion ? undefined : { opacity: [0.72, 0.94, 0.8, 0.72], scale: [0.98, 1.035, 1, 0.98] }}
+          transition={{ duration: 14, ease: "easeInOut", repeat: Infinity }}
+        />
+      </div>
+      <div
+        className="absolute h-[clamp(36px,4vw,58px)] w-[clamp(36px,4vw,58px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_34%_28%,#ffffff_0%,#edf3ff_38%,#b8c8eb_72%,#8397ca_100%)] shadow-[0_0_18px_6px_rgba(229,238,255,.56),0_0_55px_22px_rgba(157,184,241,.27),0_0_115px_48px_rgba(101,132,207,.12)] transition-[left,top,opacity] duration-[4000ms] ease-linear motion-reduce:transition-none after:absolute after:-right-[18%] after:-top-[8%] after:h-[92%] after:w-[92%] after:rounded-full after:bg-[#101b38] after:shadow-[-7px_5px_13px_rgba(234,241,255,.12)] after:content-['']"
         style={{ left: `${sky.moonX}%`, top: `${sky.moonY}%`, opacity: sky.moonOpacity }}
       />
 
