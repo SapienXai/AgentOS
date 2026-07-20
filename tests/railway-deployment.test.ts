@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
+import { isRailwayManagedRuntime } from "@/lib/openclaw/deployment-runtime";
 
 const rootDir = process.cwd();
 
@@ -47,9 +48,29 @@ test("Railway supervisor keeps Gateway private, bootstraps explicit empty model 
   assert.match(supervisor, /"--auth",\s*"token"/);
   assert.doesNotMatch(supervisor, /"--allow-unconfigured"/);
   assert.doesNotMatch(supervisor, /"--token"/);
+  assert.match(supervisor, /maxGatewayRestartAttempts = 3/);
+  assert.match(supervisor, /OpenClaw Gateway stopped unexpectedly[\s\S]*Restarting/);
+  assert.match(supervisor, /OpenClaw Gateway restarted successfully/);
+  assert.match(supervisor, /AgentOS stopped unexpectedly[\s\S]*process\.exitCode = 1/);
   assert.match(dockerfile, /railway-openclaw-bootstrap\.mjs/);
   assert.match(entrypoint, /RAILWAY_VOLUME_MOUNT_PATH:-.*\/data/);
   assert.match(entrypoint, /exec gosu node:node/);
+});
+
+test("Railway onboarding observes the managed Gateway without controlling its service lifecycle", async () => {
+  const onboardingRoute = await read("app/api/onboarding/route.ts");
+
+  assert.equal(isRailwayManagedRuntime({ AGENTOS_DEPLOYMENT_PLATFORM: "railway" }), true);
+  assert.equal(isRailwayManagedRuntime({ AGENTOS_DEPLOYMENT_PLATFORM: " Railway " }), true);
+  assert.equal(isRailwayManagedRuntime({ AGENTOS_DEPLOYMENT_PLATFORM: "local" }), false);
+  assert.match(onboardingRoute, /OpenClaw Gateway is ready and managed by Railway/);
+  assert.match(onboardingRoute, /AgentOS did not run gateway install, start, or restart/);
+
+  const managedGuardIndex = onboardingRoute.indexOf("if (isRailwayManagedRuntime())");
+  const localGatewayCommandIndex = onboardingRoute.indexOf('["gateway", "install", "--json"]');
+  assert.ok(managedGuardIndex >= 0);
+  assert.ok(localGatewayCommandIndex >= 0);
+  assert.ok(managedGuardIndex < localGatewayCommandIndex);
 });
 
 test("Railway bootstrap script creates an empty model baseline without provider credentials", async () => {

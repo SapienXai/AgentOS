@@ -2,26 +2,13 @@ import { spawn } from "node:child_process";
 import { bootstrapRailwayOpenClawConfig } from "./railway-openclaw-bootstrap.mjs";
 
 const gatewayPort = 18789;
+const maxGatewayRestartAttempts = 3;
 const gatewayEnv = { ...process.env };
 delete gatewayEnv.AGENTOS_INITIAL_ADMIN_PASSWORD;
 
 await bootstrapRailwayOpenClawConfig(gatewayEnv);
 
-const gateway = spawn("openclaw", [
-  "gateway",
-  "run",
-  "--bind",
-  "loopback",
-  "--auth",
-  "token",
-  "--compact",
-  "--port",
-  String(gatewayPort)
-], {
-  env: gatewayEnv,
-  stdio: "inherit"
-});
-
+let gateway = startGateway();
 let agentos = null;
 let stopping = false;
 
@@ -34,11 +21,6 @@ const stop = (signal = "SIGTERM") => {
 
 process.on("SIGTERM", () => stop("SIGTERM"));
 process.on("SIGINT", () => stop("SIGINT"));
-
-gateway.once("error", (error) => {
-  console.error(`OpenClaw Gateway could not start: ${error.message}`);
-  process.exitCode = 1;
-});
 
 try {
   await waitForGateway();
@@ -60,21 +42,77 @@ agentos = spawn(process.execPath, ["/agentos/server.js"], {
 
 agentos.once("error", (error) => {
   console.error(`AgentOS could not start: ${error.message}`);
+  process.exitCode = 1;
   stop();
 });
 
-const exit = await Promise.race([
-  childExit(gateway, "OpenClaw Gateway"),
-  childExit(agentos, "AgentOS")
-]);
+const agentosExit = childExit(agentos, "AgentOS");
+let gatewayRestartAttempts = 0;
 
-if (!stopping) {
-  console.error(`${exit.label} stopped unexpectedly (code ${exit.code ?? "unknown"}).`);
-  stop();
+while (!stopping) {
+  const exit = await Promise.race([
+    childExit(gateway, "OpenClaw Gateway"),
+    agentosExit
+  ]);
+
+  if (stopping) break;
+
+  if (exit.label === "AgentOS") {
+    console.error(`AgentOS stopped unexpectedly (code ${exit.code ?? "unknown"}).`);
+    process.exitCode = 1;
+    stop();
+    break;
+  }
+
+  gatewayRestartAttempts += 1;
+  console.error(
+    `OpenClaw Gateway stopped unexpectedly (code ${exit.code ?? "unknown"}). Restarting (${gatewayRestartAttempts}/${maxGatewayRestartAttempts}).`
+  );
+
+  if (gatewayRestartAttempts > maxGatewayRestartAttempts) {
+    console.error("OpenClaw Gateway exceeded the Railway restart limit.");
+    stop();
+    process.exitCode = 1;
+    break;
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, gatewayRestartAttempts * 1_000));
+  gateway = startGateway();
+
+  try {
+    await waitForGateway();
+    console.error("OpenClaw Gateway restarted successfully.");
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "OpenClaw Gateway restart did not become ready.");
+    gateway.kill("SIGTERM");
+  }
 }
 
-await Promise.allSettled([childExit(gateway, "OpenClaw Gateway"), childExit(agentos, "AgentOS")]);
-process.exit(stopping ? 0 : 1);
+await Promise.allSettled([childExit(gateway, "OpenClaw Gateway"), agentosExit]);
+process.exit(process.exitCode ?? 0);
+
+function startGateway() {
+  const child = spawn("openclaw", [
+    "gateway",
+    "run",
+    "--bind",
+    "loopback",
+    "--auth",
+    "token",
+    "--compact",
+    "--port",
+    String(gatewayPort)
+  ], {
+    env: gatewayEnv,
+    stdio: "inherit"
+  });
+
+  child.once("error", (error) => {
+    console.error(`OpenClaw Gateway could not start: ${error.message}`);
+  });
+
+  return child;
+}
 
 async function waitForGateway() {
   const deadline = Date.now() + 120_000;

@@ -53,6 +53,7 @@ import {
   saveGatewayNativeAuthCredential
 } from "@/lib/openclaw/application/settings-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { isRailwayManagedRuntime } from "@/lib/openclaw/deployment-runtime";
 import type {
   MissionControlSnapshot,
   OpenClawOnboardingPhase,
@@ -78,6 +79,7 @@ const postAuthRepairReadyTimeoutMs = 180_000;
 const readyPollIntervalMs = 250;
 const readySnapshotIntervalMs = 2_000;
 const readyStatusIntervalMs = 5_000;
+
 type CommandResult = {
   code: number | null;
   stdout: string;
@@ -229,6 +231,32 @@ export async function POST(request: Request) {
     };
 
     try {
+      if (isRailwayManagedRuntime()) {
+        const managedSnapshot = await loadSnapshot(true);
+
+        if (!isOpenClawReady(managedSnapshot)) {
+          await fail(
+            "verifying",
+            "OpenClaw Gateway is managed by this Railway deployment and is not ready yet. AgentOS did not run gateway install, start, or restart. Wait for the deployment health check to recover, then retry.",
+            { snapshot: managedSnapshot }
+          );
+          return;
+        }
+
+        await send({
+          type: "done",
+          ok: true,
+          phase: "ready",
+          message: "OpenClaw Gateway is ready and managed by Railway. Continue to model setup.",
+          exitCode: 0,
+          stdout: "AgentOS verified the Railway-managed OpenClaw Gateway without changing its process lifecycle.\n",
+          stderr: "",
+          snapshot: managedSnapshot
+        });
+        await closeWriter();
+        return;
+      }
+
       await send({
         type: "status",
         phase: intent === "install"
