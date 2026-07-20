@@ -2,7 +2,6 @@ import { spawn } from "node:child_process";
 import { bootstrapRailwayOpenClawConfig } from "./railway-openclaw-bootstrap.mjs";
 
 const gatewayPort = 18789;
-const maxGatewayRestartAttempts = 3;
 const gatewayEnv = { ...process.env };
 delete gatewayEnv.AGENTOS_INITIAL_ADMIN_PASSWORD;
 
@@ -66,22 +65,16 @@ while (!stopping) {
 
   gatewayRestartAttempts += 1;
   console.error(
-    `OpenClaw Gateway stopped unexpectedly (code ${exit.code ?? "unknown"}). Restarting (${gatewayRestartAttempts}/${maxGatewayRestartAttempts}).`
+    `OpenClaw Gateway stopped unexpectedly (${formatChildExit(exit)}). Restarting in ${gatewayRestartDelayMs(gatewayRestartAttempts)}ms.`
   );
 
-  if (gatewayRestartAttempts > maxGatewayRestartAttempts) {
-    console.error("OpenClaw Gateway exceeded the Railway restart limit.");
-    stop();
-    process.exitCode = 1;
-    break;
-  }
-
-  await new Promise((resolve) => setTimeout(resolve, gatewayRestartAttempts * 1_000));
+  await new Promise((resolve) => setTimeout(resolve, gatewayRestartDelayMs(gatewayRestartAttempts)));
   gateway = startGateway();
 
   try {
     await waitForGateway();
     console.error("OpenClaw Gateway restarted successfully.");
+    gatewayRestartAttempts = 0;
   } catch (error) {
     console.error(error instanceof Error ? error.message : "OpenClaw Gateway restart did not become ready.");
     gateway.kill("SIGTERM");
@@ -139,10 +132,22 @@ async function waitForGateway() {
 
 function childExit(child, label) {
   if (child.exitCode !== null) {
-    return Promise.resolve({ label, code: child.exitCode });
+    return Promise.resolve({ label, code: child.exitCode, signal: child.signalCode });
   }
 
   return new Promise((resolve) => {
-    child.once("exit", (code) => resolve({ label, code }));
+    child.once("exit", (code, signal) => resolve({ label, code, signal }));
   });
+}
+
+function formatChildExit(exit) {
+  if (exit.code !== null && exit.code !== undefined) {
+    return `code ${exit.code}`;
+  }
+
+  return exit.signal ? `signal ${exit.signal}` : "code unknown";
+}
+
+function gatewayRestartDelayMs(attempt) {
+  return Math.min(Math.max(attempt, 1) * 1_000, 30_000);
 }

@@ -6,6 +6,7 @@ import {
   getOpenClawGatewayMethodCandidates,
   type OpenClawGatewayCompatibilityOperationId
 } from "@/lib/openclaw/client/gateway-compatibility";
+import { isRailwayManagedRuntime } from "@/lib/openclaw/deployment-runtime";
 import {
   canFallbackGatewayAuthConfigRepair,
   buildMergePatchForConfigPath,
@@ -1058,6 +1059,14 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   }
 
   controlGateway(action: "start" | "stop" | "restart", options: OpenClawCommandOptions & { force?: boolean } = {}) {
+    if (isRailwayManagedRuntime()) {
+      return Promise.reject(
+        new Error(
+          `OpenClaw Gateway ${action} is unavailable from AgentOS in Railway. The container supervisor owns the Gateway process lifecycle.`
+        )
+      );
+    }
+
     this.close(`gateway.${action}`);
     return this.fallback.controlGateway(action, options).finally(() => {
       this.close(`gateway.${action}.completed`);

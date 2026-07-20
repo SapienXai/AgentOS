@@ -48,13 +48,22 @@ test("Railway supervisor keeps Gateway private, bootstraps explicit empty model 
   assert.match(supervisor, /"--auth",\s*"token"/);
   assert.doesNotMatch(supervisor, /"--allow-unconfigured"/);
   assert.doesNotMatch(supervisor, /"--token"/);
-  assert.match(supervisor, /maxGatewayRestartAttempts = 3/);
-  assert.match(supervisor, /OpenClaw Gateway stopped unexpectedly[\s\S]*Restarting/);
+  assert.match(supervisor, /OpenClaw Gateway stopped unexpectedly[\s\S]*Restarting in/);
   assert.match(supervisor, /OpenClaw Gateway restarted successfully/);
+  assert.match(supervisor, /gatewayRestartDelayMs/);
+  assert.doesNotMatch(supervisor, /Gateway exceeded the Railway restart limit/);
   assert.match(supervisor, /AgentOS stopped unexpectedly[\s\S]*process\.exitCode = 1/);
   assert.match(dockerfile, /railway-openclaw-bootstrap\.mjs/);
   assert.match(entrypoint, /RAILWAY_VOLUME_MOUNT_PATH:-.*\/data/);
   assert.match(entrypoint, /exec gosu node:node/);
+});
+
+test("Railway blocks every AgentOS Gateway lifecycle command while preserving native Gateway RPC", async () => {
+  const nativeClient = await read("lib/openclaw/client/native-ws-gateway-client.ts");
+
+  assert.match(nativeClient, /isRailwayManagedRuntime\(\)/);
+  assert.match(nativeClient, /container supervisor owns the Gateway process lifecycle/);
+  assert.match(nativeClient, /OpenClaw Gateway \$\{action\} is unavailable from AgentOS in Railway/);
 });
 
 test("Railway onboarding observes the managed Gateway without controlling its service lifecycle", async () => {

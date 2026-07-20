@@ -235,6 +235,7 @@ class FallbackGatewayClient implements OpenClawGatewayClient {
   }
 
   async controlGateway() {
+    this.calls.push({ method: "controlGateway" });
     return {};
   }
 
@@ -430,6 +431,31 @@ test("native WS gateway client handshakes and correlates request responses", asy
   assert.deepEqual(result, { ok: true, method: "health", params: { probe: true } });
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "health"]);
   assert.equal(fallback.calls.length, 0);
+});
+
+test("Railway rejects Gateway lifecycle control without invoking the CLI fallback", async () => {
+  const previousPlatform = process.env.AGENTOS_DEPLOYMENT_PLATFORM;
+  process.env.AGENTOS_DEPLOYMENT_PLATFORM = "railway";
+
+  try {
+    const fallback = new FallbackGatewayClient();
+    const client = new NativeWsOpenClawGatewayClient({
+      fallback,
+      url: "ws://127.0.0.1:18789"
+    });
+
+    await assert.rejects(
+      () => client.controlGateway("restart"),
+      /container supervisor owns the Gateway process lifecycle/
+    );
+    assert.equal(fallback.calls.some((call) => call.method === "controlGateway"), false);
+  } finally {
+    if (previousPlatform === undefined) {
+      delete process.env.AGENTOS_DEPLOYMENT_PLATFORM;
+    } else {
+      process.env.AGENTOS_DEPLOYMENT_PLATFORM = previousPlatform;
+    }
+  }
 });
 
 test("native WS gateway client reuses one persistent handshake for multiple RPCs", async () => {
