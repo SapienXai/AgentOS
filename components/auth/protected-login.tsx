@@ -95,7 +95,7 @@ export function ProtectedLogin() {
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-[0.16] [background-image:linear-gradient(hsl(var(--foreground)/0.08)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--foreground)/0.08)_1px,transparent_1px)] [background-size:42px_42px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]" />
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/70 to-transparent" />
 
-      <header className="relative z-10 mx-auto flex w-full max-w-[1180px] items-center justify-between px-5 py-5 sm:px-8">
+      <header className="relative z-10 mx-auto flex w-full max-w-[1180px] items-center justify-between px-6 py-5 sm:px-8">
         <div className="flex items-center gap-3">
           <video src="/assets/logo.webm" autoPlay muted loop playsInline preload="auto" aria-label="AgentOS" className="h-11 w-11 shrink-0 object-contain" />
           <div>
@@ -103,16 +103,16 @@ export function ProtectedLogin() {
             <AnimatedHeaderTagline />
           </div>
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-border/80 bg-card/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground shadow-sm backdrop-blur-xl">
+        <div className="hidden items-center gap-2 rounded-full border border-border/80 bg-card/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground shadow-sm backdrop-blur-xl sm:flex">
           <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-40" /><span className="relative inline-flex h-2 w-2 rounded-full bg-primary" /></span>
           Instance locked
         </div>
       </header>
 
-      <div className="relative z-10 mx-auto grid min-h-[calc(100vh-80px)] w-full max-w-[1180px] items-center gap-12 px-5 pb-10 sm:px-8 lg:grid-cols-[minmax(0,480px)_1fr] lg:gap-20 lg:pb-8">
+      <div className="relative z-10 mx-auto grid min-h-[calc(100vh-80px)] w-full max-w-[1180px] items-center gap-12 px-6 pb-10 sm:px-8 lg:grid-cols-[minmax(0,480px)_1fr] lg:gap-20 lg:pb-8">
         <motion.section initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }} className="-mt-4 w-full lg:mt-0" aria-labelledby="protected-title">
           <div className="mb-5 -translate-y-5 text-center lg:mb-4 lg:translate-y-0">
-            <h1 id="protected-title" className="font-display text-[2.35rem] font-semibold leading-none tracking-[-0.06em] sm:whitespace-nowrap sm:text-[2.65rem] lg:text-[2.75rem]">AgentOS is Protected</h1>
+            <h1 id="protected-title" className="whitespace-nowrap font-display text-[clamp(1.85rem,8.5vw,2.1rem)] font-semibold leading-none tracking-[-0.06em] sm:text-[2.5rem] lg:text-[2.75rem]">AgentOS is Protected</h1>
             <p className="mx-auto mt-2 max-w-[430px] whitespace-nowrap text-xs leading-5 text-muted-foreground sm:text-sm">Unlock the control plane to access AgentOS.</p>
           </div>
 
