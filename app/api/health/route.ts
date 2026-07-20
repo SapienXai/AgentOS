@@ -7,7 +7,7 @@ export async function GET() {
   const timeout = setTimeout(() => controller.abort(), 1_500);
 
   try {
-    const response = await fetch("http://127.0.0.1:18789/readyz", {
+    const response = await fetch("http://127.0.0.1:18789/healthz", {
       cache: "no-store",
       signal: controller.signal
     });

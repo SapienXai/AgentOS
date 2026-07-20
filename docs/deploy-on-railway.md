@@ -62,7 +62,7 @@ Do not add `AGENTOS_TRUSTED_OPERATOR_ORIGINS` for the generated Railway domain. 
 
 1. Enter the initial administrator username and password in the template form.
 2. Deploy the template.
-3. Wait until `/api/health` passes. The startup supervisor starts OpenClaw first and starts AgentOS only after the Gateway readiness endpoint responds.
+3. Wait until `/api/health` passes. The startup supervisor starts OpenClaw first and starts AgentOS only after the Gateway liveness endpoint responds. AgentOS reports stricter runtime, channel, and plugin readiness separately in diagnostics.
 4. Open the generated HTTPS domain and sign in.
 5. Remove `AGENTOS_INITIAL_ADMIN_PASSWORD` from the Railway service variables after confirming the first sign-in. The account remains on the persistent volume.
 6. Connect a real model/provider in Setup Center, then explicitly choose its default model.
@@ -78,8 +78,8 @@ On a new volume, AgentOS creates only the durable OpenClaw Gateway baseline (`ga
 - The initial admin password is removed from the long-running AgentOS process after bootstrap and is never passed to the OpenClaw process.
 - OpenClaw listens only on container loopback. It has no Railway public port or domain.
 - The Railway supervisor owns the OpenClaw Gateway process lifecycle. AgentOS onboarding only verifies that managed Gateway and configures providers, authentication, and models; it never invokes the host-service `gateway install`, `gateway start`, or `gateway restart` CLI lifecycle inside Railway.
-- An authenticated operator can request **Restart managed gateway** from AgentOS. AgentOS sends the fixed restart request over a container-private, owner-only supervisor socket; the supervisor restarts only the Gateway and waits for `/readyz` before reporting success.
-- The supervisor checks Gateway readiness continuously in addition to watching the process. If the managed Gateway exits or repeatedly fails readiness probes, the supervisor restarts it while keeping AgentOS available. After three failed Gateway restart attempts, the container exits so Railway can apply its service restart policy.
+- An authenticated operator can request **Restart managed gateway** from AgentOS. AgentOS sends the fixed restart request over a container-private, owner-only supervisor socket; the supervisor restarts only the Gateway and waits for `/healthz` liveness before reporting success.
+- The supervisor checks Gateway liveness continuously in addition to watching the process. If the managed Gateway exits or repeatedly fails liveness probes, the supervisor restarts it while keeping AgentOS available. Stricter `/readyz` channel/plugin readiness remains an AgentOS diagnostic instead of blocking the deployment. After three failed Gateway restart attempts, the container exits so Railway can apply its service restart policy.
 - Browser sessions authenticate with the same username and password on every trusted browser; session cookies remain browser-specific.
 - Login is rate-limited. Mutation requests require an authenticated session and an exact same-origin HTTPS request.
 - Chromium is included for headless OpenClaw browser automation. Agents can navigate, click, type, and capture screenshots, but operator-driven browser login, local Chrome attachment, interactive desktop actions, and host Finder/Terminal integration are not available in the Railway container.

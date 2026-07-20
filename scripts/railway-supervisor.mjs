@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { bootstrapRailwayOpenClawConfig } from "./railway-openclaw-bootstrap.mjs";
 
 const gatewayPort = 18789;
-const gatewayReadyUrl = `http://127.0.0.1:${gatewayPort}/readyz`;
+const gatewayLivenessUrl = `http://127.0.0.1:${gatewayPort}/healthz`;
 const supervisorSocketPath = process.env.AGENTOS_SUPERVISOR_SOCKET_PATH?.trim() || "/tmp/agentos-supervisor.sock";
 const gatewayHealthIntervalMs = 5_000;
 const gatewayHealthFailureThreshold = 3;
@@ -41,7 +41,7 @@ process.on("SIGTERM", () => stop("SIGTERM"));
 process.on("SIGINT", () => stop("SIGINT"));
 
 try {
-  await waitForGateway();
+  await waitForGatewayLiveness();
 } catch (error) {
   console.error(error instanceof Error ? error.message : "OpenClaw Gateway did not become ready.");
   stop();
@@ -71,7 +71,7 @@ while (!stopping) {
   const exit = await Promise.race([
     childExit(gateway, "OpenClaw Gateway"),
     agentosExit,
-    waitForGatewayHealthFailure(gateway, healthMonitor.signal)
+    waitForGatewayLivenessFailure(gateway, healthMonitor.signal)
   ]);
   healthMonitor.abort();
 
@@ -89,7 +89,7 @@ while (!stopping) {
   const restartReason = requestedRestart
     ? "manual operator request"
     : exit.label === "OpenClaw Gateway health"
-      ? "readiness checks failed"
+      ? "liveness checks failed"
       : formatChildExit(exit);
 
   if (exit.label === "OpenClaw Gateway health" && gateway.exitCode === null) {
@@ -109,8 +109,8 @@ while (!stopping) {
   gateway = startGateway();
 
   try {
-    await waitForGateway();
-    console.error("OpenClaw Gateway restarted successfully and passed readiness checks.");
+    await waitForGatewayLiveness();
+    console.error("OpenClaw Gateway restarted successfully and passed liveness checks.");
     consecutiveRestartFailures = 0;
     gatewayTransitionInProgress = false;
     if (requestedRestart && manualRestart === requestedRestart) {
@@ -118,7 +118,7 @@ while (!stopping) {
       manualRestart = null;
       requestedRestart.resolve({
         ok: true,
-        message: "Managed OpenClaw Gateway restarted and is ready."
+        message: "Managed OpenClaw Gateway restarted and is live."
       });
     }
   } catch (error) {
@@ -172,7 +172,7 @@ function startGateway() {
   return child;
 }
 
-async function waitForGateway() {
+async function waitForGatewayLiveness() {
   const deadline = Date.now() + 120_000;
 
   while (Date.now() < deadline) {
@@ -180,27 +180,27 @@ async function waitForGateway() {
       throw new Error(`OpenClaw Gateway exited during startup (code ${gateway.exitCode}).`);
     }
 
-    if (await isGatewayReady()) return;
+    if (await isGatewayLive()) return;
     await wait(500);
   }
 
-  throw new Error("OpenClaw Gateway did not become ready within 120 seconds.");
+  throw new Error("OpenClaw Gateway did not become live within 120 seconds.");
 }
 
-async function waitForGatewayHealthFailure(child, signal) {
+async function waitForGatewayLivenessFailure(child, signal) {
   let consecutiveFailures = 0;
 
   while (!signal.aborted && child.exitCode === null) {
     await wait(gatewayHealthIntervalMs, signal);
     if (signal.aborted || child.exitCode !== null) break;
 
-    if (await isGatewayReady()) {
+    if (await isGatewayLive()) {
       consecutiveFailures = 0;
       continue;
     }
 
     consecutiveFailures += 1;
-    console.error(`OpenClaw Gateway readiness probe failed (${consecutiveFailures}/${gatewayHealthFailureThreshold}).`);
+    console.error(`OpenClaw Gateway liveness probe failed (${consecutiveFailures}/${gatewayHealthFailureThreshold}).`);
     if (consecutiveFailures >= gatewayHealthFailureThreshold) {
       return { label: "OpenClaw Gateway health", code: null, signal: null };
     }
@@ -209,9 +209,9 @@ async function waitForGatewayHealthFailure(child, signal) {
   return new Promise(() => {});
 }
 
-async function isGatewayReady() {
+async function isGatewayLive() {
   try {
-    const response = await fetch(gatewayReadyUrl, {
+    const response = await fetch(gatewayLivenessUrl, {
       signal: AbortSignal.timeout(1_500)
     });
     return response.ok;

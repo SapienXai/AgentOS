@@ -22,7 +22,7 @@ export async function restartManagedRailwayGateway() {
   }
 
   return {
-    message: response.message || "Managed OpenClaw Gateway restarted and is ready."
+    message: response.message || "Managed OpenClaw Gateway restarted and is live."
   };
 }
 

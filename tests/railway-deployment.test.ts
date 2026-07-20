@@ -7,7 +7,7 @@ import { isRailwayManagedRuntime } from "@/lib/openclaw/deployment-runtime";
 
 const rootDir = process.cwd();
 
-test("Railway config uses the dedicated container and readiness endpoint", async () => {
+test("Railway config uses the dedicated container and liveness endpoint", async () => {
   const config = JSON.parse(await read("railway.json")) as {
     build?: { builder?: string; dockerfilePath?: string };
     deploy?: {
@@ -22,6 +22,9 @@ test("Railway config uses the dedicated container and readiness endpoint", async
   assert.equal(config.deploy?.healthcheckPath, "/api/health");
   assert.equal(config.deploy?.restartPolicyType, "ON_FAILURE");
   assert.equal(config.deploy?.drainingSeconds, 30);
+  const healthRoute = await read("app/api/health/route.ts");
+  assert.match(healthRoute, /127\.0\.0\.1:18789\/healthz/);
+  assert.doesNotMatch(healthRoute, /\/readyz/);
 });
 
 test("Railway image pins OpenClaw, avoids service-bound cache mounts, and maps every mutable runtime root to the volume", async () => {
@@ -54,11 +57,13 @@ test("Railway supervisor keeps Gateway private, exposes a locked-down control so
   assert.match(supervisor, /chmod\(supervisorSocketPath, 0o600\)/);
   assert.match(supervisor, /manualRestartCooldownMs/);
   assert.match(supervisor, /A managed Gateway restart is already in progress/);
-  assert.match(supervisor, /OpenClaw Gateway restarted successfully and passed readiness checks/);
+  assert.match(supervisor, /OpenClaw Gateway restarted successfully and passed liveness checks/);
   assert.match(supervisor, /gatewayRestartDelayMs/);
   assert.match(supervisor, /gatewayHealthFailureThreshold = 3/);
   assert.match(supervisor, /gatewayRestartFailureLimit = 3/);
-  assert.match(supervisor, /readiness probe failed/);
+  assert.match(supervisor, /liveness probe failed/);
+  assert.match(supervisor, /gatewayLivenessUrl = `http:\/\/127\.0\.0\.1:\$\{gatewayPort\}\/healthz`/);
+  assert.doesNotMatch(supervisor, /gatewayReadyUrl|\/readyz/);
   assert.match(supervisor, /restart attempts exhausted/);
   assert.match(supervisor, /AgentOS stopped unexpectedly[\s\S]*process\.exitCode = 1/);
   assert.match(dockerfile, /railway-openclaw-bootstrap\.mjs/);

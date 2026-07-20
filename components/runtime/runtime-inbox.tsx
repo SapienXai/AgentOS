@@ -472,7 +472,7 @@ function RuntimeIssueActions({
       }
 
       if (action === "restartManagedGateway") {
-        setActionStatus("Restarting the managed Gateway and waiting for readiness...");
+        setActionStatus("Restarting the managed Gateway and waiting for liveness...");
         const response = await fetch("/api/gateway/control", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -491,7 +491,7 @@ function RuntimeIssueActions({
         }
         setActionStatus(null);
         toast.success("Managed Gateway restarted.", {
-          description: payload?.message || "OpenClaw passed its readiness check."
+          description: payload?.message || "OpenClaw passed its liveness check."
         });
         return;
       }
@@ -788,7 +788,7 @@ function RuntimeIssueActions({
           <DialogHeader>
             <DialogTitle>Restart the managed OpenClaw Gateway?</DialogTitle>
             <DialogDescription>
-              Active Gateway-backed tasks may be interrupted briefly. AgentOS will ask the Railway supervisor to restart only the Gateway and wait for readiness.
+              Active Gateway-backed tasks may be interrupted briefly. AgentOS will ask the Railway supervisor to restart only the Gateway and wait for liveness. Detailed runtime readiness remains visible in diagnostics.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
