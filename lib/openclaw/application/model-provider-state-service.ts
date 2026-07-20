@@ -119,22 +119,27 @@ type OpenClawAgentDefaultsConfig = NonNullable<NonNullable<OpenClawConfigPayload
 
 export async function readOpenClawConfiguredModelIds() {
   try {
-    const configuredModels = await getOpenClawAdapter().getConfig<Record<string, unknown>>(
-      "agents.defaults.models",
+    const defaults = await getOpenClawAdapter().getConfig<OpenClawAgentDefaultsConfig>(
+      "agents.defaults",
       { timeoutMs: 5_000 }
     );
 
-    if (isRecord(configuredModels)) {
-      return new Set(Object.keys(configuredModels));
+    if (isRecord(defaults)) {
+      return readConfiguredModelIdsFromDefaults(defaults);
     }
   } catch {
     // Local file read remains an offline recovery fallback when Gateway config is unavailable.
   }
 
   const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
-  const modelEntries = config.agents?.defaults?.models ?? {};
+  return readConfiguredModelIdsFromDefaults(config.agents?.defaults);
+}
 
-  return new Set(Object.keys(modelEntries));
+function readConfiguredModelIdsFromDefaults(defaults: OpenClawAgentDefaultsConfig | undefined) {
+  const modelEntries = defaults?.models ?? {};
+  const primaryModel = defaults?.model?.primary?.trim() ?? "";
+
+  return new Set([...Object.keys(modelEntries), primaryModel].filter(Boolean));
 }
 
 export async function readOpenClawProviderModelStatus(): Promise<ModelsStatusPayload | null> {

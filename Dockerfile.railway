@@ -31,6 +31,7 @@ COPY --from=agentos-build --chown=node:node /build/.next/standalone ./
 COPY --from=agentos-build --chown=node:node /build/.next/static ./.next/static
 COPY --from=agentos-build --chown=node:node /build/public ./public
 COPY --chown=node:node scripts/railway-supervisor.mjs ./scripts/railway-supervisor.mjs
+COPY --chown=node:node scripts/railway-openclaw-bootstrap.mjs ./scripts/railway-openclaw-bootstrap.mjs
 COPY scripts/railway-entrypoint.sh ./scripts/railway-entrypoint.sh
 
 RUN chmod 0755 ./scripts/railway-entrypoint.sh && \

@@ -1416,6 +1416,44 @@ test("remote provider connection depends on auth rather than configured models",
   );
 });
 
+test("an implicit Gateway default never makes a clean install model-ready", () => {
+  const readiness = resolveModelReadiness(
+    [
+      {
+        key: "openai/gpt-5.5",
+        local: false,
+        available: true,
+        missing: false
+      }
+    ],
+    {
+      defaultModel: "openai/gpt-5.5",
+      resolvedDefault: "openai/gpt-5.5",
+      auth: {
+        providers: [
+          {
+            provider: "openai",
+            profiles: {
+              count: 0
+            }
+          }
+        ],
+        oauth: {
+          providers: []
+        },
+        missingProvidersInUse: ["openai"],
+        unusableProfiles: []
+      }
+    } as never,
+    []
+  );
+
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.defaultModelReady, false);
+  assert.equal(readiness.recommendedModelId, null);
+  assert.equal(readiness.issues.includes("Choose a default model to finish setup."), true);
+});
+
 test("model status keeps agent config default when native status omits it", () => {
   const status = mergeModelStatusWithAgentConfigDefaults(
     {

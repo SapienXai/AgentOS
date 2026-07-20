@@ -70,7 +70,10 @@ export async function buildSystemReadinessSnapshot({
   );
   const modelStatus = buildModelStatusFromAgentConfig(agentConfig);
   const localModels = buildModelsPayloadFromFallbackSources(agentConfig, modelStatus);
-  const modelReadiness = resolveModelReadiness(localModels.models, modelStatus);
+  const configuredModelIds = agentConfig
+    .map((agent) => agent.model?.trim())
+    .filter((modelId): modelId is string => Boolean(modelId));
+  const modelReadiness = resolveModelReadiness(localModels.models, modelStatus, configuredModelIds);
   const rpcOk = Boolean(gatewayStatus?.rpc?.ok);
   const loaded = Boolean(gatewayStatus?.service?.loaded || rpcOk);
   const ready = openclawInstalled && rpcOk && runtimeDiagnostics.stateWritable && runtimeDiagnostics.sessionStoreWritable;

@@ -65,10 +65,12 @@ Do not add `AGENTOS_TRUSTED_OPERATOR_ORIGINS` for the generated Railway domain. 
 3. Wait until `/api/health` passes. The startup supervisor starts OpenClaw first and starts AgentOS only after the Gateway readiness endpoint responds.
 4. Open the generated HTTPS domain and sign in.
 5. Remove `AGENTOS_INITIAL_ADMIN_PASSWORD` from the Railway service variables after confirming the first sign-in. The account remains on the persistent volume.
-6. Connect a real model/provider in Setup Center.
+6. Connect a real model/provider in Setup Center, then explicitly choose its default model.
 7. Create a workspace and run the compatibility diagnostics before assigning production work.
 
 The bootstrap password is used only when `/data/agentos/instance-protection.json` does not exist. It is removed from the long-running AgentOS process after bootstrap and is never passed to OpenClaw, but Railway retains the service variable until the operator removes it. Redeploying or changing the variable does not replace the account. Change credentials from AgentOS. If recovery is required, use a Railway shell to run the documented Instance Protection reset deliberately; deleting the volume is not an account-reset mechanism because it also destroys OpenClaw and workspace state.
+
+On a new volume, AgentOS creates only the durable OpenClaw Gateway baseline (`gateway.mode=local` with token auth). It intentionally creates no provider, auth profile, model catalog entry, default model, agent, or demo task. Until the operator connects a provider and chooses a default model, AgentOS blocks chat, mission dispatch, and runtime smoke tests before any provider request is sent.
 
 ## Runtime and security behavior
 

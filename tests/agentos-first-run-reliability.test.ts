@@ -34,7 +34,7 @@ test("OpenClaw missing snapshot does not present fake live workspaces, models, a
   assert.deepEqual(snapshot.tasks, []);
 });
 
-test("fallback demo snapshot remains explicitly offline and non-live", () => {
+test("fallback snapshot never advertises demo agents, models, or runnable work", () => {
   const snapshot = createFallbackSnapshot("OpenClaw snapshot unavailable.");
 
   assert.equal(snapshot.mode, "fallback");
@@ -42,10 +42,12 @@ test("fallback demo snapshot remains explicitly offline and non-live", () => {
   assert.equal(snapshot.diagnostics.loaded, false);
   assert.equal(snapshot.diagnostics.rpcOk, false);
   assert.equal(snapshot.diagnostics.health, "offline");
-  assert.ok(snapshot.workspaces.every((workspace) => workspace.id.includes("demo")));
-  assert.ok(snapshot.agents.every((agent) => agent.id.includes("demo")));
-  assert.ok(snapshot.runtimes.every((runtime) => runtime.id.includes("demo")));
-  assert.ok(snapshot.tasks.every((task) => task.id.includes("demo") || task.key.includes("demo")));
+  assert.equal(snapshot.diagnostics.modelReadiness.ready, false);
+  assert.deepEqual(snapshot.workspaces, []);
+  assert.deepEqual(snapshot.agents, []);
+  assert.deepEqual(snapshot.models, []);
+  assert.deepEqual(snapshot.runtimes, []);
+  assert.deepEqual(snapshot.tasks, []);
 });
 
 test("onboarding overlay is portaled and does not create outer page scroll", () => {
@@ -109,6 +111,38 @@ test("model readiness failures explain the next action for first workspace and a
   assert.match(resolveWorkspaceCreationReadinessError(snapshot) ?? "", /No models are configured yet/);
   assert.match(resolveWorkspaceCreationReadinessError(snapshot) ?? "", /Choose a model before creating the first workspace/);
   assert.match(resolveAgentCreationReadinessError(snapshot) ?? "", /Choose a ready model before creating the agent/);
+});
+
+test("a clean install blocks an implicit OpenAI default before any chat or smoke-test dispatch", () => {
+  const snapshot = createErrorSnapshot("No provider is configured.", {
+    installed: true,
+    loaded: true,
+    rpcOk: true
+  });
+  snapshot.diagnostics.runtime.stateWritable = true;
+  snapshot.diagnostics.runtime.sessionStoreWritable = true;
+  snapshot.diagnostics.modelReadiness = {
+    ...snapshot.diagnostics.modelReadiness,
+    defaultModel: "openai/gpt-5.5",
+    resolvedDefaultModel: "openai/gpt-5.5",
+    defaultModelReady: false,
+    ready: false,
+    totalModelCount: 0,
+    availableModelCount: 0,
+    issues: ["Choose a default model to finish setup."]
+  };
+
+  assert.match(
+    resolveMissionDispatchReadinessError(snapshot, "openai/gpt-5.5") ?? "",
+    /Requested model openai\/gpt-5\.5 is not ready/
+  );
+
+  const chatRoute = readFileSync(path.join(process.cwd(), "app/api/agents/[agentId]/chat/route.ts"), "utf8");
+  const readinessGuard = chatRoute.indexOf("const modelReadinessError = resolveOpenClawModelReadinessIssue(");
+  const dispatch = chatRoute.indexOf("getOpenClawAdapter().streamAgentTurn(");
+
+  assert.ok(readinessGuard >= 0);
+  assert.ok(dispatch > readinessGuard);
 });
 
 test("workspace-backed agent models keep first-run actions usable when the global default is missing", () => {

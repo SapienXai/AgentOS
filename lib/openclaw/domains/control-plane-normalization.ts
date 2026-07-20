@@ -187,7 +187,16 @@ export function resolveWorkspaceHealth(agentIds: string[], agents: AgentLike[]):
   return "standby";
 }
 
-export function resolveModelReadiness(models: ModelLike[], modelStatus?: ModelStatusLike): ModelReadiness {
+export function resolveModelReadiness(
+  models: ModelLike[],
+  modelStatus?: ModelStatusLike,
+  configuredModelIds?: Iterable<string>
+): ModelReadiness {
+  const configuredModelIdSet = new Set(
+    Array.from(configuredModelIds ?? [])
+      .map((modelId) => normalizeOptionalValue(modelId)?.toLowerCase())
+      .filter((modelId): modelId is string => Boolean(modelId))
+  );
   const readyModels = models.filter((model) => isReadyModelRecord(model));
   const providerIds = unique(
     [
@@ -209,13 +218,22 @@ export function resolveModelReadiness(models: ModelLike[], modelStatus?: ModelSt
   const resolvedDefaultModel = normalizeOptionalValue(modelStatus?.resolvedDefault ?? undefined);
   const defaultModel = normalizeOptionalValue(modelStatus?.defaultModel ?? undefined);
   const defaultModelId = resolvedDefaultModel ?? defaultModel;
+  const hasExplicitDefaultModel = Boolean(
+    defaultModelId &&
+      (configuredModelIds === undefined || configuredModelIdSet.has(defaultModelId.toLowerCase()))
+  );
   const defaultProvider = defaultModelId ? resolveModelProviderId(defaultModelId) : null;
   const defaultModelReady = Boolean(
-    defaultModelId &&
+    hasExplicitDefaultModel &&
+      defaultModelId &&
       readyModels.some((model) => model.key === defaultModelId) &&
       isModelProviderAuthenticated(defaultProvider, defaultModelId, models, authProviderMap, oauthProviderMap, modelStatus)
   );
-  const recommendedModelId = defaultModelReady ? defaultModelId : readyModels[0]?.key ?? null;
+  const recommendedModelId = defaultModelReady
+    ? defaultModelId
+    : configuredModelIds === undefined
+      ? readyModels[0]?.key ?? null
+      : readyModels.find((model) => configuredModelIdSet.has(model.key.toLowerCase()))?.key ?? null;
   const authProviders = providerIds.map((provider) => {
     const providerModels = models.filter((model) => modelMatchesAuthProvider(provider, model.key));
     const hasRemoteRoute = providerModels.some((model) => model.local !== true);
@@ -272,11 +290,11 @@ export function resolveModelReadiness(models: ModelLike[], modelStatus?: ModelSt
     issues.push("No available models were detected yet.");
   }
 
-  if (readyModels.length > 0 && !defaultModelId) {
+  if (readyModels.length > 0 && !hasExplicitDefaultModel) {
     issues.push("Choose a default model to finish setup.");
   }
 
-  if (defaultModelId && !defaultModelReady) {
+  if (hasExplicitDefaultModel && defaultModelId && !defaultModelReady) {
     if (defaultProvider && missingProviderSet.has(defaultProvider)) {
       issues.push(`Default model is set, but ${formatProviderLabel(defaultProvider)} auth is still missing.`);
     } else if (missingProvidersInUse.length > 0) {

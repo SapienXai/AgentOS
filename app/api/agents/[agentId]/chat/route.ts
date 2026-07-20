@@ -49,6 +49,7 @@ import {
   resolveOpenClawRuntimeFailureMessage,
   resolveOpenClawRuntimePreflightError
 } from "@/lib/openclaw/runtime-compatibility";
+import { resolveOpenClawModelReadinessIssue } from "@/lib/openclaw/readiness";
 import { renderWorkspaceSurfaceCoordinationMarkdownForAgent } from "@/lib/openclaw/surface-coordination";
 import { redactErrorMessage, redactSecretText, redactSecrets } from "@/lib/security/redaction";
 import type { ControlPlaneSnapshot, MissionDispatchStatus, MissionResponse } from "@/lib/agentos/contracts";
@@ -419,6 +420,19 @@ export async function POST(
             type: "done",
             ok: false,
             message: runtimePreflightError
+          });
+          return;
+        }
+
+        const modelReadinessError = resolveOpenClawModelReadinessIssue(
+          snapshot,
+          agent.modelId === "unassigned" ? null : agent.modelId
+        );
+        if (modelReadinessError) {
+          await send({
+            type: "done",
+            ok: false,
+            message: `${modelReadinessError} Connect a provider and choose a default model before starting a chat.`
           });
           return;
         }

@@ -1,8 +1,11 @@
 import { spawn } from "node:child_process";
+import { bootstrapRailwayOpenClawConfig } from "./railway-openclaw-bootstrap.mjs";
 
 const gatewayPort = 18789;
 const gatewayEnv = { ...process.env };
 delete gatewayEnv.AGENTOS_INITIAL_ADMIN_PASSWORD;
+
+await bootstrapRailwayOpenClawConfig(gatewayEnv);
 
 const gateway = spawn("openclaw", [
   "gateway",
@@ -11,7 +14,6 @@ const gateway = spawn("openclaw", [
   "loopback",
   "--auth",
   "token",
-  "--allow-unconfigured",
   "--compact",
   "--port",
   String(gatewayPort)

@@ -103,6 +103,7 @@ export async function buildLiveMissionControlDiagnostics(input: {
   models: ModelsPayload["models"];
   agents: OpenClawAgent[];
   modelStatus?: ModelsStatusPayload;
+  configuredModelIds?: Iterable<string>;
   deviceAccess?: OpenClawDeviceListPayload;
   payloadResults: {
     gatewayStatus: PromiseSettledResult<GatewayStatusPayload>;
@@ -130,7 +131,11 @@ export async function buildLiveMissionControlDiagnostics(input: {
     presence: PayloadReuseState;
   };
 }) {
-  const modelReadiness = resolveModelReadiness(input.models, input.modelStatus);
+  const modelReadiness = resolveModelReadiness(
+    input.models,
+    input.modelStatus,
+    input.configuredModelIds
+  );
   const securityWarnings = buildSecurityWarnings(input.status);
   const versionDiagnostics = buildVersionDiagnostics({
     status: input.status,
