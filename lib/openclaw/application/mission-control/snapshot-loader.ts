@@ -498,6 +498,7 @@ async function loadMissionControlSnapshots({
       models,
       agents,
       modelStatus,
+      configuredModelIds,
       deviceAccess: deviceAccessResult.status === "fulfilled" ? deviceAccessResult.value : undefined,
       payloadResults: {
         gatewayStatus: gatewayStatusResult,

@@ -29,6 +29,7 @@ import {
 import { resolveOpenClawBin } from "@/lib/openclaw/cli";
 import { openClawStateRootPath } from "@/lib/openclaw/state/paths";
 import { inspectOpenClawRuntimeState } from "@/lib/openclaw/state/runtime-state";
+import { resolveOpenClawModelReadinessIssue } from "@/lib/openclaw/readiness";
 import type {
   MissionControlSnapshot,
   OpenClawRuntimeSmokeTest,
@@ -101,6 +102,22 @@ export async function ensureOpenClawRuntimeSmokeTest(options: {
 } = {}): Promise<OpenClawRuntimeSmokeTest> {
   const snapshot = await getMissionControlSnapshot({ force: true, includeHidden: true });
   const agentId = resolveRuntimeSmokeTestAgentId(snapshot, options.agentId);
+  const smokeAgent = agentId ? snapshot.agents.find((agent) => agent.id === agentId) : null;
+  const modelReadinessError = resolveOpenClawModelReadinessIssue(
+    snapshot,
+    smokeAgent?.modelId === "unassigned" ? null : smokeAgent?.modelId
+  );
+
+  if (modelReadinessError) {
+    return {
+      status: "not-run",
+      checkedAt: new Date().toISOString(),
+      agentId,
+      runId: null,
+      summary: null,
+      error: `${modelReadinessError} AgentOS did not send a provider request.`
+    };
+  }
 
   if (!agentId) {
     return {
@@ -120,7 +137,6 @@ export async function ensureOpenClawRuntimeSmokeTest(options: {
     return mapRuntimeSmokeTestEntry(agentId, cached);
   }
 
-  const smokeAgent = snapshot.agents.find((agent) => agent.id === agentId);
   await assertOpenClawRuntimeStateAccess(agentId, smokeAgent?.agentDir);
 
   try {

@@ -35,17 +35,32 @@ test("Railway image pins OpenClaw, avoids service-bound cache mounts, and maps e
   assert.match(dockerfile, /gosu/);
 });
 
-test("Railway supervisor keeps Gateway private and excludes the bootstrap password", async () => {
+test("Railway supervisor keeps Gateway private, bootstraps explicit empty model state, and excludes the bootstrap password", async () => {
   const supervisor = await read("scripts/railway-supervisor.mjs");
   const entrypoint = await read("scripts/railway-entrypoint.sh");
+  const dockerfile = await read("Dockerfile.railway");
 
   assert.match(supervisor, /delete gatewayEnv\.AGENTOS_INITIAL_ADMIN_PASSWORD/);
+  assert.match(supervisor, /bootstrapRailwayOpenClawConfig\(gatewayEnv\)/);
   assert.doesNotMatch(supervisor, /PORT:\s*"3000"/);
   assert.match(supervisor, /"--bind",\s*"loopback"/);
   assert.match(supervisor, /"--auth",\s*"token"/);
+  assert.doesNotMatch(supervisor, /"--allow-unconfigured"/);
   assert.doesNotMatch(supervisor, /"--token"/);
+  assert.match(dockerfile, /railway-openclaw-bootstrap\.mjs/);
   assert.match(entrypoint, /RAILWAY_VOLUME_MOUNT_PATH:-.*\/data/);
   assert.match(entrypoint, /exec gosu node:node/);
+});
+
+test("Railway bootstrap script creates an empty model baseline without provider credentials", async () => {
+  const bootstrap = await read("scripts/railway-openclaw-bootstrap.mjs");
+
+  assert.match(bootstrap, /flag:\s*"wx"/);
+  assert.match(bootstrap, /mode:\s*"local"/);
+  assert.match(bootstrap, /models:\s*\{\}/);
+  assert.doesNotMatch(bootstrap, /primary:\s*["']/);
+  assert.doesNotMatch(bootstrap, /providers:/);
+  assert.doesNotMatch(bootstrap, /apiKey|token:\s*env\.|OPENAI_API_KEY/);
 });
 
 async function read(relativePath: string) {
