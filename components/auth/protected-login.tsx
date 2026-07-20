@@ -6,6 +6,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { broadcastAuthChange, useInstanceProtection } from "@/components/auth/instance-protection-provider";
+import { CelestialLockBackground } from "@/components/auth/celestial-lock-background";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -89,21 +90,19 @@ export function ProtectedLogin() {
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-background text-foreground">
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_12%,hsl(var(--primary)/0.12),transparent_28%),radial-gradient(circle_at_82%_72%,hsl(220_80%_55%/0.09),transparent_30%),linear-gradient(145deg,hsl(var(--background)),hsl(var(--background))_58%,hsl(var(--muted)/0.35))]" />
-      <div aria-hidden="true" className="pointer-events-none absolute -right-[8%] top-[6%] hidden h-[82%] w-[68%] rounded-full bg-[radial-gradient(circle_at_center,hsl(var(--primary)/0.15),hsl(215_100%_72%/0.10)_30%,transparent_68%)] blur-2xl dark:bg-[radial-gradient(circle_at_center,hsl(var(--primary)/0.24),hsl(215_100%_62%/0.13)_32%,transparent_70%)] lg:block" />
-      <div aria-hidden="true" className="pointer-events-none absolute bottom-[-24%] right-[4%] hidden h-[46%] w-[56%] rounded-[50%] bg-primary/[0.07] blur-[100px] dark:bg-primary/[0.11] lg:block" />
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-[0.16] [background-image:linear-gradient(hsl(var(--foreground)/0.08)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--foreground)/0.08)_1px,transparent_1px)] [background-size:42px_42px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]" />
-      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/70 to-transparent" />
+      <CelestialLockBackground />
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-[0.12] [background-image:linear-gradient(rgba(255,255,255,.13)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.13)_1px,transparent_1px)] [background-size:42px_42px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]" />
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/70 to-transparent" />
 
       <header className="relative z-10 mx-auto flex w-full max-w-[1180px] items-center justify-between px-6 py-5 sm:px-8">
         <div className="flex items-center gap-3">
           <video src="/assets/logo.webm" autoPlay muted loop playsInline preload="auto" aria-label="AgentOS" className="h-11 w-11 shrink-0 object-contain" />
-          <div>
+          <div className="text-white [text-shadow:0_1px_18px_rgba(2,6,23,.38)]">
             <p className="font-display text-sm font-semibold tracking-[-0.02em]">AgentOS</p>
             <AnimatedHeaderTagline />
           </div>
         </div>
-        <div className="hidden items-center gap-2 rounded-full border border-border/80 bg-card/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground shadow-sm backdrop-blur-xl sm:flex">
+        <div className="hidden items-center gap-2 rounded-full border border-white/20 bg-slate-950/25 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/80 shadow-sm backdrop-blur-xl sm:flex">
           <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-40" /><span className="relative inline-flex h-2 w-2 rounded-full bg-primary" /></span>
           Instance locked
         </div>
@@ -111,12 +110,12 @@ export function ProtectedLogin() {
 
       <div className="relative z-10 mx-auto grid min-h-[calc(100vh-80px)] w-full max-w-[1180px] items-center gap-12 px-6 pb-10 sm:px-8 lg:grid-cols-[minmax(0,480px)_1fr] lg:gap-20 lg:pb-8">
         <motion.section initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }} className="-mt-4 w-full lg:mt-0" aria-labelledby="protected-title">
-          <div className="mb-5 -translate-y-5 text-center lg:mb-4 lg:translate-y-0">
+          <div className="mb-5 -translate-y-5 text-center text-white [text-shadow:0_2px_28px_rgba(2,6,23,.48)] lg:mb-4 lg:translate-y-0">
             <h1 id="protected-title" className="whitespace-nowrap font-display text-[clamp(1.85rem,8.5vw,2.1rem)] font-semibold leading-none tracking-[-0.06em] sm:text-[2.5rem] lg:text-[2.75rem]">AgentOS is Protected</h1>
-            <p className="mx-auto mt-2 max-w-[430px] whitespace-nowrap text-xs leading-5 text-muted-foreground sm:text-sm">Unlock the control plane to access AgentOS.</p>
+            <p className="mx-auto mt-2 max-w-[430px] whitespace-nowrap text-xs leading-5 text-white/70 sm:text-sm">Unlock the control plane to access AgentOS.</p>
           </div>
 
-          <div className="relative mt-12 rounded-[26px] border border-border/80 bg-card/[0.88] p-5 pt-16 shadow-[0_28px_90px_hsl(var(--foreground)/0.12)] backdrop-blur-2xl dark:border-white/[0.10] dark:bg-[hsl(220_18%_15%/0.94)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_30px_90px_rgba(0,0,0,0.36)] lg:mt-0 lg:pt-5">
+          <div className="relative mt-12 rounded-[26px] border border-border/80 bg-card/[0.88] p-5 pt-16 text-card-foreground shadow-[0_28px_90px_rgba(2,6,23,.26)] backdrop-blur-2xl dark:border-white/[0.10] dark:bg-[hsl(220_18%_15%/0.90)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_30px_90px_rgba(0,0,0,0.36)] lg:mt-0 lg:pt-5">
             <div className="absolute left-1/2 top-[-1px] z-10 h-[116px] w-[116px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-br from-white/90 via-primary/45 to-sky-400/40 p-0.5 shadow-[0_0_22px_hsl(var(--primary)/0.28),0_20px_46px_hsl(var(--foreground)/0.20)] dark:from-white/30 dark:via-primary/50 dark:to-sky-400/35 lg:hidden">
               <div className="relative h-full w-full overflow-hidden rounded-full border border-white/70 bg-background shadow-[inset_0_0_18px_hsl(var(--foreground)/0.16)] dark:border-white/25">
                 <video src="/assets/agentProfiles/piko.webm" autoPlay muted loop playsInline preload="auto" aria-label="Piko agent profile" className="h-full w-full object-cover" />
@@ -164,8 +163,8 @@ export function ProtectedLogin() {
             </div>
           </div>
 
-          <div className="mt-3 px-1 text-center text-[10px] leading-4 text-muted-foreground">
-            <p className="lg:whitespace-nowrap">Forgot your credentials? Run <code className="rounded-md border border-border/70 bg-muted/60 px-1.5 py-0.5 text-foreground">agentos auth reset</code> on the machine running AgentOS.</p>
+          <div className="mt-3 px-1 text-center text-[10px] leading-4 text-white/70 [text-shadow:0_1px_12px_rgba(2,6,23,.55)]">
+            <p className="lg:whitespace-nowrap">Forgot your credentials? Run <code className="rounded-md border border-white/20 bg-slate-950/20 px-1.5 py-0.5 text-white">agentos auth reset</code> on the machine running AgentOS.</p>
           </div>
         </motion.section>
 
@@ -258,9 +257,9 @@ function AnimatedHeaderTagline() {
   }, [deleting, phraseIndex, reduceMotion, visibleText]);
 
   return (
-    <p aria-label="AI workforce operating system" className="flex h-3.5 w-[138px] items-center overflow-hidden whitespace-nowrap text-[9px] tracking-[0.12em] text-muted-foreground sm:w-[170px]">
+    <p aria-label="AI workforce operating system" className="flex h-3.5 w-[138px] items-center overflow-hidden whitespace-nowrap text-[9px] tracking-[0.12em] text-white/55 [text-shadow:0_1px_12px_rgba(2,6,23,.45)] sm:w-[170px]">
       <span aria-hidden="true">{reduceMotion ? HEADER_TAGLINES[0] : visibleText}</span>
-      <motion.span aria-hidden="true" animate={reduceMotion ? { opacity: 0.7 } : { opacity: [0.9, 0.2, 0.9] }} transition={{ duration: 0.8, ease: "easeInOut", repeat: Infinity }} className="ml-1 h-2.5 w-px shrink-0 bg-primary/70" />
+      <motion.span aria-hidden="true" animate={reduceMotion ? { opacity: 0.7 } : { opacity: [0.9, 0.2, 0.9] }} transition={{ duration: 0.8, ease: "easeInOut", repeat: Infinity }} className="ml-1 h-2.5 w-px shrink-0 bg-white/70" />
     </p>
   );
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
+import { resolveAgentOsDeploymentCapabilities } from "@/lib/agentos/deployment-capabilities";
 import { isRailwayManagedRuntime } from "@/lib/openclaw/deployment-runtime";
 
 const rootDir = process.cwd();
@@ -29,6 +30,7 @@ test("Railway image pins OpenClaw, avoids service-bound cache mounts, and maps e
   assert.match(dockerfile, /ghcr\.io\/openclaw\/openclaw:2026\.6\.11@sha256:[a-f0-9]{64}/);
   assert.doesNotMatch(dockerfile, /--mount=type=cache/);
   assert.match(dockerfile, /AGENTOS_RUNTIME_DIR=\/data\/agentos/);
+  assert.match(dockerfile, /AGENTOS_SUPERVISOR_SOCKET_PATH=\/tmp\/agentos-supervisor\.sock/);
   assert.match(dockerfile, /OPENCLAW_STATE_DIR=\/data\/openclaw/);
   assert.doesNotMatch(dockerfile, /EXPOSE\s+3000/);
   assert.match(dockerfile, /\/data\/agentos\/mission-control/);
@@ -36,7 +38,7 @@ test("Railway image pins OpenClaw, avoids service-bound cache mounts, and maps e
   assert.match(dockerfile, /gosu/);
 });
 
-test("Railway supervisor keeps Gateway private, bootstraps explicit empty model state, and excludes the bootstrap password", async () => {
+test("Railway supervisor keeps Gateway private, exposes a locked-down control socket, and excludes the bootstrap password", async () => {
   const supervisor = await read("scripts/railway-supervisor.mjs");
   const entrypoint = await read("scripts/railway-entrypoint.sh");
   const dockerfile = await read("Dockerfile.railway");
@@ -48,14 +50,59 @@ test("Railway supervisor keeps Gateway private, bootstraps explicit empty model 
   assert.match(supervisor, /"--auth",\s*"token"/);
   assert.doesNotMatch(supervisor, /"--allow-unconfigured"/);
   assert.doesNotMatch(supervisor, /"--token"/);
-  assert.match(supervisor, /OpenClaw Gateway stopped unexpectedly[\s\S]*Restarting in/);
-  assert.match(supervisor, /OpenClaw Gateway restarted successfully/);
+  assert.match(supervisor, /request\.action !== "restart-gateway"/);
+  assert.match(supervisor, /chmod\(supervisorSocketPath, 0o600\)/);
+  assert.match(supervisor, /manualRestartCooldownMs/);
+  assert.match(supervisor, /A managed Gateway restart is already in progress/);
+  assert.match(supervisor, /OpenClaw Gateway restarted successfully and passed readiness checks/);
   assert.match(supervisor, /gatewayRestartDelayMs/);
-  assert.doesNotMatch(supervisor, /Gateway exceeded the Railway restart limit/);
+  assert.match(supervisor, /gatewayHealthFailureThreshold = 3/);
+  assert.match(supervisor, /gatewayRestartFailureLimit = 3/);
+  assert.match(supervisor, /readiness probe failed/);
+  assert.match(supervisor, /restart attempts exhausted/);
   assert.match(supervisor, /AgentOS stopped unexpectedly[\s\S]*process\.exitCode = 1/);
   assert.match(dockerfile, /railway-openclaw-bootstrap\.mjs/);
   assert.match(entrypoint, /RAILWAY_VOLUME_MOUNT_PATH:-.*\/data/);
   assert.match(entrypoint, /exec gosu node:node/);
+});
+
+test("deployment capabilities separate local desktop actions from Railway headless operation", () => {
+  const railway = resolveAgentOsDeploymentCapabilities({ AGENTOS_DEPLOYMENT_PLATFORM: "railway" }, "linux");
+  assert.deepEqual(railway, {
+    platform: "railway",
+    gatewayLifecycle: "supervisor-managed",
+    terminalAccess: "unavailable",
+    browserAutomation: "server-headless",
+    interactiveBrowserLogin: "unavailable",
+    existingBrowserSession: "unavailable",
+    hostFileActions: "unavailable"
+  });
+
+  const local = resolveAgentOsDeploymentCapabilities({}, "darwin");
+  assert.equal(local.gatewayLifecycle, "agentos-managed");
+  assert.equal(local.terminalAccess, "macos");
+  assert.equal(local.interactiveBrowserLogin, "supported");
+  assert.equal(local.existingBrowserSession, "supported");
+});
+
+test("Railway Gateway control uses supervisor IPC while browser login fails closed", async () => {
+  const gatewayRoute = await read("app/api/gateway/control/route.ts");
+  const managedGateway = await read("lib/openclaw/application/managed-gateway-service.ts");
+  const browserRoute = await read("app/api/accounts/browser-profiles/route.ts");
+  const runtimeInbox = await read("components/runtime/runtime-inbox.tsx");
+  const accounts = await read("components/operations/accounts/accounts-page-content.tsx");
+
+  assert.match(gatewayRoute, /restartManagedRailwayGateway/);
+  assert.match(gatewayRoute, /Only a managed Gateway restart is available/);
+  assert.match(managedGateway, /createConnection\(\{ path: socketPath \}\)/);
+  assert.match(managedGateway, /action: "restart-gateway"/);
+  assert.match(browserRoute, /interactiveBrowserLogin === "unavailable"/);
+  assert.match(browserRoute, /managed Chromium browser is headless/);
+  assert.match(runtimeInbox, /deployment\.gatewayLifecycle === "supervisor-managed"/);
+  assert.match(runtimeInbox, /Restart managed gateway/);
+  assert.match(runtimeInbox, /Retry connection/);
+  assert.match(accounts, /Interactive browser login is unavailable in Railway/);
+  assert.match(accounts, /profile\.driver !== "existing-session"/);
 });
 
 test("Railway blocks every AgentOS Gateway lifecycle command while preserving native Gateway RPC", async () => {

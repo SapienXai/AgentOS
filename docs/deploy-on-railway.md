@@ -77,11 +77,12 @@ On a new volume, AgentOS creates only the durable OpenClaw Gateway baseline (`ga
 - The container starts as root only long enough to prepare the root-owned Railway volume, then runs both AgentOS and OpenClaw as the non-root `node` user.
 - The initial admin password is removed from the long-running AgentOS process after bootstrap and is never passed to the OpenClaw process.
 - OpenClaw listens only on container loopback. It has no Railway public port or domain.
-- Railway owns the OpenClaw Gateway process lifecycle. AgentOS onboarding only verifies that managed Gateway and configures providers, authentication, and models; it never runs `gateway install`, `gateway start`, or `gateway restart` inside a Railway deployment.
-- If the managed Gateway exits unexpectedly, the startup supervisor restarts it while keeping AgentOS available. After three failed Gateway restart attempts, the container exits so Railway can apply its service restart policy.
+- The Railway supervisor owns the OpenClaw Gateway process lifecycle. AgentOS onboarding only verifies that managed Gateway and configures providers, authentication, and models; it never invokes the host-service `gateway install`, `gateway start`, or `gateway restart` CLI lifecycle inside Railway.
+- An authenticated operator can request **Restart managed gateway** from AgentOS. AgentOS sends the fixed restart request over a container-private, owner-only supervisor socket; the supervisor restarts only the Gateway and waits for `/readyz` before reporting success.
+- The supervisor checks Gateway readiness continuously in addition to watching the process. If the managed Gateway exits or repeatedly fails readiness probes, the supervisor restarts it while keeping AgentOS available. After three failed Gateway restart attempts, the container exits so Railway can apply its service restart policy.
 - Browser sessions authenticate with the same username and password on every trusted browser; session cookies remain browser-specific.
 - Login is rate-limited. Mutation requests require an authenticated session and an exact same-origin HTTPS request.
-- Chromium is included for OpenClaw browser automation. Interactive desktop actions and host Finder/Terminal integration are not available in a headless Railway container.
+- Chromium is included for headless OpenClaw browser automation. Agents can navigate, click, type, and capture screenshots, but operator-driven browser login, local Chrome attachment, interactive desktop actions, and host Finder/Terminal integration are not available in the Railway container.
 - The health endpoint intentionally reveals no version, token, path, account, or Gateway detail.
 
 ## Persistence and operations

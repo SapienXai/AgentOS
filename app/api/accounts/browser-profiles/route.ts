@@ -6,6 +6,7 @@ import {
   openLoginUrlInOpenClawBrowserProfile,
   startOpenClawBrowserProfile
 } from "@/lib/openclaw/application/browser-profile-service";
+import { resolveAgentOsDeploymentCapabilities } from "@/lib/agentos/deployment-capabilities";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
@@ -49,6 +50,18 @@ export async function POST(request: Request) {
       return NextResponse.json(redactSecrets(await startOpenClawBrowserProfile({
         profileName: input.profileName
       })));
+    }
+
+    if (resolveAgentOsDeploymentCapabilities().interactiveBrowserLogin === "unavailable") {
+      return NextResponse.json(
+        {
+          ok: false,
+          generatedAt: new Date().toISOString(),
+          source: "openclaw.browser.request",
+          error: "Interactive browser login is unavailable in Railway. The managed Chromium browser is headless and cannot collect operator login or two-factor input."
+        },
+        { status: 409 }
+      );
     }
 
     return NextResponse.json(redactSecrets(await openLoginUrlInOpenClawBrowserProfile({

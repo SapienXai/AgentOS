@@ -593,6 +593,18 @@ test("API middleware centrally covers mutation routes including Gateway auth", (
   assert.match(middlewareSource, /getInstanceProtectionStatus/);
 });
 
+test("managed Gateway restart stays behind the authenticated same-origin API proxy", () => {
+  const proxySource = readProjectFile("proxy.ts");
+  const routeSource = readProjectFile("app/api/gateway/control/route.ts");
+  const supervisorSource = readProjectFile("scripts/railway-supervisor.mjs");
+
+  assert.match(proxySource, /pathname\.startsWith\("\/api\/"\)/);
+  assert.doesNotMatch(proxySource, /publicInstanceApiPaths[\s\S]*\/api\/gateway\/control/);
+  assert.match(routeSource, /restartManagedRailwayGateway/);
+  assert.match(supervisorSource, /request\.action !== "restart-gateway"/);
+  assert.doesNotMatch(supervisorSource, /exec\(|execFile\(|shell:\s*true/);
+});
+
 test("API proxy protects snapshot reads with bearer auth in production-like env", async () => {
   await withProcessEnv({ AGENTOS_API_TOKEN: "local-secret", NODE_ENV: "production" }, async () => {
     const missingToken = await proxy(new NextRequest("http://localhost:3000/api/snapshot", {

@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
+import { resolveAgentOsDeploymentCapabilities } from "@/lib/agentos/deployment-capabilities";
 import { controlGateway } from "@/lib/openclaw/application/gateway-service";
+import { restartManagedRailwayGateway } from "@/lib/openclaw/application/managed-gateway-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
@@ -22,6 +24,24 @@ const actionMessageMap = {
 export async function POST(request: Request) {
   try {
     const input = gatewayControlSchema.parse(await request.json());
+    const deployment = resolveAgentOsDeploymentCapabilities();
+
+    if (deployment.gatewayLifecycle === "supervisor-managed") {
+      if (input.action !== "restart") {
+        return NextResponse.json(
+          { error: "Railway manages the Gateway process lifecycle. Only a managed Gateway restart is available." },
+          { status: 409 }
+        );
+      }
+
+      const result = await restartManagedRailwayGateway();
+      const snapshot = await getMissionControlSnapshot({ force: true });
+      return NextResponse.json({
+        message: result.message,
+        snapshot: redactSecrets(snapshot)
+      });
+    }
+
     const currentSnapshot = await getMissionControlSnapshot({ force: true });
 
     if (!currentSnapshot.diagnostics.installed) {

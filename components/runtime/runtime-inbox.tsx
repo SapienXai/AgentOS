@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot, OpenClawUpdateStreamEvent, RuntimeIssue } from "@/lib/agentos/contracts";
+import { useDeploymentCapabilities } from "@/hooks/use-deployment-capabilities";
 import { cn } from "@/lib/utils";
 
 type SurfaceTheme = "dark" | "light";
@@ -32,6 +33,8 @@ type RuntimeAction =
   | "approveRequest"
   | "approveLatest"
   | "openRecovery"
+  | "restartManagedGateway"
+  | "retryConnection"
   | "repairLegacyState"
   | "restoreRollback"
   | "dismiss";
@@ -436,7 +439,9 @@ function RuntimeIssueActions({
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<RuntimeDeviceReview | null>(null);
   const [confirmRestore, setConfirmRestore] = useState(false);
+  const [confirmGatewayRestart, setConfirmGatewayRestart] = useState(false);
   const [actionStatus, setActionStatus] = useState<string | null>(null);
+  const deployment = useDeploymentCapabilities();
   const isScopeUpgrade = issue.type === "scope_upgrade_pending";
   const recoveryCommand = issue.recoveryCommand?.trim() || null;
   const rollbackTargetVersion = readRecoveryTargetVersion(recoveryCommand);
@@ -444,7 +449,14 @@ function RuntimeIssueActions({
     rollbackTargetVersion && issue.type === "openclaw_postflight_failed"
   );
   const isLegacyStateRepair = issue.type === "openclaw_doctor_warning";
-  const canOpenRecovery = Boolean(recoveryCommand && !isScopeUpgrade && !isRollbackRecovery && !isLegacyStateRepair);
+  const isManagedGatewayRecovery = issue.type === "gateway_unreachable" && deployment.gatewayLifecycle === "supervisor-managed";
+  const canOpenRecovery = Boolean(
+    recoveryCommand &&
+    deployment.gatewayLifecycle === "agentos-managed" &&
+    !isScopeUpgrade &&
+    !isRollbackRecovery &&
+    !isLegacyStateRepair
+  );
 
   const runAction = async (action: RuntimeAction) => {
     setBusyAction(action);
@@ -452,6 +464,38 @@ function RuntimeIssueActions({
     setActionStatus(null);
 
     try {
+      if (action === "retryConnection") {
+        setActionStatus("Refreshing Gateway diagnostics...");
+        await onRefresh?.();
+        setActionStatus(null);
+        return;
+      }
+
+      if (action === "restartManagedGateway") {
+        setActionStatus("Restarting the managed Gateway and waiting for readiness...");
+        const response = await fetch("/api/gateway/control", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "restart" })
+        });
+        const payload = await response.json().catch(() => null) as RuntimeActionResponse & { message?: string } | null;
+
+        if (!response.ok) {
+          throw new Error(payload?.error || "The managed Gateway restart failed.");
+        }
+
+        if (payload?.snapshot) {
+          onSnapshotChange?.(payload.snapshot);
+        } else {
+          await onRefresh?.();
+        }
+        setActionStatus(null);
+        toast.success("Managed Gateway restarted.", {
+          description: payload?.message || "OpenClaw passed its readiness check."
+        });
+        return;
+      }
+
       if (action === "restoreRollback") {
         const response = await fetch("/api/update", {
           method: "POST",
@@ -628,6 +672,31 @@ function RuntimeIssueActions({
             {resolveRecoveryActionLabel(issue)}
           </Button>
         ) : null}
+        {isManagedGatewayRecovery ? (
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => setConfirmGatewayRestart(true)}
+            disabled={busyAction !== null}
+            className="h-8 rounded-lg px-2.5 text-xs"
+          >
+            {busyAction === "restartManagedGateway" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+            Restart managed gateway
+          </Button>
+        ) : null}
+        {isManagedGatewayRecovery ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => void runAction("retryConnection")}
+            disabled={busyAction !== null}
+            className={buttonClassName(surfaceTheme)}
+          >
+            {busyAction === "retryConnection" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+            Retry connection
+          </Button>
+        ) : null}
         {isLegacyStateRepair ? (
           <Button
             type="button"
@@ -673,6 +742,11 @@ function RuntimeIssueActions({
           {recoveryCommand}
         </p>
       ) : null}
+      {isManagedGatewayRecovery ? (
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">
+          Railway automatically recovers failed Gateway processes. You can also restart only the managed Gateway here without restarting AgentOS.
+        </p>
+      ) : null}
       {review ? <RuntimeDeviceReviewPanel review={review} surfaceTheme={surfaceTheme} /> : null}
       <Dialog open={confirmRestore} onOpenChange={setConfirmRestore}>
         <DialogContent>
@@ -705,6 +779,31 @@ function RuntimeIssueActions({
               }}
             >
               Restore and restart
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={confirmGatewayRestart} onOpenChange={setConfirmGatewayRestart}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Restart the managed OpenClaw Gateway?</DialogTitle>
+            <DialogDescription>
+              Active Gateway-backed tasks may be interrupted briefly. AgentOS will ask the Railway supervisor to restart only the Gateway and wait for readiness.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => setConfirmGatewayRestart(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                setConfirmGatewayRestart(false);
+                void runAction("restartManagedGateway");
+              }}
+            >
+              Restart managed gateway
             </Button>
           </DialogFooter>
         </DialogContent>

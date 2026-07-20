@@ -53,6 +53,7 @@ ENV NODE_ENV=production \
     AGENTOS_PACKAGE_RUNTIME=1 \
     AGENTOS_DEPLOYMENT_PLATFORM=railway \
     AGENTOS_RUNTIME_DIR=/data/agentos \
+    AGENTOS_SUPERVISOR_SOCKET_PATH=/tmp/agentos-supervisor.sock \
     OPENCLAW_STATE_DIR=/data/openclaw \
     OPENCLAW_CONFIG_PATH=/data/openclaw/openclaw.json \
     OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789 \

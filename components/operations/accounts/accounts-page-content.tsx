@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { useAccountsData } from "@/components/operations/accounts/use-accounts-data";
+import { useDeploymentCapabilities } from "@/hooks/use-deployment-capabilities";
 import type { AccountAccessPermission, AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
 import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-types";
 import type { AgentRecord, MissionControlSnapshot, WorkspaceRecord } from "@/lib/agentos/contracts";
@@ -31,6 +32,8 @@ export function AccountsPageContent({
   activeWorkspaceId: string | null;
   surfaceTheme: "dark" | "light";
 }) {
+  const deployment = useDeploymentCapabilities();
+  const interactiveBrowserLoginSupported = deployment.interactiveBrowserLogin === "supported";
   const {
     profiles,
     loginTargets,
@@ -65,13 +68,21 @@ export function AccountsPageContent({
   const browserAgentCount = workspaceAgents.filter(agentHasBrowserAccess).length;
   const runnableAccessRuleCount = accessRules.filter((rule) => rule.permission === "use_browser_profile").length;
   const approvalBlockedAccessRuleCount = accessRules.filter((rule) => rule.permission === "requires_approval").length;
-  const usableProfiles = useMemo(() => profiles.filter(isUsableAccountBrowserProfile), [profiles]);
-  const hiddenUnavailableProfiles = useMemo(() => profiles.filter((profile) => !isUsableAccountBrowserProfile(profile)), [profiles]);
+  const visibleProfiles = useMemo(
+    () => deployment.existingBrowserSession === "supported"
+      ? profiles
+      : profiles.filter((profile) => profile.driver !== "existing-session"),
+    [deployment.existingBrowserSession, profiles]
+  );
+  const usableProfiles = useMemo(() => visibleProfiles.filter(isUsableAccountBrowserProfile), [visibleProfiles]);
+  const hiddenUnavailableProfiles = useMemo(() => visibleProfiles.filter((profile) => !isUsableAccountBrowserProfile(profile)), [visibleProfiles]);
   const runningCount = usableProfiles.filter((profile) => profile.running).length;
   const managedCount = usableProfiles.filter((profile) => profile.driver === "openclaw").length;
   const existingSessionCount = usableProfiles.filter((profile) => profile.driver === "existing-session").length;
   const tabCount = usableProfiles.reduce((total, profile) => total + profile.tabCount, 0);
-  const driverFilters: Array<"all" | OpenClawBrowserDriver> = ["all", "openclaw", "existing-session"];
+  const driverFilters: Array<"all" | OpenClawBrowserDriver> = deployment.existingBrowserSession === "supported"
+    ? ["all", "openclaw", "existing-session"]
+    : ["all", "openclaw"];
   const statusFilters: Array<"all" | "running" | "stopped"> = ["all", "running", "stopped"];
   const profileNames = useMemo(() => new Set(usableProfiles.map((profile) => profile.name)), [usableProfiles]);
   const accessRulesByTargetId = useMemo(() => {
@@ -136,10 +147,10 @@ export function AccountsPageContent({
     }
 
     const params = new URLSearchParams(window.location.search);
-    if (params.get("connect") === "1") {
+    if (params.get("connect") === "1" && interactiveBrowserLoginSupported) {
       setConnectDialogOpen(true);
     }
-  }, [activeWorkspaceId]);
+  }, [activeWorkspaceId, interactiveBrowserLoginSupported]);
 
   const removeLoginTarget = async (target: AccountLoginTargetView) => {
     setBusyLoginTargetId(target.id);
@@ -160,6 +171,13 @@ export function AccountsPageContent({
   };
 
   const openLoginTarget = async (target: AccountLoginTargetView) => {
+    if (!interactiveBrowserLoginSupported) {
+      toast.error("Interactive browser login is unavailable in Railway.", {
+        description: "The managed Chromium browser is headless. Use browser automation for public pages or a supported integration for authenticated access."
+      });
+      return;
+    }
+
     setBusyLoginTargetId(target.id);
 
     try {
@@ -245,6 +263,11 @@ export function AccountsPageContent({
   };
 
   const connectAccount = async (input: ConnectBrowserProfileInput) => {
+    if (!interactiveBrowserLoginSupported) {
+      toast.error("Interactive browser login is unavailable in Railway.");
+      return;
+    }
+
     if (!activeWorkspace) {
       toast.error("Select a workspace before connecting an account.");
       return;
@@ -301,9 +324,11 @@ export function AccountsPageContent({
                 label: "Connect Account",
                 icon: KeyRound,
                 onClick: () => setConnectDialogOpen(true),
-                disabled: !activeWorkspaceId,
-                title: activeWorkspaceId
-                  ? "Open a login flow in an OpenClaw browser profile for this workspace."
+                disabled: !activeWorkspaceId || !interactiveBrowserLoginSupported,
+                title: !interactiveBrowserLoginSupported
+                  ? "Interactive login is unavailable because Railway runs the managed Chromium browser headlessly."
+                  : activeWorkspaceId
+                    ? "Open a login flow in an OpenClaw browser profile for this workspace."
                   : "Select a workspace before connecting account sessions."
               }}
             >
@@ -323,7 +348,9 @@ export function AccountsPageContent({
             </StatGrid>
 
             <div className="rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-xs leading-5 text-foreground">
-              AgentOS does not store raw passwords. Sessions are stored in OpenClaw browser profiles.
+              {deployment.browserAutomation === "server-headless"
+                ? "Railway runs OpenClaw browser automation in headless Chromium. Agents can navigate, click, type, and capture screenshots, but operators cannot complete interactive login or two-factor prompts in that browser."
+                : "AgentOS does not store raw passwords. Sessions are stored in OpenClaw browser profiles."}
             </div>
 
             {hiddenUnavailableProfiles.length > 0 ? (
@@ -336,7 +363,11 @@ export function AccountsPageContent({
               <div className="grid gap-3 p-3 text-xs leading-5 text-foreground/80 lg:grid-cols-2">
                 <div>
                   <p className="font-semibold text-foreground">What works here</p>
-                  <p className="mt-1 text-muted-foreground">AgentOS reads OpenClaw browser profiles, starts a profile, opens a login URL, and records the workspace login target after that browser action succeeds.</p>
+                  <p className="mt-1 text-muted-foreground">
+                    {deployment.browserAutomation === "server-headless"
+                      ? "AgentOS reads and starts managed OpenClaw profiles for headless agent automation, including navigation, clicks, typing, and screenshots."
+                      : "AgentOS reads OpenClaw browser profiles, starts a profile, opens a login URL, and records the workspace login target after that browser action succeeds."}
+                  </p>
                 </div>
                 <div>
                   <p className="font-semibold text-foreground">What is not exposed yet</p>
@@ -404,7 +435,9 @@ export function AccountsPageContent({
                   <EmptyState
                     title={loginTargets.length === 0 ? "No login targets connected" : "No login targets match"}
                     description={loginTargets.length === 0
-                      ? "Use Connect Account to open a login page in a real OpenClaw browser profile. AgentOS will list the target here after the browser action succeeds."
+                      ? interactiveBrowserLoginSupported
+                        ? "Use Connect Account to open a login page in a real OpenClaw browser profile. AgentOS will list the target here after the browser action succeeds."
+                        : "Interactive browser login is unavailable in Railway. Use supported integrations for authenticated services."
                       : "Clear search to inspect another login target."}
                   />
                 </div>
@@ -418,6 +451,7 @@ export function AccountsPageContent({
                       accessRules={accessRulesByTargetId.get(target.id) ?? []}
                       workspaceAgents={agentsByWorkspaceId.get(target.workspaceId) ?? []}
                       busy={busyLoginTargetId === target.id}
+                      interactiveBrowserLoginSupported={interactiveBrowserLoginSupported}
                       onOpen={() => void openLoginTarget(target)}
                       onForget={() => void removeLoginTarget(target)}
                       onManageAccess={() => setManageAccessTarget(target)}
@@ -469,7 +503,9 @@ export function AccountsPageContent({
               <EmptyState
                 title={profiles.length === 0 ? "No browser profiles reported" : usableProfiles.length === 0 ? "No usable browser profiles" : "No profiles match"}
                 description={profiles.length === 0 || usableProfiles.length === 0
-                  ? "Create, enable, or attach a usable OpenClaw browser profile first, then use Connect Account to open a manual login flow in that profile."
+                  ? interactiveBrowserLoginSupported
+                    ? "Create, enable, or attach a usable OpenClaw browser profile first, then use Connect Account to open a manual login flow in that profile."
+                    : "No managed OpenClaw browser profiles are currently available for headless automation."
                   : "Clear search or filters to inspect another OpenClaw browser profile."}
               />
             ) : (
@@ -579,6 +615,7 @@ function LoginTargetCard({
   accessRules,
   workspaceAgents,
   busy,
+  interactiveBrowserLoginSupported,
   onOpen,
   onForget,
   onManageAccess,
@@ -589,6 +626,7 @@ function LoginTargetCard({
   accessRules: AccountAccessRuleView[];
   workspaceAgents: AgentRecord[];
   busy: boolean;
+  interactiveBrowserLoginSupported: boolean;
   onOpen: () => void;
   onForget: () => void;
   onManageAccess: () => void;
@@ -659,8 +697,12 @@ function LoginTargetCard({
           variant="secondary"
           size="sm"
           className="h-7 rounded-[8px] px-2 text-[0.7rem]"
-          disabled={busy || !profileAvailable}
-          title={profileAvailable ? "Open this login page in its OpenClaw browser profile." : "The saved browser profile is not reported by OpenClaw."}
+          disabled={busy || !profileAvailable || !interactiveBrowserLoginSupported}
+          title={!interactiveBrowserLoginSupported
+            ? "Interactive browser login is unavailable in Railway headless mode."
+            : profileAvailable
+              ? "Open this login page in its OpenClaw browser profile."
+              : "The saved browser profile is not reported by OpenClaw."}
           onClick={onOpen}
         >
           <SquareArrowOutUpRight className="mr-1 h-3 w-3" />
@@ -1086,10 +1128,12 @@ export function ConnectAccountWizard({
   onRestartGateway?: () => void;
   restartGatewayBusy?: boolean;
 }) {
+  const deployment = useDeploymentCapabilities();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {open ? (
-        <ConnectAccountWizardContent
+        deployment.interactiveBrowserLogin === "supported" ? <ConnectAccountWizardContent
           key={workspace?.id ?? "no-workspace"}
           workspace={workspace}
           profiles={profiles}
@@ -1099,7 +1143,19 @@ export function ConnectAccountWizard({
           restartGatewayBusy={restartGatewayBusy}
           onCancel={() => onOpenChange(false)}
           onSubmit={onSubmit}
-        />
+        /> : (
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Interactive browser login is unavailable</DialogTitle>
+              <DialogDescription>
+                Railway runs the managed Chromium browser headlessly. Agents can automate public pages, but an operator cannot complete passwords or two-factor prompts in that browser. Use a supported integration for authenticated access.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        )
       ) : null}
     </Dialog>
   );
