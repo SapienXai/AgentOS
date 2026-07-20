@@ -1,23 +1,71 @@
 {
-  "name": "AgentOS | Control Plane",
+  "id": "/",
+  "name": "AgentOS — Control Plane",
   "short_name": "AgentOS",
   "description": "Human Control Layer for AI Agents and Companies | Built on OpenClaw.",
+  "lang": "en",
+  "dir": "ltr",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#09101c",
-  "theme_color": "#09101c",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "categories": ["productivity", "business", "utilities"],
+  "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/android-chrome-192x192.png",
+      "src": "/pwa/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/android-chrome-512x512.png",
+      "src": "/pwa/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/pwa/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/assets/screenshots/hero.jpeg",
+      "sizes": "1672x941",
+      "type": "image/jpeg",
+      "form_factor": "wide",
+      "label": "AgentOS Mission Control"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Mission Control",
+      "short_name": "Mission",
+      "url": "/",
+      "icons": [{ "src": "/pwa/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Agents",
+      "short_name": "Agents",
+      "url": "/agents",
+      "icons": [{ "src": "/pwa/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Tasks",
+      "short_name": "Tasks",
+      "url": "/tasks",
+      "icons": [{ "src": "/pwa/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ]
 }

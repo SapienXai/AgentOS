@@ -9,12 +9,13 @@ const publicInstanceApiPaths = new Set([
   "/api/auth/logout",
   "/api/health"
 ]);
+const publicPwaShellPaths = new Set(["/site.webmanifest", "/sw.js"]);
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const isApiRequest = pathname.startsWith("/api/");
 
-  if (publicInstanceApiPaths.has(pathname) || pathname === "/login") {
+  if (publicInstanceApiPaths.has(pathname) || publicPwaShellPaths.has(pathname) || pathname === "/login") {
     return NextResponse.next();
   }
 
