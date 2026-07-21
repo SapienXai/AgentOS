@@ -727,6 +727,17 @@ test("settings control center exposes hash navigation for subpages", () => {
   assert.match(source, /event\.currentTarget\.closest\("details"\)\?\.removeAttribute\("open"\);/);
   assert.doesNotMatch(source, /title="Settings Sections"/);
   assert.doesNotMatch(source, /resolveSettingsSectionStatus\(/);
+  assert.match(source, /function SettingsToggle\(/);
+  assert.match(source, /role="switch"/);
+  assert.match(source, /aria-checked=\{checked\}/);
+  assert.match(source, /const saveToolSetting = async \(settingId: ToolSettingId, enabled: boolean\)/);
+  assert.match(source, /applyToolSettings\(nextSettings\);/);
+  assert.match(source, /applyToolSettings\(previousSettings\);/);
+  assert.match(source, /Changes save automatically\./);
+  assert.match(source, /Saving…/);
+  assert.match(source, /Saved/);
+  assert.doesNotMatch(source, /Save changes/);
+  assert.doesNotMatch(source, />\s*Disabled\s*<\/button>[\s\S]*?>\s*Enabled\s*<\/button>/);
   assert.match(source, /case "capabilities":\s*return "capabilities";/);
   assert.match(source, /case "diagnostics":\s*return "diagnostics";/);
   assert.doesNotMatch(source, /id: "billing"/);

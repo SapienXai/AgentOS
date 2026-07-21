@@ -119,6 +119,8 @@ type GatewayOperationFeedback = {
   finishedAt: string | null;
   message: string;
 };
+type ToolSettingId = "browser" | "web-fetch" | "web-search";
+type ToolSettingsSaveState = "idle" | "saving" | "saved" | "error";
 type SettingsSectionId =
   | "general"
   | "overview"
@@ -259,7 +261,8 @@ export function SettingsControlCenter(
   const [webSearchToolEnabled, setWebSearchToolEnabled] = useState<boolean | null>(null);
   const [toolSettingsError, setToolSettingsError] = useState<string | null>(null);
   const [isLoadingToolSettings, setIsLoadingToolSettings] = useState(false);
-  const [isSavingToolSettings, setIsSavingToolSettings] = useState(false);
+  const [savingToolSettingId, setSavingToolSettingId] = useState<ToolSettingId | null>(null);
+  const [toolSettingsSaveState, setToolSettingsSaveState] = useState<ToolSettingsSaveState>("idle");
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => resolveInitialSettingsSection());
   const [currentGatewayBind, setCurrentGatewayBind] = useState<string | null>(() =>
     snapshot.diagnostics.bindMode || (
@@ -747,6 +750,7 @@ export function SettingsControlCenter(
       setBrowserToolEnabled(payload.toolSettings.browserEnabled);
       setWebFetchToolEnabled(payload.toolSettings.webFetchEnabled);
       setWebSearchToolEnabled(payload.toolSettings.webSearchEnabled);
+      setToolSettingsSaveState("idle");
     } catch (error) {
       setToolSettingsError(error instanceof Error ? error.message : "Unable to read OpenClaw tool settings.");
     } finally {
@@ -847,23 +851,43 @@ export function SettingsControlCenter(
     }
   };
 
-  const saveToolSettings = async () => {
-    if (browserToolEnabled === null || webFetchToolEnabled === null || webSearchToolEnabled === null) {
+  const saveToolSetting = async (settingId: ToolSettingId, enabled: boolean) => {
+    if (
+      browserToolEnabled === null ||
+      webFetchToolEnabled === null ||
+      webSearchToolEnabled === null ||
+      savingToolSettingId
+    ) {
       return;
     }
 
-    setIsSavingToolSettings(true);
+    const previousSettings = {
+      browserEnabled: browserToolEnabled,
+      webFetchEnabled: webFetchToolEnabled,
+      webSearchEnabled: webSearchToolEnabled
+    };
+    const nextSettings = {
+      ...previousSettings,
+      ...(settingId === "browser" ? { browserEnabled: enabled } : {}),
+      ...(settingId === "web-fetch" ? { webFetchEnabled: enabled } : {}),
+      ...(settingId === "web-search" ? { webSearchEnabled: enabled } : {})
+    };
+    const applyToolSettings = (settings: typeof previousSettings) => {
+      setBrowserToolEnabled(settings.browserEnabled);
+      setWebFetchToolEnabled(settings.webFetchEnabled);
+      setWebSearchToolEnabled(settings.webSearchEnabled);
+    };
+
+    applyToolSettings(nextSettings);
+    setSavingToolSettingId(settingId);
+    setToolSettingsSaveState("saving");
     setToolSettingsError(null);
 
     try {
       const response = await fetch("/api/settings/tools", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          browserEnabled: browserToolEnabled,
-          webFetchEnabled: webFetchToolEnabled,
-          webSearchEnabled: webSearchToolEnabled
-        })
+        body: JSON.stringify(nextSettings)
       });
       const payload = await response.json() as {
         error?: string;
@@ -878,13 +902,14 @@ export function SettingsControlCenter(
         throw new Error(payload.error || "Unable to save OpenClaw tool settings.");
       }
 
-      setBrowserToolEnabled(payload.toolSettings.browserEnabled);
-      setWebFetchToolEnabled(payload.toolSettings.webFetchEnabled);
-      setWebSearchToolEnabled(payload.toolSettings.webSearchEnabled);
+      applyToolSettings(payload.toolSettings);
+      setToolSettingsSaveState("saved");
     } catch (error) {
+      applyToolSettings(previousSettings);
+      setToolSettingsSaveState("error");
       setToolSettingsError(error instanceof Error ? error.message : "Unable to save OpenClaw tool settings.");
     } finally {
-      setIsSavingToolSettings(false);
+      setSavingToolSettingId(null);
     }
   };
 
@@ -1094,27 +1119,29 @@ export function SettingsControlCenter(
     }
     scrollSettingsToTop();
   };
-  const toolControls = [
+  const toolControls: Array<{
+    id: ToolSettingId;
+    label: string;
+    description: string;
+    enabled: boolean | null;
+  }> = [
     {
       id: "browser",
       label: "Browser",
       description: "Allow OpenClaw to use browser tools.",
-      enabled: browserToolEnabled,
-      onChange: (enabled: boolean) => setBrowserToolEnabled(enabled)
+      enabled: browserToolEnabled
     },
     {
       id: "web-fetch",
       label: "Web Fetch",
       description: "Allow tools to retrieve content from web pages.",
-      enabled: webFetchToolEnabled,
-      onChange: (enabled: boolean) => setWebFetchToolEnabled(enabled)
+      enabled: webFetchToolEnabled
     },
     {
       id: "web-search",
       label: "Web Search",
       description: "Allow tools to search the web.",
-      enabled: webSearchToolEnabled,
-      onChange: (enabled: boolean) => setWebSearchToolEnabled(enabled)
+      enabled: webSearchToolEnabled
     }
   ];
 
@@ -1948,43 +1975,36 @@ export function SettingsControlCenter(
               {renderedActiveSection === "general" ? (
               <section id="general" className="scroll-mt-24">
                 <Card title="General" icon={Wrench} surfaceTheme={surfaceTheme}>
-                  <div className="space-y-4">
+                  <div className={cn(
+                    "overflow-hidden rounded-[14px] border",
+                    surfaceTheme === "light"
+                      ? "border-border bg-card"
+                      : "border-white/[0.08] bg-[#0c1522]"
+                  )}>
                     {toolControls.map((tool) => (
-                      <div key={tool.id} className={cn(
-                        "rounded-[16px] border p-3",
-                        surfaceTheme === "light" ? "border-border bg-muted/30" : "border-white/[0.08] bg-white/[0.025]"
-                      )}>
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className={labelClassName(surfaceTheme)}>{tool.label}</p>
-                            <p className={cn("mt-1 text-xs leading-5", mutedTextClassName(surfaceTheme))}>
-                              {tool.description}
-                            </p>
-                          </div>
-                          <StatusPill
-                            label={isLoadingToolSettings || tool.enabled === null ? "Loading" : tool.enabled ? "Enabled" : "Disabled"}
-                            tone={tool.enabled ? "success" : "neutral"}
-                            surfaceTheme={surfaceTheme}
-                          />
+                      <div
+                        key={tool.id}
+                        className={cn(
+                          "flex min-h-[62px] items-center gap-3 border-b px-3 py-2.5 last:border-b-0 sm:px-3.5",
+                          surfaceTheme === "light" ? "border-border" : "border-white/[0.07]"
+                        )}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+                            {tool.label}
+                          </p>
+                          <p className={cn("mt-0.5 text-xs leading-4", mutedTextClassName(surfaceTheme))}>
+                            {tool.description}
+                          </p>
                         </div>
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                          <button
-                            type="button"
-                            disabled={isLoadingToolSettings || tool.enabled === null}
-                            onClick={() => tool.onChange(false)}
-                            className={segmentedButtonClassName(surfaceTheme, tool.enabled === false)}
-                          >
-                            Disabled
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isLoadingToolSettings || tool.enabled === null}
-                            onClick={() => tool.onChange(true)}
-                            className={segmentedButtonClassName(surfaceTheme, tool.enabled === true)}
-                          >
-                            Enabled
-                          </button>
-                        </div>
+                        <SettingsToggle
+                          checked={tool.enabled === true}
+                          disabled={isLoadingToolSettings || tool.enabled === null || savingToolSettingId !== null}
+                          loading={isLoadingToolSettings || tool.enabled === null || savingToolSettingId === tool.id}
+                          label={tool.label}
+                          onCheckedChange={(checked) => void saveToolSetting(tool.id, checked)}
+                          surfaceTheme={surfaceTheme}
+                        />
                       </div>
                     ))}
                   </div>
@@ -1993,21 +2013,28 @@ export function SettingsControlCenter(
                     <p className={cn(
                       "mt-3 text-xs leading-5",
                       surfaceTheme === "light" ? "text-red-700" : "text-rose-300"
-                    )}>
+                    )} role="alert">
                       {toolSettingsError}
                     </p>
                   ) : null}
 
-                  <div className="mt-4">
-                    <Button
-                      type="button"
-                      onClick={() => void saveToolSettings()}
-                      disabled={toolControls.some((tool) => tool.enabled === null) || isLoadingToolSettings || isSavingToolSettings}
-                      className="h-9 w-full rounded-full bg-primary text-xs text-primary-foreground hover:bg-primary/90"
-                    >
-                      {isSavingToolSettings ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                      Save
-                    </Button>
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <p className={cn("text-[11px] leading-4", mutedTextClassName(surfaceTheme))}>
+                      Changes save automatically.
+                    </p>
+                    {toolSettingsSaveState === "saving" ? (
+                      <span className={cn("flex items-center gap-1.5 text-[11px] font-medium", mutedTextClassName(surfaceTheme))} role="status">
+                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Saving…
+                      </span>
+                    ) : toolSettingsSaveState === "saved" ? (
+                      <span className={cn("flex items-center gap-1.5 text-[11px] font-medium", surfaceTheme === "light" ? "text-emerald-700" : "text-emerald-300")} role="status">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+                      </span>
+                    ) : toolSettingsSaveState === "error" ? (
+                      <span className={cn("flex items-center gap-1.5 text-[11px] font-medium", surfaceTheme === "light" ? "text-red-700" : "text-rose-300")} role="status">
+                        <XCircle className="h-3.5 w-3.5" /> Not saved
+                      </span>
+                    ) : null}
                   </div>
                 </Card>
               </section>
@@ -2699,6 +2726,65 @@ function SettingsSectionNavigation({
         </nav>
       </aside>
     </>
+  );
+}
+
+function SettingsToggle({
+  checked,
+  disabled,
+  loading,
+  label,
+  onCheckedChange,
+  surfaceTheme
+}: {
+  checked: boolean;
+  disabled: boolean;
+  loading: boolean;
+  label: string;
+  onCheckedChange: (checked: boolean) => void;
+  surfaceTheme: SurfaceTheme;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      <span className={cn(
+        "hidden min-w-5 text-right text-[10px] font-semibold uppercase tracking-[0.08em] sm:block",
+        checked
+          ? surfaceTheme === "light" ? "text-emerald-700" : "text-emerald-300"
+          : mutedTextClassName(surfaceTheme)
+      )}>
+        {loading ? "…" : checked ? "On" : "Off"}
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={`${label}: ${checked ? "enabled" : "disabled"}`}
+        disabled={disabled}
+        onClick={() => onCheckedChange(!checked)}
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl outline-none transition-opacity focus-visible:ring-2 focus-visible:ring-ring/45 disabled:cursor-wait disabled:opacity-60 sm:h-8 sm:w-10"
+      >
+        <span
+          aria-hidden="true"
+          className={cn(
+            "relative h-5 w-9 rounded-full border transition-colors",
+            checked
+              ? "border-primary/45 bg-primary"
+              : surfaceTheme === "light"
+                ? "border-slate-300 bg-slate-200"
+                : "border-white/[0.12] bg-[#1a2638]"
+          )}
+        >
+          {loading ? (
+            <LoaderCircle className={cn("absolute left-2 top-0.5 h-4 w-4 animate-spin", surfaceTheme === "light" ? "text-slate-500" : "text-slate-300")} />
+          ) : (
+            <span className={cn(
+              "absolute left-0.5 top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.32)] transition-transform",
+              checked && "translate-x-4"
+            )} />
+          )}
+        </span>
+      </button>
+    </div>
   );
 }
 
