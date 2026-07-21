@@ -66,6 +66,7 @@ import {
 
 type StartPoint = "empty" | "preset" | "import";
 type WizardStage = "start" | "preset" | "import" | "details";
+type MobileDetailsStep = "identity" | "work" | "safety";
 type SurfaceTheme = "dark" | "light";
 type CreateAgentProgress = "idle" | "creating" | "syncing";
 
@@ -111,6 +112,8 @@ export function CreateAgentDialog({
     onControlledOpenChange?.(nextOpen);
   }, [controlledOpen, onControlledOpenChange]);
   const [stage, setStage] = useState<WizardStage>("start");
+  const [mobileDetailsStep, setMobileDetailsStep] = useState<MobileDetailsStep>("identity");
+  const [isCompactViewport, setIsCompactViewport] = useState(false);
   const [startPoint, setStartPoint] = useState<StartPoint | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<AgentPreset>("worker");
   const [selectedImportAgentId, setSelectedImportAgentId] = useState<string | null>(null);
@@ -187,8 +190,28 @@ export function CreateAgentDialog({
   const activeStepIndex = getWizardActiveStepIndex(startPoint, stage);
   const canCreate = Boolean(generatedAgentId && selectedWorkspace && effectiveModelId) && !isSaving;
   const canAdvanceFromCurrentStage = stage === "details"
-    ? canCreate
+    ? isCompactViewport && mobileDetailsStep !== "safety"
+      ? !isSaving
+      : canCreate
     : getCanAdvanceFromStage(stage, startPoint, selectedImportAgentId);
+  const mobileStepIndex = stage === "details"
+    ? mobileDetailsStep === "identity"
+      ? 1
+      : mobileDetailsStep === "work"
+        ? 2
+        : 3
+    : 0;
+  const mobileStepLabel = stage === "details"
+    ? mobileDetailsStep === "identity"
+      ? "Identity"
+      : mobileDetailsStep === "work"
+        ? "Work setup"
+        : "Safety & review"
+    : stage === "preset"
+      ? "Choose template"
+      : stage === "import"
+        ? "Choose profile"
+        : "Start";
   const createdAgentVisible = Boolean(
     createdAgentId && snapshot.agents.some((agent) => agent.id === createdAgentId)
   );
@@ -201,6 +224,7 @@ export function CreateAgentDialog({
   const resetWizardState = useCallback((workspaceId: string) => {
     const nextDraft = createCustomAgentDraft(workspaceId, snapshot);
     setStage("start");
+    setMobileDetailsStep("identity");
     setStartPoint(null);
     setSelectedPreset("worker");
     setSelectedImportAgentId(null);
@@ -222,6 +246,15 @@ export function CreateAgentDialog({
   }, []);
 
   useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 639px)");
+    const updateViewport = () => setIsCompactViewport(mediaQuery.matches);
+
+    updateViewport();
+    mediaQuery.addEventListener("change", updateViewport);
+    return () => mediaQuery.removeEventListener("change", updateViewport);
+  }, []);
+
+  useEffect(() => {
     if (open) {
       return;
     }
@@ -234,7 +267,9 @@ export function CreateAgentDialog({
       return;
     }
 
-    nameInputRef.current?.focus();
+    if (window.matchMedia("(min-width: 640px)").matches) {
+      nameInputRef.current?.focus();
+    }
   }, [open, stage, startPoint]);
 
   useEffect(() => {
@@ -338,6 +373,7 @@ export function CreateAgentDialog({
     setSelectedPreset("worker");
     setSelectedImportAgentId(null);
     setImportSearch("");
+    setMobileDetailsStep("identity");
 
     if (nextStartPoint === "empty") {
       setDraft(nextDraft);
@@ -411,6 +447,11 @@ export function CreateAgentDialog({
 
   const handleBack = () => {
     if (stage === "details") {
+      if (isCompactViewport && mobileDetailsStep !== "identity") {
+        setMobileDetailsStep(mobileDetailsStep === "safety" ? "work" : "identity");
+        return;
+      }
+
       setStage(startPoint === "empty" ? "start" : startPoint ?? "start");
       return;
     }
@@ -547,6 +588,11 @@ export function CreateAgentDialog({
 
   const handlePrimaryAction = () => {
     if (stage === "details") {
+      if (isCompactViewport && mobileDetailsStep !== "safety") {
+        setMobileDetailsStep(mobileDetailsStep === "identity" ? "work" : "safety");
+        return;
+      }
+
       void submitCreateAgent();
       return;
     }
@@ -565,20 +611,31 @@ export function CreateAgentDialog({
       surfaceTheme={surfaceTheme}
       variant="worker-profile"
       trigger={trigger}
-      title="Create Worker Profile"
+      title={
+        <>
+          <span className="sm:hidden">Create Agent</span>
+          <span className="hidden sm:inline">Create Worker Profile</span>
+        </>
+      }
       description={stage === "start" ? "Choose how to shape this digital employee." : getWizardStageHint(startPoint, stage)}
       icon={Bot}
       chips={
         <MissionControlDialogChip tone={stage === "details" ? "violet" : "muted"} surfaceTheme={surfaceTheme}>
-          Step {activeStepIndex + 1} / {stepLabels.length} · {stepLabels[activeStepIndex] ?? "Start"}
+          <span className="sm:hidden">Step {mobileStepIndex + 1} / 4 · {mobileStepLabel}</span>
+          <span className="hidden sm:inline">Step {activeStepIndex + 1} / {stepLabels.length} · {stepLabels[activeStepIndex] ?? "Start"}</span>
         </MissionControlDialogChip>
       }
       headerActions={
         stage !== "start" ? (
-          <WizardStepper labels={stepLabels} activeIndex={activeStepIndex} surfaceTheme={effectiveSurfaceTheme} onStepClick={handleStepClick} />
+          <div className="hidden sm:block">
+            <WizardStepper labels={stepLabels} activeIndex={activeStepIndex} surfaceTheme={effectiveSurfaceTheme} onStepClick={handleStepClick} />
+          </div>
         ) : null
       }
-      bodyClassName="px-4 py-3 sm:px-5 sm:py-4"
+      contentClassName="left-0 top-0 h-[100dvh] max-h-none w-full max-w-none translate-x-0 translate-y-0 rounded-none border-0 sm:left-1/2 sm:top-1/2 sm:h-[min(calc(100vh-56px),780px)] sm:max-h-[calc(100vh-56px)] sm:w-[min(94vw,1120px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[24px] sm:border"
+      headerClassName="px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-7 sm:pb-3.5 sm:pt-4"
+      bodyClassName="px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:px-5 sm:py-4"
+      footerClassName="px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 sm:px-7 sm:py-2"
       disableOutsideDismiss
       footer={
         <div className="flex w-full flex-col gap-2">
@@ -589,19 +646,19 @@ export function CreateAgentDialog({
             </div>
           ) : null}
 
-          <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex w-full items-center gap-2 sm:justify-between">
             <Button
               type="button"
               variant="secondary"
               size="sm"
               onClick={() => handleOpenChange(false)}
               disabled={isSaving}
-              className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-9 rounded-xl px-4")}
+              className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "hidden h-9 rounded-xl px-4 sm:inline-flex")}
             >
               Cancel
             </Button>
 
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+            <div className="flex min-w-0 flex-1 items-center gap-2 sm:flex-none">
               {stage !== "start" ? (
                 <Button
                   type="button"
@@ -609,7 +666,7 @@ export function CreateAgentDialog({
                   size="sm"
                   onClick={handleBack}
                   disabled={isSaving}
-                  className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-9 rounded-xl px-4")}
+                  className={cn(missionControlDialogButtonClassName("secondary", surfaceTheme), "h-10 flex-1 rounded-xl px-4 sm:h-9 sm:flex-none")}
                 >
                   Back
                 </Button>
@@ -620,7 +677,7 @@ export function CreateAgentDialog({
                 size="sm"
                 onClick={handlePrimaryAction}
                 disabled={!canAdvanceFromCurrentStage}
-                className={cn(missionControlDialogButtonClassName("primary", surfaceTheme), "h-9 rounded-xl px-4")}
+                className={cn(missionControlDialogButtonClassName("primary", surfaceTheme), "h-10 flex-1 rounded-xl px-4 sm:h-9 sm:flex-none")}
               >
                 {stage === "details" ? (
                   isSaving ? (
@@ -629,7 +686,7 @@ export function CreateAgentDialog({
                       {createProgress === "syncing" ? "Syncing canvas..." : "Creating..."}
                     </>
                   ) : (
-                    "Create profile"
+                    isCompactViewport && mobileDetailsStep !== "safety" ? "Continue" : "Create profile"
                   )
                 ) : stage === "start" ? (
                   startPoint === "empty" ? (
@@ -649,7 +706,7 @@ export function CreateAgentDialog({
             {stage === "start" ? (
               <div className="mx-auto flex w-full max-w-[980px] flex-col gap-3 py-1 md:py-2">
                 <div className={cn(
-                  "relative overflow-hidden rounded-[22px] border px-5 py-4 sm:px-6 sm:py-5",
+                  "relative overflow-hidden rounded-[18px] border px-4 py-3 sm:rounded-[22px] sm:px-6 sm:py-5",
                   isLight
                     ? "border-[#e4d7cb] bg-[radial-gradient(circle_at_88%_8%,rgba(200,158,115,0.20),transparent_29%),linear-gradient(135deg,#fffdf9,#f8f0e8)] shadow-[0_20px_54px_rgba(140,102,72,0.10)]"
                     : "border-violet-300/18 bg-[radial-gradient(circle_at_88%_8%,rgba(168,85,247,0.22),transparent_29%),radial-gradient(circle_at_8%_100%,rgba(34,211,238,0.10),transparent_27%),linear-gradient(135deg,rgba(25,18,48,0.76),rgba(9,13,25,0.84))] shadow-[0_18px_54px_rgba(0,0,0,0.22)]"
@@ -660,10 +717,10 @@ export function CreateAgentDialog({
                       <Sparkles className="h-3 w-3" />
                       Build a digital employee
                     </div>
-                    <h2 className={cn("mt-3 font-display text-[22px] font-semibold tracking-[-0.035em] sm:text-[26px]", isLight ? "text-[#302219]" : "text-white")}>
+                    <h2 className={cn("mt-2 font-display text-[19px] font-semibold tracking-[-0.035em] sm:mt-3 sm:text-[26px]", isLight ? "text-[#302219]" : "text-white")}>
                       Start with the right foundation.
                     </h2>
-                    <p className={cn("mt-2 max-w-xl text-xs leading-5", isLight ? "text-[#765f4f]" : "text-slate-300")}>
+                    <p className={cn("mt-1.5 max-w-xl text-[11px] leading-4 sm:mt-2 sm:text-xs sm:leading-5", isLight ? "text-[#765f4f]" : "text-slate-300")}>
                       Choose how this worker begins. You will review every meaningful setting before AgentOS creates it in OpenClaw.
                     </p>
                   </div>
@@ -699,7 +756,7 @@ export function CreateAgentDialog({
                   />
                 </div>
 
-                <div className={cn("flex flex-col gap-1.5 rounded-xl border px-3 py-2 text-[11px] leading-4 sm:flex-row sm:items-center sm:justify-between", isLight ? "border-[#e5d9ce] bg-white/70 text-[#7c6554]" : "border-white/[0.08] bg-white/[0.025] text-slate-400")}>
+                <div className={cn("hidden flex-col gap-1.5 rounded-xl border px-3 py-2 text-[11px] leading-4 sm:flex sm:flex-row sm:items-center sm:justify-between", isLight ? "border-[#e5d9ce] bg-white/70 text-[#7c6554]" : "border-white/[0.08] bg-white/[0.025] text-slate-400")}>
                   <span>Templates and cloning only prefill supported Worker Profile settings.</span>
                   <span className={cn("shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em]", isLight ? "text-[#8a6b53]" : "text-violet-200")}>Safe baseline first</span>
                 </div>
@@ -914,6 +971,7 @@ export function CreateAgentDialog({
                     title="Role & identity"
                     description="Define who this worker is and how it appears to operators."
                     surfaceTheme={effectiveSurfaceTheme}
+                    className={cn(mobileDetailsStep !== "identity" && "hidden sm:block")}
                   >
                     <div className="space-y-4">
                       <WorkerRoleBaseline
@@ -1044,6 +1102,7 @@ export function CreateAgentDialog({
                     title="Work setup"
                     description="Choose where the worker operates and which capabilities it starts with."
                     surfaceTheme={effectiveSurfaceTheme}
+                    className={cn(mobileDetailsStep !== "work" && "hidden sm:block")}
                   >
                     <div className="space-y-4">
                       <div className="grid gap-3.5 sm:grid-cols-2">
@@ -1198,6 +1257,7 @@ export function CreateAgentDialog({
                     title="Access & safety"
                     description="Separate runtime-enforced boundaries from operating guidance."
                     surfaceTheme={effectiveSurfaceTheme}
+                    className={cn(mobileDetailsStep !== "safety" && "hidden sm:block")}
                   >
                     <div className="space-y-4">
                       <PolicyBoundaryNotice surfaceTheme={effectiveSurfaceTheme} />
@@ -1303,7 +1363,7 @@ export function CreateAgentDialog({
                   </PanelCard>
                 </div>
 
-                <div className="space-y-4">
+                <div className={cn("space-y-4", mobileDetailsStep !== "safety" && "hidden sm:block")}>
                   <PanelCard
                     title="Profile review"
                     description="What AgentOS will create for this worker."
@@ -1649,7 +1709,7 @@ function StartPointCard({
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "group relative flex min-h-[185px] w-full flex-col overflow-hidden rounded-[18px] border p-4 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2",
+        "group relative flex min-h-[104px] w-full flex-col overflow-hidden rounded-[16px] border p-3 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 sm:min-h-[185px] sm:rounded-[18px] sm:p-4",
         isLight
           ? "focus-visible:ring-[#c89e73]/30"
           : "focus-visible:ring-cyan-300/40",
@@ -1686,14 +1746,14 @@ function StartPointCard({
         </Badge>
       </div>
 
-      <div className="mt-5 space-y-1.5">
+      <div className="mt-3 space-y-1 sm:mt-5 sm:space-y-1.5">
         <p className={cn("text-sm font-semibold tracking-[-0.015em]", isLight ? "text-[#413126]" : "text-white")}>{title}</p>
         <p className={cn("text-[11px] leading-4", isLight ? "text-[#8a7463]" : "text-slate-400")}>{description}</p>
       </div>
 
-      <div className="mt-auto border-t border-current/10 pt-3.5">
+      <div className="mt-2 border-t border-current/10 pt-2 sm:mt-auto sm:pt-3.5">
         <div className="flex items-center justify-between gap-3">
-          <span className={cn("max-w-[116px] text-[9px] uppercase leading-[1.35] tracking-[0.2em]", isLight ? "text-[#9a8572]" : "text-slate-500")}>
+          <span className={cn("hidden max-w-[116px] text-[9px] uppercase leading-[1.35] tracking-[0.2em] sm:inline", isLight ? "text-[#9a8572]" : "text-slate-500")}>
             {helper}
           </span>
           <span className={cn("inline-flex items-center gap-1 text-[9px] uppercase tracking-[0.18em]", isLight ? "text-[#7f6958]" : "text-slate-400")}>
