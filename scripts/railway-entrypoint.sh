@@ -3,6 +3,11 @@ set -eu
 
 umask 077
 
+# Railway can inject a service PORT even when its generated public domain still
+# targets the template default (3000). Keep the public proxy and Next.js listener
+# aligned for every fresh template deployment.
+export PORT=3000
+
 if [ "${RAILWAY_ENVIRONMENT_ID:-}" != "" ] && [ "${RAILWAY_VOLUME_MOUNT_PATH:-}" != "/data" ]; then
   echo "AgentOS requires a Railway volume mounted at /data." >&2
   exit 1

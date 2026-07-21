@@ -14,6 +14,8 @@ The Railway deployment runs AgentOS and OpenClaw `2026.6.11` in one service. Ope
 
 The single-service design is intentional. It keeps the Gateway private, avoids cross-service credential and state synchronization, and matches AgentOS's current local-Gateway architecture. Railway services with volumes should use one replica; horizontal replicas would not share a single writable OpenClaw runtime safely.
 
+The entrypoint explicitly starts AgentOS on port `3000`, matching the generated Railway domain target. Do not override the service `PORT` value or change the generated domain target port unless both values change together; a mismatch produces Railway `502` responses even when the container is healthy.
+
 ## Template composer specification
 
 Create the template from the `https://github.com/SapienXai/AgentOS` repository and use the default branch. Configure the service as follows.
@@ -24,6 +26,7 @@ Create the template from the `https://github.com/SapienXai/AgentOS` repository a
 - Source: `https://github.com/SapienXai/AgentOS`
 - Builder: Dockerfile (the repository's `railway.json` selects `Dockerfile.railway`)
 - Public networking: enabled, generate a domain
+- Public domain target port: `3000`
 - Healthcheck path: `/api/health`
 - Healthcheck timeout: `300` seconds
 - Restart policy: `ON_FAILURE`, maximum `10` retries

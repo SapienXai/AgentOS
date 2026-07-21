@@ -67,6 +67,7 @@ test("Railway supervisor keeps Gateway private, exposes a locked-down control so
   assert.match(supervisor, /restart attempts exhausted/);
   assert.match(supervisor, /AgentOS stopped unexpectedly[\s\S]*process\.exitCode = 1/);
   assert.match(dockerfile, /railway-openclaw-bootstrap\.mjs/);
+  assert.match(entrypoint, /export PORT=3000/);
   assert.match(entrypoint, /RAILWAY_VOLUME_MOUNT_PATH:-.*\/data/);
   assert.match(entrypoint, /exec gosu node:node/);
 });
