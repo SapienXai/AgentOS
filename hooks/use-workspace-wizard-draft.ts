@@ -62,6 +62,8 @@ type UseWorkspaceWizardDraftOptions = {
   workspaceEditId?: string | null;
   onRefresh: () => Promise<void>;
   onWorkspaceCreated: (result: WorkspaceCreateResult | WorkspacePlanDeployResult) => void;
+  onWorkspaceCreationStarted?: (workspace: { id: string; name: string; createdAt: number }) => void;
+  onWorkspaceCreationFinished?: () => void;
   onWorkspaceUpdated?: (workspaceId: string) => void;
 };
 
@@ -71,6 +73,8 @@ export function useWorkspaceWizardDraft({
   workspaceEditId,
   onRefresh,
   onWorkspaceCreated,
+  onWorkspaceCreationStarted,
+  onWorkspaceCreationFinished,
   onWorkspaceUpdated
 }: UseWorkspaceWizardDraftOptions) {
   const [mode, setMode] = useState<WorkspaceWizardMode>(initialMode);
@@ -475,6 +479,11 @@ export function useWorkspaceWizardDraft({
     });
 
     commitPlan(ensuredPlan);
+    onWorkspaceCreationStarted?.({
+      id: `creating-workspace:${crypto.randomUUID()}`,
+      name: ensuredPlan.workspace.name.trim() || "Untitled workspace",
+      createdAt: Date.now()
+    });
     setIsCreating(true);
 
     const initialProgress = createPendingOperationProgressSnapshot(
@@ -569,8 +578,9 @@ export function useWorkspaceWizardDraft({
       return null;
     } finally {
       setIsCreating(false);
+      onWorkspaceCreationFinished?.();
     }
-  }, [basicDraft, basicModelProfile, basicRules, basicTeamPreset, basicTemplate, clearStoredPlan, commitPlan, ensurePlan, onRefresh, onWorkspaceCreated, workspaceEditId]);
+  }, [basicDraft, basicModelProfile, basicRules, basicTeamPreset, basicTemplate, clearStoredPlan, commitPlan, ensurePlan, onRefresh, onWorkspaceCreated, onWorkspaceCreationFinished, onWorkspaceCreationStarted, workspaceEditId]);
 
   const applyWorkspaceChanges = useCallback(async () => {
     const activePlan = planRef.current;

@@ -119,7 +119,7 @@ export function PikoLoader({ open, title, description, className }: PikoLoaderPr
 
   return createPortal(
     <div
-      className="pointer-events-none fixed inset-0 z-[100]"
+      className="pointer-events-none fixed inset-0 z-[10000]"
       role="status"
       aria-live="polite"
       aria-label={title}

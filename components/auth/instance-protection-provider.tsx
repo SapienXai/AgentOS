@@ -2,6 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { PikoLoader } from "@/components/ui/piko-loader";
+
 export type InstanceProtectionStatus = {
   protectionEnabled: boolean;
   authenticated: boolean;
@@ -72,6 +74,11 @@ export function InstanceProtectionProvider({ children, initialStatus }: { childr
   const value = useMemo(() => ({ status, loading, refresh, applyStatus: setStatus, lock }), [status, loading, refresh, lock]);
   return <InstanceProtectionContext.Provider value={value}>
     {children}
+    <PikoLoader
+      open={shielded}
+      title="Locking AgentOS"
+      description="Securing this session before the lock screen opens."
+    />
     {shielded ? <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-background text-sm text-muted-foreground" role="status">Locking AgentOS…</div> : null}
   </InstanceProtectionContext.Provider>;
 }

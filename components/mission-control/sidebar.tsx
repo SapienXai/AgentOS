@@ -23,6 +23,7 @@ import {
   KeyRound,
   LifeBuoy,
   LockKeyhole,
+  Loader2,
   LogOut,
   Moon,
   Pencil,
@@ -168,9 +169,11 @@ type MissionSidebarProps = {
   onEditWorkspace: (workspaceId: string) => void;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
   pendingCreatedAgents?: PendingAgentProjection[];
+  pendingWorkspaceCreations?: PendingWorkspaceMenuEntry[];
   onAgentCreationPending?: (agent: PendingAgentProjection) => void;
   onAgentCreatedVisible?: (agentId: string) => void;
   onAgentActionModalOpenChange?: (open: boolean) => void;
+  onAgentActionRequestDismiss?: () => void;
   settingsMode?: boolean;
 };
 
@@ -237,9 +240,11 @@ export function MissionSidebar({
   onEditWorkspace,
   onSnapshotChange,
   pendingCreatedAgents = [],
+  pendingWorkspaceCreations = [],
   onAgentCreationPending,
   onAgentCreatedVisible,
-  onAgentActionModalOpenChange
+  onAgentActionModalOpenChange,
+  onAgentActionRequestDismiss
 }: MissionSidebarProps) {
   const pathname = usePathname();
   const [activeHash, setActiveHash] = useState("");
@@ -287,11 +292,15 @@ export function MissionSidebar({
   }, []);
 
   const pendingWorkspaceEntries = useMemo(
-    () => buildPendingWorkspaceMenuEntries(
-      pendingCreatedAgents,
-      new Set(snapshot.workspaces.map((workspace) => workspace.id))
-    ),
-    [pendingCreatedAgents, snapshot.workspaces]
+    () => {
+      const liveWorkspaceIds = new Set(snapshot.workspaces.map((workspace) => workspace.id));
+      const pendingAgentWorkspaces = buildPendingWorkspaceMenuEntries(pendingCreatedAgents, liveWorkspaceIds);
+      const entries = [...pendingWorkspaceCreations, ...pendingAgentWorkspaces]
+        .filter((workspace, index, all) => !liveWorkspaceIds.has(workspace.id) && all.findIndex((entry) => entry.id === workspace.id) === index);
+
+      return entries.sort((left, right) => right.createdAt - left.createdAt || left.name.localeCompare(right.name));
+    },
+    [pendingCreatedAgents, pendingWorkspaceCreations, snapshot.workspaces]
   );
   const workspaceMenuEntries = useMemo<WorkspaceMenuEntry[]>(
     () => [
@@ -378,6 +387,7 @@ export function MissionSidebar({
   const closeDeleteAgent = () => {
     setIsDeleteAgentOpen(false);
     onAgentActionModalOpenChange?.(false);
+    onAgentActionRequestDismiss?.();
     setAgentDeleteTarget(null);
     setAgentDeleteConfirmText("");
   };
@@ -414,6 +424,16 @@ export function MissionSidebar({
 
     openDeleteAgent(agent);
   }, [requestedAgentAction, snapshot.agents, openDeleteAgent, openEditAgent]);
+
+  useEffect(() => {
+    if (requestedAgentAction !== null) {
+      return;
+    }
+
+    setIsDeleteAgentOpen(false);
+    setAgentDeleteTarget(null);
+    setAgentDeleteConfirmText("");
+  }, [requestedAgentAction]);
 
   const submitEditAgent = async () => {
     if (!editDraft) {
@@ -583,6 +603,7 @@ export function MissionSidebar({
                 workspaceMenuEntries={workspaceMenuEntries}
                 workspaceCount={workspaceCount}
                 activeWorkspaceIsPending={Boolean(activePendingWorkspace)}
+                hasWorkspaceCreationPending={pendingWorkspaceCreations.length > 0}
                 statusLabel={statusLabel}
                 statusTone={statusTone}
                 onSelectWorkspace={onSelectWorkspace}
@@ -1304,6 +1325,7 @@ function WorkspaceSwitcher({
   workspaceMenuEntries,
   workspaceCount,
   activeWorkspaceIsPending,
+  hasWorkspaceCreationPending,
   statusLabel,
   statusTone,
   onSelectWorkspace,
@@ -1317,6 +1339,7 @@ function WorkspaceSwitcher({
   workspaceMenuEntries: WorkspaceMenuEntry[];
   workspaceCount: number;
   activeWorkspaceIsPending: boolean;
+  hasWorkspaceCreationPending: boolean;
   statusLabel: string;
   statusTone: string;
   onSelectWorkspace: (workspaceId: string | null) => void;
@@ -1329,8 +1352,15 @@ function WorkspaceSwitcher({
   const [deleteTarget, setDeleteTarget] = useState<MissionControlSnapshot["workspaces"][number] | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
+  const [deletingWorkspaceId, setDeletingWorkspaceId] = useState<string | null>(null);
   const deleteImpact = deleteTarget ? getWorkspaceDeleteImpact(snapshot, deleteTarget) : null;
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (deletingWorkspaceId && !snapshot.workspaces.some((entry) => entry.id === deletingWorkspaceId)) {
+      setDeletingWorkspaceId(null);
+    }
+  }, [deletingWorkspaceId, snapshot.workspaces]);
 
   useEffect(() => {
     if (!open) {
@@ -1361,6 +1391,12 @@ function WorkspaceSwitcher({
     };
   }, [open]);
 
+  useEffect(() => {
+    if (hasWorkspaceCreationPending) {
+      setOpen(true);
+    }
+  }, [hasWorkspaceCreationPending]);
+
   const requestDeleteWorkspace = (workspaceId: string) => {
     const target = snapshot.workspaces.find((entry) => entry.id === workspaceId) ?? null;
 
@@ -1379,7 +1415,12 @@ function WorkspaceSwitcher({
       return;
     }
 
+    const workspaceToDelete = deleteTarget;
     setIsDeletingWorkspace(true);
+    setDeletingWorkspaceId(workspaceToDelete.id);
+    setDeleteTarget(null);
+    setDeleteConfirmText("");
+    setOpen(true);
 
     try {
       const response = await fetch("/api/workspaces", {
@@ -1388,7 +1429,7 @@ function WorkspaceSwitcher({
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          workspaceId: deleteTarget.id
+          workspaceId: workspaceToDelete.id
         })
       });
       const result = (await response.json()) as { error?: string };
@@ -1397,24 +1438,23 @@ function WorkspaceSwitcher({
         throw new Error(result.error || "OpenClaw could not delete the workspace.");
       }
 
-      const remainingWorkspaces = snapshot.workspaces.filter((entry) => entry.id !== deleteTarget.id);
-      const deletedWorkspaceIndex = snapshot.workspaces.findIndex((entry) => entry.id === deleteTarget.id);
+      const remainingWorkspaces = snapshot.workspaces.filter((entry) => entry.id !== workspaceToDelete.id);
+      const deletedWorkspaceIndex = snapshot.workspaces.findIndex((entry) => entry.id === workspaceToDelete.id);
       const nextWorkspace =
         remainingWorkspaces[
           Math.min(Math.max(deletedWorkspaceIndex, 0), Math.max(remainingWorkspaces.length - 1, 0))
         ] ?? null;
 
-      if (activeWorkspaceId === deleteTarget.id) {
+      if (activeWorkspaceId === workspaceToDelete.id) {
         onSelectWorkspace(nextWorkspace?.id ?? null);
       }
 
-      setDeleteTarget(null);
-      setDeleteConfirmText("");
       toast.success("Workspace deleted.", {
-        description: deleteTarget.name
+        description: workspaceToDelete.name
       });
       void onRefresh().catch(() => {});
     } catch (error) {
+      setDeletingWorkspaceId(null);
       toast.error("Workspace deletion failed.", {
         description: error instanceof Error ? error.message : "Unknown workspace error."
       });
@@ -1488,31 +1528,35 @@ function WorkspaceSwitcher({
             />
 
             <div className="workspace-menu-scroll mt-1 flex max-h-[356px] flex-col gap-1 overflow-y-auto pr-1">
+              <AnimatePresence initial={false}>
               {workspaceMenuEntries.map((entry, index) => (
                 <motion.div
                   key={entry.id}
                   initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: Math.min(index, 6) * 0.015, duration: 0.14 }}
+                  animate={entry.id === deletingWorkspaceId ? { opacity: [1, 0.58, 1], x: [0, 2, 0] } : { opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, height: 0, y: -4 }}
+                  transition={entry.id === deletingWorkspaceId ? { duration: 1.15, ease: "easeInOut", repeat: Infinity } : { delay: Math.min(index, 6) * 0.015, duration: 0.14 }}
                 >
                   <WorkspaceMenuRow
                     label={entry.name}
-                    detail={entry.detail}
+                    detail={entry.id === deletingWorkspaceId ? "Deleting workspace" : entry.detail}
                     selected={entry.id === activeWorkspaceId}
                     pending={entry.pending}
+                    deleting={entry.id === deletingWorkspaceId}
                     actionsOpen={workspaceActionsOpenForId === entry.id}
                     onClick={() => {
+                      if (entry.id === deletingWorkspaceId) return;
                       onSelectWorkspace(entry.id);
                       setOpen(false);
                       setWorkspaceActionsOpenForId(null);
                     }}
                     onToggleActions={
-                      entry.pending
+                      entry.pending || isDeletingWorkspace || entry.id === deletingWorkspaceId
                         ? undefined
                         : () => setWorkspaceActionsOpenForId((current) => (current === entry.id ? null : entry.id))
                     }
                     onEdit={
-                      entry.pending
+                      entry.pending || isDeletingWorkspace || entry.id === deletingWorkspaceId
                         ? undefined
                         : () => {
                             onEditWorkspace(entry.id);
@@ -1520,10 +1564,11 @@ function WorkspaceSwitcher({
                             setWorkspaceActionsOpenForId(null);
                           }
                     }
-                    onDelete={entry.pending ? undefined : () => requestDeleteWorkspace(entry.id)}
+                    onDelete={entry.pending || isDeletingWorkspace || entry.id === deletingWorkspaceId ? undefined : () => requestDeleteWorkspace(entry.id)}
                   />
                 </motion.div>
               ))}
+              </AnimatePresence>
             </div>
 
             <div className="mt-1.5 border-t border-border/70 pt-1.5">
@@ -1717,7 +1762,8 @@ function WorkspaceMenuButton({
   className,
   leadingAdornment,
   endAdornment,
-  onEndAdornmentClick
+  onEndAdornmentClick,
+  disabled = false
 }: {
   label: string;
   detail: string;
@@ -1727,11 +1773,13 @@ function WorkspaceMenuButton({
   leadingAdornment?: ReactNode;
   endAdornment?: ReactNode;
   onEndAdornmentClick?: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       role="menuitem"
+      disabled={disabled}
       onClick={(event) => {
         if (onEndAdornmentClick) {
           const target = event.target as HTMLElement | null;
@@ -1746,7 +1794,7 @@ function WorkspaceMenuButton({
         onClick();
       }}
       className={cn(
-        "flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        "flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-80",
         selected
           ? "border-primary/25 bg-primary/10 text-primary shadow-[0_8px_20px_hsl(var(--primary)/0.08)]"
           : "border-transparent text-muted-foreground hover:border-border/80 hover:bg-accent/70 hover:text-accent-foreground",
@@ -1780,6 +1828,7 @@ function WorkspaceMenuRow({
   detail,
   selected,
   pending,
+  deleting,
   actionsOpen,
   onClick,
   onToggleActions,
@@ -1790,13 +1839,14 @@ function WorkspaceMenuRow({
   detail: string;
   selected: boolean;
   pending: boolean;
+  deleting: boolean;
   actionsOpen: boolean;
   onClick: () => void;
   onToggleActions?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
 }) {
-  const hasActions = Boolean(onToggleActions && onEdit && onDelete);
+  const hasActions = !deleting && Boolean(onToggleActions && onEdit && onDelete);
 
   return (
     <div className="relative">
@@ -1804,10 +1854,11 @@ function WorkspaceMenuRow({
         label={label}
         detail={detail}
         selected={selected}
+        disabled={deleting}
         onClick={onClick}
-        onEndAdornmentClick={onToggleActions}
-        leadingAdornment={<WorkspaceMenuAvatar label={label} pending={pending} selected={selected} />}
-        endAdornment={hasActions ? <Settings2 className="h-4 w-4" /> : null}
+        onEndAdornmentClick={deleting ? undefined : onToggleActions}
+        leadingAdornment={<WorkspaceMenuAvatar label={label} pending={pending} deleting={deleting} selected={selected} />}
+        endAdornment={deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin text-rose-500" /> : hasActions ? <Settings2 className="h-4 w-4" /> : null}
       />
 
       <AnimatePresence initial={false}>
@@ -1838,10 +1889,12 @@ function WorkspaceMenuRow({
 function WorkspaceMenuAvatar({
   label,
   pending,
+  deleting,
   selected
 }: {
   label: string;
   pending: boolean;
+  deleting: boolean;
   selected: boolean;
 }) {
   const initial = label.trim().charAt(0).toUpperCase() || "W";
@@ -1854,10 +1907,11 @@ function WorkspaceMenuAvatar({
         selected
           ? "border-primary/25 bg-primary/[0.12] text-primary"
           : "border-border/80 bg-background/70 text-muted-foreground",
-        pending && "border-amber-300/30 bg-amber-300/10 text-amber-500 dark:text-amber-200"
+        pending && "border-amber-300/30 bg-amber-300/10 text-amber-500 dark:text-amber-200",
+        deleting && "border-rose-300/40 bg-rose-500/10 text-rose-500 dark:text-rose-200"
       )}
     >
-      {pending ? <span className="h-1.5 w-1.5 rounded-full bg-current shadow-[0_0_10px_currentColor]" /> : initial}
+      {pending || deleting ? <span className="h-1.5 w-1.5 rounded-full bg-current shadow-[0_0_10px_currentColor]" /> : initial}
     </span>
   );
 }

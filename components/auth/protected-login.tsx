@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PikoLoader } from "@/components/ui/piko-loader";
 
 const HEADER_TAGLINES = [
   "AI Workforce OS",
@@ -90,7 +91,13 @@ export function ProtectedLogin() {
   const returnTo = safeReturnTo(searchParams.get("returnTo"));
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-background text-foreground">
+    <>
+      <PikoLoader
+        open={submitting}
+        title="Unlocking AgentOS"
+        description="Verifying your session and opening the control plane."
+      />
+      <main className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <CelestialLockBackground />
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-[0.12] [background-image:linear-gradient(rgba(255,255,255,.13)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.13)_1px,transparent_1px)] [background-size:42px_42px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]" />
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/70 to-transparent" />
@@ -173,7 +180,8 @@ export function ProtectedLogin() {
 
         <VaultVisual />
       </div>
-    </main>
+      </main>
+    </>
   );
 }
 

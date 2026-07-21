@@ -68,6 +68,8 @@ type WorkspaceWizardDialogProps = {
   snapshot: MissionControlSnapshot;
   onRefresh: () => Promise<void>;
   onWorkspaceCreated: (result: WorkspaceCreateResult | WorkspacePlanDeployResult) => void;
+  onWorkspaceCreationStarted?: (workspace: { id: string; name: string; createdAt: number }) => void;
+  onWorkspaceCreationFinished?: () => void;
   onWorkspaceUpdated?: (workspaceId: string) => void;
 };
 
@@ -80,6 +82,8 @@ export function WorkspaceWizardDialog({
   snapshot,
   onRefresh,
   onWorkspaceCreated,
+  onWorkspaceCreationStarted,
+  onWorkspaceCreationFinished,
   onWorkspaceUpdated
 }: WorkspaceWizardDialogProps) {
   const isEditingWorkspace = Boolean(workspaceEditId);
@@ -89,6 +93,11 @@ export function WorkspaceWizardDialog({
     workspaceEditId,
     onRefresh,
     onWorkspaceCreated,
+    onWorkspaceCreationStarted: (workspace) => {
+      onWorkspaceCreationStarted?.(workspace);
+      handleOpenChange(false);
+    },
+    onWorkspaceCreationFinished,
     onWorkspaceUpdated
   });
 

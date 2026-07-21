@@ -52,7 +52,8 @@ import {
   buildPendingAgentsForWorkspaceResult,
   parsePendingAgentProjections,
   pendingAgentProjectionStorageKey,
-  type PendingAgentProjection
+  type PendingAgentProjection,
+  type PendingWorkspaceMenuEntry
 } from "@/components/mission-control/pending-agent-projection";
 import { ConnectAccountWizard } from "@/components/operations/accounts/accounts-page-content";
 import dynamic from "next/dynamic";
@@ -278,6 +279,7 @@ export function MissionControlShell({
   const missionDispatchAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const [recentCreatedAgentId, setRecentCreatedAgentId] = useState<string | null>(null);
   const [pendingCreatedAgents, setPendingCreatedAgents] = useState<PendingAgentProjection[]>(loadPendingAgentProjections);
+  const [pendingWorkspaceCreations, setPendingWorkspaceCreations] = useState<PendingWorkspaceMenuEntry[]>([]);
   const [agentCreationWarnings, setAgentCreationWarnings] = useState<Record<string, string>>({});
   const [isSidebarOpenState, setIsSidebarOpen] = useState(false);
   const { isSidebarPinned, setIsSidebarPinned } = useSidebarPinning();
@@ -966,6 +968,7 @@ export function MissionControlShell({
   }, [selectNode, setActiveWorkspaceId]);
 
   const handleWorkspaceCreated = useCallback((result: WorkspaceCreateResult | WorkspacePlanDeployResult) => {
+    setPendingWorkspaceCreations([]);
     const pendingAgents = buildPendingAgentsForWorkspaceResult(result);
 
     if (pendingAgents.length > 0) {
@@ -978,6 +981,19 @@ export function MissionControlShell({
 
     openWorkspaceOnCanvas(result.workspaceId, { markPending: true });
   }, [openWorkspaceOnCanvas]);
+
+  const handleWorkspaceCreationStarted = useCallback((workspace: { id: string; name: string; createdAt: number }) => {
+    setPendingWorkspaceCreations([{
+      ...workspace,
+      detail: "Creating workspace",
+      pending: true
+    }]);
+    setIsSidebarOpen(true);
+  }, []);
+
+  const handleWorkspaceCreationFinished = useCallback(() => {
+    setPendingWorkspaceCreations([]);
+  }, []);
 
   useEffect(() => {
     if (typeof globalThis.localStorage === "undefined") {
@@ -3752,6 +3768,8 @@ export function MissionControlShell({
         snapshot={snapshot}
         onRefresh={refresh}
         onWorkspaceCreated={handleWorkspaceCreated}
+        onWorkspaceCreationStarted={handleWorkspaceCreationStarted}
+        onWorkspaceCreationFinished={handleWorkspaceCreationFinished}
         onWorkspaceUpdated={(workspaceId) => {
           openWorkspaceOnCanvas(workspaceId, { markPending: true });
         }}
@@ -3947,8 +3965,10 @@ export function MissionControlShell({
             onEditWorkspace={openWorkspaceWizardForEdit}
             onSnapshotChange={setSnapshot}
             pendingCreatedAgents={pendingCreatedAgents}
+            pendingWorkspaceCreations={pendingWorkspaceCreations}
             onAgentCreationPending={handleAgentCreationPending}
             onAgentCreatedVisible={handleCreatedAgentVisible}
+            onAgentActionRequestDismiss={() => setAgentActionRequest(null)}
             onAgentActionModalOpenChange={(open) => {
               setIsSidebarAgentActionModalOpen(open);
               if (open && !isSidebarPinned) {
@@ -4049,8 +4069,10 @@ export function MissionControlShell({
             onEditWorkspace={openWorkspaceWizardForEdit}
             onSnapshotChange={setSnapshot}
             pendingCreatedAgents={pendingCreatedAgents}
+            pendingWorkspaceCreations={pendingWorkspaceCreations}
             onAgentCreationPending={handleAgentCreationPending}
             onAgentCreatedVisible={handleCreatedAgentVisible}
+            onAgentActionRequestDismiss={() => setAgentActionRequest(null)}
             onAgentActionModalOpenChange={(open) => {
               setIsSidebarAgentActionModalOpen(open);
               if (open) {
@@ -4382,8 +4404,10 @@ export function MissionControlShell({
             onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
             onEditWorkspace={openWorkspaceWizardForEdit}
             onSnapshotChange={setSnapshot}
+            pendingWorkspaceCreations={pendingWorkspaceCreations}
             onAgentCreationPending={handleAgentCreationPending}
             onAgentCreatedVisible={handleCreatedAgentVisible}
+            onAgentActionRequestDismiss={() => setAgentActionRequest(null)}
             onAgentActionModalOpenChange={(open) => {
               setIsSidebarAgentActionModalOpen(open);
               if (open && !isSidebarPinned) {
@@ -4456,8 +4480,10 @@ export function MissionControlShell({
             onOpenWorkspaceCreate={() => openWorkspaceWizard("basic")}
             onEditWorkspace={openWorkspaceWizardForEdit}
             onSnapshotChange={setSnapshot}
+            pendingWorkspaceCreations={pendingWorkspaceCreations}
             onAgentCreationPending={handleAgentCreationPending}
             onAgentCreatedVisible={handleCreatedAgentVisible}
+            onAgentActionRequestDismiss={() => setAgentActionRequest(null)}
             onAgentActionModalOpenChange={(open) => {
               setIsSidebarAgentActionModalOpen(open);
               if (open) {
@@ -4874,6 +4900,8 @@ export function MissionControlShell({
           snapshot={snapshot}
           onRefresh={refresh}
           onWorkspaceCreated={handleWorkspaceCreated}
+          onWorkspaceCreationStarted={handleWorkspaceCreationStarted}
+          onWorkspaceCreationFinished={handleWorkspaceCreationFinished}
           onWorkspaceUpdated={(workspaceId) => {
             openWorkspaceOnCanvas(workspaceId, { markPending: true });
           }}
