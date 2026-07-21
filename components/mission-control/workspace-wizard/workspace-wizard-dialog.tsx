@@ -25,6 +25,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { Textarea } from "@/components/ui/textarea";
 import { useWorkspaceWizardDraft, type WorkspaceWizardMode } from "@/hooks/use-workspace-wizard-draft";
 import { createPlannerMessage } from "@/lib/openclaw/planner-core";
@@ -308,7 +309,13 @@ export function WorkspaceWizardDialog({
   };
 
   return (
-    <MissionControlDialogShell
+    <>
+      <PikoLoader
+        open={wizard.isCreating}
+        title="Creating your workspace"
+        description="Setting up the workspace, its agents, and the OpenClaw configuration."
+      />
+      <MissionControlDialogShell
       open={open}
       onOpenChange={handleOpenChange}
       surfaceTheme={surfaceTheme}
@@ -739,7 +746,8 @@ export function WorkspaceWizardDialog({
           ) : null}
 
         </div>
-    </MissionControlDialogShell>
+      </MissionControlDialogShell>
+    </>
   );
 }
 

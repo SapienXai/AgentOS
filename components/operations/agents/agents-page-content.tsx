@@ -15,6 +15,7 @@ import { CreateAgentDialog } from "@/components/mission-control/create-agent-dia
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import { useAccountsData } from "@/components/operations/accounts/use-accounts-data";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
@@ -137,6 +138,11 @@ export function AgentsPageContent({
 
   return (
     <>
+      <PikoLoader
+        open={Boolean(deletingAgentId)}
+        title="Deleting agent"
+        description="Removing the agent and cleaning up its OpenClaw workspace binding."
+      />
       <OperationsPageLayout
         main={
           <>

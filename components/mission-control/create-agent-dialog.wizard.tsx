@@ -32,6 +32,7 @@ import type { PendingAgentProjection } from "@/components/mission-control/pendin
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import {
@@ -605,7 +606,17 @@ export function CreateAgentDialog({
   }
 
   return (
-    <MissionControlDialogShell
+    <>
+      <PikoLoader
+        open={isSaving}
+        title={createProgress === "syncing" ? "Agent is taking its place" : "Creating your agent"}
+        description={
+          createProgress === "syncing"
+            ? "Saving is complete. We are waiting for the new agent to appear in your workspace."
+            : "Setting up the profile and applying its OpenClaw configuration."
+        }
+      />
+      <MissionControlDialogShell
       open={open}
       onOpenChange={handleOpenChange}
       surfaceTheme={surfaceTheme}
@@ -1444,7 +1455,8 @@ export function CreateAgentDialog({
                 </div>
               </div>
       )}
-    </MissionControlDialogShell>
+      </MissionControlDialogShell>
+    </>
   );
 }
 

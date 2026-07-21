@@ -71,6 +71,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import {
   AGENT_FILE_ACCESS_OPTIONS,
@@ -374,6 +375,25 @@ export function MissionSidebar({
     setIsDeleteAgentOpen(true);
   }, [onAgentActionModalOpenChange]);
 
+  const closeDeleteAgent = () => {
+    setIsDeleteAgentOpen(false);
+    onAgentActionModalOpenChange?.(false);
+    setAgentDeleteTarget(null);
+    setAgentDeleteConfirmText("");
+  };
+
+  const handleDeleteAgentOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      if (!isDeletingAgent) {
+        closeDeleteAgent();
+      }
+      return;
+    }
+
+    setIsDeleteAgentOpen(true);
+    onAgentActionModalOpenChange?.(true);
+  };
+
   useEffect(() => {
     if (!requestedAgentAction || handledRequestedAgentActionIdRef.current === requestedAgentAction.requestId) {
       return;
@@ -483,10 +503,7 @@ export function MissionSidebar({
         handleEditAgentOpenChange(false);
       }
 
-      setIsDeleteAgentOpen(false);
-      onAgentActionModalOpenChange?.(false);
-      setAgentDeleteTarget(null);
-      setAgentDeleteConfirmText("");
+      closeDeleteAgent();
       deletedAgentId = result.agentId || agentDeleteTarget.id;
       succeeded = true;
     } catch (error) {
@@ -511,6 +528,11 @@ export function MissionSidebar({
 
   return (
     <>
+      <PikoLoader
+        open={isDeletingAgent}
+        title="Deleting agent"
+        description="Removing the agent and cleaning up its OpenClaw workspace binding."
+      />
       {collapsed ? (
         <CollapsedSidebar
           activeHash={activeHash}
@@ -603,10 +625,7 @@ export function MissionSidebar({
         </aside>
       )}
 
-      <Dialog open={isDeleteAgentOpen} onOpenChange={(nextOpen) => {
-        setIsDeleteAgentOpen(nextOpen);
-        onAgentActionModalOpenChange?.(nextOpen);
-      }}>
+      <Dialog open={isDeleteAgentOpen} onOpenChange={handleDeleteAgentOpenChange}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete OpenClaw agent</DialogTitle>
@@ -673,11 +692,8 @@ export function MissionSidebar({
           <DialogFooter>
             <Button
               variant="secondary"
-              onClick={() => {
-                setIsDeleteAgentOpen(false);
-                setAgentDeleteTarget(null);
-                setAgentDeleteConfirmText("");
-              }}
+              onClick={closeDeleteAgent}
+              disabled={isDeletingAgent}
             >
               Cancel
             </Button>

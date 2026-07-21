@@ -214,6 +214,32 @@
   backdrop-filter: blur(16px) saturate(1.46) brightness(var(--lock-glass-backdrop-brightness));
 }
 
+@keyframes piko-loader-float {
+  0%,
+  100% {
+    transform: translateY(-5px) rotate(-1deg);
+  }
+  50% {
+    transform: translateY(7px) rotate(1deg);
+  }
+}
+
+.piko-loader-follow {
+  transform: translate3d(-50%, -50%, 0);
+  will-change: left, top;
+}
+
+.piko-loader-float {
+  animation: piko-loader-float 3.8s ease-in-out infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .piko-loader-float {
+    animation: none;
+  }
+}
+
 .lock-glass-divider {
   border-color: rgb(var(--lock-glass-border) / calc(var(--lock-glass-border-alpha) * 0.72));
 }
