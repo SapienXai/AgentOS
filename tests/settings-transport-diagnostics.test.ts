@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   formatGatewayFallbackDiagnosticKind,
+  resolveGatewayActionGuidance,
   resolveGatewayFallbackRecovery,
   resolveTransportDiagnosticsSummary
 } from "@/components/mission-control/settings-control-center.utils";
@@ -29,6 +30,50 @@ function createTransportDiagnostics(input: Partial<TransportDiagnostics>): Trans
     ...input
   };
 }
+
+test("Gateway action guidance prioritizes service, auth, and transport recovery", () => {
+  assert.equal(resolveGatewayActionGuidance({
+    serviceOnline: false,
+    authOk: false,
+    authIssueKind: "auth",
+    transportTone: "danger"
+  }).action, "start");
+
+  assert.equal(resolveGatewayActionGuidance({
+    serviceOnline: true,
+    authOk: false,
+    authIssueKind: "scope-limited",
+    transportTone: "warning"
+  }).action, "repair-access");
+
+  assert.equal(resolveGatewayActionGuidance({
+    serviceOnline: true,
+    authOk: false,
+    authIssueKind: "auth",
+    transportTone: "warning"
+  }).action, "repair-token");
+
+  assert.equal(resolveGatewayActionGuidance({
+    serviceOnline: true,
+    authOk: true,
+    authIssueKind: null,
+    transportTone: "danger"
+  }).action, "restart");
+
+  assert.equal(resolveGatewayActionGuidance({
+    serviceOnline: true,
+    authOk: true,
+    authIssueKind: null,
+    transportTone: "warning"
+  }).action, null);
+
+  assert.equal(resolveGatewayActionGuidance({
+    serviceOnline: true,
+    authOk: null,
+    authIssueKind: null,
+    transportTone: "warning"
+  }).state, "checking");
+});
 
 test("transport diagnostics summary formats native WS connected state", () => {
   const summary = resolveTransportDiagnosticsSummary(

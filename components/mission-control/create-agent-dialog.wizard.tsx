@@ -632,7 +632,7 @@ export function CreateAgentDialog({
           </div>
         ) : null
       }
-      contentClassName="left-0 top-0 h-[100dvh] max-h-none w-full max-w-none translate-x-0 translate-y-0 rounded-none border-0 sm:left-1/2 sm:top-1/2 sm:h-[min(calc(100vh-56px),780px)] sm:max-h-[calc(100vh-56px)] sm:w-[min(94vw,1120px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[24px] sm:border"
+      contentClassName="left-0 top-0 h-[100dvh] max-h-none w-full max-w-none transform-none rounded-none border-0 sm:left-1/2 sm:top-1/2 sm:h-[min(calc(100vh-56px),780px)] sm:max-h-[calc(100vh-56px)] sm:w-[min(94vw,1120px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[24px] sm:border"
       headerClassName="px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-7 sm:pb-3.5 sm:pt-4"
       bodyClassName="px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:px-5 sm:py-4"
       footerClassName="px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 sm:px-7 sm:py-2"

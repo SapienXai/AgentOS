@@ -1,7 +1,16 @@
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
+import type { GatewayNativeAuthIssueKind } from "@/lib/openclaw/gateway-auth";
 
 export type SnapshotStreamState = "connecting" | "live" | "retrying";
 export type TransportStatusTone = "success" | "warning" | "danger" | "neutral";
+export type GatewayRecommendedAction = "start" | "restart" | "repair-access" | "repair-token" | null;
+
+export type GatewayActionGuidance = {
+  action: GatewayRecommendedAction;
+  state: "attention" | "checking" | "ready";
+  label: string;
+  detail: string;
+};
 export type OpenClawCapabilityRowStatus =
   | "gateway-native"
   | "cli-fallback"
@@ -87,6 +96,81 @@ type GatewayFallbackDiagnostic =
   | NonNullable<GatewayDiagnostics["gatewayFallbackDiagnostics"]>[number]
   | NonNullable<NonNullable<CapabilityMatrix>["fallbackDiagnostics"]>[number]
   | NonNullable<TransportDiagnostics["recentFallbackDiagnostics"]>[number];
+
+export function resolveGatewayActionGuidance({
+  serviceOnline,
+  authOk,
+  authIssueKind,
+  transportTone
+}: {
+  serviceOnline: boolean;
+  authOk: boolean | null;
+  authIssueKind: GatewayNativeAuthIssueKind | null;
+  transportTone: TransportStatusTone;
+}): GatewayActionGuidance {
+  if (!serviceOnline) {
+    return {
+      action: "start",
+      state: "attention",
+      label: "Start Gateway",
+      detail: "The Gateway service is offline. Start it before attempting authentication repair."
+    };
+  }
+
+  if (authOk === false && authIssueKind === "scope-limited") {
+    return {
+      action: "repair-access",
+      state: "attention",
+      label: "Repair local access",
+      detail: "The local device is authenticated but is missing required operator scopes."
+    };
+  }
+
+  if (authOk === false && authIssueKind === "auth") {
+    return {
+      action: "repair-token",
+      state: "attention",
+      label: "Repair token",
+      detail: "The configured Gateway credential does not match the running Gateway."
+    };
+  }
+
+  if (transportTone === "danger") {
+    return {
+      action: "restart",
+      state: "attention",
+      label: "Restart Gateway",
+      detail: "The service is online, but the native transport is unavailable."
+    };
+  }
+
+  if (authOk === false) {
+    return {
+      action: "restart",
+      state: "attention",
+      label: "Restart Gateway",
+      detail: "Authentication could not be verified. Restart the Gateway, then test authentication again."
+    };
+  }
+
+  if (authOk === null) {
+    return {
+      action: null,
+      state: "checking",
+      label: "Checking authentication",
+      detail: "Waiting for the current Gateway authentication check before recommending a recovery action."
+    };
+  }
+
+  return {
+    action: null,
+    state: "ready",
+    label: "No recovery required",
+    detail: transportTone === "warning"
+      ? "The Gateway is usable. CLI recovery remains visible for operations without native support."
+      : "The Gateway service, authentication, and native transport are ready."
+  };
+}
 
 export function resolveTransportDiagnosticsSummary(
   transport: TransportDiagnostics | undefined,

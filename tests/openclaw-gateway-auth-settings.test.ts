@@ -23,7 +23,7 @@ test("Gateway settings route unreachable Gateway repair to rollback or process r
   assert.match(source, /hasOpenClawRollbackIssue/);
   assert.match(source, /gatewayAccessRepairBlockMessage/);
   assert.match(source, /Rollback to last working OpenClaw/);
-  assert.match(source, /disabled=\{isRepairingGatewayDeviceAccess \|\| Boolean\(gatewayAccessRepairBlockMessage\)\}/);
+  assert.match(source, /disabled=\{gatewayActionBusy \|\| Boolean\(gatewayAccessRepairDisabledReason\)\}/);
 });
 
 test("Gateway settings expose OpenClaw doctor repair through Gateway control", () => {
@@ -31,10 +31,59 @@ test("Gateway settings expose OpenClaw doctor repair through Gateway control", (
   const routeSource = readFileSync(join(process.cwd(), "app/api/gateway/control/route.ts"), "utf8");
   const serviceSource = readFileSync(join(process.cwd(), "lib/openclaw/application/gateway-service.ts"), "utf8");
 
-  assert.match(settingsSource, /\["start", "stop", "restart", "doctor"\]/);
+  assert.match(settingsSource, /\{ action: "start", label: "Start"/);
+  assert.match(settingsSource, /\{ action: "doctor", label: "Doctor --fix"/);
   assert.match(settingsSource, /Doctor --fix/);
   assert.match(routeSource, /z\.enum\(\["start", "stop", "restart", "doctor"\]\)/);
   assert.match(serviceSource, /runOpenClaw\(\["doctor", "--fix"\]/);
+});
+
+test("Gateway settings separate live health from historical diagnostics", () => {
+  const source = readFileSync(join(process.cwd(), "components/mission-control/settings-control-center.tsx"), "utf8");
+
+  assert.match(source, /aria-label="Live Gateway health"/);
+  assert.match(source, /Saved compatibility evidence does not override the live service, authentication, or transport state above\./);
+  assert.match(source, /Historical evidence/);
+  assert.match(source, /Show saved technical report/);
+  assert.match(source, /Checked \{gatewayAuthStatus\?\.native\.checkedAt/);
+});
+
+test("Gateway settings prioritize actions from current service and auth state", () => {
+  const source = readFileSync(join(process.cwd(), "components/mission-control/settings-control-center.tsx"), "utf8");
+
+  assert.match(source, /resolveGatewayActionGuidance\(\{/);
+  assert.match(source, /aria-label="Recommended Gateway action"/);
+  assert.match(source, /The Gateway is already running\./);
+  assert.match(source, /Local access repair is available when required operator scopes are missing\./);
+  assert.match(source, /Token repair is available when the configured credential does not match the Gateway\./);
+  assert.match(source, /Use a known credential/);
+  assert.match(source, /disabled=\{isSavingGatewayAuthCredential \|\| !gatewayAuthCredential\.trim\(\)\}/);
+});
+
+test("Gateway operations keep visible progress and durable results", () => {
+  const settingsSource = readFileSync(join(process.cwd(), "components/mission-control/settings-control-center.tsx"), "utf8");
+  const shellSource = readFileSync(join(process.cwd(), "components/mission-control/mission-control-shell.tsx"), "utf8");
+
+  assert.match(settingsSource, /aria-label="Gateway operation progress"/);
+  assert.match(settingsSource, /"Prepare control request", "Restart Gateway service", "Verify refreshed runtime state"/);
+  assert.match(settingsSource, /finishGatewayOperation\("repair-token", "success"/);
+  assert.match(settingsSource, /finishGatewayOperation\("repair-access", "error"/);
+  assert.match(settingsSource, /Dismiss Gateway operation result/);
+  assert.match(shellSource, /throw gatewayError;/);
+});
+
+test("Gateway settings keep operator controls ahead of collapsed technical detail", () => {
+  const source = readFileSync(join(process.cwd(), "components/mission-control/settings-control-center.tsx"), "utf8");
+  const serviceControlsIndex = source.indexOf("Service controls");
+  const connectionSettingsIndex = source.indexOf("Connection settings");
+  const compatibilityPanelIndex = source.indexOf("<CompatibilityPanel");
+
+  assert.ok(serviceControlsIndex > 0);
+  assert.ok(connectionSettingsIndex > serviceControlsIndex);
+  assert.ok(compatibilityPanelIndex > connectionSettingsIndex);
+  assert.match(source, /Native transport details/);
+  assert.match(source, /shadow-none hover:bg-primary\/90 disabled:border disabled:border-border disabled:bg-muted/);
+  assert.match(source, /action === "stop" &&/);
 });
 
 test("OpenClaw Control UI opens through the CLI bootstrap flow", () => {
@@ -296,7 +345,8 @@ test("Gateway settings read the current bind through native config without expos
 
   assert.match(routeSource, /gatewayBind: await getGatewayBindMode\(\)/);
   assert.match(settingsSource, /fetch\("\/api\/settings\/gateway\?view=bind", \{ cache: "no-store" \}\)/);
-  assert.match(settingsSource, /\["Gateway bind", displayedGatewayBind\]/);
+  assert.match(settingsSource, /displayedGatewayBind=\{displayedGatewayBind\}/);
+  assert.match(settingsSource, /<span className="font-medium">Gateway bind:<\/span> \{displayedGatewayBind\}/);
   assert.match(settingsSource, /detail=\{`Bind: \$\{displayedGatewayBind\}`\}/);
   assert.match(settingsSource, /OPENCLAW_DEFAULT_GATEWAY_BIND_MODE/);
   assert.match(settingsSource, /document\.addEventListener\("visibilitychange", refreshWhenVisible\)/);

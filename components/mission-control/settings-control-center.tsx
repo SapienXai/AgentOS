@@ -44,9 +44,11 @@ import type { MissionControlShellSettingsPanelProps } from "@/components/mission
 import {
   buildOpenClawCapabilityRows,
   formatGatewayFallbackDiagnosticKind,
+  resolveGatewayActionGuidance,
   resolveTransportDiagnosticsSummary,
   resolveGatewayFallbackRecovery,
   summarizeOpenClawCapabilityRows,
+  type GatewayActionGuidance,
   type OpenClawCapabilityMatrixRow,
   type OpenClawCapabilityMatrixSummary,
   type TransportDiagnosticsSummary,
@@ -102,19 +104,21 @@ const binaryModes: Array<{
 ];
 
 type SurfaceTheme = "dark" | "light";
-type GatewayCompatibilityProfile = NonNullable<
-  NonNullable<MissionControlShellSettingsPanelProps["snapshot"]["diagnostics"]["capabilityMatrix"]>["compatibility"]
->;
-type GatewayCapabilityOperations = NonNullable<
-  NonNullable<MissionControlShellSettingsPanelProps["snapshot"]["diagnostics"]["capabilityMatrix"]>["operations"]
->;
-type GatewayMethodContractAudit = GatewayCompatibilityProfile["methodContract"];
 type CompatibilitySmokeReport = NonNullable<
   MissionControlShellSettingsPanelProps["snapshot"]["diagnostics"]["compatibilitySmokeTest"]
 >;
 type CompatibilityReport = NonNullable<
   MissionControlShellSettingsPanelProps["snapshot"]["diagnostics"]["compatibilityReport"]
 >;
+type GatewayControlAction = NonNullable<MissionControlShellSettingsPanelProps["gatewayControlAction"]>;
+type GatewayOperationKind = GatewayControlAction | "repair-access" | "repair-token";
+type GatewayOperationFeedback = {
+  kind: GatewayOperationKind;
+  status: "running" | "success" | "error";
+  startedAt: string;
+  finishedAt: string | null;
+  message: string;
+};
 type SettingsSectionId =
   | "general"
   | "overview"
@@ -229,6 +233,7 @@ export function SettingsControlCenter(
   const [isSavingGatewayAuthCredential, setIsSavingGatewayAuthCredential] = useState(false);
   const [isGeneratingGatewayAuthToken, setIsGeneratingGatewayAuthToken] = useState(false);
   const [isRepairingGatewayDeviceAccess, setIsRepairingGatewayDeviceAccess] = useState(false);
+  const [gatewayOperationFeedback, setGatewayOperationFeedback] = useState<GatewayOperationFeedback | null>(null);
   const [isOpeningControlUi, setIsOpeningControlUi] = useState(false);
   const [controlUiOpenError, setControlUiOpenError] = useState<string | null>(null);
   const [isOpenClawAppConnectOpen, setIsOpenClawAppConnectOpen] = useState(false);
@@ -361,6 +366,7 @@ export function SettingsControlCenter(
   );
   const hasScopeUpgradeIssue = activeRuntimeIssues.some((issue) => issue.type === "scope_upgrade_pending");
   const hasOpenClawRollbackIssue = activeRuntimeIssues.some((issue) => issue.type === "openclaw_rollback_needed");
+  const isGatewayServiceOnline = snapshot.diagnostics.loaded || snapshot.diagnostics.rpcOk;
   const isGatewayProcessUnavailable =
     !snapshot.diagnostics.loaded ||
     (!snapshot.diagnostics.rpcOk && !hasScopeUpgradeIssue) ||
@@ -372,7 +378,6 @@ export function SettingsControlCenter(
       : null;
   const capabilityMatrix = snapshot.diagnostics.capabilityMatrix;
   const compatibilityReport = snapshot.diagnostics.compatibilityReport;
-  const gatewayCompatibilityProfile = capabilityMatrix?.compatibility;
   const capabilityRows = useMemo(
     () => buildOpenClawCapabilityRows(snapshot.diagnostics),
     [snapshot.diagnostics]
@@ -400,6 +405,30 @@ export function SettingsControlCenter(
       ? "Authenticated"
       : formatGatewayAuthIssue(gatewayAuthStatus.native.kind)
     : "Unknown";
+  const gatewayActionGuidance = resolveGatewayActionGuidance({
+    serviceOnline: isGatewayServiceOnline,
+    authOk: gatewayAuthStatus?.native.ok ?? null,
+    authIssueKind: gatewayAuthStatus?.native.kind ?? null,
+    transportTone: transportSummary.statusTone
+  });
+  const gatewayRepairBusy = isRepairingGatewayDeviceAccess || isGeneratingGatewayAuthToken;
+  const gatewayActionBusy = gatewayControlAction !== null || gatewayRepairBusy;
+  const gatewayAuthNeedsScopeRepair = gatewayAuthStatus?.native.kind === "scope-limited";
+  const gatewayAuthNeedsTokenRepair = gatewayAuthStatus?.native.kind === "auth";
+  const gatewayAccessRepairDisabledReason = gatewayAccessRepairBlockMessage || (
+    !gatewayAuthStatus
+      ? "Wait for the current authentication check to finish."
+      : !gatewayAuthNeedsScopeRepair
+        ? "Local access repair is available when required operator scopes are missing."
+        : null
+  );
+  const gatewayTokenRepairDisabledReason = !gatewayAuthStatus
+    ? "Wait for the current authentication check to finish."
+    : !gatewayAuthNeedsTokenRepair
+      ? "Token repair is available when the configured credential does not match the Gateway."
+      : null;
+  const hasGatewayEndpointChanges = gatewayDraft.trim() !== (snapshot.diagnostics.gatewayUrl || "");
+  const hasConfiguredGatewayEndpoint = Boolean(snapshot.diagnostics.configuredGatewayUrl);
 
   const openControlUi = async () => {
     setIsOpeningControlUi(true);
@@ -870,7 +899,32 @@ export function SettingsControlCenter(
     }
   };
 
+  const beginGatewayOperation = (kind: GatewayOperationKind, message: string) => {
+    setGatewayOperationFeedback({
+      kind,
+      status: "running",
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      message
+    });
+  };
+
+  const finishGatewayOperation = (
+    kind: GatewayOperationKind,
+    status: "success" | "error",
+    message: string
+  ) => {
+    setGatewayOperationFeedback((current) => ({
+      kind,
+      status,
+      startedAt: current?.kind === kind ? current.startedAt : new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      message
+    }));
+  };
+
   const generateGatewayAuthToken = async () => {
+    beginGatewayOperation("repair-token", "Applying a new local credential and waiting for native authentication verification.");
     setIsGeneratingGatewayAuthToken(true);
     setGatewayAuthError(null);
     setGatewayAuthSaveMessage(null);
@@ -892,14 +946,18 @@ export function SettingsControlCenter(
       const result = (await response.json()) as { authStatus: GatewayNativeAuthStatus };
       setGatewayAuthStatus(result.authStatus);
       setGatewayAuthSaveMessage("Generated a local Gateway token and applied it to AgentOS.");
+      finishGatewayOperation("repair-token", "success", "Gateway token repaired and native authentication verified.");
     } catch (error) {
-      setGatewayAuthError(error instanceof Error ? error.message : "Unable to generate Gateway token.");
+      const message = error instanceof Error ? error.message : "Unable to generate Gateway token.";
+      setGatewayAuthError(message);
+      finishGatewayOperation("repair-token", "error", message);
     } finally {
       setIsGeneratingGatewayAuthToken(false);
     }
   };
 
   const repairGatewayDeviceAccess = async () => {
+    beginGatewayOperation("repair-access", "Approving required operator scopes and waiting for native authentication verification.");
     setIsRepairingGatewayDeviceAccess(true);
     setGatewayAuthError(null);
     setGatewayAuthSaveMessage(null);
@@ -921,10 +979,47 @@ export function SettingsControlCenter(
       const result = (await response.json()) as { authStatus: GatewayNativeAuthStatus };
       setGatewayAuthStatus(result.authStatus);
       setGatewayAuthSaveMessage("Local Gateway device access repaired for AgentOS.");
+      finishGatewayOperation("repair-access", "success", "Local Gateway access repaired and native authentication verified.");
     } catch (error) {
-      setGatewayAuthError(error instanceof Error ? error.message : "Unable to repair Gateway access.");
+      const message = error instanceof Error ? error.message : "Unable to repair Gateway access.";
+      setGatewayAuthError(message);
+      finishGatewayOperation("repair-access", "error", message);
     } finally {
       setIsRepairingGatewayDeviceAccess(false);
+    }
+  };
+
+  const runGatewayControlAction = async (action: GatewayControlAction) => {
+    beginGatewayOperation(action, gatewayControlRunningMessage(action));
+
+    try {
+      await onControlGateway(action);
+      finishGatewayOperation(action, "success", gatewayControlSuccessMessage(action));
+    } catch (error) {
+      finishGatewayOperation(
+        action,
+        "error",
+        error instanceof Error ? error.message : "Gateway control action failed."
+      );
+    }
+  };
+
+  const runRecommendedGatewayAction = () => {
+    switch (gatewayActionGuidance.action) {
+      case "start":
+        void runGatewayControlAction("start");
+        break;
+      case "restart":
+        void runGatewayControlAction("restart");
+        break;
+      case "repair-access":
+        void repairGatewayDeviceAccess();
+        break;
+      case "repair-token":
+        void generateGatewayAuthToken();
+        break;
+      default:
+        break;
     }
   };
 
@@ -1653,157 +1748,111 @@ export function SettingsControlCenter(
               {renderedActiveSection === "gateway" ? (
               <section id="gateway" className="scroll-mt-24">
                 <Card title="Gateway" icon={ShieldCheck} surfaceTheme={surfaceTheme}>
-                  <InfoRows
-                    surfaceTheme={surfaceTheme}
-                    rows={[
-                      ["Status", `${resolveGatewayLocality(snapshot)} / ${snapshot.diagnostics.loaded || snapshot.diagnostics.rpcOk ? "Online" : "Offline"}`],
-                      ["Native Gateway", transportSummary.statusLabel],
-                      ["Gateway mode", transportSummary.gatewayModeLabel],
-                      ["Gateway bind", displayedGatewayBind],
-                      ["Endpoint", snapshot.diagnostics.gatewayUrl || "Not configured"],
-                      ["Auth status", nativeAuthLabel],
-                      ["Protocol", `${transportSummary.protocolRangeLabel}, connected: ${transportSummary.protocolLabel}`],
-                      ["OpenClaw Compatibility", compatibilityReport ? formatCompatibilityReportStatus(compatibilityReport.status) : "Unknown"],
-                      ["Native Gateway coverage", compatibilityReport ? `${compatibilityReport.summary.nativeGatewayCoveragePercent}% (${compatibilityReport.summary.nativeGatewayCoverageLabel})` : "Unknown"],
-                      ["CLI fallback operation count", compatibilityReport ? String(compatibilityReport.summary.cliFallbackOperationCount) : "Unknown"],
-                      ["Unsupported/degraded integrations", compatibilityReport ? formatCompatibilityReportIssues(compatibilityReport) : "Unknown"],
-                      ["Compatibility", formatGatewayCompatibilityStatus(gatewayCompatibilityProfile)],
-                      ["Contract audit", formatGatewayMethodContractStatus(gatewayCompatibilityProfile?.methodContract)],
-                      ["Contract gaps", formatGatewayMethodContractGaps(gatewayCompatibilityProfile?.methodContract, capabilityMatrix?.operations)],
-                      ["Native ops", formatGatewayOperationCounts(gatewayCompatibilityProfile)],
-                      ["Alias ops", formatGatewayAliasOperations(gatewayCompatibilityProfile?.aliasOperations, capabilityMatrix?.operations)],
-                      ["Limited ops", formatGatewayDegradedOperations(gatewayCompatibilityProfile?.degradedOperations, capabilityMatrix?.operations)],
-                      ["Native chat", formatCapabilitySupport(capabilityMatrix?.nativeMissionDispatch)],
-                      ["Config patch", formatCapabilitySupport(capabilityMatrix?.configPatch)],
-                      ["Events", formatCapabilitySupport(capabilityMatrix?.eventBridge)]
-                    ]}
-                    successIndex={1}
-                  />
-
-                  <RuntimeGatewayInlineWarning
+                  <GatewayLiveHealthPanel
                     snapshot={snapshot}
-                    surfaceTheme={surfaceTheme}
-                    onSnapshotChange={onSnapshotChange}
-                    onRefresh={async () => {
-                      await refreshGatewayAuthStatus();
-                    }}
-                  />
-
-                  <CompatibilityPanel
-                    compatibilityReport={compatibilityReport}
-                    report={compatibilitySmokeReport}
-                    snapshot={snapshot}
-                    capabilityMatrix={capabilityMatrix}
                     transportSummary={transportSummary}
+                    gatewayAuthStatus={gatewayAuthStatus}
                     nativeAuthLabel={nativeAuthLabel}
-                    error={compatibilitySmokeError}
-                    isRunning={isRunningCompatibilitySmoke}
-                    onRun={() => void runCompatibilitySmokeTest()}
+                    displayedGatewayBind={displayedGatewayBind}
                     surfaceTheme={surfaceTheme}
                   />
 
-                  {transportSummary.recovery || transportSummary.lastNativeError ? (
-                    <div className={cn("mt-4 rounded-[18px] border p-3.5", insetPanelClassName(surfaceTheme))}>
-                      <p className={labelClassName(surfaceTheme)}>Native Gateway diagnostic</p>
-                      {transportSummary.lastNativeError ? (
-                        <p className={cn("mt-2 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-300")}>
-                          Last native error: {transportSummary.lastNativeError}
-                        </p>
-                      ) : null}
-                      {transportSummary.recovery ? (
-                        <p className={cn("mt-1 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
-                          Recovery: {transportSummary.recovery}
-                        </p>
-                      ) : null}
-                    </div>
+                  <GatewayRecommendedActionPanel
+                    guidance={gatewayActionGuidance}
+                    isBusy={gatewayActionBusy}
+                    onRun={runRecommendedGatewayAction}
+                    surfaceTheme={surfaceTheme}
+                  />
+
+                  {gatewayOperationFeedback ? (
+                    <GatewayOperationProgressPanel
+                      feedback={gatewayOperationFeedback}
+                      onDismiss={() => setGatewayOperationFeedback(null)}
+                      surfaceTheme={surfaceTheme}
+                    />
                   ) : null}
 
-                  <div className="mt-4 space-y-3">
-                    <div>
-                      <Label className={labelClassName(surfaceTheme)}>Gateway endpoint</Label>
-                      <Input
-                        value={gatewayDraft}
-                        onChange={(event) => onGatewayDraftChange(event.target.value)}
-                        placeholder="ws://127.0.0.1:18789"
-                        className={inputClassName(surfaceTheme, "mt-2")}
-                      />
+                  <div className="mt-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <p className={labelClassName(surfaceTheme)}>Service controls</p>
+                      <p className={cn("text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
+                        {isGatewayServiceOnline ? "Gateway is running" : "Gateway is stopped"}
+                      </p>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        type="button"
-                        onClick={() => void onSaveGatewaySettings(gatewayDraft.trim() || null)}
-                        disabled={isSavingGateway}
-                        className="h-9 rounded-full bg-primary text-xs text-primary-foreground hover:bg-primary/90"
-                      >
-                        {isSavingGateway ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                        Save endpoint
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => void onSaveGatewaySettings(null)}
-                        disabled={isSavingGateway}
-                        className={secondaryButtonClassName(surfaceTheme)}
-                      >
-                        <RotateCcw className="h-3.5 w-3.5" />
-                        Clear
-                      </Button>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {([
+                        { action: "start", label: "Start", disabledReason: isGatewayServiceOnline ? "The Gateway is already running." : null },
+                        { action: "stop", label: "Stop", disabledReason: !isGatewayServiceOnline ? "The Gateway is already stopped." : null },
+                        { action: "restart", label: "Restart", disabledReason: !isGatewayServiceOnline ? "Start the Gateway before restarting it." : null },
+                        { action: "doctor", label: "Doctor --fix", disabledReason: null }
+                      ] as const).map(({ action, label, disabledReason }) => (
+                        <Button
+                          key={action}
+                          type="button"
+                          variant="secondary"
+                          onClick={() => void runGatewayControlAction(action)}
+                          disabled={gatewayActionBusy || Boolean(disabledReason)}
+                          title={disabledReason ?? undefined}
+                          className={cn(
+                            secondaryButtonClassName(surfaceTheme),
+                            "shadow-none",
+                            action === "doctor" ? "normal-case" : "capitalize",
+                            action === "stop" && (surfaceTheme === "light" ? "border-rose-200 text-rose-700 hover:bg-rose-50" : "border-rose-300/15 text-rose-200 hover:bg-rose-300/10")
+                          )}
+                        >
+                          {gatewayControlAction === action ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
+                          {label}
+                        </Button>
+                      ))}
                     </div>
-                  </div>
-
-                  <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {(["start", "stop", "restart", "doctor"] as const).map((action) => (
-                      <Button
-                        key={action}
-                        type="button"
-                        variant="secondary"
-                        onClick={() => void onControlGateway(action)}
-                        disabled={gatewayControlAction !== null}
-                        className={cn(secondaryButtonClassName(surfaceTheme), action === "doctor" ? "normal-case" : "capitalize")}
-                      >
-                        {gatewayControlAction === action ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-                        {action === "doctor" ? "Doctor --fix" : action}
-                      </Button>
-                    ))}
                   </div>
 
                   <div
                     className={cn(
-                      "mt-4 rounded-[18px] p-3.5",
-                      surfaceTheme === "light"
-                        ? "border border-emerald-200 bg-emerald-50/55"
-                        : "border border-cyan-300/12 bg-cyan-300/[0.06]"
+                      "mt-4 rounded-[18px] border p-3.5",
+                      insetPanelClassName(surfaceTheme)
                     )}
                   >
-                    <div className="flex items-start gap-3">
-                      <KeyRound
-                        className={cn(
-                          "mt-0.5 h-4 w-4",
-                          surfaceTheme === "light" ? "text-emerald-700" : "text-cyan-200"
-                        )}
-                      />
-                      <div>
-                        <p className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-[#2f624b]" : "text-slate-100")}>
-                          Native Gateway auth
-                        </p>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <KeyRound className={cn("mt-0.5 h-4 w-4 shrink-0", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")} />
+                        <div>
+                          <p className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+                            Native Gateway auth
+                          </p>
                         <p
                           className={cn(
                             "mt-1 text-xs leading-5",
-                            surfaceTheme === "light" ? "text-[#6f836f]" : "text-slate-400"
+                            surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400"
                           )}
                         >
-                          Use local repair when AgentOS reports missing operator scopes.
+                          {!gatewayAuthStatus
+                            ? "Checking the current Gateway authentication state."
+                            : gatewayAuthStatus.native.ok
+                              ? "Authentication is healthy. Repair actions stay disabled until a matching issue is detected."
+                              : gatewayAuthNeedsScopeRepair
+                                ? "Required operator scopes are missing. Repair local access to continue."
+                                : gatewayAuthNeedsTokenRepair
+                                  ? "The configured credential does not match the running Gateway."
+                                  : gatewayAuthStatus.recommendation}
                         </p>
+                        </div>
                       </div>
+                      <span className={transportTonePillClassName(
+                        !gatewayAuthStatus ? "neutral" : gatewayAuthStatus.native.ok ? "success" : "warning",
+                        surfaceTheme
+                      )}>
+                        {!gatewayAuthStatus ? "Checking" : gatewayAuthStatus.native.ok ? "Healthy" : "Attention"}
+                      </span>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       <Button
                         type="button"
                         variant="secondary"
                         onClick={() => void repairGatewayDeviceAccess()}
-                        disabled={isRepairingGatewayDeviceAccess || Boolean(gatewayAccessRepairBlockMessage)}
+                        disabled={gatewayActionBusy || Boolean(gatewayAccessRepairDisabledReason)}
                         className={secondaryButtonClassName(surfaceTheme, "px-3", "gateway-contrast")}
-                        title={gatewayAccessRepairBlockMessage ?? undefined}
+                        title={gatewayAccessRepairDisabledReason ?? undefined}
                       >
                         {isRepairingGatewayDeviceAccess ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}
                         Repair local access
@@ -1812,51 +1861,60 @@ export function SettingsControlCenter(
                         type="button"
                         variant="secondary"
                         onClick={() => void generateGatewayAuthToken()}
-                        disabled={isGeneratingGatewayAuthToken}
+                        disabled={gatewayActionBusy || Boolean(gatewayTokenRepairDisabledReason)}
                         className={secondaryButtonClassName(surfaceTheme, "px-3", "gateway-contrast")}
+                        title={gatewayTokenRepairDisabledReason ?? undefined}
                       >
                         {isGeneratingGatewayAuthToken ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
                         Repair token
                       </Button>
                     </div>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-[112px_1fr]">
-                      <select
-                        value={gatewayAuthCredentialKind}
-                        onChange={(event) => setGatewayAuthCredentialKind(event.target.value as GatewayNativeAuthCredentialKind)}
-                        className={inputClassName(surfaceTheme)}
-                      >
-                        <option value="token">Token</option>
-                        <option value="password">Password</option>
-                      </select>
-                      <Input
-                        type="password"
-                        value={gatewayAuthCredential}
-                        onChange={(event) => setGatewayAuthCredential(event.target.value)}
-                        placeholder="Paste known credential"
-                        className={inputClassName(surfaceTheme)}
-                      />
-                    </div>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <Button
-                        type="button"
-                        onClick={() => void saveGatewayAuthCredential()}
-                        disabled={isSavingGatewayAuthCredential}
-                        className="h-9 rounded-full bg-primary text-xs text-primary-foreground hover:bg-primary/90"
-                      >
-                        {isSavingGatewayAuthCredential ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                        Save credential
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => void refreshGatewayAuthStatus()}
-                        disabled={isCheckingGatewayAuth}
-                        className={secondaryButtonClassName(surfaceTheme, undefined, "gateway-contrast")}
-                      >
-                        {isCheckingGatewayAuth ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                        Test auth
-                      </Button>
-                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => void refreshGatewayAuthStatus()}
+                      disabled={isCheckingGatewayAuth || gatewayActionBusy}
+                      className={cn(secondaryButtonClassName(surfaceTheme, "mt-2 w-full", "gateway-contrast"))}
+                    >
+                      {isCheckingGatewayAuth ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                      Test auth
+                    </Button>
+
+                    <details className={cn("group mt-3 rounded-[14px] border", surfaceTheme === "light" ? "border-border bg-white/60" : "border-white/[0.08] bg-black/10")}>
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5">
+                        <span className={cn("text-xs font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-200")}>Use a known credential</span>
+                        <ChevronDown className={cn("h-4 w-4 transition-transform group-open:rotate-180", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")} />
+                      </summary>
+                      <div className={cn("border-t p-3", surfaceTheme === "light" ? "border-border" : "border-white/[0.08]")}>
+                        <div className="grid gap-2 sm:grid-cols-[112px_1fr]">
+                          <select
+                            value={gatewayAuthCredentialKind}
+                            onChange={(event) => setGatewayAuthCredentialKind(event.target.value as GatewayNativeAuthCredentialKind)}
+                            className={inputClassName(surfaceTheme)}
+                          >
+                            <option value="token">Token</option>
+                            <option value="password">Password</option>
+                          </select>
+                          <Input
+                            type="password"
+                            value={gatewayAuthCredential}
+                            onChange={(event) => setGatewayAuthCredential(event.target.value)}
+                            placeholder="Paste known credential"
+                            className={inputClassName(surfaceTheme)}
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          onClick={() => void saveGatewayAuthCredential()}
+                          disabled={isSavingGatewayAuthCredential || !gatewayAuthCredential.trim()}
+                          title={!gatewayAuthCredential.trim() ? "Enter a known Gateway credential before saving." : undefined}
+                          className="mt-2 h-9 w-full rounded-full bg-primary text-xs text-primary-foreground shadow-none hover:bg-primary/90 disabled:border disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
+                        >
+                          {isSavingGatewayAuthCredential ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                          Save credential
+                        </Button>
+                      </div>
+                    </details>
                     {gatewayAccessRepairBlockMessage ? (
                       <div
                         className={cn(
@@ -1901,6 +1959,98 @@ export function SettingsControlCenter(
                       </p>
                     ) : null}
                   </div>
+
+                  <details className={cn("group mt-4 rounded-[16px] border", insetPanelClassName(surfaceTheme))}>
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3.5 py-3">
+                      <div className="min-w-0">
+                        <p className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>Connection settings</p>
+                        <p className={cn("mt-0.5 truncate text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
+                          {snapshot.diagnostics.gatewayUrl || "No Gateway endpoint configured"} · {displayedGatewayBind}
+                        </p>
+                      </div>
+                      <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform group-open:rotate-180", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")} />
+                    </summary>
+                    <div className={cn("border-t p-3.5", surfaceTheme === "light" ? "border-border" : "border-white/[0.08]")}>
+                      <Label className={labelClassName(surfaceTheme)}>Gateway endpoint</Label>
+                      <Input
+                        value={gatewayDraft}
+                        onChange={(event) => onGatewayDraftChange(event.target.value)}
+                        placeholder="ws://127.0.0.1:18789"
+                        className={inputClassName(surfaceTheme, "mt-2")}
+                      />
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          onClick={() => void onSaveGatewaySettings(gatewayDraft.trim() || null)}
+                          disabled={isSavingGateway || !hasGatewayEndpointChanges}
+                          title={!hasGatewayEndpointChanges ? "The Gateway endpoint has not changed." : undefined}
+                          className="h-9 rounded-full bg-primary text-xs text-primary-foreground shadow-none hover:bg-primary/90 disabled:border disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
+                        >
+                          {isSavingGateway ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                          Save endpoint
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => void onSaveGatewaySettings(null)}
+                          disabled={isSavingGateway || !hasConfiguredGatewayEndpoint}
+                          title={!hasConfiguredGatewayEndpoint ? "No custom Gateway endpoint is configured." : undefined}
+                          className={secondaryButtonClassName(surfaceTheme)}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                          Clear
+                        </Button>
+                      </div>
+                    </div>
+                  </details>
+
+                  <RuntimeGatewayInlineWarning
+                    snapshot={snapshot}
+                    surfaceTheme={surfaceTheme}
+                    onSnapshotChange={onSnapshotChange}
+                    onRefresh={async () => {
+                      await refreshGatewayAuthStatus();
+                    }}
+                  />
+
+                  <CompatibilityPanel
+                    compatibilityReport={compatibilityReport}
+                    report={compatibilitySmokeReport}
+                    snapshot={snapshot}
+                    capabilityMatrix={capabilityMatrix}
+                    transportSummary={transportSummary}
+                    nativeAuthLabel={nativeAuthLabel}
+                    error={compatibilitySmokeError}
+                    isRunning={isRunningCompatibilitySmoke}
+                    onRun={() => void runCompatibilitySmokeTest()}
+                    surfaceTheme={surfaceTheme}
+                  />
+
+                  {transportSummary.recovery || transportSummary.lastNativeError ? (
+                    <details className={cn("group mt-3 rounded-[16px] border", insetPanelClassName(surfaceTheme))}>
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3.5 py-3">
+                        <div className="min-w-0">
+                          <p className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>Native transport details</p>
+                          <p className={cn("mt-0.5 truncate text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
+                            {transportSummary.lastNativeError || transportSummary.recovery}
+                          </p>
+                        </div>
+                        <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform group-open:rotate-180", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")} />
+                      </summary>
+                      <div className={cn("border-t p-3.5", surfaceTheme === "light" ? "border-border" : "border-white/[0.08]")}>
+                        {transportSummary.lastNativeError ? (
+                          <p className={cn("text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-300")}>
+                            Last native error: {transportSummary.lastNativeError}
+                          </p>
+                        ) : null}
+                        {transportSummary.recovery ? (
+                          <p className={cn("mt-1 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
+                            Recovery: {transportSummary.recovery}
+                          </p>
+                        ) : null}
+                      </div>
+                    </details>
+                  ) : null}
                 </Card>
               </section>
               ) : null}
@@ -4089,6 +4239,322 @@ function evidenceTagClassName(tone: "success" | "warning" | "danger" | "neutral"
   return contractBadgeClassName("gray", surfaceTheme);
 }
 
+function GatewayLiveHealthPanel({
+  snapshot,
+  transportSummary,
+  gatewayAuthStatus,
+  nativeAuthLabel,
+  displayedGatewayBind,
+  surfaceTheme
+}: {
+  snapshot: MissionControlShellSettingsPanelProps["snapshot"];
+  transportSummary: TransportDiagnosticsSummary;
+  gatewayAuthStatus: GatewayNativeAuthStatus | null;
+  nativeAuthLabel: string;
+  displayedGatewayBind: string;
+  surfaceTheme: SurfaceTheme;
+}) {
+  const isServiceOnline = snapshot.diagnostics.loaded || snapshot.diagnostics.rpcOk;
+  const serviceTone: TransportStatusTone = isServiceOnline ? "success" : "danger";
+  const authTone: TransportStatusTone = gatewayAuthStatus
+    ? gatewayAuthStatus.native.ok
+      ? "success"
+      : "danger"
+    : "neutral";
+  const summary = !isServiceOnline
+    ? "The Gateway is unavailable. Start or restart it before repairing authentication."
+    : gatewayAuthStatus && !gatewayAuthStatus.native.ok
+      ? "The Gateway is running, but native authentication needs attention."
+      : transportSummary.statusTone === "danger"
+        ? "The Gateway is online, but the native transport is not ready."
+        : transportSummary.statusTone === "warning"
+          ? "The Gateway is authenticated and available with an explicit recovery path in use."
+          : "The Gateway is online, authenticated, and ready for native operations.";
+
+  return (
+    <div
+      aria-label="Live Gateway health"
+      className={cn(
+        "rounded-[18px] border p-3.5",
+        surfaceTheme === "light"
+          ? "border-border bg-card"
+          : "border-white/[0.08] bg-[#101a2a]/92"
+      )}
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className={labelClassName(surfaceTheme)}>Live Gateway health</p>
+          <p className={cn("mt-1.5 text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+            {summary}
+          </p>
+        </div>
+        <p className={cn("shrink-0 text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
+          Checked {gatewayAuthStatus?.native.checkedAt ? formatTimestamp(gatewayAuthStatus.native.checkedAt) : "from current snapshot"}
+        </p>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <GatewayHealthMetric
+          label="Service"
+          value={isServiceOnline ? "Online" : "Offline"}
+          detail={`${resolveGatewayLocality(snapshot)} Gateway`}
+          tone={serviceTone}
+          surfaceTheme={surfaceTheme}
+        />
+        <GatewayHealthMetric
+          label="Authentication"
+          value={nativeAuthLabel}
+          detail={gatewayAuthStatus?.mode ? `${gatewayAuthStatus.mode} mode` : "Auth mode unknown"}
+          tone={authTone}
+          surfaceTheme={surfaceTheme}
+        />
+        <GatewayHealthMetric
+          label="Native transport"
+          value={transportSummary.statusLabel}
+          detail={transportSummary.gatewayModeLabel}
+          tone={transportSummary.statusTone}
+          surfaceTheme={surfaceTheme}
+        />
+      </div>
+
+      <div className={cn("mt-3 grid gap-x-4 gap-y-2 border-t pt-3 text-xs sm:grid-cols-3", surfaceTheme === "light" ? "border-border text-muted-foreground" : "border-white/[0.08] text-slate-400")}>
+        <p><span className="font-medium">Endpoint:</span> {snapshot.diagnostics.gatewayUrl || "Not configured"}</p>
+        <p><span className="font-medium">Gateway bind:</span> {displayedGatewayBind}</p>
+        <p><span className="font-medium">Protocol:</span> {transportSummary.protocolLabel}</p>
+      </div>
+    </div>
+  );
+}
+
+function GatewayHealthMetric({
+  label,
+  value,
+  detail,
+  tone,
+  surfaceTheme
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone: TransportStatusTone;
+  surfaceTheme: SurfaceTheme;
+}) {
+  return (
+    <div className={cn("rounded-[16px] border p-3", insetPanelClassName(surfaceTheme))}>
+      <div className="flex items-center justify-between gap-2">
+        <p className={labelClassName(surfaceTheme)}>{label}</p>
+        <span className={transportTonePillClassName(tone, surfaceTheme)}>{value}</span>
+      </div>
+      <p className={cn("mt-2 text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>{detail}</p>
+    </div>
+  );
+}
+
+function GatewayRecommendedActionPanel({
+  guidance,
+  isBusy,
+  onRun,
+  surfaceTheme
+}: {
+  guidance: GatewayActionGuidance;
+  isBusy: boolean;
+  onRun: () => void;
+  surfaceTheme: SurfaceTheme;
+}) {
+  const needsAction = guidance.action !== null;
+  const isChecking = guidance.state === "checking";
+  const guidanceTone: TransportStatusTone = needsAction ? "warning" : isChecking ? "neutral" : "success";
+
+  return (
+    <div
+      aria-label="Recommended Gateway action"
+      className={cn(
+        "mt-3 flex flex-col gap-3 rounded-[16px] border p-3 sm:flex-row sm:items-center sm:justify-between",
+        needsAction
+          ? surfaceTheme === "light"
+            ? "border-amber-200 bg-amber-50/65"
+            : "border-amber-300/20 bg-amber-300/[0.07]"
+          : isChecking
+            ? insetPanelClassName(surfaceTheme)
+          : surfaceTheme === "light"
+            ? "border-emerald-200 bg-card"
+            : "border-emerald-300/15 bg-[#101a2a]/92"
+      )}
+    >
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className={labelClassName(surfaceTheme)}>Recommended action</p>
+          <span className={transportTonePillClassName(guidanceTone, surfaceTheme)}>
+            {needsAction ? "Attention" : isChecking ? "Checking" : "Ready"}
+          </span>
+        </div>
+        <p className={cn("mt-1.5 text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>{guidance.label}</p>
+        <p className={cn("mt-1 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>{guidance.detail}</p>
+      </div>
+      {needsAction ? (
+        <Button
+          type="button"
+          onClick={onRun}
+          disabled={isBusy}
+          className="h-9 shrink-0 rounded-full bg-primary px-4 text-xs text-primary-foreground shadow-none hover:bg-primary/90"
+        >
+          {isBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}
+          {isBusy ? "Working..." : guidance.label}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function GatewayOperationProgressPanel({
+  feedback,
+  onDismiss,
+  surfaceTheme
+}: {
+  feedback: GatewayOperationFeedback;
+  onDismiss: () => void;
+  surfaceTheme: SurfaceTheme;
+}) {
+  const steps = gatewayOperationSteps(feedback.kind);
+  const isRunning = feedback.status === "running";
+  const tone: TransportStatusTone = isRunning ? "warning" : feedback.status === "success" ? "success" : "danger";
+
+  return (
+    <div
+      aria-label="Gateway operation progress"
+      aria-live="polite"
+      className={cn(
+        "mt-3 rounded-[16px] border p-3.5",
+        feedback.status === "success"
+          ? surfaceTheme === "light" ? "border-emerald-200 bg-card" : "border-emerald-300/15 bg-[#101a2a]/92"
+          : feedback.status === "error"
+            ? surfaceTheme === "light" ? "border-rose-200 bg-rose-50/60" : "border-rose-300/20 bg-rose-300/[0.07]"
+            : insetPanelClassName(surfaceTheme)
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className={labelClassName(surfaceTheme)}>Gateway operation</p>
+            <span className={transportTonePillClassName(tone, surfaceTheme)}>
+              {isRunning ? "In progress" : feedback.status}
+            </span>
+          </div>
+          <p className={cn("mt-1.5 text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
+            {gatewayOperationLabel(feedback.kind)}
+          </p>
+          <p className={cn("mt-1 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
+            {feedback.message}
+          </p>
+        </div>
+        {!isRunning ? (
+          <button
+            type="button"
+            onClick={onDismiss}
+            className={cn("rounded-full p-1 transition-colors", surfaceTheme === "light" ? "text-muted-foreground hover:bg-black/5 hover:text-foreground" : "text-slate-400 hover:bg-white/10 hover:text-white")}
+            aria-label="Dismiss Gateway operation result"
+          >
+            <XCircle className="h-4 w-4" />
+          </button>
+        ) : null}
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        {steps.map((step, index) => {
+          const stepState = feedback.status === "success"
+            ? "complete"
+            : index === 0
+              ? "complete"
+              : index === 1
+                ? feedback.status === "error" ? "error" : "active"
+                : "pending";
+
+          return (
+            <div key={step} className={cn("flex items-start gap-2 rounded-[14px] border p-2.5", insetPanelClassName(surfaceTheme))}>
+              {stepState === "complete" ? (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+              ) : stepState === "error" ? (
+                <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
+              ) : stepState === "active" ? (
+                <LoaderCircle className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-amber-500" />
+              ) : (
+                <span className={cn("mt-1 h-2.5 w-2.5 shrink-0 rounded-full border", surfaceTheme === "light" ? "border-slate-300" : "border-slate-600")} />
+              )}
+              <div className="min-w-0">
+                <p className={cn("text-xs font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-200")}>{step}</p>
+                <p className={cn("mt-0.5 text-[10px] uppercase tracking-[0.1em]", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-500")}>
+                  {stepState}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className={cn("mt-2 text-[10px]", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-500")}>
+        Started {formatTimestamp(feedback.startedAt)}
+        {feedback.finishedAt ? ` · Finished ${formatTimestamp(feedback.finishedAt)}` : ""}
+      </p>
+    </div>
+  );
+}
+
+function gatewayOperationSteps(kind: GatewayOperationKind) {
+  switch (kind) {
+    case "repair-token":
+      return ["Prepare secure repair", "Apply token and restart", "Verify native authentication"];
+    case "repair-access":
+      return ["Prepare access repair", "Approve scopes and sync", "Verify native authentication"];
+    case "restart":
+      return ["Prepare control request", "Restart Gateway service", "Verify refreshed runtime state"];
+    case "start":
+      return ["Prepare control request", "Start Gateway service", "Verify refreshed runtime state"];
+    case "stop":
+      return ["Prepare control request", "Stop Gateway service", "Verify stopped runtime state"];
+    case "doctor":
+      return ["Prepare recovery request", "Run OpenClaw doctor --fix", "Refresh Gateway diagnostics"];
+  }
+}
+
+function gatewayOperationLabel(kind: GatewayOperationKind) {
+  switch (kind) {
+    case "repair-token":
+      return "Repair Gateway token";
+    case "repair-access":
+      return "Repair local Gateway access";
+    case "doctor":
+      return "Run OpenClaw doctor --fix";
+    default:
+      return `${kind.charAt(0).toUpperCase()}${kind.slice(1)} Gateway`;
+  }
+}
+
+function gatewayControlRunningMessage(action: GatewayControlAction) {
+  switch (action) {
+    case "doctor":
+      return "Running OpenClaw doctor --fix and waiting for refreshed Gateway diagnostics.";
+    case "restart":
+      return "Restarting the Gateway service and waiting for a refreshed runtime snapshot.";
+    case "start":
+      return "Starting the Gateway service and waiting for a refreshed runtime snapshot.";
+    case "stop":
+      return "Stopping the Gateway service and waiting for the stopped runtime state.";
+  }
+}
+
+function gatewayControlSuccessMessage(action: GatewayControlAction) {
+  switch (action) {
+    case "doctor":
+      return "OpenClaw doctor --fix completed and Gateway diagnostics were refreshed.";
+    case "restart":
+      return "Gateway restarted and the refreshed runtime state was received.";
+    case "start":
+      return "Gateway started and the refreshed runtime state was received.";
+    case "stop":
+      return "Gateway stopped and the refreshed runtime state was received.";
+  }
+}
+
 function CompatibilityPanel({
   compatibilityReport,
   report,
@@ -4163,16 +4629,20 @@ function CompatibilityPanel({
     <div className={cn("mt-4 rounded-[18px] border p-3.5", insetPanelClassName(surfaceTheme))}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <p className={labelClassName(surfaceTheme)}>Compatibility</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className={labelClassName(surfaceTheme)}>Technical diagnostics</p>
+            {(compatibilityReport || report) ? (
+              <span className={transportTonePillClassName("neutral", surfaceTheme)}>Historical evidence</span>
+            ) : null}
+          </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             <p className={cn("font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
               {statusLabel}
             </p>
             <span className={transportTonePillClassName(statusTone, surfaceTheme)}>{safeLabel}</span>
           </div>
-          <p className={cn("mt-1 text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
-            Report: {compatibilityReport ? formatTimestamp(compatibilityReport.generatedAt) : "Not available"}
-            {report ? ` / Smoke: ${formatTimestamp(report.checkedAt)}` : ""}
+          <p className={cn("mt-1 max-w-2xl text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
+            Saved compatibility evidence does not override the live service, authentication, or transport state above.
           </p>
         </div>
         <Button
@@ -4187,132 +4657,85 @@ function CompatibilityPanel({
         </Button>
       </div>
 
-      <div className="mt-3">
-        <InfoRows
-          surfaceTheme={surfaceTheme}
-          rows={[
-            ["Installed OpenClaw", formatVersionValue(compatibilityReport?.openClaw.installedVersion ?? compatibility?.installedVersion ?? snapshot.diagnostics.version ?? null)],
-            ["Required OpenClaw", formatVersionValue(compatibility?.requiredOpenClawVersion ?? compatibilityReport?.openClaw.supportedBaselineVersion ?? null)],
-            ["Recommended OpenClaw", formatVersionValue(compatibilityReport?.openClaw.recommendedVersion ?? compatibility?.recommendedOpenClawVersion ?? snapshot.diagnostics.latestVersion ?? null)],
-            ["Gateway protocol status", compatibilityReport ? formatGatewayProtocolReport(compatibilityReport) : compatibility?.gatewayProtocolVersion ? `v${compatibility.gatewayProtocolVersion}` : capabilityMatrix?.gatewayProtocolVersion ? `v${capabilityMatrix.gatewayProtocolVersion}` : transportSummary.protocolLabel],
-            ["AgentOS protocol range", protocolRange],
-            ["Native Gateway coverage", compatibilityReport ? `${compatibilityReport.summary.nativeGatewayCoveragePercent}% (${compatibilityReport.summary.nativeGatewayCoverageLabel})` : "Unknown"],
-            ["CLI fallback operation count", compatibilityReport ? String(compatibilityReport.summary.cliFallbackOperationCount) : "Unknown"],
-            ["Unsupported/degraded integrations", compatibilityReport ? (reportIssues.length > 0 ? formatShortList(reportIssues, 3) : "None") : "Unknown"],
-            ["Node.js", compatibility?.nodeVersion ? `${compatibility.nodeVersion} / ${formatNodeStatus(compatibility.nodeStatus)}` : "Run smoke test"],
-            ["Gateway auth", compatibility?.gatewayAuthStatus || nativeAuthLabel],
-            ["Native Gateway", compatibilityReport ? `${compatibilityReport.gateway.health} / ${compatibilityReport.gateway.capabilitySource}` : compatibility?.nativeGatewayStatus || transportSummary.statusLabel],
-            ["CLI fallback count", String(compatibility?.cliFallbackUsageCount ?? transportSummary.fallbackTotal)],
-            ["Last native error", lastNativeError],
-            ["Last fallback reason", fallbackReason]
-          ]}
-        />
-      </div>
+      <details className={cn("group mt-3 rounded-[16px] border", surfaceTheme === "light" ? "border-border bg-card" : "border-white/[0.08] bg-[#101a2a]/92")}>
+        <summary className="flex cursor-pointer list-none items-center gap-3 px-3.5 py-3">
+          <div className="min-w-0 flex-1">
+            <p className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>Show saved technical report</p>
+            <p className={cn("mt-0.5 text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
+              Report: {compatibilityReport ? formatTimestamp(compatibilityReport.generatedAt) : "Not available"}
+              {report ? ` / Smoke: ${formatTimestamp(report.checkedAt)}` : ""}
+            </p>
+          </div>
+          <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform group-open:rotate-180", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")} />
+        </summary>
 
-      <div
-        className={cn(
-          "mt-3 rounded-[16px] border p-3 text-xs leading-5",
-          surfaceTheme === "light"
-            ? "border-border bg-muted/45 text-foreground"
-            : "border-white/[0.08] bg-[#0d1624] text-slate-300"
-        )}
-      >
-        <p className={labelClassName(surfaceTheme)}>Recovery suggestion</p>
-        <p className="mt-1.5">{recovery}</p>
-        {error ? (
-          <p className={cn("mt-1.5", surfaceTheme === "light" ? "text-rose-700" : "text-rose-200")}>
-            {error}
-          </p>
-        ) : null}
-      </div>
+        <div className={cn("border-t p-3.5", surfaceTheme === "light" ? "border-border" : "border-white/[0.08]")}>
+          <InfoRows
+            surfaceTheme={surfaceTheme}
+            rows={[
+              ["Installed OpenClaw", formatVersionValue(compatibilityReport?.openClaw.installedVersion ?? compatibility?.installedVersion ?? snapshot.diagnostics.version ?? null)],
+              ["Required OpenClaw", formatVersionValue(compatibility?.requiredOpenClawVersion ?? compatibilityReport?.openClaw.supportedBaselineVersion ?? null)],
+              ["Recommended OpenClaw", formatVersionValue(compatibilityReport?.openClaw.recommendedVersion ?? compatibility?.recommendedOpenClawVersion ?? snapshot.diagnostics.latestVersion ?? null)],
+              ["Gateway protocol status", compatibilityReport ? formatGatewayProtocolReport(compatibilityReport) : compatibility?.gatewayProtocolVersion ? `v${compatibility.gatewayProtocolVersion}` : capabilityMatrix?.gatewayProtocolVersion ? `v${capabilityMatrix.gatewayProtocolVersion}` : transportSummary.protocolLabel],
+              ["AgentOS protocol range", protocolRange],
+              ["Native Gateway coverage", compatibilityReport ? `${compatibilityReport.summary.nativeGatewayCoveragePercent}% (${compatibilityReport.summary.nativeGatewayCoverageLabel})` : "Unknown"],
+              ["CLI fallback operation count", compatibilityReport ? String(compatibilityReport.summary.cliFallbackOperationCount) : "Unknown"],
+              ["Unsupported/degraded integrations", compatibilityReport ? (reportIssues.length > 0 ? formatShortList(reportIssues, 3) : "None") : "Unknown"],
+              ["Node.js", compatibility?.nodeVersion ? `${compatibility.nodeVersion} / ${formatNodeStatus(compatibility.nodeStatus)}` : "Run smoke test"],
+              ["Gateway auth", compatibility?.gatewayAuthStatus || nativeAuthLabel],
+              ["Native Gateway", compatibilityReport ? `${compatibilityReport.gateway.health} / ${compatibilityReport.gateway.capabilitySource}` : compatibility?.nativeGatewayStatus || transportSummary.statusLabel],
+              ["CLI fallback count", String(compatibility?.cliFallbackUsageCount ?? transportSummary.fallbackTotal)],
+              ["Last native error", lastNativeError],
+              ["Last fallback reason", fallbackReason]
+            ]}
+          />
 
-      {visibleContractIssues.length > 0 ? (
-        <div className="mt-3 space-y-2">
-          {visibleContractIssues.map((check) => (
-            <div
-              key={check.operation}
-              className={cn(
-                "rounded-[16px] border p-3",
-                surfaceTheme === "light"
-                  ? "border-border bg-card"
-                  : "border-white/[0.08] bg-[#101a2a]/92"
-              )}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={transportTonePillClassName(contractStatusTone(check.status), surfaceTheme)}>
-                  {formatContractStatus(check.status)}
-                </span>
-                <p className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
-                  {check.label}
-                </p>
-              </div>
-              <p className={cn("mt-2 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-300")}>
-                {check.reason}
-              </p>
-              <p className={cn("mt-1 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
-                Recovery: {check.suggestedRecovery}
-              </p>
-            </div>
-          ))}
-        </div>
-      ) : null}
+          <div className={cn("mt-3 rounded-[16px] border p-3 text-xs leading-5", surfaceTheme === "light" ? "border-border bg-muted/45 text-foreground" : "border-white/[0.08] bg-[#0d1624] text-slate-300")}>
+            <p className={labelClassName(surfaceTheme)}>Recovery suggestion</p>
+            <p className="mt-1.5">{recovery}</p>
+            {error ? <p className={cn("mt-1.5", surfaceTheme === "light" ? "text-rose-700" : "text-rose-200")}>{error}</p> : null}
+          </div>
 
-      {report?.checks.length ? (
-        <div className="mt-3 space-y-2">
-          {report.checks.map((check) => (
-            <details
-              key={check.id}
-              className={cn(
-                "group rounded-[16px] border",
-                surfaceTheme === "light"
-                  ? "border-border bg-card"
-                  : "border-white/[0.08] bg-[#101a2a]/92"
-              )}
-            >
-              <summary className="flex cursor-pointer list-none items-center gap-3 px-3.5 py-2.5">
-                <span className={transportTonePillClassName(smokeCheckTone(check.status), surfaceTheme)}>
-                  {formatSmokeCheckStatus(check.status)}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className={cn("truncate text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
-                    {check.label}
-                  </p>
-                  <p className={cn("mt-0.5 truncate text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
-                    {check.summary}
-                  </p>
+          {visibleContractIssues.length > 0 ? (
+            <div className="mt-3 space-y-2">
+              {visibleContractIssues.map((check) => (
+                <div key={check.operation} className={cn("rounded-[16px] border p-3", surfaceTheme === "light" ? "border-border bg-card" : "border-white/[0.08] bg-[#101a2a]/92")}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={transportTonePillClassName(contractStatusTone(check.status), surfaceTheme)}>{formatContractStatus(check.status)}</span>
+                    <p className={cn("text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>{check.label}</p>
+                  </div>
+                  <p className={cn("mt-2 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-300")}>{check.reason}</p>
+                  <p className={cn("mt-1 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>Recovery: {check.suggestedRecovery}</p>
                 </div>
-                <span className={cn("hidden text-xs sm:inline", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>
-                  {check.durationMs} ms
-                </span>
-                <ChevronDown className={cn("h-4 w-4 transition-transform group-open:rotate-180", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")} />
-              </summary>
-              <div
-                className={cn(
-                  "border-t p-3.5",
-                  surfaceTheme === "light" ? "border-border" : "border-white/[0.08]"
-                )}
-              >
-                {check.recovery ? (
-                  <p className={cn("mb-3 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-300")}>
-                    Recovery: {check.recovery}
-                  </p>
-                ) : null}
-                <DiagnosticBlock
-                  title="raw details"
-                  value={formatRawDetails(check.rawDetails)}
-                  surfaceTheme={surfaceTheme}
-                />
-              </div>
-            </details>
-          ))}
+              ))}
+            </div>
+          ) : null}
+
+          {report?.checks.length ? (
+            <div className="mt-3 space-y-2">
+              {report.checks.map((check) => (
+                <details key={check.id} className={cn("group/check rounded-[16px] border", surfaceTheme === "light" ? "border-border bg-card" : "border-white/[0.08] bg-[#101a2a]/92")}>
+                  <summary className="flex cursor-pointer list-none items-center gap-3 px-3.5 py-2.5">
+                    <span className={transportTonePillClassName(smokeCheckTone(check.status), surfaceTheme)}>{formatSmokeCheckStatus(check.status)}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className={cn("truncate text-sm font-medium", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>{check.label}</p>
+                      <p className={cn("mt-0.5 truncate text-xs", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>{check.summary}</p>
+                    </div>
+                    <span className={cn("hidden text-xs sm:inline", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")}>{check.durationMs} ms</span>
+                    <ChevronDown className={cn("h-4 w-4 transition-transform group-open/check:rotate-180", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-400")} />
+                  </summary>
+                  <div className={cn("border-t p-3.5", surfaceTheme === "light" ? "border-border" : "border-white/[0.08]")}>
+                    {check.recovery ? <p className={cn("mb-3 text-xs leading-5", surfaceTheme === "light" ? "text-muted-foreground" : "text-slate-300")}>Recovery: {check.recovery}</p> : null}
+                    <DiagnosticBlock title="raw details" value={formatRawDetails(check.rawDetails)} surfaceTheme={surfaceTheme} />
+                  </div>
+                </details>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="No compatibility smoke report" detail="Run the smoke test to verify OpenClaw binary, Gateway, models, sessions, tasks, config, events, and fallback behavior." surfaceTheme={surfaceTheme} />
+          )}
         </div>
-      ) : (
-        <EmptyState
-          title="No compatibility smoke report"
-          detail="Run the smoke test to verify OpenClaw binary, Gateway, models, sessions, tasks, config, events, and fallback behavior."
-          surfaceTheme={surfaceTheme}
-        />
-      )}
+      </details>
     </div>
   );
 }
@@ -5303,18 +5726,6 @@ function resolveGatewayLocality(snapshot: MissionControlShellSettingsPanelProps[
     : "Local";
 }
 
-function formatCapabilitySupport(value?: "supported" | "unsupported" | "unknown") {
-  if (value === "supported") {
-    return "Supported";
-  }
-
-  if (value === "unsupported") {
-    return "Fallback";
-  }
-
-  return "Unknown";
-}
-
 function formatCompatibilitySmokeStatus(value: CompatibilitySmokeReport["status"]) {
   switch (value) {
     case "compatible":
@@ -5526,16 +5937,6 @@ function formatGatewayProtocolReport(report: CompatibilityReport) {
   return `${version} / ${report.gateway.protocolStatus}`;
 }
 
-function formatCompatibilityReportIssues(report: CompatibilityReport) {
-  const values = [
-    ...report.summary.failedSurfaces,
-    ...report.summary.unsupportedSurfaces,
-    ...report.summary.degradedSurfaces
-  ];
-
-  return values.length > 0 ? formatShortList(values, 3) : "None";
-}
-
 function formatShortList(values: string[], maxVisible: number) {
   const unique = Array.from(new Set(values));
   const visible = unique.slice(0, maxVisible);
@@ -5558,128 +5959,6 @@ function formatRawDetails(value: unknown) {
   } catch {
     return String(value);
   }
-}
-
-function formatGatewayCompatibilityStatus(
-  value?: GatewayCompatibilityProfile
-) {
-  switch (value?.protocol.status) {
-    case "compatible":
-      return "Compatible";
-    case "unsupported":
-      return "Unsupported";
-    case "unknown":
-    default:
-      return "Unknown";
-  }
-}
-
-function formatGatewayOperationCounts(value?: GatewayCompatibilityProfile) {
-  if (!value) {
-    return "Unknown";
-  }
-
-  return `${value.nativeOperationCount} native / ${value.degradedOperationCount} limited`;
-}
-
-function formatGatewayMethodContractStatus(value?: GatewayMethodContractAudit) {
-  if (!value) {
-    return "Unknown";
-  }
-
-  const source = formatGatewayMethodContractSource(value.source);
-
-  switch (value.status) {
-    case "advertised":
-      return `Advertised via ${source}`;
-    case "verified":
-      return `Verified via ${source}`;
-    case "drift":
-      return `Drift via ${source}`;
-    case "unknown":
-    default:
-      return `Unknown via ${source}`;
-  }
-}
-
-function formatGatewayMethodContractGaps(
-  value?: GatewayMethodContractAudit,
-  operations?: GatewayCapabilityOperations
-) {
-  if (!value) {
-    return "Unknown";
-  }
-
-  if (value.status === "advertised" || value.status === "verified") {
-    return "None";
-  }
-
-  if (value.status === "unknown") {
-    return value.reason;
-  }
-
-  if (value.missingOperations.length > 0) {
-    return formatGatewayOperationList(value.missingOperations, operations);
-  }
-
-  return `${value.missingMethodCount} methods`;
-}
-
-function formatGatewayMethodContractSource(source: GatewayMethodContractAudit["source"]) {
-  switch (source) {
-    case "gateway-handshake":
-      return "handshake";
-    case "disabled":
-      return "disabled";
-    case "unavailable":
-      return "unavailable";
-    default:
-      return source;
-  }
-}
-
-function formatGatewayAliasOperations(value?: string[], operations?: GatewayCapabilityOperations) {
-  if (!value) {
-    return "Unknown";
-  }
-
-  return value.length > 0 ? formatGatewayOperationList(value, operations) : "None";
-}
-
-function formatGatewayDegradedOperations(value?: string[], operations?: GatewayCapabilityOperations) {
-  if (!value) {
-    return "Unknown";
-  }
-
-  return value.length > 0 ? formatGatewayOperationList(value, operations) : "None";
-}
-
-function formatGatewayOperationList(value: string[], operations?: GatewayCapabilityOperations) {
-  const visible = value.slice(0, 3).map((entry) => formatGatewayOperationEntry(entry, operations));
-  const suffix = value.length > visible.length ? ` +${value.length - visible.length}` : "";
-
-  return `${value.length}: ${visible.join(", ")}${suffix}`;
-}
-
-function formatGatewayOperationEntry(entry: string, operations?: GatewayCapabilityOperations) {
-  const [operationId, detail] = entry.split(/:\s*/, 2);
-  const operation = operations?.[operationId];
-  const label = operation?.label ?? titleizeGatewayOperationId(operationId || entry);
-
-  if (!detail && operation?.recovery && operation.mode !== "gateway-native") {
-    return `${label}: ${operation.recovery}`;
-  }
-
-  return detail ? `${label} via ${detail}` : label;
-}
-
-function titleizeGatewayOperationId(value: string) {
-  return value
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/[._-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Gateway operation";
 }
 
 function formatGatewayAuthIssue(kind: GatewayNativeAuthStatus["native"]["kind"]) {

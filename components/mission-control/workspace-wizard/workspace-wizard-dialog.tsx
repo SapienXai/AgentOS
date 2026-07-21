@@ -372,7 +372,7 @@ export function WorkspaceWizardDialog({
           ) : null}
         </div>
       }
-      contentClassName="h-[100dvh] max-h-[100dvh] w-screen rounded-none border-x-0 md:h-[min(calc(100vh-72px),760px)] md:max-h-[calc(100vh-72px)] md:w-[min(90vw,1060px)] md:rounded-2xl md:border-x"
+      contentClassName="left-0 top-0 h-[100dvh] max-h-[100dvh] w-screen transform-none rounded-none border-x-0 md:left-1/2 md:top-1/2 md:h-[min(calc(100vh-72px),760px)] md:max-h-[calc(100vh-72px)] md:w-[min(90vw,1060px)] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:border-x"
       headerClassName="px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:px-6 md:pb-2 md:pt-3"
       bodyClassName="p-0 overflow-hidden"
       footerClassName="px-3 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 md:px-4 md:py-1.5"

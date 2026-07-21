@@ -3036,9 +3036,11 @@ export function MissionControlShell({
         description: result.message || "Gateway state changed."
       });
     } catch (error) {
+      const gatewayError = error instanceof Error ? error : new Error("Unknown gateway control error.");
       toast.error("Gateway action failed.", {
-        description: error instanceof Error ? error.message : "Unknown gateway control error."
+        description: gatewayError.message
       });
+      throw gatewayError;
     } finally {
       setGatewayControlAction(null);
     }

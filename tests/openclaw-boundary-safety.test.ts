@@ -456,16 +456,14 @@ test("Gateway compatibility aliases stay centralized outside application service
   assert.match(nativeClientSource, /getOpenClawGatewayMethodCandidates/);
 });
 
-test("settings gateway card exposes method contract audit and readable fallback operations", () => {
+test("settings gateway card keeps contract and fallback evidence in historical diagnostics", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/settings-control-center.tsx"), "utf8");
 
-  assert.match(source, /\["Compatibility", formatGatewayCompatibilityStatus\(gatewayCompatibilityProfile\)\]/);
-  assert.match(source, /\["Contract audit", formatGatewayMethodContractStatus\(gatewayCompatibilityProfile\?\.methodContract\)\]/);
-  assert.match(source, /\["Contract gaps", formatGatewayMethodContractGaps\(gatewayCompatibilityProfile\?\.methodContract, capabilityMatrix\?\.operations\)\]/);
-  assert.match(source, /\["Native ops", formatGatewayOperationCounts\(gatewayCompatibilityProfile\)\]/);
-  assert.match(source, /\["Alias ops", formatGatewayAliasOperations\(gatewayCompatibilityProfile\?\.aliasOperations, capabilityMatrix\?\.operations\)\]/);
-  assert.match(source, /\["Limited ops", formatGatewayDegradedOperations\(gatewayCompatibilityProfile\?\.degradedOperations, capabilityMatrix\?\.operations\)\]/);
-  assert.match(source, /formatGatewayOperationList/);
+  assert.match(source, /Historical evidence/);
+  assert.match(source, /Show saved technical report/);
+  assert.match(source, /visibleContractIssues/);
+  assert.match(source, /formatContractStatus\(check\.status\)/);
+  assert.match(source, /check\.suggestedRecovery/);
   assert.match(source, /Gateway fallback diagnostics/);
   assert.match(source, /diagnostic\.operationLabel/);
 });
