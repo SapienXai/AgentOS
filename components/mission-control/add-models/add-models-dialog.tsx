@@ -30,6 +30,7 @@ import {
   DialogTitle
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   modelProviderRegistry,
@@ -449,6 +450,17 @@ export function AddModelsDialog({
       : activeDraft.flowState === "connecting"
         ? "Preparing the provider connection."
         : "Checking provider status before discovery.";
+  const isModelOperationInProgress = isAddingCatalogModels || isOpeningTerminal || showLoadingHero;
+  const modelOperationTitle = isAddingCatalogModels
+    ? "Adding selected models"
+    : isOpeningTerminal
+      ? "Opening provider terminal"
+      : loadingHeroTitle;
+  const modelOperationDescription = isAddingCatalogModels
+    ? "Registering the selected models and refreshing the OpenClaw model catalog."
+    : isOpeningTerminal
+      ? "Opening the terminal so you can complete the provider login."
+      : loadingHeroCopy;
   const shouldShowDiscoveryCta = Boolean(
     activeProviderId &&
       activeDescriptor &&
@@ -1160,7 +1172,13 @@ export function AddModelsDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <PikoLoader
+        open={isModelOperationInProgress}
+        title={modelOperationTitle}
+        description={modelOperationDescription}
+      />
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
           "flex h-[min(90dvh,900px)] max-h-[90dvh] w-[calc(100vw-48px)] max-w-[1420px] flex-col gap-0 overflow-hidden rounded-[26px] p-0 sm:w-[min(1420px,calc(100vw-64px))]",
@@ -2704,7 +2722,8 @@ export function AddModelsDialog({
           </DialogContent>
         </Dialog>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+    </>
   );
 }
 

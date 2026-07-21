@@ -533,6 +533,11 @@ export function MissionSidebar({
         title="Deleting agent"
         description="Removing the agent and cleaning up its OpenClaw workspace binding."
       />
+      <PikoLoader
+        open={isSavingAgent}
+        title="Saving agent profile"
+        description="Updating the profile, policy, and workspace channel bindings."
+      />
       {collapsed ? (
         <CollapsedSidebar
           activeHash={activeHash}
@@ -1419,7 +1424,13 @@ function WorkspaceSwitcher({
   };
 
   return (
-    <div className="relative mt-5" ref={menuRef}>
+    <>
+      <PikoLoader
+        open={isDeletingWorkspace}
+        title="Deleting workspace"
+        description="Removing its OpenClaw workspace, agents, runtime references, and managed files."
+      />
+      <div className="relative mt-5" ref={menuRef}>
       <button
         type="button"
         aria-expanded={open}
@@ -1542,7 +1553,7 @@ function WorkspaceSwitcher({
       <Dialog
         open={Boolean(deleteTarget)}
         onOpenChange={(nextOpen) => {
-          if (nextOpen) {
+          if (nextOpen || isDeletingWorkspace) {
             return;
           }
 
@@ -1693,7 +1704,8 @@ function WorkspaceSwitcher({
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </>
   );
 }
 

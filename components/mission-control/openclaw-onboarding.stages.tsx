@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import type { AddModelsProviderId, MissionControlSnapshot } from "@/lib/agentos/contracts";
 import type { OpenClawModelOnboardingPhase, OperationProgressSnapshot } from "@/lib/agentos/contracts";
@@ -54,6 +55,11 @@ export function SystemStage({
 
   return (
     <>
+      <PikoLoader
+        open={run.runState === "running"}
+        title="Setting up OpenClaw"
+        description={statusCopy || "Installing, starting, and verifying the local OpenClaw runtime."}
+      />
       <div className="mt-3">
         <p
           className={cn(
@@ -334,6 +340,11 @@ export function ModelStage({
 
   return (
     <>
+      <PikoLoader
+        open={run.runState === "running" || modelSwitchFeedback.phase === "saving"}
+        title={modelSwitchFeedback.phase === "saving" ? "Switching default model" : "Preparing model setup"}
+        description={statusCopy || "Connecting the model route and verifying it in OpenClaw."}
+      />
       <div className="mt-3">
         <p className={cn("text-[11px] font-medium", surfaceTheme === "light" ? "text-[#33251c]" : "text-white")}>
           Step 2: Model setup

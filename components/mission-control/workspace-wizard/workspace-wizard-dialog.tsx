@@ -311,9 +311,21 @@ export function WorkspaceWizardDialog({
   return (
     <>
       <PikoLoader
-        open={wizard.isCreating}
-        title="Creating your workspace"
-        description="Setting up the workspace, its agents, and the OpenClaw configuration."
+        open={wizard.isCreating || wizard.isDeploying || wizard.isApplyingWorkspaceChanges}
+        title={
+          wizard.isDeploying
+            ? "Deploying your workspace"
+            : wizard.isApplyingWorkspaceChanges
+              ? "Updating your workspace"
+              : "Creating your workspace"
+        }
+        description={
+          wizard.isDeploying
+            ? "Applying the reviewed plan, agents, and OpenClaw configuration."
+            : wizard.isApplyingWorkspaceChanges
+              ? "Applying your workspace changes in OpenClaw."
+              : "Setting up the workspace, its agents, and the OpenClaw configuration."
+        }
       />
       <MissionControlDialogShell
       open={open}

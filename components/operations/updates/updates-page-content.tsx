@@ -39,6 +39,7 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import type {
   MissionControlSnapshot,
@@ -404,6 +405,15 @@ export function UpdatesPageContent({
 
   return (
     <>
+      <PikoLoader
+        open={isUpdateRunning || isRunningPreflight}
+        title={isUpdateRunning ? "Updating OpenClaw" : "Checking update readiness"}
+        description={
+          isUpdateRunning
+            ? updateStatusMessage || "Installing the selected release and verifying the runtime."
+            : "Running the safety checks required before an OpenClaw update."
+        }
+      />
       <PageHeader
         title="OpenClaw Updates"
         subtitle="Choose a version to install based on release confidence."

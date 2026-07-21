@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import type { AgentRecord } from "@/lib/agentos/contracts";
 import type { AgentFilter, AgentView, FileView, IntegrationStatus, IntegrationView, ModelView, TaskView } from "@/components/operations/operations-data";
@@ -242,7 +243,13 @@ export function MissionDispatchDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <PikoLoader
+        open={submitting}
+        title="Submitting task"
+        description="Sending the mission to OpenClaw and preparing the task run."
+      />
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl rounded-[18px] p-4">
         <DialogHeader>
           <DialogTitle>{agent ? `Run task with ${agent.name}` : "Create Task"}</DialogTitle>
@@ -271,7 +278,8 @@ export function MissionDispatchDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+    </>
   );
 }
 

@@ -12,6 +12,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Textarea } from "@/components/ui/textarea";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot, MissionResponse, MissionSubmission } from "@/lib/agentos/contracts";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
@@ -475,6 +476,11 @@ export function CommandBar({
 
   return (
     <>
+      <PikoLoader
+        open={isSubmitting}
+        title="Submitting task"
+        description="Sending the task to OpenClaw and preparing its run."
+      />
       <div
         ref={commandBarRef}
         className={cn(

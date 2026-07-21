@@ -57,6 +57,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { GatewayProductSurfacePanel } from "@/components/mission-control/gateway-surface-panel";
 import { OpenClawAppConnectDialog } from "@/components/mission-control/openclaw-app-connect-dialog";
 import {
@@ -405,6 +406,44 @@ export function SettingsControlCenter(
   });
   const gatewayRepairBusy = isRepairingGatewayDeviceAccess || isGeneratingGatewayAuthToken;
   const gatewayActionBusy = gatewayControlAction !== null || gatewayRepairBusy;
+  const isSettingsOperationInProgress =
+    updateRunState === "running" ||
+    isCheckingForUpdates ||
+    isRunningUpdatePreflight ||
+    isRunningShadowProbe ||
+    isGeneratingCompatibilityLabReport ||
+    isRunningCompatibilitySmoke ||
+    gatewayActionBusy ||
+    isSavingGatewayAuthCredential ||
+    isSavingGateway ||
+    isSavingOpenClawBinary ||
+    isSavingWorkspaceRoot;
+  const settingsOperationTitle =
+    updateRunState === "running"
+      ? "Updating OpenClaw"
+      : isCheckingForUpdates
+        ? "Checking for updates"
+        : isRunningUpdatePreflight || isRunningShadowProbe || isGeneratingCompatibilityLabReport || isRunningCompatibilitySmoke
+          ? "Verifying OpenClaw compatibility"
+          : gatewayActionBusy
+            ? "Working on the Gateway"
+            : isSavingGatewayAuthCredential
+              ? "Saving Gateway credential"
+              : isSavingGateway
+                ? "Saving Gateway settings"
+                : isSavingOpenClawBinary
+                  ? "Saving OpenClaw runtime settings"
+                  : "Saving workspace settings";
+  const settingsOperationDescription =
+    updateRunState === "running"
+      ? "Installing the selected release and verifying the OpenClaw runtime."
+      : isCheckingForUpdates
+        ? "Reading the update registry and compatibility guidance."
+        : isRunningUpdatePreflight || isRunningShadowProbe || isGeneratingCompatibilityLabReport || isRunningCompatibilitySmoke
+          ? "Running the selected safety and compatibility checks."
+          : gatewayActionBusy
+            ? "Applying the requested Gateway operation and refreshing its status."
+            : "Saving the setting and refreshing the OpenClaw configuration.";
   const gatewayAuthNeedsScopeRepair = gatewayAuthStatus?.native.kind === "scope-limited";
   const gatewayAuthNeedsTokenRepair = gatewayAuthStatus?.native.kind === "auth";
   const gatewayAccessRepairDisabledReason = gatewayAccessRepairBlockMessage || (
@@ -1146,7 +1185,13 @@ export function SettingsControlCenter(
   ];
 
   return (
-    <main
+    <>
+      <PikoLoader
+        open={isSettingsOperationInProgress}
+        title={settingsOperationTitle}
+        description={settingsOperationDescription}
+      />
+      <main
       className={cn(
         "relative z-10 min-h-screen [&_a]:inline-flex [&_a]:min-h-11 [&_a]:min-w-11 [&_a]:items-center [&_button]:min-h-11 [&_button]:min-w-11 [&_input]:min-h-11 [&_select]:min-h-11 sm:[&_a]:min-h-0 sm:[&_a]:min-w-0 sm:[&_button]:min-h-0 sm:[&_button]:min-w-0 sm:[&_input]:min-h-0 sm:[&_select]:min-h-0",
         surfaceTheme === "light" ? "text-foreground" : "bg-[#080d16] text-slate-100"
@@ -2602,7 +2647,8 @@ export function SettingsControlCenter(
             </div>
           </div>
         </section>
-    </main>
+      </main>
+    </>
   );
 }
 

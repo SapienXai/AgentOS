@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -29,6 +30,11 @@ export function OperationsJobsPageContent({ snapshot, activeWorkspaceId, surface
   const perform = async (action: "run" | "pause" | "resume" | "retry" | "disable" | "cancel" | "delete", job: OperationJob) => { setBusyAction({ jobId: job.id, action }); try { const response = await fetch("/api/operations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, jobId: job.id }) }); const result = await response.json() as { error?: string }; if (!response.ok || result.error) throw new Error(result.error || "Operation was rejected."); toast.success(action === "delete" ? `${job.name} was removed from OpenClaw.` : `${job.name}: ${action} accepted by OpenClaw.`); if (action === "delete") { setSelected((value) => value === job.id ? null : value); setExpandedJobs((current) => { const next = new Set(current); next.delete(job.id); return next; }); setDeleteTarget(null); } await load(); } catch (error) { toast.error(`${action} was not applied.`, { description: error instanceof Error ? error.message : "Unknown error." }); } finally { setBusyAction(null); } };
   const counts = { active: jobs.filter((job) => job.status === "active" || job.status === "scheduled").length, running: jobs.filter((job) => job.status === "running").length, failed: jobs.filter((job) => job.status === "failed").length, paused: jobs.filter((job) => job.status === "paused").length };
   return <OperationsPageLayout main={<>
+    <PikoLoader
+      open={Boolean(busyAction)}
+      title={busyAction?.action === "run" ? "Starting operation" : busyAction?.action === "delete" ? "Deleting operation" : "Updating operation"}
+      description="Applying the requested operation change in OpenClaw."
+    />
     <PageHeader surfaceTheme={surfaceTheme} title="Operations & Jobs" subtitle="OpenClaw cron is the execution source of truth. AgentOS adds safety checks, health projection, and an immutable operator audit trail." actions={<div className="flex shrink-0 items-center gap-2"><Button variant="secondary" size="sm" className="h-9 rounded-lg px-3" onClick={() => void load()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button><Button size="sm" className="h-9 rounded-lg px-3" disabled={data?.scheduler.state !== "available"} title={data?.scheduler.state !== "available" ? "Cron write capability is unavailable." : undefined} onClick={() => setCreating(true)}><Plus className="mr-1.5 h-3.5 w-3.5" />New job</Button></div>} />
     <StatGrid columns={4}><StatCard label="Active" value={String(counts.active)} detail="Scheduled in OpenClaw" icon={CalendarClock} tone="info" /><StatCard label="Running" value={String(counts.running)} detail="Live cron runs" icon={Activity} tone="warning" /><StatCard label="Failed" value={String(counts.failed)} detail="Needs recovery" icon={AlertTriangle} tone="danger" /><StatCard label="Paused" value={String(counts.paused)} detail="Disabled jobs" icon={CirclePause} tone="muted" /></StatGrid>
     {data?.notices.map((notice) => <div key={notice.title} className="rounded-lg border border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-xs text-muted-foreground"><strong className="text-foreground">{notice.title}</strong><span className="ml-2">{notice.detail}</span></div>)}
@@ -198,7 +204,13 @@ function CreateOperationForm({ snapshot, activeWorkspaceId, onClose, onCreated }
     }
   };
 
-  return <Dialog open onOpenChange={(nextOpen) => { if (!nextOpen && !saving) onClose(); }}>
+  return <>
+    <PikoLoader
+      open={saving}
+      title="Creating operation"
+      description="Saving the schedule and its OpenClaw execution settings."
+    />
+    <Dialog open onOpenChange={(nextOpen) => { if (!nextOpen && !saving) onClose(); }}>
     <DialogContent className="w-[calc(100vw-24px)] max-w-[720px] gap-0 overflow-hidden rounded-[22px] border-border bg-popover p-0 shadow-2xl">
       <form onSubmit={submit}>
         <div className="border-b border-border bg-gradient-to-r from-primary/[0.09] via-primary/[0.035] to-transparent px-6 py-5 pr-14">
@@ -247,7 +259,8 @@ function CreateOperationForm({ snapshot, activeWorkspaceId, onClose, onCreated }
         <div className="flex items-center justify-end gap-2 border-t border-border bg-muted/25 px-6 py-4"><Button type="button" variant="ghost" disabled={saving} onClick={onClose}>Cancel</Button><Button type="submit" disabled={saving || !canSubmit}><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />{saving ? "Creating…" : "Create operation"}</Button></div>
       </form>
     </DialogContent>
-  </Dialog>;
+    </Dialog>
+  </>;
 }
 
 const selectClassName = "h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground shadow-sm outline-none focus:ring-2 focus:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";

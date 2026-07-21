@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { useAccountsData } from "@/components/operations/accounts/use-accounts-data";
@@ -838,7 +839,13 @@ function ManageAccountAccessDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <PikoLoader
+        open={saving}
+        title="Saving account access"
+        description="Updating which workspace agents may use this browser profile."
+      />
+      <Dialog open={open} onOpenChange={onOpenChange}>
       {target ? (
         <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto rounded-[18px] p-4">
           <DialogHeader>
@@ -939,7 +946,8 @@ function ManageAccountAccessDialog({
           </DialogFooter>
         </DialogContent>
       ) : null}
-    </Dialog>
+      </Dialog>
+    </>
   );
 }
 
@@ -1025,7 +1033,13 @@ function AccountTargetMissionDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <PikoLoader
+        open={submitting}
+        title="Submitting account task"
+        description="Dispatching the task with the selected browser-profile context."
+      />
+      <Dialog open={open} onOpenChange={onOpenChange}>
       {target ? (
         <DialogContent className="max-w-xl rounded-[18px] p-4">
           <DialogHeader>
@@ -1091,7 +1105,8 @@ function AccountTargetMissionDialog({
           </DialogFooter>
         </DialogContent>
       ) : null}
-    </Dialog>
+      </Dialog>
+    </>
   );
 }
 
@@ -1248,7 +1263,13 @@ function ConnectAccountWizardContent({
   };
 
   return (
-    <DialogContent className="max-h-[92vh] w-[calc(100vw-2rem)] max-w-3xl overflow-y-auto rounded-[18px] p-4">
+    <>
+      <PikoLoader
+        open={submitting}
+        title="Opening account login"
+        description="Opening the selected login URL in its OpenClaw browser profile."
+      />
+      <DialogContent className="max-h-[92vh] w-[calc(100vw-2rem)] max-w-3xl overflow-y-auto rounded-[18px] p-4">
       <div className="border-b border-border p-4">
         <DialogHeader>
           <DialogTitle>Connect Account</DialogTitle>
@@ -1381,7 +1402,8 @@ function ConnectAccountWizardContent({
           </div>
         </div>
       </DialogFooter>
-    </DialogContent>
+      </DialogContent>
+    </>
   );
 }
 

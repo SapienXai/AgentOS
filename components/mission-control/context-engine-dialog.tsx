@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import { applyContextEngineDraftState, useContextEngineDraft } from "@/components/mission-control/use-context-engine-draft";
 import { useContextEngineLoader } from "@/components/mission-control/use-context-engine-loader";
@@ -445,7 +446,17 @@ export function ContextEngineDialog({
   }, [createableMissingFile]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <PikoLoader
+        open={isSavingContext || isSavingFile}
+        title={isSavingFile ? "Saving context file" : "Saving context configuration"}
+        description={
+          isSavingFile
+            ? "Writing the selected context file and refreshing its runtime state."
+            : "Applying the selected context files to this agent."
+        }
+      />
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-testid="context-engine-dialog"
         style={contextEngineThemeStyles[surfaceTheme]}
@@ -609,7 +620,8 @@ export function ContextEngineDialog({
           </div>
         </DialogFooter>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+    </>
   );
 }
 
