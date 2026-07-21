@@ -12,6 +12,17 @@ type PikoLoaderProps = {
   className?: string;
 };
 
+type LoaderMotion = {
+  frame: number | null;
+  lastTimestamp: number;
+  x: number;
+  y: number;
+  targetX: number;
+  targetY: number;
+  velocityX: number;
+  velocityY: number;
+};
+
 /**
  * A blocking operation indicator for work that is still happening in OpenClaw.
  * It is portaled above dialogs so it can be used from any screen or workflow.
@@ -23,17 +34,71 @@ export function PikoLoader({ open, title, description, className }: PikoLoaderPr
     () => false
   );
   const loaderRef = useRef<HTMLDivElement | null>(null);
+  const motionRef = useRef<LoaderMotion>({
+    frame: null,
+    lastTimestamp: 0,
+    x: 0,
+    y: 0,
+    targetX: 0,
+    targetY: 0,
+    velocityX: 0,
+    velocityY: 0
+  });
 
   useEffect(() => {
     if (!open) {
       return;
     }
 
-    const handlePointerMove = (event: PointerEvent) => {
+    const motion = motionRef.current;
+    motion.x = window.innerWidth / 2;
+    motion.y = window.innerHeight / 2;
+    motion.targetX = motion.x;
+    motion.targetY = motion.y;
+    motion.velocityX = 0;
+    motion.velocityY = 0;
+
+    if (loaderRef.current) {
+      loaderRef.current.style.left = `${motion.x}px`;
+      loaderRef.current.style.top = `${motion.y}px`;
+      loaderRef.current.style.transform = "translate3d(0, 0, 0)";
+    }
+
+    const animate = (timestamp: number) => {
+      const elapsed = Math.min((timestamp - motion.lastTimestamp) / 1000, 0.04);
+      motion.lastTimestamp = timestamp;
+
+      const deltaX = motion.targetX - motion.x;
+      const deltaY = motion.targetY - motion.y;
+      const springStrength = 24;
+      const damping = 8;
+
+      motion.velocityX = (motion.velocityX + deltaX * springStrength * elapsed) * Math.exp(-damping * elapsed);
+      motion.velocityY = (motion.velocityY + deltaY * springStrength * elapsed) * Math.exp(-damping * elapsed);
+      motion.x += motion.velocityX * elapsed;
+      motion.y += motion.velocityY * elapsed;
+
       if (loaderRef.current) {
-        loaderRef.current.style.left = `${event.clientX + 32}px`;
-        loaderRef.current.style.top = `${event.clientY + 24}px`;
-        loaderRef.current.style.transform = "translate3d(0, 0, 0)";
+        loaderRef.current.style.left = `${motion.x}px`;
+        loaderRef.current.style.top = `${motion.y}px`;
+      }
+
+      const settled =
+        Math.abs(deltaX) < 0.4 &&
+        Math.abs(deltaY) < 0.4 &&
+        Math.abs(motion.velocityX) < 0.4 &&
+        Math.abs(motion.velocityY) < 0.4;
+
+      motion.frame = settled ? null : window.requestAnimationFrame(animate);
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      motion.targetX = event.clientX + 32;
+      motion.targetY = event.clientY + 24;
+
+      if (motion.frame === null) {
+        motion.lastTimestamp = performance.now();
+        motion.frame = window.requestAnimationFrame(animate);
       }
     };
 
@@ -41,6 +106,10 @@ export function PikoLoader({ open, title, description, className }: PikoLoaderPr
 
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
+      if (motion.frame !== null) {
+        window.cancelAnimationFrame(motion.frame);
+        motion.frame = null;
+      }
     };
   }, [open]);
 
