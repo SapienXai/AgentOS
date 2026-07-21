@@ -15,10 +15,10 @@ const gatewayControlSchema = z.object({
 });
 
 const actionMessageMap = {
-  start: "Gateway start requested.",
-  stop: "Gateway stop requested.",
-  restart: "Gateway restart requested.",
-  doctor: "OpenClaw doctor repair requested."
+  start: "Gateway started.",
+  stop: "Gateway stopped.",
+  restart: "Gateway restarted.",
+  doctor: "OpenClaw doctor repair completed."
 } satisfies Record<z.infer<typeof gatewayControlSchema>["action"], string>;
 
 export async function POST(request: Request) {

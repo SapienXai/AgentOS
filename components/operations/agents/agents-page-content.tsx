@@ -1,19 +1,20 @@
 "use client";
 
 import { useMemo, useState, type CSSProperties, type Dispatch, type SetStateAction } from "react";
-import { Activity, Bot, CircleCheck, Clock3, Chrome, Filter, Folder, Globe2, Import, MessageSquare, Play, Plus, Plug, ShieldCheck, SlidersHorizontal, Sparkles, Terminal } from "lucide-react";
+import { Activity, ArrowLeft, Bot, CircleCheck, Clock3, Chrome, Filter, Folder, Globe2, Import, MessageSquare, Play, Plus, Plug, ShieldCheck, SlidersHorizontal, Sparkles, Terminal } from "lucide-react";
 
 import { AddModelsDialog } from "@/components/mission-control/add-models/add-models-dialog";
 import { AccountIcon } from "@/components/mission-control/account-icon";
 import { AgentCapabilityEditorDialog } from "@/components/mission-control/agent-capability-editor-dialog";
 import { AgentChatDrawer } from "@/components/mission-control/agent-chat-drawer";
 import { AgentModelPickerDialog } from "@/components/mission-control/agent-model-picker-dialog";
+import { resolveAgentStatusDotTone } from "@/components/mission-control/node-visual-tones";
 import { WorkerProfileDialog } from "@/components/operations/agents/worker-profile-dialog";
 import { resolveAgentProfileVisual } from "@/components/mission-control/agent-profile-visuals";
 import { CreateAgentDialog } from "@/components/mission-control/create-agent-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/sonner";
 import { useAccountsData } from "@/components/operations/accounts/use-accounts-data";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
@@ -248,14 +249,46 @@ export function AgentsPageContent({
       ) : null}
     />
       <Dialog open={Boolean(chatAgent)} onOpenChange={(open) => setChatAgentId(open ? chatAgentId : null)}>
-        <DialogContent className="flex h-[min(82dvh,760px)] max-w-3xl flex-col rounded-[18px] p-4">
-          <DialogHeader>
-            <DialogTitle>{chatAgent ? `Message ${formatAgentDisplayNameFromRecord(chatAgent)}` : "Agent Chat"}</DialogTitle>
-            <DialogDescription>
-              Messages are sent through the existing AgentOS/OpenClaw agent chat runner.
-            </DialogDescription>
+        <DialogContent
+          className="left-0 top-0 flex h-[100dvh] max-h-none w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-0 p-0 sm:left-1/2 sm:top-1/2 sm:h-[min(82dvh,760px)] sm:max-w-3xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:gap-4 sm:rounded-[18px] sm:border sm:p-4"
+          closeClassName="hidden sm:block"
+        >
+          <DialogHeader className="shrink-0 border-b border-border/55 px-3 pb-3 pt-[calc(0.6rem+env(safe-area-inset-top))] sm:border-0 sm:p-0">
+            <div className="flex min-w-0 items-center gap-3 sm:block">
+              <DialogClose className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground sm:hidden">
+                <ArrowLeft className="h-4 w-4" />
+                <span className="sr-only">Back to agents</span>
+              </DialogClose>
+              <div className="min-w-0 flex-1 sm:pr-10">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <DialogTitle className="truncate text-[1.05rem] sm:text-xl">
+                    <span className="sm:hidden">
+                      {chatAgent ? formatAgentDisplayNameFromRecord(chatAgent) : "Agent Chat"}
+                    </span>
+                    <span className="hidden sm:inline">
+                      {chatAgent ? `Message ${formatAgentDisplayNameFromRecord(chatAgent)}` : "Agent Chat"}
+                    </span>
+                  </DialogTitle>
+                  {chatAgent ? (
+                    <span
+                      aria-label={chatAgent.status}
+                      title={chatAgent.status}
+                      className={cn("h-2 w-2 shrink-0 rounded-full sm:hidden", resolveAgentStatusDotTone(chatAgent.status))}
+                    />
+                  ) : null}
+                </div>
+                <DialogDescription className="mt-0.5 truncate text-[11px] sm:mt-2 sm:text-sm">
+                  <span className="sm:hidden">
+                    {chatAgent?.currentAction?.trim() || (chatAgent ? `${chatAgent.status} · Ready to chat` : "Direct agent chat")}
+                  </span>
+                  <span className="hidden sm:inline">
+                    Messages are sent through the existing AgentOS/OpenClaw agent chat runner.
+                  </span>
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="min-h-0 flex-1">
+          <div className="min-h-0 flex-1 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-0">
             {chatAgent ? (
               <AgentChatDrawer
                 agent={chatAgent}

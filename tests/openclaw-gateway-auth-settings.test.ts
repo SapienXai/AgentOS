@@ -330,6 +330,44 @@ test("Gateway native auth token generation configures OpenClaw and local env wit
   assert.doesNotMatch(JSON.stringify(result), new RegExp(configuredToken));
 });
 
+test("Gateway native auth token repair gives CLI config fallback enough time to start", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agentos-gateway-auth-timeout-"));
+  const adapter = createSettingsAdapter();
+  const mutationTimeouts: Array<number | undefined> = [];
+  const originalSetConfig = adapter.setConfig.bind(adapter);
+  adapter.setConfig = async (path, value, options) => {
+    mutationTimeouts.push(options?.timeoutMs);
+    return originalSetConfig(path, value, options);
+  };
+  setOpenClawAdapterForTesting(adapter);
+
+  await generateGatewayNativeAuthToken({
+    cwd,
+    verifyNativeAuth: async () => ({ version: "9.9.9" })
+  });
+
+  assert.deepEqual(mutationTimeouts, [30_000, 30_000]);
+});
+
+test("Gateway native auth token repair restarts before writing the development env file", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "agentos-gateway-auth-order-"));
+  const adapter = createSettingsAdapter();
+  let envFileExistedDuringRestart = true;
+  adapter.controlGateway = async () => {
+    envFileExistedDuringRestart = existsSync(join(cwd, ".env.local"));
+    return {};
+  };
+  setOpenClawAdapterForTesting(adapter);
+
+  await generateGatewayNativeAuthToken({
+    cwd,
+    verifyNativeAuth: async () => ({ version: "9.9.9" })
+  });
+
+  assert.equal(envFileExistedDuringRestart, false);
+  assert.equal(existsSync(join(cwd, ".env.local")), true);
+});
+
 test("Gateway native auth token generation restarts even when auth config reports hot reload", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "agentos-gateway-auth-hot-reload-"));
   const adapter = createSettingsAdapter();

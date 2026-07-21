@@ -47,6 +47,7 @@ const GATEWAY_REMOTE_URL_CONFIG_KEY = "gateway.remote.url";
 const GATEWAY_BIND_CONFIG_KEY = "gateway.bind";
 const REDACTED_OPENCLAW_SECRET = "__OPENCLAW_REDACTED__";
 const GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS = 2_500;
+const GATEWAY_AUTH_CONFIG_MUTATION_TIMEOUT_MS = 30_000;
 const GATEWAY_AUTH_ENV_FILE_NAME = ".env.local";
 const GATEWAY_AUTH_TOKEN_ENV_NAME = "AGENTOS_OPENCLAW_GATEWAY_TOKEN";
 const GATEWAY_AUTH_PASSWORD_ENV_NAME = "AGENTOS_OPENCLAW_GATEWAY_PASSWORD";
@@ -447,16 +448,10 @@ export async function generateGatewayNativeAuthToken(input: {
   const token = randomBytes(32).toString("base64url");
 
   const modeMutation = await getOpenClawAdapter().setConfig(GATEWAY_AUTH_MODE_CONFIG_KEY, "token", {
-    timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
+    timeoutMs: GATEWAY_AUTH_CONFIG_MUTATION_TIMEOUT_MS
   });
   const tokenMutation = await getOpenClawAdapter().setConfig(GATEWAY_AUTH_TOKEN_CONFIG_KEY, token, {
-    timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
-  });
-
-  const saved = await saveGatewayNativeAuthCredential({
-    kind: "token",
-    value: token,
-    cwd: input.cwd
+    timeoutMs: GATEWAY_AUTH_CONFIG_MUTATION_TIMEOUT_MS
   });
 
   let restarted = false;
@@ -487,6 +482,14 @@ export async function generateGatewayNativeAuthToken(input: {
   }
 
   verified = !verificationIssue;
+  // Persist only after the Gateway has restarted and accepted the new token.
+  // In local Next.js development, changing .env.local reloads the server and
+  // would otherwise interrupt this request before the lifecycle repair runs.
+  const saved = await saveGatewayNativeAuthCredential({
+    kind: "token",
+    value: token,
+    cwd: input.cwd
+  });
   invalidateSettingsSnapshot();
 
   return {

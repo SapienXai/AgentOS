@@ -277,7 +277,7 @@ function formatHealthLabel(snapshot: MissionControlSnapshot) {
     }
 
     if (diagnostics.eventBridge?.mode === "polling") {
-      return "Polling";
+      return "Online";
     }
   }
 

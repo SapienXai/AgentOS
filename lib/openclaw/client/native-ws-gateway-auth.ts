@@ -126,14 +126,15 @@ export async function resolveGatewayAuth(
   url: string,
   commandOptions: OpenClawCommandOptions
 ) {
+  const preferLocalConfig = isLocalGatewayUrl(url) && !options.webSocketFactory;
   const configTokenPaths = isLocalGatewayUrl(url)
     ? ["gateway.auth.token", "gateway.remote.token"]
     : ["gateway.remote.token", "gateway.auth.token"];
   const configPasswordPaths = isLocalGatewayUrl(url)
     ? ["gateway.auth.password", "gateway.remote.password"]
     : ["gateway.remote.password", "gateway.auth.password"];
-  const explicitToken =
-    options.token?.trim() ||
+  const explicitToken = options.token?.trim();
+  const envToken =
     process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN?.trim() ||
     process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
 
@@ -144,8 +145,15 @@ export async function resolveGatewayAuth(
     };
   }
 
-  const explicitPassword =
-    options.password?.trim() ||
+  if (envToken && !preferLocalConfig) {
+    return {
+      token: envToken,
+      password: ""
+    };
+  }
+
+  const explicitPassword = options.password?.trim();
+  const envPassword =
     process.env.AGENTOS_OPENCLAW_GATEWAY_PASSWORD?.trim() ||
     process.env.OPENCLAW_GATEWAY_PASSWORD?.trim();
 
@@ -167,6 +175,13 @@ export async function resolveGatewayAuth(
     };
   }
 
+  if (envToken) {
+    return {
+      token: envToken,
+      password: ""
+    };
+  }
+
   const savedCredential = isLocalGatewayUrl(url)
     ? await readAgentOsGatewayAuthCredential()
     : null;
@@ -182,6 +197,13 @@ export async function resolveGatewayAuth(
     readLocalConfigFile: !options.webSocketFactory
   });
   const password = passwordResult.invalidConfig ? "" : passwordResult.value;
+
+  if (!password && envPassword) {
+    return {
+      token: "",
+      password: envPassword
+    };
+  }
 
   if (!password && savedCredential?.kind === "password") {
     return {

@@ -1814,7 +1814,7 @@ export function SettingsControlCenter(
                         className={secondaryButtonClassName(surfaceTheme, "px-3", "gateway-contrast")}
                       >
                         {isGeneratingGatewayAuthToken ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
-                        Generate token
+                        Repair token
                       </Button>
                     </div>
                     <div className="mt-3 grid gap-2 sm:grid-cols-[112px_1fr]">

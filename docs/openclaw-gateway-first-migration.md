@@ -140,7 +140,7 @@ Config writes:
 
 Native WS credential discovery is intentionally conservative:
 
-- explicit client options and `AGENTOS_OPENCLAW_GATEWAY_TOKEN/PASSWORD` or `OPENCLAW_GATEWAY_TOKEN/PASSWORD` can be used directly;
+- explicit client options can be used directly; environment credentials remain the first choice for remote/test transports, while a real loopback connection reads the current local OpenClaw config before environment credentials so a stale development process cannot override a repaired token;
 - local Gateway URLs prefer `gateway.auth.*` before `gateway.remote.*`;
 - remote Gateway URLs prefer `gateway.remote.*` before `gateway.auth.*`;
 - OpenClaw-redacted config values such as `__OPENCLAW_REDACTED__` are never sent as credentials;

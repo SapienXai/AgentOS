@@ -11,7 +11,10 @@ import {
   NativeWsOpenClawGatewayClient,
   type WebSocketFactory
 } from "@/lib/openclaw/client/native-ws-gateway-client";
-import { resolveConfiguredGatewaySecretFromLocalConfig } from "@/lib/openclaw/client/native-ws-gateway-auth";
+import {
+  resolveConfiguredGatewaySecretFromLocalConfig,
+  resolveGatewayAuth
+} from "@/lib/openclaw/client/native-ws-gateway-auth";
 import { parseConfigPath } from "@/lib/openclaw/client/native-ws-gateway-utils";
 import type {
   ModelsStatusPayload,
@@ -1028,6 +1031,46 @@ test("native WS gateway client uses env token without config secret probes", asy
     });
     assert.deepEqual(fallback.configCalls, []);
   } finally {
+    if (previousToken === undefined) {
+      delete process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
+    } else {
+      process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = previousToken;
+    }
+  }
+});
+
+test("native WS gateway auth prefers current loopback config over a stale server env token", async () => {
+  const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+  const previousToken = process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
+  const stateDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-local-config-auth-"));
+  await writeFile(join(stateDir, "openclaw.json"), JSON.stringify({
+    gateway: {
+      auth: {
+        token: "current-config-token"
+      }
+    }
+  }), "utf8");
+  process.env.OPENCLAW_STATE_DIR = stateDir;
+  process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = "stale-env-token";
+
+  try {
+    const auth = await resolveGatewayAuth(
+      new FallbackGatewayClient(),
+      {},
+      "ws://127.0.0.1:18789",
+      {}
+    );
+
+    assert.deepEqual(auth, {
+      token: "current-config-token",
+      password: ""
+    });
+  } finally {
+    if (previousStateDir === undefined) {
+      delete process.env.OPENCLAW_STATE_DIR;
+    } else {
+      process.env.OPENCLAW_STATE_DIR = previousStateDir;
+    }
     if (previousToken === undefined) {
       delete process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
     } else {

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
+  ArrowLeft,
   Bot,
   ClipboardList,
   Cpu,
@@ -107,6 +108,7 @@ type InspectorPanelProps = {
   onSelectScope: (scope: InspectorScopeShortcut) => void;
   activeTab: "overview" | "chat" | "output" | "files" | "raw";
   onActiveTabChange: (tab: "overview" | "chat" | "output" | "files" | "raw") => void;
+  onBackFromChat?: () => void;
 };
 
 type InspectorPanelTab = InspectorPanelProps["activeTab"];
@@ -152,7 +154,8 @@ function InspectorPanelContent({
   onExpandDetail,
   onSelectScope,
   activeTab,
-  onActiveTabChange
+  onActiveTabChange,
+  onBackFromChat
 }: InspectorPanelProps) {
   const relativeTimeReferenceMs = resolveRelativeTimeReferenceMs(snapshot.generatedAt);
   const selectedWorkspace = snapshot.workspaces.find((workspace) => workspace.id === selectedNodeId);
@@ -333,8 +336,28 @@ function InspectorPanelContent({
               isChatView ? "overflow-hidden" : "overflow-y-auto"
             )}
           >
-            <div className={cn("shrink-0 px-3", isChatView ? "pb-1 pt-2" : "pb-2 pt-3")}>
+            <div
+              className={cn(
+                "shrink-0 px-3",
+                isChatView
+                  ? "pb-2 pt-[calc(0.5rem+env(safe-area-inset-top))] lg:pb-1 lg:pt-2"
+                  : "pb-2 pt-3"
+              )}
+            >
               <div className="flex items-start justify-between gap-3">
+                {isChatView ? (
+                  <button
+                    type="button"
+                    aria-label="Back from agent chat"
+                    onClick={onBackFromChat ?? (() => onActiveTabChange("overview"))}
+                    className={cn(
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors lg:hidden",
+                      surfaceTone.subtleButton
+                    )}
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </button>
+                ) : null}
                 <div className="min-w-0 flex-1">
                   {!isChatView ? (
                     <p className={cn("text-[9px] font-semibold uppercase tracking-[0.24em]", surfaceTone.eyebrow)}>{selectedDetail}</p>
@@ -376,6 +399,11 @@ function InspectorPanelContent({
                               : "Live gateway context"}
                     </p>
                   ) : null}
+                  {isChatView && selectedAgent ? (
+                    <p className={cn("mt-1 truncate text-[11px] leading-4 lg:hidden", surfaceTone.mutedText)}>
+                      {selectedAgent.currentAction?.trim() || `${selectedAgent.status} · Ready to chat`}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="flex shrink-0 items-center gap-1">
@@ -396,7 +424,11 @@ function InspectorPanelContent({
                     type="button"
                     aria-label="Close inspector"
                     onClick={onToggleCollapsed}
-                    className={cn("flex h-8 w-8 items-center justify-center rounded-[9px] border transition-colors", surfaceTone.subtleButton)}
+                    className={cn(
+                      "h-8 w-8 items-center justify-center rounded-[9px] border transition-colors",
+                      isChatView ? "hidden lg:flex" : "flex",
+                      surfaceTone.subtleButton
+                    )}
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -406,7 +438,8 @@ function InspectorPanelContent({
               <div
                 aria-label="Inspector scope"
                 className={cn(
-                  "mt-3 grid grid-cols-3 gap-1 rounded-[10px] border p-1 lg:hidden",
+                  "mt-3 grid-cols-3 gap-1 rounded-[10px] border p-1 lg:hidden",
+                  isChatView ? "hidden" : "grid",
                   surfaceTone.tabTrack
                 )}
               >
@@ -434,7 +467,11 @@ function InspectorPanelContent({
               </div>
 
               <div
-                className={cn("grid overflow-hidden rounded-[10px] border p-1", isChatView ? "mt-2" : "mt-3", surfaceTone.tabTrack)}
+                className={cn(
+                  "overflow-hidden rounded-[10px] border p-1",
+                  isChatView ? "mt-2 hidden lg:grid" : "mt-3 grid",
+                  surfaceTone.tabTrack
+                )}
                 style={{ gridTemplateColumns: `repeat(${visibleDetailTabs.length}, minmax(0, 1fr))` }}
               >
                 {visibleDetailTabs.map((item) => (
@@ -449,7 +486,12 @@ function InspectorPanelContent({
               </div>
             </div>
 
-            <div className={cn("flex-1 px-4 pb-4 pt-0", isChatView && "min-h-0 overflow-hidden")}>
+            <div
+              className={cn(
+                "flex-1 px-4 pb-4 pt-0",
+                isChatView && "min-h-0 overflow-hidden pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:pb-4"
+              )}
+            >
               <AnimatePresence mode="wait">
                 <motion.div
                   key={selectedNodeId || "overview"}

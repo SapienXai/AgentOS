@@ -46,6 +46,52 @@ function formatChatTime(timestamp: number) {
   }).format(new Date(timestamp));
 }
 
+function formatChatDate(timestamp: number) {
+  if (!Number.isFinite(timestamp)) {
+    return "Today";
+  }
+
+  const date = new Date(timestamp);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  if (isSameCalendarDay(date, today)) {
+    return "Today";
+  }
+
+  if (isSameCalendarDay(date, yesterday)) {
+    return "Yesterday";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: date.getFullYear() === today.getFullYear() ? undefined : "numeric"
+  }).format(date);
+}
+
+function isSameCalendarDay(left: Date, right: Date) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+function shouldShowChatDateSeparator(previousTimestamp: number | undefined, timestamp: number) {
+  if (!Number.isFinite(timestamp)) {
+    return previousTimestamp === undefined;
+  }
+
+  if (typeof previousTimestamp !== "number" || !Number.isFinite(previousTimestamp)) {
+    return true;
+  }
+
+  return !isSameCalendarDay(new Date(previousTimestamp), new Date(timestamp));
+}
+
 function AssistantThinkingActivity({
   statusMessage,
   expanded,
@@ -148,10 +194,10 @@ function AgentChatWelcome({
   return (
     <div
       className={cn(
-        "w-full max-w-[292px] rounded-[18px] border px-4 py-4 text-center shadow-[0_14px_34px_rgba(0,0,0,0.08)]",
+        "w-full max-w-[292px] rounded-[18px] border border-transparent bg-transparent px-4 py-4 text-center shadow-none lg:shadow-[0_14px_34px_rgba(0,0,0,0.08)]",
         surfaceTheme === "light"
-          ? "border-[#e3d4c8] bg-[#fffaf6]"
-          : "border-white/[0.08] bg-white/[0.035]"
+          ? "lg:border-[#e3d4c8] lg:bg-[#fffaf6]"
+          : "lg:border-white/[0.08] lg:bg-white/[0.035]"
       )}
     >
       <motion.div
@@ -219,8 +265,10 @@ export function AgentChatDrawer({
   const [repairingGatewayMessageId, setRepairingGatewayMessageId] = useState<string | null>(null);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
+  const [timelineScrollIndicator, setTimelineScrollIndicator] = useState({ top: 0, height: 0, visible: false });
   const listRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const scrollIndicatorHideTimeoutRef = useRef<number | null>(null);
   const isVisibleRef = useRef(isVisible);
   const isNearBottomRef = useRef(true);
   const rehydratedAgentRef = useRef<string | null>(null);
@@ -251,6 +299,24 @@ export function AgentChatDrawer({
       return;
     }
 
+    const scrollRange = list.scrollHeight - list.clientHeight;
+    if (scrollRange > 0) {
+      const height = Math.min(64, Math.max(28, (list.clientHeight / list.scrollHeight) * list.clientHeight));
+      const top = (list.scrollTop / scrollRange) * Math.max(0, list.clientHeight - height);
+      setTimelineScrollIndicator({ top, height, visible: true });
+
+      if (scrollIndicatorHideTimeoutRef.current !== null) {
+        window.clearTimeout(scrollIndicatorHideTimeoutRef.current);
+      }
+
+      scrollIndicatorHideTimeoutRef.current = window.setTimeout(() => {
+        setTimelineScrollIndicator((current) => ({ ...current, visible: false }));
+        scrollIndicatorHideTimeoutRef.current = null;
+      }, 650);
+    } else {
+      setTimelineScrollIndicator({ top: 0, height: 0, visible: false });
+    }
+
     const nextIsNearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 48;
     isNearBottomRef.current = nextIsNearBottom;
     setIsNearBottom(nextIsNearBottom);
@@ -268,6 +334,14 @@ export function AgentChatDrawer({
   useEffect(() => {
     isVisibleRef.current = isVisible;
   }, [isVisible]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollIndicatorHideTimeoutRef.current !== null) {
+        window.clearTimeout(scrollIndicatorHideTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const syncAgentChatState = () => {
@@ -404,13 +478,26 @@ export function AgentChatDrawer({
     }
 
     const frame = requestAnimationFrame(() => {
-      if (isVisibleRef.current) {
+      if (isVisibleRef.current && window.matchMedia("(min-width: 1024px)").matches) {
         textareaRef.current?.focus();
       }
     });
 
     return () => cancelAnimationFrame(frame);
   }, [agent.id, isVisible]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    const minHeight = window.matchMedia("(min-width: 1024px)").matches ? 96 : 52;
+    textarea.style.height = "auto";
+    const nextHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), 132);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > 132 ? "auto" : "hidden";
+  }, [draft, isVisible]);
 
   useEffect(() => {
     if (!isVisible) {
@@ -542,11 +629,17 @@ export function AgentChatDrawer({
         ref={listRef}
         onScroll={handleTimelineScroll}
         className={cn(
-          "mission-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1",
+          "agent-chat-scroll mission-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain pt-3 lg:pr-1 lg:pt-0",
           surfaceTheme === "light" ? "text-[#4a382c]" : "text-slate-200"
         )}
       >
-        <div className={cn(hasConversation ? "space-y-2.5 pb-1" : "flex min-h-full items-center justify-center pb-3")}>
+        <div
+          className={cn(
+            hasConversation
+              ? "space-y-5 pb-3 lg:space-y-2.5 lg:pb-1"
+              : "flex min-h-full items-center justify-center pb-3"
+          )}
+        >
           {!hasConversation ? (
             <AgentChatWelcome
               agentLabel={agentLabel}
@@ -562,7 +655,7 @@ export function AgentChatDrawer({
               surfaceTheme={surfaceTheme}
             />
           ))}
-          {messages.map((entry) => {
+          {messages.map((entry, index) => {
             const isUser = entry.role === "user";
             const isSystem = entry.role === "system";
             const isAssistant = entry.role === "assistant";
@@ -585,64 +678,81 @@ export function AgentChatDrawer({
               authActionMessage && !gatewayRepairAction ? resolveAgentChatAuthAction(authActionMessage, agent.modelId) : null;
             const showAssistantRecoveryAction =
               !isPendingAssistant && entry.status !== "error" && isAssistant && Boolean(authAction && onConnectModelProvider);
+            const showDateSeparator = shouldShowChatDateSeparator(messages[index - 1]?.createdAt, entry.createdAt);
 
             return (
-              <div key={entry.id} className={cn("flex", isUser ? "justify-end" : "justify-start")}>
-                <div
-                  className={cn(
-                    "min-w-0 max-w-[92%] rounded-[18px] border px-3 py-2 text-[13px] leading-5 shadow-[0_14px_34px_rgba(0,0,0,0.14)]",
-                    isPendingUser && "opacity-85",
-                    isSystem
-                      ? surfaceTheme === "light"
-                        ? "border-[#e3d4c8] bg-[#fffaf6] text-[#6c5647]"
-                        : "border-white/[0.08] bg-white/[0.03] text-slate-400"
-                      : isUser
+              <div key={entry.id} className="space-y-2">
+                {showDateSeparator ? (
+                  <div className="flex items-center gap-3 py-1" role="separator" aria-label={formatChatDate(entry.createdAt)}>
+                    <span className={cn("h-px flex-1", surfaceTheme === "light" ? "bg-[#dfd4cc]/70" : "bg-white/[0.07]")} />
+                    <time
+                      dateTime={Number.isFinite(entry.createdAt) ? new Date(entry.createdAt).toISOString() : undefined}
+                      className={cn(
+                        "shrink-0 text-[9px] font-medium uppercase tracking-[0.14em]",
+                        surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-500"
+                      )}
+                    >
+                      {formatChatDate(entry.createdAt)}
+                    </time>
+                    <span className={cn("h-px flex-1", surfaceTheme === "light" ? "bg-[#dfd4cc]/70" : "bg-white/[0.07]")} />
+                  </div>
+                ) : null}
+                <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
+                  <div
+                    className={cn(
+                      "min-w-0 text-[15px] leading-6 lg:max-w-[92%] lg:rounded-[18px] lg:border lg:px-3 lg:py-2 lg:text-[13px] lg:leading-5 lg:shadow-[0_14px_34px_rgba(0,0,0,0.14)]",
+                      isPendingUser && "opacity-85",
+                      isSystem
                         ? surfaceTheme === "light"
-                          ? "border-[#e3d4c8] bg-[#fff3f6] text-[#4a382c]"
-                          : "border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03))] text-slate-100"
-                        : surfaceTheme === "light"
-                          ? "border-[#e3d4c8] bg-[#fffaf6] text-[#4a382c]"
-                          : "border-cyan-300/12 bg-[linear-gradient(180deg,rgba(34,211,238,0.10),rgba(59,130,246,0.06))] text-slate-100"
-                  )}
-                >
-                  {isPendingAssistant ? (
-                    <AssistantThinkingActivity
-                      statusMessage={runSnapshot.statusMessage}
-                      expanded={Boolean(expandedThinkingById[entry.id])}
-                      onToggle={() =>
-                        setExpandedThinkingById((current) => ({
-                          ...current,
-                          [entry.id]: !current[entry.id]
-                        }))
-                      }
-                      surfaceTheme={surfaceTheme}
-                    />
-                  ) : (
-                    <>
-                      <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                        {isAssistant ? visibleAssistantText : entry.text}
-                      </p>
-                      <time
-                        dateTime={Number.isFinite(entry.createdAt) ? new Date(entry.createdAt).toISOString() : undefined}
-                        className={cn(
-                          "mt-1 block text-[9px] leading-3",
-                          isUser ? "text-right" : "text-left",
-                          surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-500"
-                        )}
-                      >
-                        {formatChatTime(entry.createdAt)}
-                      </time>
-                      {showAssistantActivity ? (
-                        <motion.span
-                          aria-hidden="true"
-                          animate={{ opacity: [0.2, 1, 0.2] }}
-                          transition={{ duration: 0.9, repeat: Infinity, ease: "easeInOut" }}
-                          className="ml-0.5 inline-block h-[1em] w-[1px] translate-y-[2px] bg-current"
-                        />
-                      ) : null}
-                    </>
-                  )}
-                  {!isPendingAssistant && showInlineStatus ? (
+                          ? "max-w-full rounded-[16px] border border-[#e3d4c8] bg-[#fffaf6] px-3 py-2 text-[#6c5647]"
+                          : "max-w-full rounded-[16px] border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-slate-400"
+                        : isUser
+                          ? surfaceTheme === "light"
+                            ? "max-w-[82%] rounded-[22px] bg-[#eee7e2] px-4 py-2.5 text-[#35271f] lg:border-[#e3d4c8] lg:bg-[#fff3f6]"
+                            : "max-w-[82%] rounded-[22px] bg-white/[0.12] px-4 py-2.5 text-slate-50 lg:border-white/[0.08] lg:bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03))]"
+                          : surfaceTheme === "light"
+                            ? "max-w-full bg-transparent px-0 py-1 text-[#35271f] lg:border-[#e3d4c8] lg:bg-[#fffaf6] lg:text-[#4a382c]"
+                            : "max-w-full bg-transparent px-0 py-1 text-slate-100 lg:border-cyan-300/12 lg:bg-[linear-gradient(180deg,rgba(34,211,238,0.10),rgba(59,130,246,0.06))]"
+                    )}
+                  >
+                    {isPendingAssistant ? (
+                      <AssistantThinkingActivity
+                        statusMessage={runSnapshot.statusMessage}
+                        expanded={Boolean(expandedThinkingById[entry.id])}
+                        onToggle={() =>
+                          setExpandedThinkingById((current) => ({
+                            ...current,
+                            [entry.id]: !current[entry.id]
+                          }))
+                        }
+                        surfaceTheme={surfaceTheme}
+                      />
+                    ) : (
+                      <>
+                        <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                          {isAssistant ? visibleAssistantText : entry.text}
+                        </p>
+                        <time
+                          dateTime={Number.isFinite(entry.createdAt) ? new Date(entry.createdAt).toISOString() : undefined}
+                          className={cn(
+                            "mt-1 block text-[9px] leading-3 opacity-70",
+                            isUser ? "text-right" : "text-left",
+                            surfaceTheme === "light" ? "text-[#8b7262]" : "text-slate-500"
+                          )}
+                        >
+                          {formatChatTime(entry.createdAt)}
+                        </time>
+                        {showAssistantActivity ? (
+                          <motion.span
+                            aria-hidden="true"
+                            animate={{ opacity: [0.2, 1, 0.2] }}
+                            transition={{ duration: 0.9, repeat: Infinity, ease: "easeInOut" }}
+                            className="ml-0.5 inline-block h-[1em] w-[1px] translate-y-[2px] bg-current"
+                          />
+                        ) : null}
+                      </>
+                    )}
+                    {!isPendingAssistant && showInlineStatus ? (
                     <p
                       className={cn(
                         "mt-1.5 text-[10px] uppercase tracking-[0.18em]",
@@ -726,12 +836,25 @@ export function AgentChatDrawer({
                       </Button>
                     </div>
                   ) : null}
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
       </div>
+
+      {timelineScrollIndicator.height > 0 ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute right-0 z-10 w-0.5 rounded-full transition-opacity duration-200 lg:hidden",
+            timelineScrollIndicator.visible ? "opacity-100" : "opacity-0",
+            surfaceTheme === "light" ? "bg-[#8b7262]/35" : "bg-slate-300/35"
+          )}
+          style={{ top: timelineScrollIndicator.top, height: timelineScrollIndicator.height }}
+        />
+      ) : null}
 
       {hasUnreadBelow && !isNearBottom ? (
         <button
@@ -751,9 +874,9 @@ export function AgentChatDrawer({
 
       <div
         className={cn(
-          "relative mt-2 shrink-0 overflow-hidden rounded-[14px] border",
+          "relative mt-2 shrink-0 overflow-hidden rounded-[26px] border shadow-none lg:rounded-[14px]",
           surfaceTheme === "light"
-            ? "border-[#e3d4c8] bg-[#fffaf6]"
+            ? "border-[#dfd4cc] bg-[#fffaf6]"
             : "border-white/[0.08] bg-[linear-gradient(180deg,rgba(11,18,32,0.86),rgba(8,13,24,0.82))]"
         )}
         onPointerDown={(event) => {
@@ -764,6 +887,7 @@ export function AgentChatDrawer({
       >
         <Textarea
           ref={textareaRef}
+          rows={1}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={async (event) => {
@@ -774,7 +898,7 @@ export function AgentChatDrawer({
           }}
           placeholder={`Ask ${agentLabel} about ${agentWorkLabel}…`}
           className={cn(
-            "min-h-[96px] w-full cursor-text resize-none border-0 bg-transparent px-3 py-3 pr-20 text-[13px] leading-[1.5] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
+            "min-h-[52px] max-h-[132px] w-full cursor-text resize-none border-0 bg-transparent px-4 py-[15px] pr-16 text-[15px] leading-[22px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 lg:min-h-[96px] lg:px-3 lg:py-3 lg:pr-20 lg:text-[13px] lg:leading-[1.5]",
             surfaceTheme === "light"
               ? "text-[#3f2f24] placeholder:text-[#8f7664]"
               : "text-white placeholder:text-slate-500"
@@ -782,9 +906,11 @@ export function AgentChatDrawer({
         />
 
         <Button
+          type="button"
+          aria-label={runSnapshot.isRunning ? "Agent is responding" : "Send message"}
           disabled={!canSend}
           className={cn(
-            "absolute right-3 top-3 h-8 rounded-full px-3 shadow-none",
+            "absolute bottom-1.5 right-1.5 h-10 w-10 rounded-full p-0 shadow-none lg:bottom-auto lg:right-3 lg:top-3 lg:h-8 lg:w-auto lg:px-3",
             surfaceTheme === "light"
               ? "bg-[#4a382c] text-[#fffaf6] hover:bg-[#3f2f24]"
               : "bg-white text-slate-950 hover:bg-white/92"
@@ -792,11 +918,11 @@ export function AgentChatDrawer({
           onClick={send}
         >
           {runSnapshot.isRunning ? (
-            <LoaderCircle className="mr-[5px] h-[13px] w-[13px] animate-spin" />
+            <LoaderCircle className="h-4 w-4 animate-spin lg:mr-[5px] lg:h-[13px] lg:w-[13px]" />
           ) : (
-            <SendHorizontal className="mr-[5px] h-[13px] w-[13px]" />
+            <SendHorizontal className="h-4 w-4 lg:mr-[5px] lg:h-[13px] lg:w-[13px]" />
           )}
-          Send
+          <span className="sr-only lg:not-sr-only">Send</span>
         </Button>
       </div>
     </div>

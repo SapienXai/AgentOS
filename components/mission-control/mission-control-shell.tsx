@@ -284,6 +284,7 @@ export function MissionControlShell({
   const [isCompactViewport, setIsCompactViewport] = useState(false);
   const isSidebarOpen = isSidebarOpenState || (isSidebarPinned && !isCompactViewport);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+  const inspectorChatEntryPointRef = useRef<"mission-control" | "inspector">("inspector");
   const [inspectorWidth, setInspectorWidth] = useState(inspectorCompactWidth);
   const [isResizingInspector, setIsResizingInspector] = useState(false);
   const inspectorResizeCleanupRef = useRef<(() => void) | null>(null);
@@ -298,6 +299,27 @@ export function MissionControlShell({
     mediaQuery.addEventListener("change", syncViewport);
     return () => mediaQuery.removeEventListener("change", syncViewport);
   }, []);
+
+  const handleInspectorTabChange = useCallback(
+    (tab: "overview" | "chat" | "output" | "files" | "raw") => {
+      if (tab === "chat") {
+        inspectorChatEntryPointRef.current = "inspector";
+      }
+
+      setActiveInspectorTab(tab);
+    },
+    [setActiveInspectorTab]
+  );
+
+  const handleBackFromInspectorChat = useCallback(() => {
+    const entryPoint = inspectorChatEntryPointRef.current;
+    inspectorChatEntryPointRef.current = "inspector";
+    setActiveInspectorTab("overview");
+
+    if (entryPoint === "mission-control") {
+      setIsInspectorOpen(false);
+    }
+  }, [setActiveInspectorTab]);
 
   useEffect(() => {
     if (mode !== "settings" || !isCompactViewport || !isSidebarOpenState) {
@@ -4137,6 +4159,7 @@ export function MissionControlShell({
 
               setAgentActionRequest(null);
               setActiveWorkspaceId(agent.workspaceId);
+              inspectorChatEntryPointRef.current = "mission-control";
               selectNode(agentId, "chat");
               setIsInspectorOpen(true);
             }}
@@ -4518,7 +4541,8 @@ export function MissionControlShell({
             onToggleCollapsed={() => setIsInspectorOpen((current) => !current)}
             onSelectScope={selectInspectorScope}
             activeTab={activeInspectorTab}
-            onActiveTabChange={setActiveInspectorTab}
+            onActiveTabChange={handleInspectorTabChange}
+            onBackFromChat={handleBackFromInspectorChat}
             onAbortTask={requestTaskAbort}
             onReviewTask={openTaskReview}
             detailExpanded={isInspectorDetailExpanded}
