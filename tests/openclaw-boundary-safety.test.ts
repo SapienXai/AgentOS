@@ -710,12 +710,23 @@ test("settings control center exposes hash navigation for subpages", () => {
 
   assert.match(source, /type SettingsSectionId =[\s\S]*?\| "diagnostics"[\s\S]*?\| "advanced"/);
   assert.match(source, /const settingsSections: SettingsSection\[] = \[/);
-  assert.match(source, /\{ id: "gateway", label: "Gateway", icon: ShieldCheck \}/);
-  assert.match(source, /\{ id: "capabilities", label: "Capabilities", icon: ListChecks \}/);
-  assert.match(source, /\{ id: "diagnostics", label: "Diagnostics", icon: TerminalSquare \}/);
+  assert.match(source, /\{ id: "gateway", label: "Gateway", icon: ShieldCheck, group: "OpenClaw" \}/);
+  assert.match(source, /\{ id: "capabilities", label: "Capabilities", icon: ListChecks, group: "OpenClaw" \}/);
+  assert.match(source, /\{ id: "diagnostics", label: "Diagnostics", icon: TerminalSquare, group: "System" \}/);
+  assert.match(source, /const settingsSectionGroups = \["Core", "OpenClaw", "Workspace", "System"\] as const;/);
+  assert.match(source, /function SettingsSectionNavigation\(/);
+  assert.match(source, /"border-t px-2\.5 pb-3 pt-2"/);
+  assert.match(source, /"bg-\[#080d16\] text-slate-100"/);
+  assert.match(source, /"border border-white\/\[0\.10\] bg-\[#121d2d\] text-slate-100/);
+  assert.match(source, /"border-white\/\[0\.08\] bg-\[#0c1522\]"/);
+  assert.match(source, /"sticky top-\[92px\] hidden[^"]*lg:block"/);
+  assert.doesNotMatch(source, /overflow-x-auto rounded-\[18px\]/);
   assert.match(source, /aria-label="Settings sections"/);
   assert.match(source, /href=\{`\/settings#\$\{section\.id\}`\}/);
-  assert.match(source, /onClick=\{\(\) => \{[\s\S]*?setActiveSection\(section\.id\);[\s\S]*?scrollSettingsToTop\(\);[\s\S]*?\}\}/);
+  assert.match(source, /onSelect\(section\.id\);/);
+  assert.match(source, /event\.currentTarget\.closest\("details"\)\?\.removeAttribute\("open"\);/);
+  assert.doesNotMatch(source, /title="Settings Sections"/);
+  assert.doesNotMatch(source, /resolveSettingsSectionStatus\(/);
   assert.match(source, /case "capabilities":\s*return "capabilities";/);
   assert.match(source, /case "diagnostics":\s*return "diagnostics";/);
   assert.doesNotMatch(source, /id: "billing"/);

@@ -136,36 +136,25 @@ type SettingsSection = {
   id: SettingsSectionId;
   label: string;
   icon: LucideIcon;
+  group: "Core" | "OpenClaw" | "Workspace" | "System";
   destructive?: boolean;
 };
 
 const settingsSections: SettingsSection[] = [
-  { id: "general", label: "General", icon: Wrench },
-  { id: "overview", label: "Overview", icon: Settings2 },
-  { id: "openclaw", label: "OpenClaw", icon: Activity },
-  { id: "gateway", label: "Gateway", icon: ShieldCheck },
-  { id: "capabilities", label: "Capabilities", icon: ListChecks },
-  { id: "models", label: "Models", icon: Box },
-  { id: "workspace", label: "Workspace", icon: Folder },
-  { id: "agents", label: "Agents", icon: Bot },
-  { id: "diagnostics", label: "Diagnostics", icon: TerminalSquare },
-  { id: "advanced", label: "Advanced", icon: Settings2 },
-  { id: "danger-zone", label: "Danger Zone", icon: AlertTriangle, destructive: true }
+  { id: "overview", label: "Overview", icon: Settings2, group: "Core" },
+  { id: "general", label: "General", icon: Wrench, group: "Core" },
+  { id: "openclaw", label: "OpenClaw", icon: Activity, group: "OpenClaw" },
+  { id: "gateway", label: "Gateway", icon: ShieldCheck, group: "OpenClaw" },
+  { id: "capabilities", label: "Capabilities", icon: ListChecks, group: "OpenClaw" },
+  { id: "models", label: "Models", icon: Box, group: "OpenClaw" },
+  { id: "workspace", label: "Workspace", icon: Folder, group: "Workspace" },
+  { id: "agents", label: "Agents", icon: Bot, group: "Workspace" },
+  { id: "diagnostics", label: "Diagnostics", icon: TerminalSquare, group: "System" },
+  { id: "advanced", label: "Advanced", icon: Settings2, group: "System" },
+  { id: "danger-zone", label: "Danger Zone", icon: AlertTriangle, group: "System", destructive: true }
 ];
 
-const settingsSectionDescriptions: Record<SettingsSectionId, string> = {
-  general: "Global OpenClaw tool availability and browser runtime control.",
-  overview: "System configuration, runtime health, and operator controls.",
-  openclaw: "Source-of-truth runtime state, update flow, and local binary selection.",
-  gateway: "Connection state, auth repair, endpoint control, and native transport health.",
-  capabilities: "Native coverage, fallback surface, and protocol contract detail.",
-  models: "Default model, provider readiness, and model set management.",
-  workspace: "Workspace root, project defaults, and local workspace context.",
-  agents: "Agent inventory, runtime coverage, and operator handoff visibility.",
-  diagnostics: "Transport health, CLI activity, and compatibility evidence.",
-  advanced: "Update pacing, install metadata, and low-level control settings.",
-  "danger-zone": "Destructive recovery actions that require deliberate confirmation."
-};
+const settingsSectionGroups = ["Core", "OpenClaw", "Workspace", "System"] as const;
 
 const relatedSettingsSections: Record<SettingsSectionId, SettingsSectionId[]> = {
   general: ["gateway", "capabilities", "agents"],
@@ -1133,7 +1122,7 @@ export function SettingsControlCenter(
     <main
       className={cn(
         "relative z-10 min-h-screen [&_a]:inline-flex [&_a]:min-h-11 [&_a]:min-w-11 [&_a]:items-center [&_button]:min-h-11 [&_button]:min-w-11 [&_input]:min-h-11 [&_select]:min-h-11 sm:[&_a]:min-h-0 sm:[&_a]:min-w-0 sm:[&_button]:min-h-0 sm:[&_button]:min-w-0 sm:[&_input]:min-h-0 sm:[&_select]:min-h-0",
-        surfaceTheme === "light" ? "text-foreground" : "text-slate-100"
+        surfaceTheme === "light" ? "text-foreground" : "bg-[#080d16] text-slate-100"
       )}
     >
         <section
@@ -1190,7 +1179,7 @@ export function SettingsControlCenter(
                   />
               </div>
 
-              <div className="order-1 hidden flex-col gap-1.5 sm:flex">
+              <div className="order-1 flex flex-col gap-1.5">
                 <h1 className={cn("font-display text-[1.45rem] leading-tight sm:text-[1.85rem]", surfaceTheme === "light" ? "text-[#1f1712]" : "text-slate-50")}>
                   Settings
                 </h1>
@@ -1199,61 +1188,15 @@ export function SettingsControlCenter(
                 </p>
               </div>
 
-              <label className="order-3 sm:hidden">
-                <span className={cn("mb-1.5 block text-[0.65rem] font-semibold uppercase tracking-[0.14em]", mutedTextClassName(surfaceTheme))}>Settings section</span>
-                <select
-                  value={renderedActiveSection}
-                  onChange={(event) => selectSettingsSection(event.target.value as SettingsSectionId)}
-                  className={cn(
-                    "h-11 w-full rounded-xl border px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-ring/40",
-                    surfaceTheme === "light" ? "border-border bg-card text-foreground" : "border-border bg-[#0b111c] text-slate-100"
-                  )}
-                >
-                  {settingsSections.map((section) => <option key={section.id} value={section.id}>{section.label}</option>)}
-                </select>
-              </label>
-
-              <nav
-                aria-label="Settings sections"
-                className={cn(
-                  "order-3 hidden gap-1 overflow-x-auto rounded-[18px] border p-1 shadow-[0_18px_44px_rgba(15,23,42,0.10)] sm:flex",
-                  surfaceTheme === "light"
-                    ? "border-border bg-card"
-                    : "border-border bg-[#0b111c] shadow-[0_18px_48px_rgba(0,0,0,0.36)]"
-                )}
-              >
-                {settingsSections.map((section) => {
-                  const active = renderedActiveSection === section.id;
-
-                  return (
-                    <Link
-                      key={section.id}
-                      href={`/settings#${section.id}`}
-                      scroll={false}
-                      aria-current={active ? "page" : undefined}
-                      onClick={() => {
-                        setActiveSection(section.id);
-                        scrollSettingsToTop();
-                      }}
-                      className={cn(
-                        "relative flex min-h-10 shrink-0 items-center justify-center rounded-[14px] px-4 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
-                        active
-                          ? section.destructive
-                            ? "bg-destructive/10 text-destructive"
-                            : "bg-primary/10 text-primary"
-                          : surfaceTheme === "light"
-                            ? "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                            : "text-slate-300 hover:bg-white/[0.06] hover:text-slate-50",
-                        active ? "after:absolute after:bottom-0 after:left-4 after:right-4 after:h-0.5 after:rounded-full after:bg-current" : null
-                      )}
-                    >
-                      {section.label}
-                    </Link>
-                  );
-                })}
-              </nav>
             </section>
 
+            <div className="grid items-start gap-5 lg:grid-cols-[224px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)]">
+              <SettingsSectionNavigation
+                activeSection={renderedActiveSection}
+                onSelect={selectSettingsSection}
+                surfaceTheme={surfaceTheme}
+              />
+              <div className="min-w-0 space-y-4">
             <section className="space-y-4">
               <div className="min-w-0 space-y-4">
                 <div className="flex flex-col gap-4">
@@ -1330,59 +1273,6 @@ export function SettingsControlCenter(
                       <SettingsActionRow icon={ShieldCheck} label="Open Gateway settings" href="/settings#gateway" surfaceTheme={surfaceTheme} onActivate={() => setActiveSection("gateway")} />
                       <SettingsActionRow icon={TerminalSquare} label="Run diagnostics" href="/settings#diagnostics" surfaceTheme={surfaceTheme} onActivate={() => setActiveSection("diagnostics")} />
                       <SettingsActionRow icon={Box} label="Manage models" href="/settings#models" surfaceTheme={surfaceTheme} onActivate={() => setActiveSection("models")} />
-                    </div>
-                  </Card>
-                </div>
-
-                <div className="hidden sm:block">
-                  <Card title="Settings Sections" icon={Settings2} surfaceTheme={surfaceTheme}>
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {settingsSections
-                      .filter((section) => section.id !== "overview")
-                      .map((section) => {
-                        const Icon = section.icon;
-                        const status = resolveSettingsSectionStatus(section.id, {
-                          snapshot,
-                          transportSummary,
-                          compatibilityReport: compatibilityReport ?? null,
-                          activeRuntimeIssuesCount: activeRuntimeIssues.length,
-                          selectedOrDefaultModelId
-                        });
-
-                        return (
-                          <Link
-                            key={section.id}
-                            href={`/settings#${section.id}`}
-                            scroll={false}
-                            onClick={() => {
-                              setActiveSection(section.id);
-                              scrollSettingsToTop();
-                            }}
-                            className={cn(
-                              "group min-h-[134px] rounded-[18px] border p-4 shadow-[0_14px_34px_rgba(15,23,42,0.07)] transition-colors",
-                              surfaceTheme === "light"
-                                ? "border-slate-200 bg-white hover:border-primary/25 hover:bg-slate-50"
-                                : "border-white/[0.12] bg-[#121a27] shadow-[0_16px_38px_rgba(0,0,0,0.24)] hover:border-primary/30 hover:bg-[#172231]"
-                            )}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <span className={cardIconClassName(surfaceTheme)}>
-                                <Icon className="h-4 w-4" />
-                              </span>
-                              <StatusPill label={status.label} tone={status.tone} surfaceTheme={surfaceTheme} />
-                            </div>
-                            <h3 className={cn("mt-4 text-sm font-semibold", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
-                              {section.label}
-                            </h3>
-                            <p className={cn("mt-2 min-h-10 text-xs leading-5", mutedTextClassName(surfaceTheme))}>
-                              {settingsSectionDescriptions[section.id]}
-                            </p>
-                            <span className={cn("mt-3 inline-flex items-center gap-2 text-xs font-medium", section.destructive ? "text-destructive" : "text-primary")}>
-                              Configure <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-                            </span>
-                          </Link>
-                        );
-                      })}
                     </div>
                   </Card>
                 </div>
@@ -2681,9 +2571,134 @@ export function SettingsControlCenter(
                 />
               </Card>
             </div>
+              </div>
+            </div>
           </div>
         </section>
     </main>
+  );
+}
+
+function SettingsSectionNavigation({
+  activeSection,
+  onSelect,
+  surfaceTheme
+}: {
+  activeSection: SettingsSectionId;
+  onSelect: (sectionId: SettingsSectionId) => void;
+  surfaceTheme: SurfaceTheme;
+}) {
+  const activeSectionConfig = settingsSections.find((section) => section.id === activeSection) ?? settingsSections[0];
+  const ActiveIcon = activeSectionConfig.icon;
+
+  const renderSectionLink = (section: SettingsSection, mobile = false) => {
+    const active = section.id === activeSection;
+    const Icon = section.icon;
+
+    return (
+      <Link
+        key={section.id}
+        href={`/settings#${section.id}`}
+        scroll={false}
+        aria-current={active ? "page" : undefined}
+        onClick={(event) => {
+          if (mobile) {
+            event.currentTarget.closest("details")?.removeAttribute("open");
+          }
+          onSelect(section.id);
+        }}
+        className={cn(
+          "group flex min-w-0 items-center rounded-xl border font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
+          mobile ? "gap-3 px-3 py-2.5 text-sm" : "gap-2.5 px-2.5 py-1.5 text-[0.8rem]",
+          active
+            ? section.destructive
+              ? "border-destructive/25 bg-destructive/12 text-destructive"
+              : surfaceTheme === "light"
+                ? "border-primary/20 bg-primary/10 text-primary"
+                : "border-primary/30 bg-primary/15 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+            : section.destructive
+              ? "border-transparent text-destructive/80 hover:border-destructive/15 hover:bg-destructive/8 hover:text-destructive"
+              : surfaceTheme === "light"
+                ? "border-transparent text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                : "border-transparent text-slate-300 hover:border-white/[0.08] hover:bg-white/[0.055] hover:text-slate-50"
+        )}
+      >
+        <span className={cn(
+          "flex shrink-0 items-center justify-center rounded-[10px] border transition-colors",
+          mobile ? "h-8 w-8" : "h-7 w-7",
+          active
+            ? section.destructive
+              ? "border-destructive/20 bg-destructive/10"
+              : "border-primary/20 bg-primary/10"
+            : "border-border bg-transparent group-hover:border-current/15"
+        )}>
+          <Icon className="h-4 w-4" />
+        </span>
+        <span className="truncate">{section.label}</span>
+        {active ? <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-current" /> : null}
+      </Link>
+    );
+  };
+
+  return (
+    <>
+      <details
+        className={cn(
+          "group overflow-hidden rounded-[18px] border lg:hidden",
+          surfaceTheme === "light"
+            ? "border-border bg-card"
+            : "border-white/[0.10] bg-[#0d1725] shadow-[0_18px_44px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.035)]"
+        )}
+      >
+        <summary className="flex min-h-16 cursor-pointer list-none items-center gap-3 px-3.5 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/35 [&::-webkit-details-marker]:hidden">
+          <span className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border",
+            activeSectionConfig.destructive ? "border-destructive/20 bg-destructive/10 text-destructive" : "border-primary/20 bg-primary/10 text-primary"
+          )}>
+            <ActiveIcon className="h-4 w-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className={cn("block text-[0.65rem] font-semibold uppercase tracking-[0.13em]", mutedTextClassName(surfaceTheme))}>Settings section</span>
+            <span className="block truncate text-sm font-semibold">{activeSectionConfig.label}</span>
+          </span>
+          <ChevronDown className="h-4 w-4 shrink-0 opacity-60 transition-transform group-open:rotate-180" />
+        </summary>
+        <nav aria-label="Settings sections" className={cn("border-t px-2.5 pb-3 pt-2", surfaceTheme === "light" ? "border-border" : "border-white/[0.09] bg-[#0a1320]")}>
+          {settingsSectionGroups.map((group) => (
+            <div key={group} className="pt-2 first:pt-0">
+              <p className={cn("px-3 pb-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em]", mutedTextClassName(surfaceTheme))}>{group}</p>
+              <div className="grid gap-0.5 sm:grid-cols-2">
+                {settingsSections.filter((section) => section.group === group).map((section) => renderSectionLink(section, true))}
+              </div>
+            </div>
+          ))}
+        </nav>
+      </details>
+
+      <aside
+        className={cn(
+          "sticky top-[92px] hidden max-h-[calc(100dvh-112px)] overflow-y-auto rounded-[20px] border p-2.5 lg:block",
+          surfaceTheme === "light"
+            ? "border-border bg-card"
+            : "border-white/[0.10] bg-[#0d1725] shadow-[0_18px_44px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.035)]"
+        )}
+      >
+        <div className="px-3 pb-2 pt-1">
+          <p className="text-sm font-semibold">Sections</p>
+          <p className={cn("mt-1 text-xs leading-5", mutedTextClassName(surfaceTheme))}>Choose a section to configure.</p>
+        </div>
+        <nav aria-label="Settings sections" className="space-y-3">
+          {settingsSectionGroups.map((group) => (
+            <div key={group}>
+              <p className={cn("px-3 pb-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em]", mutedTextClassName(surfaceTheme))}>{group}</p>
+              <div className="space-y-0.5">
+                {settingsSections.filter((section) => section.group === group).map((section) => renderSectionLink(section))}
+              </div>
+            </div>
+          ))}
+        </nav>
+      </aside>
+    </>
   );
 }
 
@@ -2747,8 +2762,8 @@ function SummaryTile({
             ? "border-primary/20 bg-primary/8"
             : "border-border bg-card/86"
           : accent
-            ? "border-primary/20 bg-primary/10"
-            : "border-border bg-[#0f1826]"
+            ? "border-primary/30 bg-primary/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+            : "border-white/[0.10] bg-[#111c2c] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
       )}
     >
       <p className={cn(compact ? "text-[9px] uppercase tracking-[0.16em]" : "text-[10px] uppercase tracking-[0.18em]", mutedTextClassName(surfaceTheme))}>
@@ -6044,59 +6059,6 @@ function copyToClipboard(value: string) {
   void navigator.clipboard.writeText(value);
 }
 
-function resolveSettingsSectionStatus(
-  sectionId: SettingsSectionId,
-  context: {
-    snapshot: MissionControlShellSettingsPanelProps["snapshot"];
-    transportSummary: TransportDiagnosticsSummary;
-    compatibilityReport: CompatibilityReport | null;
-    activeRuntimeIssuesCount: number;
-    selectedOrDefaultModelId: string;
-  }
-): { label: string; tone: "success" | "warning" | "danger" | "neutral" } {
-  switch (sectionId) {
-    case "openclaw":
-      return context.snapshot.diagnostics.version
-        ? { label: "Current", tone: "success" }
-        : { label: "Unknown", tone: "neutral" };
-    case "gateway":
-      return context.snapshot.diagnostics.loaded || context.snapshot.diagnostics.rpcOk
-        ? { label: "Online", tone: "success" }
-        : { label: "Offline", tone: "danger" };
-    case "general":
-      return { label: "Configured", tone: "neutral" };
-    case "capabilities":
-      return context.compatibilityReport
-        ? { label: formatCompatibilityReportStatus(context.compatibilityReport.status), tone: context.compatibilityReport.status === "compatible" ? "success" : "warning" }
-        : { label: "Unknown", tone: "neutral" };
-    case "models":
-      return context.selectedOrDefaultModelId
-        ? { label: "Active", tone: "success" }
-        : { label: "Needs setup", tone: "warning" };
-    case "workspace":
-      return context.snapshot.diagnostics.workspaceRoot
-        ? { label: "Active", tone: "success" }
-        : { label: "Not set", tone: "warning" };
-    case "agents":
-      return context.snapshot.agents.length
-        ? { label: "Enabled", tone: "success" }
-        : { label: "Empty", tone: "neutral" };
-    case "diagnostics":
-      return context.activeRuntimeIssuesCount
-        ? { label: `${context.activeRuntimeIssuesCount} visible`, tone: "warning" }
-        : { label: "Good", tone: "success" };
-    case "advanced":
-      return context.transportSummary.fallbackTotal
-        ? { label: "Fallback used", tone: "warning" }
-        : { label: "Configured", tone: "neutral" };
-    case "danger-zone":
-      return { label: "Restricted", tone: "danger" };
-    case "overview":
-    default:
-      return { label: "Ready", tone: "neutral" };
-  }
-}
-
 function resolveInitialSettingsSection(): SettingsSectionId {
   return "general";
 }
@@ -6138,7 +6100,7 @@ function resolveHashSettingsSection(): SettingsSectionId {
 function cardClassName(surfaceTheme: SurfaceTheme) {
   return surfaceTheme === "light"
     ? "border-border bg-card/92 text-card-foreground shadow-card"
-    : "border-border bg-card/96 text-card-foreground shadow-[0_20px_54px_rgba(0,0,0,0.26)]";
+    : "border border-white/[0.10] bg-[#121d2d] text-slate-100 shadow-[0_22px_56px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.035)]";
 }
 
 function cardIconClassName(surfaceTheme: SurfaceTheme) {
@@ -6198,7 +6160,7 @@ function segmentedButtonClassName(surfaceTheme: SurfaceTheme, active: boolean) {
 function insetPanelClassName(surfaceTheme: SurfaceTheme) {
   return surfaceTheme === "light"
     ? "border-border bg-muted/45"
-    : "border-border bg-[#101a2a]/92";
+    : "border-white/[0.08] bg-[#0c1522]";
 }
 
 function mutedTextClassName(surfaceTheme: SurfaceTheme) {
@@ -6208,7 +6170,7 @@ function mutedTextClassName(surfaceTheme: SurfaceTheme) {
 function infoRowsShellClassName(surfaceTheme: SurfaceTheme) {
   return surfaceTheme === "light"
     ? "border-border bg-card"
-    : "border-border bg-[#0f1826]";
+    : "border-white/[0.08] bg-[#0c1522]";
 }
 
 function infoRowBorderClassName(surfaceTheme: SurfaceTheme) {
