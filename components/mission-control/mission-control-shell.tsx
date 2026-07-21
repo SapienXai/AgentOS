@@ -3968,7 +3968,7 @@ export function MissionControlShell({
         {!isSidebarOpen ? (
           <div
             className={cn(
-              "fixed inset-x-0 top-0 z-[60] flex min-h-16 items-center gap-3 border-b px-3 backdrop-blur-xl lg:hidden",
+              "fixed inset-x-0 top-0 z-30 flex min-h-16 items-center gap-3 border-b px-3 backdrop-blur-xl lg:hidden",
               surfaceTheme === "light"
                 ? "border-[#d9c9bc]/80 bg-[#f8f5f0]/94 text-[#2d211b]"
                 : "border-white/[0.08] bg-[#07101c]/94 text-slate-100"

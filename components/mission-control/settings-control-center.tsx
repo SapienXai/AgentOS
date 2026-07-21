@@ -1047,7 +1047,7 @@ export function SettingsControlCenter(
             sidebarOpen ? "lg:ml-[308px]" : "lg:ml-[72px]"
           )}
         >
-          <div className="mx-auto max-w-[1680px] space-y-5">
+          <div className="mx-auto max-w-[1680px] space-y-4 sm:space-y-5">
             <section className="flex flex-col gap-5">
               <div className="order-2 grid grid-cols-2 gap-2 sm:grid-cols-2 xl:grid-cols-[1.05fr_0.9fr_0.9fr_1.45fr_0.7fr_0.72fr]">
                   <SummaryTile
@@ -1095,7 +1095,7 @@ export function SettingsControlCenter(
                   />
               </div>
 
-              <div className="order-1 flex flex-col gap-1.5">
+              <div className="order-1 hidden flex-col gap-1.5 sm:flex">
                 <h1 className={cn("font-display text-[1.45rem] leading-tight sm:text-[1.85rem]", surfaceTheme === "light" ? "text-[#1f1712]" : "text-slate-50")}>
                   Settings
                 </h1>
@@ -1164,7 +1164,7 @@ export function SettingsControlCenter(
                 <div className="flex flex-col gap-4">
               {renderedActiveSection === "overview" ? (
               <section id="overview" className="scroll-mt-24 space-y-5">
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <Card title="OpenClaw" icon={Activity} surfaceTheme={surfaceTheme}>
                     <Metric
                       label="Current version"
@@ -1239,8 +1239,9 @@ export function SettingsControlCenter(
                   </Card>
                 </div>
 
-                <Card title="Settings Sections" icon={Settings2} surfaceTheme={surfaceTheme}>
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="hidden sm:block">
+                  <Card title="Settings Sections" icon={Settings2} surfaceTheme={surfaceTheme}>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {settingsSections
                       .filter((section) => section.id !== "overview")
                       .map((section) => {
@@ -1287,10 +1288,11 @@ export function SettingsControlCenter(
                           </Link>
                         );
                       })}
-                  </div>
-                </Card>
+                    </div>
+                  </Card>
+                </div>
 
-                <div className="grid gap-4 xl:grid-cols-2">
+                <div className="hidden gap-4 sm:grid xl:grid-cols-2">
                   <Card title="Runtime Context" icon={Database} surfaceTheme={surfaceTheme}>
                     <InfoRows
                       surfaceTheme={surfaceTheme}
@@ -2551,16 +2553,16 @@ function Card({
   return (
     <div
       className={cn(
-        "min-h-full rounded-[18px] p-4 shadow-[0_16px_40px_rgba(101,74,54,0.07)] backdrop-blur-xl",
+        "min-h-full min-w-0 rounded-[18px] p-3.5 shadow-[0_16px_40px_rgba(101,74,54,0.07)] backdrop-blur-xl sm:p-4",
         cardClassName(surfaceTheme)
       )}
     >
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center justify-between gap-3 sm:gap-4">
+        <div className="flex min-w-0 items-center gap-3">
           <span className={cardIconClassName(surfaceTheme)}>
             <Icon className="h-4 w-4" />
           </span>
-          <h2 className={cn("font-display text-lg", surfaceTheme === "light" ? "text-[#2d211b]" : "text-slate-100")}>
+          <h2 className={cn("min-w-0 truncate font-display text-lg", surfaceTheme === "light" ? "text-[#2d211b]" : "text-slate-100")}>
             {title}
           </h2>
         </div>
