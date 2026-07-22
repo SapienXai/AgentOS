@@ -75,6 +75,9 @@ const contextEngineThemeStyles: Record<ContextEngineSurfaceTheme, ContextEngineT
     "--ce-panel": "rgba(255,255,255,0.04)",
     "--ce-panel-strong": "rgba(2,6,23,0.62)",
     "--ce-panel-hover": "rgba(255,255,255,0.085)",
+    "--ce-card": "rgba(22,28,40,0.92)",
+    "--ce-card-strong": "rgba(10,15,24,0.8)",
+    "--ce-card-hover": "rgba(32,40,56,0.96)",
     "--ce-border": "rgba(255,255,255,0.11)",
     "--ce-border-subtle": "rgba(255,255,255,0.07)",
     "--ce-text-strong": "#f8fafc",
@@ -100,9 +103,12 @@ const contextEngineThemeStyles: Record<ContextEngineSurfaceTheme, ContextEngineT
   },
   light: {
     "--ce-surface": "radial-gradient(circle at 10% 0%, rgba(124,58,237,0.1), transparent 30%), linear-gradient(135deg, rgba(255,253,251,0.99), rgba(248,244,240,0.99) 62%, rgba(252,249,246,0.99))",
-    "--ce-panel": "rgba(255,255,255,0.72)",
-    "--ce-panel-strong": "rgba(255,255,255,0.92)",
+    "--ce-panel": "#faf9f7",
+    "--ce-panel-strong": "#fdfbf9",
     "--ce-panel-hover": "rgba(109,40,217,0.09)",
+    "--ce-card": "#fffdfa",
+    "--ce-card-strong": "#f7f2ec",
+    "--ce-card-hover": "#fff9f3",
     "--ce-border": "rgba(91,70,57,0.2)",
     "--ce-border-subtle": "rgba(91,70,57,0.13)",
     "--ce-text-strong": "#241b16",
@@ -2031,7 +2037,7 @@ function EffectiveContextPanel({
           </div>
           <span className="text-[11px] text-[var(--ce-text-subtle)]">{stackSections.length} sources</span>
         </div>
-        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-3 grid grid-cols-2 gap-2 xl:grid-cols-3">
           {stackSections.map((section, index) => (
             <EffectiveContextSectionCard
               key={section.id}
@@ -2050,7 +2056,7 @@ function EffectiveContextPanel({
             <h4 className="text-sm font-semibold text-[var(--ce-warning-text)]">Not included or unavailable</h4>
           </div>
           <p className="mt-1 text-xs leading-5 text-[var(--ce-warning-text)]">Review these sources before relying on the next context as complete.</p>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <div className="mt-3 grid grid-cols-2 gap-2">
             {gapSections.map((section) => (
               <EffectiveContextSectionCard key={section.id} section={section} onNavigate={onNavigate} compact />
             ))}
@@ -2088,7 +2094,7 @@ function EffectiveContextSectionCard({
 
   return (
     <div className={cn(
-      "group relative min-w-0 overflow-hidden rounded-[10px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] transition-[border-color,background,transform] hover:-translate-y-px hover:border-[var(--ce-border)] hover:bg-[var(--ce-panel-hover)]",
+      "group relative min-w-0 overflow-hidden rounded-[10px] border border-[var(--ce-border-subtle)] bg-[var(--ce-card)] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] transition-[border-color,background,transform] hover:-translate-y-px hover:border-[var(--ce-border)] hover:bg-[var(--ce-card-hover)]",
       compact ? "p-2.5" : "p-3"
     )}>
       <div className={cn("absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-current to-transparent opacity-35", sourceVisual.className)} />
@@ -2109,16 +2115,17 @@ function EffectiveContextSectionCard({
           {section.items.length > 0 ? (
             <ul className="mt-2 flex flex-wrap gap-1">
               {section.items.slice(0, compact ? 2 : 2).map((item) => (
-                <li key={item} className="max-w-full truncate rounded-[6px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--ce-text)]" title={item}>{item}</li>
+                <li key={item} className="max-w-full truncate rounded-[6px] border border-[var(--ce-border-subtle)] bg-[var(--ce-card-strong)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--ce-text)]" title={item}>{item}</li>
               ))}
-              {section.items.length > 2 ? <li className="rounded-[6px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] px-1.5 py-0.5 text-[9px] text-[var(--ce-text-subtle)]">+{section.items.length - 2}</li> : null}
+              {section.items.length > 2 ? <li className="rounded-[6px] border border-[var(--ce-border-subtle)] bg-[var(--ce-card-strong)] px-1.5 py-0.5 text-[9px] text-[var(--ce-text-subtle)]">+{section.items.length - 2}</li> : null}
             </ul>
           ) : null}
         </div>
       </div>
       {action ? (
-        <button type="button" className="mt-3 inline-flex items-center gap-1 border-t border-[var(--ce-border-subtle)] pt-2 text-[11px] font-medium text-[var(--ce-accent)] hover:text-[var(--ce-accent-strong)]" onClick={() => onNavigate(action.tab)}>
-          {action.label}
+        <button type="button" className="mt-3 inline-flex max-w-full items-center gap-1 border-t border-[var(--ce-border-subtle)] pt-2 text-[11px] font-medium text-[var(--ce-accent)] hover:text-[var(--ce-accent-strong)]" onClick={() => onNavigate(action.tab)}>
+          <span className="truncate sm:hidden">{action.mobileLabel}</span>
+          <span className="hidden sm:inline">{action.label}</span>
           <ChevronRight className="h-3 w-3" />
         </button>
       ) : null}
@@ -2147,13 +2154,13 @@ function resolveEffectiveContextVisual(sectionId: ContextEngineEffectiveContextS
 
 function resolveEffectiveContextAction(sectionId: ContextEngineEffectiveContextSection["id"]) {
   if (sectionId === "enabled-files" || sectionId === "disabled-files" || sectionId === "file-issues" || sectionId === "agentos-sidecar") {
-    return { label: "Open project context", tab: "project" as const };
+    return { label: "Open project context", mobileLabel: "Project files", tab: "project" as const };
   }
   if (sectionId === "memory" || sectionId === "history" || sectionId === "openclaw-runtime") {
-    return { label: "Review memory & history", tab: "memory" as const };
+    return { label: "Review memory & history", mobileLabel: "Memory", tab: "memory" as const };
   }
   if (sectionId === "skills-tools") {
-    return { label: "Review capabilities", tab: "skills" as const };
+    return { label: "Review capabilities", mobileLabel: "Capabilities", tab: "skills" as const };
   }
   return null;
 }

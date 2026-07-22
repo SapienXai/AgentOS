@@ -31,6 +31,7 @@ Build calm, dense, trustworthy operator surfaces. AgentOS is the human control l
 - In dark mode, use translucent panels over a restrained deep surface. In light mode, use warm/neutral opaque panels with sufficient text contrast.
 - Prefer `bg-[var(--...)]`, `border-[var(--...)]`, and `text-[var(--...)]` inside a themed surface. Keep semantic state colors separate.
 - Use violet as the standard primary interactive accent for new theme-aware modal work unless the existing feature owns a stronger semantic color.
+- Give dense card collections a deliberate second surface tone. In light theme, establish contrast in the correct direction: use white or cream cards on a warm-gray parent panel, or warm-gray cards on a white parent panel. In dark theme, use a darker opaque or high-opacity card panel distinct from the base surface. Define local `--*-card`, `--*-card-strong`, and hover variables when the collection needs nested chips or metadata.
 
 ### Cards and density
 
@@ -39,6 +40,7 @@ Build calm, dense, trustworthy operator surfaces. AgentOS is the human control l
 - Keep card headers compact. Hide supporting copy on small screens when the control remains self-explanatory.
 - Put the action nearest to the item it affects. Do not place selected-item actions far below a long list.
 - Treat counts as supporting evidence, not the main visual element.
+- For compact, related cards, use a two-column mobile grid when each card remains readable at the narrowest supported width. Use short mobile action labels and preserve one-column layout for dense forms, long prose, or cards with several controls.
 
 ## Dialog and mobile standard
 
