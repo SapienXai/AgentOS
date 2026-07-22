@@ -1023,6 +1023,9 @@ test("context file list keeps mobile scrolling single-layered and desktop totals
   assert.doesNotMatch(source, /ScrollArea/);
   assert.match(source, /grid h-dvh max-h-dvh w-screen max-w-none grid-rows/);
   assert.doesNotMatch(source, /lg:w-\[min\(90vw,1060px\)\]/);
+  assert.match(source, /lg:h-full lg:overflow-hidden lg:p-0/);
+  assert.match(source, /lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain/);
+  assert.doesNotMatch(source, /lg:h-full lg:min-h-\[465px\] lg:overflow-visible/);
 });
 
 test("context engine shows Piko during real loading and saving work", () => {
@@ -1064,6 +1067,10 @@ test("context engine overview is an actionable health dashboard backed by live c
   assert.match(source, /label: "Review project context"/);
   assert.match(source, /label: "Review effective context"/);
   assert.match(source, /largestBudgetItems/);
+  assert.match(source, /projectContextTokens = sumKnownTokens/);
+  assert.match(source, /resolveOverviewBudget\(snapshot, projectContextTokens\)/);
+  assert.match(source, /Project Context total from enabled files/);
+  assert.match(source, /overviewBudget\.usedPercent !== null/);
   assert.match(source, /Context delivery/);
   assert.match(source, /Runtime confidence/);
   assert.match(source, /sm:grid-cols-2 xl:grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)_minmax\(280px,0\.9fr\)\]/);

@@ -580,7 +580,7 @@ export function ContextEngineDialog({
             </nav>
           </aside>
 
-          <main className="min-h-0 flex-1 overflow-y-auto p-3 lg:h-full lg:min-h-[465px] lg:overflow-visible lg:p-0">
+          <main className="min-h-0 flex-1 overflow-y-auto p-3 lg:h-full lg:overflow-hidden lg:p-0">
             {activeTab === "project" ? (
               <ProjectContextTab
                 surfaceTheme={surfaceTheme}
@@ -619,7 +619,7 @@ export function ContextEngineDialog({
                 onSaveFile={() => void saveFile()}
               />
             ) : (
-              <div className="lg:h-full lg:overflow-y-auto lg:p-3">
+              <div className="lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:p-3 lg:pb-4">
                 <SecondaryTabPanel
                   tab={activeTab}
                   snapshot={engineSnapshot}
@@ -1533,11 +1533,14 @@ function ContextOverviewDashboard({
   onNavigate: (tab: ContextEngineTab) => void;
   onSaveContext: () => void;
 }) {
-  const budget = snapshot?.budget;
   const problemFiles = files.filter((file) => file.status === "missing" || file.status === "truncated" || file.status === "error");
   const enabledFiles = files.filter((file) => file.enabled && file.exists);
   const excludedFiles = files.filter((file) => !file.enabled && file.preferenceSource === "agentos-sidecar");
-  const hasBudgetPressure = typeof budget?.usedPercent === "number" && budget.usedPercent >= 80;
+  const projectContextTokens = sumKnownTokens(
+    enabledFiles.filter((file) => isProjectContextFile(file)).map((file) => file.injectedTokens)
+  );
+  const overviewBudget = resolveOverviewBudget(snapshot, projectContextTokens);
+  const hasBudgetPressure = typeof overviewBudget.usedPercent === "number" && overviewBudget.usedPercent >= 80;
   const hasEstimatedRuntime = snapshot?.runtimeReport.status !== "exact";
   const hasRecoveredPreferences = snapshot?.configuration.persistenceStatus === "recovered";
   const health = problemFiles.length > 0
@@ -1549,7 +1552,7 @@ function ContextOverviewDashboard({
     : hasBudgetPressure
       ? {
           label: "Budget pressure",
-          detail: `${budget?.usedPercent}% of the available context window is currently in use.`,
+          detail: `${overviewBudget.usedPercent}% of the available context window is currently in use.`,
           tone: "warning" as const
         }
       : hasEstimatedRuntime || hasRecoveredPreferences
@@ -1590,7 +1593,7 @@ function ContextOverviewDashboard({
             onClick: () => onNavigate("preview"),
             disabled: false
           };
-  const largestBudgetItems = [...(budget?.items ?? defaultBudgetItems())]
+  const largestBudgetItems = overviewBudget.items
     .filter((item) => typeof item.tokens === "number")
     .sort((left, right) => (right.tokens ?? 0) - (left.tokens ?? 0))
     .slice(0, 3);
@@ -1639,19 +1642,21 @@ function ContextOverviewDashboard({
                 <Gauge className="h-4 w-4 text-[var(--ce-accent)]" />
                 <h4 className="text-sm font-semibold text-[var(--ce-text-strong)]">Context budget</h4>
               </div>
-              <p className="mt-1 text-xs text-[var(--ce-text-muted)]">{formatContextBudgetSource(snapshot)}</p>
+              <p className="mt-1 text-xs text-[var(--ce-text-muted)]">{overviewBudget.description}</p>
             </div>
-            <span className="shrink-0 text-right text-lg font-semibold tracking-[-0.03em] text-[var(--ce-text-strong)]">{formatContextUsage(snapshot)}</span>
+            <span className="shrink-0 text-right text-lg font-semibold tracking-[-0.03em] text-[var(--ce-text-strong)]">{overviewBudget.label}</span>
           </div>
-          <div className="mt-3 h-2.5 overflow-hidden rounded-full border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)]">
-            <div
-              className={cn(
-                "h-full rounded-full transition-[width]",
-                hasBudgetPressure ? "bg-[linear-gradient(90deg,#f59e0b,#fb7185)]" : "bg-[linear-gradient(90deg,#8b5cf6,#c084fc)]"
-              )}
-              style={{ width: `${Math.max(0, Math.min(100, budget?.usedPercent ?? 0))}%` }}
-            />
-          </div>
+          {overviewBudget.usedPercent !== null ? (
+            <div className="mt-3 h-2.5 overflow-hidden rounded-full border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)]">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-[width]",
+                  hasBudgetPressure ? "bg-[linear-gradient(90deg,#f59e0b,#fb7185)]" : "bg-[linear-gradient(90deg,#8b5cf6,#c084fc)]"
+                )}
+                style={{ width: `${Math.max(1, Math.min(100, overviewBudget.usedPercent))}%` }}
+              />
+            </div>
+          ) : null}
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
             {largestBudgetItems.length > 0 ? largestBudgetItems.map((item) => <ContextBudgetSource key={item.id} item={item} />) : (
               <p className="rounded-[8px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] px-3 py-2 text-xs text-[var(--ce-text-muted)] sm:col-span-3">No token source breakdown is available yet.</p>
@@ -1781,14 +1786,46 @@ function OverviewTag({ label }: { label: string }) {
   return <span className="rounded-[6px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] px-1.5 py-0.5 text-[10px] text-[var(--ce-text-muted)]">{label}</span>;
 }
 
-function formatContextBudgetSource(snapshot: ContextEngineSnapshot | null) {
-  if (!snapshot?.budget.usedTokens) {
-    return "OpenClaw has not exposed a reliable total context value yet.";
+function resolveOverviewBudget(snapshot: ContextEngineSnapshot | null, projectContextTokens: number | null) {
+  const budget = snapshot?.budget;
+  const usedTokens = budget?.usedTokens ?? projectContextTokens;
+  const usedPercent = budget?.usedPercent ?? (
+    typeof usedTokens === "number" && typeof budget?.limit === "number" && budget.limit > 0
+      ? Math.min(100, Math.round((usedTokens / budget.limit) * 100))
+      : null
+  );
+  const items = (budget?.items ?? defaultBudgetItems()).map((item) => (
+    item.id === "project" && item.tokens == null && projectContextTokens !== null
+      ? { ...item, tokens: projectContextTokens, source: "estimated" as const }
+      : item
+  ));
+
+  if (typeof budget?.usedTokens === "number") {
+    return {
+      usedPercent,
+      items,
+      label: usedPercent === null ? `${formatTokenValue(budget.usedTokens)} tokens used` : `${usedPercent}% context used`,
+      description: budget.usedSource === "reported"
+        ? "Total reported by OpenClaw for the latest runtime context."
+        : "Total estimated by AgentOS from the available context sources."
+    };
   }
 
-  return snapshot.budget.usedSource === "reported"
-    ? "Total reported by OpenClaw for the latest runtime context."
-    : "Total estimated by AgentOS from the available context sources.";
+  if (projectContextTokens !== null) {
+    return {
+      usedPercent,
+      items,
+      label: usedPercent === null ? `${formatTokenValue(projectContextTokens)} project tokens` : `${usedPercent}% context used`,
+      description: "Project Context total from enabled files; OpenClaw has not reported the full runtime total yet."
+    };
+  }
+
+  return {
+    usedPercent: null,
+    items,
+    label: "Context total unavailable",
+    description: "OpenClaw has not exposed a reliable runtime total, and no enabled Project Context tokens are available."
+  };
 }
 
 function formatRuntimeConfidence(snapshot: ContextEngineSnapshot | null) {
@@ -2107,7 +2144,7 @@ function InfoPanel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="min-h-full rounded-[10px] border border-[var(--ce-border)] bg-[var(--ce-panel)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-4 lg:h-full">
+    <section className="min-h-full rounded-[10px] border border-[var(--ce-border)] bg-[var(--ce-panel)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-4">
       <h3 className="text-sm font-semibold text-[var(--ce-text-strong)] sm:text-base">{title}</h3>
       <p className="mt-1 text-xs text-[var(--ce-text-muted)]">{subtitle}</p>
       <div className="mt-3 sm:mt-4">{children}</div>
