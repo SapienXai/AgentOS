@@ -1081,6 +1081,17 @@ test("context engine overview is an actionable health dashboard backed by live c
   assert.match(source, /<span className="sm:hidden">Context: \{health\.label\}<\/span>/);
 });
 
+test("context engine memory uses real file reading and editing flows", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/context-engine-dialog.tsx"), "utf8");
+
+  assert.match(source, /<MemoryHistoryPanel/);
+  assert.match(source, /onOpenMemoryFile=\{\(file, mode\)/);
+  assert.match(source, /setActiveTab\("project"\)/);
+  assert.match(source, /onOpenFile\(file, "preview"\)/);
+  assert.match(source, /onOpenFile\(file, "edit"\)/);
+  assert.match(source, /Session transcript editing is not exposed by the current OpenClaw context API\./);
+});
+
 test("model dialogs use mobile fullscreen layouts with reachable actions", () => {
   const pickerSource = readFileSync(path.join(rootDir, "components/mission-control/agent-model-picker-dialog.tsx"), "utf8");
   const librarySource = readFileSync(path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"), "utf8");

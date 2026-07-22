@@ -630,6 +630,12 @@ export function ContextEngineDialog({
                   onNavigate={setActiveTab}
                   onSaveContext={() => void saveContext()}
                   onConfigureCapabilities={onConfigureCapabilities}
+                  onOpenMemoryFile={(file, mode) => {
+                    setSelectedPath(file.path);
+                    setInspectorMode(mode);
+                    setActionMenuPath(null);
+                    setActiveTab("project");
+                  }}
                 />
               </div>
             )}
@@ -1431,7 +1437,8 @@ function SecondaryTabPanel({
   isSavingContext,
   onNavigate,
   onSaveContext,
-  onConfigureCapabilities
+  onConfigureCapabilities,
+  onOpenMemoryFile
 }: {
   tab: ContextEngineTab;
   snapshot: ContextEngineSnapshot | null;
@@ -1442,6 +1449,7 @@ function SecondaryTabPanel({
   onNavigate: (tab: ContextEngineTab) => void;
   onSaveContext: () => void;
   onConfigureCapabilities?: (agentId: string, focus: "skills" | "tools") => void;
+  onOpenMemoryFile: (file: ContextEngineFile, mode: InspectorMode) => void;
 }) {
   if (isLoading && !snapshot) {
     return (
@@ -1484,8 +1492,12 @@ function SecondaryTabPanel({
     const memoryFiles = files.filter((file) => file.owner === "memory");
     return (
       <InfoPanel title="Memory & History" subtitle="Durable memory files and latest session context state.">
-        <FileSummaryList files={memoryFiles} empty="No memory files are available for this workspace." />
-        <DiagnosticsList diagnostics={[snapshot?.preview.historySummary ?? "Session history is unavailable until an OpenClaw context report exists."]} />
+        <MemoryHistoryPanel
+          files={memoryFiles}
+          snapshot={snapshot}
+          onOpenFile={onOpenMemoryFile}
+          onNavigate={onNavigate}
+        />
       </InfoPanel>
     );
   }
@@ -2201,19 +2213,108 @@ function CapabilityList({ title, values, emptyLabel = "No values available." }: 
   );
 }
 
-function FileSummaryList({ files, empty }: { files: ContextEngineFile[]; empty: string }) {
-  if (files.length === 0) {
-    return <p className="mt-2 rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3 text-xs text-[var(--ce-text-subtle)]">{empty}</p>;
-  }
+function MemoryHistoryPanel({
+  files,
+  snapshot,
+  onOpenFile,
+  onNavigate
+}: {
+  files: ContextEngineFile[];
+  snapshot: ContextEngineSnapshot | null;
+  onOpenFile: (file: ContextEngineFile, mode: InspectorMode) => void;
+  onNavigate: (tab: ContextEngineTab) => void;
+}) {
+  const runtimeReport = snapshot?.runtimeReport;
+  const sessionReference = runtimeReport?.sessionKey ?? runtimeReport?.sessionId ?? null;
+  const historyAvailable = Boolean(sessionReference);
 
   return (
-    <div className="mt-2 divide-y divide-white/[0.06] rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)]">
-      {files.map((file) => (
-        <div key={file.path} className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
-          <span className="truncate text-[var(--ce-text)]">{file.path}</span>
-          <span className="shrink-0 text-[var(--ce-text-subtle)]">{formatTokenValue(file.injectedTokens)} tokens</span>
+    <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)]">
+      <section className="overflow-hidden rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--ce-border-subtle)] px-3 py-2.5">
+          <div>
+            <h4 className="text-sm font-semibold text-[var(--ce-text-strong)]">Durable memory</h4>
+            <p className="mt-0.5 text-[11px] text-[var(--ce-text-muted)]">Read or edit workspace memory files through the Context Engine.</p>
+          </div>
+          <Badge className="shrink-0 rounded-[7px] border-[var(--ce-border)] bg-[var(--ce-panel)] text-[10px] text-[var(--ce-text)]">
+            {files.length} file{files.length === 1 ? "" : "s"}
+          </Badge>
         </div>
-      ))}
+        {files.length === 0 ? (
+          <p className="p-3 text-xs text-[var(--ce-text-subtle)]">No memory files are available for this workspace.</p>
+        ) : (
+          <div className="divide-y divide-white/[0.06]">
+            {files.map((file) => {
+              const canRead = file.exists;
+              const canEdit = canRead && file.editable;
+
+              return (
+                <div key={file.path} className="flex min-w-0 items-center gap-2 px-3 py-2.5">
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={!canRead}
+                    title={canRead ? `Read ${file.path}` : file.statusReason ?? "This memory file is not available to read."}
+                    onClick={() => onOpenFile(file, "preview")}
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <FileText className="h-3.5 w-3.5 shrink-0 text-[var(--ce-accent)]" />
+                      <span className="truncate text-xs font-medium text-[var(--ce-text-strong)]">{file.path}</span>
+                      <StatusBadge status={file.status} compact />
+                    </div>
+                    <p className="mt-1 text-[11px] text-[var(--ce-text-muted)]">{formatTokenValue(file.injectedTokens)} tokens · {canRead ? "Open to read" : "Unavailable"}</p>
+                  </button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-8 shrink-0 rounded-[7px] border-[var(--ce-border)] bg-[var(--ce-panel)] px-2.5 text-[11px] text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] hover:text-[var(--ce-text-strong)]"
+                    disabled={!canEdit}
+                    title={canEdit ? `Edit ${file.path}` : file.statusReason ?? "This memory file is read-only or unavailable."}
+                    onClick={() => onOpenFile(file, "edit")}
+                  >
+                    <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                    Edit
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3">
+        <div className="flex items-center gap-2">
+          <History className="h-4 w-4 text-[var(--ce-blue)]" />
+          <h4 className="text-sm font-semibold text-[var(--ce-text-strong)]">Latest session context</h4>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-[var(--ce-text-muted)]">
+          {snapshot?.preview.historySummary ?? "Session history is unavailable until an OpenClaw context report exists."}
+        </p>
+        {historyAvailable ? (
+          <div className="mt-3 rounded-[7px] border border-[var(--ce-border)] bg-[var(--ce-panel)] px-2.5 py-2">
+            <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ce-text-subtle)]">OpenClaw session</p>
+            <p className="mt-1 truncate text-xs font-medium text-[var(--ce-text-strong)]" title={sessionReference ?? undefined}>{sessionReference}</p>
+            <p className="mt-1 text-[11px] text-[var(--ce-text-muted)]">
+              {runtimeReport?.status === "exact" ? "Reported by OpenClaw" : "Latest report is estimated"}
+              {runtimeReport?.updatedAt ? ` · ${formatRelativeTime(runtimeReport.updatedAt)}` : ""}
+            </p>
+          </div>
+        ) : (
+          <p className="mt-3 rounded-[7px] border border-[var(--ce-warning-border)] bg-[var(--ce-warning-bg)] px-2.5 py-2 text-[11px] leading-4 text-[var(--ce-warning-text)]">
+            OpenClaw has not exposed a session context report for this agent yet.
+          </p>
+        )}
+        <Button
+          type="button"
+          variant="secondary"
+          className="mt-3 h-8 w-full rounded-[7px] border-[var(--ce-border)] bg-[var(--ce-panel)] px-3 text-xs text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] hover:text-[var(--ce-text-strong)]"
+          onClick={() => onNavigate("preview")}
+        >
+          <Eye className="mr-1.5 h-3.5 w-3.5" />
+          Inspect effective context
+        </Button>
+        <p className="mt-2 text-[10px] leading-4 text-[var(--ce-text-subtle)]">Session transcript editing is not exposed by the current OpenClaw context API.</p>
+      </section>
     </div>
   );
 }
