@@ -1100,6 +1100,7 @@ test("effective context is an actionable runtime truth view", () => {
   assert.match(source, /--ce-panel": "#faf9f7"/);
   assert.match(source, /--ce-card": "#fffdfa"/);
   assert.match(source, /mobileLabel: "Project files"/);
+  assert.match(source, /hidden h-8 w-8 shrink-0 items-center justify-center.*sm:flex/);
 });
 
 test("context engine memory uses real file reading and editing flows", () => {

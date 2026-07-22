@@ -2098,8 +2098,8 @@ function EffectiveContextSectionCard({
       compact ? "p-2.5" : "p-3"
     )}>
       <div className={cn("absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-current to-transparent opacity-35", sourceVisual.className)} />
-      <div className="flex min-w-0 items-start gap-2.5">
-        <div className={cn("relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border", sourceVisual.className, sourceVisual.surfaceClassName)}>
+      <div className="min-w-0 sm:flex sm:items-start sm:gap-2.5">
+        <div className={cn("relative hidden h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border sm:flex", sourceVisual.className, sourceVisual.surfaceClassName)}>
           <sourceVisual.Icon className="h-4 w-4" />
           {index ? <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-[var(--ce-border)] bg-[var(--ce-panel-strong)] text-[8px] font-semibold text-[var(--ce-text-muted)]">{index}</span> : null}
         </div>
