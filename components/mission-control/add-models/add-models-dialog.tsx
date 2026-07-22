@@ -1228,7 +1228,7 @@ export function AddModelsDialog({
         className={cn(
           "flex h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-[min(90dvh,900px)] sm:max-h-[90dvh] sm:w-[min(1420px,calc(100vw-64px))] sm:max-w-[1420px] sm:rounded-[26px] sm:border",
           isLight
-            ? "agentos-light-modal border-border bg-card text-card-foreground shadow-[0_35px_100px_rgba(63,47,34,0.18),0_0_0_1px_rgba(120,92,66,0.08)]"
+            ? "border-border bg-card text-card-foreground shadow-[0_35px_100px_rgba(63,47,34,0.18),0_0_0_1px_rgba(120,92,66,0.08)]"
             : "border-white/12 bg-[#070b14] text-white shadow-[0_35px_130px_rgba(0,0,0,0.68),0_0_80px_rgba(124,58,237,0.13)]"
         )}
       >

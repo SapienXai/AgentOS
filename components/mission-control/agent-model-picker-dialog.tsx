@@ -363,7 +363,7 @@ export function AgentModelPickerDialog({
         className={cn(
           "flex h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-[min(94dvh,940px)] sm:max-h-[94dvh] sm:w-[min(1400px,calc(100vw-64px))] sm:max-w-[1400px] sm:rounded-[28px] sm:border",
           isLight
-            ? "agentos-light-modal border-border bg-card text-card-foreground shadow-[0_30px_90px_rgba(63,47,34,0.18),0_0_0_1px_rgba(120,92,66,0.08)]"
+            ? "border-border bg-card text-card-foreground shadow-[0_30px_90px_rgba(63,47,34,0.18),0_0_0_1px_rgba(120,92,66,0.08)]"
             : "border-violet-400/45 bg-[#070a14] text-white shadow-[0_0_0_1px_rgba(168,85,247,0.18),0_30px_120px_rgba(3,7,18,0.72),0_0_80px_rgba(124,58,237,0.20)]"
         )}
       >
@@ -371,8 +371,8 @@ export function AgentModelPickerDialog({
           className={cn(
             "relative shrink-0 overflow-hidden border-b px-4 pb-3.5 pt-[max(1rem,env(safe-area-inset-top))] pr-12 sm:px-5 sm:py-3.5",
             isLight
-              ? "border-border bg-[radial-gradient(circle_at_15%_20%,rgba(236,72,153,0.10),transparent_32%),radial-gradient(circle_at_92%_12%,rgba(124,58,237,0.12),transparent_30%),linear-gradient(135deg,hsl(var(--card)),hsl(var(--muted)/0.64))]"
-              : "border-white/10 bg-[radial-gradient(circle_at_15%_20%,rgba(236,72,153,0.16),transparent_32%),radial-gradient(circle_at_92%_12%,rgba(124,58,237,0.20),transparent_30%),linear-gradient(135deg,rgba(12,18,34,0.98),rgba(8,10,23,0.98))]"
+              ? "border-border bg-[radial-gradient(circle_at_10%_0%,rgba(124,58,237,0.12),transparent_32%),linear-gradient(135deg,hsl(var(--card)),hsl(var(--muted)/0.64))]"
+              : "border-white/10 bg-[radial-gradient(circle_at_10%_0%,rgba(124,58,237,0.20),transparent_32%),linear-gradient(135deg,rgba(12,18,34,0.98),rgba(8,10,23,0.98))]"
           )}
         >
           <div className={cn("absolute inset-x-12 bottom-0 h-px bg-gradient-to-r from-transparent to-transparent", isLight ? "via-primary/25" : "via-violet-400/60")} />
@@ -382,7 +382,7 @@ export function AgentModelPickerDialog({
                 "flex h-12 w-12 items-center justify-center rounded-[16px] border",
                 isLight
                   ? "border-primary/20 bg-primary/10 text-primary shadow-[0_18px_42px_rgba(124,58,237,0.10)]"
-                  : "border-pink-400/25 bg-[linear-gradient(145deg,rgba(236,72,153,0.20),rgba(124,58,237,0.14))] text-pink-300 shadow-[0_0_36px_rgba(236,72,153,0.18)]"
+                  : "border-violet-300/25 bg-[linear-gradient(145deg,rgba(124,58,237,0.30),rgba(76,29,149,0.18))] text-violet-200 shadow-[0_0_36px_rgba(124,58,237,0.22)]"
               )}
             >
               <Grid2X2 className="h-5 w-5" />
@@ -731,7 +731,7 @@ export function AgentModelPickerDialog({
                   "h-[34px] shrink-0 rounded-[11px] px-[18px] text-[0.76rem] font-semibold shadow-[0_18px_45px_rgba(124,58,237,0.35)] max-sm:flex-1",
                   isLight
                     ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                    : "bg-[linear-gradient(135deg,#7c3aed,#ec4899)]"
+                    : "bg-[linear-gradient(135deg,#8b5cf6,#6d28d9)]"
                 )}
                 disabled={saving || !hasChanges || !selectedModelSelectable}
                 onClick={() => {

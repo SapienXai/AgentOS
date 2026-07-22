@@ -37,7 +37,6 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
@@ -462,7 +461,7 @@ export function ContextEngineDialog({
         style={contextEngineThemeStyles[surfaceTheme]}
         overlayClassName="bg-black/78 backdrop-blur-lg"
         closeClassName="right-3 top-3 z-20 h-9 w-9 text-[var(--ce-text)] hover:bg-[var(--ce-panel-hover)] hover:text-[var(--ce-text-strong)] sm:h-8 sm:w-8"
-        className="grid h-[100dvh] max-h-[100dvh] w-screen max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-none border-x-0 border-y border-[var(--ce-border)] bg-[image:var(--ce-surface)] p-0 text-[var(--ce-text)] shadow-[0_0_0_1px_rgba(124,58,237,0.12),0_24px_80px_rgba(0,0,0,0.42)] sm:h-[calc(100dvh-24px)] sm:max-h-[calc(100dvh-24px)] sm:w-[calc(100vw-24px)] sm:rounded-2xl sm:border lg:h-[min(calc(100dvh-72px),760px)] lg:max-h-[calc(100dvh-72px)] lg:w-[min(90vw,1060px)]"
+        className="grid h-dvh max-h-dvh w-screen max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-none border-0 bg-[image:var(--ce-surface)] p-0 text-[var(--ce-text)] shadow-[0_0_0_1px_rgba(124,58,237,0.12),0_24px_80px_rgba(0,0,0,0.42)]"
       >
         <DialogHeader className="relative space-y-0 border-b border-[var(--ce-border-subtle)] px-4 py-3 sm:px-6 sm:pb-2 sm:pt-3">
           <div className="flex items-start justify-between gap-3 pr-10 sm:gap-5 sm:pr-9">
@@ -692,7 +691,7 @@ function ProjectContextTab({
     <div className="flex min-h-0 flex-col gap-3 lg:h-full xl:grid xl:grid-rows-[96px_minmax(0,1fr)]">
       <ContextBudgetCard snapshot={snapshot} />
       <div className="grid min-h-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.22fr)_minmax(285px,0.95fr)]">
-        <section className="min-h-0 overflow-hidden rounded-[10px] border border-[var(--ce-border)] bg-[var(--ce-panel)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-[10px] border border-[var(--ce-border)] bg-[var(--ce-panel)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] xl:h-full">
           <div className="flex items-center justify-between gap-3 border-b border-[var(--ce-border-subtle)] px-3 py-2.5 sm:items-start sm:px-4 sm:py-3">
             <div>
               <h3 className="text-sm font-semibold text-[var(--ce-text-strong)] sm:text-[15px]">Project Context Files</h3>
@@ -716,7 +715,7 @@ function ProjectContextTab({
             <span>State</span>
             <span />
           </div>
-          <ScrollArea className="max-h-[42dvh] sm:max-h-[360px] xl:h-[calc(100%-112px)] xl:max-h-none">
+          <div className="min-h-0 sm:max-h-[360px] sm:overflow-y-auto xl:flex-1 xl:max-h-none">
             {isLoadingSnapshot && files.length === 0 ? (
               <div className="flex h-40 items-center justify-center gap-2 text-sm text-[var(--ce-text-muted)]">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -755,8 +754,8 @@ function ProjectContextTab({
                 ))}
               </div>
             )}
-          </ScrollArea>
-          <div className="flex items-center justify-between border-t border-[var(--ce-border-subtle)] px-3 py-2 text-xs text-[var(--ce-text-muted)] sm:grid sm:grid-cols-[minmax(150px,1fr)_105px_132px_32px]">
+          </div>
+          <div className="shrink-0 flex items-center justify-between border-t border-[var(--ce-border-subtle)] px-3 py-2 text-xs text-[var(--ce-text-muted)] sm:grid sm:grid-cols-[minmax(150px,1fr)_105px_132px_32px]">
             <span className="text-[11px] uppercase tracking-[0.18em]">Total</span>
             <span className="font-semibold text-[var(--ce-text-strong)]">{formatTokenValue(enabledProjectTokenTotal)} tokens</span>
             <span className="hidden sm:block" />

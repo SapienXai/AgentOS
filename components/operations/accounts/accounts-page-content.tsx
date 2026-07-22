@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Chrome, Filter, Fingerprint, Gauge, KeyRound, Play, RefreshCw, Search, SlidersHorizontal, SquareArrowOutUpRight, UserCog, X } from "lucide-react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { AlertTriangle, Chrome, Filter, Fingerprint, Gauge, Info, KeyRound, Play, RefreshCw, Search, SlidersHorizontal, SquareArrowOutUpRight, UserCog, X } from "lucide-react";
 import Link from "next/link";
 
 import { AccountIcon } from "@/components/mission-control/account-icon";
@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAccountsData } from "@/components/operations/accounts/use-accounts-data";
 import { useDeploymentCapabilities } from "@/hooks/use-deployment-capabilities";
 import type { AccountAccessPermission, AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
@@ -21,6 +22,37 @@ import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-
 import type { AgentRecord, MissionControlSnapshot, WorkspaceRecord } from "@/lib/agentos/contracts";
 import type { OpenClawBrowserDriver, OpenClawBrowserProfileView } from "@/lib/openclaw/browser-profile-types";
 import { cn } from "@/lib/utils";
+
+type ConnectAccountThemeStyle = CSSProperties & Record<`--ca-${string}`, string>;
+
+const connectAccountThemeStyles: Record<"dark" | "light", ConnectAccountThemeStyle> = {
+  dark: {
+    "--ca-surface": "radial-gradient(circle at 8% 0%, rgba(124,58,237,0.16), transparent 30%), linear-gradient(135deg, rgba(16,20,31,0.99), rgba(8,11,19,0.99) 66%)",
+    "--ca-panel": "rgba(255,255,255,0.045)",
+    "--ca-panel-strong": "rgba(2,6,23,0.62)",
+    "--ca-panel-hover": "rgba(255,255,255,0.085)",
+    "--ca-border": "rgba(255,255,255,0.11)",
+    "--ca-border-subtle": "rgba(255,255,255,0.07)",
+    "--ca-text-strong": "#f8fafc",
+    "--ca-text": "#dbe4f0",
+    "--ca-text-muted": "#9ba9ba",
+    "--ca-accent": "#c4b5fd",
+    "--ca-accent-soft": "rgba(139,92,246,0.17)"
+  },
+  light: {
+    "--ca-surface": "radial-gradient(circle at 8% 0%, rgba(124,58,237,0.1), transparent 32%), linear-gradient(135deg, rgba(255,253,251,0.99), rgba(248,244,240,0.99) 66%)",
+    "--ca-panel": "rgba(255,255,255,0.72)",
+    "--ca-panel-strong": "rgba(255,255,255,0.92)",
+    "--ca-panel-hover": "rgba(109,40,217,0.09)",
+    "--ca-border": "rgba(91,70,57,0.2)",
+    "--ca-border-subtle": "rgba(91,70,57,0.13)",
+    "--ca-text-strong": "#241b16",
+    "--ca-text": "#493a31",
+    "--ca-text-muted": "#736258",
+    "--ca-accent": "#6d28d9",
+    "--ca-accent-soft": "rgba(109,40,217,0.1)"
+  }
+};
 
 export function AccountsPageContent({
   snapshot,
@@ -535,6 +567,7 @@ export function AccountsPageContent({
         onRetryProfiles={() => void loadProfiles()}
         onRestartGateway={() => void restartGatewayForProfiles()}
         restartGatewayBusy={recoveryActionBusy === "restart"}
+        surfaceTheme={surfaceTheme}
       />
       <ManageAccountAccessDialog
         open={Boolean(manageAccessTarget)}
@@ -1131,7 +1164,8 @@ export function ConnectAccountWizard({
   profilesError = null,
   onRetryProfiles,
   onRestartGateway,
-  restartGatewayBusy = false
+  restartGatewayBusy = false,
+  surfaceTheme = "dark"
 }: {
   open: boolean;
   workspace: WorkspaceRecord | null;
@@ -1142,6 +1176,7 @@ export function ConnectAccountWizard({
   onRetryProfiles?: () => void;
   onRestartGateway?: () => void;
   restartGatewayBusy?: boolean;
+  surfaceTheme?: "dark" | "light";
 }) {
   const deployment = useDeploymentCapabilities();
 
@@ -1156,18 +1191,23 @@ export function ConnectAccountWizard({
           onRetryProfiles={onRetryProfiles}
           onRestartGateway={onRestartGateway}
           restartGatewayBusy={restartGatewayBusy}
+          surfaceTheme={surfaceTheme}
           onCancel={() => onOpenChange(false)}
           onSubmit={onSubmit}
         /> : (
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Interactive browser login is unavailable</DialogTitle>
-              <DialogDescription>
+          <DialogContent
+            style={connectAccountThemeStyles[surfaceTheme]}
+            overlayClassName="bg-black/78 backdrop-blur-lg"
+            className="flex h-dvh max-h-dvh w-screen max-w-none flex-col rounded-none border-0 bg-[image:var(--ca-surface)] p-5 pt-[max(1.25rem,env(safe-area-inset-top))] text-[var(--ca-text)] sm:h-auto sm:w-[min(520px,calc(100vw-2rem))] sm:rounded-[18px] sm:border-[var(--ca-border)]"
+          >
+            <DialogHeader className="pr-10">
+              <DialogTitle className="text-[var(--ca-text-strong)]">Interactive browser login is unavailable</DialogTitle>
+              <DialogDescription className="text-[var(--ca-text-muted)]">
                 Railway runs the managed Chromium browser headlessly. Agents can automate public pages, but an operator cannot complete passwords or two-factor prompts in that browser. Use a supported integration for authenticated access.
               </DialogDescription>
             </DialogHeader>
-            <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Close</Button>
+            <DialogFooter className="mt-auto pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+              <Button type="button" variant="secondary" className="h-10 w-full rounded-[8px] sm:w-auto" onClick={() => onOpenChange(false)}>Close</Button>
             </DialogFooter>
           </DialogContent>
         )
@@ -1184,7 +1224,8 @@ function ConnectAccountWizardContent({
   onRestartGateway,
   restartGatewayBusy,
   onCancel,
-  onSubmit
+  onSubmit,
+  surfaceTheme
 }: {
   workspace: WorkspaceRecord | null;
   profiles: OpenClawBrowserProfileView[];
@@ -1194,6 +1235,7 @@ function ConnectAccountWizardContent({
   restartGatewayBusy: boolean;
   onCancel: () => void;
   onSubmit: (input: ConnectBrowserProfileInput) => Promise<void>;
+  surfaceTheme: "dark" | "light";
 }) {
   const usableProfiles = useMemo(() => profiles.filter(isUsableAccountBrowserProfile), [profiles]);
   const defaultExistingProfileName = useMemo(
@@ -1207,6 +1249,7 @@ function ConnectAccountWizardContent({
   const [mode, setMode] = useState<ConnectBrowserProfileMode>("existing");
   const [existingProfileName, setExistingProfileName] = useState(defaultExistingProfileName);
   const [submitting, setSubmitting] = useState(false);
+  const [securityTipOpen, setSecurityTipOpen] = useState(false);
   const resolvedWebsite = useMemo(() => resolveConnectAccountWebsite(websiteInput), [websiteInput]);
   const resolvedServiceName = resolvedWebsite?.serviceName ?? "Website";
   const resolvedLoginUrl = resolvedWebsite?.loginUrl ?? "";
@@ -1263,32 +1306,59 @@ function ConnectAccountWizardContent({
   };
 
   return (
-    <>
+    <TooltipProvider delayDuration={150}>
       <PikoLoader
         open={submitting}
         title="Opening account login"
         description="Opening the selected login URL in its OpenClaw browser profile."
       />
-      <DialogContent className="max-h-[92vh] w-[calc(100vw-2rem)] max-w-3xl overflow-y-auto rounded-[18px] p-4">
-      <div className="border-b border-border p-4">
+      <DialogContent
+        style={connectAccountThemeStyles[surfaceTheme]}
+        overlayClassName="bg-black/78 backdrop-blur-lg"
+        closeClassName="right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] z-20 h-9 w-9 text-[var(--ca-text)] hover:bg-[var(--ca-panel-hover)] hover:text-[var(--ca-text-strong)]"
+        className="flex h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 bg-[image:var(--ca-surface)] p-0 text-[var(--ca-text)] shadow-[0_0_0_1px_rgba(124,58,237,0.12),0_24px_80px_rgba(0,0,0,0.42)] sm:h-[min(92dvh,760px)] sm:max-h-[92dvh] sm:w-[min(720px,calc(100vw-2rem))] sm:rounded-[18px] sm:border-[var(--ca-border)]"
+      >
+      <div className="border-b border-[var(--ca-border-subtle)] px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] pr-12 sm:px-5 sm:py-4">
         <DialogHeader>
-          <DialogTitle>Connect Account</DialogTitle>
-          <DialogDescription>
-            Open a login flow in a real OpenClaw browser profile for this workspace.
-          </DialogDescription>
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[var(--ca-accent-soft)] text-[var(--ca-accent)] shadow-[0_0_20px_rgba(124,58,237,0.2)]">
+              <KeyRound className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <DialogTitle className="text-[17px] leading-5 text-[var(--ca-text-strong)]">Connect Account</DialogTitle>
+                <Tooltip open={securityTipOpen} onOpenChange={setSecurityTipOpen}>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="Account login security information"
+                      onClick={() => setSecurityTipOpen(true)}
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--ca-text-muted)] transition-colors hover:bg-[var(--ca-panel-hover)] hover:text-[var(--ca-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/60"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" align="start" className="z-[10000] max-w-[280px] border-violet-300/25 bg-slate-950 px-3 py-2.5 text-[11px] leading-5 text-slate-100 shadow-[0_12px_32px_rgba(0,0,0,0.32)] dark:border-violet-300/25">
+                    AgentOS does not store raw passwords. Complete login manually in the assigned browser profile, or use a supported integration.
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <DialogDescription className="mt-0.5 text-xs text-[var(--ca-text-muted)]">
+                {workspace ? `Open a login flow for ${workspace.name}.` : "Open a login flow in a real OpenClaw browser profile."}
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
-        <div className="mt-3 rounded-[10px] border border-[hsl(var(--status-warning)/0.24)] bg-[hsl(var(--status-warning)/0.10)] px-3 py-2 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]">
-          AgentOS does not store raw passwords. Use manual login inside the assigned browser profile or connect through supported integrations.
-        </div>
       </div>
 
-      <div className="flex min-w-0 flex-col gap-4 p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+      <div className="flex min-w-0 flex-col gap-4">
         <WizardSectionTitle
           title="Login Target"
           description="Type one website or choose a shortcut. AgentOS opens that URL in the selected OpenClaw browser profile."
         />
-        <div className="min-w-0 max-w-full rounded-[22px] border border-border bg-muted/25 p-3 shadow-card">
-          <div className="flex h-12 items-center gap-3 rounded-full border border-input bg-card px-4 shadow-sm">
+        <div className="min-w-0 max-w-full rounded-[14px] border border-[var(--ca-border)] bg-[var(--ca-panel)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="flex h-12 items-center gap-3 rounded-[10px] border border-[var(--ca-border)] bg-[var(--ca-panel-strong)] px-4">
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
             <Input
               id="connect-website-url"
@@ -1301,7 +1371,7 @@ function ConnectAccountWizardContent({
                 }
               }}
               placeholder="Search or type a website URL"
-              className="h-10 min-w-0 border-0 bg-transparent px-0 text-sm text-foreground shadow-none outline-none placeholder:text-muted-foreground focus-visible:ring-0"
+              className="h-10 min-w-0 border-0 bg-transparent px-0 text-sm text-[var(--ca-text-strong)] shadow-none outline-none placeholder:text-[var(--ca-text-muted)] focus-visible:ring-0"
             />
             {resolvedWebsite ? (
               <AccountIcon
@@ -1390,20 +1460,21 @@ function ConnectAccountWizardContent({
 
         <ValidationMessage message={validationMessage} />
       </div>
+      </div>
 
-      <DialogFooter className="border-t border-border p-4">
-        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[0.7rem] text-muted-foreground">{validationMessage ?? "Ready to open a real OpenClaw browser login flow."}</p>
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={onCancel}>Cancel</Button>
-            <Button size="sm" className="h-8 rounded-[9px] bg-primary text-xs text-white hover:bg-primary/90" disabled={Boolean(validationMessage) || submitting} onClick={() => void submit()}>
+      <DialogFooter className="!flex-row border-t border-[var(--ca-border-subtle)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-5 sm:py-3">
+        <div className="flex w-full items-center justify-between gap-3">
+          <p className="hidden min-w-0 truncate text-[0.7rem] text-[var(--ca-text-muted)] sm:block">{validationMessage ?? "Ready to open a real OpenClaw browser login flow."}</p>
+          <div className="flex flex-1 items-center justify-end gap-2 sm:flex-none">
+            <Button variant="secondary" size="sm" className="h-10 flex-1 rounded-[8px] border-[var(--ca-border)] bg-[var(--ca-panel)] text-xs text-[var(--ca-text)] hover:bg-[var(--ca-panel-hover)] sm:h-8 sm:flex-none" onClick={onCancel}>Cancel</Button>
+            <Button size="sm" className="h-10 flex-1 rounded-[8px] border border-violet-200/35 bg-[linear-gradient(180deg,rgba(139,92,246,0.98),rgba(109,40,217,0.96))] text-xs text-white shadow-[0_6px_16px_rgba(124,58,237,0.28)] hover:bg-violet-500 sm:h-8 sm:flex-none" disabled={Boolean(validationMessage) || submitting} onClick={() => void submit()}>
               {submitting ? "Opening..." : "Connect Account"}
             </Button>
           </div>
         </div>
       </DialogFooter>
       </DialogContent>
-    </>
+    </TooltipProvider>
   );
 }
 

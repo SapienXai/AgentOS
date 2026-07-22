@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, KeyRound, Link2, Loader2, Plus, RefreshCw, Trash2, UserRound } from "lucide-react";
 
@@ -110,6 +110,36 @@ type GatewayAuthStatusResult = {
 
 const SURFACE_KIND_ORDER: MissionControlSurfaceKind[] = ["chat", "inbox", "trigger"];
 export type WorkspaceDialogSection = "surfaces" | "accounts";
+type WorkspaceDialogThemeStyle = CSSProperties & Record<`--wi-${string}`, string>;
+
+const workspaceDialogThemeStyles: Record<"dark" | "light", WorkspaceDialogThemeStyle> = {
+  dark: {
+    "--wi-surface": "radial-gradient(circle at 8% 0%, rgba(124,58,237,0.16), transparent 30%), linear-gradient(135deg, rgba(16,20,31,0.99), rgba(8,11,19,0.99) 66%)",
+    "--wi-panel": "rgba(255,255,255,0.045)",
+    "--wi-panel-strong": "rgba(2,6,23,0.62)",
+    "--wi-panel-hover": "rgba(255,255,255,0.085)",
+    "--wi-border": "rgba(255,255,255,0.11)",
+    "--wi-border-subtle": "rgba(255,255,255,0.07)",
+    "--wi-text-strong": "#f8fafc",
+    "--wi-text": "#dbe4f0",
+    "--wi-text-muted": "#9ba9ba",
+    "--wi-accent": "#c4b5fd",
+    "--wi-accent-soft": "rgba(139,92,246,0.17)"
+  },
+  light: {
+    "--wi-surface": "radial-gradient(circle at 8% 0%, rgba(124,58,237,0.1), transparent 32%), linear-gradient(135deg, rgba(255,253,251,0.99), rgba(248,244,240,0.99) 66%)",
+    "--wi-panel": "rgba(255,255,255,0.72)",
+    "--wi-panel-strong": "rgba(255,255,255,0.92)",
+    "--wi-panel-hover": "rgba(109,40,217,0.09)",
+    "--wi-border": "rgba(91,70,57,0.2)",
+    "--wi-border-subtle": "rgba(91,70,57,0.13)",
+    "--wi-text-strong": "#241b16",
+    "--wi-text": "#493a31",
+    "--wi-text-muted": "#736258",
+    "--wi-accent": "#6d28d9",
+    "--wi-accent-soft": "rgba(109,40,217,0.1)"
+  }
+};
 
 export function WorkspaceChannelsDialog({
   snapshot,
@@ -125,7 +155,8 @@ export function WorkspaceChannelsDialog({
   onSnapshotChange,
   onAccountAccessRulesChange,
   onAccountTargetsChange,
-  onConnectAccount
+  onConnectAccount,
+  surfaceTheme = "dark"
 }: {
   snapshot: MissionControlSnapshot;
   workspaceId: string | null;
@@ -141,6 +172,7 @@ export function WorkspaceChannelsDialog({
   onAccountAccessRulesChange?: (rules: AccountAccessRuleView[]) => void;
   onAccountTargetsChange?: (targets: AccountLoginTargetView[]) => void;
   onConnectAccount?: () => void;
+  surfaceTheme?: "dark" | "light";
 }) {
   const workspace = useMemo(
     () => snapshot.workspaces.find((entry) => entry.id === workspaceId) ?? null,
@@ -1137,26 +1169,38 @@ export function WorkspaceChannelsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex h-dvh max-h-dvh w-screen max-w-none flex-col overflow-hidden rounded-none border-0 bg-popover p-0 text-popover-foreground sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100vw-1rem)] sm:max-w-5xl sm:rounded-[22px] sm:border-border dark:border-white/10 dark:bg-slate-950 dark:text-white"
-        closeClassName="right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))]"
+        className="flex h-dvh max-h-dvh w-screen max-w-none flex-col overflow-hidden rounded-none border-0 bg-[image:var(--wi-surface)] p-0 text-[var(--wi-text)] shadow-[0_0_0_1px_rgba(124,58,237,0.12),0_24px_80px_rgba(0,0,0,0.42)] sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100vw-1rem)] sm:max-w-5xl sm:rounded-[22px] sm:border-[var(--wi-border)]"
+        style={workspaceDialogThemeStyles[surfaceTheme]}
+        overlayClassName="bg-black/78 backdrop-blur-lg"
+        closeClassName="right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] z-20 h-9 w-9 text-[var(--wi-text)] hover:bg-[var(--wi-panel-hover)] hover:text-[var(--wi-text-strong)]"
       >
         <div className="flex min-h-0 flex-1 flex-col">
-        <DialogHeader className="border-b border-border px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] pr-12 sm:px-5 sm:py-3 dark:border-white/10">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <DialogTitle className="text-lg">Workspace integrations</DialogTitle>
-              <DialogDescription className="mt-1 text-xs">
-                Manage accounts, owners, and routes for this workspace.
-              </DialogDescription>
+        <DialogHeader className="border-b border-[var(--wi-border-subtle)] px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] pr-12 sm:px-5 sm:py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[var(--wi-accent-soft)] text-[var(--wi-accent)] shadow-[0_0_20px_rgba(124,58,237,0.2)]">
+                <Link2 className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <DialogTitle className="truncate font-display text-[17px] font-semibold leading-5 text-[var(--wi-text-strong)]">
+                  Workspace integrations
+                </DialogTitle>
+                <DialogDescription className="mt-0.5 truncate text-xs text-[var(--wi-text-muted)]">
+                  {workspace ? `${workspace.name} · accounts, owners, and routes` : "Manage accounts, owners, and routes."}
+                </DialogDescription>
+              </div>
             </div>
-            <div className="flex items-center gap-2 text-[10px] text-muted-foreground dark:text-slate-400">
-              <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
+            <Badge variant="muted" className="h-6 shrink-0 rounded-full border-[var(--wi-border)] bg-[var(--wi-panel)] px-2 text-[10px] text-[var(--wi-text-muted)] sm:hidden">
+              {activeSection === "surfaces" ? "Integrations" : "Accounts"}
+            </Badge>
+            <div className="hidden items-center gap-2 text-[10px] sm:flex">
+              <Badge variant="muted" className="h-6 rounded-full border-[var(--wi-border)] bg-[var(--wi-panel)] px-2 text-[10px] text-[var(--wi-text-muted)]">
                 {workspaceSurfaces.length} linked
               </Badge>
-              <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
+              <Badge variant="muted" className="h-6 rounded-full border-[var(--wi-border)] bg-[var(--wi-panel)] px-2 text-[10px] text-[var(--wi-text-muted)]">
                 {allAccounts.length} accounts
               </Badge>
-              <Badge variant="muted" className="hidden h-6 rounded-full px-2 text-[10px] sm:inline-flex">
+              <Badge variant="muted" className="hidden h-6 rounded-full border-[var(--wi-border)] bg-[var(--wi-panel)] px-2 text-[10px] text-[var(--wi-text-muted)] lg:inline-flex">
                 {workspaceAccountTargets.length} account targets
               </Badge>
             </div>
@@ -1218,18 +1262,18 @@ export function WorkspaceChannelsDialog({
 
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
         <div className="grid min-h-0 gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
-          <aside className="sticky top-0 z-10 h-fit rounded-2xl border border-border bg-card p-2.5 shadow-sm sm:top-0 dark:border-white/10 dark:bg-slate-950 dark:shadow-none">
-            <div className="grid grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/40 p-1 dark:border-white/8 dark:bg-black/15">
+          <aside className="sticky top-0 z-10 h-fit rounded-[14px] border border-[var(--wi-border)] bg-[var(--wi-panel)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:top-0">
+            <div className="grid grid-cols-2 gap-1 rounded-[10px] border border-[var(--wi-border-subtle)] bg-[var(--wi-panel-strong)] p-1">
               {(["surfaces", "accounts"] as WorkspaceDialogSection[]).map((section) => (
                 <button
                   key={section}
                   type="button"
                   onClick={() => setActiveSection(section)}
                   className={cn(
-                    "rounded-lg px-2 py-1.5 text-[11px] font-medium transition-colors",
+                    "rounded-[8px] px-2 py-2 text-[11px] font-medium transition-colors",
                     activeSection === section
-                      ? "bg-primary/10 text-primary dark:bg-cyan-300/14 dark:text-cyan-50"
-                      : "text-muted-foreground hover:bg-background hover:text-foreground dark:text-slate-400 dark:hover:bg-white/[0.04] dark:hover:text-slate-200"
+                      ? "bg-[var(--wi-accent-soft)] text-[var(--wi-accent)]"
+                      : "text-[var(--wi-text-muted)] hover:bg-[var(--wi-panel-hover)] hover:text-[var(--wi-text-strong)]"
                   )}
                 >
                   {section === "surfaces" ? "Integrations" : "Accounts"}
@@ -1240,7 +1284,7 @@ export function WorkspaceChannelsDialog({
             {activeSection === "surfaces" ? (
               <>
                 <Tabs value={activeKind} onValueChange={(value) => setActiveKind(value as MissionControlSurfaceKind)} className="mt-2">
-                  <TabsList className="flex h-9 w-full gap-1 overflow-x-auto rounded-xl p-1">
+                  <TabsList className="flex h-9 w-full gap-1 overflow-x-auto rounded-[10px] border border-[var(--wi-border-subtle)] bg-[var(--wi-panel-strong)] p-1">
                     {availableKinds.map((kind) => (
                       <TabsTrigger key={kind} className="h-7 min-w-fit flex-1 rounded-lg px-2 text-[11px]" value={kind}>
                         {formatSurfaceKindLabel(kind)}
@@ -1264,17 +1308,17 @@ export function WorkspaceChannelsDialog({
                     type="button"
                     onClick={() => setActiveProvider(provider)}
                     className={cn(
-                      "flex min-w-[148px] shrink-0 items-center justify-between gap-2 rounded-xl border px-2.5 py-2 text-left transition-colors sm:w-full sm:min-w-0 sm:gap-3",
+                      "flex min-w-[148px] shrink-0 items-center justify-between gap-2 rounded-[10px] border px-2.5 py-2 text-left transition-colors sm:w-full sm:min-w-0 sm:gap-3",
                       activeProvider === provider
-                        ? "border-primary/25 bg-primary/10 dark:border-cyan-300/35 dark:bg-cyan-400/[0.08]"
-                        : "border-border/80 bg-muted/30 hover:bg-muted/50 dark:border-white/8 dark:bg-white/[0.02] dark:hover:bg-white/[0.04]"
+                        ? "border-violet-300/35 bg-[var(--wi-accent-soft)]"
+                        : "border-[var(--wi-border-subtle)] bg-[var(--wi-panel-strong)] hover:bg-[var(--wi-panel-hover)]"
                     )}
                   >
                     <div className="flex min-w-0 items-center gap-2.5">
                       <SurfaceIcon provider={provider} className="h-8 w-8 shrink-0" />
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground dark:text-white">{entry.label}</p>
-                        <p className="mt-0.5 truncate text-[10px] text-muted-foreground dark:text-slate-500">
+                        <p className="truncate text-sm font-medium text-[var(--wi-text-strong)]">{entry.label}</p>
+                        <p className="mt-0.5 truncate text-[10px] text-[var(--wi-text-muted)]">
                           {Math.max(providerAccountCount, providerRuntimeCount)} account
                           {Math.max(providerAccountCount, providerRuntimeCount) === 1 ? "" : "s"} ·{" "}
                           {formatSurfaceRuntimeSource(snapshot.surfaceRuntime.source)}

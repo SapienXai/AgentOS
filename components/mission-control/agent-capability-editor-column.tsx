@@ -29,7 +29,6 @@ type AgentCapabilityEditorColumnProps = {
   catalogError: string | null;
   helperLabel: string;
   currentHintLabel: string;
-  highlight: boolean;
 };
 
 export function AgentCapabilityEditorColumn({
@@ -49,8 +48,7 @@ export function AgentCapabilityEditorColumn({
   loading,
   catalogError,
   helperLabel,
-  currentHintLabel,
-  highlight
+  currentHintLabel
 }: AgentCapabilityEditorColumnProps) {
   const [showAllSelected, setShowAllSelected] = useState(false);
   const toneClasses =
@@ -74,12 +72,7 @@ export function AgentCapabilityEditorColumn({
   const hiddenSelectedCount = Math.max(selectedValues.length - visibleSelectedValues.length, 0);
 
   return (
-    <div
-      className={cn(
-        "rounded-[14px] border border-[var(--cap-border)] bg-[var(--cap-panel)] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
-        highlight && "shadow-[0_0_0_1px_rgba(34,211,238,0.08)]"
-      )}
-    >
+    <div className="space-y-3">
       <div className="mb-3 flex items-center justify-between gap-2">
         <p className="text-[10px] uppercase tracking-[0.22em] text-[var(--cap-text-subtle)]">{title}</p>
         <Badge variant="muted" className="border-[var(--cap-border)] bg-[var(--cap-panel-strong)] text-[var(--cap-text-muted)]">Declared</Badge>
@@ -234,28 +227,26 @@ function CapabilitySuggestionPanel({
         <Badge variant="muted">{suggestions.length} total</Badge>
       </div>
 
-      <div className="max-h-[min(38dvh,360px)] space-y-1.5 overflow-y-auto pr-1 sm:max-h-[280px]">
-        <div className="space-y-1.5">
-          <CapabilityOptionList
-            kind={kind}
-            options={visibleSuggestions}
-            onPick={onPick}
-            emptyLabel={emptyLabel}
-          />
+      <div className="space-y-1.5">
+        <CapabilityOptionList
+          kind={kind}
+          options={visibleSuggestions}
+          onPick={onPick}
+          emptyLabel={emptyLabel}
+        />
 
-          {remainingSuggestionCount > 0 ? (
-            <button
-              type="button"
-              onClick={() => setVisibleSuggestionCount((current) => current + INITIAL_SUGGESTION_COUNT)}
-              className="group flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-cyan-300/20 bg-cyan-400/[0.04] px-3 py-2 text-[11px] text-cyan-100 transition-colors hover:border-cyan-200/35 hover:bg-cyan-400/[0.08] hover:text-white"
-            >
-              <span className="uppercase tracking-[0.18em]">Load more</span>
-              <Badge variant="muted" className="h-5 px-2 py-0 text-[10px]">
-                +{remainingSuggestionCount}
-              </Badge>
-            </button>
-          ) : null}
-        </div>
+        {remainingSuggestionCount > 0 ? (
+          <button
+            type="button"
+            onClick={() => setVisibleSuggestionCount((current) => current + INITIAL_SUGGESTION_COUNT)}
+            className="group flex w-full items-center justify-center gap-2 rounded-[10px] border border-[var(--cap-border)] bg-[var(--cap-accent-soft)] px-3 py-2.5 text-[11px] font-medium text-[var(--cap-accent)] transition-colors hover:border-violet-300/45 hover:bg-[var(--cap-panel-hover)]"
+          >
+            <span className="uppercase tracking-[0.18em]">Load more</span>
+            <Badge variant="muted" className="h-5 border-[var(--cap-border)] bg-[var(--cap-panel-strong)] px-2 py-0 text-[10px] text-[var(--cap-text)]">
+              +{remainingSuggestionCount}
+            </Badge>
+          </button>
+        ) : null}
       </div>
     </>
   );
@@ -273,7 +264,7 @@ function CapabilityOptionList({
   emptyLabel: string;
 }) {
   if (options.length === 0) {
-    return <p className="text-[11px] leading-5 text-slate-500">{emptyLabel}</p>;
+    return <p className="text-[11px] leading-5 text-[var(--cap-text-muted)]">{emptyLabel}</p>;
   }
 
   return (

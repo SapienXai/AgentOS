@@ -4814,6 +4814,7 @@ export function MissionControlShell({
           onAccountAccessRulesChange={setAccountAccessRules}
           onAccountTargetsChange={setAccountTargets}
           onConnectAccount={openConnectAccountDialog}
+          surfaceTheme={surfaceTheme}
         />
         <ConnectAccountWizard
           open={isConnectAccountDialogOpen}
@@ -4825,6 +4826,7 @@ export function MissionControlShell({
           onRetryProfiles={() => void loadAccountBrowserProfiles()}
           onRestartGateway={() => void restartGatewayForAccountProfiles()}
           restartGatewayBusy={accountBrowserProfileRecoveryBusy === "restart"}
+          surfaceTheme={surfaceTheme}
         />
 
         <ContextEngineDialog

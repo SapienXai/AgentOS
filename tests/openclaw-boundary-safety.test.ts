@@ -1014,6 +1014,17 @@ test("system setup shows Piko while runtime verification is running", () => {
   assert.match(source, /h-dvh w-full min-h-0 max-h-dvh max-w-none flex-col overflow-hidden rounded-none border-0/);
 });
 
+test("context file list keeps mobile scrolling single-layered and desktop totals visible", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/context-engine-dialog.tsx"), "utf8");
+
+  assert.match(source, /flex min-h-0 flex-col overflow-hidden rounded-\[10px\].*xl:h-full/);
+  assert.match(source, /min-h-0 sm:max-h-\[360px\] sm:overflow-y-auto xl:flex-1 xl:max-h-none/);
+  assert.match(source, /shrink-0 flex items-center justify-between border-t border-\[var\(--ce-border-subtle\)\]/);
+  assert.doesNotMatch(source, /ScrollArea/);
+  assert.match(source, /grid h-dvh max-h-dvh w-screen max-w-none grid-rows/);
+  assert.doesNotMatch(source, /lg:w-\[min\(90vw,1060px\)\]/);
+});
+
 test("model dialogs use mobile fullscreen layouts with reachable actions", () => {
   const pickerSource = readFileSync(path.join(rootDir, "components/mission-control/agent-model-picker-dialog.tsx"), "utf8");
   const librarySource = readFileSync(path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"), "utf8");
@@ -1023,7 +1034,10 @@ test("model dialogs use mobile fullscreen layouts with reachable actions", () =>
   assert.match(pickerSource, /<span className="ml-1\.5 text-\[0\.72rem\] lg:hidden">Library<\/span>/);
   assert.match(pickerSource, /const \[mobileFiltersOpen, setMobileFiltersOpen\] = useState\(false\)/);
   assert.match(pickerSource, /Filters\{activeFilterCount > 0/);
+  assert.match(pickerSource, /radial-gradient\(circle_at_10%_0%,rgba\(124,58,237,0\.20\)/);
+  assert.match(pickerSource, /bg-\[linear-gradient\(135deg,#8b5cf6,#6d28d9\)\]/);
   assert.match(librarySource, /h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0/);
+  assert.doesNotMatch(librarySource, /agentos-light-modal border-border bg-card text-card-foreground shadow-\[0_35px_100px/);
   assert.match(librarySource, /max-lg:\[&>button\]:w-auto/);
   assert.match(librarySource, /safe-area-inset-top/);
 });
@@ -1041,6 +1055,10 @@ test("agent capability and connection dialogs use mobile fullscreen layouts", ()
     path.join(rootDir, "components/mission-control/workspace-channels-dialog.tsx"),
     "utf8"
   );
+  const accountsSource = readFileSync(
+    path.join(rootDir, "components/operations/accounts/accounts-page-content.tsx"),
+    "utf8"
+  );
 
   assert.match(capabilityDialogSource, /h-dvh max-h-dvh w-screen max-w-none flex-col overflow-hidden rounded-none border-0/);
   assert.match(capabilityDialogSource, /safe-area-inset-bottom/);
@@ -1049,14 +1067,28 @@ test("agent capability and connection dialogs use mobile fullscreen layouts", ()
   assert.match(capabilityDialogSource, /const capabilityThemeStyles: Record<"dark" \| "light", CapabilityThemeStyle>/);
   assert.match(capabilityDialogSource, /bg-\[image:var\(--cap-surface\)\]/);
   assert.match(capabilityDialogSource, /border-violet-200\/35 bg-\[linear-gradient/);
-  assert.match(capabilityColumnSource, /max-h-\[min\(38dvh,360px\)\]/);
+  assert.match(capabilityDialogSource, /setDraftSkills\(\(current\) => normalizeCapabilityValues\(\[value, \.\.\.current\]\)\)/);
+  assert.match(capabilityDialogSource, /setDraftTools\(\(current\) => normalizeCapabilityValues\(\[value, \.\.\.current\]\)\)/);
   assert.match(capabilityColumnSource, /const \[showAllSelected, setShowAllSelected\] = useState\(false\)/);
-  assert.match(capabilityColumnSource, /bg-\[var\(--cap-panel\)\]/);
+  assert.match(capabilityColumnSource, /<div className="space-y-3">/);
+  assert.doesNotMatch(capabilityColumnSource, /max-h-\[min\(38dvh,360px\)\]/);
+  assert.match(capabilityColumnSource, /bg-\[var\(--cap-accent-soft\)\]/);
   assert.match(channelsDialogSource, /h-dvh max-h-dvh w-screen max-w-none flex-col overflow-hidden rounded-none border-0/);
+  assert.match(channelsDialogSource, /const workspaceDialogThemeStyles: Record<"dark" \| "light", WorkspaceDialogThemeStyle>/);
+  assert.match(channelsDialogSource, /bg-\[image:var\(--wi-surface\)\]/);
+  assert.match(channelsDialogSource, /workspace \? `\$\{workspace\.name\} · accounts, owners, and routes`/);
   assert.match(channelsDialogSource, /safe-area-inset-top/);
   assert.match(channelsDialogSource, /overflow-x-hidden overflow-y-auto/);
-  assert.match(channelsDialogSource, /flex h-9 w-full gap-1 overflow-x-auto rounded-xl p-1/);
+  assert.match(channelsDialogSource, /flex h-9 w-full gap-1 overflow-x-auto rounded-\[10px\] border/);
   assert.match(channelsDialogSource, /min-w-\[148px\] shrink-0/);
+  assert.match(accountsSource, /const connectAccountThemeStyles: Record<"dark" \| "light", ConnectAccountThemeStyle>/);
+  assert.match(accountsSource, /bg-\[image:var\(--ca-surface\)\]/);
+  assert.match(accountsSource, /h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0/);
+  assert.match(accountsSource, /min-h-0 flex-1 overflow-y-auto px-4 py-4/);
+  assert.match(accountsSource, /!flex-row border-t border-\[var\(--ca-border-subtle\)\]/);
+  assert.match(accountsSource, /const \[securityTipOpen, setSecurityTipOpen\] = useState\(false\)/);
+  assert.match(accountsSource, /aria-label="Account login security information"/);
+  assert.match(accountsSource, /AgentOS does not store raw passwords\. Complete login manually/);
 });
 
 test("model library keeps selected-model actions visible while browsing", () => {

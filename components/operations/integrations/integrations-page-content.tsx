@@ -478,6 +478,7 @@ export function IntegrationsPageContent({
         onOpenChange={setIsChannelsDialogOpen}
         onRefresh={refresh}
         onSnapshotChange={(updater) => setSnapshot((current) => updater(current))}
+        surfaceTheme={surfaceTheme}
       />
       <AddModelsDialog
         open={isAddModelsDialogOpen}

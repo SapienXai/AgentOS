@@ -404,7 +404,7 @@ export function AgentCapabilityEditorDialog({
           </DialogHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="px-4 py-4 sm:px-4">
+            <div className="px-4 py-4 sm:px-5">
               <AgentCapabilityEditorColumn
                 title={isSkillsEditor ? "Skills" : "Tools"}
                 selectedValues={isSkillsEditor ? draftSkills : draftTools}
@@ -424,10 +424,10 @@ export function AgentCapabilityEditorDialog({
                 }}
                 onPick={(value) => {
                   if (isSkillsEditor) {
-                    setDraftSkills((current) => normalizeCapabilityValues([...current, value]));
+                    setDraftSkills((current) => normalizeCapabilityValues([value, ...current]));
                     setSkillInput("");
                   } else {
-                    setDraftTools((current) => normalizeCapabilityValues([...current, value]));
+                    setDraftTools((current) => normalizeCapabilityValues([value, ...current]));
                     setToolInput("");
                   }
                 }}
@@ -453,7 +453,6 @@ export function AgentCapabilityEditorDialog({
                     ? "Click × on a current skill to remove it."
                     : "Click × on a current tool to remove it."
                 }
-                highlight={true}
               />
             </div>
 

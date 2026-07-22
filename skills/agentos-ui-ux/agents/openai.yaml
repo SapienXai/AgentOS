@@ -1,0 +1,4 @@
+interface:
+  display_name: "AgentOS UI UX"
+  short_description: "Apply AgentOS operator-console UI and UX standards"
+  default_prompt: "Use $agentos-ui-ux to improve this AgentOS interface."

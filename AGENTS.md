@@ -55,6 +55,7 @@ If the task touches OpenClaw, releases, npm publishing, GitHub releases, auth, a
 
 ## UI / UX Rules
 
+- For AgentOS UI, UX, responsive layout, modal, card, form, or theme work, read and follow `skills/agentos-ui-ux/SKILL.md` before editing.
 - Do not build fake working UI.
 - Every button, action, link, filter, sort, metric, and status should either:
   - work against real data,
