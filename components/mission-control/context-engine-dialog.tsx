@@ -2091,6 +2091,8 @@ function EffectiveContextSectionCard({
 }) {
   const action = resolveEffectiveContextAction(section.id);
   const sourceVisual = resolveEffectiveContextVisual(section.id);
+  const [itemsExpanded, setItemsExpanded] = useState(false);
+  const visibleItems = itemsExpanded ? section.items : section.items.slice(0, 2);
 
   return (
     <div className={cn(
@@ -2114,10 +2116,22 @@ function EffectiveContextSectionCard({
           <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-[var(--ce-text)]">{section.detail}</p>
           {section.items.length > 0 ? (
             <ul className="mt-2 flex flex-wrap gap-1">
-              {section.items.slice(0, compact ? 2 : 2).map((item) => (
+              {visibleItems.map((item) => (
                 <li key={item} className="max-w-full truncate rounded-[6px] border border-[var(--ce-border-subtle)] bg-[var(--ce-card-strong)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--ce-text)]" title={item}>{item}</li>
               ))}
-              {section.items.length > 2 ? <li className="rounded-[6px] border border-[var(--ce-border-subtle)] bg-[var(--ce-card-strong)] px-1.5 py-0.5 text-[9px] text-[var(--ce-text-subtle)]">+{section.items.length - 2}</li> : null}
+              {section.items.length > 2 ? (
+                <li>
+                  <button
+                    type="button"
+                    className="rounded-[6px] border border-[var(--ce-border-subtle)] bg-[var(--ce-card-strong)] px-1.5 py-0.5 text-[9px] text-[var(--ce-text-subtle)] transition-colors hover:border-[var(--ce-border)] hover:bg-[var(--ce-card-hover)] hover:text-[var(--ce-text)]"
+                    aria-expanded={itemsExpanded}
+                    title={itemsExpanded ? "Show fewer context items" : `Show ${section.items.length - 2} more context items`}
+                    onClick={() => setItemsExpanded((current) => !current)}
+                  >
+                    {itemsExpanded ? "Show less" : `+${section.items.length - 2}`}
+                  </button>
+                </li>
+              ) : null}
             </ul>
           ) : null}
         </div>
