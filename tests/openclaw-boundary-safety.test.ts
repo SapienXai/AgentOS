@@ -1094,6 +1094,9 @@ test("effective context is an actionable runtime truth view", () => {
   assert.match(source, /Review memory & history/);
   assert.match(source, /Review capabilities/);
   assert.match(source, /grid grid-cols-2 gap-2 rounded-\[9px\]/);
+  assert.match(source, /grid gap-2 md:grid-cols-2 xl:grid-cols-3/);
+  assert.match(source, /resolveEffectiveContextVisual/);
+  assert.match(source, /group relative min-w-0 overflow-hidden rounded-\[10px\]/);
 });
 
 test("context engine memory uses real file reading and editing flows", () => {

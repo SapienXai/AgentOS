@@ -2031,7 +2031,7 @@ function EffectiveContextPanel({
           </div>
           <span className="text-[11px] text-[var(--ce-text-subtle)]">{stackSections.length} sources</span>
         </div>
-        <div className="mt-3 space-y-2">
+        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
           {stackSections.map((section, index) => (
             <EffectiveContextSectionCard
               key={section.id}
@@ -2084,14 +2084,19 @@ function EffectiveContextSectionCard({
   compact?: boolean;
 }) {
   const action = resolveEffectiveContextAction(section.id);
+  const sourceVisual = resolveEffectiveContextVisual(section.id);
 
   return (
     <div className={cn(
-      "min-w-0 rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)]",
+      "group relative min-w-0 overflow-hidden rounded-[10px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] transition-[border-color,background,transform] hover:-translate-y-px hover:border-[var(--ce-border)] hover:bg-[var(--ce-panel-hover)]",
       compact ? "p-2.5" : "p-3"
     )}>
+      <div className={cn("absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-current to-transparent opacity-35", sourceVisual.className)} />
       <div className="flex min-w-0 items-start gap-2.5">
-        {index ? <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[var(--ce-border)] bg-[var(--ce-panel-strong)] text-[10px] font-semibold text-[var(--ce-text-muted)]">{index}</span> : null}
+        <div className={cn("relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border", sourceVisual.className, sourceVisual.surfaceClassName)}>
+          <sourceVisual.Icon className="h-4 w-4" />
+          {index ? <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-[var(--ce-border)] bg-[var(--ce-panel-strong)] text-[8px] font-semibold text-[var(--ce-text-muted)]">{index}</span> : null}
+        </div>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <p className="truncate text-xs font-medium text-[var(--ce-text-strong)]">{section.label}</p>
@@ -2100,25 +2105,44 @@ function EffectiveContextSectionCard({
             </span>
           </div>
           <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-[var(--ce-text-subtle)]">{formatEffectiveContextSource(section.source)}</p>
-          <p className="mt-1.5 text-xs leading-5 text-[var(--ce-text)]">{section.detail}</p>
+          <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-[var(--ce-text)]">{section.detail}</p>
           {section.items.length > 0 ? (
-            <ul className="mt-2 space-y-1">
-              {section.items.slice(0, compact ? 3 : 4).map((item) => (
-                <li key={item} className="truncate rounded-[6px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] px-2 py-1 font-mono text-[10px] text-[var(--ce-text)]" title={item}>{item}</li>
+            <ul className="mt-2 flex flex-wrap gap-1">
+              {section.items.slice(0, compact ? 2 : 2).map((item) => (
+                <li key={item} className="max-w-full truncate rounded-[6px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--ce-text)]" title={item}>{item}</li>
               ))}
-              {section.items.length > (compact ? 3 : 4) ? <li className="px-1 text-[10px] text-[var(--ce-text-subtle)]">+{section.items.length - (compact ? 3 : 4)} more</li> : null}
+              {section.items.length > 2 ? <li className="rounded-[6px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] px-1.5 py-0.5 text-[9px] text-[var(--ce-text-subtle)]">+{section.items.length - 2}</li> : null}
             </ul>
           ) : null}
         </div>
       </div>
       {action ? (
-        <button type="button" className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-[var(--ce-accent)] hover:text-[var(--ce-accent-strong)]" onClick={() => onNavigate(action.tab)}>
+        <button type="button" className="mt-3 inline-flex items-center gap-1 border-t border-[var(--ce-border-subtle)] pt-2 text-[11px] font-medium text-[var(--ce-accent)] hover:text-[var(--ce-accent-strong)]" onClick={() => onNavigate(action.tab)}>
           {action.label}
           <ChevronRight className="h-3 w-3" />
         </button>
       ) : null}
     </div>
   );
+}
+
+function resolveEffectiveContextVisual(sectionId: ContextEngineEffectiveContextSection["id"]) {
+  if (sectionId === "system") {
+    return { Icon: TerminalSquare, className: "text-[var(--ce-accent)]", surfaceClassName: "border-[var(--ce-accent-strong)] bg-[var(--ce-accent-soft)]" };
+  }
+  if (sectionId === "openclaw-runtime") {
+    return { Icon: Activity, className: "text-[var(--ce-blue)]", surfaceClassName: "border-[var(--ce-border)] bg-[var(--ce-panel-strong)]" };
+  }
+  if (sectionId === "enabled-files" || sectionId === "disabled-files" || sectionId === "file-issues" || sectionId === "agentos-sidecar") {
+    return { Icon: FolderOpen, className: "text-[var(--ce-blue)]", surfaceClassName: "border-[var(--ce-border)] bg-[var(--ce-panel-strong)]" };
+  }
+  if (sectionId === "memory" || sectionId === "history") {
+    return { Icon: History, className: "text-[var(--ce-success-text)]", surfaceClassName: "border-[var(--ce-success-border)] bg-[var(--ce-success-bg)]" };
+  }
+  if (sectionId === "skills-tools") {
+    return { Icon: Puzzle, className: "text-[var(--ce-warning-text)]", surfaceClassName: "border-[var(--ce-warning-border)] bg-[var(--ce-warning-bg)]" };
+  }
+  return { Icon: Paperclip, className: "text-[var(--ce-text-muted)]", surfaceClassName: "border-[var(--ce-border)] bg-[var(--ce-panel-strong)]" };
 }
 
 function resolveEffectiveContextAction(sectionId: ContextEngineEffectiveContextSection["id"]) {
