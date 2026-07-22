@@ -53,8 +53,8 @@ export function AccountsSurfaceSection({
               Attach saved browser-profile account targets to an agent. AgentOS enforces these bindings before account-target task launch.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
-            <Button type="button" variant="default" size="sm" className="h-8 rounded-full px-3 text-[11px]" onClick={onConnectAccount}>
+          <div className="flex gap-2 sm:flex-wrap sm:items-center sm:justify-end">
+            <Button type="button" variant="default" size="sm" className="h-9 min-w-0 flex-1 rounded-full px-3 text-[11px] sm:h-8 sm:flex-none" onClick={onConnectAccount}>
               <KeyRound className="mr-1.5 h-3.5 w-3.5" />
               Connect Account
             </Button>
@@ -62,7 +62,7 @@ export function AccountsSurfaceSection({
               type="button"
               variant="secondary"
               size="sm"
-              className="h-8 rounded-full px-3 text-[11px]"
+              className="h-9 min-w-0 flex-1 rounded-full px-3 text-[11px] sm:h-8 sm:flex-none"
               disabled={isSaving}
               onClick={onRefreshAccounts}
             >
@@ -114,7 +114,7 @@ export function AccountsSurfaceSection({
       <section className="rounded-2xl border border-border bg-card p-3.5 shadow-sm dark:border-white/10 dark:bg-white/[0.025] dark:shadow-none">
         <div className="flex items-center justify-between gap-3">
           <p className="min-w-0 truncate text-sm font-medium text-foreground dark:text-white">Workspace account targets</p>
-          <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
+          <Badge variant="muted" className="h-6 max-w-[52%] truncate rounded-full px-2 text-[10px]">
             {selectedAgent ? formatAgentDisplayName(selectedAgent) : "No agent"}
           </Badge>
         </div>
@@ -178,7 +178,7 @@ export function AccountsSurfaceSection({
                     type="button"
                     size="sm"
                     variant={linked ? "secondary" : "default"}
-                    className="h-8 rounded-full px-3 text-[11px] sm:shrink-0"
+                    className="h-9 w-full rounded-full px-3 text-[11px] sm:h-8 sm:w-auto sm:shrink-0"
                     disabled={isSaving || Boolean(disabledReason)}
                     title={disabledReason || (linked ? "Remove this account from the selected agent." : "Attach this account to the selected agent.")}
                     onClick={() => onToggleAccountAccess(target, linked)}

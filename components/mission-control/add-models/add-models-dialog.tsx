@@ -102,7 +102,7 @@ const initialDraftState = (): ProviderDraft => ({
   discoveryLoaded: false
 });
 
-const CATALOG_PAGE_SIZE = 5;
+const CATALOG_PAGE_SIZE = 15;
 
 export function AddModelsDialog({
   open,
@@ -553,6 +553,9 @@ export function AddModelsDialog({
 
     return groups;
   }, [catalogModels, catalogSelectedModelIds]);
+  const activeCatalogSelectedCount = activeProviderId
+    ? catalogSelectedModelGroups.get(activeProviderId)?.length ?? 0
+    : 0;
 
   useEffect(() => {
     if (!shouldScrollToProviderSettings || !activeProviderId || typeof window === "undefined") {
@@ -602,6 +605,10 @@ export function AddModelsDialog({
     setActiveSetupMode("standard");
     setActiveTab("providers");
     setShouldScrollToProviderSettings(scrollToSettings);
+
+    if (!isBuiltInAddModelsProviderId(providerId)) {
+      setExplicitProviderIds((current) => current.includes(providerId) ? current : [...current, providerId]);
+    }
 
     const draft = resolveDraft(providerDrafts[providerId]);
 
@@ -1043,6 +1050,7 @@ export function AddModelsDialog({
       });
     } finally {
       setIsAddingCatalogModels(false);
+      void refreshGlobalCatalog(true);
     }
   }
 
@@ -2158,6 +2166,47 @@ export function AddModelsDialog({
                 >
                   {activeProviderId && activeDescriptor ? (
                     <div className="sticky top-0">
+                      {activeCatalogSelectedCount > 0 ? (
+                        <div
+                          className={cn(
+                            "mb-3 rounded-[14px] border px-3 py-2.5",
+                            isLight
+                              ? "border-primary/25 bg-primary/10 text-foreground"
+                              : "border-violet-300/25 bg-violet-500/10 text-white"
+                          )}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-[0.74rem] font-semibold">
+                                {activeCatalogSelectedCount} catalog model{activeCatalogSelectedCount === 1 ? "" : "s"} selected
+                              </p>
+                              <p className={cn("mt-0.5 text-[0.64rem]", isLight ? "text-muted-foreground" : "text-slate-300")}>
+                                Add the selection after completing provider setup.
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 gap-1.5">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                className="h-7 rounded-full px-2.5 text-[0.62rem]"
+                                onClick={() => setActiveTab("catalog")}
+                              >
+                                Review
+                              </Button>
+                              <Button
+                                type="button"
+                                className="h-7 rounded-full px-2.5 text-[0.62rem]"
+                                disabled={isAddingCatalogModels}
+                                onClick={() => {
+                                  void addSelectedCatalogModels();
+                                }}
+                              >
+                                {isAddingCatalogModels ? "Adding..." : "Add selected"}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className={cn("font-display text-[1.05rem]", isLight ? "text-foreground" : "text-white")}>

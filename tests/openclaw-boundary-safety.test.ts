@@ -1028,6 +1028,37 @@ test("model dialogs use mobile fullscreen layouts with reachable actions", () =>
   assert.match(librarySource, /safe-area-inset-top/);
 });
 
+test("agent capability and connection dialogs use mobile fullscreen layouts", () => {
+  const capabilityDialogSource = readFileSync(
+    path.join(rootDir, "components/mission-control/agent-capability-editor-dialog.tsx"),
+    "utf8"
+  );
+  const capabilityColumnSource = readFileSync(
+    path.join(rootDir, "components/mission-control/agent-capability-editor-column.tsx"),
+    "utf8"
+  );
+  const channelsDialogSource = readFileSync(
+    path.join(rootDir, "components/mission-control/workspace-channels-dialog.tsx"),
+    "utf8"
+  );
+
+  assert.match(capabilityDialogSource, /h-dvh max-h-dvh w-screen max-w-none flex-col overflow-hidden rounded-none border-0/);
+  assert.match(capabilityDialogSource, /safe-area-inset-bottom/);
+  assert.match(capabilityDialogSource, /!flex-row border-t border-\[var\(--cap-border-subtle\)\]/);
+  assert.match(capabilityDialogSource, /h-10 flex-1 rounded-\[8px\]/);
+  assert.match(capabilityDialogSource, /const capabilityThemeStyles: Record<"dark" \| "light", CapabilityThemeStyle>/);
+  assert.match(capabilityDialogSource, /bg-\[image:var\(--cap-surface\)\]/);
+  assert.match(capabilityDialogSource, /border-violet-200\/35 bg-\[linear-gradient/);
+  assert.match(capabilityColumnSource, /max-h-\[min\(38dvh,360px\)\]/);
+  assert.match(capabilityColumnSource, /const \[showAllSelected, setShowAllSelected\] = useState\(false\)/);
+  assert.match(capabilityColumnSource, /bg-\[var\(--cap-panel\)\]/);
+  assert.match(channelsDialogSource, /h-dvh max-h-dvh w-screen max-w-none flex-col overflow-hidden rounded-none border-0/);
+  assert.match(channelsDialogSource, /safe-area-inset-top/);
+  assert.match(channelsDialogSource, /overflow-x-hidden overflow-y-auto/);
+  assert.match(channelsDialogSource, /flex h-9 w-full gap-1 overflow-x-auto rounded-xl p-1/);
+  assert.match(channelsDialogSource, /min-w-\[148px\] shrink-0/);
+});
+
 test("model library keeps selected-model actions visible while browsing", () => {
   const pickerSource = readFileSync(
     path.join(rootDir, "components/mission-control/add-models/global-model-picker.tsx"),
@@ -1075,6 +1106,20 @@ test("model library catalog fills the available dialog space", () => {
   assert.match(librarySource, /flex min-h-0 flex-1 flex-col space-y-2 px-3 py-3/);
   assert.match(pickerSource, /flex min-h-0 flex-1 flex-col rounded-\[15px\] border p-3/);
   assert.match(pickerSource, /mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto/);
+});
+
+test("model library keeps OpenClaw catalog failures visible and supports explicit providers", () => {
+  const hookSource = readFileSync(path.join(rootDir, "hooks/use-model-catalog.ts"), "utf8");
+  const routeSource = readFileSync(path.join(rootDir, "app/api/models/catalog/route.ts"), "utf8");
+  const dialogSource = readFileSync(path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"), "utf8");
+
+  assert.match(hookSource, /setError\(error instanceof Error \? error\.message : "OpenClaw catalog could not be loaded\."\)/);
+  assert.match(routeSource, /import \{ isAddModelsProviderId \} from "@\/lib\/openclaw\/model-provider-registry"/);
+  assert.doesNotMatch(routeSource, /return \[\s*"openai-codex"/);
+  assert.match(dialogSource, /const CATALOG_PAGE_SIZE = 15/);
+  assert.match(dialogSource, /setExplicitProviderIds\(\(current\) => current\.includes\(providerId\) \? current : \[\.\.\.current, providerId\]\)/);
+  assert.match(dialogSource, /catalog model\{activeCatalogSelectedCount === 1 \? "" : "s"\} selected/);
+  assert.match(dialogSource, /void refreshGlobalCatalog\(true\)/);
 });
 
 function resolveLocalOpenClawImport(filePath: string, specifier: string) {

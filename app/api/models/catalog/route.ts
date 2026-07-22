@@ -18,6 +18,7 @@ import {
   writeModelCatalogCache
 } from "@/lib/openclaw/application/model-catalog-cache-service";
 import { normalizeOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
+import { isAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
 import { markConfiguredCatalogModels } from "@/lib/openclaw/domains/model-catalog-projection";
 import {
   isGatewayAuthSetupRecoveryError,
@@ -253,20 +254,6 @@ function normalizeCatalogModelId(provider: AddModelsProviderId, modelId: string)
   }
 
   return modelId;
-}
-
-function isAddModelsProviderId(value: string): value is AddModelsProviderId {
-  return [
-    "openai-codex",
-    "openrouter",
-    "ollama",
-    "openai",
-    "anthropic",
-    "xai",
-    "google",
-    "deepseek",
-    "mistral"
-  ].includes(value);
 }
 
 function isRecommendedModel(provider: string, modelId: string) {

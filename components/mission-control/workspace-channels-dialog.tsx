@@ -1137,11 +1137,11 @@ export function WorkspaceChannelsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-1rem)] max-w-5xl flex-col overflow-hidden rounded-[22px] border-border bg-popover p-0 text-popover-foreground dark:border-white/10 dark:bg-slate-950 dark:text-white"
-        closeClassName="right-3 top-3"
+        className="flex h-dvh max-h-dvh w-screen max-w-none flex-col overflow-hidden rounded-none border-0 bg-popover p-0 text-popover-foreground sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100vw-1rem)] sm:max-w-5xl sm:rounded-[22px] sm:border-border dark:border-white/10 dark:bg-slate-950 dark:text-white"
+        closeClassName="right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))]"
       >
         <div className="flex min-h-0 flex-1 flex-col">
-        <DialogHeader className="border-b border-border px-4 py-3 pr-12 sm:px-5 dark:border-white/10">
+        <DialogHeader className="border-b border-border px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))] pr-12 sm:px-5 sm:py-3 dark:border-white/10">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <DialogTitle className="text-lg">Workspace integrations</DialogTitle>
@@ -1156,7 +1156,7 @@ export function WorkspaceChannelsDialog({
               <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
                 {allAccounts.length} accounts
               </Badge>
-              <Badge variant="muted" className="h-6 rounded-full px-2 text-[10px]">
+              <Badge variant="muted" className="hidden h-6 rounded-full px-2 text-[10px] sm:inline-flex">
                 {workspaceAccountTargets.length} account targets
               </Badge>
             </div>
@@ -1216,9 +1216,9 @@ export function WorkspaceChannelsDialog({
           </div>
         ) : null}
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
         <div className="grid min-h-0 gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
-          <aside className="h-fit rounded-2xl border border-border bg-card p-2.5 shadow-sm sm:sticky sm:top-0 dark:border-white/10 dark:bg-white/[0.025] dark:shadow-none">
+          <aside className="sticky top-0 z-10 h-fit rounded-2xl border border-border bg-card p-2.5 shadow-sm sm:top-0 dark:border-white/10 dark:bg-slate-950 dark:shadow-none">
             <div className="grid grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/40 p-1 dark:border-white/8 dark:bg-black/15">
               {(["surfaces", "accounts"] as WorkspaceDialogSection[]).map((section) => (
                 <button
@@ -1239,17 +1239,17 @@ export function WorkspaceChannelsDialog({
 
             {activeSection === "surfaces" ? (
               <>
-                <Tabs value={activeKind} onValueChange={(value) => setActiveKind(value as MissionControlSurfaceKind)} className="mt-2.5">
-                  <TabsList className="grid h-9 w-full grid-cols-3 rounded-xl">
+                <Tabs value={activeKind} onValueChange={(value) => setActiveKind(value as MissionControlSurfaceKind)} className="mt-2">
+                  <TabsList className="flex h-9 w-full gap-1 overflow-x-auto rounded-xl p-1">
                     {availableKinds.map((kind) => (
-                      <TabsTrigger key={kind} className="h-7 rounded-lg px-2 text-[11px]" value={kind}>
+                      <TabsTrigger key={kind} className="h-7 min-w-fit flex-1 rounded-lg px-2 text-[11px]" value={kind}>
                         {formatSurfaceKindLabel(kind)}
                       </TabsTrigger>
                     ))}
                   </TabsList>
                 </Tabs>
 
-                <div className="mt-2.5 space-y-1.5">
+                <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1 sm:block sm:mt-2.5 sm:space-y-1.5 sm:overflow-visible sm:pb-0">
                   {providerOptions.map((provider) => {
                 const entry = surfaceCatalogByProvider.get(provider) ?? getSurfaceCatalogEntry(provider);
                 const providerSurfaceCount = workspaceSurfaces.filter((surface) => surface.type === provider).length;
@@ -1264,7 +1264,7 @@ export function WorkspaceChannelsDialog({
                     type="button"
                     onClick={() => setActiveProvider(provider)}
                     className={cn(
-                      "flex w-full items-center justify-between gap-3 rounded-xl border px-2.5 py-2 text-left transition-colors",
+                      "flex min-w-[148px] shrink-0 items-center justify-between gap-2 rounded-xl border px-2.5 py-2 text-left transition-colors sm:w-full sm:min-w-0 sm:gap-3",
                       activeProvider === provider
                         ? "border-primary/25 bg-primary/10 dark:border-cyan-300/35 dark:bg-cyan-400/[0.08]"
                         : "border-border/80 bg-muted/30 hover:bg-muted/50 dark:border-white/8 dark:bg-white/[0.02] dark:hover:bg-white/[0.04]"
@@ -1290,7 +1290,7 @@ export function WorkspaceChannelsDialog({
                 </div>
               </>
             ) : (
-              <div className="mt-2.5 space-y-2 rounded-xl border border-border/80 bg-muted/30 p-2.5 dark:border-white/8 dark:bg-white/[0.02]">
+              <div className="mt-2 hidden space-y-2 rounded-xl border border-border/80 bg-muted/30 p-2.5 sm:block dark:border-white/8 dark:bg-white/[0.02]">
                 <div className="flex items-center gap-2">
                   <KeyRound className="h-3.5 w-3.5 text-amber-600 dark:text-amber-200" />
                   <p className="text-xs font-medium text-foreground dark:text-white">Workspace accounts</p>
@@ -1736,7 +1736,7 @@ export function WorkspaceChannelsDialog({
                                                 </p>
                                               ) : null}
                                             </div>
-                                            <div className="min-w-[190px] space-y-1">
+                                            <div className="w-full space-y-1 sm:min-w-[190px] sm:w-auto">
                                               <p className="px-1 text-[9px] uppercase tracking-[0.14em] text-muted-foreground dark:text-slate-500">
                                                 Route owner
                                               </p>
@@ -1961,8 +1961,8 @@ export function WorkspaceChannelsDialog({
 
         </div>
 
-        <DialogFooter className="border-t border-border px-4 py-3 sm:px-5 dark:border-white/10">
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="border-t border-border px-4 pb-[max(0.875rem,env(safe-area-inset-bottom))] pt-3 sm:px-5 sm:py-3 dark:border-white/10">
+          <Button variant="secondary" className="h-10 w-full sm:h-9 sm:w-auto" onClick={() => onOpenChange(false)}>
             Close
           </Button>
         </DialogFooter>
@@ -1970,8 +1970,8 @@ export function WorkspaceChannelsDialog({
       </DialogContent>
 
       <Dialog open={Boolean(deleteTarget)} onOpenChange={(nextOpen) => !nextOpen && setDeleteTarget(null)}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="h-dvh max-h-dvh w-screen max-w-none rounded-none border-0 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:h-auto sm:w-auto sm:max-w-2xl sm:rounded-lg sm:border">
+          <DialogHeader className="pr-10">
             <DialogTitle>Delete OpenClaw account</DialogTitle>
             <DialogDescription>
               This removes the account from every workspace overlay. For provider-backed chat accounts, AgentOS also asks
@@ -2003,7 +2003,7 @@ export function WorkspaceChannelsDialog({
             />
           </FormField>
 
-          <DialogFooter>
+          <DialogFooter className="pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0">
             <Button
               variant="secondary"
               onClick={() => {
@@ -2032,8 +2032,8 @@ export function WorkspaceChannelsDialog({
           }
         }}
       >
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="h-dvh max-h-dvh w-screen max-w-none rounded-none border-0 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:h-auto sm:w-auto sm:max-w-2xl sm:rounded-lg sm:border">
+          <DialogHeader className="pr-10">
             <DialogTitle>Apply OpenClaw binding repair</DialogTitle>
             <DialogDescription>
               Confirm the previewed repair before AgentOS writes a bounded OpenClaw config patch.
@@ -2082,7 +2082,7 @@ export function WorkspaceChannelsDialog({
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-0">
             <Button
               variant="secondary"
               disabled={isSaving}

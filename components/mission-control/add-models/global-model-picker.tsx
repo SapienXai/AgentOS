@@ -238,7 +238,7 @@ export function GlobalModelPicker({
                 onClick={onLoadMore}
                 className="h-7 w-full rounded-full px-3 text-[9px]"
               >
-                Load {Math.min(5, remainingModelCount)} more
+                Load {Math.min(15, remainingModelCount)} more
               </Button>
             </div>
           ) : null}

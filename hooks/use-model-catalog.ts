@@ -79,9 +79,9 @@ export function useModelCatalog({
       const nextPayload = await loadModelCatalog(force);
       setPayload(nextPayload);
       return nextPayload;
-    } catch {
+    } catch (error) {
       // Configured snapshot models remain usable when the optional global catalog is unavailable.
-      setError(null);
+      setError(error instanceof Error ? error.message : "OpenClaw catalog could not be loaded.");
       return null;
     } finally {
       setIsLoading(false);

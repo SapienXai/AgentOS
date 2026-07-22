@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, Puzzle, Wrench } from "lucide-react";
 import { toast } from "sonner";
 
 import { AgentCapabilityEditorColumn } from "@/components/mission-control/agent-capability-editor-column";
@@ -32,6 +32,39 @@ import {
 import { OPENCLAW_BUILTIN_TOOL_CATALOG, OPENCLAW_TOOL_GROUP_CATALOG } from "@/lib/openclaw/tool-catalog";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
+
+type CapabilityThemeStyle = CSSProperties & Record<`--cap-${string}`, string>;
+
+const capabilityThemeStyles: Record<"dark" | "light", CapabilityThemeStyle> = {
+  dark: {
+    "--cap-surface": "radial-gradient(circle at 8% 0%, rgba(124,58,237,0.16), transparent 30%), linear-gradient(135deg, rgba(16,20,31,0.99), rgba(8,11,19,0.99) 66%)",
+    "--cap-panel": "rgba(255,255,255,0.045)",
+    "--cap-panel-strong": "rgba(2,6,23,0.62)",
+    "--cap-panel-hover": "rgba(255,255,255,0.085)",
+    "--cap-border": "rgba(255,255,255,0.11)",
+    "--cap-border-subtle": "rgba(255,255,255,0.07)",
+    "--cap-text-strong": "#f8fafc",
+    "--cap-text": "#dbe4f0",
+    "--cap-text-muted": "#9ba9ba",
+    "--cap-text-subtle": "#69788b",
+    "--cap-accent": "#c4b5fd",
+    "--cap-accent-soft": "rgba(139,92,246,0.17)"
+  },
+  light: {
+    "--cap-surface": "radial-gradient(circle at 8% 0%, rgba(124,58,237,0.1), transparent 32%), linear-gradient(135deg, rgba(255,253,251,0.99), rgba(248,244,240,0.99) 66%)",
+    "--cap-panel": "rgba(255,255,255,0.72)",
+    "--cap-panel-strong": "rgba(255,255,255,0.92)",
+    "--cap-panel-hover": "rgba(109,40,217,0.09)",
+    "--cap-border": "rgba(91,70,57,0.2)",
+    "--cap-border-subtle": "rgba(91,70,57,0.13)",
+    "--cap-text-strong": "#241b16",
+    "--cap-text": "#493a31",
+    "--cap-text-muted": "#736258",
+    "--cap-text-subtle": "#927f73",
+    "--cap-accent": "#6d28d9",
+    "--cap-accent-soft": "rgba(109,40,217,0.1)"
+  }
+};
 
 type AgentCapabilityEditorDialogProps = {
   open: boolean;
@@ -341,25 +374,37 @@ export function AgentCapabilityEditorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          "w-[min(680px,calc(100vw-1.5rem))] max-h-[calc(100dvh-1.5rem)] overflow-hidden rounded-[24px] border-white/10 bg-[linear-gradient(180deg,rgba(7,10,18,0.98),rgba(4,7,14,0.98))] p-0",
-          surfaceTheme === "light" && "agentos-light-modal"
+          "flex h-dvh max-h-dvh w-screen max-w-none flex-col overflow-hidden rounded-none border-0 bg-[image:var(--cap-surface)] p-0 text-[var(--cap-text)] shadow-[0_0_0_1px_rgba(124,58,237,0.12),0_24px_80px_rgba(0,0,0,0.42)] sm:h-auto sm:max-h-[calc(100dvh-1.5rem)] sm:w-[min(680px,calc(100vw-1.5rem))] sm:rounded-[24px] sm:border-[var(--cap-border)]"
         )}
+        style={capabilityThemeStyles[surfaceTheme]}
+        overlayClassName="bg-black/78 backdrop-blur-lg"
+        closeClassName="right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] z-20 h-9 w-9 text-[var(--cap-text)] hover:bg-[var(--cap-panel-hover)] hover:text-[var(--cap-text-strong)]"
       >
-        <div className="flex max-h-[calc(100dvh-1.5rem)] min-h-0 flex-col">
-          <DialogHeader className="border-b border-white/[0.08] px-4 py-2.5">
-            <DialogTitle className="text-[0.95rem]">{`Edit ${isSkillsEditor ? "skills" : "tools"} · ${formatAgentDisplayName(agent)}`}</DialogTitle>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <DialogHeader className="border-b border-[var(--cap-border-subtle)] px-4 pb-3 pt-[max(0.875rem,env(safe-area-inset-top))] pr-12 sm:py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[var(--cap-accent-soft)] text-[var(--cap-accent)] shadow-[0_0_20px_rgba(124,58,237,0.2)]">
+                {isSkillsEditor ? <Puzzle className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}
+              </div>
+              <div className="min-w-0">
+                <DialogTitle className="truncate font-display text-[17px] font-semibold leading-5 text-[var(--cap-text-strong)]">
+                  {`Edit ${isSkillsEditor ? "skills" : "tools"}`}
+                </DialogTitle>
+                <p className="mt-0.5 truncate text-xs text-[var(--cap-text-muted)]">{formatAgentDisplayName(agent)}</p>
+              </div>
+            </div>
             <DialogDescription className="sr-only">
               Edit the selected agent&apos;s skills or tools and save the updated capability set.
             </DialogDescription>
             <div className="flex flex-wrap gap-1 pt-0.5">
-              <Badge variant="muted" className={headerBadgeClassName}>
+              <Badge variant="muted" className={cn(headerBadgeClassName, "border-[var(--cap-border)] bg-[var(--cap-panel)] text-[var(--cap-text-muted)]")}>
                 {formatAgentPresetLabel(agent.policy.preset)}
               </Badge>
             </div>
           </DialogHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="px-4 py-4">
+            <div className="px-4 py-4 sm:px-4">
               <AgentCapabilityEditorColumn
                 title={isSkillsEditor ? "Skills" : "Tools"}
                 selectedValues={isSkillsEditor ? draftSkills : draftTools}
@@ -413,19 +458,19 @@ export function AgentCapabilityEditorDialog({
             </div>
 
             {error ? (
-              <div className="border-t border-white/[0.08] px-4 py-3">
-                <p className="text-[12px] leading-5 text-rose-300">{error}</p>
+              <div className="border-t border-[var(--cap-border-subtle)] px-4 py-3">
+                <p className="text-[12px] leading-5 text-rose-300 dark:text-rose-300">{error}</p>
               </div>
             ) : null}
           </div>
 
-          <DialogFooter className="border-t border-white/[0.08] px-4 py-2 sm:flex-row">
+          <DialogFooter className="!flex-row border-t border-[var(--cap-border-subtle)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:justify-end sm:py-2">
             <Button
               type="button"
               variant="secondary"
               onClick={() => onOpenChange(false)}
               disabled={saving}
-              className="h-8 rounded-full px-2.5 text-[10px]"
+              className="h-10 flex-1 rounded-[8px] border-[var(--cap-border)] bg-[var(--cap-panel)] px-3 text-xs text-[var(--cap-text)] hover:bg-[var(--cap-panel-hover)] hover:text-[var(--cap-text-strong)] sm:h-8 sm:flex-none sm:px-2.5 sm:text-[10px]"
             >
               Cancel
             </Button>
@@ -435,7 +480,7 @@ export function AgentCapabilityEditorDialog({
                 void saveCapabilities();
               }}
               disabled={saving || !hasChanges}
-              className="h-8 rounded-full px-2.5 text-[10px]"
+              className="h-10 flex-1 rounded-[8px] border border-violet-200/35 bg-[linear-gradient(180deg,rgba(139,92,246,0.98),rgba(109,40,217,0.96))] px-3 text-xs text-white shadow-[0_6px_16px_rgba(124,58,237,0.28)] hover:bg-violet-500 sm:h-8 sm:flex-none sm:px-2.5 sm:text-[10px]"
             >
               {saving ? <LoaderCircle className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               Save changes
