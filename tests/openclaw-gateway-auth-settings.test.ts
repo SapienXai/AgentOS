@@ -648,6 +648,17 @@ test("Gateway native auth device access repair approves latest local scope reque
   assert.equal(result.activeEnvName, null);
 });
 
+test("Gateway device repair probes admin-level config access instead of read-only status", () => {
+  const source = readFileSync(
+    join(process.cwd(), "lib/openclaw/application/settings-service.ts"),
+    "utf8"
+  );
+
+  assert.match(source, /options\.nativeProbe \?\? assertGatewayNativeConfigMutationAccess/);
+  assert.match(source, /callNative\("config\.schema\.lookup", \{ path: "agents\.list" \}/);
+  assert.doesNotMatch(source, /probeGatewayNativeStatusForDeviceAccessRepair/);
+});
+
 test("Gateway native auth device access repair still approves CLI scopes when native auth already works", async () => {
   setOpenClawAdapterForTesting(createSettingsAdapter());
   process.env.OPENCLAW_STATE_DIR = await mkdtemp(join(tmpdir(), "agentos-gateway-device-repair-"));

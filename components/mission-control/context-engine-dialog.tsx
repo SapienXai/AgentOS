@@ -3,13 +3,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
+  Activity,
+  AlertTriangle,
   Ban,
   Bot,
+  CheckCircle2,
+  ChevronRight,
   Clock3,
   Eye,
   FileText,
   FolderOpen,
   Grid2X2,
+  Gauge,
   Hexagon,
   History,
   Home,
@@ -52,7 +57,6 @@ import type {
   ContextEngineTokenSource
 } from "@/lib/openclaw/context-engine-types";
 import {
-  compactPath,
   formatAgentDisplayName,
   formatContextWindow,
   formatRelativeTime,
@@ -615,13 +619,19 @@ export function ContextEngineDialog({
                 onSaveFile={() => void saveFile()}
               />
             ) : (
-              <SecondaryTabPanel
-                tab={activeTab}
-                snapshot={engineSnapshot}
-                files={projectFiles}
-                isLoading={isLoadingSnapshot}
-                onConfigureCapabilities={onConfigureCapabilities}
-              />
+              <div className="lg:h-full lg:overflow-y-auto lg:p-3">
+                <SecondaryTabPanel
+                  tab={activeTab}
+                  snapshot={engineSnapshot}
+                  files={projectFiles}
+                  isLoading={isLoadingSnapshot}
+                  hasContextChanges={hasContextChanges}
+                  isSavingContext={isSavingContext}
+                  onNavigate={setActiveTab}
+                  onSaveContext={() => void saveContext()}
+                  onConfigureCapabilities={onConfigureCapabilities}
+                />
+              </div>
             )}
           </main>
         </div>
@@ -1417,12 +1427,20 @@ function SecondaryTabPanel({
   snapshot,
   files,
   isLoading,
+  hasContextChanges,
+  isSavingContext,
+  onNavigate,
+  onSaveContext,
   onConfigureCapabilities
 }: {
   tab: ContextEngineTab;
   snapshot: ContextEngineSnapshot | null;
   files: ContextEngineFile[];
   isLoading: boolean;
+  hasContextChanges: boolean;
+  isSavingContext: boolean;
+  onNavigate: (tab: ContextEngineTab) => void;
+  onSaveContext: () => void;
   onConfigureCapabilities?: (agentId: string, focus: "skills" | "tools") => void;
 }) {
   if (isLoading && !snapshot) {
@@ -1436,23 +1454,14 @@ function SecondaryTabPanel({
 
   if (tab === "overview") {
     return (
-      <InfoPanel title="Overview" subtitle="Current agent, workspace, model, and runtime report state.">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
-          <OverviewMetric label="Agent" value={snapshot ? formatAgentDisplayName(snapshot.agent) : "Unknown"} />
-          <OverviewMetric label="Workspace" value={snapshot?.workspace.name ?? "Unknown"} detail={snapshot?.workspace.path ? compactPath(snapshot.workspace.path) : undefined} />
-          <OverviewMetric label="Model" value={snapshot?.model.label ?? "Unknown"} detail={snapshot?.model.provider ?? undefined} />
-          <OverviewMetric label="Runtime report" value={snapshot?.runtimeReport.status === "exact" ? "Exact" : "Degraded"} detail={snapshot?.runtimeReport.source.replace(/-/g, " ")} />
-          <OverviewMetric
-            label="Preferences"
-            value={formatConfigurationPersistence(snapshot)}
-            detail={snapshot?.configuration.storagePath}
-          />
-        </div>
-        <DiagnosticsList
-          diagnostics={[
-            ...(snapshot?.configuration.persistenceWarning ? [snapshot.configuration.persistenceWarning] : []),
-            ...(snapshot?.diagnostics ?? [])
-          ]}
+      <InfoPanel title="Context health" subtitle="Understand what shapes the next response, how reliable that view is, and what needs attention.">
+        <ContextOverviewDashboard
+          snapshot={snapshot}
+          files={snapshot?.files ?? files}
+          hasContextChanges={hasContextChanges}
+          isSavingContext={isSavingContext}
+          onNavigate={onNavigate}
+          onSaveContext={onSaveContext}
         />
       </InfoPanel>
     );
@@ -1507,6 +1516,302 @@ function SecondaryTabPanel({
       </div>
     </InfoPanel>
   );
+}
+
+function ContextOverviewDashboard({
+  snapshot,
+  files,
+  hasContextChanges,
+  isSavingContext,
+  onNavigate,
+  onSaveContext
+}: {
+  snapshot: ContextEngineSnapshot | null;
+  files: ContextEngineFile[];
+  hasContextChanges: boolean;
+  isSavingContext: boolean;
+  onNavigate: (tab: ContextEngineTab) => void;
+  onSaveContext: () => void;
+}) {
+  const budget = snapshot?.budget;
+  const problemFiles = files.filter((file) => file.status === "missing" || file.status === "truncated" || file.status === "error");
+  const enabledFiles = files.filter((file) => file.enabled && file.exists);
+  const excludedFiles = files.filter((file) => !file.enabled && file.preferenceSource === "agentos-sidecar");
+  const hasBudgetPressure = typeof budget?.usedPercent === "number" && budget.usedPercent >= 80;
+  const hasEstimatedRuntime = snapshot?.runtimeReport.status !== "exact";
+  const hasRecoveredPreferences = snapshot?.configuration.persistenceStatus === "recovered";
+  const health = problemFiles.length > 0
+    ? {
+        label: "Needs attention",
+        detail: `${problemFiles.length} context file${problemFiles.length === 1 ? " needs" : "s need"} review before the next response.`,
+        tone: "danger" as const
+      }
+    : hasBudgetPressure
+      ? {
+          label: "Budget pressure",
+          detail: `${budget?.usedPercent}% of the available context window is currently in use.`,
+          tone: "warning" as const
+        }
+      : hasEstimatedRuntime || hasRecoveredPreferences
+        ? {
+            label: "Estimated coverage",
+            detail: "AgentOS can project the next context, but OpenClaw has not supplied a complete exact report.",
+            tone: "warning" as const
+          }
+        : {
+            label: "Healthy",
+            detail: "Context sources are available and OpenClaw supplied an exact runtime report.",
+            tone: "success" as const
+          };
+  const primaryAction = hasContextChanges
+    ? {
+        label: "Save context",
+        detail: "Apply the context selection currently waiting to be saved.",
+        onClick: onSaveContext,
+        disabled: isSavingContext
+      }
+    : problemFiles.length > 0 || hasRecoveredPreferences
+      ? {
+          label: "Review project context",
+          detail: problemFiles.length > 0 ? "Inspect the files that need attention." : "Review the recovered context preferences.",
+          onClick: () => onNavigate("project"),
+          disabled: false
+        }
+      : hasBudgetPressure || hasEstimatedRuntime
+        ? {
+            label: "Review effective context",
+            detail: hasBudgetPressure ? "See which sources are using the most context." : "Review what AgentOS can verify about the next response.",
+            onClick: () => onNavigate("preview"),
+            disabled: false
+          }
+        : {
+            label: "Inspect effective context",
+            detail: "Review the verified context that will shape the next response.",
+            onClick: () => onNavigate("preview"),
+            disabled: false
+          };
+  const largestBudgetItems = [...(budget?.items ?? defaultBudgetItems())]
+    .filter((item) => typeof item.tokens === "number")
+    .sort((left, right) => (right.tokens ?? 0) - (left.tokens ?? 0))
+    .slice(0, 3);
+  const attentionItems = [
+    ...(problemFiles.length > 0 ? [`${problemFiles.length} context file${problemFiles.length === 1 ? " needs" : "s need"} attention.`] : []),
+    ...(snapshot?.configuration.persistenceWarning ? [snapshot.configuration.persistenceWarning] : []),
+    ...(snapshot?.runtimeReport.diagnostics ?? []),
+    ...(snapshot?.diagnostics ?? [])
+  ].filter((item, index, entries) => Boolean(item) && entries.indexOf(item) === index).slice(0, 3);
+
+  return (
+    <div className="space-y-3 sm:space-y-4">
+      <section className="overflow-hidden rounded-[11px] border border-[var(--ce-border)] bg-[linear-gradient(135deg,var(--ce-panel-strong),var(--ce-panel))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+        <div className="grid gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_minmax(235px,0.7fr)] lg:items-center lg:gap-6">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <ContextHealthBadge tone={health.tone} label={health.label} />
+              <span className="text-[11px] text-[var(--ce-text-subtle)]">
+                {snapshot?.agent ? formatAgentDisplayName(snapshot.agent) : "Agent context"}
+              </span>
+            </div>
+            <h4 className="mt-2 text-lg font-semibold tracking-[-0.02em] text-[var(--ce-text-strong)] sm:text-xl">Context is {health.label.toLowerCase()}</h4>
+            <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--ce-text-muted)] sm:text-sm">{health.detail}</p>
+          </div>
+          <div className="min-w-0 rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] p-2.5 sm:p-3">
+            <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--ce-text-subtle)]">Next best action</p>
+            <p className="mt-1 text-xs font-medium text-[var(--ce-text-strong)]">{primaryAction.detail}</p>
+            <Button
+              type="button"
+              className="mt-2 h-9 w-full rounded-[8px] border border-violet-200/35 bg-[linear-gradient(180deg,rgba(139,92,246,0.98),rgba(109,40,217,0.96))] px-3 text-xs text-white shadow-[0_6px_16px_rgba(124,58,237,0.24)] hover:bg-violet-500"
+              disabled={primaryAction.disabled}
+              onClick={primaryAction.onClick}
+            >
+              {isSavingContext && hasContextChanges ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ChevronRight className="mr-1.5 h-3.5 w-3.5" />}
+              {primaryAction.label}
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(250px,0.85fr)]">
+        <section className="rounded-[10px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3 sm:p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Gauge className="h-4 w-4 text-[var(--ce-accent)]" />
+                <h4 className="text-sm font-semibold text-[var(--ce-text-strong)]">Context budget</h4>
+              </div>
+              <p className="mt-1 text-xs text-[var(--ce-text-muted)]">{formatContextBudgetSource(snapshot)}</p>
+            </div>
+            <span className="shrink-0 text-right text-lg font-semibold tracking-[-0.03em] text-[var(--ce-text-strong)]">{formatContextUsage(snapshot)}</span>
+          </div>
+          <div className="mt-3 h-2.5 overflow-hidden rounded-full border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)]">
+            <div
+              className={cn(
+                "h-full rounded-full transition-[width]",
+                hasBudgetPressure ? "bg-[linear-gradient(90deg,#f59e0b,#fb7185)]" : "bg-[linear-gradient(90deg,#8b5cf6,#c084fc)]"
+              )}
+              style={{ width: `${Math.max(0, Math.min(100, budget?.usedPercent ?? 0))}%` }}
+            />
+          </div>
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {largestBudgetItems.length > 0 ? largestBudgetItems.map((item) => <ContextBudgetSource key={item.id} item={item} />) : (
+              <p className="rounded-[8px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] px-3 py-2 text-xs text-[var(--ce-text-muted)] sm:col-span-3">No token source breakdown is available yet.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-[10px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3 sm:p-4">
+          <div className="flex items-center gap-2">
+            <Activity className="h-4 w-4 text-[var(--ce-blue)]" />
+            <h4 className="text-sm font-semibold text-[var(--ce-text-strong)]">Runtime confidence</h4>
+          </div>
+          <p className="mt-2 text-base font-semibold text-[var(--ce-text-strong)]">{snapshot?.runtimeReport.status === "exact" ? "Exact OpenClaw report" : "AgentOS estimate"}</p>
+          <p className="mt-1 text-xs leading-5 text-[var(--ce-text-muted)]">{formatRuntimeConfidence(snapshot)}</p>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            <OverviewTag label={`${snapshot?.sessionCount ?? 0} session${snapshot?.sessionCount === 1 ? "" : "s"}`} />
+            <OverviewTag label={`${snapshot?.runtimeCount ?? 0} runtime${snapshot?.runtimeCount === 1 ? "" : "s"}`} />
+            {snapshot?.runtimeReport.updatedAt ? <OverviewTag label={formatRelativeTime(snapshot.runtimeReport.updatedAt)} /> : null}
+          </div>
+        </section>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(280px,0.9fr)]">
+        <OverviewStatusCard
+          icon={<FileText className="h-4 w-4 text-[var(--ce-accent)]" />}
+          title="Context delivery"
+          value={`${enabledFiles.length} available`}
+          detail={`${excludedFiles.length} excluded · ${problemFiles.length} need attention`}
+          actionLabel="Open project context"
+          onAction={() => onNavigate("project")}
+        />
+        <OverviewStatusCard
+          icon={<Sparkles className="h-4 w-4 text-[var(--ce-success-text)]" />}
+          title="Capabilities"
+          value={`${snapshot?.policy.effectiveSkills.length ?? 0} skills · ${snapshot?.policy.effectiveTools.length ?? 0} tools`}
+          detail={snapshot?.policy.declaredSkills.length ? "Explicit capability configuration" : "Using preset or inherited capabilities"}
+          actionLabel="Review capabilities"
+          onAction={() => onNavigate("skills")}
+        />
+        <OverviewStatusCard
+          icon={<History className="h-4 w-4 text-[var(--ce-blue)]" />}
+          title="Configuration"
+          value={formatConfigurationPersistence(snapshot)}
+          detail={formatConfigurationTimestamp(snapshot)}
+          actionLabel="Review context setup"
+          onAction={() => onNavigate("project")}
+        />
+      </div>
+
+      {attentionItems.length > 0 ? (
+        <section className="rounded-[10px] border border-[var(--ce-warning-border)] bg-[var(--ce-warning-bg)] p-3 sm:p-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-[var(--ce-warning-text)]" />
+            <h4 className="text-sm font-semibold text-[var(--ce-warning-text)]">Attention</h4>
+          </div>
+          <ul className="mt-2 space-y-1.5">
+            {attentionItems.map((item) => <li key={item} className="text-xs leading-5 text-[var(--ce-warning-text)]">{item}</li>)}
+          </ul>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function ContextHealthBadge({ tone, label }: { tone: "success" | "warning" | "danger"; label: string }) {
+  const Icon = tone === "success" ? CheckCircle2 : AlertTriangle;
+
+  return (
+    <span className={cn(
+      "inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em]",
+      tone === "success" && "border-[var(--ce-success-border)] bg-[var(--ce-success-bg)] text-[var(--ce-success-text)]",
+      tone === "warning" && "border-[var(--ce-warning-border)] bg-[var(--ce-warning-bg)] text-[var(--ce-warning-text)]",
+      tone === "danger" && "border-[var(--ce-danger-border)] bg-[var(--ce-danger-bg)] text-[var(--ce-danger-text)]"
+    )}>
+      <Icon className="h-3 w-3" />
+      {label}
+    </span>
+  );
+}
+
+function ContextBudgetSource({ item }: { item: ContextEngineBudgetItem }) {
+  const Icon = budgetIcons[item.id];
+
+  return (
+    <div className="min-w-0 rounded-[8px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] px-2.5 py-2">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <Icon className={cn("h-3.5 w-3.5 shrink-0", resolveBudgetTone(item.id))} />
+        <span className="truncate text-[11px] text-[var(--ce-text-muted)]">{item.label}</span>
+      </div>
+      <p className="mt-1 truncate text-sm font-semibold text-[var(--ce-text-strong)]">{formatTokenValue(item.tokens)} tokens</p>
+    </div>
+  );
+}
+
+function OverviewStatusCard({
+  icon,
+  title,
+  value,
+  detail,
+  actionLabel,
+  onAction
+}: {
+  icon: React.ReactNode;
+  title: string;
+  value: string;
+  detail: string;
+  actionLabel: string;
+  onAction: () => void;
+}) {
+  return (
+    <section className="min-w-0 rounded-[10px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3">
+      <div className="flex items-center gap-2">
+        {icon}
+        <h4 className="text-xs font-semibold text-[var(--ce-text-strong)]">{title}</h4>
+      </div>
+      <p className="mt-2 truncate text-sm font-semibold text-[var(--ce-text-strong)]" title={value}>{value}</p>
+      <p className="mt-1 min-h-8 text-[11px] leading-4 text-[var(--ce-text-muted)]">{detail}</p>
+      <button type="button" className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-[var(--ce-accent)] hover:text-[var(--ce-accent-strong)]" onClick={onAction}>
+        {actionLabel}
+        <ChevronRight className="h-3 w-3" />
+      </button>
+    </section>
+  );
+}
+
+function OverviewTag({ label }: { label: string }) {
+  return <span className="rounded-[6px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] px-1.5 py-0.5 text-[10px] text-[var(--ce-text-muted)]">{label}</span>;
+}
+
+function formatContextBudgetSource(snapshot: ContextEngineSnapshot | null) {
+  if (!snapshot?.budget.usedTokens) {
+    return "OpenClaw has not exposed a reliable total context value yet.";
+  }
+
+  return snapshot.budget.usedSource === "reported"
+    ? "Total reported by OpenClaw for the latest runtime context."
+    : "Total estimated by AgentOS from the available context sources.";
+}
+
+function formatRuntimeConfidence(snapshot: ContextEngineSnapshot | null) {
+  if (!snapshot) {
+    return "Runtime context is unavailable until the agent snapshot loads.";
+  }
+
+  if (snapshot.runtimeReport.status === "exact") {
+    return `${snapshot.runtimeReport.injectedFiles.length} injected file${snapshot.runtimeReport.injectedFiles.length === 1 ? "" : "s"} reported by ${snapshot.runtimeReport.source.replace(/-/g, " ")}.`;
+  }
+
+  return "OpenClaw has not exposed a complete session context report, so token and injection coverage are estimated.";
+}
+
+function formatConfigurationTimestamp(snapshot: ContextEngineSnapshot | null) {
+  if (!snapshot) {
+    return "Context preferences are loading.";
+  }
+
+  const updatedAt = snapshot.configuration.updatedAt ? Date.parse(snapshot.configuration.updatedAt) : null;
+  return updatedAt && !Number.isNaN(updatedAt)
+    ? `Updated ${formatRelativeTime(updatedAt)}`
+    : snapshot.configuration.storagePath;
 }
 
 function SkillsToolsPanel({
@@ -1807,24 +2112,6 @@ function InfoPanel({
       <p className="mt-1 text-xs text-[var(--ce-text-muted)]">{subtitle}</p>
       <div className="mt-3 sm:mt-4">{children}</div>
     </section>
-  );
-}
-
-function OverviewMetric({
-  label,
-  value,
-  detail
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-}) {
-  return (
-    <div className="rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3">
-      <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--ce-text-subtle)]">{label}</p>
-      <p className="mt-1.5 truncate text-base font-semibold text-[var(--ce-text-strong)]">{value}</p>
-      {detail ? <p className="mt-1 truncate text-xs text-[var(--ce-text-subtle)]">{detail}</p> : null}
-    </div>
   );
 }
 

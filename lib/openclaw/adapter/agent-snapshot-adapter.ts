@@ -41,6 +41,15 @@ export type SnapshotAgentEntry = {
   relationships: RelationshipRecord[];
 };
 
+export function resolveSnapshotAgentSkills(
+  configuredSkills: string[] | undefined,
+  manifestSkillIds: string[] | undefined
+) {
+  return filterAgentPolicySkills(
+    configuredSkills === undefined ? manifestSkillIds ?? [] : configuredSkills
+  );
+}
+
 export function buildSnapshotAgentEntry(input: {
   rawAgent: AgentPayload[number];
   configured: AgentConfigPayload[number] | undefined;
@@ -57,7 +66,10 @@ export function buildSnapshotAgentEntry(input: {
   gatewayRpcOk: boolean;
   profile: OpenClawAgent["profile"];
 }) {
-  const configuredSkills = filterAgentPolicySkills(input.configured?.skills ?? []);
+  const configuredSkills = resolveSnapshotAgentSkills(
+    input.configured?.skills,
+    input.manifestAgent?.skillIds
+  );
   const workerProfile = input.manifestAgent?.workerProfile ?? null;
   const agentName = resolveSnapshotAgentDisplayName(
     input.rawAgent.id,

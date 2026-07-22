@@ -2050,10 +2050,13 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       );
       const config = cloneJsonObject(isObjectRecord(snapshot.config) ? snapshot.config : {});
       const currentValue = readConfigPath(config, path);
+      const mustPersistAgentRegistry = operation === "config.set" && path === "agents.list";
 
       if (
-        (operation === "config.unset" && currentValue === undefined) ||
-        (operation === "config.set" && jsonValuesEqual(currentValue, value))
+        !mustPersistAgentRegistry && (
+          (operation === "config.unset" && currentValue === undefined) ||
+          (operation === "config.set" && jsonValuesEqual(currentValue, value))
+        )
       ) {
         const configMutation: OpenClawConfigMutationMetadata = {
           path,
@@ -2086,6 +2089,10 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       const patchParams: Record<string, unknown> = {
         raw: JSON.stringify(patch)
       };
+
+      if (path === "agents.list") {
+        patchParams.replacePaths = ["agents.list[].skills"];
+      }
 
       if (baseHash) {
         patchParams.baseHash = baseHash;

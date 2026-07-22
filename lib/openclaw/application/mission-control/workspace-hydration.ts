@@ -4,7 +4,8 @@ import { stat } from "node:fs/promises";
 
 import {
   buildSnapshotAgentEntry,
-  resolveSnapshotAgentDisplayName
+  resolveSnapshotAgentDisplayName,
+  resolveSnapshotAgentSkills
 } from "@/lib/openclaw/adapter/agent-snapshot-adapter";
 import { readAgentBootstrapProfile } from "@/lib/openclaw/adapter/agent-profile-adapter";
 import {
@@ -19,7 +20,6 @@ import type {
   GatewayStatusPayload,
   StatusPayload
 } from "@/lib/openclaw/client/gateway-client";
-import { filterAgentPolicySkills } from "@/lib/openclaw/domains/agent-config";
 import { sortRuntimesByUpdatedAtDesc } from "@/lib/openclaw/domains/runtime-history";
 import type { SessionsPayload } from "@/lib/openclaw/domains/session-catalog";
 import {
@@ -159,7 +159,10 @@ export async function hydrateMissionControlWorkspaceGraph(input: {
       const profile = await readAgentBootstrapProfile(rawAgent.workspace, {
         agentId: rawAgent.id,
         agentName: agentDisplayName,
-        configuredSkills: filterAgentPolicySkills(configured?.skills ?? []),
+        configuredSkills: resolveSnapshotAgentSkills(
+          configured?.skills,
+          manifestAgent?.skillIds
+        ),
         configuredTools: uniqueStrings([
           ...(manifestAgent?.toolIds ?? []),
           ...((configured?.tools?.fs?.workspaceOnly || manifestAgent?.policy?.fileAccess === "workspace-only")

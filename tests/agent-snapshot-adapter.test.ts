@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildSnapshotAgentEntry } from "@/lib/openclaw/adapter/agent-snapshot-adapter";
+import {
+  buildSnapshotAgentEntry,
+  resolveSnapshotAgentSkills
+} from "@/lib/openclaw/adapter/agent-snapshot-adapter";
 import { resolveAgentPolicy } from "@/lib/openclaw/agent-presets";
 
 test("snapshot agent entry prefers saved customization over raw runtime metadata", () => {
@@ -110,4 +113,16 @@ test("snapshot agent entry falls back to configured heartbeat when live heartbea
 
   assert.equal(entry.agent.heartbeat.enabled, true);
   assert.equal(entry.agent.heartbeat.every, "30m");
+});
+
+test("snapshot skills recover the AgentOS manifest selection only when OpenClaw omits its allowlist", () => {
+  assert.deepEqual(
+    resolveSnapshotAgentSkills(undefined, ["github", "clawhub", "agent-policy-worker"]),
+    ["github", "clawhub"]
+  );
+  assert.deepEqual(
+    resolveSnapshotAgentSkills(["project-builder", "agent-policy-worker"], ["github"]),
+    ["project-builder"]
+  );
+  assert.deepEqual(resolveSnapshotAgentSkills([], ["github"]), []);
 });

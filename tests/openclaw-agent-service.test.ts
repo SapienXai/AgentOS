@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 
 import {
@@ -195,4 +197,22 @@ test("explicit Worker Profile identity values take precedence over legacy fields
   });
 
   assert.equal(patch?.identity?.theme, null);
+});
+
+test("capability updates keep their freshly written agent config instead of replaying a stale workspace snapshot", () => {
+  const source = readFileSync(
+    path.join(process.cwd(), "lib/openclaw/application/agent-service.ts"),
+    "utf8"
+  );
+  const updateAgentSource = source.slice(
+    source.indexOf("export async function updateAgent"),
+    source.indexOf("export async function deleteAgent")
+  );
+
+  assert.match(updateAgentSource, /skills: uniqueStrings\(\[\.\.\.nextDeclaredSkills, policySkillId\]\)/);
+  assert.match(updateAgentSource, /checking agent skill configuration access/);
+  assert.match(updateAgentSource, /assertGatewayNativeConfigMutationAccess/);
+  assert.match(updateAgentSource, /assertAgentSkillConfigPersisted\(agentId, nextDeclaredSkills\)/);
+  assert.match(updateAgentSource, /invalidateMissionControlSnapshotCache\(\);/);
+  assert.doesNotMatch(updateAgentSource, /syncWorkspaceAgentPolicySkills\(resolvedWorkspacePath\)/);
 });

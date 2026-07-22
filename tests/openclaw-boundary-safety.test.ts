@@ -1051,6 +1051,24 @@ test("context engine skills and tools uses real capability state and shared edit
   assert.match(shellSource, /onSaved=\{\(\) => setCapabilitiesRevision\(\(current\) => current \+ 1\)\}/);
 });
 
+test("context engine overview is an actionable health dashboard backed by live context state", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/context-engine-dialog.tsx"), "utf8");
+
+  assert.match(source, /<ContextOverviewDashboard/);
+  assert.match(source, /hasContextChanges=\{hasContextChanges\}/);
+  assert.match(source, /onNavigate=\{setActiveTab\}/);
+  assert.match(source, /problemFiles = files\.filter/);
+  assert.match(source, /hasBudgetPressure/);
+  assert.match(source, /snapshot\?\.runtimeReport\.status !== "exact"/);
+  assert.match(source, /label: "Save context"/);
+  assert.match(source, /label: "Review project context"/);
+  assert.match(source, /label: "Review effective context"/);
+  assert.match(source, /largestBudgetItems/);
+  assert.match(source, /Context delivery/);
+  assert.match(source, /Runtime confidence/);
+  assert.match(source, /sm:grid-cols-2 xl:grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)_minmax\(280px,0\.9fr\)\]/);
+});
+
 test("model dialogs use mobile fullscreen layouts with reachable actions", () => {
   const pickerSource = readFileSync(path.join(rootDir, "components/mission-control/agent-model-picker-dialog.tsx"), "utf8");
   const librarySource = readFileSync(path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"), "utf8");

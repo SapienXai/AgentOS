@@ -2282,7 +2282,7 @@ test("native WS gateway client mutates config through Gateway snapshots", async 
   assert.deepEqual(fallback.calls, []);
 });
 
-test("native WS gateway client skips config.patch when config value is unchanged", async () => {
+test("native WS gateway client persists agents.list even when the Gateway snapshot already matches", async () => {
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
     globalThis.queueMicrotask(() => {
@@ -2316,8 +2316,18 @@ test("native WS gateway client skips config.patch when config value is unchanged
 
   const result = await client.setConfig("agents.list", [{ id: "agent-1", workspace: "/workspace" }], { strictJson: true });
 
-  assert.match(result.stdout, /"appliedVia":"noop"/);
-  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "config.get"]);
+  assert.match(result.stdout, /"appliedVia":"config.patch"/);
+  assert.deepEqual(sentFrames.map((frame) => frame.method), [
+    "connect",
+    "config.get",
+    "config.schema.lookup",
+    "config.patch"
+  ]);
+  assert.deepEqual(sentFrames[3]?.params, {
+    raw: JSON.stringify({ agents: { list: [{ id: "agent-1", workspace: "/workspace" }] } }),
+    replacePaths: ["agents.list[].skills"],
+    baseHash: "hash-1"
+  });
   assert.deepEqual(fallback.calls, []);
 });
 

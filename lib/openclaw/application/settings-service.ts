@@ -598,7 +598,7 @@ export async function repairGatewayNativeDeviceAccess(
 ): Promise<GatewayNativeDeviceAccessRepairResult> {
   const readDeviceAuthToken = options.readDeviceAuthToken ?? readLocalOpenClawDeviceAuthToken;
   const requiredScopes = normalizeGatewayRepairScopes(options.requiredScopes);
-  const nativeProbe = options.nativeProbe ?? probeGatewayNativeStatusForDeviceAccessRepair;
+  const nativeProbe = options.nativeProbe ?? assertGatewayNativeConfigMutationAccess;
   let probeSucceeded = false;
 
   try {
@@ -706,15 +706,15 @@ async function approveLatestOpenClawDeviceAccess(requiredScopes: string[]) {
   );
 }
 
-async function probeGatewayNativeStatusForDeviceAccessRepair() {
+export async function assertGatewayNativeConfigMutationAccess() {
   const client = new NativeWsOpenClawGatewayClient();
 
   try {
-    return await client.callNative("status", {}, {
+    return await client.callNative("config.schema.lookup", { path: "agents.list" }, {
       timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
     });
   } finally {
-    client.close("gateway device access repair probe completed");
+    client.close("gateway config mutation access probe completed");
   }
 }
 

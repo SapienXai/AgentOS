@@ -27,6 +27,7 @@ import {
   invalidateMissionControlSnapshotCache
 } from "@/lib/openclaw/application/mission-control-service";
 import { ensureOpenClawModelRuntimeConfig } from "@/lib/openclaw/application/model-provider-state-service";
+import { assertGatewayNativeConfigMutationAccess } from "@/lib/openclaw/application/settings-service";
 import {
   buildAgentPolicySkillId,
   buildWorkspaceAgentStatePath,
@@ -416,6 +417,13 @@ export async function updateAgent(input: AgentUpdateInput) {
     input.sandbox === undefined &&
     input.memorySearch === undefined;
 
+  if (input.skills !== undefined) {
+    await runAgentGatewayMutation(
+      "checking agent skill configuration access",
+      assertGatewayNativeConfigMutationAccess
+    );
+  }
+
   if (onlyModelChanged) {
     await prepareAgentModelRuntimeConfig(nextModelId);
 
@@ -527,6 +535,9 @@ export async function updateAgent(input: AgentUpdateInput) {
     },
     snapshot
   );
+  if (input.skills !== undefined) {
+    await assertAgentSkillConfigPersisted(agentId, nextDeclaredSkills);
+  }
   const nextDeclaredTools =
     input.tools === undefined
       ? shouldResetTools
@@ -562,7 +573,6 @@ export async function updateAgent(input: AgentUpdateInput) {
   );
 
   invalidateMissionControlSnapshotCache();
-  await syncWorkspaceAgentPolicySkills(resolvedWorkspacePath);
 
   return {
     agentId,
@@ -806,6 +816,18 @@ async function syncAgentPolicySkills(agentIds: string[], snapshot?: MissionContr
 
 async function upsertAgentConfigEntryWithRecovery(...args: Parameters<typeof upsertAgentConfigEntry>) {
   return runAgentGatewayMutation("syncing the agent config", () => upsertAgentConfigEntry(...args));
+}
+
+async function assertAgentSkillConfigPersisted(agentId: string, expectedSkills: string[]) {
+  const configList = await readAgentConfigList();
+  const persistedAgent = configList.find((entry) => entry.id === agentId);
+  const persistedSkills = filterAgentPolicySkills(persistedAgent?.skills ?? []);
+
+  if (!persistedAgent || !areSameStringSet(persistedSkills, expectedSkills)) {
+    throw new Error(
+      "OpenClaw Gateway did not persist the agent skill configuration. Repair AgentOS device access in Gateway settings, then retry."
+    );
+  }
 }
 
 async function runAgentGatewayMutation<T>(operationLabel: string, operation: () => Promise<T>) {
