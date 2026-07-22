@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, Check, ChevronDown, Copy, Info, LoaderCircle, Sq
 import { motion, useReducedMotion } from "motion/react";
 
 import { Button } from "@/components/ui/button";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import {
   isOpenClawMissionReady,
@@ -305,7 +306,12 @@ export function OpenClawOnboarding({
             />
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-6 pb-24 pt-6 sm:px-8 lg:px-12 [-webkit-overflow-scrolling:touch]">
+          <div
+            className={cn(
+              "min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-6 pb-24 pt-6 sm:px-8 lg:px-12 [-webkit-overflow-scrolling:touch]",
+              visualStage === "system" && "sm:overflow-y-hidden"
+            )}
+          >
             {renderLaunchpad ? (
               <LaunchpadStage
                 surfaceTheme={surfaceTheme}
@@ -782,19 +788,22 @@ function SetupSystemStage({
   phaseLabel: string;
   onOpenGatewayAuthSettings: () => void;
 }) {
-  return (
-    <div className="mx-auto max-w-[860px]">
-      <h2 className="text-[18px] font-semibold tracking-[-0.01em]">System Setup</h2>
-      <div className="mt-1 flex items-baseline justify-between gap-4 max-sm:flex-col max-sm:items-start max-sm:gap-1">
-        <p className="text-[12px] leading-5 text-muted-foreground">
-          Install the CLI, start the gateway, and verify RPC.
-        </p>
-        <p className="shrink-0 text-right text-[10px] font-semibold uppercase tracking-[0.14em] text-primary max-sm:text-left">
-          Step 1 of 3
-        </p>
-      </div>
+  const activeStep = steps.find((step) => step.state === "current");
+  const isRuntimeVerification = activeStep?.id === "runtime";
+  const isSetupRunning = run.runState === "running";
 
-      <div className="mt-3 space-y-2">
+  return (
+    <div className="mx-auto max-w-[720px]">
+      <PikoLoader
+        open={isSetupRunning}
+        title={isRuntimeVerification ? "Verifying OpenClaw runtime" : "Setting up OpenClaw"}
+        description={
+          isRuntimeVerification
+            ? statusCopy || "Waiting for Gateway RPC and runtime storage to become ready."
+            : statusCopy || activeStep?.description || "Preparing the local OpenClaw runtime."
+        }
+      />
+      <div className="space-y-2">
         {steps.map((step, index) => (
           <SetupTaskRow
             key={step.id}
@@ -938,10 +947,10 @@ function SetupRunDetailsPanel({
   return (
     <div
       className={cn(
-        "mt-3 overflow-hidden rounded-[12px] border",
+        "mt-3 overflow-hidden rounded-[12px] border shadow-[0_10px_24px_rgba(15,23,42,0.06)]",
         surfaceTheme === "light"
-          ? "border-border/80 bg-white/66"
-          : "border-white/10 bg-white/[0.035]"
+          ? "border-slate-200 bg-white"
+          : "border-slate-700/80 bg-slate-950 shadow-[0_12px_28px_rgba(0,0,0,0.24)]"
       )}
     >
       <button
@@ -988,8 +997,8 @@ function SetupRunDetailsPanel({
             className={cn(
               "max-h-[92px] min-h-[46px] overflow-auto whitespace-pre-wrap break-words rounded-[8px] border px-2.5 py-1.5 font-mono text-[9px] leading-3",
               surfaceTheme === "light"
-                ? "border-border/70 bg-muted/35 text-foreground"
-                : "border-white/8 bg-black/20 text-slate-200"
+                ? "border-slate-200 bg-slate-50 text-foreground"
+                : "border-slate-700/80 bg-black text-slate-200"
             )}
           >
             {run.log || "No output yet.\n\nStart setup to stream OpenClaw logs here."}
@@ -1082,7 +1091,9 @@ function SetupTaskRow({
       layout
       className={cn(
         "relative flex min-h-[50px] items-center gap-3 overflow-hidden rounded-[12px] border px-3 py-2 max-sm:grid max-sm:grid-cols-[30px_minmax(0,1fr)] max-sm:items-start max-sm:gap-x-2.5 max-sm:gap-y-1.5",
-        surfaceTheme === "light" ? "border-border/80 bg-white/72" : "border-white/10 bg-white/[0.035]",
+        surfaceTheme === "light"
+          ? "border-slate-200 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
+          : "border-slate-700/80 bg-slate-950 shadow-[0_10px_24px_rgba(0,0,0,0.2)]",
         isActive && "border-primary/24"
       )}
     >
@@ -1117,8 +1128,8 @@ function SetupTaskRow({
         )}
       </span>
       <div className="relative z-[1] min-w-0 flex-1">
-        <p className="text-[13px] font-semibold tracking-[-0.01em]">{step.label}</p>
-        <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{step.description}</p>
+        <p className="text-[14px] font-semibold tracking-[-0.01em]">{step.label}</p>
+        <p className="mt-0.5 text-[12px] leading-4 text-muted-foreground">{step.description}</p>
       </div>
       <span
         className={cn(
@@ -1161,10 +1172,10 @@ function SetupStatusPanel({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
   return (
     <div
       className={cn(
-        "mt-3 rounded-[12px] border px-3 py-2.5",
+        "mt-3 rounded-[12px] border px-3 py-2.5 shadow-[0_10px_24px_rgba(15,23,42,0.06)]",
         surfaceTheme === "light"
-          ? "border-primary/18 bg-primary/[0.035]"
-          : "border-primary/20 bg-primary/[0.075]"
+          ? "border-primary/20 bg-[#f8f5ff]"
+          : "border-primary/25 bg-slate-900 shadow-[0_12px_28px_rgba(0,0,0,0.24)]"
       )}
     >
       <div className="flex items-start gap-3">

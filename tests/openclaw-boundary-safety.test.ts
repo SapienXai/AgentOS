@@ -996,6 +996,21 @@ test("system setup action shows a loader until lightweight status resolves", () 
   assert.match(source, /"Checking\.\.\."/);
 });
 
+test("system setup shows Piko while runtime verification is running", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding.tsx"), "utf8");
+
+  assert.match(source, /import \{ PikoLoader \} from "@\/components\/ui\/piko-loader"/);
+  assert.match(source, /const isRuntimeVerification = activeStep\?\.id === "runtime"/);
+  assert.match(source, /<PikoLoader\s+open=\{isSetupRunning\}/);
+  assert.match(source, /title=\{isRuntimeVerification \? "Verifying OpenClaw runtime" : "Setting up OpenClaw"\}/);
+  assert.match(source, /<div className="mx-auto max-w-\[720px\]">/);
+  assert.doesNotMatch(source, />System Setup<\/h2>/);
+  assert.doesNotMatch(source, />Step 1 of 3</);
+  assert.match(source, /visualStage === "system" && "sm:overflow-y-hidden"/);
+  assert.match(source, /border-slate-200 bg-white shadow-\[0_8px_20px_rgba\(15,23,42,0\.05\)\]/);
+  assert.match(source, /border-slate-700\/80 bg-slate-950 shadow-\[0_10px_24px_rgba\(0,0,0,0\.2\)\]/);
+});
+
 function resolveLocalOpenClawImport(filePath: string, specifier: string) {
   if (specifier.startsWith("@/")) {
     return `${specifier.slice(2)}.ts`;
