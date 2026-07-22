@@ -164,6 +164,7 @@ export function OpenClawOnboarding({
   );
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const [selectedVisualStage, setSelectedVisualStage] = useState<OnboardingVisualStage | null>(null);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const systemPhaseForSteps = onboardingSystemReady ? "ready" : systemPhase;
   const systemSteps = buildSystemSteps(snapshot, systemPhaseForSteps, {
     forcePending: systemSetupRequired,
@@ -246,6 +247,16 @@ export function OpenClawOnboarding({
     };
   }, []);
 
+  useEffect(() => {
+    const mobileQuery = window.matchMedia("(max-width: 639px)");
+    const updateViewport = () => setIsMobileViewport(mobileQuery.matches);
+
+    updateViewport();
+    mobileQuery.addEventListener("change", updateViewport);
+
+    return () => mobileQuery.removeEventListener("change", updateViewport);
+  }, []);
+
   if (!portalRoot) {
     return null;
   }
@@ -256,7 +267,7 @@ export function OpenClawOnboarding({
       animate={{ opacity: 1, backdropFilter: "blur(12px)" }}
       exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
       className={cn(
-        "openclaw-onboarding-backdrop fixed inset-0 z-[1000] pointer-events-auto isolate flex h-dvh w-screen max-w-full items-center justify-center overflow-hidden px-4 py-3 sm:px-6 sm:py-4",
+        "openclaw-onboarding-backdrop fixed inset-0 z-[1000] pointer-events-auto isolate flex h-dvh w-screen max-w-full items-center justify-center overflow-hidden p-0 sm:px-6 sm:py-4",
         surfaceTheme === "light"
           ? "openclaw-onboarding-backdrop--light bg-[radial-gradient(circle_at_50%_4%,rgba(255,255,255,0.98),rgba(255,250,247,0.94)_34%,rgba(250,243,239,0.96)_72%)]"
           : "openclaw-onboarding-backdrop--dark bg-[radial-gradient(circle_at_50%_0%,rgba(38,10,18,0.46),rgba(6,8,13,0.96)_42%,rgba(2,4,8,0.98))]"
@@ -264,28 +275,28 @@ export function OpenClawOnboarding({
     >
       <SetupBackground surfaceTheme={surfaceTheme} />
       <motion.div
-        initial={{ opacity: 0, y: 18, scale: 0.885 }}
-        animate={{ opacity: 1, y: 0, scale: 0.9 }}
+        initial={{ opacity: 0, y: 18, scale: isMobileViewport ? 1 : 0.885 }}
+        animate={{ opacity: 1, y: 0, scale: isMobileViewport ? 1 : 0.9 }}
         className={cn(
-          "relative z-10 flex w-full min-h-0 max-h-[calc(100dvh-24px)] max-w-[980px] flex-col overflow-hidden rounded-[18px] border backdrop-blur-2xl sm:max-h-[calc(100dvh-32px)]",
+          "relative z-10 flex h-dvh w-full min-h-0 max-h-dvh max-w-none flex-col overflow-hidden rounded-none border-0 sm:h-auto sm:max-h-[calc(100dvh-32px)] sm:max-w-[980px] sm:rounded-[18px] sm:border sm:backdrop-blur-2xl",
           surfaceTheme === "light"
-            ? "border-border/80 bg-card/92 text-foreground shadow-[0_24px_70px_rgba(15,23,42,0.14)]"
-            : "border-primary/18 bg-[hsl(var(--card)/0.88)] text-foreground shadow-[0_0_0_1px_hsl(var(--primary)/0.08),0_28px_90px_rgba(0,0,0,0.48)]"
+            ? "bg-card text-foreground shadow-none sm:border-border/80 sm:bg-card/92 sm:shadow-[0_24px_70px_rgba(15,23,42,0.14)]"
+            : "bg-background text-foreground shadow-none sm:border-primary/18 sm:bg-[hsl(var(--card)/0.88)] sm:shadow-[0_0_0_1px_hsl(var(--primary)/0.08),0_28px_90px_rgba(0,0,0,0.48)]"
         )}
       >
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="px-6 pt-5 sm:px-8 sm:pt-6 lg:px-10">
+          <div className="px-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-8 sm:pt-6 lg:px-10">
             <div className="flex justify-center">
               <div className="flex min-w-0 flex-col items-center text-center">
-                <div className="flex items-center justify-center gap-4">
+                <div className="flex items-center justify-center gap-3 sm:gap-4">
                   <AgentOSMark />
                   <div className="min-w-0">
-                    <span className="block text-[23px] font-bold tracking-[-0.02em]">
+                    <span className="block text-[21px] font-bold tracking-[-0.02em] sm:text-[23px]">
                       Agent<span className="text-primary">OS</span>
                     </span>
                   </div>
                 </div>
-                <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
+                <p className="mt-1.5 text-[12px] leading-4 text-muted-foreground sm:mt-2 sm:text-[13px] sm:leading-5">
                   Connect your local OpenClaw and prepare your environment.
                 </p>
               </div>
@@ -308,7 +319,7 @@ export function OpenClawOnboarding({
 
           <div
             className={cn(
-              "min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-6 pb-24 pt-6 sm:px-8 lg:px-12 [-webkit-overflow-scrolling:touch]",
+              "min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-5 pt-4 sm:px-8 sm:pb-24 sm:pt-6 lg:px-12 [-webkit-overflow-scrolling:touch]",
               visualStage === "system" && "sm:overflow-y-hidden"
             )}
           >
@@ -358,12 +369,12 @@ export function OpenClawOnboarding({
 
           <div
             className={cn(
-              "mt-auto shrink-0 flex flex-col gap-4 border-t px-6 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-8 lg:px-10",
+              "mt-auto shrink-0 flex flex-col gap-3 border-t px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-8 sm:py-4 lg:px-10",
               surfaceTheme === "light" ? "border-border/70 bg-white/36" : "border-white/8 bg-black/10"
             )}
           >
-            <div className="flex min-w-0 flex-1 items-center gap-4">
-              <span className="shrink-0 text-[13px] text-muted-foreground">Overall progress</span>
+            <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+              <span className="shrink-0 text-[12px] text-muted-foreground sm:text-[13px]">Overall progress</span>
               <div className="h-1.5 w-full max-w-[190px] overflow-hidden rounded-full bg-muted">
                 <motion.div
                   className="h-full rounded-full bg-primary"
@@ -375,7 +386,7 @@ export function OpenClawOnboarding({
               <span className="text-[13px] font-semibold text-primary">{progressPercent}%</span>
             </div>
 
-            <div className="flex flex-wrap items-center justify-end gap-3">
+            <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-end sm:gap-3">
               {renderLaunchpad ? (
                 <span
                   className={cn(
@@ -422,7 +433,7 @@ export function OpenClawOnboarding({
                       disabled={!canEnterAgentOS}
                       title={canEnterAgentOS ? "Open AgentOS." : "Finish system, model, and workspace setup before entering AgentOS."}
                       className={cn(
-                        "h-11 min-w-[190px] rounded-full px-5 text-[14px] transition-transform active:scale-[0.98]",
+                        "h-11 min-w-[190px] rounded-full px-5 text-[14px] transition-transform active:scale-[0.98] max-sm:min-w-0 max-sm:flex-1",
                         surfaceTheme === "light"
                           ? "bg-primary text-primary-foreground shadow-[0_14px_30px_hsl(var(--primary)/0.24)] hover:bg-primary/90"
                           : "bg-primary text-primary-foreground shadow-[0_14px_34px_hsl(var(--primary)/0.28)] hover:bg-primary/90"
@@ -448,7 +459,7 @@ export function OpenClawOnboarding({
                       type="button"
                       onClick={onCreateWorkspace}
                       className={cn(
-                        "h-11 min-w-[190px] rounded-full px-5 text-[14px] transition-transform active:scale-[0.98]",
+                        "h-11 min-w-[190px] rounded-full px-5 text-[14px] transition-transform active:scale-[0.98] max-sm:min-w-0 max-sm:flex-1",
                         surfaceTheme === "light"
                           ? "bg-primary text-primary-foreground shadow-[0_14px_30px_hsl(var(--primary)/0.24)] hover:bg-primary/90"
                           : "bg-primary text-primary-foreground shadow-[0_14px_34px_hsl(var(--primary)/0.28)] hover:bg-primary/90"
@@ -524,7 +535,7 @@ export function OpenClawOnboarding({
                       primaryAction.kind === "select-model"
                     }
                     className={cn(
-                      "h-11 min-w-[190px] rounded-full px-5 text-[14px] transition-transform active:scale-[0.98]",
+                      "h-11 min-w-[190px] rounded-full px-5 text-[14px] transition-transform active:scale-[0.98] max-sm:min-w-0 max-sm:flex-1",
                       surfaceTheme === "light"
                         ? "bg-primary text-primary-foreground shadow-[0_14px_30px_hsl(var(--primary)/0.24)] hover:bg-primary/90"
                         : "bg-primary text-primary-foreground shadow-[0_14px_34px_hsl(var(--primary)/0.28)] hover:bg-primary/90"
@@ -707,7 +718,7 @@ function SetupStepper({
   ] as const;
 
   return (
-    <div className="mx-auto mt-6 grid max-w-[760px] grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-3 max-md:w-full max-md:grid-cols-[1fr_auto_1fr_auto_1fr] max-md:gap-1.5">
+    <div className="mx-auto mt-4 grid max-w-[760px] grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-1.5 sm:mt-6 sm:gap-3 max-md:w-full max-md:grid-cols-[1fr_auto_1fr_auto_1fr]">
       {steps.map((step, index) => {
         const isActive = activeStep === step.order;
         const isComplete = step.complete;
@@ -731,7 +742,7 @@ function SetupStepper({
               <span className={cn("block text-[13px] font-semibold max-md:text-[10px] max-md:leading-3", isActive ? "text-primary" : "text-foreground")}>
                 {step.label}
               </span>
-              <span className="mt-0.5 block text-[12px] leading-4 text-muted-foreground max-md:text-[8px] max-md:leading-[0.65rem]">{step.description}</span>
+              <span className="mt-0.5 hidden text-[12px] leading-4 text-muted-foreground sm:block">{step.description}</span>
             </span>
           </div>
         );

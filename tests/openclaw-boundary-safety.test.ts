@@ -1009,6 +1009,40 @@ test("system setup shows Piko while runtime verification is running", () => {
   assert.match(source, /visualStage === "system" && "sm:overflow-y-hidden"/);
   assert.match(source, /border-slate-200 bg-white shadow-\[0_8px_20px_rgba\(15,23,42,0\.05\)\]/);
   assert.match(source, /border-slate-700\/80 bg-slate-950 shadow-\[0_10px_24px_rgba\(0,0,0,0\.2\)\]/);
+  assert.match(source, /const \[isMobileViewport, setIsMobileViewport\] = useState\(false\)/);
+  assert.match(source, /window\.matchMedia\("\(max-width: 639px\)"\)/);
+  assert.match(source, /h-dvh w-full min-h-0 max-h-dvh max-w-none flex-col overflow-hidden rounded-none border-0/);
+});
+
+test("model dialogs use mobile fullscreen layouts with reachable actions", () => {
+  const pickerSource = readFileSync(path.join(rootDir, "components/mission-control/agent-model-picker-dialog.tsx"), "utf8");
+  const librarySource = readFileSync(path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"), "utf8");
+
+  assert.match(pickerSource, /h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0/);
+  assert.match(pickerSource, /hidden min-h-0 overflow-y-auto rounded-\[18px\] border p-2\.5 lg:block/);
+  assert.match(pickerSource, /<span className="ml-1\.5 text-\[0\.72rem\] lg:hidden">Library<\/span>/);
+  assert.match(pickerSource, /const \[mobileFiltersOpen, setMobileFiltersOpen\] = useState\(false\)/);
+  assert.match(pickerSource, /Filters\{activeFilterCount > 0/);
+  assert.match(librarySource, /h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0/);
+  assert.match(librarySource, /max-lg:\[&>button\]:w-\[154px\] lg:min-w-0 lg:flex-col/);
+  assert.match(librarySource, /safe-area-inset-top/);
+});
+
+test("model library keeps selected-model actions visible while browsing", () => {
+  const pickerSource = readFileSync(
+    path.join(rootDir, "components/mission-control/add-models/global-model-picker.tsx"),
+    "utf8"
+  );
+  const librarySource = readFileSync(
+    path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"),
+    "utf8"
+  );
+
+  assert.match(pickerSource, /sticky bottom-0 z-10/);
+  assert.match(pickerSource, /ready to add/);
+  assert.match(pickerSource, /onClearSelected/);
+  assert.match(librarySource, /function clearCatalogSelection\(\)/);
+  assert.match(librarySource, /onClearSelected=\{clearCatalogSelection\}/);
 });
 
 function resolveLocalOpenClawImport(filePath: string, specifier: string) {

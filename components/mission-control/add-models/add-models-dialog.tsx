@@ -530,11 +530,6 @@ export function AddModelsDialog({
     () => new Map(catalogModels.map((model) => [model.id, model] as const)),
     [catalogModels]
   );
-  const catalogProviderCount = useMemo(() => new Set(catalogModels.map((model) => model.provider)).size, [catalogModels]);
-  const catalogAddedCount = useMemo(
-    () => catalogModels.filter((model) => model.alreadyAdded).length,
-    [catalogModels]
-  );
   const catalogSelectedModelGroups = useMemo(() => {
     const selectedModelIds = new Set(catalogSelectedModelIds);
     const groups = new Map<string, string[]>();
@@ -1024,6 +1019,20 @@ export function AddModelsDialog({
     }
   }
 
+  function clearCatalogSelection() {
+    setProviderDrafts((current) => {
+      const next = { ...current };
+
+      for (const [providerId, draft] of Object.entries(next)) {
+        if (draft?.selectedModelIds.length) {
+          next[providerId] = { ...draft, selectedModelIds: [] };
+        }
+      }
+
+      return next;
+    });
+  }
+
   async function addCatalogProviderModels(providerId: string, modelIds: string[]) {
     const selectedModelIds = modelIds.filter((modelId) => {
       const model = catalogModelById.get(modelId);
@@ -1180,8 +1189,9 @@ export function AddModelsDialog({
       />
       <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        closeClassName="right-3 top-[max(0.75rem,env(safe-area-inset-top))] sm:right-4 sm:top-4"
         className={cn(
-          "flex h-[min(90dvh,900px)] max-h-[90dvh] w-[calc(100vw-48px)] max-w-[1420px] flex-col gap-0 overflow-hidden rounded-[26px] p-0 sm:w-[min(1420px,calc(100vw-64px))]",
+          "flex h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-[min(90dvh,900px)] sm:max-h-[90dvh] sm:w-[min(1420px,calc(100vw-64px))] sm:max-w-[1420px] sm:rounded-[26px] sm:border",
           isLight
             ? "agentos-light-modal border-border bg-card text-card-foreground shadow-[0_35px_100px_rgba(63,47,34,0.18),0_0_0_1px_rgba(120,92,66,0.08)]"
             : "border-white/12 bg-[#070b14] text-white shadow-[0_35px_130px_rgba(0,0,0,0.68),0_0_80px_rgba(124,58,237,0.13)]"
@@ -1189,7 +1199,7 @@ export function AddModelsDialog({
       >
         <DialogHeader
           className={cn(
-            "relative shrink-0 border-b px-6 py-4 pr-14",
+            "relative shrink-0 border-b px-4 pb-3.5 pt-[max(1rem,env(safe-area-inset-top))] pr-12 sm:px-6 sm:py-4",
             isLight
               ? "border-border bg-[radial-gradient(circle_at_8%_0%,hsl(var(--primary)/0.10),transparent_28%),linear-gradient(180deg,hsl(var(--card)),hsl(var(--muted)/0.64))]"
               : "border-white/10 bg-[radial-gradient(circle_at_8%_0%,rgba(124,58,237,0.16),transparent_28%),linear-gradient(180deg,rgba(11,17,30,0.98),rgba(7,11,20,0.98))]"
@@ -1227,8 +1237,8 @@ export function AddModelsDialog({
               : "bg-[linear-gradient(180deg,rgba(5,8,17,0.98),rgba(4,7,14,0.99))]"
           )}
         >
-          <div className={cn("flex shrink-0 flex-col border-b px-3 py-3 lg:min-h-0 lg:border-b-0 lg:border-r", isLight ? "border-border bg-card/65" : "border-white/10 bg-slate-950/25")}>
-            <div className="flex flex-col gap-1.5">
+          <div className={cn("flex shrink-0 flex-col overflow-x-auto border-b px-3 py-2.5 lg:min-h-0 lg:border-b-0 lg:border-r lg:py-3", isLight ? "border-border bg-card/65" : "border-white/10 bg-slate-950/25")}>
+            <div className="flex min-w-max flex-row gap-1.5 max-lg:[&>button]:w-[154px] lg:min-w-0 lg:flex-col">
               <button
                 type="button"
                 aria-pressed={sidebarFilter === "available"}
@@ -2515,29 +2525,7 @@ export function AddModelsDialog({
             </TabsContent>
 
             <TabsContent value="catalog" className="!mt-0 m-0 h-full">
-              <div className="space-y-3 px-3 py-3">
-                <div className={cn("rounded-[16px] border p-3", isLight ? "border-border bg-card shadow-card" : "border-white/10 bg-[linear-gradient(180deg,rgba(11,18,32,0.96),rgba(6,10,18,0.98))]")}>
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className={cn("font-display text-[0.78rem]", isLight ? "text-foreground" : "text-white")}>OpenClaw catalog</p>
-                      <p className={cn("mt-1 text-[9px] leading-[0.95rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
-                        Search the full OpenClaw model catalog, then load five more whenever you want to extend the list.
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      <Badge variant="muted" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
-                        {catalogModels.length} models
-                      </Badge>
-                      <Badge variant="muted" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
-                        {catalogProviderCount} providers
-                      </Badge>
-                      <Badge variant="muted" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
-                        {catalogAddedCount} added
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-
+              <div className="space-y-2 px-3 py-3">
                 {globalCatalogError ? (
                   <div className={cn("flex items-center justify-between gap-3 rounded-[18px] border px-4 py-3 text-[11px]", isLight ? "border-rose-200 bg-rose-50 text-rose-800" : "border-rose-400/20 bg-rose-400/[0.08] text-rose-100")}>
                     <span>{globalCatalogError}</span>
@@ -2581,6 +2569,7 @@ export function AddModelsDialog({
                   onAddSelected={() => {
                     void addSelectedCatalogModels();
                   }}
+                  onClearSelected={clearCatalogSelection}
                   onOpenProviders={(providerId) => {
                     setActiveTab("providers");
 

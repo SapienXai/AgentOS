@@ -11,6 +11,7 @@ import {
   Database,
   Grid2X2,
   Info,
+  Library,
   LoaderCircle,
   Plus,
   Search,
@@ -75,6 +76,7 @@ export function AgentModelPickerDialog({
   const [providerFilter, setProviderFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [sortMode, setSortMode] = useState("recent");
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [removingModelId, setRemovingModelId] = useState<string | null>(null);
   const [deleteTargetModelId, setDeleteTargetModelId] = useState<string | null>(null);
@@ -117,6 +119,7 @@ export function AgentModelPickerDialog({
     setProviderFilter("all");
     setTypeFilter("all");
     setSortMode("recent");
+    setMobileFiltersOpen(false);
     setError(null);
   }, [agentId, open]);
 
@@ -188,6 +191,7 @@ export function AgentModelPickerDialog({
         return haystack.includes(query);
       });
   }, [modelOptions, providerFilter, search, sortMode, typeFilter]);
+  const activeFilterCount = [providerFilter !== "all", typeFilter !== "all", sortMode !== "recent"].filter(Boolean).length;
 
   const selectedModel = selectedModelId
     ? findModelByCanonicalId(modelOptions, selectedModelId)
@@ -355,8 +359,9 @@ export function AgentModelPickerDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        closeClassName="right-3 top-[max(0.75rem,env(safe-area-inset-top))] sm:right-4 sm:top-4"
         className={cn(
-          "flex h-[min(94dvh,940px)] max-h-[94dvh] w-[calc(100vw-48px)] max-w-[1400px] flex-col gap-0 overflow-hidden rounded-[28px] p-0 sm:w-[min(1400px,calc(100vw-64px))]",
+          "flex h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-[min(94dvh,940px)] sm:max-h-[94dvh] sm:w-[min(1400px,calc(100vw-64px))] sm:max-w-[1400px] sm:rounded-[28px] sm:border",
           isLight
             ? "agentos-light-modal border-border bg-card text-card-foreground shadow-[0_30px_90px_rgba(63,47,34,0.18),0_0_0_1px_rgba(120,92,66,0.08)]"
             : "border-violet-400/45 bg-[#070a14] text-white shadow-[0_0_0_1px_rgba(168,85,247,0.18),0_30px_120px_rgba(3,7,18,0.72),0_0_80px_rgba(124,58,237,0.20)]"
@@ -364,7 +369,7 @@ export function AgentModelPickerDialog({
       >
         <DialogHeader
           className={cn(
-            "relative shrink-0 overflow-hidden border-b px-5 py-3.5 pr-12",
+            "relative shrink-0 overflow-hidden border-b px-4 pb-3.5 pt-[max(1rem,env(safe-area-inset-top))] pr-12 sm:px-5 sm:py-3.5",
             isLight
               ? "border-border bg-[radial-gradient(circle_at_15%_20%,rgba(236,72,153,0.10),transparent_32%),radial-gradient(circle_at_92%_12%,rgba(124,58,237,0.12),transparent_30%),linear-gradient(135deg,hsl(var(--card)),hsl(var(--muted)/0.64))]"
               : "border-white/10 bg-[radial-gradient(circle_at_15%_20%,rgba(236,72,153,0.16),transparent_32%),radial-gradient(circle_at_92%_12%,rgba(124,58,237,0.20),transparent_30%),linear-gradient(135deg,rgba(12,18,34,0.98),rgba(8,10,23,0.98))]"
@@ -386,6 +391,9 @@ export function AgentModelPickerDialog({
               <DialogTitle className={cn("font-display text-[1.3rem] leading-none tracking-[-0.04em]", isLight ? "text-foreground" : "text-white")}>
                 Change Model
               </DialogTitle>
+              <p className={cn("mt-1 text-[0.72rem] font-medium lg:hidden", isLight ? "text-foreground" : "text-slate-100")}>
+                {formatAgentDisplayName(agent)}
+              </p>
               <DialogDescription className={cn("mt-1 max-w-[620px] text-[0.78rem] leading-[1.15rem]", isLight ? "text-muted-foreground" : "text-slate-300")}>
                 Choose the model this agent will use.
               </DialogDescription>
@@ -395,7 +403,7 @@ export function AgentModelPickerDialog({
 
         <div
           className={cn(
-            "grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden p-3 lg:grid-cols-[300px_minmax(0,1fr)]",
+            "grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-hidden p-0 sm:gap-3 sm:p-3 lg:grid-cols-[300px_minmax(0,1fr)]",
             isLight
               ? "bg-[radial-gradient(circle_at_8%_85%,hsl(var(--primary)/0.08),transparent_28%),linear-gradient(180deg,hsl(var(--background)),hsl(var(--muted)/0.42))]"
               : "bg-[radial-gradient(circle_at_8%_85%,rgba(34,211,238,0.10),transparent_28%),linear-gradient(180deg,rgba(4,7,17,0.96),rgba(3,6,14,0.98))]"
@@ -403,7 +411,7 @@ export function AgentModelPickerDialog({
         >
           <aside
             className={cn(
-              "min-h-0 overflow-y-auto rounded-[18px] border p-2.5",
+              "hidden min-h-0 overflow-y-auto rounded-[18px] border p-2.5 lg:block",
               isLight
                 ? "border-border bg-card shadow-card"
                 : "border-white/10 bg-[linear-gradient(180deg,rgba(17,24,43,0.90),rgba(9,13,25,0.92))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
@@ -512,46 +520,61 @@ export function AgentModelPickerDialog({
 
           <section
             className={cn(
-              "min-h-0 overflow-hidden rounded-[18px] border p-2.5",
+              "flex min-h-0 flex-col overflow-hidden rounded-none border-0 p-4 sm:rounded-[18px] sm:border sm:p-2.5",
               isLight
                 ? "border-border bg-card shadow-card"
                 : "border-white/10 bg-[linear-gradient(180deg,rgba(10,15,30,0.82),rgba(5,8,18,0.86))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
             )}
           >
             <div className="flex flex-col gap-1.5 xl:flex-row">
-              <div className="relative min-w-0 flex-1">
-                <Search className={cn("pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2", isLight ? "text-muted-foreground" : "text-slate-500")} />
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search models..."
-                  className={cn("h-8 rounded-[11px] pl-9 text-[0.76rem]", isLight ? "border-input bg-card text-foreground" : "border-white/10 bg-slate-950/45 text-slate-100")}
-                />
+              <div className="flex min-w-0 flex-1 gap-1.5">
+                <div className="relative min-w-0 flex-1">
+                  <Search className={cn("pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2", isLight ? "text-muted-foreground" : "text-slate-500")} />
+                  <Input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search models..."
+                    className={cn("h-8 rounded-[11px] pl-9 text-[0.76rem]", isLight ? "border-input bg-card text-foreground" : "border-white/10 bg-slate-950/45 text-slate-100")}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setMobileFiltersOpen((current) => !current)}
+                  className="h-8 shrink-0 rounded-[11px] px-2.5 text-[0.72rem] xl:hidden"
+                  aria-expanded={mobileFiltersOpen}
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                  <span className="ml-1.5">Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}</span>
+                </Button>
               </div>
-              <NativeFilter value={providerFilter} onChange={setProviderFilter} ariaLabel="Provider filter" surfaceTheme={surfaceTheme}>
-                <option value="all">All providers</option>
-                {providerOptions.map((provider) => (
-                  <option key={provider} value={provider}>{formatModelProviderLabel(provider)}</option>
-                ))}
-              </NativeFilter>
-              <NativeFilter value={typeFilter} onChange={setTypeFilter} ariaLabel="Type filter" surfaceTheme={surfaceTheme}>
-                <option value="all">All types</option>
-                <option value="remote">Remote</option>
-                <option value="local">Local</option>
-                <option value="ready">Ready</option>
-                <option value="needs-setup">Needs setup</option>
-              </NativeFilter>
-              <NativeFilter value={sortMode} onChange={setSortMode} ariaLabel="Sort models" surfaceTheme={surfaceTheme}>
-                <option value="recent">Sort: Recent</option>
-                <option value="context">Sort: Context</option>
-                <option value="provider">Sort: Provider</option>
-              </NativeFilter>
-              <Button type="button" variant="secondary" className="h-8 rounded-[11px] px-3">
-                <SlidersHorizontal className="h-3.5 w-3.5" />
+              <div className={cn("grid grid-cols-2 gap-1.5 xl:flex", mobileFiltersOpen ? "grid" : "hidden")}>
+                <NativeFilter className="min-w-0 w-full xl:w-auto" value={providerFilter} onChange={setProviderFilter} ariaLabel="Provider filter" surfaceTheme={surfaceTheme}>
+                  <option value="all">All providers</option>
+                  {providerOptions.map((provider) => (
+                    <option key={provider} value={provider}>{formatModelProviderLabel(provider)}</option>
+                  ))}
+                </NativeFilter>
+                <NativeFilter className="min-w-0 w-full xl:w-auto" value={typeFilter} onChange={setTypeFilter} ariaLabel="Type filter" surfaceTheme={surfaceTheme}>
+                  <option value="all">All types</option>
+                  <option value="remote">Remote</option>
+                  <option value="local">Local</option>
+                  <option value="ready">Ready</option>
+                  <option value="needs-setup">Needs setup</option>
+                </NativeFilter>
+                <NativeFilter className="col-span-2 min-w-0 w-full xl:col-auto xl:w-auto" value={sortMode} onChange={setSortMode} ariaLabel="Sort models" surfaceTheme={surfaceTheme}>
+                  <option value="recent">Sort: Recent</option>
+                  <option value="context">Sort: Context</option>
+                  <option value="provider">Sort: Provider</option>
+                </NativeFilter>
+              </div>
+              <Button type="button" variant="secondary" onClick={handleOpenAddModels} className="h-8 rounded-[11px] px-3">
+                <Library className="h-3.5 w-3.5" />
+                <span className="ml-1.5 text-[0.72rem] lg:hidden">Library</span>
               </Button>
             </div>
 
-            <div className="mt-2 min-h-0 overflow-y-auto pr-1 lg:max-h-[calc(90dvh-180px)]">
+            <div className="mt-2 min-h-0 flex-1 overflow-y-auto pr-1 lg:max-h-[calc(90dvh-180px)]">
               <div className="space-y-1">
                 {visibleModels.length > 0 ? (
                   visibleModels.map((model) => {
@@ -670,8 +693,8 @@ export function AgentModelPickerDialog({
           </section>
         </div>
 
-        <div className={cn("shrink-0 border-t px-4 py-2", isLight ? "border-border bg-card" : "border-white/[0.08] bg-slate-950/55")}>
-          <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className={cn("shrink-0 border-t px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:py-2", isLight ? "border-border bg-card" : "border-white/[0.08] bg-slate-950/55")}>
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <div className={cn("flex min-w-0 flex-1 items-center gap-2 text-[0.68rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
               <Info className={cn("h-3.5 w-3.5 shrink-0", isLight ? "text-muted-foreground" : "text-slate-500")} />
               <span className="min-w-0 truncate">
@@ -683,7 +706,7 @@ export function AgentModelPickerDialog({
                 type="button"
                 variant="secondary"
                 className={cn(
-                  "h-[34px] shrink-0 rounded-[11px] px-[14px] text-[0.76rem]",
+                  "hidden h-[34px] shrink-0 rounded-[11px] px-[14px] text-[0.76rem] sm:flex",
                   isLight
                     ? "border-border bg-card text-foreground hover:border-primary/25 hover:bg-accent"
                     : "border-white/10 bg-white/[0.04] text-white hover:border-violet-300/30 hover:bg-violet-400/10"
@@ -696,7 +719,7 @@ export function AgentModelPickerDialog({
               <Button
                 type="button"
                 variant="secondary"
-                className="h-[34px] shrink-0 rounded-[11px] px-[18px] text-[0.76rem]"
+                className="h-[34px] shrink-0 rounded-[11px] px-[18px] text-[0.76rem] max-sm:flex-1"
                 disabled={saving}
                 onClick={() => onOpenChange(false)}
               >
@@ -705,7 +728,7 @@ export function AgentModelPickerDialog({
               <Button
                 type="button"
                 className={cn(
-                  "h-[34px] shrink-0 rounded-[11px] px-[18px] text-[0.76rem] font-semibold shadow-[0_18px_45px_rgba(124,58,237,0.35)]",
+                  "h-[34px] shrink-0 rounded-[11px] px-[18px] text-[0.76rem] font-semibold shadow-[0_18px_45px_rgba(124,58,237,0.35)] max-sm:flex-1",
                   isLight
                     ? "bg-primary text-primary-foreground hover:bg-primary/90"
                     : "bg-[linear-gradient(135deg,#7c3aed,#ec4899)]"
@@ -920,12 +943,14 @@ function NativeFilter({
   onChange,
   ariaLabel,
   children,
+  className,
   surfaceTheme = "dark"
 }: {
   value: string;
   onChange: (value: string) => void;
   ariaLabel: string;
   children: ReactNode;
+  className?: string;
   surfaceTheme?: "dark" | "light";
 }) {
   const isLight = surfaceTheme === "light";
@@ -936,7 +961,8 @@ function NativeFilter({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       className={cn(
-        "h-10 min-w-[118px] rounded-[12px] border px-3 text-[0.78rem] font-medium outline-none transition",
+        "h-8 min-w-[118px] rounded-[11px] border px-3 text-[0.76rem] font-medium outline-none transition",
+        className,
         isLight
           ? "border-input bg-card text-foreground hover:border-primary/30 focus:border-primary/50"
           : "border-white/10 bg-slate-950/45 text-slate-100 hover:border-violet-300/30 focus:border-violet-300/50"

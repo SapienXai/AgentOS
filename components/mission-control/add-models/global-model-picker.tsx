@@ -30,6 +30,7 @@ export function GlobalModelPicker({
   onSearchChange,
   onToggleModel,
   onAddSelected,
+  onClearSelected,
   onOpenProviders,
   onLoadMore,
   visibleModelCount,
@@ -43,6 +44,7 @@ export function GlobalModelPicker({
   onSearchChange: (value: string) => void;
   onToggleModel: (providerId: string, modelId: string) => void;
   onAddSelected: () => void;
+  onClearSelected: () => void;
   onOpenProviders: (providerId?: string | null) => void;
   onLoadMore: () => void;
   visibleModelCount: number;
@@ -72,16 +74,16 @@ export function GlobalModelPicker({
   return (
     <div
       className={cn(
-        "rounded-[15px] border p-3",
+        "flex flex-col rounded-[15px] border p-3",
         isLight
           ? "border-border bg-card shadow-card"
           : "border-white/10 bg-[linear-gradient(180deg,rgba(10,15,26,0.94),rgba(7,11,20,0.96))]"
       )}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className={cn("font-display text-[0.78rem]", isLight ? "text-foreground" : "text-white")}>Catalog</p>
-          <p className={cn("mt-1 text-[9px] leading-[0.9rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
+          <p className={cn("mt-0.5 hidden text-[9px] leading-[0.9rem] sm:block", isLight ? "text-muted-foreground" : "text-slate-400")}>
             Browse the full OpenClaw catalog. Unavailable entries show which provider setup is missing.
           </p>
         </div>
@@ -114,7 +116,7 @@ export function GlobalModelPicker({
           Loading OpenClaw catalog...
         </div>
       ) : visibleModels.length > 0 ? (
-        <div className="mt-3 max-h-[min(44vh,410px)] space-y-1 overflow-y-auto pr-1">
+        <div className="mt-2 max-h-[min(40dvh,360px)] space-y-1 overflow-y-auto pr-1 sm:mt-3 sm:max-h-[min(44vh,410px)]">
           {visibleModels.map((model) => {
             const selected = selectedModelIds.includes(model.id);
             const locked = model.alreadyAdded;
@@ -259,20 +261,37 @@ export function GlobalModelPicker({
         </div>
       )}
 
-      <div className={cn("mt-3 flex items-center justify-between gap-2 border-t pt-3", isLight ? "border-border" : "border-white/10")}>
-        <p className={cn("text-[8px] leading-3", isLight ? "text-muted-foreground" : "text-slate-400")}>
-          {selectedModelCount > 0
-            ? `${selectedModelCount} model${selectedModelCount === 1 ? "" : "s"} selected`
-            : "Choose one or more models to add"}
-        </p>
-        <Button
-          type="button"
-          onClick={onAddSelected}
-          disabled={selectedModelCount === 0 || isAdding}
-          className="h-7 rounded-full px-2.5 text-[9px]"
-        >
-          {isAdding ? "Adding..." : "Add selected models"}
-        </Button>
+      <div
+        className={cn(
+          "sticky bottom-0 z-10 -mx-3 -mb-3 mt-2 flex items-center justify-between gap-2 border-t px-3 pb-3 pt-2 shadow-[0_-10px_24px_rgba(15,23,42,0.08)] sm:mt-3",
+          isLight ? "border-border bg-card" : "border-white/10 bg-[#0a0f1a]"
+        )}
+      >
+        <div className="min-w-0">
+          <p className={cn("text-[10px] font-medium", isLight ? "text-foreground" : "text-white")}>
+            {selectedModelCount > 0
+              ? `${selectedModelCount} model${selectedModelCount === 1 ? "" : "s"} ready to add`
+              : "Select models to add"}
+          </p>
+          <p className={cn("mt-0.5 truncate text-[8px]", isLight ? "text-muted-foreground" : "text-slate-400")}>
+            {selectedModelCount > 0 ? "Add them now or adjust your selection." : "Already added models stay locked."}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {selectedModelCount > 0 ? (
+            <Button type="button" variant="ghost" onClick={onClearSelected} className="h-8 rounded-full px-2.5 text-[9px]">
+              Clear
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            onClick={onAddSelected}
+            disabled={selectedModelCount === 0 || isAdding}
+            className="h-8 rounded-full px-3 text-[9px]"
+          >
+            {isAdding ? "Adding..." : "Add selected"}
+          </Button>
+        </div>
       </div>
     </div>
   );
