@@ -1515,21 +1515,7 @@ function SecondaryTabPanel({
 
   return (
     <InfoPanel title="Effective Context" subtitle="What AgentOS can verify about the next model context, grouped by source of truth.">
-      <div className="grid gap-3 xl:grid-cols-[1fr_280px]">
-        <div className="grid gap-2 sm:grid-cols-2">
-          {(snapshot?.effectiveContext.sections ?? []).map((section) => (
-            <EffectiveContextSectionCard key={section.id} section={section} />
-          ))}
-        </div>
-        <div className="rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3">
-          <p className="text-xs font-medium text-[var(--ce-text-strong)]">Effective context total</p>
-          <p className="mt-2 text-2xl font-semibold text-[var(--ce-text-strong)]">{formatTokenValue(snapshot?.preview.totalTokens ?? null)}</p>
-          <p className="mt-1.5 text-xs text-[var(--ce-text-muted)]">
-            {snapshot?.effectiveContext.status === "exact" ? "Exact OpenClaw context report" : "Estimated by AgentOS from available metadata"}
-          </p>
-          <DiagnosticsList diagnostics={snapshot?.effectiveContext.diagnostics ?? []} />
-        </div>
-      </div>
+      <EffectiveContextPanel snapshot={snapshot} onNavigate={onNavigate} />
     </InfoPanel>
   );
 }
@@ -1957,33 +1943,195 @@ function formatCapabilityImpact(item: ContextEngineBudgetItem | null) {
   return `${formatTokenValue(item.tokens)} tokens · ${item.source}`;
 }
 
-function EffectiveContextSectionCard({ section }: { section: ContextEngineEffectiveContextSection }) {
+function EffectiveContextPanel({
+  snapshot,
+  onNavigate
+}: {
+  snapshot: ContextEngineSnapshot | null;
+  onNavigate: (tab: ContextEngineTab) => void;
+}) {
+  const sections = snapshot?.effectiveContext.sections ?? [];
+  const sectionById = new Map(sections.map((section) => [section.id, section]));
+  const stackIds: ContextEngineEffectiveContextSection["id"][] = [
+    "system",
+    "openclaw-runtime",
+    "enabled-files",
+    "memory",
+    "skills-tools",
+    "history"
+  ];
+  const stackSections = stackIds.flatMap((id) => {
+    const section = sectionById.get(id);
+    return section ? [section] : [];
+  });
+  const gapSections = ["disabled-files", "file-issues", "attachments"]
+    .flatMap((id) => {
+      const section = sectionById.get(id as ContextEngineEffectiveContextSection["id"]);
+      return section ? [section] : [];
+    })
+    .filter((section) => section.status === "unavailable" || section.items.length > 0);
+  const budget = snapshot?.budget;
+  const totalTokens = snapshot?.preview.totalTokens ?? budget?.usedTokens ?? null;
+  const hasExactRuntime = snapshot?.runtimeReport.status === "exact";
+  const hasContextWindow = typeof budget?.limit === "number" && budget.limit > 0;
+  const sessionReference = snapshot?.runtimeReport.sessionKey ?? snapshot?.runtimeReport.sessionId ?? null;
+
   return (
-    <div className="min-w-0 rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-[var(--ce-text-strong)]">{section.label}</p>
-          <p className="mt-1 text-[10px] uppercase tracking-[0.14em] text-[var(--ce-text-subtle)]">{formatEffectiveContextSource(section.source)}</p>
+    <div className="space-y-3 sm:space-y-4">
+      <section className="overflow-hidden rounded-[11px] border border-[var(--ce-border)] bg-[linear-gradient(135deg,var(--ce-panel-strong),var(--ce-panel))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+        <div className="grid gap-3 p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.72fr)] lg:items-center lg:gap-6">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em]",
+                hasExactRuntime
+                  ? "border-[var(--ce-success-border)] bg-[var(--ce-success-bg)] text-[var(--ce-success-text)]"
+                  : "border-[var(--ce-warning-border)] bg-[var(--ce-warning-bg)] text-[var(--ce-warning-text)]"
+              )}>
+                {hasExactRuntime ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                {hasExactRuntime ? "Exact runtime context" : "Estimated context"}
+              </span>
+              {snapshot?.runtimeReport.updatedAt ? <OverviewTag label={formatRelativeTime(snapshot.runtimeReport.updatedAt)} /> : null}
+            </div>
+            <h4 className="mt-2 text-base font-semibold tracking-[-0.02em] text-[var(--ce-text-strong)] sm:text-xl">What will shape the next response</h4>
+            <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--ce-text-muted)] sm:text-sm">
+              {hasExactRuntime
+                ? "OpenClaw supplied a runtime context report for the latest session."
+                : "AgentOS is projecting the next context from workspace files, policy, and available runtime metadata."}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] p-2.5 sm:p-3">
+            <ContextMetric label="Context total" value={`${formatTokenValue(totalTokens)} tokens`} />
+            <ContextMetric label="Context window" value={hasContextWindow ? formatContextWindow(budget?.limit ?? null) : "Unknown"} />
+            <ContextMetric label="Used" value={budget?.usedPercent == null ? "Not reported" : `${budget.usedPercent}%`} />
+            <ContextMetric label="Session" value={sessionReference ? "Available" : "Not reported"} />
+          </div>
         </div>
-        <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[9px] uppercase tracking-[0.12em]", effectiveContextStatusClassName(section.status))}>
-          {section.status}
-        </span>
-      </div>
-      <p className="mt-2 text-xs leading-5 text-[var(--ce-text)]">{section.detail}</p>
-      {section.items.length > 0 ? (
-        <ul className="mt-2 max-h-28 space-y-1 overflow-y-auto pr-1">
-          {section.items.slice(0, 8).map((item) => (
-            <li key={item} className="truncate rounded-[7px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] px-2 py-1 font-mono text-[10px] text-[var(--ce-text)]" title={item}>
-              {item}
-            </li>
+        {budget?.usedPercent != null ? (
+          <div className="border-t border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] px-3 py-2.5 sm:px-4">
+            <div className="flex items-center justify-between gap-3 text-[11px] text-[var(--ce-text-muted)]">
+              <span>Context window usage</span>
+              <span className="font-medium text-[var(--ce-text-strong)]">{formatTokenValue(totalTokens)} / {hasContextWindow ? formatTokenValue(budget?.limit) : "Unknown"} tokens</span>
+            </div>
+            <div className="mt-1.5 h-2 overflow-hidden rounded-full border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)]">
+              <div
+                className={cn("h-full rounded-full", budget.usedPercent >= 80 ? "bg-[linear-gradient(90deg,#f59e0b,#fb7185)]" : "bg-[linear-gradient(90deg,#8b5cf6,#c084fc)]")}
+                style={{ width: `${Math.max(1, Math.min(100, budget.usedPercent))}%` }}
+              />
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="rounded-[10px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3 sm:p-4">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h4 className="text-sm font-semibold text-[var(--ce-text-strong)]">Context stack</h4>
+            <p className="mt-1 text-xs text-[var(--ce-text-muted)]">Sources AgentOS can verify for the next model request.</p>
+          </div>
+          <span className="text-[11px] text-[var(--ce-text-subtle)]">{stackSections.length} sources</span>
+        </div>
+        <div className="mt-3 space-y-2">
+          {stackSections.map((section, index) => (
+            <EffectiveContextSectionCard
+              key={section.id}
+              index={index + 1}
+              section={section}
+              onNavigate={onNavigate}
+            />
           ))}
-          {section.items.length > 8 ? (
-            <li className="px-2 text-[10px] text-[var(--ce-text-subtle)]">+{section.items.length - 8} more</li>
+        </div>
+      </section>
+
+      {gapSections.length > 0 ? (
+        <section className="rounded-[10px] border border-[var(--ce-warning-border)] bg-[var(--ce-warning-bg)] p-3 sm:p-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-[var(--ce-warning-text)]" />
+            <h4 className="text-sm font-semibold text-[var(--ce-warning-text)]">Not included or unavailable</h4>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-[var(--ce-warning-text)]">Review these sources before relying on the next context as complete.</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {gapSections.map((section) => (
+              <EffectiveContextSectionCard key={section.id} section={section} onNavigate={onNavigate} compact />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <DiagnosticsList diagnostics={snapshot?.effectiveContext.diagnostics ?? []} />
+    </div>
+  );
+}
+
+function ContextMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-[7px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] px-2 py-1.5">
+      <p className="truncate text-[9px] uppercase tracking-[0.11em] text-[var(--ce-text-subtle)]">{label}</p>
+      <p className="mt-0.5 truncate text-xs font-semibold text-[var(--ce-text-strong)]" title={value}>{value}</p>
+    </div>
+  );
+}
+
+function EffectiveContextSectionCard({
+  section,
+  index,
+  onNavigate,
+  compact = false
+}: {
+  section: ContextEngineEffectiveContextSection;
+  index?: number;
+  onNavigate: (tab: ContextEngineTab) => void;
+  compact?: boolean;
+}) {
+  const action = resolveEffectiveContextAction(section.id);
+
+  return (
+    <div className={cn(
+      "min-w-0 rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)]",
+      compact ? "p-2.5" : "p-3"
+    )}>
+      <div className="flex min-w-0 items-start gap-2.5">
+        {index ? <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[var(--ce-border)] bg-[var(--ce-panel-strong)] text-[10px] font-semibold text-[var(--ce-text-muted)]">{index}</span> : null}
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <p className="truncate text-xs font-medium text-[var(--ce-text-strong)]">{section.label}</p>
+            <span className={cn("shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] uppercase tracking-[0.1em]", effectiveContextStatusClassName(section.status))}>
+              {section.status}
+            </span>
+          </div>
+          <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-[var(--ce-text-subtle)]">{formatEffectiveContextSource(section.source)}</p>
+          <p className="mt-1.5 text-xs leading-5 text-[var(--ce-text)]">{section.detail}</p>
+          {section.items.length > 0 ? (
+            <ul className="mt-2 space-y-1">
+              {section.items.slice(0, compact ? 3 : 4).map((item) => (
+                <li key={item} className="truncate rounded-[6px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] px-2 py-1 font-mono text-[10px] text-[var(--ce-text)]" title={item}>{item}</li>
+              ))}
+              {section.items.length > (compact ? 3 : 4) ? <li className="px-1 text-[10px] text-[var(--ce-text-subtle)]">+{section.items.length - (compact ? 3 : 4)} more</li> : null}
+            </ul>
           ) : null}
-        </ul>
+        </div>
+      </div>
+      {action ? (
+        <button type="button" className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-[var(--ce-accent)] hover:text-[var(--ce-accent-strong)]" onClick={() => onNavigate(action.tab)}>
+          {action.label}
+          <ChevronRight className="h-3 w-3" />
+        </button>
       ) : null}
     </div>
   );
+}
+
+function resolveEffectiveContextAction(sectionId: ContextEngineEffectiveContextSection["id"]) {
+  if (sectionId === "enabled-files" || sectionId === "disabled-files" || sectionId === "file-issues" || sectionId === "agentos-sidecar") {
+    return { label: "Open project context", tab: "project" as const };
+  }
+  if (sectionId === "memory" || sectionId === "history" || sectionId === "openclaw-runtime") {
+    return { label: "Review memory & history", tab: "memory" as const };
+  }
+  if (sectionId === "skills-tools") {
+    return { label: "Review capabilities", tab: "skills" as const };
+  }
+  return null;
 }
 
 function formatEffectiveContextSource(source: ContextEngineEffectiveContextSection["source"]) {

@@ -1081,6 +1081,21 @@ test("context engine overview is an actionable health dashboard backed by live c
   assert.match(source, /<span className="sm:hidden">Context: \{health\.label\}<\/span>/);
 });
 
+test("effective context is an actionable runtime truth view", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/context-engine-dialog.tsx"), "utf8");
+
+  assert.match(source, /<EffectiveContextPanel snapshot=\{snapshot\} onNavigate=\{onNavigate\} \/>/);
+  assert.match(source, /Exact runtime context/);
+  assert.match(source, /Estimated context/);
+  assert.match(source, /Context stack/);
+  assert.match(source, /Not included or unavailable/);
+  assert.match(source, /resolveEffectiveContextAction/);
+  assert.match(source, /Open project context/);
+  assert.match(source, /Review memory & history/);
+  assert.match(source, /Review capabilities/);
+  assert.match(source, /grid grid-cols-2 gap-2 rounded-\[9px\]/);
+});
+
 test("context engine memory uses real file reading and editing flows", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/context-engine-dialog.tsx"), "utf8");
 
