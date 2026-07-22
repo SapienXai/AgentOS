@@ -1026,6 +1026,8 @@ test("context file list keeps mobile scrolling single-layered and desktop totals
   assert.match(source, /lg:h-full lg:overflow-hidden lg:p-0/);
   assert.match(source, /lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain/);
   assert.doesNotMatch(source, /lg:h-full lg:min-h-\[465px\] lg:overflow-visible/);
+  assert.match(source, /flex snap-x snap-mandatory gap-2 overflow-x-auto/);
+  assert.match(source, /w-\[112px\] shrink-0 snap-start/);
 });
 
 test("context engine shows Piko during real loading and saving work", () => {
@@ -1058,6 +1060,7 @@ test("context engine overview is an actionable health dashboard backed by live c
   const source = readFileSync(path.join(rootDir, "components/mission-control/context-engine-dialog.tsx"), "utf8");
 
   assert.match(source, /<ContextOverviewDashboard/);
+  assert.match(source, /hideHeadingOnMobile/);
   assert.match(source, /hasContextChanges=\{hasContextChanges\}/);
   assert.match(source, /onNavigate=\{setActiveTab\}/);
   assert.match(source, /problemFiles = files\.filter/);
@@ -1071,9 +1074,11 @@ test("context engine overview is an actionable health dashboard backed by live c
   assert.match(source, /resolveOverviewBudget\(snapshot, projectContextTokens\)/);
   assert.match(source, /Project Context total from enabled files/);
   assert.match(source, /overviewBudget\.usedPercent !== null/);
+  assert.match(source, /mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3/);
   assert.match(source, /Context delivery/);
   assert.match(source, /Runtime confidence/);
-  assert.match(source, /sm:grid-cols-2 xl:grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)_minmax\(280px,0\.9fr\)\]/);
+  assert.match(source, /grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)_minmax\(280px,0\.9fr\)\]/);
+  assert.match(source, /<span className="sm:hidden">Context: \{health\.label\}<\/span>/);
 });
 
 test("model dialogs use mobile fullscreen layouts with reachable actions", () => {

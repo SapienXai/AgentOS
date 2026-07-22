@@ -866,7 +866,7 @@ function ContextBudgetCard({ snapshot }: { snapshot: ContextEngineSnapshot | nul
           </span>
         </div>
       </div>
-      <div className="mt-2 hidden grid-cols-3 gap-2 sm:grid lg:grid-cols-6">
+      <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-3 sm:overflow-visible sm:pb-0 lg:grid-cols-6">
         {(budget?.items ?? defaultBudgetItems()).map((item) => (
           <BudgetPill key={item.id} item={item} />
         ))}
@@ -883,7 +883,7 @@ function BudgetPill({ item }: { item: ContextEngineBudgetItem }) {
   const hasTokenValue = typeof item.tokens === "number";
 
   return (
-    <div className="rounded-[7px] border border-[var(--ce-border)] bg-[var(--ce-panel-strong)] px-2 py-1">
+    <div className="w-[112px] shrink-0 snap-start rounded-[7px] border border-[var(--ce-border)] bg-[var(--ce-panel-strong)] px-2 py-1 sm:w-auto sm:min-w-0">
       <div className="flex items-center gap-1.5">
         <Icon className={cn("h-3 w-3 shrink-0", tone)} />
         <p className="truncate text-[10px] leading-3 text-[var(--ce-text)]">{item.label}</p>
@@ -1454,7 +1454,11 @@ function SecondaryTabPanel({
 
   if (tab === "overview") {
     return (
-      <InfoPanel title="Context health" subtitle="Understand what shapes the next response, how reliable that view is, and what needs attention.">
+      <InfoPanel
+        title="Context health"
+        subtitle="Understand what shapes the next response, how reliable that view is, and what needs attention."
+        hideHeadingOnMobile
+      >
         <ContextOverviewDashboard
           snapshot={snapshot}
           files={snapshot?.files ?? files}
@@ -1607,7 +1611,7 @@ function ContextOverviewDashboard({
   return (
     <div className="space-y-3 sm:space-y-4">
       <section className="overflow-hidden rounded-[11px] border border-[var(--ce-border)] bg-[linear-gradient(135deg,var(--ce-panel-strong),var(--ce-panel))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-        <div className="grid gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_minmax(235px,0.7fr)] lg:items-center lg:gap-6">
+        <div className="grid gap-3 p-2.5 sm:gap-4 sm:p-4 lg:grid-cols-[minmax(0,1fr)_minmax(235px,0.7fr)] lg:items-center lg:gap-6">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <ContextHealthBadge tone={health.tone} label={health.label} />
@@ -1615,15 +1619,18 @@ function ContextOverviewDashboard({
                 {snapshot?.agent ? formatAgentDisplayName(snapshot.agent) : "Agent context"}
               </span>
             </div>
-            <h4 className="mt-2 text-lg font-semibold tracking-[-0.02em] text-[var(--ce-text-strong)] sm:text-xl">Context is {health.label.toLowerCase()}</h4>
-            <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--ce-text-muted)] sm:text-sm">{health.detail}</p>
+            <h4 className="mt-1.5 text-base font-semibold leading-5 tracking-[-0.02em] text-[var(--ce-text-strong)] sm:mt-2 sm:text-xl sm:leading-normal">
+              <span className="sm:hidden">Context: {health.label}</span>
+              <span className="hidden sm:inline">Context is {health.label.toLowerCase()}</span>
+            </h4>
+            <p className="mt-1 max-w-2xl text-[11px] leading-4 text-[var(--ce-text-muted)] sm:text-sm sm:leading-5">{health.detail}</p>
           </div>
           <div className="min-w-0 rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] p-2.5 sm:p-3">
-            <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--ce-text-subtle)]">Next best action</p>
-            <p className="mt-1 text-xs font-medium text-[var(--ce-text-strong)]">{primaryAction.detail}</p>
+            <p className="text-[9px] uppercase tracking-[0.14em] text-[var(--ce-text-subtle)] sm:text-[10px]">Next best action</p>
+            <p className="mt-0.5 text-[11px] font-medium text-[var(--ce-text-strong)] sm:mt-1 sm:text-xs">{primaryAction.detail}</p>
             <Button
               type="button"
-              className="mt-2 h-9 w-full rounded-[8px] border border-violet-200/35 bg-[linear-gradient(180deg,rgba(139,92,246,0.98),rgba(109,40,217,0.96))] px-3 text-xs text-white shadow-[0_6px_16px_rgba(124,58,237,0.24)] hover:bg-violet-500"
+              className="mt-1.5 h-8 w-full rounded-[8px] border border-violet-200/35 bg-[linear-gradient(180deg,rgba(139,92,246,0.98),rgba(109,40,217,0.96))] px-3 text-[11px] text-white shadow-[0_6px_16px_rgba(124,58,237,0.24)] hover:bg-violet-500 sm:mt-2 sm:h-9 sm:text-xs"
               disabled={primaryAction.disabled}
               onClick={primaryAction.onClick}
             >
@@ -1657,9 +1664,9 @@ function ContextOverviewDashboard({
               />
             </div>
           ) : null}
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
             {largestBudgetItems.length > 0 ? largestBudgetItems.map((item) => <ContextBudgetSource key={item.id} item={item} />) : (
-              <p className="rounded-[8px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] px-3 py-2 text-xs text-[var(--ce-text-muted)] sm:col-span-3">No token source breakdown is available yet.</p>
+              <p className="col-span-2 rounded-[8px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel)] px-3 py-2 text-xs text-[var(--ce-text-muted)] sm:col-span-3">No token source breakdown is available yet.</p>
             )}
           </div>
         </section>
@@ -1679,7 +1686,7 @@ function ContextOverviewDashboard({
         </section>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(280px,0.9fr)]">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(280px,0.9fr)]">
         <OverviewStatusCard
           icon={<FileText className="h-4 w-4 text-[var(--ce-accent)]" />}
           title="Context delivery"
@@ -2137,17 +2144,21 @@ function CodePreview({
 function InfoPanel({
   title,
   subtitle,
+  hideHeadingOnMobile = false,
   children
 }: {
   title: string;
   subtitle: string;
+  hideHeadingOnMobile?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <section className="min-h-full rounded-[10px] border border-[var(--ce-border)] bg-[var(--ce-panel)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-4">
-      <h3 className="text-sm font-semibold text-[var(--ce-text-strong)] sm:text-base">{title}</h3>
-      <p className="mt-1 text-xs text-[var(--ce-text-muted)]">{subtitle}</p>
-      <div className="mt-3 sm:mt-4">{children}</div>
+      <div className={cn(hideHeadingOnMobile && "hidden sm:block")}>
+        <h3 className="text-sm font-semibold text-[var(--ce-text-strong)] sm:text-base">{title}</h3>
+        <p className="mt-1 text-xs text-[var(--ce-text-muted)]">{subtitle}</p>
+      </div>
+      <div className={cn(hideHeadingOnMobile ? "sm:mt-4" : "mt-3 sm:mt-4")}>{children}</div>
     </section>
   );
 }
