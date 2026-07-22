@@ -1024,7 +1024,7 @@ test("model dialogs use mobile fullscreen layouts with reachable actions", () =>
   assert.match(pickerSource, /const \[mobileFiltersOpen, setMobileFiltersOpen\] = useState\(false\)/);
   assert.match(pickerSource, /Filters\{activeFilterCount > 0/);
   assert.match(librarySource, /h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0/);
-  assert.match(librarySource, /max-lg:\[&>button\]:w-\[154px\] lg:min-w-0 lg:flex-col/);
+  assert.match(librarySource, /max-lg:\[&>button\]:w-auto/);
   assert.match(librarySource, /safe-area-inset-top/);
 });
 
@@ -1043,6 +1043,38 @@ test("model library keeps selected-model actions visible while browsing", () => 
   assert.match(pickerSource, /onClearSelected/);
   assert.match(librarySource, /function clearCatalogSelection\(\)/);
   assert.match(librarySource, /onClearSelected=\{clearCatalogSelection\}/);
+});
+
+test("model library focuses provider setup after a model selection", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"), "utf8");
+
+  assert.match(source, /const providerSettingsRef = useRef<HTMLElement \| null>\(null\)/);
+  assert.match(source, /providerSettingsRef\.current\?\.scrollIntoView\(\{ behavior: "smooth", block: "start" \}\)/);
+  assert.match(source, /void selectProvider\(provider\.id, \{ scrollToSettings: true \}\)/);
+  assert.match(source, /!wasSelected && isAddModelsProviderId\(providerId\)/);
+  assert.match(source, /max-lg:\[&>button\]:w-auto/);
+});
+
+test("model library returns to change model when opened from its picker", () => {
+  const librarySource = readFileSync(path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"), "utf8");
+  const shellSource = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
+
+  assert.match(librarySource, /onBack\?: \(\) => void/);
+  assert.match(librarySource, /aria-label="Back to Change Model"/);
+  assert.match(librarySource, /<ChevronLeft className="h-5 w-5" \/>/);
+  assert.match(shellSource, /const \[returnToAgentModelId, setReturnToAgentModelId\] = useState<string \| null>\(null\)/);
+  assert.match(shellSource, /const handleBackToAgentModelPicker = \(\) =>/);
+  assert.match(shellSource, /onBack=\{returnToAgentModelId \? handleBackToAgentModelPicker : undefined\}/);
+});
+
+test("model library catalog fills the available dialog space", () => {
+  const librarySource = readFileSync(path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"), "utf8");
+  const pickerSource = readFileSync(path.join(rootDir, "components/mission-control/add-models/global-model-picker.tsx"), "utf8");
+
+  assert.match(librarySource, /TabsContent value="catalog" className="!mt-0 m-0 flex h-full min-h-0 flex-col"/);
+  assert.match(librarySource, /flex min-h-0 flex-1 flex-col space-y-2 px-3 py-3/);
+  assert.match(pickerSource, /flex min-h-0 flex-1 flex-col rounded-\[15px\] border p-3/);
+  assert.match(pickerSource, /mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto/);
 });
 
 function resolveLocalOpenClawImport(filePath: string, specifier: string) {

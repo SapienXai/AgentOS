@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useEffectEvent, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
   Boxes,
+  ChevronLeft,
   CircleCheckBig,
   Copy,
   Database,
@@ -108,6 +109,7 @@ export function AddModelsDialog({
   onOpenChange,
   snapshot,
   initialProvider = null,
+  onBack,
   onSnapshotChange,
   onProviderSnapshotReady,
   surfaceTheme = "dark"
@@ -116,6 +118,7 @@ export function AddModelsDialog({
   onOpenChange: (open: boolean) => void;
   snapshot: MissionControlSnapshot;
   initialProvider?: AddModelsProviderId | null;
+  onBack?: () => void;
   onSnapshotChange: (snapshot: MissionControlSnapshot) => void;
   onProviderSnapshotReady?: (snapshot: MissionControlSnapshot) => void;
   surfaceTheme?: "dark" | "light";
@@ -130,10 +133,12 @@ export function AddModelsDialog({
   const [isAddingCatalogModels, setIsAddingCatalogModels] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogVisibleCount, setCatalogVisibleCount] = useState(CATALOG_PAGE_SIZE);
+  const [shouldScrollToProviderSettings, setShouldScrollToProviderSettings] = useState(false);
   const [activeSetupMode, setActiveSetupMode] = useState<"standard" | "custom-openai-compatible">("standard");
   const [sidebarFilter, setSidebarFilter] = useState<SidebarFilter>("providers");
   const [explicitProviderIds, setExplicitProviderIds] = useState<string[]>([]);
   const [switchAccountProviderId, setSwitchAccountProviderId] = useState<AddModelsProviderId | null>(null);
+  const providerSettingsRef = useRef<HTMLElement | null>(null);
   const {
     models: globalCatalogModels,
     isLoading: isLoadingGlobalCatalog,
@@ -548,6 +553,24 @@ export function AddModelsDialog({
 
     return groups;
   }, [catalogModels, catalogSelectedModelIds]);
+
+  useEffect(() => {
+    if (!shouldScrollToProviderSettings || !activeProviderId || typeof window === "undefined") {
+      return;
+    }
+
+    if (!window.matchMedia("(max-width: 1279px)").matches) {
+      setShouldScrollToProviderSettings(false);
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      providerSettingsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setShouldScrollToProviderSettings(false);
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [activeProviderId, shouldScrollToProviderSettings]);
   function focusSidebarFilter(filter: SidebarFilter) {
     setSidebarFilter(filter);
 
@@ -568,13 +591,17 @@ export function AddModelsDialog({
             : providerCards[0]?.provider.id ?? null;
 
     if (targetProviderId) {
-      void selectProvider(targetProviderId);
+      void selectProvider(targetProviderId, { scrollToSettings: true });
     }
   }
-  async function selectProvider(providerId: AddModelsProviderId) {
+  async function selectProvider(
+    providerId: AddModelsProviderId,
+    { scrollToSettings = false }: { scrollToSettings?: boolean } = {}
+  ) {
     setActiveProvider(providerId);
     setActiveSetupMode("standard");
     setActiveTab("providers");
+    setShouldScrollToProviderSettings(scrollToSettings);
 
     const draft = resolveDraft(providerDrafts[providerId]);
 
@@ -1206,16 +1233,33 @@ export function AddModelsDialog({
           )}
         >
           <div className="flex items-center gap-3">
-            <div
-              className={cn(
-                "flex h-11 w-11 items-center justify-center rounded-[14px] border",
-                isLight
-                  ? "border-primary/20 bg-primary/10 text-primary shadow-[0_18px_42px_rgba(124,58,237,0.10)]"
-                  : "border-violet-300/25 bg-[linear-gradient(145deg,rgba(124,58,237,0.88),rgba(76,29,149,0.92))] text-white shadow-[0_0_38px_rgba(124,58,237,0.28)]"
-              )}
-            >
-              <Library className="h-5 w-5" />
-            </div>
+            {onBack ? (
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label="Back to Change Model"
+                title="Back to Change Model"
+                className={cn(
+                  "flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
+                  isLight
+                    ? "border-primary/20 bg-primary/10 text-primary shadow-[0_18px_42px_rgba(124,58,237,0.10)] hover:bg-primary/15"
+                    : "border-violet-300/25 bg-[linear-gradient(145deg,rgba(124,58,237,0.88),rgba(76,29,149,0.92))] text-white shadow-[0_0_38px_rgba(124,58,237,0.28)] hover:brightness-110"
+                )}
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+            ) : (
+              <div
+                className={cn(
+                  "flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border",
+                  isLight
+                    ? "border-primary/20 bg-primary/10 text-primary shadow-[0_18px_42px_rgba(124,58,237,0.10)]"
+                    : "border-violet-300/25 bg-[linear-gradient(145deg,rgba(124,58,237,0.88),rgba(76,29,149,0.92))] text-white shadow-[0_0_38px_rgba(124,58,237,0.28)]"
+                )}
+              >
+                <Library className="h-5 w-5" />
+              </div>
+            )}
             <div>
               <DialogTitle className={cn("font-display text-[1.35rem] leading-none tracking-[-0.03em]", isLight ? "text-foreground" : "text-white")}>
                 Model Library
@@ -1237,8 +1281,8 @@ export function AddModelsDialog({
               : "bg-[linear-gradient(180deg,rgba(5,8,17,0.98),rgba(4,7,14,0.99))]"
           )}
         >
-          <div className={cn("flex shrink-0 flex-col overflow-x-auto border-b px-3 py-2.5 lg:min-h-0 lg:border-b-0 lg:border-r lg:py-3", isLight ? "border-border bg-card/65" : "border-white/10 bg-slate-950/25")}>
-            <div className="flex min-w-max flex-row gap-1.5 max-lg:[&>button]:w-[154px] lg:min-w-0 lg:flex-col">
+          <div className={cn("flex shrink-0 flex-col overflow-x-auto border-b px-2 py-2 lg:min-h-0 lg:border-b-0 lg:border-r lg:px-3 lg:py-3", isLight ? "border-border bg-card/65" : "border-white/10 bg-slate-950/25")}>
+            <div className="flex min-w-max flex-row gap-1 max-lg:[&>button]:w-auto max-lg:[&>button]:rounded-full max-lg:[&>button]:px-2.5 max-lg:[&>button]:py-2 lg:min-w-0 lg:flex-col lg:gap-1.5">
               <button
                 type="button"
                 aria-pressed={sidebarFilter === "available"}
@@ -1277,7 +1321,7 @@ export function AddModelsDialog({
                         {availableProviderCards.length}
                       </Badge>
                     </span>
-                    <span className={cn("mt-1 block text-[0.66rem] leading-none", sidebarFilter === "available" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
+                    <span className={cn("mt-1 hidden text-[0.66rem] leading-none lg:block", sidebarFilter === "available" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
                       Connected providers
                     </span>
                   </span>
@@ -1322,7 +1366,7 @@ export function AddModelsDialog({
                         {providerCards.length}
                       </Badge>
                     </span>
-                    <span className={cn("mt-1 block text-[0.66rem] leading-none", sidebarFilter === "providers" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
+                    <span className={cn("mt-1 hidden text-[0.66rem] leading-none lg:block", sidebarFilter === "providers" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
                       All provider cards
                     </span>
                   </span>
@@ -1367,7 +1411,7 @@ export function AddModelsDialog({
                         {globalCatalogModels.length > 0 ? globalCatalogModels.length : "—"}
                       </Badge>
                     </span>
-                    <span className={cn("mt-1 block text-[0.66rem] leading-none", sidebarFilter === "catalog" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
+                    <span className={cn("mt-1 hidden text-[0.66rem] leading-none lg:block", sidebarFilter === "catalog" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
                       Browse global models
                     </span>
                   </span>
@@ -1412,7 +1456,7 @@ export function AddModelsDialog({
                         {localProviderCards.length}
                       </Badge>
                     </span>
-                    <span className={cn("mt-1 block text-[0.66rem] leading-none", sidebarFilter === "local-models" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
+                    <span className={cn("mt-1 hidden text-[0.66rem] leading-none lg:block", sidebarFilter === "local-models" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
                       Detected on this machine
                     </span>
                   </span>
@@ -1457,7 +1501,7 @@ export function AddModelsDialog({
                         {defaultModelProviderId ? 1 : "—"}
                       </Badge>
                     </span>
-                    <span className={cn("mt-1 block text-[0.66rem] leading-none", sidebarFilter === "defaults" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
+                    <span className={cn("mt-1 hidden text-[0.66rem] leading-none lg:block", sidebarFilter === "defaults" ? (isLight ? "text-primary/75" : "text-violet-100/75") : isLight ? "text-muted-foreground" : "text-slate-400")}>
                       OpenClaw global default
                     </span>
                   </span>
@@ -1549,7 +1593,7 @@ export function AddModelsDialog({
                             <button
                               type="button"
                               onClick={() => {
-                                void selectProvider(provider.id);
+                                void selectProvider(provider.id, { scrollToSettings: true });
                               }}
                               className="min-h-0 w-full flex-1 overflow-hidden p-2.5 pb-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/55 focus-visible:ring-inset"
                             >
@@ -2104,6 +2148,7 @@ export function AddModelsDialog({
                 </div>
                 </div>
                 <aside
+                  ref={providerSettingsRef}
                   className={cn(
                     "border-t p-4 xl:border-l xl:border-t-0",
                     isLight
@@ -2524,8 +2569,8 @@ export function AddModelsDialog({
               </div>
             </TabsContent>
 
-            <TabsContent value="catalog" className="!mt-0 m-0 h-full">
-              <div className="space-y-2 px-3 py-3">
+            <TabsContent value="catalog" className="!mt-0 m-0 flex h-full min-h-0 flex-col">
+              <div className="flex min-h-0 flex-1 flex-col space-y-2 px-3 py-3">
                 {globalCatalogError ? (
                   <div className={cn("flex items-center justify-between gap-3 rounded-[18px] border px-4 py-3 text-[11px]", isLight ? "border-rose-200 bg-rose-50 text-rose-800" : "border-rose-400/20 bg-rose-400/[0.08] text-rose-100")}>
                     <span>{globalCatalogError}</span>
@@ -2560,11 +2605,16 @@ export function AddModelsDialog({
                   onSearchChange={setCatalogSearch}
                   onToggleModel={(providerId, modelId) => {
                     const currentDraft = resolveDraft(providerDrafts[providerId]);
+                    const wasSelected = currentDraft.selectedModelIds.includes(modelId);
                     updateDraft(providerId, {
-                      selectedModelIds: currentDraft.selectedModelIds.includes(modelId)
+                      selectedModelIds: wasSelected
                         ? currentDraft.selectedModelIds.filter((entry) => entry !== modelId)
                         : [...currentDraft.selectedModelIds, modelId]
                     });
+
+                    if (!wasSelected && isAddModelsProviderId(providerId)) {
+                      void selectProvider(providerId, { scrollToSettings: true });
+                    }
                   }}
                   onAddSelected={() => {
                     void addSelectedCatalogModels();
@@ -2574,7 +2624,7 @@ export function AddModelsDialog({
                     setActiveTab("providers");
 
                     if (isAddModelsProviderId(providerId)) {
-                      void selectProvider(providerId);
+                      void selectProvider(providerId, { scrollToSettings: true });
                     }
                   }}
                   onLoadMore={() => setCatalogVisibleCount((current) => current + CATALOG_PAGE_SIZE)}

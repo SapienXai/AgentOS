@@ -74,7 +74,7 @@ export function GlobalModelPicker({
   return (
     <div
       className={cn(
-        "flex flex-col rounded-[15px] border p-3",
+        "flex min-h-0 flex-1 flex-col rounded-[15px] border p-3",
         isLight
           ? "border-border bg-card shadow-card"
           : "border-white/10 bg-[linear-gradient(180deg,rgba(10,15,26,0.94),rgba(7,11,20,0.96))]"
@@ -116,7 +116,7 @@ export function GlobalModelPicker({
           Loading OpenClaw catalog...
         </div>
       ) : visibleModels.length > 0 ? (
-        <div className="mt-2 max-h-[min(40dvh,360px)] space-y-1 overflow-y-auto pr-1 sm:mt-3 sm:max-h-[min(44vh,410px)]">
+        <div className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1 sm:mt-3">
           {visibleModels.map((model) => {
             const selected = selectedModelIds.includes(model.id);
             const locked = model.alreadyAdded;

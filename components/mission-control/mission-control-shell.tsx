@@ -510,6 +510,7 @@ export function MissionControlShell({
   const [gatewayControlAction, setGatewayControlAction] = useState<GatewayControlAction | null>(null);
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
   const [isAddModelsDialogOpen, setIsAddModelsDialogOpen] = useState(false);
+  const [returnToAgentModelId, setReturnToAgentModelId] = useState<string | null>(null);
   const [isSidebarCreateAgentDialogOpen, setIsSidebarCreateAgentDialogOpen] = useState(false);
   const [isSidebarAgentActionModalOpen, setIsSidebarAgentActionModalOpen] = useState(false);
   const [initialAddModelsProvider, setInitialAddModelsProvider] = useState<AddModelsProviderId | null>(null);
@@ -3063,6 +3064,7 @@ export function MissionControlShell({
   };
 
   const openAddModelsDialog = (provider?: AddModelsProviderId | null) => {
+    setReturnToAgentModelId(null);
     setInitialAddModelsProvider(normalizeAddModelsProviderId(provider));
     setIsAddModelsDialogOpen(true);
   };
@@ -3084,8 +3086,34 @@ export function MissionControlShell({
   };
 
   const openAddModelsFromModelPicker = () => {
+    const agentId = agentModelRequest?.agentId ?? null;
+
+    setReturnToAgentModelId(agentId);
     setAgentModelRequest(null);
-    openAddModelsDialog(null);
+    setInitialAddModelsProvider(null);
+    setIsAddModelsDialogOpen(true);
+  };
+
+  const handleBackToAgentModelPicker = () => {
+    const agentId = returnToAgentModelId;
+
+    setIsAddModelsDialogOpen(false);
+    setReturnToAgentModelId(null);
+
+    if (agentId) {
+      setAgentModelRequest({
+        requestId: `agent-model-return:${agentId}:${Date.now()}`,
+        agentId
+      });
+    }
+  };
+
+  const handleAddModelsDialogOpenChange = (open: boolean) => {
+    setIsAddModelsDialogOpen(open);
+
+    if (!open) {
+      setReturnToAgentModelId(null);
+    }
   };
 
   const checkForUpdates = async () => {
@@ -3777,11 +3805,12 @@ export function MissionControlShell({
 
       <AddModelsDialog
         open={isAddModelsDialogOpen}
-        onOpenChange={setIsAddModelsDialogOpen}
+        onOpenChange={handleAddModelsDialogOpenChange}
         snapshot={snapshot}
         initialProvider={initialAddModelsProvider}
         onSnapshotChange={setSnapshot}
         onProviderSnapshotReady={handleAddModelsProviderSnapshotReady}
+        onBack={returnToAgentModelId ? handleBackToAgentModelPicker : undefined}
         surfaceTheme={surfaceTheme}
       />
 
@@ -4909,11 +4938,12 @@ export function MissionControlShell({
 
         <AddModelsDialog
           open={isAddModelsDialogOpen}
-          onOpenChange={setIsAddModelsDialogOpen}
+          onOpenChange={handleAddModelsDialogOpenChange}
           snapshot={snapshot}
           initialProvider={initialAddModelsProvider}
           onSnapshotChange={setSnapshot}
           onProviderSnapshotReady={handleAddModelsProviderSnapshotReady}
+          onBack={returnToAgentModelId ? handleBackToAgentModelPicker : undefined}
           surfaceTheme={surfaceTheme}
         />
 
