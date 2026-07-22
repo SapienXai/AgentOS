@@ -161,11 +161,13 @@ export function ContextEngineDialog({
   agentId,
   open,
   onOpenChange,
+  onConfigureCapabilities,
   surfaceTheme = "dark"
 }: {
   agentId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onConfigureCapabilities?: (agentId: string, focus: "skills" | "tools") => void;
   surfaceTheme?: ContextEngineSurfaceTheme;
 }) {
   const [engineSnapshot, setEngineSnapshot] = useState<ContextEngineSnapshot | null>(null);
@@ -590,6 +592,7 @@ export function ContextEngineDialog({
                 snapshot={engineSnapshot}
                 files={projectFiles}
                 isLoading={isLoadingSnapshot}
+                onConfigureCapabilities={onConfigureCapabilities}
               />
             )}
           </main>
@@ -1385,12 +1388,14 @@ function SecondaryTabPanel({
   tab,
   snapshot,
   files,
-  isLoading
+  isLoading,
+  onConfigureCapabilities
 }: {
   tab: ContextEngineTab;
   snapshot: ContextEngineSnapshot | null;
   files: ContextEngineFile[];
   isLoading: boolean;
+  onConfigureCapabilities?: (agentId: string, focus: "skills" | "tools") => void;
 }) {
   if (isLoading && !snapshot) {
     return (
@@ -1427,8 +1432,8 @@ function SecondaryTabPanel({
 
   if (tab === "skills") {
     return (
-      <InfoPanel title="Skills & Tools" subtitle="Declared and effective capabilities visible in AgentOS.">
-        <TwoColumnList leftTitle="Skills" leftValues={snapshot?.policy.effectiveSkills ?? []} rightTitle="Tools" rightValues={snapshot?.policy.effectiveTools ?? []} />
+      <InfoPanel title="Skills & Tools" subtitle="Review what reaches this agent’s context, then manage capabilities through the shared agent editor.">
+        <SkillsToolsPanel snapshot={snapshot} onConfigureCapabilities={onConfigureCapabilities} />
         <DiagnosticsList diagnostics={snapshot?.capabilities.nativeFileToggles.reason ? [snapshot.capabilities.nativeFileToggles.reason] : []} />
       </InfoPanel>
     );
@@ -1474,6 +1479,93 @@ function SecondaryTabPanel({
       </div>
     </InfoPanel>
   );
+}
+
+function SkillsToolsPanel({
+  snapshot,
+  onConfigureCapabilities
+}: {
+  snapshot: ContextEngineSnapshot | null;
+  onConfigureCapabilities?: (agentId: string, focus: "skills" | "tools") => void;
+}) {
+  const skillsBudget = snapshot?.budget.items.find((item) => item.id === "skills") ?? null;
+  const toolsBudget = snapshot?.budget.items.find((item) => item.id === "tools") ?? null;
+  const canConfigure = Boolean(snapshot && onConfigureCapabilities);
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <CapabilityImpactCard label="Effective skills" value={String(snapshot?.policy.effectiveSkills.length ?? 0)} detail={formatCapabilityImpact(skillsBudget)} tone="violet" />
+        <CapabilityImpactCard label="Effective tools" value={String(snapshot?.policy.effectiveTools.length ?? 0)} detail={formatCapabilityImpact(toolsBudget)} tone="blue" />
+        <CapabilityImpactCard label="Observed tools" value={String(snapshot?.policy.observedTools.length ?? 0)} detail="Runtime transcripts" tone="muted" />
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-2.5 sm:flex-row sm:items-center sm:justify-between sm:p-3">
+        <p className="text-xs leading-5 text-[var(--ce-text-muted)]">
+          Capability changes use the shared agent editor and are applied to the real AgentOS/OpenClaw-backed agent policy.
+        </p>
+        <div className="flex shrink-0 gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            className="h-9 flex-1 rounded-[8px] border-[var(--ce-border)] bg-[var(--ce-panel)] px-3 text-xs text-[var(--ce-text-strong)] hover:bg-[var(--ce-panel-hover)] sm:h-8 sm:flex-none"
+            disabled={!canConfigure}
+            title={canConfigure ? "Manage agent skills" : "Agent capability editing is unavailable."}
+            onClick={() => snapshot && onConfigureCapabilities?.(snapshot.agent.id, "skills")}
+          >
+            <Puzzle className="mr-1.5 h-3.5 w-3.5" />
+            Manage skills
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            className="h-9 flex-1 rounded-[8px] border-[var(--ce-border)] bg-[var(--ce-panel)] px-3 text-xs text-[var(--ce-text-strong)] hover:bg-[var(--ce-panel-hover)] sm:h-8 sm:flex-none"
+            disabled={!canConfigure}
+            title={canConfigure ? "Manage agent tools" : "Agent capability editing is unavailable."}
+            onClick={() => snapshot && onConfigureCapabilities?.(snapshot.agent.id, "tools")}
+          >
+            <Wrench className="mr-1.5 h-3.5 w-3.5" />
+            Manage tools
+          </Button>
+        </div>
+      </div>
+
+      <TwoColumnList leftTitle="Effective skills" leftValues={snapshot?.policy.effectiveSkills ?? []} rightTitle="Effective tools" rightValues={snapshot?.policy.effectiveTools ?? []} />
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <CapabilityList title="Declared skills" values={snapshot?.policy.declaredSkills ?? []} emptyLabel="Using preset or inherited skills." />
+        <CapabilityList title="Observed tools" values={snapshot?.policy.observedTools ?? []} emptyLabel="No runtime tools observed yet." />
+      </div>
+    </div>
+  );
+}
+
+function CapabilityImpactCard({
+  label,
+  value,
+  detail,
+  tone
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone: "violet" | "blue" | "muted";
+}) {
+  return (
+    <div className="rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3">
+      <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--ce-text-subtle)]">{label}</p>
+      <p className={cn("mt-1 text-lg font-semibold", tone === "violet" ? "text-[var(--ce-accent)]" : tone === "blue" ? "text-[var(--ce-blue)]" : "text-[var(--ce-text-strong)]")}>{value}</p>
+      <p className="mt-1 truncate text-[10px] text-[var(--ce-text-muted)]" title={detail}>{detail}</p>
+    </div>
+  );
+}
+
+function formatCapabilityImpact(item: ContextEngineBudgetItem | null) {
+  if (!item || item.tokens == null) {
+    return "Context impact unknown";
+  }
+
+  return `${formatTokenValue(item.tokens)} tokens · ${item.source}`;
 }
 
 function EffectiveContextSectionCard({ section }: { section: ContextEngineEffectiveContextSection }) {
@@ -1727,7 +1819,7 @@ function TwoColumnList({
   );
 }
 
-function CapabilityList({ title, values }: { title: string; values: string[] }) {
+function CapabilityList({ title, values, emptyLabel = "No values available." }: { title: string; values: string[]; emptyLabel?: string }) {
   return (
     <div className="rounded-[9px] border border-[var(--ce-border-subtle)] bg-[var(--ce-panel-strong)] p-3">
       <p className="text-xs font-medium text-[var(--ce-text-strong)]">{title}</p>
@@ -1739,7 +1831,7 @@ function CapabilityList({ title, values }: { title: string; values: string[] }) 
             </Badge>
           ))
         ) : (
-          <span className="text-xs text-[var(--ce-text-subtle)]">No values available.</span>
+          <span className="text-xs text-[var(--ce-text-subtle)]">{emptyLabel}</span>
         )}
       </div>
     </div>

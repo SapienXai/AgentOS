@@ -1025,6 +1025,19 @@ test("context file list keeps mobile scrolling single-layered and desktop totals
   assert.doesNotMatch(source, /lg:w-\[min\(90vw,1060px\)\]/);
 });
 
+test("context engine skills and tools uses real capability state and shared editing", () => {
+  const dialogSource = readFileSync(path.join(rootDir, "components/mission-control/context-engine-dialog.tsx"), "utf8");
+  const shellSource = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
+
+  assert.match(dialogSource, /<SkillsToolsPanel snapshot=\{snapshot\} onConfigureCapabilities=\{onConfigureCapabilities\} \/>/);
+  assert.match(dialogSource, /snapshot\?\.policy\.effectiveSkills\.length/);
+  assert.match(dialogSource, /snapshot\?\.policy\.observedTools\.length/);
+  assert.match(dialogSource, /onConfigureCapabilities\?\.\(snapshot\.agent\.id, "skills"\)/);
+  assert.match(dialogSource, /onConfigureCapabilities\?\.\(snapshot\.agent\.id, "tools"\)/);
+  assert.match(dialogSource, /formatCapabilityImpact\(skillsBudget\)/);
+  assert.match(shellSource, /<ContextEngineDialog[\s\S]*onConfigureCapabilities=\{handleConfigureAgentCapabilities\}/);
+});
+
 test("model dialogs use mobile fullscreen layouts with reachable actions", () => {
   const pickerSource = readFileSync(path.join(rootDir, "components/mission-control/agent-model-picker-dialog.tsx"), "utf8");
   const librarySource = readFileSync(path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"), "utf8");

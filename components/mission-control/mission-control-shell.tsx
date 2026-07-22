@@ -4833,6 +4833,7 @@ export function MissionControlShell({
           agentId={contextEngineAgentId}
           open={contextEngineAgentId !== null}
           onOpenChange={handleContextEngineOpenChange}
+          onConfigureCapabilities={handleConfigureAgentCapabilities}
           surfaceTheme={surfaceTheme}
         />
 
