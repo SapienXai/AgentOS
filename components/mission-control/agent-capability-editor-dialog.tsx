@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { AgentCapabilityEditorColumn } from "@/components/mission-control/agent-capability-editor-column";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import {
   Dialog,
   DialogContent,
@@ -74,6 +75,7 @@ type AgentCapabilityEditorDialogProps = {
   onOpenChange: (open: boolean) => void;
   onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
   onRefresh?: () => Promise<void>;
+  onSaved?: () => void;
   surfaceTheme?: "dark" | "light";
 };
 
@@ -85,6 +87,7 @@ export function AgentCapabilityEditorDialog({
   onOpenChange,
   onSnapshotChange,
   onRefresh,
+  onSaved,
   surfaceTheme = "dark"
 }: AgentCapabilityEditorDialogProps) {
   const agent = agentId ? snapshot.agents.find((entry) => entry.id === agentId) ?? null : null;
@@ -354,6 +357,7 @@ export function AgentCapabilityEditorDialog({
       }
 
       onSnapshotChange?.((current) => updateSnapshotAgentCapabilities(current, agent.id, nextSkills, nextTools));
+      onSaved?.();
       toast.success("Agent capabilities updated.");
       onOpenChange(false);
 
@@ -371,7 +375,17 @@ export function AgentCapabilityEditorDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <PikoLoader
+        open={open && saving}
+        title={isSkillsEditor ? "Saving skills" : "Saving tools"}
+        description={
+          isSkillsEditor
+            ? "Updating this agent's skill configuration."
+            : "Updating this agent's tool configuration."
+        }
+      />
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
           "flex h-dvh max-h-dvh w-screen max-w-none flex-col overflow-hidden rounded-none border-0 bg-[image:var(--cap-surface)] p-0 text-[var(--cap-text)] shadow-[0_0_0_1px_rgba(124,58,237,0.12),0_24px_80px_rgba(0,0,0,0.42)] sm:h-auto sm:max-h-[calc(100dvh-1.5rem)] sm:w-[min(680px,calc(100vw-1.5rem))] sm:rounded-[24px] sm:border-[var(--cap-border)]"
@@ -487,6 +501,7 @@ export function AgentCapabilityEditorDialog({
           </DialogFooter>
         </div>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+    </>
   );
 }

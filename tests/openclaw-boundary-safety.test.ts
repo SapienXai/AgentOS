@@ -1025,6 +1025,16 @@ test("context file list keeps mobile scrolling single-layered and desktop totals
   assert.doesNotMatch(source, /lg:w-\[min\(90vw,1060px\)\]/);
 });
 
+test("context engine shows Piko during real loading and saving work", () => {
+  const source = readFileSync(path.join(rootDir, "components/mission-control/context-engine-dialog.tsx"), "utf8");
+
+  assert.match(source, /import \{ PikoLoader \} from "@\/components\/ui\/piko-loader"/);
+  assert.match(source, /const isContextEngineBusy = open && \(isSavingContext \|\| isSavingFile \|\| isLoadingSnapshot \|\| isLoadingFile\)/);
+  assert.match(source, /: isLoadingFile\s+\? "Loading context file"\s+: "Loading Context Engine"/);
+  assert.match(source, /open=\{isContextEngineBusy\}/);
+  assert.match(source, /Loading this agent's context configuration and runtime capability state\./);
+});
+
 test("context engine skills and tools uses real capability state and shared editing", () => {
   const dialogSource = readFileSync(path.join(rootDir, "components/mission-control/context-engine-dialog.tsx"), "utf8");
   const shellSource = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
@@ -1035,7 +1045,10 @@ test("context engine skills and tools uses real capability state and shared edit
   assert.match(dialogSource, /onConfigureCapabilities\?\.\(snapshot\.agent\.id, "skills"\)/);
   assert.match(dialogSource, /onConfigureCapabilities\?\.\(snapshot\.agent\.id, "tools"\)/);
   assert.match(dialogSource, /formatCapabilityImpact\(skillsBudget\)/);
+  assert.match(dialogSource, /capabilitiesRevision = 0/);
+  assert.match(dialogSource, /void refreshSnapshot\(\)/);
   assert.match(shellSource, /<ContextEngineDialog[\s\S]*onConfigureCapabilities=\{handleConfigureAgentCapabilities\}/);
+  assert.match(shellSource, /onSaved=\{\(\) => setCapabilitiesRevision\(\(current\) => current \+ 1\)\}/);
 });
 
 test("model dialogs use mobile fullscreen layouts with reachable actions", () => {
@@ -1080,6 +1093,9 @@ test("agent capability and connection dialogs use mobile fullscreen layouts", ()
   assert.match(capabilityDialogSource, /const capabilityThemeStyles: Record<"dark" \| "light", CapabilityThemeStyle>/);
   assert.match(capabilityDialogSource, /bg-\[image:var\(--cap-surface\)\]/);
   assert.match(capabilityDialogSource, /border-violet-200\/35 bg-\[linear-gradient/);
+  assert.match(capabilityDialogSource, /import \{ PikoLoader \} from "@\/components\/ui\/piko-loader"/);
+  assert.match(capabilityDialogSource, /open=\{open && saving\}/);
+  assert.match(capabilityDialogSource, /title=\{isSkillsEditor \? "Saving skills" : "Saving tools"\}/);
   assert.match(capabilityDialogSource, /setDraftSkills\(\(current\) => normalizeCapabilityValues\(\[value, \.\.\.current\]\)\)/);
   assert.match(capabilityDialogSource, /setDraftTools\(\(current\) => normalizeCapabilityValues\(\[value, \.\.\.current\]\)\)/);
   assert.match(capabilityColumnSource, /const \[showAllSelected, setShowAllSelected\] = useState\(false\)/);

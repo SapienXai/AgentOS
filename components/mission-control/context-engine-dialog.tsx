@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
   Ban,
@@ -162,12 +162,14 @@ export function ContextEngineDialog({
   open,
   onOpenChange,
   onConfigureCapabilities,
+  capabilitiesRevision = 0,
   surfaceTheme = "dark"
 }: {
   agentId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfigureCapabilities?: (agentId: string, focus: "skills" | "tools") => void;
+  capabilitiesRevision?: number;
   surfaceTheme?: ContextEngineSurfaceTheme;
 }) {
   const [engineSnapshot, setEngineSnapshot] = useState<ContextEngineSnapshot | null>(null);
@@ -184,6 +186,7 @@ export function ContextEngineDialog({
   const [isSavingFile, setIsSavingFile] = useState(false);
   const [isSavingContext, setIsSavingContext] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const capabilitiesRevisionRef = useRef(capabilitiesRevision);
   const {
     draftEnabledByPath,
     setDraftEnabledByPath,
@@ -212,6 +215,21 @@ export function ContextEngineDialog({
   const enabledProjectTokenTotal = sumKnownTokens(
     projectFiles.filter((file) => file.enabled).map((file) => file.injectedTokens)
   );
+  const isContextEngineBusy = open && (isSavingContext || isSavingFile || isLoadingSnapshot || isLoadingFile);
+  const contextEngineLoaderTitle = isSavingFile
+    ? "Saving context file"
+    : isSavingContext
+      ? "Saving context configuration"
+      : isLoadingFile
+        ? "Loading context file"
+        : "Loading Context Engine";
+  const contextEngineLoaderDescription = isSavingFile
+    ? "Writing the selected context file and refreshing its runtime state."
+    : isSavingContext
+      ? "Applying the selected context files to this agent."
+      : isLoadingFile
+        ? "Reading the selected context file and its current runtime state."
+        : "Loading this agent's context configuration and runtime capability state.";
 
   const refreshSnapshot = useCallback(async () => {
     if (!agentId) {
@@ -263,6 +281,20 @@ export function ContextEngineDialog({
 
     void refreshSnapshot();
   }, [agentId, open, refreshSnapshot, replaceDraftFromFiles]);
+
+  useEffect(() => {
+    if (!open) {
+      capabilitiesRevisionRef.current = capabilitiesRevision;
+      return;
+    }
+
+    if (capabilitiesRevisionRef.current === capabilitiesRevision) {
+      return;
+    }
+
+    capabilitiesRevisionRef.current = capabilitiesRevision;
+    void refreshSnapshot();
+  }, [capabilitiesRevision, open, refreshSnapshot]);
 
   useEffect(() => {
     if (!open || !agentId || !selectedPath) {
@@ -449,13 +481,9 @@ export function ContextEngineDialog({
   return (
     <>
       <PikoLoader
-        open={isSavingContext || isSavingFile}
-        title={isSavingFile ? "Saving context file" : "Saving context configuration"}
-        description={
-          isSavingFile
-            ? "Writing the selected context file and refreshing its runtime state."
-            : "Applying the selected context files to this agent."
-        }
+        open={isContextEngineBusy}
+        title={contextEngineLoaderTitle}
+        description={contextEngineLoaderDescription}
       />
       <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent

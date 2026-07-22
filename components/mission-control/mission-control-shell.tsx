@@ -772,6 +772,7 @@ export function MissionControlShell({
       ) ?? taskReviewRequest.fallbackTask
     );
   }, [taskReviewRequest, uiSnapshot.tasks]);
+  const [capabilitiesRevision, setCapabilitiesRevision] = useState(0);
   const openWorkspaceOnCanvas = useCallback(
     (workspaceId: string | null, options: { markPending?: boolean } = {}) => {
       if (options.markPending && workspaceId) {
@@ -4617,6 +4618,7 @@ export function MissionControlShell({
           onRefresh={async () => {
             await refreshSnapshot({ force: true });
           }}
+          onSaved={() => setCapabilitiesRevision((current) => current + 1)}
           surfaceTheme={surfaceTheme}
         />
 
@@ -4834,6 +4836,7 @@ export function MissionControlShell({
           open={contextEngineAgentId !== null}
           onOpenChange={handleContextEngineOpenChange}
           onConfigureCapabilities={handleConfigureAgentCapabilities}
+          capabilitiesRevision={capabilitiesRevision}
           surfaceTheme={surfaceTheme}
         />
 
