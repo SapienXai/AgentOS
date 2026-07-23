@@ -56,11 +56,21 @@ export async function startBrowserWorkerSession(input: {
   profileId: string;
   initialUrl: string;
 }) {
-  return await requestBrowserWorker<BrowserWorkerSession>({
+  const session = await requestBrowserWorker<BrowserWorkerSession>({
     action: "start-session",
     profileId: input.profileId,
     initialUrl: input.initialUrl
   });
+  const remoteWorkerUrl = process.env.AGENTOS_BROWSER_WORKER_URL?.trim();
+  if (!remoteWorkerUrl) return session;
+
+  const relayBase = requireLoopbackCdpRelayUrl(
+    process.env.AGENTOS_BROWSER_CDP_RELAY_URL
+  );
+  return {
+    ...session,
+    cdpUrl: `${relayBase}/cdp/profile/${encodeURIComponent(session.profileId)}`
+  };
 }
 
 export async function stopBrowserWorkerSession(sessionId: string) {
@@ -102,6 +112,15 @@ export function setBrowserWorkerTransportForTesting(transport: BrowserWorkerTran
 async function requestBrowserWorker<T>(request: BrowserWorkerRequest): Promise<T> {
   if (transportOverride) {
     return await transportOverride(request) as T;
+  }
+
+  const remoteWorkerUrl = process.env.AGENTOS_BROWSER_WORKER_URL?.trim();
+  if (remoteWorkerUrl) {
+    return await requestRemoteBrowserWorker<T>(
+      remoteWorkerUrl,
+      request,
+      workerActionTimeoutMs[request.action]
+    );
   }
 
   const socketPath =
@@ -169,4 +188,93 @@ async function requestBrowserWorker<T>(request: BrowserWorkerRequest): Promise<T
       if (!settled) finish(new Error("Secure browser worker closed the request unexpectedly."));
     });
   });
+}
+
+async function requestRemoteBrowserWorker<T>(
+  rawWorkerUrl: string,
+  request: BrowserWorkerRequest,
+  timeoutMs: number
+): Promise<T> {
+  const workerUrl = normalizeRemoteWorkerUrl(rawWorkerUrl);
+  const workerToken = process.env.AGENTOS_BROWSER_WORKER_TOKEN?.trim();
+  if (!workerToken || workerToken.length < 32) {
+    throw new Error("Secure browser worker authentication is unavailable.");
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${workerUrl}/control`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-AgentOS-Browser-Worker-Token": workerToken
+      },
+      body: JSON.stringify(request),
+      cache: "no-store",
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "TimeoutError") {
+      throw new Error(
+        request.action === "start-session"
+          ? "Secure browser startup did not finish within 90 seconds. Check the private Railway browser worker."
+          : "Secure browser worker did not respond in time."
+      );
+    }
+    throw new Error("Secure browser worker is unavailable.");
+  }
+
+  const rawBody = await response.text();
+  if (Buffer.byteLength(rawBody, "utf8") > maximumResponseBytes) {
+    throw new Error("Secure browser worker returned an invalid response.");
+  }
+
+  let payload: {
+    ok?: unknown;
+    result?: T;
+    error?: unknown;
+  };
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    throw new Error("Secure browser worker returned an invalid response.");
+  }
+  if (!response.ok || payload.ok !== true) {
+    throw new Error(
+      typeof payload.error === "string"
+        ? redactErrorMessage(payload.error, "Secure browser worker action failed.")
+        : "Secure browser worker action failed."
+    );
+  }
+  return payload.result as T;
+}
+
+function normalizeRemoteWorkerUrl(value: string) {
+  const url = new URL(value);
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    (url.pathname !== "/" && url.pathname !== "")
+  ) {
+    throw new Error("Secure browser worker URL is invalid.");
+  }
+  return url.origin;
+}
+
+function requireLoopbackCdpRelayUrl(value: string | undefined) {
+  const url = new URL(value?.trim() || "http://127.0.0.1:3000/_agentos/browser-cdp");
+  if (
+    url.protocol !== "http:" ||
+    url.hostname !== "127.0.0.1" ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error("Secure browser CDP relay is unavailable.");
+  }
+  return url.href.replace(/\/$/, "");
 }

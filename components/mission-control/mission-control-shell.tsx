@@ -822,6 +822,7 @@ export function MissionControlShell({
     accountBrowserProfiles,
     accountBrowserProfilesError,
     accountBrowserProfileRecoveryBusy,
+    accountSecureBrowserCapabilities,
     accountTargets,
     setAccountTargets,
     accountAccessRules,
@@ -829,7 +830,8 @@ export function MissionControlShell({
     loadAccountBrowserProfiles,
     openConnectAccountDialog,
     restartGatewayForAccountProfiles,
-    connectAccount
+    connectAccount,
+    connectSecureBrowserAccount
   } = useMissionControlWorkspaceActions({
     activeWorkspace: activeWorkspaceForDialogs,
     openWorkspaceOnCanvas
@@ -4823,6 +4825,11 @@ export function MissionControlShell({
           workspace={activeWorkspaceForDialogs}
           onOpenChange={setIsConnectAccountDialogOpen}
           onSubmit={connectAccount}
+          onSecureSubmit={connectSecureBrowserAccount}
+          secureBrowserCapabilities={accountSecureBrowserCapabilities}
+          agents={uiSnapshot.agents.filter(
+            (agent) => agent.workspaceId === activeWorkspaceForDialogs?.id
+          )}
           profiles={accountBrowserProfiles}
           profilesError={accountBrowserProfilesError}
           onRetryProfiles={() => void loadAccountBrowserProfiles()}

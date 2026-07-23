@@ -456,9 +456,9 @@ test("Live View capability is one-time, owner-bound, short-lived, and revocable"
   );
 });
 
-test("browser account API and UI expose explicit Secure Live View controls", async () => {
+test("browser account API and every account modal expose explicit Secure Live View controls", async () => {
   const root = process.cwd();
-  const [route, routeSecurity, policyRoute, workerEventRoute, policySecurity, proxy, supervisor, ui, mission, workflow] = await Promise.all([
+  const [route, routeSecurity, policyRoute, workerEventRoute, policySecurity, proxy, supervisor, ui, workspaceActions, missionShell, mission, workflow] = await Promise.all([
     readFile(path.join(root, "app/api/accounts/browser-accounts/route.ts"), "utf8"),
     readFile(path.join(root, "lib/security/browser-account-route.ts"), "utf8"),
     readFile(path.join(root, "app/api/internal/browser-policy/heartbeat/route.ts"), "utf8"),
@@ -467,6 +467,8 @@ test("browser account API and UI expose explicit Secure Live View controls", asy
     readFile(path.join(root, "proxy.ts"), "utf8"),
     readFile(path.join(root, "scripts/railway-supervisor.mjs"), "utf8"),
     readFile(path.join(root, "components/operations/accounts/accounts-page-content.tsx"), "utf8"),
+    readFile(path.join(root, "components/mission-control/use-mission-control-workspace-actions.ts"), "utf8"),
+    readFile(path.join(root, "components/mission-control/mission-control-shell.tsx"), "utf8"),
     readFile(path.join(root, "lib/agentos/application/account-target-mission-context-service.ts"), "utf8"),
     readFile(path.join(root, "lib/openclaw/domains/mission-dispatch-workflow.ts"), "utf8")
   ]);
@@ -491,6 +493,11 @@ test("browser account API and UI expose explicit Secure Live View controls", asy
   assert.match(ui, /Start Secure Browser/);
   assert.match(ui, /Open Live View/);
   assert.match(ui, /Unavailable in this runtime/);
+  assert.match(workspaceActions, /loadAccountSecureBrowserCapabilities/);
+  assert.match(workspaceActions, /connectSecureBrowserAccount/);
+  assert.match(workspaceActions, /startSecureLiveView/);
+  assert.match(missionShell, /onSecureSubmit=\{connectSecureBrowserAccount\}/);
+  assert.match(missionShell, /secureBrowserCapabilities=\{accountSecureBrowserCapabilities\}/);
   assert.doesNotMatch(mission, /prompt-only profile selection/);
   assert.match(mission, /BrowserTaskBindingRequest/);
   assert.match(ui, /Task-bound policy/);
@@ -803,7 +810,7 @@ test("Secure Browser production smoke covers persistence, worker crash restart, 
 });
 
 test("Secure Browser startup uses a Railway-safe timeout and visible progress state", async () => {
-  const [client, worker, accountsUi] = await Promise.all([
+  const [client, worker, accountsUi, connectClient] = await Promise.all([
     readFile(
       path.join(process.cwd(), "lib/agentos/browser-accounts/browser-worker-client.ts"),
       "utf8"
@@ -811,6 +818,10 @@ test("Secure Browser startup uses a Railway-safe timeout and visible progress st
     readFile(path.join(process.cwd(), "scripts/secure-browser-worker.mjs"), "utf8"),
     readFile(
       path.join(process.cwd(), "components/operations/accounts/accounts-page-content.tsx"),
+      "utf8"
+    ),
+    readFile(
+      path.join(process.cwd(), "components/operations/accounts/secure-browser-connect-client.ts"),
       "utf8"
     )
   ]);
@@ -822,7 +833,7 @@ test("Secure Browser startup uses a Railway-safe timeout and visible progress st
   assert.match(worker, /waitForManagedCondition/);
   assert.match(worker, /child\.signalCode !== null/);
   assert.match(worker, /Secure browser session startup failed during/);
-  assert.match(accountsUi, /Starting secure browser…/);
+  assert.match(connectClient, /Starting secure browser…/);
   assert.match(accountsUi, /Profiles \$\{/);
   assert.match(accountsUi, /Task dispatch \$\{/);
 });

@@ -1,9 +1,12 @@
 import { createServer, request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 
 import { WebSocket, WebSocketServer } from "ws";
 
 const liveViewPathPattern =
   /^\/api\/accounts\/browser-live\/ws\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(?:\?.*)?$/i;
+const cdpRelayPrefix = "/_agentos/browser-cdp";
+const maximumCdpResponseBytes = 4 * 1024 * 1024;
 const browserLiveCsp = [
   "default-src 'self'",
   "script-src 'self'",
@@ -22,7 +25,7 @@ const browserLiveCsp = [
 export async function startRailwayPublicProxy(input) {
   const publicPort = input.publicPort;
   const nextPort = input.nextPort;
-  const browserWorkerPort = input.browserWorkerPort;
+  const browserWorkerUrl = normalizeWorkerUrl(input.browserWorkerUrl);
   const browserProxyToken = input.browserProxyToken;
   const browserWorkerToken = input.browserWorkerToken;
   const webSocketServer = new WebSocketServer({
@@ -32,10 +35,31 @@ export async function startRailwayPublicProxy(input) {
   });
 
   const server = createServer((request, response) => {
+    if (isCdpRelayRequest(request.url)) {
+      void proxyPrivateCdpRequest({
+        request,
+        response,
+        publicPort,
+        browserWorkerUrl,
+        browserWorkerToken
+      });
+      return;
+    }
     proxyHttpRequest({ request, response, nextPort });
   });
 
   server.on("upgrade", (request, socket, head) => {
+    if (isCdpRelayRequest(request.url)) {
+      void bridgePrivateCdpWebSocket({
+        request,
+        socket,
+        head,
+        browserWorkerUrl,
+        browserWorkerToken,
+        webSocketServer
+      });
+      return;
+    }
     const match = liveViewPathPattern.exec(request.url || "");
     if (!match) {
       rejectUpgrade(socket, 404);
@@ -47,7 +71,7 @@ export async function startRailwayPublicProxy(input) {
       head,
       sessionId: match[1].toLowerCase(),
       nextPort,
-      browserWorkerPort,
+      browserWorkerUrl,
       browserProxyToken,
       browserWorkerToken,
       webSocketServer
@@ -128,7 +152,7 @@ async function authorizeAndBridgeLiveView(input) {
     }
 
     const workerWebSocket = new WebSocket(
-      `ws://127.0.0.1:${input.browserWorkerPort}/session/${input.sessionId}`,
+      toWorkerWebSocketUrl(input.browserWorkerUrl, `/session/${input.sessionId}`),
       {
         headers: {
           "x-agentos-browser-worker-token": input.browserWorkerToken
@@ -145,6 +169,133 @@ async function authorizeAndBridgeLiveView(input) {
     });
   } catch {
     rejectUpgrade(input.socket, 503);
+  }
+}
+
+async function proxyPrivateCdpRequest(input) {
+  if (!isLoopbackAddress(input.request.socket.remoteAddress)) {
+    input.response.writeHead(404, { "Cache-Control": "no-store" });
+    input.response.end();
+    return;
+  }
+
+  const upstreamPath = rewriteCdpRelayPath(input.request.url);
+  if (!upstreamPath) {
+    input.response.writeHead(404, { "Cache-Control": "no-store" });
+    input.response.end();
+    return;
+  }
+
+  const upstreamUrl = new URL(upstreamPath, input.browserWorkerUrl);
+  const requestImplementation =
+    upstreamUrl.protocol === "https:" ? httpsRequest : httpRequest;
+  const upstream = requestImplementation({
+    protocol: upstreamUrl.protocol,
+    hostname: upstreamUrl.hostname,
+    port: upstreamUrl.port,
+    method: input.request.method,
+    path: `${upstreamUrl.pathname}${upstreamUrl.search}`,
+    headers: {
+      host: upstreamUrl.host,
+      "content-type":
+        readHeader(input.request.headers["content-type"]) || "application/json",
+      "x-agentos-browser-worker-token": input.browserWorkerToken
+    }
+  }, (upstreamResponse) => {
+    const chunks = [];
+    let size = 0;
+    upstreamResponse.on("data", (chunk) => {
+      size += chunk.length;
+      if (size <= maximumCdpResponseBytes) chunks.push(chunk);
+    });
+    upstreamResponse.on("end", () => {
+      if (size > maximumCdpResponseBytes) {
+        input.response.writeHead(502, { "Cache-Control": "no-store" });
+        input.response.end();
+        return;
+      }
+      const contentType = String(upstreamResponse.headers["content-type"] || "");
+      const body = Buffer.concat(chunks);
+      const responseBody = contentType.includes("json")
+        ? rewriteRelayedCdpJson(body, input.publicPort)
+        : body;
+      input.response.writeHead(upstreamResponse.statusCode || 502, {
+        "Cache-Control": "no-store",
+        "Content-Type": contentType || "application/octet-stream"
+      });
+      input.response.end(responseBody);
+    });
+  });
+  upstream.once("error", () => {
+    if (input.response.headersSent) {
+      input.response.destroy();
+      return;
+    }
+    input.response.writeHead(502, { "Cache-Control": "no-store" });
+    input.response.end();
+  });
+  input.request.pipe(upstream);
+}
+
+async function bridgePrivateCdpWebSocket(input) {
+  if (!isLoopbackAddress(input.socket.remoteAddress)) {
+    rejectUpgrade(input.socket, 404);
+    return;
+  }
+  const upstreamPath = rewriteCdpRelayPath(input.request.url);
+  if (!upstreamPath) {
+    rejectUpgrade(input.socket, 404);
+    return;
+  }
+
+  try {
+    const workerWebSocket = new WebSocket(
+      toWorkerWebSocketUrl(input.browserWorkerUrl, upstreamPath),
+      {
+        headers: {
+          "x-agentos-browser-worker-token": input.browserWorkerToken
+        },
+        perMessageDeflate: false,
+        handshakeTimeout: 3_000,
+        maxPayload: 2 * 1024 * 1024
+      }
+    );
+    await waitForWebSocketOpen(workerWebSocket);
+    input.webSocketServer.handleUpgrade(
+      input.request,
+      input.socket,
+      input.head,
+      (loopbackWebSocket) => bridgeWebSockets(loopbackWebSocket, workerWebSocket)
+    );
+  } catch {
+    rejectUpgrade(input.socket, 503);
+  }
+}
+
+export function rewriteRelayedCdpJson(body, publicPort) {
+  try {
+    const value = JSON.parse(body.toString("utf8"));
+    const rewrite = (entry) => {
+      if (Array.isArray(entry)) return entry.map(rewrite);
+      if (!entry || typeof entry !== "object") return entry;
+      const next = {};
+      for (const [key, child] of Object.entries(entry)) {
+        if (key === "webSocketDebuggerUrl" && typeof child === "string") {
+          const url = new URL(child);
+          const cdpPath = url.pathname.startsWith("/cdp/")
+            ? url.pathname
+            : `/cdp${url.pathname}`;
+          next[key] =
+            `ws://127.0.0.1:${publicPort}${cdpRelayPrefix}${cdpPath}${url.search}`;
+        } else {
+          next[key] = rewrite(child);
+        }
+      }
+      return next;
+    };
+    return Buffer.from(JSON.stringify(rewrite(value)));
+  } catch {
+    return body;
   }
 }
 
@@ -179,6 +330,55 @@ function waitForWebSocketOpen(webSocket) {
 function isBrowserLiveDocument(value) {
   const pathname = (value || "").split("?")[0];
   return pathname === "/accounts/browser-live" || pathname.startsWith("/novnc/");
+}
+
+function isCdpRelayRequest(value) {
+  const pathname = (value || "").split("?")[0];
+  return pathname === cdpRelayPrefix || pathname.startsWith(`${cdpRelayPrefix}/`);
+}
+
+export function rewriteCdpRelayPath(value) {
+  try {
+    const url = new URL(value || "/", "http://127.0.0.1");
+    if (
+      url.pathname !== cdpRelayPrefix &&
+      !url.pathname.startsWith(`${cdpRelayPrefix}/`)
+    ) {
+      return null;
+    }
+    const suffix = url.pathname.slice(cdpRelayPrefix.length);
+    if (!suffix.startsWith("/cdp/")) return null;
+    return `${suffix}${url.search}`;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeWorkerUrl(value) {
+  const url = new URL(value);
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    (url.pathname !== "/" && url.pathname !== "")
+  ) {
+    throw new Error("Secure browser worker URL is invalid.");
+  }
+  return url.origin;
+}
+
+function toWorkerWebSocketUrl(workerUrl, requestPath) {
+  const url = new URL(requestPath, workerUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.href;
+}
+
+export function isLoopbackAddress(value) {
+  return value === "127.0.0.1" ||
+    value === "::1" ||
+    value === "::ffff:127.0.0.1";
 }
 
 function stripHopByHopHeaders(headers) {

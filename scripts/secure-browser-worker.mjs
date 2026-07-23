@@ -22,7 +22,13 @@ export async function startSecureBrowserWorker(env = process.env) {
   const controlSocketPath = env.AGENTOS_BROWSER_WORKER_SOCKET_PATH?.trim() || defaultControlSocketPath;
   const internalToken = env.AGENTOS_BROWSER_WORKER_TOKEN?.trim();
   const chromeBinary = env.CHROME_BIN?.trim() || "/usr/bin/chromium";
-  const httpPort = readPort(env.AGENTOS_BROWSER_WORKER_PORT, defaultHttpPort);
+  const httpPort = readPort(
+    env.AGENTOS_BROWSER_WORKER_PORT || env.PORT,
+    defaultHttpPort
+  );
+  const httpHost = env.AGENTOS_BROWSER_WORKER_HOST?.trim() || "127.0.0.1";
+  const disableChromiumSandbox =
+    env.AGENTOS_BROWSER_DISABLE_CHROMIUM_SANDBOX === "1";
   const sessionTtlMs = readPositiveInteger(env.AGENTOS_BROWSER_SESSION_TTL_MS, defaultSessionTtlMs);
   const sessions = new Map();
 
@@ -47,11 +53,31 @@ export async function startSecureBrowserWorker(env = process.env) {
         "Cache-Control": "no-store",
         "Content-Type": "application/json; charset=utf-8"
       });
-      response.end(`${JSON.stringify({ ok: true, activeSessions: sessions.size })}\n`);
+      response.end(`${JSON.stringify({ ok: true })}\n`);
+      return;
+    }
+    if (request.method === "POST" && request.url === "/control") {
+      void handleHttpControlRequest({
+        request,
+        response,
+        internalToken,
+        profileRoot,
+        chromeBinary,
+        disableChromiumSandbox,
+        httpPort,
+        sessionTtlMs,
+        sessions
+      });
       return;
     }
     const cdpTarget = resolveCdpProxyTarget(request.url, sessions);
-    if (cdpTarget) {
+    if (
+      cdpTarget &&
+      constantTimeEqual(
+        readSingleHeader(request.headers["x-agentos-browser-worker-token"]),
+        internalToken
+      )
+    ) {
       void proxyCdpHttpRequest(request, response, cdpTarget, httpPort);
       return;
     }
@@ -60,6 +86,15 @@ export async function startSecureBrowserWorker(env = process.env) {
   });
 
   httpServer.on("upgrade", (request, socket, head) => {
+    if (
+      !constantTimeEqual(
+        readSingleHeader(request.headers["x-agentos-browser-worker-token"]),
+        internalToken
+      )
+    ) {
+      rejectUpgrade(socket, 403);
+      return;
+    }
     const cdpTarget = resolveCdpProxyTarget(request.url, sessions);
     if (cdpTarget?.upstreamPath.startsWith("/devtools/")) {
       webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
@@ -70,8 +105,7 @@ export async function startSecureBrowserWorker(env = process.env) {
 
     const sessionId = readSessionIdFromWebSocketPath(request.url);
     if (
-      !sessionId ||
-      !constantTimeEqual(request.headers["x-agentos-browser-worker-token"], internalToken)
+      !sessionId
     ) {
       rejectUpgrade(socket, 403);
       return;
@@ -106,6 +140,7 @@ export async function startSecureBrowserWorker(env = process.env) {
         line,
         profileRoot,
         chromeBinary,
+        disableChromiumSandbox,
         httpPort,
         sessionTtlMs,
         sessions
@@ -114,10 +149,15 @@ export async function startSecureBrowserWorker(env = process.env) {
   });
 
   await Promise.all([
-    listenHttpServer(httpServer, httpPort),
+    listenHttpServer(httpServer, httpPort, httpHost),
     listenControlServer(controlServer, controlSocketPath)
   ]);
   await chmod(controlSocketPath, 0o600);
+  if (disableChromiumSandbox) {
+    console.error(
+      "Secure browser Chromium sandbox is disabled by explicit deployment policy; container isolation is required."
+    );
+  }
 
   let stopping = false;
   const stop = async () => {
@@ -151,17 +191,22 @@ export async function startSecureBrowserWorker(env = process.env) {
     profileRoot,
     controlSocketPath,
     httpPort,
+    httpHost,
     stop
   };
 }
 
 async function handleControlRequest(input) {
+  const response = await executeControlRequest(input);
+  writeControlResponse(input.socket, response);
+}
+
+async function executeControlRequest(input) {
   let request;
   try {
     request = JSON.parse(input.line);
   } catch {
-    writeControlResponse(input.socket, { ok: false, error: "Invalid browser worker request." });
-    return;
+    return { ok: false, error: "Invalid browser worker request." };
   }
 
   try {
@@ -173,6 +218,7 @@ async function handleControlRequest(input) {
           ? await startBrowserSession({
               profileRoot: input.profileRoot,
               chromeBinary: input.chromeBinary,
+              disableChromiumSandbox: input.disableChromiumSandbox,
               httpPort: input.httpPort,
               sessionTtlMs: input.sessionTtlMs,
               sessions: input.sessions,
@@ -194,14 +240,39 @@ async function handleControlRequest(input) {
               : null;
 
     if (!result) {
-      writeControlResponse(input.socket, { ok: false, error: "Unsupported browser worker action." });
-      return;
+      return { ok: false, error: "Unsupported browser worker action." };
     }
-    writeControlResponse(input.socket, { ok: true, result });
+    return { ok: true, result };
   } catch (error) {
-    writeControlResponse(input.socket, {
+    return {
       ok: false,
       error: sanitizeWorkerError(error)
+    };
+  }
+}
+
+async function handleHttpControlRequest(input) {
+  if (
+    !constantTimeEqual(
+      readSingleHeader(input.request.headers["x-agentos-browser-worker-token"]),
+      input.internalToken
+    )
+  ) {
+    writeHttpJson(input.response, 403, { ok: false, error: "Forbidden." });
+    return;
+  }
+
+  try {
+    const line = await readBoundedRequestBody(
+      input.request,
+      maximumControlRequestBytes
+    );
+    const result = await executeControlRequest({ ...input, line });
+    writeHttpJson(input.response, result.ok ? 200 : 400, result);
+  } catch {
+    writeHttpJson(input.response, 400, {
+      ok: false,
+      error: "Invalid browser worker request."
     });
   }
 }
@@ -349,9 +420,10 @@ async function startBrowserSession(input) {
   try {
     const display = `:${displayNumber}`;
     const childEnvironment = {
-      ...process.env,
       DISPLAY: display,
-      HOME: process.env.HOME || "/home/node"
+      HOME: process.env.HOME || "/home/node",
+      LANG: process.env.LANG || "C.UTF-8",
+      PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin"
     };
     const xvfb = spawnManaged("Xvfb", [
       display,
@@ -380,6 +452,7 @@ async function startBrowserSession(input) {
       `--user-data-dir=${profilePath}`,
       "--remote-debugging-address=127.0.0.1",
       `--remote-debugging-port=${cdpPort}`,
+      ...(input.disableChromiumSandbox ? ["--no-sandbox"] : []),
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-background-networking",
@@ -858,10 +931,10 @@ function readPositiveInteger(value, fallback) {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function listenHttpServer(server, port) {
+function listenHttpServer(server, port, host) {
   return new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(port, host, () => {
       server.off("error", reject);
       resolve();
     });
@@ -886,6 +959,38 @@ function closeServer(server) {
     }
     server.close(() => resolve());
   });
+}
+
+function readBoundedRequestBody(request, maximumBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    request.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > maximumBytes) {
+        reject(new Error("Request body is too large."));
+        request.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.once("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    request.once("error", reject);
+  });
+}
+
+function writeHttpJson(response, status, value) {
+  if (response.headersSent) return;
+  response.writeHead(status, {
+    "Cache-Control": "no-store",
+    "Content-Type": "application/json; charset=utf-8",
+    "X-Content-Type-Options": "nosniff"
+  });
+  response.end(`${JSON.stringify(value)}\n`);
+}
+
+function readSingleHeader(value) {
+  return Array.isArray(value) ? value[0] || "" : value || "";
 }
 
 function childExit(child) {

@@ -1,0 +1,46 @@
+FROM node:24-bookworm@sha256:3a09aa6354567619221ef6c45a5051b671f953f0a1924d1f819ffb236e520e6b AS runtime-dependencies
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=/pnpm:$PATH
+
+RUN corepack enable
+
+WORKDIR /build
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile && \
+    mkdir -p /runtime-extras/node_modules && \
+    cp -LR node_modules/ws /runtime-extras/node_modules/ws
+
+FROM node:24-bookworm@sha256:3a09aa6354567619221ef6c45a5051b671f953f0a1924d1f819ffb236e520e6b
+
+USER root
+
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      chromium \
+      chromium-sandbox \
+      gosu \
+      openbox \
+      tini \
+      x11vnc \
+      xvfb && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /browser-worker
+
+COPY --from=runtime-dependencies --chown=node:node /runtime-extras/node_modules/ws ./node_modules/ws
+COPY --chown=node:node scripts/secure-browser-worker.mjs ./scripts/secure-browser-worker.mjs
+COPY scripts/railway-browser-worker-entrypoint.sh ./scripts/railway-browser-worker-entrypoint.sh
+
+RUN chmod 0755 ./scripts/railway-browser-worker-entrypoint.sh
+
+ENV NODE_ENV=production \
+    HOME=/home/node \
+    CHROME_BIN=/usr/bin/chromium \
+    AGENTOS_BROWSER_PROFILE_ROOT=/data/browser-profiles \
+    AGENTOS_BROWSER_WORKER_HOST=:: \
+    AGENTOS_BROWSER_DISABLE_CHROMIUM_SANDBOX=1 \
+    AGENTOS_BROWSER_SESSION_TTL_MS=1200000
+
+ENTRYPOINT ["tini", "-s", "--", "/browser-worker/scripts/railway-browser-worker-entrypoint.sh"]

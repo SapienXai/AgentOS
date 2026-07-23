@@ -31,12 +31,14 @@ AgentOS never treats a profile name added to a prompt as enforcement.
 Railway HTTPS domain :3000
 └── AgentOS public proxy
     ├── HTTP -> Next.js 127.0.0.1:3001
+    ├── loopback-only CDP relay for OpenClaw
     └── authorized Live View WebSocket
-        └── browser worker 127.0.0.1:18794
-            └── x11vnc 127.0.0.1:<ephemeral>
-                └── Xvfb + openbox + headed Chromium
-                    ├── CDP 127.0.0.1:<ephemeral>
-                    └── /data/browser-profiles/<scoped-profile-id>
+        └── authenticated Railway private network
+            └── dedicated browser-worker service :18794
+                └── x11vnc 127.0.0.1:<ephemeral>
+                    └── Xvfb + openbox + headed Chromium
+                        ├── CDP 127.0.0.1:<ephemeral>
+                        └── dedicated volume /data/browser-profiles/<profile-id>
 
 OpenClaw Gateway 127.0.0.1:18789
 ├── remains the agent runtime and source of truth
@@ -49,10 +51,10 @@ OpenClaw Gateway 127.0.0.1:18789
     └── uses plugin.approval for interactive actions
 ```
 
-The worker also exposes an owner-only Unix control socket at
-`/tmp/agentos-browser-worker.sock`. Next.js can create, start, stop, and revoke
-profiles through that socket. Raw VNC and CDP endpoints are never returned by
-an AgentOS API and have no Railway public port.
+The Railway worker exposes a token-authenticated private HTTP control endpoint.
+The owner-only Unix socket remains available for local development fallback.
+Raw VNC and remote CDP endpoints are never returned by an AgentOS API and have
+no Railway public port.
 
 The provider boundary remains
 `lib/agentos/browser-accounts/provider.ts`. The default
@@ -61,9 +63,9 @@ and persistence while preserving a future OpenClaw task adapter boundary.
 Optional provider identifiers do not install or require paid SDKs. OpenClaw
 core is not forked.
 
-The worker keeps Chromium's raw ephemeral CDP endpoint private and returns only
-a stable loopback Browser Gateway route through the owner-only Unix control
-socket. AgentOS temporarily configures that private route on an `attachOnly`
+The worker keeps Chromium's raw ephemeral CDP endpoint private. AgentOS rewrites
+the worker route to a stable loopback-only CDP relay in the main service and
+temporarily configures that route on an `attachOnly`
 OpenClaw profile through native Gateway config mutation. Raw Chromium CDP URLs
 are not persisted in account, task, or OpenClaw config and are never returned
 through AgentOS HTTP.
@@ -104,7 +106,7 @@ through AgentOS HTTP.
    ID to derive the exact session key expected by OpenClaw `2026.6.11`.
 4. A ten-minute durable lease and fencing token are acquired. The worker starts
    the persistent Chromium profile and returns its stable loopback Browser
-   Gateway route over the Unix socket.
+   Gateway route over the authenticated private control channel.
 5. AgentOS adds a temporary `attachOnly` OpenClaw browser profile through
    Gateway config mutation and writes a secret-free task binding.
 6. The OpenClaw plugin matches `ctx.agentId` and `ctx.sessionKey`, overwrites
@@ -142,7 +144,8 @@ operator to reconnect through Live View.
 
 ## Storage and isolation
 
-- Profiles: `/data/browser-profiles/<profile-id>`, owner-only mode `0700`.
+- Profiles: the dedicated worker volume at
+  `/data/browser-profiles/<profile-id>`, owner-only mode `0700`.
 - AgentOS policy, leases, capability hashes, and audit:
   `/data/agentos/mission-control/browser-accounts.json`.
 - Active secret-free task bindings:
@@ -155,8 +158,8 @@ operator to reconnect through Live View.
 Profile IDs are derived from owner, workspace, and account identity. A durable
 lease permits one writer and uses a monotonically increasing fencing token so
 an expired holder cannot release a newer lease. The filesystem registry lock
-assumes one AgentOS replica attached to one Railway volume; it is not a
-distributed multi-replica lock.
+assumes one AgentOS replica. The private worker also rejects a second active
+session for the same profile. This is not a distributed multi-replica lock.
 
 Cookies, localStorage, service tokens, and session state exist inside the
 Chromium profile. They are intentionally not copied into the AgentOS database.
@@ -181,10 +184,17 @@ encrypted browser worker for stricter enterprise requirements.
   frame, MIME, and Permissions Policy headers.
 - The embedded noVNC Lite surface provides no AgentOS clipboard, upload,
   download, file-transfer, or recording controls.
-- Chromium keeps its sandbox; the worker does not use `--no-sandbox`.
+- Local/main-container fallback keeps Chromium's sandbox. Railway's dedicated
+  worker explicitly uses `--no-sandbox` because the Railway container runtime
+  rejects Chromium's credential sandbox setup. The exception is confined to a
+  private, single-purpose, non-root container that receives no AgentOS,
+  OpenClaw, provider, or model secrets.
+- Chromium, Xvfb, openbox, and x11vnc receive a minimal allowlisted child
+  environment. The worker token and inherited application secrets are not
+  passed to browser child processes.
 - Xvfb disables TCP listening. CDP and x11vnc bind to loopback and use
   ephemeral ports.
-- Worker health reveals only readiness and active-session count.
+- Worker health reveals only readiness.
 - Provider verification uses a bounded private CDP evaluation containing only
   versioned CSS selectors. Results are reduced to marker state and hostname.
 - Logs and audits omit URLs, passwords, cookies, tokens, process arguments,
@@ -200,12 +210,11 @@ encrypted browser worker for stricter enterprise requirements.
 - CLI mission fallback is disabled for account-bound tasks. Native Gateway
   mission dispatch and the loaded policy plugin are mandatory.
 
-x11vnc runs without its own password because it is not a public or cross-host
-security boundary: it accepts only loopback connections and is reached through
-two authenticated WebSocket hops. This leaves a same-container, same-network-
-namespace residual risk. Deploy the browser worker as a separate private
-service or replace the display transport with KasmVNC when process-level or
-tenant-level isolation is required.
+x11vnc runs without its own password because it accepts only loopback
+connections inside the dedicated worker and is reached through two
+authenticated WebSocket hops. The remaining same-worker namespace risk is
+limited to that browser worker. Use a worker and volume per tenant, or replace
+the display transport with KasmVNC, for hostile multi-tenant isolation.
 
 The noVNC client is trusted static code served by AgentOS. It needs scripts and
 same-origin access to load its modules and open the authorized WebSocket. A
@@ -226,9 +235,9 @@ for a future multi-tenant SaaS deployment.
 ### Health and recovery
 
 - `/api/health` covers the public application and OpenClaw Gateway.
-- The supervisor independently probes the browser worker and restarts it up to
-  three times. Exhausted restarts terminate the container so Railway can apply
-  its restart policy.
+- The AgentOS supervisor independently probes the private browser worker,
+  fences active bindings when it becomes unavailable, and keeps AgentOS online
+  while Railway restarts the worker service.
 - Worker restart stops active display processes; persistent profiles remain.
 - Before restarting an unhealthy worker, the supervisor sends a
   token-authenticated loopback event to AgentOS. Active account leases and task

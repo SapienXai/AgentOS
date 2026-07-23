@@ -4,6 +4,13 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { WorkspaceDialogSection } from "@/components/mission-control/workspace-channels-dialog";
 import type { ConnectBrowserProfileInput } from "@/components/operations/accounts/accounts-page-content";
+import {
+  prepareSecureBrowserPopup,
+  startSecureLiveView,
+  type SecureBrowserAccountView,
+  type SecureBrowserCapabilityView,
+  type SecureBrowserConnectInput
+} from "@/components/operations/accounts/secure-browser-connect-client";
 import { toast } from "@/components/ui/sonner";
 import type {
   AccountAccessRulesResponse,
@@ -39,6 +46,8 @@ export function useMissionControlWorkspaceActions({
   const [accountBrowserProfiles, setAccountBrowserProfiles] = useState<OpenClawBrowserProfileView[]>([]);
   const [accountBrowserProfilesError, setAccountBrowserProfilesError] = useState<string | null>(null);
   const [accountBrowserProfileRecoveryBusy, setAccountBrowserProfileRecoveryBusy] = useState<"restart" | null>(null);
+  const [accountSecureBrowserCapabilities, setAccountSecureBrowserCapabilities] =
+    useState<SecureBrowserCapabilityView | null>(null);
   const [accountTargets, setAccountTargets] = useState<AccountLoginTargetView[]>([]);
   const [accountAccessRules, setAccountAccessRules] = useState<AccountAccessRuleView[]>([]);
 
@@ -102,6 +111,33 @@ export function useMissionControlWorkspaceActions({
     }
   }, []);
 
+  const loadAccountSecureBrowserCapabilities = useCallback(async () => {
+    if (!activeWorkspace) {
+      setAccountSecureBrowserCapabilities(null);
+      return;
+    }
+    try {
+      const response = await fetch(
+        `/api/accounts/browser-accounts?workspaceId=${encodeURIComponent(activeWorkspace.id)}`,
+        { cache: "no-store" }
+      );
+      const payload = await response.json().catch(() => null) as {
+        capabilities?: SecureBrowserCapabilityView;
+        error?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Unable to read Secure Browser capabilities.");
+      }
+      setAccountSecureBrowserCapabilities(payload?.capabilities ?? null);
+    } catch {
+      setAccountSecureBrowserCapabilities(null);
+    }
+  }, [activeWorkspace]);
+
+  useEffect(() => {
+    void loadAccountSecureBrowserCapabilities();
+  }, [loadAccountSecureBrowserCapabilities]);
+
   useEffect(() => {
     void loadAccountBindings();
   }, [loadAccountBindings]);
@@ -125,7 +161,8 @@ export function useMissionControlWorkspaceActions({
     setIsConnectAccountDialogOpen(true);
     setAccountBrowserProfilesError(null);
     void loadAccountBrowserProfiles();
-  }, [loadAccountBrowserProfiles]);
+    void loadAccountSecureBrowserCapabilities();
+  }, [loadAccountBrowserProfiles, loadAccountSecureBrowserCapabilities]);
 
   const restartGatewayForAccountProfiles = useCallback(async () => {
     setAccountBrowserProfileRecoveryBusy("restart");
@@ -211,6 +248,59 @@ export function useMissionControlWorkspaceActions({
     }
   }, [activeWorkspace, loadAccountBindings, loadAccountBrowserProfiles]);
 
+  const connectSecureBrowserAccount = useCallback(async (input: SecureBrowserConnectInput) => {
+    if (!activeWorkspace) {
+      toast.error("Select a workspace before connecting an account.");
+      return;
+    }
+    const popup = window.open("about:blank", "agentos-secure-browser");
+    if (!popup) {
+      toast.error("Allow pop-ups to open Secure Browser Live View.");
+      return;
+    }
+    prepareSecureBrowserPopup(popup);
+    try {
+      const createResponse = await fetch("/api/accounts/browser-accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          workspaceId: activeWorkspace.id,
+          serviceName: input.serviceName,
+          primaryDomain: input.primaryDomain,
+          allowedDomains: [input.primaryDomain],
+          allowedAgentIds: input.allowedAgentIds
+        })
+      });
+      const createPayload = await createResponse.json().catch(() => null) as {
+        result?: { account?: SecureBrowserAccountView };
+        error?: string;
+      } | null;
+      const account = createPayload?.result?.account;
+      if (!createResponse.ok || !account) {
+        throw new Error(
+          createPayload?.error ?? "Unable to create the secure browser profile."
+        );
+      }
+
+      const launchUrl = await startSecureLiveView(account.id, account.workspaceId);
+      popup.location.replace(launchUrl);
+      setIsConnectAccountDialogOpen(false);
+      toast.success("Secure Browser opened.", {
+        description: "Your password and verification codes stay inside the isolated browser session."
+      });
+      await loadAccountBindings();
+    } catch (error) {
+      popup.close();
+      toast.error("Connect Browser Account did not complete.", {
+        description: readBrowserProfileError(
+          error,
+          "Unable to start Secure Browser Live View."
+        )
+      });
+    }
+  }, [activeWorkspace, loadAccountBindings]);
+
   return {
     isWorkspaceWizardOpen,
     workspaceWizardInitialMode,
@@ -231,6 +321,7 @@ export function useMissionControlWorkspaceActions({
     accountBrowserProfiles,
     accountBrowserProfilesError,
     accountBrowserProfileRecoveryBusy,
+    accountSecureBrowserCapabilities,
     accountTargets,
     setAccountTargets,
     accountAccessRules,
@@ -238,7 +329,8 @@ export function useMissionControlWorkspaceActions({
     loadAccountBrowserProfiles,
     openConnectAccountDialog,
     restartGatewayForAccountProfiles,
-    connectAccount
+    connectAccount,
+    connectSecureBrowserAccount
   };
 }
 

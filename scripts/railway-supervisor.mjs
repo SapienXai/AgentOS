@@ -12,7 +12,12 @@ const gatewayLivenessUrl = `http://127.0.0.1:${gatewayPort}/healthz`;
 const publicPort = Number.parseInt(process.env.PORT || "3000", 10);
 const agentosPort = 3001;
 const browserWorkerPort = 18794;
-const browserWorkerLivenessUrl = `http://127.0.0.1:${browserWorkerPort}/healthz`;
+const remoteBrowserWorkerUrl = normalizeBrowserWorkerUrl(
+  process.env.AGENTOS_BROWSER_WORKER_URL
+);
+const browserWorkerUrl =
+  remoteBrowserWorkerUrl || `http://127.0.0.1:${browserWorkerPort}`;
+const browserWorkerLivenessUrl = `${browserWorkerUrl}/healthz`;
 const browserWorkerSocketPath =
   process.env.AGENTOS_BROWSER_WORKER_SOCKET_PATH?.trim() ||
   "/tmp/agentos-browser-worker.sock";
@@ -36,7 +41,9 @@ gatewayEnv.AGENTOS_BROWSER_POLICY_TOKEN = browserPolicyToken;
 gatewayEnv.AGENTOS_BROWSER_POLICY_HEARTBEAT_URL =
   `http://127.0.0.1:${agentosPort}/api/internal/browser-policy/heartbeat`;
 const browserProxyToken = randomBytes(32).toString("base64url");
-const browserWorkerToken = randomBytes(32).toString("base64url");
+const browserWorkerToken = remoteBrowserWorkerUrl
+  ? requireBrowserWorkerToken(process.env.AGENTOS_BROWSER_WORKER_TOKEN)
+  : randomBytes(32).toString("base64url");
 
 await bootstrapRailwayOpenClawConfig(gatewayEnv);
 await unlink(browserPolicyReadyPath).catch((error) => {
@@ -44,7 +51,7 @@ await unlink(browserPolicyReadyPath).catch((error) => {
 });
 
 let gateway = startGateway();
-let browserWorker = startBrowserWorker();
+let browserWorker = remoteBrowserWorkerUrl ? null : startBrowserWorker();
 let agentos = null;
 let publicProxy = null;
 let stopping = false;
@@ -64,7 +71,7 @@ const stop = (signal = "SIGTERM") => {
   controlServer.close();
   publicProxy?.close();
   agentos?.kill(signal);
-  browserWorker.kill(signal);
+  browserWorker?.kill(signal);
   gateway.kill(signal);
 };
 
@@ -82,7 +89,10 @@ try {
   process.exit(1);
 }
 
-if (gateway.exitCode !== null || browserWorker.exitCode !== null) {
+if (
+  gateway.exitCode !== null ||
+  (browserWorker && browserWorker.exitCode !== null)
+) {
   console.error("A required managed service exited before AgentOS started.");
   process.exit(1);
 }
@@ -93,6 +103,10 @@ const agentosEnv = {
   HOSTNAME: "127.0.0.1",
   AGENTOS_BROWSER_PROXY_TOKEN: browserProxyToken,
   AGENTOS_BROWSER_WORKER_SOCKET_PATH: browserWorkerSocketPath,
+  AGENTOS_BROWSER_WORKER_URL: remoteBrowserWorkerUrl || "",
+  AGENTOS_BROWSER_WORKER_TOKEN: browserWorkerToken,
+  AGENTOS_BROWSER_CDP_RELAY_URL:
+    `http://127.0.0.1:${publicPort}/_agentos/browser-cdp`,
   AGENTOS_BROWSER_POLICY_READY_PATH: browserPolicyReadyPath,
   AGENTOS_BROWSER_POLICY_TOKEN: browserPolicyToken
 };
@@ -111,7 +125,7 @@ const agentosExit = childExit(agentos, "AgentOS");
 publicProxy = await startRailwayPublicProxy({
   publicPort,
   nextPort: agentosPort,
-  browserWorkerPort,
+  browserWorkerUrl,
   browserProxyToken,
   browserWorkerToken
 });
@@ -122,7 +136,9 @@ while (!stopping) {
   const browserHealthMonitor = new AbortController();
   const exit = await Promise.race([
     childExit(gateway, "OpenClaw Gateway"),
-    childExit(browserWorker, "Secure browser worker"),
+    browserWorker
+      ? childExit(browserWorker, "Secure browser worker")
+      : new Promise(() => {}),
     agentosExit,
     waitForGatewayLivenessFailure(gateway, healthMonitor.signal),
     waitForBrowserWorkerLivenessFailure(browserWorker, browserHealthMonitor.signal)
@@ -141,6 +157,22 @@ while (!stopping) {
 
   if (exit.label === "Secure browser worker" || exit.label === "Secure browser worker health") {
     await notifyBrowserWorkerRestart();
+    if (remoteBrowserWorkerUrl) {
+      console.error(
+        "Private Secure browser worker is unavailable. AgentOS remains online while the worker service recovers."
+      );
+      try {
+        await waitForBrowserWorkerLiveness();
+        console.error("Private Secure browser worker recovered and passed liveness checks.");
+      } catch (error) {
+        console.error(
+          error instanceof Error
+            ? error.message
+            : "Private Secure browser worker did not recover."
+        );
+      }
+      continue;
+    }
     if (exit.label === "Secure browser worker health" && browserWorker.exitCode === null) {
       console.error("Secure browser worker became unhealthy. Stopping the managed process.");
       await stopManagedProcess(browserWorker, "Secure browser worker");
@@ -234,7 +266,9 @@ while (!stopping) {
 
 await Promise.allSettled([
   childExit(gateway, "OpenClaw Gateway"),
-  childExit(browserWorker, "Secure browser worker"),
+  browserWorker
+    ? childExit(browserWorker, "Secure browser worker")
+    : Promise.resolve(),
   agentosExit,
   closeServer(publicProxy),
   removeControlSocket()
@@ -283,7 +317,9 @@ function startBrowserWorker() {
       AGENTOS_BROWSER_WORKER_SOCKET_PATH: browserWorkerSocketPath,
       AGENTOS_BROWSER_WORKER_PORT: String(browserWorkerPort),
       AGENTOS_BROWSER_SESSION_TTL_MS: String(20 * 60_000),
-      AGENTOS_BROWSER_WORKER_TOKEN: browserWorkerToken
+      AGENTOS_BROWSER_WORKER_TOKEN: browserWorkerToken,
+      AGENTOS_BROWSER_DISABLE_CHROMIUM_SANDBOX:
+        process.env.AGENTOS_BROWSER_DISABLE_CHROMIUM_SANDBOX === "1" ? "1" : "0"
     },
     stdio: "inherit",
     detached: true
@@ -365,7 +401,7 @@ async function isGatewayLive() {
 async function waitForBrowserWorkerLiveness() {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (browserWorker.exitCode !== null) {
+    if (browserWorker && browserWorker.exitCode !== null) {
       throw new Error("Secure browser worker exited during startup.");
     }
     if (await isBrowserWorkerLive()) return;
@@ -376,9 +412,9 @@ async function waitForBrowserWorkerLiveness() {
 
 async function waitForBrowserWorkerLivenessFailure(child, signal) {
   let consecutiveFailures = 0;
-  while (!signal.aborted && child.exitCode === null) {
+  while (!signal.aborted && (!child || child.exitCode === null)) {
     await wait(gatewayHealthIntervalMs, signal);
-    if (signal.aborted || child.exitCode !== null) break;
+    if (signal.aborted || (child && child.exitCode !== null)) break;
     if (await isBrowserWorkerLive()) {
       consecutiveFailures = 0;
       continue;
@@ -600,4 +636,39 @@ function closeServer(server) {
     }
     server.close(() => resolve());
   });
+}
+
+function normalizeBrowserWorkerUrl(value) {
+  if (!value?.trim()) return null;
+  const url = new URL(value.trim());
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    (url.pathname !== "/" && url.pathname !== "")
+  ) {
+    throw new Error("AGENTOS_BROWSER_WORKER_URL must be an HTTP(S) service origin.");
+  }
+  if (
+    process.env.AGENTOS_DEPLOYMENT_PLATFORM === "railway" &&
+    url.hostname !== "127.0.0.1" &&
+    !url.hostname.endsWith(".railway.internal")
+  ) {
+    throw new Error(
+      "Railway Secure Browser workers must use a private .railway.internal hostname."
+    );
+  }
+  return url.origin;
+}
+
+function requireBrowserWorkerToken(value) {
+  const token = value?.trim();
+  if (!token || token.length < 32) {
+    throw new Error(
+      "AGENTOS_BROWSER_WORKER_TOKEN must contain at least 32 characters for a private browser worker."
+    );
+  }
+  return token;
 }

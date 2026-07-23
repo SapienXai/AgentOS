@@ -129,12 +129,28 @@ test("Railway Gateway control uses supervisor IPC while secure browser login fai
 });
 
 test("Railway secure browser state remains on the persistent volume without public VNC or CDP", async () => {
-  const [dockerfile, entrypoint, docs, worker, proxy] = await Promise.all([
+  const [
+    dockerfile,
+    workerDockerfile,
+    workerConfig,
+    workerEntrypoint,
+    entrypoint,
+    docs,
+    worker,
+    proxy,
+    supervisor,
+    client
+  ] = await Promise.all([
     read("Dockerfile.railway"),
+    read("Dockerfile.browser-worker"),
+    read("railway.browser-worker.json"),
+    read("scripts/railway-browser-worker-entrypoint.sh"),
     read("scripts/railway-entrypoint.sh"),
     read("docs/secure-browser-accounts.md"),
     read("scripts/secure-browser-worker.mjs"),
-    read("scripts/railway-public-proxy.mjs")
+    read("scripts/railway-public-proxy.mjs"),
+    read("scripts/railway-supervisor.mjs"),
+    read("lib/agentos/browser-accounts/browser-worker-client.ts")
   ]);
 
   assert.match(dockerfile, /OPENCLAW_STATE_DIR=\/data\/openclaw/);
@@ -147,14 +163,38 @@ test("Railway secure browser state remains on the persistent volume without publ
   assert.match(worker, /rewriteCdpJson/);
   assert.doesNotMatch(worker, /cdpUrl: `http:\/\/127\.0\.0\.1:\$\{cdpPort\}`/);
   assert.match(worker, /"-localhost"/);
-  assert.doesNotMatch(worker, /--no-sandbox/);
+  assert.match(
+    worker,
+    /\.\.\.\(input\.disableChromiumSandbox \? \["--no-sandbox"\] : \[\]\)/
+  );
+  assert.match(workerDockerfile, /AGENTOS_BROWSER_DISABLE_CHROMIUM_SANDBOX=1/);
+  assert.match(workerDockerfile, /AGENTOS_BROWSER_WORKER_HOST=::/);
+  assert.match(workerDockerfile, /Dockerfile\.browser-worker|secure-browser-worker\.mjs/);
+  assert.match(workerConfig, /Dockerfile\.browser-worker/);
+  assert.match(workerConfig, /"healthcheckPath": "\/healthz"/);
+  assert.match(workerEntrypoint, /AGENTOS_BROWSER_WORKER_TOKEN/);
+  assert.match(workerEntrypoint, /exec gosu node:node/);
+  assert.match(worker, /x-agentos-browser-worker-token/);
+  assert.match(worker, /const childEnvironment = \{/);
+  assert.doesNotMatch(worker, /const childEnvironment = \{\s*\.\.\.process\.env/);
   assert.match(worker, /credentials_enable_service: false/);
   assert.match(worker, /download_restrictions: 3/);
   assert.match(worker, /password_manager_enabled: false/);
   assert.match(proxy, /x-agentos-browser-proxy-token/);
+  assert.match(proxy, /_agentos\/browser-cdp/);
+  assert.match(proxy, /isLoopbackAddress\(input\.request\.socket\.remoteAddress\)/);
+  assert.match(proxy, /x-agentos-browser-worker-token/);
   assert.match(proxy, /authorizeAndBridgeLiveView/);
   assert.doesNotMatch(proxy, /5900|9222/);
-  assert.match(docs, /Raw VNC and CDP endpoints[\s\S]*have no Railway public port/);
+  assert.match(supervisor, /AGENTOS_BROWSER_WORKER_URL/);
+  assert.match(supervisor, /AGENTOS_BROWSER_CDP_RELAY_URL/);
+  assert.match(client, /requestRemoteBrowserWorker/);
+  assert.match(client, /X-AgentOS-Browser-Worker-Token/);
+  assert.match(
+    client,
+    /cdpUrl: `\$\{relayBase\}\/cdp\/profile\/\$\{encodeURIComponent\(session\.profileId\)\}`/
+  );
+  assert.match(docs, /Raw VNC and remote CDP endpoints[\s\S]*have\s+no Railway public port/);
   assert.match(docs, /browser-accounts\.json/);
   assert.match(docs, /Railway volume/);
 });

@@ -16,6 +16,13 @@ import { toast } from "@/components/ui/sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAccountsData } from "@/components/operations/accounts/use-accounts-data";
+import {
+  prepareSecureBrowserPopup,
+  startSecureLiveView,
+  type SecureBrowserAccountView,
+  type SecureBrowserCapabilityView,
+  type SecureBrowserConnectInput
+} from "@/components/operations/accounts/secure-browser-connect-client";
 import { useDeploymentCapabilities } from "@/hooks/use-deployment-capabilities";
 import type { AccountAccessPermission, AccountAccessRuleView } from "@/lib/agentos/account-access-policy-types";
 import type { AccountLoginTargetView } from "@/lib/agentos/account-login-target-types";
@@ -25,39 +32,6 @@ import { cn } from "@/lib/utils";
 
 type ConnectAccountThemeStyle = CSSProperties & Record<`--ca-${string}`, string>;
 
-type SecureBrowserAccountView = {
-  id: string;
-  provider: string;
-  serviceName: string;
-  primaryDomain: string;
-  ownerUserId: string;
-  workspaceId: string;
-  browserProfileId: string;
-  allowedAgentIds: string[];
-  allowedDomains: string[];
-  connectionStatus: string;
-  verificationSource: string;
-  sessionState: string;
-  concurrencyLease: {
-    holderTaskId: string;
-    holderAgentId: string;
-    heartbeatAt: string;
-    expiresAt: string;
-    fencingToken: number;
-  } | null;
-  lastVerifiedAt: string | null;
-  lastUsedAt: string | null;
-  source: string;
-};
-
-type SecureBrowserCapabilityView = {
-  provider: string;
-  persistentProfiles: "supported" | "unsupported" | "unknown";
-  liveView: "supported" | "unsupported" | "unknown";
-  humanTakeover: "supported" | "unsupported" | "unknown";
-  typedTaskDispatch: "supported" | "unsupported" | "unknown";
-  reason: string | null;
-};
 
 const connectAccountThemeStyles: Record<"dark" | "light", ConnectAccountThemeStyle> = {
   dark: {
@@ -862,7 +836,7 @@ export function AccountsPageContent({
                   <EmptyState
                     title={loginTargets.length === 0 ? "No login targets connected" : "No login targets match"}
                     description={loginTargets.length === 0
-                      ? interactiveBrowserLoginSupported
+                      ? secureBrowserCapabilities?.liveView === "supported" || interactiveBrowserLoginSupported
                         ? "Use Connect Account to open a login page in a real OpenClaw browser profile. AgentOS will list the target here after the browser action succeeds."
                         : "Secure self-hosted Live View is unavailable in this runtime. Review Connect Browser Account for supported methods or use an official integration."
                       : "Clear search to inspect another login target."}
@@ -1833,11 +1807,6 @@ export type ConnectBrowserProfileInput = {
   primaryDomain: string;
 };
 
-type SecureBrowserConnectInput = {
-  serviceName: string;
-  primaryDomain: string;
-  allowedAgentIds: string[];
-};
 
 type ConnectBrowserProfileMode = "existing" | "signed-in-chrome";
 
@@ -2374,27 +2343,6 @@ function ConnectAccountWizardContent({
   );
 }
 
-async function startSecureLiveView(accountId: string, workspaceId: string) {
-  const response = await fetch("/api/accounts/browser-accounts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action: "start-live-view",
-      accountId,
-      workspaceId
-    })
-  });
-  const payload = await response.json().catch(() => null) as {
-    result?: { launchUrl?: string };
-    error?: string;
-  } | null;
-  const launchUrl = payload?.result?.launchUrl;
-  if (!response.ok || !launchUrl) {
-    throw new Error(payload?.error ?? "Unable to start Secure Browser Live View.");
-  }
-  return launchUrl;
-}
-
 function ProfileModeOption({
   active,
   title,
@@ -2555,44 +2503,6 @@ function secureBrowserCapabilityTone(
   value: "supported" | "unsupported" | "unknown" | undefined
 ): "success" | "warning" | "muted" {
   return value === "supported" ? "success" : value === "unsupported" ? "warning" : "muted";
-}
-
-function prepareSecureBrowserPopup(popup: Window) {
-  const document = popup.document;
-  document.title = "Starting Secure Browser";
-  document.documentElement.style.colorScheme = "dark";
-  document.body.replaceChildren();
-  Object.assign(document.body.style, {
-    alignItems: "center",
-    background: "#070b13",
-    color: "#dbe4f0",
-    display: "flex",
-    fontFamily: "ui-sans-serif, system-ui, sans-serif",
-    justifyContent: "center",
-    margin: "0",
-    minHeight: "100vh"
-  });
-
-  const status = document.createElement("div");
-  status.setAttribute("role", "status");
-  status.style.maxWidth = "28rem";
-  status.style.padding = "2rem";
-  status.style.textAlign = "center";
-
-  const title = document.createElement("h1");
-  title.textContent = "Starting secure browser…";
-  title.style.fontSize = "1rem";
-  title.style.margin = "0";
-
-  const detail = document.createElement("p");
-  detail.textContent = "Preparing the isolated Chromium profile and private Live View. This can take up to 90 seconds on Railway.";
-  detail.style.color = "#94a3b8";
-  detail.style.fontSize = "0.8rem";
-  detail.style.lineHeight = "1.5";
-  detail.style.margin = "0.75rem 0 0";
-
-  status.append(title, detail);
-  document.body.append(status);
 }
 
 function validateConnectBrowserProfileInput(input: {
