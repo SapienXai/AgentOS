@@ -319,6 +319,9 @@ export function annotateRuntimeWithMissionDispatch(runtime: RuntimeRecord, recor
       dispatchHeartbeatAt: record.runner.lastHeartbeatAt,
       dispatchObservedAt: record.observation.observedAt,
       dispatchError: record.error,
+      browserAccountId: record.browserBinding?.accountId ?? null,
+      browserProfileName: record.browserBinding?.profileName ?? null,
+      browserBindingStatus: record.browserBinding?.status ?? null,
       mission: record.mission,
       routedMission: record.routedMission,
       outputDir: record.outputDir,
@@ -378,6 +381,9 @@ export function buildMissionDispatchTranscriptRuntime(
       dispatchHeartbeatAt: record.runner.lastHeartbeatAt,
       dispatchObservedAt: record.observation.observedAt,
       dispatchError: record.error,
+      browserAccountId: record.browserBinding?.accountId ?? null,
+      browserProfileName: record.browserBinding?.profileName ?? null,
+      browserBindingStatus: record.browserBinding?.status ?? null,
       recoveredFromObservation: true,
       ...(integrityWarning ? { warnings: [integrityWarning], warningSummary: integrityWarning } : {})
     }

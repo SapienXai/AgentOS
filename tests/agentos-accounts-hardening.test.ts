@@ -14,7 +14,6 @@ import {
   normalizeStorableLoginUrl,
   normalizeStoredLoginUrl
 } from "@/lib/agentos/application/account-login-target-service";
-import { buildAccountTargetMissionContext } from "@/lib/agentos/application/account-target-mission-context-service";
 import { setOpenClawAdapterForTesting, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
   listOpenClawBrowserProfiles,
@@ -123,17 +122,17 @@ test("account login targets strip query and hash data while preserving stable ta
   assert.equal(target?.loginUrl, "https://example.com/login");
 });
 
-test("account target mission context omits login URLs and secret-bearing values", () => {
-  const context = buildAccountTargetMissionContext({
-    serviceName: "Portal token=query-secret\npassword=line-secret",
-    primaryDomain: "example.com",
-    browserProfileName: "openclaw"
-  });
+test("account target dispatch resolves a typed Secure Browser Account binding", () => {
+  const source = readFileSync(
+    path.join(process.cwd(), "lib/agentos/application/account-target-mission-context-service.ts"),
+    "utf8"
+  );
 
-  assert.match(context, /AgentOS account-target context is an MVP bridge/);
-  assert.doesNotMatch(context, /Login URL|https?:\/\//);
-  assert.doesNotMatch(context, /query-secret|line-secret|hash-secret|cookie-secret|password-secret/);
-  assert.doesNotMatch(context, /[?#]/);
+  assert.match(source, /BrowserTaskBindingRequest/);
+  assert.match(source, /listBrowserAccounts/);
+  assert.match(source, /actorUserId/);
+  assert.doesNotMatch(source, /OpenClaw browser profile:/);
+  assert.doesNotMatch(source, /account target context/i);
 });
 
 test("browser profile service uses OpenClaw browser.request and sanitizes URL fields", async () => {

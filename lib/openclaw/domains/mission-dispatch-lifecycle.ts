@@ -125,7 +125,8 @@ export function createMissionDispatchRecord(payload: MissionDispatchPayload): Mi
       observedAt: null
     },
     result: null,
-    error: null
+    error: null,
+    browserBinding: null
   };
 }
 

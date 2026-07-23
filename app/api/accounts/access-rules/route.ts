@@ -5,6 +5,7 @@ import {
   listAccountAccessRules,
   replaceAccountAccessRulesForTarget
 } from "@/lib/agentos/application/account-access-policy-service";
+import { browserAccountResponseHeaders, requireBrowserAccountActor } from "@/lib/security/browser-account-route";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
@@ -22,12 +23,17 @@ const accessRulesReplaceSchema = z.object({
 });
 
 export async function GET(request: Request) {
+  const authorization = await requireBrowserAccountActor(request);
+  if ("response" in authorization) return authorization.response;
+
   try {
     const { searchParams } = new URL(request.url);
     const workspaceId = searchParams.get("workspaceId");
     const targetId = searchParams.get("targetId");
 
-    return NextResponse.json(redactSecrets(await listAccountAccessRules({ workspaceId, targetId })));
+    return NextResponse.json(redactSecrets(await listAccountAccessRules({ workspaceId, targetId })), {
+      headers: browserAccountResponseHeaders()
+    });
   } catch (error) {
     return NextResponse.json(
       redactSecrets({
@@ -37,16 +43,21 @@ export async function GET(request: Request) {
         rules: [],
         error: redactErrorMessage(error, "Unable to read account access rules.")
       }),
-      { status: 500 }
+      { status: 500, headers: browserAccountResponseHeaders() }
     );
   }
 }
 
 export async function POST(request: Request) {
+  const authorization = await requireBrowserAccountActor(request);
+  if ("response" in authorization) return authorization.response;
+
   try {
     const input = accessRulesReplaceSchema.parse(await request.json());
 
-    return NextResponse.json(redactSecrets(await replaceAccountAccessRulesForTarget(input)));
+    return NextResponse.json(redactSecrets(await replaceAccountAccessRulesForTarget(input)), {
+      headers: browserAccountResponseHeaders()
+    });
   } catch (error) {
     return NextResponse.json(
       redactSecrets({
@@ -56,7 +67,7 @@ export async function POST(request: Request) {
         rules: [],
         error: redactErrorMessage(error, "Unable to save account access rules.")
       }),
-      { status: 400 }
+      { status: 400, headers: browserAccountResponseHeaders() }
     );
   }
 }

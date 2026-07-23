@@ -18,10 +18,17 @@ import {
 } from "@/lib/openclaw/domains/agent-chat-sessions";
 import {
   buildObservedMissionDispatchRuntime,
+  isMissionDispatchTerminalStatus,
   persistMissionDispatchObservation,
   readMissionDispatchRecords,
-  reconcileMissionDispatchRuntimeState
+  reconcileMissionDispatchRuntimeState,
+  writeMissionDispatchRecord
 } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
+import {
+  finalizeBrowserTaskBinding,
+  getBrowserTaskBinding
+} from "@/lib/agentos/application/browser-task-binding-service";
+import type { MissionDispatchRecordLike } from "@/lib/openclaw/domains/mission-dispatch-model";
 import {
   annotateMissionDispatchMetadata as annotateMissionDispatchMetadataFromRuntime,
   annotateMissionDispatchSessions,
@@ -113,7 +120,7 @@ export async function reconcileMissionControlRuntimes(input: {
     {
       buildObservedRuntime: buildObservedMissionDispatchRuntime,
       persistObservation: persistMissionDispatchObservation,
-      reconcileRuntimeState: reconcileMissionDispatchRuntimeState
+      reconcileRuntimeState: reconcileMissionDispatchRuntimeStateAndBrowserBinding
     }
   );
 
@@ -124,6 +131,53 @@ export async function reconcileMissionControlRuntimes(input: {
     ],
     input.historyStore
   );
+}
+
+async function reconcileMissionDispatchRuntimeStateAndBrowserBinding(
+  record: MissionDispatchRecordLike,
+  runtime: RuntimeRecord
+) {
+  const reconciled = await reconcileMissionDispatchRuntimeState(record, runtime);
+  const effective = reconciled ?? record;
+  if (effective.browserBinding?.status !== "active") {
+    return reconciled;
+  }
+
+  const binding = await getBrowserTaskBinding(effective.id).catch(() => null);
+  const bindingExpired = !binding || Date.parse(binding.expiresAt) <= Date.now();
+  if (!isMissionDispatchTerminalStatus(effective.status) && !bindingExpired) {
+    if (effective.browserBinding.expiresAt === binding.expiresAt) return reconciled;
+    const nextRecord: MissionDispatchRecordLike = {
+      ...effective,
+      updatedAt: new Date().toISOString(),
+      browserBinding: {
+        ...effective.browserBinding,
+        expiresAt: binding.expiresAt
+      }
+    };
+    await writeMissionDispatchRecord(nextRecord);
+    return nextRecord;
+  }
+
+  const cleanup = await finalizeBrowserTaskBinding(effective.id).catch(() => ({
+    finalized: true,
+    cleanupFailed: true
+  }));
+  const now = new Date().toISOString();
+  const nextRecord: MissionDispatchRecordLike = {
+    ...effective,
+    updatedAt: now,
+    browserBinding: {
+      ...effective.browserBinding,
+      status:
+        !isMissionDispatchTerminalStatus(effective.status) || cleanup.cleanupFailed
+          ? "recovery_required"
+          : "released",
+      releasedAt: now
+    }
+  };
+  await writeMissionDispatchRecord(nextRecord);
+  return nextRecord;
 }
 
 export function mergeMissionControlRuntimeHistory(

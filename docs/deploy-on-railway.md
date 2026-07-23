@@ -43,6 +43,7 @@ Attach one volume to the AgentOS service with mount path:
 The volume contains:
 
 - `/data/agentos`: Instance Protection and AgentOS operator state;
+- `/data/browser-profiles`: isolated persistent Chromium profiles used by Secure Browser Accounts;
 - `/data/openclaw` and `/data/openclaw-config`: OpenClaw configuration, device identity, credentials, sessions, and logs;
 - `/data/workspaces`: AgentOS-created workspaces.
 
@@ -85,12 +86,45 @@ On a new volume, AgentOS creates only the durable OpenClaw Gateway baseline (`ga
 - The supervisor checks Gateway liveness continuously in addition to watching the process. If the managed Gateway exits or repeatedly fails liveness probes, the supervisor restarts it while keeping AgentOS available. Stricter `/readyz` channel/plugin readiness remains an AgentOS diagnostic instead of blocking the deployment. After three failed Gateway restart attempts, the container exits so Railway can apply its service restart policy.
 - Browser sessions authenticate with the same username and password on every trusted browser; session cookies remain browser-specific.
 - Login is rate-limited. Mutation requests require an authenticated session and an exact same-origin HTTPS request.
-- Chromium is included for headless OpenClaw browser automation. Agents can navigate, click, type, and capture screenshots, but operator-driven browser login, local Chrome attachment, interactive desktop actions, and host Finder/Terminal integration are not available in the Railway container.
+- Chromium is included both for OpenClaw headless automation and for AgentOS Secure Browser Accounts. The supervisor runs a private browser worker using headed Chromium, Xvfb, openbox, and x11vnc. AgentOS exposes only an authenticated same-origin noVNC Live View; raw VNC and CDP remain loopback-only.
+- Secure Browser profiles persist under `/data/browser-profiles`. A user can complete password, 2FA, or CAPTCHA input directly in Live View and reuse the resulting profile after the process stops. AgentOS stores only hashed, short-lived Live View credentials and never requests the website password.
+- Secure Browser Account dispatch is enabled only when the AgentOS Browser Policy plugin has started inside OpenClaw, its supervisor-generated loopback heartbeat token is available, and native Gateway mission dispatch is advertised. The adapter binds the trusted task session key, forces the temporary `attachOnly` profile, renews the durable lease through the private AgentOS policy endpoint, enforces domain/action policy, and releases the browser session on terminal paths. CLI fallback and prompt-only profile selection remain blocked.
+- A browser worker crash is reported through the same authenticated loopback policy channel. AgentOS immediately fences active profile leases, expires task bindings, revokes Live View credentials, and shows `recovery_required` instead of waiting for TTL expiry.
+- Stable provider authentication rules are conservative. GitHub currently supports independent marker verification; other websites remain explicitly user-confirmed until a reviewed rule exists.
 - The health endpoint intentionally reveals no version, token, path, account, or Gateway detail.
 
 ## Persistence and operations
 
 Back up the Railway volume before risky upgrades. A service with an attached volume has brief redeploy downtime, and Railway cannot run multiple replicas against this single-runtime layout. Monitor volume capacity because a full volume can prevent OpenClaw and AgentOS from writing state.
+
+Secure Browser Account metadata uses the existing AgentOS mission-control state
+on `/data/agentos`; the self-hosted worker keeps authenticated Chromium profile
+state under `/data/browser-profiles`. AgentOS does not export cookies,
+localStorage, raw CDP URLs, or raw Live View credentials. No VNC or CDP port is
+public. See
+[Secure Browser Accounts](./secure-browser-accounts.md) for storage, trust
+boundaries, backup, revoke, recovery, and upgrade procedures.
+
+The browser policy heartbeat secret is generated in memory on every supervisor
+start and passed only to the loopback AgentOS and OpenClaw processes. Do not
+configure or expose it as a Railway template variable. Stale task bindings are
+fenced after their rolling TTL and can be retried from **Accounts → Retry
+cleanup**. The current single-service topology remains a single-operator
+deployment; hostile multi-tenant workloads require separate private browser
+worker services or equivalent tenant-level process/container isolation.
+
+After building the Railway image, run the credential-free browser lifecycle
+smoke in a disposable container:
+
+```bash
+docker run --rm --shm-size=256m --user node:node --entrypoint node agentos-railway \
+  /agentos/scripts/secure-browser-integration-smoke.mjs
+```
+
+This verifies real Chromium cookie/localStorage persistence, worker
+process-group crash recovery, profile reuse, and revoke cleanup. It does not
+prove compatibility with a third-party website and does not use real login
+credentials.
 
 OpenClaw is pinned in `Dockerfile.railway`. Upgrade it only together with AgentOS compatibility checks and update the pin, recommended version, and deployment documentation in the same change.
 

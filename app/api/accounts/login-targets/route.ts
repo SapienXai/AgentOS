@@ -8,6 +8,7 @@ import {
   upsertAccountLoginTarget
 } from "@/lib/agentos/application/account-login-target-service";
 import { deleteAccountAccessRulesForTarget } from "@/lib/agentos/application/account-access-policy-service";
+import { browserAccountResponseHeaders, requireBrowserAccountActor } from "@/lib/security/browser-account-route";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
@@ -30,11 +31,16 @@ const deleteLoginTargetSchema = z.object({
 });
 
 export async function GET(request: Request) {
+  const authorization = await requireBrowserAccountActor(request);
+  if ("response" in authorization) return authorization.response;
+
   try {
     const { searchParams } = new URL(request.url);
     const workspaceId = searchParams.get("workspaceId");
 
-    return NextResponse.json(redactSecrets(await listAccountLoginTargets({ workspaceId })));
+    return NextResponse.json(redactSecrets(await listAccountLoginTargets({ workspaceId })), {
+      headers: browserAccountResponseHeaders()
+    });
   } catch (error) {
     return NextResponse.json(
       redactSecrets({
@@ -44,15 +50,20 @@ export async function GET(request: Request) {
         targets: [],
         error: redactErrorMessage(error, "Unable to read account login targets.")
       }),
-      { status: 500 }
+      { status: 500, headers: browserAccountResponseHeaders() }
     );
   }
 }
 
 export async function POST(request: Request) {
+  const authorization = await requireBrowserAccountActor(request);
+  if ("response" in authorization) return authorization.response;
+
   try {
     const input = accountLoginTargetSchema.parse(await request.json());
-    return NextResponse.json(redactSecrets(await upsertAccountLoginTarget(input)));
+    return NextResponse.json(redactSecrets(await upsertAccountLoginTarget(input)), {
+      headers: browserAccountResponseHeaders()
+    });
   } catch (error) {
     return NextResponse.json(
       redactSecrets({
@@ -62,12 +73,15 @@ export async function POST(request: Request) {
         targets: [],
         error: redactErrorMessage(error, "Unable to save account login target.")
       }),
-      { status: 400 }
+      { status: 400, headers: browserAccountResponseHeaders() }
     );
   }
 }
 
 export async function DELETE(request: Request) {
+  const authorization = await requireBrowserAccountActor(request);
+  if ("response" in authorization) return authorization.response;
+
   try {
     const input = deleteLoginTargetSchema.parse(await request.json());
     const target = await findAccountLoginTarget(input);
@@ -78,7 +92,9 @@ export async function DELETE(request: Request) {
       });
     }
 
-    return NextResponse.json(redactSecrets(await deleteAccountLoginTarget(input)));
+    return NextResponse.json(redactSecrets(await deleteAccountLoginTarget(input)), {
+      headers: browserAccountResponseHeaders()
+    });
   } catch (error) {
     return NextResponse.json(
       redactSecrets({
@@ -88,7 +104,7 @@ export async function DELETE(request: Request) {
         targets: [],
         error: redactErrorMessage(error, "Unable to remove account login target.")
       }),
-      { status: 400 }
+      { status: 400, headers: browserAccountResponseHeaders() }
     );
   }
 }

@@ -1257,6 +1257,10 @@ export interface MissionSubmission {
   agentId?: string;
   workspaceId?: string;
   thinking?: "off" | "minimal" | "low" | "medium" | "high";
+  browserAccount?: {
+    accountId: string;
+    actorUserId: string;
+  };
 }
 
 export interface MissionResponse {

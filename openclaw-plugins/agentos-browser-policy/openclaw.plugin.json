@@ -1,0 +1,13 @@
+{
+  "id": "agentos-browser-policy",
+  "name": "AgentOS Browser Policy",
+  "description": "Binds OpenClaw browser calls to AgentOS task-scoped secure profiles",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

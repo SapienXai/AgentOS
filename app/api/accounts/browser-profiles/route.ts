@@ -7,6 +7,7 @@ import {
   startOpenClawBrowserProfile
 } from "@/lib/openclaw/application/browser-profile-service";
 import { resolveAgentOsDeploymentCapabilities } from "@/lib/agentos/deployment-capabilities";
+import { browserAccountResponseHeaders, requireBrowserAccountActor } from "@/lib/security/browser-account-route";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
@@ -25,9 +26,14 @@ const browserProfileMutationSchema = z.discriminatedUnion("action", [
   })
 ]);
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authorization = await requireBrowserAccountActor(request);
+  if ("response" in authorization) return authorization.response;
+
   try {
-    return NextResponse.json(redactSecrets(await listOpenClawBrowserProfiles()));
+    return NextResponse.json(redactSecrets(await listOpenClawBrowserProfiles()), {
+      headers: browserAccountResponseHeaders()
+    });
   } catch (error) {
     return NextResponse.json(
       redactSecrets({
@@ -37,19 +43,22 @@ export async function GET() {
         profiles: [],
         error: redactErrorMessage(error, "Unable to read OpenClaw browser profiles.")
       }),
-      { status: 503 }
+      { status: 503, headers: browserAccountResponseHeaders() }
     );
   }
 }
 
 export async function POST(request: Request) {
+  const authorization = await requireBrowserAccountActor(request);
+  if ("response" in authorization) return authorization.response;
+
   try {
     const input = browserProfileMutationSchema.parse(await request.json());
 
     if (input.action === "start-profile") {
       return NextResponse.json(redactSecrets(await startOpenClawBrowserProfile({
         profileName: input.profileName
-      })));
+      })), { headers: browserAccountResponseHeaders() });
     }
 
     if (resolveAgentOsDeploymentCapabilities().interactiveBrowserLogin === "unavailable") {
@@ -60,7 +69,7 @@ export async function POST(request: Request) {
           source: "openclaw.browser.request",
           error: "Interactive browser login is unavailable in Railway. The managed Chromium browser is headless and cannot collect operator login or two-factor input."
         },
-        { status: 409 }
+        { status: 409, headers: browserAccountResponseHeaders() }
       );
     }
 
@@ -68,7 +77,7 @@ export async function POST(request: Request) {
       profileName: input.profileName,
       loginUrl: input.loginUrl,
       label: input.label
-    })));
+    })), { headers: browserAccountResponseHeaders() });
   } catch (error) {
     return NextResponse.json(
       redactSecrets({
@@ -77,7 +86,7 @@ export async function POST(request: Request) {
         source: "openclaw.browser.request",
         error: redactErrorMessage(error, "Unable to update OpenClaw browser profile.")
       }),
-      { status: 400 }
+      { status: 400, headers: browserAccountResponseHeaders() }
     );
   }
 }

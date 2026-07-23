@@ -1,26 +1,55 @@
 import { chmod, unlink } from "node:fs/promises";
+import { unlinkSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { spawn } from "node:child_process";
 
 import { bootstrapRailwayOpenClawConfig } from "./railway-openclaw-bootstrap.mjs";
+import { startRailwayPublicProxy } from "./railway-public-proxy.mjs";
 
 const gatewayPort = 18789;
 const gatewayLivenessUrl = `http://127.0.0.1:${gatewayPort}/healthz`;
+const publicPort = Number.parseInt(process.env.PORT || "3000", 10);
+const agentosPort = 3001;
+const browserWorkerPort = 18794;
+const browserWorkerLivenessUrl = `http://127.0.0.1:${browserWorkerPort}/healthz`;
+const browserWorkerSocketPath =
+  process.env.AGENTOS_BROWSER_WORKER_SOCKET_PATH?.trim() ||
+  "/tmp/agentos-browser-worker.sock";
+const browserPolicyReadyPath =
+  process.env.AGENTOS_BROWSER_POLICY_READY_PATH?.trim() ||
+  "/tmp/agentos-browser-policy.ready";
 const supervisorSocketPath = process.env.AGENTOS_SUPERVISOR_SOCKET_PATH?.trim() || "/tmp/agentos-supervisor.sock";
 const gatewayHealthIntervalMs = 5_000;
 const gatewayHealthFailureThreshold = 3;
+const browserWorkerHealthFailureThreshold = 3;
 const gatewayStopTimeoutMs = 10_000;
 const gatewayRestartFailureLimit = 3;
+const browserWorkerRestartFailureLimit = 3;
 const manualRestartCooldownMs = 10_000;
+const browserPolicyToken = randomBytes(32).toString("base64url");
 const gatewayEnv = { ...process.env };
 delete gatewayEnv.AGENTOS_INITIAL_ADMIN_PASSWORD;
+gatewayEnv.AGENTOS_BROWSER_POLICY_READY_PATH = browserPolicyReadyPath;
+gatewayEnv.AGENTOS_MISSION_CONTROL_ROOT = "/agentos/.mission-control";
+gatewayEnv.AGENTOS_BROWSER_POLICY_TOKEN = browserPolicyToken;
+gatewayEnv.AGENTOS_BROWSER_POLICY_HEARTBEAT_URL =
+  `http://127.0.0.1:${agentosPort}/api/internal/browser-policy/heartbeat`;
+const browserProxyToken = randomBytes(32).toString("base64url");
+const browserWorkerToken = randomBytes(32).toString("base64url");
 
 await bootstrapRailwayOpenClawConfig(gatewayEnv);
+await unlink(browserPolicyReadyPath).catch((error) => {
+  if (error?.code !== "ENOENT") throw error;
+});
 
 let gateway = startGateway();
+let browserWorker = startBrowserWorker();
 let agentos = null;
+let publicProxy = null;
 let stopping = false;
 let consecutiveRestartFailures = 0;
+let consecutiveBrowserWorkerRestartFailures = 0;
 let manualRestart = null;
 let lastManualRestartCompletedAt = 0;
 let gatewayTransitionInProgress = false;
@@ -33,7 +62,9 @@ const stop = (signal = "SIGTERM") => {
   manualRestart?.reject(new Error("The Railway service is stopping."));
   manualRestart = null;
   controlServer.close();
+  publicProxy?.close();
   agentos?.kill(signal);
+  browserWorker.kill(signal);
   gateway.kill(signal);
 };
 
@@ -41,20 +72,32 @@ process.on("SIGTERM", () => stop("SIGTERM"));
 process.on("SIGINT", () => stop("SIGINT"));
 
 try {
-  await waitForGatewayLiveness();
+  await Promise.all([
+    waitForGatewayLiveness(),
+    waitForBrowserWorkerLiveness()
+  ]);
 } catch (error) {
-  console.error(error instanceof Error ? error.message : "OpenClaw Gateway did not become ready.");
+  console.error(error instanceof Error ? error.message : "A required managed service did not become ready.");
   stop();
   process.exit(1);
 }
 
-if (gateway.exitCode !== null) {
-  console.error(`OpenClaw Gateway exited before AgentOS started (code ${gateway.exitCode}).`);
+if (gateway.exitCode !== null || browserWorker.exitCode !== null) {
+  console.error("A required managed service exited before AgentOS started.");
   process.exit(1);
 }
 
+const agentosEnv = {
+  ...process.env,
+  PORT: String(agentosPort),
+  HOSTNAME: "127.0.0.1",
+  AGENTOS_BROWSER_PROXY_TOKEN: browserProxyToken,
+  AGENTOS_BROWSER_WORKER_SOCKET_PATH: browserWorkerSocketPath,
+  AGENTOS_BROWSER_POLICY_READY_PATH: browserPolicyReadyPath,
+  AGENTOS_BROWSER_POLICY_TOKEN: browserPolicyToken
+};
 agentos = spawn(process.execPath, ["/agentos/server.js"], {
-  env: process.env,
+  env: agentosEnv,
   stdio: "inherit"
 });
 
@@ -65,15 +108,27 @@ agentos.once("error", (error) => {
 });
 
 const agentosExit = childExit(agentos, "AgentOS");
+publicProxy = await startRailwayPublicProxy({
+  publicPort,
+  nextPort: agentosPort,
+  browserWorkerPort,
+  browserProxyToken,
+  browserWorkerToken
+});
+console.error("AgentOS same-origin public proxy is ready.");
 
 while (!stopping) {
   const healthMonitor = new AbortController();
+  const browserHealthMonitor = new AbortController();
   const exit = await Promise.race([
     childExit(gateway, "OpenClaw Gateway"),
+    childExit(browserWorker, "Secure browser worker"),
     agentosExit,
-    waitForGatewayLivenessFailure(gateway, healthMonitor.signal)
+    waitForGatewayLivenessFailure(gateway, healthMonitor.signal),
+    waitForBrowserWorkerLivenessFailure(browserWorker, browserHealthMonitor.signal)
   ]);
   healthMonitor.abort();
+  browserHealthMonitor.abort();
 
   if (stopping) break;
 
@@ -82,6 +137,41 @@ while (!stopping) {
     process.exitCode = 1;
     stop();
     break;
+  }
+
+  if (exit.label === "Secure browser worker" || exit.label === "Secure browser worker health") {
+    await notifyBrowserWorkerRestart();
+    if (exit.label === "Secure browser worker health" && browserWorker.exitCode === null) {
+      console.error("Secure browser worker became unhealthy. Stopping the managed process.");
+      await stopManagedProcess(browserWorker, "Secure browser worker");
+    }
+    await terminateBrowserWorkerProcessGroup(browserWorker.pid);
+    consecutiveBrowserWorkerRestartFailures += 1;
+    if (consecutiveBrowserWorkerRestartFailures > browserWorkerRestartFailureLimit) {
+      console.error("Secure browser worker restart attempts exhausted. Exiting so Railway can restart the service.");
+      process.exitCode = 1;
+      stop();
+      break;
+    }
+    const delayMs = gatewayRestartDelayMs(consecutiveBrowserWorkerRestartFailures);
+    console.error(
+      `Secure browser worker stopped or became unavailable. Restart attempt ${consecutiveBrowserWorkerRestartFailures}/${browserWorkerRestartFailureLimit} in ${delayMs}ms.`
+    );
+    await wait(delayMs);
+    browserWorker = startBrowserWorker();
+    try {
+      await waitForBrowserWorkerLiveness();
+      console.error("Secure browser worker restarted successfully and passed liveness checks.");
+      consecutiveBrowserWorkerRestartFailures = 0;
+    } catch (error) {
+      console.error(
+        error instanceof Error
+          ? error.message
+          : "Secure browser worker restart did not become ready."
+      );
+      await stopManagedProcess(browserWorker, "Secure browser worker");
+    }
+    continue;
   }
 
   const requestedRestart = manualRestart;
@@ -144,12 +234,21 @@ while (!stopping) {
 
 await Promise.allSettled([
   childExit(gateway, "OpenClaw Gateway"),
+  childExit(browserWorker, "Secure browser worker"),
   agentosExit,
+  closeServer(publicProxy),
   removeControlSocket()
 ]);
 process.exit(process.exitCode ?? 0);
 
 function startGateway() {
+  try {
+    unlinkSync(browserPolicyReadyPath);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      console.error("Browser policy readiness marker could not be cleared.");
+    }
+  }
   const child = spawn("openclaw", [
     "gateway",
     "run",
@@ -170,6 +269,49 @@ function startGateway() {
   });
 
   return child;
+}
+
+function startBrowserWorker() {
+  const child = spawn(process.execPath, ["/agentos/scripts/secure-browser-worker.mjs"], {
+    env: {
+      NODE_ENV: "production",
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      CHROME_BIN: process.env.CHROME_BIN,
+      AGENTOS_BROWSER_PROFILE_ROOT:
+        process.env.AGENTOS_BROWSER_PROFILE_ROOT || "/data/browser-profiles",
+      AGENTOS_BROWSER_WORKER_SOCKET_PATH: browserWorkerSocketPath,
+      AGENTOS_BROWSER_WORKER_PORT: String(browserWorkerPort),
+      AGENTOS_BROWSER_SESSION_TTL_MS: String(20 * 60_000),
+      AGENTOS_BROWSER_WORKER_TOKEN: browserWorkerToken
+    },
+    stdio: "inherit",
+    detached: true
+  });
+  child.once("error", (error) => {
+    console.error(`Secure browser worker could not start: ${error.message}`);
+  });
+  return child;
+}
+
+async function terminateBrowserWorkerProcessGroup(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 1) return;
+  try {
+    process.kill(-pid, "SIGTERM");
+  } catch (error) {
+    if (error?.code !== "ESRCH") {
+      console.error("Secure browser process-group cleanup could not send SIGTERM.");
+    }
+    return;
+  }
+  await wait(500);
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch (error) {
+    if (error?.code !== "ESRCH") {
+      console.error("Secure browser process-group cleanup could not send SIGKILL.");
+    }
+  }
 }
 
 async function waitForGatewayLiveness() {
@@ -220,6 +362,71 @@ async function isGatewayLive() {
   }
 }
 
+async function waitForBrowserWorkerLiveness() {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    if (browserWorker.exitCode !== null) {
+      throw new Error("Secure browser worker exited during startup.");
+    }
+    if (await isBrowserWorkerLive()) return;
+    await wait(250);
+  }
+  throw new Error("Secure browser worker did not become live within 60 seconds.");
+}
+
+async function waitForBrowserWorkerLivenessFailure(child, signal) {
+  let consecutiveFailures = 0;
+  while (!signal.aborted && child.exitCode === null) {
+    await wait(gatewayHealthIntervalMs, signal);
+    if (signal.aborted || child.exitCode !== null) break;
+    if (await isBrowserWorkerLive()) {
+      consecutiveFailures = 0;
+      continue;
+    }
+    consecutiveFailures += 1;
+    console.error(
+      `Secure browser worker liveness probe failed (${consecutiveFailures}/${browserWorkerHealthFailureThreshold}).`
+    );
+    if (consecutiveFailures >= browserWorkerHealthFailureThreshold) {
+      return { label: "Secure browser worker health", code: null, signal: null };
+    }
+  }
+  return new Promise(() => {});
+}
+
+async function isBrowserWorkerLive() {
+  try {
+    const response = await fetch(browserWorkerLivenessUrl, {
+      signal: AbortSignal.timeout(1_500)
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function notifyBrowserWorkerRestart() {
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${agentosPort}/api/internal/browser-policy/worker-event`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-AgentOS-Browser-Policy-Token": browserPolicyToken
+        },
+        body: JSON.stringify({ event: "worker-restarting" }),
+        signal: AbortSignal.timeout(2_500)
+      }
+    );
+    if (!response.ok) {
+      console.error("AgentOS could not fence active browser sessions before worker restart.");
+    }
+  } catch {
+    console.error("AgentOS browser session fencing was unavailable during worker restart.");
+  }
+}
+
 async function stopGatewayProcess(child) {
   if (child.exitCode !== null) return;
 
@@ -233,6 +440,20 @@ async function stopGatewayProcess(child) {
     console.error("OpenClaw Gateway did not stop after SIGTERM; sending SIGKILL.");
     child.kill("SIGKILL");
     await childExit(child, "OpenClaw Gateway");
+  }
+}
+
+async function stopManagedProcess(child, label) {
+  if (child.exitCode !== null) return;
+  child.kill("SIGTERM");
+  const exited = await Promise.race([
+    childExit(child, label).then(() => true),
+    wait(gatewayStopTimeoutMs).then(() => false)
+  ]);
+  if (!exited && child.exitCode === null) {
+    console.error(`${label} did not stop after SIGTERM; sending SIGKILL.`);
+    child.kill("SIGKILL");
+    await childExit(child, label);
   }
 }
 
@@ -368,5 +589,15 @@ function wait(ms, signal) {
 async function removeControlSocket() {
   await unlink(supervisorSocketPath).catch((error) => {
     if (error?.code !== "ENOENT") throw error;
+  });
+}
+
+function closeServer(server) {
+  return new Promise((resolve) => {
+    if (!server?.listening) {
+      resolve();
+      return;
+    }
+    server.close(() => resolve());
   });
 }

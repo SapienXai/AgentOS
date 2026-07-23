@@ -51,6 +51,13 @@ export type MissionDispatchRecordLike = {
   };
   result: MissionCommandPayloadLike | null;
   error: string | null;
+  browserBinding?: {
+    accountId: string;
+    profileName: string;
+    status: "active" | "released" | "recovery_required";
+    expiresAt: string;
+    releasedAt: string | null;
+  } | null;
 };
 
 const missionDispatchHeartbeatStallMs = 5 * 60_000;
@@ -304,6 +311,9 @@ export function reconcileTaskRecordWithDispatchRecord(task: TaskRecord, record: 
       dispatchHeartbeatAt: record.runner.lastHeartbeatAt,
       dispatchObservedAt: record.observation.observedAt,
       dispatchError: record.error,
+      browserAccountId: record.browserBinding?.accountId ?? null,
+      browserProfileName: record.browserBinding?.profileName ?? null,
+      browserBindingStatus: record.browserBinding?.status ?? null,
       outputDir: record.outputDir,
       outputDirRelative: record.outputDirRelative
     }

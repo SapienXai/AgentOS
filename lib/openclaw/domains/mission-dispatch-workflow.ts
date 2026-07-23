@@ -20,6 +20,7 @@ import {
   extractMissionCommandPayloads,
   resolveMissionDispatchCompletionDetail
 } from "@/lib/openclaw/domains/mission-dispatch-model";
+import type { MissionDispatchRecordLike } from "@/lib/openclaw/domains/mission-dispatch-model";
 import { resolveMissionDispatchReadinessError } from "@/lib/openclaw/readiness";
 import type {
   MissionAbortResponse,
@@ -28,6 +29,10 @@ import type {
   MissionResponse,
   MissionSubmission
 } from "@/lib/openclaw/types";
+import {
+  finalizeBrowserTaskBinding,
+  prepareBrowserTaskBinding
+} from "@/lib/agentos/application/browser-task-binding-service";
 
 export type MissionDispatchWorkflowDependencies = {
   getMissionControlSnapshot: (options?: { force?: boolean; includeHidden?: boolean }) => Promise<MissionControlSnapshot>;
@@ -63,6 +68,18 @@ export async function submitMissionDispatch(
           path: missionAgent.workspacePath
         }
       : null);
+  if (
+    input.browserAccount &&
+    (
+      !missionAgent ||
+      !missionWorkspace ||
+      missionAgent.workspaceId !== missionWorkspace.id
+    )
+  ) {
+    throw new Error(
+      "The selected agent must belong to the browser account workspace."
+    );
+  }
   const workspaceAgents = missionWorkspace
     ? snapshot.agents.filter((entry) => entry.workspaceId === missionWorkspace.id)
     : [];
@@ -132,6 +149,37 @@ export async function submitMissionDispatch(
   try {
     const capabilityMatrix = await getOpenClawCapabilityMatrix().catch(() => null);
 
+    if (input.browserAccount && capabilityMatrix?.nativeMissionDispatch !== "supported") {
+      throw new Error(
+        "Secure browser account tasks require native OpenClaw Gateway mission dispatch. CLI fallback is disabled for task-bound browser profiles."
+      );
+    }
+
+    if (input.browserAccount) {
+      if (!dispatchRecord.sessionId) {
+        throw new Error("OpenClaw did not allocate a task session for the browser account binding.");
+      }
+      const binding = await prepareBrowserTaskBinding({
+        request: input.browserAccount,
+        workspaceId: missionWorkspace?.id ?? input.workspaceId ?? "",
+        agentId,
+        dispatchId: dispatchRecord.id,
+        openClawSessionId: dispatchRecord.sessionId
+      });
+      dispatchRecord = {
+        ...dispatchRecord,
+        browserBinding: {
+          accountId: binding.accountId,
+          profileName: binding.profileName,
+          status: "active",
+          expiresAt: binding.expiresAt,
+          releasedAt: null
+        },
+        updatedAt: new Date().toISOString()
+      };
+      await writeMissionDispatchRecord(dispatchRecord);
+    }
+
     if (capabilityMatrix?.nativeMissionDispatch !== "unsupported") {
       const payload = await getOpenClawAdapter().runAgentTurn(
         {
@@ -170,10 +218,23 @@ export async function submitMissionDispatch(
         error: nextStatus === "stalled" ? resolveGatewayMissionDispatchError(payload) : null
       };
       await writeMissionDispatchRecord(dispatchRecord);
+      if (isMissionDispatchTerminalStatus(dispatchRecord.status) && dispatchRecord.browserBinding) {
+        dispatchRecord = await finalizeDispatchBrowserBinding(dispatchRecord);
+      }
     } else {
       dispatchRecord = await launchMissionDispatchRunner(dispatchRecord);
     }
   } catch (error) {
+    if (dispatchRecord.browserBinding?.status === "active") {
+      dispatchRecord = await finalizeDispatchBrowserBinding(dispatchRecord).catch(() => ({
+        ...dispatchRecord,
+        browserBinding: {
+          ...dispatchRecord.browserBinding!,
+          status: "recovery_required" as const,
+          releasedAt: new Date().toISOString()
+        }
+      }));
+    }
     dispatchRecord = {
       ...dispatchRecord,
       status: "stalled",
@@ -231,15 +292,19 @@ export async function abortMissionDispatchTask(
   }
 
   if (isMissionDispatchTerminalStatus(dispatchRecord.status)) {
+    const terminalRecord =
+      dispatchRecord.browserBinding?.status === "active"
+        ? await finalizeDispatchBrowserBinding(dispatchRecord)
+        : dispatchRecord;
     return {
       taskId,
-      dispatchId: dispatchRecord.id,
-      status: dispatchRecord.status,
-      summary: resolveMissionDispatchCompletionDetail(dispatchRecord),
-      reason: dispatchRecord.error,
-      runnerPid: dispatchRecord.runner.pid,
-      childPid: dispatchRecord.runner.childPid,
-      abortedAt: dispatchRecord.runner.finishedAt ?? dispatchRecord.updatedAt
+      dispatchId: terminalRecord.id,
+      status: terminalRecord.status,
+      summary: resolveMissionDispatchCompletionDetail(terminalRecord),
+      reason: terminalRecord.error,
+      runnerPid: terminalRecord.runner.pid,
+      childPid: terminalRecord.runner.childPid,
+      abortedAt: terminalRecord.runner.finishedAt ?? terminalRecord.updatedAt
     };
   }
 
@@ -281,6 +346,9 @@ export async function abortMissionDispatchTask(
   }
 
   killedChildPid = await stopMissionDispatchChildProcess(nextRecord);
+  if (nextRecord.browserBinding?.status === "active") {
+    await finalizeDispatchBrowserBinding(nextRecord);
+  }
 
   return {
     taskId,
@@ -292,6 +360,23 @@ export async function abortMissionDispatchTask(
     childPid: killedChildPid ?? nextRecord.runner.childPid,
     abortedAt
   };
+}
+
+async function finalizeDispatchBrowserBinding<T extends MissionDispatchRecordLike>(record: T): Promise<T> {
+  if (!record.browserBinding || record.browserBinding.status !== "active") return record;
+  const result = await finalizeBrowserTaskBinding(record.id);
+  const now = new Date().toISOString();
+  const nextRecord = {
+    ...record,
+    updatedAt: now,
+    browserBinding: {
+      ...record.browserBinding,
+      status: result.cleanupFailed ? "recovery_required" as const : "released" as const,
+      releasedAt: now
+    }
+  };
+  await writeMissionDispatchRecord(nextRecord);
+  return nextRecord as T;
 }
 
 function resolveGatewayTaskCancelIds(

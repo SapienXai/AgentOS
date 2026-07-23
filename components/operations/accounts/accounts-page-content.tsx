@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { AlertTriangle, Chrome, Filter, Fingerprint, Gauge, Info, KeyRound, Play, RefreshCw, Search, SlidersHorizontal, SquareArrowOutUpRight, UserCog, X } from "lucide-react";
 import Link from "next/link";
 
@@ -24,6 +24,40 @@ import type { OpenClawBrowserDriver, OpenClawBrowserProfileView } from "@/lib/op
 import { cn } from "@/lib/utils";
 
 type ConnectAccountThemeStyle = CSSProperties & Record<`--ca-${string}`, string>;
+
+type SecureBrowserAccountView = {
+  id: string;
+  provider: string;
+  serviceName: string;
+  primaryDomain: string;
+  ownerUserId: string;
+  workspaceId: string;
+  browserProfileId: string;
+  allowedAgentIds: string[];
+  allowedDomains: string[];
+  connectionStatus: string;
+  verificationSource: string;
+  sessionState: string;
+  concurrencyLease: {
+    holderTaskId: string;
+    holderAgentId: string;
+    heartbeatAt: string;
+    expiresAt: string;
+    fencingToken: number;
+  } | null;
+  lastVerifiedAt: string | null;
+  lastUsedAt: string | null;
+  source: string;
+};
+
+type SecureBrowserCapabilityView = {
+  provider: string;
+  persistentProfiles: "supported" | "unsupported" | "unknown";
+  liveView: "supported" | "unsupported" | "unknown";
+  humanTakeover: "supported" | "unsupported" | "unknown";
+  typedTaskDispatch: "supported" | "unsupported" | "unknown";
+  reason: string | null;
+};
 
 const connectAccountThemeStyles: Record<"dark" | "light", ConnectAccountThemeStyle> = {
   dark: {
@@ -91,8 +125,18 @@ export function AccountsPageContent({
   const [connectDialogOpen, setConnectDialogOpen] = useState(false);
   const [manageAccessTarget, setManageAccessTarget] = useState<AccountLoginTargetView | null>(null);
   const [missionTarget, setMissionTarget] = useState<AccountLoginTargetView | null>(null);
+  const [secureMissionAccount, setSecureMissionAccount] = useState<SecureBrowserAccountView | null>(null);
+  const [manageSecureAccount, setManageSecureAccount] = useState<SecureBrowserAccountView | null>(null);
   const [busyProfileName, setBusyProfileName] = useState<string | null>(null);
   const [busyLoginTargetId, setBusyLoginTargetId] = useState<string | null>(null);
+  const [secureBrowserAccounts, setSecureBrowserAccounts] = useState<SecureBrowserAccountView[]>([]);
+  const [secureBrowserCapabilities, setSecureBrowserCapabilities] = useState<SecureBrowserCapabilityView | null>(null);
+  const [secureBrowserStateError, setSecureBrowserStateError] = useState<string | null>(null);
+  const [secureBrowserStateLoading, setSecureBrowserStateLoading] = useState(false);
+  const [revokingSecureAccountId, setRevokingSecureAccountId] = useState<string | null>(null);
+  const [openingSecureAccountId, setOpeningSecureAccountId] = useState<string | null>(null);
+  const [secureRecoveryBusy, setSecureRecoveryBusy] = useState(false);
+  const [secureRecoveryFailures, setSecureRecoveryFailures] = useState(0);
   const [recoveryActionBusy, setRecoveryActionBusy] = useState<"restart" | null>(null);
   const workspaceAgents = useMemo(
     () => snapshot.agents.filter((agent) => !activeWorkspaceId || agent.workspaceId === activeWorkspaceId),
@@ -180,10 +224,218 @@ export function AccountsPageContent({
     }
 
     const params = new URLSearchParams(window.location.search);
-    if (params.get("connect") === "1" && interactiveBrowserLoginSupported) {
+    if (params.get("connect") === "1") {
       setConnectDialogOpen(true);
     }
-  }, [activeWorkspaceId, interactiveBrowserLoginSupported]);
+  }, [activeWorkspaceId]);
+
+  const loadSecureBrowserAccounts = useCallback(async () => {
+    if (!activeWorkspaceId) {
+      setSecureBrowserAccounts([]);
+      setSecureBrowserCapabilities(null);
+      setSecureBrowserStateError(null);
+      return;
+    }
+
+    setSecureBrowserStateLoading(true);
+    try {
+      const response = await fetch(`/api/accounts/browser-accounts?workspaceId=${encodeURIComponent(activeWorkspaceId)}`, {
+        cache: "no-store"
+      });
+      const payload = await response.json().catch(() => null) as {
+        accounts?: SecureBrowserAccountView[];
+        capabilities?: SecureBrowserCapabilityView;
+        recovery?: {
+          recoveredCount: number;
+          cleanupFailedCount: number;
+        };
+        error?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Unable to load Secure Browser Account state.");
+      }
+      setSecureBrowserAccounts(payload?.accounts ?? []);
+      setSecureBrowserCapabilities(payload?.capabilities ?? null);
+      setSecureRecoveryFailures(payload?.recovery?.cleanupFailedCount ?? 0);
+      setSecureBrowserStateError(null);
+    } catch (loadError) {
+      setSecureBrowserStateError(readBrowserProfileError(loadError, "Unable to load Secure Browser Account state."));
+    } finally {
+      setSecureBrowserStateLoading(false);
+    }
+  }, [activeWorkspaceId]);
+
+  const recoverSecureBrowserAccounts = async () => {
+    if (!activeWorkspaceId) return;
+    setSecureRecoveryBusy(true);
+    try {
+      const response = await fetch("/api/accounts/browser-accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "recover",
+          workspaceId: activeWorkspaceId
+        })
+      });
+      const payload = await response.json().catch(() => null) as {
+        result?: { recoveredCount?: number; cleanupFailedCount?: number };
+        error?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Secure browser recovery failed.");
+      }
+      const failures = payload?.result?.cleanupFailedCount ?? 0;
+      if (failures > 0) {
+        toast.error("Some browser sessions still require recovery.", {
+          description: `${failures} cleanup operation(s) could not be confirmed.`
+        });
+      } else {
+        toast.success("Secure browser recovery completed.", {
+          description: `${payload?.result?.recoveredCount ?? 0} stale binding(s) were checked.`
+        });
+      }
+      await loadSecureBrowserAccounts();
+    } catch (recoveryError) {
+      toast.error("Secure browser recovery failed.", {
+        description: readBrowserProfileError(recoveryError, "Unable to recover stale browser bindings.")
+      });
+    } finally {
+      setSecureRecoveryBusy(false);
+    }
+  };
+
+  const updateSecureBrowserAccess = async (input: {
+    account: SecureBrowserAccountView;
+    allowedAgentIds: string[];
+    allowedDomains: string[];
+  }) => {
+    const response = await fetch("/api/accounts/browser-accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "update-access",
+        accountId: input.account.id,
+        workspaceId: input.account.workspaceId,
+        allowedAgentIds: input.allowedAgentIds,
+        allowedDomains: input.allowedDomains
+      })
+    });
+    const payload = await response.json().catch(() => null) as { error?: string } | null;
+    if (!response.ok) {
+      throw new Error(payload?.error ?? "Unable to update browser account access.");
+    }
+    toast.success("Browser account access updated.", {
+      description: "The new agent and domain policy applies to future task bindings."
+    });
+    setManageSecureAccount(null);
+    await loadSecureBrowserAccounts();
+  };
+
+  useEffect(() => {
+    void loadSecureBrowserAccounts();
+  }, [loadSecureBrowserAccounts]);
+
+  const revokeSecureBrowserAccount = async (account: SecureBrowserAccountView) => {
+    setRevokingSecureAccountId(account.id);
+    try {
+      const response = await fetch("/api/accounts/browser-accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "revoke",
+          accountId: account.id,
+          workspaceId: account.workspaceId
+        })
+      });
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Unable to revoke the browser account.");
+      }
+      toast.success("Browser account revoked.", {
+        description: "Agent access and active leases were removed. Provider cleanup was requested."
+      });
+      await loadSecureBrowserAccounts();
+    } catch (revokeError) {
+      toast.error("Browser account was not revoked.", {
+        description: readBrowserProfileError(revokeError, "Unable to revoke the browser account.")
+      });
+    } finally {
+      setRevokingSecureAccountId(null);
+    }
+  };
+
+  const openSecureBrowserAccount = async (account: SecureBrowserAccountView) => {
+    const popup = window.open("about:blank", "agentos-secure-browser");
+    if (!popup) {
+      toast.error("Allow pop-ups to open Secure Browser Live View.");
+      return;
+    }
+    popup.document.title = "Opening Secure Browser";
+    setOpeningSecureAccountId(account.id);
+    try {
+      const launchUrl = await startSecureLiveView(account.id, account.workspaceId);
+      popup.location.replace(launchUrl);
+      toast.success("Secure Browser opened.", {
+        description: "Complete passwords, 2FA, and CAPTCHA only inside the browser window."
+      });
+      await loadSecureBrowserAccounts();
+    } catch (openError) {
+      popup.close();
+      toast.error("Secure Browser did not open.", {
+        description: readBrowserProfileError(openError, "Unable to start Secure Browser Live View.")
+      });
+    } finally {
+      setOpeningSecureAccountId(null);
+    }
+  };
+
+  const connectSecureBrowserAccount = async (input: SecureBrowserConnectInput) => {
+    if (!activeWorkspace) {
+      toast.error("Select a workspace before connecting an account.");
+      return;
+    }
+    const popup = window.open("about:blank", "agentos-secure-browser");
+    if (!popup) {
+      toast.error("Allow pop-ups to open Secure Browser Live View.");
+      return;
+    }
+    popup.document.title = "Opening Secure Browser";
+    try {
+      const createResponse = await fetch("/api/accounts/browser-accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          workspaceId: activeWorkspace.id,
+          serviceName: input.serviceName,
+          primaryDomain: input.primaryDomain,
+          allowedDomains: [input.primaryDomain],
+          allowedAgentIds: input.allowedAgentIds
+        })
+      });
+      const createPayload = await createResponse.json().catch(() => null) as {
+        result?: { account?: SecureBrowserAccountView };
+        error?: string;
+      } | null;
+      const account = createPayload?.result?.account;
+      if (!createResponse.ok || !account) {
+        throw new Error(createPayload?.error ?? "Unable to create the secure browser profile.");
+      }
+
+      const launchUrl = await startSecureLiveView(account.id, account.workspaceId);
+      popup.location.replace(launchUrl);
+      setConnectDialogOpen(false);
+      toast.success("Secure Browser opened.", {
+        description: "Your password and verification codes stay inside the isolated browser session."
+      });
+      await loadSecureBrowserAccounts();
+    } catch (connectError) {
+      popup.close();
+      toast.error("Connect Browser Account did not complete.", {
+        description: readBrowserProfileError(connectError, "Unable to start Secure Browser Live View.")
+      });
+    }
+  };
 
   const removeLoginTarget = async (target: AccountLoginTargetView) => {
     setBusyLoginTargetId(target.id);
@@ -354,14 +606,12 @@ export function AccountsPageContent({
               title="Accounts"
               subtitle="Manage real OpenClaw browser profiles used for reusable account sessions."
               primaryAction={{
-                label: "Connect Account",
+                label: "Connect Browser Account",
                 icon: KeyRound,
                 onClick: () => setConnectDialogOpen(true),
-                disabled: !activeWorkspaceId || !interactiveBrowserLoginSupported,
-                title: !interactiveBrowserLoginSupported
-                  ? "Interactive login is unavailable because Railway runs the managed Chromium browser headlessly."
-                  : activeWorkspaceId
-                    ? "Open a login flow in an OpenClaw browser profile for this workspace."
+                disabled: !activeWorkspaceId,
+                title: activeWorkspaceId
+                  ? "Inspect secure browser and official integration connection methods."
                   : "Select a workspace before connecting account sessions."
               }}
             >
@@ -382,7 +632,7 @@ export function AccountsPageContent({
 
             <div className="rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-xs leading-5 text-foreground">
               {deployment.browserAutomation === "server-headless"
-                ? "Railway runs OpenClaw browser automation in headless Chromium. Agents can navigate, click, type, and capture screenshots, but operators cannot complete interactive login or two-factor prompts in that browser."
+                ? "Railway supports secure manual login through an isolated, persistent self-hosted browser worker. Agent task use remains blocked until OpenClaw exposes a typed task-bound profile contract."
                 : "AgentOS does not store raw passwords. Sessions are stored in OpenClaw browser profiles."}
             </div>
 
@@ -398,13 +648,15 @@ export function AccountsPageContent({
                   <p className="font-semibold text-foreground">What works here</p>
                   <p className="mt-1 text-muted-foreground">
                     {deployment.browserAutomation === "server-headless"
-                      ? "AgentOS reads and starts managed OpenClaw profiles for headless agent automation, including navigation, clicks, typing, and screenshots."
+                      ? "Operators can complete login, 2FA, and CAPTCHA through Secure Live View. AgentOS also reads managed OpenClaw profiles for headless public-page automation."
                       : "AgentOS reads OpenClaw browser profiles, starts a profile, opens a login URL, and records the workspace login target after that browser action succeeds."}
                   </p>
                 </div>
                 <div>
-                  <p className="font-semibold text-foreground">What is not exposed yet</p>
-                  <p className="mt-1 text-muted-foreground">OpenClaw does not expose verified website account identities or a direct browser-profile dispatch parameter to AgentOS. Agent access is enforced by AgentOS before account-target task launch.</p>
+                  <p className="font-semibold text-foreground">Current boundary</p>
+                  <p className="mt-1 text-muted-foreground">
+                    Website identity verification remains user-confirmed unless a provider-specific check exists. Agent task dispatch is enabled only when the OpenClaw policy plugin and native Gateway mission dispatch are both available.
+                  </p>
                 </div>
               </div>
             </SectionCard>
@@ -444,6 +696,132 @@ export function AccountsPageContent({
               />
             </SearchToolbar>
 
+            <SectionCard title="Secure Browser Accounts">
+              <div className="flex flex-col gap-2 border-b border-border px-3 py-2.5 text-xs leading-5 text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  Provider: {secureBrowserCapabilities?.provider ?? "Checking"} · Persistent profiles: {secureBrowserCapabilities?.persistentProfiles ?? "unknown"} · Live View: {secureBrowserCapabilities?.liveView ?? "unknown"} · Typed dispatch: {secureBrowserCapabilities?.typedTaskDispatch ?? "unknown"}
+                  {secureBrowserCapabilities?.reason ? <p className="mt-1">{secureBrowserCapabilities.reason}</p> : null}
+                </div>
+                {(secureRecoveryFailures > 0 || secureBrowserAccounts.some((account) => account.sessionState === "recovery_required")) ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={secureRecoveryBusy}
+                    onClick={() => void recoverSecureBrowserAccounts()}
+                  >
+                    <RefreshCw className={cn("mr-1 h-3 w-3", secureRecoveryBusy && "animate-spin")} />
+                    {secureRecoveryBusy ? "Recovering..." : "Retry cleanup"}
+                  </Button>
+                ) : null}
+              </div>
+              {secureBrowserStateError ? (
+                <div className="flex items-center justify-between gap-3 p-3">
+                  <p className="text-xs text-[hsl(var(--status-warning-foreground))]">{secureBrowserStateError}</p>
+                  <Button variant="secondary" size="sm" onClick={() => void loadSecureBrowserAccounts()}>Retry</Button>
+                </div>
+              ) : secureBrowserStateLoading ? (
+                <div className="p-4 text-xs text-muted-foreground">Loading secure browser account state...</div>
+              ) : secureBrowserAccounts.length === 0 ? (
+                <div className="p-4">
+                  <EmptyState
+                    title="No Secure Browser Accounts"
+                    description="No isolated browser profile exists for this workspace. Use Connect Browser Account to start a secure manual login."
+                  />
+                </div>
+              ) : (
+                <div className="grid gap-2.5 p-3 lg:grid-cols-2">
+                  {secureBrowserAccounts.map((account) => (
+                    <div key={account.id} className="rounded-[12px] border border-border bg-card p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-foreground">{account.serviceName}</p>
+                          <p className="mt-1 truncate text-[0.7rem] text-muted-foreground">{account.primaryDomain}</p>
+                        </div>
+                        <StatusBadge
+                          label={account.connectionStatus.replaceAll("_", " ")}
+                          tone={account.connectionStatus === "revoked" ? "muted" : account.connectionStatus === "connected" ? "success" : "warning"}
+                        />
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <KeyValue label="Provider" value={account.provider} />
+                        <KeyValue label="Source" value={account.source} />
+                        <KeyValue label="Profile" value={account.browserProfileId} />
+                        <KeyValue label="Owner / workspace" value={`${account.ownerUserId} / ${account.workspaceId}`} />
+                        <KeyValue label="Allowed agents" value={account.allowedAgentIds.length ? account.allowedAgentIds.join(", ") : "None"} />
+                        <KeyValue label="Session" value={account.sessionState} />
+                        <KeyValue label="Active task" value={account.concurrencyLease?.holderTaskId ?? "None"} />
+                        <KeyValue label="Lease" value={account.concurrencyLease ? `Fenced #${account.concurrencyLease.fencingToken} until ${formatAccountTimestamp(account.concurrencyLease.expiresAt)}` : "Idle"} />
+                        <KeyValue label="Heartbeat" value={account.concurrencyLease ? formatAccountTimestamp(account.concurrencyLease.heartbeatAt) : "None"} />
+                        <KeyValue label="Verification" value={`${account.verificationSource} · ${account.lastVerifiedAt ? formatAccountTimestamp(account.lastVerifiedAt) : "Never"}`} />
+                        <KeyValue label="Last used" value={account.lastUsedAt ? formatAccountTimestamp(account.lastUsedAt) : "Never"} />
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+                        <Button
+                          size="sm"
+                          disabled={
+                            account.connectionStatus === "revoked" ||
+                            account.sessionState === "recovery_required" ||
+                            secureBrowserCapabilities?.liveView !== "supported" ||
+                            openingSecureAccountId === account.id
+                          }
+                          onClick={() => void openSecureBrowserAccount(account)}
+                        >
+                          {openingSecureAccountId === account.id ? "Opening..." : "Open Live View"}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={
+                            account.connectionStatus === "revoked" ||
+                            account.sessionState === "recovery_required" ||
+                            !account.lastVerifiedAt ||
+                            account.allowedAgentIds.length === 0 ||
+                            secureBrowserCapabilities?.typedTaskDispatch !== "supported"
+                          }
+                          onClick={() => setSecureMissionAccount(account)}
+                        >
+                          Run Task
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={
+                            account.connectionStatus === "revoked" ||
+                            account.sessionState === "recovery_required" ||
+                            Boolean(account.concurrencyLease)
+                          }
+                          title={
+                            account.sessionState === "recovery_required"
+                              ? "Retry browser cleanup before changing access."
+                              : account.concurrencyLease
+                                ? "Access policy is locked while this profile has an active lease."
+                                : "Choose the agents and domains allowed to use this account."
+                          }
+                          onClick={() => setManageSecureAccount(account)}
+                        >
+                          <UserCog className="mr-1 h-3 w-3" />
+                          Manage access
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={account.connectionStatus === "revoked" || revokingSecureAccountId === account.id}
+                          onClick={() => void revokeSecureBrowserAccount(account)}
+                        >
+                          {revokingSecureAccountId === account.id ? "Revoking..." : "Revoke"}
+                        </Button>
+                        <MiniBadge>
+                          {secureBrowserCapabilities?.typedTaskDispatch === "supported"
+                            ? "Task-bound policy"
+                            : "Agent dispatch unavailable"}
+                        </MiniBadge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+
             <SectionCard title="Connected Login Targets">
               {targetsError || accessRulesError ? (
                 <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -470,7 +848,7 @@ export function AccountsPageContent({
                     description={loginTargets.length === 0
                       ? interactiveBrowserLoginSupported
                         ? "Use Connect Account to open a login page in a real OpenClaw browser profile. AgentOS will list the target here after the browser action succeeds."
-                        : "Interactive browser login is unavailable in Railway. Use supported integrations for authenticated services."
+                        : "Secure self-hosted Live View is unavailable in this runtime. Review Connect Browser Account for supported methods or use an official integration."
                       : "Clear search to inspect another login target."}
                   />
                 </div>
@@ -562,6 +940,9 @@ export function AccountsPageContent({
         workspace={activeWorkspace}
         onOpenChange={setConnectDialogOpen}
         onSubmit={connectAccount}
+        onSecureSubmit={connectSecureBrowserAccount}
+        agents={workspaceAgents}
+        secureBrowserCapabilities={secureBrowserCapabilities}
         profiles={usableProfiles}
         profilesError={error}
         onRetryProfiles={() => void loadProfiles()}
@@ -587,6 +968,22 @@ export function AccountsPageContent({
           setMissionTarget(null);
           await loadProfiles();
         }}
+      />
+      <SecureBrowserMissionDialog
+        open={Boolean(secureMissionAccount)}
+        account={secureMissionAccount}
+        agents={workspaceAgents}
+        onOpenChange={(open) => setSecureMissionAccount(open ? secureMissionAccount : null)}
+        onSubmitted={async () => {
+          await loadSecureBrowserAccounts();
+        }}
+      />
+      <ManageSecureBrowserAccessDialog
+        open={Boolean(manageSecureAccount)}
+        account={manageSecureAccount}
+        agents={workspaceAgents}
+        onOpenChange={(open) => setManageSecureAccount(open ? manageSecureAccount : null)}
+        onSave={updateSecureBrowserAccess}
       />
     </>
   );
@@ -673,11 +1070,6 @@ function LoginTargetCard({
   const approvalRules = accessRules.filter(
     (rule) => workspaceAgentIds.has(rule.agentId) && rule.permission === "requires_approval"
   );
-  const browserCapableRunnableRules = runnableRules.filter((rule) => {
-    const agent = workspaceAgents.find((entry) => entry.id === rule.agentId);
-    return agent ? agentHasBrowserAccess(agent) : false;
-  });
-
   return (
     <div className="rounded-[12px] border border-border bg-card">
       <div className="flex items-start justify-between gap-3 p-3">
@@ -757,8 +1149,8 @@ function LoginTargetCard({
           variant="secondary"
           size="sm"
           className="h-7 rounded-[8px] px-2 text-[0.7rem]"
-          disabled={busy || !profileAvailable || browserCapableRunnableRules.length === 0}
-          title={browserCapableRunnableRules.length > 0 ? "Run a task with an allowed browser-capable agent." : "Grant runnable access to a browser-capable agent first."}
+          disabled
+          title="Blocked: OpenClaw 2026.6.11 has no typed task-bound browser-profile dispatch contract."
           onClick={onRunTask}
         >
           <Play className="mr-1 h-3 w-3" />
@@ -1050,7 +1442,7 @@ function AccountTargetMissionDialog({
       }
 
       toast.success("Task submitted.", {
-        description: result?.summary ?? `${target.serviceName} account target context was attached.`
+        description: result?.summary ?? `${target.serviceName} was bound to the task session.`
       });
       onOpenChange(false);
       await onSubmitted();
@@ -1070,7 +1462,7 @@ function AccountTargetMissionDialog({
       <PikoLoader
         open={submitting}
         title="Submitting account task"
-        description="Dispatching the task with the selected browser-profile context."
+        description="Resolving the Secure Browser Account and binding it to one OpenClaw task session."
       />
       <Dialog open={open} onOpenChange={onOpenChange}>
       {target ? (
@@ -1078,7 +1470,7 @@ function AccountTargetMissionDialog({
           <DialogHeader>
             <DialogTitle>Run Task With Account</DialogTitle>
             <DialogDescription>
-              Dispatch to an allowed browser-capable agent with account target context.
+              Dispatch to an allowed browser-capable agent with a task-bound Secure Browser Account.
             </DialogDescription>
           </DialogHeader>
 
@@ -1087,12 +1479,12 @@ function AccountTargetMissionDialog({
               <KeyValue label="Account target" value={target.serviceName} />
               <KeyValue label="Browser profile" value={target.browserProfileName} />
               <KeyValue label="Domain" value={target.primaryDomain} />
-              <KeyValue label="Dispatch enforcement" value="AgentOS policy guard" />
+              <KeyValue label="Dispatch enforcement" value="Session-key policy plugin" />
             </div>
           </SectionCard>
 
           <div className="rounded-[10px] border border-[hsl(var(--status-warning)/0.24)] bg-[hsl(var(--status-warning)/0.10)] px-3 py-2 text-xs leading-5 text-[hsl(var(--status-warning-foreground))]">
-            OpenClaw does not expose a direct browser-profile dispatch parameter yet. AgentOS blocks unauthorized agents and includes the selected profile/session as task context.
+            Legacy targets run only when AgentOS can resolve them to a Secure Browser Account. The profile is forced at the OpenClaw tool boundary and is never selected through prompt text.
           </div>
 
           {allowedAgents.length === 0 ? (
@@ -1143,6 +1535,278 @@ function AccountTargetMissionDialog({
   );
 }
 
+function ManageSecureBrowserAccessDialog({
+  open,
+  account,
+  agents,
+  onOpenChange,
+  onSave
+}: {
+  open: boolean;
+  account: SecureBrowserAccountView | null;
+  agents: AgentRecord[];
+  onOpenChange: (open: boolean) => void;
+  onSave: (input: {
+    account: SecureBrowserAccountView;
+    allowedAgentIds: string[];
+    allowedDomains: string[];
+  }) => Promise<void>;
+}) {
+  const browserAgents = useMemo(
+    () => agents.filter(agentHasBrowserAccess).sort((left, right) => left.name.localeCompare(right.name)),
+    [agents]
+  );
+  const [allowedAgentIds, setAllowedAgentIds] = useState<string[]>([]);
+  const [allowedDomains, setAllowedDomains] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || !account) return;
+    setAllowedAgentIds(account.allowedAgentIds);
+    setAllowedDomains(account.allowedDomains.join(", "));
+    setError(null);
+  }, [account, open]);
+
+  const save = async () => {
+    if (!account) return;
+    const domains = [...new Set(
+      allowedDomains
+        .split(",")
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean)
+    )];
+    if (!domains.length) {
+      setError("At least one allowed domain is required.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave({ account, allowedAgentIds, allowedDomains: domains });
+    } catch (saveError) {
+      setError(readBrowserProfileError(saveError, "Unable to update browser account access."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {account ? (
+        <DialogContent className="flex h-dvh max-h-dvh w-screen max-w-none flex-col rounded-none border-0 p-0 sm:h-auto sm:max-h-[85vh] sm:max-w-xl sm:rounded-[18px] sm:border">
+          <DialogHeader className="border-b border-border px-5 pb-4 pt-[max(1.25rem,env(safe-area-inset-top))] sm:pt-5">
+            <DialogTitle>Manage Secure Browser Access</DialogTitle>
+            <DialogDescription>
+              Changes apply to future task bindings. Active profile leases lock this policy to prevent mid-task privilege changes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+            <SectionCard>
+              <div className="grid gap-2 p-3 sm:grid-cols-2">
+                <KeyValue label="Account" value={account.serviceName} />
+                <KeyValue label="Workspace" value={account.workspaceId} />
+                <KeyValue label="Owner" value={account.ownerUserId} />
+                <KeyValue label="Profile" value={account.browserProfileId} />
+              </div>
+            </SectionCard>
+            <div className="space-y-2">
+              <Label>Allowed agents</Label>
+              {browserAgents.length === 0 ? (
+                <p className="rounded-[10px] border border-border px-3 py-2 text-xs text-muted-foreground">
+                  No browser-capable agent exists in this workspace.
+                </p>
+              ) : (
+                <div className="grid gap-2 rounded-[12px] border border-border bg-card p-3 sm:grid-cols-2">
+                  {browserAgents.map((agent) => {
+                    const checked = allowedAgentIds.includes(agent.id);
+                    return (
+                      <label key={agent.id} className="flex min-w-0 items-center gap-2 text-xs text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setAllowedAgentIds((current) =>
+                            checked
+                              ? current.filter((id) => id !== agent.id)
+                              : [...current, agent.id]
+                          )}
+                        />
+                        <span className="truncate" title={agent.name}>{agent.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`secure-account-domains-${account.id}`}>Allowed domains</Label>
+              <Input
+                id={`secure-account-domains-${account.id}`}
+                value={allowedDomains}
+                onChange={(event) => setAllowedDomains(event.target.value)}
+                placeholder="example.com, *.example.com"
+              />
+              <p className="text-xs leading-5 text-muted-foreground">
+                Comma-separated hostnames only. The primary domain remains mandatory and is restored by the server if omitted.
+              </p>
+            </div>
+            {error ? (
+              <div className="rounded-[10px] border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                {error}
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter className="border-t border-border px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 sm:pb-5">
+            <Button variant="secondary" disabled={saving} onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button disabled={saving} onClick={() => void save()}>
+              {saving ? "Saving..." : "Save access"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      ) : null}
+    </Dialog>
+  );
+}
+
+function SecureBrowserMissionDialog({
+  open,
+  account,
+  agents,
+  onOpenChange,
+  onSubmitted
+}: {
+  open: boolean;
+  account: SecureBrowserAccountView | null;
+  agents: AgentRecord[];
+  onOpenChange: (open: boolean) => void;
+  onSubmitted: () => Promise<void>;
+}) {
+  const allowedAgents = useMemo(
+    () =>
+      agents
+        .filter((agent) => account?.allowedAgentIds.includes(agent.id))
+        .filter(agentHasBrowserAccess)
+        .sort((left, right) => left.name.localeCompare(right.name)),
+    [account, agents]
+  );
+  const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [mission, setMission] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedAgentId(allowedAgents[0]?.id ?? "");
+    setMission("");
+    setError(null);
+  }, [allowedAgents, open]);
+
+  const submit = async () => {
+    if (!account || !selectedAgentId || !mission.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/mission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mission: mission.trim(),
+          agentId: selectedAgentId,
+          workspaceId: account.workspaceId,
+          browserAccountId: account.id
+        })
+      });
+      const result = await response.json().catch(() => null) as {
+        error?: string;
+        summary?: string;
+      } | null;
+      if (!response.ok || result?.error) {
+        throw new Error(result?.error || "Secure browser task dispatch failed.");
+      }
+      toast.success("Secure browser task submitted.", {
+        description: result?.summary ?? "The authenticated profile is bound to this task only."
+      });
+      onOpenChange(false);
+      await onSubmitted();
+    } catch (submitError) {
+      setError(readBrowserProfileError(submitError, "Secure browser task dispatch failed."));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <PikoLoader
+        open={submitting}
+        title="Binding secure browser account"
+        description="Starting the isolated profile and attaching it to one OpenClaw task session."
+      />
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        {account ? (
+          <DialogContent className="max-w-xl rounded-[18px] p-4">
+            <DialogHeader>
+              <DialogTitle>Run Task With Secure Browser</DialogTitle>
+              <DialogDescription>
+                AgentOS binds this account to one OpenClaw session, forces its browser profile, and releases it when the task ends.
+              </DialogDescription>
+            </DialogHeader>
+            <SectionCard>
+              <div className="grid gap-2 p-3 sm:grid-cols-2">
+                <KeyValue label="Account" value={account.serviceName} />
+                <KeyValue label="Allowed domain" value={account.primaryDomain} />
+                <KeyValue label="Profile" value={account.browserProfileId} />
+                <KeyValue label="Policy" value="Domain guard + per-action approval" />
+              </div>
+            </SectionCard>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={`secure-account-agent-${account.id}`}>Agent</Label>
+              <select
+                id={`secure-account-agent-${account.id}`}
+                value={selectedAgentId}
+                onChange={(event) => setSelectedAgentId(event.target.value)}
+                className="h-9 rounded-[10px] border border-input bg-card px-3 text-xs text-foreground"
+              >
+                {allowedAgents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>{agent.name}</option>
+                ))}
+              </select>
+            </div>
+            <Textarea
+              value={mission}
+              onChange={(event) => setMission(event.target.value)}
+              placeholder={`Describe what the agent should do on ${account.primaryDomain}...`}
+              className="min-h-32 rounded-[12px] text-sm"
+            />
+            <p className="text-xs leading-5 text-muted-foreground">
+              Passwords, cookies, OTP codes, CDP endpoints, and browser credentials are not added to the prompt.
+            </p>
+            {error ? (
+              <div className="rounded-[10px] border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                {error}
+              </div>
+            ) : null}
+            <DialogFooter>
+              <Button variant="secondary" size="sm" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={submitting || allowedAgents.length === 0 || !selectedAgentId || !mission.trim()}
+                onClick={() => void submit()}
+              >
+                {submitting ? "Submitting..." : "Submit task"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        ) : null}
+      </Dialog>
+    </>
+  );
+}
+
 export type ConnectBrowserProfileInput = {
   mode: ConnectBrowserProfileMode;
   profileName: string;
@@ -1153,6 +1817,12 @@ export type ConnectBrowserProfileInput = {
   primaryDomain: string;
 };
 
+type SecureBrowserConnectInput = {
+  serviceName: string;
+  primaryDomain: string;
+  allowedAgentIds: string[];
+};
+
 type ConnectBrowserProfileMode = "existing" | "signed-in-chrome";
 
 export function ConnectAccountWizard({
@@ -1160,6 +1830,9 @@ export function ConnectAccountWizard({
   workspace,
   onOpenChange,
   onSubmit,
+  onSecureSubmit,
+  secureBrowserCapabilities = null,
+  agents = [],
   profiles,
   profilesError = null,
   onRetryProfiles,
@@ -1171,6 +1844,9 @@ export function ConnectAccountWizard({
   workspace: WorkspaceRecord | null;
   onOpenChange: (open: boolean) => void;
   onSubmit: (input: ConnectBrowserProfileInput) => Promise<void>;
+  onSecureSubmit?: (input: SecureBrowserConnectInput) => Promise<void>;
+  secureBrowserCapabilities?: SecureBrowserCapabilityView | null;
+  agents?: AgentRecord[];
   profiles: OpenClawBrowserProfileView[];
   profilesError?: string | null;
   onRetryProfiles?: () => void;
@@ -1183,7 +1859,19 @@ export function ConnectAccountWizard({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {open ? (
-        deployment.interactiveBrowserLogin === "supported" ? <ConnectAccountWizardContent
+        onSecureSubmit &&
+        secureBrowserCapabilities?.liveView === "supported" &&
+        secureBrowserCapabilities.humanTakeover === "supported" ? (
+          <SecureSelfHostedConnect
+            key={workspace?.id ?? "no-workspace"}
+            workspace={workspace}
+            capabilities={secureBrowserCapabilities}
+            agents={agents}
+            surfaceTheme={surfaceTheme}
+            onCancel={() => onOpenChange(false)}
+            onSubmit={onSecureSubmit}
+          />
+        ) : deployment.interactiveBrowserLogin === "supported" ? <ConnectAccountWizardContent
           key={workspace?.id ?? "no-workspace"}
           workspace={workspace}
           profiles={profiles}
@@ -1201,11 +1889,55 @@ export function ConnectAccountWizard({
             className="flex h-dvh max-h-dvh w-screen max-w-none flex-col rounded-none border-0 bg-[image:var(--ca-surface)] p-5 pt-[max(1.25rem,env(safe-area-inset-top))] text-[var(--ca-text)] sm:h-auto sm:w-[min(520px,calc(100vw-2rem))] sm:rounded-[18px] sm:border-[var(--ca-border)]"
           >
             <DialogHeader className="pr-10">
-              <DialogTitle className="text-[var(--ca-text-strong)]">Interactive browser login is unavailable</DialogTitle>
+              <DialogTitle className="text-[var(--ca-text-strong)]">Connect Browser Account</DialogTitle>
               <DialogDescription className="text-[var(--ca-text-muted)]">
-                Railway runs the managed Chromium browser headlessly. Agents can automate public pages, but an operator cannot complete passwords or two-factor prompts in that browser. Use a supported integration for authenticated access.
+                Choose a connection method. AgentOS will not request passwords, OTP codes, cookies, or raw browser credentials.
               </DialogDescription>
             </DialogHeader>
+            <div className="grid gap-2.5 py-2">
+              <div className="rounded-[12px] border border-[var(--ca-border)] bg-[var(--ca-panel)] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-[var(--ca-text-strong)]">Secure Self-hosted Browser</p>
+                  <MiniBadge>Default · Unavailable</MiniBadge>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-[var(--ca-text-muted)]">
+                  Dedicated persistent OpenClaw profiles are supported. Secure same-origin Live View, human takeover, and typed task-bound profile dispatch are not available in OpenClaw 2026.6.11, so account connection is disabled.
+                </p>
+                <Button type="button" variant="secondary" className="mt-3 h-9 w-full rounded-[8px]" disabled title="Requires secure Live View and typed task-bound profile dispatch.">
+                  Unavailable in this runtime
+                </Button>
+              </div>
+              <div className="rounded-[12px] border border-[var(--ca-border)] bg-[var(--ca-panel)] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-[var(--ca-text-strong)]">Use My Chrome</p>
+                  <MiniBadge>Local only</MiniBadge>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-[var(--ca-text-muted)]">
+                  A local Chrome or OpenClaw browser node can preserve user-controlled login, but it is not a reliable 24/7 Railway browser and is not connected to this deployment.
+                </p>
+                <Button type="button" variant="secondary" className="mt-3 h-9 w-full rounded-[8px]" disabled title="No authenticated local browser node is connected to this Railway instance.">
+                  No browser node connected
+                </Button>
+              </div>
+              <div className="rounded-[12px] border border-[var(--ca-border)] bg-[var(--ca-panel)] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-[var(--ca-text-strong)]">Official Integration</p>
+                  <MiniBadge>Preferred when available</MiniBadge>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-[var(--ca-text-muted)]">
+                  Use OAuth or a supported provider integration instead of browser automation whenever the service offers one.
+                </p>
+                <Button asChild type="button" variant="secondary" className="mt-3 h-9 w-full rounded-[8px]">
+                  <Link href="/integrations" onClick={() => onOpenChange(false)}>Open Integrations</Link>
+                </Button>
+              </div>
+              <div className="rounded-[12px] border border-[var(--ca-border)] bg-[var(--ca-panel)] p-3">
+                <p className="text-sm font-semibold text-[var(--ca-text-strong)]">Optional browser providers</p>
+                <p className="mt-1 text-xs leading-5 text-[var(--ca-text-muted)]">
+                  Browserless and Browserbase adapters are defined as optional capabilities only. No paid provider SDK or credential is configured.
+                </p>
+              </div>
+            </div>
             <DialogFooter className="mt-auto pb-[max(0.5rem,env(safe-area-inset-bottom))]">
               <Button type="button" variant="secondary" className="h-10 w-full rounded-[8px] sm:w-auto" onClick={() => onOpenChange(false)}>Close</Button>
             </DialogFooter>
@@ -1213,6 +1945,154 @@ export function ConnectAccountWizard({
         )
       ) : null}
     </Dialog>
+  );
+}
+
+function SecureSelfHostedConnect({
+  workspace,
+  capabilities,
+  agents,
+  surfaceTheme,
+  onCancel,
+  onSubmit
+}: {
+  workspace: WorkspaceRecord | null;
+  capabilities: SecureBrowserCapabilityView;
+  agents: AgentRecord[];
+  surfaceTheme: "dark" | "light";
+  onCancel: () => void;
+  onSubmit: (input: SecureBrowserConnectInput) => Promise<void>;
+}) {
+  const [websiteInput, setWebsiteInput] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const browserAgents = useMemo(
+    () => agents.filter(agentHasBrowserAccess).sort((left, right) => left.name.localeCompare(right.name)),
+    [agents]
+  );
+  const [allowedAgentIds, setAllowedAgentIds] = useState<string[]>([]);
+  const website = useMemo(() => resolveConnectAccountWebsite(websiteInput), [websiteInput]);
+  const validationMessage = !workspace
+    ? "Select a workspace first."
+    : !website
+      ? "Enter a valid HTTPS website or choose a shortcut."
+      : null;
+
+  const submit = async () => {
+    if (!website || validationMessage) return;
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        serviceName: website.serviceName,
+        primaryDomain: website.primaryDomain,
+        allowedAgentIds
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <DialogContent
+      style={connectAccountThemeStyles[surfaceTheme]}
+      overlayClassName="bg-black/78 backdrop-blur-lg"
+      className="flex h-dvh max-h-dvh w-screen max-w-none flex-col rounded-none border-0 bg-[image:var(--ca-surface)] p-5 pt-[max(1.25rem,env(safe-area-inset-top))] text-[var(--ca-text)] sm:h-auto sm:w-[min(560px,calc(100vw-2rem))] sm:rounded-[18px] sm:border-[var(--ca-border)]"
+    >
+      <DialogHeader className="pr-10">
+        <DialogTitle className="text-[var(--ca-text-strong)]">Connect Browser Account</DialogTitle>
+        <DialogDescription className="text-[var(--ca-text-muted)]">
+          Start an isolated, persistent browser. Passwords, OTP codes, and CAPTCHA answers stay inside the browser stream.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-4 py-3">
+        <div className="rounded-[12px] border border-violet-300/25 bg-violet-500/10 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-[var(--ca-text-strong)]">Secure Self-hosted Browser</p>
+            <MiniBadge>Default · Ready</MiniBadge>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-[var(--ca-text-muted)]">
+            A private headed Chromium session runs beside AgentOS. Live View uses a one-time link and a short-lived session cookie; raw VNC and CDP ports are never public.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="secure-browser-website">Website</Label>
+          <Input
+            id="secure-browser-website"
+            value={websiteInput}
+            onChange={(event) => setWebsiteInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void submit();
+              }
+            }}
+            placeholder="https://example.com"
+          />
+          <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
+            {accountLoginExamples.slice(0, 6).map((example) => (
+              <Button
+                key={example.id}
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="shrink-0"
+                onClick={() => setWebsiteInput(example.loginUrl)}
+              >
+                {example.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Allowed agents</Label>
+          {browserAgents.length === 0 ? (
+            <p className="rounded-[10px] border border-border px-3 py-2 text-xs text-muted-foreground">
+              No browser-capable agent exists in this workspace. You can connect the account now, but agent tasks will remain disabled.
+            </p>
+          ) : (
+            <div className="grid gap-2 rounded-[12px] border border-[var(--ca-border)] bg-[var(--ca-panel)] p-3 sm:grid-cols-2">
+              {browserAgents.map((agent) => {
+                const checked = allowedAgentIds.includes(agent.id);
+                return (
+                  <label key={agent.id} className="flex items-center gap-2 text-xs text-[var(--ca-text)]">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() =>
+                        setAllowedAgentIds((current) =>
+                          checked
+                            ? current.filter((id) => id !== agent.id)
+                            : [...current, agent.id]
+                        )
+                      }
+                    />
+                    <span className="truncate">{agent.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-2 rounded-[12px] border border-[var(--ca-border)] bg-[var(--ca-panel)] p-3 sm:grid-cols-2">
+          <KeyValue label="Workspace" value={workspace?.name ?? "Not selected"} />
+          <KeyValue label="Provider" value={capabilities.provider} />
+          <KeyValue label="Profile" value="Dedicated and persistent" />
+          <KeyValue label="Agent task dispatch" value={capabilities.typedTaskDispatch === "supported" ? "Task-bound policy ready" : "Unavailable"} />
+        </div>
+        <p className="text-xs leading-5 text-[var(--ca-text-muted)]">
+          Prefer Official Integrations for services that offer OAuth or a supported API. Browser automation is reserved for workflows without an appropriate integration.
+        </p>
+        <ValidationMessage message={validationMessage} />
+      </div>
+      <DialogFooter className="mt-auto">
+        <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
+        <Button type="button" disabled={Boolean(validationMessage) || submitting} onClick={() => void submit()}>
+          {submitting ? "Starting..." : "Start Secure Browser"}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
   );
 }
 
@@ -1476,6 +2356,27 @@ function ConnectAccountWizardContent({
       </DialogContent>
     </TooltipProvider>
   );
+}
+
+async function startSecureLiveView(accountId: string, workspaceId: string) {
+  const response = await fetch("/api/accounts/browser-accounts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "start-live-view",
+      accountId,
+      workspaceId
+    })
+  });
+  const payload = await response.json().catch(() => null) as {
+    result?: { launchUrl?: string };
+    error?: string;
+  } | null;
+  const launchUrl = payload?.result?.launchUrl;
+  if (!response.ok || !launchUrl) {
+    throw new Error(payload?.error ?? "Unable to start Secure Browser Live View.");
+  }
+  return launchUrl;
 }
 
 function ProfileModeOption({

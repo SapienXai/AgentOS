@@ -9,6 +9,8 @@ WORKDIR /build
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
+RUN mkdir -p /runtime-extras/node_modules && \
+    cp -LR node_modules/ws /runtime-extras/node_modules/ws
 
 COPY . .
 RUN pnpm build
@@ -22,7 +24,11 @@ RUN apt-get update && \
       chromium \
       chromium-sandbox \
       git \
-      gosu && \
+      gosu \
+      novnc \
+      openbox \
+      x11vnc \
+      xvfb && \
     rm -f /var/lib/apt/lists/lock /var/cache/apt/archives/lock
 
 WORKDIR /agentos
@@ -30,8 +36,13 @@ WORKDIR /agentos
 COPY --from=agentos-build --chown=node:node /build/.next/standalone ./
 COPY --from=agentos-build --chown=node:node /build/.next/static ./.next/static
 COPY --from=agentos-build --chown=node:node /build/public ./public
+COPY --from=agentos-build --chown=node:node /runtime-extras/node_modules/ws ./node_modules/ws
 COPY --chown=node:node scripts/railway-supervisor.mjs ./scripts/railway-supervisor.mjs
+COPY --chown=node:node scripts/railway-public-proxy.mjs ./scripts/railway-public-proxy.mjs
+COPY --chown=node:node scripts/secure-browser-worker.mjs ./scripts/secure-browser-worker.mjs
+COPY --chown=node:node scripts/secure-browser-integration-smoke.mjs ./scripts/secure-browser-integration-smoke.mjs
 COPY --chown=node:node scripts/railway-openclaw-bootstrap.mjs ./scripts/railway-openclaw-bootstrap.mjs
+COPY --chown=node:node openclaw-plugins/agentos-browser-policy ./openclaw-plugins/agentos-browser-policy
 COPY scripts/railway-entrypoint.sh ./scripts/railway-entrypoint.sh
 
 RUN chmod 0755 ./scripts/railway-entrypoint.sh && \
@@ -41,6 +52,8 @@ RUN chmod 0755 ./scripts/railway-entrypoint.sh && \
     ln -s /data/openclaw /home/node/.openclaw && \
     ln -s /data/openclaw-config /home/node/.config/openclaw && \
     ln -s /data/workspaces /home/node/Documents/Shared/projects && \
+    cp -a /usr/share/novnc /agentos/public/novnc && \
+    chown -R node:node /agentos/public/novnc && \
     chown -h node:node \
       /agentos/.mission-control \
       /home/node/.openclaw \
@@ -54,6 +67,8 @@ ENV NODE_ENV=production \
     AGENTOS_DEPLOYMENT_PLATFORM=railway \
     AGENTOS_RUNTIME_DIR=/data/agentos \
     AGENTOS_SUPERVISOR_SOCKET_PATH=/tmp/agentos-supervisor.sock \
+    AGENTOS_BROWSER_PROFILE_ROOT=/data/browser-profiles \
+    AGENTOS_BROWSER_WORKER_SOCKET_PATH=/tmp/agentos-browser-worker.sock \
     OPENCLAW_STATE_DIR=/data/openclaw \
     OPENCLAW_CONFIG_PATH=/data/openclaw/openclaw.json \
     OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789 \

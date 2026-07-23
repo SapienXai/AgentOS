@@ -23,17 +23,19 @@ if [ "${AGENTOS_API_TOKEN:-}" = "" ]; then
   exit 1
 fi
 
-mkdir -p /data/agentos/mission-control /data/openclaw /data/openclaw-config /data/workspaces
+mkdir -p /data/agentos/mission-control /data/browser-profiles /data/openclaw /data/openclaw-config /data/workspaces
 chown node:node \
   /data \
   /data/agentos \
   /data/agentos/mission-control \
+  /data/browser-profiles \
   /data/openclaw \
   /data/openclaw-config \
   /data/workspaces
 chmod 0700 \
   /data/agentos \
   /data/agentos/mission-control \
+  /data/browser-profiles \
   /data/openclaw \
   /data/openclaw-config \
   /data/workspaces

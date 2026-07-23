@@ -7,7 +7,10 @@ const publicInstanceApiPaths = new Set([
   "/api/auth/status",
   "/api/auth/login",
   "/api/auth/logout",
-  "/api/health"
+  "/api/health",
+  "/api/accounts/browser-live/authorize",
+  "/api/internal/browser-policy/heartbeat",
+  "/api/internal/browser-policy/worker-event"
 ]);
 const publicPwaShellPaths = new Set(["/site.webmanifest", "/sw.js"]);
 
