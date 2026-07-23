@@ -370,7 +370,7 @@ export function AccountsPageContent({
       toast.error("Allow pop-ups to open Secure Browser Live View.");
       return;
     }
-    popup.document.title = "Opening Secure Browser";
+    prepareSecureBrowserPopup(popup);
     setOpeningSecureAccountId(account.id);
     try {
       const launchUrl = await startSecureLiveView(account.id, account.workspaceId);
@@ -399,7 +399,7 @@ export function AccountsPageContent({
       toast.error("Allow pop-ups to open Secure Browser Live View.");
       return;
     }
-    popup.document.title = "Opening Secure Browser";
+    prepareSecureBrowserPopup(popup);
     try {
       const createResponse = await fetch("/api/accounts/browser-accounts", {
         method: "POST",
@@ -698,9 +698,25 @@ export function AccountsPageContent({
 
             <SectionCard title="Secure Browser Accounts">
               <div className="flex flex-col gap-2 border-b border-border px-3 py-2.5 text-xs leading-5 text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  Provider: {secureBrowserCapabilities?.provider ?? "Checking"} · Persistent profiles: {secureBrowserCapabilities?.persistentProfiles ?? "unknown"} · Live View: {secureBrowserCapabilities?.liveView ?? "unknown"} · Typed dispatch: {secureBrowserCapabilities?.typedTaskDispatch ?? "unknown"}
-                  {secureBrowserCapabilities?.reason ? <p className="mt-1">{secureBrowserCapabilities.reason}</p> : null}
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="font-medium text-foreground">
+                    Provider: {secureBrowserCapabilities?.provider ?? "Checking"}
+                  </span>
+                  <StatusBadge
+                    label={`Profiles ${secureBrowserCapabilities?.persistentProfiles ?? "checking"}`}
+                    tone={secureBrowserCapabilityTone(secureBrowserCapabilities?.persistentProfiles)}
+                  />
+                  <StatusBadge
+                    label={`Live View ${secureBrowserCapabilities?.liveView ?? "checking"}`}
+                    tone={secureBrowserCapabilityTone(secureBrowserCapabilities?.liveView)}
+                  />
+                  <StatusBadge
+                    label={`Task dispatch ${secureBrowserCapabilities?.typedTaskDispatch ?? "checking"}`}
+                    tone={secureBrowserCapabilityTone(secureBrowserCapabilities?.typedTaskDispatch)}
+                  />
+                  {secureBrowserCapabilities?.reason ? (
+                    <p className="basis-full text-muted-foreground">{secureBrowserCapabilities.reason}</p>
+                  ) : null}
                 </div>
                 {(secureRecoveryFailures > 0 || secureBrowserAccounts.some((account) => account.sessionState === "recovery_required")) ? (
                   <Button
@@ -2533,6 +2549,50 @@ function formatAccountTimestamp(value: string) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(date);
+}
+
+function secureBrowserCapabilityTone(
+  value: "supported" | "unsupported" | "unknown" | undefined
+): "success" | "warning" | "muted" {
+  return value === "supported" ? "success" : value === "unsupported" ? "warning" : "muted";
+}
+
+function prepareSecureBrowserPopup(popup: Window) {
+  const document = popup.document;
+  document.title = "Starting Secure Browser";
+  document.documentElement.style.colorScheme = "dark";
+  document.body.replaceChildren();
+  Object.assign(document.body.style, {
+    alignItems: "center",
+    background: "#070b13",
+    color: "#dbe4f0",
+    display: "flex",
+    fontFamily: "ui-sans-serif, system-ui, sans-serif",
+    justifyContent: "center",
+    margin: "0",
+    minHeight: "100vh"
+  });
+
+  const status = document.createElement("div");
+  status.setAttribute("role", "status");
+  status.style.maxWidth = "28rem";
+  status.style.padding = "2rem";
+  status.style.textAlign = "center";
+
+  const title = document.createElement("h1");
+  title.textContent = "Starting secure browser…";
+  title.style.fontSize = "1rem";
+  title.style.margin = "0";
+
+  const detail = document.createElement("p");
+  detail.textContent = "Preparing the isolated Chromium profile and private Live View. This can take up to 90 seconds on Railway.";
+  detail.style.color = "#94a3b8";
+  detail.style.fontSize = "0.8rem";
+  detail.style.lineHeight = "1.5";
+  detail.style.margin = "0.75rem 0 0";
+
+  status.append(title, detail);
+  document.body.append(status);
 }
 
 function validateConnectBrowserProfileInput(input: {

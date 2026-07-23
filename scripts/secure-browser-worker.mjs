@@ -15,6 +15,7 @@ const defaultControlSocketPath = "/tmp/agentos-browser-worker.sock";
 const defaultHttpPort = 18794;
 const defaultSessionTtlMs = 30 * 60_000;
 const maximumControlRequestBytes = 16_384;
+const managedSpawnFailures = new WeakSet();
 
 export async function startSecureBrowserWorker(env = process.env) {
   const profileRoot = path.resolve(env.AGENTOS_BROWSER_PROFILE_ROOT?.trim() || defaultProfileRoot);
@@ -135,7 +136,7 @@ export async function startSecureBrowserWorker(env = process.env) {
   const sweepTimer = setInterval(() => {
     const now = Date.now();
     for (const session of sessions.values()) {
-      if (session.expiresAt <= now || session.processes.some((child) => child.exitCode !== null)) {
+      if (session.expiresAt <= now || session.processes.some(childHasExited)) {
         sessions.delete(session.sessionId);
         void stopBrowserSession(session);
       }
@@ -343,6 +344,7 @@ async function startBrowserSession(input) {
     expiresAt: Date.now() + input.sessionTtlMs,
     processes: []
   };
+  let startupPhase = "virtual display";
 
   try {
     const display = `:${displayNumber}`;
@@ -361,15 +363,19 @@ async function startBrowserSession(input) {
       "-noreset"
     ], childEnvironment);
     session.processes.push(xvfb);
-    await waitForCondition(
+    await waitForManagedCondition(
+      xvfb,
       () => stat(`/tmp/.X11-unix/X${displayNumber}`).then(() => true).catch(() => false),
       10_000,
-      "Virtual browser display did not become ready."
+      "Virtual browser display did not become ready.",
+      "Virtual browser display exited during startup."
     );
 
+    startupPhase = "window manager";
     const windowManager = spawnManaged("openbox", ["--sm-disable"], childEnvironment);
     session.processes.push(windowManager);
 
+    startupPhase = "Chromium";
     const chromium = spawnManaged(input.chromeBinary, [
       `--user-data-dir=${profilePath}`,
       "--remote-debugging-address=127.0.0.1",
@@ -379,6 +385,7 @@ async function startBrowserSession(input) {
       "--disable-background-networking",
       "--disable-component-update",
       "--disable-default-apps",
+      "--disable-dev-shm-usage",
       "--disable-features=Translate,OptimizationHints,MediaRouter,PasswordManagerOnboarding,PasswordLeakDetection",
       "--disable-save-password-bubble",
       "--disable-sync",
@@ -388,14 +395,17 @@ async function startBrowserSession(input) {
       initialUrl
     ], childEnvironment);
     session.processes.push(chromium);
-    await waitForCondition(
+    await waitForManagedCondition(
+      chromium,
       () => fetch(`http://127.0.0.1:${cdpPort}/json/version`, {
         signal: AbortSignal.timeout(750)
       }).then((response) => response.ok).catch(() => false),
       20_000,
-      "Chromium did not become ready."
+      "Chromium did not become ready.",
+      "Chromium exited during startup."
     );
 
+    startupPhase = "private display channel";
     const vnc = spawnManaged("x11vnc", [
       "-display",
       display,
@@ -411,10 +421,12 @@ async function startBrowserSession(input) {
       "-quiet"
     ], childEnvironment);
     session.processes.push(vnc);
-    await waitForCondition(
+    await waitForManagedCondition(
+      vnc,
       () => canConnect(vncPort),
       10_000,
-      "Private browser display channel did not become ready."
+      "Private browser display channel did not become ready.",
+      "Private browser display channel exited during startup."
     );
 
     session.state = "active";
@@ -429,6 +441,7 @@ async function startBrowserSession(input) {
       cdpUrl: `http://127.0.0.1:${input.httpPort}/cdp/profile/${profileId}`
     };
   } catch (error) {
+    console.error(`Secure browser session startup failed during ${startupPhase}.`);
     await stopBrowserSession(session);
     throw error;
   }
@@ -470,21 +483,25 @@ function spawnManaged(command, args, env) {
     stdio: ["ignore", "ignore", "ignore"]
   });
   child.once("error", () => {
+    managedSpawnFailures.add(child);
     // Health and lifecycle state report failure without exposing commands or paths.
   });
   return child;
 }
 
 async function stopChild(child) {
-  if (child.exitCode !== null) return;
+  if (childHasExited(child)) return;
   child.kill("SIGTERM");
   const exited = await Promise.race([
     childExit(child).then(() => true),
     wait(5_000).then(() => false)
   ]);
-  if (!exited && child.exitCode === null) {
+  if (!exited && !childHasExited(child)) {
     child.kill("SIGKILL");
-    await childExit(child);
+    await Promise.race([
+      childExit(child),
+      wait(2_000)
+    ]);
   }
 }
 
@@ -792,13 +809,19 @@ async function canConnect(port) {
   });
 }
 
-async function waitForCondition(check, timeoutMs, message) {
+async function waitForManagedCondition(child, check, timeoutMs, timeoutMessage, exitMessage) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (managedSpawnFailures.has(child) || childHasExited(child)) {
+      throw new Error(exitMessage);
+    }
     if (await check()) return;
     await wait(100);
   }
-  throw new Error(message);
+  if (managedSpawnFailures.has(child) || childHasExited(child)) {
+    throw new Error(exitMessage);
+  }
+  throw new Error(timeoutMessage);
 }
 
 function writeControlResponse(socket, response) {
@@ -866,8 +889,12 @@ function closeServer(server) {
 }
 
 function childExit(child) {
-  if (child.exitCode !== null) return Promise.resolve();
+  if (childHasExited(child)) return Promise.resolve();
   return new Promise((resolve) => child.once("exit", resolve));
+}
+
+function childHasExited(child) {
+  return child.exitCode !== null || child.signalCode !== null;
 }
 
 function wait(ms) {

@@ -248,6 +248,18 @@ for a future multi-tenant SaaS deployment.
   records for another retry.
 - If an account remains `recovery_required`, do not dispatch work. Retry
   cleanup or revoke it before reconnecting.
+- A new headed Chromium session can take up to 90 seconds to become ready on a
+  cold or resource-constrained Railway container. The popup shows an explicit
+  startup state during this interval. Health checks and other worker actions
+  retain shorter, action-specific timeouts.
+- If startup fails, the worker records only the failed startup phase
+  (`virtual display`, `window manager`, `Chromium`, or `private display
+  channel`) and returns a bounded sanitized error. It never logs the account
+  URL, profile id, cookie, token, or browser contents.
+- Repeated Chromium startup failures should be investigated through Railway
+  memory usage and the worker phase diagnostic. Chromium uses
+  `--disable-dev-shm-usage` in the container to avoid depending on a small
+  default `/dev/shm`; do not work around failures by exposing CDP or VNC.
 
 ### Multi-user boundary
 

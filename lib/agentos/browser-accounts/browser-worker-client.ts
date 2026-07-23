@@ -5,7 +5,14 @@ import { createConnection } from "node:net";
 import { redactErrorMessage } from "@/lib/security/redaction";
 
 const maximumResponseBytes = 32_768;
-const defaultTimeoutMs = 30_000;
+const workerActionTimeoutMs: Record<BrowserWorkerRequest["action"], number> = {
+  health: 5_000,
+  "create-profile": 15_000,
+  "start-session": 90_000,
+  "inspect-authentication": 10_000,
+  "stop-session": 45_000,
+  "revoke-profile": 45_000
+};
 let transportOverride: BrowserWorkerTransport | null = null;
 
 type BrowserWorkerTransport = (request: BrowserWorkerRequest) => Promise<unknown>;
@@ -105,9 +112,14 @@ async function requestBrowserWorker<T>(request: BrowserWorkerRequest): Promise<T
     const socket = createConnection({ path: socketPath });
     let settled = false;
     let buffer = "";
+    const timeoutMs = workerActionTimeoutMs[request.action];
     const timeout = setTimeout(() => {
-      finish(new Error("Secure browser worker did not respond in time."));
-    }, defaultTimeoutMs);
+      finish(new Error(
+        request.action === "start-session"
+          ? "Secure browser startup did not finish within 90 seconds. Check Railway browser worker health and available memory."
+          : "Secure browser worker did not respond in time."
+      ));
+    }, timeoutMs);
 
     const finish = (error?: Error, value?: T) => {
       if (settled) return;

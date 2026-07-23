@@ -802,6 +802,31 @@ test("Secure Browser production smoke covers persistence, worker crash restart, 
   assert.doesNotMatch(worker, /document\.cookie|localStorage\.getItem/);
 });
 
+test("Secure Browser startup uses a Railway-safe timeout and visible progress state", async () => {
+  const [client, worker, accountsUi] = await Promise.all([
+    readFile(
+      path.join(process.cwd(), "lib/agentos/browser-accounts/browser-worker-client.ts"),
+      "utf8"
+    ),
+    readFile(path.join(process.cwd(), "scripts/secure-browser-worker.mjs"), "utf8"),
+    readFile(
+      path.join(process.cwd(), "components/operations/accounts/accounts-page-content.tsx"),
+      "utf8"
+    )
+  ]);
+
+  assert.match(client, /"start-session": 90_000/);
+  assert.match(client, /health: 5_000/);
+  assert.match(client, /Secure browser startup did not finish within 90 seconds/);
+  assert.match(worker, /--disable-dev-shm-usage/);
+  assert.match(worker, /waitForManagedCondition/);
+  assert.match(worker, /child\.signalCode !== null/);
+  assert.match(worker, /Secure browser session startup failed during/);
+  assert.match(accountsUi, /Starting secure browser…/);
+  assert.match(accountsUi, /Profiles \$\{/);
+  assert.match(accountsUi, /Task dispatch \$\{/);
+});
+
 async function useTemporaryRegistry() {
   const root = await mkdtemp(path.join(os.tmpdir(), "agentos-browser-accounts-"));
   temporaryRoots.push(root);
