@@ -276,7 +276,16 @@ function AnimatedHeaderTagline() {
 }
 
 function AuthSplash() {
-  return <main className="flex min-h-screen items-center justify-center bg-background"><div className="flex items-center gap-3 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Checking protection…</div></main>;
+  return (
+    <>
+      <PikoLoader
+        open
+        title="Checking protection"
+        description="Confirming this session can access AgentOS."
+      />
+      <main className="min-h-screen bg-background" aria-busy="true" aria-label="Checking protection" />
+    </>
+  );
 }
 
 function safeReturnTo(value: string | null) {

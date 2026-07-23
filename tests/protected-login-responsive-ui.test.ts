@@ -20,6 +20,14 @@ test("protected login title scales down fluidly on small screens", async () => {
   assert.match(source, /lg:text-\[2\.75rem\]/);
 });
 
+test("protected login uses Piko while checking instance protection", async () => {
+  const source = await readFile(path.join(rootDir, "components/auth/protected-login.tsx"), "utf8");
+
+  assert.match(source, /function AuthSplash\(\)[\s\S]*?<PikoLoader\s+open\s+title="Checking protection"/);
+  assert.match(source, /description="Confirming this session can access AgentOS\."/);
+  assert.match(source, /aria-busy="true" aria-label="Checking protection"/);
+});
+
 test("protected login composes a theme-aware glass access card", async () => {
   const source = await readFile(path.join(rootDir, "components/auth/protected-login.tsx"), "utf8");
   const styles = await readFile(path.join(rootDir, "app/globals.css"), "utf8");
