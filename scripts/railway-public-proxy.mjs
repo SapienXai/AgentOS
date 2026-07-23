@@ -5,6 +5,8 @@ import { WebSocket, WebSocketServer } from "ws";
 
 const liveViewPathPattern =
   /^\/api\/accounts\/browser-live\/ws\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(?:\?.*)?$/i;
+const browserLiveExchangePath = "/api/accounts/browser-live/exchange";
+const maximumBrowserLiveExchangeBytes = 16 * 1024;
 const cdpRelayPrefix = "/_agentos/browser-cdp";
 const maximumCdpResponseBytes = 4 * 1024 * 1024;
 const browserLiveCsp = [
@@ -42,6 +44,14 @@ export async function startRailwayPublicProxy(input) {
         publicPort,
         browserWorkerUrl,
         browserWorkerToken
+      });
+      return;
+    }
+    if (isBrowserLiveExchangeRequest(request.url)) {
+      void proxyBufferedBrowserLiveExchange({
+        request,
+        response,
+        nextPort
       });
       return;
     }
@@ -125,6 +135,72 @@ function proxyHttpRequest(input) {
     input.response.end("AgentOS is starting.");
   });
   input.request.pipe(upstream);
+}
+
+async function proxyBufferedBrowserLiveExchange(input) {
+  try {
+    const body = await readBoundedRequestBody(
+      input.request,
+      maximumBrowserLiveExchangeBytes
+    );
+    const headers = stripHopByHopHeaders(input.request.headers);
+    delete headers["content-length"];
+    headers["content-length"] = String(body.length);
+
+    const upstream = httpRequest({
+      host: "127.0.0.1",
+      port: input.nextPort,
+      method: input.request.method,
+      path: input.request.url,
+      headers
+    }, (upstreamResponse) => {
+      input.response.writeHead(
+        upstreamResponse.statusCode || 502,
+        stripHopByHopHeaders(upstreamResponse.headers)
+      );
+      upstreamResponse.pipe(input.response);
+    });
+
+    upstream.once("error", () => {
+      if (input.response.headersSent) {
+        input.response.destroy();
+        return;
+      }
+      input.response.writeHead(502, {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json; charset=utf-8"
+      });
+      input.response.end(JSON.stringify({
+        error: "Live View capability exchange is temporarily unavailable."
+      }));
+    });
+    upstream.end(body);
+  } catch {
+    if (input.response.headersSent) {
+      input.response.destroy();
+      return;
+    }
+    input.response.writeHead(413, {
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json; charset=utf-8"
+    });
+    input.response.end(JSON.stringify({
+      error: "Live View capability exchange request is too large."
+    }));
+  }
+}
+
+async function readBoundedRequestBody(request, maximumBytes) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > maximumBytes) {
+      throw new Error("Request body exceeded the allowed size.");
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 }
 
 async function authorizeAndBridgeLiveView(input) {
@@ -330,6 +406,11 @@ function waitForWebSocketOpen(webSocket) {
 function isBrowserLiveDocument(value) {
   const pathname = (value || "").split("?")[0];
   return pathname === "/accounts/browser-live" || pathname.startsWith("/novnc/");
+}
+
+export function isBrowserLiveExchangeRequest(value) {
+  const pathname = (value || "").split("?")[0];
+  return pathname === browserLiveExchangePath;
 }
 
 function isCdpRelayRequest(value) {

@@ -170,17 +170,29 @@ export function SecureBrowserLiveView() {
 }
 
 async function exchangeCapability(capability: string): Promise<LiveViewExchange> {
-  const response = await fetch("/api/accounts/browser-live/exchange", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ capability }),
-    cache: "no-store"
-  });
-  const payload = await response.json().catch(() => null) as (LiveViewExchange & { error?: string }) | null;
-  if (!response.ok || !payload) {
-    throw new Error(payload?.error ?? "The one-time Live View link is invalid.");
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch("/api/accounts/browser-live/exchange", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ capability }),
+      cache: "no-store",
+      signal: controller.signal
+    });
+    const payload = await response.json().catch(() => null) as (LiveViewExchange & { error?: string }) | null;
+    if (!response.ok || !payload) {
+      throw new Error(payload?.error ?? "The one-time Live View link is invalid.");
+    }
+    return payload;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Live View access exchange timed out. Return to Accounts and open Live View again.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
   }
-  return payload;
 }
 
 async function postBrowserAccountAction<T = unknown>(input: Record<string, string>): Promise<T | null> {
