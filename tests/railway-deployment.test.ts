@@ -175,6 +175,9 @@ test("Railway secure browser state remains on the persistent volume without publ
   assert.match(workerEntrypoint, /AGENTOS_BROWSER_WORKER_TOKEN/);
   assert.match(workerEntrypoint, /exec gosu node:node/);
   assert.match(worker, /x-agentos-browser-worker-token/);
+  assert.match(proxy, /script-src 'self' 'unsafe-inline'/);
+  assert.match(proxy, /frame-ancestors 'self'/);
+  assert.match(proxy, /object-src 'none'/);
   assert.match(worker, /const childEnvironment = \{/);
   assert.doesNotMatch(worker, /const childEnvironment = \{\s*\.\.\.process\.env/);
   assert.match(worker, /credentials_enable_service: false/);

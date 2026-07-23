@@ -11,7 +11,9 @@ const cdpRelayPrefix = "/_agentos/browser-cdp";
 const maximumCdpResponseBytes = 4 * 1024 * 1024;
 const browserLiveCsp = [
   "default-src 'self'",
-  "script-src 'self'",
+  // Next.js emits an inline hydration bootstrap. This isolated document renders
+  // no provider or user-controlled HTML, while all remote script origins remain blocked.
+  "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "connect-src 'self' ws: wss:",
