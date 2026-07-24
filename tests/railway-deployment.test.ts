@@ -105,6 +105,10 @@ test("Railway supervisor keeps Gateway private, exposes a locked-down control so
   assert.match(entrypoint, /exec \/agentos\/scripts\/railway-browser-worker-entrypoint\.sh/);
   assert.match(entrypoint, /AGENTOS_BROWSER_DISABLE_CHROMIUM_SANDBOX:-1/);
   assert.match(entrypoint, /export PORT=3000/);
+  assert.match(
+    entrypoint,
+    /service_role=.*AGENTOS_SERVICE_ROLE:-agentos[\s\S]*export PORT=3000/
+  );
   assert.match(entrypoint, /RAILWAY_VOLUME_MOUNT_PATH:-.*\/data/);
   assert.match(entrypoint, /exec gosu node:node/);
   assert.match(workerEntrypoint, /PORT is required and must match the private worker URL port/);
@@ -184,6 +188,7 @@ test("Railway secure browser state remains on the persistent volume without publ
   assert.match(entrypoint, /\/data\/browser-profiles/);
   assert.doesNotMatch(dockerfile, /EXPOSE\s+(5900|6080|9222|18800)/);
   assert.match(worker, /"--remote-debugging-address=127\.0\.0\.1"/);
+  assert.match(worker, /request\.url === "\/healthz" \|\| request\.url === "\/api\/health"/);
   assert.match(worker, /cdpUrl: `http:\/\/127\.0\.0\.1:\$\{input\.httpPort\}\/cdp\/profile\/\$\{profileId\}`/);
   assert.match(worker, /rewriteCdpJson/);
   assert.doesNotMatch(worker, /cdpUrl: `http:\/\/127\.0\.0\.1:\$\{cdpPort\}`/);
@@ -198,6 +203,7 @@ test("Railway secure browser state remains on the persistent volume without publ
   assert.match(workerConfig, /Dockerfile\.browser-worker/);
   assert.match(workerConfig, /"healthcheckPath": "\/healthz"/);
   assert.match(deployGuide, /AGENTOS_SERVICE_ROLE/);
+  assert.match(deployGuide, /worker serves\s+both endpoints/);
   assert.match(
     deployGuide,
     /published one-click marketplace template does not rely on that\s+per-service config-file override/i

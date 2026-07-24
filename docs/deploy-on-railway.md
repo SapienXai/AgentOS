@@ -51,7 +51,9 @@ Create the template from the `https://github.com/SapienXai/AgentOS` repository a
   `Dockerfile.railway`)
 - Public networking: disabled; do not generate a domain
 - Private networking: enabled
-- Healthcheck path: `/healthz`
+- Healthcheck path: `/healthz` when you can set a service-specific value. The
+  published one-click template may inherit `/api/health`, so the worker serves
+  both endpoints.
 - Healthcheck timeout: `300` seconds
 - Restart policy: `ON_FAILURE`, maximum `10` retries
 - Replicas: `1`
@@ -131,9 +133,10 @@ Do not add `AGENTOS_TRUSTED_OPERATOR_ORIGINS` for the generated Railway domain. 
 
 1. Enter the initial administrator username and password in the template form.
 2. Deploy the template.
-3. Wait until the private worker `/healthz` and AgentOS `/api/health` checks
-   pass. The AgentOS supervisor verifies the private worker and OpenClaw before
-   starting the application.
+3. Wait until the private worker healthcheck (`/healthz` or `/api/health`,
+   depending on how Railway rendered the template) and the AgentOS `/api/health`
+   check pass. The AgentOS supervisor verifies the private worker and OpenClaw
+   before starting the application.
 4. Open the generated HTTPS domain and sign in.
 5. Remove `AGENTOS_INITIAL_ADMIN_PASSWORD` from the Railway service variables after confirming the first sign-in. The account remains on the persistent volume.
 6. Connect a real model/provider in Setup Center, then explicitly choose its default model.

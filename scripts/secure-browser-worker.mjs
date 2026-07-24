@@ -48,7 +48,10 @@ export async function startSecureBrowserWorker(env = process.env) {
     maxPayload: 2 * 1024 * 1024
   });
   const httpServer = createHttpServer((request, response) => {
-    if (request.method === "GET" && request.url === "/healthz") {
+    if (
+      request.method === "GET" &&
+      (request.url === "/healthz" || request.url === "/api/health")
+    ) {
       response.writeHead(200, {
         "Cache-Control": "no-store",
         "Content-Type": "application/json; charset=utf-8"

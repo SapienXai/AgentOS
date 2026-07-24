@@ -3,11 +3,6 @@ set -eu
 
 umask 077
 
-# Railway can inject a service PORT even when its generated public domain still
-# targets the template default (3000). Keep the public proxy and Next.js listener
-# aligned for every fresh template deployment.
-export PORT=3000
-
 service_role=$(printf '%s' "${AGENTOS_SERVICE_ROLE:-agentos}" | tr '[:upper:]' '[:lower:]')
 
 if [ "$service_role" = "browser-worker" ]; then
@@ -15,6 +10,11 @@ if [ "$service_role" = "browser-worker" ]; then
   export AGENTOS_BROWSER_DISABLE_CHROMIUM_SANDBOX="${AGENTOS_BROWSER_DISABLE_CHROMIUM_SANDBOX:-1}"
   exec /agentos/scripts/railway-browser-worker-entrypoint.sh
 fi
+
+# Railway can inject a service PORT even when its generated public domain still
+# targets the template default (3000). Keep the public proxy and Next.js listener
+# aligned for every fresh template deployment.
+export PORT=3000
 
 if [ "${RAILWAY_ENVIRONMENT_ID:-}" != "" ] && [ "${RAILWAY_VOLUME_MOUNT_PATH:-}" != "/data" ]; then
   echo "AgentOS requires a Railway volume mounted at /data." >&2
