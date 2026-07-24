@@ -360,6 +360,31 @@ test("provider-verified Live View confirmation promotes only a matched session t
   assert.equal(confirmed.verificationSource, "provider_verified");
 });
 
+test("user-confirmed Live View confirmation stays connected when provider verification is unavailable", async () => {
+  await useTemporaryRegistry();
+  setBrowserProviderForTesting(fakeProvider({}, "unknown"));
+  const created = await createBrowserAccount(baseCreateInput());
+  const live = await startBrowserAccountLiveView({
+    actor: { userId: "owner-a" },
+    accountId: created.account.id,
+    workspaceId: "workspace-a"
+  });
+  const exchange = await exchangeBrowserLiveViewCapability({
+    actor: { userId: "owner-a" },
+    capability: decodeURIComponent(live.launchUrl.split("capability=")[1])
+  });
+  const confirmed = await confirmBrowserAccountLogin({
+    actor: { userId: "owner-a" },
+    accountId: created.account.id,
+    workspaceId: "workspace-a",
+    providerSessionId: exchange.providerSessionId
+  });
+  assert.equal(confirmed.authenticationStatus, "unknown");
+  assert.equal(confirmed.connectionStatus, "connected");
+  assert.equal(confirmed.verificationSource, "user_confirmed");
+  assert.ok(confirmed.lastVerifiedAt);
+});
+
 test("browser authentication verification cannot inspect another account session", async () => {
   await useTemporaryRegistry();
   setBrowserProviderForTesting(fakeProvider({}, "verified"));
@@ -446,6 +471,7 @@ test("Live View capability is one-time, owner-bound, short-lived, and revocable"
     workspaceId: "workspace-a",
     providerSessionId: exchange.providerSessionId
   });
+  assert.deepEqual(stoppedSessions, ["2a0f35f7-9824-4d7a-b05d-77a05f887847"]);
   await assert.rejects(
     () => authorizeBrowserLiveViewWebSocket({
       actor,

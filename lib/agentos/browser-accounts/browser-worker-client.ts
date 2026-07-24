@@ -9,6 +9,7 @@ const workerActionTimeoutMs: Record<BrowserWorkerRequest["action"], number> = {
   health: 5_000,
   "create-profile": 15_000,
   "start-session": 90_000,
+  "persist-profile": 20_000,
   "inspect-authentication": 10_000,
   "stop-session": 45_000,
   "revoke-profile": 45_000
@@ -21,6 +22,7 @@ type BrowserWorkerRequest =
   | { action: "health" }
   | { action: "create-profile"; profileId: string }
   | { action: "start-session"; profileId: string; initialUrl: string }
+  | { action: "persist-profile"; sessionId: string; profileId: string }
   | {
       action: "inspect-authentication";
       sessionId: string;
@@ -77,6 +79,21 @@ export async function stopBrowserWorkerSession(sessionId: string) {
   return await requestBrowserWorker<{ sessionId: string; stopped: true }>({
     action: "stop-session",
     sessionId
+  });
+}
+
+export async function persistBrowserWorkerProfile(input: {
+  sessionId: string;
+  profileId: string;
+}) {
+  return await requestBrowserWorker<{
+    sessionId: string;
+    profileId: string;
+    persistent: true;
+  }>({
+    action: "persist-profile",
+    sessionId: input.sessionId,
+    profileId: input.profileId
   });
 }
 

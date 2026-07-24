@@ -214,7 +214,7 @@ async function executeControlRequest(input) {
       ? { ready: true, activeSessions: input.sessions.size }
       : request.action === "create-profile"
         ? await createProfile(input.profileRoot, request.profileId)
-        : request.action === "start-session"
+      : request.action === "start-session"
           ? await startBrowserSession({
               profileRoot: input.profileRoot,
               chromeBinary: input.chromeBinary,
@@ -225,6 +225,12 @@ async function executeControlRequest(input) {
               profileId: request.profileId,
               initialUrl: request.initialUrl
             })
+          : request.action === "persist-profile"
+            ? await persistProfile({
+                sessions: input.sessions,
+                sessionId: request.sessionId,
+                profileId: request.profileId
+              })
           : request.action === "inspect-authentication"
             ? await inspectAuthentication({
                 sessions: input.sessions,
@@ -322,6 +328,19 @@ async function inspectAuthentication(input) {
 }
 
 async function evaluateCdpExpression(webSocketUrl, expression) {
+  return await sendCdpCommand(
+    webSocketUrl,
+    "Runtime.evaluate",
+    {
+      expression,
+      returnByValue: true,
+      awaitPromise: false
+    },
+    3_000
+  );
+}
+
+async function sendCdpCommand(webSocketUrl, method, params, timeoutMs) {
   return await new Promise((resolve, reject) => {
     const socket = new WebSocket(webSocketUrl, {
       perMessageDeflate: false,
@@ -331,8 +350,8 @@ async function evaluateCdpExpression(webSocketUrl, expression) {
     let settled = false;
     const timeout = setTimeout(() => {
       socket.terminate();
-      reject(new Error("Browser authentication inspection timed out."));
-    }, 3_000);
+      reject(new Error("Browser DevTools command timed out."));
+    }, timeoutMs);
     const finish = (error, value) => {
       if (settled) return;
       settled = true;
@@ -349,12 +368,8 @@ async function evaluateCdpExpression(webSocketUrl, expression) {
     socket.once("open", () => {
       socket.send(JSON.stringify({
         id: requestId,
-        method: "Runtime.evaluate",
-        params: {
-          expression,
-          returnByValue: true,
-          awaitPromise: false
-        }
+        method,
+        params
       }));
     });
     socket.on("message", (data) => {
@@ -527,6 +542,27 @@ async function stopSessionById(sessions, sessionId) {
   sessions.delete(normalizedSessionId);
   await stopBrowserSession(session);
   return { sessionId: normalizedSessionId, stopped: true };
+}
+
+async function persistProfile(input) {
+  const sessionId = validateSessionId(input.sessionId);
+  const profileId = validateProfileId(input.profileId);
+  const session = input.sessions.get(sessionId);
+  if (!session || session.profileId !== profileId) {
+    throw new Error("The browser session is unavailable.");
+  }
+  const browserWebSocketUrl = await fetch(`http://127.0.0.1:${session.cdpPort}/json/version`, {
+    signal: AbortSignal.timeout(2_000)
+  }).then(async (response) => {
+    if (!response.ok) return null;
+    const payload = await response.json().catch(() => null);
+    return typeof payload?.webSocketDebuggerUrl === "string" ? payload.webSocketDebuggerUrl : null;
+  });
+  if (!browserWebSocketUrl || !isPrivateCdpWebSocket(browserWebSocketUrl, session.cdpPort)) {
+    throw new Error("The browser profile could not be persisted.");
+  }
+  await sendCdpCommand(browserWebSocketUrl, "Browser.close", {}, 5_000);
+  return { sessionId, profileId, persistent: true };
 }
 
 async function revokeProfile(profileRoot, sessions, profileIdValue) {

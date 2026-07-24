@@ -6,6 +6,7 @@ import {
   createBrowserWorkerProfile,
   getBrowserWorkerHealth,
   inspectBrowserWorkerAuthentication,
+  persistBrowserWorkerProfile,
   revokeBrowserWorkerProfile,
   startBrowserWorkerSession,
   stopBrowserWorkerSession
@@ -119,8 +120,12 @@ export class SelfHostedOpenClawBrowserProvider implements BrowserProvider {
     return { status: "unknown" as const, verifiedAt: null };
   }
 
-  async persistProfile(input: { browserProfileId: string }) {
+  async persistProfile(input: { sessionId: string; browserProfileId: string }) {
     const browserProfileId = normalizeProfileId(input.browserProfileId);
+    await persistBrowserWorkerProfile({
+      sessionId: input.sessionId,
+      profileId: browserProfileId
+    });
     return {
       provider: "self-hosted-openclaw" as const,
       externalProfileId: null,

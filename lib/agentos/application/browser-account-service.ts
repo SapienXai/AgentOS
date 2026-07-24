@@ -209,11 +209,9 @@ export async function confirmBrowserAccountLogin(input: {
     const account = requireOwnedAccount(registry, input);
     assertAccountUsable(account, { allowExpired: true });
     account.connectionStatus =
-      authenticationStatus === "verified"
-        ? "connected"
-        : authenticationStatus === "expired"
-          ? "expired"
-          : "needs_verification";
+      authenticationStatus === "expired"
+        ? "expired"
+        : "connected";
     account.verificationSource =
       authenticationStatus === "verified" ? "provider_verified" : "user_confirmed";
     account.lastVerifiedAt =
@@ -594,14 +592,10 @@ export async function stopBrowserAccountLiveView(input: {
     throw new BrowserAccountError("Live View session was not found.", 409, "live-view-not-found");
   }
 
-  let cleanupFailed = false;
-  try {
-    await getBrowserProvider(existing.provider).stopSession({
-      sessionId: liveView.providerSessionId
-    });
-  } catch {
-    cleanupFailed = true;
-  }
+  const cleanupFailed = await persistAndStopBrowserSession(existing.provider, {
+    browserProfileId: existing.browserProfileId,
+    sessionId: liveView.providerSessionId
+  });
 
   await mutateRegistry((nextRegistry) => {
     const account = requireOwnedAccount(nextRegistry, input);
@@ -868,15 +862,11 @@ export async function completeBrowserAccountTaskSession(input: {
 }) {
   const registry = await readRegistry();
   const existing = requireOwnedAccount(registry, input);
-  let cleanupFailed = input.configurationCleanupFailed === true;
-
-  try {
-    await getBrowserProvider(existing.provider).stopSession({
+  const cleanupFailed =
+    (await persistAndStopBrowserSession(existing.provider, {
+      browserProfileId: existing.browserProfileId,
       sessionId: input.providerSessionId
-    });
-  } catch {
-    cleanupFailed = true;
-  }
+    })) || input.configurationCleanupFailed === true;
 
   await mutateRegistry((nextRegistry) => {
     const account = requireOwnedAccount(nextRegistry, input);
@@ -1205,6 +1195,33 @@ function requireId(value: string, label: string) {
 
 function normalizeOptionalId(value: string | null | undefined) {
   return value?.trim() ? requireId(value, "Identifier") : null;
+}
+
+async function persistAndStopBrowserSession(
+  providerId: BrowserAccountProviderId,
+  input: {
+    browserProfileId: string;
+    sessionId: string;
+  }
+) {
+  const provider = getBrowserProvider(providerId);
+  let cleanupFailed = false;
+  try {
+    await provider.persistProfile({
+      sessionId: input.sessionId,
+      browserProfileId: input.browserProfileId
+    });
+  } catch {
+    cleanupFailed = true;
+  }
+  try {
+    await provider.stopSession({
+      sessionId: input.sessionId
+    });
+  } catch {
+    cleanupFailed = true;
+  }
+  return cleanupFailed;
 }
 
 function normalizeIds(values: string[] | undefined) {
