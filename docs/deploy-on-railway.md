@@ -9,8 +9,8 @@ exposed through Railway's HTTPS domain.
 ## What the template creates
 
 - One public GitHub-backed AgentOS service built with `Dockerfile.railway`.
-- One private GitHub-backed browser worker built with
-  `Dockerfile.browser-worker`.
+- One private GitHub-backed browser worker built from the same repository and
+  started in browser-worker mode by `AGENTOS_SERVICE_ROLE=browser-worker`.
 - One public Railway HTTPS domain for AgentOS.
 - One persistent AgentOS/OpenClaw volume mounted at `/data` on AgentOS.
 - One separate persistent browser-profile volume mounted at `/data` on the
@@ -47,9 +47,8 @@ Create the template from the `https://github.com/SapienXai/AgentOS` repository a
 
 - Name: `browser-worker`
 - Source: the same AgentOS repository and revision
-- Builder: Dockerfile
-- Railway config file: `/railway.browser-worker.json`
-- Dockerfile: `/Dockerfile.browser-worker`
+- Builder: Dockerfile (the repository's `railway.json` still selects
+  `Dockerfile.railway`)
 - Public networking: disabled; do not generate a domain
 - Private networking: enabled
 - Healthcheck path: `/healthz`
@@ -90,8 +89,10 @@ On the browser worker:
 
 | Variable | Value | Purpose |
 | --- | --- | --- |
+| `AGENTOS_SERVICE_ROLE` | `browser-worker` | Switches the shared Railway image into dedicated browser-worker mode for one-click template deploys. |
 | `PORT` | `18794` | Explicit private HTTP/WebSocket listener port. |
 | `AGENTOS_BROWSER_WORKER_TOKEN` | `${{secret(64)}}` | Authenticates control, Live View, and CDP relay traffic. |
+| `AGENTOS_BROWSER_DISABLE_CHROMIUM_SANDBOX` | `1` | Keeps Chromium bootable inside Railway's private worker container. |
 | `RAILWAY_RUN_UID` | `0` | Lets the entrypoint prepare its dedicated volume. |
 
 On AgentOS:
@@ -104,6 +105,14 @@ On AgentOS:
 Do not set `AGENTOS_BROWSER_CDP_RELAY_URL`; the supervisor creates the
 loopback-only relay URL. Do not expose ports `18794`, `5900`, `6080`, or `9222`
 through a Railway public domain or TCP proxy.
+
+The repository still includes `Dockerfile.browser-worker` plus
+`/railway.browser-worker.json` for manual or self-hosted Railway setups where
+you explicitly choose a dedicated worker Dockerfile and custom config-as-code
+path. The published one-click marketplace template does not rely on that
+per-service config-file override because Railway's template composer reliably
+preserves service variables, healthchecks, and volumes, but not custom
+config-as-code file selection.
 
 ### AgentOS variables
 

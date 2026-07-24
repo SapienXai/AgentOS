@@ -8,6 +8,14 @@ umask 077
 # aligned for every fresh template deployment.
 export PORT=3000
 
+service_role=$(printf '%s' "${AGENTOS_SERVICE_ROLE:-agentos}" | tr '[:upper:]' '[:lower:]')
+
+if [ "$service_role" = "browser-worker" ]; then
+  export AGENTOS_BROWSER_WORKER_HOST="${AGENTOS_BROWSER_WORKER_HOST:-::}"
+  export AGENTOS_BROWSER_DISABLE_CHROMIUM_SANDBOX="${AGENTOS_BROWSER_DISABLE_CHROMIUM_SANDBOX:-1}"
+  exec /agentos/scripts/railway-browser-worker-entrypoint.sh
+fi
+
 if [ "${RAILWAY_ENVIRONMENT_ID:-}" != "" ] && [ "${RAILWAY_VOLUME_MOUNT_PATH:-}" != "/data" ]; then
   echo "AgentOS requires a Railway volume mounted at /data." >&2
   exit 1

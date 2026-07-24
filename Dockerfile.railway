@@ -44,8 +44,9 @@ COPY --chown=node:node scripts/secure-browser-integration-smoke.mjs ./scripts/se
 COPY --chown=node:node scripts/railway-openclaw-bootstrap.mjs ./scripts/railway-openclaw-bootstrap.mjs
 COPY --chown=node:node openclaw-plugins/agentos-browser-policy ./openclaw-plugins/agentos-browser-policy
 COPY scripts/railway-entrypoint.sh ./scripts/railway-entrypoint.sh
+COPY scripts/railway-browser-worker-entrypoint.sh ./scripts/railway-browser-worker-entrypoint.sh
 
-RUN chmod 0755 ./scripts/railway-entrypoint.sh && \
+RUN chmod 0755 ./scripts/railway-entrypoint.sh ./scripts/railway-browser-worker-entrypoint.sh && \
     rm -rf /home/node/.openclaw /home/node/.config/openclaw && \
     mkdir -p /home/node/.config /home/node/Documents/Shared && \
     ln -s /data/agentos/mission-control /agentos/.mission-control && \

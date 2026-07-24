@@ -53,6 +53,7 @@ test("Railway image pins OpenClaw, avoids service-bound cache mounts, and maps e
   assert.match(dockerfile, /AGENTOS_BROWSER_PROFILE_ROOT=\/data\/browser-profiles/);
   assert.match(dockerfile, /secure-browser-worker\.mjs/);
   assert.match(dockerfile, /secure-browser-integration-smoke\.mjs/);
+  assert.match(dockerfile, /railway-browser-worker-entrypoint\.sh/);
   assert.match(dockerfile, /openclaw-plugins\/agentos-browser-policy/);
   assert.match(dockerfile, /runtime-extras\/node_modules\/ws/);
   assert.match(dockerfile, /novnc/);
@@ -68,6 +69,7 @@ test("Railway image pins OpenClaw, avoids service-bound cache mounts, and maps e
 test("Railway supervisor keeps Gateway private, exposes a locked-down control socket, and excludes the bootstrap password", async () => {
   const supervisor = await read("scripts/railway-supervisor.mjs");
   const entrypoint = await read("scripts/railway-entrypoint.sh");
+  const workerEntrypoint = await read("scripts/railway-browser-worker-entrypoint.sh");
   const dockerfile = await read("Dockerfile.railway");
 
   assert.match(supervisor, /delete gatewayEnv\.AGENTOS_INITIAL_ADMIN_PASSWORD/);
@@ -98,9 +100,14 @@ test("Railway supervisor keeps Gateway private, exposes a locked-down control so
   assert.match(supervisor, /restart attempts exhausted/);
   assert.match(supervisor, /AgentOS stopped unexpectedly[\s\S]*process\.exitCode = 1/);
   assert.match(dockerfile, /railway-openclaw-bootstrap\.mjs/);
+  assert.match(entrypoint, /AGENTOS_SERVICE_ROLE:-agentos/);
+  assert.match(entrypoint, /service_role" = "browser-worker"/);
+  assert.match(entrypoint, /exec \/agentos\/scripts\/railway-browser-worker-entrypoint\.sh/);
+  assert.match(entrypoint, /AGENTOS_BROWSER_DISABLE_CHROMIUM_SANDBOX:-1/);
   assert.match(entrypoint, /export PORT=3000/);
   assert.match(entrypoint, /RAILWAY_VOLUME_MOUNT_PATH:-.*\/data/);
   assert.match(entrypoint, /exec gosu node:node/);
+  assert.match(workerEntrypoint, /PORT is required and must match the private worker URL port/);
 });
 
 test("deployment capabilities separate local desktop actions from Railway headless operation", () => {
@@ -152,6 +159,7 @@ test("Railway secure browser state remains on the persistent volume without publ
     workerEntrypoint,
     entrypoint,
     docs,
+    deployGuide,
     worker,
     proxy,
     supervisor,
@@ -163,6 +171,7 @@ test("Railway secure browser state remains on the persistent volume without publ
     read("scripts/railway-browser-worker-entrypoint.sh"),
     read("scripts/railway-entrypoint.sh"),
     read("docs/secure-browser-accounts.md"),
+    read("docs/deploy-on-railway.md"),
     read("scripts/secure-browser-worker.mjs"),
     read("scripts/railway-public-proxy.mjs"),
     read("scripts/railway-supervisor.mjs"),
@@ -188,6 +197,11 @@ test("Railway secure browser state remains on the persistent volume without publ
   assert.match(workerDockerfile, /Dockerfile\.browser-worker|secure-browser-worker\.mjs/);
   assert.match(workerConfig, /Dockerfile\.browser-worker/);
   assert.match(workerConfig, /"healthcheckPath": "\/healthz"/);
+  assert.match(deployGuide, /AGENTOS_SERVICE_ROLE/);
+  assert.match(
+    deployGuide,
+    /published one-click marketplace template does not rely on that\s+per-service config-file override/i
+  );
   assert.match(workerEntrypoint, /AGENTOS_BROWSER_WORKER_TOKEN/);
   assert.match(workerEntrypoint, /exec gosu node:node/);
   assert.match(worker, /x-agentos-browser-worker-token/);
