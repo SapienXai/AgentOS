@@ -407,7 +407,12 @@ function waitForWebSocketOpen(webSocket) {
 
 function isBrowserLiveDocument(value) {
   const pathname = (value || "").split("?")[0];
-  return pathname === "/accounts/browser-live" || pathname.startsWith("/novnc/");
+  return (
+    pathname === "/accounts/browser-live" ||
+    pathname === "/secure-browser-client.html" ||
+    pathname === "/secure-browser-client.js" ||
+    pathname.startsWith("/novnc/")
+  );
 }
 
 export function isBrowserLiveExchangeRequest(value) {

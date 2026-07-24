@@ -533,7 +533,7 @@ export async function exchangeBrowserLiveViewCapability(input: {
   return {
     ...result!,
     credential,
-    viewerPath: `/novnc/vnc_lite.html?autoconnect=true&resize=remote&path=${encodeURIComponent(
+    viewerPath: `/secure-browser-client.html?path=${encodeURIComponent(
       `api/accounts/browser-live/ws/${result!.providerSessionId}`
     )}`
   };

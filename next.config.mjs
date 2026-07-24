@@ -21,6 +21,10 @@ const nextConfig = {
       {
         source: "/novnc/:path*",
         headers: secureBrowserHeaders()
+      },
+      {
+        source: "/secure-browser-client.:extension(html|js)",
+        headers: secureBrowserHeaders()
       }
     ];
   },

@@ -417,7 +417,7 @@ test("Live View capability is one-time, owner-bound, short-lived, and revocable"
   );
 
   const exchange = await exchangeBrowserLiveViewCapability({ actor, capability });
-  assert.match(exchange.viewerPath, /^\/novnc\/vnc_lite\.html/);
+  assert.match(exchange.viewerPath, /^\/secure-browser-client\.html/);
   assert.match(exchange.cookieName, /^agentos_browser_live_[a-f0-9]{32}$/);
   await assert.rejects(
     () => exchangeBrowserLiveViewCapability({ actor, capability }),

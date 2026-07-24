@@ -23,6 +23,7 @@ Build calm, dense, trustworthy operator surfaces. AgentOS is the human control l
 - Use hierarchy through spacing, surfaces, type, and restrained color—not excessive borders, gradients, or badges.
 - Let status colors communicate state. Do not use warning, danger, or success colors as generic decoration.
 - Keep one primary action per active region. Secondary actions should be visually quieter.
+- Keep button corners controlled and architectural. Default to `rounded-md` for standard buttons and avoid pill-like rounding unless the component has a strong semantic reason to stand out.
 
 ### Theme-aware surfaces
 
