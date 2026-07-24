@@ -22,4 +22,15 @@ mkdir -p /data/browser-profiles
 chown node:node /data /data/browser-profiles
 chmod 0700 /data/browser-profiles
 
-exec gosu node:node node /browser-worker/scripts/secure-browser-worker.mjs
+worker_script="/agentos/scripts/secure-browser-worker.mjs"
+
+if [ ! -f "$worker_script" ] && [ -f /browser-worker/scripts/secure-browser-worker.mjs ]; then
+  worker_script="/browser-worker/scripts/secure-browser-worker.mjs"
+fi
+
+if [ ! -f "$worker_script" ]; then
+  echo "secure-browser-worker.mjs is missing from the Railway image." >&2
+  exit 1
+fi
+
+exec gosu node:node node "$worker_script"
