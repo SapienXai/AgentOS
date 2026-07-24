@@ -215,6 +215,28 @@ The README uses Railway's official button:
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/agentos-1?utm_medium=integration&utm_source=button&utm_campaign=agentos)
 ```
 
+## Updating the public template
+
+Railway templates deploy directly from the published template repository by
+default. When AgentOS' Railway runtime contract changes, update the existing
+public template instead of creating an ad hoc second template unless the new
+template code is intentional and documented.
+
+Use this update sequence:
+
+1. Land the repo changes for `Dockerfile.railway`,
+   `Dockerfile.browser-worker`, both Railway config files, and this guide.
+2. Rebuild and verify the template locally where practical:
+   `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`.
+3. In Railway, open the existing AgentOS template, refresh it from the current
+   repository revision, and confirm both services still point at the same repo
+   and branch.
+4. Re-check generated secrets, the private `browser-worker` service reference,
+   both `/data` volumes, the AgentOS `/api/health` healthcheck, and the worker
+   `/healthz` healthcheck before publishing.
+5. Publish the updated template and verify the marketplace page plus direct
+   deploy link still resolve to the intended template code.
+
 When the runtime contract changes, update the Railway template and this guide together. Verify the public template page, deploy form, required password field, generated secrets, `/data` volume, and healthcheck before publishing an update.
 
 ## Railway references

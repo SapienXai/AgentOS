@@ -27,6 +27,22 @@ test("Railway config uses the dedicated container and liveness endpoint", async 
   assert.doesNotMatch(healthRoute, /\/readyz/);
 });
 
+test("README and Railway guide describe the same published two-service template", async () => {
+  const [readme, docs] = await Promise.all([
+    read("README.md"),
+    read("docs/deploy-on-railway.md")
+  ]);
+
+  assert.match(readme, /\[!\[Deploy on Railway\]\(https:\/\/railway\.com\/button\.svg\)\]\(https:\/\/railway\.com\/new\/template\/agentos-1\?utm_medium=integration&utm_source=button&utm_campaign=agentos\)/);
+  assert.match(readme, /public application service and runs interactive Chromium in a separate private `browser-worker` service/);
+  assert.match(readme, /provisions both required volumes, generates the internal AgentOS, OpenClaw, and browser-worker secrets automatically/);
+  assert.doesNotMatch(readme, /together in one service/);
+  assert.match(docs, /## Published one-click template/);
+  assert.match(docs, /## Updating the public template/);
+  assert.match(docs, /Railway templates deploy directly from the published template repository by\s+default/);
+  assert.match(docs, /Publish the updated template and verify the marketplace page plus direct\s+deploy link still resolve to the intended template code/i);
+});
+
 test("Railway image pins OpenClaw, avoids service-bound cache mounts, and maps every mutable runtime root to the volume", async () => {
   const dockerfile = await read("Dockerfile.railway");
 
