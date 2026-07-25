@@ -496,19 +496,41 @@ export function AddModelsDialog({
       : activeDraft.flowState === "disconnecting"
         ? "Removing provider models, checking affected agents, and updating the OpenClaw global default when needed."
       : activeDraft.flowState === "connecting"
-        ? "Preparing the provider connection."
+        ? activeProviderId === "openai-codex"
+          ? "Complete the OpenClaw authorization page in your browser. AgentOS will refresh the provider automatically."
+          : "Preparing the provider connection."
         : "Checking provider status before discovery.";
-  const isModelOperationInProgress = isAddingCatalogModels || isOpeningTerminal || showLoadingHero;
+  const isModelOperationInProgress =
+    isAddingCatalogModels ||
+    isOpeningTerminal ||
+    isSavingConnection ||
+    isLoadingDangerImpact ||
+    isApplyingDangerAction ||
+    showLoadingHero;
   const modelOperationTitle = isAddingCatalogModels
     ? "Adding selected models"
-    : isOpeningTerminal
-      ? "Opening provider terminal"
-      : loadingHeroTitle;
+    : isApplyingDangerAction
+      ? dangerAction?.kind === "delete-provider"
+        ? "Deleting provider"
+        : "Disconnecting provider"
+      : isLoadingDangerImpact
+        ? "Checking provider impact"
+        : isSavingConnection
+          ? "Saving provider connection"
+          : isOpeningTerminal
+            ? "Opening provider terminal"
+            : loadingHeroTitle;
   const modelOperationDescription = isAddingCatalogModels
     ? "Registering the selected models and refreshing the OpenClaw model catalog."
-    : isOpeningTerminal
-      ? "Opening the terminal so you can complete the provider login."
-      : loadingHeroCopy;
+    : isApplyingDangerAction
+      ? "Updating OpenClaw configuration and refreshing affected models and agents."
+      : isLoadingDangerImpact
+        ? "Checking affected models, agents, credentials, and the global default."
+        : isSavingConnection
+          ? "Applying provider settings through OpenClaw and refreshing connection status."
+          : isOpeningTerminal
+            ? "Opening the terminal so you can complete the provider login."
+            : loadingHeroCopy;
   const shouldShowDiscoveryCta = Boolean(
     activeProviderId &&
       activeDescriptor &&
@@ -714,11 +736,12 @@ export function AddModelsDialog({
     updateDraft(providerId, {
       flowState: "connecting",
       errorMessage: null,
+      manualCommand: null,
       statusMessage:
         providerId === "openai-codex"
           ? options?.force
-            ? "Refreshing Codex app-server setup..."
-            : "Checking Codex app-server setup..."
+            ? "Refreshing ChatGPT authorization..."
+            : "Opening ChatGPT authorization..."
           : providerId === "openai" && options?.endpoint
             ? "Connecting OpenAI-compatible endpoint..."
           : `Connecting ${getModelProviderDescriptor(providerId).shortLabel}...`
@@ -736,7 +759,7 @@ export function AddModelsDialog({
       applyActionResult(
         providerId,
         result,
-        providerId === "openai-codex" ? "connecting" : result.models.length ? "discovery-success" : "idle",
+        result.models.length ? "discovery-success" : "idle",
         {
           apiKey: "",
           endpoint: providerId === "openai" && options?.endpoint ? options.endpoint : draft.endpoint
@@ -828,13 +851,14 @@ export function AddModelsDialog({
     updateDraft(providerId, {
       flowState: "connecting",
       errorMessage: null,
-      statusMessage: "Preparing ChatGPT account switch..."
+      manualCommand: null,
+      statusMessage: "Opening ChatGPT account switch..."
     });
 
     try {
       const result = await adapter.switchAccount();
 
-      applyActionResult(providerId, result, "connecting");
+      applyActionResult(providerId, result, result.models.length ? "discovery-success" : "idle");
 
       if (result.snapshot) {
         onSnapshotChange(result.snapshot);

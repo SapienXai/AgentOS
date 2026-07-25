@@ -7,6 +7,7 @@ import { ProviderCard } from "@/components/mission-control/add-models/provider-c
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import type {
   AddModelsCatalogModel,
@@ -388,11 +389,12 @@ export function OpenClawOnboardingProviderFlow({
     updateDraft(providerId, {
       flowState: "connecting",
       errorMessage: null,
+      manualCommand: null,
       statusMessage:
         providerId === "openai-codex"
           ? options?.force
-            ? "Refreshing Codex app-server setup..."
-            : "Checking Codex app-server setup..."
+            ? "Refreshing ChatGPT authorization..."
+            : "Opening ChatGPT authorization..."
           : `Connecting ${getModelProviderDescriptor(providerId).shortLabel}...`
     });
 
@@ -537,12 +539,26 @@ export function OpenClawOnboardingProviderFlow({
   }
 
   return (
-    <div
-      className={cn(
-        "mt-3 rounded-[16px] border px-3 py-3",
-        isLight ? "border-[#e3d5c8] bg-[#fffaf6]" : "border-white/8 bg-[rgba(255,255,255,0.03)]"
-      )}
-    >
+    <>
+      <PikoLoader
+        open={showLoadingHero || isOpeningTerminal}
+        title={isOpeningTerminal ? "Opening provider terminal" : loadingHeroTitle}
+        description={
+          isOpeningTerminal
+            ? "Opening the recovery command for this provider."
+            : activeDraft.flowState === "connecting" && activeProviderId === "openai-codex"
+              ? "Complete the OpenClaw authorization page in your browser. AgentOS will refresh the provider automatically."
+              : activeDraft.flowState === "discovering"
+                ? "Pulling the provider catalog into AgentOS."
+                : "Refreshing OpenClaw provider status."
+        }
+      />
+      <div
+        className={cn(
+          "mt-3 rounded-[16px] border px-3 py-3",
+          isLight ? "border-[#e3d5c8] bg-[#fffaf6]" : "border-white/8 bg-[rgba(255,255,255,0.03)]"
+        )}
+      >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className={cn("whitespace-nowrap text-[8px] font-medium", isLight ? "text-[#8f7664]" : "text-slate-500")}>
@@ -843,7 +859,7 @@ export function OpenClawOnboardingProviderFlow({
                   void connectProvider(activeProviderId, { force: true });
                 }}
               >
-                Refresh app-server
+                Reconnect ChatGPT
               </Button>
             </div>
 
@@ -1049,7 +1065,8 @@ export function OpenClawOnboardingProviderFlow({
           </div>
         ) : null}
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -1119,7 +1136,7 @@ function resolveConnectionDetail(
     connected,
     verification: connected ? "credential-stored" as const : "not-configured" as const,
     canConnect: true,
-    needsTerminal: providerId === "openai-codex",
+    needsTerminal: false,
     source: readinessProvider ? "gateway" : "unknown",
     degraded: false,
     stale: false,

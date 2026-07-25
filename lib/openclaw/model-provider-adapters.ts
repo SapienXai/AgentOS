@@ -39,6 +39,7 @@ export class ModelProviderActionError extends Error {
 }
 
 const MODEL_PROVIDER_REQUEST_TIMEOUT_MS = 30_000;
+const CHATGPT_PROVIDER_REQUEST_TIMEOUT_MS = 13 * 60_000;
 
 async function runProviderAction(
   request: AddModelsProviderActionRequest,
@@ -53,7 +54,12 @@ async function runProviderAction(
         "Content-Type": "application/json"
       },
       body: JSON.stringify(request),
-      signal: AbortSignal.timeout(MODEL_PROVIDER_REQUEST_TIMEOUT_MS)
+      signal: AbortSignal.timeout(
+        request.provider === "openai-codex" &&
+        (request.action === "connect" || request.action === "switch-account")
+          ? CHATGPT_PROVIDER_REQUEST_TIMEOUT_MS
+          : MODEL_PROVIDER_REQUEST_TIMEOUT_MS
+      )
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "TimeoutError") {

@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
 import {
   formatModelProviderLabel,
@@ -389,7 +390,25 @@ export function AgentModelPickerDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <PikoLoader
+        open={saving || Boolean(removingModelId) || deleteImpactLoading}
+        title={
+          saving
+            ? "Changing agent model"
+            : removingModelId
+              ? "Removing model"
+              : "Checking model impact"
+        }
+        description={
+          saving
+            ? "Updating the OpenClaw model assignment and refreshing agent state."
+            : removingModelId
+              ? "Reassigning affected agents and updating OpenClaw configuration."
+              : "Checking affected agents and the OpenClaw global default."
+        }
+      />
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         closeClassName="right-3 top-[max(0.75rem,env(safe-area-inset-top))] sm:right-4 sm:top-4"
         className={cn(
@@ -880,7 +899,8 @@ export function AgentModelPickerDialog({
           </DialogContent>
         </Dialog>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+    </>
   );
 }
 

@@ -95,6 +95,7 @@ test("OpenClaw direct CLI JSON usage remains in documented fallback/discovery fi
 test("OpenClaw direct CLI command usage remains in documented fallback/provisioning files", () => {
   const allowed = new Set([
     "lib/openclaw/application/channel-connect-service.ts",
+    "lib/openclaw/application/chatgpt-provider-auth-service.ts",
     "lib/openclaw/application/gateway-service.ts",
     "lib/openclaw/application/mobile-pairing-service.ts",
     "lib/openclaw/application/mission-control/diagnostics.ts",
@@ -166,13 +167,22 @@ test("model provider API route keeps local OpenClaw config state behind the appl
   assert.match(serviceSource, /auth-profiles\.json/);
 });
 
-test("model provider API route uses the Codex login command helper", () => {
+test("model provider API route keeps ChatGPT OAuth behind the application service", () => {
   const routeSource = readFileSync(path.join(rootDir, "app/api/models/providers/route.ts"), "utf8");
+  const serviceSource = readFileSync(
+    path.join(rootDir, "lib/openclaw/application/chatgpt-provider-auth-service.ts"),
+    "utf8"
+  );
 
-  assert.match(routeSource, /readOpenClawCodexPluginReady/);
-  assert.match(routeSource, /resolveOpenAiCodexAuthHandoff\(commandBin,\s*codexPluginReady/);
+  assert.match(routeSource, /connectOpenClawChatGptProvider/);
   assert.match(routeSource, /statusContext\.connection\.connected/);
-  assert.doesNotMatch(routeSource, /readOpenClawCodexPluginReady\(\)\.catch\(\(\) => true\)/);
+  assert.doesNotMatch(routeSource, /resolveOpenAiCodexAuthHandoff|manualCommand:\s*authHandoff\.command/);
+  assert.match(serviceSource, /readOpenClawCodexPluginReady/);
+  assert.match(serviceSource, /\["plugins",\s*"install",\s*"--force",\s*"@openclaw\/codex"\]/);
+  assert.match(serviceSource, /"models",\s*"auth",\s*"login"/);
+  assert.match(serviceSource, /"openai"/);
+  assert.match(serviceSource, /"oauth"/);
+  assert.match(serviceSource, /"\/usr\/bin\/script"/);
   assert.doesNotMatch(routeSource, /models\s+auth\s+login\s+--provider\s+openai-codex\s+--set-default/);
 });
 
@@ -1129,7 +1139,10 @@ test("model dialogs use mobile fullscreen layouts with reachable actions", () =>
   assert.match(pickerSource, /Filters\{activeFilterCount > 0/);
   assert.match(pickerSource, /radial-gradient\(circle_at_10%_0%,rgba\(124,58,237,0\.20\)/);
   assert.match(pickerSource, /bg-\[linear-gradient\(135deg,#8b5cf6,#6d28d9\)\]/);
+  assert.match(pickerSource, /<PikoLoader[\s\S]*open=\{saving \|\| Boolean\(removingModelId\) \|\| deleteImpactLoading\}/);
   assert.match(librarySource, /h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0/);
+  assert.match(librarySource, /<PikoLoader[\s\S]*open=\{isModelOperationInProgress\}/);
+  assert.match(librarySource, /isLoadingDangerImpact \|\|[\s\S]*isApplyingDangerAction \|\|[\s\S]*showLoadingHero/);
   assert.doesNotMatch(librarySource, /agentos-light-modal border-border bg-card text-card-foreground shadow-\[0_35px_100px/);
   assert.match(librarySource, /max-lg:\[&>button\]:w-auto/);
   assert.match(librarySource, /safe-area-inset-top/);
@@ -1272,6 +1285,26 @@ test("model library separates provider editing, credential disconnect, and custo
     readFileSync(path.join(rootDir, "lib/openclaw/model-provider-adapters.ts"), "utf8"),
     /disconnect-credential-impact"[\s\S]*allowNotOk: true/
   );
+});
+
+test("ChatGPT provider connection stays in-app and clears legacy terminal handoff state", () => {
+  const dialogSource = readFileSync(
+    path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"),
+    "utf8"
+  );
+  const setupSource = readFileSync(
+    path.join(rootDir, "components/mission-control/openclaw-onboarding-provider-flow.tsx"),
+    "utf8"
+  );
+  const routeSource = readFileSync(path.join(rootDir, "app/api/models/providers/route.ts"), "utf8");
+
+  assert.match(dialogSource, /manualCommand: null,[\s\S]*Opening ChatGPT authorization/);
+  assert.match(dialogSource, /Complete the OpenClaw authorization page in your browser/);
+  assert.match(setupSource, /<PikoLoader/);
+  assert.match(setupSource, /manualCommand: null,[\s\S]*Opening ChatGPT authorization/);
+  assert.match(routeSource, /connectOpenClawChatGptProvider/);
+  assert.match(routeSource, /manualCommand: null/);
+  assert.doesNotMatch(routeSource, /manualCommand:\s*authHandoff\.command/);
 });
 
 test("phase three model surfaces separate setup, assignment, and session scope", () => {

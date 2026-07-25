@@ -13,15 +13,11 @@ import {
   scanOpenClawModels
 } from "@/lib/openclaw/application/catalog-service";
 import {
-  buildOpenAiCodexAuthLoginCommand,
   isOpenAiCodexAuthRefreshFailure,
   isOpenAiCodexProviderPluginMissing,
-  isOpenAiCodexDiscoveryTimeout,
-  resolveOpenAiCodexAuthRecoveryMessage,
-  buildOpenAiCodexAuthRepairCommand,
-  resolveOpenAiCodexAuthHandoff,
-  resolveOpenAiCodexProviderPluginRecoveryMessage
+  isOpenAiCodexDiscoveryTimeout
 } from "@/lib/openclaw/model-auth-errors";
+import { connectOpenClawChatGptProvider } from "@/lib/openclaw/application/chatgpt-provider-auth-service";
 import {
   clearOpenAiCodexAuthRuntimeSmokeFailures,
   getLatestOpenAiCodexAuthRuntimeSmokeFailure,
@@ -40,7 +36,6 @@ import {
   addOpenClawModelsToConfig,
   addOpenClawExplicitProviderModelsToConfig,
   buildOpenClawFileBasedProviderConnectionStatus,
-  readOpenClawCodexPluginReady,
   readOpenClawExplicitProviderConfig,
   persistOpenClawExplicitProviderConfig,
   readOpenClawOpenAiProviderConfig,
@@ -219,7 +214,7 @@ const providerTokenRules: Partial<Record<AddModelsProviderId, RegExp>> = {
 class ProviderAuthActionError extends Error {
   constructor(
     message: string,
-    readonly manualCommand: string
+    readonly manualCommand: string | null = null
   ) {
     super(message);
     this.name = "ProviderAuthActionError";
@@ -263,7 +258,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await handleProviderAction(input);
+    const result = await handleProviderAction(input, request.signal);
     return NextResponse.json(redactSecrets(result), { status: result.ok ? 200 : 400 });
   } catch (error) {
     return NextResponse.json(
@@ -276,7 +271,8 @@ export async function POST(request: Request) {
 }
 
 async function handleProviderAction(
-  input: AddModelsProviderActionRequest
+  input: AddModelsProviderActionRequest,
+  signal?: AbortSignal
 ): Promise<AddModelsProviderActionResult> {
   const commandBin = await resolveOpenClawBin().catch(() => "openclaw");
 
@@ -447,7 +443,7 @@ async function handleProviderAction(
       inspectModelRemoval(input.provider, input.modelId),
       readProviderConnectionContext(input.provider)
     ]);
-    const providerModels = await readProviderCatalog(input.provider, statusContext.configuredModelIds, commandBin)
+    const providerModels = await readProviderCatalog(input.provider, statusContext.configuredModelIds)
       .catch(() => []);
 
     return buildActionResult({
@@ -525,7 +521,7 @@ async function handleProviderAction(
     }
 
     if (input.provider === "ollama") {
-      return discoverProviderModels(input.provider, commandBin);
+      return discoverProviderModels(input.provider);
     }
 
     if (input.provider === "openai-codex") {
@@ -544,21 +540,55 @@ async function handleProviderAction(
         });
       }
 
-      const codexPluginReady = await readOpenClawCodexPluginReady().catch(() => false);
-      const authHandoff = resolveOpenAiCodexAuthHandoff(commandBin, codexPluginReady, {
-        force: input.force === true
-      });
+      try {
+        const authResult = await connectOpenClawChatGptProvider({
+          force: input.force === true,
+          signal
+        });
+        clearModelProviderCaches();
+        const refreshedStatus = await readProviderConnectionContext(input.provider);
+        const models = await readProviderCatalog(
+          input.provider,
+          refreshedStatus.configuredModelIds
+        ).catch(() => []);
+        const snapshot = await getMissionControlSnapshot({ force: true }).catch(() => undefined);
 
-      return buildActionResult({
-        ok: true,
-        action: input.action,
-        provider: input.provider,
-        message: authHandoff.continueMessage,
-        connection: statusContext.connection,
-        models: [],
-        manualCommand: authHandoff.command,
-        docsUrl: addModelsDocsUrl
-      });
+        return buildActionResult({
+          ok: refreshedStatus.connection.connected,
+          action: input.action,
+          provider: input.provider,
+          message: refreshedStatus.connection.connected
+            ? `${authResult.pluginInstalled ? "Installed the Codex plugin and connected" : "Connected"} ChatGPT through OpenClaw. Found ${models.length} available model${models.length === 1 ? "" : "s"}.`
+            : "OpenClaw finished ChatGPT sign-in but did not report a usable account yet. Try connecting again.",
+          connection: {
+            ...refreshedStatus.connection,
+            needsTerminal: false,
+            recovery: refreshedStatus.connection.connected
+              ? null
+              : "Try the in-app ChatGPT sign-in again. AgentOS will reopen OpenClaw's authorization page."
+          },
+          models,
+          snapshot,
+          manualCommand: null,
+          docsUrl: addModelsDocsUrl
+        });
+      } catch (error) {
+        return buildActionResult({
+          ok: false,
+          action: input.action,
+          provider: input.provider,
+          message: readProviderActionError(error),
+          connection: {
+            ...statusContext.connection,
+            connected: false,
+            needsTerminal: false,
+            recovery: "Try Connect ChatGPT again to restart OpenClaw's in-app authorization flow."
+          },
+          models: [],
+          manualCommand: null,
+          docsUrl: addModelsDocsUrl
+        });
+      }
     }
 
     const apiKey = input.apiKey?.trim();
@@ -614,7 +644,7 @@ async function handleProviderAction(
 
     let models: AddModelsCatalogModel[] = [];
     try {
-      models = await readProviderCatalog(input.provider, statusContext.configuredModelIds, commandBin, {
+      models = await readProviderCatalog(input.provider, statusContext.configuredModelIds, {
         preferScan: input.provider === "openai" && Boolean(input.endpoint)
       });
     } catch (error) {
@@ -668,22 +698,48 @@ async function handleProviderAction(
       });
     }
 
-    const codexPluginReady = await readOpenClawCodexPluginReady().catch(() => false);
-    const authHandoff = resolveOpenAiCodexAuthHandoff(commandBin, codexPluginReady, {
-      force: true,
-      intent: "switch-account"
-    });
+    try {
+      await connectOpenClawChatGptProvider({ force: true, signal });
+      clearModelProviderCaches();
+      const refreshedStatus = await readProviderConnectionContext(input.provider);
+      const models = await readProviderCatalog(
+        input.provider,
+        refreshedStatus.configuredModelIds
+      ).catch(() => []);
+      const snapshot = await getMissionControlSnapshot({ force: true }).catch(() => undefined);
 
-    return buildActionResult({
-      ok: true,
-      action: input.action,
-      provider: input.provider,
-      message: authHandoff.continueMessage,
-      connection: statusContext.connection,
-      models: [],
-      manualCommand: authHandoff.command,
-      docsUrl: addModelsDocsUrl
-    });
+      return buildActionResult({
+        ok: refreshedStatus.connection.connected,
+        action: input.action,
+        provider: input.provider,
+        message: refreshedStatus.connection.connected
+          ? `Switched the ChatGPT account through OpenClaw. Found ${models.length} available model${models.length === 1 ? "" : "s"}.`
+          : "OpenClaw finished account switching but did not report a usable ChatGPT account yet.",
+        connection: {
+          ...refreshedStatus.connection,
+          needsTerminal: false
+        },
+        models,
+        snapshot,
+        manualCommand: null,
+        docsUrl: addModelsDocsUrl
+      });
+    } catch (error) {
+      return buildActionResult({
+        ok: false,
+        action: input.action,
+        provider: input.provider,
+        message: readProviderActionError(error),
+        connection: {
+          ...statusContext.connection,
+          needsTerminal: false,
+          recovery: "Try Switch account again to restart OpenClaw's in-app authorization flow."
+        },
+        models: [],
+        manualCommand: null,
+        docsUrl: addModelsDocsUrl
+      });
+    }
   }
 
   if (input.action === "discover") {
@@ -691,7 +747,7 @@ async function handleProviderAction(
       return discoverExplicitProviderModels(input.provider);
     }
 
-    return discoverProviderModels(input.provider, commandBin);
+    return discoverProviderModels(input.provider);
   }
 
   if (input.action === "set-default") {
@@ -699,7 +755,7 @@ async function handleProviderAction(
   }
 
   if (input.action === "remove-model") {
-    return removeProviderModel(input.provider, input.modelId, commandBin);
+    return removeProviderModel(input.provider, input.modelId);
   }
 
   let repairedGatewayAuth = false;
@@ -718,7 +774,7 @@ async function handleProviderAction(
     repairedGatewayAuth = Boolean(result.repaired);
   } catch (error) {
     const statusContext = await readProviderConnectionContext(input.provider);
-    const providerModels = await readProviderCatalog(input.provider, statusContext.configuredModelIds, commandBin)
+    const providerModels = await readProviderCatalog(input.provider, statusContext.configuredModelIds)
       .catch(() => []);
 
     return buildActionResult({
@@ -741,7 +797,7 @@ async function handleProviderAction(
   clearModelCatalogCache();
   const refreshedSnapshot = await getMissionControlSnapshot({ force: true });
   const statusContext = await readProviderConnectionContext(input.provider);
-  const providerModels = await readProviderCatalog(input.provider, statusContext.configuredModelIds, commandBin);
+  const providerModels = await readProviderCatalog(input.provider, statusContext.configuredModelIds);
 
   return buildActionResult({
     ok: true,
@@ -951,7 +1007,7 @@ async function setProviderDefaultModel(
     savedDefault = result.value;
   } catch (error) {
     const statusContext = await readProviderConnectionContext(provider);
-    const providerModels = await readProviderCatalog(provider, statusContext.configuredModelIds, commandBin)
+    const providerModels = await readProviderCatalog(provider, statusContext.configuredModelIds)
       .catch(() => []);
 
     return buildActionResult({
@@ -974,7 +1030,7 @@ async function setProviderDefaultModel(
   clearModelCatalogCache();
   const refreshedSnapshot = await getMissionControlSnapshot({ force: true });
   const statusContext = await readProviderConnectionContext(provider);
-  const providerModels = await readProviderCatalog(provider, statusContext.configuredModelIds, commandBin);
+  const providerModels = await readProviderCatalog(provider, statusContext.configuredModelIds);
 
   return buildActionResult({
     ok: true,
@@ -997,8 +1053,7 @@ async function setProviderDefaultModel(
 
 async function removeProviderModel(
   provider: AddModelsProviderId,
-  modelId: string,
-  commandBin = "openclaw"
+  modelId: string
 ): Promise<AddModelsProviderActionResult> {
   const statusContext = await readProviderConnectionContext(provider);
   let removeResult: Awaited<ReturnType<typeof removeModelSafely>>;
@@ -1012,7 +1067,7 @@ async function removeProviderModel(
     );
     removeResult = recoveryResult.value;
   } catch (error) {
-    const providerModels = await readProviderCatalog(provider, statusContext.configuredModelIds, commandBin)
+    const providerModels = await readProviderCatalog(provider, statusContext.configuredModelIds)
       .catch(() => []);
 
     return buildActionResult({
@@ -1030,7 +1085,7 @@ async function removeProviderModel(
   clearModelProviderCaches();
   const refreshedSnapshot = await getMissionControlSnapshot({ force: true }).catch(() => undefined);
   const refreshedStatus = await readProviderConnectionContext(provider);
-  const providerModels = await readProviderCatalog(provider, refreshedStatus.configuredModelIds, commandBin);
+  const providerModels = await readProviderCatalog(provider, refreshedStatus.configuredModelIds);
 
   return buildActionResult({
     ok: true,
@@ -1046,8 +1101,7 @@ async function removeProviderModel(
 }
 
 async function discoverProviderModels(
-  provider: AddModelsProviderId,
-  commandBin = "openclaw"
+  provider: AddModelsProviderId
 ): Promise<AddModelsProviderActionResult> {
   const { connection, ollamaState, configuredModelIds } = await readProviderConnectionContext(provider);
   const isCustomOpenAiEndpoint = provider === "openai" && isCustomOpenAiEndpointConnection(connection);
@@ -1055,7 +1109,7 @@ async function discoverProviderModels(
   let fallbackMessage: string | null = null;
 
   try {
-    models = await readProviderCatalog(provider, configuredModelIds, commandBin, {
+    models = await readProviderCatalog(provider, configuredModelIds, {
       preferScan: isCustomOpenAiEndpoint
     });
     if (isCustomOpenAiEndpoint) {
@@ -1125,12 +1179,11 @@ async function discoverProviderModels(
 async function readProviderCatalog(
   provider: AddModelsProviderId,
   configuredModelIds: Set<string>,
-  commandBin = "openclaw",
   options: { preferScan?: boolean } = {}
 ): Promise<AddModelsCatalogModel[]> {
   if (provider === "openai-codex") {
     try {
-      const providerPayload = await readProviderModelPayload(provider, { all: true, provider: "openai" }, commandBin);
+      const providerPayload = await readProviderModelPayload(provider, { all: true, provider: "openai" });
       const providerModels = normalizeCatalogModels(provider, providerPayload.models, configuredModelIds)
         .filter((model) => isKnownOpenAiCodexModelId(model.id) || model.tags.some(isCodexModelTag));
 
@@ -1145,7 +1198,7 @@ async function readProviderCatalog(
   }
 
   if (options.preferScan) {
-    const scanPayload = await scanProviderModels(provider, commandBin);
+    const scanPayload = await scanProviderModels(provider);
     const scanModels = normalizeScanModels(provider, scanPayload, configuredModelIds);
 
     if (scanModels.length > 0) {
@@ -1153,7 +1206,7 @@ async function readProviderCatalog(
     }
   }
 
-  const providerPayload = await readProviderModelPayload(provider, { all: true, provider }, commandBin);
+  const providerPayload = await readProviderModelPayload(provider, { all: true, provider });
   const providerModels = normalizeCatalogModels(provider, providerPayload.models, configuredModelIds);
 
   if (providerModels.length > 0) {
@@ -1162,7 +1215,7 @@ async function readProviderCatalog(
       : providerModels;
   }
 
-  const globalPayload = await readProviderModelPayload(provider, { all: true }, commandBin);
+  const globalPayload = await readProviderModelPayload(provider, { all: true });
   const globalModels = normalizeCatalogModels(provider, globalPayload.models, configuredModelIds);
 
   if (globalModels.length > 0) {
@@ -1175,7 +1228,7 @@ async function readProviderCatalog(
     return readLocalOllamaCatalog(configuredModelIds);
   }
 
-  const scanPayload = await scanProviderModels(provider, commandBin);
+  const scanPayload = await scanProviderModels(provider);
 
   return normalizeScanModels(provider, scanPayload, configuredModelIds);
 }
@@ -1347,19 +1400,18 @@ function readProviderName(providerConfig: OpenClawProviderModelsEntry | null) {
 
 async function readProviderModelPayload(
   provider: AddModelsProviderId,
-  input: Parameters<typeof listOpenClawModels>[0],
-  commandBin = "openclaw"
+  input: Parameters<typeof listOpenClawModels>[0]
 ) {
   try {
     return await listOpenClawModels(input, {
       timeoutMs: provider === "openai-codex" ? codexDiscoveryTimeoutMs : undefined
     });
   } catch (error) {
-    throw normalizeProviderCatalogError(provider, error, commandBin);
+    throw normalizeProviderCatalogError(provider, error);
   }
 }
 
-async function scanProviderModels(provider: AddModelsProviderId, commandBin = "openclaw") {
+async function scanProviderModels(provider: AddModelsProviderId) {
   try {
     return await scanOpenClawModels({
       yes: true,
@@ -1368,22 +1420,19 @@ async function scanProviderModels(provider: AddModelsProviderId, commandBin = "o
       timeoutMs: provider === "openai-codex" ? codexDiscoveryTimeoutMs : undefined
     });
   } catch (error) {
-    throw normalizeProviderCatalogError(provider, error, commandBin);
+    throw normalizeProviderCatalogError(provider, error);
   }
 }
 
-function normalizeProviderCatalogError(provider: AddModelsProviderId, error: unknown, commandBin = "openclaw") {
+function normalizeProviderCatalogError(provider: AddModelsProviderId, error: unknown) {
   const message = stringifyProviderError(error);
 
   if (
     provider === "openai-codex" &&
     isOpenAiCodexProviderPluginMissing(message)
   ) {
-    const command = buildOpenAiCodexAuthRepairCommand(commandBin);
-
     return new ProviderAuthActionError(
-      resolveOpenAiCodexProviderPluginRecoveryMessage(command),
-      command
+      "OpenClaw needs the Codex provider plugin before model discovery can continue. Use Connect ChatGPT in AgentOS to install it and start authorization."
     );
   }
 
@@ -1391,11 +1440,8 @@ function normalizeProviderCatalogError(provider: AddModelsProviderId, error: unk
     provider === "openai-codex" &&
     isOpenAiCodexAuthRefreshFailure(message)
   ) {
-    const command = buildOpenAiCodexAuthLoginCommand(commandBin);
-
     return new ProviderAuthActionError(
-      resolveOpenAiCodexAuthRecoveryMessage(command),
-      command
+      "Your ChatGPT session needs authorization. Use Connect ChatGPT in AgentOS to reopen OpenClaw's sign-in page."
     );
   }
 
