@@ -15,11 +15,9 @@ import {
   LoaderCircle,
   Plus,
   Search,
-  Settings,
   SlidersHorizontal,
   Sparkles,
-  Trash2,
-  Zap
+  Trash2
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -74,8 +72,9 @@ export function AgentModelPickerDialog({
   const [selectedModelId, setSelectedModelId] = useState(currentModelId);
   const [search, setSearch] = useState("");
   const [providerFilter, setProviderFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [sortMode, setSortMode] = useState("recent");
+  const [typeFilter, setTypeFilter] = useState("ready");
+  const [sortMode, setSortMode] = useState("name");
+  const [showNeedsSetup, setShowNeedsSetup] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [removingModelId, setRemovingModelId] = useState<string | null>(null);
@@ -84,6 +83,7 @@ export function AgentModelPickerDialog({
   const [deleteImpact, setDeleteImpact] = useState<AddModelsProviderActionResult["modelRemoveImpact"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const snapshotRef = useRef(snapshot);
+  const pendingSetupModelIdRef = useRef<string | null>(null);
   const {
     models: sharedCatalogModels,
     refresh: refreshSharedCatalog
@@ -98,6 +98,18 @@ export function AgentModelPickerDialog({
   const currentModel = currentModelId ? findModelByCanonicalId(modelOptions, currentModelId) : null;
   const currentModelSelectable = currentModel ? isSelectableModel(currentModel) : false;
   const deleteTargetModel = deleteTargetModelId ? findModelByCanonicalId(modelOptions, deleteTargetModelId) : null;
+  const globalDefaultModelId =
+    snapshot.diagnostics.modelReadiness.resolvedDefaultModel ||
+    snapshot.diagnostics.modelReadiness.defaultModel ||
+    "";
+  const sessionOverrides = snapshot.runtimes.filter(
+    (runtime) =>
+      runtime.agentId === agent?.id &&
+      Boolean(runtime.sessionId) &&
+      Boolean(runtime.modelId) &&
+      normalizeOpenAiCodexModelId(runtime.modelId ?? "") !== currentModelId
+  );
+  const setupRequiredCount = modelOptions.filter((model) => !isSelectableModel(model)).length;
 
   useEffect(() => {
     snapshotRef.current = snapshot;
@@ -114,14 +126,27 @@ export function AgentModelPickerDialog({
       return;
     }
 
-    setSelectedModelId(currentAgent.modelId === "unassigned" ? "" : normalizeOpenAiCodexModelId(currentAgent.modelId));
+    const pendingModelId = pendingSetupModelIdRef.current;
+    const pendingModel = pendingModelId ? findModelByCanonicalId(modelOptions, pendingModelId) : null;
+    setSelectedModelId(
+      pendingModel && isSelectableModel(pendingModel)
+        ? pendingModel.id
+        : currentAgent.modelId === "unassigned"
+          ? ""
+          : normalizeOpenAiCodexModelId(currentAgent.modelId)
+    );
     setSearch("");
     setProviderFilter("all");
-    setTypeFilter("all");
-    setSortMode("recent");
+    setTypeFilter(pendingModel && !isSelectableModel(pendingModel) ? "needs-setup" : "ready");
+    setSortMode("name");
+    setShowNeedsSetup(Boolean(pendingModel && !isSelectableModel(pendingModel)));
     setMobileFiltersOpen(false);
     setError(null);
-  }, [agentId, open]);
+  }, [agentId, modelOptions, open]);
+
+  useEffect(() => {
+    pendingSetupModelIdRef.current = null;
+  }, [agentId]);
 
   const visibleModels = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -181,6 +206,10 @@ export function AgentModelPickerDialog({
           return false;
         }
 
+        if (!showNeedsSetup && !isSelectableModel(model)) {
+          return false;
+        }
+
         if (!query) {
           return true;
         }
@@ -190,8 +219,8 @@ export function AgentModelPickerDialog({
             .toLowerCase();
         return haystack.includes(query);
       });
-  }, [modelOptions, providerFilter, search, sortMode, typeFilter]);
-  const activeFilterCount = [providerFilter !== "all", typeFilter !== "all", sortMode !== "recent"].filter(Boolean).length;
+  }, [modelOptions, providerFilter, search, showNeedsSetup, sortMode, typeFilter]);
+  const activeFilterCount = [providerFilter !== "all", typeFilter !== "ready", sortMode !== "name", showNeedsSetup].filter(Boolean).length;
 
   const selectedModel = selectedModelId
     ? findModelByCanonicalId(modelOptions, selectedModelId)
@@ -205,12 +234,6 @@ export function AgentModelPickerDialog({
         .sort((left, right) => formatModelProviderLabel(left).localeCompare(formatModelProviderLabel(right))),
     [modelOptions]
   );
-  const currentStatusLabel = currentModel
-    ? resolveModelStatusLabel(currentModel)
-    : currentModelId
-      ? "Unknown"
-      : "Default route";
-
   const saveModel = async () => {
     if (!agent || !selectedModel || !selectedModelSelectable || !hasChanges) {
       return;
@@ -238,6 +261,7 @@ export function AgentModelPickerDialog({
       }
 
       onSnapshotChange?.((current) => updateSnapshotAgentModel(current, agent.id, selectedModelId));
+      pendingSetupModelIdRef.current = null;
       toast.success("Agent model updated.", {
         description: selectedModel.name
       });
@@ -258,6 +282,14 @@ export function AgentModelPickerDialog({
 
   const handleOpenAddModels = () => {
     onOpenAddModels(null);
+    onOpenChange(false);
+  };
+
+  const handleOpenProviderSetup = (model: AgentModelRecord) => {
+    pendingSetupModelIdRef.current = normalizeOpenAiCodexModelId(model.id);
+    setSelectedModelId(model.id);
+    const provider = resolvePickerModelProvider(model);
+    onOpenAddModels(isAddModelsProviderId(provider) ? provider : null);
     onOpenChange(false);
   };
 
@@ -443,7 +475,7 @@ export function AgentModelPickerDialog({
                   <ProviderGlyph provider={currentModel ? resolvePickerModelProvider(currentModel) : "openai-codex"} />
                 </div>
                 <div className="min-w-0">
-                  <p className={cn("text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Agent override</p>
+                  <p className={cn("text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Agent assignment</p>
                   <p className={cn("truncate text-[0.8rem] font-semibold", isLight ? "text-foreground" : "text-white")}>
                     {currentModel?.name || (currentModelId ? currentModelId : "OpenClaw global default")}
                   </p>
@@ -452,9 +484,9 @@ export function AgentModelPickerDialog({
             </div>
 
             <div className="mt-2.5 grid grid-cols-3 gap-1.5">
-              <MetricTile label="Provider" value={currentModel ? formatPickerModelProviderLabel(currentModel) : "OpenClaw global default"} surfaceTheme={surfaceTheme} />
-              <MetricTile label="Context window" value={currentModel ? formatContextWindow(currentModel.contextWindow) : "Unknown"} surfaceTheme={surfaceTheme} />
-              <MetricTile label="Status" value={currentStatusLabel} tone={currentModelSelectable ? "success" : "warning"} surfaceTheme={surfaceTheme} />
+              <MetricTile label="Global default" value={globalDefaultModelId ? formatModelLabel(globalDefaultModelId) : "Not set"} surfaceTheme={surfaceTheme} />
+              <MetricTile label="Agent model" value={currentModel ? formatModelLabel(currentModel.id) : "Inherits default"} tone={currentModelSelectable ? "success" : "warning"} surfaceTheme={surfaceTheme} />
+              <MetricTile label="Session overrides" value={sessionOverrides.length > 0 ? String(sessionOverrides.length) : "None"} tone={sessionOverrides.length > 0 ? "warning" : "success"} surfaceTheme={surfaceTheme} />
             </div>
 
             <div className={cn("mt-2.5 rounded-[14px] border p-2.5", isLight ? "border-border bg-muted/35" : "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.74),rgba(15,23,42,0.34))]")}>
@@ -492,25 +524,6 @@ export function AgentModelPickerDialog({
                   <span>
                     <span className={cn("block text-[0.72rem] font-medium", isLight ? "text-foreground" : "text-white")}>Open Model Library</span>
                     <span className={cn("block text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Manage providers & models</span>
-                  </span>
-                </span>
-                <ChevronRight className={cn("h-3.5 w-3.5", isLight ? "text-muted-foreground" : "text-slate-500")} />
-              </button>
-              <button
-                type="button"
-                className={cn(
-                  "mt-1.5 flex w-full cursor-not-allowed items-center justify-between rounded-[12px] border px-2 py-2 text-left opacity-70",
-                  isLight ? "border-border bg-muted/55 text-muted-foreground" : "border-white/8 bg-white/[0.025]"
-                )}
-                title="Model settings are managed by provider setup for now."
-              >
-                <span className="flex items-center gap-2.5">
-                  <span className={cn("flex h-7 w-7 items-center justify-center rounded-[9px]", isLight ? "bg-muted text-muted-foreground" : "bg-white/[0.06] text-slate-300")}>
-                    <Settings className="h-3 w-3" />
-                  </span>
-                  <span>
-                    <span className={cn("block text-[0.72rem] font-medium", isLight ? "text-foreground" : "text-white")}>Model Settings</span>
-                    <span className={cn("block text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Default params & routing</span>
                   </span>
                 </span>
                 <ChevronRight className={cn("h-3.5 w-3.5", isLight ? "text-muted-foreground" : "text-slate-500")} />
@@ -556,14 +569,14 @@ export function AgentModelPickerDialog({
                   ))}
                 </NativeFilter>
                 <NativeFilter className="min-w-0 w-full xl:w-auto" value={typeFilter} onChange={setTypeFilter} ariaLabel="Type filter" surfaceTheme={surfaceTheme}>
-                  <option value="all">All types</option>
+                  <option value="all">All availability</option>
                   <option value="remote">Remote</option>
                   <option value="local">Local</option>
                   <option value="ready">Ready</option>
                   <option value="needs-setup">Needs setup</option>
                 </NativeFilter>
                 <NativeFilter className="col-span-2 min-w-0 w-full xl:col-auto xl:w-auto" value={sortMode} onChange={setSortMode} ariaLabel="Sort models" surfaceTheme={surfaceTheme}>
-                  <option value="recent">Sort: Recent</option>
+                  <option value="name">Sort: Name</option>
                   <option value="context">Sort: Context</option>
                   <option value="provider">Sort: Provider</option>
                 </NativeFilter>
@@ -572,6 +585,19 @@ export function AgentModelPickerDialog({
                 <Library className="h-3.5 w-3.5" />
                 <span className="ml-1.5 text-[0.72rem] lg:hidden">Library</span>
               </Button>
+              {setupRequiredCount > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setShowNeedsSetup((current) => !current);
+                    setTypeFilter(showNeedsSetup ? "ready" : "all");
+                  }}
+                  className="h-8 rounded-[11px] px-3 text-[0.68rem]"
+                >
+                  {showNeedsSetup ? "Hide setup needed" : `Show setup needed (${setupRequiredCount})`}
+                </Button>
+              ) : null}
             </div>
 
             <div className="mt-2 min-h-0 flex-1 overflow-y-auto pr-1 lg:max-h-[calc(90dvh-180px)]">
@@ -599,13 +625,17 @@ export function AgentModelPickerDialog({
                       >
                         <button
                           type="button"
-                          disabled={!selectable}
                           aria-pressed={selected}
-                          onClick={() => selectable && setSelectedModelId(model.id)}
+                          onClick={() => {
+                            if (selectable) {
+                              setSelectedModelId(model.id);
+                            } else {
+                              handleOpenProviderSetup(model);
+                            }
+                          }}
                           className={cn(
-                            "grid min-h-[72px] min-w-0 grid-cols-[22px_1fr] items-center gap-2 rounded-[12px] px-2 py-1.5 text-left transition lg:grid-cols-[22px_1.05fr_100px_92px_92px_68px]",
-                            isLight ? "hover:bg-accent/50" : "hover:bg-white/[0.03]",
-                            !selectable && "cursor-not-allowed"
+                            "grid min-h-[72px] min-w-0 grid-cols-[22px_1fr] items-center gap-2 rounded-[12px] px-2 py-1.5 text-left transition lg:grid-cols-[22px_1.15fr_110px_100px_72px]",
+                            isLight ? "hover:bg-accent/50" : "hover:bg-white/[0.03]"
                           )}
                         >
                           <span className={cn(
@@ -640,11 +670,15 @@ export function AgentModelPickerDialog({
                                   {resolveModelSetupHint(model)}
                                 </span>
                               ) : null}
+                              {!selectable ? (
+                                <span className={cn("mt-1 block text-[0.62rem] font-semibold", isLight ? "text-amber-800" : "text-amber-200")}>
+                                  Set up {formatModelProviderLabel(provider)}
+                                </span>
+                              ) : null}
                             </span>
                           </span>
 
                           <MetricInline icon={<Cpu className="h-3.5 w-3.5" />} value={formatContextWindow(model.contextWindow)} label="Context window" surfaceTheme={surfaceTheme} />
-                          <MetricInline icon={<Zap className="h-3.5 w-3.5" />} value={resolvePerformanceLabel(model)} label="Performance" surfaceTheme={surfaceTheme} />
                           <MetricInline icon={<span className={cn("h-2.5 w-2.5 rounded-full", selectable ? "bg-emerald-400" : "bg-amber-400")} />} value={selectable ? "Ready" : "Needs setup"} label="Status" tone={selectable ? "success" : "warning"} surfaceTheme={surfaceTheme} />
                           <Badge className={cn("justify-self-start rounded-[8px] px-2 py-0.5 text-[0.6rem]", model.local ? (isLight ? "border-cyan-300 bg-cyan-50 text-cyan-800" : "border-cyan-300/30 bg-cyan-400/10 text-cyan-100") : (isLight ? "border-primary/25 bg-primary/10 text-primary" : "border-violet-300/30 bg-violet-500/10 text-violet-100"))}>
                             {model.local ? "Local" : "Remote"}
@@ -698,7 +732,7 @@ export function AgentModelPickerDialog({
             <div className={cn("flex min-w-0 flex-1 items-center gap-2 text-[0.68rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
               <Info className={cn("h-3.5 w-3.5 shrink-0", isLight ? "text-muted-foreground" : "text-slate-500")} />
               <span className="min-w-0 truncate">
-                Models marked <span className={cn(isLight ? "text-amber-800" : "text-amber-300")}>Needs setup</span> require provider connection first.
+                Saving changes the agent assignment. Existing session overrides continue until reset from the runtime inspector.
               </span>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -999,22 +1033,6 @@ function getProviderIconTone(provider: string, surfaceTheme: "dark" | "light" = 
     : "border-amber-300/25 bg-amber-400/10 text-amber-100";
 }
 
-function resolvePerformanceLabel(model: AgentModelRecord) {
-  if (model.local) {
-    return "Local";
-  }
-
-  if ((model.contextWindow ?? 0) >= 250_000) {
-    return "High";
-  }
-
-  if ((model.contextWindow ?? 0) >= 100_000) {
-    return "Balanced";
-  }
-
-  return "Fast";
-}
-
 function resolveModelSetupHint(model: AgentModelRecord) {
   const provider = resolvePickerModelProvider(model);
   const descriptor = isAddModelsProviderId(provider)
@@ -1052,10 +1070,6 @@ function resolveModelSetupHint(model: AgentModelRecord) {
   return "This model is not ready for assignment.";
 }
 
-function formatPickerModelProviderLabel(model: AgentModelRecord) {
-  return formatModelProviderLabel(resolvePickerModelProvider(model));
-}
-
 function resolvePickerModelProvider(model: AgentModelRecord) {
   const canonicalModelId = normalizeOpenAiCodexModelId(model.id);
 
@@ -1068,22 +1082,6 @@ function resolvePickerModelProvider(model: AgentModelRecord) {
   }
 
   return model.provider;
-}
-
-function resolveModelStatusLabel(model: AgentModelRecord) {
-  if (model.missing) {
-    return "Missing";
-  }
-
-  if (model.available === false) {
-    return "Unavailable";
-  }
-
-  if (model.local) {
-    return "Local";
-  }
-
-  return "Remote";
 }
 
 function updateSnapshotAgentModel(

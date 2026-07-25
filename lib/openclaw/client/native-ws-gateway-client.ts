@@ -8,6 +8,7 @@ import {
 } from "@/lib/openclaw/client/gateway-compatibility";
 import { isRailwayManagedRuntime } from "@/lib/openclaw/deployment-runtime";
 import {
+  buildMergePatchReplacementValue,
   canFallbackGatewayAuthConfigRepair,
   buildMergePatchForConfigPath,
   isGatewayTransportConfigPath,
@@ -162,6 +163,8 @@ import type {
   OpenClawSessionHistoryInput,
   OpenClawSessionHistoryPayload,
   OpenClawSessionControlPayload,
+  OpenClawSessionModelPatchInput,
+  OpenClawSessionModelPatchPayload,
   OpenClawSessionPayload,
   OpenClawSessionSteerInput,
   OpenClawSessionsPayload,
@@ -600,6 +603,39 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       (payload) => parseGatewayPayload<OpenClawSessionsPayload>("sessions.list", sessionsPayloadSchema, payload),
       () => this.fallback.listSessions(input, options)
     );
+  }
+
+  async patchSessionModel(input: OpenClawSessionModelPatchInput, options: OpenClawCommandOptions = {}) {
+    if (this.options.forceCli || isCliGatewayClientForcedByEnv()) {
+      throw new OpenClawGatewayClientError(
+        "Resetting a session model override requires native OpenClaw Gateway support; CLI fallback is disabled for this operation.",
+        "unsupported"
+      );
+    }
+
+    const key = input.key ?? input.sessionKey;
+    if (!key) {
+      throw new OpenClawGatewayClientError("A session key is required to update the session model.", "unknown");
+    }
+
+    try {
+      const payload = await this.callNative<unknown>(
+        "sessions.patch",
+        {
+          key,
+          agentId: input.agentId,
+          model: input.model
+        },
+        options,
+        resolveGatewayRequestPolicy("sessions.patch", options)
+      );
+      clearGatewayFallbackDiagnostic("sessions.patch");
+      this.clearNativeFailure("sessions.patch");
+      return parseObjectGatewayPayload<OpenClawSessionModelPatchPayload>("sessions.patch", payload);
+    } catch (error) {
+      this.options.onNativeFailure?.(error, "sessions.patch");
+      throw this.cliFallbackDisabledError("sessions.patch", error);
+    }
   }
 
   describeSession(input: OpenClawDescribeSessionInput = {}, options: OpenClawCommandOptions = {}) {
@@ -2085,7 +2121,14 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       const reloadKind = readConfigReloadKindFromSchemaLookup(schemaLookupPayload);
 
       const baseHash = typeof snapshot.hash === "string" && snapshot.hash.trim() ? snapshot.hash : undefined;
-      const patch = buildMergePatchForConfigPath(path, operation === "config.unset" ? null : value);
+      // config.patch uses JSON Merge Patch semantics. A missing object member
+      // means "preserve", while setConfig(path, object) promises replacement
+      // semantics. Emit null tombstones for removed members so invalid legacy
+      // values such as a blank provider baseUrl are actually removed.
+      const patchValue = operation === "config.unset"
+        ? null
+        : buildMergePatchReplacementValue(currentValue, value);
+      const patch = buildMergePatchForConfigPath(path, patchValue);
       const patchParams: Record<string, unknown> = {
         raw: JSON.stringify(patch)
       };

@@ -5,6 +5,7 @@ import {
   buildModelRemoveImpact,
   buildModelProviderDisconnectImpact,
   disconnectModelProvider,
+  disconnectModelProviderCredential,
   removeModelSafely
 } from "@/lib/openclaw/application/model-provider-disconnect-service";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
@@ -80,7 +81,49 @@ test("disconnect impact selects a ready replacement for the default and affected
   assert.equal(impact.defaultModelAffected, true);
   assert.equal(impact.replacementModelId, "openai/gpt-5.4-mini");
   assert.equal(impact.blockedReason, null);
-  assert.equal(impact.credentialCleanup, "retained-unsupported");
+  assert.equal(impact.credentialCleanup, "removed");
+});
+
+test("credential disconnect reassigns active configuration but keeps provider models", async () => {
+  const calls: string[] = [];
+  const snapshot = createSnapshot();
+  const result = await disconnectModelProviderCredential("google", {
+    getSnapshot: async () => snapshot,
+    readConfiguredModelIds: async () => new Set(["google/gemini-3.5-flash", "openai/gpt-5.4-mini"]),
+    setDefaultModel: async (modelId) => {
+      calls.push(`default:${modelId}`);
+      return { modelId, provider: "openai", via: "gateway" };
+    },
+    updateAgentModel: async (agentId, modelId) => {
+      calls.push(`agent:${agentId}:${modelId}`);
+    },
+    removeModel: async () => {
+      throw new Error("credential disconnect must keep configured models");
+    },
+    removeProviderConfiguration: async () => {
+      throw new Error("credential disconnect must keep the provider definition");
+    },
+    removeProviderCredential: async () => {
+      calls.push("remove-credential");
+      return { removed: true, credentialCleanup: "removed" };
+    },
+    markDisconnected: async () => {
+      calls.push("mark-disconnected");
+    },
+    clearCaches: () => {
+      calls.push("clear-caches");
+    }
+  });
+
+  assert.deepEqual(calls, [
+    "default:openai/gpt-5.4-mini",
+    "agent:agent-google:openai/gpt-5.4-mini",
+    "remove-credential",
+    "mark-disconnected",
+    "clear-caches"
+  ]);
+  assert.deepEqual(result.impact.providerModelIds, ["google/gemini-3.5-flash"]);
+  assert.equal(result.impact.credentialCleanup, "removed");
 });
 
 test("disconnect impact blocks active agents and missing replacements", () => {

@@ -196,6 +196,7 @@ function normalizeSessionRuntime(entry: Record<string, unknown>, context: Runtim
     cacheRead: readNumber(entry.cacheRead),
     totalTokens: readNumber(entry.totalTokens),
     model: readString(entry.model) ?? readString(entry.modelId) ?? undefined,
+    modelProvider: readString(entry.modelProvider) ?? readString(entry.provider) ?? undefined,
     kind: readString(entry.kind) ?? "runtime",
     origin: "openclaw-runtime-snapshot",
     mission: readString(entry.mission) ?? readString(entry.prompt) ?? undefined,

@@ -102,12 +102,9 @@ export type ModelView = {
   provider: string;
   statusLabel: string;
   statusTone: StatusTone;
-  latencyLabel: string;
   contextLabel: string;
-  costLabel: string;
-  rateLimitLabel: string;
   role: "Primary" | "Fallback" | "Secondary" | "Experimental";
-  lastActiveLabel: string;
+  linkedAgentsLabel: string;
   capabilities: string[];
   source?: ModelRecord;
 };
@@ -326,12 +323,9 @@ export function buildModelViews(snapshot: MissionControlSnapshot): ModelView[] {
     provider: formatProviderName(model.provider),
     statusLabel: model.local ? "Local" : model.missing || model.available === false ? "Unavailable" : "Healthy",
     statusTone: model.missing || model.available === false ? "danger" : model.local ? "info" : "success",
-    latencyLabel: "Not reported",
     contextLabel: formatContextWindow(model.contextWindow),
-    costLabel: "Not reported",
-    rateLimitLabel: "Not reported",
     role: resolveModelRole(model, defaultModelId),
-    lastActiveLabel: model.usageCount > 0 ? `${model.usageCount} use${model.usageCount === 1 ? "" : "s"}` : "Not reported",
+    linkedAgentsLabel: `${model.usageCount} agent${model.usageCount === 1 ? "" : "s"}`,
     capabilities: buildModelCapabilities(model),
     source: model
   }));

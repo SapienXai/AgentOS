@@ -43,6 +43,34 @@ export function buildMergePatchForConfigPath(path: string, value: unknown) {
   return root;
 }
 
+export function buildMergePatchReplacementValue(currentValue: unknown, nextValue: unknown): unknown {
+  if (!isObjectRecord(nextValue)) {
+    return nextValue;
+  }
+
+  const currentRecord = isObjectRecord(currentValue) ? currentValue : {};
+  const patch: Record<string, unknown> = {};
+
+  for (const key of Object.keys(currentRecord)) {
+    if (!(key in nextValue)) {
+      patch[key] = null;
+    }
+  }
+
+  for (const [key, value] of Object.entries(nextValue)) {
+    const currentChild = currentRecord[key];
+
+    if (isObjectRecord(value) && isObjectRecord(currentChild)) {
+      patch[key] = buildMergePatchReplacementValue(currentChild, value);
+      continue;
+    }
+
+    patch[key] = value;
+  }
+
+  return patch;
+}
+
 export function normalizeConfigReloadKind(value: unknown): OpenClawConfigReloadKind {
   if (typeof value !== "string") {
     return "unknown";

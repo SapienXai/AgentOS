@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import type { AddModelsCatalogModel, MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { mergeCatalogWithConfiguredModels } from "@/lib/openclaw/domains/model-catalog-projection";
@@ -9,10 +9,12 @@ type ModelCatalogPayload = {
   models: AddModelsCatalogModel[];
   source: "openclaw" | "openclaw-cache" | "snapshot";
   age: number | null;
+  checkedAt: string;
   warning?: string;
 };
 
 const MODEL_CATALOG_TIMEOUT_MS = 20_000;
+const MODEL_CATALOG_RECONCILE_INTERVAL_MS = 60_000;
 let cachedPayload: ModelCatalogPayload | null = null;
 let catalogRequest: Promise<ModelCatalogPayload> | null = null;
 
@@ -38,6 +40,7 @@ async function loadModelCatalog(force = false) {
       models: Array.isArray(payload.models) ? payload.models : [],
       source: payload.source,
       age: typeof payload.age === "number" ? payload.age : null,
+      checkedAt: payload.checkedAt,
       warning: payload.warning
     };
     return cachedPayload;
@@ -87,6 +90,9 @@ export function useModelCatalog({
       setIsLoading(false);
     }
   }
+  const reconcileCatalog = useEffectEvent(() => {
+    void refresh(true);
+  });
 
   useEffect(() => {
     if (!enabled) {
@@ -95,6 +101,18 @@ export function useModelCatalog({
 
     void refresh();
     // Catalog loading is intentionally keyed only by visibility; snapshot updates are merged below.
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      reconcileCatalog();
+    }, MODEL_CATALOG_RECONCILE_INTERVAL_MS);
+
+    return () => window.clearInterval(interval);
   }, [enabled]);
 
   const models = useMemo(
@@ -109,6 +127,8 @@ export function useModelCatalog({
     source: payload?.source ?? null,
     warning: payload?.warning ?? null,
     age: payload?.age ?? null,
+    checkedAt: payload?.checkedAt ?? null,
+    stale: typeof payload?.age === "number" && payload.age > MODEL_CATALOG_RECONCILE_INTERVAL_MS * 5,
     refresh
   };
 }

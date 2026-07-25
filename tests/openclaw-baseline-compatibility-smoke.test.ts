@@ -7,7 +7,6 @@ import {
   buildOpenAiCodexAuthLoginCommand,
   buildOpenAiCodexAuthRepairCommand
 } from "@/lib/openclaw/model-auth-errors";
-import { persistOpenClawProviderToken } from "@/lib/openclaw/application/model-provider-state-service";
 import {
   OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS,
   OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
@@ -100,22 +99,15 @@ test("add ChatGPT/Codex model smoke uses the canonical OpenAI provider handoff",
   assert.doesNotMatch(repairCommand, staleCodexAuthCommandPattern);
 });
 
-test("add OpenRouter key smoke blocks silent local token writes without recovery opt-in", async () => {
-  const previous = process.env.AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK;
-  delete process.env.AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK;
+test("add OpenRouter key smoke keeps provider credentials Gateway-native", () => {
+  const stateService = source("lib/openclaw/application/model-provider-state-service.ts");
+  const registry = source("lib/openclaw/model-provider-registry.ts");
 
-  try {
-    await assert.rejects(
-      () => persistOpenClawProviderToken("openrouter", "sk-or-test"),
-      /Gateway-native provider token persistence is not available yet.*AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK=1/
-    );
-  } finally {
-    if (previous === undefined) {
-      delete process.env.AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK;
-    } else {
-      process.env.AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK = previous;
-    }
-  }
+  assert.match(stateService, /persistProviderCredentialViaGateway/);
+  assert.match(stateService, /\.setConfig\(target\.configPath, credential/);
+  assert.match(registry, /env\.vars\.OPENROUTER_API_KEY/);
+  assert.match(registry, /config-backed env\.vars/);
+  assert.doesNotMatch(stateService, /Gateway-native provider token persistence is not available yet/);
 });
 
 test("set default model smoke stays Gateway-native before explicit recovery fallback", () => {

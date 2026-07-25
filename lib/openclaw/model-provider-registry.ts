@@ -19,6 +19,44 @@ export type ModelProviderDescriptor = {
   searchPlaceholder?: string;
 };
 
+/**
+ * OpenClaw 2026.6.11 resolves bundled provider API keys from its runtime
+ * environment. Persist them under config-backed env.vars so the Gateway owns
+ * storage, validation, reload, and redeploy persistence without turning a
+ * bundled provider into a custom models.providers entry.
+ */
+export type ModelProviderCredentialTarget = {
+  configPath: string;
+};
+
+export const modelProviderCredentialRegistry: Partial<Record<AddModelsProviderId, ModelProviderCredentialTarget>> = {
+  openrouter: {
+    configPath: "env.vars.OPENROUTER_API_KEY"
+  },
+  openai: {
+    configPath: "env.vars.OPENAI_API_KEY"
+  },
+  anthropic: {
+    configPath: "env.vars.ANTHROPIC_API_KEY"
+  },
+  google: {
+    configPath: "env.vars.GEMINI_API_KEY"
+  },
+  xai: {
+    configPath: "env.vars.XAI_API_KEY"
+  },
+  deepseek: {
+    configPath: "env.vars.DEEPSEEK_API_KEY"
+  },
+  mistral: {
+    configPath: "env.vars.MISTRAL_API_KEY"
+  }
+};
+
+export function getModelProviderCredentialTarget(provider: AddModelsProviderId) {
+  return modelProviderCredentialRegistry[provider] ?? null;
+}
+
 export const modelProviderRegistry: Array<ModelProviderDescriptor & { id: BuiltInAddModelsProviderId; kind: "builtin" }> = [
   {
     id: "openai-codex",

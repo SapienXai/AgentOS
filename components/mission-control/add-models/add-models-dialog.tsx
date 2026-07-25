@@ -2,6 +2,7 @@
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
   Boxes,
   ChevronLeft,
   CircleCheckBig,
@@ -9,6 +10,7 @@ import {
   Database,
   HardDrive,
   HelpCircle,
+  KeyRound,
   Library,
   LoaderCircle,
   RefreshCw,
@@ -27,6 +29,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog";
@@ -53,7 +56,9 @@ import type {
   AddModelsEmptyState,
   AddModelsFlowState,
   AddModelsProviderActionResult,
+  AddModelsProviderConfigSummary,
   AddModelsProviderConnectionStatus,
+  AddModelsProviderDisconnectImpact,
   AddModelsProviderId,
   MissionControlSnapshot
 } from "@/lib/agentos/contracts";
@@ -78,6 +83,13 @@ type ProviderDraft = {
   search: string;
   loaded: boolean;
   discoveryLoaded: boolean;
+  providerConfig: AddModelsProviderConfigSummary | null;
+};
+
+type ProviderDangerAction = {
+  kind: "disconnect-credential" | "delete-provider";
+  providerId: AddModelsProviderId;
+  impact: AddModelsProviderDisconnectImpact;
 };
 
 type SidebarFilter = "available" | "providers" | "catalog" | "local-models" | "defaults";
@@ -99,7 +111,8 @@ const initialDraftState = (): ProviderDraft => ({
   manualModelId: "",
   search: "",
   loaded: false,
-  discoveryLoaded: false
+  discoveryLoaded: false,
+  providerConfig: null
 });
 
 const CATALOG_PAGE_SIZE = 15;
@@ -138,6 +151,14 @@ export function AddModelsDialog({
   const [sidebarFilter, setSidebarFilter] = useState<SidebarFilter>("providers");
   const [explicitProviderIds, setExplicitProviderIds] = useState<string[]>([]);
   const [switchAccountProviderId, setSwitchAccountProviderId] = useState<AddModelsProviderId | null>(null);
+  const [connectionEditorOpen, setConnectionEditorOpen] = useState(false);
+  const [connectionEditorEndpoint, setConnectionEditorEndpoint] = useState("");
+  const [connectionEditorApi, setConnectionEditorApi] = useState("openai-completions");
+  const [connectionEditorCredential, setConnectionEditorCredential] = useState("");
+  const [isSavingConnection, setIsSavingConnection] = useState(false);
+  const [dangerAction, setDangerAction] = useState<ProviderDangerAction | null>(null);
+  const [isLoadingDangerImpact, setIsLoadingDangerImpact] = useState(false);
+  const [isApplyingDangerAction, setIsApplyingDangerAction] = useState(false);
   const providerSettingsRef = useRef<HTMLElement | null>(null);
   const {
     models: globalCatalogModels,
@@ -146,9 +167,11 @@ export function AddModelsDialog({
     warning: globalCatalogWarning,
     source: globalCatalogSource,
     age: globalCatalogAge,
+    checkedAt: globalCatalogCheckedAt,
+    stale: globalCatalogStale,
     refresh: refreshGlobalCatalog
   } = useModelCatalog({
-    enabled: open && activeTab === "catalog",
+    enabled: open,
     snapshot
   });
   const handleInitialProviderOpen = useEffectEvent((providerId: AddModelsProviderId) => {
@@ -166,6 +189,7 @@ export function AddModelsDialog({
               id?: string;
               baseUrl?: string | null;
               modelCount?: number;
+              api?: string | null;
             }>;
             error?: string;
           }
@@ -195,6 +219,17 @@ export function AddModelsDialog({
           next[providerId] = {
             ...currentDraft,
             endpoint: provider.baseUrl ?? currentDraft.endpoint,
+            providerConfig: {
+              provider: providerId,
+              kind: isBuiltInAddModelsProviderId(providerId) ? "builtin" : "custom",
+              providerId,
+              baseUrl: provider.baseUrl ?? null,
+              api: provider.api ?? null,
+              modelCount: provider.modelCount ?? 0,
+              credentialConfigured: false,
+              endpointOverride: Boolean(provider.baseUrl),
+              editable: true
+            },
             connection: {
               provider: providerId,
               connected: Boolean(provider.baseUrl),
@@ -230,6 +265,14 @@ export function AddModelsDialog({
       setCatalogSearch("");
       setCatalogVisibleCount(CATALOG_PAGE_SIZE);
       setSwitchAccountProviderId(null);
+      setConnectionEditorOpen(false);
+      setConnectionEditorEndpoint("");
+      setConnectionEditorApi("openai-completions");
+      setConnectionEditorCredential("");
+      setDangerAction(null);
+      setIsSavingConnection(false);
+      setIsLoadingDangerImpact(false);
+      setIsApplyingDangerAction(false);
       setProviderDrafts((current) =>
         Object.fromEntries(
           Object.entries(current).map(([providerId, draft]) => [
@@ -472,7 +515,12 @@ export function AddModelsDialog({
       activeSetupMode !== "custom-openai-compatible" &&
       activeDraft.models.length === 0
   );
-  const showProviderConnectionForm = Boolean(activeProviderId && activeDescriptor && activeDescriptor.connectKind === "apiKey");
+  const showProviderConnectionForm = Boolean(
+    activeProviderId &&
+      activeDescriptor &&
+      activeDescriptor.connectKind === "apiKey" &&
+      (activeSetupMode === "custom-openai-compatible" || !activeConnectionReady)
+  );
   const isDiscovering = activeDraft.flowState === "discovery-loading";
   const isDisconnecting = activeDraft.flowState === "disconnecting";
   const discoveryActionLabel =
@@ -849,99 +897,179 @@ export function AddModelsDialog({
     }
   }
 
-  async function disconnectProvider(providerId: AddModelsProviderId) {
+  async function openConnectionEditor(providerId: AddModelsProviderId) {
     const adapter = getModelProviderAdapter(providerId);
-    const descriptor = getModelProviderDescriptor(providerId);
-
-    updateDraft(providerId, {
-      flowState: "disconnecting",
-      errorMessage: null,
-      statusMessage: `Checking ${descriptor.shortLabel} disconnect impact...`
-    });
 
     try {
-      const preview = await adapter.getDisconnectImpact();
-      const impact = preview.disconnectImpact;
+      const result = await adapter.getConnectionStatus();
+      const providerConfig = result.providerConfig ??
+        resolveDraft(providerDrafts[providerId]).providerConfig;
 
-      if (!impact) {
-        throw new Error("OpenClaw did not return provider disconnect impact details.");
-      }
-
-      if (impact.blockedReason) {
-        throw new Error(impact.blockedReason);
-      }
-
-      const affectedAgentNames = impact.affectedAgents.map((agent) => agent.name).join(", ");
-      const confirmationLines = [
-        `Disconnect ${descriptor.shortLabel}?`,
-        `This removes ${impact.providerModelIds.length} configured model${impact.providerModelIds.length === 1 ? "" : "s"}.`,
-        impact.affectedAgents.length > 0
-          ? `${impact.affectedAgents.length} affected agent${impact.affectedAgents.length === 1 ? "" : "s"} (${affectedAgentNames}) will move to ${impact.replacementModelId}.`
-          : "No agents currently use this provider.",
-        impact.defaultModelAffected
-          ? `The OpenClaw global default will move to ${impact.replacementModelId}.`
-          : "The OpenClaw global default is not affected.",
-        impact.credentialCleanup === "retained-unsupported"
-          ? "OpenClaw does not expose credential deletion yet. Reconnecting will replace its retained default credential."
-          : "Provider configuration will be removed."
-      ];
-
-      if (!window.confirm(confirmationLines.join("\n\n"))) {
-        updateDraft(providerId, {
-          flowState: "idle",
-          statusMessage: `Disconnect canceled. ${descriptor.shortLabel} remains connected.`
+      if (!providerConfig?.editable) {
+        toast.error("Connection settings are managed by OpenClaw.", {
+          description: `${getModelProviderDescriptor(providerId).shortLabel} does not expose editable API-key settings here.`
         });
         return;
       }
 
-      updateDraft(providerId, {
-        flowState: "disconnecting",
-        statusMessage: `Disconnecting ${descriptor.shortLabel}...`
+      applyActionResult(providerId, result, "idle");
+
+      setConnectionEditorEndpoint(providerConfig.baseUrl ?? "");
+      setConnectionEditorApi(providerConfig.api ?? "openai-completions");
+      setConnectionEditorCredential("");
+      setConnectionEditorOpen(true);
+    } catch (error) {
+      toast.error("Connection settings could not be loaded.", {
+        description: error instanceof Error ? error.message : "OpenClaw provider configuration is unavailable."
       });
-      const result = await adapter.disconnect();
+    }
+  }
+
+  async function saveConnectionEditor() {
+    if (!activeProviderId) {
+      return;
+    }
+
+    const adapter = getModelProviderAdapter(activeProviderId);
+    const providerConfig = activeDraft.providerConfig;
+
+    if (!providerConfig) {
+      return;
+    }
+
+    setIsSavingConnection(true);
+
+    try {
+      let result: AddModelsProviderActionResult | null = null;
+      const endpoint = connectionEditorEndpoint.trim();
+      const endpointChanged = endpoint !== (providerConfig.baseUrl ?? "");
+      const apiChanged = providerConfig.kind === "custom" &&
+        connectionEditorApi !== (providerConfig.api ?? "openai-completions");
+
+      if (endpointChanged || apiChanged) {
+        result = await adapter.updateProvider({
+          endpoint: endpoint || null,
+          api: providerConfig.kind === "custom" ? connectionEditorApi : undefined
+        });
+      }
+
+      if (connectionEditorCredential.trim()) {
+        result = await adapter.replaceCredential(connectionEditorCredential);
+      }
+
+      if (result) {
+        applyActionResult(activeProviderId, result, "idle", {
+          apiKey: "",
+          endpoint: result.providerConfig?.baseUrl ?? endpoint,
+          providerConfig: result.providerConfig ?? providerConfig
+        });
+      }
+
+      setConnectionEditorCredential("");
+      setConnectionEditorOpen(false);
+      await runStatus(activeProviderId);
+      toast.success("Connection settings saved.", {
+        description: connectionEditorCredential.trim()
+          ? "The credential was replaced without exposing its stored value."
+          : "OpenClaw provider settings were updated."
+      });
+    } catch (error) {
+      toast.error("Connection settings were not saved.", {
+        description: error instanceof Error ? error.message : "OpenClaw rejected the provider configuration."
+      });
+    } finally {
+      setIsSavingConnection(false);
+    }
+  }
+
+  async function requestProviderDangerAction(
+    providerId: AddModelsProviderId,
+    kind: ProviderDangerAction["kind"]
+  ) {
+    const adapter = getModelProviderAdapter(providerId);
+    setIsLoadingDangerImpact(true);
+
+    try {
+      const preview = kind === "delete-provider"
+        ? await adapter.getDeleteImpact()
+        : await adapter.getCredentialDisconnectImpact();
+      const impact = preview.disconnectImpact;
+
+      if (!impact) {
+        throw new Error("OpenClaw did not return provider impact details.");
+      }
+
+      setDangerAction({ kind, providerId, impact });
+    } catch (error) {
+      toast.error(kind === "delete-provider" ? "Provider cannot be deleted." : "Credential cannot be disconnected.", {
+        description: error instanceof Error ? error.message : "OpenClaw provider impact could not be inspected."
+      });
+    } finally {
+      setIsLoadingDangerImpact(false);
+    }
+  }
+
+  async function applyProviderDangerAction() {
+    if (!dangerAction) {
+      return;
+    }
+
+    const { providerId, kind } = dangerAction;
+    const adapter = getModelProviderAdapter(providerId);
+    const descriptor = getModelProviderDescriptor(providerId);
+    setIsApplyingDangerAction(true);
+    updateDraft(providerId, {
+      flowState: "disconnecting",
+      errorMessage: null,
+      statusMessage: kind === "delete-provider"
+        ? `Deleting ${descriptor.shortLabel}...`
+        : `Disconnecting ${descriptor.shortLabel} credential...`
+    });
+
+    try {
+      const result = kind === "delete-provider"
+        ? await adapter.deleteProvider()
+        : await adapter.disconnectCredential();
+      const currentDraft = resolveDraft(providerDrafts[providerId]);
 
       applyActionResult(providerId, result, "idle", {
         apiKey: "",
-        endpoint: "",
-        models: [],
-        selectedModelIds: [],
-        discoveryLoaded: false,
-        manualCommand: null
+        endpoint: kind === "delete-provider" ? "" : currentDraft.endpoint,
+        models: kind === "delete-provider" ? [] : currentDraft.models,
+        selectedModelIds: kind === "delete-provider" ? [] : currentDraft.selectedModelIds,
+        discoveryLoaded: kind === "delete-provider" ? false : currentDraft.discoveryLoaded,
+        manualCommand: null,
+        providerConfig: kind === "delete-provider" ? null : result.providerConfig ?? currentDraft.providerConfig
       });
 
       if (result.snapshot) {
         onSnapshotChange(result.snapshot);
       }
 
-      if (!isBuiltInAddModelsProviderId(providerId)) {
+      if (kind === "delete-provider") {
         setExplicitProviderIds((current) => current.filter((entry) => entry !== providerId));
+        setActiveProvider(null);
       }
 
+      setDangerAction(null);
       setSidebarFilter("providers");
-
-      toast.success(`${descriptor.shortLabel} disconnected.`, {
-        description: result.message
-      });
+      toast.success(
+        kind === "delete-provider"
+          ? `${descriptor.shortLabel} deleted.`
+          : `${descriptor.shortLabel} credential disconnected.`,
+        { description: result.message }
+      );
     } catch (error) {
-      const actionResult = readProviderActionErrorResult(error);
-      const errorMessage = error instanceof Error ? error.message : "Provider disconnect failed.";
-
-      if (actionResult) {
-        applyActionResult(providerId, actionResult, "auth-error", {
-          errorMessage,
-          statusMessage: `Disconnect blocked. ${descriptor.shortLabel} remains connected.`
-        });
-      } else {
-        updateDraft(providerId, {
-          flowState: "auth-error",
-          errorMessage,
-          statusMessage: `Disconnect failed. ${descriptor.shortLabel} remains connected.`
-        });
-      }
-
-      toast.error(`${descriptor.shortLabel} was not disconnected.`, {
-        description: errorMessage
+      updateDraft(providerId, {
+        flowState: "auth-error",
+        errorMessage: error instanceof Error ? error.message : "Provider action failed.",
+        statusMessage: `${descriptor.shortLabel} was not changed.`
       });
+      toast.error(`${descriptor.shortLabel} was not changed.`, {
+        description: error instanceof Error ? error.message : "OpenClaw rejected the provider action."
+      });
+    } finally {
+      setIsApplyingDangerAction(false);
     }
   }
 
@@ -1201,6 +1329,7 @@ export function AddModelsDialog({
           emptyState: result.emptyState ?? null,
           manualCommand: result.manualCommand ?? null,
           docsUrl: result.docsUrl ?? null,
+          providerConfig: result.providerConfig ?? currentDraft.providerConfig,
           models: shouldPreserveDiscoveredModels ? currentDraft.models : result.models,
           loaded: true,
           discoveryLoaded:
@@ -1540,6 +1669,18 @@ export function AddModelsDialog({
                       <Badge variant="muted" className="px-2.5 py-1 text-[0.66rem]">
                         {activeDraft.loaded ? "Selected provider loaded" : "Select a provider"}
                       </Badge>
+                      <Badge
+                        variant={globalCatalogStale || globalCatalogWarning ? "warning" : "success"}
+                        className="px-2.5 py-1 text-[0.66rem]"
+                      >
+                        {globalCatalogStale
+                          ? "Catalog stale"
+                          : globalCatalogSource === "openclaw"
+                            ? "OpenClaw verified"
+                            : globalCatalogSource
+                              ? "Degraded evidence"
+                              : "Checking OpenClaw"}
+                      </Badge>
                       <Button
                         type="button"
                         className={cn(
@@ -1557,6 +1698,18 @@ export function AddModelsDialog({
                       >
                         <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", isLight ? "text-primary" : "text-white")} />
                         Refresh selected
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="h-7 rounded-[9px] px-2.5 text-[0.66rem]"
+                        disabled={isLoadingGlobalCatalog}
+                        onClick={() => {
+                          void refreshGlobalCatalog(true);
+                        }}
+                      >
+                        <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", isLoadingGlobalCatalog && "animate-spin")} />
+                        Reconcile library
                       </Button>
                     </div>
                   </div>
@@ -2569,9 +2722,18 @@ export function AddModelsDialog({
                                 : "border-white/10 bg-white/[0.04] hover:border-violet-300/30 hover:bg-violet-400/10"
                             )}
                             onClick={() => {
-                              void runStatus(activeProviderId);
+                              void openConnectionEditor(activeProviderId);
                             }}
-                            disabled={isDisconnecting}
+                            disabled={
+                              isDisconnecting ||
+                              activeDescriptor.connectKind === "oauth" ||
+                              activeDescriptor.connectKind === "local"
+                            }
+                            title={
+                              activeDescriptor.connectKind === "oauth" || activeDescriptor.connectKind === "local"
+                                ? "This provider connection is managed by OpenClaw."
+                                : undefined
+                            }
                           >
                             <Settings className={cn("h-4 w-4", isLight ? "text-primary" : "text-slate-300")} />
                             <span>
@@ -2581,29 +2743,65 @@ export function AddModelsDialog({
                           </button>
                           <button
                             type="button"
-                            disabled={activeDraft.flowState === "disconnecting"}
+                            disabled={
+                              activeDraft.flowState === "disconnecting" ||
+                              isLoadingDangerImpact ||
+                              activeDescriptor.connectKind === "oauth" ||
+                              activeDescriptor.connectKind === "local"
+                            }
                             className={cn(
-                              "flex w-full items-center gap-2.5 rounded-[12px] border px-3 py-2.5 text-left transition disabled:cursor-wait disabled:opacity-70",
-                              isLight ? "border-rose-200 bg-rose-50" : "border-rose-400/20 bg-rose-500/[0.07]"
+                              "flex w-full items-center gap-2.5 rounded-[12px] border px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-60",
+                              isLight
+                                ? "border-border bg-card text-foreground hover:border-amber-300 hover:bg-amber-50"
+                                : "border-white/10 bg-white/[0.04] hover:border-amber-300/30 hover:bg-amber-400/[0.08]"
                             )}
                             onClick={() => {
-                              void disconnectProvider(activeProviderId);
+                              void requestProviderDangerAction(activeProviderId, "disconnect-credential");
                             }}
                           >
-                            {activeDraft.flowState === "disconnecting" ? (
-                              <LoaderCircle className={cn("h-4 w-4 animate-spin", isLight ? "text-rose-700" : "text-rose-300")} />
+                            {activeDraft.flowState === "disconnecting" || isLoadingDangerImpact ? (
+                              <LoaderCircle className={cn("h-4 w-4 animate-spin", isLight ? "text-amber-700" : "text-amber-300")} />
                             ) : (
-                              <Trash2 className={cn("h-4 w-4", isLight ? "text-rose-700" : "text-rose-300")} />
+                              <KeyRound className={cn("h-4 w-4", isLight ? "text-amber-700" : "text-amber-300")} />
                             )}
                             <span>
-                              <span className={cn("block text-[0.78rem] font-medium", isLight ? "text-rose-800" : "text-rose-200")}>
-                                {activeDraft.flowState === "disconnecting" ? "Disconnecting..." : "Disconnect"}
+                              <span className={cn("block text-[0.78rem] font-medium", isLight ? "text-foreground" : "text-white")}>
+                                Disconnect credential
                               </span>
-                              <span className={cn("block text-[0.66rem]", isLight ? "text-rose-700" : "text-rose-300/80")}>Remove provider models and safely reassign agents</span>
+                              <span className={cn("block text-[0.66rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
+                                Keep configured models and remove API access
+                              </span>
                             </span>
                           </button>
                         </div>
                       </div>
+
+                      {!isBuiltInAddModelsProviderId(activeProviderId) ? (
+                        <div className={cn("mt-4 border-t pt-4", isLight ? "border-rose-200" : "border-rose-400/20")}>
+                          <p className={cn("font-display text-[0.84rem]", isLight ? "text-rose-800" : "text-rose-200")}>Danger zone</p>
+                          <button
+                            type="button"
+                            disabled={activeDraft.flowState === "disconnecting" || isLoadingDangerImpact}
+                            className={cn(
+                              "mt-3 flex w-full items-center gap-2.5 rounded-[12px] border px-3 py-2.5 text-left transition disabled:cursor-wait disabled:opacity-70",
+                              isLight ? "border-rose-200 bg-rose-50 hover:bg-rose-100" : "border-rose-400/20 bg-rose-500/[0.07] hover:bg-rose-500/[0.12]"
+                            )}
+                            onClick={() => {
+                              void requestProviderDangerAction(activeProviderId, "delete-provider");
+                            }}
+                          >
+                            <Trash2 className={cn("h-4 w-4", isLight ? "text-rose-700" : "text-rose-300")} />
+                            <span>
+                              <span className={cn("block text-[0.78rem] font-medium", isLight ? "text-rose-800" : "text-rose-200")}>
+                                Delete custom provider
+                              </span>
+                              <span className={cn("block text-[0.66rem]", isLight ? "text-rose-700" : "text-rose-300/80")}>
+                                Remove its models, credential, and OpenClaw definition
+                              </span>
+                            </span>
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
                     <div className={cn("flex h-full min-h-[260px] items-center justify-center rounded-[16px] border border-dashed text-center", isLight ? "border-border bg-muted/35" : "border-white/10")}>
@@ -2644,6 +2842,28 @@ export function AddModelsDialog({
                     </span>{" "}
                     {globalCatalogWarning}
                     {typeof globalCatalogAge === "number" && globalCatalogAge > 0 ? ` Age: ${formatCatalogAge(globalCatalogAge)}.` : ""}
+                  </div>
+                ) : null}
+
+                {globalCatalogSource ? (
+                  <div className={cn("flex flex-wrap items-center justify-between gap-2 rounded-[14px] border px-3 py-2 text-[9px]", isLight ? "border-border bg-muted/30 text-muted-foreground" : "border-white/10 bg-white/[0.03] text-slate-400")}>
+                    <span>
+                      Source:{" "}
+                      <span className={cn("font-semibold", isLight ? "text-foreground" : "text-slate-200")}>
+                        {globalCatalogSource === "openclaw"
+                          ? "Live OpenClaw catalog"
+                          : globalCatalogSource === "openclaw-cache"
+                            ? "Cached OpenClaw catalog"
+                            : "Snapshot-derived catalog"}
+                      </span>
+                    </span>
+                    <span>
+                      {typeof globalCatalogAge === "number" && globalCatalogAge > 0
+                        ? `Updated ${formatCatalogAge(globalCatalogAge)} ago`
+                        : globalCatalogCheckedAt
+                          ? `Checked ${new Date(globalCatalogCheckedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                          : "Checking OpenClaw"}
+                    </span>
                   </div>
                 ) : null}
 
@@ -2809,6 +3029,270 @@ export function AddModelsDialog({
             </div>
           </DialogContent>
         </Dialog>
+        <Dialog
+          open={connectionEditorOpen}
+          onOpenChange={(nextOpen) => {
+            if (!isSavingConnection) {
+              setConnectionEditorOpen(nextOpen);
+              if (!nextOpen) {
+                setConnectionEditorCredential("");
+              }
+            }
+          }}
+        >
+          <DialogContent
+            className={cn(
+              "flex h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-auto sm:max-h-[86dvh] sm:w-[min(92vw,560px)] sm:max-w-[560px] sm:rounded-[22px] sm:border",
+              isLight
+                ? "border-border bg-card text-card-foreground shadow-[0_30px_90px_rgba(63,47,34,0.18)]"
+                : "border-white/10 bg-[#090d17] text-white shadow-[0_30px_90px_rgba(0,0,0,0.58)]"
+            )}
+          >
+            <DialogHeader className={cn("shrink-0 border-b px-5 py-4 text-left", isLight ? "border-border" : "border-white/10")}>
+              <DialogTitle className="font-display text-[1.05rem]">Connection settings</DialogTitle>
+              <DialogDescription className={cn("mt-1 text-[0.76rem] leading-5", isLight ? "text-muted-foreground" : "text-slate-400")}>
+                Edit the OpenClaw provider overlay or replace its stored credential.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              <div className="space-y-4">
+                <div>
+                  <label className={cn("text-[0.68rem] font-medium", isLight ? "text-foreground" : "text-slate-200")}>Provider ID</label>
+                  <Input
+                    value={activeProviderId ?? ""}
+                    readOnly
+                    className="mt-1.5 h-9 font-mono text-[0.72rem]"
+                  />
+                  <p className={cn("mt-1.5 text-[0.66rem] leading-4", isLight ? "text-muted-foreground" : "text-slate-500")}>
+                    Provider IDs are immutable because OpenClaw model references use this namespace.
+                  </p>
+                </div>
+
+                <div>
+                  <label className={cn("text-[0.68rem] font-medium", isLight ? "text-foreground" : "text-slate-200")}>Base URL</label>
+                  <Input
+                    type="url"
+                    value={connectionEditorEndpoint}
+                    onChange={(event) => setConnectionEditorEndpoint(event.target.value)}
+                    placeholder={
+                      activeDraft.providerConfig?.kind === "custom"
+                        ? "https://provider.example/v1"
+                        : "Use OpenClaw default"
+                    }
+                    className="mt-1.5 h-9 text-[0.72rem]"
+                  />
+                  <p className={cn("mt-1.5 text-[0.66rem] leading-4", isLight ? "text-muted-foreground" : "text-slate-500")}>
+                    {activeDraft.providerConfig?.kind === "custom"
+                      ? "Custom providers require a valid HTTP or HTTPS endpoint."
+                      : "Leave blank to remove the override and use OpenClaw's bundled endpoint."}
+                  </p>
+                </div>
+
+                {activeDraft.providerConfig?.kind === "custom" ? (
+                  <div>
+                    <label className={cn("text-[0.68rem] font-medium", isLight ? "text-foreground" : "text-slate-200")}>API mode</label>
+                    <select
+                      value={connectionEditorApi}
+                      onChange={(event) => setConnectionEditorApi(event.target.value)}
+                      className={cn(
+                        "mt-1.5 h-9 w-full rounded-md border px-3 text-[0.72rem] outline-none focus:ring-2 focus:ring-violet-500/30",
+                        isLight ? "border-border bg-background text-foreground" : "border-white/10 bg-slate-950 text-white"
+                      )}
+                    >
+                      <option value="openai-completions">OpenAI Completions</option>
+                      <option value="openai-responses">OpenAI Responses</option>
+                      <option value="anthropic-messages">Anthropic Messages</option>
+                      <option value="google-generative-ai">Google Generative AI</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div className={cn("rounded-md border px-3 py-2.5", isLight ? "border-border bg-muted/40" : "border-white/10 bg-white/[0.03]")}>
+                    <p className={cn("text-[0.68rem] font-medium", isLight ? "text-foreground" : "text-slate-200")}>Bundled API mode</p>
+                    <p className={cn("mt-1 text-[0.66rem] leading-4", isLight ? "text-muted-foreground" : "text-slate-400")}>
+                      OpenClaw owns the transport mode for bundled providers.
+                    </p>
+                  </div>
+                )}
+
+                <div className={cn("rounded-md border p-3", isLight ? "border-border bg-muted/35" : "border-white/10 bg-white/[0.03]")}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className={cn("text-[0.7rem] font-medium", isLight ? "text-foreground" : "text-white")}>Credential</p>
+                      <p className={cn("mt-0.5 text-[0.64rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
+                        {activeDraft.providerConfig?.credentialConfigured ? "Configured in OpenClaw" : "Not configured"}
+                      </p>
+                    </div>
+                    <Badge variant={activeDraft.providerConfig?.credentialConfigured ? "success" : "muted"}>
+                      {activeDraft.providerConfig?.credentialConfigured ? "Configured" : "Missing"}
+                    </Badge>
+                  </div>
+                  <Input
+                    type="password"
+                    value={connectionEditorCredential}
+                    onChange={(event) => setConnectionEditorCredential(event.target.value)}
+                    placeholder="Leave blank to keep the current credential"
+                    className="mt-3 h-9 text-[0.72rem]"
+                    autoComplete="new-password"
+                  />
+                  <p className={cn("mt-1.5 text-[0.64rem] leading-4", isLight ? "text-muted-foreground" : "text-slate-500")}>
+                    AgentOS never reads the stored value back. Entering a new key replaces it.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className={cn("shrink-0 flex-row border-t px-5 py-4", isLight ? "border-border" : "border-white/10")}>
+              <Button
+                type="button"
+                variant="secondary"
+                className="flex-1 sm:flex-none"
+                disabled={isSavingConnection}
+                onClick={() => setConnectionEditorOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 sm:flex-none"
+                disabled={
+                  isSavingConnection ||
+                  (activeDraft.providerConfig?.kind === "custom" && !connectionEditorEndpoint.trim())
+                }
+                onClick={() => {
+                  void saveConnectionEditor();
+                }}
+              >
+                {isSavingConnection ? (
+                  <>
+                    <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save connection"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={dangerAction !== null}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen && !isApplyingDangerAction) {
+              setDangerAction(null);
+            }
+          }}
+        >
+          <DialogContent
+            className={cn(
+              "w-[min(94vw,520px)] rounded-[20px] p-0",
+              isLight
+                ? "border-rose-200 bg-card text-card-foreground shadow-[0_30px_90px_rgba(63,47,34,0.18)]"
+                : "border-rose-400/20 bg-[#0b0d15] text-white shadow-[0_30px_90px_rgba(0,0,0,0.58)]"
+            )}
+          >
+            <DialogHeader className={cn("border-b px-5 py-4 text-left", isLight ? "border-rose-200" : "border-rose-400/20")}>
+              <div className="flex items-start gap-3">
+                <span className={cn("mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md", isLight ? "bg-rose-100 text-rose-700" : "bg-rose-500/10 text-rose-300")}>
+                  <AlertTriangle className="h-4 w-4" />
+                </span>
+                <div>
+                  <DialogTitle className="font-display text-[1rem]">
+                    {dangerAction?.kind === "delete-provider" ? "Delete custom provider?" : "Disconnect provider credential?"}
+                  </DialogTitle>
+                  <DialogDescription className={cn("mt-1 text-[0.72rem] leading-5", isLight ? "text-muted-foreground" : "text-slate-400")}>
+                    Review the OpenClaw impact before applying this change.
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            {dangerAction ? (
+              <div className="space-y-3 px-5 py-4 text-[0.72rem]">
+                <ImpactRow
+                  label="Configured models"
+                  value={
+                    dangerAction.kind === "delete-provider"
+                      ? `${dangerAction.impact.providerModelIds.length} will be removed`
+                      : `${dangerAction.impact.providerModelIds.length} will be kept`
+                  }
+                  surfaceTheme={surfaceTheme}
+                />
+                <ImpactRow
+                  label="Affected agents"
+                  value={
+                    dangerAction.impact.affectedAgents.length > 0
+                      ? dangerAction.impact.replacementModelId
+                        ? `${dangerAction.impact.affectedAgents.length} will move to ${dangerAction.impact.replacementModelId}`
+                        : `${dangerAction.impact.affectedAgents.length} affected; no replacement available`
+                      : "None"
+                  }
+                  surfaceTheme={surfaceTheme}
+                />
+                <ImpactRow
+                  label="Global default"
+                  value={
+                    dangerAction.impact.defaultModelAffected
+                      ? dangerAction.impact.replacementModelId
+                        ? `Moves to ${dangerAction.impact.replacementModelId}`
+                        : "No replacement available"
+                      : "Unchanged"
+                  }
+                  surfaceTheme={surfaceTheme}
+                />
+                <ImpactRow
+                  label="Credential"
+                  value={
+                    dangerAction.impact.credentialCleanup === "removed"
+                      ? "Removed from OpenClaw config"
+                      : dangerAction.impact.credentialCleanup === "not-required"
+                        ? "Not applicable"
+                        : "Removal unsupported"
+                  }
+                  surfaceTheme={surfaceTheme}
+                />
+                {dangerAction.impact.blockedReason ? (
+                  <div className={cn("rounded-md border px-3 py-2", isLight ? "border-rose-200 bg-rose-50 text-rose-800" : "border-rose-400/20 bg-rose-500/[0.08] text-rose-200")}>
+                    {dangerAction.impact.blockedReason}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <DialogFooter className={cn("flex-row border-t px-5 py-4", isLight ? "border-border" : "border-white/10")}>
+              <Button
+                type="button"
+                variant="secondary"
+                className="flex-1 sm:flex-none"
+                disabled={isApplyingDangerAction}
+                onClick={() => setDangerAction(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                className="flex-1 sm:flex-none"
+                disabled={isApplyingDangerAction || Boolean(dangerAction?.impact.blockedReason)}
+                onClick={() => {
+                  void applyProviderDangerAction();
+                }}
+              >
+                {isApplyingDangerAction ? (
+                  <>
+                    <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                    Applying...
+                  </>
+                ) : dangerAction?.kind === "delete-provider" ? (
+                  "Delete provider"
+                ) : (
+                  "Disconnect credential"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
       </Dialog>
     </>
@@ -2891,6 +3375,25 @@ function InspectorMetric({
 
 function resolveDraft(draft?: ProviderDraft): ProviderDraft {
   return draft ? { ...initialDraftState(), ...draft } : initialDraftState();
+}
+
+function ImpactRow({
+  label,
+  value,
+  surfaceTheme
+}: {
+  label: string;
+  value: string;
+  surfaceTheme: "dark" | "light";
+}) {
+  const isLight = surfaceTheme === "light";
+
+  return (
+    <div className={cn("flex items-start justify-between gap-4 rounded-md border px-3 py-2.5", isLight ? "border-border bg-muted/35" : "border-white/10 bg-white/[0.03]")}>
+      <span className={cn("text-[0.68rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>{label}</span>
+      <span className={cn("max-w-[65%] text-right text-[0.7rem] font-medium", isLight ? "text-foreground" : "text-slate-100")}>{value}</span>
+    </div>
+  );
 }
 
 function resolveCustomDraftProviderId(draft: ProviderDraft) {
@@ -3074,6 +3577,14 @@ function resolveProviderConnectionLabel(
 
   if (connection.degraded) {
     return connection.connected ? "Degraded" : "Needs reconnect";
+  }
+
+  if (connection.verification === "credential-stored") {
+    return "Credential stored";
+  }
+
+  if (connection.verification === "verified") {
+    return "Verified";
   }
 
   if (isProviderConnectionReady(connection)) {

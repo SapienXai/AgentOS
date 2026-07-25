@@ -73,6 +73,7 @@ export type {
   AddModelsProviderActionResult,
   AddModelsProviderCategory,
   AddModelsProviderConnectKind,
+  AddModelsProviderConfigSummary,
   AddModelsProviderConnectionStatus,
   AddModelsProviderDisconnectImpact,
   AddModelsModelRemoveImpact,

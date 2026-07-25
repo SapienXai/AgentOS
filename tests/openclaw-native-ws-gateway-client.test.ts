@@ -461,6 +461,40 @@ test("Railway rejects Gateway lifecycle control without invoking the CLI fallbac
   }
 });
 
+test("session model reset uses native sessions.patch without CLI fallback", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect" ? { protocol: 3 } : { ok: true }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await client.patchSessionModel({
+    key: "agent:researcher:main",
+    agentId: "researcher",
+    model: null
+  });
+
+  const patchFrame = sentFrames.find((frame) => frame.method === "sessions.patch");
+  assert.deepEqual(patchFrame?.params, {
+    key: "agent:researcher:main",
+    agentId: "researcher",
+    model: null
+  });
+  assert.equal(fallback.calls.length, 0);
+});
+
 test("native WS gateway client reuses one persistent handshake for multiple RPCs", async () => {
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
@@ -2327,6 +2361,71 @@ test("native WS gateway client persists agents.list even when the Gateway snapsh
     raw: JSON.stringify({ agents: { list: [{ id: "agent-1", workspace: "/workspace" }] } }),
     replacePaths: ["agents.list[].skills"],
     baseHash: "hash-1"
+  });
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("native WS gateway config object replacement removes omitted members with merge-patch tombstones", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? { protocol: 4 }
+          : frame.method === "config.get"
+            ? {
+                exists: true,
+                valid: false,
+                hash: "hash-provider",
+                config: {
+                  models: {
+                    providers: {
+                      openrouter: {
+                        baseUrl: "",
+                        models: [{ id: "auto" }]
+                      }
+                    }
+                  }
+                }
+              }
+            : { ok: true }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await client.setConfig("models.providers.openrouter", {
+    apiKey: "sk-or-test",
+    models: [{ id: "auto" }]
+  });
+
+  assert.deepEqual(sentFrames.map((frame) => frame.method), [
+    "connect",
+    "config.get",
+    "config.schema.lookup",
+    "config.patch"
+  ]);
+  assert.deepEqual(sentFrames[3]?.params, {
+    raw: JSON.stringify({
+      models: {
+        providers: {
+          openrouter: {
+            baseUrl: null,
+            apiKey: "sk-or-test",
+            models: [{ id: "auto" }]
+          }
+        }
+      }
+    }),
+    baseHash: "hash-provider"
   });
   assert.deepEqual(fallback.calls, []);
 });

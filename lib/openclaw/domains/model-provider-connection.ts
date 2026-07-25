@@ -10,6 +10,51 @@ type ModelProviderMetadata = {
   tags?: string[] | null;
 };
 
+/**
+ * OpenClaw models.status reports auth profiles, but config-backed provider
+ * apiKeys are intentionally redacted from that payload. Project only the
+ * presence of a Gateway-stored credential into normalized status so operator
+ * UI can accurately mark those model routes usable without exposing a secret.
+ */
+export function mergeModelStatusWithGatewayCredentials(
+  modelStatus: ModelsStatusPayload | null | undefined,
+  credentialProviders: Iterable<AddModelsProviderId>
+): ModelsStatusPayload | null {
+  const providersWithCredentials = new Set(credentialProviders);
+
+  if (providersWithCredentials.size === 0) {
+    return modelStatus ?? null;
+  }
+
+  const status: ModelsStatusPayload = modelStatus ? structuredClone(modelStatus) : {};
+  const existingProviders = status.auth?.providers ?? [];
+  const byProvider = new Map(
+    existingProviders
+      .filter((entry): entry is NonNullable<typeof entry> & { provider: string } => Boolean(entry.provider))
+      .map((entry) => [entry.provider, entry])
+  );
+
+  for (const provider of providersWithCredentials) {
+    const existing = byProvider.get(provider);
+    byProvider.set(provider, {
+      ...existing,
+      provider,
+      effective: existing?.effective ?? { kind: "api-key", detail: "Gateway config credential" },
+      profiles: {
+        ...existing?.profiles,
+        count: Math.max(existing?.profiles?.count ?? 0, 1)
+      }
+    });
+  }
+
+  status.auth = {
+    ...status.auth,
+    providers: Array.from(byProvider.values())
+  };
+
+  return status;
+}
+
 export function buildModelStatusConnectionStatus(
   provider: AddModelsProviderId,
   modelStatus: ModelsStatusPayload | null,
@@ -63,6 +108,7 @@ export function buildModelStatusConnectionStatus(
   return {
     provider,
     connected,
+    verification: connected ? "credential-stored" : "not-configured",
     canConnect: true,
     needsTerminal: descriptor.connectKind === "oauth",
     source: "gateway",

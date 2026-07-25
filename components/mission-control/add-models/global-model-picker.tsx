@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { AlertTriangle, Check, Lock, Search, LoaderCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -53,7 +55,14 @@ export function GlobalModelPicker({
   surfaceTheme?: "dark" | "light";
 }) {
   const isLight = surfaceTheme === "light";
-  const filteredModels = filterModels(models, search);
+  const [showNeedsSetup, setShowNeedsSetup] = useState(false);
+  const setupModelCount = models.filter(
+    (model) => !model.alreadyAdded && (model.available === false || model.missing)
+  ).length;
+  const catalogModels = showNeedsSetup
+    ? models
+    : models.filter((model) => model.alreadyAdded || (model.available !== false && !model.missing));
+  const filteredModels = filterModels(catalogModels, search);
   const showAllMatches = search.trim().length > 0;
   const visibleModels = showAllMatches ? filteredModels : filteredModels.slice(0, visibleModelCount);
   const hasMoreModels = !showAllMatches && visibleModelCount < filteredModels.length;
@@ -84,7 +93,7 @@ export function GlobalModelPicker({
         <div>
           <p className={cn("font-display text-[0.78rem]", isLight ? "text-foreground" : "text-white")}>Catalog</p>
           <p className={cn("mt-0.5 hidden text-[9px] leading-[0.9rem] sm:block", isLight ? "text-muted-foreground" : "text-slate-400")}>
-            Browse the full OpenClaw catalog. Unavailable entries show which provider setup is missing.
+            Add ready OpenClaw routes here. Provider credentials are managed in Providers.
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -109,6 +118,23 @@ export function GlobalModelPicker({
           className="h-7 pl-8 text-[10px]"
         />
       </div>
+      {setupModelCount > 0 ? (
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <p className={cn("text-[9px]", isLight ? "text-muted-foreground" : "text-slate-400")}>
+            {showNeedsSetup
+              ? `${setupModelCount} setup-required model${setupModelCount === 1 ? "" : "s"} shown`
+              : `${setupModelCount} setup-required model${setupModelCount === 1 ? "" : "s"} hidden`}
+          </p>
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-7 rounded-full px-2.5 text-[9px]"
+            onClick={() => setShowNeedsSetup((current) => !current)}
+          >
+            {showNeedsSetup ? "Hide setup needed" : "Show setup needed"}
+          </Button>
+        </div>
+      ) : null}
 
       {isLoading ? (
         <div className={cn("mt-3 rounded-[13px] border px-3 py-4 text-center text-[10px]", isLight ? "border-border bg-muted/35 text-muted-foreground" : "border-white/10 bg-white/[0.03] text-slate-400")}>
@@ -134,6 +160,11 @@ export function GlobalModelPicker({
                 aria-pressed={selected}
                 onClick={() => {
                   if (locked) {
+                    return;
+                  }
+
+                  if (needsSetup) {
+                    onOpenProviders(model.provider);
                     return;
                   }
 
@@ -210,9 +241,14 @@ export function GlobalModelPicker({
                       Already added
                     </Badge>
                   ) : needsSetup ? (
-                    <Badge variant="warning" className="px-1.5 py-0.5 text-[8px] tracking-[0.12em]">
-                      Needs setup
-                    </Badge>
+                    <span className="flex flex-col items-end gap-1">
+                      <Badge variant="warning" className="px-1.5 py-0.5 text-[8px] tracking-[0.12em]">
+                        Needs setup
+                      </Badge>
+                      <span className={cn("text-[8px] font-semibold", isLight ? "text-amber-800" : "text-amber-200")}>
+                        Set up provider
+                      </span>
+                    </span>
                   ) : model.recommended ? (
                     <Badge variant="default" className="px-1.5 py-0.5 text-[8px] tracking-[0.12em]">
                       Recommended
@@ -299,11 +335,11 @@ export function GlobalModelPicker({
 
 function resolveSetupHint(model: AddModelsCatalogModel, providerLabel: string) {
   if (model.missing) {
-    return `${providerLabel} is configured, but this model is not available locally yet. You can still add it now, then finish setup in Providers.`;
+    return `${providerLabel} is configured, but this model is not available locally yet. Open Providers to finish setup.`;
   }
 
   if (model.available === false) {
-    return `${providerLabel} needs a one-time setup before this model can be used. You can add it now, then connect it in Add Models > Providers.`;
+    return `${providerLabel} needs a one-time setup before this model can be added. Open Providers to connect it.`;
   }
 
   return "";

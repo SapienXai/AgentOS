@@ -5,13 +5,17 @@ import { clearModelCatalogCache } from "@/lib/openclaw/application/model-catalog
 import { updateAgent } from "@/lib/openclaw/application/agent-service";
 import {
   readOpenClawConfiguredModelIds,
+  removeOpenClawProviderCredential,
   removeOpenClawConfiguredModelFromConfig,
   removeOpenClawProviderConfiguration,
   setOpenClawDefaultModel
 } from "@/lib/openclaw/application/model-provider-state-service";
 import { modelMatchesAddModelsProvider } from "@/lib/openclaw/domains/model-provider-connection";
 import { setModelProviderDisconnected } from "@/lib/openclaw/domains/control-plane-settings";
-import { normalizeAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
+import {
+  isBuiltInAddModelsProviderId,
+  normalizeAddModelsProviderId
+} from "@/lib/openclaw/model-provider-registry";
 import type {
   AddModelsModelRemoveImpact,
   AddModelsProviderDisconnectImpact,
@@ -27,6 +31,7 @@ type DisconnectDependencies = {
   updateAgentModel: (agentId: string, modelId: string) => Promise<unknown>;
   removeModel: typeof removeOpenClawConfiguredModelFromConfig;
   removeProviderConfiguration: typeof removeOpenClawProviderConfiguration;
+  removeProviderCredential: typeof removeOpenClawProviderCredential;
   markDisconnected: (provider: string) => Promise<unknown>;
   clearCaches: () => void;
 };
@@ -38,6 +43,7 @@ const defaultDependencies: DisconnectDependencies = {
   updateAgentModel: (agentId, modelId) => updateAgent({ id: agentId, modelId }),
   removeModel: removeOpenClawConfiguredModelFromConfig,
   removeProviderConfiguration: removeOpenClawProviderConfiguration,
+  removeProviderCredential: removeOpenClawProviderCredential,
   markDisconnected: (provider) => setModelProviderDisconnected(provider, true),
   clearCaches: () => {
     clearMissionControlCaches();
@@ -90,6 +96,52 @@ export async function disconnectModelProvider(
   }
 
   const cleanup = await dependencies.removeProviderConfiguration(provider);
+  await dependencies.markDisconnected(provider);
+  dependencies.clearCaches();
+  const refreshedSnapshot = await dependencies.getSnapshot();
+
+  return {
+    impact: {
+      ...impact,
+      credentialCleanup: cleanup.credentialCleanup
+    },
+    snapshot: refreshedSnapshot
+  };
+}
+
+export async function disconnectModelProviderCredential(
+  provider: AddModelsProviderId,
+  dependencyOverrides: Partial<DisconnectDependencies> = {}
+) {
+  const dependencies = { ...defaultDependencies, ...dependencyOverrides };
+  const [snapshot, configuredModelIds] = await Promise.all([
+    dependencies.getSnapshot(),
+    dependencies.readConfiguredModelIds()
+  ]);
+  const impact = buildModelProviderDisconnectImpact(snapshot, provider, configuredModelIds);
+
+  if (impact.blockedReason) {
+    throw new Error(impact.blockedReason);
+  }
+
+  if (impact.defaultModelAffected && impact.replacementModelId) {
+    await dependencies.setDefaultModel(impact.replacementModelId, {
+      provider: resolveModelProvider(snapshot, impact.replacementModelId)
+    });
+  }
+
+  if (impact.replacementModelId) {
+    for (const agent of impact.affectedAgents) {
+      await dependencies.updateAgentModel(agent.id, impact.replacementModelId);
+    }
+  }
+
+  const cleanup = await dependencies.removeProviderCredential(provider);
+
+  if (cleanup.credentialCleanup === "retained-unsupported") {
+    throw new Error("OpenClaw does not expose credential removal for this provider.");
+  }
+
   await dependencies.markDisconnected(provider);
   dependencies.clearCaches();
   const refreshedSnapshot = await dependencies.getSnapshot();
@@ -320,9 +372,13 @@ function resolveExpectedCredentialCleanup(
     return "not-required";
   }
 
-  if (provider === "openai" || !["openai-codex", "openrouter", "anthropic", "xai", "google", "deepseek", "mistral"].includes(provider)) {
+  if (provider === "openai-codex") {
+    return "retained-unsupported";
+  }
+
+  if (provider === "openai" || ["openrouter", "anthropic", "xai", "google", "deepseek", "mistral"].includes(provider) || !isBuiltInAddModelsProviderId(provider)) {
     return "removed";
   }
 
-  return "retained-unsupported";
+  return "not-required";
 }

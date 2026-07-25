@@ -1250,6 +1250,84 @@ test("model library keeps OpenClaw catalog failures visible and supports explici
   assert.match(dialogSource, /void refreshGlobalCatalog\(true\)/);
 });
 
+test("model library separates provider editing, credential disconnect, and custom deletion", () => {
+  const dialogSource = readFileSync(
+    path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"),
+    "utf8"
+  );
+  const routeSource = readFileSync(path.join(rootDir, "app/api/models/providers/route.ts"), "utf8");
+
+  assert.match(dialogSource, /Connection settings/);
+  assert.match(dialogSource, /const result = await adapter\.getConnectionStatus\(\)/);
+  assert.match(dialogSource, /Leave blank to keep the current credential/);
+  assert.match(dialogSource, /Disconnect credential/);
+  assert.match(dialogSource, /Keep configured models and remove API access/);
+  assert.match(dialogSource, /Delete custom provider/);
+  assert.match(dialogSource, /Review the OpenClaw impact before applying this change/);
+  assert.doesNotMatch(dialogSource, /window\.confirm/);
+  assert.match(routeSource, /action === "disconnect-credential"/);
+  assert.match(routeSource, /action === "delete-provider"/);
+  assert.match(routeSource, /Bundled OpenClaw providers cannot be deleted/);
+  assert.match(
+    readFileSync(path.join(rootDir, "lib/openclaw/model-provider-adapters.ts"), "utf8"),
+    /disconnect-credential-impact"[\s\S]*allowNotOk: true/
+  );
+});
+
+test("phase three model surfaces separate setup, assignment, and session scope", () => {
+  const pickerSource = readFileSync(
+    path.join(rootDir, "components/mission-control/agent-model-picker-dialog.tsx"),
+    "utf8"
+  );
+  const catalogSource = readFileSync(
+    path.join(rootDir, "components/mission-control/add-models/global-model-picker.tsx"),
+    "utf8"
+  );
+  const inspectorSource = readFileSync(
+    path.join(rootDir, "components/mission-control/inspector-panel.tsx"),
+    "utf8"
+  );
+  const routeSource = readFileSync(path.join(rootDir, "app/api/sessions/model/route.ts"), "utf8");
+
+  assert.match(pickerSource, /Global default/);
+  assert.match(pickerSource, /Agent model/);
+  assert.match(pickerSource, /Session overrides/);
+  assert.match(pickerSource, /pendingSetupModelIdRef/);
+  assert.match(pickerSource, /Show setup needed/);
+  assert.doesNotMatch(pickerSource, /Model Settings/);
+  assert.doesNotMatch(pickerSource, /Sort: Recent/);
+  assert.match(catalogSource, /Provider credentials are managed in Providers/);
+  assert.match(catalogSource, /Set up provider/);
+  assert.match(inspectorSource, /Use agent model/);
+  assert.match(routeSource, /action: z\.literal\("inherit"\)/);
+});
+
+test("phase four model control reconciles catalog evidence and bulk session overrides", () => {
+  const hookSource = readFileSync(path.join(rootDir, "hooks/use-model-catalog.ts"), "utf8");
+  const dialogSource = readFileSync(
+    path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"),
+    "utf8"
+  );
+  const modelsSource = readFileSync(
+    path.join(rootDir, "components/operations/models/models-page-content.tsx"),
+    "utf8"
+  );
+  const routeSource = readFileSync(path.join(rootDir, "app/api/sessions/model/route.ts"), "utf8");
+  const serviceSource = readFileSync(
+    path.join(rootDir, "lib/openclaw/application/session-model-service.ts"),
+    "utf8"
+  );
+
+  assert.match(hookSource, /MODEL_CATALOG_RECONCILE_INTERVAL_MS = 60_000/);
+  assert.match(dialogSource, /Reconcile library/);
+  assert.match(dialogSource, /OpenClaw verified/);
+  assert.match(modelsSource, /Session Model Overrides/);
+  assert.match(modelsSource, /Reset all/);
+  assert.match(routeSource, /action: z\.literal\("inherit-many"\)/);
+  assert.match(serviceSource, /buildSessionModelOverrides\(currentSnapshot\)/);
+  assert.match(serviceSource, /for \(const target of targets\)/);
+});
+
 function resolveLocalOpenClawImport(filePath: string, specifier: string) {
   if (specifier.startsWith("@/")) {
     return `${specifier.slice(2)}.ts`;

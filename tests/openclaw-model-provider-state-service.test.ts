@@ -11,10 +11,15 @@ import {
   addOpenClawModelsToConfig,
   ensureOpenClawModelRuntimeConfig,
   persistOpenClawProviderToken,
+  readOpenClawProviderConfigSummary,
+  readOpenClawProviderModelStatus,
   readOpenClawCodexPluginReady,
+  removeOpenClawProviderCredential,
   removeOpenClawConfiguredModelFromConfig,
-  setOpenClawDefaultModel
+  setOpenClawDefaultModel,
+  updateOpenClawProviderSettings
 } from "@/lib/openclaw/application/model-provider-state-service";
+import { buildModelStatusConnectionStatus } from "@/lib/openclaw/domains/model-provider-connection";
 
 const legacyProviderFileFallbackEnv = "AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK";
 const originalFetch = globalThis.fetch;
@@ -29,11 +34,315 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-test("provider token persistence does not silently write OpenClaw auth files by default", async () => {
+test("provider token persistence writes the OpenClaw runtime env target atomically", async () => {
+  const calls: Array<{ path: string; value: unknown }> = [];
+  setOpenClawAdapterForTesting({
+    async getConfig() {
+      return null;
+    },
+    async setConfig(path: string, value: unknown) {
+      calls.push({ path, value });
+      return { stdout: "", stderr: "", code: 0 };
+    }
+  } as unknown as OpenClawAdapter);
+
+  await persistOpenClawProviderToken("openrouter", "sk-or-test");
+
+  assert.deepEqual(calls, [{
+    path: "env.vars.OPENROUTER_API_KEY",
+    value: "sk-or-test"
+  }]);
+});
+
+test("provider credential persistence replaces an invalid empty endpoint and preserves models", async () => {
+  const calls: Array<{ kind: "set" | "unset"; path: string; value?: unknown }> = [];
+  setOpenClawAdapterForTesting({
+    async getConfig(path: string) {
+      return path === "models.providers.openrouter" ? { baseUrl: "", models: [{ id: "auto" }] } : null;
+    },
+    async setConfig(path: string, value: unknown) {
+      calls.push({ kind: "set", path, value });
+      return { stdout: "", stderr: "", code: 0 };
+    },
+    async unsetConfig(path: string) {
+      calls.push({ kind: "unset", path });
+      return { stdout: "", stderr: "", code: 0 };
+    }
+  } as unknown as OpenClawAdapter);
+
+  const result = await persistOpenClawProviderToken("openrouter", "sk-or-test");
+
+  assert.deepEqual(calls, [
+    { kind: "unset", path: "models.providers.openrouter.baseUrl" },
+    { kind: "unset", path: "models.providers.openrouter.baseURL" },
+    { kind: "set", path: "env.vars.OPENROUTER_API_KEY", value: "sk-or-test" }
+  ]);
+  assert.equal(result.repairedBlankEndpoint, true);
+});
+
+test("provider credential persistence preserves a non-empty environment-backed endpoint", async () => {
+  const calls: Array<{ path: string; value: unknown }> = [];
+  setOpenClawAdapterForTesting({
+    async getConfig() {
+      return { baseUrl: "${OPENROUTER_BASE_URL}" };
+    },
+    async setConfig(path: string, value: unknown) {
+      calls.push({ path, value });
+      return { stdout: "", stderr: "", code: 0 };
+    }
+  } as unknown as OpenClawAdapter);
+
+  await persistOpenClawProviderToken("openrouter", "sk-or-test");
+
+  assert.deepEqual(calls, [{
+    path: "env.vars.OPENROUTER_API_KEY",
+    value: "sk-or-test"
+  }]);
+});
+
+test("provider credential persistence preserves a concrete custom endpoint", async () => {
+  const calls: Array<{ path: string; value: unknown }> = [];
+  setOpenClawAdapterForTesting({
+    async getConfig() {
+      return { baseUrl: "https://gateway.example.test/v1", models: [{ id: "auto" }] };
+    },
+    async setConfig(path: string, value: unknown) {
+      calls.push({ path, value });
+      return { stdout: "", stderr: "", code: 0 };
+    }
+  } as unknown as OpenClawAdapter);
+
+  await persistOpenClawProviderToken("openrouter", "sk-or-test");
+
+  assert.deepEqual(calls, [{
+    path: "env.vars.OPENROUTER_API_KEY",
+    value: "sk-or-test"
+  }]);
+});
+
+test("provider credential registry resolves Anthropic, Gemini, and xAI config targets", async () => {
+  const calls: Array<{ path: string; value: unknown }> = [];
+  setOpenClawAdapterForTesting({
+    async getConfig() {
+      return null;
+    },
+    async setConfig(path: string, value: unknown) {
+      calls.push({ path, value });
+      return { stdout: "", stderr: "", code: 0 };
+    }
+  } as unknown as OpenClawAdapter);
+
+  await persistOpenClawProviderToken("anthropic", "sk-ant-test");
+  await persistOpenClawProviderToken("google", "gemini-test");
+  await persistOpenClawProviderToken("xai", "xai-test");
+
+  assert.deepEqual(calls.map(({ path }) => path), [
+    "env.vars.ANTHROPIC_API_KEY",
+    "env.vars.GEMINI_API_KEY",
+    "env.vars.XAI_API_KEY"
+  ]);
+  assert.deepEqual(calls.map(({ value }) => value), [
+    "sk-ant-test",
+    "gemini-test",
+    "xai-test"
+  ]);
+});
+
+test("provider credential persistence rejects malformed endpoint overrides before config mutation", async () => {
+  let setConfigCalled = false;
+  setOpenClawAdapterForTesting({
+    async getConfig() {
+      return {};
+    },
+    async setConfig() {
+      setConfigCalled = true;
+      return { stdout: "", stderr: "", code: 0 };
+    }
+  } as unknown as OpenClawAdapter);
+
   await assert.rejects(
-    () => persistOpenClawProviderToken("openai", "sk-test"),
-    /Legacy OpenClaw provider file writes are disabled by default/
+    () => persistOpenClawProviderToken("openrouter", "sk-or-test", { endpoint: "not-a-url" }),
+    /provider endpoint must be a valid HTTP or HTTPS URL/
   );
+  assert.equal(setConfigCalled, false);
+});
+
+test("Gateway-stored provider credentials make configured model routes ready without auth profiles", async () => {
+  setOpenClawAdapterForTesting({
+    async getConfig(path: string) {
+      if (path === "env.vars.OPENROUTER_API_KEY") {
+        return "[redacted]";
+      }
+      return null;
+    },
+    async getModelStatus() {
+      return { allowed: ["openrouter/openai/gpt-5"] };
+    }
+  } as unknown as OpenClawAdapter);
+
+  const status = await readOpenClawProviderModelStatus();
+  const connection = buildModelStatusConnectionStatus("openrouter", status, ["openrouter/openai/gpt-5"]);
+
+  assert.equal(connection?.connected, true);
+  assert.equal(connection?.needsTerminal, false);
+});
+
+test("Gateway secret references count as stored provider credentials without exposing values", async () => {
+  setOpenClawAdapterForTesting({
+    async getConfig(path: string) {
+      if (path === "env.vars.OPENROUTER_API_KEY") {
+        return { source: "env", provider: "default", id: "OPENROUTER_API_KEY" };
+      }
+      return null;
+    },
+    async getModelStatus() {
+      return { allowed: ["openrouter/auto"] };
+    }
+  } as unknown as OpenClawAdapter);
+
+  const status = await readOpenClawProviderModelStatus();
+  const connection = buildModelStatusConnectionStatus("openrouter", status, ["openrouter/auto"]);
+
+  assert.equal(connection?.connected, true);
+  assert.equal(connection?.verification, "credential-stored");
+  assert.doesNotMatch(JSON.stringify(status), /OPENROUTER_API_KEY/);
+});
+
+test("provider config summary exposes editable metadata without returning credentials", async () => {
+  setOpenClawAdapterForTesting({
+    async getConfig(path: string) {
+      if (path === "models.providers.entrim") {
+        return {
+          baseUrl: "https://api.entrim.test/v1",
+          api: "openai-completions",
+          apiKey: "secret-value",
+          models: [{ id: "qwen" }]
+        };
+      }
+      return null;
+    }
+  } as unknown as OpenClawAdapter);
+
+  const summary = await readOpenClawProviderConfigSummary("entrim");
+
+  assert.deepEqual(summary, {
+    provider: "entrim",
+    kind: "custom",
+    providerId: "entrim",
+    baseUrl: "https://api.entrim.test/v1",
+    api: "openai-completions",
+    modelCount: 1,
+    credentialConfigured: true,
+    endpointOverride: true,
+    editable: true
+  });
+  assert.doesNotMatch(JSON.stringify(summary), /secret-value/);
+});
+
+test("provider settings update resets bundled endpoints and edits custom provider paths", async () => {
+  const calls: Array<{ kind: "set" | "unset"; path: string; value?: unknown }> = [];
+  setOpenClawAdapterForTesting({
+    async getConfig(path: string) {
+      if (path === "models.providers.openrouter") {
+        return { baseUrl: "https://proxy.example/v1", apiKey: "[redacted]" };
+      }
+      if (path === "models.providers.entrim") {
+        return {
+          baseUrl: "https://old.example/v1",
+          api: "openai-completions",
+          apiKey: "[redacted]",
+          models: [{ id: "qwen" }]
+        };
+      }
+      return null;
+    },
+    async setConfig(path: string, value: unknown) {
+      calls.push({ kind: "set", path, value });
+      return { stdout: "", stderr: "", code: 0 };
+    },
+    async unsetConfig(path: string) {
+      calls.push({ kind: "unset", path });
+      return { stdout: "", stderr: "", code: 0 };
+    }
+  } as unknown as OpenClawAdapter);
+
+  await updateOpenClawProviderSettings("openrouter", { endpoint: null });
+  await updateOpenClawProviderSettings("entrim", {
+    endpoint: "https://new.example/v1",
+    api: "openai-responses"
+  });
+
+  assert.deepEqual(calls, [
+    { kind: "unset", path: "models.providers.openrouter.baseUrl" },
+    { kind: "set", path: "models.providers.entrim.baseUrl", value: "https://new.example/v1" },
+    { kind: "unset", path: "models.providers.entrim.baseURL" },
+    { kind: "set", path: "models.providers.entrim.api", value: "openai-responses" }
+  ]);
+});
+
+test("provider credential replacement stays Gateway-native and never returns the secret", async () => {
+  const calls: Array<{ path: string; value: unknown }> = [];
+  let storedCredential: unknown = "[redacted]";
+  setOpenClawAdapterForTesting({
+    async getConfig(path: string) {
+      if (path === "env.vars.OPENROUTER_API_KEY") {
+        return storedCredential;
+      }
+      if (path === "agents.defaults") {
+        return { model: { primary: "" }, models: {} };
+      }
+      return null;
+    },
+    async setConfig(path: string, value: unknown) {
+      calls.push({ path, value });
+      if (path === "env.vars.OPENROUTER_API_KEY") {
+        storedCredential = "[redacted]";
+      }
+      return { stdout: "", stderr: "", code: 0 };
+    },
+    async getModelStatus() {
+      return { allowed: [] };
+    }
+  } as unknown as OpenClawAdapter);
+
+  const response = await modelsProviderPost(
+    new Request("http://agentos.test/api/models/providers", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "replace-credential",
+        provider: "openrouter",
+        apiKey: "sk-or-replacement-secret"
+      })
+    })
+  );
+  const payload = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(payload));
+  assert.equal(payload.ok, true);
+  assert.equal(payload.providerConfig.credentialConfigured, true);
+  assert.deepEqual(calls, [{
+    path: "env.vars.OPENROUTER_API_KEY",
+    value: "sk-or-replacement-secret"
+  }]);
+  assert.doesNotMatch(JSON.stringify(payload), /sk-or-replacement-secret/);
+});
+
+test("credential disconnect removes only the Gateway credential path", async () => {
+  const calls: string[] = [];
+  setOpenClawAdapterForTesting({
+    async getConfig(path: string) {
+      return path === "env.vars.OPENROUTER_API_KEY" ? "[redacted]" : null;
+    },
+    async unsetConfig(path: string) {
+      calls.push(path);
+      return { stdout: "", stderr: "", code: 0 };
+    }
+  } as unknown as OpenClawAdapter);
+
+  const result = await removeOpenClawProviderCredential("openrouter");
+
+  assert.deepEqual(calls, ["env.vars.OPENROUTER_API_KEY"]);
+  assert.deepEqual(result, { removed: true, credentialCleanup: "removed" });
 });
 
 test("model removal unsets the exact configured model key before rewriting defaults", async () => {
@@ -172,7 +481,7 @@ test("custom provider connect writes an explicit OpenClaw provider and namespace
   const payload = await response.json();
   const serialized = JSON.stringify(payload);
 
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 200, JSON.stringify(payload));
   assert.equal(payload.ok, true);
   assert.equal(payload.provider, "entrim");
   assert.equal(payload.connection.connected, true);
@@ -330,7 +639,7 @@ test("custom provider list returns explicit providers without exposing secrets",
   const payload = await response.json();
   const serialized = JSON.stringify(payload);
 
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 200, JSON.stringify(payload));
   assert.deepEqual(payload.providers, [
     {
       id: "entrim",
@@ -341,10 +650,25 @@ test("custom provider list returns explicit providers without exposing secrets",
   assert.doesNotMatch(serialized, /apiKey|redacted/);
 });
 
-test("OpenRouter connect returns terminal paste-token handoff when native token persistence is unavailable", async () => {
+test("OpenRouter connect persists through Gateway and returns no terminal handoff", async () => {
+  const calls: Array<{ path: string; value: unknown }> = [];
+  let storedOpenRouterCredential: unknown = null;
   setOpenClawAdapterForTesting({
-    async getConfig() {
-      return {};
+    async getConfig(path: string) {
+      return path === "env.vars.OPENROUTER_API_KEY" ? storedOpenRouterCredential : null;
+    },
+    async setConfig(path: string, value: unknown) {
+      calls.push({ path, value });
+      if (path === "env.vars.OPENROUTER_API_KEY") {
+        storedOpenRouterCredential = "[redacted]";
+      }
+      return { stdout: "", stderr: "", code: 0 };
+    },
+    async listModels() {
+      return { models: [] };
+    },
+    async scanModels() {
+      return [];
     },
     async getModelStatus() {
       return {
@@ -372,16 +696,36 @@ test("OpenRouter connect returns terminal paste-token handoff when native token 
   const payload = await response.json();
   const serialized = JSON.stringify(payload);
 
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 200, JSON.stringify(payload));
   assert.equal(payload.ok, true);
-  assert.match(payload.manualCommand, /models auth paste-token --provider openrouter/);
+  assert.equal(payload.manualCommand, null);
+  assert.deepEqual(calls, [{
+    path: "env.vars.OPENROUTER_API_KEY",
+    value: "sk-or-test-secret"
+  }]);
+  assert.equal(payload.connection.verification, "verified");
   assert.doesNotMatch(serialized, /sk-or-test-secret/);
 });
 
-test("Gemini connect returns terminal paste-api-key handoff when native key persistence is unavailable", async () => {
+test("Gemini connect persists through its native provider config path", async () => {
+  const calls: Array<{ path: string; value: unknown }> = [];
+  let storedGeminiCredential: unknown = null;
   setOpenClawAdapterForTesting({
-    async getConfig() {
-      return {};
+    async getConfig(path: string) {
+      return path === "env.vars.GEMINI_API_KEY" ? storedGeminiCredential : null;
+    },
+    async setConfig(path: string, value: unknown) {
+      calls.push({ path, value });
+      if (path === "env.vars.GEMINI_API_KEY") {
+        storedGeminiCredential = "[redacted]";
+      }
+      return { stdout: "", stderr: "", code: 0 };
+    },
+    async listModels() {
+      return { models: [] };
+    },
+    async scanModels() {
+      return [];
     },
     async getModelStatus() {
       return {
@@ -409,11 +753,13 @@ test("Gemini connect returns terminal paste-api-key handoff when native key pers
   const payload = await response.json();
   const serialized = JSON.stringify(payload);
 
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 200, JSON.stringify(payload));
   assert.equal(payload.ok, true);
-  assert.match(payload.manualCommand, /models auth paste-api-key --provider google/);
-  assert.match(payload.manualCommand, /--profile-id google:default/);
-  assert.match(payload.message, /Continue in Terminal/);
+  assert.equal(payload.manualCommand, null);
+  assert.deepEqual(calls, [{
+    path: "env.vars.GEMINI_API_KEY",
+    value: "gemini-test-secret"
+  }]);
   assert.doesNotMatch(serialized, /gemini-test-secret/);
 });
 

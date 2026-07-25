@@ -72,8 +72,13 @@ import {
   normalizeConfiguredWorkspaceRootValue,
   readMissionControlSettings
 } from "@/lib/openclaw/domains/control-plane-settings";
-import { readOpenClawConfiguredModelIds } from "@/lib/openclaw/application/model-provider-state-service";
+import {
+  readOpenClawConfiguredModelIds,
+  readOpenClawConfiguredProviderCredentialIds
+} from "@/lib/openclaw/application/model-provider-state-service";
+import { mergeModelStatusWithGatewayCredentials } from "@/lib/openclaw/domains/model-provider-connection";
 import type { MissionControlSnapshot } from "@/lib/openclaw/types";
+import type { AddModelsProviderId } from "@/lib/openclaw/types";
 import {
   hydrateMissionControlChannels
 } from "@/lib/openclaw/application/mission-control/channel-hydration";
@@ -229,6 +234,7 @@ async function loadMissionControlSnapshots({
     let agentsResult: PromiseSettledResult<AgentPayload>;
     let agentConfigResult: PromiseSettledResult<AgentConfigPayload>;
     let configuredModelIdsResult: PromiseSettledResult<string[]>;
+    let credentialProviderIdsResult: PromiseSettledResult<AddModelsProviderId[]>;
     let modelsResult: PromiseSettledResult<ModelsPayload>;
     let modelStatusResult: PromiseSettledResult<ModelsStatusPayload>;
     let deviceAccessResult: PromiseSettledResult<OpenClawDeviceListPayload>;
@@ -258,6 +264,9 @@ async function loadMissionControlSnapshots({
           value: Array.from(configuredModelIds)
         }) as PromiseSettledResult<string[]>
       );
+      const credentialProviderIdsPromise = readOpenClawConfiguredProviderCredentialIds().then(
+        (providers) => ({ status: "fulfilled", value: providers }) as PromiseSettledResult<AddModelsProviderId[]>
+      );
       const modelStatusPromise = shouldHydrateModelStatus
         ? settleModelStatusPayloadFromOpenClaw(15_000)
         : Promise.resolve(createDeferredPayloadResult<ModelsStatusPayload>());
@@ -269,6 +278,7 @@ async function loadMissionControlSnapshots({
         statusResult,
         agentConfigResult,
         configuredModelIdsResult,
+        credentialProviderIdsResult,
         modelStatusResult,
         deviceAccessResult
       ] = await Promise.all([
@@ -276,6 +286,7 @@ async function loadMissionControlSnapshots({
         statusPromise,
         agentConfigPromise,
         configuredModelIdsPromise,
+        credentialProviderIdsPromise,
         modelStatusPromise,
         deviceAccessPromise
       ]);
@@ -291,6 +302,7 @@ async function loadMissionControlSnapshots({
         gatewayStatusResult,
         agentConfigResult,
         configuredModelIdsResult,
+        credentialProviderIdsResult,
         modelStatusResult,
         deviceAccessResult
       ] = await Promise.all([
@@ -302,6 +314,9 @@ async function loadMissionControlSnapshots({
             status: "fulfilled",
             value: Array.from(configuredModelIds)
           }) as PromiseSettledResult<string[]>
+        ),
+        readOpenClawConfiguredProviderCredentialIds().then(
+          (providers) => ({ status: "fulfilled", value: providers }) as PromiseSettledResult<AddModelsProviderId[]>
         ),
         settleModelStatusPayloadFromOpenClaw(45_000),
         settleDeviceAccessPayloadFromOpenClaw(10_000)
@@ -344,6 +359,9 @@ async function loadMissionControlSnapshots({
     const agentConfig = resolvedAgentConfig.value ?? [];
     const configuredModelIds = configuredModelIdsResult.status === "fulfilled"
       ? configuredModelIdsResult.value
+      : [];
+    const credentialProviderIds = credentialProviderIdsResult.status === "fulfilled"
+      ? credentialProviderIdsResult.value
       : [];
     if (isDeferredPayloadResult(agentsResult) && !systemProfile) {
       agentsResult = await settleAgentPayloadFromOpenClaw(agentConfig);
@@ -397,7 +415,10 @@ async function loadMissionControlSnapshots({
       ? { value: undefined, reusedCachedValue: false, failed: false }
       : updateStatusPayloadCache.resolve(updateStatusResult);
     const agentsList = resolvedAgents.value ?? buildAgentPayloadsFromConfig(agentConfig, openClawStateRootPath);
-    const modelStatus = mergeModelStatusWithAgentConfigDefaults(resolvedModelStatus.value, agentConfig, agentsList);
+    const modelStatus = mergeModelStatusWithGatewayCredentials(
+      mergeModelStatusWithAgentConfigDefaults(resolvedModelStatus.value, agentConfig, agentsList),
+      credentialProviderIds
+    ) ?? undefined;
     const localModels = buildFallbackModels({ agentConfig, modelStatus, configuredModelIds });
     const models = resolvedModels.value?.models ?? localModels.models;
     const presence = resolvedPresence.value ?? [];

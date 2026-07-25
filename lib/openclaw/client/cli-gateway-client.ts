@@ -79,6 +79,7 @@ import type {
   OpenClawSessionHistoryInput,
   OpenClawSessionHistoryPayload,
   OpenClawSessionControlPayload,
+  OpenClawSessionModelPatchPayload,
   OpenClawSessionPayload,
   OpenClawSessionSteerInput,
   OpenClawSessionsPayload,
@@ -424,6 +425,12 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
 
   listSessions(input: OpenClawListSessionsInput = {}, options: OpenClawCommandOptions = {}) {
     return this.call<OpenClawSessionsPayload>("sessions.list", { ...input }, options);
+  }
+
+  patchSessionModel(): Promise<OpenClawSessionModelPatchPayload> {
+    return Promise.reject(
+      new Error("Resetting a session model override requires native OpenClaw Gateway support; CLI fallback is disabled.")
+    );
   }
 
   describeSession(input: OpenClawDescribeSessionInput = {}, options: OpenClawCommandOptions = {}) {

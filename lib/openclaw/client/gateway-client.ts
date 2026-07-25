@@ -78,6 +78,8 @@ export type {
   OpenClawSessionHistoryInput,
   OpenClawSessionHistoryPayload,
   OpenClawSessionControlPayload,
+  OpenClawSessionModelPatchInput,
+  OpenClawSessionModelPatchPayload,
   OpenClawSessionPayload,
   OpenClawSessionReferenceInput,
   OpenClawSessionSteerInput,

@@ -34,10 +34,7 @@ export function mapSessionCatalogEntryToRuntime(
     : undefined;
   const taskId = extractRuntimeKeyToken(session.key, "task");
   const stage = extractRuntimeKeyToken(session.key, "stage");
-  const modelId =
-    session.model && session.model.includes("/")
-      ? session.model
-      : config?.model || agent?.model || "unassigned";
+  const modelId = resolveSessionModelId(session, config?.model || agent?.model);
   const status = resolveRuntimeStatus(stage, session.key, session.ageMs);
   const runtimeId = createRuntimeId(session);
   const taskLabel = taskId ? taskId.slice(0, 8) : null;
@@ -83,6 +80,20 @@ export function mapSessionCatalogEntryToRuntime(
       historical: false
     }
   };
+}
+
+function resolveSessionModelId(
+  session: SessionsPayload["sessions"][number],
+  inheritedModelId?: string
+) {
+  const model = session.model?.trim();
+  const provider = session.modelProvider?.trim();
+
+  if (model && provider) {
+    return model.startsWith(`${provider}/`) ? model : `${provider}/${model}`;
+  }
+
+  return model && model.includes("/") ? model : inheritedModelId || "unassigned";
 }
 
 export function createRuntimeId(session: SessionsPayload["sessions"][number]) {

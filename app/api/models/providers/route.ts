@@ -46,13 +46,18 @@ import {
   readOpenClawOpenAiProviderConfig,
   persistOpenClawOpenAiProviderConfig,
   persistOpenClawProviderToken,
+  readOpenClawProviderConfigSummary,
   readOpenClawConfiguredModelIds,
   readOpenClawExplicitProviderSummaries,
   readOpenClawProviderModelStatus,
+  readOpenClawProviderCredentialConfigured,
+  replaceOpenClawProviderCredential,
+  updateOpenClawProviderSettings,
   setOpenClawDefaultModel
 } from "@/lib/openclaw/application/model-provider-state-service";
 import {
   disconnectModelProvider,
+  disconnectModelProviderCredential,
   inspectModelProviderDisconnect,
   inspectModelRemoval,
   removeModelSafely
@@ -120,6 +125,22 @@ const requestSchema = z.discriminatedUnion("action", [
     force: z.boolean().optional()
   }),
   z.object({
+    action: z.literal("update-provider"),
+    provider: explicitProviderIdSchema,
+    endpoint: z.string().trim().min(1).nullable().optional(),
+    api: z.enum([
+      "openai-completions",
+      "openai-responses",
+      "anthropic-messages",
+      "google-generative-ai"
+    ]).optional()
+  }),
+  z.object({
+    action: z.literal("replace-credential"),
+    provider: explicitProviderIdSchema,
+    apiKey: z.string().trim().min(1)
+  }),
+  z.object({
     action: z.literal("switch-account"),
     provider: explicitProviderIdSchema
   }),
@@ -153,6 +174,24 @@ const requestSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("disconnect"),
+    provider: explicitProviderIdSchema,
+    confirmed: z.literal(true)
+  }),
+  z.object({
+    action: z.literal("disconnect-credential-impact"),
+    provider: explicitProviderIdSchema
+  }),
+  z.object({
+    action: z.literal("disconnect-credential"),
+    provider: explicitProviderIdSchema,
+    confirmed: z.literal(true)
+  }),
+  z.object({
+    action: z.literal("delete-provider-impact"),
+    provider: explicitProviderIdSchema
+  }),
+  z.object({
+    action: z.literal("delete-provider"),
     provider: explicitProviderIdSchema,
     confirmed: z.literal(true)
   })
@@ -241,6 +280,150 @@ async function handleProviderAction(
 ): Promise<AddModelsProviderActionResult> {
   const commandBin = await resolveOpenClawBin().catch(() => "openclaw");
 
+  if (input.action === "update-provider") {
+    const providerConfig = await updateOpenClawProviderSettings(input.provider, {
+      endpoint: input.endpoint,
+      api: input.api
+    });
+    clearModelProviderCaches();
+    const statusContext = await readProviderConnectionContext(input.provider);
+
+    return buildActionResult({
+      ok: true,
+      action: input.action,
+      provider: input.provider,
+      message: providerConfig.endpointOverride
+        ? `Saved the ${getModelProviderDescriptor(input.provider).shortLabel} endpoint override.`
+        : `Restored the OpenClaw default endpoint for ${getModelProviderDescriptor(input.provider).shortLabel}.`,
+      connection: statusContext.connection,
+      providerConfig,
+      models: [],
+      docsUrl: addModelsDocsUrl
+    });
+  }
+
+  if (input.action === "replace-credential") {
+    validateApiKey(input.provider, input.apiKey);
+    await replaceOpenClawProviderCredential(input.provider, input.apiKey);
+    await setModelProviderDisconnected(input.provider, false);
+    clearModelProviderCaches();
+    const statusContext = await readProviderConnectionContext(input.provider);
+    const providerConfig = await readOpenClawProviderConfigSummary(input.provider);
+
+    return buildActionResult({
+      ok: true,
+      action: input.action,
+      provider: input.provider,
+      message: `Replaced the ${getModelProviderDescriptor(input.provider).shortLabel} credential in OpenClaw.`,
+      connection: {
+        ...statusContext.connection,
+        connected: true,
+        verification: "credential-stored",
+        detail: "Credential stored in OpenClaw Gateway configuration. Verify by refreshing models."
+      },
+      providerConfig,
+      models: [],
+      docsUrl: addModelsDocsUrl
+    });
+  }
+
+  if (input.action === "disconnect-credential-impact") {
+    const [impact, statusContext, providerConfig] = await Promise.all([
+      inspectModelProviderDisconnect(input.provider),
+      readProviderConnectionContext(input.provider),
+      readOpenClawProviderConfigSummary(input.provider)
+    ]);
+
+    return buildActionResult({
+      ok: !impact.blockedReason && impact.credentialCleanup !== "retained-unsupported",
+      action: input.action,
+      provider: input.provider,
+      message: impact.blockedReason ??
+        (impact.credentialCleanup === "retained-unsupported"
+          ? "OpenClaw does not expose credential removal for this provider."
+          : `Disconnecting the credential keeps ${impact.providerModelIds.length} configured model${impact.providerModelIds.length === 1 ? "" : "s"} in the library.`),
+      connection: statusContext.connection,
+      providerConfig,
+      models: [],
+      disconnectImpact: impact,
+      docsUrl: addModelsDocsUrl
+    });
+  }
+
+  if (input.action === "disconnect-credential") {
+    const result = await disconnectModelProviderCredential(input.provider);
+    const [statusContext, providerConfig] = await Promise.all([
+      readProviderConnectionContext(input.provider),
+      readOpenClawProviderConfigSummary(input.provider)
+    ]);
+
+    return buildActionResult({
+      ok: true,
+      action: input.action,
+      provider: input.provider,
+      message: `Disconnected the ${getModelProviderDescriptor(input.provider).shortLabel} credential. Configured models were kept.`,
+      connection: {
+        ...statusContext.connection,
+        connected: false,
+        verification: "not-configured",
+        source: "agentos-sidecar",
+        detail: "Credential disconnected in AgentOS. Provider models remain configured."
+      },
+      providerConfig,
+      models: [],
+      disconnectImpact: result.impact,
+      snapshot: result.snapshot,
+      docsUrl: addModelsDocsUrl
+    });
+  }
+
+  if (input.action === "delete-provider-impact" || input.action === "delete-provider") {
+    if (isBuiltInAddModelsProviderId(input.provider)) {
+      throw new Error("Bundled OpenClaw providers cannot be deleted. Disconnect the credential or restore the default endpoint instead.");
+    }
+
+    if (input.action === "delete-provider-impact") {
+      const [impact, statusContext, providerConfig] = await Promise.all([
+        inspectModelProviderDisconnect(input.provider),
+        readProviderConnectionContext(input.provider),
+        readOpenClawProviderConfigSummary(input.provider)
+      ]);
+
+      return buildActionResult({
+        ok: !impact.blockedReason,
+        action: input.action,
+        provider: input.provider,
+        message: impact.blockedReason ??
+          `Deleting this custom provider removes ${impact.providerModelIds.length} configured model${impact.providerModelIds.length === 1 ? "" : "s"} and its OpenClaw provider definition.`,
+        connection: statusContext.connection,
+        providerConfig,
+        models: [],
+        disconnectImpact: impact,
+        docsUrl: addModelsDocsUrl
+      });
+    }
+
+    const result = await disconnectModelProvider(input.provider);
+    const statusContext = await readProviderConnectionContext(input.provider);
+
+    return buildActionResult({
+      ok: true,
+      action: input.action,
+      provider: input.provider,
+      message: `Deleted the ${getModelProviderDescriptor(input.provider).shortLabel} custom provider from OpenClaw.`,
+      connection: {
+        ...statusContext.connection,
+        connected: false,
+        verification: "not-configured",
+        detail: "Custom provider deleted from OpenClaw."
+      },
+      models: [],
+      disconnectImpact: result.impact,
+      snapshot: result.snapshot,
+      docsUrl: addModelsDocsUrl
+    });
+  }
+
   if (input.action === "disconnect-impact") {
     const [impact, statusContext] = await Promise.all([
       inspectModelProviderDisconnect(input.provider),
@@ -301,7 +484,10 @@ async function handleProviderAction(
   }
 
   if (input.action === "status") {
-    const statusContext = await readProviderConnectionContext(input.provider);
+    const [statusContext, providerConfig] = await Promise.all([
+      readProviderConnectionContext(input.provider),
+      readOpenClawProviderConfigSummary(input.provider)
+    ]);
     const intentionallyDisconnected = await isModelProviderDisconnected(input.provider);
     const connection = intentionallyDisconnected
       ? {
@@ -325,6 +511,7 @@ async function handleProviderAction(
       message: resolveProviderStatusMessage(input.provider, connection),
       snapshot,
       connection,
+      providerConfig,
       models: [],
       emptyState: statusContext.ollamaState ? resolveOllamaEmptyState(statusContext.ollamaState) : null,
       docsUrl: addModelsDocsUrl
@@ -391,33 +578,21 @@ async function handleProviderAction(
     }
 
     validateApiKey(input.provider, apiKey);
+    let repairedBlankEndpoint = false;
     try {
-      if (input.provider === "openai") {
-        await persistOpenClawOpenAiProviderConfig(apiKey, {
-          endpoint: input.endpoint ? normalizeOpenAiCompatibleProviderBaseUrl(input.endpoint) : undefined
+      if (input.provider === "openai" && input.endpoint) {
+        const result = await persistOpenClawOpenAiProviderConfig(apiKey, {
+          endpoint: normalizeOpenAiCompatibleProviderBaseUrl(input.endpoint)
         });
+        repairedBlankEndpoint = result.repairedBlankEndpoint;
       } else {
-        await persistOpenClawProviderToken(input.provider, apiKey, {
+        const result = await persistOpenClawProviderToken(input.provider, apiKey, {
           endpoint: input.endpoint
         });
+        repairedBlankEndpoint = result.repairedBlankEndpoint;
       }
     } catch (error) {
       const statusContext = await readProviderConnectionContext(input.provider);
-      const tokenHandoff = resolveProviderTokenAuthHandoff(input.provider, commandBin, error);
-
-      if (tokenHandoff) {
-        return buildActionResult({
-          ok: true,
-          action: input.action,
-          provider: input.provider,
-          message: tokenHandoff.continueMessage,
-          connection: statusContext.connection,
-          models: [],
-          manualCommand: tokenHandoff.command,
-          docsUrl: addModelsDocsUrl
-        });
-      }
-
       return buildActionResult({
         ok: false,
         action: input.action,
@@ -430,21 +605,50 @@ async function handleProviderAction(
     }
 
     clearModelProviderCaches();
-    const snapshot = await getMissionControlSnapshot({ force: true });
+    const snapshot = await getMissionControlSnapshot({ force: true }).catch(() => undefined);
     const statusContext = await readProviderConnectionContext(input.provider);
     const connectedLabel =
       input.provider === "openai" && input.endpoint
         ? "custom OpenAI-compatible endpoint"
         : getModelProviderDescriptor(input.provider).shortLabel;
 
+    let models: AddModelsCatalogModel[] = [];
+    try {
+      models = await readProviderCatalog(input.provider, statusContext.configuredModelIds, commandBin, {
+        preferScan: input.provider === "openai" && Boolean(input.endpoint)
+      });
+    } catch (error) {
+      return buildActionResult({
+        ok: false,
+        action: input.action,
+        provider: input.provider,
+        message: readProviderCredentialVerificationError(input.provider, error),
+        snapshot,
+        connection: {
+          ...statusContext.connection,
+          verification: "degraded",
+          degraded: true,
+          recovery: "The credential was saved. Retry discovery when the provider is reachable."
+        },
+        models: [],
+        docsUrl: addModelsDocsUrl
+      });
+    }
+
     return buildActionResult({
       ok: true,
       action: input.action,
       provider: input.provider,
-      message: `Connected ${connectedLabel}. Discovering available models is next.`,
+      message: `${repairedBlankEndpoint ? `Repaired the invalid ${connectedLabel} endpoint configuration. ` : ""}Connected ${connectedLabel}. Found ${models.length} available model${models.length === 1 ? "" : "s"}.`,
       snapshot,
-      connection: statusContext.connection,
-      models: [],
+      connection: {
+        ...statusContext.connection,
+        verification: "verified",
+        detail: models.length > 0
+          ? `Credential verified through OpenClaw. ${models.length} model${models.length === 1 ? "" : "s"} available.`
+          : "Credential accepted by OpenClaw. No models were returned yet."
+      },
+      models,
       docsUrl: addModelsDocsUrl
     });
   }
@@ -1362,7 +1566,8 @@ function buildActionResult({
   docsUrl = null,
   defaultModel,
   disconnectImpact,
-  modelRemoveImpact
+  modelRemoveImpact,
+  providerConfig
 }: {
   ok: boolean;
   action: AddModelsProviderActionResult["action"];
@@ -1377,6 +1582,7 @@ function buildActionResult({
   defaultModel?: AddModelsProviderActionResult["defaultModel"];
   disconnectImpact?: AddModelsProviderActionResult["disconnectImpact"];
   modelRemoveImpact?: AddModelsProviderActionResult["modelRemoveImpact"];
+  providerConfig?: AddModelsProviderActionResult["providerConfig"];
 }): AddModelsProviderActionResult {
   return {
     ok,
@@ -1391,6 +1597,7 @@ function buildActionResult({
     defaultModel,
     disconnectImpact,
     modelRemoveImpact,
+    providerConfig,
     snapshot
   };
 }
@@ -1532,6 +1739,23 @@ async function resolveProviderConnectionStatus(
 
   if (customOpenAiConnection) {
     return customOpenAiConnection;
+  }
+
+  const credentialConfigured = await readOpenClawProviderCredentialConfigured(provider);
+
+  if (credentialConfigured) {
+    return {
+      provider,
+      connected: true,
+      verification: "credential-stored" as const,
+      canConnect: true,
+      needsTerminal: false,
+      source: "openclaw-config" as const,
+      degraded: false,
+      stale: false,
+      recovery: null,
+      detail: "Credential stored in OpenClaw Gateway configuration."
+    };
   }
 
   return modelStatusConnection ?? fileBasedStatus;
@@ -1840,36 +2064,17 @@ function isCodexModelTag(tag: string) {
   return /^(codex|openai-codex|chatgpt|app-server|codex-app-server)$/i.test(tag.trim());
 }
 
-function resolveProviderTokenAuthHandoff(
-  provider: AddModelsProviderId,
-  commandBin: string,
-  error: unknown
-) {
-  if (!isProviderTokenPersistenceUnavailable(error)) {
-    return null;
+function readProviderCredentialVerificationError(provider: AddModelsProviderId, error: unknown) {
+  const message = redactErrorMessage(error, "Provider verification failed.");
+  const label = getModelProviderDescriptor(provider).shortLabel;
+
+  if (/\b(?:401|403|unauthori[sz]ed|forbidden|invalid (?:api )?key)\b/i.test(message)) {
+    return `The API key was rejected by ${label}.`;
   }
 
-  const label = getModelProviderDescriptor(provider).shortLabel;
-  const authCommand = provider === "openrouter" ? "paste-token" : "paste-api-key";
-  const profileArgs = provider === "openrouter" ? [] : ["--profile-id", `${provider}:default`];
+  if (/timeout|unreachable|ECONN|network|fetch failed/i.test(message)) {
+    return "The credential was saved, but OpenClaw could not reach the provider.";
+  }
 
-  return {
-    command: formatOpenClawCommand(commandBin, [
-      "models",
-      "auth",
-      authCommand,
-      "--provider",
-      provider,
-      ...profileArgs
-    ]),
-    continueMessage:
-      `OpenClaw does not expose native ${label} API key persistence to AgentOS yet. Continue in Terminal to paste your ${label} API key, then return here and refresh this provider.`
-  };
-}
-
-function isProviderTokenPersistenceUnavailable(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error || "");
-
-  return /Gateway-native provider token persistence is not available yet/i.test(message) ||
-    /Legacy OpenClaw provider file writes are disabled by default/i.test(message);
+  return "OpenClaw did not accept this provider configuration. Review the Gateway logs.";
 }

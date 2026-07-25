@@ -15,11 +15,17 @@ export type ModelProviderAdapter = {
   descriptor: ModelProviderDescriptor;
   getConnectionStatus: () => Promise<AddModelsProviderActionResult>;
   connect: (input?: { apiKey?: string; endpoint?: string; providerName?: string; modelId?: string; force?: boolean }) => Promise<AddModelsProviderActionResult>;
+  updateProvider: (input: { endpoint?: string | null; api?: string }) => Promise<AddModelsProviderActionResult>;
+  replaceCredential: (apiKey: string) => Promise<AddModelsProviderActionResult>;
   switchAccount: () => Promise<AddModelsProviderActionResult>;
   discoverModels: () => Promise<AddModelsProviderActionResult>;
   addModels: (modelIds: string[]) => Promise<AddModelsProviderActionResult>;
   getDisconnectImpact: () => Promise<AddModelsProviderActionResult>;
   disconnect: () => Promise<AddModelsProviderActionResult>;
+  getCredentialDisconnectImpact: () => Promise<AddModelsProviderActionResult>;
+  disconnectCredential: () => Promise<AddModelsProviderActionResult>;
+  getDeleteImpact: () => Promise<AddModelsProviderActionResult>;
+  deleteProvider: () => Promise<AddModelsProviderActionResult>;
 };
 
 export class ModelProviderActionError extends Error {
@@ -35,7 +41,8 @@ export class ModelProviderActionError extends Error {
 const MODEL_PROVIDER_REQUEST_TIMEOUT_MS = 30_000;
 
 async function runProviderAction(
-  request: AddModelsProviderActionRequest
+  request: AddModelsProviderActionRequest,
+  options?: { allowNotOk?: boolean }
 ): Promise<AddModelsProviderActionResult> {
   let response: Response;
 
@@ -61,10 +68,13 @@ async function runProviderAction(
     | null;
 
   if (!response.ok || !result) {
+    if (options?.allowNotOk && result) {
+      return result;
+    }
     throw new Error(result?.error || result?.message || "Model provider request failed.");
   }
 
-  if (!result.ok && result.message) {
+  if (!result.ok && result.message && !options?.allowNotOk) {
     throw new ModelProviderActionError(result.message, result);
   }
 
@@ -90,6 +100,19 @@ function createModelProviderAdapter(providerId: AddModelsProviderId): ModelProvi
         modelId: input?.modelId?.trim() ? input.modelId.trim() : undefined,
         force: input?.force === true ? true : undefined
       }),
+    updateProvider: (input) =>
+      runProviderAction({
+        action: "update-provider",
+        provider: providerId,
+        endpoint: input.endpoint,
+        api: input.api
+      }),
+    replaceCredential: (apiKey) =>
+      runProviderAction({
+        action: "replace-credential",
+        provider: providerId,
+        apiKey
+      }),
     switchAccount: () =>
       runProviderAction({
         action: "switch-account",
@@ -110,10 +133,32 @@ function createModelProviderAdapter(providerId: AddModelsProviderId): ModelProvi
       runProviderAction({
         action: "disconnect-impact",
         provider: providerId
-      }),
+      }, { allowNotOk: true }),
     disconnect: () =>
       runProviderAction({
         action: "disconnect",
+        provider: providerId,
+        confirmed: true
+      }),
+    getCredentialDisconnectImpact: () =>
+      runProviderAction({
+        action: "disconnect-credential-impact",
+        provider: providerId
+      }, { allowNotOk: true }),
+    disconnectCredential: () =>
+      runProviderAction({
+        action: "disconnect-credential",
+        provider: providerId,
+        confirmed: true
+      }),
+    getDeleteImpact: () =>
+      runProviderAction({
+        action: "delete-provider-impact",
+        provider: providerId
+      }, { allowNotOk: true }),
+    deleteProvider: () =>
+      runProviderAction({
+        action: "delete-provider",
         provider: providerId,
         confirmed: true
       })

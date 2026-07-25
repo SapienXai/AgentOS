@@ -3,10 +3,10 @@ import { z } from "zod";
 
 import { listOpenClawModels } from "@/lib/openclaw/application/catalog-service";
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
-import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { buildModelRecords } from "@/lib/openclaw/adapter/model-adapter";
 import {
   addOpenClawModelsToConfig,
+  readOpenClawProviderModelStatus,
   readOpenClawConfiguredModelIds
 } from "@/lib/openclaw/application/model-provider-state-service";
 import {
@@ -56,6 +56,7 @@ export async function GET() {
     return NextResponse.json(
       redactSecrets({
         ...result,
+        checkedAt: new Date().toISOString(),
         models: markConfiguredCatalogModels(result.models, configuredModelIds)
       }),
       { status: 200 }
@@ -179,11 +180,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: s
 }
 
 async function readModelStatus(): Promise<ModelsStatusPayload | null> {
-  try {
-    return await getOpenClawAdapter().getModelStatus({ timeoutMs: 8_000 });
-  } catch {
-    return null;
-  }
+  return readOpenClawProviderModelStatus();
 }
 
 function normalizeCatalogModels(

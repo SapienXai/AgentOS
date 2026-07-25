@@ -452,6 +452,12 @@ export interface OpenClawSessionReferenceInput {
   agentId?: string;
 }
 
+export interface OpenClawSessionModelPatchInput extends OpenClawSessionReferenceInput {
+  model: string | null;
+}
+
+export type OpenClawSessionModelPatchPayload = Record<string, unknown>;
+
 export interface OpenClawDescribeSessionInput extends OpenClawSessionReferenceInput {
   limit?: number;
 }
@@ -991,6 +997,7 @@ export interface OpenClawGatewayClient {
   setModelAuthOrder(input: OpenClawModelAuthOrderSetInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   listAgents(options?: OpenClawCommandOptions): Promise<OpenClawAgentListPayload>;
   listSessions(input?: OpenClawListSessionsInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionsPayload>;
+  patchSessionModel?(input: OpenClawSessionModelPatchInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionModelPatchPayload>;
   describeSession(input?: OpenClawDescribeSessionInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionPayload>;
   getSessionHistory(
     input?: OpenClawSessionHistoryInput,

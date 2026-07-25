@@ -17,6 +17,7 @@ import {
   MessageSquareText,
   MoreHorizontal,
   Radar,
+  RotateCcw,
   Pencil,
   TerminalSquare,
   X
@@ -549,6 +550,8 @@ function InspectorPanelContent({
                               runtimeOutput={resolvedRuntimeOutput}
                               runtimeOutputLoading={runtimeOutputLoading}
                               runtimeOutputError={resolvedRuntimeOutputError}
+                              onSnapshotChange={onSnapshotChange}
+                              onRefresh={onRefresh}
                             />
                           ) : null}
                           {selectedModel ? <ModelContent snapshot={snapshot} modelId={selectedModel.id} /> : null}
@@ -3174,14 +3177,19 @@ function RuntimeContent({
   runtimeId,
   runtimeOutput,
   runtimeOutputLoading,
-  runtimeOutputError
+  runtimeOutputError,
+  onSnapshotChange,
+  onRefresh
 }: {
   snapshot: MissionControlSnapshot;
   runtimeId: string;
   runtimeOutput: RuntimeOutputRecord | null;
   runtimeOutputLoading: boolean;
   runtimeOutputError: string | null;
+  onSnapshotChange?: (updater: (snapshot: MissionControlSnapshot) => MissionControlSnapshot) => void;
+  onRefresh?: () => Promise<void>;
 }) {
+  const [resettingModel, setResettingModel] = useState(false);
   const relativeTimeReferenceMs = resolveRelativeTimeReferenceMs(snapshot.generatedAt);
   const runtime = snapshot.runtimes.find((entry) => entry.id === runtimeId);
   const createdFiles = dedupeCreatedFiles(runtimeOutput?.createdFiles ?? (runtime ? extractCreatedFilesFromRuntime(runtime) : []));
@@ -3194,6 +3202,47 @@ function RuntimeContent({
     return null;
   }
 
+  const agent = snapshot.agents.find((entry) => entry.id === runtime.agentId);
+  const agentModelId = agent?.modelId && agent.modelId !== "unassigned" ? agent.modelId : null;
+  const hasSessionModelOverride =
+    runtime.source === "session" &&
+    Boolean(runtime.key) &&
+    Boolean(runtime.modelId) &&
+    Boolean(agentModelId) &&
+    runtime.modelId !== agentModelId;
+
+  const resetModelOverride = async () => {
+    if (!hasSessionModelOverride || resettingModel) {
+      return;
+    }
+
+    setResettingModel(true);
+    try {
+      const response = await fetch("/api/sessions/model", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionKey: runtime.key,
+          agentId: runtime.agentId,
+          action: "inherit"
+        })
+      });
+      const payload = (await response.json()) as { error?: string; snapshot?: MissionControlSnapshot };
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || "Unable to reset the session model override.");
+      }
+      if (payload.snapshot) {
+        onSnapshotChange?.(() => payload.snapshot!);
+      }
+      toast.success("Session now inherits the agent model.");
+      void onRefresh?.().catch(() => undefined);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to reset the session model override.");
+    } finally {
+      setResettingModel(false);
+    }
+  };
+
   return (
     <>
       <InfoCard icon={TerminalSquare} title="Runtime key" value={runtime.status}>
@@ -3201,6 +3250,28 @@ function RuntimeContent({
         <p>Session {shortId(runtime.sessionId, 12)}</p>
         {runtime.taskId ? <p>Task {shortId(runtime.taskId, 12)}</p> : null}
         {runtime.runId ? <p>Run {shortId(runtime.runId, 12)}</p> : null}
+      </InfoCard>
+      <InfoCard
+        icon={Cpu}
+        title="Model scope"
+        value={hasSessionModelOverride ? "session override" : "agent inherited"}
+      >
+        <p>Session: {runtime.modelId || agentModelId || "OpenClaw default"}</p>
+        <p>Agent: {agentModelId || "OpenClaw global default"}</p>
+        {hasSessionModelOverride ? (
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-2 h-8 rounded-[10px] px-3 text-[11px]"
+            disabled={resettingModel}
+            onClick={() => {
+              void resetModelOverride();
+            }}
+          >
+            <RotateCcw className={cn("mr-2 h-3.5 w-3.5", resettingModel && "animate-spin")} />
+            Use agent model
+          </Button>
+        ) : null}
       </InfoCard>
       {runtimeEvidenceView ? <RuntimeEvidencePanel view={runtimeEvidenceView} /> : null}
       <InfoCard icon={Radar} title="Activity" value={formatRelativeTime(runtime.updatedAt, relativeTimeReferenceMs)}>

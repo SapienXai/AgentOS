@@ -72,6 +72,8 @@ import type {
   OpenClawSessionHistoryInput,
   OpenClawSessionHistoryPayload,
   OpenClawSessionControlPayload,
+  OpenClawSessionModelPatchInput,
+  OpenClawSessionModelPatchPayload,
   OpenClawSessionPayload,
   OpenClawSessionSteerInput,
   OpenClawSessionsPayload,
@@ -104,6 +106,7 @@ export interface OpenClawAdapter {
   setModelAuthOrder(input: OpenClawModelAuthOrderSetInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   listAgents(options?: OpenClawCommandOptions): Promise<OpenClawAgentListPayload>;
   listSessions(input?: OpenClawListSessionsInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionsPayload>;
+  patchSessionModel?(input: OpenClawSessionModelPatchInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionModelPatchPayload>;
   describeSession(input?: OpenClawDescribeSessionInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionPayload>;
   getSessionHistory(
     input?: OpenClawSessionHistoryInput,
@@ -267,6 +270,14 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
 
   listSessions(input: OpenClawListSessionsInput = {}, options: OpenClawCommandOptions = {}) {
     return this.getClient().listSessions(input, options);
+  }
+
+  patchSessionModel(input: OpenClawSessionModelPatchInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.patchSessionModel) {
+      return Promise.reject(new Error("This OpenClaw client does not support sessions.patch."));
+    }
+    return client.patchSessionModel(input, options);
   }
 
   describeSession(input: OpenClawDescribeSessionInput = {}, options: OpenClawCommandOptions = {}) {

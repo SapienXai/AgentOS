@@ -130,6 +130,28 @@ test("runtime snapshot mapper preserves gateway runtime metadata from partial pa
   assert.equal(runtimes[0].metadata.gatewayObjectKind, "runtime");
 });
 
+test("runtime snapshot mapper qualifies session models with the OpenClaw provider", () => {
+  const runtimes = mapOpenClawRuntimeSnapshotToRuntimes(
+    {
+      sessions: [{
+        key: "agent:agent-1:main",
+        sessionId: "session-1",
+        agentId: "agent-1",
+        model: "Qwen/Qwen3.6-35B-A3B",
+        modelProvider: "entrim",
+        updatedAt: 1_700_000_000_000
+      }]
+    },
+    {
+      agentConfig: [{ id: "agent-1", workspace: "/tmp/workspace", model: "entrim/Qwen/Qwen3.6-35B-A3B" }],
+      agentsList: [{ id: "agent-1", workspace: "/tmp/workspace", model: "entrim/Qwen/Qwen3.6-35B-A3B" }],
+      resolveWorkspaceId: () => "workspace-1"
+    }
+  );
+
+  assert.equal((runtimes[0] as RuntimeRecord | undefined)?.modelId, "entrim/Qwen/Qwen3.6-35B-A3B");
+});
+
 test("workspace bindings keep workspace, agent, and resolver shape stable", () => {
   const bindings = createMissionControlWorkspaceBindings([
     { id: "agent-1", workspace: "/tmp/acme", agentDir: "/tmp/acme/.openclaw/agents/agent-1", model: "openai/test" },

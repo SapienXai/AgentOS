@@ -13,16 +13,20 @@ import {
 import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import {
   isKnownOpenAiCodexModelId,
+  mergeModelStatusWithGatewayCredentials,
   normalizeOpenAiCodexModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
 import {
   getModelProviderDescriptor,
+  getModelProviderCredentialTarget,
+  modelProviderCredentialRegistry,
   isAddModelsProviderId,
   isBuiltInAddModelsProviderId
 } from "@/lib/openclaw/model-provider-registry";
 import { redactSecretText } from "@/lib/security/redaction";
 import type {
   AddModelsProviderConnectionStatus,
+  AddModelsProviderConfigSummary,
   AddModelsProviderId
 } from "@/lib/openclaw/types";
 import type { ModelsStatusPayload } from "@/lib/openclaw/client/gateway-client";
@@ -62,7 +66,7 @@ export type OpenClawProviderModelsEntry = Record<string, unknown> & {
   models?: OpenClawProviderModelEntry[];
   baseUrl?: string;
   baseURL?: string;
-  apiKey?: string;
+  apiKey?: unknown;
   api?: string;
   name?: string;
   label?: string;
@@ -144,9 +148,33 @@ function readConfiguredModelIdsFromDefaults(defaults: OpenClawAgentDefaultsConfi
 
 export async function readOpenClawProviderModelStatus(): Promise<ModelsStatusPayload | null> {
   try {
-    return await getOpenClawAdapter().getModelStatus({ timeoutMs: 8_000 });
+    const [status, credentialProviders] = await Promise.all([
+      getOpenClawAdapter().getModelStatus({ timeoutMs: 8_000 }),
+      readOpenClawConfiguredProviderCredentialIds()
+    ]);
+    return mergeModelStatusWithGatewayCredentials(status, credentialProviders);
   } catch {
     return null;
+  }
+}
+
+export async function readOpenClawConfiguredProviderCredentialIds(): Promise<AddModelsProviderId[]> {
+  try {
+    const adapter = getOpenClawAdapter();
+    const providers = Object.keys(modelProviderCredentialRegistry) as AddModelsProviderId[];
+    const configured = await Promise.all(providers.map(async (provider) => {
+      const target = getModelProviderCredentialTarget(provider);
+      if (!target) {
+        return null;
+      }
+
+      const value = await adapter.getConfig<unknown>(target.configPath, { timeoutMs: 5_000 });
+      return isConfiguredCredentialValue(value) ? provider : null;
+    }));
+
+    return configured.filter((provider): provider is AddModelsProviderId => Boolean(provider));
+  } catch {
+    return [];
   }
 }
 
@@ -211,21 +239,30 @@ export async function persistOpenClawOpenAiProviderConfig(
     "models.providers.openai",
     { timeoutMs: 5_000 }
   );
-  const nextProviderConfig = cloneProviderModelsEntry(existingProviderConfig);
+  const nextProviderConfig = cloneProviderCredentialOverlay(existingProviderConfig);
   const trimmedApiKey = apiKey.trim();
   const trimmedEndpoint = options?.endpoint?.trim();
+  const existingBaseUrl = readProviderConfigBaseUrl(nextProviderConfig);
+  const repairedBlankEndpoint =
+    isRecord(existingProviderConfig) &&
+    (("baseUrl" in existingProviderConfig && !existingBaseUrl) ||
+      ("baseURL" in existingProviderConfig && !existingBaseUrl));
 
   nextProviderConfig.apiKey = trimmedApiKey;
 
   if (trimmedEndpoint) {
+    if (!isConcreteHttpEndpoint(trimmedEndpoint)) {
+      throw new Error("The provider endpoint must be a valid HTTP or HTTPS URL.");
+    }
     nextProviderConfig.baseUrl = trimmedEndpoint;
     delete nextProviderConfig.baseURL;
-  } else {
+  } else if (!existingBaseUrl) {
     delete nextProviderConfig.baseUrl;
     delete nextProviderConfig.baseURL;
   }
 
   await adapter.setConfig("models.providers.openai", nextProviderConfig, { timeoutMs: 5_000 });
+  return { repairedBlankEndpoint };
 }
 
 export async function readOpenClawExplicitProviderConfig(provider: string) {
@@ -284,6 +321,143 @@ export async function readOpenClawExplicitProviderSummaries(): Promise<OpenClawE
       modelCount: Array.isArray(providerConfig.models) ? providerConfig.models.length : 0
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+export async function readOpenClawProviderConfigSummary(
+  provider: AddModelsProviderId
+): Promise<AddModelsProviderConfigSummary> {
+  const providerConfig = await readOpenClawExplicitProviderConfig(resolveProviderConfigId(provider));
+  const baseUrl = providerConfig ? readProviderConfigBaseUrl(providerConfig) : null;
+  const credentialConfigured = providerConfig
+    ? isConfiguredCredentialValue(providerConfig.apiKey)
+    : await readOpenClawProviderCredentialConfigured(provider);
+
+  return {
+    provider,
+    kind: isBuiltInAddModelsProviderId(provider) ? "builtin" : "custom",
+    providerId: provider,
+    baseUrl,
+    api: typeof providerConfig?.api === "string" && providerConfig.api.trim()
+      ? providerConfig.api.trim()
+      : null,
+    modelCount: Array.isArray(providerConfig?.models) ? providerConfig.models.length : 0,
+    credentialConfigured,
+    endpointOverride: Boolean(baseUrl),
+    editable: provider !== "openai-codex" && provider !== "ollama"
+  };
+}
+
+export async function updateOpenClawProviderSettings(
+  provider: AddModelsProviderId,
+  input: {
+    endpoint?: string | null;
+    api?: string;
+  }
+) {
+  const adapter = getOpenClawAdapter();
+  const configProvider = resolveProviderConfigId(provider);
+  const isBuiltIn = isBuiltInAddModelsProviderId(provider);
+  const existingProviderConfig = await readOpenClawExplicitProviderConfig(configProvider);
+
+  if (provider === "openai-codex" || provider === "ollama") {
+    throw new Error(`${getModelProviderDescriptor(provider).shortLabel} connection settings are managed by OpenClaw.`);
+  }
+
+  if (!isBuiltIn && !existingProviderConfig) {
+    throw new Error("Custom provider configuration no longer exists in OpenClaw.");
+  }
+
+  if (input.endpoint !== undefined) {
+    const endpoint = input.endpoint?.trim() || null;
+
+    if (!endpoint) {
+      if (!isBuiltIn) {
+        throw new Error("Custom providers require a base URL.");
+      }
+      if (isRecord(existingProviderConfig) && "baseUrl" in existingProviderConfig) {
+        await adapter.unsetConfig(`models.providers.${configProvider}.baseUrl`, { timeoutMs: 5_000 });
+      }
+      if (isRecord(existingProviderConfig) && "baseURL" in existingProviderConfig) {
+        await adapter.unsetConfig(`models.providers.${configProvider}.baseURL`, { timeoutMs: 5_000 });
+      }
+    } else {
+      if (!isConcreteHttpEndpoint(endpoint)) {
+        throw new Error("The provider endpoint must be a valid HTTP or HTTPS URL.");
+      }
+      await adapter.setConfig(`models.providers.${configProvider}.baseUrl`, endpoint, { timeoutMs: 5_000 });
+      await adapter.unsetConfig(`models.providers.${configProvider}.baseURL`, { timeoutMs: 5_000 }).catch(() => undefined);
+    }
+  }
+
+  if (input.api !== undefined) {
+    if (isBuiltIn) {
+      throw new Error("Bundled provider API modes are managed by OpenClaw.");
+    }
+
+    const api = input.api.trim();
+    if (!supportedCustomProviderApis.has(api)) {
+      throw new Error("Choose a supported OpenClaw provider API mode.");
+    }
+    await adapter.setConfig(`models.providers.${configProvider}.api`, api, { timeoutMs: 5_000 });
+  }
+
+  return readOpenClawProviderConfigSummary(provider);
+}
+
+export async function removeOpenClawProviderCredential(provider: AddModelsProviderId) {
+  const target = getModelProviderCredentialTarget(provider);
+
+  if (!target) {
+    return {
+      removed: false,
+      credentialCleanup: provider === "ollama" ? "not-required" as const : "retained-unsupported" as const
+    };
+  }
+
+  const configured = await readOpenClawProviderCredentialConfigured(provider);
+
+  if (configured) {
+    await getOpenClawAdapter().unsetConfig(target.configPath, { timeoutMs: 5_000 });
+  }
+
+  return {
+    removed: configured,
+    credentialCleanup: "removed" as const
+  };
+}
+
+export async function replaceOpenClawProviderCredential(
+  provider: AddModelsProviderId,
+  credential: string
+) {
+  const apiKey = credential.trim();
+
+  if (!apiKey) {
+    throw new Error("Enter an API key to replace the provider credential.");
+  }
+
+  if (isBuiltInAddModelsProviderId(provider)) {
+    if (provider === "openai") {
+      return persistOpenClawOpenAiProviderConfig(apiKey);
+    }
+    return persistOpenClawProviderToken(provider, apiKey);
+  }
+
+  const providerConfig = await readOpenClawExplicitProviderConfig(provider);
+  const baseUrl = providerConfig ? readProviderConfigBaseUrl(providerConfig) : null;
+
+  if (!providerConfig || !baseUrl) {
+    throw new Error("Custom provider configuration no longer exists in OpenClaw.");
+  }
+
+  await persistOpenClawExplicitProviderConfig(provider, {
+    baseUrl,
+    apiKey,
+    api: typeof providerConfig.api === "string" ? providerConfig.api : "openai-completions",
+    models: providerConfig.models ?? []
+  });
+
+  return { repairedBlankEndpoint: false };
 }
 
 export async function persistOpenClawExplicitProviderConfig(
@@ -376,43 +550,150 @@ export async function persistOpenClawProviderToken(
   token: string,
   options?: { endpoint?: string }
 ) {
-  assertLegacyProviderFileFallbackEnabled(
-    "Gateway-native provider token persistence is not available yet."
-  );
+  const target = getModelProviderCredentialTarget(provider);
 
-  const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
-  const authProfiles = await readJsonFile<OpenClawAuthProfilesPayload>(openClawAuthProfilesPath, {
-    version: 1
-  });
-  const profileId = `${provider}:manual`;
+  if (!target) {
+    throw new Error(`OpenClaw does not support API-key configuration for ${getModelProviderDescriptor(provider).shortLabel}.`);
+  }
 
-  config.meta = {
-    ...config.meta,
-    lastTouchedAt: new Date().toISOString()
-  };
-  config.auth = config.auth || {};
-  config.auth.profiles = config.auth.profiles || {};
-  config.auth.profiles[profileId] = {
-    provider,
-    mode: "token"
-  };
-  applyProviderEndpointConfig(config, provider, options?.endpoint);
+  // config.patch is optimistic/atomic in the native client. The retry only
+  // covers Gateway cooldown or a revision race; it never falls back to files.
+  return persistProviderCredentialViaGateway(provider, target, token.trim(), options?.endpoint);
+}
 
-  authProfiles.version = 1;
-  authProfiles.profiles = authProfiles.profiles || {};
-  authProfiles.profiles[profileId] = {
-    type: "token",
-    provider,
-    token
-  };
-  authProfiles.usageStats = authProfiles.usageStats || {};
-  authProfiles.usageStats[profileId] = {
-    errorCount: authProfiles.usageStats[profileId]?.errorCount ?? 0,
-    lastUsed: Date.now()
-  };
+async function persistProviderCredentialViaGateway(
+  provider: AddModelsProviderId,
+  target: NonNullable<ReturnType<typeof getModelProviderCredentialTarget>>,
+  credential: string,
+  endpoint?: string
+) {
+  let lastError: unknown = null;
+  const adapter = getOpenClawAdapter();
+  const requestedEndpoint = endpoint?.trim();
 
-  await writeJsonFile(openClawConfigPath, config);
-  await writeJsonFile(openClawAuthProfilesPath, authProfiles);
+  if (requestedEndpoint && !isConcreteHttpEndpoint(requestedEndpoint)) {
+    throw new Error("The provider endpoint must be a valid HTTP or HTTPS URL.");
+  }
+
+  for (let attempt = 0; attempt <= gatewayConfigPatchRetryDelaysMs.length; attempt += 1) {
+    try {
+      const existingProviderConfig = await adapter.getConfig<OpenClawProviderModelsEntry>(
+        `models.providers.${provider}`,
+        { timeoutMs: 5_000 }
+      );
+      const existingBaseUrl = isRecord(existingProviderConfig)
+        ? readProviderConfigBaseUrl(existingProviderConfig)
+        : null;
+      const repairedBlankEndpoint =
+        isRecord(existingProviderConfig) &&
+        (("baseUrl" in existingProviderConfig && !existingBaseUrl) ||
+          ("baseURL" in existingProviderConfig && !existingBaseUrl));
+
+      if (requestedEndpoint) {
+        await adapter.setConfig(`models.providers.${provider}.baseUrl`, requestedEndpoint, { timeoutMs: 5_000 });
+        await adapter.unsetConfig(`models.providers.${provider}.baseURL`, { timeoutMs: 5_000 });
+      } else if (repairedBlankEndpoint) {
+        await adapter.unsetConfig(`models.providers.${provider}.baseUrl`, { timeoutMs: 5_000 });
+        await adapter.unsetConfig(`models.providers.${provider}.baseURL`, { timeoutMs: 5_000 });
+      }
+
+      await adapter.setConfig(target.configPath, credential, { timeoutMs: 5_000 });
+      return { repairedBlankEndpoint };
+    } catch (error) {
+      lastError = error;
+
+      const retryDelayMs = resolveGatewayConfigPatchRetryDelayMs(error, attempt);
+
+      if (retryDelayMs === null) {
+        throw new Error(buildProviderCredentialMutationFailureMessage(provider, error));
+      }
+
+      await tryStartGatewayAfterTransientConfigFailure(error);
+      await delay(retryDelayMs);
+    }
+  }
+
+  throw new Error(buildProviderCredentialMutationFailureMessage(provider, lastError));
+}
+
+function cloneProviderCredentialOverlay(value: unknown): OpenClawProviderModelsEntry {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return {
+    ...value,
+    ...(Array.isArray(value.models)
+      ? {
+          models: value.models
+            .filter(isRecord)
+            .map((entry) => ({ ...entry } as OpenClawProviderModelEntry))
+        }
+      : {})
+  };
+}
+
+function isConcreteHttpEndpoint(value: string | null | undefined) {
+  if (!value) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+const supportedCustomProviderApis = new Set([
+  "openai-completions",
+  "openai-responses",
+  "anthropic-messages",
+  "google-generative-ai"
+]);
+
+function buildProviderCredentialMutationFailureMessage(provider: AddModelsProviderId, error: unknown) {
+  const message = readErrorMessage(error);
+
+  if (/config validation failed: models\.providers\.[^.]+\.baseurl: too small/i.test(message)) {
+    return `OpenClaw did not accept the ${getModelProviderDescriptor(provider).shortLabel} endpoint. Remove or replace the provider endpoint, then retry the connection.`;
+  }
+
+  if (isGatewayConfigRateLimitError(error) || isGatewayConfigSettleError(error)) {
+    return "The Gateway configuration is temporarily unavailable. Try again.";
+  }
+
+  return "OpenClaw did not accept this provider configuration. Review the Gateway logs.";
+}
+
+export async function readOpenClawProviderCredentialConfigured(provider: AddModelsProviderId) {
+  const target = getModelProviderCredentialTarget(provider);
+
+  if (!target) {
+    return false;
+  }
+
+  try {
+    const value = await getOpenClawAdapter().getConfig<unknown>(target.configPath, { timeoutMs: 5_000 });
+    return isConfiguredCredentialValue(value);
+  } catch {
+    return false;
+  }
+}
+
+function isConfiguredCredentialValue(value: unknown) {
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const source = typeof value.source === "string" ? value.source.trim() : "";
+  const id = typeof value.id === "string" ? value.id.trim() : "";
+  return (source === "env" || source === "file" || source === "exec") && id.length > 0;
 }
 
 export async function addOpenClawModelsToConfig(provider: AddModelsProviderId, modelIds: string[]) {
@@ -546,7 +827,7 @@ function resolveProviderCredentialCleanup(
     return "not-required";
   }
 
-  if (!isBuiltInAddModelsProviderId(provider) || (provider === "openai" && providerConfigRemoved)) {
+  if (providerConfigRemoved) {
     return "removed";
   }
 
@@ -1580,16 +1861,6 @@ async function writeJsonFile(filePath: string, value: unknown) {
   if (filePath === openClawAuthProfilesPath) {
     await chmod(filePath, 0o600);
   }
-}
-
-function assertLegacyProviderFileFallbackEnabled(reason: string) {
-  if (isLegacyProviderFileFallbackEnabled()) {
-    return;
-  }
-
-  throw new Error(
-    `${reason} Legacy OpenClaw provider file writes are disabled by default; set ${legacyProviderFileFallbackEnv}=1 only for explicit recovery.`
-  );
 }
 
 function isLegacyProviderFileFallbackEnabled() {

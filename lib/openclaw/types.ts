@@ -1451,6 +1451,7 @@ export interface AddModelsCatalogModel {
 export interface AddModelsProviderConnectionStatus {
   provider: string;
   connected: boolean;
+  verification?: "not-configured" | "credential-stored" | "verified" | "degraded" | "unknown";
   canConnect: boolean;
   needsTerminal: boolean;
   detail: string | null;
@@ -1468,6 +1469,18 @@ export interface AddModelsProviderConnectionStatus {
   recovery?: string | null;
 }
 
+export interface AddModelsProviderConfigSummary {
+  provider: AddModelsProviderId;
+  kind: "builtin" | "custom";
+  providerId: string;
+  baseUrl: string | null;
+  api: string | null;
+  modelCount: number;
+  credentialConfigured: boolean;
+  endpointOverride: boolean;
+  editable: boolean;
+}
+
 export interface AddModelsEmptyState {
   kind: "no-models" | "ollama-empty" | "ollama-missing";
   title: string;
@@ -1478,6 +1491,8 @@ export interface AddModelsEmptyState {
 export type AddModelsProviderAction =
   | "status"
   | "connect"
+  | "update-provider"
+  | "replace-credential"
   | "switch-account"
   | "discover"
   | "add-models"
@@ -1485,7 +1500,11 @@ export type AddModelsProviderAction =
   | "remove-model-impact"
   | "remove-model"
   | "disconnect-impact"
-  | "disconnect";
+  | "disconnect"
+  | "disconnect-credential-impact"
+  | "disconnect-credential"
+  | "delete-provider-impact"
+  | "delete-provider";
 
 export interface AddModelsProviderDisconnectImpact {
   providerModelIds: string[];
@@ -1533,6 +1552,17 @@ export type AddModelsProviderActionRequest =
       force?: boolean;
     }
   | {
+      action: "update-provider";
+      provider: AddModelsProviderId;
+      endpoint?: string | null;
+      api?: string;
+    }
+  | {
+      action: "replace-credential";
+      provider: AddModelsProviderId;
+      apiKey: string;
+    }
+  | {
       action: "switch-account";
       provider: AddModelsProviderId;
     }
@@ -1568,6 +1598,24 @@ export type AddModelsProviderActionRequest =
       action: "disconnect";
       provider: AddModelsProviderId;
       confirmed: true;
+    }
+  | {
+      action: "disconnect-credential-impact";
+      provider: AddModelsProviderId;
+    }
+  | {
+      action: "disconnect-credential";
+      provider: AddModelsProviderId;
+      confirmed: true;
+    }
+  | {
+      action: "delete-provider-impact";
+      provider: AddModelsProviderId;
+    }
+  | {
+      action: "delete-provider";
+      provider: AddModelsProviderId;
+      confirmed: true;
     };
 
 export interface AddModelsProviderActionResult {
@@ -1587,6 +1635,7 @@ export interface AddModelsProviderActionResult {
   };
   disconnectImpact?: AddModelsProviderDisconnectImpact;
   modelRemoveImpact?: AddModelsModelRemoveImpact;
+  providerConfig?: AddModelsProviderConfigSummary;
   snapshot?: MissionControlSnapshot;
 }
 

@@ -206,6 +206,7 @@ export function OpenClawOnboardingProviderFlow({
   const activeDescriptor = getModelProviderDescriptor(activeProviderId);
   const activeDraft = resolveDraft(providerDrafts[activeProviderId]);
   const activeConnection = activeDraft.connection ?? resolveConnectionDetail(snapshot, activeProviderId);
+  const activeConnectionLabel = resolveProviderConnectionLabel(activeConnection);
   const snapshotProviderModels = useMemo(
     () =>
       snapshot.models
@@ -653,10 +654,10 @@ export function OpenClawOnboardingProviderFlow({
           </div>
 
           <Badge
-            variant={activeConnection.connected ? "success" : "muted"}
+            variant={activeConnection.verification === "verified" ? "success" : "muted"}
             className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]"
           >
-            {activeConnection.connected ? "Connected" : "Not connected"}
+            {activeConnectionLabel}
           </Badge>
         </div>
 
@@ -1084,7 +1085,10 @@ function resolveDraft(draft?: ProviderDraft): ProviderDraft {
   return draft ? draft : initialDraftState();
 }
 
-function resolveConnectionDetail(snapshot: MissionControlSnapshot, providerId: AddModelsProviderId) {
+function resolveConnectionDetail(
+  snapshot: MissionControlSnapshot,
+  providerId: AddModelsProviderId
+): AddModelsProviderConnectionStatus {
   const readinessProvider = snapshot.diagnostics.modelReadiness.authProviders.find(
     (provider) => provider.provider === providerId
   );
@@ -1092,7 +1096,15 @@ function resolveConnectionDetail(snapshot: MissionControlSnapshot, providerId: A
 
   if (providerId === "ollama") {
     return {
+      provider: providerId,
       connected: Boolean(localModelCount > 0),
+      verification: localModelCount > 0 ? "verified" : "not-configured",
+      canConnect: true,
+      needsTerminal: false,
+      source: "local-runtime",
+      degraded: false,
+      stale: false,
+      recovery: localModelCount > 0 ? null : "Start Ollama and refresh local model discovery.",
       detail:
         localModelCount > 0
           ? `${localModelCount} model${localModelCount === 1 ? "" : "s"} already visible in AgentOS.`
@@ -1103,13 +1115,43 @@ function resolveConnectionDetail(snapshot: MissionControlSnapshot, providerId: A
   const connected = Boolean(readinessProvider?.connected);
 
   return {
+    provider: providerId,
     connected,
+    verification: connected ? "credential-stored" as const : "not-configured" as const,
+    canConnect: true,
+    needsTerminal: providerId === "openai-codex",
+    source: readinessProvider ? "gateway" : "unknown",
+    degraded: false,
+    stale: false,
+    recovery: connected ? null : `Connect ${formatProviderLabel(providerId)} through OpenClaw, then refresh discovery.`,
     detail: connected
       ? readinessProvider?.detail || getModelProviderDescriptor(providerId).helperText
       : localModelCount > 0
         ? `${localModelCount} model${localModelCount === 1 ? "" : "s"} are already saved in AgentOS. Connect ${formatProviderLabel(providerId)} to use them.`
         : getModelProviderDescriptor(providerId).helperText
   };
+}
+
+function resolveProviderConnectionLabel(
+  connection: Pick<AddModelsProviderConnectionStatus, "connected" | "degraded" | "stale" | "verification">
+) {
+  if (connection.stale) {
+    return "Cached";
+  }
+
+  if (connection.degraded || connection.verification === "degraded") {
+    return connection.connected ? "Degraded" : "Needs reconnect";
+  }
+
+  if (connection.verification === "verified") {
+    return "Verified";
+  }
+
+  if (connection.verification === "credential-stored") {
+    return "Credential stored";
+  }
+
+  return connection.connected ? "Connected" : "Not connected";
 }
 
 function modelMatchesProvider(providerId: AddModelsProviderId, modelId: string, modelProvider?: string | null) {
