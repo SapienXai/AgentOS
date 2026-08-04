@@ -271,6 +271,41 @@ test("preflight report blocks update when Gateway is not ready", () => {
   assert.match(report.recommendedNextAction, /Do not update yet/);
 });
 
+test("preflight blocks a target with incompatible Gateway server-method evidence", () => {
+  const decision = resolveOpenClawUpdateDecision({
+    manifest,
+    agentOsVersion: "0.7.2",
+    targetVersion: "2026.6.8",
+    mode: "recommended"
+  });
+  const report = buildOpenClawUpdatePreflightReport({
+    snapshot: createUpdateSafetySnapshot({}),
+    targetVersion: "2026.6.8",
+    decision,
+    rollbackSnapshotAvailable: true,
+    serverMethodContractDiff: {
+      generatedAt: "2026-06-14T10:00:00.000Z",
+      source: "github-static",
+      currentVersion: "2026.6.7",
+      targetVersion: "2026.6.8",
+      status: "blocker",
+      currentMethodCount: 10,
+      targetMethodCount: 9,
+      changedServerMethodFiles: ["src/gateway/server-methods/models.ts"],
+      changedProtocolFiles: [],
+      changes: [],
+      blockerCount: 1,
+      warningCount: 0,
+      summary: "A required AgentOS Gateway method is removed.",
+      error: null
+    }
+  });
+
+  assert.equal(report.canAttemptUpdate, false);
+  assert.equal(report.blockers.some((check) => check.id === "server-method-contract"), true);
+  assert.equal(report.serverMethodContractDiff?.status, "blocker");
+});
+
 test("candidate preflight remains attemptable only with explicit opt-in warning", () => {
   const decision = resolveOpenClawUpdateDecision({
     manifest,
