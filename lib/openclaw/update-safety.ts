@@ -3,6 +3,7 @@ import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-norm
 import type {
   MissionControlSnapshot,
   OpenClawUpdateDecision,
+  OpenClawServerMethodContractDiffReport,
   OpenClawUpdateSafetyCheck,
   OpenClawUpdateSafetyCheckStatus,
   OpenClawUpdateSafetyReport
@@ -13,6 +14,7 @@ type BuildOpenClawUpdatePreflightReportInput = {
   targetVersion: string;
   decision: OpenClawUpdateDecision;
   rollbackSnapshotAvailable: boolean;
+  serverMethodContractDiff?: OpenClawServerMethodContractDiffReport | null;
   generatedAt?: Date;
 };
 
@@ -97,6 +99,16 @@ export function buildOpenClawUpdatePreflightReport(
       status: classifyDecisionStatus(input.decision),
       message: input.decision.reason
     }),
+    ...(input.serverMethodContractDiff
+      ? [createCheck({
+          id: "server-method-contract",
+          label: "Gateway server-method contract",
+          status: input.serverMethodContractDiff.status,
+          message: input.serverMethodContractDiff.error
+            ? `${input.serverMethodContractDiff.summary} ${input.serverMethodContractDiff.error}`
+            : input.serverMethodContractDiff.summary
+        })]
+      : []),
     createCheck({
       id: "gateway-reachability",
       label: "Current Gateway reachability",
@@ -212,6 +224,7 @@ export function buildOpenClawUpdatePreflightReport(
     canAttemptUpdate,
     requiresExplicitConfirmation,
     rollbackSnapshotAvailable: input.rollbackSnapshotAvailable,
+    serverMethodContractDiff: input.serverMethodContractDiff ?? null,
     recommendedNextAction: resolveRecommendedNextAction({
       canAttemptUpdate,
       decision: input.decision,
