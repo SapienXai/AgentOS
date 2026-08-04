@@ -47,7 +47,11 @@ import type {
 } from "@/lib/agentos/contracts";
 import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
 import { compareOpenClawReleases } from "@/lib/openclaw/release-comparison";
-import type { OpenClawUpdateSafetyCheck, OpenClawUpdateSafetyReport } from "@/lib/openclaw/types";
+import type {
+  OpenClawServerMethodContractDiffReport,
+  OpenClawUpdateSafetyCheck,
+  OpenClawUpdateSafetyReport
+} from "@/lib/openclaw/types";
 import type {
   OpenClawStabilityRelease,
   OpenClawStabilitySnapshot,
@@ -764,6 +768,7 @@ export function UpdatesPageContent({
                           </div>
                         </div>
                         <PreflightCheckList report={selectedPreflight} />
+                        <ServerMethodContractDiffPanel report={selectedPreflight.serverMethodContractDiff} />
                       </>
                     ) : (
                       <div className="mt-4 flex min-h-[150px] items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">
@@ -960,6 +965,89 @@ function PreflightCheckList({ report }: { report: OpenClawUpdateSafetyReport }) 
       ))}
     </div>
   );
+}
+
+function ServerMethodContractDiffPanel({
+  report
+}: {
+  report: OpenClawServerMethodContractDiffReport | null | undefined;
+}) {
+  if (!report) {
+    return null;
+  }
+
+  const tone: StatusTone = report.status === "safe"
+    ? "success"
+    : report.status === "blocker"
+      ? "danger"
+      : report.status === "warning"
+        ? "warning"
+        : "muted";
+  const visibleChanges = report.changes
+    .filter((change) => !change.method.startsWith("__"))
+    .sort((left, right) => contractChangePriority(left.status) - contractChangePriority(right.status))
+    .slice(0, 6);
+
+  return (
+    <div className="mt-3 rounded-lg border border-border bg-card p-3" data-server-method-contract-diff={report.status}>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold text-foreground">Gateway contract diff</p>
+          <p className="mt-1 text-[0.66rem] leading-4 text-muted-foreground">{report.summary}</p>
+        </div>
+        <StatusBadge label={contractDiffStatusLabel(report.status)} tone={tone} />
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-md border border-border bg-muted/30 sm:grid-cols-4">
+        <ContractDiffMetric label="Current methods" value={formatContractMetric(report.currentMethodCount)} />
+        <ContractDiffMetric label="Target methods" value={formatContractMetric(report.targetMethodCount)} />
+        <ContractDiffMetric label="Method files" value={String(report.changedServerMethodFiles.length)} />
+        <ContractDiffMetric label="Protocol files" value={String(report.changedProtocolFiles.length)} />
+      </div>
+
+      {visibleChanges.length > 0 ? (
+        <div className="mt-3 space-y-1.5">
+          {visibleChanges.map((change) => (
+            <div key={`${change.method}-${change.kind}`} className="rounded-md border border-border bg-muted/20 px-2.5 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <code className="text-[0.66rem] font-semibold text-foreground">{change.method}</code>
+                <StatusBadge
+                  label={change.status}
+                  tone={change.status === "blocker" ? "danger" : change.status === "warning" ? "warning" : "success"}
+                />
+              </div>
+              <p className="mt-1 text-[0.64rem] leading-4 text-muted-foreground">{change.message}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {report.error ? (
+        <p className="mt-3 text-[0.64rem] leading-4 text-muted-foreground">Evidence note: {report.error}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function ContractDiffMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border-border p-2.5 [&:not(:last-child)]:border-r">
+      <p className="text-[0.56rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{label}</p>
+      <p className="mt-1 text-xs font-semibold text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function contractChangePriority(status: "safe" | "warning" | "blocker") {
+  return status === "blocker" ? 0 : status === "warning" ? 1 : 2;
+}
+
+function contractDiffStatusLabel(status: OpenClawServerMethodContractDiffReport["status"]) {
+  return status === "safe" ? "Compatible" : status === "blocker" ? "Blocked" : status === "warning" ? "Review" : "Unknown";
+}
+
+function formatContractMetric(value: number | null) {
+  return value === null ? "Unknown" : String(value);
 }
 
 function PreflightCheckRow({ check }: { check: OpenClawUpdateSafetyCheck }) {
