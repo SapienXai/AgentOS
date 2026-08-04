@@ -479,6 +479,35 @@ export interface OpenClawUpdateSafetyCheck {
   message: string;
 }
 
+export type OpenClawServerMethodContractDiffStatus = "safe" | "warning" | "blocker" | "unknown";
+
+export interface OpenClawServerMethodContractChange {
+  method: string;
+  kind: "added" | "removed" | "scope-changed" | "policy-changed";
+  status: Exclude<OpenClawServerMethodContractDiffStatus, "unknown">;
+  currentScope: string | null;
+  targetScope: string | null;
+  affectedOperations: string[];
+  message: string;
+}
+
+export interface OpenClawServerMethodContractDiffReport {
+  generatedAt: string;
+  source: "github-static" | "unavailable";
+  currentVersion: string;
+  targetVersion: string;
+  status: OpenClawServerMethodContractDiffStatus;
+  currentMethodCount: number | null;
+  targetMethodCount: number | null;
+  changedServerMethodFiles: string[];
+  changedProtocolFiles: string[];
+  changes: OpenClawServerMethodContractChange[];
+  blockerCount: number;
+  warningCount: number;
+  summary: string;
+  error: string | null;
+}
+
 export interface OpenClawUpdateSafetyReport {
   generatedAt: string;
   targetVersion: string;
@@ -489,6 +518,7 @@ export interface OpenClawUpdateSafetyReport {
   canAttemptUpdate: boolean;
   requiresExplicitConfirmation: boolean;
   rollbackSnapshotAvailable: boolean;
+  serverMethodContractDiff?: OpenClawServerMethodContractDiffReport | null;
   recommendedNextAction: string;
   safeChecks: OpenClawUpdateSafetyCheck[];
   warnings: OpenClawUpdateSafetyCheck[];
