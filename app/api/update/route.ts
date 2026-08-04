@@ -22,6 +22,7 @@ import type {
   OpenClawUpdateSafetyReport
 } from "@/lib/openclaw/types";
 import { recordOpenClawUpdateRuntimeIssue } from "@/lib/openclaw/application/runtime-issue-service";
+import { getOpenClawServerMethodContractDiff } from "@/lib/openclaw/application/update-contract-diff-service";
 import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
 import {
   buildOpenClawDowngradeConfigBlockerManualCommand,
@@ -159,11 +160,13 @@ export async function POST(request: Request) {
 
   if (updateRequest.action === "preflight") {
     const rollbackSnapshot = await readOpenClawRollbackSnapshot();
+    const serverMethodContractDiff = await resolveServerMethodContractDiff(snapshot, targetVersion);
     const report = buildOpenClawUpdatePreflightReport({
       snapshot,
       targetVersion,
       decision: updateDecision,
-      rollbackSnapshotAvailable: Boolean(rollbackSnapshot)
+      rollbackSnapshotAvailable: Boolean(rollbackSnapshot),
+      serverMethodContractDiff
     });
 
     return NextResponse.json(redactSecrets({ report }));
@@ -1910,11 +1913,13 @@ async function runOpenClawUpdatePreflight(input: {
   decision: ReturnType<typeof resolveOpenClawUpdateDecision>;
   rollbackSnapshotAvailable: boolean;
 }): Promise<UpdatePreflightResult> {
+  const serverMethodContractDiff = await resolveServerMethodContractDiff(input.snapshot, input.targetVersion);
   const report = buildOpenClawUpdatePreflightReport({
     snapshot: input.snapshot,
     targetVersion: input.targetVersion,
     decision: input.decision,
-    rollbackSnapshotAvailable: input.rollbackSnapshotAvailable
+    rollbackSnapshotAvailable: input.rollbackSnapshotAvailable,
+    serverMethodContractDiff
   });
 
   if (!report.canAttemptUpdate) {
@@ -1930,6 +1935,18 @@ async function runOpenClawUpdatePreflight(input: {
     message: `Preflight passed for OpenClaw v${input.targetVersion}. ${report.recommendedNextAction}`,
     report
   };
+}
+
+async function resolveServerMethodContractDiff(snapshot: MissionControlSnapshot, targetVersion: string) {
+  const currentVersion = normalizeVersion(snapshot.diagnostics.version);
+  if (!currentVersion) {
+    return null;
+  }
+
+  return getOpenClawServerMethodContractDiff({
+    currentVersion,
+    targetVersion
+  });
 }
 
 function buildOpenClawUpdateCertificationScorecard(input: {
