@@ -19,7 +19,7 @@
 </p>
 
 <p>
-  <a href="https://sapienx.app/agentos"><strong>Website</strong></a>
+  <a href="https://agentos.sapienx.app/"><strong>Website</strong></a>
   ·
   <a href="https://youtu.be/ribFHZuKRos"><strong>Watch Demo</strong></a>
   ·
