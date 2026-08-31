@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import { controlGateway } from "@/lib/openclaw/application/gateway-service";
+import { requireAgentOsActorContext } from "@/lib/security/agentos-actor";
+import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
@@ -20,6 +22,9 @@ const actionMessageMap = {
 } satisfies Record<z.infer<typeof gatewayControlSchema>["action"], string>;
 
 export async function POST(request: Request) {
+  const actorResult = await requireAgentOsActorContext(request);
+  if ("response" in actorResult) return actorResult.response;
+
   try {
     const input = gatewayControlSchema.parse(await request.json());
     const currentSnapshot = await getMissionControlSnapshot({ force: true });
@@ -34,6 +39,12 @@ export async function POST(request: Request) {
     }
 
     await controlGateway(input.action);
+    await recordAgentOsAuditEvent({
+      actor: actorResult.actor,
+      operation: `gateway.${input.action}`,
+      targetKind: "gateway",
+      result: "succeeded"
+    }).catch(() => {});
     const snapshot = await getMissionControlSnapshot({ force: true });
 
     return NextResponse.json({
@@ -41,6 +52,12 @@ export async function POST(request: Request) {
       snapshot: redactSecrets(snapshot)
     });
   } catch (error) {
+    await recordAgentOsAuditEvent({
+      actor: actorResult.actor,
+      operation: "gateway.control",
+      targetKind: "gateway",
+      result: "failed"
+    }).catch(() => {});
     return NextResponse.json(
       {
         error: redactErrorMessage(error, "Unable to control the OpenClaw gateway.")

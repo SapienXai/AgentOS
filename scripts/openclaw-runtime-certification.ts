@@ -48,6 +48,7 @@ const FULL_SCOPES = [
   "operator.approvals",
   "operator.questions",
   "operator.pairing",
+  "operator.talk",
   "operator.talk.secrets"
 ];
 

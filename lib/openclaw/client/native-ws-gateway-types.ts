@@ -39,7 +39,9 @@ export const DEFAULT_OPERATOR_SCOPES = [
   "operator.read",
   "operator.write",
   "operator.approvals",
+  "operator.questions",
   "operator.pairing",
+  "operator.talk",
   "operator.talk.secrets"
 ];
 

@@ -1,4 +1,5 @@
 import type { CommandResult } from "@/lib/openclaw/cli";
+import type { OpenClawOperatorIdentity } from "@/lib/openclaw/identity/types";
 import type {
   AgentMemorySearchConfig,
   AgentSandboxConfig,
@@ -70,6 +71,7 @@ export type OpenClawGatewayClientDiagnostics = {
   lastNativeFailureAt: string | null;
   lastConnectedAt: string | null;
   lastDisconnectedAt: string | null;
+  operatorIdentity?: OpenClawOperatorIdentity;
 };
 
 export type OpenClawGatewayRequestPolicy = {
@@ -988,6 +990,8 @@ export type OpenClawUpdateStatusPayload = Record<string, unknown> & {
 };
 
 export interface OpenClawGatewayClient {
+  getDiagnostics?(): OpenClawGatewayClientDiagnostics;
+  getOperatorIdentity?(options?: OpenClawCommandOptions): Promise<OpenClawOperatorIdentity>;
   getHealth(options?: OpenClawCommandOptions): Promise<OpenClawHealthPayload>;
   getStatus(options?: OpenClawCommandOptions): Promise<StatusPayload>;
   getUpdateStatus(options?: OpenClawCommandOptions): Promise<OpenClawUpdateStatusPayload>;

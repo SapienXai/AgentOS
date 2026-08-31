@@ -639,7 +639,16 @@ test("Gateway native auth device access repair approves latest local scope reque
         requestId: "request-1",
         device: {
           deviceId: "device-1",
-          approvedScopes: ["operator.read", "operator.write", "operator.admin"]
+          approvedScopes: [
+            "operator.admin",
+            "operator.read",
+            "operator.write",
+            "operator.approvals",
+            "operator.questions",
+            "operator.pairing",
+            "operator.talk",
+            "operator.talk.secrets"
+          ]
         }
       };
     },
@@ -651,7 +660,9 @@ test("Gateway native auth device access repair approves latest local scope reque
           "operator.read",
           "operator.write",
           "operator.approvals",
+          "operator.questions",
           "operator.pairing",
+          "operator.talk",
           "operator.talk.secrets"
         ]
       };
@@ -668,7 +679,9 @@ test("Gateway native auth device access repair approves latest local scope reque
     "operator.read",
     "operator.write",
     "operator.approvals",
+    "operator.questions",
     "operator.pairing",
+    "operator.talk",
     "operator.talk.secrets"
   ]);
   assert.equal(result.envSynced, false);
@@ -708,7 +721,9 @@ test("Gateway native auth device access repair still approves CLI scopes when na
             "operator.read",
             "operator.write",
             "operator.approvals",
+            "operator.questions",
             "operator.pairing",
+            "operator.talk",
             "operator.talk.secrets"
           ]
         }
@@ -722,7 +737,9 @@ test("Gateway native auth device access repair still approves CLI scopes when na
           "operator.read",
           "operator.write",
           "operator.approvals",
+          "operator.questions",
           "operator.pairing",
+          "operator.talk",
           "operator.talk.secrets"
         ]
       };
@@ -739,7 +756,9 @@ test("Gateway native auth device access repair still approves CLI scopes when na
     "operator.read",
     "operator.write",
     "operator.approvals",
+    "operator.questions",
     "operator.pairing",
+    "operator.talk",
     "operator.talk.secrets"
   ]);
   assert.equal(result.approvalIssue, null);
@@ -754,7 +773,9 @@ test("Gateway native auth device access repair syncs approved pairing token for 
     "operator.read",
     "operator.write",
     "operator.approvals",
+    "operator.questions",
     "operator.pairing",
+    "operator.talk",
     "operator.talk.secrets"
   ];
   process.env.OPENCLAW_STATE_DIR = stateDir;
@@ -846,7 +867,9 @@ test("Gateway native auth device access repair trusts verified native access whe
     "operator.read",
     "operator.write",
     "operator.approvals",
+    "operator.questions",
     "operator.pairing",
+    "operator.talk",
     "operator.talk.secrets"
   ]);
   assert.match(result.approvalIssue ?? "", /local CLI device token has not reported/);
@@ -878,7 +901,9 @@ test("Gateway native auth device access repair is idempotent when native access 
     "operator.read",
     "operator.write",
     "operator.approvals",
+    "operator.questions",
     "operator.pairing",
+    "operator.talk",
     "operator.talk.secrets"
   ]);
   assert.match(result.approvalIssue ?? "", /No pending OpenClaw device access request found/);

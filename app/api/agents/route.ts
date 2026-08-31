@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createAgent, deleteAgent, getMissionControlSnapshot, updateAgent } from "@/lib/agentos/control-plane";
+import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
+import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 import { redactSecretText, redactSecrets } from "@/lib/security/redaction";
 
 export const runtime = "nodejs";
@@ -108,11 +110,31 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const authorization = await requireAgentOsOpenClawPreflight(request, {
+    operation: "agent.create",
+    method: "agents.create",
+    targetKind: "agent"
+  });
+  if ("response" in authorization) return authorization.response;
+
   try {
     const input = createAgentSchema.parse(await request.json());
     const created = await createAgent(input);
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "agent.create",
+      targetKind: "agent",
+      targetId: input.id,
+      result: "succeeded"
+    }).catch(() => {});
     return NextResponse.json(redactSecrets(created));
   } catch (error) {
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "agent.create",
+      targetKind: "agent",
+      result: "failed"
+    }).catch(() => {});
     return NextResponse.json(
       {
         error: formatAgentApiError("create", error)
@@ -123,11 +145,31 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const authorization = await requireAgentOsOpenClawPreflight(request, {
+    operation: "agent.update",
+    method: "agents.update",
+    targetKind: "agent"
+  });
+  if ("response" in authorization) return authorization.response;
+
   try {
     const input = updateAgentSchema.parse(await request.json());
     const updated = await updateAgent(input);
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "agent.update",
+      targetKind: "agent",
+      targetId: input.id,
+      result: "succeeded"
+    }).catch(() => {});
     return NextResponse.json(redactSecrets(updated));
   } catch (error) {
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "agent.update",
+      targetKind: "agent",
+      result: "failed"
+    }).catch(() => {});
     return NextResponse.json(
       {
         error: formatAgentApiError("update", error)
@@ -138,11 +180,31 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const authorization = await requireAgentOsOpenClawPreflight(request, {
+    operation: "agent.delete",
+    method: "agents.delete",
+    targetKind: "agent"
+  });
+  if ("response" in authorization) return authorization.response;
+
   try {
     const input = deleteAgentSchema.parse(await request.json());
     const deleted = await deleteAgent(input);
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "agent.delete",
+      targetKind: "agent",
+      targetId: input.agentId,
+      result: "succeeded"
+    }).catch(() => {});
     return NextResponse.json(redactSecrets(deleted));
   } catch (error) {
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "agent.delete",
+      targetKind: "agent",
+      result: "failed"
+    }).catch(() => {});
     return NextResponse.json(
       {
         error: formatAgentApiError("delete", error)

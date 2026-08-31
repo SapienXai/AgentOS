@@ -52,6 +52,8 @@ import {
 import { persistOpenClawCertificationScorecard } from "@/lib/openclaw/compatibility-lab/store";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import { getOpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
+import { requireAgentOsActorContext } from "@/lib/security/agentos-actor";
+import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -136,6 +138,15 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
+
+  const actorResult = await requireAgentOsActorContext(request);
+  if ("response" in actorResult) return actorResult.response;
+  await recordAgentOsAuditEvent({
+    actor: actorResult.actor,
+    operation: `openclaw.update.${updateRequest.action}`,
+    targetKind: "openclaw-runtime",
+    result: "started"
+  }).catch(() => {});
 
   const snapshot = await getMissionControlSnapshot({ force: true });
   const lifecycleStatus = await getOpenClawLifecycleService().getStatus().catch(() => null);

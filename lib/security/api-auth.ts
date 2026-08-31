@@ -87,6 +87,24 @@ export function evaluateAgentOsApiRequest(input: {
   };
 }
 
+/**
+ * Returns whether the request presented the configured API token.
+ *
+ * This deliberately does not apply origin or local-network policy. Callers
+ * that use the result for an API boundary must still run the normal request
+ * decision above. The token itself is never returned to application code.
+ */
+export function hasValidAgentOsApiToken(
+  headers: Headers,
+  env: Record<string, string | undefined> = process.env
+) {
+  const configuredToken = env[AGENTOS_API_TOKEN_ENV]?.trim();
+  if (!configuredToken) return false;
+
+  const providedToken = readBearerToken(headers) ?? readApiTokenCookie(headers);
+  return Boolean(providedToken && constantTimeStringEqual(providedToken, configuredToken));
+}
+
 export function evaluateAuthenticatedAgentOsApiRequest(input: {
   method: string;
   url: string;

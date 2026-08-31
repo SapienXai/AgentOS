@@ -8,6 +8,8 @@ import {
   saveOperatorProfile
 } from "@/lib/agentos/application/operator-profile-service";
 import { redactErrorMessage } from "@/lib/security/redaction";
+import { requireAgentOsActorContext } from "@/lib/security/agentos-actor";
+import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,8 +38,21 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
+    const actorResult = await requireAgentOsActorContext(request);
+    if ("response" in actorResult) return actorResult.response;
+
     const profile = profileSchema.parse(await request.json());
-    return NextResponse.json(await saveOperatorProfile(profile));
+    const actorId = actorResult.actor.authenticationMethod === "instance-session"
+      ? actorResult.actor.actorId
+      : undefined;
+    const saved = await saveOperatorProfile(profile, process.env, actorId);
+    await recordAgentOsAuditEvent({
+      actor: actorResult.actor,
+      operation: "profile.update",
+      targetKind: "operator-profile",
+      result: "succeeded"
+    }).catch(() => {});
+    return NextResponse.json(saved);
   } catch (error) {
     const invalidInput = error instanceof z.ZodError;
     return NextResponse.json(

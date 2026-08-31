@@ -635,6 +635,45 @@ test("native WS gateway client exposes handshake feature discovery", async () =>
   assert.deepEqual(fallback.calls, []);
 });
 
+test("native WS gateway client records requested and granted operator identity separately", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? {
+              type: "hello-ok",
+              protocol: 4,
+              server: { connId: "connection-1" },
+              auth: { role: "operator", scopes: ["operator.read"] }
+            }
+          : { ok: true }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250,
+    role: "operator",
+    scopes: ["operator.read", "operator.write", "operator.questions"]
+  });
+
+  const identity = await client.getOperatorIdentity();
+  assert.equal(identity.requestedRole, "operator");
+  assert.equal(identity.role, "operator");
+  assert.deepEqual(identity.requestedScopes, ["operator.read", "operator.write", "operator.questions"]);
+  assert.deepEqual(identity.grantedScopes, ["operator.read"]);
+  assert.equal(identity.grantedScopesKnown, true);
+  assert.equal(identity.connectionId, "connection-1");
+  assert.equal(identity.authenticated, true);
+  assert.equal(identity.source, "native-handshake");
+});
+
 test("native WS gateway client records protocol mismatch recovery diagnostics", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
@@ -721,7 +760,9 @@ test("native WS gateway client uses Gateway first for typed status requests", as
     "operator.read",
     "operator.write",
     "operator.approvals",
+    "operator.questions",
     "operator.pairing",
+    "operator.talk",
     "operator.talk.secrets"
   ]);
   assert.deepEqual(fallback.calls, []);

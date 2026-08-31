@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import { resolveAgentOsRuntimeDir } from "@/lib/agentos/runtime-auth";
+import { readInstanceProtectionState } from "@/lib/security/instance-protection";
 
 export const OPERATOR_PROFILE_FILE = "operator-profile.json";
 export const OPERATOR_PROFILE_AVATAR_MAX_CHARACTERS = 720_000;
@@ -17,7 +18,10 @@ export type OperatorProfile = {
   updatedAt: string | null;
 };
 
-type StoredOperatorProfile = Partial<OperatorProfile> & { version?: unknown };
+type StoredOperatorProfile = Partial<OperatorProfile> & {
+  version?: unknown;
+  actorId?: unknown;
+};
 
 const emptyOperatorProfile: OperatorProfile = {
   fullName: "",
@@ -32,30 +36,13 @@ export function resolveOperatorProfilePath(env: NodeJS.ProcessEnv = process.env)
 }
 
 export async function readOperatorProfile(env: NodeJS.ProcessEnv = process.env): Promise<OperatorProfile> {
-  let payload: StoredOperatorProfile;
-
-  try {
-    payload = JSON.parse(await readFile(resolveOperatorProfilePath(env), "utf8")) as StoredOperatorProfile;
-  } catch (error) {
-    if (isMissingFileError(error)) {
-      return { ...emptyOperatorProfile };
-    }
-
-    throw new Error("Operator profile data is unavailable or invalid.");
-  }
-
-  return {
-    fullName: readString(payload.fullName),
-    username: readString(payload.username),
-    email: readString(payload.email),
-    avatarDataUrl: isSupportedAvatarDataUrl(payload.avatarDataUrl) ? payload.avatarDataUrl : null,
-    updatedAt: readNullableString(payload.updatedAt)
-  };
+  return (await readOperatorProfileRecord(env)).profile;
 }
 
 export async function saveOperatorProfile(
   input: Omit<OperatorProfile, "updatedAt">,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  actorId?: string | null
 ): Promise<OperatorProfile> {
   if (input.avatarDataUrl !== null && !isSupportedAvatarDataUrl(input.avatarDataUrl)) {
     throw new Error("Operator profile avatar is invalid or too large.");
@@ -68,19 +55,59 @@ export async function saveOperatorProfile(
     avatarDataUrl: input.avatarDataUrl,
     updatedAt: new Date().toISOString()
   };
+  const current = await readOperatorProfileRecord(env);
+  const linkedActorId = actorId === undefined ? current.actorId : actorId;
+  if (linkedActorId !== null && !isStableActorId(linkedActorId)) {
+    throw new Error("Operator profile actor linkage is invalid.");
+  }
   const profilePath = resolveOperatorProfilePath(env);
   const temporaryPath = `${profilePath}.${randomUUID()}.tmp`;
 
   await mkdir(path.dirname(profilePath), { recursive: true, mode: 0o700 });
   await writeFile(
     temporaryPath,
-    `${JSON.stringify({ version: 1, ...profile }, null, 2)}\n`,
+    `${JSON.stringify({ version: 2, actorId: linkedActorId, ...profile }, null, 2)}\n`,
     { encoding: "utf8", mode: 0o600 }
   );
   await rename(temporaryPath, profilePath);
   await chmod(profilePath, 0o600);
 
   return profile;
+}
+
+export async function readOperatorProfileRecord(env: NodeJS.ProcessEnv = process.env): Promise<{
+  profile: OperatorProfile;
+  actorId: string | null;
+}> {
+  let payload: StoredOperatorProfile;
+
+  try {
+    payload = JSON.parse(await readFile(resolveOperatorProfilePath(env), "utf8")) as StoredOperatorProfile;
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return { profile: { ...emptyOperatorProfile }, actorId: null };
+    }
+
+    throw new Error("Operator profile data is unavailable or invalid.");
+  }
+
+  const profile = {
+    fullName: readString(payload.fullName),
+    username: readString(payload.username),
+    email: readString(payload.email),
+    avatarDataUrl: isSupportedAvatarDataUrl(payload.avatarDataUrl) ? payload.avatarDataUrl : null,
+    updatedAt: readNullableString(payload.updatedAt)
+  } satisfies OperatorProfile;
+  const actorId = isStableActorId(payload.actorId) ? payload.actorId : null;
+
+  let linkedActorId = actorId;
+  if (payload.version !== 2) {
+    const protectionState = await readInstanceProtectionState(env);
+    linkedActorId = protectionState?.actorId ?? actorId;
+    await writeOperatorProfileRecord(profile, linkedActorId, env);
+  }
+
+  return { profile, actorId: linkedActorId };
 }
 
 export function isSupportedAvatarDataUrl(value: unknown): value is string {
@@ -101,4 +128,25 @@ function readNullableString(value: unknown) {
 
 function isMissingFileError(error: unknown) {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+async function writeOperatorProfileRecord(
+  profile: OperatorProfile,
+  actorId: string | null,
+  env: NodeJS.ProcessEnv
+) {
+  const profilePath = resolveOperatorProfilePath(env);
+  const temporaryPath = `${profilePath}.${randomUUID()}.tmp`;
+  await mkdir(path.dirname(profilePath), { recursive: true, mode: 0o700 });
+  await writeFile(
+    temporaryPath,
+    `${JSON.stringify({ version: 2, actorId, ...profile }, null, 2)}\n`,
+    { encoding: "utf8", mode: 0o600 }
+  );
+  await rename(temporaryPath, profilePath);
+  await chmod(profilePath, 0o600);
+}
+
+function isStableActorId(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }

@@ -33,6 +33,7 @@ import {
 import { resetOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import { getOpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
 import { isOpenClawInvalidConfigError } from "@/lib/openclaw/command-failure";
+import { OPENCLAW_OPERATOR_SCOPES } from "@/lib/openclaw/identity/contract";
 import type { OpenClawDeviceApprovePayload } from "@/lib/openclaw/client/gateway-client";
 import type {
   GatewayAuthSecretState,
@@ -65,7 +66,9 @@ const GATEWAY_DEVICE_ACCESS_REQUIRED_SCOPES = [
   "operator.read",
   "operator.write",
   "operator.approvals",
+  "operator.questions",
   "operator.pairing",
+  "operator.talk",
   "operator.talk.secrets"
 ];
 
@@ -1146,7 +1149,9 @@ function resolveOpenClawStateDir() {
 }
 
 function normalizeGatewayRepairScopes(scopes: string[] | undefined) {
-  const normalized = readStringArray(scopes).filter((scope) => /^operator\./.test(scope));
+  const normalized = readStringArray(scopes).filter((scope) =>
+    (OPENCLAW_OPERATOR_SCOPES as readonly string[]).includes(scope)
+  );
   return normalized.length > 0 ? Array.from(new Set(normalized)).sort() : GATEWAY_DEVICE_ACCESS_REQUIRED_SCOPES;
 }
 

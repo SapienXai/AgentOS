@@ -10,6 +10,9 @@ import {
   updateGatewayRemoteUrl
 } from "@/lib/agentos/control-plane";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
+import { requireAgentOsActorContext } from "@/lib/security/agentos-actor";
+import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,8 +32,7 @@ const gatewayAuthGenerateSchema = z.object({
 });
 
 const gatewayAuthRepairSchema = z.object({
-  action: z.literal("repairDeviceAccess"),
-  scopes: z.array(z.string().min(1)).optional()
+  action: z.literal("repairDeviceAccess")
 });
 
 export async function GET(request: Request) {
@@ -64,16 +66,35 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const authorization = await requireAgentOsOpenClawPreflight(request, {
+    operation: "gateway.config.patch",
+    method: "config.patch",
+    targetKind: "gateway-config"
+  });
+  if ("response" in authorization) return authorization.response;
+
   try {
     const input = gatewaySettingsSchema.parse(await request.json());
     const snapshot = await updateGatewayRemoteUrl({
       gatewayUrl: input.gatewayUrl ?? null
     });
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "gateway.config.patch",
+      targetKind: "gateway-config",
+      result: "succeeded"
+    }).catch(() => {});
 
     return NextResponse.json({
       snapshot: redactSecrets(snapshot)
     });
   } catch (error) {
+    await recordAgentOsAuditEvent({
+      actor: authorization.actor,
+      operation: "gateway.config.patch",
+      targetKind: "gateway-config",
+      result: "failed"
+    }).catch(() => {});
     return NextResponse.json(
       {
         error: redactErrorMessage(error, "Unable to update the OpenClaw gateway.")
@@ -84,12 +105,21 @@ export async function PATCH(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const actorResult = await requireAgentOsActorContext(request);
+  if ("response" in actorResult) return actorResult.response;
+
   try {
     const body = await request.json();
 
     if (gatewayAuthGenerateSchema.safeParse(body).success) {
       const result = await generateGatewayNativeAuthToken();
       const authStatus = await getGatewayNativeAuthStatus();
+      await recordAgentOsAuditEvent({
+        actor: actorResult.actor,
+        operation: "gateway.auth.generate-token",
+        targetKind: "gateway-credential",
+        result: "succeeded"
+      }).catch(() => {});
 
       return NextResponse.json({
         saved: true,
@@ -101,10 +131,16 @@ export async function POST(request: Request) {
 
     const repairInput = gatewayAuthRepairSchema.safeParse(body);
     if (repairInput.success) {
-      const result = await repairGatewayNativeDeviceAccess({
-        requiredScopes: repairInput.data.scopes
-      });
+      // The repair scope set is server-owned. Browser input cannot request
+      // arbitrary OpenClaw privileges.
+      const result = await repairGatewayNativeDeviceAccess();
       const authStatus = await getGatewayNativeAuthStatus();
+      await recordAgentOsAuditEvent({
+        actor: actorResult.actor,
+        operation: "gateway.device.repair",
+        targetKind: "gateway-device",
+        result: "succeeded"
+      }).catch(() => {});
 
       return NextResponse.json({
         saved: true,
@@ -117,6 +153,12 @@ export async function POST(request: Request) {
     const input = gatewayAuthCredentialSchema.parse(body);
     const result = await saveGatewayNativeAuthCredential(input);
     const authStatus = await getGatewayNativeAuthStatus();
+    await recordAgentOsAuditEvent({
+      actor: actorResult.actor,
+      operation: "gateway.auth.save-credential",
+      targetKind: "gateway-credential",
+      result: "succeeded"
+    }).catch(() => {});
 
     return NextResponse.json({
       saved: true,
@@ -124,6 +166,12 @@ export async function POST(request: Request) {
       authStatus: redactSecrets(authStatus)
     });
   } catch (error) {
+    await recordAgentOsAuditEvent({
+      actor: actorResult.actor,
+      operation: "gateway.auth.mutation",
+      targetKind: "gateway-credential",
+      result: "failed"
+    }).catch(() => {});
     return NextResponse.json(
       {
         error: redactErrorMessage(error, "Unable to save the OpenClaw gateway credential.")

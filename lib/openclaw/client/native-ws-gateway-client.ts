@@ -186,6 +186,7 @@ import type {
   OpenClawUpdateStatusPayload,
   StatusPayload
 } from "@/lib/openclaw/client/types";
+import type { OpenClawOperatorIdentity } from "@/lib/openclaw/identity/types";
 
 export {
   isCliGatewayClientForcedByEnv,
@@ -269,6 +270,16 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     this.connection.close(reason);
   }
 
+  async getOperatorIdentity(options: OpenClawCommandOptions = {}): Promise<OpenClawOperatorIdentity> {
+    try {
+      await this.probeNativeHandshake(options);
+    } catch {
+      return this.connection.getOperatorIdentity();
+    }
+
+    return this.connection.getOperatorIdentity();
+  }
+
   getDiagnostics(): OpenClawGatewayClientDiagnostics {
     const connection = this.connection.getDiagnostics();
     const forceCli = this.options.forceCli || isCliGatewayClientForcedByEnv();
@@ -317,7 +328,8 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       lastNativeError: lastNativeError || null,
       lastNativeFailureAt: this.lastNativeFailure?.at ?? null,
       lastConnectedAt: connection.lastConnectedAt,
-      lastDisconnectedAt: connection.lastDisconnectedAt
+      lastDisconnectedAt: connection.lastDisconnectedAt,
+      operatorIdentity: this.connection.getOperatorIdentity()
     };
   }
 

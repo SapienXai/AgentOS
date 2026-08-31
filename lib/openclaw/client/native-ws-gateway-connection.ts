@@ -38,6 +38,7 @@ import type {
   OpenClawGatewayRequestPolicy,
   OpenClawGatewayEventSubscription
 } from "@/lib/openclaw/client/types";
+import type { OpenClawOperatorIdentity } from "@/lib/openclaw/identity/types";
 
 export type GatewayEventListener = (event: GatewayEventFrame) => void;
 
@@ -59,6 +60,17 @@ export class PersistentOpenClawGatewayConnection {
   private lastNativeError: string | null = null;
   private lastConnectedAt: string | null = null;
   private lastDisconnectedAt: string | null = null;
+  private operatorIdentity: OpenClawOperatorIdentity = {
+    requestedRole: null,
+    role: null,
+    requestedScopes: [],
+    grantedScopes: [],
+    grantedScopesKnown: false,
+    deviceId: null,
+    connectionId: null,
+    authenticated: false,
+    source: "unavailable"
+  };
 
   constructor(
     private readonly fallback: OpenClawGatewayClient,
@@ -75,6 +87,7 @@ export class PersistentOpenClawGatewayConnection {
     | "lastNativeError"
     | "lastConnectedAt"
     | "lastDisconnectedAt"
+    | "operatorIdentity"
   > {
     return {
       connectionState: this.state,
@@ -84,7 +97,16 @@ export class PersistentOpenClawGatewayConnection {
       cachedReadRequestCount: this.readRequestCache.size,
       lastNativeError: this.lastNativeError,
       lastConnectedAt: this.lastConnectedAt,
-      lastDisconnectedAt: this.lastDisconnectedAt
+      lastDisconnectedAt: this.lastDisconnectedAt,
+      operatorIdentity: this.getOperatorIdentity()
+    };
+  }
+
+  getOperatorIdentity(): OpenClawOperatorIdentity {
+    return {
+      ...this.operatorIdentity,
+      requestedScopes: [...this.operatorIdentity.requestedScopes],
+      grantedScopes: [...this.operatorIdentity.grantedScopes]
     };
   }
 
@@ -300,6 +322,17 @@ export class PersistentOpenClawGatewayConnection {
         options.signal
       );
       validateGatewayHandshakePayload(hello);
+      this.operatorIdentity = {
+        requestedRole: readOptionalString(connectParams.role),
+        role: readOptionalString(hello.auth?.role),
+        requestedScopes: readStringArray(connectParams.scopes),
+        grantedScopes: readStringArray(hello.auth?.scopes),
+        grantedScopesKnown: Array.isArray(hello.auth?.scopes),
+        deviceId: connectContext.deviceAuth?.deviceId ?? readOptionalString(readRecord(connectParams.device)?.id),
+        connectionId: readOptionalString(hello.server?.connId),
+        authenticated: true,
+        source: "native-handshake"
+      };
       this.hello = hello;
       this.state = "connected";
       this.lastConnectedAt = new Date().toISOString();
@@ -378,6 +411,10 @@ export class PersistentOpenClawGatewayConnection {
     const socket = this.socket;
     this.socket = null;
     this.hello = null;
+    this.operatorIdentity = {
+      ...this.operatorIdentity,
+      authenticated: false
+    };
     this.state = options.state;
     this.sharedReadRequests.clear();
     this.readRequestCache.clear();
@@ -401,6 +438,20 @@ export class PersistentOpenClawGatewayConnection {
       closeSocketForDisconnect(socket);
     }
   }
+}
+
+function readOptionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : [];
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
 function buildReadRequestCacheKey(method: string, params: Record<string, unknown>) {

@@ -1104,7 +1104,7 @@ function parseMissingScopes(message: string | null) {
     return [];
   }
 
-  for (const match of message.matchAll(/operator\.(?:admin|read|write|approvals|pairing|talk\.secrets)/g)) {
+  for (const match of message.matchAll(/operator\.(?:admin|read|write|approvals|questions|pairing|talk(?:\.secrets)?)/g)) {
     scopes.add(match[0]);
   }
 

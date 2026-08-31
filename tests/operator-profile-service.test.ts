@@ -35,7 +35,8 @@ test("operator profile sidecar defaults safely and writes owner-only data", asyn
   assert.equal(saved.fullName, "Kazim Akgul");
   assert.equal(saved.username, "kazim.akgul");
   assert.equal(saved.email, "kazim@example.com");
-  assert.equal(stored.version, 1);
+  assert.equal(stored.version, 2);
+  assert.equal(stored.actorId, null);
   assert.equal(fileStat.mode & 0o777, 0o600);
   assert.deepEqual(await readOperatorProfile(env), saved);
 });

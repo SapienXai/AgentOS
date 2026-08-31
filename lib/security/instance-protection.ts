@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -18,9 +18,10 @@ const LOGIN_MAX_FAILURES = 5;
 const DUMMY_SALT = "3b95d51f07317118d2ef196c0e9c7ae6";
 const DUMMY_HASH = "0".repeat(SCRYPT_KEY_LENGTH * 2);
 
-type InstanceProtectionState = {
-  version: 1;
+export type InstanceProtectionState = {
+  version: 2;
   enabled: true;
+  actorId: string;
   username: string;
   passwordSalt: string;
   passwordHash: string;
@@ -59,9 +60,8 @@ export async function readInstanceProtectionState(
   }
 
   try {
-    const parsed = JSON.parse(raw) as Partial<InstanceProtectionState>;
+    const parsed = JSON.parse(raw) as Partial<Omit<InstanceProtectionState, "version">> & { version?: unknown };
     if (
-      parsed.version !== 1 ||
       parsed.enabled !== true ||
       typeof parsed.username !== "string" ||
       !parsed.username.trim() ||
@@ -71,6 +71,26 @@ export async function readInstanceProtectionState(
       !Number.isSafeInteger(parsed.sessionVersion) ||
       typeof parsed.updatedAt !== "string"
     ) {
+      throw new Error("Instance Protection state is invalid.");
+    }
+
+    if (parsed.version === 1) {
+      const migratedState: InstanceProtectionState = {
+        version: 2,
+        enabled: true,
+        actorId: randomUUID(),
+        username: parsed.username,
+        passwordSalt: parsed.passwordSalt,
+        passwordHash: parsed.passwordHash,
+        sessionSecret: parsed.sessionSecret,
+        sessionVersion: parsed.sessionVersion as number,
+        updatedAt: new Date().toISOString()
+      };
+      await writeInstanceProtectionState(migratedState, env);
+      return migratedState;
+    }
+
+    if (parsed.version !== 2 || !isStableActorId(parsed.actorId)) {
       throw new Error("Instance Protection state is invalid.");
     }
 
@@ -117,8 +137,9 @@ export async function enableInstanceProtection(
   const passwordSalt = randomBytes(16).toString("hex");
   const passwordHash = await hashPassword(input.password, passwordSalt);
   const state: InstanceProtectionState = {
-    version: 1,
+    version: 2,
     enabled: true,
+    actorId: randomUUID(),
     username,
     passwordSalt,
     passwordHash,
@@ -345,4 +366,8 @@ function recordLoginFailure(key: string) {
 
 function isMissingFileError(error: unknown) {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
+}
+
+function isStableActorId(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }

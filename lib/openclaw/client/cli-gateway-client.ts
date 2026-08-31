@@ -100,6 +100,7 @@ import type {
   OpenClawUpdateStatusPayload,
   StatusPayload
 } from "@/lib/openclaw/client/types";
+import type { OpenClawOperatorIdentity } from "@/lib/openclaw/identity/types";
 
 function buildAgentTurnArgs(input: OpenClawAgentTurnInput) {
   const args = [
@@ -343,6 +344,20 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
+  async getOperatorIdentity(): Promise<OpenClawOperatorIdentity> {
+    return {
+      requestedRole: null,
+      role: null,
+      requestedScopes: [],
+      grantedScopes: [],
+      grantedScopesKnown: false,
+      deviceId: null,
+      connectionId: null,
+      authenticated: false,
+      source: "cli-fallback"
+    };
+  }
+
   getDiagnostics(): OpenClawGatewayClientDiagnostics {
     return {
       mode: "cli",
@@ -358,7 +373,18 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
       lastNativeError: null,
       lastNativeFailureAt: null,
       lastConnectedAt: null,
-      lastDisconnectedAt: null
+      lastDisconnectedAt: null,
+      operatorIdentity: {
+        requestedRole: null,
+        role: null,
+        requestedScopes: [],
+        grantedScopes: [],
+        grantedScopesKnown: false,
+        deviceId: null,
+        connectionId: null,
+        authenticated: false,
+        source: "cli-fallback"
+      }
     };
   }
 

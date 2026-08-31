@@ -14,6 +14,8 @@ import {
 } from "@/lib/openclaw/application/openclaw-migration-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import { evaluateAgentOsApiRequest } from "@/lib/security/api-auth";
+import { requireAgentOsActorContext } from "@/lib/security/agentos-actor";
+import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,6 +56,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const authFailure = evaluateAgentOsApiRequest({ method: "POST", url: request.url, headers: request.headers });
   if (!authFailure.ok) return NextResponse.json({ error: authFailure.message, code: authFailure.code }, { status: authFailure.status });
+  const actorResult = await requireAgentOsActorContext(request);
+  if ("response" in actorResult) return actorResult.response;
   let input: z.infer<typeof migrationInputSchema>;
   try {
     input = migrationInputSchema.parse(await request.json());
@@ -85,8 +89,20 @@ export async function POST(request: Request) {
             : input.action === "resume"
               ? await resumeOpenClawMigration(engineInput, requireJournalPath(input))
               : await rollbackOpenClawMigration(engineInput, requireJournalPath(input));
+    await recordAgentOsAuditEvent({
+      actor: actorResult.actor,
+      operation: `openclaw.migration.${input.action}`,
+      targetKind: "openclaw-migration",
+      result: "succeeded"
+    }).catch(() => {});
     return NextResponse.json(redactSecrets(result), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    await recordAgentOsAuditEvent({
+      actor: actorResult.actor,
+      operation: `openclaw.migration.${input.action}`,
+      targetKind: "openclaw-migration",
+      result: "failed"
+    }).catch(() => {});
     return NextResponse.json({ error: redactErrorMessage(error, "OpenClaw migration request failed.") }, { status: 400 });
   }
 }
