@@ -510,7 +510,7 @@ async function buildContractDiff(input: {
     const changedProtocolFiles = changedFiles.filter((file) =>
       PROTOCOL_PATH_PREFIXES.some((prefix) => file.startsWith(prefix))
     );
-    const changes = compareMethodSpecs(currentSpecs, targetSpecs);
+    const changes = compareOpenClawCoreMethodSpecs(currentSpecs, targetSpecs);
     const evidenceWarnings: OpenClawServerMethodContractChange[] = [];
 
     if (compareResult.status === "rejected") {
@@ -584,7 +584,11 @@ async function buildContractDiff(input: {
   }
 }
 
-function compareMethodSpecs(currentSpecs: OpenClawCoreMethodSpec[], targetSpecs: OpenClawCoreMethodSpec[]) {
+export function compareOpenClawCoreMethodSpecs(
+  currentSpecs: OpenClawCoreMethodSpec[],
+  targetSpecs: OpenClawCoreMethodSpec[],
+  operations: OpenClawGatewayCompatibilityOperationDefinition[] = OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS
+) {
   const currentByName = new Map(currentSpecs.map((spec) => [spec.name, spec]));
   const targetByName = new Map(targetSpecs.map((spec) => [spec.name, spec]));
   const methodNames = new Set([...currentByName.keys(), ...targetByName.keys()]);
@@ -593,32 +597,38 @@ function compareMethodSpecs(currentSpecs: OpenClawCoreMethodSpec[], targetSpecs:
   for (const method of [...methodNames].sort()) {
     const current = currentByName.get(method) ?? null;
     const target = targetByName.get(method) ?? null;
-    const affectedOperations = operationsForMethod(method);
+    const affectedOperations = operationsForMethod(method, operations);
 
     if (!current && target) {
+      const dynamicAuthorization = requiresRuntimeAuthorization(target.scope);
       changes.push({
         method,
         kind: "added",
-        status: "safe",
+        status: dynamicAuthorization ? "unknown" : "safe",
+        authorizationEvidence: dynamicAuthorization ? "runtime-required" : "static",
         currentScope: null,
         targetScope: target.scope,
         affectedOperations,
-        message: `${method} is added with ${target.scope} scope.`
+        message: dynamicAuthorization
+          ? `${method} is added with ${target.scope} scope; descriptor advertisement does not prove parameter-dependent authorization, so live runtime verification is required.`
+          : `${method} is added with ${target.scope} scope.`
       });
       continue;
     }
 
     if (current && !target) {
-      const status = lostOperationStatus(method, currentSpecs, targetSpecs);
+      const replacement = findExplicitReplacement(method, targetSpecs, operations);
+      const status = lostOperationStatus(method, currentSpecs, targetSpecs, operations);
       changes.push({
         method,
-        kind: replacementKind(method, currentSpecs, targetSpecs),
+        kind: replacement ? "replaced" : "removed",
         status,
+        authorizationEvidence: "static",
         currentScope: current.scope,
         targetScope: null,
         affectedOperations,
         message: affectedOperations.length
-          ? `${method} is removed${replacementKind(method, currentSpecs, targetSpecs) === "replaced" ? " with an AgentOS operation candidate still present" : ""} and affects ${affectedOperations.join(", ")}.`
+          ? `${method} is removed${replacement ? ` with explicit replacement evidence for ${replacement.replacementMethod}` : ""} and affects ${affectedOperations.join(", ")}.`
           : `${method} is removed from the core Gateway contract.`
       });
       continue;
@@ -630,14 +640,18 @@ function compareMethodSpecs(currentSpecs: OpenClawCoreMethodSpec[], targetSpecs:
 
     if (current.scope !== target.scope) {
       const status = scopeChangeStatus(method, current.scope, target.scope);
+      const dynamicAuthorization = requiresRuntimeAuthorization(target.scope);
       changes.push({
         method,
         kind: "scope-changed",
         status,
+        authorizationEvidence: dynamicAuthorization ? "runtime-required" : "static",
         currentScope: current.scope,
         targetScope: target.scope,
         affectedOperations,
-        message: `${method} scope changes from ${current.scope} to ${target.scope}.`
+        message: dynamicAuthorization
+          ? `${method} scope changes from ${current.scope} to ${target.scope}; authorization depends on request parameters or runtime state and requires live runtime verification.`
+          : `${method} scope changes from ${current.scope} to ${target.scope}.`
       });
     }
 
@@ -648,15 +662,23 @@ function compareMethodSpecs(currentSpecs: OpenClawCoreMethodSpec[], targetSpecs:
       current.compatibilityRestored !== target.compatibilityRestored
     ) {
       const hidden = current.advertise && !target.advertise;
-      const status = hidden ? lostOperationStatus(method, currentSpecs, targetSpecs) : "warning";
+      const dynamicAuthorization = requiresRuntimeAuthorization(target.scope);
+      const status = hidden
+        ? lostOperationStatus(method, currentSpecs, targetSpecs, operations)
+        : dynamicAuthorization
+          ? "unknown"
+          : "warning";
       changes.push({
         method,
         kind: "policy-changed",
         status,
+        authorizationEvidence: dynamicAuthorization ? "runtime-required" : "static",
         currentScope: current.scope,
         targetScope: target.scope,
         affectedOperations,
-        message: `${method} policy changes (${formatPolicy(current)} -> ${formatPolicy(target)}).`
+        message: dynamicAuthorization
+          ? `${method} policy changes (${formatPolicy(current)} -> ${formatPolicy(target)}); descriptor advertisement does not prove parameter-dependent authorization, so live runtime verification is required.`
+          : `${method} policy changes (${formatPolicy(current)} -> ${formatPolicy(target)}).`
       });
     }
   }
@@ -664,13 +686,21 @@ function compareMethodSpecs(currentSpecs: OpenClawCoreMethodSpec[], targetSpecs:
   return changes;
 }
 
-function lostOperationStatus(method: string, currentSpecs: OpenClawCoreMethodSpec[], targetSpecs: OpenClawCoreMethodSpec[]) {
+function lostOperationStatus(
+  method: string,
+  currentSpecs: OpenClawCoreMethodSpec[],
+  targetSpecs: OpenClawCoreMethodSpec[],
+  operations: OpenClawGatewayCompatibilityOperationDefinition[]
+) {
   const currentMethods = new Set(currentSpecs.filter((spec) => spec.advertise).map((spec) => spec.name));
   const targetMethods = new Set(targetSpecs.filter((spec) => spec.advertise).map((spec) => spec.name));
-  const impacted = OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS.filter((operation) =>
+  if (!currentMethods.has(method) || targetMethods.has(method)) {
+    return "warning";
+  }
+
+  const impacted = operations.filter((operation) =>
     operation.methods.includes(method) &&
-    operation.methods.some((candidate) => currentMethods.has(candidate)) &&
-    !operation.methods.some((candidate) => targetMethods.has(candidate))
+    !findExplicitReplacementForOperation(method, targetMethods, operation)
   );
 
   return impacted.some(blocksUpdate) ? "blocker" : "warning";
@@ -688,21 +718,51 @@ function blocksUpdate(operation: OpenClawGatewayCompatibilityOperationDefinition
   return operation.baseline === "required";
 }
 
-function replacementKind(method: string, currentSpecs: OpenClawCoreMethodSpec[], targetSpecs: OpenClawCoreMethodSpec[]) {
-  const currentMethods = new Set(currentSpecs.filter((spec) => spec.advertise).map((spec) => spec.name));
+function findExplicitReplacement(
+  method: string,
+  targetSpecs: OpenClawCoreMethodSpec[],
+  operations: OpenClawGatewayCompatibilityOperationDefinition[]
+) {
   const targetMethods = new Set(targetSpecs.filter((spec) => spec.advertise).map((spec) => spec.name));
-  const hasReplacement = OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS.some((operation) =>
-    operation.methods.includes(method) &&
-    currentMethods.has(method) &&
-    operation.methods.some((candidate) => candidate !== method && targetMethods.has(candidate))
-  );
-  return hasReplacement ? "replaced" : "removed";
+  for (const operation of operations) {
+    const replacement = findExplicitReplacementForOperation(method, targetMethods, operation);
+    if (replacement) {
+      return replacement;
+    }
+  }
+  return null;
 }
 
-function operationsForMethod(method: string) {
-  return OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS
+function findExplicitReplacementForOperation(
+  method: string,
+  targetMethods: Set<string>,
+  operation: OpenClawGatewayCompatibilityOperationDefinition
+) {
+  const evidence = operation.replacementEvidence?.find((entry) =>
+    entry.removedMethod === method &&
+    entry.replacementMethods.some((replacementMethod) =>
+      operation.methods.includes(replacementMethod) && targetMethods.has(replacementMethod)
+    )
+  );
+  if (!evidence) {
+    return null;
+  }
+  return {
+    replacementMethod: evidence.replacementMethods.find((replacementMethod) =>
+      operation.methods.includes(replacementMethod) && targetMethods.has(replacementMethod)
+    ) ?? null,
+    rationale: evidence.rationale
+  };
+}
+
+function operationsForMethod(method: string, operations: OpenClawGatewayCompatibilityOperationDefinition[]) {
+  return operations
     .filter((operation) => operation.methods.includes(method))
     .map((operation) => operation.label);
+}
+
+function requiresRuntimeAuthorization(scope: string) {
+  return scope === "dynamic" || scope === "node";
 }
 
 function formatPolicy(spec: OpenClawCoreMethodSpec) {
@@ -719,6 +779,7 @@ function createEvidenceWarning(method: string, message: string): OpenClawServerM
     method,
     kind: "policy-changed",
     status: "warning",
+    authorizationEvidence: "static",
     currentScope: null,
     targetScope: null,
     affectedOperations: [],
@@ -731,6 +792,7 @@ function createEvidenceUnknown(method: string, message: string): OpenClawServerM
     method,
     kind: "policy-changed",
     status: "unknown",
+    authorizationEvidence: "static",
     currentScope: null,
     targetScope: null,
     affectedOperations: [],

@@ -80,6 +80,11 @@ export type OpenClawGatewayCompatibilityOperationDefinition = {
   id: OpenClawGatewayCompatibilityOperationId;
   label: string;
   methods: string[];
+  replacementEvidence?: {
+    removedMethod: string;
+    replacementMethods: string[];
+    rationale: string;
+  }[];
   events?: string[];
   fallbackAllowed?: boolean;
   recovery?: string;
@@ -108,6 +113,18 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     id: "modelAuthOrder",
     label: "Model auth order",
     methods: ["models.authOrder.set", "models.auth.order.set"],
+    replacementEvidence: [
+      {
+        removedMethod: "models.authOrder.set",
+        replacementMethods: ["models.auth.order.set"],
+        rationale: "OpenClaw exposes the dotted auth-order spelling as an explicit compatibility alias for the camel-case spelling."
+      },
+      {
+        removedMethod: "models.auth.order.set",
+        replacementMethods: ["models.authOrder.set"],
+        rationale: "OpenClaw exposes the camel-case auth-order spelling as an explicit compatibility alias for the dotted spelling."
+      }
+    ],
     recovery: "Keep model selection explicit in AgentOS and update OpenClaw for native model auth order writes.",
     baseline: "experimental"
   },

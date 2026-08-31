@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  compareOpenClawCoreMethodSpecs,
   getOpenClawServerMethodContractDiff,
   parseOpenClawCoreMethodSpecs,
   resetOpenClawServerMethodContractDiffCache
@@ -139,12 +140,49 @@ test("scope changes use warning and unknown evidence instead of a privilege ladd
   assert.equal(report.status, "warning");
   assert.equal(report.unknownCount, 1);
   assert.equal(report.changes.find((change) => change.method === "sessions.create")?.status, "unknown");
+  assert.equal(report.changes.find((change) => change.method === "sessions.create")?.authorizationEvidence, "runtime-required");
+  assert.match(report.changes.find((change) => change.method === "sessions.create")?.message ?? "", /does not prove|runtime verification/i);
   assert.equal(report.changes.find((change) => change.method === "talk.session.create")?.status, "warning");
   assert.equal(report.changes.find((change) => change.method === "config.schema")?.status, "warning");
   assert.equal(report.changes.some((change) => change.status === "blocker"), false);
 });
 
-test("optional loss with a disabled fallback is warning evidence, and replacement aliases are explicit", async () => {
+test("dynamic target descriptors never certify authorization from advertisement alone", () => {
+  const methods = ["sessions.create", "sessions.patch", "sessions.delete", "node.invoke", "agent", "talk.config"];
+  const changes = compareOpenClawCoreMethodSpecs(
+    methods.map((name) => ({
+      name,
+      family: null,
+      scope: "operator.write",
+      since: null,
+      advertise: true,
+      startup: false,
+      controlPlaneWrite: false,
+      compatibilityRestored: false,
+      description: null
+    })),
+    methods.map((name) => ({
+      name,
+      family: null,
+      scope: "dynamic",
+      since: null,
+      advertise: true,
+      startup: false,
+      controlPlaneWrite: false,
+      compatibilityRestored: false,
+      description: null
+    }))
+  );
+
+  for (const method of methods) {
+    const change = changes.find((candidate) => candidate.method === method);
+    assert.equal(change?.status, "unknown");
+    assert.equal(change?.authorizationEvidence, "runtime-required");
+    assert.match(change?.message ?? "", /runtime verification/i);
+  }
+});
+
+test("optional loss with a disabled fallback is warning evidence, and operation siblings are not replacements", async () => {
   const report = await getOpenClawServerMethodContractDiff(
     { currentVersion: "2026.6.8", targetVersion: "2026.7.1" },
     {
@@ -168,11 +206,53 @@ test("optional loss with a disabled fallback is warning evidence, and replacemen
 
   assert.equal(report.status, "warning");
   assert.equal(report.changes.find((change) => change.method === "tools.catalog")?.status, "warning");
-  assert.equal(report.changes.find((change) => change.method === "talk.session.join")?.kind, "replaced");
-  assert.equal(report.replacedCount, 1);
+  assert.equal(report.changes.find((change) => change.method === "talk.session.join")?.kind, "removed");
+  assert.equal(report.replacedCount, 0);
 });
 
-test("bounded compare pagination reports incomplete implementation evidence as unknown", async () => {
+test("required loss blocks when an unrelated operation sibling survives", () => {
+  const changes = compareOpenClawCoreMethodSpecs(
+    [
+      { name: "required.primary", family: null, scope: "operator.read", since: null, advertise: true, startup: false, controlPlaneWrite: false, compatibilityRestored: false, description: null },
+      { name: "required.sibling", family: null, scope: "operator.read", since: null, advertise: true, startup: false, controlPlaneWrite: false, compatibilityRestored: false, description: null }
+    ],
+    [
+      { name: "required.sibling", family: null, scope: "operator.read", since: null, advertise: true, startup: false, controlPlaneWrite: false, compatibilityRestored: false, description: null }
+    ],
+    [{ id: "health", label: "Required composite", methods: ["required.primary", "required.sibling"], baseline: "required" }]
+  );
+
+  assert.equal(changes.find((change) => change.method === "required.primary")?.kind, "removed");
+  assert.equal(changes.find((change) => change.method === "required.primary")?.status, "blocker");
+});
+
+test("explicit replacement evidence prevents a required-loss blocker", () => {
+  const changes = compareOpenClawCoreMethodSpecs(
+    [
+      { name: "required.primary", family: null, scope: "operator.read", since: null, advertise: true, startup: false, controlPlaneWrite: false, compatibilityRestored: false, description: null },
+      { name: "required.sibling", family: null, scope: "operator.read", since: null, advertise: true, startup: false, controlPlaneWrite: false, compatibilityRestored: false, description: null }
+    ],
+    [
+      { name: "required.sibling", family: null, scope: "operator.read", since: null, advertise: true, startup: false, controlPlaneWrite: false, compatibilityRestored: false, description: null }
+    ],
+    [{
+      id: "health",
+      label: "Required composite",
+      methods: ["required.primary", "required.sibling"],
+      replacementEvidence: [{
+        removedMethod: "required.primary",
+        replacementMethods: ["required.sibling"],
+        rationale: "The contract explicitly declares these two method names as aliases."
+      }],
+      baseline: "required"
+    }]
+  );
+
+  assert.equal(changes.find((change) => change.method === "required.primary")?.kind, "replaced");
+  assert.equal(changes.find((change) => change.method === "required.primary")?.status, "warning");
+});
+
+test("diverged compare evidence remains incomplete after the bounded first page", async () => {
   const comparePages: number[] = [];
   const report = await getOpenClawServerMethodContractDiff(
     { currentVersion: "2026.6.8", targetVersion: "2026.7.1" },
@@ -184,7 +264,11 @@ test("bounded compare pagination reports incomplete implementation evidence as u
           const page = Number(new URL(url).searchParams.get("page"));
           comparePages.push(page);
           return jsonResponse({
-            files: Array.from({ length: 100 }, (_, index) => ({ filename: `other/file-${page}-${index}` }))
+            status: "diverged",
+            total_commits: 10_000,
+            files: page === 1
+              ? Array.from({ length: 300 }, (_, index) => ({ filename: `docs/file-${index}` }))
+              : []
           });
         }
         return new Response(url.includes("v2026.6.8") ? currentDescriptor : currentDescriptor);
@@ -192,7 +276,9 @@ test("bounded compare pagination reports incomplete implementation evidence as u
     }
   );
 
-  assert.deepEqual(comparePages, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.deepEqual(comparePages, [1, 2]);
+  assert.deepEqual(report.changedServerMethodFiles, []);
+  assert.deepEqual(report.changedProtocolFiles, []);
   assert.equal(report.changes.some((change) => change.method === "__comparison_truncated__" && change.status === "unknown"), true);
   assert.equal(report.unknownCount, 1);
 });

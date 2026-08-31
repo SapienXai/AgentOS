@@ -485,6 +485,7 @@ export interface OpenClawServerMethodContractChange {
   method: string;
   kind: "added" | "removed" | "renamed" | "replaced" | "scope-changed" | "policy-changed";
   status: OpenClawServerMethodContractDiffStatus;
+  authorizationEvidence: "static" | "runtime-required";
   currentScope: string | null;
   targetScope: string | null;
   affectedOperations: string[];

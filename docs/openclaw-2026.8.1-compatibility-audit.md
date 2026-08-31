@@ -46,14 +46,14 @@ Normalized descriptor diff:
 - Common methods: 199
 - Scope changes: 18
 - Policy changes: 8
-- Replacements inferred from an existing AgentOS operation retaining a target candidate: 9
+- Explicit semantic replacements in the AgentOS compatibility model: 0 for this tag pair
 - Renames proven by the descriptor evidence: 0
 
 Removed methods:
 
 `doctor.memory.remHarness`, `node.pair.request`, `node.pair.verify`, `sessions.compaction.get`, `sessions.unsubscribe`, `talk.session.cancelTurn`, `talk.session.endTurn`, `talk.session.join`, `talk.session.startTurn`, and `voicewake.routing.set`.
 
-The nine replacement classifications are operation-level evidence, not an assertion that OpenClaw declared a rename: memory doctor, node pairing, session subscriptions, Talk session control, and voice wake routing retain other candidate methods. `sessions.compaction.get` has no equivalent proven by the current AgentOS operation map.
+No removed method is classified as replaced for this tag pair. Shared AgentOS operation membership is retained as operation-survival evidence only; it is not semantic replacement evidence. In particular, the presence of another session, pairing, Talk, memory, or voice-wake method does not prove that it replaces a removed method. The compatibility model supports explicit replacement evidence for future cases, but no declared relation matches these ten removals.
 
 Scope changes:
 
@@ -70,16 +70,30 @@ Policy changes:
 - Control-plane write policy was added to `cron.add`, `cron.update`, `cron.remove`, and `cron.run`.
 - `gateway.restart.preflight` is marked `compatibilityRestored` in the target descriptor.
 
-The exact tag comparison found 518 changed files under `src/gateway/server-methods/` and 211 changed files under `packages/gateway-protocol/`. No changed files were found under `src/gateway/protocol/` for this comparison. These are implementation/protocol evidence, not runtime proof.
+Local exact tag diff evidence found 518 changed files under `src/gateway/server-methods/` and 211 changed files under `packages/gateway-protocol/`. No changed files were found under `src/gateway/protocol/` in that local exact diff. These are implementation/protocol evidence, not runtime proof, and must not be conflated with the bounded GitHub Compare API listing.
+
+### Dynamic authorization evidence
+
+The exact target authorization implementation confirms that `dynamic` is a sentinel, not a grant. The target resolves least-privilege authorization from request parameters and runtime state in `src/gateway/method-scopes.ts`, including:
+
+- `sessions.create`, `sessions.patch`, and `sessions.delete` through the parameter-aware session policy in `src/shared/session-method-scopes.ts` and `src/shared/session-method-scopes-base.ts`;
+- `node.invoke` from the requested command, node target, pairing, and approval policy;
+- `agent` from the message command, including lifecycle commands; and
+- `talk.config` from `includeSecrets` and the active profile/provider state.
+
+The related pinned source files are [core descriptors](https://github.com/openclaw/openclaw/blob/ea806575e6450e4d1efdfc72c19f04be982a1b9b/src/gateway/methods/core-descriptors.ts), [method scope resolution](https://github.com/openclaw/openclaw/blob/ea806575e6450e4d1efdfc72c19f04be982a1b9b/src/gateway/method-scopes.ts), [operator scope implications](https://github.com/openclaw/openclaw/blob/ea806575e6450e4d1efdfc72c19f04be982a1b9b/src/shared/operator-scope-compat.ts), and [session dynamic scope policy](https://github.com/openclaw/openclaw/blob/ea806575e6450e4d1efdfc72c19f04be982a1b9b/src/shared/session-method-scopes-base.ts).
+
+AgentOS marks all changed `dynamic` or `node` descriptor rows with `authorizationEvidence: "runtime-required"` and status `unknown`. Advertisement alone therefore does not certify authorization. The v2026.6.11 to v2026.8.1 comparison contains 16 such changed rows: six scope transitions, nine additions, and one policy-only change for `agent`.
 
 ## Implementation
 
 - `lib/openclaw/application/update-contract-diff-service.ts` now parses legacy object descriptors and v8 tuple descriptors, including policy metadata and exact-tag scope names.
 - The parser enforces source-size and row-count bounds, validates method names/scopes/since-tags, rejects malformed or duplicate rows, and fails closed without executing OpenClaw source.
 - Static diff results now retain registered versus advertised counts and classify blocker, warning, safe, and unknown evidence.
-- Required operation loss is the only static blocker condition. Optional or experimental loss remains warning evidence even when an operation disables CLI fallback.
+- Required operation loss is the only static blocker condition unless the compatibility model contains explicit semantic replacement evidence. An unrelated method surviving in the same operation never preserves a removed required method. Optional or experimental loss remains warning evidence even when an operation disables CLI fallback.
+- Removed methods are classified as `replaced` only by an explicit `replacementEvidence` relation owned by the compatibility model. The exact v2026.6.11 to v2026.8.1 tag diff has zero such replacements.
 - Scope transitions use explicit scope semantics. `dynamic` and `node` transitions are unknown until runtime authorization and payload behavior are verified; fixed dedicated-scope changes are warnings rather than numeric privilege escalation.
-- GitHub compare file evidence is fetched by pinned tag comparison with bounded pagination and includes renamed file paths when supplied. If the upstream comparison exceeds that bound, the report emits unknown evidence instead of treating missing paths as unchanged.
+- GitHub Compare file evidence is read as a bounded collection, not as a reliable paginated file inventory. When the API reports `diverged` or a capped commit distance, AgentOS emits incomplete-comparison unknown evidence and never treats absent implementation or protocol paths as unchanged.
 - The compatibility matrix includes model authentication, session recovery, Gateway restart control, operator questions, execution approval grants, session viewers, current Talk methods, Talk client transcript/close, and voice-wake routing. Legacy candidates remain ordered after modern candidates where they are still needed for the baseline.
 
 ## Compatibility Matrix
@@ -118,12 +132,15 @@ Focused tests cover:
 - legacy object and v8 tuple parsing;
 - policy metadata, dedicated scopes, dynamic scopes, malformed rows, duplicates, and fail-closed behavior;
 - added, removed, replaced, required-loss, optional-loss, and implementation/protocol evidence;
+- explicit replacement evidence versus unrelated operation siblings;
+- realistic `status: "diverged"` / capped-commit Compare API truncation;
+- dynamic and node authorization rows that remain runtime-required;
 - invalid release input with zero network calls;
 - compatibility checks where write authorizes read/Talk and dedicated question scope remains exact.
 
 ## Verification
 
-The implementation must be verified with the repository commands before this phase is considered complete:
+The relevant repository commands were run with Node `v24.15.0` and pnpm `10.30.3`:
 
 ```text
 pnpm test
@@ -134,13 +151,23 @@ pnpm build
 
 Phase 1 does not claim runtime compatibility. A real OpenClaw 2026.8.1 Gateway session, method payload probes, session continuity, node pairing, Talk turns, memory doctor, model auth, config, and automation verification remain deferred.
 
-Validation recorded for this branch: the focused OpenClaw regression set passed 187 tests; `pnpm typecheck`, `pnpm lint`, and `pnpm build` passed. The existing local runtime compatibility command reported degraded status on OpenClaw v2026.6.11; it did not exercise v2026.8.1.
+Validation recorded for this branch: the focused OpenClaw regression set passed 190 tests; `pnpm typecheck`, `pnpm lint`, and `pnpm build` passed. The existing local runtime compatibility command reported degraded status on OpenClaw v2026.6.11; it did not exercise v2026.8.1.
+
+The full-suite A/B check used the same `pnpm test` command against a clean worktree at `ad8416910df411f194c0b60e1f8b45e91dcb2a7f` and the hardening branch. Both runs reproduced the same five pre-existing static/source-shape failures:
+
+- `inspector visual tones provide distinct light and dark compact surfaces`: expected `/255,253,251/`; actual light tone `border-[#ddcec3] bg-[#fbf7f3] ...`.
+- `mobile inspector moves scope controls into the header and reserves the rail for desktop`: expected `/mt-3 grid grid-cols-3[\\s\\S]*lg:hidden/`.
+- `workspace creation provides a compact mobile-first basic flow`: expected `/contentClassName="h-[100dvh] max-h-[100dvh] w-screen rounded-none/`.
+- `mission shell supports hover and pinned sidebar modes`: expected `/aria-label=\\{isSidebarOpen \\? "Close navigation" : "Open navigation"\\}/`.
+- `settings control center renders a single hash-selected section`: expected `/\\{ id: "general", label: "General", icon: Wrench \\}/`.
+
+Both full-suite processes then remained open at `tests/openclaw-workspace-service.test.ts` and were interrupted after reaching the same pending-file state. Running that file alone reached all 13 assertions in both worktrees but neither process exited; both were interrupted at the same file-level pending state. The isolated `tests/openclaw-adapter.test.ts` passed 11/11 at both revisions, so the one concurrent full-suite observation of that test was not treated as a branch regression.
 
 ## Deferred Findings
 
 - Runtime verification against an actual v2026.8.1 Gateway.
 - Payload and error-shape checks for newly added methods.
-- Dynamic authorization verification for sessions, nodes, agents, Talk configuration, and parameter-sensitive filesystem methods.
+- Dynamic authorization verification for sessions, nodes, agents, Talk configuration, and parameter-sensitive filesystem methods. Static rows now explicitly preserve this runtime requirement.
 - Full session continuity and subscription behavior across update/restart.
 - Node pairing, Talk turn lifecycle, memory doctor, model auth, config policy, and automation control-plane smoke tests.
 - Review of the complete 194-method addition set beyond the mapped AgentOS surfaces.
@@ -148,5 +175,5 @@ Validation recorded for this branch: the focused OpenClaw regression set passed 
 ## Known Risks
 
 - The static evidence is authoritative only for the two pinned source tags and cannot prove runtime behavior.
-- A GitHub compare endpoint failure produces bounded unknown evidence; it must not be read as compatibility certification.
+- A GitHub Compare endpoint can report a divergent/capped comparison with only a bounded file collection. AgentOS therefore cannot certify missing implementation or protocol categories from absent file entries.
 - The target adds substantial Gateway surface area and protocol implementation churn; Phase 2 must run a real runtime matrix before any target is certified.
