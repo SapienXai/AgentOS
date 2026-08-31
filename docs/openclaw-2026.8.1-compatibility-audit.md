@@ -1,30 +1,32 @@
 # OpenClaw 2026.8.1 Compatibility Audit
 
-Status: Phase 1 static compatibility foundation. This document records tag-pinned evidence and does not certify runtime compatibility.
+Status: Historical Phase 1 static compatibility analysis retained for provenance. Phase 2C promotes the separately certified OpenClaw `2026.8.1` runtime to the active AgentOS baseline; see [`docs/openclaw-2026.8.1-fresh-baseline.md`](openclaw-2026.8.1-fresh-baseline.md).
 
 ## Provenance
 
 - OpenClaw repository: `openclaw/openclaw`
-- Current tag: `v2026.6.11` at `e085fa1a3ffd32d0ea6917e1e6fb4ecbffbb77d2`
+- Historical source tag: `v2026.6.11` at `e085fa1a3ffd32d0ea6917e1e6fb4ecbffbb77d2`
 - Target tag: `v2026.8.1` at `ea806575e6450e4d1efdfc72c19f04be982a1b9b`
 - Descriptor source for both tags: `src/gateway/methods/core-descriptors.ts`
 - [v2026.6.11 descriptor source](https://raw.githubusercontent.com/openclaw/openclaw/v2026.6.11/src/gateway/methods/core-descriptors.ts)
 - [v2026.8.1 descriptor source](https://raw.githubusercontent.com/openclaw/openclaw/v2026.8.1/src/gateway/methods/core-descriptors.ts)
 - [Pinned GitHub tag comparison](https://github.com/openclaw/openclaw/compare/v2026.6.11...v2026.8.1)
 - AgentOS starting main HEAD: `ad8416910df411f194c0b60e1f8b45e91dcb2a7f`
-- Phase 1 branch: `upgrade/openclaw-2026.8.1`
+- Original Phase 1 branch: `upgrade/openclaw-2026.8.1`
 - The comparison uses the two exact release tags. `main` is not used as an OpenClaw comparison source.
 
 ## Baseline Constants
 
-The existing AgentOS baseline constants are unchanged:
+The active AgentOS baseline constants are now promoted:
 
-- `OPENCLAW_RECOMMENDED_VERSION = "2026.6.11"`
-- `OPENCLAW_SUPPORTED_BASELINE_VERSION = "2026.6.8"`
+- `OPENCLAW_RECOMMENDED_VERSION = "2026.8.1"`
+- `OPENCLAW_SUPPORTED_BASELINE_VERSION = "2026.8.1"`
+
+The `2026.6.11` to `2026.8.1` comparison below is retained as historical static compatibility evidence, not as the active runtime policy.
 - Current AgentOS package root version: `0.1.0`
 - Published AgentOS package version: `0.7.6`
 
-No OpenClaw runtime binary, session store, SQLite state, hosted deployment, or AgentOS release version was upgraded in Phase 1.
+No OpenClaw runtime binary, session store, SQLite state, hosted deployment, or AgentOS release version was upgraded in the historical Phase 1 analysis.
 
 ## Contract Analysis
 
@@ -149,9 +151,9 @@ pnpm lint
 pnpm build
 ```
 
-Phase 1 does not claim runtime compatibility. A real OpenClaw 2026.8.1 Gateway session, method payload probes, session continuity, node pairing, Talk turns, memory doctor, model auth, config, and automation verification remain deferred.
+The historical Phase 1 analysis does not claim runtime compatibility. The core 2026.8.1 Gateway session, method payload probes, session continuity, model execution, config, cron, restart, SQLite, and doctor checks are now covered by the Phase 2C fresh-baseline artifact. Node pairing, Talk turns, and semantic memory search remain environment-dependent and outside the baseline gate.
 
-Validation recorded for this branch: the focused OpenClaw regression set passed 190 tests; `pnpm typecheck`, `pnpm lint`, and `pnpm build` passed. The existing local runtime compatibility command reported degraded status on OpenClaw v2026.6.11; it did not exercise v2026.8.1.
+Historical Phase 1 validation recorded for the branch: the focused OpenClaw regression set passed 190 tests; `pnpm typecheck`, `pnpm lint`, and `pnpm build` passed. Current Phase 2C validation is recorded in the fresh-baseline evidence artifact.
 
 The full-suite A/B check used the same `pnpm test` command against a clean worktree at `ad8416910df411f194c0b60e1f8b45e91dcb2a7f` and the hardening branch. Both runs reproduced the same five pre-existing static/source-shape failures:
 

@@ -8,12 +8,12 @@
       "./index.js"
     ],
     "compat": {
-      "pluginApi": ">=2026.6.11",
-      "minGatewayVersion": "2026.6.11"
+      "pluginApi": ">=2026.8.1",
+      "minGatewayVersion": "2026.8.1"
     },
     "build": {
-      "openclawVersion": "2026.6.11",
-      "pluginSdkVersion": "2026.6.11"
+      "openclawVersion": "2026.8.1",
+      "pluginSdkVersion": "2026.8.1"
     }
   }
 }

@@ -1,6 +1,8 @@
-# OpenClaw 2026.6.11 to 2026.8.1 Migration Engine
+# Historical OpenClaw 2026.6.11 to 2026.8.1 Migration Engine
 
-This document describes the AgentOS Phase 2B migration boundary for upgrading an OpenClaw runtime from `2026.6.11` to the exact `2026.8.1` build at commit `ea806575e6450e4d1efdfc72c19f04be982a1b9b`.
+This document describes the retained AgentOS Phase 2B migration boundary for upgrading a historical OpenClaw runtime from `2026.6.11` to the exact `2026.8.1` build at commit `ea806575e6450e4d1efdfc72c19f04be982a1b9b`.
+
+The 6.11 fixture and migration journal are compatibility infrastructure and evidence only. They are not the active AgentOS install or support path; fresh installs provision the current `2026.8.1` baseline directly.
 
 OpenClaw remains the source of truth for runtime behavior, state schemas, migrations, Gateway RPC, sessions, transcripts, models, and cron. AgentOS owns the operator-facing plan, journal, isolation boundary, evidence, commit point, rollback control, and recovery API. The implementation is in [`lib/openclaw/migration-engine/`](../lib/openclaw/migration-engine/) and is exposed through the server-only migration service and authenticated [`/api/openclaw/migrations`](../app/api/openclaw/migrations/route.ts) route.
 
@@ -10,7 +12,7 @@ The engine is intentionally narrow:
 
 - Source must be OpenClaw `2026.6.11`.
 - Target must be OpenClaw `2026.8.1` with the exact source commit above.
-- AgentOS policy remains recommended `2026.6.11` and supported baseline `2026.6.8`; this migration does not change that policy.
+- AgentOS policy is recommended and supported baseline `2026.8.1`; this historical migration flow remains available for regression coverage only.
 - The target package is staged and started in an isolated state/config root before any live replacement.
 - The managed install package is replaced only after the target doctor, runtime certification, and preservation gates pass.
 - External process supervisors remain the owner of process replacement when detected or explicitly configured.

@@ -20,7 +20,7 @@ export type ModelProviderDescriptor = {
 };
 
 /**
- * OpenClaw 2026.6.11 resolves bundled provider API keys from its runtime
+ * The supported OpenClaw baseline resolves bundled provider API keys from its runtime
  * environment. Persist them under config-backed env.vars so the Gateway owns
  * storage, validation, reload, and redeploy persistence without turning a
  * bundled provider into a custom models.providers entry.

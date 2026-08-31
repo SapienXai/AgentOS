@@ -1140,7 +1140,7 @@ function LoginTargetCard({
           size="sm"
           className="h-7 rounded-[8px] px-2 text-[0.7rem]"
           disabled
-          title="Blocked: OpenClaw 2026.6.11 has no typed task-bound browser-profile dispatch contract."
+          title="Blocked: the current OpenClaw Gateway has no typed task-bound browser-profile dispatch contract."
           onClick={onRunTask}
         >
           <Play className="mr-1 h-3 w-3" />
@@ -1886,7 +1886,7 @@ export function ConnectAccountWizard({
                   <MiniBadge>Default · Unavailable</MiniBadge>
                 </div>
                 <p className="mt-1 text-xs leading-5 text-[var(--ca-text-muted)]">
-                  Dedicated persistent OpenClaw profiles are supported. Secure same-origin Live View, human takeover, and typed task-bound profile dispatch are not available in OpenClaw 2026.6.11, so account connection is disabled.
+                  Dedicated persistent OpenClaw profiles are supported. Secure same-origin Live View, human takeover, and typed task-bound profile dispatch are not available in the current Gateway contract, so account connection is disabled.
                 </p>
                 <Button type="button" variant="secondary" className="mt-3 h-9 w-full rounded-[8px]" disabled title="Requires secure Live View and typed task-bound profile dispatch.">
                   Unavailable in this runtime

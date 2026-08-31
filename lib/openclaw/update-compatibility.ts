@@ -33,13 +33,13 @@ export const LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST: OpenClawCompatibilityManifes
   recommendedVersion: OPENCLAW_RECOMMENDED_VERSION,
   minRequiredAgentOsVersion: "0.7.2",
   versions: [
-    {
+    ...(OPENCLAW_SUPPORTED_BASELINE_VERSION === OPENCLAW_RECOMMENDED_VERSION ? [] : [{
       version: OPENCLAW_SUPPORTED_BASELINE_VERSION,
-      status: "certified",
+      status: "certified" as const,
       minRequiredAgentOsVersion: "0.7.2",
       notes: "Certified stable baseline for AgentOS Gateway-first operation.",
       reason: "Validated against AgentOS compatibility diagnostics and runtime smoke coverage."
-    },
+    }]),
     {
       version: OPENCLAW_RECOMMENDED_VERSION,
       status: "certified",

@@ -13,6 +13,7 @@ import { createOpenClawRuntimeProviderFixture } from "@/scripts/openclaw-runtime
 import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
 import { DEFAULT_NATIVE_TIMEOUT_MS, type WebSocketFactory } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { redactSecrets } from "@/lib/security/redaction";
+import { OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 
 const TARGET_PACKAGE_ROOT = process.env.OPENCLAW_MIGRATION_TARGET_PACKAGE?.trim() || "/tmp/agentos-openclaw-2026.8.1-runtime.3O13Q3/package";
 const SOURCE_PACKAGE_INPUT = process.env.OPENCLAW_MIGRATION_SOURCE_PACKAGE?.trim() || "/tmp/agentos-openclaw-source-X2592F/openclaw-2026.6.11/package";
@@ -47,8 +48,8 @@ async function main() {
       targetVersion: OPENCLAW_PHASE_2B_TARGET_VERSION,
       targetCommit: OPENCLAW_PHASE_2B_TARGET_COMMIT,
       targetBuildId: targetIdentity.buildId,
-      agentosRecommendedVersion: "2026.6.11",
-      agentosSupportedBaseline: "2026.6.8"
+      agentosRecommendedVersion: OPENCLAW_RECOMMENDED_VERSION,
+      agentosSupportedBaseline: OPENCLAW_SUPPORTED_BASELINE_VERSION
     },
     fixture: {
       kind: "disposable-exact-source-runtime",

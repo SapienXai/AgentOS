@@ -38,8 +38,9 @@ const defaultDependencies: ChatGptProviderAuthDependencies = {
 
 /**
  * Runs OpenClaw's official provider-auth flow without handing a shell command to
- * the operator. OpenClaw 2026.6.11 does not expose OAuth start through Gateway,
- * so this remains an explicit, isolated CLI fallback at the application boundary.
+ * the operator. The current OpenClaw Gateway contract does not expose OAuth
+ * start through Gateway, so this remains an explicit, isolated CLI fallback at
+ * the application boundary.
  */
 export async function connectOpenClawChatGptProvider(
   input: {

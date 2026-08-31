@@ -8,8 +8,8 @@
     "targetVersion": "2026.8.1",
     "targetCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
     "targetBuildId": "2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z",
-    "agentosRecommendedVersion": "2026.6.11",
-    "agentosSupportedBaseline": "2026.6.8"
+    "agentosRecommendedVersion": "2026.8.1",
+    "agentosSupportedBaseline": "2026.8.1"
   },
   "fixture": {
     "kind": "disposable-exact-source-runtime",

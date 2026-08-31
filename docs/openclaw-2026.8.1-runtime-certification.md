@@ -2,7 +2,7 @@
 
 Certification date: 2026-08-31
 
-This document records the Phase 2A.1 hardening run against an isolated OpenClaw `2026.8.1` Gateway. It does not change the AgentOS recommended or supported OpenClaw versions, published package version, production configuration, or production SQLite state.
+This document records the Phase 2A.1 hardening run against an isolated OpenClaw `2026.8.1` Gateway. Phase 2C now promotes that certified runtime to the AgentOS recommended and supported baseline; the run still did not mutate production configuration or production SQLite state.
 
 ## Provenance
 
@@ -11,8 +11,8 @@ This document records the Phase 2A.1 hardening run against an isolated OpenClaw 
 - Starting local and remote HEAD: `878d6bb029d6225352344d2da2e25be88660fd5c`
 - AgentOS root version: `0.1.0`
 - AgentOS package version: `0.7.6`
-- `OPENCLAW_RECOMMENDED_VERSION`: `2026.6.11` (unchanged)
-- `OPENCLAW_SUPPORTED_BASELINE_VERSION`: `2026.6.8` (unchanged)
+- `OPENCLAW_RECOMMENDED_VERSION`: `2026.8.1`
+- `OPENCLAW_SUPPORTED_BASELINE_VERSION`: `2026.8.1`
 - OpenClaw target version: `2026.8.1`
 - Exact OpenClaw target source commit: `ea806575e6450e4d1efdfc72c19f04be982a1b9b`
 - OpenClaw build ID: `2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z`
@@ -129,7 +129,7 @@ The final bridge summary was:
 - uncertified: `2`
 - static-only: `199`
 
-The static comparison source was `github-static`, from `2026.6.11` to `2026.8.1`, with `371` target methods, `0` blockers, `29` warnings, and `17` unknowns. The exact target source commit is retained in the committed artifact as `staticContract.targetCommit`.
+The static comparison source was historical `github-static`, from `2026.6.11` to `2026.8.1`, with `371` target methods, `0` blockers, `29` warnings, and `17` unknowns. The exact target source commit is retained in the committed artifact as `staticContract.targetCommit`.
 
 ## Migration Readiness
 
@@ -137,7 +137,7 @@ The static comparison source was `github-static`, from `2026.6.11` to `2026.8.1`
 
 The gate returned no blockers. It verified exact static/runtime target matching, installed version `2026.8.1`, supported protocol `4`, an authenticated operator with read/write scopes, healthy persistence, and certified required operations including model execution, streaming, restart, session continuity, config mutation, and agent/session lifecycle.
 
-This gate is evidence-only in Phase 2A.1. It is not connected to production automatic updating and does not promote `2026.8.1` to the AgentOS recommended or supported policy.
+This gate is evidence-only and does not itself perform production automatic updating. Phase 2C uses it as supporting evidence for the direct `2026.8.1` fresh baseline.
 
 ## Sanitized Evidence Artifact
 
@@ -189,7 +189,7 @@ The final real run used native WebSocket RPC and the isolated loopback provider.
 | Restart continuity works | Restart probe and second-turn history check | First turn survived restart and second turn completed | Disposable local session only |
 | Cron execution works | `cron.run` plus `cron.runs` exact run-ID poll | Successful fixture-backed terminal run | Disposable isolated cron job only |
 | Low-risk static rows are classified honestly | Requirement levels and per-operation bridge | `fs.listDir`/`sessions.patchMany` passed; dispatch/move environment-failed | Node/pairing fixtures remain unavailable |
-| Migration readiness is gated | Readiness evaluator | Gate returned `READY FOR PHASE 2B` with no blockers | Does not change production policy |
+| Migration readiness is gated | Readiness evaluator | Gate returned `READY FOR PHASE 2B` with no blockers | This historical report is supporting evidence; the Phase 2C fresh gate records the active baseline decision |
 
 ## Deferred Findings
 

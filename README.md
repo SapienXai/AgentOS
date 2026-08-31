@@ -325,10 +325,10 @@ Several operations spawn local processes, inspect transcript files, or write to 
 
 ## Compatibility
 
-The current `0.7.6` package expects OpenClaw 2026.6.8 or newer:
+The current `0.7.6` package uses OpenClaw `2026.8.1` as its supported baseline:
 
 - Node.js 24 or newer;
-- OpenClaw `2026.6.8` or newer;
+- OpenClaw 2026.8.1 or newer;
 - a reachable Gateway with valid local authentication;
 - at least one ready model for real mission execution.
 

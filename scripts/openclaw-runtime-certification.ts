@@ -14,7 +14,6 @@ import {
 import { normalizeGatewayTurnEvent } from "@/lib/openclaw/client/native-ws-gateway-mappers";
 import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import { redactGatewayUrl } from "@/lib/openclaw/compat/targets";
-import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import { bridgeOpenClawStaticRuntimeEvidence } from "@/lib/openclaw/runtime-certification/evidence-bridge";
 import { runOpenClawRuntimeCertification } from "@/lib/openclaw/runtime-certification/harness";
 import { evaluateOpenClawRuntimeMigrationReadiness } from "@/lib/openclaw/runtime-certification/readiness-gate";
@@ -30,6 +29,7 @@ import type {
 
 const TARGET_VERSION = process.env.OPENCLAW_RUNTIME_CERT_TARGET?.trim() || "2026.8.1";
 const TARGET_COMMIT = process.env.OPENCLAW_RUNTIME_CERT_TARGET_COMMIT?.trim() || "ea806575e6450e4d1efdfc72c19f04be982a1b9b";
+const STATIC_COMPARISON_SOURCE_VERSION = process.env.OPENCLAW_RUNTIME_CERT_STATIC_CURRENT_VERSION?.trim() || "2026.6.11";
 const GATEWAY_URL = process.env.OPENCLAW_RUNTIME_CERT_GATEWAY_URL?.trim() || "ws://127.0.0.1:18789";
 const TOKEN =
   process.env.OPENCLAW_RUNTIME_CERT_TOKEN?.trim() ||
@@ -155,7 +155,10 @@ async function main() {
     });
 
     staticReport = await getOpenClawServerMethodContractDiff({
-      currentVersion: OPENCLAW_RECOMMENDED_VERSION,
+      // The static source is intentionally explicit historical evidence. The
+      // active AgentOS baseline may equal the runtime target and must not be
+      // self-compared as a fake upgrade.
+      currentVersion: STATIC_COMPARISON_SOURCE_VERSION,
       targetVersion: TARGET_VERSION
     });
     evidenceBridge = bridgeOpenClawStaticRuntimeEvidence({
@@ -421,6 +424,22 @@ function createProbes(input: {
             const recovered = await clientContext.probeHandshake();
             clientContext.handshake = recovered;
             context.data.recoveredHandshake = recovered;
+            // OpenClaw can acknowledge the new socket before its restarted
+            // method registry is ready. Refresh every certification client and
+            // let the restarted Gateway settle before continuing with probes.
+            await wait(2_000);
+            for (const client of Object.values(context.clients)) {
+              if (!client.probeHandshake) continue;
+              for (let refreshAttempt = 0; refreshAttempt < 6; refreshAttempt += 1) {
+                try {
+                  client.handshake = await client.probeHandshake();
+                  break;
+                } catch (refreshError) {
+                  if (refreshAttempt === 5) throw refreshError;
+                  await wait(500);
+                }
+              }
+            }
             return { accepted: true, recovered: true };
           } catch (error) {
             lastError = error;
