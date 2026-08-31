@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
 import { setOpenClawAdapterForTesting, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { OpenClawLifecycleService, setOpenClawLifecycleServiceForTesting } from "@/lib/openclaw/lifecycle/service";
 import {
   GET as modelsProviderGet,
   POST as modelsProviderPost
@@ -31,6 +32,7 @@ function fetchRouteGet() {
 afterEach(() => {
   delete process.env[legacyProviderFileFallbackEnv];
   setOpenClawAdapterForTesting(null);
+  setOpenClawLifecycleServiceForTesting(null);
   globalThis.fetch = originalFetch;
 });
 
@@ -907,6 +909,7 @@ test("setting the default model retries and starts Gateway after transient conne
       return { ok: true, action };
     }
   } as unknown as OpenClawAdapter);
+  setOpenClawLifecycleServiceForTesting(createTestLifecycleService());
 
   const result = await setOpenClawDefaultModel("openai/gpt-5.4-mini", {
     provider: "openai-codex"
@@ -955,6 +958,7 @@ test("setting the default model retries while Gateway is still starting", async 
       return { ok: true, action };
     }
   } as unknown as OpenClawAdapter);
+  setOpenClawLifecycleServiceForTesting(createTestLifecycleService());
 
   const result = await setOpenClawDefaultModel("openai/gpt-5.4-mini", {
     provider: "openai"
@@ -982,6 +986,27 @@ test("setting the default model retries while Gateway is still starting", async 
     }
   });
 });
+
+function createTestLifecycleService() {
+  return new OpenClawLifecycleService({
+    env: {
+      OPENCLAW_GATEWAY_BINARY: "/tmp/agentos-openclaw",
+      OPENCLAW_STATE_DIR: "/tmp/agentos-model-provider-state",
+      OPENCLAW_CONFIG_PATH: "/tmp/agentos-model-provider-state/openclaw.json"
+    },
+    resolveBinary: async () => "/tmp/agentos-openclaw",
+    readinessProbe: async () => ({
+      ready: true,
+      authenticated: true,
+      health: "live",
+      protocolVersion: 4,
+      version: "2026.8.1",
+      sourceCommit: null,
+      checkedAt: new Date().toISOString(),
+      reason: null
+    })
+  });
+}
 
 test("setting the default model writes OpenClaw Gateway config", async () => {
   const calls: string[] = [];

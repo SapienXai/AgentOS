@@ -341,7 +341,7 @@ test("runtime inbox exposes recovery commands for non-scope issues", () => {
   assert.match(source, /Restart gateway/);
   assert.match(source, /Restart managed gateway/);
   assert.match(source, /gatewayLifecycle === "agentos-managed"/);
-  assert.match(source, /gatewayLifecycle === "supervisor-managed"/);
+  assert.match(source, /gatewayLifecycle === "external-supervisor"/);
   assert.match(source, /recoveryCommand/);
   assert.match(source, /hiddenIssueIds/);
   assert.match(source, /exitingIssueIds/);

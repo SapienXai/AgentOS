@@ -5,6 +5,11 @@ import { afterEach, test } from "node:test";
 
 import { controlGateway } from "@/lib/openclaw/application/gateway-service";
 import {
+  OpenClawLifecycleService,
+  setOpenClawLifecycleServiceForTesting
+} from "@/lib/openclaw/lifecycle/service";
+import type { GatewayLifecycleResult } from "@/lib/openclaw/lifecycle/types";
+import {
   GatewayBackedOpenClawAdapter,
   getOpenClawAdapter,
   setOpenClawAdapterForTesting
@@ -302,6 +307,7 @@ afterEach(() => {
   setOpenClawGatewayClientProvider(null);
   setOpenClawGatewayClientForTesting(null);
   setOpenClawAdapterForTesting(null);
+  setOpenClawLifecycleServiceForTesting(null);
   resetConfigUpdatePacingForTesting({ clearPersistentQueue: true });
 });
 
@@ -340,15 +346,18 @@ test("OpenClaw adapter status settlement preserves rejected payload shape", asyn
   assert.equal(result.reason, failure);
 });
 
-test("gateway application service controls the gateway through the adapter", async () => {
+test("gateway application service controls the gateway through the lifecycle service", async () => {
   const { client, calls } = createMockGatewayClient();
   setOpenClawGatewayClientForTesting(client);
+  setOpenClawLifecycleServiceForTesting(createTestLifecycleService());
 
-  const result = await controlGateway("restart");
+  const result = await controlGateway("restart") as GatewayLifecycleResult;
 
-  assert.deepEqual(result, { ok: true, action: "restart" });
+  assert.equal(result.operation, "restart");
+  assert.equal(result.descriptor.ownership, "agentos-managed");
+  assert.equal(result.message, "OpenClaw Gateway restarted and is ready.");
   assert.deepEqual(calls, [
-    { method: "controlGateway", action: "restart", options: {} }
+    { method: "controlGateway", action: "restart", options: { force: true } }
   ]);
 });
 
@@ -362,18 +371,44 @@ test("gateway application service coalesces concurrent identical control actions
     }
   }).client;
   setOpenClawGatewayClientForTesting(client);
+  setOpenClawLifecycleServiceForTesting(createTestLifecycleService());
 
-  const [first, second] = await Promise.all([
+  const [firstRaw, secondRaw] = await Promise.all([
     controlGateway("restart"),
     controlGateway("restart")
   ]);
+  const first = firstRaw as GatewayLifecycleResult;
+  const second = secondRaw as GatewayLifecycleResult;
 
-  assert.deepEqual(first, { ok: true, action: "restart" });
+  assert.equal(first.operation, "restart");
+  assert.equal(first.descriptor.ownership, "agentos-managed");
+  assert.equal(first.message, "OpenClaw Gateway restarted and is ready.");
   assert.equal(first, second);
   assert.deepEqual(calls, [
-    { method: "controlGateway", action: "restart", options: {} }
+    { method: "controlGateway", action: "restart", options: { force: true } }
   ]);
 });
+
+function createTestLifecycleService() {
+  return new OpenClawLifecycleService({
+    env: {
+      OPENCLAW_GATEWAY_BINARY: "/tmp/agentos-openclaw",
+      OPENCLAW_STATE_DIR: "/tmp/agentos-adapter-state",
+      OPENCLAW_CONFIG_PATH: "/tmp/agentos-adapter-state/openclaw.json"
+    },
+    resolveBinary: async () => "/tmp/agentos-openclaw",
+    readinessProbe: async () => ({
+      ready: true,
+      authenticated: true,
+      health: "live",
+      protocolVersion: 4,
+      version: "2026.8.1",
+      sourceCommit: null,
+      checkedAt: new Date().toISOString(),
+      reason: null
+    })
+  });
+}
 
 test("OpenClaw gateway client factory supports a provider extension point", () => {
   const { client } = createMockGatewayClient();

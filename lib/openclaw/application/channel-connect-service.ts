@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { getOpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
 import {
   isPluginApiVersionMismatch,
   resolveChannelPluginActivation
@@ -286,7 +287,7 @@ export async function installChannelPlugin(provider: ChannelConnectProviderId) {
   let restartError: string | null = null;
 
   try {
-    await adapter.controlGateway("restart", { timeoutMs: 60_000 });
+    await getOpenClawLifecycleService().restart();
     restarted = true;
   } catch (error) {
     restartError = redactErrorMessage(error, "The plugin was installed, but the Gateway could not be restarted.");

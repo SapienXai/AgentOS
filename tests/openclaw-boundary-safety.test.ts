@@ -931,7 +931,7 @@ test("system setup starts Gateway before requesting a full readiness snapshot", 
 
   assert.equal(statusIndex >= 0 && startIndex > statusIndex, true);
   assert.equal(snapshotIndex === -1 || snapshotIndex > startIndex, true);
-  assert.match(source, /async function startGatewayForOnboarding[\s\S]*?runCommand\(openClawBin, \["gateway", "start", "--json"\]/);
+  assert.match(source, /async function startGatewayForOnboarding[\s\S]*?getOpenClawLifecycleService\(\)\.start\(\)/);
   assert.match(source, /const gatewayStatusTimeoutMs = 3_000;/);
 });
 
@@ -964,7 +964,7 @@ test("system setup restarts a stopped Gateway service before readiness polling",
   const source = readFileSync(path.join(rootDir, "app/api/onboarding/route.ts"), "utf8");
   const postStartIndex = source.indexOf("const postStartGatewayStatus = await readGatewayStatus(openClawBin)");
   const stoppedCheckIndex = source.indexOf("isGatewayServiceStopped(gatewayStatus)", postStartIndex);
-  const restartIndex = source.indexOf('["gateway", "restart", "--force", "--json"]', stoppedCheckIndex);
+  const restartIndex = source.indexOf("restartGatewayForOnboarding", stoppedCheckIndex);
   const waitIndex = source.indexOf("snapshot = await waitForReadySnapshotWithGatewayAuthDetection", restartIndex);
 
   assert.equal(postStartIndex >= 0 && stoppedCheckIndex > postStartIndex, true);
@@ -989,13 +989,12 @@ test("readiness polling does not load full snapshots before Gateway is reachable
   assert.doesNotMatch(source, /exceeded 60 seconds/);
 });
 
-test("Windows setup starts a registered Gateway task before falling back to the OpenClaw CLI", () => {
+test("Windows setup uses the canonical lifecycle service instead of a task-specific Gateway owner", () => {
   const source = readFileSync(path.join(rootDir, "app/api/onboarding/route.ts"), "utf8");
-  const directStart = source.indexOf("await startRegisteredWindowsGateway(send)");
-  const cliStart = source.indexOf('await runCommand(openClawBin, ["gateway", "start", "--json"]', directStart);
+  const lifecycleStart = source.indexOf("getOpenClawLifecycleService().start()", source.indexOf("async function startGatewayForOnboarding"));
 
-  assert.equal(directStart >= 0 && cliStart > directStart, true);
-  assert.match(source, /runCommand\(executable, \["\/Run", "\/TN", taskName\]/);
+  assert.equal(lifecycleStart >= 0, true);
+  assert.doesNotMatch(source, /startRegisteredWindowsGateway/);
 });
 
 test("system setup action shows a loader until lightweight status resolves", () => {

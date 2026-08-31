@@ -600,8 +600,8 @@ test("managed Gateway restart stays behind the authenticated same-origin API pro
 
   assert.match(proxySource, /pathname\.startsWith\("\/api\/"\)/);
   assert.doesNotMatch(proxySource, /publicInstanceApiPaths[\s\S]*\/api\/gateway\/control/);
-  assert.match(routeSource, /restartManagedRailwayGateway/);
-  assert.match(supervisorSource, /request\.action !== "restart-gateway"/);
+  assert.match(routeSource, /controlGateway\(input\.action\)/);
+  assert.match(supervisorSource, /createGatewaySupervisor/);
   assert.doesNotMatch(supervisorSource, /exec\(|execFile\(|shell:\s*true/);
 });
 

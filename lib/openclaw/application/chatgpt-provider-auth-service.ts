@@ -8,6 +8,7 @@ import {
 } from "@/lib/openclaw/install";
 import { resolveOpenClawBin, runOpenClaw } from "@/lib/openclaw/cli";
 import { readOpenClawCodexPluginReady } from "@/lib/openclaw/application/model-provider-state-service";
+import { getOpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
 
 const chatGptAuthTimeoutMs = 6 * 60_000;
 const pluginSetupTimeoutMs = 2 * 60_000;
@@ -31,6 +32,10 @@ const defaultDependencies: ChatGptProviderAuthDependencies = {
   platform: process.platform,
   readPluginReady: async () => await readOpenClawCodexPluginReady(),
   runSetupCommand: async (args, timeoutMs) => {
+    if (args[0] === "gateway" && args[1] === "restart") {
+      await getOpenClawLifecycleService().restart();
+      return;
+    }
     await runOpenClaw(args, { timeoutMs });
   },
   runInteractiveLogin: runOpenClawChatGptInteractiveLogin

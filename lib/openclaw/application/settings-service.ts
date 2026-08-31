@@ -31,6 +31,7 @@ import {
   NativeWsOpenClawGatewayClient
 } from "@/lib/openclaw/client/native-ws-gateway-client";
 import { resetOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
+import { getOpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
 import { isOpenClawInvalidConfigError } from "@/lib/openclaw/command-failure";
 import type { OpenClawDeviceApprovePayload } from "@/lib/openclaw/client/gateway-client";
 import type {
@@ -505,10 +506,7 @@ export async function generateGatewayNativeAuthToken(input: {
 
 async function restartGatewayAfterAuthTokenRotation() {
   try {
-    await getOpenClawAdapter().controlGateway("restart", {
-      timeoutMs: 20_000,
-      force: true
-    });
+    await getOpenClawLifecycleService().restart();
     resetOpenClawGatewayClient("gateway auth token rotated");
     await delay(GATEWAY_AUTH_RESTART_SETTLE_MS);
 
@@ -528,18 +526,14 @@ async function cycleGatewayAfterAuthTokenRotation() {
   let issue: string | null = null;
 
   try {
-    await getOpenClawAdapter().controlGateway("stop", {
-      timeoutMs: 20_000
-    });
+    await getOpenClawLifecycleService().stop();
     await delay(750);
   } catch (error) {
     issue = redactErrorMessage(error, "Gateway stop after token rotation failed.");
   }
 
   try {
-    await getOpenClawAdapter().controlGateway("start", {
-      timeoutMs: 20_000
-    });
+    await getOpenClawLifecycleService().start();
     resetOpenClawGatewayClient("gateway auth token rotation stop/start completed");
     await delay(GATEWAY_AUTH_RESTART_SETTLE_MS);
 

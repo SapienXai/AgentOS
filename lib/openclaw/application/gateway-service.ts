@@ -1,7 +1,7 @@
 import "server-only";
 
-import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { runOpenClaw } from "@/lib/openclaw/cli";
+import { getOpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
 
 export type GatewayControlAction = "start" | "stop" | "restart" | "doctor";
 
@@ -45,5 +45,5 @@ function runGatewayControl(action: GatewayControlAction) {
     return runOpenClaw(["doctor", "--fix"], { timeoutMs: 4 * 60_000 });
   }
 
-  return getOpenClawAdapter().controlGateway(action);
+  return getOpenClawLifecycleService()[action]();
 }

@@ -54,6 +54,7 @@ import {
 } from "@/lib/openclaw/application/settings-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import { isRailwayManagedRuntime } from "@/lib/openclaw/deployment-runtime";
+import { getOpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
 import type {
   MissionControlSnapshot,
   OpenClawOnboardingPhase,
@@ -1197,64 +1198,36 @@ async function waitForInstalledOpenClawBin() {
   }
 }
 
-async function startRegisteredWindowsGateway(
-  send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>
-): Promise<CommandResult | null> {
-  if (process.platform !== "win32") {
-    return null;
-  }
-
-  const executable = process.env.SystemRoot
-    ? path.join(process.env.SystemRoot, "System32", "schtasks.exe")
-    : "schtasks.exe";
-  const taskName = process.env.OPENCLAW_WINDOWS_TASK_NAME?.trim() || "OpenClaw Gateway";
-
-  await send({
-    type: "status",
-    phase: "starting-gateway",
-    message: "Starting the registered Windows gateway task..."
-  });
-
-  const result = await runCommand(executable, ["/Run", "/TN", taskName], send, { timeoutMs: 5_000 });
-  return !result.errorMessage && !result.timedOut && result.code === 0 ? result : null;
-}
-
 async function restartGatewayForOnboarding(
   openClawBin: string,
   send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>,
   options: { timeoutMs?: number } = {}
-) {
-  if (process.platform === "win32") {
-    const executable = process.env.SystemRoot
-      ? path.join(process.env.SystemRoot, "System32", "schtasks.exe")
-      : "schtasks.exe";
-    const taskName = process.env.OPENCLAW_WINDOWS_TASK_NAME?.trim() || "OpenClaw Gateway";
-
-    // OpenClaw's legacy restart handoff launches a cmd script that shells out
-    // to findstr. Calling the registered task directly avoids a visible helper
-    // console during System Setup while retaining the normal CLI fallback.
-    await runCommand(executable, ["/End", "/TN", taskName], send, {
-      timeoutMs: 5_000,
-      streamOutput: false
-    });
-    const taskRunResult = await runCommand(executable, ["/Run", "/TN", taskName], send, {
-      timeoutMs: options.timeoutMs ?? 30_000
-    });
-
-    if (!taskRunResult.errorMessage && !taskRunResult.timedOut && taskRunResult.code === 0) {
-      return taskRunResult;
-    }
-  }
-
-  return await runCommand(openClawBin, ["gateway", "restart", "--force", "--json"], send, options);
+): Promise<CommandResult> {
+  void openClawBin;
+  void send;
+  void options;
+  const result = await getOpenClawLifecycleService().restart();
+  return {
+    code: 0,
+    stdout: `${result.message}\n`,
+    stderr: "",
+    timedOut: false
+  } satisfies CommandResult;
 }
 
 async function startGatewayForOnboarding(
   openClawBin: string,
   send: (event: OpenClawOnboardingStreamEvent) => Promise<unknown>
-) {
-  return await startRegisteredWindowsGateway(send)
-    ?? await runCommand(openClawBin, ["gateway", "start", "--json"], send, { timeoutMs: 15_000 });
+): Promise<CommandResult> {
+  void openClawBin;
+  void send;
+  const result = await getOpenClawLifecycleService().start();
+  return {
+    code: 0,
+    stdout: `${result.message}\n`,
+    stderr: "",
+    timedOut: false
+  } satisfies CommandResult;
 }
 
 async function needsWindowsGatewayHiddenLauncherMigration(

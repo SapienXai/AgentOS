@@ -6,6 +6,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { getOpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
 import {
   isGatewayConfigRateLimitError,
   readGatewayConfigRateLimitRetryAfterMs
@@ -1370,15 +1371,7 @@ async function tryStartGatewayAfterTransientConfigFailure(error: unknown) {
     return;
   }
 
-  const adapter = getOpenClawAdapter() as {
-    controlGateway?: (action: "start", options?: { timeoutMs?: number }) => Promise<unknown>;
-  };
-
-  if (typeof adapter.controlGateway !== "function") {
-    return;
-  }
-
-  await adapter.controlGateway("start", { timeoutMs: 10_000 }).catch(() => {});
+  await getOpenClawLifecycleService().start().catch(() => {});
 }
 
 function isGatewayTransportSettleError(error: unknown) {

@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-31T17:46:00.187Z",
+  "provenance": {
+    "agentosCommit": "b04b43a79a0a766078073e1f525bfd30e990fc83",
+    "targetVersion": "2026.8.1",
+    "targetCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
+    "targetBuildId": "2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z",
+    "targetPackageHash": "7c0eb75f8337d5a0eb73aefd27ad6978dccf486ae1fd7ae0759ed3a3c2e1bb52"
+  },
+  "runtime": {
+    "packageMode": "exact-package-fixture",
+    "packageVersion": "2026.8.1",
+    "packageSourceCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
+    "stateRoot": "[DISPOSABLE_ROOT]",
+    "configRoot": "[DISPOSABLE_ROOT]",
+    "provider": "loopback-fixture",
+    "realGateway": true
+  },
+  "lifecycleSchema": {
+    "ownership": [
+      "agentos-managed",
+      "external-supervisor",
+      "unavailable",
+      "unknown"
+    ],
+    "states": [
+      "unknown",
+      "stopped",
+      "starting",
+      "running",
+      "ready",
+      "degraded",
+      "restarting",
+      "stopping",
+      "crashed",
+      "recovering",
+      "blocked"
+    ],
+    "operations": [
+      "inspect",
+      "start",
+      "stop",
+      "restart",
+      "waitForReady",
+      "recover",
+      "getStatus",
+      "prepareForMaintenance",
+      "resumeAfterMaintenance"
+    ]
+  },
+  "managed": {
+    "ownership": "agentos-managed",
+    "strategy": "child",
+    "binaryRole": "exact-openclaw-package",
+    "firstAssistantPresent": true,
+    "secondAssistantPresent": true,
+    "restartedGeneration": 1788198368633,
+    "readinessState": "ready",
+    "recoveredGeneration": 1788198375869,
+    "recoveredPid": 88357
+  },
+  "external": {
+    "ownership": "external-supervisor",
+    "strategy": "external-supervisor",
+    "controlSocket": "private-unix-socket",
+    "initialGeneration": 3,
+    "recoveredGeneration": 4,
+    "recoveredPid": 88844,
+    "sessionContinuity": true
+  },
+  "checks": {
+    "canonicalRuntime": true,
+    "start": true,
+    "stop": true,
+    "restart": true,
+    "readiness": true,
+    "nativeHandshake": true,
+    "sessionContinuity": true,
+    "crashRecovery": true,
+    "crashLoopProtection": true,
+    "supervisorIpcSafety": true,
+    "ownershipFailClosed": true,
+    "noDoubleSpawn": true,
+    "externalNoDirectProcessControl": true
+  },
+  "cleanup": {
+    "status": "complete",
+    "disposableRootRemoved": true,
+    "gatewayProcessesStopped": true
+  },
+  "gate": "OPENCLAW 8.1 LIFECYCLE GATE: PASS",
+  "success": true
+}

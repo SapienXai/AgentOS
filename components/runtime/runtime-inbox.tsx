@@ -449,7 +449,7 @@ function RuntimeIssueActions({
     rollbackTargetVersion && issue.type === "openclaw_postflight_failed"
   );
   const isLegacyStateRepair = issue.type === "openclaw_doctor_warning";
-  const isManagedGatewayRecovery = issue.type === "gateway_unreachable" && deployment.gatewayLifecycle === "supervisor-managed";
+  const isManagedGatewayRecovery = issue.type === "gateway_unreachable" && deployment.gatewayLifecycle === "external-supervisor";
   const canOpenRecovery = Boolean(
     recoveryCommand &&
     deployment.gatewayLifecycle === "agentos-managed" &&

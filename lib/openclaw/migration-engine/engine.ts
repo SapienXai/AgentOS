@@ -753,7 +753,7 @@ function resolveSupervisorMode(input: OpenClawMigrationEngineInput["supervisorMo
   if (input === "agentos-managed") return "agentos-managed";
   if (process.env.OPENCLAW_SUPERVISOR_MODE?.trim().toLowerCase() === "external") return "external";
   const deployment = resolveAgentOsDeploymentCapabilities();
-  if (deployment.gatewayLifecycle === "supervisor-managed") return "external";
+  if (deployment.gatewayLifecycle === "external-supervisor") return "external";
   if (deployment.gatewayLifecycle === "agentos-managed") return "agentos-managed";
   return "unknown";
 }

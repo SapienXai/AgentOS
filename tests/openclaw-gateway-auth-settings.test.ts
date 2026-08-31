@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, test } from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
 
 import {
   generateGatewayNativeAuthToken,
@@ -16,6 +16,7 @@ import {
   setOpenClawAdapterForTesting,
   type OpenClawAdapter
 } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { OpenClawLifecycleService, setOpenClawLifecycleServiceForTesting } from "@/lib/openclaw/lifecycle/service";
 
 test("Gateway settings route unreachable Gateway repair to rollback or process recovery", () => {
   const source = readFileSync(join(process.cwd(), "components/mission-control/settings-control-center.tsx"), "utf8");
@@ -321,13 +322,39 @@ function createSettingsAdapter(config: Record<string, unknown> = {}): OpenClawAd
   };
 }
 
+function createSettingsLifecycleService() {
+  return new OpenClawLifecycleService({
+    env: {
+      OPENCLAW_GATEWAY_BINARY: "/tmp/agentos-openclaw",
+      OPENCLAW_STATE_DIR: "/tmp/agentos-settings-state",
+      OPENCLAW_CONFIG_PATH: "/tmp/agentos-settings-state/openclaw.json"
+    },
+    resolveBinary: async () => "/tmp/agentos-openclaw",
+    readinessProbe: async () => ({
+      ready: true,
+      authenticated: true,
+      health: "live",
+      protocolVersion: 4,
+      version: "2026.8.1",
+      sourceCommit: null,
+      checkedAt: new Date().toISOString(),
+      reason: null
+    })
+  });
+}
+
 afterEach(() => {
   setOpenClawAdapterForTesting(null);
+  setOpenClawLifecycleServiceForTesting(null);
   delete process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
   delete process.env.AGENTOS_OPENCLAW_GATEWAY_PASSWORD;
   delete process.env.AGENTOS_PACKAGE_RUNTIME;
   delete process.env.AGENTOS_RUNTIME_DIR;
   delete process.env.OPENCLAW_STATE_DIR;
+});
+
+beforeEach(() => {
+  setOpenClawLifecycleServiceForTesting(createSettingsLifecycleService());
 });
 
 test("Gateway settings read the current bind through native config without exposing the config snapshot", async () => {

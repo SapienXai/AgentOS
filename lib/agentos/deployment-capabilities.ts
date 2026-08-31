@@ -2,7 +2,7 @@ export type AgentOsDeploymentPlatform = "local" | "railway" | "unknown";
 
 export type AgentOsDeploymentCapabilities = {
   platform: AgentOsDeploymentPlatform;
-  gatewayLifecycle: "agentos-managed" | "supervisor-managed" | "unavailable";
+  gatewayLifecycle: "agentos-managed" | "external-supervisor" | "unavailable" | "unknown";
   terminalAccess: "macos" | "unavailable";
   browserAutomation: "local-visible" | "server-headless" | "unknown";
   interactiveBrowserLogin: "supported" | "unavailable";
@@ -12,7 +12,7 @@ export type AgentOsDeploymentCapabilities = {
 
 export const unknownDeploymentCapabilities: AgentOsDeploymentCapabilities = {
   platform: "unknown",
-  gatewayLifecycle: "unavailable",
+  gatewayLifecycle: "unknown",
   terminalAccess: "unavailable",
   browserAutomation: "unknown",
   interactiveBrowserLogin: "unavailable",
@@ -24,16 +24,27 @@ export function resolveAgentOsDeploymentCapabilities(
   env: Readonly<Record<string, string | undefined>> = process.env,
   platform = process.platform
 ): AgentOsDeploymentCapabilities {
-  if (env.AGENTOS_DEPLOYMENT_PLATFORM?.trim().toLowerCase() === "railway") {
+  const deploymentPlatform = env.AGENTOS_DEPLOYMENT_PLATFORM?.trim().toLowerCase();
+  const supervisorMode = env.OPENCLAW_SUPERVISOR_MODE?.trim().toLowerCase();
+
+  if (deploymentPlatform && deploymentPlatform !== "local" && deploymentPlatform !== "railway") {
+    return unknownDeploymentCapabilities;
+  }
+
+  if (deploymentPlatform === "railway" || supervisorMode === "external") {
     return {
-      platform: "railway",
-      gatewayLifecycle: "supervisor-managed",
+      platform: deploymentPlatform === "railway" ? "railway" : "local",
+      gatewayLifecycle: "external-supervisor",
       terminalAccess: "unavailable",
       browserAutomation: "server-headless",
       interactiveBrowserLogin: "unavailable",
       existingBrowserSession: "unavailable",
       hostFileActions: "unavailable"
     };
+  }
+
+  if (supervisorMode && supervisorMode !== "agentos-managed") {
+    return unknownDeploymentCapabilities;
   }
 
   return {

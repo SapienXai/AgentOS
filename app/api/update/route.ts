@@ -51,6 +51,7 @@ import {
 } from "@/lib/openclaw/certification-scorecard";
 import { persistOpenClawCertificationScorecard } from "@/lib/openclaw/compatibility-lab/store";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { getOpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -102,6 +103,26 @@ type RoundTripResult = {
   smokeTest?: OpenClawRuntimeSmokeTest | null;
 };
 
+async function lifecycleCommandResult(action: "start" | "stop" | "restart"): Promise<CommandResult> {
+  try {
+    const result = await getOpenClawLifecycleService()[action]();
+    return {
+      code: 0,
+      stdout: `${result.message}\n`,
+      stderr: "",
+      timedOut: false
+    };
+  } catch (error) {
+    return {
+      code: null,
+      stdout: "",
+      stderr: "",
+      timedOut: false,
+      errorMessage: redactErrorMessage(error, `OpenClaw Gateway ${action} failed.`)
+    };
+  }
+}
+
 export async function POST(request: Request) {
   let updateRequest: z.infer<typeof updateSchema>;
 
@@ -117,6 +138,7 @@ export async function POST(request: Request) {
   }
 
   const snapshot = await getMissionControlSnapshot({ force: true });
+  const lifecycleStatus = await getOpenClawLifecycleService().getStatus().catch(() => null);
   const agentOsVersion = await resolveAgentOsVersion();
   const targetVersion = normalizeVersion(updateRequest.targetVersion) || OPENCLAW_RECOMMENDED_VERSION;
   const updateDecision = resolveOpenClawUpdateDecision({
@@ -124,6 +146,19 @@ export async function POST(request: Request) {
     targetVersion,
     mode: updateRequest.mode
   });
+
+  if (
+    lifecycleStatus?.ownership === "external-supervisor" &&
+    (updateRequest.action === "update" || updateRequest.action === "rollback" || updateRequest.action === "certify-round-trip")
+  ) {
+    return NextResponse.json(
+      {
+        error: "OpenClaw self-update is unavailable while an external supervisor owns the Gateway. Stop the supervisor, replace the runtime through its deployment workflow, then restart and verify it.",
+        ownership: lifecycleStatus.ownership
+      },
+      { status: 409 }
+    );
+  }
 
   if ((updateRequest.action === "update" || updateRequest.action === "certify-round-trip") && !updateDecision.allowed) {
     return NextResponse.json(
@@ -1512,9 +1547,7 @@ async function recoverOpenClawPostUpdate(
     };
   }
 
-  const restartResult = await runRecoveryCommand(openClawBin, ["gateway", "restart"], send, {
-    timeoutMs: 90_000
-  });
+  const restartResult = await lifecycleCommandResult("restart");
   appendOutput(restartResult);
 
   if (restartResult.errorMessage || restartResult.timedOut || restartResult.code !== 0) {
@@ -2531,9 +2564,7 @@ async function restoreConfigAndRestartOpenClaw(
     message: "Restarting OpenClaw Gateway with the restored config snapshot..."
   });
 
-  const restartResult = await runRecoveryCommand(openClawBin, ["gateway", "restart"], send, {
-    timeoutMs: 90_000
-  });
+  const restartResult = await lifecycleCommandResult("restart");
   stdout += restartResult.stdout;
   stderr += restartResult.stderr;
 
