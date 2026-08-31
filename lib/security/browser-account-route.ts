@@ -4,13 +4,17 @@ import {
   getInstanceProtectionStatus,
   readInstanceSessionCookie
 } from "@/lib/security/instance-protection";
+import { requireAgentOsProductPermission, type AgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import { requireSameOriginMutation } from "@/lib/security/instance-protection-route";
 
 const mutationWindowMs = 60_000;
 const mutationLimit = 30;
 const mutationAttempts = new Map<string, number[]>();
 
-export async function requireBrowserAccountActor(request: Request) {
+export async function requireBrowserAccountActor(
+  request: Request,
+  productPermission: AgentOsProductPermission = "runtime.use"
+) {
   const status = await getInstanceProtectionStatus(readInstanceSessionCookie(request.headers));
   if (status.protectionEnabled && !status.authenticated) {
     return {
@@ -21,6 +25,10 @@ export async function requireBrowserAccountActor(request: Request) {
     };
   }
 
+  const productAuthorization = await requireAgentOsProductPermission(request, productPermission);
+  if ("response" in productAuthorization) return productAuthorization;
+  const agentOsActor = productAuthorization.actor;
+
   if (!isSafeMethod(request.method)) {
     const originFailure = requireSameOriginMutation(request);
     if (originFailure) {
@@ -30,7 +38,7 @@ export async function requireBrowserAccountActor(request: Request) {
       return { response: originFailure };
     }
 
-    const userId = status.username?.trim() || "instance-owner";
+    const userId = agentOsActor.actorId;
     const rateKey = `${userId}:${request.method.toUpperCase()}`;
     const now = Date.now();
     const recent = (mutationAttempts.get(rateKey) ?? []).filter((at) => now - at < mutationWindowMs);
@@ -54,7 +62,7 @@ export async function requireBrowserAccountActor(request: Request) {
 
   return {
     actor: {
-      userId: status.username?.trim() || "instance-owner"
+      userId: agentOsActor.actorId
     }
   };
 }

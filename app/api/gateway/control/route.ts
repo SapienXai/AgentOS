@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import { controlGateway } from "@/lib/openclaw/application/gateway-service";
-import { requireAgentOsActorContext } from "@/lib/security/agentos-actor";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 
@@ -22,8 +22,8 @@ const actionMessageMap = {
 } satisfies Record<z.infer<typeof gatewayControlSchema>["action"], string>;
 
 export async function POST(request: Request) {
-  const actorResult = await requireAgentOsActorContext(request);
-  if ("response" in actorResult) return actorResult.response;
+  const authorization = await requireAgentOsProductPermission(request, "lifecycle.manage");
+  if ("response" in authorization) return authorization.response;
 
   try {
     const input = gatewayControlSchema.parse(await request.json());
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
 
     await controlGateway(input.action);
     await recordAgentOsAuditEvent({
-      actor: actorResult.actor,
+      actor: authorization.actor,
       operation: `gateway.${input.action}`,
       targetKind: "gateway",
       result: "succeeded"
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     await recordAgentOsAuditEvent({
-      actor: actorResult.actor,
+      actor: authorization.actor,
       operation: "gateway.control",
       targetKind: "gateway",
       result: "failed"

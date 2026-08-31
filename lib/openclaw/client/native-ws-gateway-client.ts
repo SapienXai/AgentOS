@@ -184,6 +184,8 @@ import type {
   OpenClawToolsEffectivePayload,
   OpenClawUpdateAgentInput,
   OpenClawUpdateStatusPayload,
+  OpenClawUserListPayload,
+  OpenClawUserProfile,
   StatusPayload
 } from "@/lib/openclaw/client/types";
 import {
@@ -411,6 +413,50 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         this.recordGatewayFallback("status", error);
         return this.fallback.getStatus(options);
       });
+  }
+
+  async listUsers(options: OpenClawCommandOptions = {}): Promise<OpenClawUserListPayload> {
+    const payload = await this.callNative<unknown>("users.list", {}, options, { safety: "read" });
+    const profiles = isObjectRecord(payload) && Array.isArray(payload.profiles)
+      ? payload.profiles.map(normalizeOpenClawUserProfile).filter((profile): profile is OpenClawUserProfile => Boolean(profile))
+      : [];
+    return { profiles };
+  }
+
+  async getCurrentUser(options: OpenClawCommandOptions = {}): Promise<OpenClawUserProfile | null> {
+    const payload = await this.callNative<unknown>("users.self", {}, options, { safety: "read" });
+    return normalizeOpenClawUserProfile(payload);
+  }
+
+  async setUserDisplayName(profileId: string, displayName: string, options: OpenClawCommandOptions = {}) {
+    return this.callUserMutation("users.setDisplayName", { profileId, displayName }, options);
+  }
+
+  async setUserAvatar(profileId: string, avatar: string | null, options: OpenClawCommandOptions = {}) {
+    return this.callUserMutation("users.setAvatar", { profileId, avatar }, options);
+  }
+
+  async linkUserEmail(profileId: string, email: string, options: OpenClawCommandOptions = {}) {
+    return this.callUserMutation("users.linkEmail", { profileId, email }, options);
+  }
+
+  async setUserRole(profileId: string, role: string | null, options: OpenClawCommandOptions = {}) {
+    return this.callUserMutation("users.setRole", { profileId, role }, options);
+  }
+
+  async listGatewayRoleNames(options: OpenClawCommandOptions = {}) {
+    const payload = await this.callNative<unknown>("config.get", {}, options, { safety: "read" });
+    const record = isObjectRecord(payload) ? payload : {};
+    const config = isObjectRecord(record.config) ? record.config : record;
+    const gateway = isObjectRecord(config.gateway) ? config.gateway : {};
+    const roles = isObjectRecord(gateway.roles) ? gateway.roles : {};
+    const definitions = isObjectRecord(roles.definitions) ? roles.definitions : {};
+    return Object.keys(definitions).sort();
+  }
+
+  private async callUserMutation(method: string, params: Record<string, unknown>, options: OpenClawCommandOptions) {
+    const payload = await this.callNative<unknown>(method, params, options, { safety: "mutation" });
+    return normalizeOpenClawUserProfile(payload);
   }
 
   getUpdateStatus(options: OpenClawCommandOptions = {}) {
@@ -2557,4 +2603,19 @@ function collectUpdateStatusRecords(payload: OpenClawUpdateStatusPayload | undef
 
 function readRecord(value: unknown) {
   return isObjectRecord(value) ? value : undefined;
+}
+
+function normalizeOpenClawUserProfile(value: unknown): OpenClawUserProfile | null {
+  const record = isObjectRecord(value) ? value : null;
+  const profile = record && isObjectRecord(record.profile) ? record.profile : record;
+  if (!profile) return null;
+  const profileId = readNonEmptyString(profile.profileId ?? profile.id);
+  if (!profileId) return null;
+  return {
+    profileId,
+    displayName: typeof profile.displayName === "string" ? profile.displayName : null,
+    avatar: typeof profile.avatar === "string" ? profile.avatar : null,
+    email: typeof profile.email === "string" ? profile.email : null,
+    role: typeof profile.role === "string" ? profile.role : null
+  };
 }

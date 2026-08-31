@@ -4,6 +4,7 @@ import { z } from "zod";
 import { executeReset, getResetPreview } from "@/lib/agentos/reset";
 import type { ResetStreamEvent } from "@/lib/agentos/contracts";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +23,8 @@ const executeRequestSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "security.manage");
+  if ("response" in permission) return permission.response;
   let payload: unknown;
 
   try {

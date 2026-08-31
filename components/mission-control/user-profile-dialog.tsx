@@ -41,6 +41,9 @@ export type OperatorProfileSummary = {
   username: string;
   email: string;
   avatarDataUrl: string | null;
+  actorId?: string | null;
+  role?: "owner" | "member" | null;
+  status?: "active" | "disabled" | null;
 };
 
 type OperatorProfileResponse = OperatorProfileSummary & {

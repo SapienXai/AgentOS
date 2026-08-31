@@ -22,6 +22,7 @@ import {
 } from "@/lib/openclaw/gateway-config-errors";
 import { createTimingCollector, formatTimingSummary, measureTiming } from "@/lib/openclaw/timing";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,6 +64,9 @@ const deleteChannelSchema = z.object({
 });
 
 export async function GET(_request: Request, context: { params: Promise<{ workspaceId: string }> }) {
+  const permission = await requireAgentOsProductPermission(_request, "runtime.use");
+  if ("response" in permission) return permission.response;
+
   const { workspaceId } = await context.params;
   const {
     channelRegistry: registry,
@@ -84,6 +88,9 @@ export async function GET(_request: Request, context: { params: Promise<{ worksp
 }
 
 export async function POST(request: Request, context: { params: Promise<{ workspaceId: string }> }) {
+  const permission = await requireAgentOsProductPermission(request, "gateway.manage");
+  if ("response" in permission) return permission.response;
+
   const timings = createTimingCollector("workspace-surface-provision");
 
   try {
@@ -177,6 +184,9 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ workspaceId: string }> }) {
+  const permission = await requireAgentOsProductPermission(request, "gateway.manage");
+  if ("response" in permission) return permission.response;
+
   try {
     const { workspaceId } = await context.params;
     const input = patchChannelSchema.parse(await request.json());
@@ -242,6 +252,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ works
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ workspaceId: string }> }) {
+  const permission = await requireAgentOsProductPermission(request, "gateway.manage");
+  if ("response" in permission) return permission.response;
+
   const timings = createTimingCollector("workspace-surface-delete");
 
   try {

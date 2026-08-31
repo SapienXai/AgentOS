@@ -8,6 +8,7 @@ import {
   getLatestOpenClawCompatibilityLabReport
 } from "@/lib/openclaw/compatibility-lab/report-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,9 @@ const compatibilityLabSchema = z.object({
   reportId: z.string().trim().optional()
 });
 
-export async function GET() {
+export async function GET(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  if ("response" in permission) return permission.response;
   try {
     const report = await getLatestOpenClawCompatibilityLabReport();
 
@@ -35,6 +38,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "gateway.manage");
+  if ("response" in permission) return permission.response;
   let input: z.infer<typeof compatibilityLabSchema>;
 
   try {

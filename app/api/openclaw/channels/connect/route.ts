@@ -78,7 +78,8 @@ export async function POST(request: Request) {
       targetKind: "openclaw-channel",
       targetId: accountId ?? input.provider,
       securityClass: "privileged-mutation",
-      executionPath: "gateway-or-verified-cli"
+      executionPath: "gateway-or-verified-cli",
+      productPermission: "gateway.manage"
     });
     if ("response" in authorization) return authorization.response;
 

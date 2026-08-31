@@ -53,7 +53,8 @@ export async function POST(
     securityClass: "privileged-mutation",
     executionPath: parseResult.data.action === "continue"
       ? "gateway-or-verified-cli"
-      : "gateway-native"
+      : "gateway-native",
+    productPermission: "tasks.use"
   });
   if ("response" in authorization) return authorization.response;
 

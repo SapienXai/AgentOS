@@ -13,6 +13,7 @@ import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 import { requireAgentOsActorContext } from "@/lib/security/agentos-actor";
 import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,7 +72,8 @@ export async function PATCH(request: Request) {
     method: "config.patch",
     targetKind: "gateway-config",
     securityClass: "privileged-mutation",
-    executionPath: "gateway-or-verified-cli"
+    executionPath: "gateway-or-verified-cli",
+    productPermission: "gateway.manage"
   });
   if ("response" in authorization) return authorization.response;
 
@@ -107,13 +109,15 @@ export async function PATCH(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const actorResult = await requireAgentOsActorContext(request);
+    const actorResult = await requireAgentOsActorContext(request);
   if ("response" in actorResult) return actorResult.response;
 
   try {
     const body = await request.json();
 
     if (gatewayAuthGenerateSchema.safeParse(body).success) {
+      const permission = await requireAgentOsProductPermission(request, "gateway.manage");
+      if ("response" in permission) return permission.response;
       const result = await generateGatewayNativeAuthToken();
       const authStatus = await getGatewayNativeAuthStatus();
       await recordAgentOsAuditEvent({
@@ -140,7 +144,8 @@ export async function POST(request: Request) {
         method: "device.pair.approve",
         targetKind: "gateway-device",
         securityClass: "privileged-mutation",
-        executionPath: "gateway-or-verified-cli"
+        executionPath: "gateway-or-verified-cli",
+        productPermission: "gateway.manage"
       });
       if ("response" in repairAuthorization) return repairAuthorization.response;
 
@@ -164,6 +169,8 @@ export async function POST(request: Request) {
     }
 
     const input = gatewayAuthCredentialSchema.parse(body);
+    const permission = await requireAgentOsProductPermission(request, "gateway.manage");
+    if ("response" in permission) return permission.response;
     const result = await saveGatewayNativeAuthCredential(input);
     const authStatus = await getGatewayNativeAuthStatus();
     await recordAgentOsAuditEvent({

@@ -9,6 +9,7 @@ import {
 } from "@/lib/agentos/control-plane";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import type { OperationProgressSnapshot, WorkspaceCreateStreamEvent } from "@/lib/agentos/contracts";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -94,7 +95,9 @@ const workspaceDeleteSchema = z.object({
   workspaceId: z.string().min(1)
 });
 
-export async function GET() {
+export async function GET(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  if ("response" in permission) return permission.response;
   const snapshot = await getMissionControlSnapshot();
   return NextResponse.json(redactSecrets({
     workspaces: snapshot.workspaces
@@ -102,6 +105,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "workspace.manage");
+  if ("response" in permission) return permission.response;
   try {
     const parsed = workspaceCreateRequestSchema.parse(await request.json());
     const { stream, ...input } = parsed;
@@ -183,6 +188,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "workspace.manage");
+  if ("response" in permission) return permission.response;
   try {
     const input = workspaceUpdateSchema.parse(await request.json());
     const updated = await updateWorkspaceProject(input);
@@ -199,6 +206,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "workspace.manage");
+  if ("response" in permission) return permission.response;
   try {
     const input = workspaceDeleteSchema.parse(await request.json());
     const deleted = await deleteWorkspaceProject(input);

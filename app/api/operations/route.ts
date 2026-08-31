@@ -45,8 +45,9 @@ export async function POST(request: Request) {
       params: operation.targetId ? { jobId: operation.targetId } : {},
       targetKind: "openclaw-cron",
       targetId: operation.targetId,
-      securityClass: "privileged-mutation",
-      executionPath: "gateway-native"
+    securityClass: "privileged-mutation",
+      executionPath: "gateway-native",
+      productPermission: "tasks.use"
     });
     if ("response" in authorization) return authorization.response;
 

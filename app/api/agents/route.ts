@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { createAgent, deleteAgent, getMissionControlSnapshot, updateAgent } from "@/lib/agentos/control-plane";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 import { redactSecretText, redactSecrets } from "@/lib/security/redaction";
 
@@ -102,7 +103,9 @@ const deleteAgentSchema = z.object({
   agentId: z.string().min(1)
 });
 
-export async function GET() {
+export async function GET(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "agents.read");
+  if ("response" in permission) return permission.response;
   const snapshot = await getMissionControlSnapshot();
   return NextResponse.json(redactSecrets({
     agents: snapshot.agents
@@ -115,7 +118,8 @@ export async function POST(request: Request) {
     method: "agents.create",
     targetKind: "agent",
     securityClass: "privileged-mutation",
-    executionPath: "gateway-or-verified-cli"
+    executionPath: "gateway-or-verified-cli",
+    productPermission: "agents.manage"
   });
   if ("response" in authorization) return authorization.response;
 
@@ -152,7 +156,8 @@ export async function PATCH(request: Request) {
     method: "agents.update",
     targetKind: "agent",
     securityClass: "privileged-mutation",
-    executionPath: "gateway-or-verified-cli"
+    executionPath: "gateway-or-verified-cli",
+    productPermission: "agents.manage"
   });
   if ("response" in authorization) return authorization.response;
 
@@ -189,7 +194,8 @@ export async function DELETE(request: Request) {
     method: "agents.delete",
     targetKind: "agent",
     securityClass: "privileged-mutation",
-    executionPath: "gateway-or-verified-cli"
+    executionPath: "gateway-or-verified-cli",
+    productPermission: "agents.manage"
   });
   if ("response" in authorization) return authorization.response;
 

@@ -27,7 +27,8 @@ export async function POST(request: Request) {
       method: mobilePairingGatewayMethod,
       targetKind: "gateway-device",
       securityClass: "privileged-mutation",
-      executionPath: "gateway-or-verified-cli"
+      executionPath: "gateway-or-verified-cli",
+      productPermission: "gateway.manage"
     });
     if ("response" in authorization) return authorization.response;
 

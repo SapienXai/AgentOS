@@ -1,22 +1,29 @@
-import { createHmac, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { promisify } from "node:util";
-
 import { resolveAgentOsRuntimeDir } from "@/lib/agentos/runtime-auth";
+import {
+  createPasswordSalt,
+  hashPassword,
+  PASSWORD_MIN_LENGTH,
+  verifyPassword,
+  verifyPasswordOrDummy
+} from "@/lib/security/password-hashing";
+import {
+  createOwnerUserFromInstanceState,
+  normalizeAgentOsUsername,
+  readAgentOsUserStore,
+  writeAgentOsUserStore
+} from "@/lib/security/agentos-user-store";
 
 export const INSTANCE_PROTECTION_COOKIE = "agentos_instance_session";
 export const INSTANCE_PROTECTION_FILE = "instance-protection.json";
 export const INSTANCE_SESSION_TTL_SECONDS = 12 * 60 * 60;
 export const INSTANCE_PASSWORD_MIN_LENGTH = 8;
 
-const scrypt = promisify(scryptCallback);
-const SCRYPT_KEY_LENGTH = 64;
 const LOGIN_WINDOW_MS = 5 * 60 * 1000;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
 const LOGIN_MAX_FAILURES = 5;
-const DUMMY_SALT = "3b95d51f07317118d2ef196c0e9c7ae6";
-const DUMMY_HASH = "0".repeat(SCRYPT_KEY_LENGTH * 2);
 
 export type InstanceProtectionState = {
   version: 2;
@@ -35,6 +42,8 @@ export type InstanceProtectionStatus = {
   authenticated: boolean;
   username: string | null;
   credentialConfigured: boolean;
+  actorId?: string | null;
+  role?: "owner" | "member" | null;
 };
 
 type LoginRateEntry = {
@@ -115,11 +124,19 @@ export async function getInstanceProtectionStatus(
     };
   }
 
+  const sessionIdentity = readInstanceSessionIdentity(cookieValue, state);
+  const userStore = await readAgentOsUserStore(env) ?? await ensureAgentOsUserStoreForMigration(env);
+  const sessionUser = sessionIdentity
+    ? userStore?.users.find((entry) => entry.actorId === sessionIdentity.actorId) ?? null
+    : null;
+
   return {
     protectionEnabled: true,
-    authenticated: verifyInstanceSession(cookieValue, state),
-    username: state.username,
-    credentialConfigured: true
+    authenticated: await isActiveInstanceSession(cookieValue, state, env),
+    username: sessionUser?.username ?? state.username,
+    credentialConfigured: true,
+    actorId: sessionIdentity?.actorId ?? null,
+    role: sessionUser?.role ?? await resolveInstanceSessionRole(cookieValue, state, env)
   };
 }
 
@@ -134,7 +151,7 @@ export async function enableInstanceProtection(
 
   const username = validateUsername(input.username);
   validatePassword(input.password);
-  const passwordSalt = randomBytes(16).toString("hex");
+  const passwordSalt = createPasswordSalt();
   const passwordHash = await hashPassword(input.password, passwordSalt);
   const state: InstanceProtectionState = {
     version: 2,
@@ -149,7 +166,9 @@ export async function enableInstanceProtection(
   };
 
   await writeInstanceProtectionState(state, env);
-  return { status: await getInstanceProtectionStatus(createInstanceSession(state), env), session: createInstanceSession(state) };
+  await createOwnerUserFromInstanceState(state, env);
+  const session = createInstanceSession(state);
+  return { status: await getInstanceProtectionStatus(session, env), session };
 }
 
 export async function loginToInstance(
@@ -160,20 +179,24 @@ export async function loginToInstance(
   const attemptKey = input.username.trim().toLocaleLowerCase("en-US") || "<empty>";
   assertLoginAllowed(attemptKey);
 
-  const passwordMatches = await verifyPassword(
-    input.password,
-    state?.passwordSalt ?? DUMMY_SALT,
-    state?.passwordHash ?? DUMMY_HASH
-  );
-  const usernameMatches = Boolean(state && constantTimeTextEqual(input.username.trim(), state.username));
+  let userStore = await readAgentOsUserStore(env);
+  if (!userStore && state) {
+    userStore = await ensureAgentOsUserStoreForMigration(env);
+  }
+  const user = userStore?.users.find((entry) => entry.username === input.username.trim().toLocaleLowerCase("en-US"));
+  const passwordMatches = await verifyPasswordOrDummy(input.password, user?.passwordSalt ?? state?.passwordSalt, user?.passwordHash ?? state?.passwordHash);
+  const usernameMatches = Boolean(state && user
+    ? constantTimeTextEqual(input.username.trim().toLocaleLowerCase("en-US"), user.username)
+    : state && constantTimeTextEqual(input.username.trim(), state.username));
 
-  if (!state || !usernameMatches || !passwordMatches) {
+  if (!state || !usernameMatches || !passwordMatches || !user || user.status !== "active") {
     recordLoginFailure(attemptKey);
     throw new InstanceProtectionError("Invalid username or password.", 401, "invalid-credentials");
   }
 
   loginAttempts.delete(attemptKey);
-  return { status: await getInstanceProtectionStatus(createInstanceSession(state), env), session: createInstanceSession(state) };
+  const session = createInstanceSession(state, user.actorId, user.sessionVersion);
+  return { status: await getInstanceProtectionStatus(session, env), session };
 }
 
 export async function updateInstanceCredentials(
@@ -191,18 +214,34 @@ export async function updateInstanceCredentials(
     validatePassword(nextPassword);
   }
 
-  const passwordSalt = nextPassword ? randomBytes(16).toString("hex") : state.passwordSalt;
+  const passwordSalt = nextPassword ? createPasswordSalt() : state.passwordSalt;
   const passwordHash = nextPassword ? await hashPassword(nextPassword, passwordSalt) : state.passwordHash;
   const nextState: InstanceProtectionState = {
     ...state,
     username,
     passwordSalt,
     passwordHash,
-    sessionVersion: state.sessionVersion + 1,
+    // The state version is the instance-wide signing epoch. Per-user
+    // credentials use the account store's sessionVersion so changing the
+    // owner's password does not revoke unrelated team sessions.
+    sessionVersion: state.sessionVersion,
     updatedAt: new Date().toISOString()
   };
   await writeInstanceProtectionState(nextState, env);
-  const session = createInstanceSession(nextState);
+  const userStore = await readAgentOsUserStore(env) ?? await ensureAgentOsUserStoreForMigration(env);
+  const owner = userStore?.users.find((user) => user.actorId === state.actorId);
+  const ownerSessionVersion = (owner?.sessionVersion ?? state.sessionVersion) + 1;
+  if (owner && userStore) {
+    owner.username = username.toLocaleLowerCase("en-US");
+    owner.passwordSalt = passwordSalt;
+    owner.passwordHash = passwordHash;
+    owner.sessionVersion = ownerSessionVersion;
+    owner.updatedAt = nextState.updatedAt;
+    await writeAgentOsUserStore(userStore, env);
+  } else if (!userStore) {
+    await createOwnerUserFromInstanceState({ ...nextState, sessionVersion: ownerSessionVersion }, env);
+  }
+  const session = createInstanceSession(nextState, state.actorId, ownerSessionVersion);
   return { status: await getInstanceProtectionStatus(session, env), session };
 }
 
@@ -223,26 +262,35 @@ export async function resetInstanceProtection(env: NodeJS.ProcessEnv = process.e
 }
 
 export function verifyInstanceSession(cookieValue: string | null, state: InstanceProtectionState) {
-  if (!cookieValue) return false;
+  return Boolean(readInstanceSessionIdentity(cookieValue, state));
+}
+
+export function readInstanceSessionIdentity(cookieValue: string | null, state: InstanceProtectionState): {
+  actorId: string;
+  sessionVersion: number;
+} | null {
+  if (!cookieValue) return null;
   const separator = cookieValue.lastIndexOf(".");
-  if (separator <= 0) return false;
+  if (separator <= 0) return null;
   const encodedPayload = cookieValue.slice(0, separator);
   const providedSignature = cookieValue.slice(separator + 1);
   const expectedSignature = signSessionPayload(encodedPayload, state.sessionSecret);
-  if (!constantTimeTextEqual(providedSignature, expectedSignature)) return false;
+  if (!constantTimeTextEqual(providedSignature, expectedSignature)) return null;
 
   try {
     const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as {
       exp?: unknown;
       version?: unknown;
+      actorId?: unknown;
+      sessionVersion?: unknown;
     };
-    return (
-      typeof payload.exp === "number" &&
-      payload.exp > Math.floor(Date.now() / 1000) &&
-      payload.version === state.sessionVersion
-    );
+    if (typeof payload.exp !== "number" || payload.exp <= Math.floor(Date.now() / 1000)) return null;
+    if (payload.version !== state.sessionVersion) return null;
+    const actorId = typeof payload.actorId === "string" ? payload.actorId : state.actorId;
+    const sessionVersion = typeof payload.sessionVersion === "number" ? payload.sessionVersion : state.sessionVersion;
+    return Number.isSafeInteger(sessionVersion) ? { actorId, sessionVersion } : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -284,10 +332,16 @@ export class InstanceProtectionError extends Error {
   }
 }
 
-function createInstanceSession(state: InstanceProtectionState) {
+export function createInstanceSession(
+  state: InstanceProtectionState,
+  actorId = state.actorId,
+  sessionVersion = state.sessionVersion
+) {
   const encodedPayload = Buffer.from(JSON.stringify({
     exp: Math.floor(Date.now() / 1000) + INSTANCE_SESSION_TTL_SECONDS,
     version: state.sessionVersion,
+    actorId,
+    sessionVersion,
     nonce: randomBytes(16).toString("base64url")
   })).toString("base64url");
   return `${encodedPayload}.${signSessionPayload(encodedPayload, state.sessionSecret)}`;
@@ -316,27 +370,18 @@ async function requireState(env: NodeJS.ProcessEnv) {
 }
 
 function validateUsername(value: string) {
-  const username = value.trim();
-  if (!username) throw new InstanceProtectionError("Username is required.", 400, "invalid-input");
-  if (username.length > 128) throw new InstanceProtectionError("Username must be 128 characters or fewer.", 400, "invalid-input");
-  return username;
+  try {
+    return normalizeAgentOsUsername(value);
+  } catch (error) {
+    throw new InstanceProtectionError(error instanceof Error ? error.message : "Username is invalid.", 400, "invalid-input");
+  }
 }
 
 function validatePassword(value: string) {
-  if (value.length < INSTANCE_PASSWORD_MIN_LENGTH) {
+  if (value.length < PASSWORD_MIN_LENGTH) {
     throw new InstanceProtectionError(`Password must be at least ${INSTANCE_PASSWORD_MIN_LENGTH} characters.`, 400, "invalid-input");
   }
   if (value.length > 1024) throw new InstanceProtectionError("Password is too long.", 400, "invalid-input");
-}
-
-async function hashPassword(password: string, salt: string) {
-  return Buffer.from(await scrypt(password, salt, SCRYPT_KEY_LENGTH) as Buffer).toString("hex");
-}
-
-async function verifyPassword(password: string, salt: string, expectedHash: string) {
-  const actual = Buffer.from(await scrypt(password, salt, SCRYPT_KEY_LENGTH) as Buffer);
-  const expected = Buffer.from(expectedHash, "hex");
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
 function constantTimeTextEqual(left: string, right: string) {
@@ -370,4 +415,24 @@ function isMissingFileError(error: unknown) {
 
 function isStableActorId(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function isActiveInstanceSession(cookieValue: string | null, state: InstanceProtectionState, env: NodeJS.ProcessEnv) {
+  const identity = readInstanceSessionIdentity(cookieValue, state);
+  if (!identity) return false;
+  const store = await readAgentOsUserStore(env);
+  const user = store?.users.find((entry) => entry.actorId === identity.actorId);
+  return !user || (user.status === "active" && user.sessionVersion === identity.sessionVersion);
+}
+
+async function resolveInstanceSessionRole(cookieValue: string | null, state: InstanceProtectionState, env: NodeJS.ProcessEnv) {
+  const identity = readInstanceSessionIdentity(cookieValue, state);
+  if (!identity) return null;
+  const store = await readAgentOsUserStore(env);
+  return store?.users.find((entry) => entry.actorId === identity.actorId)?.role ?? "owner";
+}
+
+async function ensureAgentOsUserStoreForMigration(env: NodeJS.ProcessEnv) {
+  const { ensureAgentOsUserStore } = await import("@/lib/agentos/application/agentos-account-service");
+  return ensureAgentOsUserStore(env);
 }

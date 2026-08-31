@@ -13,6 +13,7 @@ import {
 import { getOpenClawLocalPrefixBinPath } from "@/lib/openclaw/install";
 import { resetOpenClawBinCache } from "@/lib/openclaw/cli";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,6 +43,8 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "gateway.manage");
+  if ("response" in permission) return permission.response;
   try {
     const input = openClawBinarySelectionSchema.parse(await request.json());
     const nextSelection = await resolveSelection(input);

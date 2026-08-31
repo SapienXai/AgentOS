@@ -18,6 +18,10 @@ import {
   type AgentOsActorResult
 } from "@/lib/security/agentos-actor";
 import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
+import {
+  canAgentOsActorUseProductPermission,
+  type AgentOsProductPermission
+} from "@/lib/security/agentos-product-authorization";
 
 export type AgentOsOpenClawPreflightInput = {
   operation: string;
@@ -27,6 +31,7 @@ export type AgentOsOpenClawPreflightInput = {
   targetId?: string | null;
   securityClass: "read" | "mutation" | "privileged-mutation" | "internal-recovery";
   executionPath?: "gateway-native" | "gateway-or-verified-cli";
+  productPermission?: AgentOsProductPermission;
 };
 
 export type AgentOsOpenClawPreflightResult =
@@ -59,6 +64,32 @@ export async function requireAgentOsOpenClawPreflight(
         {
           error: "This operation is available only to an internal AgentOS service.",
           code: "agentos-internal-service-required"
+        },
+        {
+          status: 403,
+          headers: {
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff"
+          }
+        }
+      )
+    };
+  }
+
+  if (input.productPermission && !canAgentOsActorUseProductPermission(actorResult.actor, input.productPermission)) {
+    await recordAgentOsAuditEvent({
+      actor: actorResult.actor,
+      operation: input.operation,
+      targetKind: input.targetKind,
+      targetId: input.targetId,
+      result: "denied"
+    }).catch(() => {});
+    return {
+      response: NextResponse.json(
+        {
+          error: "Your AgentOS role does not allow this operation.",
+          code: "agentos-permission-denied",
+          permission: input.productPermission
         },
         {
           status: 403,

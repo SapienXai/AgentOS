@@ -53,6 +53,7 @@ import { persistOpenClawCertificationScorecard } from "@/lib/openclaw/compatibil
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import { getOpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
 import { requireAgentOsActorContext } from "@/lib/security/agentos-actor";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 
 export const runtime = "nodejs";
@@ -141,6 +142,8 @@ export async function POST(request: Request) {
 
   const actorResult = await requireAgentOsActorContext(request);
   if ("response" in actorResult) return actorResult.response;
+  const permission = await requireAgentOsProductPermission(request, "updates.manage");
+  if ("response" in permission) return permission.response;
   await recordAgentOsAuditEvent({
     actor: actorResult.actor,
     operation: `openclaw.update.${updateRequest.action}`,

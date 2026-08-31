@@ -81,6 +81,18 @@ export type OpenClawGatewayClientDiagnostics = {
   operatorIdentity?: OpenClawOperatorIdentity;
 };
 
+export type OpenClawUserProfile = {
+  profileId: string;
+  displayName: string | null;
+  avatar: string | null;
+  email: string | null;
+  role: string | null;
+};
+
+export type OpenClawUserListPayload = {
+  profiles: OpenClawUserProfile[];
+};
+
 export type OpenClawGatewayRequestPolicy = {
   safety: "read" | "mutation";
   timeoutMs?: number;
@@ -1003,6 +1015,13 @@ export interface OpenClawGatewayClient {
   getStatus(options?: OpenClawCommandOptions): Promise<StatusPayload>;
   getUpdateStatus(options?: OpenClawCommandOptions): Promise<OpenClawUpdateStatusPayload>;
   getGatewayStatus(options?: OpenClawCommandOptions): Promise<GatewayStatusPayload>;
+  listUsers?(options?: OpenClawCommandOptions): Promise<OpenClawUserListPayload>;
+  getCurrentUser?(options?: OpenClawCommandOptions): Promise<OpenClawUserProfile | null>;
+  setUserDisplayName?(profileId: string, displayName: string, options?: OpenClawCommandOptions): Promise<OpenClawUserProfile | null>;
+  setUserAvatar?(profileId: string, avatar: string | null, options?: OpenClawCommandOptions): Promise<OpenClawUserProfile | null>;
+  linkUserEmail?(profileId: string, email: string, options?: OpenClawCommandOptions): Promise<OpenClawUserProfile | null>;
+  setUserRole?(profileId: string, role: string | null, options?: OpenClawCommandOptions): Promise<OpenClawUserProfile | null>;
+  listGatewayRoleNames?(options?: OpenClawCommandOptions): Promise<string[]>;
   getModelStatus(options?: OpenClawCommandOptions): Promise<ModelsStatusPayload>;
   getAgentModelStatus(input: OpenClawAgentModelStatusInput, options?: OpenClawCommandOptions): Promise<ModelsStatusPayload>;
   setModelAuthOrder(input: OpenClawModelAuthOrderSetInput, options?: OpenClawCommandOptions): Promise<CommandResult>;

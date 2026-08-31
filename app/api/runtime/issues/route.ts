@@ -12,6 +12,7 @@ import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import { requireAgentOsActorContext } from "@/lib/security/agentos-actor";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,9 @@ const runtimeIssueActionSchema = z.discriminatedUnion("action", [
   })
 ]);
 
-export async function GET() {
+export async function GET(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  if ("response" in permission) return permission.response;
   try {
     const snapshot = await getMissionControlSnapshot({ force: true });
 
@@ -60,6 +63,8 @@ export async function GET() {
 export async function POST(request: Request) {
   const actorResult = await requireAgentOsActorContext(request);
   if ("response" in actorResult) return actorResult.response;
+  const productPermission = await requireAgentOsProductPermission(request, "runtime.use");
+  if ("response" in productPermission) return productPermission.response;
 
   try {
     const input = runtimeIssueActionSchema.parse(await request.json());
@@ -70,7 +75,8 @@ export async function POST(request: Request) {
         method: "device.pair.list",
         targetKind: "gateway-device",
         targetId: input.issueId,
-        securityClass: "read"
+        securityClass: "read",
+        productPermission: "runtime.use"
       });
       if ("response" in authorization) return authorization.response;
       const result = await inspectRuntimeIssueDevices(input.issueId);
@@ -85,7 +91,8 @@ export async function POST(request: Request) {
         targetKind: "gateway-device",
         targetId: input.requestId ?? input.issueId,
         securityClass: "privileged-mutation",
-        executionPath: "gateway-or-verified-cli"
+        executionPath: "gateway-or-verified-cli",
+        productPermission: "gateway.manage"
       });
       if ("response" in authorization) return authorization.response;
       const result = await approveRuntimeIssue({
@@ -104,7 +111,8 @@ export async function POST(request: Request) {
         targetKind: "gateway-device",
         targetId: input.issueId,
         securityClass: "privileged-mutation",
-        executionPath: "gateway-or-verified-cli"
+        executionPath: "gateway-or-verified-cli",
+        productPermission: "gateway.manage"
       });
       if ("response" in authorization) return authorization.response;
       const result = await approveRuntimeIssue({

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { getWorkspacePlan, updateWorkspacePlan } from "@/lib/agentos/planner";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,9 @@ export async function GET(
     }>;
   }
 ) {
+  const permission = await requireAgentOsProductPermission(_request, "missions.use");
+  if ("response" in permission) return permission.response;
+
   try {
     const { planId } = await context.params;
     const result = await getWorkspacePlan(planId);
@@ -41,6 +45,9 @@ export async function PUT(
     }>;
   }
 ) {
+  const permission = await requireAgentOsProductPermission(request, "missions.use");
+  if ("response" in permission) return permission.response;
+
   try {
     const { planId } = await context.params;
     const input = planUpdateSchema.parse(await request.json());

@@ -16,6 +16,7 @@ import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import { evaluateAgentOsApiRequest } from "@/lib/security/api-auth";
 import { requireAgentOsActorContext } from "@/lib/security/agentos-actor";
 import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,6 +45,8 @@ const migrationInputSchema = z.object({
 export async function GET(request: Request) {
   const authFailure = evaluateAgentOsApiRequest({ method: "GET", url: request.url, headers: request.headers });
   if (!authFailure.ok) return NextResponse.json({ error: authFailure.message, code: authFailure.code }, { status: authFailure.status });
+  const permission = await requireAgentOsProductPermission(request, "migrations.manage");
+  if ("response" in permission) return permission.response;
   const journalPath = new URL(request.url).searchParams.get("journalPath");
   if (!journalPath) return NextResponse.json({ error: "journalPath is required." }, { status: 400 });
   try {
@@ -58,6 +61,8 @@ export async function POST(request: Request) {
   if (!authFailure.ok) return NextResponse.json({ error: authFailure.message, code: authFailure.code }, { status: authFailure.status });
   const actorResult = await requireAgentOsActorContext(request);
   if ("response" in actorResult) return actorResult.response;
+  const permission = await requireAgentOsProductPermission(request, "migrations.manage");
+  if ("response" in permission) return permission.response;
   let input: z.infer<typeof migrationInputSchema>;
   try {
     input = migrationInputSchema.parse(await request.json());

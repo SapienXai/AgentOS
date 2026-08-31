@@ -5,11 +5,14 @@ import {
   runOpenClawCompatibilitySmokeTest
 } from "@/lib/openclaw/application/compatibility-smoke-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  if ("response" in permission) return permission.response;
   try {
     const report = await getLatestOpenClawCompatibilitySmokeReport();
 
@@ -26,7 +29,9 @@ export async function GET() {
   }
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "gateway.manage");
+  if ("response" in permission) return permission.response;
   try {
     const report = await runOpenClawCompatibilitySmokeTest();
 

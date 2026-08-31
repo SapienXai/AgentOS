@@ -6,6 +6,7 @@ import {
   writeAgentContextEngineFile
 } from "@/lib/openclaw/application/context-engine-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,9 @@ const fileWriteSchema = z.object({
 });
 
 export async function GET(request: Request, context: { params: Promise<{ agentId: string }> }) {
+  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  if ("response" in permission) return permission.response;
+
   try {
     const { agentId } = await context.params;
     const url = new URL(request.url);
@@ -50,6 +54,9 @@ export async function GET(request: Request, context: { params: Promise<{ agentId
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ agentId: string }> }) {
+  const permission = await requireAgentOsProductPermission(request, "agents.manage");
+  if ("response" in permission) return permission.response;
+
   try {
     const { agentId } = await context.params;
     const input = fileWriteSchema.parse(await request.json());

@@ -53,6 +53,7 @@ import { resolveOpenClawModelReadinessIssue } from "@/lib/openclaw/readiness";
 import { renderWorkspaceSurfaceCoordinationMarkdownForAgent } from "@/lib/openclaw/surface-coordination";
 import { redactErrorMessage, redactSecretText, redactSecrets } from "@/lib/security/redaction";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import type { ControlPlaneSnapshot, MissionDispatchStatus, MissionResponse } from "@/lib/agentos/contracts";
 import type { TranscriptTurn } from "@/lib/openclaw/domains/runtime-transcript";
 
@@ -123,9 +124,12 @@ type RehydratedAgentChatMessage = {
 };
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ agentId: string }> }
 ) {
+  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  if ("response" in permission) return permission.response;
+
   try {
     const params = await Promise.resolve(context.params);
     const agentId = params.agentId.trim();
@@ -198,7 +202,8 @@ export async function POST(
     targetKind: "agent-session",
     targetId: agentId,
     securityClass: "privileged-mutation",
-    executionPath: "gateway-or-verified-cli"
+    executionPath: "gateway-or-verified-cli",
+    productPermission: "runtime.use"
   });
   if ("response" in authorization) return authorization.response;
 

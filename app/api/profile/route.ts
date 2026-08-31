@@ -5,8 +5,13 @@ import {
   OPERATOR_PROFILE_AVATAR_MAX_CHARACTERS,
   isSupportedAvatarDataUrl,
   readOperatorProfile,
-  saveOperatorProfile
+  saveOperatorProfile,
+  type OperatorProfile
 } from "@/lib/agentos/application/operator-profile-service";
+import {
+  getCurrentAgentOsUser,
+  updateManagedAgentOsUserProfile
+} from "@/lib/agentos/application/agentos-account-service";
 import { redactErrorMessage } from "@/lib/security/redaction";
 import { requireAgentOsActorContext } from "@/lib/security/agentos-actor";
 import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
@@ -25,8 +30,25 @@ const profileSchema = z.object({
     .nullable()
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const actorResult = await requireAgentOsActorContext(request);
+    if ("response" in actorResult) return actorResult.response;
+    if (actorResult.actor.authenticationMethod === "instance-session") {
+      const user = await getCurrentAgentOsUser(actorResult.actor.actorId);
+      if (!user) return NextResponse.json({ error: "AgentOS account is unavailable." }, { status: 503 });
+      return NextResponse.json({
+        fullName: user.profile.displayName,
+        username: user.username,
+        email: user.profile.email,
+        avatarDataUrl: user.profile.avatarDataUrl,
+        updatedAt: user.updatedAt,
+        actorId: user.actorId,
+        role: user.role,
+        status: user.status,
+        openClaw: user.openClaw
+      });
+    }
     return NextResponse.json(await readOperatorProfile());
   } catch (error) {
     return NextResponse.json(
@@ -42,10 +64,32 @@ export async function PATCH(request: Request) {
     if ("response" in actorResult) return actorResult.response;
 
     const profile = profileSchema.parse(await request.json());
-    const actorId = actorResult.actor.authenticationMethod === "instance-session"
-      ? actorResult.actor.actorId
-      : undefined;
-    const saved = await saveOperatorProfile(profile, process.env, actorId);
+    let saved: OperatorProfile = { ...profile, updatedAt: null };
+    if (actorResult.actor.authenticationMethod === "instance-session") {
+      if (profile.username !== actorResult.actor.username) {
+        return NextResponse.json(
+          { error: "Login username changes must be performed through Instance Protection settings.", code: "username-change-requires-security-settings" },
+          { status: 400 }
+        );
+      }
+      const user = await updateManagedAgentOsUserProfile(actorResult.actor.actorId, {
+        displayName: profile.fullName,
+        email: profile.email,
+        avatarDataUrl: profile.avatarDataUrl
+      });
+      saved = {
+        fullName: user.profile.displayName,
+        username: user.username,
+        email: user.profile.email,
+        avatarDataUrl: user.profile.avatarDataUrl,
+        updatedAt: user.updatedAt
+      };
+      if (user.role === "owner") {
+        await saveOperatorProfile(saved, process.env, user.actorId);
+      }
+    } else {
+      saved = await saveOperatorProfile(profile);
+    }
     await recordAgentOsAuditEvent({
       actor: actorResult.actor,
       operation: "profile.update",

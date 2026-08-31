@@ -11,6 +11,7 @@ import {
 } from "@/lib/openclaw/gateway-config-errors";
 import { createTimingCollector, formatTimingSummary, measureTiming } from "@/lib/openclaw/timing";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,9 @@ const reconcileSchema = z.object({
 const surfaceReconcileApplyConfirmation = "apply-surface-reconcile";
 
 export async function POST(request: Request, context: { params: Promise<{ workspaceId: string }> }) {
+  const permission = await requireAgentOsProductPermission(request, "gateway.manage");
+  if ("response" in permission) return permission.response;
+
   const timings = createTimingCollector("workspace-surface-reconcile");
 
   try {

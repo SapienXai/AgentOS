@@ -60,6 +60,7 @@ import type {
   OpenClawOnboardingPhase,
   OpenClawOnboardingStreamEvent
 } from "@/lib/agentos/contracts";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -90,6 +91,8 @@ type CommandResult = {
 };
 
 export async function POST(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "lifecycle.manage");
+  if ("response" in permission) return permission.response;
   let intent: "auto" | "install" | "prepare" | "start";
   try {
     intent = onboardingSchema.parse(await request.json()).intent;

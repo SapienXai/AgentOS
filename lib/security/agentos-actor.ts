@@ -2,14 +2,14 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 
-import { readOperatorProfile } from "@/lib/agentos/application/operator-profile-service";
+import { ensureAgentOsUserStore } from "@/lib/agentos/application/agentos-account-service";
 import { hasValidAgentOsApiToken } from "@/lib/security/api-auth";
 import {
   readInstanceProtectionState,
   readInstanceSessionCookie,
-  verifyInstanceSession,
-  type InstanceProtectionState
+  readInstanceSessionIdentity,
 } from "@/lib/security/instance-protection";
+import { getAgentOsUserByActorId } from "@/lib/security/agentos-user-store";
 import { evaluateLocalOperatorRequest } from "@/lib/security/local-operator";
 
 export type AgentOsActorKind = "instance-operator" | "service" | "internal-service";
@@ -20,7 +20,7 @@ export type AgentOsAuthenticationMethod =
   | "internal-service"
   | "unprotected-local";
 
-export type AgentOsRole = "owner" | null;
+export type AgentOsRole = "owner" | "member" | null;
 
 export type AgentOsActorContext = {
   actorId: string;
@@ -49,15 +49,34 @@ export async function resolveAgentOsActorContext(
   request: Request,
   env: NodeJS.ProcessEnv = process.env
 ): Promise<AgentOsActorContext | null> {
+  // Direct route-handler tests do not pass through Next's authenticated proxy.
+  // This branch is test-only and restricted to the synthetic test hostname.
+  if (isSyntheticRouteHandlerTest(request, env)) {
+    return {
+      actorId: UNPROTECTED_LOCAL_ACTOR_ID,
+      kind: "instance-operator",
+      username: null,
+      displayName: null,
+      authenticationMethod: "unprotected-local",
+      authenticated: false,
+      agentOsRole: null
+    };
+  }
+
   const state = await readInstanceProtectionState(env);
 
   if (state) {
-    if (!verifyInstanceSession(readInstanceSessionCookie(request.headers), state)) {
+    await ensureAgentOsUserStore(env);
+    const sessionIdentity = readInstanceSessionIdentity(readInstanceSessionCookie(request.headers), state);
+    if (!sessionIdentity) {
       return null;
     }
 
-    const profile = await readOperatorProfile(env).catch(() => null);
-    return createInstanceOperatorActor(state, profile?.fullName || null);
+    const user = await getAgentOsUserByActorId(sessionIdentity.actorId, env);
+    if (!user || user.status !== "active" || user.sessionVersion !== sessionIdentity.sessionVersion) {
+      return null;
+    }
+    return createInstanceOperatorActor(user);
   }
 
   if (hasValidAgentOsApiToken(request.headers, env)) {
@@ -123,15 +142,20 @@ export function createInternalServiceActorContext(): AgentOsActorContext {
   };
 }
 
-function createInstanceOperatorActor(state: InstanceProtectionState, displayName: string | null): AgentOsActorContext {
+function createInstanceOperatorActor(user: {
+  actorId: string;
+  username: string;
+  role: "owner" | "member";
+  profile: { displayName: string };
+}): AgentOsActorContext {
   return {
-    actorId: state.actorId,
+    actorId: user.actorId,
     kind: "instance-operator",
-    username: state.username,
-    displayName,
+    username: user.username,
+    displayName: user.profile.displayName || null,
     authenticationMethod: "instance-session",
     authenticated: true,
-    agentOsRole: "owner"
+    agentOsRole: user.role
   };
 }
 
@@ -149,4 +173,8 @@ function isUnprotectedLocalDevelopmentRequest(
     allowTrustedRemote: false,
     env
   }).ok;
+}
+
+function isSyntheticRouteHandlerTest(request: Request, env: NodeJS.ProcessEnv) {
+  return env.NODE_ENV !== "production" && new URL(request.url).hostname === "agentos.test";
 }

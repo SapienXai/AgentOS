@@ -7,6 +7,7 @@ import type {
   WorkspacePlanDeployStreamEvent
 } from "@/lib/agentos/contracts";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,9 @@ export async function POST(
     }>;
   }
 ) {
+  const permission = await requireAgentOsProductPermission(request, "missions.use");
+  if ("response" in permission) return permission.response;
+
   try {
     const { planId } = await context.params;
     const input = deploySchema.parse(await request.json());

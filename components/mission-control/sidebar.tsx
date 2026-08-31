@@ -33,7 +33,8 @@ import {
   ShieldCheck,
   SunMedium,
   Trash2,
-  UserRound
+  UserRound,
+  Users
 } from "lucide-react";
 
 import { ChannelBindingPicker } from "@/components/mission-control/channel-binding-picker";
@@ -60,6 +61,7 @@ import {
   UserProfileDialog,
   type OperatorProfileSummary
 } from "@/components/mission-control/user-profile-dialog";
+import { UserManagementDialog } from "@/components/mission-control/user-management-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -274,7 +276,10 @@ export function MissionSidebar({
           fullName: result.fullName,
           username: result.username,
           email: result.email,
-          avatarDataUrl: result.avatarDataUrl
+          avatarDataUrl: result.avatarDataUrl,
+          actorId: result.actorId,
+          role: result.role,
+          status: result.status
         });
       })
       .catch(() => {});
@@ -2201,6 +2206,7 @@ function SidebarUserMenu({
   const [profileOpen, setProfileOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const [protectionOpen, setProtectionOpen] = useState(false);
+  const [userManagementOpen, setUserManagementOpen] = useState(false);
   const { status: protectionStatus, lock } = useInstanceProtection();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const displayName = resolveOperatorDisplayName(operatorProfile);
@@ -2270,6 +2276,16 @@ function SidebarUserMenu({
                 setProfileOpen(true);
               }}
             />
+            {operatorProfile.role === "owner" ? (
+              <SidebarUserMenuAction
+                icon={Users}
+                label="Manage users"
+                onSelect={() => {
+                  setOpen(false);
+                  setUserManagementOpen(true);
+                }}
+              />
+            ) : null}
             <SidebarUserMenuLink href="/settings" icon={Settings2} label="Settings" onNavigate={() => setOpen(false)} />
             <SidebarThemeMenuAction surfaceTheme={surfaceTheme} onToggle={onToggleTheme} />
             <SidebarUserMenuAction
@@ -2343,6 +2359,7 @@ function SidebarUserMenu({
         onRefresh={onRefresh}
       />
       <InstanceProtectionDialog open={protectionOpen} onOpenChange={setProtectionOpen} />
+      <UserManagementDialog open={userManagementOpen} onOpenChange={setUserManagementOpen} />
     </>
   );
 }

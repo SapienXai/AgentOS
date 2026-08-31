@@ -45,7 +45,8 @@ export async function POST(
     targetKind: "task-session",
     targetId: taskId,
     securityClass: "privileged-mutation",
-    executionPath: "gateway-or-verified-cli"
+    executionPath: "gateway-or-verified-cli",
+    productPermission: "tasks.use"
   });
   if ("response" in authorization) return authorization.response;
 

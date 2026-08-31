@@ -84,6 +84,7 @@ import type {
   OpenClawProviderModelsEntry
 } from "@/lib/openclaw/application/model-provider-state-service";
 import { redactErrorMessage, redactSecretText, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -228,7 +229,11 @@ class ProviderCatalogFallbackError extends Error {
   }
 }
 
-export async function GET() {
+export async function GET(request?: Request) {
+  if (request) {
+    const permission = await requireAgentOsProductPermission(request, "runtime.use");
+    if ("response" in permission) return permission.response;
+  }
   try {
     const providers = await readOpenClawExplicitProviderSummaries();
 
@@ -244,6 +249,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "secrets.manage");
+  if ("response" in permission) return permission.response;
   let input: AddModelsProviderActionRequest;
 
   try {

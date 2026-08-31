@@ -6,6 +6,7 @@ import {
   resetSessionModelOverrides
 } from "@/lib/openclaw/application/session-model-service";
 import { redactSecretText, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,8 @@ const inputSchema = z.discriminatedUnion("action", [
 ]);
 
 export async function POST(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "sessions.use");
+  if ("response" in permission) return permission.response;
   try {
     const input = inputSchema.parse(await request.json());
     if (input.action === "inherit") {

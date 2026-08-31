@@ -46,7 +46,8 @@ export async function POST(request: Request) {
     securityClass: "privileged-mutation",
     executionPath: input.accountTargetId || input.browserAccountId
       ? "gateway-native"
-      : "gateway-or-verified-cli"
+      : "gateway-or-verified-cli",
+    productPermission: "missions.use"
   });
   if ("response" in openClawAuthorization) {
     for (const [name, value] of Object.entries(browserAccountResponseHeaders())) {

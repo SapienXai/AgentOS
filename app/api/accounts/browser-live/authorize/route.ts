@@ -11,6 +11,8 @@ import {
   getInstanceProtectionStatus,
   readInstanceSessionCookie
 } from "@/lib/security/instance-protection";
+import { resolveAgentOsActorContext } from "@/lib/security/agentos-actor";
+import { canAgentOsActorUseProductPermission } from "@/lib/security/agentos-product-authorization";
 import { evaluateLocalOperatorRequest } from "@/lib/security/local-operator";
 
 export const runtime = "nodejs";
@@ -40,13 +42,19 @@ export async function POST(request: Request) {
     );
     if (status.protectionEnabled && !status.authenticated) return denied();
 
+    const actor = await resolveAgentOsActorContext(new Request(
+      `${forwardedHeaders.get("x-forwarded-proto") ?? "https"}://${forwardedHeaders.get("host") ?? "invalid"}/api/accounts/browser-live/ws`,
+      { method: "POST", headers: forwardedHeaders }
+    ));
+    if (!actor || !canAgentOsActorUseProductPermission(actor, "runtime.use")) return denied();
+
     const input = authorizationSchema.parse(await request.json());
     const credential = readBrowserLiveViewCookie(
       forwardedHeaders,
       input.providerSessionId
     );
     await authorizeBrowserLiveViewWebSocket({
-      actor: { userId: status.username?.trim() || "instance-owner" },
+      actor: { userId: actor.actorId },
       providerSessionId: input.providerSessionId,
       credential
     });

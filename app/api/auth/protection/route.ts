@@ -15,6 +15,7 @@ import {
   instanceProtectionErrorResponse,
   requireSameOriginMutation
 } from "@/lib/security/instance-protection-route";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 const mutationSchema = z.discriminatedUnion("action", [
   z.object({
@@ -46,6 +47,11 @@ export async function POST(request: Request) {
         { error: "Unlock AgentOS to manage instance protection.", code: "instance-auth-required" },
         { status: 401, headers: { "X-AgentOS-Auth-Required": "instance" } }
       );
+    }
+
+    if (input.action !== "enable") {
+      const permission = await requireAgentOsProductPermission(request, "security.manage");
+      if ("response" in permission) return permission.response;
     }
 
     if (input.action === "enable") {

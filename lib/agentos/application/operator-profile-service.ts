@@ -6,6 +6,7 @@ import path from "node:path";
 
 import { resolveAgentOsRuntimeDir } from "@/lib/agentos/runtime-auth";
 import { readInstanceProtectionState } from "@/lib/security/instance-protection";
+import { getAgentOsUserByActorId, readAgentOsUserStore, writeAgentOsUserStore } from "@/lib/security/agentos-user-store";
 
 export const OPERATOR_PROFILE_FILE = "operator-profile.json";
 export const OPERATOR_PROFILE_AVATAR_MAX_CHARACTERS = 720_000;
@@ -71,6 +72,20 @@ export async function saveOperatorProfile(
   );
   await rename(temporaryPath, profilePath);
   await chmod(profilePath, 0o600);
+
+  if (linkedActorId) {
+    const userStore = await readAgentOsUserStore(env);
+    const user = await getAgentOsUserByActorId(linkedActorId, env);
+    if (userStore && user) {
+      user.profile = {
+        displayName: profile.fullName,
+        email: profile.email,
+        avatarDataUrl: profile.avatarDataUrl
+      };
+      user.updatedAt = profile.updatedAt ?? new Date().toISOString();
+      await writeAgentOsUserStore(userStore, env);
+    }
+  }
 
   return profile;
 }
