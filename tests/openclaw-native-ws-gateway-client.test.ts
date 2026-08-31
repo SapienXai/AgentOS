@@ -24,6 +24,7 @@ import type {
 } from "@/lib/openclaw/client/gateway-client";
 import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-normalization";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
+import type { OpenClawNativeAuthorizationProof } from "@/lib/openclaw/identity/types";
 
 type SentFrame = {
   type: string;
@@ -31,6 +32,22 @@ type SentFrame = {
   method: string;
   params: Record<string, unknown>;
 };
+
+function nativeAuthorizationProof(
+  grantedScopes: string[] = ["operator.admin"],
+  connectionId: string | null = "connection-1"
+): OpenClawNativeAuthorizationProof {
+  return {
+    source: "native-handshake",
+    authenticated: true,
+    grantedScopesKnown: true,
+    grantedScopes,
+    requiredScopes: ["operator.admin"],
+    connectionId,
+    cliFallbackAllowed: true,
+    issuedAt: new Date().toISOString()
+  };
+}
 
 test("config paths preserve quoted model IDs as one segment", () => {
   assert.deepEqual(
@@ -2566,7 +2583,7 @@ test("native WS gateway client falls back to CLI for Gateway auth config repair 
     timeoutMs: 250
   });
 
-  await client.setConfig("gateway.auth.token", "fresh-token");
+  await client.setConfig("gateway.auth.token", "fresh-token", { allowGatewayAuthRepairFallback: true });
 
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect"]);
   assert.deepEqual(fallback.calls.map((call) => call.method), ["setConfig"]);
@@ -2609,7 +2626,7 @@ test("native WS gateway client reports OK after auth repair reconnects", async (
     timeoutMs: 250
   });
 
-  await client.setConfig("gateway.auth.token", "fresh-token");
+  await client.setConfig("gateway.auth.token", "fresh-token", { allowGatewayAuthRepairFallback: true });
   await new Promise((resolve) => setTimeout(resolve, 5));
   await client.getStatus();
 
@@ -3038,7 +3055,7 @@ test("native WS gateway client does not CLI fallback after sent mutation timeout
   assert.deepEqual(fallback.calls, []);
 });
 
-test("native WS gateway client falls back for unadvertised mutation methods before sending them", async () => {
+test("native WS gateway client blocks unadvertised mutation fallback without native proof", async () => {
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
     if (frame.method === "connect") {
@@ -3059,10 +3076,13 @@ test("native WS gateway client falls back for unadvertised mutation methods befo
     timeoutMs: 250
   });
 
-  await client.deleteAgent("agent-1");
+  await assert.rejects(
+    () => client.deleteAgent("agent-1"),
+    /CLI fallback for OpenClaw mutation agents\.delete requires a current native Gateway authorization proof/
+  );
 
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect"]);
-  assert.deepEqual(fallback.calls.map((call) => call.method), ["deleteAgent"]);
+  assert.deepEqual(fallback.calls, []);
 });
 
 test("native WS gateway client blocks CLI fallback for sent mutation auth failures", async () => {
@@ -3141,7 +3161,7 @@ test("native WS gateway client honors forced CLI mode without opening a socket",
   assert.deepEqual(fallback.calls.map((call) => call.method), ["health"]);
 });
 
-test("native WS gateway client honors per-request CLI stream fallback", async () => {
+test("native WS gateway client blocks per-request CLI mutation fallback without native proof", async () => {
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket(() => {
     throw new Error("socket should not be used");
@@ -3153,14 +3173,17 @@ test("native WS gateway client honors per-request CLI stream fallback", async ()
     timeoutMs: 250
   });
 
-  await client.streamAgentTurn(
-    { agentId: "agent-1", sessionId: "session-1", message: "hello" },
-    {},
-    { forceCli: true }
+  await assert.rejects(
+    () => client.streamAgentTurn(
+      { agentId: "agent-1", sessionId: "session-1", message: "hello" },
+      {},
+      { forceCli: true }
+    ),
+    /CLI fallback for OpenClaw mutation chat\.send requires a current native Gateway authorization proof/
   );
 
   assert.deepEqual(sentFrames, []);
-  assert.deepEqual(fallback.calls.map((call) => call.method), ["streamAgentTurn"]);
+  assert.deepEqual(fallback.calls, []);
 });
 
 test("native WS gateway client classifies unknown Gateway methods as unsupported", async () => {
@@ -3199,7 +3222,13 @@ test("native WS gateway client uses Gateway first for critical workflows with co
         type: "res",
         id: frame.id,
         ok: true,
-        payload: frame.method === "connect" ? { protocol: 3 } : { runId: "run-1", status: "running" }
+        payload: frame.method === "connect"
+          ? {
+              protocol: 3,
+              server: { connId: "connection-1" },
+              auth: { role: "operator", scopes: ["operator.admin"] }
+            }
+          : { runId: "run-1", status: "running" }
       });
     });
   });
@@ -3210,7 +3239,11 @@ test("native WS gateway client uses Gateway first for critical workflows with co
     timeoutMs: 250
   });
 
-  await client.addAgent({ id: "agent-1", workspace: "/workspace", agentDir: "/agent" });
+  await client.probeNativeHandshake();
+  await client.addAgent(
+    { id: "agent-1", workspace: "/workspace", agentDir: "/agent" },
+    { authorizationProof: nativeAuthorizationProof() }
+  );
   await client.deleteAgent("agent-1");
   await client.runAgentTurn({ agentId: "agent-1", message: "hello", workspace: "/workspace" });
   await client.abortAgentTurn({ runId: "run-1", reason: "stop" });
@@ -3688,16 +3721,56 @@ test("native WS gateway client uses CLI agent creation to preserve explicit agen
     timeoutMs: 250
   });
 
-  await client.addAgent({ id: "agent-1", workspace: "/workspace", agentDir: "/agent" });
+  await assert.rejects(
+    async () => client.addAgent({ id: "agent-1", workspace: "/workspace", agentDir: "/agent" }),
+    /CLI fallback for OpenClaw mutation agents\.create requires a current native Gateway authorization proof/
+  );
 
   assert.deepEqual(sentFrames.map((frame) => frame.method), []);
-  assert.deepEqual(fallback.calls.map((call) => call.method), ["addAgent"]);
-  assert.deepEqual(fallback.calls[0]?.params, {
-    id: "agent-1",
-    workspace: "/workspace",
-    agentDir: "/agent"
-  });
+  assert.deepEqual(fallback.calls, []);
   assert.deepEqual(getRecentOpenClawGatewayFallbackDiagnostics(), []);
+});
+
+test("native CLI agent creation requires a live proof after disconnect", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? {
+              protocol: 4,
+              server: { connId: "connection-1" },
+              auth: { role: "operator", scopes: ["operator.admin"] }
+            }
+          : { ok: true }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await client.probeNativeHandshake();
+  const proof = nativeAuthorizationProof();
+  await client.addAgent({ id: "agent-1", workspace: "/workspace", agentDir: "/agent" }, {
+    authorizationProof: proof
+  });
+  assert.deepEqual(fallback.calls.map((call) => call.method), ["addAgent"]);
+
+  client.close("identity freshness test");
+  await assert.rejects(
+    async () => client.addAgent({ id: "agent-2", workspace: "/workspace", agentDir: "/agent-2" }, {
+      authorizationProof: proof
+    }),
+    /requires a current native Gateway authorization proof/
+  );
+  assert.deepEqual(fallback.calls.map((call) => call.method), ["addAgent"]);
 });
 
 test("native WS gateway client uses agents.update when supported", async () => {
@@ -3759,7 +3832,7 @@ test("native WS gateway client fails closed when agent update has no real fallba
 
   await assert.rejects(
     () => client.updateAgent({ id: "agent-1", name: "Agent One", workspace: "/workspace", model: "openai/test" }),
-    /agent update is unavailable.*agents\.update is not supported.*no real CLI fallback/i
+    /CLI fallback for OpenClaw mutation agents\.update requires a current native Gateway authorization proof/
   );
 
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect"]);

@@ -150,3 +150,31 @@ test("API-token and internal actors are explicit and cannot be browser-forged", 
   });
   assert.equal(typeof events[0]?.timestamp, "string");
 });
+
+test("protected instances never let an API token bypass the browser session boundary", async () => {
+  const runtimeDir = await mkdtemp(path.join(tmpdir(), "agentos-actor-precedence-"));
+  const env = {
+    ...process.env,
+    AGENTOS_RUNTIME_DIR: runtimeDir,
+    AGENTOS_API_TOKEN: "service-secret",
+    NODE_ENV: "production" as const
+  };
+  const enabled = await enableInstanceProtection({ username: "operator", password: "secure password" }, env);
+  const baseRequest = "https://agentos.example.com/api/agents";
+
+  assert.equal(await resolveAgentOsActorContext(new Request(baseRequest, {
+    headers: { authorization: "Bearer service-secret" }
+  }), env), null);
+  assert.equal((await resolveAgentOsActorContext(new Request(baseRequest, {
+    headers: {
+      authorization: "Bearer service-secret",
+      cookie: `agentos_instance_session=${enabled.session}`
+    }
+  }), env))?.actorId, (await readInstanceProtectionState(env))?.actorId);
+  assert.equal(await resolveAgentOsActorContext(new Request(baseRequest, {
+    headers: {
+      authorization: "Bearer service-secret",
+      cookie: "agentos_instance_session=invalid"
+    }
+  }), env), null);
+});

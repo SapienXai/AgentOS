@@ -10,6 +10,7 @@ import { extractAgentChatMessagesFromSessionHistory } from "@/lib/openclaw/agent
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getOpenClawCapabilityMatrix } from "@/lib/openclaw/application/capability-matrix-service";
 import { missionControlRootPath } from "@/lib/openclaw/state/paths";
+import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 
 type Registry = {
   version: 1;
@@ -56,7 +57,10 @@ export async function getOperationsSnapshot(): Promise<OperationsSnapshot> {
   }
 }
 
-export async function createOperation(input: OperationJobInput) {
+export async function createOperation(
+  input: OperationJobInput,
+  gatewayOptions: OpenClawCommandOptions = {}
+) {
   const requestId = randomUUID();
   try {
     await requireMutationCapability();
@@ -66,7 +70,11 @@ export async function createOperation(input: OperationJobInput) {
     if (!agent || agent.workspaceId !== input.workspaceId) throw new Error("Owner agent must belong to the selected workspace.");
     const safety = normalizeSafety(input.safety);
     await assertSafety(input.agentId, input.workspaceId, safety);
-    const payload = await getOpenClawAdapter().call<Record<string, unknown>>("cron.add", buildOpenClawCronAddParams(input));
+    const payload = await getOpenClawAdapter().call<Record<string, unknown>>(
+      "cron.add",
+      buildOpenClawCronAddParams(input),
+      gatewayOptions
+    );
     const jobId = string(payload.jobId) ?? string(payload.id);
     if (!jobId) throw new Error("OpenClaw did not return a cron job id.");
     const registry = await readRegistry();
@@ -77,7 +85,11 @@ export async function createOperation(input: OperationJobInput) {
   } catch (error) { await appendAudit(audit("create", null, "failed", message(error), requestId)); throw error; }
 }
 
-export async function operateOperation(action: Exclude<OperationAction, "create" | "update">, jobId: string) {
+export async function operateOperation(
+  action: Exclude<OperationAction, "create" | "update">,
+  jobId: string,
+  gatewayOptions: OpenClawCommandOptions = {}
+) {
   const requestId = randomUUID();
   try {
     await requireMutationCapability();
@@ -88,7 +100,7 @@ export async function operateOperation(action: Exclude<OperationAction, "create"
     const call: [string, Record<string, unknown>] = action === "delete" ? ["cron.remove", { jobId }]
       : action === "run" || action === "retry" ? ["cron.run", { jobId, mode: "force" }]
       : ["cron.update", { jobId, patch: { enabled: action === "resume" } }];
-    await getOpenClawAdapter().call<unknown>(call[0], call[1]);
+    await getOpenClawAdapter().call<unknown>(call[0], call[1], gatewayOptions);
     if (action === "delete") {
       delete registry.jobs[jobId];
       delete registry.results[jobId];
@@ -99,14 +111,17 @@ export async function operateOperation(action: Exclude<OperationAction, "create"
   } catch (error) { await appendAudit(audit(action, jobId, "failed", message(error), requestId)); throw error; }
 }
 
-export async function updateOperationSchedule(input: { jobId: string; trigger: OperationJobInput["trigger"] }) {
+export async function updateOperationSchedule(
+  input: { jobId: string; trigger: OperationJobInput["trigger"] },
+  gatewayOptions: OpenClawCommandOptions = {}
+) {
   const requestId = randomUUID();
   try {
     await requireMutationCapability();
     const schedule = input.trigger.kind === "at" ? { kind: "at", at: input.trigger.at }
       : input.trigger.kind === "every" ? { kind: "every", everyMs: input.trigger.everyMs }
       : { kind: "cron", expr: input.trigger.expression, ...(input.trigger.timezone ? { tz: input.trigger.timezone } : {}) };
-    await getOpenClawAdapter().call<unknown>("cron.update", { jobId: input.jobId, patch: { schedule } });
+    await getOpenClawAdapter().call<unknown>("cron.update", { jobId: input.jobId, patch: { schedule } }, gatewayOptions);
     const registry = await readRegistry();
     registry.audit.unshift(audit("update", input.jobId, "accepted", "OpenClaw cron schedule updated.", requestId));
     await writeRegistry(registry);

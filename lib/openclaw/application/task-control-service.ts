@@ -10,6 +10,7 @@ import {
 import { getTaskDetail } from "@/lib/openclaw/application/runtime-service";
 import { resolveTaskFollowUpContext } from "@/lib/openclaw/domains/task-follow-up";
 import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
+import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 import type { MissionControlSnapshot, TaskDetailRecord } from "@/lib/openclaw/types";
 
 export type RunningTaskControlAction = "steer" | "inject" | "continue";
@@ -61,7 +62,8 @@ type TaskControlDeps = {
 export async function controlRunningTaskSession(
   taskId: string,
   input: RunningTaskControlInput,
-  deps: TaskControlDeps = {}
+  deps: TaskControlDeps = {},
+  gatewayOptions: OpenClawCommandOptions = {}
 ): Promise<RunningTaskControlResult> {
   const message = input.message.trim();
 
@@ -75,7 +77,7 @@ export async function controlRunningTaskSession(
   const adapter = deps.adapter ?? getOpenClawAdapter();
 
   if (input.action === "continue") {
-    const result = await continueTaskSession(taskDetail, target, message, input, adapter, deps);
+    const result = await continueTaskSession(taskDetail, target, message, input, adapter, deps, gatewayOptions);
     const warning = resolveContinuationWarning(target);
 
     (deps.invalidateMissionControlSnapshotCache ?? invalidateMissionControlSnapshotCache)();
@@ -100,7 +102,7 @@ export async function controlRunningTaskSession(
 
   const control =
     input.action === "steer"
-      ? await steerSessionWithCompatibilityFallback(adapter, target, message)
+      ? await steerSessionWithCompatibilityFallback(adapter, target, message, gatewayOptions)
       : {
           result: await adapter.injectChat(
             {
@@ -108,7 +110,7 @@ export async function controlRunningTaskSession(
               sessionId: target.sessionKey ? null : target.sessionId,
               message
             },
-            { timeoutMs: 10000 }
+            { ...gatewayOptions, timeoutMs: 10000 }
           ),
           transport: {
             requestedMethod: "chat.inject",
@@ -133,7 +135,8 @@ export async function controlRunningTaskSession(
 async function steerSessionWithCompatibilityFallback(
   adapter: TaskControlAdapter,
   target: RunningTaskControlTarget,
-  message: string
+  message: string,
+  gatewayOptions: OpenClawCommandOptions
 ) {
   try {
     const result = await adapter.steerSession(
@@ -142,7 +145,7 @@ async function steerSessionWithCompatibilityFallback(
         sessionId: target.sessionKey ? null : target.sessionId,
         message
       },
-      { timeoutMs: 10000 }
+      { ...gatewayOptions, timeoutMs: 10000 }
     );
 
     return {
@@ -170,7 +173,7 @@ async function steerSessionWithCompatibilityFallback(
         sessionId: target.sessionKey ? null : target.sessionId,
         message
       },
-      { timeoutMs: 10000 }
+      { ...gatewayOptions, timeoutMs: 10000 }
     );
 
     return {
@@ -191,7 +194,8 @@ async function continueTaskSession(
   message: string,
   input: RunningTaskControlInput,
   adapter: TaskControlAdapter,
-  deps: TaskControlDeps
+  deps: TaskControlDeps,
+  gatewayOptions: OpenClawCommandOptions
 ) {
   if (target.confidence === "none") {
     throw new Error("Task continuation is disabled because AgentOS could not resolve a trusted OpenClaw session context.");
@@ -231,7 +235,7 @@ async function continueTaskSession(
       dispatchId,
       idempotencyKey
     },
-    { timeoutMs: 60_000 }
+    { ...gatewayOptions, timeoutMs: 60_000 }
   );
 
   return result as Record<string, unknown>;

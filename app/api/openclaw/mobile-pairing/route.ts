@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { prepareOpenClawMobilePairing } from "@/lib/openclaw/application/mobile-pairing-service";
 import { redactErrorMessage } from "@/lib/security/redaction";
+import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +21,16 @@ const sensitiveResponseHeaders = {
 export async function POST(request: Request) {
   try {
     const input = mobilePairingSchema.parse(await request.json());
-    const pairing = await prepareOpenClawMobilePairing(input);
+    const authorization = await requireAgentOsOpenClawPreflight(request, {
+      operation: "device.pair.setup-code",
+      method: "device.pair.setupCode",
+      targetKind: "gateway-device",
+      securityClass: "privileged-mutation",
+      executionPath: "gateway-or-verified-cli"
+    });
+    if ("response" in authorization) return authorization.response;
+
+    const pairing = await prepareOpenClawMobilePairing(input, authorization.commandOptions);
 
     return NextResponse.json({ pairing }, { headers: sensitiveResponseHeaders });
   } catch (error) {

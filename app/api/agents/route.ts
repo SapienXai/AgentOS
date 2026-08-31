@@ -113,13 +113,15 @@ export async function POST(request: Request) {
   const authorization = await requireAgentOsOpenClawPreflight(request, {
     operation: "agent.create",
     method: "agents.create",
-    targetKind: "agent"
+    targetKind: "agent",
+    securityClass: "privileged-mutation",
+    executionPath: "gateway-or-verified-cli"
   });
   if ("response" in authorization) return authorization.response;
 
   try {
     const input = createAgentSchema.parse(await request.json());
-    const created = await createAgent(input);
+    const created = await createAgent(input, authorization.commandOptions);
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
       operation: "agent.create",
@@ -148,13 +150,15 @@ export async function PATCH(request: Request) {
   const authorization = await requireAgentOsOpenClawPreflight(request, {
     operation: "agent.update",
     method: "agents.update",
-    targetKind: "agent"
+    targetKind: "agent",
+    securityClass: "privileged-mutation",
+    executionPath: "gateway-or-verified-cli"
   });
   if ("response" in authorization) return authorization.response;
 
   try {
     const input = updateAgentSchema.parse(await request.json());
-    const updated = await updateAgent(input);
+    const updated = await updateAgent(input, authorization.commandOptions);
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
       operation: "agent.update",
@@ -183,13 +187,15 @@ export async function DELETE(request: Request) {
   const authorization = await requireAgentOsOpenClawPreflight(request, {
     operation: "agent.delete",
     method: "agents.delete",
-    targetKind: "agent"
+    targetKind: "agent",
+    securityClass: "privileged-mutation",
+    executionPath: "gateway-or-verified-cli"
   });
   if ("response" in authorization) return authorization.response;
 
   try {
     const input = deleteAgentSchema.parse(await request.json());
-    const deleted = await deleteAgent(input);
+    const deleted = await deleteAgent(input, authorization.commandOptions);
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
       operation: "agent.delete",

@@ -33,6 +33,7 @@ import {
   finalizeBrowserTaskBinding,
   prepareBrowserTaskBinding
 } from "@/lib/agentos/application/browser-task-binding-service";
+import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 
 export type MissionDispatchWorkflowDependencies = {
   getMissionControlSnapshot: (options?: { force?: boolean; includeHidden?: boolean }) => Promise<MissionControlSnapshot>;
@@ -42,7 +43,8 @@ export type MissionDispatchWorkflowDependencies = {
 
 export async function submitMissionDispatch(
   input: MissionSubmission,
-  deps: MissionDispatchWorkflowDependencies
+  deps: MissionDispatchWorkflowDependencies,
+  gatewayOptions: OpenClawCommandOptions = {}
 ): Promise<MissionResponse> {
   const mission = input.mission.trim();
 
@@ -191,7 +193,7 @@ export async function submitMissionDispatch(
           workspace: missionWorkspace?.path ?? null,
           dispatchId: dispatchRecord.id
         },
-        { timeoutMs: 60_000 }
+        { ...gatewayOptions, timeoutMs: 60_000 }
       );
       const now = new Date().toISOString();
       // OpenClaw documents agent.wait as a bounded observation call: a wait timeout
@@ -273,7 +275,8 @@ export async function abortMissionDispatchTask(
   taskId: string,
   reason: string | null | undefined,
   dispatchId: string | null | undefined,
-  deps: MissionDispatchWorkflowDependencies
+  deps: MissionDispatchWorkflowDependencies,
+  gatewayOptions: OpenClawCommandOptions = {}
 ): Promise<MissionAbortResponse> {
   const snapshot = await deps.getMissionControlSnapshot({ includeHidden: true });
   const task = snapshot.tasks.find((entry) => entry.id === taskId);
@@ -288,7 +291,7 @@ export async function abortMissionDispatchTask(
   }
 
   if (!dispatchRecord) {
-    return abortNativeGatewayTask(task, taskId, reason, deps);
+    return abortNativeGatewayTask(task, taskId, reason, deps, gatewayOptions);
   }
 
   if (isMissionDispatchTerminalStatus(dispatchRecord.status)) {
@@ -333,7 +336,7 @@ export async function abortMissionDispatchTask(
     await adapter.cancelTask({
       taskId: gatewayTaskId,
       reason: abortReason
-    }, { timeoutMs: 15_000 }).catch(() => null);
+    }, { ...gatewayOptions, timeoutMs: 15_000 }).catch(() => null);
   }
 
   if (runId || dispatchRecord.sessionId) {
@@ -342,7 +345,7 @@ export async function abortMissionDispatchTask(
       sessionId: dispatchRecord.sessionId,
       agentId: dispatchRecord.agentId,
       reason: abortReason
-    }, { timeoutMs: 15_000 }).catch(() => null);
+    }, { ...gatewayOptions, timeoutMs: 15_000 }).catch(() => null);
   }
 
   killedChildPid = await stopMissionDispatchChildProcess(nextRecord);
@@ -405,7 +408,8 @@ async function abortNativeGatewayTask(
   task: MissionControlSnapshot["tasks"][number] | undefined,
   taskId: string,
   reason: string | null | undefined,
-  deps: MissionDispatchWorkflowDependencies
+  deps: MissionDispatchWorkflowDependencies,
+  gatewayOptions: OpenClawCommandOptions
 ): Promise<MissionAbortResponse> {
   if (!task) {
     throw new Error("Task was not found in the current OpenClaw snapshot.");
@@ -435,7 +439,7 @@ async function abortNativeGatewayTask(
     await getOpenClawAdapter().cancelTask({
       taskId: gatewayTaskId,
       reason: abortReason
-    }, { timeoutMs: 15_000 });
+    }, { ...gatewayOptions, timeoutMs: 15_000 });
   }
 
   deps.invalidateMissionControlCaches();

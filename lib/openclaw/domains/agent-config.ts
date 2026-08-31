@@ -8,6 +8,7 @@ import {
 } from "@/lib/openclaw/agent-bootstrap-files";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import { measureTiming, type TimingCollector } from "@/lib/openclaw/timing";
+import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 import type {
   AgentBootstrapFileInput,
   AgentHeartbeatInput,
@@ -133,9 +134,12 @@ export function normalizeDeclaredAgentTools(toolIds: string[]) {
   );
 }
 
-export async function readAgentConfigList(snapshot?: MissionControlSnapshot) {
+export async function readAgentConfigList(
+  snapshot?: MissionControlSnapshot,
+  options: OpenClawCommandOptions = {}
+) {
   try {
-    const config = await getOpenClawAdapter().getConfig<MutableAgentConfigEntry[]>("agents.list");
+    const config = await getOpenClawAdapter().getConfig<MutableAgentConfigEntry[]>("agents.list", options);
 
     if (Array.isArray(config)) {
       return config;
@@ -151,8 +155,11 @@ export async function readAgentConfigList(snapshot?: MissionControlSnapshot) {
   }
 }
 
-export async function writeAgentConfigList(configList: MutableAgentConfigEntry[]) {
-  await getOpenClawAdapter().setConfig("agents.list", configList, { strictJson: true });
+export async function writeAgentConfigList(
+  configList: MutableAgentConfigEntry[],
+  options: OpenClawCommandOptions = {}
+) {
+  await getOpenClawAdapter().setConfig("agents.list", configList, { ...options, strictJson: true });
 }
 
 export async function upsertAgentConfigEntry(
@@ -176,9 +183,10 @@ export async function upsertAgentConfigEntry(
     } | null;
   },
   snapshot?: MissionControlSnapshot,
-  timings?: TimingCollector
+  timings?: TimingCollector,
+  options: OpenClawCommandOptions = {}
 ) {
-  const configList = await measureTiming(timings, "agent-config.read", () => readAgentConfigList(snapshot));
+  const configList = await measureTiming(timings, "agent-config.read", () => readAgentConfigList(snapshot, options));
   const existingIndex = configList.findIndex((entry) => entry.id === agentId);
   const existingEntry = existingIndex >= 0 ? configList[existingIndex] : null;
   const nextEntry: MutableAgentConfigEntry =
@@ -301,7 +309,7 @@ export async function upsertAgentConfigEntry(
     return nextEntry;
   }
 
-  await measureTiming(timings, "agent-config.write", () => writeAgentConfigList(configList));
+  await measureTiming(timings, "agent-config.write", () => writeAgentConfigList(configList, options));
   return nextEntry;
 }
 

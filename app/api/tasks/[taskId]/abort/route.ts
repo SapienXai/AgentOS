@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { abortMissionTask } from "@/lib/agentos/control-plane";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,8 +38,24 @@ export async function POST(
     );
   }
 
+  const authorization = await requireAgentOsOpenClawPreflight(request, {
+    operation: "task.abort",
+    method: "sessions.abort",
+    params: { taskId },
+    targetKind: "task-session",
+    targetId: taskId,
+    securityClass: "privileged-mutation",
+    executionPath: "gateway-or-verified-cli"
+  });
+  if ("response" in authorization) return authorization.response;
+
   try {
-    const result = await abortMissionTask(taskId, parseResult.data.reason ?? null, parseResult.data.dispatchId ?? null);
+    const result = await abortMissionTask(
+      taskId,
+      parseResult.data.reason ?? null,
+      parseResult.data.dispatchId ?? null,
+      authorization.commandOptions
+    );
     return NextResponse.json(redactSecrets({
       result
     }));

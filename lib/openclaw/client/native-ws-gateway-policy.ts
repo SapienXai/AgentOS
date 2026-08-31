@@ -15,6 +15,18 @@ import type {
   OpenClawGatewayRequestPolicy
 } from "@/lib/openclaw/client/types";
 
+const explicitGatewayMutationMethods = new Set([
+  "channels.pairing.approve",
+  "device.pair.approve",
+  "device.pair.setupCode",
+  "plugins.install",
+  "plugins.setEnabled",
+  "plugins.uninstall",
+  "sessions.steer",
+  "chat.inject",
+  "web.login.wait"
+]);
+
 export function normalizeEnvFlag(value: string | undefined) {
   return value?.trim().toLowerCase();
 }
@@ -75,7 +87,8 @@ export function resolveGatewayRequestPolicy(method: string, options: OpenClawCom
 }
 
 export function isGatewayMutationMethod(method: string) {
-  return /(^|\.)(add|assign|cancel|configure|create|delete|invoke|put|remove|setup|update|set|unset|patch|apply|send|abort|resolve|restart|start|stop|logout)$/i.test(method);
+  return explicitGatewayMutationMethods.has(method) ||
+    /(^|\.)(add|assign|cancel|configure|create|delete|invoke|put|remove|setup|update|set|unset|patch|apply|send|abort|resolve|restart|start|stop|logout)$/i.test(method);
 }
 
 export function shouldUseCliFallback(

@@ -67,11 +67,14 @@ import type {
   MissionControlSnapshot,
   OpenClawAgent
 } from "@/lib/openclaw/types";
-import type { OpenClawUpdateAgentInput } from "@/lib/openclaw/client/types";
+import type {
+  OpenClawCommandOptions,
+  OpenClawUpdateAgentInput
+} from "@/lib/openclaw/client/types";
 
 const LEGACY_CUSTOM_PRESET_SKILL_IDS = ["project-researcher", "project-builder", "project-analyst"];
 
-export async function createAgent(input: AgentCreateInput) {
+export async function createAgent(input: AgentCreateInput, gatewayOptions: OpenClawCommandOptions = {}) {
   const agentId = slugify(input.id.trim());
 
   if (!agentId) {
@@ -158,7 +161,7 @@ export async function createAgent(input: AgentCreateInput) {
     name: displayName,
     emoji,
     avatar
-  });
+  }, gatewayOptions);
 
   const policySkillId = await ensureAgentPolicySkillFromProvisioning({
     workspacePath: resolvedWorkspacePath,
@@ -194,7 +197,9 @@ export async function createAgent(input: AgentCreateInput) {
           avatar
         }
       },
-      snapshot
+      snapshot,
+      undefined,
+      gatewayOptions
     );
   } catch (error) {
     syncWarnings.push(assertPostCreateAgentConfigSyncWarning(error));
@@ -314,11 +319,12 @@ async function prepareAgentModelRuntimeConfig(modelId: string | undefined) {
 
 async function updateAgentGatewayMetadataOrDeferToConfig(
   input: OpenClawUpdateAgentInput,
-  operationLabel: string
+  operationLabel: string,
+  gatewayOptions: OpenClawCommandOptions = {}
 ) {
   try {
     await runAgentGatewayMutation(operationLabel, () =>
-      getOpenClawAdapter().updateAgent(input, { timeoutMs: 15_000 })
+      getOpenClawAdapter().updateAgent(input, { ...gatewayOptions, timeoutMs: 15_000 })
     );
   } catch (error) {
     if (isRecoverableAgentUpdateGatewayDrift(error)) {
@@ -336,7 +342,7 @@ function isRecoverableAgentUpdateGatewayDrift(error: unknown) {
     /Gateway-native operation failed;\s*CLI fallback disabled/i.test(message);
 }
 
-export async function updateAgent(input: AgentUpdateInput) {
+export async function updateAgent(input: AgentUpdateInput, gatewayOptions: OpenClawCommandOptions = {}) {
   const agentId = input.id.trim();
 
   if (!agentId) {
@@ -433,7 +439,8 @@ export async function updateAgent(input: AgentUpdateInput) {
         workspace: resolvedWorkspacePath,
         model: nextModelId
       },
-      "updating the agent model"
+      "updating the agent model",
+      gatewayOptions
     );
 
     await upsertAgentConfigEntryWithRecovery(
@@ -444,7 +451,9 @@ export async function updateAgent(input: AgentUpdateInput) {
         description: workerProfile.employment.mission,
         model: nextModelId
       },
-      snapshot
+      snapshot,
+      undefined,
+      gatewayOptions
     );
 
     await upsertWorkspaceProjectAgentMetadata(resolvedWorkspacePath, {
@@ -510,7 +519,8 @@ export async function updateAgent(input: AgentUpdateInput) {
       workspace: resolvedWorkspacePath,
       model: nextModelId
     },
-    "updating the agent"
+    "updating the agent",
+    gatewayOptions
   );
 
   const configEntry = await upsertAgentConfigEntryWithRecovery(
@@ -533,7 +543,9 @@ export async function updateAgent(input: AgentUpdateInput) {
         avatar: workerProfile.identity.avatar ?? agent.identity.avatar
       }
     },
-    snapshot
+    snapshot,
+    undefined,
+    gatewayOptions
   );
   if (input.skills !== undefined) {
     await assertAgentSkillConfigPersisted(agentId, nextDeclaredSkills);
@@ -580,7 +592,7 @@ export async function updateAgent(input: AgentUpdateInput) {
   };
 }
 
-export async function deleteAgent(input: AgentDeleteInput) {
+export async function deleteAgent(input: AgentDeleteInput, gatewayOptions: OpenClawCommandOptions = {}) {
   const agentId = input.agentId.trim();
 
   if (!agentId) {
@@ -602,7 +614,7 @@ export async function deleteAgent(input: AgentDeleteInput) {
   const workspace = snapshot.workspaces.find((entry) => entry.id === agent.workspaceId) ?? null;
   const runtimeCount = snapshot.runtimes.filter((runtime) => runtime.agentId === agent.id).length;
 
-  await getOpenClawAdapter().deleteAgent(agent.id);
+  await getOpenClawAdapter().deleteAgent(agent.id, gatewayOptions);
 
   try {
     const configList = await readAgentConfigList(snapshot);

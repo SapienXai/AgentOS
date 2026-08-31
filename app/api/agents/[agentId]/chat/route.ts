@@ -52,6 +52,7 @@ import {
 import { resolveOpenClawModelReadinessIssue } from "@/lib/openclaw/readiness";
 import { renderWorkspaceSurfaceCoordinationMarkdownForAgent } from "@/lib/openclaw/surface-coordination";
 import { redactErrorMessage, redactSecretText, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 import type { ControlPlaneSnapshot, MissionDispatchStatus, MissionResponse } from "@/lib/agentos/contracts";
 import type { TranscriptTurn } from "@/lib/openclaw/domains/runtime-transcript";
 
@@ -183,14 +184,25 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ agentId: string }> }
 ) {
+  const routeParams = await Promise.resolve(context.params);
+  const agentId = routeParams.agentId.trim();
+
+  if (!agentId) {
+    return NextResponse.json({ error: "Agent id is required." }, { status: 400 });
+  }
+
+  const authorization = await requireAgentOsOpenClawPreflight(request, {
+    operation: "agent.chat",
+    method: "chat.send",
+    params: { agentId },
+    targetKind: "agent-session",
+    targetId: agentId,
+    securityClass: "privileged-mutation",
+    executionPath: "gateway-or-verified-cli"
+  });
+  if ("response" in authorization) return authorization.response;
+
   try {
-    const params = await Promise.resolve(context.params);
-    const agentId = params.agentId.trim();
-
-    if (!agentId) {
-      return NextResponse.json({ error: "Agent id is required." }, { status: 400 });
-    }
-
     const input = chatSchema.parse(await request.json());
 
     const stream = new TransformStream();
@@ -363,7 +375,7 @@ export async function POST(
           await updateAgent({
             id: agentId,
             modelId: resolvedDefaultModelId
-          });
+          }, authorization.commandOptions);
           agent.modelId = resolvedDefaultModelId;
           activeAgentModelId = agent.modelId;
         }
@@ -377,7 +389,7 @@ export async function POST(
           await updateAgent({
             id: agentId,
             name: directRename
-          });
+          }, authorization.commandOptions);
           clearMissionControlCaches();
 
           const response = applyMissionControlActionMetadata(
@@ -514,7 +526,8 @@ export async function POST(
             },
             {
               timeoutMs: 120000,
-              signal: request.signal
+              signal: request.signal,
+              ...authorization.commandOptions
             }
           ) as Promise<AgentChatCommandPayload>;
 
@@ -596,7 +609,7 @@ export async function POST(
             await updateAgent({
               id: agentId,
               name: action.name
-            });
+            }, authorization.commandOptions);
           }
 
           clearMissionControlCaches();

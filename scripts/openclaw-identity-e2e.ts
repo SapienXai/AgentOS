@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import WebSocket from "ws";
 
 import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
+import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
 import type { OpenClawOperatorIdentity } from "@/lib/openclaw/identity/types";
 import {
   OPENCLAW_8_1_IDENTITY_INVENTORY,
@@ -18,7 +19,10 @@ import {
   OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
   OPENCLAW_IDENTITY_CONTRACT_VERSION
 } from "@/lib/openclaw/identity/contract";
-import { OpenClawAuthorizationService } from "@/lib/openclaw/identity/authorization";
+import {
+  buildOpenClawNativeAuthorizationProof,
+  OpenClawAuthorizationService
+} from "@/lib/openclaw/identity/authorization";
 
 const execFileAsync = promisify(execFile);
 const PACKAGE_INPUT = process.env.OPENCLAW_IDENTITY_E2E_PACKAGE?.trim();
@@ -64,7 +68,7 @@ async function main() {
   let success = false;
 
   const evidence = {
-    schemaVersion: OPENCLAW_IDENTITY_CONTRACT_SCHEMA_VERSION,
+    schemaVersion: OPENCLAW_IDENTITY_CONTRACT_SCHEMA_VERSION + 1,
     generatedAt: new Date().toISOString(),
     provenance: {
       repository: "SapienXai/AgentOS",
@@ -98,6 +102,25 @@ async function main() {
     roleEvidence: [] as Array<{ profile: string; requested: string | null; granted: string | null }>,
     authorizationChecks: checks,
     dynamicAuthorizationChecks: dynamicChecks,
+    authorizationStateSemantics: {
+      allowed: "Authenticated native handshake, known granted scopes, static scope pass, and no additional runtime check.",
+      denied: "Authenticated native handshake with a known missing granted scope.",
+      runtimeRequired: "Authenticated native handshake with static scope pass; target/runtime authority remains Gateway-owned.",
+      unknown: "No authenticated native proof, unavailable granted scopes, CLI-only path, or unavailable Gateway; privileged external mutations fail closed.",
+      unsupported: "The operation cannot be safely authorized or executed and fails closed."
+    },
+    cliFallbackSafety: {
+      provenNativeAdmin: null as Record<string, unknown> | null,
+      staleNativeIdentity: null as Record<string, unknown> | null,
+      unknownIdentity: null as Record<string, unknown> | null,
+      forcedCliWithoutProof: null as Record<string, unknown> | null
+    },
+    actorAuthenticationContract: {
+      protectedBrowserOperator: "instance-session with the persisted Instance Protection actorId",
+      apiTokenService: "api-token with the fixed service:agentos-api-token actorId when protection is off",
+      internalService: "internal-service with the fixed service:agentos-internal actorId; not browser-selectable",
+      precedence: "When protection is enabled, a valid browser session is required and API-token-only access does not bypass it."
+    },
     sessionIdentityFindings: {
       creator: "createdActor is persisted by OpenClaw when an authenticated user profile is available.",
       owner: "owner is derived from creator/profile and sharing state where session sharing is active.",
@@ -131,6 +154,7 @@ async function main() {
   };
 
   try {
+    const writeSessionKey = `agent:main:identity-write-${Date.now()}`;
     const profileInputs = [
       { name: "read", scopes: ["operator.read"], allowed: [{ method: "status", params: {} }], denied: [
         { method: "sessions.create", params: { key: "agent:main:identity-read-denied", agentId: "main" } },
@@ -141,7 +165,7 @@ async function main() {
         { method: "question.list", params: {} },
         { method: "exec.approval.list", params: {} }
       ] },
-      { name: "write", scopes: ["operator.write"], allowed: [{ method: "sessions.create", params: { key: `agent:main:identity-write-${Date.now()}`, agentId: "main" } }], denied: [
+      { name: "write", scopes: ["operator.write"], allowed: [{ method: "sessions.create", params: { key: writeSessionKey, agentId: "main" } }], denied: [
         { method: "config.patch", params: { raw: "{}" } },
         { method: "exec.approval.list", params: {} }
       ] },
@@ -183,8 +207,16 @@ async function main() {
 
       if (profileInput.name === "write") {
         await runCheck(client, profileInput.name, "node.invoke", { nodeId: "missing-node", command: "system.run", params: {} }, "runtime-dependent", dynamicChecks);
+        await runCheck(client, profileInput.name, "sessions.patch", { key: writeSessionKey, label: "identity-e2e" }, "runtime-dependent", dynamicChecks);
       }
     }
+
+    await verifyCliFallbackSafety(
+      packageIdentity,
+      { packageRoot, stateDir, workspaceDir, configPath, port, token },
+      clients,
+      evidence
+    );
 
     const authorizationService = new OpenClawAuthorizationService(clients[1]!);
     const dynamicPreflight = await authorizationService.authorizeMethod("sessions.patch", { key: "agent:main:identity-write" });
@@ -254,7 +286,12 @@ async function runCheck(
   }
 }
 
-function createClient(input: { url: string; token: string; scopes: string[] }) {
+function createClient(input: {
+  url: string;
+  token: string;
+  scopes: string[];
+  fallback?: OpenClawGatewayClient;
+}) {
   return new NativeWsOpenClawGatewayClient({
     url: input.url,
     token: input.token,
@@ -263,8 +300,185 @@ function createClient(input: { url: string; token: string; scopes: string[] }) {
     timeoutMs: REQUEST_TIMEOUT_MS,
     clientName: "gateway-client",
     clientVersion: "0.1.0-agentos-identity-e2e",
+    fallback: input.fallback,
     webSocketFactory: WebSocket as unknown as import("@/lib/openclaw/client/native-ws-gateway-types").WebSocketFactory
   });
+}
+
+async function verifyCliFallbackSafety(
+  packageIdentity: Awaited<ReturnType<typeof readPackageIdentity>>,
+  runtime: {
+    packageRoot: string;
+    stateDir: string;
+    workspaceDir: string;
+    configPath: string;
+    port: number;
+    token: string;
+  },
+  clients: NativeWsOpenClawGatewayClient[],
+  evidence: {
+    cliFallbackSafety: {
+      provenNativeAdmin: Record<string, unknown> | null;
+      staleNativeIdentity: Record<string, unknown> | null;
+      unknownIdentity: Record<string, unknown> | null;
+      forcedCliWithoutProof: Record<string, unknown> | null;
+    };
+  }
+) {
+  const fallbackCalls: string[] = [];
+  const adminAgentDir = path.join(path.dirname(runtime.configPath), "admin-agent");
+  const fallback = {
+    addAgent: async (input: { id: string; workspace: string; agentDir: string }) => {
+      fallbackCalls.push("agents.create");
+      return runExactOpenClawAgentCreate(runtime, input);
+    }
+  } as unknown as OpenClawGatewayClient;
+  const adminClient = createClient({
+    url: `ws://127.0.0.1:${runtime.port}`,
+    token: runtime.token,
+    scopes: ["operator.admin"],
+    fallback
+  });
+  clients.push(adminClient);
+
+  const adminAuthorization = new OpenClawAuthorizationService(adminClient);
+  const adminResult = await adminAuthorization.authorizeMethod("agents.create", { agentDir: "[DISPOSABLE_AGENT_DIR]" });
+  const proof = buildOpenClawNativeAuthorizationProof(adminResult, true);
+  assert.ok(proof);
+  await adminClient.addAgent({
+    id: "identity-e2e-admin-agent",
+    workspace: runtime.workspaceDir,
+    agentDir: adminAgentDir
+  }, { authorizationProof: proof });
+  assert.deepEqual(fallbackCalls, ["agents.create"]);
+  evidence.cliFallbackSafety.provenNativeAdmin = {
+    result: "PASS",
+    nativeIdentity: summarizeIdentity(adminResult.identity),
+    fallbackInvoked: true,
+    agentCreated: true,
+    packageVersion: packageIdentity.version
+  };
+
+  adminClient.close("stale identity hardening check");
+  await assert.rejects(
+    async () => adminClient.addAgent({
+      id: "identity-e2e-stale-agent",
+      workspace: runtime.workspaceDir,
+      agentDir: path.join(path.dirname(runtime.configPath), "stale-agent")
+    }, { authorizationProof: proof }),
+    /requires a current native Gateway authorization proof/
+  );
+  assert.deepEqual(fallbackCalls, ["agents.create"]);
+  evidence.cliFallbackSafety.staleNativeIdentity = {
+    result: "PASS",
+    fallbackInvokedAfterDisconnect: false,
+    observedIdentity: summarizeIdentity(adminClient.getDiagnostics().operatorIdentity ?? null)
+  };
+
+  const unknownCalls: string[] = [];
+  const unknownClient = new NativeWsOpenClawGatewayClient({
+    forceCli: true,
+    fallback: {
+      addAgent: async () => {
+        unknownCalls.push("agents.create");
+        return { stdout: "", stderr: "", code: 0 };
+      }
+    } as unknown as OpenClawGatewayClient
+  });
+  clients.push(unknownClient);
+  await assert.rejects(
+    async () => unknownClient.addAgent({
+      id: "identity-e2e-unknown-agent",
+      workspace: "[DISPOSABLE_WORKSPACE]",
+      agentDir: "[DISPOSABLE_AGENT_DIR]"
+    }, { authorizationProof: proof }),
+    /requires a current native Gateway authorization proof/
+  );
+  assert.deepEqual(unknownCalls, []);
+  evidence.cliFallbackSafety.unknownIdentity = {
+    result: "PASS",
+    fallbackInvoked: false,
+    source: "cli-fallback-without-native-handshake"
+  };
+  evidence.cliFallbackSafety.forcedCliWithoutProof = {
+    result: "PASS",
+    socketOpened: false,
+    fallbackInvoked: false
+  };
+}
+
+async function runExactOpenClawAgentCreate(
+  runtime: {
+    packageRoot: string;
+    stateDir: string;
+    workspaceDir: string;
+    configPath: string;
+    token: string;
+  },
+  input: { id: string; workspace: string; agentDir: string }
+) {
+  const result = await execFileAsync(
+    process.execPath,
+    [
+      path.join(runtime.packageRoot, "openclaw.mjs"),
+      "agents",
+      "add",
+      input.id,
+      "--workspace",
+      input.workspace,
+      "--agent-dir",
+      input.agentDir,
+      "--non-interactive",
+      "--json"
+    ],
+    {
+      cwd: runtime.workspaceDir,
+      env: {
+        ...process.env,
+        OPENCLAW_STATE_DIR: runtime.stateDir,
+        OPENCLAW_CONFIG_PATH: runtime.configPath,
+        OPENCLAW_GATEWAY_TOKEN: runtime.token
+      },
+      maxBuffer: 1_000_000
+    }
+  );
+
+  assert.match(result.stdout, /identity-e2e-admin-agent/);
+  const listResult = await execFileAsync(
+    process.execPath,
+    [path.join(runtime.packageRoot, "openclaw.mjs"), "agents", "list", "--json"],
+    {
+      cwd: runtime.workspaceDir,
+      env: {
+        ...process.env,
+        OPENCLAW_STATE_DIR: runtime.stateDir,
+        OPENCLAW_CONFIG_PATH: runtime.configPath,
+        OPENCLAW_GATEWAY_TOKEN: runtime.token
+      },
+      maxBuffer: 1_000_000
+    }
+  );
+  assert.match(listResult.stdout, /identity-e2e-admin-agent/);
+  return {
+    stdout: result.stdout,
+    stderr: result.stderr,
+    code: 0
+  };
+}
+
+function summarizeIdentity(identity: OpenClawOperatorIdentity | null) {
+  if (!identity) return null;
+  return {
+    requestedRole: identity.requestedRole,
+    role: identity.role,
+    requestedScopes: identity.requestedScopes,
+    grantedScopes: identity.grantedScopes,
+    grantedScopesKnown: identity.grantedScopesKnown,
+    deviceId: identity.deviceId,
+    connectionId: identity.connectionId,
+    authenticated: identity.authenticated,
+    source: identity.source
+  };
 }
 
 async function startGateway(input: {

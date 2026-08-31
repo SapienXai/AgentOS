@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { controlRunningTaskSession } from "@/lib/agentos/control-plane";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,8 +40,25 @@ export async function POST(
     );
   }
 
+  const authorization = await requireAgentOsOpenClawPreflight(request, {
+    operation: `task.${parseResult.data.action}`,
+    method: parseResult.data.action === "steer"
+      ? "sessions.steer"
+      : parseResult.data.action === "inject"
+        ? "chat.inject"
+        : "chat.send",
+    params: { taskId },
+    targetKind: "task-session",
+    targetId: taskId,
+    securityClass: "privileged-mutation",
+    executionPath: parseResult.data.action === "continue"
+      ? "gateway-or-verified-cli"
+      : "gateway-native"
+  });
+  if ("response" in authorization) return authorization.response;
+
   try {
-    const result = await controlRunningTaskSession(taskId, parseResult.data);
+    const result = await controlRunningTaskSession(taskId, parseResult.data, {}, authorization.commandOptions);
     return NextResponse.json(redactSecrets({
       result
     }));

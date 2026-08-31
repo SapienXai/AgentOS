@@ -11,6 +11,7 @@ import {
   waitForChannelWebLogin
 } from "@/lib/openclaw/application/channel-connect-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,15 +60,37 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const input = actionSchema.parse(await request.json());
+    const accountId = "accountId" in input ? input.accountId : undefined;
+    const authorization = await requireAgentOsOpenClawPreflight(request, {
+      operation: `channel.${input.action}`,
+      method: input.action === "install-plugin"
+        ? "plugins.install"
+        : input.action === "web-login-start"
+          ? "web.login.start"
+          : input.action === "web-login-wait"
+            ? "web.login.wait"
+            : input.action === "logout"
+              ? "channels.logout"
+              : "channels.pairing.approve",
+      params: input.action === "approve-pairing"
+        ? { provider: input.provider, accountId: input.accountId, code: input.code }
+        : { provider: input.provider, accountId },
+      targetKind: "openclaw-channel",
+      targetId: accountId ?? input.provider,
+      securityClass: "privileged-mutation",
+      executionPath: "gateway-or-verified-cli"
+    });
+    if ("response" in authorization) return authorization.response;
+
     const result = input.action === "install-plugin"
-      ? await installChannelPlugin(input.provider)
+      ? await installChannelPlugin(input.provider, authorization.commandOptions)
       : input.action === "web-login-start"
-        ? await startChannelWebLogin(input)
+        ? await startChannelWebLogin(input, authorization.commandOptions)
       : input.action === "web-login-wait"
-          ? await waitForChannelWebLogin(input)
+          ? await waitForChannelWebLogin(input, authorization.commandOptions)
           : input.action === "approve-pairing"
-            ? await approveChannelPairing(input)
-            : await logoutConnectedChannel(input);
+            ? await approveChannelPairing(input, authorization.commandOptions)
+            : await logoutConnectedChannel(input, authorization.commandOptions);
 
     return NextResponse.json(redactSecrets({ result }), {
       headers: { "Cache-Control": "no-store" }

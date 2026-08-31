@@ -63,6 +63,7 @@ import {
   getChannelRegistry
 } from "@/lib/openclaw/domains/channels";
 import type { TimingCollector } from "@/lib/openclaw/timing";
+import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 import type {
   AgentCreateInput,
   AgentDeleteInput,
@@ -124,16 +125,17 @@ export async function ensureOpenClawRuntimeSmokeTest(options: {
   return ensureOpenClawRuntimeSmokeTestFromApplication(options);
 }
 
-export async function submitMission(input: MissionSubmission): Promise<MissionResponse> {
-  return submitMissionFromApplication(input);
+export async function submitMission(input: MissionSubmission, options: OpenClawCommandOptions = {}): Promise<MissionResponse> {
+  return submitMissionFromApplication(input, options);
 }
 
 export async function abortMissionTask(
   taskId: string,
   reason?: string | null,
-  dispatchId?: string | null
+  dispatchId?: string | null,
+  options: OpenClawCommandOptions = {}
 ): Promise<MissionAbortResponse> {
-  return abortMissionTaskFromApplication(taskId, reason, dispatchId);
+  return abortMissionTaskFromApplication(taskId, reason, dispatchId, options);
 }
 
 export async function getRuntimeOutput(runtimeId: string) {
@@ -149,16 +151,16 @@ export async function getTaskDetail(
   return getTaskDetailFromApplication(taskId, options);
 }
 
-export async function createAgent(input: AgentCreateInput) {
-  return createAgentFromApplication(input);
+export async function createAgent(input: AgentCreateInput, options: OpenClawCommandOptions = {}) {
+  return createAgentFromApplication(input, options);
 }
 
-export async function updateAgent(input: AgentUpdateInput) {
-  return updateAgentFromApplication(input);
+export async function updateAgent(input: AgentUpdateInput, options: OpenClawCommandOptions = {}) {
+  return updateAgentFromApplication(input, options);
 }
 
-export async function deleteAgent(input: AgentDeleteInput) {
-  return deleteAgentFromApplication(input);
+export async function deleteAgent(input: AgentDeleteInput, options: OpenClawCommandOptions = {}) {
+  return deleteAgentFromApplication(input, options);
 }
 
 export async function upsertWorkspaceChannel(input: {
@@ -234,8 +236,11 @@ export async function deleteWorkspaceProject(input: WorkspaceDeleteInput) {
   return deleteWorkspaceProjectFromApplication(input);
 }
 
-export async function updateGatewayRemoteUrl(input: { gatewayUrl?: string | null }) {
-  return updateGatewayRemoteUrlFromApplication(input);
+export async function updateGatewayRemoteUrl(
+  input: { gatewayUrl?: string | null },
+  options: OpenClawCommandOptions = {}
+) {
+  return updateGatewayRemoteUrlFromApplication(input, options);
 }
 
 export async function updateWorkspaceRoot(input: { workspaceRoot?: string | null }) {

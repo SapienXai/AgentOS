@@ -8,6 +8,12 @@ import { controlGateway } from "@/lib/openclaw/application/gateway-service";
 import { resetOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import { getGatewayNativeAuthStatus } from "@/lib/openclaw/application/settings-service";
 import { runOpenClawJson } from "@/lib/openclaw/cli";
+import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
+import { getOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
+import {
+  isVerifiedNativeAuthorizationProof,
+  resolveRequiredScopes
+} from "@/lib/openclaw/identity/authorization";
 import { decodeOpenClawMobileSetupCode, type OpenClawMobileManualSetup } from "@/lib/openclaw/mobile-pairing-projection";
 import { redactErrorMessage } from "@/lib/security/redaction";
 
@@ -39,7 +45,7 @@ const gatewayRestartPollIntervalMs = 750;
 
 export async function prepareOpenClawMobilePairing(input: {
   network: OpenClawMobilePairingNetwork;
-}): Promise<OpenClawMobilePairingResult> {
+}, options: OpenClawCommandOptions = {}): Promise<OpenClawMobilePairingResult> {
   const snapshot = await getMissionControlSnapshot({ force: true });
 
   if (!snapshot.diagnostics.loaded || !snapshot.diagnostics.rpcOk) {
@@ -53,18 +59,18 @@ export async function prepareOpenClawMobilePairing(input: {
 
   const needsLanBind = input.network === "lan" && isLoopbackBind(snapshot.diagnostics.bindMode);
   if (needsLanBind) {
-    await getOpenClawAdapter().setConfig(gatewayBindConfigKey, "lan", { timeoutMs: 10_000 });
+    await getOpenClawAdapter().setConfig(gatewayBindConfigKey, "lan", { ...options, timeoutMs: 10_000 });
     await controlGateway("restart");
     resetOpenClawGatewayClient("Gateway restarted for mobile pairing");
   }
 
   try {
-    const payload = await waitForMobilePairingSetupCode();
+    const payload = await waitForMobilePairingSetupCode(options);
     const nativeQrDataUrl = readPngDataUrl(payload.qrDataUrl);
     const nativeGatewayUrl = readString(payload.gatewayUrl);
     const nativeSetupCode = readString(payload.setupCode);
     const hasCompleteNativePayload = Boolean(nativeQrDataUrl && nativeGatewayUrl && nativeSetupCode);
-    const fallback = hasCompleteNativePayload ? null : await createCliQrFallback();
+    const fallback = hasCompleteNativePayload ? null : await createCliQrFallback(options);
     const qrDataUrl = hasCompleteNativePayload ? nativeQrDataUrl : fallback?.qrDataUrl ?? null;
     const setupCode = hasCompleteNativePayload ? nativeSetupCode : fallback?.setupCode ?? null;
     const gatewayUrl = hasCompleteNativePayload ? nativeGatewayUrl : fallback?.gatewayUrl ?? null;
@@ -88,7 +94,7 @@ export async function prepareOpenClawMobilePairing(input: {
   }
 }
 
-async function waitForMobilePairingSetupCode() {
+async function waitForMobilePairingSetupCode(options: OpenClawCommandOptions) {
   const deadline = Date.now() + gatewayRestartReadyTimeoutMs;
   let lastError: unknown = null;
 
@@ -97,7 +103,7 @@ async function waitForMobilePairingSetupCode() {
       return await getOpenClawAdapter().call<OpenClawSetupCodePayload>(
         "device.pair.setupCode",
         {},
-        { timeoutMs: 15_000 }
+        { ...options, timeoutMs: 15_000 }
       );
     } catch (error) {
       lastError = error;
@@ -113,8 +119,9 @@ async function waitForMobilePairingSetupCode() {
   throw lastError ?? new Error("OpenClaw Gateway did not become ready after restart.");
 }
 
-async function createCliQrFallback() {
-  const payload = await runOpenClawJson<OpenClawSetupCodePayload>(["qr", "--json"], { timeoutMs: 15_000 });
+async function createCliQrFallback(options: OpenClawCommandOptions) {
+  await assertVerifiedCliMutationFallback("device.pair.setupCode", {}, options);
+  const payload = await runOpenClawJson<OpenClawSetupCodePayload>(["qr", "--json"], { ...options, timeoutMs: 15_000 });
   const setupCode = readString(payload.setupCode);
   const gatewayUrl = readString(payload.gatewayUrl);
 
@@ -134,6 +141,22 @@ async function createCliQrFallback() {
     auth: readString(payload.auth),
     urlSource: readString(payload.urlSource)
   };
+}
+
+async function assertVerifiedCliMutationFallback(
+  method: string,
+  params: Record<string, unknown>,
+  options: OpenClawCommandOptions
+) {
+  const identity = await getOpenClawGatewayClient().getOperatorIdentity?.();
+  if (identity && isVerifiedNativeAuthorizationProof(options.authorizationProof, identity, method, params)) {
+    return;
+  }
+
+  const requiredScopes = resolveRequiredScopes(method, params);
+  throw new Error(
+    `CLI fallback for OpenClaw mutation ${method} requires a current native Gateway authorization proof for ${requiredScopes.join(", ")}.`
+  );
 }
 
 function hasVerifiedGatewayAuthentication(status: Awaited<ReturnType<typeof getGatewayNativeAuthStatus>>) {

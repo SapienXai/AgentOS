@@ -69,7 +69,9 @@ export async function PATCH(request: Request) {
   const authorization = await requireAgentOsOpenClawPreflight(request, {
     operation: "gateway.config.patch",
     method: "config.patch",
-    targetKind: "gateway-config"
+    targetKind: "gateway-config",
+    securityClass: "privileged-mutation",
+    executionPath: "gateway-or-verified-cli"
   });
   if ("response" in authorization) return authorization.response;
 
@@ -77,7 +79,7 @@ export async function PATCH(request: Request) {
     const input = gatewaySettingsSchema.parse(await request.json());
     const snapshot = await updateGatewayRemoteUrl({
       gatewayUrl: input.gatewayUrl ?? null
-    });
+    }, authorization.commandOptions);
     await recordAgentOsAuditEvent({
       actor: authorization.actor,
       operation: "gateway.config.patch",
@@ -133,7 +135,18 @@ export async function POST(request: Request) {
     if (repairInput.success) {
       // The repair scope set is server-owned. Browser input cannot request
       // arbitrary OpenClaw privileges.
-      const result = await repairGatewayNativeDeviceAccess();
+      const repairAuthorization = await requireAgentOsOpenClawPreflight(request, {
+        operation: "gateway.device.repair",
+        method: "device.pair.approve",
+        targetKind: "gateway-device",
+        securityClass: "privileged-mutation",
+        executionPath: "gateway-or-verified-cli"
+      });
+      if ("response" in repairAuthorization) return repairAuthorization.response;
+
+      const result = await repairGatewayNativeDeviceAccess({
+        gatewayOptions: repairAuthorization.commandOptions
+      });
       const authStatus = await getGatewayNativeAuthStatus();
       await recordAgentOsAuditEvent({
         actor: actorResult.actor,

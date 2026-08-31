@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { createOperation, getOperationsSnapshot, operateOperation, updateOperationSchedule } from "@/lib/agentos/application/operations-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,11 +28,37 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const result = body?.action === "create"
-      ? await createOperation(createSchema.parse(body) as Parameters<typeof createOperation>[0])
+    const input = body?.action === "create"
+      ? createSchema.parse(body)
       : body?.action === "update"
-        ? await updateOperationSchedule(updateSchema.parse(body))
-        : await operateOperation(actionSchema.parse(body).action, actionSchema.parse(body).jobId);
+        ? updateSchema.parse(body)
+        : actionSchema.parse(body);
+    const action = input.action;
+    const operation = action === "create"
+      ? { method: "cron.add", targetId: null }
+      : action === "update"
+        ? { method: "cron.update", targetId: input.jobId }
+        : { method: action === "delete" ? "cron.remove" : action === "run" || action === "retry" ? "cron.run" : "cron.update", targetId: input.jobId };
+    const authorization = await requireAgentOsOpenClawPreflight(request, {
+      operation: `operations.${action}`,
+      method: operation.method,
+      params: operation.targetId ? { jobId: operation.targetId } : {},
+      targetKind: "openclaw-cron",
+      targetId: operation.targetId,
+      securityClass: "privileged-mutation",
+      executionPath: "gateway-native"
+    });
+    if ("response" in authorization) return authorization.response;
+
+    const result = action === "create"
+      ? await createOperation(input as Parameters<typeof createOperation>[0], authorization.commandOptions)
+      : action === "update"
+        ? await updateOperationSchedule(input, authorization.commandOptions)
+        : await operateOperation(
+            input.action,
+            input.jobId,
+            authorization.commandOptions
+          );
     return NextResponse.json(redactSecrets(result), { status: 202 });
   } catch (error) { return NextResponse.json({ error: redactErrorMessage(error, "Operations action failed.") }, { status: 400 }); }
 }

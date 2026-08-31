@@ -73,6 +73,19 @@ export const OPENCLAW_8_1_IDENTITY_INVENTORY = [
     sourceNote: "Pairing and device-token rotation are Gateway authorities."
   },
   {
+    classification: "device-authority",
+    methodOrField: "device.pair.setupCode",
+    payloadShape: "closed setup-code request",
+    responseShape: "setupId, expiresAtMs, setupCode, optional qrDataUrl, gatewayUrl, auth label, urlSource, access",
+    requiredStaticScopes: ["operator.admin"],
+    dynamicAuthorization: false,
+    targetDependent: false,
+    connectionLocal: false,
+    deviceIdentityInvolved: true,
+    currentAgentOsUse: "used",
+    sourceNote: "The 8.1 mobile setup-code RPC is admin-only and intentionally omitted from advertised discovery."
+  },
+  {
     classification: "user-directory",
     methodOrField: "users.list",
     payloadShape: "closed empty params object",
@@ -203,6 +216,58 @@ export const OPENCLAW_8_1_IDENTITY_INVENTORY = [
     sourceNote: "Agent access is filtered by Gateway role policy when a profile is authenticated."
   },
   {
+    classification: "channel-authority",
+    methodOrField: "web.login.start / web.login.wait / channels.logout",
+    payloadShape: "provider/account-specific web login or logout payload",
+    responseShape: "QR login result, login wait result, or logout result",
+    requiredStaticScopes: ["operator.admin"],
+    dynamicAuthorization: true,
+    targetDependent: true,
+    connectionLocal: true,
+    deviceIdentityInvolved: false,
+    currentAgentOsUse: "used",
+    sourceNote: "8.1 exposes these channel methods as admin-protected Gateway operations."
+  },
+  {
+    classification: "pairing-authority",
+    methodOrField: "channels.pairing.approve",
+    payloadShape: "channel/provider/account pairing approval payload",
+    responseShape: "pairing approval result",
+    requiredStaticScopes: ["operator.pairing"],
+    dynamicAuthorization: true,
+    targetDependent: true,
+    connectionLocal: true,
+    deviceIdentityInvolved: true,
+    currentAgentOsUse: "used",
+    sourceNote: "The exact pairing target and bootstrap-owner policy remain Gateway runtime checks."
+  },
+  {
+    classification: "device-authority",
+    methodOrField: "device.pair.approve",
+    payloadShape: "pending device request id, optional approved scopes",
+    responseShape: "approved device/token result",
+    requiredStaticScopes: ["operator.pairing"],
+    dynamicAuthorization: true,
+    targetDependent: true,
+    connectionLocal: true,
+    deviceIdentityInvolved: true,
+    currentAgentOsUse: "used",
+    sourceNote: "The pending request, requested scopes, and resulting device authority are Gateway-owned."
+  },
+  {
+    classification: "plugin-authority",
+    methodOrField: "plugins.install",
+    payloadShape: "official plugin or ClawHub package install payload",
+    responseShape: "plugin installation result and Gateway restart requirement",
+    requiredStaticScopes: ["operator.admin"],
+    dynamicAuthorization: true,
+    targetDependent: true,
+    connectionLocal: false,
+    deviceIdentityInvolved: false,
+    currentAgentOsUse: "used",
+    sourceNote: "Plugin installation is a Gateway control-plane write; AgentOS uses the official CLI fallback only with native proof."
+  },
+  {
     classification: "node-authority",
     methodOrField: "node.invoke",
     payloadShape: "node id, command, params",
@@ -259,14 +324,25 @@ export const OPENCLAW_DYNAMIC_METHODS = [
   "sessions.patch",
   "sessions.delete",
   "sessions.dispatch",
+  "sessions.send",
+  "sessions.abort",
   "agent",
+  "chat.send",
+  "chat.inject",
+  "sessions.steer",
   "node.invoke",
   "config.patch",
   "config.apply",
   "config.set",
   "question.resolve",
   "talk.config",
-  "talk.mode"
+  "talk.mode",
+  "device.pair.approve",
+  "channels.pairing.approve",
+  "web.login.start",
+  "web.login.wait",
+  "channels.logout",
+  "plugins.install"
 ] as const;
 
 export const OPENCLAW_STATIC_METHOD_SCOPES: Record<string, readonly string[]> = {
@@ -285,5 +361,10 @@ export const OPENCLAW_STATIC_METHOD_SCOPES: Record<string, readonly string[]> = 
   "users.setRole": ["operator.admin"],
   "device.pair.list": ["operator.pairing"],
   "device.pair.approve": ["operator.pairing"],
+  "device.pair.setupCode": ["operator.admin"],
+  "web.login.start": ["operator.admin"],
+  "web.login.wait": ["operator.admin"],
+  "channels.logout": ["operator.admin"],
+  "plugins.install": ["operator.admin"],
   "config.patch": ["operator.admin"]
 };

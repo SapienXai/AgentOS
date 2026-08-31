@@ -14,6 +14,7 @@ import type {
   MissionResponse,
   MissionSubmission
 } from "@/lib/openclaw/types";
+import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 
 function resolveAgentForMission(snapshot: MissionControlSnapshot, workspaceId?: string) {
   if (!workspaceId) {
@@ -28,22 +29,26 @@ function resolveAgentForMission(snapshot: MissionControlSnapshot, workspaceId?: 
   );
 }
 
-export async function submitMission(input: MissionSubmission): Promise<MissionResponse> {
+export async function submitMission(
+  input: MissionSubmission,
+  gatewayOptions: OpenClawCommandOptions = {}
+): Promise<MissionResponse> {
   return submitMissionDispatchFromWorkflow(input, {
     getMissionControlSnapshot,
     resolveAgentForMission,
     invalidateMissionControlCaches: clearMissionControlCaches
-  });
+  }, gatewayOptions);
 }
 
 export async function abortMissionTask(
   taskId: string,
   reason?: string | null,
-  dispatchId?: string | null
+  dispatchId?: string | null,
+  gatewayOptions: OpenClawCommandOptions = {}
 ): Promise<MissionAbortResponse> {
   return abortMissionDispatchTaskFromWorkflow(taskId, reason, dispatchId, {
     getMissionControlSnapshot,
     resolveAgentForMission,
     invalidateMissionControlCaches: clearMissionControlCaches
-  });
+  }, gatewayOptions);
 }

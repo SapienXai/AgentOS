@@ -1,5 +1,8 @@
 import type { CommandResult } from "@/lib/openclaw/cli";
-import type { OpenClawOperatorIdentity } from "@/lib/openclaw/identity/types";
+import type {
+  OpenClawNativeAuthorizationProof,
+  OpenClawOperatorIdentity
+} from "@/lib/openclaw/identity/types";
 import type {
   AgentMemorySearchConfig,
   AgentSandboxConfig,
@@ -10,6 +13,10 @@ export interface OpenClawCommandOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   forceCli?: boolean;
+  /** Server-created native handshake proof required for mutation CLI fallback. */
+  authorizationProof?: OpenClawNativeAuthorizationProof;
+  /** Dedicated local Gateway-auth bootstrap path; never accepted from HTTP input. */
+  allowGatewayAuthRepairFallback?: boolean;
 }
 
 export type OpenClawGatewayControlOptions = OpenClawCommandOptions & {

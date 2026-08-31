@@ -1,6 +1,6 @@
 # OpenClaw 2026.8.1 Identity and Authorization Foundation
 
-Status: Phase 4A evidence and architecture record.
+Status: Phase 4A.1 evidence and architecture record.
 
 This document describes the identity boundary currently implemented by AgentOS and the exact OpenClaw 2026.8.1 contract used for runtime verification. It does not introduce the Phase 4B multi-user product.
 
@@ -35,6 +35,8 @@ type AgentOsActorContext = {
 The current protected AgentOS product has one human role, `owner`. This is an instance-level product role, not an OpenClaw role and not a multi-user claim.
 
 `actorId` is a generated UUID persisted in Instance Protection state. Username, password, profile name, and email changes do not change it. The browser cannot submit or override it.
+
+Authentication precedence is explicit: with Instance Protection enabled, a valid browser session resolves to the stable human actor and an API token alone is rejected; with protection disabled, a valid API token resolves to the service actor. A request carrying both a valid session and token remains the browser human actor. Forged actor, role, scope, device, and connection headers are ignored.
 
 ## Operator Profile Separation
 
@@ -85,6 +87,10 @@ The exact 8.1 Gateway contract exposes durable profile methods:
 | `question.*` | Dedicated `operator.questions` surface. |
 | `exec.approval.*` | Dedicated `operator.approvals` surface. |
 | `device.pair.*` | Dedicated `operator.pairing` surface. |
+| `device.pair.setupCode` | Admin-only mobile setup-code generation; omitted from advertised discovery. |
+| `web.login.start` / `web.login.wait` / `channels.logout` | Admin-protected channel login/logout operations with provider/runtime checks. |
+| `channels.pairing.approve` | Dynamic channel pairing operation; pairing scope is required and Gateway remains authoritative. |
+| `plugins.install` | Admin-protected plugin control-plane mutation with install-policy/runtime checks. |
 | `talk.*` | Ordinary Talk uses `operator.talk`; secret-inclusive `talk.config` additionally uses `operator.talk.secrets` and read. |
 | `node.invoke` | Dynamic command, target, node, and runtime authority. |
 | `config.patch/set/apply` | Admin scope plus schema, path, hash, and reload/runtime enforcement. |
@@ -121,10 +127,31 @@ AgentOS preflight is deliberately bounded. It answers static capability question
 - normal `sessions.create` / safe `sessions.patch` / archived-only `sessions.delete` use write authority;
 - incognito, full-permission, unsafe session field, and unrestricted delete paths require admin;
 - `sessions.dispatch`, `sessions.move`, `agent`, `node.invoke`, and secret-sensitive Talk paths depend on parameters and target/runtime state;
+- device approval, channel login/logout/pairing, and plugin installation retain runtime/provider/policy checks after their static scope preflight;
 - `config.patch`, `config.set`, and `config.apply` retain admin scope plus Gateway schema, path, hash, and reload checks;
 - question resolution and approval/device actions retain their dedicated static scope and Gateway lifecycle enforcement.
 
-The preflight never replaces the Gateway call. A known missing static scope is blocked early; `runtime-required` and unavailable/unknown identity states remain honest and reach the final OpenClaw enforcement point when the application elects to proceed.
+The preflight never replaces the Gateway call. A known missing static scope is blocked early; `runtime-required` reaches the final OpenClaw enforcement point, while unavailable/unknown identity is not treated as permission for external mutation.
+
+For mutation-capable browser/API boundaries, the last sentence has a strict qualification: `runtime-required` may proceed only with the server-observed native identity and the final operation must remain Gateway-native or carry a server-created, current native authorization proof for the explicitly permitted CLI fallback. `unknown` and `unsupported` fail closed before external mutation. A read may remain observable as `unknown` without being treated as permission.
+
+The state contract is:
+
+| State | Meaning | External mutation behavior |
+| --- | --- | --- |
+| `allowed` | Authenticated native handshake, known granted scopes, static pass, no extra runtime check. | Proceed through the selected authorized transport. |
+| `denied` | Authenticated native handshake with a known missing granted scope. | Return a stable 403 capability denial. |
+| `runtime-required` | Known static scope pass, with target/session/node/schema/runtime authority still owned by OpenClaw. | Proceed only while OpenClaw remains the final authority. |
+| `unknown` | Native identity unavailable, stale/disconnected, CLI-only, Gateway unavailable, or requested scopes not proven as granted. | Return 503 `openclaw-identity-unavailable` for mutation. |
+| `unsupported` | The operation cannot be safely authorized or executed. | Fail closed. |
+
+The implemented public mutation preflight covers agent create/update/delete, agent chat, mission dispatch, task session controls, task abort, Gateway config mutation, device access repair, cron operations, channel connect actions, and mobile pairing. Gateway lifecycle control, update, and migration are AgentOS control-plane operations: they require an authenticated AgentOS actor and retain the Phase 3 lifecycle ownership contract even when the runtime is offline. They do not turn a missing OpenClaw handshake into runtime privilege.
+
+## CLI Fallback Audit
+
+CLI fallback is transport, not authorization. The native client accepts a CLI mutation fallback only when the server has produced a native-handshake proof containing the actual granted scopes, the current connection identity still matches, and the operation's resolved required scopes pass. The proof is never accepted from HTTP input, never derived from requested scopes, and becomes unusable after disconnect. Forced CLI mode therefore cannot execute a privileged browser/API mutation without a current native proof. The explicit `agentDir` creation path, plugin install, channel pairing, and mobile QR fallback are covered by the same rule.
+
+The only exception is the dedicated local Gateway-auth repair option used by AgentOS-owned bootstrap/recovery code. It is not exposed as an HTTP-controlled option and is not a browser privilege path.
 
 ## Session Identity Findings
 
@@ -158,6 +185,12 @@ Decision: **Hybrid — native per-user authorization exists in OpenClaw 8.1, whi
 OpenClaw 8.1 supports Model B primitives (`users.*`, profile-linked roles, profile-aware session sharing). The current AgentOS backend still uses one shared `gateway-client` / `backend` connection and a service-owned Gateway credential, which is Model A behavior. It is suitable for one protected operator and trusted teams, but it is not a claim of mutually untrusted user isolation.
 
 Phase 4B must choose explicit profile/token delegation or isolated Gateway/state roots for hostile tenant boundaries. AgentOS does not fabricate per-user OpenClaw tokens or pretend the current shared token identifies each future human.
+
+## Control-Plane and Internal-Service Boundary
+
+`Gateway restart`, `update`, and `migration` are controlled by the authenticated AgentOS actor and the Phase 3 lifecycle/supervisor ownership model. They are not authorized by a live Gateway role because recovery must remain possible when the Gateway is offline. Internal server-to-server work uses the explicit `service:agentos-internal` actor; public requests cannot select `internal-service` or `internal-recovery` through headers or body fields.
+
+AgentOS-side audit records include the stable actor ID, authentication method, operation, safe target, result, and timestamp. The record intentionally excludes credentials, cookies, prompts, and session content. OpenClaw remains responsible for runtime attribution and enforcement; the current shared connection can identify the Gateway connection and granted role/scopes but does not create a human AgentOS-to-OpenClaw identity mapping.
 
 ## Security Boundary
 

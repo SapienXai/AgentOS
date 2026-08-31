@@ -10,10 +10,12 @@ import {
 } from "@/lib/openclaw/identity/contract";
 import type {
   AgentOsOpenClawRequestContext,
+  OpenClawNativeAuthorizationProof,
   OpenClawAuthorizationResult,
   OpenClawCapability,
   OpenClawOperatorIdentity
 } from "@/lib/openclaw/identity/types";
+import { openClawScopesAllow } from "@/lib/openclaw/identity/types";
 
 const EMPTY_IDENTITY: OpenClawOperatorIdentity = {
   requestedRole: null,
@@ -81,6 +83,7 @@ export class OpenClawAuthorizationService {
       ...staticResult,
       capability,
       method: null,
+      identity,
       requiredScopes,
       reason: staticResult.reason || `Capability ${capability} is not available.`
     };
@@ -100,6 +103,7 @@ export class OpenClawAuthorizationService {
       ...staticResult,
       capability: null,
       method,
+      identity,
       requiredScopes,
       state: staticResult.state === "allowed" && runtimeRequired ? "runtime-required" : staticResult.state,
       reason: staticResult.state === "denied"
@@ -113,12 +117,13 @@ export class OpenClawAuthorizationService {
   async buildRequestContext(
     actor: AgentOsActorContext,
     operation: string,
+    identity?: OpenClawOperatorIdentity,
     options: OpenClawCommandOptions = {}
   ): Promise<AgentOsOpenClawRequestContext> {
     return {
       actorId: actor.actorId,
       operation,
-      openClaw: await this.getIdentity(options)
+      openClaw: identity ?? await this.getIdentity(options)
     };
   }
 }
@@ -163,7 +168,7 @@ function authorizeGrantedScopes(
   };
 }
 
-function resolveRequiredScopes(method: string, params: Record<string, unknown>) {
+export function resolveRequiredScopes(method: string, params: Record<string, unknown> = {}) {
   const staticScopes = OPENCLAW_STATIC_METHOD_SCOPES[method];
   if (staticScopes) return [...staticScopes];
 
@@ -206,13 +211,17 @@ function resolveRequiredScopes(method: string, params: Record<string, unknown>) 
     return isRecord(params.target) && params.target.kind === "profile" ? ["operator.admin"] : ["operator.write"];
   }
 
-  if (method === "agent" && typeof params.message === "string" && /^\/(?:new|reset)(?:\s|$)/i.test(params.message)) {
-    return ["operator.admin"];
+  if (method === "agent") {
+    return typeof params.message === "string" && /^\/(?:new|reset)(?:\s|$)/i.test(params.message)
+      ? ["operator.admin"]
+      : ["operator.write"];
   }
 
   if (method === "node.invoke") return [
     ADMIN_ONLY_NODE_COMMANDS.has(params.command as string) ? "operator.admin" : "operator.write"
   ];
+  if (method === "chat.send" || method === "sessions.send") return ["operator.write"];
+  if (method === "chat.inject" || method === "sessions.steer" || method === "sessions.abort") return ["operator.write"];
   if (method === "fs.listDir") return [Object.hasOwn(params, "nodeId") ? "operator.admin" : "operator.write"];
   if (method === "channels.pairing.approve") return [params.bootstrapCommandOwner === true ? "operator.admin" : "operator.pairing", "operator.pairing"];
   if (method.startsWith("question.")) return ["operator.questions"];
@@ -226,7 +235,7 @@ function resolveRequiredScopes(method: string, params: Record<string, unknown>) 
   return ["operator.admin"];
 }
 
-function isRuntimeDependentMethod(method: string, params: Record<string, unknown>) {
+export function isRuntimeDependentMethod(method: string, params: Record<string, unknown>) {
   return OPENCLAW_DYNAMIC_METHODS.includes(method as (typeof OPENCLAW_DYNAMIC_METHODS)[number]) ||
     method === "plugins.sessionAction" ||
     method === "sessions.move" ||
@@ -234,11 +243,7 @@ function isRuntimeDependentMethod(method: string, params: Record<string, unknown
 }
 
 function scopeAllows(grantedScopes: string[], requiredScope: string) {
-  const granted = new Set(grantedScopes);
-  if (granted.has("operator.admin")) return true;
-  if (requiredScope === "operator.read") return granted.has("operator.read") || granted.has("operator.write");
-  if (requiredScope === "operator.talk") return granted.has("operator.talk") || granted.has("operator.write");
-  return granted.has(requiredScope);
+  return openClawScopesAllow(grantedScopes, [requiredScope]);
 }
 
 function isIncognitoSessionKey(value: string) {
@@ -252,4 +257,71 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function isKnownOpenClawOperatorScope(value: string): value is (typeof OPENCLAW_OPERATOR_SCOPES)[number] {
   return (OPENCLAW_OPERATOR_SCOPES as readonly string[]).includes(value);
+}
+
+export function buildOpenClawNativeAuthorizationProof(
+  result: OpenClawAuthorizationResult,
+  cliFallbackAllowed = false
+): OpenClawNativeAuthorizationProof | null {
+  if (result.state !== "allowed" && result.state !== "runtime-required") {
+    return null;
+  }
+
+  const identity = result.identity;
+  if (!isProvenNativeIdentity(identity) || !openClawScopesAllow(identity.grantedScopes, result.requiredScopes)) {
+    return null;
+  }
+
+  return {
+    source: "native-handshake",
+    authenticated: true,
+    grantedScopesKnown: true,
+    grantedScopes: [...identity.grantedScopes],
+    requiredScopes: [...result.requiredScopes],
+    connectionId: identity.connectionId,
+    cliFallbackAllowed,
+    issuedAt: new Date().toISOString()
+  };
+}
+
+export function isVerifiedNativeAuthorizationProof(
+  proof: OpenClawNativeAuthorizationProof | undefined,
+  currentIdentity: OpenClawOperatorIdentity,
+  method: string,
+  params: Record<string, unknown> = {}
+) {
+  if (!proof || !isProvenNativeIdentity(currentIdentity)) {
+    return false;
+  }
+
+  if (
+    proof.source !== "native-handshake" ||
+    proof.authenticated !== true ||
+    proof.grantedScopesKnown !== true ||
+    proof.cliFallbackAllowed !== true ||
+    !Array.isArray(proof.grantedScopes) ||
+    !Array.isArray(proof.requiredScopes)
+  ) {
+    return false;
+  }
+
+  if (proof.connectionId !== currentIdentity.connectionId) {
+    return false;
+  }
+
+  const requiredScopes = resolveRequiredScopes(method, params);
+  return openClawScopesAllow(proof.grantedScopes, requiredScopes) &&
+    openClawScopesAllow(currentIdentity.grantedScopes, requiredScopes) &&
+    openClawScopesAllow(proof.grantedScopes, proof.requiredScopes) &&
+    sameStringSet(proof.grantedScopes, currentIdentity.grantedScopes);
+}
+
+function isProvenNativeIdentity(identity: OpenClawOperatorIdentity) {
+  return identity.authenticated &&
+    identity.source === "native-handshake" &&
+    identity.grantedScopesKnown;
+}
+
+function sameStringSet(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value) => right.includes(value));
 }

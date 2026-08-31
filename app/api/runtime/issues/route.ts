@@ -69,7 +69,8 @@ export async function POST(request: Request) {
         operation: "device.review",
         method: "device.pair.list",
         targetKind: "gateway-device",
-        targetId: input.issueId
+        targetId: input.issueId,
+        securityClass: "read"
       });
       if ("response" in authorization) return authorization.response;
       const result = await inspectRuntimeIssueDevices(input.issueId);
@@ -82,14 +83,16 @@ export async function POST(request: Request) {
         operation: "device.approve",
         method: "device.pair.approve",
         targetKind: "gateway-device",
-        targetId: input.requestId ?? input.issueId
+        targetId: input.requestId ?? input.issueId,
+        securityClass: "privileged-mutation",
+        executionPath: "gateway-or-verified-cli"
       });
       if ("response" in authorization) return authorization.response;
       const result = await approveRuntimeIssue({
         issueId: input.issueId,
         requestId: input.requestId,
         latest: false
-      });
+      }, authorization.commandOptions);
       await recordAgentOsAuditEvent({ actor: actorResult.actor, operation: "device.approve", targetKind: "gateway-device", targetId: input.requestId ?? input.issueId, result: "succeeded" }).catch(() => {});
       return NextResponse.json(redactSecrets(result));
     }
@@ -99,13 +102,15 @@ export async function POST(request: Request) {
         operation: "device.approve-latest",
         method: "device.pair.approve",
         targetKind: "gateway-device",
-        targetId: input.issueId
+        targetId: input.issueId,
+        securityClass: "privileged-mutation",
+        executionPath: "gateway-or-verified-cli"
       });
       if ("response" in authorization) return authorization.response;
       const result = await approveRuntimeIssue({
         issueId: input.issueId,
         latest: true
-      });
+      }, authorization.commandOptions);
       await recordAgentOsAuditEvent({ actor: actorResult.actor, operation: "device.approve-latest", targetKind: "gateway-device", targetId: input.issueId, result: "succeeded" }).catch(() => {});
       return NextResponse.json(redactSecrets(result));
     }

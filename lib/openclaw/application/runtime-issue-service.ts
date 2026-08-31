@@ -21,6 +21,7 @@ import {
   type RuntimeIssueState
 } from "@/lib/openclaw/runtime-issues";
 import { redactErrorMessage, redactSecretText, redactSecrets } from "@/lib/security/redaction";
+import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 
 const deviceListTimeoutMs = 10_000;
 const deviceApproveTimeoutMs = 10_000;
@@ -167,7 +168,7 @@ export async function approveRuntimeIssue(input: {
   issueId?: string | null;
   requestId?: string | null;
   latest?: boolean;
-}): Promise<{
+}, gatewayOptions: OpenClawCommandOptions = {}): Promise<{
   issueId: string;
   approved: boolean;
   result: unknown;
@@ -201,7 +202,7 @@ export async function approveRuntimeIssue(input: {
   try {
     const result = await getOpenClawAdapter().approveDeviceAccess(
       latest ? { latest: true } : { latest: false, requestId },
-      { timeoutMs: deviceApproveTimeoutMs }
+      { ...gatewayOptions, timeoutMs: deviceApproveTimeoutMs }
     );
     const approvedAt = new Date().toISOString();
     await updateRuntimeIssueState(issueId, (current) => ({
