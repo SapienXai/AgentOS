@@ -291,11 +291,16 @@ test("preflight blocks a target with incompatible Gateway server-method evidence
       status: "blocker",
       currentMethodCount: 10,
       targetMethodCount: 9,
+      currentRegisteredMethodCount: 10,
+      targetRegisteredMethodCount: 9,
       changedServerMethodFiles: ["src/gateway/server-methods/models.ts"],
       changedProtocolFiles: [],
       changes: [],
       blockerCount: 1,
       warningCount: 0,
+      unknownCount: 0,
+      renamedCount: 0,
+      replacedCount: 0,
       summary: "A required AgentOS Gateway method is removed.",
       error: null
     }

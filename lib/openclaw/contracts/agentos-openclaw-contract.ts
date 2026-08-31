@@ -14,11 +14,14 @@ const areaByOperation: Record<string, OpenClawCompatibilityLabAreaId> = {
   logsTail: "gateway-protocol",
   updates: "rollback-recovery",
   models: "models-providers",
+  modelAuth: "models-providers",
   modelAuthOrder: "models-providers",
   modelScan: "models-providers",
+  gatewayRestart: "gateway-protocol",
   configSchemaLookup: "config-patching",
   configPatch: "config-patching",
   sessionLifecycle: "sessions-tasks-agents",
+  sessionRecovery: "sessions-tasks-agents",
   agentCreate: "sessions-tasks-agents",
   agentUpdate: "sessions-tasks-agents",
   agentIdentity: "sessions-tasks-agents",
@@ -36,6 +39,7 @@ const areaByOperation: Record<string, OpenClawCompatibilityLabAreaId> = {
   tools: "native-rpc",
   plugins: "config-patching",
   execApprovals: "channels-accounts-scopes",
+  questions: "sessions-tasks-agents",
   devicePairList: "channels-accounts-scopes",
   deviceApproval: "channels-accounts-scopes",
   cronRead: "channels-accounts-scopes",
@@ -101,7 +105,15 @@ function toContractOperation(
     eventNames: operation.events ?? [],
     requirement,
     expectedPayloadShape: firstMethod ? `${firstMethod} response accepted by AgentOS normalizers` : undefined,
-    requiredScopes: operation.id === "execApprovals" ? ["operator.approvals"] : [],
+    requiredScopes: operation.id === "execApprovals"
+      ? ["operator.approvals"]
+      : operation.id === "questions"
+        ? ["operator.questions"]
+        : operation.id === "modelAuth" || operation.id === "gatewayRestart"
+          ? ["operator.admin"]
+        : operation.id === "talkSession" || operation.id === "talkClient"
+          ? ["operator.talk"]
+          : [],
     cliFallbackAllowed: operation.fallbackAllowed !== false,
     cliFallbackCommand: operation.fallbackAllowed === false ? undefined : `openclaw ${operation.id}`,
     blocksCertification: requirement === "required" || operation.fallbackAllowed === false,

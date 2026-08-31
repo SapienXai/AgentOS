@@ -6,6 +6,7 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "gatewayIdentity"
   | "presence"
   | "models"
+  | "modelAuth"
   | "modelAuthOrder"
   | "modelScan"
   | "usageStatus"
@@ -16,9 +17,11 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "messaging"
   | "configSchemaLookup"
   | "configPatch"
+  | "gatewayRestart"
   | "secrets"
   | "wizard"
   | "sessionLifecycle"
+  | "sessionRecovery"
   | "sessionMutation"
   | "sessionMessages"
   | "chatMessage"
@@ -43,6 +46,7 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "plugins"
   | "execApprovals"
   | "pluginApprovals"
+  | "questions"
   | "devicePairList"
   | "deviceApproval"
   | "deviceToken"
@@ -95,6 +99,12 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   },
   { id: "models", label: "Models List", methods: ["models.list", "models.authStatus"], baseline: "required" },
   {
+    id: "modelAuth",
+    label: "Model authentication",
+    methods: ["models.authLogout"],
+    baseline: "experimental"
+  },
+  {
     id: "modelAuthOrder",
     label: "Model auth order",
     methods: ["models.authOrder.set", "models.auth.order.set"],
@@ -135,6 +145,12 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   { id: "messaging", label: "Operator messaging", methods: ["send", "push.test"], baseline: "optional" },
   { id: "configSchemaLookup", label: "Config schema lookup", methods: ["config.schema.lookup", "config.schema"], baseline: "required" },
   { id: "configPatch", label: "Config patch", methods: ["config.patch", "config.apply", "config.set"], baseline: "required" },
+  {
+    id: "gatewayRestart",
+    label: "Gateway restart control",
+    methods: ["gateway.restart.preflight", "gateway.restart.request"],
+    baseline: "experimental"
+  },
   { id: "secrets", label: "Secret reload and resolution", methods: ["secrets.reload", "secrets.resolve"], baseline: "optional" },
   { id: "wizard", label: "Setup wizard", methods: ["wizard.start", "wizard.next", "wizard.status", "wizard.cancel"], baseline: "optional" },
   {
@@ -142,6 +158,12 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     label: "Session lifecycle",
     methods: ["sessions.list", "sessions.resolve", "sessions.create", "sessions.send", "sessions.steer", "sessions.abort"],
     baseline: "required"
+  },
+  {
+    id: "sessionRecovery",
+    label: "Session recovery",
+    methods: ["sessions.recover", "sessions.reclaim", "sessions.rewind"],
+    baseline: "experimental"
   },
   {
     id: "sessionMutation",
@@ -152,7 +174,7 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   {
     id: "sessionMessages",
     label: "Session message stream",
-    methods: ["sessions.subscribe", "sessions.unsubscribe", "sessions.messages.subscribe", "sessions.messages.unsubscribe"],
+    methods: ["sessions.subscribe", "sessions.messages.subscribe", "sessions.messages.unsubscribe", "sessions.unsubscribe", "sessions.viewers.set"],
     events: ["chat", "session.message", "session.operation", "session.tool", "sessions.changed"],
     baseline: "optional"
   },
@@ -225,7 +247,9 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
       "exec.approval.get",
       "exec.approval.resolve",
       "exec.approvals.get",
-      "exec.approvals.set"
+      "exec.approvals.set",
+      "exec.approval.grants.list",
+      "exec.approval.grants.revoke"
     ],
     baseline: "optional"
   },
@@ -239,6 +263,12 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
       "plugin.approval.resolve"
     ],
     baseline: "optional"
+  },
+  {
+    id: "questions",
+    label: "Operator questions",
+    methods: ["question.request", "question.waitAnswer", "question.resolve", "question.get", "question.list"],
+    baseline: "experimental"
   },
   { id: "devicePairList", label: "Device pairing list", methods: ["device.pair.list", "devices.list", "gateway.devices.list"], baseline: "optional" },
   {
@@ -299,7 +329,7 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   },
   { id: "automationProvisioning", label: "Automation provisioning", methods: ["cron.add", "cron.create"], baseline: "experimental" },
   { id: "browserProfiles", label: "Browser profiles", methods: ["browser.request"], fallbackAllowed: false, baseline: "experimental" },
-  { id: "voiceWake", label: "Voice wake", methods: ["voicewake.get", "voicewake.set"], events: ["voicewake.changed"], baseline: "optional" },
+  { id: "voiceWake", label: "Voice wake", methods: ["voicewake.get", "voicewake.set", "voicewake.routing.get", "voicewake.routing.set"], events: ["voicewake.changed"], baseline: "optional" },
   { id: "talkCatalog", label: "Talk catalog", methods: ["talk.catalog"], baseline: "optional" },
   { id: "talkConfig", label: "Talk config", methods: ["talk.config"], baseline: "optional" },
   {
@@ -307,22 +337,23 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     label: "Talk session control",
     methods: [
       "talk.session.create",
-      "talk.session.join",
       "talk.session.appendAudio",
-      "talk.session.startTurn",
-      "talk.session.endTurn",
-      "talk.session.cancelTurn",
       "talk.session.cancelOutput",
+      "talk.session.acknowledgeMark",
       "talk.session.submitToolResult",
       "talk.session.steer",
       "talk.session.close",
       "talk.mode",
-      "talk.speak"
+      "talk.speak",
+      "talk.session.join",
+      "talk.session.startTurn",
+      "talk.session.endTurn",
+      "talk.session.cancelTurn"
     ],
     events: ["talk.event"],
     baseline: "optional"
   },
-  { id: "talkClient", label: "Talk client control", methods: ["talk.client.create", "talk.client.toolCall", "talk.client.steer"], baseline: "optional" },
+  { id: "talkClient", label: "Talk client control", methods: ["talk.client.create", "talk.client.toolCall", "talk.client.steer", "talk.client.transcript", "talk.client.close"], baseline: "optional" },
   {
     id: "tts",
     label: "Text to speech",

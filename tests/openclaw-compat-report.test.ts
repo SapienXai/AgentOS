@@ -185,6 +185,27 @@ test("compatibility report degrades advertised scope-gated methods when operator
   assert.equal(report.summary.degradedSurfaces.includes("Execution approvals"), true);
 });
 
+test("compatibility scope checks honor dedicated scopes and legacy write authorization", async () => {
+  const gateway = createCompatibilityGateway([
+    "config.schema.lookup",
+    "talk.session.create",
+    "question.request"
+  ], { authScopes: ["operator.write"] });
+
+  const report = await generateOpenClawCompatibilityReport({
+    ...baseReportOptions(gateway, { authScopes: ["operator.write"] }),
+    includeLiveShapeChecks: false
+  });
+  const config = report.contracts.find((check) => check.operation === "configSchemaLookup");
+  const talk = report.contracts.find((check) => check.operation === "talkSession");
+  const questions = report.contracts.find((check) => check.operation === "questions");
+
+  assert.equal(config?.supportedMethod, "config.schema.lookup");
+  assert.deepEqual(config?.missingScopes, []);
+  assert.deepEqual(talk?.missingScopes, []);
+  assert.deepEqual(questions?.missingScopes, ["operator.questions"]);
+});
+
 function baseReportOptions(
   gateway: FakeOpenClawGateway,
   options: { authScopes?: string[] } = {}

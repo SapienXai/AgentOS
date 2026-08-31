@@ -483,8 +483,8 @@ export type OpenClawServerMethodContractDiffStatus = "safe" | "warning" | "block
 
 export interface OpenClawServerMethodContractChange {
   method: string;
-  kind: "added" | "removed" | "scope-changed" | "policy-changed";
-  status: Exclude<OpenClawServerMethodContractDiffStatus, "unknown">;
+  kind: "added" | "removed" | "renamed" | "replaced" | "scope-changed" | "policy-changed";
+  status: OpenClawServerMethodContractDiffStatus;
   currentScope: string | null;
   targetScope: string | null;
   affectedOperations: string[];
@@ -499,11 +499,16 @@ export interface OpenClawServerMethodContractDiffReport {
   status: OpenClawServerMethodContractDiffStatus;
   currentMethodCount: number | null;
   targetMethodCount: number | null;
+  currentRegisteredMethodCount: number | null;
+  targetRegisteredMethodCount: number | null;
   changedServerMethodFiles: string[];
   changedProtocolFiles: string[];
   changes: OpenClawServerMethodContractChange[];
   blockerCount: number;
   warningCount: number;
+  unknownCount: number;
+  renamedCount: number;
+  replacedCount: number;
   summary: string;
   error: string | null;
 }

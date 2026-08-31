@@ -24,7 +24,7 @@ const capabilityDefinitions: CapabilityDefinition[] = [
   {
     id: "gatewayHealth",
     label: "Gateway health",
-    methods: ["health", "status", "logs.tail", "diagnostics.stability", "gateway.identity.get"]
+    methods: ["health", "status", "logs.tail", "diagnostics.stability", "gateway.identity.get", "gateway.restart.preflight", "gateway.restart.request"]
   },
   {
     id: "presence",
@@ -52,7 +52,16 @@ const capabilityDefinitions: CapabilityDefinition[] = [
       "sessions.subscribe",
       "sessions.unsubscribe",
       "sessions.messages.subscribe",
-      "sessions.messages.unsubscribe"
+      "sessions.messages.unsubscribe",
+      "sessions.recover",
+      "sessions.reclaim",
+      "sessions.goal.update",
+      "sessions.goal.clear",
+      "sessions.groups.list",
+      "sessions.groups.put",
+      "sessions.groups.update",
+      "sessions.groups.rename",
+      "sessions.groups.delete"
     ],
     events: ["chat", "session.message", "session.operation", "session.tool", "sessions.changed"]
   },
@@ -75,12 +84,12 @@ const capabilityDefinitions: CapabilityDefinition[] = [
   {
     id: "models",
     label: "Models",
-    methods: ["models.list", "models.authStatus", "models.scan", "models.authOrder.set", "models.auth.order.set"]
+    methods: ["models.list", "models.authStatus", "models.authLogout", "models.probe", "models.scan", "models.authOrder.set", "models.auth.order.set"]
   },
   {
     id: "authProfiles",
     label: "Auth profiles",
-    methods: ["models.authStatus", "models.authOrder.set", "models.auth.order.set"]
+    methods: ["models.authStatus", "models.authLogout", "models.authOrder.set", "models.auth.order.set"]
   },
   {
     id: "usage",
@@ -109,7 +118,7 @@ const capabilityDefinitions: CapabilityDefinition[] = [
   {
     id: "channels",
     label: "Channels",
-    methods: ["channels.status", "channels.logout", "send", "push.test", "voicewake.get", "voicewake.set"],
+    methods: ["channels.status", "channels.logout", "send", "push.test", "voicewake.get", "voicewake.set", "voicewake.routing.get", "voicewake.routing.set"],
     events: ["voicewake.changed"]
   },
   {
@@ -132,6 +141,9 @@ const capabilityDefinitions: CapabilityDefinition[] = [
       "talk.client.create",
       "talk.client.toolCall",
       "talk.client.steer",
+      "talk.client.transcript",
+      "talk.client.close",
+      "talk.session.acknowledgeMark",
       "talk.speak"
     ],
     events: ["talk.event"]
@@ -171,12 +183,19 @@ const capabilityDefinitions: CapabilityDefinition[] = [
       "exec.approvals.set",
       "exec.approvals.node.get",
       "exec.approvals.node.set",
+      "exec.approval.grants.list",
+      "exec.approval.grants.revoke",
       "plugin.approval.request",
       "plugin.approval.list",
       "plugin.approval.waitDecision",
       "plugin.approval.resolve"
     ],
     events: ["exec.approval.requested", "exec.approval.resolved", "plugin.approval.requested", "plugin.approval.resolved"]
+  },
+  {
+    id: "questions",
+    label: "Operator questions",
+    methods: ["question.request", "question.waitAnswer", "question.resolve", "question.get", "question.list"]
   },
   {
     id: "devices",

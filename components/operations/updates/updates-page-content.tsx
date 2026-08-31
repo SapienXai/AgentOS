@@ -1013,7 +1013,7 @@ function ServerMethodContractDiffPanel({
                 <code className="text-[0.66rem] font-semibold text-foreground">{change.method}</code>
                 <StatusBadge
                   label={change.status}
-                  tone={change.status === "blocker" ? "danger" : change.status === "warning" ? "warning" : "success"}
+                  tone={change.status === "blocker" ? "danger" : change.status === "warning" ? "warning" : change.status === "unknown" ? "muted" : "success"}
                 />
               </div>
               <p className="mt-1 text-[0.64rem] leading-4 text-muted-foreground">{change.message}</p>
@@ -1038,8 +1038,8 @@ function ContractDiffMetric({ label, value }: { label: string; value: string }) 
   );
 }
 
-function contractChangePriority(status: "safe" | "warning" | "blocker") {
-  return status === "blocker" ? 0 : status === "warning" ? 1 : 2;
+function contractChangePriority(status: "safe" | "warning" | "blocker" | "unknown") {
+  return status === "blocker" ? 0 : status === "warning" ? 1 : status === "unknown" ? 2 : 3;
 }
 
 function contractDiffStatusLabel(status: OpenClawServerMethodContractDiffReport["status"]) {

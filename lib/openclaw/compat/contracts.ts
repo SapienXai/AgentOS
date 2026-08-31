@@ -22,6 +22,7 @@ const operationSurfaceMap: Partial<Record<string, OpenClawCompatibilityCapabilit
   presence: "presence",
   logsTail: "gatewayHealth",
   models: "models",
+  modelAuth: "authProfiles",
   modelAuthOrder: "authProfiles",
   modelScan: "models",
   usageStatus: "usage",
@@ -32,6 +33,7 @@ const operationSurfaceMap: Partial<Record<string, OpenClawCompatibilityCapabilit
   secrets: "secrets",
   wizard: "secrets",
   sessionLifecycle: "sessions",
+  sessionRecovery: "sessions",
   sessionMutation: "sessions",
   sessionMessages: "sessions",
   sessionHistory: "transcripts",
@@ -46,11 +48,13 @@ const operationSurfaceMap: Partial<Record<string, OpenClawCompatibilityCapabilit
   artifacts: "artifacts",
   artifactDownload: "artifacts",
   runtimeSnapshot: "sessions",
+  gatewayRestart: "gatewayHealth",
   commands: "commands",
   tools: "tools",
   plugins: "plugins",
   execApprovals: "approvals",
   pluginApprovals: "approvals",
+  questions: "questions",
   devicePairList: "devices",
   deviceApproval: "devices",
   deviceToken: "devices",
@@ -89,13 +93,19 @@ const operationSurfaceMap: Partial<Record<string, OpenClawCompatibilityCapabilit
 };
 
 const operationRequiredScopes: Partial<Record<string, string[]>> = {
-  configSchemaLookup: ["operator.admin"],
+  configSchemaLookup: ["operator.read"],
   configPatch: ["operator.admin"],
+  modelAuth: ["operator.admin"],
+  gatewayRestart: ["operator.admin"],
   secrets: ["operator.admin"],
   wizard: ["operator.admin"],
   updates: ["operator.admin"],
   execApprovals: ["operator.approvals"],
   pluginApprovals: ["operator.approvals"],
+  questions: ["operator.questions"],
+  talkConfig: ["operator.read"],
+  talkSession: ["operator.talk"],
+  talkClient: ["operator.talk"],
   deviceApproval: ["operator.pairing"],
   deviceToken: ["operator.pairing"],
   nodePairing: ["operator.pairing"]
@@ -312,9 +322,9 @@ async function checkOperationContract(
   const advertisedNativeSupport = Boolean(supportedMethod || supportedEvent);
   const liveCapabilityMetadata = input.capabilitySource !== "version-default";
   const versionDefaultExpectation = advertisedNativeSupport && !liveCapabilityMetadata;
-  const requiredScopes = operationRequiredScopes[operation.id] ?? [];
+  const requiredScopes = resolveRequiredScopes(operation.id, supportedMethod);
   const missingScopes = input.authScopes.length > 0 && advertisedNativeSupport
-    ? requiredScopes.filter((scope) => !input.authScopes.includes(scope))
+    ? requiredScopes.filter((scope) => !input.authScopes.some((grantedScope) => authorizesScope(grantedScope, scope)))
     : [];
   const nativeGatewaySupported = advertisedNativeSupport && missingScopes.length === 0 && liveCapabilityMetadata;
   const fallbackAllowed = operation.fallbackAllowed !== false;
@@ -385,6 +395,33 @@ async function checkOperationContract(
     reason,
     suggestedRecovery: resolveContractRecovery(status, operation.label, required, cliFallbackAvailable, missingScopes)
   };
+}
+
+function resolveRequiredScopes(operationId: string, supportedMethod: string | null) {
+  if (operationId === "gatewayRestart" && supportedMethod === "gateway.restart.preflight") {
+    return ["operator.read"];
+  }
+  if (
+    operationId === "execApprovals" &&
+    supportedMethod &&
+    ["exec.approvals.get", "exec.approvals.set", "exec.approvals.node.get", "exec.approvals.node.set"].includes(supportedMethod)
+  ) {
+    return ["operator.admin"];
+  }
+  return operationRequiredScopes[operationId] ?? [];
+}
+
+function authorizesScope(grantedScope: string, requiredScope: string) {
+  if (grantedScope === "operator.admin") {
+    return true;
+  }
+  if (requiredScope === "operator.read") {
+    return grantedScope === "operator.read" || grantedScope === "operator.write";
+  }
+  if (requiredScope === "operator.write" || requiredScope === "operator.talk") {
+    return grantedScope === requiredScope || grantedScope === "operator.write";
+  }
+  return grantedScope === requiredScope;
 }
 
 function resolveContractStatus(input: {

@@ -16,6 +16,7 @@ export type OpenClawCompatibilityCapabilityId =
   | "gatewayHealth"
   | "presence"
   | "sessions"
+  | "questions"
   | "chat"
   | "agents"
   | "agentFiles"
