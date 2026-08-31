@@ -96,6 +96,7 @@ export type NativeHandshakePayload = {
   protocol?: number;
   server?: {
     version?: string;
+    buildId?: string;
     connId?: string;
   };
   features?: {

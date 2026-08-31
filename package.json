@@ -17,6 +17,7 @@
     "smoke:mission-control": "node scripts/mission-control-browser-smoke.mjs",
     "smoke:secure-browser": "node scripts/secure-browser-integration-smoke.mjs",
     "smoke:runtime-golden": "node scripts/openclaw-runtime-golden-smoke.mjs",
+    "openclaw:runtime-cert": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-runtime-certification.ts",
     "start": "next start",
     "lint": "eslint .",
     "openclaw:compat": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-compat.ts",
