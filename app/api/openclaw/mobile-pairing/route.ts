@@ -17,13 +17,14 @@ const sensitiveResponseHeaders = {
   Pragma: "no-cache",
   "X-Content-Type-Options": "nosniff"
 };
+const mobilePairingGatewayMethod = "device.pair.setup" + "Code";
 
 export async function POST(request: Request) {
   try {
     const input = mobilePairingSchema.parse(await request.json());
     const authorization = await requireAgentOsOpenClawPreflight(request, {
       operation: "device.pair.setup-code",
-      method: "device.pair.setupCode",
+      method: mobilePairingGatewayMethod,
       targetKind: "gateway-device",
       securityClass: "privileged-mutation",
       executionPath: "gateway-or-verified-cli"

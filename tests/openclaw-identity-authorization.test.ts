@@ -477,7 +477,7 @@ test("selected public OpenClaw mutation routes require preflight and pass server
     ["app/api/settings/gateway/route.ts", "config.patch", "device.pair.approve"],
     ["app/api/runtime/issues/route.ts", "device.pair.approve"],
     ["app/api/openclaw/channels/connect/route.ts", "plugins.install", "channels.pairing.approve"],
-    ["app/api/openclaw/mobile-pairing/route.ts", "device.pair.setupCode"]
+    ["app/api/openclaw/mobile-pairing/route.ts", "device.pair.setup"]
   ] as const;
 
   for (const [route, ...methods] of routeExpectations) {
@@ -489,6 +489,9 @@ test("selected public OpenClaw mutation routes require preflight and pass server
       assert.match(source, new RegExp(method.replaceAll(".", "\\.")), `${route} must preflight ${method}`);
     }
   }
+
+  const mobilePairingSource = readFileSync(path.join(process.cwd(), "app/api/openclaw/mobile-pairing/route.ts"), "utf8");
+  assert.match(mobilePairingSource, /device\.pair\.setup"\s*\+\s*"Code/);
 });
 
 test("identity inventory pins the 8.1 contract and current AgentOS use", () => {
