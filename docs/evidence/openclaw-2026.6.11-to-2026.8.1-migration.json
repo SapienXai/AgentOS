@@ -1,0 +1,1314 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-31T12:57:20.903Z",
+  "provenance": {
+    "sourceVersion": "2026.6.11",
+    "sourceCommit": "e085fa1a3ffd32d0ea6917e1e6fb4ecbffbb77d2",
+    "sourceTag": "v2026.6.11",
+    "targetVersion": "2026.8.1",
+    "targetCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
+    "targetBuildId": "2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z",
+    "agentosRecommendedVersion": "2026.6.11",
+    "agentosSupportedBaseline": "2026.6.8"
+  },
+  "fixture": {
+    "kind": "disposable-exact-source-runtime",
+    "provider": "loopback-http-fixture",
+    "externalCredentialRequired": false,
+    "externalCredentialUsed": false,
+    "isolatedGatewayPorts": [
+      49747,
+      49817
+    ],
+    "cleanup": {
+      "migration": true,
+      "rollback": true
+    }
+  },
+  "dryRun": {
+    "plan": {
+      "schemaVersion": 1,
+      "planId": "6a8a1d94-d22a-46a8-a337-c292a94cf6ab",
+      "createdAt": "2026-08-31T12:55:22.877Z",
+      "mode": "dry-run",
+      "source": {
+        "packageRoot": "[disposable-fixture]/source-runtime",
+        "binaryPath": "[disposable-fixture]/source-runtime/openclaw.mjs",
+        "version": "2026.6.11",
+        "sourceCommit": "e085fa1a3ffd32d0ea6917e1e6fb4ecbffbb77d2",
+        "buildId": null,
+        "packageHash": "705e17b9bdbe7d9b51e460e19b167fc23bd0069df24a7610d52ffe662d7bfa22"
+      },
+      "target": {
+        "packageRoot": "[exact-target-package]",
+        "binaryPath": "[exact-target-package]/openclaw.mjs",
+        "version": "2026.8.1",
+        "sourceCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
+        "buildId": "2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z",
+        "packageHash": "793911e2bce4b2d2ca70abda23f9cb99da73c19511bdb86a3ebdf2806d31feaa"
+      },
+      "paths": {
+        "sourceStateDir": "[disposable-fixture]/live-state",
+        "sourceConfigPath": "[disposable-fixture]/live-config/openclaw.json",
+        "targetStateDir": "[disposable-fixture]/engine-work/runs/6a8a1d94-d22a-46a8-a337-c292a94cf6ab/target-state",
+        "targetConfigPath": "[disposable-fixture]/engine-work/runs/6a8a1d94-d22a-46a8-a337-c292a94cf6ab/target-config/openclaw.json",
+        "runtimePackageRoot": "[exact-target-package]",
+        "installPackageRoot": "[disposable-fixture]/managed-package",
+        "workRoot": "[disposable-fixture]/engine-work",
+        "snapshotRoot": "[disposable-fixture]/engine-work/snapshots"
+      },
+      "supervisor": {
+        "mode": "agentos-managed",
+        "replacementAllowed": true,
+        "reason": "AgentOS-managed lifecycle permits replacement after certification and explicit commit."
+      },
+      "steps": [
+        {
+          "id": "inspect",
+          "state": "preflight",
+          "description": "Inspect source state, config, runtime identity, and mutation ownership.",
+          "mutation": false,
+          "retryable": true,
+          "status": "pending"
+        },
+        {
+          "id": "preflight",
+          "state": "preflight",
+          "description": "Check exact source-to-target compatibility and external supervisor boundaries.",
+          "mutation": false,
+          "retryable": true,
+          "status": "pending"
+        },
+        {
+          "id": "plan",
+          "state": "planned",
+          "description": "Persist the deterministic migration plan and its explicit mutation boundary.",
+          "mutation": false,
+          "retryable": true,
+          "status": "pending"
+        },
+        {
+          "id": "snapshot",
+          "state": "snapshotting",
+          "description": "Create and verify a WAL-aware state, SQLite, config, and runtime snapshot.",
+          "mutation": true,
+          "retryable": true,
+          "status": "pending"
+        },
+        {
+          "id": "stage-target",
+          "state": "staging",
+          "description": "Stage the exact target package and copy the source state into an isolated target root.",
+          "mutation": true,
+          "retryable": true,
+          "status": "pending"
+        },
+        {
+          "id": "validate-target",
+          "state": "target-validating",
+          "description": "Run target read-only doctor and SQLite preflight checks before repair.",
+          "mutation": false,
+          "retryable": true,
+          "status": "pending"
+        },
+        {
+          "id": "migrate-state",
+          "state": "state-migrating",
+          "description": "Run the target's explicit non-interactive state/config migration in isolation.",
+          "mutation": true,
+          "retryable": true,
+          "status": "pending"
+        },
+        {
+          "id": "start-target",
+          "state": "target-starting",
+          "description": "Start the target Gateway only against the isolated migrated state.",
+          "mutation": true,
+          "retryable": true,
+          "status": "pending"
+        },
+        {
+          "id": "post-upgrade-doctor",
+          "state": "postflight",
+          "description": "Run target post-upgrade doctor checks and record machine-readable findings.",
+          "mutation": false,
+          "retryable": true,
+          "status": "pending"
+        },
+        {
+          "id": "runtime-certification",
+          "state": "certifying",
+          "description": "Certify native Gateway, model, streaming, restart, and cron behavior.",
+          "mutation": false,
+          "retryable": true,
+          "status": "pending"
+        },
+        {
+          "id": "preservation",
+          "state": "certifying",
+          "description": "Compare source and target agent, session, transcript, automation, model, and workspace evidence.",
+          "mutation": false,
+          "retryable": true,
+          "status": "pending"
+        },
+        {
+          "id": "commit",
+          "state": "committing",
+          "description": "Replace the managed runtime and live state after every required gate passes.",
+          "mutation": true,
+          "retryable": false,
+          "status": "pending"
+        },
+        {
+          "id": "cleanup",
+          "state": "completed",
+          "description": "Remove disposable staging material while retaining verified rollback evidence.",
+          "mutation": true,
+          "retryable": true,
+          "status": "pending"
+        }
+      ],
+      "blockers": [],
+      "warnings": [],
+      "mutationBoundary": {
+        "snapshotBeforeMutation": true,
+        "commitAfterCertification": true,
+        "targetStateIsolatedUntilCommit": true
+      }
+    },
+    "sourceState": {
+      "exists": true,
+      "fileCount": 21,
+      "sqliteCount": 2,
+      "configExists": true
+    },
+    "mutationCount": 6,
+    "mutations": [
+      "Create and verify a WAL-aware state, SQLite, config, and runtime snapshot.",
+      "Stage the exact target package and copy the source state into an isolated target root.",
+      "Run the target's explicit non-interactive state/config migration in isolation.",
+      "Start the target Gateway only against the isolated migrated state.",
+      "Replace the managed runtime and live state after every required gate passes.",
+      "Remove disposable staging material while retaining verified rollback evidence."
+    ]
+  },
+  "migration": {
+    "schemaVersion": 1,
+    "runId": "adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2",
+    "planId": "adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2",
+    "startedAt": "2026-08-31T12:55:22.879Z",
+    "updatedAt": "2026-08-31T12:56:09.979Z",
+    "mode": "execute",
+    "state": "completed",
+    "currentStep": null,
+    "completedSteps": [
+      "inspect",
+      "preflight",
+      "plan",
+      "snapshot",
+      "stage-target",
+      "validate-target",
+      "migrate-state",
+      "start-target",
+      "post-upgrade-doctor",
+      "runtime-certification",
+      "preservation",
+      "commit",
+      "cleanup"
+    ],
+    "journalPath": "[disposable-fixture]/engine-work/runs/adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2/migration-journal.json",
+    "journalHash": "3ead6f6c889b3ededf54922029aed50a5c2694bcf96eb12034a914c72d806dd1",
+    "snapshot": {
+      "schemaVersion": 1,
+      "snapshotId": "snapshot-adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2",
+      "createdAt": "2026-08-31T12:55:22.911Z",
+      "sourceVersion": "2026.6.11",
+      "sourceCommit": "e085fa1a3ffd32d0ea6917e1e6fb4ecbffbb77d2",
+      "stateDir": "[disposable-fixture]/live-state",
+      "configPath": "[disposable-fixture]/live-config/openclaw.json",
+      "root": "[disposable-fixture]/engine-work/runs/adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2/snapshot",
+      "files": [
+        {
+          "relativePath": "agents",
+          "kind": "directory",
+          "bytes": 0,
+          "sha256": null
+        },
+        {
+          "relativePath": "agents/dev",
+          "kind": "directory",
+          "bytes": 0,
+          "sha256": null
+        },
+        {
+          "relativePath": "agents/dev/agent",
+          "kind": "directory",
+          "bytes": 0,
+          "sha256": null
+        },
+        {
+          "relativePath": "agents/dev/agent/models.json",
+          "kind": "file",
+          "bytes": 641,
+          "sha256": "06aeed248a792332e64a35f10f4140add1ea5dc198349cd032d14821b0da514c"
+        },
+        {
+          "relativePath": "agents/dev/sessions",
+          "kind": "directory",
+          "bytes": 0,
+          "sha256": null
+        },
+        {
+          "relativePath": "agents/dev/sessions/c67af284-30c3-456a-a91a-a9d646b689b4.jsonl",
+          "kind": "file",
+          "bytes": 1840,
+          "sha256": "7224294c28d8f813a2431c2bb4d59ee0e361a24f541b7689900d7b62a39e3eb1"
+        },
+        {
+          "relativePath": "agents/dev/sessions/c67af284-30c3-456a-a91a-a9d646b689b4.trajectory-path.json",
+          "kind": "file",
+          "bytes": 328,
+          "sha256": "bc16153c0ec277b048effd2c3d4ac34dbaf9f64f2e675aed16543039f8a7bf32"
+        },
+        {
+          "relativePath": "agents/dev/sessions/c67af284-30c3-456a-a91a-a9d646b689b4.trajectory.jsonl",
+          "kind": "file",
+          "bytes": 157256,
+          "sha256": "10c9995bf47184775c4b5862499b2e7ae3733bebe52db91213a017601ff81441"
+        },
+        {
+          "relativePath": "agents/dev/sessions/sessions.json",
+          "kind": "file",
+          "bytes": 19790,
+          "sha256": "d766e3ab9ad88a44580172d089f87551ef84fd4398f0190a8390f1fc90b17c33"
+        },
+        {
+          "relativePath": "agents/dev/sessions/skills-prompts",
+          "kind": "directory",
+          "bytes": 0,
+          "sha256": null
+        },
+        {
+          "relativePath": "agents/dev/sessions/skills-prompts/sha256",
+          "kind": "directory",
+          "bytes": 0,
+          "sha256": null
+        },
+        {
+          "relativePath": "agents/dev/sessions/skills-prompts/sha256/34",
+          "kind": "directory",
+          "bytes": 0,
+          "sha256": null
+        },
+        {
+          "relativePath": "agents/dev/sessions/skills-prompts/sha256/34/3408b81e77b81e32f516ddb142c85a8c9f278c69e8cd98bbcaf9d8825e2b4e49.txt",
+          "kind": "file",
+          "bytes": 9034,
+          "sha256": "3408b81e77b81e32f516ddb142c85a8c9f278c69e8cd98bbcaf9d8825e2b4e49"
+        },
+        {
+          "relativePath": "identity",
+          "kind": "directory",
+          "bytes": 0,
+          "sha256": null
+        },
+        {
+          "relativePath": "identity/device.json",
+          "kind": "file",
+          "bytes": 416,
+          "sha256": "6064bbab14193bb8af8f31bc1b37865135cb3064610e64cf79851b450e660704"
+        },
+        {
+          "relativePath": "legacy-session-fixture.jsonl",
+          "kind": "file",
+          "bytes": 53,
+          "sha256": "9bc88728d38cabcf656187e8d81cf7a4399e384beea121b9da5a5797b024045b"
+        },
+        {
+          "relativePath": "migration-fixture.sqlite",
+          "kind": "sqlite",
+          "bytes": 12288,
+          "sha256": "ac6b59ef8b515793e6d02a92cc7184f4b7a93d941eaec1d55be144a419d7fd04"
+        },
+        {
+          "relativePath": "plugin-skills",
+          "kind": "directory",
+          "bytes": 0,
+          "sha256": null
+        },
+        {
+          "relativePath": "plugin-skills/browser-automation",
+          "kind": "symlink",
+          "bytes": 0,
+          "sha256": "1b571a06e8e4507e0555fc86c665a1af91321cd70b32d66c5904613606c5cf1a",
+          "linkTarget": "/private[disposable-fixture]/source-runtime/dist/extensions/browser/skills/browser-automation"
+        },
+        {
+          "relativePath": "plugin-skills/canvas",
+          "kind": "symlink",
+          "bytes": 0,
+          "sha256": "5deadbe12abb9bc9a9d69187d32121fd5a58732baec53006379938fbcd94fea1",
+          "linkTarget": "/private[disposable-fixture]/source-runtime/dist/extensions/canvas/skills/canvas"
+        },
+        {
+          "relativePath": "sessions.json",
+          "kind": "file",
+          "bytes": 96,
+          "sha256": "80efbe50f1a8a55bbb25127091a0b73e69293f83540ffb5444182d50be4385f3"
+        },
+        {
+          "relativePath": "state",
+          "kind": "directory",
+          "bytes": 0,
+          "sha256": null
+        },
+        {
+          "relativePath": "state/openclaw.sqlite",
+          "kind": "sqlite",
+          "bytes": 950272,
+          "sha256": "beeb9b54d829520e052c23299d8929cf0555464e49b8914f81d8dd7293cc9fdc"
+        },
+        {
+          "relativePath": "workspace",
+          "kind": "directory",
+          "bytes": 0,
+          "sha256": null
+        },
+        {
+          "relativePath": "workspace-attestations",
+          "kind": "directory",
+          "bytes": 0,
+          "sha256": null
+        },
+        {
+          "relativePath": "workspace-attestations/4524bf46be6c818bcb42b2085fcf5a6070e82255466ddbcd65f0b74c5427147f.attested",
+          "kind": "file",
+          "bytes": 484,
+          "sha256": "4ae7f0b2d382d4a859fabfd1d5f7a8b10671e183567a7932ee53e6eb00d517d8"
+        },
+        {
+          "relativePath": "workspace/AGENTS.md",
+          "kind": "file",
+          "bytes": 70,
+          "sha256": "ccc8aed228f09ab2092461deffcc1085d3a1eb38ea68976c0c57bd60ff22a0b2"
+        },
+        {
+          "relativePath": "workspace/BOOTSTRAP.md",
+          "kind": "file",
+          "bytes": 1511,
+          "sha256": "bd4a143499ab626d4c8b664086c3fcdfe32e8d1df77d2dea757059015fd558c0"
+        },
+        {
+          "relativePath": "workspace/HEARTBEAT.md",
+          "kind": "file",
+          "bytes": 244,
+          "sha256": "ecce558615751a35aa173731e892ff3993f44bb4f5a1219c0a02994790c85528"
+        },
+        {
+          "relativePath": "workspace/IDENTITY.md",
+          "kind": "file",
+          "bytes": 696,
+          "sha256": "d93cd095ac3b8d8135110230bc6f09738fb8029ca6f270001a928a1c1614bffb"
+        },
+        {
+          "relativePath": "workspace/openclaw-workspace-state.json",
+          "kind": "file",
+          "bytes": 70,
+          "sha256": "7ba9109e90bd803e6e47c4346edc50e6cf68b0b143dc33b32521680a746b3394"
+        },
+        {
+          "relativePath": "workspace/preserved-marker.md",
+          "kind": "file",
+          "bytes": 27,
+          "sha256": "0cb0fa19d518b290646bc895640b20096889315b4feb1a599b0f54ac4228c313"
+        },
+        {
+          "relativePath": "workspace/SOUL.md",
+          "kind": "file",
+          "bytes": 1806,
+          "sha256": "daab0d62045d0a00ea0f968f4463ea09fd06c71f59066f686b0e9b361f929b43"
+        },
+        {
+          "relativePath": "workspace/TOOLS.md",
+          "kind": "file",
+          "bytes": 920,
+          "sha256": "15cdfe57fcfa6d83888e215176f40b415ff2b9a51afe96b4d4134f2f5a8cfe68"
+        },
+        {
+          "relativePath": "workspace/USER.md",
+          "kind": "file",
+          "bytes": 537,
+          "sha256": "e418ca9a680553b3ad8f54aecb0d403330810bb77826ab5251cc1dc13368fe16"
+        }
+      ],
+      "sqlite": [
+        {
+          "relativePath": "migration-fixture.sqlite",
+          "snapshotPath": "state/migration-fixture.sqlite",
+          "userVersion": 0,
+          "integrity": "ok",
+          "sourceSidecars": [
+            "[disposable-fixture]/live-state/migration-fixture.sqlite-wal",
+            "[disposable-fixture]/live-state/migration-fixture.sqlite-shm"
+          ],
+          "sha256": "ac6b59ef8b515793e6d02a92cc7184f4b7a93d941eaec1d55be144a419d7fd04"
+        },
+        {
+          "relativePath": "state/openclaw.sqlite",
+          "snapshotPath": "state/state/openclaw.sqlite",
+          "userVersion": 1,
+          "integrity": "ok",
+          "sourceSidecars": [
+            "[disposable-fixture]/live-state/state/openclaw.sqlite-wal",
+            "[disposable-fixture]/live-state/state/openclaw.sqlite-shm"
+          ],
+          "sha256": "beeb9b54d829520e052c23299d8929cf0555464e49b8914f81d8dd7293cc9fdc"
+        }
+      ],
+      "config": {
+        "relativePath": "config/openclaw.json",
+        "sha256": "43cc03d5799a9605e21a0ad9123395265bc1f4216d21f8798629ea2dc17fd4ac",
+        "bytes": 1281
+      },
+      "verified": true
+    },
+    "rollback": {
+      "snapshotId": "snapshot-adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2",
+      "snapshotRoot": "[disposable-fixture]/engine-work/runs/adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2/snapshot",
+      "source": {
+        "packageRoot": "[disposable-fixture]/source-runtime",
+        "binaryPath": "[disposable-fixture]/source-runtime/openclaw.mjs",
+        "version": "2026.6.11",
+        "sourceCommit": "e085fa1a3ffd32d0ea6917e1e6fb4ecbffbb77d2",
+        "buildId": null,
+        "packageHash": "705e17b9bdbe7d9b51e460e19b167fc23bd0069df24a7610d52ffe662d7bfa22"
+      },
+      "target": {
+        "packageRoot": "[exact-target-package]",
+        "binaryPath": "[exact-target-package]/openclaw.mjs",
+        "version": "2026.8.1",
+        "sourceCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
+        "buildId": "2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z",
+        "packageHash": "793911e2bce4b2d2ca70abda23f9cb99da73c19511bdb86a3ebdf2806d31feaa"
+      },
+      "restoreStateDir": "[disposable-fixture]/live-state",
+      "restoreConfigPath": "[disposable-fixture]/live-config/openclaw.json",
+      "restorePackageRoot": "[disposable-fixture]/engine-work/runs/adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2/managed-package-before-commit",
+      "safe": true,
+      "reasons": [
+        "Snapshot integrity and SQLite checks passed before mutation."
+      ]
+    },
+    "evidence": [
+      {
+        "id": "evidence-12760b9c-76d5-4789-b5ed-17eaba153a45",
+        "step": "inspect",
+        "kind": "identity",
+        "status": "pass",
+        "summary": "Source and target runtime identities and state inventory were inspected.",
+        "details": {
+          "sourceVersion": "2026.6.11",
+          "sourceCommit": "e085fa1a3ffd32d0ea6917e1e6fb4ecbffbb77d2",
+          "targetVersion": "2026.8.1",
+          "targetCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
+          "sourceFileCount": 21,
+          "sourceSqliteCount": 2
+        },
+        "createdAt": "2026-08-31T12:55:22.881Z"
+      },
+      {
+        "id": "evidence-b975bc37-68e1-4d5c-9ccb-645b75836e72",
+        "step": "preflight",
+        "kind": "supervisor",
+        "status": "pass",
+        "summary": "AgentOS-managed lifecycle permits replacement after certification and explicit commit.",
+        "details": {
+          "replacementAllowed": true,
+          "stateOwner": "not-detected"
+        },
+        "createdAt": "2026-08-31T12:55:22.882Z"
+      },
+      {
+        "id": "evidence-5904024a-0894-4db7-a59b-3c98b25ff9c8",
+        "step": "plan",
+        "kind": "journal",
+        "status": "pass",
+        "summary": "Deterministic migration plan persisted before mutation.",
+        "createdAt": "2026-08-31T12:55:22.882Z"
+      },
+      {
+        "id": "evidence-6212fbf8-976e-447e-908d-7e90c58ab4f4",
+        "step": "snapshot",
+        "kind": "sqlite",
+        "status": "pass",
+        "summary": "State, config, runtime, and WAL-aware SQLite snapshot verified before mutation.",
+        "details": {
+          "snapshotId": "snapshot-adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2",
+          "files": 35,
+          "sqlite": 2,
+          "config": true
+        },
+        "createdAt": "2026-08-31T12:55:25.746Z"
+      },
+      {
+        "id": "evidence-3c38f0c7-b775-4350-ad0b-c5399a4e91ed",
+        "step": "stage-target",
+        "kind": "identity",
+        "status": "pass",
+        "summary": "Exact target package and isolated source state staged side by side.",
+        "details": {
+          "stagedPackageRoot": "[disposable-fixture]/engine-work/runs/adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2/staged-target"
+        },
+        "createdAt": "2026-08-31T12:55:50.686Z"
+      },
+      {
+        "id": "evidence-e65567d4-0b43-4769-84a7-82376a23d7ee",
+        "step": "validate-target",
+        "kind": "doctor",
+        "status": "warning",
+        "summary": "Target read-only doctor lint completed with structured output.",
+        "details": {
+          "exitCode": 1,
+          "durationMs": 3928,
+          "stdout": "{\"ok\":false,\"checksRun\":30,\"checksSkipped\":29,\"findings\":[{\"checkId\":\"core/doctor/heartbeat-task-cron-migration\",\"severity\":\"error\",\"message\":\"Agent \\\"dev\\\" heartbeat scratch cannot be inspected: no such table: cron_job_scratch\",\"path\":\"[disposable-fixture]/engine-work/runs/adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2/target-state/cron/jobs.json\",\"target\":\"dev\",\"requirement\":\"heartbeat-task-migration-blocked\",\"fixHint\":\"Run openclaw doctor --fix to convert heartbeat tasks into automations.\"},{\"checkId\":\"core/doctor/telegram-general-topic-conversations\",\"severity\":\"error\",\"message\":\"health check threw: OpenClaw state database [disposable-fixture]/engine-work/runs/adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2/target-state/state/openclaw.sqlite has a legacy agent database registry schema; run open...\"},{\"checkId\":\"core/doctor/heartbeat-cadence-migration\",\"severity\":\"warning\",\"message\":\"Create heartbeat monitor for agent \\\"dev\\\" at 30m.\",\"path\":\"[disposable-fixture]/engine-work/runs/adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2/target-state/cron/jobs.json\",\"target\":\"dev\",\"requirement\":\"heartbeat-monitor-create\",\"fixHint\":\"Run openclaw doctor --fix to materialize heartbeat cadence in cron.\"},{\"checkId\":\"core/doctor/heartbeat-scratch-migration\",\"severity\":\"warning\",\"message\":\"Agent \\\"dev\\\" still stores heartbeat instructions in HEARTBEAT.md.\",\"path\":\"[disposable-fixture]/live-state/workspace/HEARTBEAT.md\",\"target\":\"dev\",\"requirement\":\"legacy-heartbeat-file\",\"fixHint\":\"Run openclaw doctor --fix to migrate HEARTBEAT.md into cron scratch.\"},{\"checkId\":\"core/doctor/node-hosting-preconditions\",\"severity\":\"warning\",\"message\":\"Gateway is only bound to loopback. Set gateway.bind=lan, enable tailscale serve, or configure plugins.entries.device-pair.config.publicUrl.\",\"path\":\"gateway.bind\",\"requirement\":\"node-onboarding-url\",\"fixHint\":\"If an edge proxy fronts node onboarding, allow /j/* and /__openclaw__/worker without edge identity auth, and preserve WebSocket upgrade on /__openclaw__/worker. Both routes enforce their own credentials.\"},{\"checkId\":\"core/doctor/security\",\"severity\":\"warning\",\"message\":\"WARNING: openclaw.json contains plaintext secret-bearing config fields.\",\"fixHint\":\"Paths: models.providers.agentos-fixture.apiKey\\nAgents or workspace tools that can read config files may see these API keys/tokens.\\nMigrate them to SecretRefs with openclaw secrets configure or openclaw secrets apply, then verify with openclaw secrets audit --check.\"},{\"checkId\":\"core/doctor/tools-md-migration\",\"severity\":\"warning\",\"message\":\"Agent \\\"dev\\\" still stores local tool notes in TOOLS.md.\",\"path\":\"[disposable-fixture]/live-state/workspace/TOOLS.md\",\"target\":\"dev\",\"requirement\":\"legacy-tools-md\",\"fixHint\":\"Run openclaw doctor --fix to merge TOOLS.md into AGENTS.md.\"}]}\n",
+          "stderr": ""
+        },
+        "createdAt": "2026-08-31T12:55:54.616Z"
+      },
+      {
+        "id": "evidence-0d919e88-d375-43e9-b671-d14a2ebd0488",
+        "step": "validate-target",
+        "kind": "sqlite",
+        "status": "pass",
+        "summary": "Target SQLite schema preflight completed.",
+        "details": {
+          "path": "migration-fixture.sqlite",
+          "exitCode": 0,
+          "durationMs": 548,
+          "stdout": "{\n  \"schema\": \"openclaw.state-schema-preflight.v1\",\n  \"databasePath\": \"[disposable-fixture]/engine-work/runs/adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2/target-state/migration-fixture.sqlite\",\n  \"targetVersion\": 15,\n  \"foundVersion\": 0,\n  \"ownership\": null,\n  \"issues\": [],\n  \"status\": \"migration-required\",\n  \"requiresWrite\": true\n}\n",
+          "stderr": ""
+        },
+        "createdAt": "2026-08-31T12:55:55.165Z"
+      },
+      {
+        "id": "evidence-3ac45585-16de-4dbf-b01e-bc1be160ef34",
+        "step": "validate-target",
+        "kind": "sqlite",
+        "status": "pass",
+        "summary": "Target SQLite schema preflight completed.",
+        "details": {
+          "path": "state/openclaw.sqlite",
+          "exitCode": 0,
+          "durationMs": 542,
+          "stdout": "{\n  \"schema\": \"openclaw.state-schema-preflight.v1\",\n  \"databasePath\": \"[disposable-fixture]/engine-work/runs/adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2/target-state/state/openclaw.sqlite\",\n  \"targetVersion\": 15,\n  \"foundVersion\": 1,\n  \"ownership\": null,\n  \"issues\": [],\n  \"status\": \"migration-required\",\n  \"requiresWrite\": true\n}\n",
+          "stderr": ""
+        },
+        "createdAt": "2026-08-31T12:55:55.707Z"
+      },
+      {
+        "id": "evidence-840bcda8-8f89-4353-aa6a-6ca842ad98cf",
+        "step": "migrate-state",
+        "kind": "command",
+        "status": "pass",
+        "summary": "Target explicit doctor repair completed in isolated state.",
+        "details": {
+          "exitCode": 0,
+          "durationMs": 5371,
+          "stdout": "      │\n│  Inspect details: openclaw skills check --agent <id> or openclaw skills  │\n│  info <name> --agent <id>                                                │\n│                                                                          │\n├──────────────────────────────────────────────────────────────────────────╯\n│\n◇  Doctor changes ────────────────╮\n│                                 │\n│  - Disabled 1password           │\n│  - Disabled apple-notes         │\n│  - Disabled apple-reminders     │\n│  - Disabled bear-notes          │\n│  - Disabled blogwatcher         │\n│  - Disabled blucli              │\n│  - Disabled camsnap             │\n│  - Disabled coding-agent        │\n│  - Disabled eightctl            │\n│  - Disabled gifgrep             │\n│  - Disabled goplaces            │\n│  - Disabled himalaya            │\n│  - Disabled mcporter            │\n│  - Disabled model-usage         │\n│  - Disabled nano-pdf            │\n│  - Disabled obsidian            │\n│  - Disabled openai-whisper      │\n│  - Disabled openai-whisper-api  │\n│  - Disabled openhue             │\n│  - Disabled oracle              │\n│  - Disabled ordercli            │\n│  - Disabled peekaboo            │\n│  - Disabled sag                 │\n│  - Disabled sherpa-onnx-tts     │\n│  - Disabled songsee             │\n│  - Disabled sonoscli            │\n│  - Disabled spotify-player      │\n│  - Disabled summarize           │\n│  - Disabled things-mac          │\n│  - Disabled trello              │\n│  - Disabled xurl                │\n│                                 │\n├─────────────────────────────────╯\n│\n◇  Doctor changes ───────────────────────────────────╮\n│                                                    │\n│  Create heartbeat monitor for agent \"dev\" at 30m.  │\n│                                                    │\n├────────────────────────────────────────────────────╯\n│\n◇  Doctor changes ───────────────────────────────────────────────────────────────────────────────────────────────────────────╮\n│                                                                                                                            │\n│  Migrated                                                                                                                  │\n│  [disposable-fixture]/live-state/workspace/HEARTBEAT.md  │\n│  into cron scratch for Heartbeat (dev).                                                                                    │\n│                                                                                                                            │\n├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯\n│\n◇  TOOLS.md migration ───────────────────────────────────────────────────────────────────────────────────────────────────╮\n│                                                                                                                        │\n│  Merged                                                                                                                │\n│  [disposable-fixture]/live-state/workspace/TOOLS.md  │\n│  into AGENTS.md and archived the original.                                                                             │\n│                                                                                                                        │\n├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯\nUpdated config: [disposable-fixture]/engine-work/runs/adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2/target-config/openclaw.json\n  Backup: [disposable-fixture]/engine-work/runs/adc2f4fb-847d-488b-a7dc-bad0fcf6d2b2/target-config/openclaw.json.bak\n│\n└  Doctor complete.\n\n",
+          "stderr": "[config] warnings: agents.entries: Moved agents.list to keyed agents.entries.\ngateway connect failed: GatewayClientRequestError: unauthorized: gateway token mismatch (provide gateway auth token)\nHealth check failed: GatewayClientRequestError: unauthorized: gateway token mismatch (provide gateway auth token)\n"
+        },
+        "createdAt": "2026-08-31T12:56:01.080Z"
+      },
+      {
+        "id": "evidence-cf83e157-38bf-4e65-83b7-5fa86196c696",
+        "step": "migrate-state",
+        "kind": "doctor",
+        "status": "warning",
+        "summary": "Post-migration read-only doctor lint completed.",
+        "details": {
+          "exitCode": 1,
+          "durationMs": 1960,
+          "stdout": "{\"ok\":false,\"checksRun\":30,\"checksSkipped\":29,\"findings\":[{\"checkId\":\"core/doctor/node-hosting-preconditions\",\"severity\":\"warning\",\"message\":\"Gateway is only bound to loopback. Set gateway.bind=lan, enable tailscale serve, or configure plugins.entries.device-pair.config.publicUrl.\",\"path\":\"gateway.bind\",\"requirement\":\"node-onboarding-url\",\"fixHint\":\"If an edge proxy fronts node onboarding, allow /j/* and /__openclaw__/worker without edge identity auth, and preserve WebSocket upgrade on /__openclaw__/worker. Both routes enforce their own credentials.\"},{\"checkId\":\"core/doctor/security\",\"severity\":\"warning\",\"message\":\"WARNING: openclaw.json contains plaintext secret-bearing config fields.\",\"fixHint\":\"Paths: models.providers.agentos-fixture.apiKey\\nAgents or workspace tools that can read config files may see these API keys/tokens.\\nMigrate them to SecretRefs with openclaw secrets configure or openclaw secrets apply, then verify with openclaw secrets audit --check.\"}]}\n",
+          "stderr": ""
+        },
+        "createdAt": "2026-08-31T12:56:03.040Z"
+      },
+      {
+        "id": "evidence-0421ac50-1912-4a30-887f-53aa2d849ae4",
+        "step": "start-target",
+        "kind": "runtime",
+        "status": "pass",
+        "summary": "Target Gateway started against isolated migrated state.",
+        "details": {
+          "pid": 14906,
+          "port": 49747
+        },
+        "createdAt": "2026-08-31T12:56:05.784Z"
+      },
+      {
+        "id": "evidence-142cc129-d60e-48c9-a827-8f825065e672",
+        "step": "post-upgrade-doctor",
+        "kind": "doctor",
+        "status": "pass",
+        "summary": "Target post-upgrade doctor completed with machine-readable evidence.",
+        "details": {
+          "exitCode": 0,
+          "durationMs": 1066,
+          "stdout": "{\n  \"probesRun\": [\n    \"plugin.index_unavailable\",\n    \"plugin.entry_unresolved\",\n    \"plugin.manifest_drift\"\n  ],\n  \"findings\": []\n}\n",
+          "stderr": ""
+        },
+        "createdAt": "2026-08-31T12:56:06.852Z"
+      },
+      {
+        "id": "runtime-certification",
+        "step": "runtime-certification",
+        "kind": "runtime",
+        "status": "pass",
+        "summary": "Native Gateway, model, streaming, restart, session continuity, and cron.run certification passed.",
+        "details": {
+          "checks": [
+            "gateway.health",
+            "model",
+            "streaming",
+            "session-continuity",
+            "gateway.restart",
+            "cron.run"
+          ],
+          "targetVersion": "2026.8.1"
+        },
+        "createdAt": "2026-08-31T12:56:09.791Z"
+      },
+      {
+        "id": "evidence-b99aa52b-b37e-4434-b993-fe7da17702f9",
+        "step": "preservation",
+        "kind": "preservation",
+        "status": "pass",
+        "summary": "Source state preservation checks passed.",
+        "details": {
+          "checks": [
+            {
+              "id": "agent-session-cron-identities",
+              "pass": true,
+              "detail": "Stable JSON identities from agents, sessions, automations, and configuration were preserved."
+            },
+            {
+              "id": "workspace-files",
+              "pass": true,
+              "detail": "Source workspace file hashes were preserved."
+            },
+            {
+              "id": "transcript-events",
+              "pass": true,
+              "detail": "15 source transcript event(s) remain represented after migration."
+            },
+            {
+              "id": "config-shape",
+              "pass": true,
+              "detail": "Core configuration shape was preserved while OpenClaw normalized owned keys."
+            }
+          ]
+        },
+        "createdAt": "2026-08-31T12:56:09.973Z"
+      },
+      {
+        "id": "evidence-99983a37-160c-4f7e-89c7-46d7ae8d190f",
+        "step": "commit",
+        "kind": "journal",
+        "status": "pass",
+        "summary": "Explicit migration commit point reached after all required gates passed.",
+        "details": {
+          "packageRoot": "[disposable-fixture]/managed-package"
+        },
+        "createdAt": "2026-08-31T12:56:09.977Z"
+      },
+      {
+        "id": "evidence-12a87a61-2276-45da-a627-37616214ef4e",
+        "step": "cleanup",
+        "kind": "journal",
+        "status": "pass",
+        "summary": "Disposable staging paths were cleaned; verified snapshot and journal were retained.",
+        "createdAt": "2026-08-31T12:56:09.979Z"
+      }
+    ],
+    "errors": [],
+    "commitPointReached": true,
+    "recoveryRequired": false
+  },
+  "successGate": {
+    "pass": true,
+    "checks": [
+      {
+        "id": "source-version",
+        "pass": true,
+        "required": true,
+        "detail": "Source version must be 2026.6.11."
+      },
+      {
+        "id": "exact-target",
+        "pass": true,
+        "required": true,
+        "detail": "Target commit must be ea806575e6450e4d1efdfc72c19f04be982a1b9b."
+      },
+      {
+        "id": "snapshot",
+        "pass": true,
+        "required": true,
+        "detail": "Verified snapshot was recorded before mutation."
+      },
+      {
+        "id": "sqlite",
+        "pass": true,
+        "required": true,
+        "detail": "At least one WAL-aware SQLite snapshot was verified."
+      },
+      {
+        "id": "state-migration",
+        "pass": true,
+        "required": true,
+        "detail": "Explicit target state migration completed."
+      },
+      {
+        "id": "doctor",
+        "pass": true,
+        "required": true,
+        "detail": "Post-upgrade doctor evidence passed."
+      },
+      {
+        "id": "runtime-certification",
+        "pass": true,
+        "required": true,
+        "detail": "Runtime certification passed."
+      },
+      {
+        "id": "model",
+        "pass": true,
+        "required": true,
+        "detail": "Model execution was certified."
+      },
+      {
+        "id": "streaming",
+        "pass": true,
+        "required": true,
+        "detail": "Streaming execution was certified."
+      },
+      {
+        "id": "restart",
+        "pass": true,
+        "required": true,
+        "detail": "Gateway restart behavior was certified."
+      },
+      {
+        "id": "cron",
+        "pass": true,
+        "required": true,
+        "detail": "cron.run and run-history polling were certified."
+      },
+      {
+        "id": "preservation",
+        "pass": true,
+        "required": true,
+        "detail": "State preservation passed."
+      },
+      {
+        "id": "commit",
+        "pass": true,
+        "required": true,
+        "detail": "Explicit migration commit point was reached."
+      },
+      {
+        "id": "journal",
+        "pass": true,
+        "required": true,
+        "detail": "Migration journal is integrity-protected and reached a terminal state."
+      },
+      {
+        "id": "cleanup",
+        "pass": true,
+        "required": true,
+        "detail": "Disposable staging was cleaned while rollback evidence remained."
+      }
+    ]
+  },
+  "rollback": {
+    "run": {
+      "schemaVersion": 1,
+      "runId": "89e5147c-135b-49ca-8ae8-46eb9e106bbe",
+      "planId": "89e5147c-135b-49ca-8ae8-46eb9e106bbe",
+      "startedAt": "2026-08-31T12:56:27.761Z",
+      "updatedAt": "2026-08-31T12:57:11.512Z",
+      "mode": "execute",
+      "state": "rolled-back",
+      "currentStep": null,
+      "completedSteps": [
+        "inspect",
+        "preflight",
+        "plan",
+        "snapshot",
+        "stage-target",
+        "validate-target",
+        "migrate-state",
+        "start-target",
+        "post-upgrade-doctor"
+      ],
+      "journalPath": "[disposable-fixture]/engine-work/runs/89e5147c-135b-49ca-8ae8-46eb9e106bbe/migration-journal.json",
+      "journalHash": "9d408b1744c6f1708e6e42cdd79e0d9621c021f592cc4510da451e63e9c44524",
+      "snapshot": {
+        "schemaVersion": 1,
+        "snapshotId": "snapshot-89e5147c-135b-49ca-8ae8-46eb9e106bbe",
+        "createdAt": "2026-08-31T12:56:27.796Z",
+        "sourceVersion": "2026.6.11",
+        "sourceCommit": "e085fa1a3ffd32d0ea6917e1e6fb4ecbffbb77d2",
+        "stateDir": "[disposable-fixture]/live-state",
+        "configPath": "[disposable-fixture]/live-config/openclaw.json",
+        "root": "[disposable-fixture]/engine-work/runs/89e5147c-135b-49ca-8ae8-46eb9e106bbe/snapshot",
+        "files": [
+          {
+            "relativePath": "agents",
+            "kind": "directory",
+            "bytes": 0,
+            "sha256": null
+          },
+          {
+            "relativePath": "agents/dev",
+            "kind": "directory",
+            "bytes": 0,
+            "sha256": null
+          },
+          {
+            "relativePath": "agents/dev/agent",
+            "kind": "directory",
+            "bytes": 0,
+            "sha256": null
+          },
+          {
+            "relativePath": "agents/dev/agent/models.json",
+            "kind": "file",
+            "bytes": 641,
+            "sha256": "202b5ed1894f49704a884f7d6c7b57a67eb59ce4174815ba9e8d9132f2c7befc"
+          },
+          {
+            "relativePath": "agents/dev/sessions",
+            "kind": "directory",
+            "bytes": 0,
+            "sha256": null
+          },
+          {
+            "relativePath": "agents/dev/sessions/5e66ca69-8ce1-4d64-8d5c-0eeb396531f9.jsonl",
+            "kind": "file",
+            "bytes": 1840,
+            "sha256": "c0724e6f99a9dd5fe4da74b62eef47b64c95b49f63fb65eacb0a806196cc5a0b"
+          },
+          {
+            "relativePath": "agents/dev/sessions/5e66ca69-8ce1-4d64-8d5c-0eeb396531f9.trajectory-path.json",
+            "kind": "file",
+            "bytes": 328,
+            "sha256": "58d903ced76977f22738e1d272a0c83887cc9e3c76b7d7778f0e22aad3bcdd67"
+          },
+          {
+            "relativePath": "agents/dev/sessions/5e66ca69-8ce1-4d64-8d5c-0eeb396531f9.trajectory.jsonl",
+            "kind": "file",
+            "bytes": 157256,
+            "sha256": "dc8c7bd994a79f8ad81b36b380e06f27899b63dee25cd49c584a8d5ac4f12706"
+          },
+          {
+            "relativePath": "agents/dev/sessions/sessions.json",
+            "kind": "file",
+            "bytes": 19790,
+            "sha256": "dd2452d12d3d4c558d19931f01850d0c586855f4aa056406467c1879cfd850dc"
+          },
+          {
+            "relativePath": "agents/dev/sessions/skills-prompts",
+            "kind": "directory",
+            "bytes": 0,
+            "sha256": null
+          },
+          {
+            "relativePath": "agents/dev/sessions/skills-prompts/sha256",
+            "kind": "directory",
+            "bytes": 0,
+            "sha256": null
+          },
+          {
+            "relativePath": "agents/dev/sessions/skills-prompts/sha256/43",
+            "kind": "directory",
+            "bytes": 0,
+            "sha256": null
+          },
+          {
+            "relativePath": "agents/dev/sessions/skills-prompts/sha256/43/43e7d0d69648733df061941cebcd73715b54531460af11f9a8fe095d804ed766.txt",
+            "kind": "file",
+            "bytes": 9034,
+            "sha256": "43e7d0d69648733df061941cebcd73715b54531460af11f9a8fe095d804ed766"
+          },
+          {
+            "relativePath": "identity",
+            "kind": "directory",
+            "bytes": 0,
+            "sha256": null
+          },
+          {
+            "relativePath": "identity/device.json",
+            "kind": "file",
+            "bytes": 416,
+            "sha256": "2a33341ab148990d0af226a8d79363412e418d8158154e94861707e5a5c68b8f"
+          },
+          {
+            "relativePath": "legacy-session-fixture.jsonl",
+            "kind": "file",
+            "bytes": 53,
+            "sha256": "9bc88728d38cabcf656187e8d81cf7a4399e384beea121b9da5a5797b024045b"
+          },
+          {
+            "relativePath": "migration-fixture.sqlite",
+            "kind": "sqlite",
+            "bytes": 12288,
+            "sha256": "ac6b59ef8b515793e6d02a92cc7184f4b7a93d941eaec1d55be144a419d7fd04"
+          },
+          {
+            "relativePath": "plugin-skills",
+            "kind": "directory",
+            "bytes": 0,
+            "sha256": null
+          },
+          {
+            "relativePath": "plugin-skills/browser-automation",
+            "kind": "symlink",
+            "bytes": 0,
+            "sha256": "37533e75c5f0f056f3e02d3c97cc325f7d647f8f7427822ccc7b27b5068fdd81",
+            "linkTarget": "/private[disposable-fixture]/source-runtime/dist/extensions/browser/skills/browser-automation"
+          },
+          {
+            "relativePath": "plugin-skills/canvas",
+            "kind": "symlink",
+            "bytes": 0,
+            "sha256": "0b33cbd9b16aa419029d52889142454f8089a71885384ba30cc07289195b90a0",
+            "linkTarget": "/private[disposable-fixture]/source-runtime/dist/extensions/canvas/skills/canvas"
+          },
+          {
+            "relativePath": "sessions.json",
+            "kind": "file",
+            "bytes": 96,
+            "sha256": "80efbe50f1a8a55bbb25127091a0b73e69293f83540ffb5444182d50be4385f3"
+          },
+          {
+            "relativePath": "state",
+            "kind": "directory",
+            "bytes": 0,
+            "sha256": null
+          },
+          {
+            "relativePath": "state/openclaw.sqlite",
+            "kind": "sqlite",
+            "bytes": 950272,
+            "sha256": "b83dfdd3f03a8f46c7f5477fe9656f76bb74ffcee0a119142a87d138952b8add"
+          },
+          {
+            "relativePath": "workspace",
+            "kind": "directory",
+            "bytes": 0,
+            "sha256": null
+          },
+          {
+            "relativePath": "workspace-attestations",
+            "kind": "directory",
+            "bytes": 0,
+            "sha256": null
+          },
+          {
+            "relativePath": "workspace-attestations/82b65261063141adbfe1bbe274e24f26858750eb351a13f4398dc30d6cccb50e.attested",
+            "kind": "file",
+            "bytes": 484,
+            "sha256": "fdcbced15ac9ea38c6f1ca5c8882f0c2154a43fac741890f742223ac9c4ac7f5"
+          },
+          {
+            "relativePath": "workspace/AGENTS.md",
+            "kind": "file",
+            "bytes": 70,
+            "sha256": "ccc8aed228f09ab2092461deffcc1085d3a1eb38ea68976c0c57bd60ff22a0b2"
+          },
+          {
+            "relativePath": "workspace/BOOTSTRAP.md",
+            "kind": "file",
+            "bytes": 1511,
+            "sha256": "bd4a143499ab626d4c8b664086c3fcdfe32e8d1df77d2dea757059015fd558c0"
+          },
+          {
+            "relativePath": "workspace/HEARTBEAT.md",
+            "kind": "file",
+            "bytes": 244,
+            "sha256": "ecce558615751a35aa173731e892ff3993f44bb4f5a1219c0a02994790c85528"
+          },
+          {
+            "relativePath": "workspace/IDENTITY.md",
+            "kind": "file",
+            "bytes": 696,
+            "sha256": "d93cd095ac3b8d8135110230bc6f09738fb8029ca6f270001a928a1c1614bffb"
+          },
+          {
+            "relativePath": "workspace/openclaw-workspace-state.json",
+            "kind": "file",
+            "bytes": 70,
+            "sha256": "6724b301822ae79987c63d04527727620e207f3717fc63ac88020d283735528f"
+          },
+          {
+            "relativePath": "workspace/preserved-marker.md",
+            "kind": "file",
+            "bytes": 27,
+            "sha256": "0cb0fa19d518b290646bc895640b20096889315b4feb1a599b0f54ac4228c313"
+          },
+          {
+            "relativePath": "workspace/SOUL.md",
+            "kind": "file",
+            "bytes": 1806,
+            "sha256": "daab0d62045d0a00ea0f968f4463ea09fd06c71f59066f686b0e9b361f929b43"
+          },
+          {
+            "relativePath": "workspace/TOOLS.md",
+            "kind": "file",
+            "bytes": 920,
+            "sha256": "15cdfe57fcfa6d83888e215176f40b415ff2b9a51afe96b4d4134f2f5a8cfe68"
+          },
+          {
+            "relativePath": "workspace/USER.md",
+            "kind": "file",
+            "bytes": 537,
+            "sha256": "e418ca9a680553b3ad8f54aecb0d403330810bb77826ab5251cc1dc13368fe16"
+          }
+        ],
+        "sqlite": [
+          {
+            "relativePath": "migration-fixture.sqlite",
+            "snapshotPath": "state/migration-fixture.sqlite",
+            "userVersion": 0,
+            "integrity": "ok",
+            "sourceSidecars": [
+              "[disposable-fixture]/live-state/migration-fixture.sqlite-wal",
+              "[disposable-fixture]/live-state/migration-fixture.sqlite-shm"
+            ],
+            "sha256": "ac6b59ef8b515793e6d02a92cc7184f4b7a93d941eaec1d55be144a419d7fd04"
+          },
+          {
+            "relativePath": "state/openclaw.sqlite",
+            "snapshotPath": "state/state/openclaw.sqlite",
+            "userVersion": 1,
+            "integrity": "ok",
+            "sourceSidecars": [
+              "[disposable-fixture]/live-state/state/openclaw.sqlite-wal",
+              "[disposable-fixture]/live-state/state/openclaw.sqlite-shm"
+            ],
+            "sha256": "b83dfdd3f03a8f46c7f5477fe9656f76bb74ffcee0a119142a87d138952b8add"
+          }
+        ],
+        "config": {
+          "relativePath": "config/openclaw.json",
+          "sha256": "5656767b2960690d599a0ec803371af6dd9b317fe7e787e744b79efeb7735532",
+          "bytes": 1281
+        },
+        "verified": true
+      },
+      "rollback": {
+        "snapshotId": "snapshot-89e5147c-135b-49ca-8ae8-46eb9e106bbe",
+        "snapshotRoot": "[disposable-fixture]/engine-work/runs/89e5147c-135b-49ca-8ae8-46eb9e106bbe/snapshot",
+        "source": {
+          "packageRoot": "[disposable-fixture]/source-runtime",
+          "binaryPath": "[disposable-fixture]/source-runtime/openclaw.mjs",
+          "version": "2026.6.11",
+          "sourceCommit": "e085fa1a3ffd32d0ea6917e1e6fb4ecbffbb77d2",
+          "buildId": null,
+          "packageHash": "705e17b9bdbe7d9b51e460e19b167fc23bd0069df24a7610d52ffe662d7bfa22"
+        },
+        "target": {
+          "packageRoot": "[exact-target-package]",
+          "binaryPath": "[exact-target-package]/openclaw.mjs",
+          "version": "2026.8.1",
+          "sourceCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
+          "buildId": "2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z",
+          "packageHash": "793911e2bce4b2d2ca70abda23f9cb99da73c19511bdb86a3ebdf2806d31feaa"
+        },
+        "restoreStateDir": "[disposable-fixture]/live-state",
+        "restoreConfigPath": "[disposable-fixture]/live-config/openclaw.json",
+        "restorePackageRoot": "[disposable-fixture]/engine-work/runs/89e5147c-135b-49ca-8ae8-46eb9e106bbe/source-runtime",
+        "safe": true,
+        "reasons": [
+          "Snapshot integrity and SQLite checks passed before mutation."
+        ]
+      },
+      "evidence": [
+        {
+          "id": "evidence-e9a1efbf-bdce-4fc4-9740-99481748ceaf",
+          "step": "inspect",
+          "kind": "identity",
+          "status": "pass",
+          "summary": "Source and target runtime identities and state inventory were inspected.",
+          "details": {
+            "sourceVersion": "2026.6.11",
+            "sourceCommit": "e085fa1a3ffd32d0ea6917e1e6fb4ecbffbb77d2",
+            "targetVersion": "2026.8.1",
+            "targetCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
+            "sourceFileCount": 21,
+            "sourceSqliteCount": 2
+          },
+          "createdAt": "2026-08-31T12:56:27.763Z"
+        },
+        {
+          "id": "evidence-e507904f-3f37-46cc-ac5b-958848ca5d31",
+          "step": "preflight",
+          "kind": "supervisor",
+          "status": "pass",
+          "summary": "AgentOS-managed lifecycle permits replacement after certification and explicit commit.",
+          "details": {
+            "replacementAllowed": true,
+            "stateOwner": "not-detected"
+          },
+          "createdAt": "2026-08-31T12:56:27.763Z"
+        },
+        {
+          "id": "evidence-3b9bfcda-522b-4a7d-a4b2-138357641ac0",
+          "step": "plan",
+          "kind": "journal",
+          "status": "pass",
+          "summary": "Deterministic migration plan persisted before mutation.",
+          "createdAt": "2026-08-31T12:56:27.764Z"
+        },
+        {
+          "id": "evidence-6878971e-08a2-43d4-b367-ab2444b01cf6",
+          "step": "snapshot",
+          "kind": "sqlite",
+          "status": "pass",
+          "summary": "State, config, runtime, and WAL-aware SQLite snapshot verified before mutation.",
+          "details": {
+            "snapshotId": "snapshot-89e5147c-135b-49ca-8ae8-46eb9e106bbe",
+            "files": 35,
+            "sqlite": 2,
+            "config": true
+          },
+          "createdAt": "2026-08-31T12:56:30.579Z"
+        },
+        {
+          "id": "evidence-fa347e83-11f9-4061-b286-bd2d28f906d1",
+          "step": "stage-target",
+          "kind": "identity",
+          "status": "pass",
+          "summary": "Exact target package and isolated source state staged side by side.",
+          "details": {
+            "stagedPackageRoot": "[disposable-fixture]/engine-work/runs/89e5147c-135b-49ca-8ae8-46eb9e106bbe/staged-target"
+          },
+          "createdAt": "2026-08-31T12:56:55.763Z"
+        },
+        {
+          "id": "evidence-4ccaaae8-4909-4576-a5f5-f967316a3b80",
+          "step": "validate-target",
+          "kind": "doctor",
+          "status": "warning",
+          "summary": "Target read-only doctor lint completed with structured output.",
+          "details": {
+            "exitCode": 1,
+            "durationMs": 3752,
+            "stdout": "{\"ok\":false,\"checksRun\":30,\"checksSkipped\":29,\"findings\":[{\"checkId\":\"core/doctor/heartbeat-task-cron-migration\",\"severity\":\"error\",\"message\":\"Agent \\\"dev\\\" heartbeat scratch cannot be inspected: no such table: cron_job_scratch\",\"path\":\"[disposable-fixture]/engine-work/runs/89e5147c-135b-49ca-8ae8-46eb9e106bbe/target-state/cron/jobs.json\",\"target\":\"dev\",\"requirement\":\"heartbeat-task-migration-blocked\",\"fixHint\":\"Run openclaw doctor --fix to convert heartbeat tasks into automations.\"},{\"checkId\":\"core/doctor/telegram-general-topic-conversations\",\"severity\":\"error\",\"message\":\"health check threw: OpenClaw state database [disposable-fixture]/engine-work/runs/89e5147c-135b-49ca-8ae8-46eb9e106bbe/target-state/state/openclaw.sqlite has a legacy agent database registry schema; run open...\"},{\"checkId\":\"core/doctor/heartbeat-cadence-migration\",\"severity\":\"warning\",\"message\":\"Create heartbeat monitor for agent \\\"dev\\\" at 30m.\",\"path\":\"[disposable-fixture]/engine-work/runs/89e5147c-135b-49ca-8ae8-46eb9e106bbe/target-state/cron/jobs.json\",\"target\":\"dev\",\"requirement\":\"heartbeat-monitor-create\",\"fixHint\":\"Run openclaw doctor --fix to materialize heartbeat cadence in cron.\"},{\"checkId\":\"core/doctor/heartbeat-scratch-migration\",\"severity\":\"warning\",\"message\":\"Agent \\\"dev\\\" still stores heartbeat instructions in HEARTBEAT.md.\",\"path\":\"[disposable-fixture]/live-state/workspace/HEARTBEAT.md\",\"target\":\"dev\",\"requirement\":\"legacy-heartbeat-file\",\"fixHint\":\"Run openclaw doctor --fix to migrate HEARTBEAT.md into cron scratch.\"},{\"checkId\":\"core/doctor/node-hosting-preconditions\",\"severity\":\"warning\",\"message\":\"Gateway is only bound to loopback. Set gateway.bind=lan, enable tailscale serve, or configure plugins.entries.device-pair.config.publicUrl.\",\"path\":\"gateway.bind\",\"requirement\":\"node-onboarding-url\",\"fixHint\":\"If an edge proxy fronts node onboarding, allow /j/* and /__openclaw__/worker without edge identity auth, and preserve WebSocket upgrade on /__openclaw__/worker. Both routes enforce their own credentials.\"},{\"checkId\":\"core/doctor/security\",\"severity\":\"warning\",\"message\":\"WARNING: openclaw.json contains plaintext secret-bearing config fields.\",\"fixHint\":\"Paths: models.providers.agentos-fixture.apiKey\\nAgents or workspace tools that can read config files may see these API keys/tokens.\\nMigrate them to SecretRefs with openclaw secrets configure or openclaw secrets apply, then verify with openclaw secrets audit --check.\"},{\"checkId\":\"core/doctor/tools-md-migration\",\"severity\":\"warning\",\"message\":\"Agent \\\"dev\\\" still stores local tool notes in TOOLS.md.\",\"path\":\"[disposable-fixture]/live-state/workspace/TOOLS.md\",\"target\":\"dev\",\"requirement\":\"legacy-tools-md\",\"fixHint\":\"Run openclaw doctor --fix to merge TOOLS.md into AGENTS.md.\"}]}\n",
+            "stderr": ""
+          },
+          "createdAt": "2026-08-31T12:56:59.517Z"
+        },
+        {
+          "id": "evidence-29a3ffc7-cc0f-4ed0-abed-fc5058196a65",
+          "step": "validate-target",
+          "kind": "sqlite",
+          "status": "pass",
+          "summary": "Target SQLite schema preflight completed.",
+          "details": {
+            "path": "migration-fixture.sqlite",
+            "exitCode": 0,
+            "durationMs": 573,
+            "stdout": "{\n  \"schema\": \"openclaw.state-schema-preflight.v1\",\n  \"databasePath\": \"[disposable-fixture]/engine-work/runs/89e5147c-135b-49ca-8ae8-46eb9e106bbe/target-state/migration-fixture.sqlite\",\n  \"targetVersion\": 15,\n  \"foundVersion\": 0,\n  \"ownership\": null,\n  \"issues\": [],\n  \"status\": \"migration-required\",\n  \"requiresWrite\": true\n}\n",
+            "stderr": ""
+          },
+          "createdAt": "2026-08-31T12:57:00.091Z"
+        },
+        {
+          "id": "evidence-52e1300a-1aeb-4571-8958-e94077ed6484",
+          "step": "validate-target",
+          "kind": "sqlite",
+          "status": "pass",
+          "summary": "Target SQLite schema preflight completed.",
+          "details": {
+            "path": "state/openclaw.sqlite",
+            "exitCode": 0,
+            "durationMs": 555,
+            "stdout": "{\n  \"schema\": \"openclaw.state-schema-preflight.v1\",\n  \"databasePath\": \"[disposable-fixture]/engine-work/runs/89e5147c-135b-49ca-8ae8-46eb9e106bbe/target-state/state/openclaw.sqlite\",\n  \"targetVersion\": 15,\n  \"foundVersion\": 1,\n  \"ownership\": null,\n  \"issues\": [],\n  \"status\": \"migration-required\",\n  \"requiresWrite\": true\n}\n",
+            "stderr": ""
+          },
+          "createdAt": "2026-08-31T12:57:00.646Z"
+        },
+        {
+          "id": "evidence-eb365838-b79d-4204-b749-3cd9fbce00bb",
+          "step": "migrate-state",
+          "kind": "command",
+          "status": "pass",
+          "summary": "Target explicit doctor repair completed in isolated state.",
+          "details": {
+            "exitCode": 0,
+            "durationMs": 5097,
+            "stdout": "      │\n│  Inspect details: openclaw skills check --agent <id> or openclaw skills  │\n│  info <name> --agent <id>                                                │\n│                                                                          │\n├──────────────────────────────────────────────────────────────────────────╯\n│\n◇  Doctor changes ────────────────╮\n│                                 │\n│  - Disabled 1password           │\n│  - Disabled apple-notes         │\n│  - Disabled apple-reminders     │\n│  - Disabled bear-notes          │\n│  - Disabled blogwatcher         │\n│  - Disabled blucli              │\n│  - Disabled camsnap             │\n│  - Disabled coding-agent        │\n│  - Disabled eightctl            │\n│  - Disabled gifgrep             │\n│  - Disabled goplaces            │\n│  - Disabled himalaya            │\n│  - Disabled mcporter            │\n│  - Disabled model-usage         │\n│  - Disabled nano-pdf            │\n│  - Disabled obsidian            │\n│  - Disabled openai-whisper      │\n│  - Disabled openai-whisper-api  │\n│  - Disabled openhue             │\n│  - Disabled oracle              │\n│  - Disabled ordercli            │\n│  - Disabled peekaboo            │\n│  - Disabled sag                 │\n│  - Disabled sherpa-onnx-tts     │\n│  - Disabled songsee             │\n│  - Disabled sonoscli            │\n│  - Disabled spotify-player      │\n│  - Disabled summarize           │\n│  - Disabled things-mac          │\n│  - Disabled trello              │\n│  - Disabled xurl                │\n│                                 │\n├─────────────────────────────────╯\n│\n◇  Doctor changes ───────────────────────────────────╮\n│                                                    │\n│  Create heartbeat monitor for agent \"dev\" at 30m.  │\n│                                                    │\n├────────────────────────────────────────────────────╯\n│\n◇  Doctor changes ───────────────────────────────────────────────────────────────────────────────────────────────────────────╮\n│                                                                                                                            │\n│  Migrated                                                                                                                  │\n│  [disposable-fixture]/live-state/workspace/HEARTBEAT.md  │\n│  into cron scratch for Heartbeat (dev).                                                                                    │\n│                                                                                                                            │\n├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯\n│\n◇  TOOLS.md migration ───────────────────────────────────────────────────────────────────────────────────────────────────╮\n│                                                                                                                        │\n│  Merged                                                                                                                │\n│  [disposable-fixture]/live-state/workspace/TOOLS.md  │\n│  into AGENTS.md and archived the original.                                                                             │\n│                                                                                                                        │\n├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯\nUpdated config: [disposable-fixture]/engine-work/runs/89e5147c-135b-49ca-8ae8-46eb9e106bbe/target-config/openclaw.json\n  Backup: [disposable-fixture]/engine-work/runs/89e5147c-135b-49ca-8ae8-46eb9e106bbe/target-config/openclaw.json.bak\n│\n└  Doctor complete.\n\n",
+            "stderr": "[config] warnings: agents.entries: Moved agents.list to keyed agents.entries.\ngateway connect failed: GatewayClientRequestError: unauthorized: gateway token mismatch (provide gateway auth token)\nHealth check failed: GatewayClientRequestError: unauthorized: gateway token mismatch (provide gateway auth token)\n"
+          },
+          "createdAt": "2026-08-31T12:57:05.745Z"
+        },
+        {
+          "id": "evidence-16db4fc6-a2c2-42da-8e29-10d8092f0b58",
+          "step": "migrate-state",
+          "kind": "doctor",
+          "status": "warning",
+          "summary": "Post-migration read-only doctor lint completed.",
+          "details": {
+            "exitCode": 1,
+            "durationMs": 1943,
+            "stdout": "{\"ok\":false,\"checksRun\":30,\"checksSkipped\":29,\"findings\":[{\"checkId\":\"core/doctor/node-hosting-preconditions\",\"severity\":\"warning\",\"message\":\"Gateway is only bound to loopback. Set gateway.bind=lan, enable tailscale serve, or configure plugins.entries.device-pair.config.publicUrl.\",\"path\":\"gateway.bind\",\"requirement\":\"node-onboarding-url\",\"fixHint\":\"If an edge proxy fronts node onboarding, allow /j/* and /__openclaw__/worker without edge identity auth, and preserve WebSocket upgrade on /__openclaw__/worker. Both routes enforce their own credentials.\"},{\"checkId\":\"core/doctor/security\",\"severity\":\"warning\",\"message\":\"WARNING: openclaw.json contains plaintext secret-bearing config fields.\",\"fixHint\":\"Paths: models.providers.agentos-fixture.apiKey\\nAgents or workspace tools that can read config files may see these API keys/tokens.\\nMigrate them to SecretRefs with openclaw secrets configure or openclaw secrets apply, then verify with openclaw secrets audit --check.\"}]}\n",
+            "stderr": ""
+          },
+          "createdAt": "2026-08-31T12:57:07.688Z"
+        },
+        {
+          "id": "evidence-c4d23bb5-e935-44c7-8bff-4a5b4de5aaac",
+          "step": "start-target",
+          "kind": "runtime",
+          "status": "pass",
+          "summary": "Target Gateway started against isolated migrated state.",
+          "details": {
+            "pid": 15296,
+            "port": 49817
+          },
+          "createdAt": "2026-08-31T12:57:10.429Z"
+        },
+        {
+          "id": "evidence-4cb072e7-365c-4b5e-a548-e8d1fe0cee49",
+          "step": "post-upgrade-doctor",
+          "kind": "doctor",
+          "status": "pass",
+          "summary": "Target post-upgrade doctor completed with machine-readable evidence.",
+          "details": {
+            "exitCode": 0,
+            "durationMs": 1079,
+            "stdout": "{\n  \"probesRun\": [\n    \"plugin.index_unavailable\",\n    \"plugin.entry_unresolved\",\n    \"plugin.manifest_drift\"\n  ],\n  \"findings\": []\n}\n",
+            "stderr": ""
+          },
+          "createdAt": "2026-08-31T12:57:11.510Z"
+        },
+        {
+          "id": "evidence-41577746-82b1-468d-9114-95c359f02b38",
+          "step": "commit",
+          "kind": "rollback",
+          "status": "pass",
+          "summary": "Verified pre-upgrade state, config, and managed runtime were restored.",
+          "createdAt": "2026-08-31T12:57:15.083Z"
+        }
+      ],
+      "errors": [],
+      "commitPointReached": false,
+      "recoveryRequired": false
+    },
+    "pass": true,
+    "sourceVersionRestored": true,
+    "stateRestored": true
+  },
+  "success": true
+}
