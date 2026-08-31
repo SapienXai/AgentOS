@@ -5,6 +5,7 @@ import {
   type OpenClawGatewayClientErrorKind
 } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import { supportsGatewayMethod } from "@/lib/openclaw/client/native-ws-gateway-protocol";
+import { aggregateOpenClawRuntimeEvidence, createRuntimeEvidence } from "@/lib/openclaw/runtime-certification/evidence-model";
 import type {
   OpenClawRuntimeCertificationClientContext,
   OpenClawRuntimeCertificationContext,
@@ -12,6 +13,9 @@ import type {
   OpenClawRuntimeCertificationReport,
   OpenClawRuntimeCertificationResult,
   OpenClawRuntimeCertificationStatus,
+  OpenClawRuntimeExpectedOutcome,
+  OpenClawRuntimeEvidenceDimension,
+  OpenClawRuntimeEvidenceState,
   OpenClawRuntimeResponseShapeCheck
 } from "@/lib/openclaw/runtime-certification/types";
 
@@ -22,6 +26,7 @@ export type OpenClawRuntimeCertificationHarnessInput = {
   clients?: Record<string, OpenClawRuntimeCertificationClientContext>;
   defaultClientId?: string;
   probes: OpenClawRuntimeCertificationProbe[];
+  metadata?: Pick<OpenClawRuntimeCertificationReport, "provider" | "cleanup">;
   generatedAt?: Date;
 };
 
@@ -30,8 +35,7 @@ export async function runOpenClawRuntimeCertification(
 ): Promise<OpenClawRuntimeCertificationReport> {
   const primaryClientId = input.defaultClientId ?? "default";
   const clients = input.clients ?? {};
-  const primaryClient = clients[primaryClientId];
-  if (!primaryClient) {
+  if (!clients[primaryClientId]) {
     throw new Error(`Runtime certification client "${primaryClientId}" is not configured.`);
   }
 
@@ -61,12 +65,15 @@ export async function runOpenClawRuntimeCertification(
     expectedDenials: results.filter((result) => result.status === "EXPECTED-DENIAL").length,
     unknown: results.filter((result) => result.status === "UNKNOWN").length,
     requiredFailures: results.filter(
-      (result) => result.status === "FAIL" && result.failureKind !== "environmental-skip"
+      (result) => result.requirementLevel === "required" && (
+        result.status === "FAIL" ||
+        result.evidenceDimensions.availability === "failed"
+      )
     ).length
   };
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: (input.generatedAt ?? new Date()).toISOString(),
     targetVersion: input.targetVersion,
     gatewayUrl: input.gatewayUrl,
@@ -80,7 +87,9 @@ export async function runOpenClawRuntimeCertification(
     methodCount: advertisedMethods.length,
     eventCount: advertisedEvents.length,
     connectionStatus: "connected",
+    ...input.metadata,
     results,
+    operations: aggregateOpenClawRuntimeEvidence(results),
     summary
   };
 }
@@ -95,19 +104,27 @@ export async function executeOpenClawRuntimeProbe(input: {
   const clientContext = context.clients[clientId];
   const actualRole = readString(clientContext?.handshake?.auth?.role);
   const actualScopes = readStringList(clientContext?.handshake?.auth?.scopes);
+  const expectedOutcome: OpenClawRuntimeExpectedOutcome = probe.skipReason ? "not-tested" : probe.expectedOutcome ?? "positive";
   const base = {
     id: probe.id,
+    operationId: probe.operationId,
     operation: probe.operation,
     method: probe.method,
-    expectedScope: probe.expectedScope ?? null,
+    requirementLevel: probe.requirementLevel,
+    requiredEvidenceDimensions: probe.requiredEvidenceDimensions,
+    requirementRationale: probe.requirementRationale,
     actualRole,
-    actualScopes
+    actualScopes,
+    expectedOutcome
   };
 
   if (!clientContext) {
     return {
       ...base,
+      actualOutcome: "unknown",
       status: "UNKNOWN",
+      proofKind: "unknown",
+      evidenceDimensions: createRuntimeEvidence(),
       responseShape: "unknown",
       errorCode: null,
       errorMessage: "Certification client is not configured.",
@@ -117,29 +134,36 @@ export async function executeOpenClawRuntimeProbe(input: {
     };
   }
 
-  if (probe.skipReason) {
+  const advertised = supportsGatewayMethod(clientContext.handshake, probe.method);
+  if (!advertised) {
     return {
       ...base,
+      actualOutcome: "skip",
       status: "SKIPPED",
-      responseShape: "not-checked",
-      errorCode: null,
-      errorMessage: null,
-      failureKind: "environmental-skip",
-      retryable: null,
-      evidence: [probe.skipReason, ...(probe.evidence ?? [])]
-    };
-  }
-
-  if (!supportsGatewayMethod(clientContext.handshake, probe.method)) {
-    return {
-      ...base,
-      status: "SKIPPED",
+      proofKind: "skip",
+      evidenceDimensions: createRuntimeEvidence({ availability: "failed" }),
       responseShape: "not-checked",
       errorCode: null,
       errorMessage: `OpenClaw Gateway does not advertise method "${probe.method}".`,
       failureKind: "method-unavailable",
       retryable: false,
       evidence: ["The method was absent from the target Gateway handshake inventory.", ...(probe.evidence ?? [])]
+    };
+  }
+
+  if (probe.skipReason) {
+    return {
+      ...base,
+      actualOutcome: "skip",
+      status: "SKIPPED",
+      proofKind: "skip",
+      evidenceDimensions: createRuntimeEvidence({ availability: "proven" }),
+      responseShape: "not-checked",
+      errorCode: null,
+      errorMessage: null,
+      failureKind: "environmental-skip",
+      retryable: null,
+      evidence: [probe.skipReason, ...(probe.evidence ?? [])]
     };
   }
 
@@ -158,7 +182,13 @@ export async function executeOpenClawRuntimeProbe(input: {
     if (probe.expectedOutcome) {
       return {
         ...base,
+        actualOutcome: "positive",
         status: "FAIL",
+        proofKind: "unknown",
+        evidenceDimensions: createRuntimeEvidence({
+          availability: "proven",
+          [probe.expectedOutcome === "authorization-denied" ? "authorization" : "positiveExecution"]: "failed"
+        }),
         responseShape: "unknown",
         errorCode: null,
         errorMessage: `Expected ${probe.expectedOutcome} but the Gateway accepted the request.`,
@@ -176,7 +206,14 @@ export async function executeOpenClawRuntimeProbe(input: {
     if (!shape.valid) {
       return {
         ...base,
+        actualOutcome: "failure",
         status: "FAIL",
+        proofKind: "positive",
+        evidenceDimensions: createRuntimeEvidence({
+          availability: "proven",
+          positiveExecution: "proven",
+          responseShape: "failed"
+        }),
         responseShape: "invalid",
         errorCode: null,
         errorMessage: "The Gateway response did not match the certification shape check.",
@@ -188,7 +225,13 @@ export async function executeOpenClawRuntimeProbe(input: {
 
     return {
       ...base,
+      actualOutcome: "positive",
       status: "PASS",
+      proofKind: "positive",
+      evidenceDimensions: createRuntimeEvidence({
+        availability: "proven",
+        ...Object.fromEntries((probe.contributesTo ?? ["positiveExecution", "responseShape"]).map((dimension) => [dimension, "proven"]))
+      } as Partial<Record<OpenClawRuntimeEvidenceDimension, OpenClawRuntimeEvidenceState>>),
       responseShape: "valid",
       errorCode: null,
       errorMessage: null,
@@ -206,11 +249,42 @@ export async function executeOpenClawRuntimeProbe(input: {
       : expectedInvalid || expectedTimeout
         ? "PASS"
         : "FAIL";
+    const evidenceDimensions = expectedDenial
+      ? createRuntimeEvidence({ availability: "proven", authorization: "proven" })
+      : expectedInvalid || expectedTimeout
+        ? createRuntimeEvidence({ availability: "proven" })
+        : createRuntimeEvidence({
+            availability: "proven",
+            ...(normalized.failureKind === "authorization-denied"
+              ? { authorization: "failed" as const }
+              : { positiveExecution: "failed" as const })
+          });
+    const proofKind = expectedDenial
+      ? "authorization-denial"
+      : expectedInvalid
+        ? "invalid-parameters"
+        : expectedTimeout
+          ? "timeout"
+          : normalized.failureKind === "invalid-parameters"
+            ? "invalid-parameters"
+            : normalized.failureKind === "response-shape-mismatch"
+              ? "positive"
+              : "unknown";
+    const actualOutcome = expectedDenial
+      ? "authorization-denied"
+      : expectedInvalid
+        ? "invalid-parameters"
+        : expectedTimeout
+          ? "timeout"
+          : "failure";
 
     return {
       ...base,
+      actualOutcome,
       status,
-      responseShape: expectedDenial || expectedInvalid || expectedTimeout ? "not-checked" : "unknown",
+      proofKind,
+      evidenceDimensions,
+      responseShape: "not-checked",
       errorCode: normalized.errorCode,
       errorMessage: normalized.message,
       failureKind: normalized.failureKind,
@@ -222,7 +296,7 @@ export async function executeOpenClawRuntimeProbe(input: {
             ? "The target Gateway rejected malformed or incomplete parameters as expected."
             : expectedTimeout
               ? "The target Gateway waited for an answer and timed out as expected."
-            : "Native Gateway request failed.",
+              : "Native Gateway request failed.",
         ...(probe.evidence ?? [])
       ]
     };
@@ -239,9 +313,8 @@ function normalizeRuntimeError(error: unknown) {
   const normalized = normalizeClientError(error);
   const message = normalized.message;
   const kind = classifyGatewayError(message);
-  const failureKind = resolveFailureKind(message, kind);
   return {
-    failureKind,
+    failureKind: resolveFailureKind(message, kind),
     errorCode: readErrorCode(error),
     message,
     gatewayKind: kind,
@@ -253,28 +326,16 @@ function resolveFailureKind(
   message: string,
   kind: OpenClawGatewayClientErrorKind
 ): Exclude<OpenClawRuntimeCertificationResult["failureKind"], "none" | "environmental-skip"> {
-  if (/forbidden|missing scope|not authorized|unauthorized|permission denied|scope/i.test(message)) {
-    return "authorization-denied";
-  }
-  if (/unknown method|method not found|unsupported method|does not advertise/i.test(message)) {
-    return "method-unavailable";
-  }
-  if (/invalid[_\s-]?request|invalid .*param|missing required|expected .*required|malformed|schema/i.test(message)) {
-    return "invalid-parameters";
-  }
-  if (kind === "malformed-response") {
-    return "response-shape-mismatch";
-  }
+  if (/forbidden|missing scope|not authorized|unauthorized|permission denied|scope/i.test(message)) return "authorization-denied";
+  if (/unknown method|method not found|unsupported method|does not advertise/i.test(message)) return "method-unavailable";
+  if (/invalid[_\s-]?request|invalid .*param|missing required|expected .*required|malformed|schema/i.test(message)) return "invalid-parameters";
+  if (kind === "malformed-response") return "response-shape-mismatch";
   return "runtime-error";
 }
 
 function resolveResponseShape(check: OpenClawRuntimeResponseShapeCheck | undefined) {
-  if (check === undefined) {
-    return { valid: true, evidence: undefined };
-  }
-  if (typeof check === "boolean") {
-    return { valid: check, evidence: undefined };
-  }
+  if (check === undefined) return { valid: true, evidence: undefined };
+  if (typeof check === "boolean") return { valid: check, evidence: undefined };
   return check;
 }
 
@@ -289,9 +350,7 @@ function readStringList(value: unknown) {
 }
 
 function readErrorCode(error: unknown) {
-  if (!error || typeof error !== "object") {
-    return null;
-  }
+  if (!error || typeof error !== "object") return null;
   const code = (error as { code?: unknown }).code;
   return typeof code === "string" && code.trim() ? code.trim() : null;
 }

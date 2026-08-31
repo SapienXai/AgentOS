@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { createRuntimeEvidence } from "@/lib/openclaw/runtime-certification/evidence-model";
 import { bridgeOpenClawStaticRuntimeEvidence } from "@/lib/openclaw/runtime-certification/evidence-bridge";
 import type {
   OpenClawRuntimeCertificationReport,
@@ -16,7 +17,7 @@ test("evidence bridge certifies only an exact target-version method proof", () =
     }),
     runtimeReport: createRuntimeReport({
       targetVersion: "2026.8.1",
-      results: [runtimeResult("sessions.create", "PASS")]
+      results: [runtimeResult("sessions.create", "PASS", createRuntimeEvidence({ availability: "proven", authorization: "proven", positiveExecution: "proven", responseShape: "proven" }))]
     })
   });
 
@@ -33,7 +34,7 @@ test("evidence bridge ignores a proof for the wrong method", () => {
     }),
     runtimeReport: createRuntimeReport({
       targetVersion: "2026.8.1",
-      results: [runtimeResult("sessions.patch", "PASS")]
+      results: [runtimeResult("sessions.patch", "PASS", createRuntimeEvidence({ availability: "proven", positiveExecution: "proven", responseShape: "proven" }))]
     })
   });
 
@@ -49,7 +50,7 @@ test("evidence bridge ignores a proof for the wrong target version", () => {
     }),
     runtimeReport: createRuntimeReport({
       targetVersion: "2026.8.2",
-      results: [runtimeResult("sessions.create", "PASS")]
+      results: [runtimeResult("sessions.create", "PASS", createRuntimeEvidence({ availability: "proven", positiveExecution: "proven", responseShape: "proven" }))]
     })
   });
 
@@ -66,7 +67,7 @@ test("evidence bridge lets a failed runtime proof override static optimism", () 
     }),
     runtimeReport: createRuntimeReport({
       targetVersion: "2026.8.1",
-      results: [runtimeResult("talk.config", "FAIL")]
+      results: [runtimeResult("talk.config", "FAIL", createRuntimeEvidence({ availability: "proven", positiveExecution: "failed" }))]
     })
   });
 
@@ -74,7 +75,7 @@ test("evidence bridge lets a failed runtime proof override static optimism", () 
   assert.equal(result.summary.failed, 1);
 });
 
-test("evidence bridge accepts expected denial as authorization proof", () => {
+test("evidence bridge keeps authorization denial partial until positive execution exists", () => {
   const result = bridgeOpenClawStaticRuntimeEvidence({
     staticReport: createStaticReport({
       targetVersion: "2026.8.1",
@@ -82,13 +83,25 @@ test("evidence bridge accepts expected denial as authorization proof", () => {
     }),
     runtimeReport: createRuntimeReport({
       targetVersion: "2026.8.1",
+      results: [runtimeResult("node.invoke", "EXPECTED-DENIAL", createRuntimeEvidence({ availability: "proven", authorization: "proven" }), "authorization-denial")]
+    })
+  });
+
+  assert.equal(result.rows[0]?.outcome, "partially-certified");
+  assert.equal(result.rows[0]?.runtimeOperation?.evidenceDimensions.positiveExecution, "not-tested");
+});
+
+test("evidence bridge promotes combined positive and denial proofs", () => {
+  const result = bridgeOpenClawStaticRuntimeEvidence({
+    staticReport: createStaticReport({
+      targetVersion: "2026.8.1",
+      changes: [{ method: "chat.send", status: "unknown", authorizationEvidence: "runtime-required" }]
+    }),
+    runtimeReport: createRuntimeReport({
+      targetVersion: "2026.8.1",
       results: [
-        runtimeResult("node.invoke", "SKIPPED"),
-        {
-          ...runtimeResult("node.invoke", "PASS"),
-          status: "EXPECTED-DENIAL",
-          failureKind: "authorization-denied"
-        }
+        runtimeResult("chat.send", "PASS", createRuntimeEvidence({ availability: "proven", positiveExecution: "proven", responseShape: "proven" })),
+        runtimeResult("chat.send", "EXPECTED-DENIAL", createRuntimeEvidence({ availability: "proven", authorization: "proven" }), "authorization-denial")
       ]
     })
   });
@@ -98,20 +111,29 @@ test("evidence bridge accepts expected denial as authorization proof", () => {
 
 function runtimeResult(
   method: string,
-  status: "PASS" | "FAIL" | "SKIPPED"
-) : OpenClawRuntimeCertificationResult {
+  status: "PASS" | "FAIL" | "SKIPPED" | "EXPECTED-DENIAL",
+  evidenceDimensions: OpenClawRuntimeCertificationResult["evidenceDimensions"],
+  proofKind: OpenClawRuntimeCertificationResult["proofKind"] = status === "EXPECTED-DENIAL" ? "authorization-denial" : status === "PASS" ? "positive" : "skip"
+): OpenClawRuntimeCertificationResult {
   return {
-    id: method,
+    id: `${method}-${status}`,
+    operationId: method,
     operation: method,
     method,
-    expectedScope: null,
+    requirementLevel: "required",
+    requiredEvidenceDimensions: ["availability", "authorization", "positiveExecution", "responseShape"],
+    requirementRationale: "Runtime proof is required by the test.",
     actualRole: "operator",
     actualScopes: ["operator.admin"],
+    expectedOutcome: status === "SKIPPED" ? "not-tested" : status === "EXPECTED-DENIAL" ? "authorization-denied" : "positive",
+    actualOutcome: status === "EXPECTED-DENIAL" ? "authorization-denied" : status === "SKIPPED" ? "skip" : status === "FAIL" ? "failure" : "positive",
     status,
+    proofKind,
+    evidenceDimensions,
     responseShape: status === "PASS" ? "valid" : "unknown",
     errorCode: status === "FAIL" ? "RUNTIME_ERROR" : null,
     errorMessage: status === "FAIL" ? "runtime failure" : null,
-    failureKind: status === "FAIL" ? "runtime-error" : "none",
+    failureKind: status === "FAIL" ? "runtime-error" : status === "EXPECTED-DENIAL" ? "authorization-denied" : "none",
     retryable: false,
     evidence: []
   };
@@ -122,7 +144,7 @@ function createRuntimeReport(input: {
   results: OpenClawRuntimeCertificationReport["results"];
 }): OpenClawRuntimeCertificationReport {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: "2026-08-31T00:00:00.000Z",
     targetVersion: input.targetVersion,
     gatewayUrl: "ws://127.0.0.1:28789",
@@ -136,13 +158,14 @@ function createRuntimeReport(input: {
     methodCount: 0,
     eventCount: 0,
     connectionStatus: "connected",
+    operations: [],
     results: input.results,
     summary: {
       total: input.results.length,
       passed: input.results.filter((result) => result.status === "PASS").length,
       failed: input.results.filter((result) => result.status === "FAIL").length,
-      skipped: 0,
-      expectedDenials: 0,
+      skipped: input.results.filter((result) => result.status === "SKIPPED").length,
+      expectedDenials: input.results.filter((result) => result.status === "EXPECTED-DENIAL").length,
       unknown: 0,
       requiredFailures: 0
     }

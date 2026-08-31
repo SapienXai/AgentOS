@@ -2,240 +2,219 @@
 
 Certification date: 2026-08-31
 
-This document records a real native Gateway probe against an isolated OpenClaw `2026.8.1` runtime. It does not promote `2026.8.1` to the AgentOS recommended or supported version, and it does not change the AgentOS published version.
+This document records the Phase 2A.1 hardening run against an isolated OpenClaw `2026.8.1` Gateway. It does not change the AgentOS recommended or supported OpenClaw versions, published package version, production configuration, or production SQLite state.
 
 ## Provenance
 
 - Repository: AgentOS
 - Branch: `upgrade/openclaw-2026.8.1`
-- Starting commit: `ff9e110c1b70cfb2dfb749510d3ff8c35c170714`
-- Starting remote: `origin/upgrade/openclaw-2026.8.1` at the same commit
+- Starting local and remote HEAD: `878d6bb029d6225352344d2da2e25be88660fd5c`
 - AgentOS root version: `0.1.0`
 - AgentOS package version: `0.7.6`
 - `OPENCLAW_RECOMMENDED_VERSION`: `2026.6.11` (unchanged)
 - `OPENCLAW_SUPPORTED_BASELINE_VERSION`: `2026.6.8` (unchanged)
-- OpenClaw runtime tag: `2026.8.1`
-- OpenClaw runtime build SHA: `ea806575e6450e4d1efdfc72c19f04be982a1b9b`
+- OpenClaw target version: `2026.8.1`
+- Exact OpenClaw target source commit: `ea806575e6450e4d1efdfc72c19f04be982a1b9b`
 - OpenClaw build ID: `2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z`
 - Host: macOS `26.5.2`, Darwin arm64
 - Node: `v24.15.0`
 - pnpm: `10.30.3`
 
-The source comparison was pinned to the OpenClaw `2026.8.1` commit above. No credentials, tokens, recovery values, device keys, or raw secret-bearing payloads are included here.
+The working tree was clean before implementation. The real run used the exact target package in a disposable runtime root, a separate state directory, and loopback WebSocket port `28789`. The existing developer Gateway on port `18789` was not controlled.
 
 ## Isolated Runtime
 
-OpenClaw `2026.8.1` was downloaded from the npm registry into a temporary runtime root and installed with `npm install --ignore-scripts --no-package-lock --omit=optional --legacy-peer-deps`. The binary reported `OpenClaw 2026.8.1 (ea80657)`.
+The isolated Gateway reported OpenClaw `2026.8.1 (ea80657)`, protocol `4`, authenticated role `operator`, `371` advertised methods, and `55` advertised events. The native AgentOS WebSocket client performed the probes through `NativeWsOpenClawGatewayClient.callNative`; no CLI fallback was used as evidence for native behavior.
 
-The Gateway ran in the temporary root `/tmp/agentos-openclaw-2026.8.1-runtime.3O13Q3` with:
+Model execution used a deterministic loopback OpenAI-compatible HTTP fixture:
 
-- isolated `OPENCLAW_STATE_DIR`
-- loopback WebSocket endpoint `ws://127.0.0.1:28789`
-- token authentication supplied through the process environment only
-- isolated development workspace and agent state
-- isolated shared SQLite state at `state/state/openclaw.sqlite`
+- provider: `agentos-fixture`
+- model: `agentos-runtime-fixture`
+- model reference: `agentos-fixture/agentos-runtime-fixture`
+- external credentials required: no
+- external credentials used: no
 
-The existing developer OpenClaw `2026.6.11` process on port `18789` and its state were not modified. The temporary Gateway process was restarted during certification and remained isolated.
+The fixture returned synthetic responses only and did not log request bodies.
 
-## Gateway Handshake
+## Evidence Model
 
-The AgentOS native WebSocket client completed a real `connect` handshake against `2026.8.1`:
+Runtime evidence is now multi-dimensional. The dimensions are `availability`, `authorization`, `positiveExecution`, `responseShape`, and `lifecycle`; each dimension is explicitly `proven`, `failed`, `not-required`, or `not-tested`.
 
-- protocol: `4`
-- authenticated role: `operator`
-- requested full scopes: `operator.admin`, `operator.read`, `operator.write`, `operator.approvals`, `operator.questions`, `operator.pairing`, `operator.talk.secrets`
-- advertised methods: `371`
-- advertised events: `55`
-- installed server version matched the target: `2026.8.1`
+Each operation also has a requirement level: `required`, `optional`, or `experimental`. The outcome is one of `certified`, `partially-certified`, `failed`, `uncertified`, or `static-only`.
 
-The probe used `NativeWsOpenClawGatewayClient.callNative` directly. It did not exercise AgentOS CLI fallback paths as evidence for native runtime behavior.
+An expected authorization denial proves only the authorization dimension. A successful method call with a validated payload proves availability, positive execution, and response shape; lifecycle is added only when the probe observes the relevant state transition. Optional and experimental gaps do not block the core migration gate.
 
-## Runtime Certification Summary
+## Previous Evidence Bug
 
-| Result | Count |
-| --- | ---: |
-| PASS | 43 |
-| FAIL | 0 |
-| SKIPPED | 7 |
-| EXPECTED-DENIAL | 7 |
-| UNKNOWN | 0 |
-| Total probes | 57 |
+The previous bridge treated `EXPECTED-DENIAL` as equivalent to a successful functional probe. That could fully certify a method such as `node.invoke` when the only runtime proof was a read-only denial and no paired node existed.
 
-The final run had no runtime failures. The skipped paths are environmental, destructive, or provider/device dependent and are not treated as passes.
+The new harness records denial proof as `authorization=proven` while leaving `positiveExecution` and `responseShape` as `not-tested`. The evidence aggregator and static-to-runtime bridge require every operation-specific mandatory dimension before returning `certified`. A skipped or failed positive probe remains visible and cannot be promoted by a negative authorization result.
 
-## Dynamic Authorization
+## Core Model Execution
 
-The highest-priority parameter/state-sensitive authorization surfaces were tested with a full operator client and a separate read-only operator client using the same isolated Gateway token:
+The run created a disposable `dev` session, sent a synthetic first prompt through native `chat.send`, observed a completed model turn from the loopback fixture, and read the resulting `chat.history`. The result was `PASS`; the expected synthetic assistant response was present and history contained one assistant message.
 
-- `sessions.create`: normal creation passed; read-only request returned `FORBIDDEN: missing scope: operator.write` as EXPECTED-DENIAL.
-- `sessions.patch`: label patch and archive lifecycle patch passed; read-only patch returned missing `operator.write` as EXPECTED-DENIAL.
-- `sessions.delete`: archived-only deletion passed; ordinary read-only deletion returned missing `operator.admin` as EXPECTED-DENIAL.
-- `node.invoke`: no paired node was available, so real delivery was SKIPPED; a valid read-only invocation request was rejected for missing `operator.write` as EXPECTED-DENIAL.
-- `agent`: a valid read-only invocation request was rejected for missing `operator.write` as EXPECTED-DENIAL. No model run was started.
-- `talk.config`: ordinary configuration read passed; `includeSecrets: true` from the read-only client returned missing `operator.talk.secrets` as EXPECTED-DENIAL.
+This was a real provider-backed OpenClaw agent turn, not method advertisement or request acceptance. The committed artifact contains only booleans, counts, categories, and synthetic identifiers; it does not contain the prompt or response body.
 
-This proves the tested authorization boundaries only. It does not certify every dynamic branch for every parameter combination.
+## Streaming
 
-## Sessions / Chat / Streaming
+The native client subscribed to the session event stream before sending the turn. The fixture emitted multiple SSE content chunks followed by a completion event. The harness verified:
 
-The disposable session lifecycle passed end to end through native Gateway methods:
+- at least two normalized text frames;
+- session association;
+- a terminal completed status;
+- successful AgentOS event normalization;
+- a persisted assistant response after completion.
 
-- `sessions.create`, `sessions.describe`, `sessions.preview`, `sessions.patch`, `sessions.abort`, and archived-only `sessions.delete`
-- `chat.history` returned the expected `sessionKey`, `sessionId`, `messages`, pending-input, pagination, defaults, and session-info fields
-- `sessions.subscribe` passed
-- modern `sessions.messages.subscribe` and `sessions.messages.unsubscribe` both passed
+The `chat.streaming` operation was `certified`. No unexpected 2026.6 event-shape assumption was used.
 
-`chat.send` and provider-backed streaming were SKIPPED because the isolated runtime had no model credentials and the probe must not incur provider cost. Therefore no claim is made about a completed model turn, streamed token sequence, or tool event continuity.
+## Restart Continuity
 
-## Agents
+The real sequence passed:
 
-`agents.list` passed. A disposable agent was created, updated, listed through the catalog, and deleted successfully. The disposable workspace was outside the repository and was not retained as product state.
+`first model turn → gateway.restart.request → reconnect and fresh handshake → same session history → second model turn`
 
-## Config
+The first synthetic assistant response remained in history after restart, the second response completed successfully, and the resulting history contained two assistant messages. The stable session identity remained addressable through the same session key. The report also recorded healthy shared SQLite integrity and healthy `openclaw doctor --json` output.
 
-The following native config surfaces passed:
+## Cron Execution
 
-- `config.get` returned a config snapshot and hash
-- `config.schema` returned a schema
-- `config.schema.lookup` for `gateway` returned a schema
-- a no-op `config.patch` with the current base hash passed
-- the read-only config mutation returned missing `operator.admin` as EXPECTED-DENIAL
+A disposable enabled isolated `agentTurn` cron job was added with a one-hour interval, updated, explicitly run, and removed. The run used the same deterministic loopback model fixture and returned a successful terminal entry from `cron.runs`. The harness accepts the OpenClaw 2026.8.1 `entries` history shape and correlates the exact returned run ID.
 
-No production configuration was changed. The no-op patch was performed only in the isolated state.
+`cron.run` was `PASS`, and the cron job was cleaned before the report was serialized.
 
-## Models / Auth
+## Remaining Runtime-Required Methods
 
-`models.list` and `models.authStatus` passed and returned the expected catalog/provider containers. `models.probe` was SKIPPED because provider credentials were absent and probing can perform external work. `models.authLogout` was SKIPPED because credential logout is destructive.
+The nine rows previously marked runtime-required by static analysis were audited individually:
 
-## Approvals / Questions
+| Method | Requirement | Positive proof | Authorization proof | Outcome | Reason |
+| --- | --- | --- | --- | --- | --- |
+| `channels.pairing.approve` | experimental | Not tested | Not tested | partially-certified | No pending external pairing request existed in the isolated runtime. |
+| `fs.listDir` | optional | PASS with validated `/tmp` listing shape | Not required for this probe | certified | Safe host-directory probe completed against an isolated low-risk path. |
+| `node.invoke.progress` | experimental | Not tested | Not tested | partially-certified | No physical node invocation existed from which to observe progress events. |
+| `node.pluginTools.update` | experimental | Not tested | Not tested | partially-certified | No paired node was available. |
+| `node.runnerInventory.update` | experimental | Not tested | Not tested | failed | The target Gateway did not advertise the method. |
+| `node.skills.update` | experimental | Not tested | Not tested | partially-certified | No paired node was available. |
+| `sessions.dispatch` | optional | Failed with `INVALID_REQUEST` because no paired session-host node was available | Not tested | failed | The method is available, but this environment cannot provide a safe positive worker/device target. |
+| `sessions.move` | optional | Failed with `INVALID_REQUEST` because the disposable session was in local placement | Not tested | failed | No valid alternate Gateway placement was available. |
+| `sessions.patchMany` | optional | PASS with validated `outcomes` response | Not required for this probe | certified | Safe disposable session batch patch completed. |
 
-`exec.approval.list` passed and returned an array. The disposable question flow passed through `question.request`, `question.get`, `question.waitAnswer` with an intentionally short wait, and `question.resolve` cancellation. The question used non-secret test content and was resolved before cleanup.
+The node and pairing rows remain environment-dependent. They are not core AgentOS migration requirements because AgentOS does not currently depend on physical node delivery, Talk audio transport, or semantic memory search for baseline operation.
 
-## Node / Device
+## Core Runtime Matrix
 
-`node.list`, `node.pair.list`, and `device.pair.list` passed. The isolated runtime had no paired node, so actual command delivery through `node.invoke` was SKIPPED. The read-only authorization denial for a valid `node.invoke` request passed independently. No physical device, pairing approval, or device command was created.
+| Operation | Requirement | Availability | Authorization | Positive Execution | Shape | Lifecycle | Outcome |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `sessions.create` | required | proven | proven | proven | proven | proven | certified |
+| `sessions.patch` | required | proven | proven | proven | proven | proven | certified |
+| `sessions.delete` | required | proven | proven | proven | proven | proven | certified |
+| `chat.send` | required | proven | proven | proven | proven | not-tested | certified |
+| `chat.streaming` | required | proven | proven | proven | proven | not-tested | certified |
+| `session.continuity` | required | proven | proven | proven | proven | proven | certified |
+| `agents.create` | required | proven | proven | proven | proven | not-tested | certified |
+| `agents.update` | required | proven | proven | proven | proven | not-tested | certified |
+| `agents.delete` | required | proven | proven | proven | proven | not-tested | certified |
+| `config.get` | required | proven | not-tested | proven | proven | not-tested | certified |
+| `config.patch` | required | proven | proven | proven | proven | proven | certified |
+| `gateway.restart` | required | proven | proven | proven | proven | proven | certified |
 
-The target advertises modern pairing methods; the older `node.pair.request` and `node.pair.verify` names are absent. This is recorded as target contract evidence, not treated as a failure because the modern pairing surface is advertised and list discovery passed.
+## Evidence Bridge
 
-## Talk
+The static-to-runtime bridge matched exact target version, method/operation identity, requirement level, and dimension-bearing runtime proofs. It retained static unknowns and allowed runtime failures to override optimistic static evidence.
 
-`talk.config` and `talk.catalog` passed. Secret-inclusive Talk configuration was correctly denied to the read-only client. `talk.session.create` and audio transport were SKIPPED because no Talk provider, microphone, or audio transport was configured. No audio was sent and no speech provider was invoked.
+The final bridge summary was:
 
-## Memory
+- certified: `19`
+- partially-certified: `8`
+- failed: `3`
+- uncertified: `2`
+- static-only: `199`
 
-`doctor.memory.status` and `doctor.memory.dreamDiary` passed for the isolated `dev` agent. `memory.search` was SKIPPED because embedding credentials were not configured. The target does not advertise the older `doctor.memory.remHarness` method; this remains a static-to-runtime follow-up item rather than a fabricated compatibility pass.
+The static comparison source was `github-static`, from `2026.6.11` to `2026.8.1`, with `371` target methods, `0` blockers, `29` warnings, and `17` unknowns. The exact target source commit is retained in the committed artifact as `staticContract.targetCommit`.
 
-## Cron / Automations
+## Migration Readiness
 
-`cron.status` and `cron.list` passed. A disabled disposable `cron.add` job using a safe `systemEvent` payload on the main session target was created, updated, and removed successfully. `cron.run` was SKIPPED because execution would enter an agent runtime without model credentials. The disposable job was not left behind.
+`READY FOR PHASE 2B`
 
-## Restart / Recovery
+The gate returned no blockers. It verified exact static/runtime target matching, installed version `2026.8.1`, supported protocol `4`, an authenticated operator with read/write scopes, healthy persistence, and certified required operations including model execution, streaming, restart, session continuity, config mutation, and agent/session lifecycle.
 
-`gateway.restart.preflight` passed and reported the structured safety snapshot. `gateway.restart.request` was accepted by the isolated Gateway, the WebSocket disconnected/reconnected, and a fresh native handshake succeeded. No in-flight model work existed, so no turn continuity claim is made beyond control-plane recovery.
+This gate is evidence-only in Phase 2A.1. It is not connected to production automatic updating and does not promote `2026.8.1` to the AgentOS recommended or supported policy.
 
-## SQLite / Doctor Discovery
+## Sanitized Evidence Artifact
 
-OpenClaw `database preflight` on the live WAL-backed database correctly returned `indeterminate` because the database had `-wal` and `-shm` sidecars. A WAL-aware SQLite online backup produced a standalone copy; preflight of that copy returned:
+The committed artifact is:
 
-- target schema version: `15`
-- found schema version: `15`
-- issues: `[]`
-- status: `exact`
-- requires write: `false`
+`docs/evidence/openclaw-2026.8.1-runtime-certification.json`
 
-`doctor --session-sqlite inspect --session-sqlite-agent dev --json` passed with no issues, SQLite integrity `ok`, two SQLite entries, and no legacy/unreferenced files. This was discovery and validation only; no migration, compaction, repair, or reset was run.
+It was generated by `scripts/openclaw-runtime-certification.ts` using `serializeOpenClawRuntimeCertificationArtifact`. It contains schema version `2`, provenance, every probe, requirement levels, dimension states, status, failure categories, bridge rows, and the readiness result. Credential/token/API-key fields, bearer values, and local paths are redacted. A post-run recursive secret scan returned `false`.
 
-`doctor --lint --json` returned `ok: false` with two isolated-environment warnings: the token is environment-supplied rather than persisted in config, and loopback binding does not expose a node onboarding URL. `doctor --post-upgrade --json` reported an isolated plugin index unavailable finding. These are retained as environmental findings and were not silently converted to runtime failures.
+## Cleanup
 
-## Static → Runtime Evidence Bridge
-
-The new bridge matches static evidence and runtime proof by exact method name and exact target version. It preserves static `unknown` rows, ignores proofs for another method or target version, treats a runtime `FAIL` as authoritative over optimistic static evidence, and requires a matching proof before promoting `runtime-required` rows.
-
-The final bridge contained:
-
-- static source: `github-static`
-- static comparison: `2026.6.11` → `2026.8.1`
-- static target advertised method count: `371`
-- static blockers: `0`
-- static warnings: `29`
-- static unknowns: `17`
-- certified rows: `18`
-- failed rows: `0`
-- runtime-required rows still uncertified: `9`
-- static-only rows: `204`
-
-The remaining uncertified runtime-required rows are `channels.pairing.approve`, `fs.listDir`, `node.invoke.progress`, `node.pluginTools.update`, `node.runnerInventory.update`, `node.skills.update`, `sessions.dispatch`, `sessions.move`, and `sessions.patchMany`. Missing proof is intentionally not treated as certification.
-
-## Compatibility Fixes
-
-No OpenClaw behavior or AgentOS fallback policy required a compatibility fix during this run. The implementation changes are certification infrastructure and a handshake type addition for the observed target `server.buildId` field. Existing recommended/baseline version constants and AgentOS published versions were unchanged.
+The harness uses `try/finally` and records cleanup results. The final run reported `complete` for the disposable session, agent, question, cron job, workspace, and loopback provider endpoint. The Gateway process was owned by the outer isolated-run wrapper, which terminated it after certification; port `28789` was released. No production Gateway or user cron/session resource was touched.
 
 ## Tests
 
-- `pnpm exec tsc --noEmit` — passed
-- targeted native certification and evidence bridge tests — 10 passed
-- real `pnpm openclaw:runtime-cert` against the isolated `2026.8.1` Gateway — 43 PASS, 0 FAIL, 7 SKIPPED, 7 EXPECTED-DENIAL, 0 UNKNOWN
-- `database preflight` on WAL-aware standalone backup — exact, no issues
-- `doctor --session-sqlite inspect` — no issues, SQLite integrity `ok`
-
-The full `pnpm test` suite was also attempted. It produced no assertion failure before an existing `tests/openclaw-workspace-service.test.ts` child remained idle for more than three minutes; the run was interrupted and is not reported as a passing full-suite result.
+- Focused runtime certification, evidence bridge, readiness gate, and serializer tests: `18` passed.
+- Real isolated runtime certification: `49 PASS`, `2 FAIL`, `10 SKIPPED`, `13 EXPECTED-DENIAL`, `0 UNKNOWN`; the two failures are the documented optional `sessions.dispatch` and `sessions.move` environment limits.
+- Runtime persistence: SQLite `PRAGMA integrity_check` healthy; `openclaw doctor --json` healthy.
 
 ## Verification
 
-The native handshake and all certification calls used the isolated loopback Gateway at port `28789`. The token was read from the isolated process environment without being printed or persisted in the repository. The existing port `18789` Gateway was not controlled by the harness.
-
-The runtime report was written outside the repository at `/tmp/agentos-openclaw-2026.8.1-runtime.3O13Q3/runtime-certification.json`. It contains only sanitized metadata, response-shape evidence, statuses, and error categories.
+The final real run used native WebSocket RPC and the isolated loopback provider. It did not use external provider credentials. The existing developer OpenClaw process remained outside the test scope. The artifact was generated by the harness in the repository; it was not hand-edited.
 
 ## Files Changed
 
-- `lib/openclaw/client/native-ws-gateway-types.ts`
 - `lib/openclaw/runtime-certification/types.ts`
 - `lib/openclaw/runtime-certification/harness.ts`
+- `lib/openclaw/runtime-certification/evidence-model.ts`
 - `lib/openclaw/runtime-certification/evidence-bridge.ts`
+- `lib/openclaw/runtime-certification/readiness-gate.ts`
+- `lib/openclaw/runtime-certification/serialization.ts`
 - `scripts/openclaw-runtime-certification.ts`
+- `scripts/openclaw-runtime-provider-fixture.ts`
 - `tests/openclaw-runtime-certification.test.ts`
 - `tests/openclaw-runtime-evidence-bridge.test.ts`
-- `package.json`
+- `tests/openclaw-runtime-evidence-serialization.test.ts`
+- `tests/openclaw-runtime-readiness-gate.test.ts`
+- `docs/evidence/openclaw-2026.8.1-runtime-certification.json`
 - `docs/openclaw-2026.8.1-runtime-certification.md`
 
 ## Claim / Evidence Matrix
 
-| Claim | Implementation evidence | Runtime evidence | Test / limitation |
+| Claim | Code evidence | Runtime evidence | Test / limitation |
 | --- | --- | --- | --- |
-| Native 2026.8.1 Gateway is reachable | Native WebSocket client and native-only call path | Protocol 4 handshake, version `2026.8.1`, 371 methods, 55 events | Real isolated runtime; no production Gateway mutation |
-| Sessions create/patch/delete authorization is state-aware | Per-client scopes and dynamic probes | Normal lifecycle PASS; read-only denials EXPECTED-DENIAL | Tested disposable session branches only |
-| Agent/node/Talk dynamic authorization is enforced | Read-only negative probes | `agent`, `node.invoke`, and secret Talk config denied at the Gateway | Node delivery and Talk session remain environment-skipped |
-| Session event subscription contract works | Modern subscribe/unsubscribe probes | `sessions.subscribe` and message subscribe/unsubscribe PASS | Model streaming skipped without credentials |
-| Config and model read surfaces are compatible | Native method probes and shape checks | Config schema/get/lookup/patch and model list/auth status PASS | Provider probe and logout skipped |
-| SQLite state is structurally compatible | OpenClaw CLI discovery | WAL-aware backup preflight exact at schema 15; inspect integrity ok | No migration or repair performed |
-| Static unknowns are not over-promoted | Exact method/version evidence bridge | 9 runtime-required rows remain uncertified | 204 static-only rows retain static evidence |
+| Exact OpenClaw target is tested | Harness target/version and artifact target commit | Installed `2026.8.1`, build ID and protocol `4` | Isolated runtime only; no production upgrade |
+| Authorization is not functional proof | Dimensioned harness and evidence aggregator | Denial proofs leave positive execution and shape unproven | Regression tests cover denial-only partial state |
+| Core model execution works | Native `chat.send`, fixture, history polling | Completed synthetic assistant turn persisted | No external provider or tool-call claim |
+| Native streaming works | Event subscription and AgentOS normalizer | Multiple chunks, completion, session match | Fixture stream; external provider stream variance remains |
+| Restart continuity works | Restart probe and second-turn history check | First turn survived restart and second turn completed | Disposable local session only |
+| Cron execution works | `cron.run` plus `cron.runs` exact run-ID poll | Successful fixture-backed terminal run | Disposable isolated cron job only |
+| Low-risk static rows are classified honestly | Requirement levels and per-operation bridge | `fs.listDir`/`sessions.patchMany` passed; dispatch/move environment-failed | Node/pairing fixtures remain unavailable |
+| Migration readiness is gated | Readiness evaluator | Gate returned `READY FOR PHASE 2B` with no blockers | Does not change production policy |
 
 ## Deferred Findings
 
-- Provider-backed `chat.send`, streaming, `models.probe`, `cron.run`, and semantic `memory.search` need a separately authorized credentialed test environment.
-- Talk session/audio transport needs a configured provider and microphone/audio fixture.
-- Node command delivery needs a disposable paired node and safe command allowlist.
-- Remaining dynamic static rows need targeted runtime probes before they can be certified.
-- The isolated plugin index is missing for post-upgrade doctor checks.
+- Physical node delivery and node progress/plugin/inventory/skills updates need a disposable paired node and safe allowlist.
+- Channel pairing approval needs a pending isolated pairing request fixture.
+- Talk session/audio needs a configured audio provider and transport fixture.
+- Semantic memory search needs an embedding-backed fixture.
+- `sessions.dispatch` needs an available session-host node; `sessions.move` needs a valid non-local target placement.
 
 ## Known Risks
 
-- Passing control-plane, authorization, config, and lifecycle probes does not imply model/provider, external channel, physical node, or audio readiness.
-- AgentOS currently reports the tested target as evidence only; it does not change the recommended or supported OpenClaw policy.
-- The isolated doctor warning about environment-only token configuration should be resolved or explicitly accepted before using the package as a production upgrade candidate.
+- The loopback fixture proves the OpenClaw/AgentOS execution path and response normalization, not compatibility with every external model provider or tool-call protocol variant.
+- Optional and experimental failures remain visible in the artifact and must not be read as broad OpenClaw feature certification.
+- The readiness gate remains a certification/reporting primitive until a later phase explicitly integrates migration-engine behavior.
 
 ## Commit
 
-The certification change is committed separately after final validation. The final commit SHA is recorded in the task report. The commit subject is:
+The hardening phase is committed separately with:
 
-`test(openclaw): certify 2026.8.1 runtime contract`
+`test(openclaw): harden 2026.8.1 runtime certification`
+
+The final commit and remote SHA are recorded in the task report after validation and push.
 
 ## Phase Verdict
 
-`PHASE 2A INCOMPLETE`
+`PHASE 2A.1 COMPLETE`
 
-The native Gateway, handshake, control-plane lifecycle, dynamic authorization boundaries, SQLite schema preflight, and recovery path are certified for the tested surfaces. Phase 2A is incomplete because credentialed model/streaming/memory/cron execution, Talk audio, physical node delivery, and nine runtime-required static rows remain unproven.
-
-## Recommended Next Phase
-
-Phase 2B is recommended only after a controlled credentialed/device fixture is available and the nine remaining runtime-required rows are probed. Phase 2B should begin with those deferred runtime surfaces and explicit acceptance of the isolated doctor/plugin findings; it should not promote `2026.8.1` to the default AgentOS policy until those gaps are resolved.
+The core OpenClaw 2026.8.1 runtime contract is certified for migration-engine planning, with optional and experimental device/audio/memory/placement gaps explicitly retained as non-blocking findings.
