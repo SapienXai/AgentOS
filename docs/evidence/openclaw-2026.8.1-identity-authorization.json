@@ -1,0 +1,735 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-31T19:37:52.734Z",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "branch": "upgrade/openclaw-2026.8.1",
+    "codeCommitUnderTest": "d0070541cde68693fc6f85e610ef583101a1338f",
+    "evidenceCommit": null,
+    "openClawPackageVersion": "2026.8.1",
+    "openClawSourceCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
+    "openClawBuild": "2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z",
+    "openClawPackageHash": "7c0eb75f8337d5a0eb73aefd27ad6978dccf486ae1fd7ae0759ed3a3c2e1bb52"
+  },
+  "openClaw": {
+    "version": "2026.8.1",
+    "sourceCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
+    "build": "2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z",
+    "packageMode": "exact-npm-package-fixture",
+    "gatewayPortIsDisposable": true,
+    "gatewayConnectionIdsPresent": true
+  },
+  "agentOsIdentityModel": {
+    "actorStateVersion": 2,
+    "stableActorId": true,
+    "profileSeparated": true,
+    "requestedAndGrantedScopesSeparated": true,
+    "browserCannotSupplyActorOrScopes": true
+  },
+  "identityInventory": [
+    {
+      "classification": "connection-identity",
+      "methodOrField": "connect.client.id/mode/instanceId",
+      "payloadShape": "ConnectParams.client",
+      "responseShape": "HelloOk.server.connId and snapshot.presence",
+      "requiredStaticScopes": [],
+      "dynamicAuthorization": false,
+      "targetDependent": false,
+      "connectionLocal": true,
+      "deviceIdentityInvolved": false,
+      "currentAgentOsUse": "used",
+      "sourceNote": "AgentOS sends gateway-client/backend and an instance id when configured."
+    },
+    {
+      "classification": "connection-identity",
+      "methodOrField": "connect.role/scopes",
+      "payloadShape": "optional role string and scope string array",
+      "responseShape": "hello-ok.auth.role/scopes when exposed by the authenticated device token",
+      "requiredStaticScopes": [],
+      "dynamicAuthorization": false,
+      "targetDependent": false,
+      "connectionLocal": true,
+      "deviceIdentityInvolved": true,
+      "currentAgentOsUse": "used",
+      "sourceNote": "Requested values are not proof of granted values."
+    },
+    {
+      "classification": "device-identity",
+      "methodOrField": "connect.device",
+      "payloadShape": "id, publicKey, signature, signedAt, nonce",
+      "responseShape": "paired device token and role/scopes in hello-ok.auth when issued",
+      "requiredStaticScopes": [],
+      "dynamicAuthorization": false,
+      "targetDependent": false,
+      "connectionLocal": false,
+      "deviceIdentityInvolved": true,
+      "currentAgentOsUse": "used",
+      "sourceNote": "Pairing and device-token rotation are Gateway authorities."
+    },
+    {
+      "classification": "user-directory",
+      "methodOrField": "users.list",
+      "payloadShape": "closed empty params object",
+      "responseShape": "profiles array of UserProfile records with id, displayName, emails, role",
+      "requiredStaticScopes": [
+        "operator.read"
+      ],
+      "dynamicAuthorization": false,
+      "targetDependent": false,
+      "connectionLocal": false,
+      "deviceIdentityInvolved": false,
+      "currentAgentOsUse": "not-used",
+      "sourceNote": "8.1 exposes durable Gateway user profiles; AgentOS does not yet delegate its users."
+    },
+    {
+      "classification": "user-directory",
+      "methodOrField": "users.self",
+      "payloadShape": "closed empty params object",
+      "responseShape": "the authenticated UserProfile record",
+      "requiredStaticScopes": [
+        "operator.write"
+      ],
+      "dynamicAuthorization": true,
+      "targetDependent": true,
+      "connectionLocal": false,
+      "deviceIdentityInvolved": false,
+      "currentAgentOsUse": "not-used",
+      "sourceNote": "The response is tied to the authenticated Gateway profile, not an AgentOS display username."
+    },
+    {
+      "classification": "profile-mutation",
+      "methodOrField": "users.setDisplayName / users.setAvatar",
+      "payloadShape": "profile-scoped display or avatar payload",
+      "responseShape": "updated UserProfile",
+      "requiredStaticScopes": [
+        "operator.write"
+      ],
+      "dynamicAuthorization": true,
+      "targetDependent": true,
+      "connectionLocal": false,
+      "deviceIdentityInvolved": false,
+      "currentAgentOsUse": "not-used",
+      "sourceNote": "OpenClaw profile presentation mutation is separate from role assignment."
+    },
+    {
+      "classification": "profile-mutation",
+      "methodOrField": "users.linkEmail",
+      "payloadShape": "profile-scoped email-link payload",
+      "responseShape": "updated UserProfile",
+      "requiredStaticScopes": [
+        "operator.admin"
+      ],
+      "dynamicAuthorization": true,
+      "targetDependent": true,
+      "connectionLocal": false,
+      "deviceIdentityInvolved": false,
+      "currentAgentOsUse": "not-used",
+      "sourceNote": "Email linkage is a Gateway profile operation and is not used as AgentOS actor identity."
+    },
+    {
+      "classification": "role",
+      "methodOrField": "users.setRole",
+      "payloadShape": "profileId and nullable role",
+      "responseShape": "updated UserProfile",
+      "requiredStaticScopes": [
+        "operator.admin"
+      ],
+      "dynamicAuthorization": false,
+      "targetDependent": true,
+      "connectionLocal": false,
+      "deviceIdentityInvolved": false,
+      "currentAgentOsUse": "future",
+      "sourceNote": "Role definitions and assignment are Gateway-owned."
+    },
+    {
+      "classification": "approval-authority",
+      "methodOrField": "exec.approval.*",
+      "payloadShape": "approval-specific request/resolve payload",
+      "responseShape": "approval record or resolution result",
+      "requiredStaticScopes": [
+        "operator.approvals"
+      ],
+      "dynamicAuthorization": true,
+      "targetDependent": true,
+      "connectionLocal": true,
+      "deviceIdentityInvolved": false,
+      "currentAgentOsUse": "used",
+      "sourceNote": "Approval target/state remains Gateway runtime authority."
+    },
+    {
+      "classification": "question-authority",
+      "methodOrField": "question.request/get/list/waitAnswer/resolve",
+      "payloadShape": "question-specific payload",
+      "responseShape": "question record or resolution result",
+      "requiredStaticScopes": [
+        "operator.questions"
+      ],
+      "dynamicAuthorization": true,
+      "targetDependent": true,
+      "connectionLocal": true,
+      "deviceIdentityInvolved": false,
+      "currentAgentOsUse": "used",
+      "sourceNote": "Question target and lifecycle are not reduced to a local scope check."
+    },
+    {
+      "classification": "talk-authority",
+      "methodOrField": "talk.client.* / talk.session.* / talk.mode",
+      "payloadShape": "Talk method-specific payload",
+      "responseShape": "Talk session/client result or event",
+      "requiredStaticScopes": [
+        "operator.talk"
+      ],
+      "dynamicAuthorization": true,
+      "targetDependent": true,
+      "connectionLocal": true,
+      "deviceIdentityInvolved": false,
+      "currentAgentOsUse": "used",
+      "sourceNote": "talk.config with includeSecrets additionally requires operator.talk.secrets and read."
+    },
+    {
+      "classification": "session-authority",
+      "methodOrField": "sessions.create/patch/delete/dispatch",
+      "payloadShape": "session key/agent/target-specific payload",
+      "responseShape": "session record or dispatch result",
+      "requiredStaticScopes": [
+        "operator.write"
+      ],
+      "dynamicAuthorization": true,
+      "targetDependent": true,
+      "connectionLocal": false,
+      "deviceIdentityInvolved": false,
+      "currentAgentOsUse": "used",
+      "sourceNote": "8.1 also persists createdActor, owner, participants, visibility, and sharingRole where applicable."
+    },
+    {
+      "classification": "agent-authority",
+      "methodOrField": "agents.list/create/update/delete",
+      "payloadShape": "agent id and agent configuration payload",
+      "responseShape": "agent list or mutation result",
+      "requiredStaticScopes": [
+        "operator.admin"
+      ],
+      "dynamicAuthorization": true,
+      "targetDependent": true,
+      "connectionLocal": false,
+      "deviceIdentityInvolved": false,
+      "currentAgentOsUse": "used",
+      "sourceNote": "Agent access is filtered by Gateway role policy when a profile is authenticated."
+    },
+    {
+      "classification": "node-authority",
+      "methodOrField": "node.invoke",
+      "payloadShape": "node id, command, params",
+      "responseShape": "node invocation result/event",
+      "requiredStaticScopes": [
+        "operator.write"
+      ],
+      "dynamicAuthorization": true,
+      "targetDependent": true,
+      "connectionLocal": true,
+      "deviceIdentityInvolved": true,
+      "currentAgentOsUse": "used",
+      "sourceNote": "Command allowlists, node availability, and target ownership are runtime checks."
+    },
+    {
+      "classification": "config-authority",
+      "methodOrField": "config.patch/set/apply",
+      "payloadShape": "config patch plus base hash",
+      "responseShape": "config mutation/reload result",
+      "requiredStaticScopes": [
+        "operator.admin"
+      ],
+      "dynamicAuthorization": true,
+      "targetDependent": true,
+      "connectionLocal": false,
+      "deviceIdentityInvolved": false,
+      "currentAgentOsUse": "used",
+      "sourceNote": "Static admin scope does not replace schema, hash, path, and reload validation."
+    },
+    {
+      "classification": "admin-authority",
+      "methodOrField": "gateway role/scope enforcement",
+      "payloadShape": "connection auth plus method request",
+      "responseShape": "allowed response or Gateway error",
+      "requiredStaticScopes": [
+        "operator.admin"
+      ],
+      "dynamicAuthorization": true,
+      "targetDependent": true,
+      "connectionLocal": true,
+      "deviceIdentityInvolved": true,
+      "currentAgentOsUse": "used",
+      "sourceNote": "OpenClaw remains the final enforcement point."
+    }
+  ],
+  "connectionProfiles": [
+    {
+      "name": "read",
+      "requestedRole": "operator",
+      "role": "operator",
+      "requestedScopes": [
+        "operator.read"
+      ],
+      "grantedScopes": [
+        "operator.read"
+      ],
+      "grantedScopesKnown": true,
+      "deviceId": null,
+      "connectionId": "995b2a28-d11c-4e7d-aede-6c2b1f270cd8",
+      "authenticated": true,
+      "source": "native-handshake"
+    },
+    {
+      "name": "write",
+      "requestedRole": "operator",
+      "role": "operator",
+      "requestedScopes": [
+        "operator.write"
+      ],
+      "grantedScopes": [
+        "operator.write"
+      ],
+      "grantedScopesKnown": true,
+      "deviceId": null,
+      "connectionId": "2d6db312-2a76-47f8-868f-f0e9532feb6e",
+      "authenticated": true,
+      "source": "native-handshake"
+    },
+    {
+      "name": "approvals",
+      "requestedRole": "operator",
+      "role": "operator",
+      "requestedScopes": [
+        "operator.approvals"
+      ],
+      "grantedScopes": [
+        "operator.approvals"
+      ],
+      "grantedScopesKnown": true,
+      "deviceId": null,
+      "connectionId": "dad37b20-5722-4e28-b2ca-bd2a50c90b5c",
+      "authenticated": true,
+      "source": "native-handshake"
+    },
+    {
+      "name": "questions",
+      "requestedRole": "operator",
+      "role": "operator",
+      "requestedScopes": [
+        "operator.questions"
+      ],
+      "grantedScopes": [
+        "operator.questions"
+      ],
+      "grantedScopesKnown": true,
+      "deviceId": null,
+      "connectionId": "44996495-0970-4f26-92f7-042405e2f480",
+      "authenticated": true,
+      "source": "native-handshake"
+    },
+    {
+      "name": "pairing",
+      "requestedRole": "operator",
+      "role": "operator",
+      "requestedScopes": [
+        "operator.pairing"
+      ],
+      "grantedScopes": [
+        "operator.pairing"
+      ],
+      "grantedScopesKnown": true,
+      "deviceId": null,
+      "connectionId": "ec865945-4812-480e-b3cc-b47ddaeb7343",
+      "authenticated": true,
+      "source": "native-handshake"
+    },
+    {
+      "name": "talk",
+      "requestedRole": "operator",
+      "role": "operator",
+      "requestedScopes": [
+        "operator.read",
+        "operator.talk"
+      ],
+      "grantedScopes": [
+        "operator.read",
+        "operator.talk"
+      ],
+      "grantedScopesKnown": true,
+      "deviceId": null,
+      "connectionId": "bef14948-15fb-4800-a084-4d2f1cffe101",
+      "authenticated": true,
+      "source": "native-handshake"
+    },
+    {
+      "name": "admin",
+      "requestedRole": "operator",
+      "role": "operator",
+      "requestedScopes": [
+        "operator.admin"
+      ],
+      "grantedScopes": [
+        "operator.admin"
+      ],
+      "grantedScopesKnown": true,
+      "deviceId": null,
+      "connectionId": "2f08b47c-e00b-4839-b4fb-20426255c337",
+      "authenticated": true,
+      "source": "native-handshake"
+    }
+  ],
+  "requestedScopes": [
+    {
+      "profile": "read",
+      "scopes": [
+        "operator.read"
+      ]
+    },
+    {
+      "profile": "write",
+      "scopes": [
+        "operator.write"
+      ]
+    },
+    {
+      "profile": "approvals",
+      "scopes": [
+        "operator.approvals"
+      ]
+    },
+    {
+      "profile": "questions",
+      "scopes": [
+        "operator.questions"
+      ]
+    },
+    {
+      "profile": "pairing",
+      "scopes": [
+        "operator.pairing"
+      ]
+    },
+    {
+      "profile": "talk",
+      "scopes": [
+        "operator.read",
+        "operator.talk"
+      ]
+    },
+    {
+      "profile": "admin",
+      "scopes": [
+        "operator.admin"
+      ]
+    }
+  ],
+  "grantedScopes": [
+    {
+      "profile": "read",
+      "scopes": [
+        "operator.read"
+      ],
+      "known": true
+    },
+    {
+      "profile": "write",
+      "scopes": [
+        "operator.write"
+      ],
+      "known": true
+    },
+    {
+      "profile": "approvals",
+      "scopes": [
+        "operator.approvals"
+      ],
+      "known": true
+    },
+    {
+      "profile": "questions",
+      "scopes": [
+        "operator.questions"
+      ],
+      "known": true
+    },
+    {
+      "profile": "pairing",
+      "scopes": [
+        "operator.pairing"
+      ],
+      "known": true
+    },
+    {
+      "profile": "talk",
+      "scopes": [
+        "operator.read",
+        "operator.talk"
+      ],
+      "known": true
+    },
+    {
+      "profile": "admin",
+      "scopes": [
+        "operator.admin"
+      ],
+      "known": true
+    }
+  ],
+  "roleEvidence": [
+    {
+      "profile": "read",
+      "requested": "operator",
+      "granted": "operator"
+    },
+    {
+      "profile": "write",
+      "requested": "operator",
+      "granted": "operator"
+    },
+    {
+      "profile": "approvals",
+      "requested": "operator",
+      "granted": "operator"
+    },
+    {
+      "profile": "questions",
+      "requested": "operator",
+      "granted": "operator"
+    },
+    {
+      "profile": "pairing",
+      "requested": "operator",
+      "granted": "operator"
+    },
+    {
+      "profile": "talk",
+      "requested": "operator",
+      "granted": "operator"
+    },
+    {
+      "profile": "admin",
+      "requested": "operator",
+      "granted": "operator"
+    }
+  ],
+  "authorizationChecks": [
+    {
+      "profile": "read",
+      "method": "status",
+      "expected": "allowed",
+      "result": "PASS",
+      "observed": "Gateway response accepted"
+    },
+    {
+      "profile": "read",
+      "method": "sessions.create",
+      "expected": "denied",
+      "result": "EXPECTED-DENIAL",
+      "observed": "authorization-denied",
+      "errorClass": "authorization-denied"
+    },
+    {
+      "profile": "read",
+      "method": "config.patch",
+      "expected": "denied",
+      "result": "EXPECTED-DENIAL",
+      "observed": "authorization-denied",
+      "errorClass": "authorization-denied"
+    },
+    {
+      "profile": "read",
+      "method": "talk.client.create",
+      "expected": "denied",
+      "result": "EXPECTED-DENIAL",
+      "observed": "authorization-denied",
+      "errorClass": "authorization-denied"
+    },
+    {
+      "profile": "read",
+      "method": "talk.config",
+      "expected": "denied",
+      "result": "EXPECTED-DENIAL",
+      "observed": "authorization-denied",
+      "errorClass": "authorization-denied"
+    },
+    {
+      "profile": "read",
+      "method": "device.pair.list",
+      "expected": "denied",
+      "result": "EXPECTED-DENIAL",
+      "observed": "authorization-denied",
+      "errorClass": "authorization-denied"
+    },
+    {
+      "profile": "read",
+      "method": "question.list",
+      "expected": "denied",
+      "result": "EXPECTED-DENIAL",
+      "observed": "authorization-denied",
+      "errorClass": "authorization-denied"
+    },
+    {
+      "profile": "read",
+      "method": "exec.approval.list",
+      "expected": "denied",
+      "result": "EXPECTED-DENIAL",
+      "observed": "authorization-denied",
+      "errorClass": "authorization-denied"
+    },
+    {
+      "profile": "write",
+      "method": "sessions.create",
+      "expected": "allowed",
+      "result": "PASS",
+      "observed": "Gateway response accepted"
+    },
+    {
+      "profile": "write",
+      "method": "config.patch",
+      "expected": "denied",
+      "result": "EXPECTED-DENIAL",
+      "observed": "authorization-denied",
+      "errorClass": "authorization-denied"
+    },
+    {
+      "profile": "write",
+      "method": "exec.approval.list",
+      "expected": "denied",
+      "result": "EXPECTED-DENIAL",
+      "observed": "authorization-denied",
+      "errorClass": "authorization-denied"
+    },
+    {
+      "profile": "approvals",
+      "method": "exec.approval.list",
+      "expected": "allowed",
+      "result": "PASS",
+      "observed": "Gateway response accepted"
+    },
+    {
+      "profile": "approvals",
+      "method": "config.patch",
+      "expected": "denied",
+      "result": "EXPECTED-DENIAL",
+      "observed": "authorization-denied",
+      "errorClass": "authorization-denied"
+    },
+    {
+      "profile": "questions",
+      "method": "question.list",
+      "expected": "allowed",
+      "result": "PASS",
+      "observed": "Gateway response accepted"
+    },
+    {
+      "profile": "questions",
+      "method": "config.patch",
+      "expected": "denied",
+      "result": "EXPECTED-DENIAL",
+      "observed": "authorization-denied",
+      "errorClass": "authorization-denied"
+    },
+    {
+      "profile": "pairing",
+      "method": "device.pair.list",
+      "expected": "allowed",
+      "result": "PASS",
+      "observed": "Gateway response accepted"
+    },
+    {
+      "profile": "pairing",
+      "method": "config.patch",
+      "expected": "denied",
+      "result": "EXPECTED-DENIAL",
+      "observed": "authorization-denied",
+      "errorClass": "authorization-denied"
+    },
+    {
+      "profile": "talk",
+      "method": "talk.config",
+      "expected": "allowed",
+      "result": "PASS",
+      "observed": "Gateway response accepted"
+    },
+    {
+      "profile": "talk",
+      "method": "talk.config",
+      "expected": "denied",
+      "result": "EXPECTED-DENIAL",
+      "observed": "authorization-denied",
+      "errorClass": "authorization-denied"
+    },
+    {
+      "profile": "talk",
+      "method": "config.patch",
+      "expected": "denied",
+      "result": "EXPECTED-DENIAL",
+      "observed": "authorization-denied",
+      "errorClass": "authorization-denied"
+    },
+    {
+      "profile": "admin",
+      "method": "config.patch",
+      "expected": "allowed",
+      "result": "PASS",
+      "observed": "Gateway response accepted"
+    }
+  ],
+  "dynamicAuthorizationChecks": [
+    {
+      "profile": "write",
+      "method": "node.invoke",
+      "expected": "runtime-dependent",
+      "result": "PASS",
+      "observed": "runtime-or-domain-rejection",
+      "errorClass": "runtime-or-domain-rejection"
+    },
+    {
+      "profile": "write",
+      "method": "sessions.patch",
+      "expected": "runtime-dependent",
+      "result": "PASS",
+      "observed": "runtime-required"
+    }
+  ],
+  "sessionIdentityFindings": {
+    "creator": "createdActor is persisted by OpenClaw when an authenticated user profile is available.",
+    "owner": "owner is derived from creator/profile and sharing state where session sharing is active.",
+    "crossOperatorVisibility": "shared Gateway access is visibility/policy dependent; a shared token is not a per-user identity.",
+    "mutationAuthority": "session mutation is scope and target/runtime dependent.",
+    "persistentIdentityMetadata": [
+      "createdActor",
+      "owner",
+      "participants",
+      "sharingRole",
+      "visibility"
+    ]
+  },
+  "agentIdentityFindings": {
+    "creator": "No AgentOS actor mapping was sent by this connection; OpenClaw agent access is Gateway role-policy controlled.",
+    "owner": "not exposed as a per-AgentOS-user owner in the tested Gateway surface",
+    "crossOperatorVisibility": "global within the shared trusted Gateway unless Gateway role policy filters it",
+    "mutationAuthority": "agents.create/update/delete require admin scope and Gateway enforcement",
+    "persistentIdentityMetadata": [
+      "agent id",
+      "agent configuration",
+      "Gateway role policy"
+    ]
+  },
+  "trustBoundaryDecision": "hybrid",
+  "securityChecks": {
+    "actorSpoofing": "PASS",
+    "scopeEscalation": "PASS",
+    "roleEscalation": "PASS",
+    "profilePrivilegeEscalation": "PASS",
+    "tokenLeakage": "PASS",
+    "internalActorBoundary": "PASS"
+  },
+  "cleanup": {
+    "status": "complete",
+    "disposableRootRemoved": true,
+    "gatewayProcessStopped": true
+  },
+  "gate": "OPENCLAW 8.1 IDENTITY/AUTHORIZATION GATE: PASS",
+  "success": true
+}
