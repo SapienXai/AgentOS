@@ -1,4 +1,4 @@
-export const OPENCLAW_MIGRATION_SCHEMA_VERSION = 1 as const;
+export const OPENCLAW_MIGRATION_SCHEMA_VERSION = 2 as const;
 
 export const OPENCLAW_MIGRATION_STATES = [
   "planned",
@@ -35,6 +35,11 @@ export const OPENCLAW_MIGRATION_STEP_IDS = [
   "post-upgrade-doctor",
   "runtime-certification",
   "preservation",
+  "stop-staged-target",
+  "swap-live-paths",
+  "start-canonical-target",
+  "post-commit-certification",
+  "verify-target-sqlite",
   "commit",
   "cleanup"
 ] as const;
@@ -91,6 +96,7 @@ export type OpenClawMigrationPlan = {
     replacementAllowed: boolean;
     reason: string;
   };
+  ownership: OpenClawMigrationOwnershipEvidence;
   steps: OpenClawMigrationStep[];
   blockers: OpenClawMigrationBlocker[];
   warnings: string[];
@@ -158,11 +164,53 @@ export type OpenClawMigrationEvidence = {
     | "preservation"
     | "journal"
     | "rollback"
-    | "supervisor";
+    | "supervisor"
+    | "ownership";
   status: "pass" | "warning" | "fail" | "blocked";
   summary: string;
   details?: Record<string, unknown>;
   createdAt: string;
+};
+
+export type OpenClawMigrationLiveSwap = {
+  phase: "idle" | "package-backed-up" | "package-installed" | "state-backed-up" | "state-installed" | "config-backed-up" | "config-installed" | "complete" | "restored";
+  packageBackedUp: boolean;
+  packageInstalled: boolean;
+  stateBackedUp: boolean;
+  stateInstalled: boolean;
+  configBackedUp: boolean;
+  configInstalled: boolean;
+  sourceConfigExisted: boolean;
+};
+
+export type OpenClawMigrationRuntimeVerification = {
+  phase: "staged" | "canonical" | "rollback";
+  status: "pass" | "fail";
+  version: string | null;
+  sourceCommit: string | null;
+  binaryPathRole: "staged-target" | "managed-install" | "managed-source";
+  statePathRole: "isolated-target" | "live-canonical" | "restored-canonical";
+  configPathRole: "isolated-target" | "live-canonical" | "restored-canonical";
+  checks: string[];
+  detail?: string;
+};
+
+export type OpenClawMigrationOwnershipEvidence = {
+  status: "inactive" | "active" | "unknown";
+  source: "pid-file" | "pid-lock" | "configured-port-listener" | "external-supervisor" | "none" | "probe-error";
+  pid: number | null;
+  reason: string;
+  checkedAt: string;
+};
+
+export type OpenClawMigrationDoctorMutationDelta = {
+  status: "pass" | "warning" | "fail";
+  changed: string[];
+  added: string[];
+  removed: string[];
+  categories: Record<string, string[]>;
+  unexpected: string[];
+  warnings: string[];
 };
 
 export type OpenClawMigrationRollbackPlan = {
@@ -191,6 +239,13 @@ export type OpenClawMigrationRun = {
   journalHash: string;
   snapshot: OpenClawMigrationSnapshot | null;
   rollback: OpenClawMigrationRollbackPlan | null;
+  liveSwap: OpenClawMigrationLiveSwap;
+  livePathsSwapped: boolean;
+  postCommitRuntimeVerified: boolean;
+  canonicalRuntime: OpenClawMigrationRuntimeVerification | null;
+  rollbackVerification: OpenClawMigrationRuntimeVerification | null;
+  ownership: OpenClawMigrationOwnershipEvidence | null;
+  doctorMutationDelta: OpenClawMigrationDoctorMutationDelta | null;
   evidence: OpenClawMigrationEvidence[];
   errors: string[];
   commitPointReached: boolean;
@@ -199,6 +254,7 @@ export type OpenClawMigrationRun = {
 
 export type OpenClawMigrationFailureInjection = {
   step: OpenClawMigrationStepId;
+  subStep?: "after-package-backup" | "after-package-install" | "after-state-backup" | "after-state-install" | "after-config-backup" | "after-config-install";
   once?: boolean;
 };
 
@@ -217,11 +273,11 @@ export type OpenClawMigrationEngineInput = {
   snapshotRoot?: string;
   mode?: OpenClawMigrationRunMode;
   supervisorMode?: "agentos-managed" | "external" | "unknown";
-  activeOwnerDetected?: boolean;
   failureInjection?: OpenClawMigrationFailureInjection;
   commandTimeoutMs?: number;
   gatewayPort?: number;
   gatewayToken?: string;
+  preservationSessionKey?: string;
 };
 
 export type OpenClawMigrationCommandResult = {
@@ -248,7 +304,12 @@ export type OpenClawMigrationRuntimeHooks = {
     configPath: string;
     gatewayUrl: string;
     token: string | null;
+    phase?: "staged" | "canonical" | "rollback";
+    expectedVersion?: string;
+    expectedCommit?: string | null;
+    existingSessionKey?: string;
   }) => Promise<OpenClawMigrationEvidence>;
+  detectOwnership?: (input: { stateDir: string; gatewayPort?: number; supervisorMode: "agentos-managed" | "external" | "unknown" }) => Promise<OpenClawMigrationOwnershipEvidence>;
   gateway?: {
     start: (input: {
       binaryPath: string;
@@ -256,7 +317,8 @@ export type OpenClawMigrationRuntimeHooks = {
       configPath: string;
       port: number;
       token: string;
-    }) => Promise<{ pid: number; stop: () => Promise<void> }>;
+      phase?: "staged" | "canonical" | "rollback";
+    }) => Promise<{ pid: number; stop: () => Promise<void>; isRunning?: () => boolean }>;
   };
 };
 
@@ -279,3 +341,5 @@ export type OpenClawMigrationSuccessGate = {
     detail: string;
   }>;
 };
+
+export type OpenClawMigrationRollbackGate = OpenClawMigrationSuccessGate;

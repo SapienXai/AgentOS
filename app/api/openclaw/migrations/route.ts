@@ -35,7 +35,6 @@ const migrationInputSchema = z.object({
   workRoot: pathField.optional(),
   snapshotRoot: pathField.optional(),
   supervisorMode: z.enum(["agentos-managed", "external", "unknown"]).optional(),
-  activeOwnerDetected: z.boolean().optional(),
   gatewayPort: z.number().int().min(1024).max(65535).optional(),
   gatewayToken: z.string().min(1).optional()
 });
@@ -60,6 +59,9 @@ export async function POST(request: Request) {
     input = migrationInputSchema.parse(await request.json());
   } catch (error) {
     return NextResponse.json({ error: redactErrorMessage(error, "Invalid OpenClaw migration request.") }, { status: 400 });
+  }
+  if (hasPathOverrides(input) && process.env.NODE_ENV === "production" && process.env.AGENTOS_OPENCLAW_MIGRATION_ALLOW_PATH_OVERRIDES !== "1") {
+    return NextResponse.json({ error: "OpenClaw migration filesystem paths are server-controlled in production." }, { status: 403 });
   }
 
   try {
@@ -106,10 +108,13 @@ function requireEngineInput(input: z.infer<typeof migrationInputSchema>) {
     workRoot: input.workRoot!,
     snapshotRoot: input.snapshotRoot,
     supervisorMode: input.supervisorMode,
-    activeOwnerDetected: input.activeOwnerDetected,
     gatewayPort: input.gatewayPort,
     gatewayToken: input.gatewayToken
   };
+}
+
+function hasPathOverrides(input: z.infer<typeof migrationInputSchema>) {
+  return ["sourceBinaryPath", "sourcePackageRoot", "targetBinaryPath", "targetPackageRoot", "sourceStateDir", "sourceConfigPath", "targetStateDir", "targetConfigPath", "runtimePackageRoot", "installPackageRoot", "workRoot", "snapshotRoot"].some((key) => input[key as keyof typeof input] !== undefined);
 }
 
 function requireJournalPath(input: z.infer<typeof migrationInputSchema>) {

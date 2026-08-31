@@ -2,6 +2,9 @@ import { lstat, readFile, readlink, readdir } from "node:fs/promises";
 import path from "node:path";
 
 import { hashFile } from "@/lib/openclaw/migration-engine/sqlite";
+import type { OpenClawMigrationDoctorMutationDelta } from "@/lib/openclaw/migration-engine/types";
+
+export type StateManifestEntry = { path: string; hash: string; kind: "file" | "symlink" };
 
 export type StatePreservationSnapshot = {
   stateFilePaths: string[];
@@ -105,6 +108,59 @@ export function compareStatePreservation(source: StatePreservationSnapshot, targ
     }
   ];
   return { pass: checks.every((check) => check.pass), checks, source, target };
+}
+
+export async function captureStateManifest(input: { stateDir: string; configPath: string }): Promise<StateManifestEntry[]> {
+  const entries: StateManifestEntry[] = [];
+  if (await lstat(input.stateDir).catch(() => null)) {
+    await walk(input.stateDir, async (filePath, relativePath) => {
+      const metadata = await lstat(filePath);
+      if (metadata.isSymbolicLink()) entries.push({ path: `state/${relativePath}`, hash: `symlink:${await readlink(filePath)}`, kind: "symlink" });
+      else if (metadata.isFile()) entries.push({ path: `state/${relativePath}`, hash: await hashFile(filePath), kind: "file" });
+    });
+  }
+  const config = await lstat(input.configPath).catch(() => null);
+  if (config?.isSymbolicLink()) entries.push({ path: "config/openclaw.json", hash: `symlink:${await readlink(input.configPath)}`, kind: "symlink" });
+  else if (config?.isFile()) entries.push({ path: "config/openclaw.json", hash: await hashFile(input.configPath), kind: "file" });
+  return entries.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+export function compareDoctorMutationDelta(before: StateManifestEntry[], after: StateManifestEntry[], doctorOutput = ""): OpenClawMigrationDoctorMutationDelta {
+  const beforeMap = new Map(before.map((entry) => [entry.path, entry.hash]));
+  const afterMap = new Map(after.map((entry) => [entry.path, entry.hash]));
+  const changed = [...afterMap.keys()].filter((entryPath) => beforeMap.has(entryPath) && beforeMap.get(entryPath) !== afterMap.get(entryPath)).sort();
+  const added = [...afterMap.keys()].filter((entryPath) => !beforeMap.has(entryPath)).sort();
+  const removed = [...beforeMap.keys()].filter((entryPath) => !afterMap.has(entryPath)).sort();
+  const allPaths = [...new Set([...changed, ...added, ...removed])].sort();
+  const categories: Record<string, string[]> = {};
+  const unexpected: string[] = [];
+  for (const entryPath of allPaths) {
+    const category = classifyDoctorPath(entryPath);
+    (categories[category] ??= []).push(entryPath);
+    if (category === "unexpected-workspace-user-file") unexpected.push(entryPath);
+  }
+  const warnings = [...new Set((doctorOutput.match(/(?:warning|disabled|unsupported|unavailable)[^\n]*/gi) ?? []).map((value) => value.trim()).slice(0, 20))];
+  return {
+    status: unexpected.length > 0 ? "fail" : warnings.length > 0 ? "warning" : "pass",
+    changed,
+    added,
+    removed,
+    categories,
+    unexpected,
+    warnings
+  };
+}
+
+function classifyDoctorPath(entryPath: string) {
+  if (entryPath === "config/openclaw.json") return "config";
+  if (/^state\/workspace\/(AGENTS|HEARTBEAT|TOOLS)\.md$/i.test(entryPath)) return "workspace-metadata";
+  if (entryPath.startsWith("state/workspace/")) return "unexpected-workspace-user-file";
+  if (/session-sqlite-migration-runs|transcript|session/i.test(entryPath)) return "sessions-transcripts";
+  if (/cron|automation/i.test(entryPath)) return "cron";
+  if (/plugin|skill/i.test(entryPath)) return "plugins-skills";
+  if (/\.bak$|archive|generated|migration/i.test(entryPath)) return "generated-migration-artifact";
+  if (/\.sqlite$|\.db$/i.test(entryPath)) return "sqlite";
+  return "state-owned-file";
 }
 
 async function walk(root: string, visit: (filePath: string, relativePath: string) => Promise<void>, current = root): Promise<void> {

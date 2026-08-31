@@ -8,6 +8,7 @@ import type {
   OpenClawMigrationSnapshotFile,
   OpenClawMigrationSnapshotSqlite
 } from "@/lib/openclaw/migration-engine/types";
+import { OPENCLAW_MIGRATION_SCHEMA_VERSION } from "@/lib/openclaw/migration-engine/types";
 
 export async function createMigrationSnapshot(input: {
   snapshotId: string;
@@ -46,7 +47,7 @@ export async function createMigrationSnapshot(input: {
   }
 
   const snapshot: OpenClawMigrationSnapshot = {
-    schemaVersion: 1,
+    schemaVersion: OPENCLAW_MIGRATION_SCHEMA_VERSION,
     snapshotId: input.snapshotId,
     createdAt: new Date().toISOString(),
     sourceVersion: input.sourceVersion,
@@ -83,6 +84,39 @@ export async function restoreMigrationSnapshot(input: {
 
 export async function copySnapshotState(input: { snapshot: OpenClawMigrationSnapshot; destinationStateDir: string }) {
   await replaceDirectoryFromSnapshot(path.join(input.snapshot.root, "state"), input.destinationStateDir);
+}
+
+export async function auditMigrationSymlinks(input: {
+  snapshot: OpenClawMigrationSnapshot;
+  stateDir: string;
+  forbiddenRoots: string[];
+}) {
+  const links: Array<{ relativePath: string; target: string; status: "pass" | "fail"; reason?: string }> = [];
+  const snapshotLinks = new Map(input.snapshot.files.filter((entry) => entry.kind === "symlink").map((entry) => [entry.relativePath, entry.linkTarget ?? ""]));
+  const walk = async (current: string): Promise<void> => {
+    const entries = await readdir(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const filePath = path.join(current, entry.name);
+      const relativePath = path.relative(input.stateDir, filePath);
+      const metadata = await lstat(filePath);
+      if (metadata.isSymbolicLink()) {
+        const target = await readlink(filePath);
+        const resolvedTarget = path.resolve(path.dirname(filePath), target);
+        const forbidden = input.forbiddenRoots.some((root) => isSameOrNested(root, resolvedTarget));
+        const missing = !(await pathExists(resolvedTarget));
+        const unchangedBrokenLink = snapshotLinks.get(relativePath) === target && missing;
+        links.push({
+          relativePath,
+          target,
+          status: forbidden || (missing && !unchangedBrokenLink) ? "fail" : "pass",
+          reason: forbidden ? "Symlink target references a migration package or staging root." : missing && !unchangedBrokenLink ? "Symlink target is missing after migration." : undefined
+        });
+      } else if (metadata.isDirectory()) await walk(filePath);
+    }
+  };
+  if (await pathExists(input.stateDir)) await walk(input.stateDir);
+  const failures = links.filter((link) => link.status === "fail");
+  return { status: failures.length === 0 ? "pass" as const : "fail" as const, links, failures };
 }
 
 async function copyStateTree(
@@ -159,4 +193,13 @@ function isVolatileStateFile(filePath: string) {
 
 function isMissingPath(error: unknown) {
   return Boolean(error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === "ENOENT");
+}
+
+async function pathExists(filePath: string) {
+  return lstat(filePath).then(() => true).catch(() => false);
+}
+
+function isSameOrNested(root: string, child: string) {
+  const relative = path.relative(path.resolve(root), path.resolve(child));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }

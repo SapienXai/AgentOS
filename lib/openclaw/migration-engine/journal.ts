@@ -10,6 +10,7 @@ import {
   type OpenClawMigrationRun,
   type OpenClawMigrationStepId
 } from "@/lib/openclaw/migration-engine/types";
+import { assertOpenClawMigrationTransition } from "@/lib/openclaw/migration-engine/transitions";
 
 export async function createMigrationRun(input: {
   plan: OpenClawMigrationPlan;
@@ -31,6 +32,22 @@ export async function createMigrationRun(input: {
     journalHash: "",
     snapshot: null,
     rollback: null,
+    liveSwap: {
+      phase: "idle",
+      packageBackedUp: false,
+      packageInstalled: false,
+      stateBackedUp: false,
+      stateInstalled: false,
+      configBackedUp: false,
+      configInstalled: false,
+      sourceConfigExisted: false
+    },
+    livePathsSwapped: false,
+    postCommitRuntimeVerified: false,
+    canonicalRuntime: null,
+    rollbackVerification: null,
+    ownership: null,
+    doctorMutationDelta: null,
     evidence: [],
     errors: [],
     commitPointReached: false,
@@ -40,6 +57,10 @@ export async function createMigrationRun(input: {
 }
 
 export async function saveMigrationRun(run: OpenClawMigrationRun): Promise<OpenClawMigrationRun> {
+  const previous = await readFile(run.journalPath, "utf8").then((raw) => JSON.parse(raw) as Partial<OpenClawMigrationRun>).catch(() => null);
+  if (previous && typeof previous.state === "string" && previous.state !== run.state) {
+    assertOpenClawMigrationTransition(previous.state as OpenClawMigrationRun["state"], run.state);
+  }
   const sanitized = sanitizeRun(run);
   const journalHash = hashRun(sanitized);
   const persisted = { ...sanitized, journalHash } satisfies OpenClawMigrationRun;

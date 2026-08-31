@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { cp, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import os from "node:os";
@@ -7,7 +7,7 @@ import path from "node:path";
 import WebSocket from "ws";
 
 import { createDefaultMigrationRuntimeHooks } from "@/lib/openclaw/migration-engine/runtime";
-import { OpenClawMigrationEngine, OPENCLAW_PHASE_2B_SOURCE_VERSION, OPENCLAW_PHASE_2B_TARGET_COMMIT, OPENCLAW_PHASE_2B_TARGET_VERSION, buildSuccessGate } from "@/lib/openclaw/migration-engine/engine";
+import { OpenClawMigrationEngine, OPENCLAW_PHASE_2B_SOURCE_VERSION, OPENCLAW_PHASE_2B_TARGET_COMMIT, OPENCLAW_PHASE_2B_TARGET_VERSION, buildRollbackGate, buildSuccessGate } from "@/lib/openclaw/migration-engine/engine";
 import { readOpenClawRuntimeIdentity } from "@/lib/openclaw/migration-engine/paths";
 import { createOpenClawRuntimeProviderFixture } from "@/scripts/openclaw-runtime-provider-fixture";
 import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
@@ -30,16 +30,15 @@ async function main() {
   let rollback: Awaited<ReturnType<typeof runScenario>>;
   try {
     migration = await runScenario({ failureInjection: undefined, dependencyRoot });
-    rollback = process.env.OPENCLAW_MIGRATION_ONLY_FIRST === "1"
-      ? { ...migration, run: { ...migration.run, state: "rolled-back" as const }, sourceVersionRestored: true, stateRestored: true }
-      : await runScenario({ failureInjection: { step: "runtime-certification", once: true }, dependencyRoot });
+    rollback = await runScenario({ failureInjection: { step: "post-commit-certification", once: true }, dependencyRoot });
   } finally {
     await rm(dependencyRoot, { recursive: true, force: true });
   }
   const migrationGate = buildSuccessGate(migration.run);
-  const rollbackPassed = rollback.run.state === "rolled-back" && rollback.sourceVersionRestored && rollback.stateRestored;
+  const rollbackGate = buildRollbackGate(rollback.run);
+  const rollbackPassed = rollbackGate.pass && rollback.sourceVersionRestored && rollback.stateRestored;
   const output = redactSecrets({
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     provenance: {
       sourceVersion: OPENCLAW_PHASE_2B_SOURCE_VERSION,
@@ -63,7 +62,9 @@ async function main() {
     migration: sanitizeRun(migration.run, migration.root),
     successGate: migrationGate,
     rollback: {
+      failedRun: sanitizeRun(rollback.failedRun, rollback.root),
       run: sanitizeRun(rollback.run, rollback.root),
+      successGate: rollbackGate,
       pass: rollbackPassed,
       sourceVersionRestored: rollback.sourceVersionRestored,
       stateRestored: rollback.stateRestored
@@ -72,13 +73,14 @@ async function main() {
   });
   await mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
   await writeFile(OUTPUT_PATH, `${JSON.stringify(output, null, 2)}\n`, { mode: 0o600 });
-  console.log(`MIGRATION SUCCESS GATE: ${migrationGate.pass && rollbackPassed ? "PASS" : "FAIL"}`);
+  console.log(`MIGRATION SUCCESS GATE: ${migrationGate.pass ? "PASS" : "FAIL"}`);
+  console.log(`ROLLBACK SUCCESS GATE: ${rollbackPassed ? "PASS" : "FAIL"}`);
   console.log(`Migration state: ${migration.run.state}; rollback state: ${rollback.run.state}.`);
   console.log(`Evidence: ${OUTPUT_PATH}`);
   return migrationGate.pass && rollbackPassed ? 0 : 1;
 }
 
-async function runScenario(options: { failureInjection?: { step: "runtime-certification"; once: true }; dependencyRoot: string }) {
+async function runScenario(options: { failureInjection?: { step: "post-commit-certification"; once: true }; dependencyRoot: string }) {
   const root = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-migration-e2e-"));
   const provider = await createOpenClawRuntimeProviderFixture();
   const gatewayToken = randomBytes(24).toString("hex");
@@ -112,10 +114,11 @@ async function runScenario(options: { failureInjection?: { step: "runtime-certif
     const sourcePort = await reservePort();
     const defaultHooks = createDefaultMigrationRuntimeHooks();
     if (!defaultHooks.gateway) throw new Error("Default Gateway adapter is unavailable.");
-    sourceGateway = await defaultHooks.gateway.start({ binaryPath: path.join(sourcePackage, "openclaw.mjs"), stateDir, configPath, port: sourcePort, token: gatewayToken });
-    await seedRealSourceState(`ws://127.0.0.1:${sourcePort}`, provider.modelId, gatewayToken);
+    sourceGateway = await defaultHooks.gateway.start({ binaryPath: path.join(installRoot, "openclaw.mjs"), stateDir, configPath, port: sourcePort, token: gatewayToken, phase: "rollback" });
+    const seededSession = await seedRealSourceState(`ws://127.0.0.1:${sourcePort}`, provider.modelId, gatewayToken);
     await sourceGateway.stop();
     sourceGateway = null;
+    await writeLegacySessionTranscript(stateDir, workspace, seededSession.sessionId);
 
     const input = {
       sourceBinaryPath: path.join(sourcePackage, "openclaw.mjs"),
@@ -128,6 +131,7 @@ async function runScenario(options: { failureInjection?: { step: "runtime-certif
       workRoot: path.join(root, "engine-work"),
       gatewayPort: await reservePort(),
       gatewayToken,
+      preservationSessionKey: "agent:dev:legacy-migration-fixture",
       failureInjection: options.failureInjection
     };
     const engine = new OpenClawMigrationEngine(input, defaultHooks);
@@ -137,13 +141,13 @@ async function runScenario(options: { failureInjection?: { step: "runtime-certif
     let sourceVersionRestored = false;
     let stateRestored = false;
     if (options.failureInjection) {
-      if (!run.snapshot) return { root, port: input.gatewayPort, run, dryRun, sourceVersionRestored, stateRestored, cleaned: true };
+      if (!run.snapshot) return { root, port: input.gatewayPort, run, failedRun: run, dryRun, sourceVersionRestored, stateRestored, cleaned: true };
       const rolledBack = await engine.rollback(run.journalPath);
       sourceVersionRestored = (await readPackageVersion(installRoot)) === OPENCLAW_PHASE_2B_SOURCE_VERSION;
       stateRestored = (await readFile(path.join(stateDir, "workspace", "preserved-marker.md"), "utf8")) === "source-workspace-preserved\n";
-      return { root, port: input.gatewayPort, run: rolledBack, dryRun, sourceVersionRestored, stateRestored, cleaned: true };
+      return { root, port: input.gatewayPort, run: rolledBack, failedRun: run, dryRun, sourceVersionRestored, stateRestored, cleaned: true };
     }
-    return { root, port: input.gatewayPort, run, dryRun, sourceVersionRestored, stateRestored, cleaned: true };
+    return { root, port: input.gatewayPort, run, failedRun: null, dryRun, sourceVersionRestored, stateRestored, cleaned: true };
   } finally {
     if (sourceGateway) await sourceGateway.stop().catch(() => {});
     sourceDatabase?.close();
@@ -165,9 +169,23 @@ async function seedRealSourceState(gatewayUrl: string, modelId: string, token: s
     await new Promise((resolve) => setTimeout(resolve, 2_000));
     const cron = await retryNativeCall<Record<string, unknown>>(client, "cron.add", { name: "Legacy migration fixture cron", agentId: "dev", schedule: { kind: "every", everyMs: 3_600_000 }, sessionTarget: "isolated", wakeMode: "now", payload: { kind: "agentTurn", message: "AGENTOS_SYNTHETIC_CRON_PROMPT" }, delivery: { mode: "none" }, enabled: true, deleteAfterRun: false }, { timeoutMs: 8_000 }, { safety: "mutation", timeoutMs: 8_000 });
     if (!cron.id && !(cron.job && typeof cron.job === "object")) throw new Error("Source fixture cron was not persisted.");
+    return { sessionId: typeof session.sessionId === "string" ? session.sessionId : typeof session.id === "string" ? session.id : "" };
   } finally {
     client.close("source fixture seeded");
   }
+}
+
+async function writeLegacySessionTranscript(stateDir: string, workspace: string, sessionId: string) {
+  if (!sessionId) throw new Error("Source fixture session did not return a session id.");
+  const sessionPath = path.join(stateDir, "agents", "dev", "sessions", `${sessionId}.jsonl`);
+  const timestamp = new Date().toISOString();
+  await mkdir(path.dirname(sessionPath), { recursive: true, mode: 0o700 });
+  const userId = randomUUID();
+  await writeFile(sessionPath, [
+    { type: "session", version: 3, id: sessionId, timestamp, cwd: workspace },
+    { type: "message", id: userId, parentId: null, timestamp, message: { role: "user", content: [{ type: "text", text: "AGENTOS_SYNTHETIC_LEGACY_HISTORY" }] } },
+    { type: "message", id: randomUUID(), parentId: userId, timestamp, message: { role: "assistant", content: [{ type: "text", text: "AGENTOS_LEGACY_HISTORY_REPLY" }] } }
+  ].map((entry) => JSON.stringify(entry)).join("\n") + "\n");
 }
 
 async function createFixtureDatabase(filePath: string) {

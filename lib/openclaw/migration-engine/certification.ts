@@ -9,6 +9,10 @@ import type { OpenClawMigrationEvidence } from "@/lib/openclaw/migration-engine/
 export async function certifyOpenClawMigrationRuntime(input: {
   gatewayUrl: string;
   token: string;
+  phase?: "staged" | "canonical" | "rollback";
+  expectedVersion?: string;
+  expectedCommit?: string | null;
+  existingSessionKey?: string;
 }): Promise<OpenClawMigrationEvidence> {
   const client = new NativeWsOpenClawGatewayClient({
     url: input.gatewayUrl,
@@ -23,16 +27,45 @@ export async function certifyOpenClawMigrationRuntime(input: {
   const sessionKey = `agent:dev:agentos-migration-${Date.now()}`;
   let sessionId: string | null = null;
   let cronId: string | null = null;
+  const phase = input.phase ?? "staged";
+  const expectedVersion = input.expectedVersion ?? "2026.8.1";
   try {
-    const handshake = await client.probeNativeHandshake({ timeoutMs: 10_000 });
-    if (handshake.server?.version !== "2026.8.1") throw new Error(`Runtime certification connected to ${handshake.server?.version ?? "unknown"}, not 2026.8.1.`);
+    const handshake = await retryHandshake(client, 30_000);
+    if (handshake.server?.version !== expectedVersion) throw new Error(`Runtime certification connected to ${handshake.server?.version ?? "unknown"}, not ${expectedVersion}.`);
     checks.push("gateway.health");
     const health = await client.callNative<Record<string, unknown>>("health", {}, { timeoutMs: 8_000 }, { safety: "read", timeoutMs: 8_000 });
     if (!health || typeof health !== "object") throw new Error("Gateway health response was invalid.");
 
+    const listedBeforeWrite = input.existingSessionKey
+      ? await client.callNative<unknown>("sessions.list", {}, { timeoutMs: 8_000 }, { safety: "read", timeoutMs: 8_000 })
+      : null;
+    const preservedSessionKey = input.existingSessionKey ? findSessionKey(listedBeforeWrite, input.existingSessionKey) : null;
+    if (input.existingSessionKey && !preservedSessionKey) throw new Error("Canonical session history key was not present in sessions.list after migration.");
+    if (preservedSessionKey) {
+      const history = await client.callNative<Record<string, unknown>>("chat.history", { sessionKey: preservedSessionKey, limit: 50 }, { timeoutMs: 8_000 }, { safety: "read", timeoutMs: 8_000 });
+      const messages = asRecord(history)?.messages;
+      if (!Array.isArray(messages) || messages.length === 0) throw new Error("Canonical session history was not preserved.");
+      checks.push(phase === "rollback" ? "rollback.session-history" : "canonical.session-history");
+    }
+
     const session = await client.callNative<Record<string, unknown>>("sessions.create", { key: sessionKey, agentId: "dev", label: "AgentOS migration certification" }, { timeoutMs: 8_000 }, { safety: "mutation", timeoutMs: 8_000 });
     sessionId = readString(session.sessionId) ?? readString(asRecord(session.entry)?.sessionId);
     if (!sessionId) throw new Error("Target Gateway did not return a durable session id.");
+    const sessions = await client.callNative<unknown>("sessions.list", {}, { timeoutMs: 8_000 }, { safety: "read", timeoutMs: 8_000 });
+    if (!containsSession(sessions, sessionKey) && phase === "staged") throw new Error("Target Gateway did not expose the created session in sessions.list.");
+    checks.push(phase === "staged" ? "session-continuity" : `${phase}.session-write`);
+
+    if (phase === "canonical") {
+      return {
+        id: "runtime-certification",
+        step: "runtime-certification",
+        kind: "runtime",
+        status: "pass",
+        summary: "Canonical target Gateway health, preserved history, and durable session write certification passed.",
+        details: { checks, targetVersion: expectedVersion, expectedCommit: input.expectedCommit ?? null, phase },
+        createdAt: new Date().toISOString()
+      };
+    }
 
     const frames: GatewayEventFrame[] = [];
     const subscription = await client.subscribeNativeEvents(
@@ -52,7 +85,7 @@ export async function certifyOpenClawMigrationRuntime(input: {
       const history = await client.callNative<Record<string, unknown>>("chat.history", { sessionKey, limit: 20 }, { timeoutMs: 8_000 }, { safety: "read", timeoutMs: 8_000 });
       const assistantText = readAssistantText(history);
       if (!terminal.textObserved || !assistantText) throw new Error("Target model execution did not produce a streamed and persisted assistant response.");
-      checks.push("model", "streaming", "session-continuity");
+      checks.push("model", "streaming");
     } finally {
       subscription.close();
     }
@@ -81,7 +114,7 @@ export async function certifyOpenClawMigrationRuntime(input: {
     if (!runId) throw new Error("cron.run did not return a run id.");
     let succeeded = false;
     for (let attempt = 0; attempt < 60; attempt += 1) {
-      const runs = await client.callNative<unknown>("cron.runs", { jobId: cronId, runId, limit: 10 }, { timeoutMs: 8_000 }, { safety: "read", timeoutMs: 8_000 });
+      const runs = await retryNativeCall<unknown>(client, "cron.runs", { jobId: cronId, runId, limit: 10 }, { timeoutMs: 8_000 }, { safety: "read", timeoutMs: 8_000 });
       const entry = findRun(runs, runId);
       if (entry && ["ok", "error", "skipped", "cancelled"].includes(readString(entry.status) ?? "")) {
         succeeded = entry.status === "ok";
@@ -96,8 +129,8 @@ export async function certifyOpenClawMigrationRuntime(input: {
       step: "runtime-certification",
       kind: "runtime",
       status: "pass",
-      summary: "Native Gateway, model, streaming, restart, session continuity, and cron.run certification passed.",
-      details: { checks, targetVersion: "2026.8.1" },
+      summary: `${phase} native Gateway, model, streaming, session history, restart, and cron.run certification passed.`,
+      details: { checks, targetVersion: expectedVersion, expectedCommit: input.expectedCommit ?? null, phase },
       createdAt: new Date().toISOString()
     };
   } finally {
@@ -125,8 +158,7 @@ async function retryHandshake(client: NativeWsOpenClawGatewayClient, timeoutMs: 
   let lastError: unknown = null;
   while (Date.now() - started < timeoutMs) {
     try {
-      await client.probeNativeHandshake({ timeoutMs: 4_000 });
-      return;
+      return await client.probeNativeHandshake({ timeoutMs: 4_000 });
     } catch (error) {
       lastError = error;
       await wait(500);
@@ -144,6 +176,25 @@ function readAssistantText(payload: unknown) {
     const content = readMessageContent(record?.content) ?? readMessageContent(asRecord(record?.message)?.content);
     return role === "assistant" ? content : "";
   }).filter(Boolean).join(" ");
+}
+
+function containsSession(payload: unknown, sessionKey: string) {
+  const record = asRecord(payload);
+  const entries = Array.isArray(record?.sessions) ? record.sessions : Array.isArray(record?.entries) ? record.entries : Array.isArray(payload) ? payload : [];
+  return entries.some((entry) => {
+    const item = asRecord(entry);
+    return item?.key === sessionKey || item?.sessionKey === sessionKey || asRecord(item?.session)?.key === sessionKey;
+  });
+}
+
+function findSessionKey(payload: unknown, requestedKey: string) {
+  const record = asRecord(payload);
+  const entries = Array.isArray(record?.sessions) ? record.sessions : Array.isArray(record?.entries) ? record.entries : Array.isArray(payload) ? payload : [];
+  const records = entries.map(asRecord).filter((entry): entry is Record<string, unknown> => entry !== null);
+  const exact = records.find((entry) => entry.key === requestedKey || entry.sessionKey === requestedKey || asRecord(entry.session)?.key === requestedKey);
+  if (exact) return readString(exact.key) ?? readString(exact.sessionKey) ?? readString(asRecord(exact.session)?.key);
+  const agentMatch = records.find((entry) => readString(entry.agentId) === "dev" && (readString(entry.key) || readString(entry.sessionKey)));
+  return agentMatch ? readString(agentMatch.key) ?? readString(agentMatch.sessionKey) : null;
 }
 
 function readMessageContent(value: unknown): string | null {

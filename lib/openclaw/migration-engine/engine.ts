@@ -4,11 +4,14 @@ import path from "node:path";
 
 import { resolveAgentOsDeploymentCapabilities } from "@/lib/agentos/deployment-capabilities";
 import { redactSecretText, redactSecrets } from "@/lib/security/redaction";
-import { captureStatePreservation, compareStatePreservation } from "@/lib/openclaw/migration-engine/preservation";
-import { createMigrationSnapshot, copySnapshotState, restoreMigrationSnapshot } from "@/lib/openclaw/migration-engine/snapshot";
+import { captureStateManifest, captureStatePreservation, compareDoctorMutationDelta, compareStatePreservation } from "@/lib/openclaw/migration-engine/preservation";
+import { auditMigrationSymlinks, createMigrationSnapshot, copySnapshotState, restoreMigrationSnapshot } from "@/lib/openclaw/migration-engine/snapshot";
+import { createWalAwareSqliteSnapshot, inspectSqliteDatabase } from "@/lib/openclaw/migration-engine/sqlite";
+import { detectOpenClawMigrationOwnership } from "@/lib/openclaw/migration-engine/ownership";
 import { createDefaultMigrationRuntimeHooks, DEFAULT_MIGRATION_COMMAND_TIMEOUT_MS } from "@/lib/openclaw/migration-engine/runtime";
 import { addMigrationEvidence, beginMigrationStep, completeMigrationStep, createMigrationRun, failMigrationRun, readMigrationRun, saveMigrationRun } from "@/lib/openclaw/migration-engine/journal";
 import { compareOpenClawVersions, pathExists, readOpenClawRuntimeIdentity, resolveMigrationPaths } from "@/lib/openclaw/migration-engine/paths";
+import { transitionMigrationRun } from "@/lib/openclaw/migration-engine/transitions";
 import type {
   OpenClawMigrationCommandResult,
   OpenClawMigrationEngineInput,
@@ -18,6 +21,8 @@ import type {
   OpenClawMigrationRollbackPlan,
   OpenClawMigrationRun,
   OpenClawMigrationRuntimeHooks,
+  OpenClawMigrationRollbackGate,
+  OpenClawMigrationRuntimeVerification,
   OpenClawMigrationStep,
   OpenClawMigrationStepId,
   OpenClawMigrationSuccessGate
@@ -39,13 +44,18 @@ const STEP_DEFINITIONS: Array<Omit<OpenClawMigrationStep, "status">> = [
   { id: "post-upgrade-doctor", state: "postflight", description: "Run target post-upgrade doctor checks and record machine-readable findings.", mutation: false, retryable: true },
   { id: "runtime-certification", state: "certifying", description: "Certify native Gateway, model, streaming, restart, and cron behavior.", mutation: false, retryable: true },
   { id: "preservation", state: "certifying", description: "Compare source and target agent, session, transcript, automation, model, and workspace evidence.", mutation: false, retryable: true },
-  { id: "commit", state: "committing", description: "Replace the managed runtime and live state after every required gate passes.", mutation: true, retryable: false },
+  { id: "stop-staged-target", state: "certifying", description: "Stop the isolated target Gateway and verify it released its process before live swap.", mutation: true, retryable: true },
+  { id: "swap-live-paths", state: "committing", description: "Guardedly swap managed package and canonical live state/config while retaining rollback backups.", mutation: true, retryable: false },
+  { id: "start-canonical-target", state: "target-starting", description: "Boot the exact target from the canonical managed install and live paths.", mutation: true, retryable: true },
+  { id: "post-commit-certification", state: "certifying", description: "Certify the target again on canonical live state and verify no staging path is serving it.", mutation: false, retryable: true },
+  { id: "verify-target-sqlite", state: "certifying", description: "Recheck canonical SQLite integrity, foreign keys, sidecars, and target preflight after live swap.", mutation: false, retryable: true },
+  { id: "commit", state: "committing", description: "Record the irreversible migration commit only after canonical runtime and database gates pass.", mutation: true, retryable: false },
   { id: "cleanup", state: "completed", description: "Remove disposable staging material while retaining verified rollback evidence.", mutation: true, retryable: true }
 ];
 
 export class OpenClawMigrationEngine {
   private readonly hooks: Required<Pick<OpenClawMigrationRuntimeHooks, "runCommand">> & OpenClawMigrationRuntimeHooks;
-  private readonly gatewayHandles = new Map<string, { stop: () => Promise<void> }>();
+  private readonly gatewayHandles = new Map<string, { stop: () => Promise<void>; isRunning?: () => boolean }>();
   private readonly injectedFailureUsed = new Set<OpenClawMigrationStepId>();
 
   constructor(
@@ -77,6 +87,11 @@ export class OpenClawMigrationEngine {
     const blockers = [] as OpenClawMigrationPlan["blockers"];
     const warnings: string[] = [];
     const supervisorMode = resolveSupervisorMode(this.input.supervisorMode);
+    const ownership = await (this.hooks.detectOwnership ?? detectOpenClawMigrationOwnership)({
+      stateDir: paths.sourceStateDir,
+      gatewayPort: this.input.gatewayPort,
+      supervisorMode
+    });
     const versionOrder = compareOpenClawVersions(source.version, target.version);
 
     if (source.version !== OPENCLAW_PHASE_2B_SOURCE_VERSION) {
@@ -89,13 +104,14 @@ export class OpenClawMigrationEngine {
     else if (versionOrder >= 0) blockers.push({ code: "downgrade", message: "Migration engine accepts only a strict source-to-newer-target upgrade." });
     if (!(await pathExists(paths.sourceStateDir))) blockers.push({ code: "missing-path", message: "Source OpenClaw state directory does not exist." });
     if (!(await pathExists(source.packageRoot))) blockers.push({ code: "missing-path", message: "Source OpenClaw package root does not exist." });
-    if (this.input.activeOwnerDetected) blockers.push({ code: "active-owner", message: "OpenClaw state ownership is live; stop the current Gateway before migration." });
+    if (ownership.status === "active" && ownership.source !== "external-supervisor") blockers.push({ code: "active-owner", message: ownership.reason });
+    if (ownership.status === "unknown") blockers.push({ code: "unknown", message: `OpenClaw state ownership could not be proven inactive: ${ownership.reason}` });
     if (supervisorMode === "external") blockers.push({ code: "external-supervisor", message: "External supervisor owns Gateway replacement; AgentOS will not replace its runtime or process." });
     if (!this.input.installPackageRoot) warnings.push("No managed install package root was supplied; this plan can validate and certify but has no runtime replacement target.");
     if (!(await pathExists(paths.sourceConfigPath))) warnings.push("Source config was not found; target migration will decide whether a default config is safe.");
 
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       planId,
       createdAt: new Date().toISOString(),
       mode: this.input.mode ?? "execute",
@@ -109,6 +125,7 @@ export class OpenClawMigrationEngine {
           ? "External supervisor boundary is active; only analysis, plan, and snapshot are allowed."
           : "AgentOS-managed lifecycle permits replacement after certification and explicit commit."
       },
+      ownership,
       steps: STEP_DEFINITIONS.map((step) => ({ ...step, status: "pending" })),
       blockers,
       warnings,
@@ -146,8 +163,7 @@ export class OpenClawMigrationEngine {
           if (!run.completedSteps.includes(step.id)) run = await this.executeStep(plan, run, step, runRoot);
         }
         return await saveMigrationRun({
-          ...run,
-          state: "blocked",
+          ...transitionMigrationRun(run, "blocked"),
           currentStep: null,
           recoveryRequired: false,
           evidence: [...run.evidence, this.evidence("preflight", "supervisor", "blocked", "Snapshot completed, but external supervisor still blocks runtime replacement.")]
@@ -158,8 +174,7 @@ export class OpenClawMigrationEngine {
     }
     if (plan.blockers.length > 0) {
       run = await saveMigrationRun({
-        ...run,
-        state: "blocked",
+        ...transitionMigrationRun(run, "blocked"),
         recoveryRequired: false,
         evidence: [...run.evidence, this.evidence("preflight", "supervisor", "blocked", "Migration is blocked before state mutation.", { blockers: plan.blockers })]
       });
@@ -171,12 +186,18 @@ export class OpenClawMigrationEngine {
         if (run.completedSteps.includes(step.id)) continue;
         run = await this.executeStep(plan, run, step, runRoot);
       }
-      run = await saveMigrationRun({ ...run, state: "completed", currentStep: null, recoveryRequired: false });
+      run = await saveMigrationRun({ ...transitionMigrationRun(run, "completed"), currentStep: null, recoveryRequired: false });
     } catch (error) {
-      const state = run.snapshot ? "rollback-required" : "failed";
+      run = await readExistingRun(path.join(runRoot, "migration-journal.json")) ?? run;
+      const state = run.livePathsSwapped || run.liveSwap.phase !== "idle" || run.snapshot ? "rollback-required" : "failed";
       run = await saveMigrationRun(failMigrationRun(run, error, state));
     } finally {
-      await this.stopGateway(plan.planId);
+      try {
+        await this.stopGateway(plan.planId);
+      } catch (error) {
+        const state = run.commitPointReached ? "recovery-required" : "rollback-required";
+        run = await saveMigrationRun(failMigrationRun(run, error, state));
+      }
     }
     return run;
   }
@@ -185,11 +206,13 @@ export class OpenClawMigrationEngine {
     let run = await readMigrationRun(journalPath);
     const plan = JSON.parse(await readFile(path.join(path.dirname(journalPath), "plan.json"), "utf8")) as OpenClawMigrationPlan;
     if (run.commitPointReached) throw new Error("Committed migration cannot be resumed automatically; use rollback or recovery review.");
+    if (run.livePathsSwapped || run.liveSwap.phase !== "idle") {
+      return saveMigrationRun({ ...transitionMigrationRun(run, "recovery-required"), currentStep: null, recoveryRequired: true, errors: [...run.errors, "Live path swap was interrupted or reached an uncertain phase; automatic resume is refused. Restore through rollback/recovery."] });
+    }
     if (run.state === "interrupted") {
-      const restartFrom = new Set<OpenClawMigrationStepId>(["start-target", "post-upgrade-doctor", "runtime-certification", "preservation", "commit", "cleanup"]);
+      const restartFrom = new Set<OpenClawMigrationStepId>(["start-target", "post-upgrade-doctor", "runtime-certification", "preservation", "stop-staged-target", "swap-live-paths", "start-canonical-target", "post-commit-certification", "verify-target-sqlite", "commit", "cleanup"]);
       run = await saveMigrationRun({
-        ...run,
-        state: "planned",
+        ...transitionMigrationRun(run, "planned"),
         currentStep: null,
         recoveryRequired: false,
         completedSteps: run.completedSteps.filter((step) => !restartFrom.has(step))
@@ -201,7 +224,8 @@ export class OpenClawMigrationEngine {
   async markInterrupted(journalPath: string) {
     const run = await readMigrationRun(journalPath);
     if (run.commitPointReached) throw new Error("A committed migration cannot be marked interrupted.");
-    return saveMigrationRun({ ...run, state: "interrupted", currentStep: null, recoveryRequired: true });
+    const state = run.livePathsSwapped || run.liveSwap.phase !== "idle" ? "recovery-required" : "interrupted";
+    return saveMigrationRun({ ...transitionMigrationRun(run, state), currentStep: null, recoveryRequired: true });
   }
 
   async rollback(journalPath: string): Promise<OpenClawMigrationRun> {
@@ -209,32 +233,51 @@ export class OpenClawMigrationEngine {
     const plan = JSON.parse(await readFile(path.join(path.dirname(journalPath), "plan.json"), "utf8")) as OpenClawMigrationPlan;
     if (!run.snapshot) throw new Error("Migration rollback requires a verified snapshot.");
     if (plan.supervisor.mode === "external") throw new Error("External supervisor owns runtime replacement; AgentOS cannot perform rollback.");
-    if (this.input.activeOwnerDetected) throw new Error("Rollback is blocked while OpenClaw state ownership is live.");
+    const ownership = await (this.hooks.detectOwnership ?? detectOpenClawMigrationOwnership)({ stateDir: plan.paths.sourceStateDir, gatewayPort: this.input.gatewayPort, supervisorMode: plan.supervisor.mode });
+    if (ownership.status !== "inactive") throw new Error(`Rollback is blocked until canonical OpenClaw ownership is inactive: ${ownership.reason}`);
 
     const snapshot = run.snapshot;
-    run = await saveMigrationRun({ ...run, state: "rolling-back", currentStep: null, recoveryRequired: true });
+    run = await saveMigrationRun({ ...transitionMigrationRun(run, "rolling-back"), currentStep: null, recoveryRequired: true, ownership });
     try {
       await this.stopGateway(plan.planId);
+      await restoreLiveSwapBackups(plan, run, path.dirname(journalPath));
       await restoreMigrationSnapshot({ snapshot, stateDir: plan.paths.sourceStateDir, configPath: plan.paths.sourceConfigPath });
-      if (plan.paths.installPackageRoot && run.rollback?.restorePackageRoot) {
+      if (plan.paths.installPackageRoot && run.rollback?.restorePackageRoot && !run.liveSwap.packageBackedUp) {
         await replaceDirectory(run.rollback.restorePackageRoot, plan.paths.installPackageRoot);
       }
-      run = addMigrationEvidence(run, this.evidence("commit", "rollback", "pass", "Verified pre-upgrade state, config, and managed runtime were restored."));
-      return await saveMigrationRun({ ...run, state: "rolled-back", recoveryRequired: false, commitPointReached: false, errors: [] });
+      if (plan.paths.installPackageRoot && this.hooks.gateway && this.hooks.certify) {
+        const sourceBinaryPath = resolvePackageBinary(plan.source, plan.paths.installPackageRoot);
+        const token = requireMigrationGatewayToken(this.input.gatewayToken);
+        const handle = await this.hooks.gateway.start({ binaryPath: sourceBinaryPath, stateDir: plan.paths.sourceStateDir, configPath: plan.paths.sourceConfigPath, port: this.input.gatewayPort ?? 28789, token, phase: "rollback" });
+        this.gatewayHandles.set(plan.planId, { stop: handle.stop, isRunning: handle.isRunning });
+        const evidence = await this.hooks.certify({ binaryPath: sourceBinaryPath, stateDir: plan.paths.sourceStateDir, configPath: plan.paths.sourceConfigPath, gatewayUrl: `ws://127.0.0.1:${this.input.gatewayPort ?? 28789}`, token, phase: "rollback", expectedVersion: OPENCLAW_PHASE_2B_SOURCE_VERSION, expectedCommit: plan.source.sourceCommit, existingSessionKey: this.input.preservationSessionKey });
+        if (evidence.status !== "pass") throw new Error(`Rollback runtime certification did not pass: ${evidence.summary}`);
+        run = this.addEvidence(run, evidence);
+        await this.stopGateway(plan.planId);
+        const sqlite = await this.inspectCanonicalSqlite(plan, run, sourceBinaryPath, "rollback");
+        run = this.addEvidence(run, sqlite);
+        run = { ...run, rollbackVerification: { phase: "rollback", status: "pass", version: plan.source.version, sourceCommit: plan.source.sourceCommit, binaryPathRole: "managed-source", statePathRole: "restored-canonical", configPathRole: "restored-canonical", checks: [...readEvidenceChecks(evidence), "sqlite.integrity", "sqlite.foreign-keys", "sqlite.preflight"] } };
+      }
+      run = this.addEvidence(run, this.evidence("commit", "rollback", "pass", "Verified source runtime, state, config, and managed package were restored and booted on canonical paths."));
+      const gate = buildRollbackGate({ ...run, state: "rolled-back", recoveryRequired: false });
+      if (!gate.pass) throw new Error(`Rollback success gate failed: ${gate.checks.filter((check) => !check.pass).map((check) => check.detail).join(" ")}`);
+      return await saveMigrationRun({ ...run, ...transitionMigrationRun(run, "rolled-back"), recoveryRequired: false, commitPointReached: false, errors: [] });
     } catch (error) {
       return await saveMigrationRun(failMigrationRun(run, error, "recovery-required"));
+    } finally {
+      await this.stopGateway(plan.planId).catch(() => {});
     }
   }
 
   async finalReport(journalPath: string) {
     const run = await readMigrationRun(journalPath);
     const gate = buildSuccessGate(run);
-    return { run, successGate: gate };
+    return { run, successGate: gate, rollbackGate: buildRollbackGate(run) };
   }
 
   private async executeStep(plan: OpenClawMigrationPlan, run: OpenClawMigrationRun, step: OpenClawMigrationStep, runRoot: string) {
     if (this.shouldInjectFailure(step.id)) throw new Error(`Deterministic failure injection at migration step ${step.id}.`);
-    run = await saveMigrationRun({ ...beginMigrationStep(run, step.id), state: step.state });
+    run = await saveMigrationRun({ ...transitionMigrationRun(beginMigrationStep(run, step.id), step.state) });
     switch (step.id) {
       case "inspect":
         run = await this.stepInspect(plan, run);
@@ -269,8 +312,23 @@ export class OpenClawMigrationEngine {
       case "preservation":
         run = await this.stepPreservation(plan, run, runRoot);
         break;
+      case "stop-staged-target":
+        run = await this.stepStopStagedTarget(plan, run);
+        break;
+      case "swap-live-paths":
+        run = await this.stepSwapLivePaths(plan, run, runRoot);
+        break;
+      case "start-canonical-target":
+        run = await this.stepStartCanonicalTarget(plan, run);
+        break;
+      case "post-commit-certification":
+        run = await this.stepPostCommitCertification(plan, run);
+        break;
+      case "verify-target-sqlite":
+        run = await this.stepVerifyTargetSqlite(plan, run);
+        break;
       case "commit":
-        run = await this.stepCommit(plan, run, runRoot);
+        run = await this.stepCommit(plan, run);
         break;
       case "cleanup":
         run = await this.stepCleanup(plan, run, runRoot);
@@ -294,7 +352,7 @@ export class OpenClawMigrationEngine {
   private async stepPreflight(plan: OpenClawMigrationPlan, run: OpenClawMigrationRun) {
     return this.addEvidence(run, this.evidence("preflight", "supervisor", "pass", plan.supervisor.reason, {
       replacementAllowed: plan.supervisor.replacementAllowed,
-      stateOwner: this.input.activeOwnerDetected ? "live" : "not-detected"
+      ownership: plan.ownership
     }));
   }
 
@@ -306,7 +364,7 @@ export class OpenClawMigrationEngine {
       sourceCommit: plan.source.sourceCommit,
       stateDir: plan.paths.sourceStateDir,
       configPath: plan.paths.sourceConfigPath,
-      destinationRoot: path.join(runRoot, "snapshot")
+      destinationRoot: path.join(plan.paths.snapshotRoot, plan.planId)
     });
     const sourcePreservation = await captureStatePreservation({ stateDir: plan.paths.sourceStateDir, configPath: plan.paths.sourceConfigPath, workspaceRelativePrefix: "workspace" });
     await writeFile(path.join(runRoot, "source-preservation.json"), `${JSON.stringify(sourcePreservation, null, 2)}\n`, { mode: 0o600 });
@@ -348,7 +406,7 @@ export class OpenClawMigrationEngine {
       await mkdir(path.dirname(plan.paths.targetConfigPath), { recursive: true, mode: 0o700 });
       await cp(path.join(run.snapshot.root, run.snapshot.config.relativePath), plan.paths.targetConfigPath, { force: true });
     }
-    return this.addEvidence(run, this.evidence("stage-target", "identity", "pass", "Exact target package and isolated source state staged side by side.", { stagedPackageRoot }));
+    return this.addEvidence(run, this.evidence("stage-target", "identity", "pass", "Exact target package and isolated source state staged side by side.", { packageRole: "isolated-staging", stateRole: "isolated-target" }));
   }
 
   private async stepValidateTarget(plan: OpenClawMigrationPlan, run: OpenClawMigrationRun) {
@@ -370,9 +428,15 @@ export class OpenClawMigrationEngine {
 
   private async stepMigrateState(plan: OpenClawMigrationPlan, run: OpenClawMigrationRun) {
     const binaryPath = resolveStagedBinary(plan, path.join(plan.paths.workRoot, "runs", plan.planId, "staged-target"));
+    const beforeManifest = await captureStateManifest({ stateDir: plan.paths.targetStateDir, configPath: plan.paths.targetConfigPath });
     const result = await this.command(binaryPath, ["doctor", "--fix", "--non-interactive", "--yes", "--no-workspace-suggestions"], plan);
     if (result.exitCode !== 0) throw new Error(`Target state migration failed: ${result.stderr || result.stdout || "no diagnostic"}`);
     let next = this.addEvidence(run, this.commandEvidence("migrate-state", result, "command", "Target explicit doctor repair completed in isolated state."));
+    const afterManifest = await captureStateManifest({ stateDir: plan.paths.targetStateDir, configPath: plan.paths.targetConfigPath });
+    const doctorMutationDelta = compareDoctorMutationDelta(beforeManifest, afterManifest, `${result.stdout}\n${result.stderr}`);
+    next = { ...next, doctorMutationDelta };
+    next = this.addEvidence(next, this.evidence("migrate-state", "doctor", doctorMutationDelta.status === "fail" ? "fail" : doctorMutationDelta.status, "Doctor mutation delta was classified against the migration allowlist.", { delta: doctorMutationDelta }));
+    if (doctorMutationDelta.status === "fail") throw new Error(`Target doctor changed unexpected workspace files: ${doctorMutationDelta.unexpected.join(", ")}.`);
     const lint = await this.command(binaryPath, ["doctor", "--lint", "--json", "--no-workspace-suggestions"], plan);
     if (lint.exitCode !== 0 && !parseCommandJson(lint)) throw new Error("Target doctor lint failed after state migration.");
     next = this.addEvidence(next, this.commandEvidence("migrate-state", lint, "doctor", "Post-migration read-only doctor lint completed."));
@@ -388,10 +452,11 @@ export class OpenClawMigrationEngine {
       stateDir: plan.paths.targetStateDir,
       configPath: plan.paths.targetConfigPath,
       port,
-      token
+      token,
+      phase: "staged"
     });
-    this.gatewayHandles.set(plan.planId, { stop: handle.stop });
-    return this.addEvidence(run, this.evidence("start-target", "runtime", "pass", "Target Gateway started against isolated migrated state.", { pid: handle.pid, port }));
+    this.gatewayHandles.set(plan.planId, { stop: handle.stop, isRunning: handle.isRunning });
+    return this.addEvidence(run, this.evidence("start-target", "runtime", "pass", "Target Gateway started against isolated migrated state.", { pid: handle.pid, port, binaryRole: "staged-target", stateRole: "isolated-target", configRole: "isolated-target" }));
   }
 
   private async stepPostUpgradeDoctor(plan: OpenClawMigrationPlan, run: OpenClawMigrationRun) {
@@ -426,29 +491,144 @@ export class OpenClawMigrationEngine {
     return this.addEvidence(run, this.evidence("preservation", "preservation", "pass", "Source state preservation checks passed.", { checks: comparison.checks }));
   }
 
-  private async stepCommit(plan: OpenClawMigrationPlan, run: OpenClawMigrationRun, runRoot: string) {
-    if (!plan.paths.installPackageRoot) throw new Error("Migration commit requires an explicit managed install package root.");
-    if (!run.snapshot || !run.rollback) throw new Error("Migration commit requires a verified snapshot and rollback plan.");
-    const stagedPackageRoot = path.join(runRoot, "staged-target");
-    const packageBackup = path.join(runRoot, "managed-package-before-commit");
-    const stateBackup = path.join(runRoot, "live-state-before-commit");
-    const configBackup = path.join(runRoot, "live-config-before-commit.json");
-    if (await pathExists(plan.paths.installPackageRoot)) await rename(plan.paths.installPackageRoot, packageBackup);
+  private async stepStopStagedTarget(plan: OpenClawMigrationPlan, run: OpenClawMigrationRun) {
+    await this.stopGateway(plan.planId);
+    return this.addEvidence(run, this.evidence("stop-staged-target", "runtime", "pass", "Isolated target Gateway stopped and released before live path replacement."));
+  }
+
+  private async stepSwapLivePaths(plan: OpenClawMigrationPlan, run: OpenClawMigrationRun, runRoot: string) {
+    if (!plan.paths.installPackageRoot) throw new Error("Live path swap requires an explicit managed install package root.");
+    if (!run.snapshot || !run.rollback) throw new Error("Live path swap requires a verified snapshot and rollback plan.");
+    const swapRoot = runRoot;
+    const packageBackup = path.join(swapRoot, "managed-package-before-commit");
+    const stateBackup = path.join(swapRoot, "live-state-before-commit");
+    const configBackup = path.join(swapRoot, "live-config-before-commit.json");
+    let next = run;
     try {
-      await rename(stagedPackageRoot, plan.paths.installPackageRoot);
-      if (await pathExists(plan.paths.sourceStateDir)) await rename(plan.paths.sourceStateDir, stateBackup);
+      if (await pathExists(plan.paths.installPackageRoot)) {
+        await rename(plan.paths.installPackageRoot, packageBackup);
+        next = await this.saveLiveSwap(next, { phase: "package-backed-up", packageBackedUp: true });
+        this.maybeInjectSubStep("after-package-backup");
+      }
+      await rename(path.join(runRoot, "staged-target"), plan.paths.installPackageRoot);
+      next = await this.saveLiveSwap(next, { phase: "package-installed", packageInstalled: true });
+      this.maybeInjectSubStep("after-package-install");
+
+      if (await pathExists(plan.paths.sourceStateDir)) {
+        await rename(plan.paths.sourceStateDir, stateBackup);
+        next = await this.saveLiveSwap(next, { phase: "state-backed-up", stateBackedUp: true });
+        this.maybeInjectSubStep("after-state-backup");
+      }
       await rename(plan.paths.targetStateDir, plan.paths.sourceStateDir);
-      if (await pathExists(plan.paths.sourceConfigPath)) await rename(plan.paths.sourceConfigPath, configBackup);
+      next = await this.saveLiveSwap(next, { phase: "state-installed", stateInstalled: true });
+      this.maybeInjectSubStep("after-state-install");
+
+      const sourceConfigExisted = await pathExists(plan.paths.sourceConfigPath);
+      if (sourceConfigExisted) {
+        await rename(plan.paths.sourceConfigPath, configBackup);
+        next = await this.saveLiveSwap(next, { phase: "config-backed-up", configBackedUp: true, sourceConfigExisted: true });
+        this.maybeInjectSubStep("after-config-backup");
+      } else {
+        next = await this.saveLiveSwap(next, { phase: "config-backed-up", sourceConfigExisted: false });
+      }
       if (await pathExists(plan.paths.targetConfigPath)) {
         await mkdir(path.dirname(plan.paths.sourceConfigPath), { recursive: true, mode: 0o700 });
         await rename(plan.paths.targetConfigPath, plan.paths.sourceConfigPath);
+        next = await this.saveLiveSwap(next, { phase: "config-installed", configInstalled: true });
+        this.maybeInjectSubStep("after-config-install");
       }
+      return await this.saveLiveSwap(next, { phase: "complete", packageBackedUp: next.liveSwap.packageBackedUp, packageInstalled: true, stateBackedUp: next.liveSwap.stateBackedUp, stateInstalled: true, configBackedUp: next.liveSwap.configBackedUp, configInstalled: next.liveSwap.configInstalled, sourceConfigExisted: next.liveSwap.sourceConfigExisted, livePathsSwapped: true });
     } catch (error) {
-      await restoreCommitBackups({ plan, packageBackup, stateBackup, configBackup });
+      await restoreLiveSwapBackups(plan, next, runRoot).catch(() => {});
       throw error;
     }
-    const nextRollback = { ...run.rollback, restorePackageRoot: packageBackup };
-    return this.addEvidence({ ...run, rollback: nextRollback, commitPointReached: true }, this.evidence("commit", "journal", "pass", "Explicit migration commit point reached after all required gates passed.", { packageRoot: plan.paths.installPackageRoot }));
+  }
+
+  private async stepStartCanonicalTarget(plan: OpenClawMigrationPlan, run: OpenClawMigrationRun) {
+    if (!this.hooks.gateway) throw new Error("Canonical runtime verification requires a Gateway start adapter.");
+    const token = requireMigrationGatewayToken(this.input.gatewayToken);
+    const handle = await this.hooks.gateway.start({
+      binaryPath: resolvePackageBinary(plan.target, plan.paths.installPackageRoot!),
+      stateDir: plan.paths.sourceStateDir,
+      configPath: plan.paths.sourceConfigPath,
+      port: this.input.gatewayPort ?? 28789,
+      token,
+      phase: "canonical"
+    });
+    this.gatewayHandles.set(plan.planId, { stop: handle.stop, isRunning: handle.isRunning });
+    return this.addEvidence(run, this.evidence("start-canonical-target", "runtime", "pass", "Exact target Gateway started from the managed install and canonical live state/config paths.", { binaryRole: "managed-install", stateRole: "live-canonical", configRole: "live-canonical", pid: handle.pid }));
+  }
+
+  private async stepPostCommitCertification(plan: OpenClawMigrationPlan, run: OpenClawMigrationRun) {
+    if (!this.hooks.certify) throw new Error("Canonical runtime certification adapter is not configured.");
+    const token = requireMigrationGatewayToken(this.input.gatewayToken);
+    const evidence = await this.hooks.certify({
+      binaryPath: resolvePackageBinary(plan.target, plan.paths.installPackageRoot!),
+      stateDir: plan.paths.sourceStateDir,
+      configPath: plan.paths.sourceConfigPath,
+      gatewayUrl: `ws://127.0.0.1:${this.input.gatewayPort ?? 28789}`,
+      token,
+      phase: "canonical",
+      expectedVersion: OPENCLAW_PHASE_2B_TARGET_VERSION,
+      expectedCommit: OPENCLAW_PHASE_2B_TARGET_COMMIT,
+      existingSessionKey: this.input.preservationSessionKey
+    });
+    if (evidence.status !== "pass") throw new Error(`Canonical runtime certification did not pass: ${evidence.summary}`);
+    const canonicalEvidence = { ...evidence, id: `canonical-runtime-${randomUUID()}`, step: "post-commit-certification" as const };
+    const stale: string[] = [];
+    for (const candidate of [path.join(plan.paths.workRoot, "runs", plan.planId, "staged-target"), plan.paths.targetStateDir, plan.paths.targetConfigPath]) {
+      if (await pathExists(candidate)) stale.push(candidate);
+    }
+    if (stale.length > 0) throw new Error("Canonical runtime verification found a stale staging path still present.");
+    const runtime: OpenClawMigrationRuntimeVerification = { phase: "canonical", status: "pass", version: OPENCLAW_PHASE_2B_TARGET_VERSION, sourceCommit: OPENCLAW_PHASE_2B_TARGET_COMMIT, binaryPathRole: "managed-install", statePathRole: "live-canonical", configPathRole: "live-canonical", checks: readEvidenceChecks(evidence) };
+    return { ...this.addEvidence(run, canonicalEvidence), canonicalRuntime: runtime, postCommitRuntimeVerified: true };
+  }
+
+  private async stepVerifyTargetSqlite(plan: OpenClawMigrationPlan, run: OpenClawMigrationRun) {
+    if (!plan.paths.installPackageRoot) throw new Error("Canonical SQLite verification requires a managed install package.");
+    await this.stopGateway(plan.planId);
+    const binaryPath = resolvePackageBinary(plan.target, plan.paths.installPackageRoot);
+    const evidence = await this.inspectCanonicalSqlite(plan, run, binaryPath, "canonical");
+    const links = await auditMigrationSymlinks({ snapshot: run.snapshot!, stateDir: plan.paths.sourceStateDir, forbiddenRoots: [plan.source.packageRoot, plan.target.packageRoot, path.join(plan.paths.workRoot, "runs", plan.planId)] });
+    const next = this.addEvidence(this.addEvidence(run, evidence), this.evidence("verify-target-sqlite", "runtime", links.status, "Canonical state symlink audit completed without rewriting user-owned links.", { links: links.links, failures: links.failures }));
+    if (links.status === "fail") throw new Error("Canonical state contains a stale or broken migration-owned symlink.");
+    return next;
+  }
+
+  private async inspectCanonicalSqlite(plan: OpenClawMigrationPlan, _run: OpenClawMigrationRun, binaryPath: string, phase: "canonical" | "rollback") {
+    const sqlitePaths = await findSqlitePaths(plan.paths.sourceStateDir);
+    if (sqlitePaths.length === 0) throw new Error("Canonical OpenClaw state contains no SQLite database to verify.");
+    const checks: Array<Record<string, unknown>> = [];
+    for (const sqlitePath of sqlitePaths) {
+      const inspection = await inspectSqliteDatabase(sqlitePath);
+      if (inspection.integrity !== "ok" || inspection.foreignKeys !== "ok") throw new Error(`Canonical SQLite integrity failed for ${path.basename(sqlitePath)}.`);
+      let preflightPath = sqlitePath;
+      if (inspection.sidecars.length > 0) {
+        preflightPath = path.join(plan.paths.workRoot, "runs", plan.planId, "post-commit-sqlite", path.basename(sqlitePath));
+        await createWalAwareSqliteSnapshot({ sourcePath: sqlitePath, destinationPath: preflightPath });
+      }
+      const preflight = await this.command(binaryPath, ["database", "preflight", "--json", preflightPath], plan, { stateDir: plan.paths.sourceStateDir, configPath: plan.paths.sourceConfigPath });
+      const parsed = parseCommandJson(preflight);
+      const preflightApplicable = path.basename(sqlitePath) === "openclaw.sqlite" || path.basename(sqlitePath) === "openclaw.db";
+      if (phase === "canonical" && preflightApplicable && (preflight.exitCode !== 0 || !parsed)) throw new Error(`Canonical target SQLite preflight did not return structured evidence for ${path.basename(sqlitePath)}.`);
+      const preflightStatus = readString(parsed?.status);
+      const isOpenClawDatabase = parsed?.schema === "openclaw.state-schema-preflight.v1";
+      if (phase === "canonical" && preflightApplicable && isOpenClawDatabase && (preflightStatus !== "exact" || parsed?.requiresWrite === true)) throw new Error(`Canonical target SQLite preflight did not prove an exact read-only database for ${path.basename(sqlitePath)}.`);
+      checks.push({ relativePath: path.relative(plan.paths.sourceStateDir, sqlitePath), integrity: inspection.integrity, foreignKeys: inspection.foreignKeys, userVersion: inspection.userVersion, journalMode: inspection.journalMode, sidecars: inspection.sidecars.length, preflightStatus: preflightStatus ?? "unavailable", preflightDisposition: phase === "rollback" && !parsed ? "source-command-unavailable" : isOpenClawDatabase ? "verified" : "unowned-sqlite", requiresWrite: parsed?.requiresWrite ?? false });
+    }
+    return this.evidence(phase === "rollback" ? "verify-target-sqlite" : "verify-target-sqlite", "sqlite", "pass", `${phase === "rollback" ? "Restored source" : "Canonical target"} SQLite integrity, foreign-key, sidecar, and target preflight checks passed.`, { phase, checks });
+  }
+
+  private async saveLiveSwap(run: OpenClawMigrationRun, update: Partial<OpenClawMigrationRun["liveSwap"]> & { livePathsSwapped?: boolean }) {
+    const { livePathsSwapped, ...swap } = update;
+    return saveMigrationRun({ ...run, liveSwap: { ...run.liveSwap, ...swap }, livePathsSwapped: livePathsSwapped ?? run.livePathsSwapped });
+  }
+
+  private async stepCommit(plan: OpenClawMigrationPlan, run: OpenClawMigrationRun) {
+    if (!plan.paths.installPackageRoot) throw new Error("Migration commit requires an explicit managed install package root.");
+    if (!run.snapshot || !run.rollback || !run.livePathsSwapped || !run.postCommitRuntimeVerified) throw new Error("Migration commit requires a verified canonical live swap and post-commit runtime proof.");
+    if (!run.canonicalRuntime || run.canonicalRuntime.status !== "pass") throw new Error("Migration commit requires canonical runtime verification.");
+    return this.addEvidence({ ...run, commitPointReached: true }, this.evidence("commit", "journal", "pass", "Explicit migration commit point reached only after canonical runtime and SQLite gates passed.", { packageRole: "managed-install", stateRole: "live-canonical", configRole: "live-canonical" }));
   }
 
   private async stepCleanup(plan: OpenClawMigrationPlan, run: OpenClawMigrationRun, runRoot: string) {
@@ -458,13 +638,13 @@ export class OpenClawMigrationEngine {
     return this.addEvidence(run, this.evidence("cleanup", "journal", "pass", "Disposable staging paths were cleaned; verified snapshot and journal were retained."));
   }
 
-  private async command(binaryPath: string, args: string[], plan: OpenClawMigrationPlan) {
+  private async command(binaryPath: string, args: string[], plan: OpenClawMigrationPlan, paths = { stateDir: plan.paths.targetStateDir, configPath: plan.paths.targetConfigPath }) {
     const result = await this.hooks.runCommand({
       binaryPath,
       args,
       env: {
-        OPENCLAW_STATE_DIR: plan.paths.targetStateDir,
-        OPENCLAW_CONFIG_PATH: plan.paths.targetConfigPath,
+        OPENCLAW_STATE_DIR: paths.stateDir,
+        OPENCLAW_CONFIG_PATH: paths.configPath,
         OPENCLAW_GATEWAY_TOKEN: this.input.gatewayToken
       },
       cwd: plan.paths.workRoot,
@@ -499,37 +679,73 @@ export class OpenClawMigrationEngine {
     return true;
   }
 
+  private maybeInjectSubStep(subStep: NonNullable<OpenClawMigrationEngineInput["failureInjection"]>["subStep"]) {
+    const injection = this.input.failureInjection;
+    if (!injection || injection.subStep !== subStep || injection.step !== "swap-live-paths") return;
+    if (injection.once !== false && this.injectedFailureUsed.has("swap-live-paths")) return;
+    this.injectedFailureUsed.add("swap-live-paths");
+    throw new Error(`Deterministic failure injection at migration sub-step ${subStep}.`);
+  }
+
   private async stopGateway(planId: string) {
     const handle = this.gatewayHandles.get(planId);
     if (!handle) return;
     this.gatewayHandles.delete(planId);
-    await handle.stop().catch(() => {});
+    await handle.stop();
+    if (handle.isRunning?.()) throw new Error("Migration Gateway stop adapter returned before the process was confirmed stopped.");
   }
 }
 
 export function buildSuccessGate(run: OpenClawMigrationRun): OpenClawMigrationSuccessGate {
   const evidence = run.evidence;
   const has = (step: OpenClawMigrationStepId, kind?: OpenClawMigrationEvidence["kind"]) => evidence.some((entry) => entry.step === step && entry.status === "pass" && (!kind || entry.kind === kind));
+  const hasNonFail = (step: OpenClawMigrationStepId, kind?: OpenClawMigrationEvidence["kind"]) => evidence.some((entry) => entry.step === step && entry.status !== "fail" && entry.status !== "blocked" && (!kind || entry.kind === kind));
   const runtimeEvidence = evidence.find((entry) => entry.step === "runtime-certification" && entry.status === "pass");
+  const canonicalEvidence = evidence.find((entry) => entry.step === "post-commit-certification" && entry.status === "pass");
   const runtimeChecks = new Set(Array.isArray(runtimeEvidence?.details?.checks) ? runtimeEvidence.details.checks.filter((value): value is string => typeof value === "string") : []);
+  const canonicalChecks = new Set(Array.isArray(canonicalEvidence?.details?.checks) ? canonicalEvidence.details.checks.filter((value): value is string => typeof value === "string") : []);
   const checks = [
     { id: "source-version", pass: evidence.some((entry) => entry.step === "inspect" && entry.status === "pass" && entry.details?.sourceVersion === OPENCLAW_PHASE_2B_SOURCE_VERSION), required: true, detail: `Source version must be ${OPENCLAW_PHASE_2B_SOURCE_VERSION}.` },
     { id: "exact-target", pass: evidence.some((entry) => entry.step === "inspect" && entry.status === "pass" && entry.details?.targetCommit === OPENCLAW_PHASE_2B_TARGET_COMMIT), required: true, detail: `Target commit must be ${OPENCLAW_PHASE_2B_TARGET_COMMIT}.` },
     { id: "snapshot", pass: Boolean(run.snapshot?.verified) && has("snapshot", "sqlite"), required: true, detail: "Verified snapshot was recorded before mutation." },
     { id: "sqlite", pass: Boolean(run.snapshot?.sqlite.length), required: true, detail: "At least one WAL-aware SQLite snapshot was verified." },
     { id: "state-migration", pass: has("migrate-state"), required: true, detail: "Explicit target state migration completed." },
-    { id: "doctor", pass: has("post-upgrade-doctor", "doctor"), required: true, detail: "Post-upgrade doctor evidence passed." },
+    { id: "doctor", pass: hasNonFail("post-upgrade-doctor", "doctor"), required: true, detail: "Post-upgrade doctor evidence was machine-readable and had no blocking failure." },
+    { id: "doctor-mutation-delta", pass: Boolean(run.doctorMutationDelta) && run.doctorMutationDelta?.status !== "fail" && run.doctorMutationDelta?.unexpected.length === 0, required: true, detail: "Doctor mutation delta contains no unexpected workspace change." },
     { id: "runtime-certification", pass: has("runtime-certification", "runtime") && runtimeChecks.has("gateway.health"), required: true, detail: "Runtime certification passed." },
     { id: "model", pass: runtimeChecks.has("model"), required: true, detail: "Model execution was certified." },
     { id: "streaming", pass: runtimeChecks.has("streaming"), required: true, detail: "Streaming execution was certified." },
     { id: "restart", pass: runtimeChecks.has("gateway.restart"), required: true, detail: "Gateway restart behavior was certified." },
     { id: "cron", pass: runtimeChecks.has("cron.run"), required: true, detail: "cron.run and run-history polling were certified." },
     { id: "preservation", pass: has("preservation", "preservation"), required: true, detail: "State preservation passed." },
+    { id: "staged-gateway-stopped", pass: has("stop-staged-target", "runtime"), required: true, detail: "Staged Gateway was stopped before live swap." },
+    { id: "live-path-swap", pass: run.livePathsSwapped && run.liveSwap.phase === "complete", required: true, detail: "Managed package and canonical live paths were swapped with durable rollback markers." },
+    { id: "canonical-runtime", pass: run.postCommitRuntimeVerified && run.canonicalRuntime?.status === "pass" && has("post-commit-certification", "runtime") && canonicalChecks.has("gateway.health"), required: true, detail: "Target runtime passed again on canonical live paths." },
+    { id: "canonical-session-history", pass: canonicalChecks.has("canonical.session-history"), required: true, detail: "Pre-existing canonical session history was readable after the live swap." },
+    { id: "canonical-write", pass: canonicalChecks.has("canonical.session-write"), required: true, detail: "Canonical target session writes were visible after the live swap." },
+    { id: "canonical-sqlite", pass: has("verify-target-sqlite", "sqlite"), required: true, detail: "Canonical SQLite integrity and target preflight passed." },
     { id: "commit", pass: run.commitPointReached && has("commit", "journal"), required: true, detail: "Explicit migration commit point was reached." },
     { id: "journal", pass: Boolean(run.journalHash) && ["completed", "rolled-back"].includes(run.state), required: true, detail: "Migration journal is integrity-protected and reached a terminal state." },
     { id: "cleanup", pass: has("cleanup", "journal"), required: true, detail: "Disposable staging was cleaned while rollback evidence remained." }
   ];
   return { pass: run.state === "completed" && checks.every((check) => !check.required || check.pass), checks };
+}
+
+export function buildRollbackGate(run: OpenClawMigrationRun): OpenClawMigrationRollbackGate {
+  const evidence = run.evidence;
+  const rollbackRuntime = run.rollbackVerification;
+  const checks = [
+    { id: "rolled-back", pass: run.state === "rolled-back" && !run.recoveryRequired, required: true, detail: "Rollback reached the rolled-back terminal state without recovery required." },
+    { id: "snapshot", pass: Boolean(run.snapshot?.verified), required: true, detail: "Rollback used a verified pre-upgrade snapshot." },
+    { id: "source-runtime", pass: rollbackRuntime?.status === "pass" && rollbackRuntime.version === OPENCLAW_PHASE_2B_SOURCE_VERSION && rollbackRuntime.binaryPathRole === "managed-source", required: true, detail: `Rollback booted the restored source runtime ${OPENCLAW_PHASE_2B_SOURCE_VERSION} from the managed install.` },
+    { id: "runtime-health", pass: Boolean(rollbackRuntime?.checks.includes("gateway.health")), required: true, detail: "Restored source Gateway health passed." },
+    { id: "session-history", pass: Boolean(rollbackRuntime?.checks.some((check) => check === "rollback.session-history" || check === "session-continuity")), required: true, detail: "Restored source session history was readable." },
+    { id: "session-write", pass: Boolean(rollbackRuntime?.checks.includes("rollback.session-write")), required: true, detail: "Restored source session writes were visible." },
+    { id: "sqlite", pass: evidence.some((entry) => entry.step === "verify-target-sqlite" && entry.kind === "sqlite" && entry.status === "pass") && Boolean(rollbackRuntime?.checks.includes("sqlite.integrity") && rollbackRuntime.checks.includes("sqlite.foreign-keys") && rollbackRuntime.checks.includes("sqlite.preflight")), required: true, detail: "Restored source SQLite integrity, foreign-key, and preflight checks passed." },
+    { id: "target-runtime-stopped", pass: evidence.some((entry) => entry.kind === "rollback" && entry.status === "pass" && entry.summary.includes("canonical")), required: true, detail: "Target runtime was stopped before rollback was finalized." },
+    { id: "journal", pass: Boolean(run.journalHash), required: true, detail: "Rollback journal remains integrity-protected." }
+  ];
+  return { pass: checks.every((check) => !check.required || check.pass), checks };
 }
 
 function resolveSupervisorMode(input: OpenClawMigrationEngineInput["supervisorMode"]): "agentos-managed" | "external" | "unknown" {
@@ -548,9 +764,19 @@ function resolveStagedBinary(plan: OpenClawMigrationPlan, stagedPackageRoot: str
   return path.join(stagedPackageRoot, relativePath);
 }
 
+function resolvePackageBinary(identity: OpenClawMigrationPlan["source"] | OpenClawMigrationPlan["target"], packageRoot: string) {
+  const relativePath = path.relative(identity.packageRoot, identity.binaryPath);
+  if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) throw new Error("Runtime binary is outside its declared package root.");
+  return path.join(packageRoot, relativePath);
+}
+
 function parseCommandJson(result: OpenClawMigrationCommandResult) {
   const outputs = [result.stdout, result.stderr];
   for (const output of outputs) {
+    try {
+      const parsed = JSON.parse(output.trim()) as unknown;
+      if (parsed && typeof parsed === "object") return parsed as Record<string, unknown>;
+    } catch {}
     const lines = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).reverse();
     for (const line of lines) {
       try {
@@ -620,18 +846,31 @@ async function replaceDirectory(source: string, destination: string) {
   await rm(backup, { recursive: true, force: true });
 }
 
-async function restoreCommitBackups(input: { plan: OpenClawMigrationPlan; packageBackup: string; stateBackup: string; configBackup: string }) {
-  if (input.plan.paths.installPackageRoot && await pathExists(input.packageBackup)) {
-    await rm(input.plan.paths.installPackageRoot, { recursive: true, force: true });
-    await rename(input.packageBackup, input.plan.paths.installPackageRoot);
+async function restoreLiveSwapBackups(plan: OpenClawMigrationPlan, run: OpenClawMigrationRun, runRoot: string) {
+  if (!plan.paths.installPackageRoot) return;
+  const packageBackup = path.join(runRoot, "managed-package-before-commit");
+  const stateBackup = path.join(runRoot, "live-state-before-commit");
+  const configBackup = path.join(runRoot, "live-config-before-commit.json");
+  if (run.liveSwap.packageBackedUp && await pathExists(packageBackup)) {
+    await rm(plan.paths.installPackageRoot, { recursive: true, force: true });
+    await rename(packageBackup, plan.paths.installPackageRoot);
   }
-  if (await pathExists(input.stateBackup)) {
-    await rm(input.plan.paths.sourceStateDir, { recursive: true, force: true });
-    await rename(input.stateBackup, input.plan.paths.sourceStateDir);
+  if (run.liveSwap.stateBackedUp && await pathExists(stateBackup)) {
+    await rm(plan.paths.sourceStateDir, { recursive: true, force: true });
+    await rename(stateBackup, plan.paths.sourceStateDir);
   }
-  if (await pathExists(input.configBackup)) {
-    await rm(input.plan.paths.sourceConfigPath, { force: true });
-    await mkdir(path.dirname(input.plan.paths.sourceConfigPath), { recursive: true, mode: 0o700 });
-    await rename(input.configBackup, input.plan.paths.sourceConfigPath);
+  if (run.liveSwap.configBackedUp && await pathExists(configBackup)) {
+    await rm(plan.paths.sourceConfigPath, { force: true });
+    await mkdir(path.dirname(plan.paths.sourceConfigPath), { recursive: true, mode: 0o700 });
+    await rename(configBackup, plan.paths.sourceConfigPath);
+  } else if (run.liveSwap.configInstalled && !run.liveSwap.sourceConfigExisted) {
+    await rm(plan.paths.sourceConfigPath, { force: true });
   }
+  await rm(plan.paths.targetStateDir, { recursive: true, force: true });
+  await rm(plan.paths.targetConfigPath, { force: true });
+  await rm(path.join(runRoot, "staged-target"), { recursive: true, force: true });
+}
+
+function readEvidenceChecks(evidence: OpenClawMigrationEvidence) {
+  return Array.isArray(evidence.details?.checks) ? evidence.details.checks.filter((value): value is string => typeof value === "string") : [];
 }

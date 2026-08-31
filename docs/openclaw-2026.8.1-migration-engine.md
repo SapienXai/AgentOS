@@ -21,11 +21,11 @@ The source/target package identities are read from package metadata and `dist/bu
 
 The resumable state machine is:
 
-`planned -> preflight -> snapshotting -> staging -> target-validating -> state-migrating -> target-starting -> postflight -> certifying -> committing -> completed`
+`planned -> preflight -> snapshotting -> staging -> target-validating -> state-migrating -> target-starting -> postflight -> certifying -> committing -> target-starting -> certifying -> committing -> completed`
 
-The terminal and recovery states are `blocked`, `failed`, `rollback-required`, `rolling-back`, `rolled-back`, `interrupted`, and `recovery-required`.
+The second `target-starting` is the canonical live-path boot. The intervening steps are `stop-staged-target`, `swap-live-paths`, `start-canonical-target`, `post-commit-certification`, and `verify-target-sqlite`. The terminal and recovery states are `blocked`, `failed`, `rollback-required`, `rolling-back`, `rolled-back`, `interrupted`, and `recovery-required`.
 
-Every run has a 0600 atomic JSON journal. Each step records its status, mutation flag, evidence, errors, and completion boundary. The journal hash excludes only its own hash field, is recalculated on every write, and is checked before progress, resume, rollback, or final-report reads.
+Every run has a 0600 atomic JSON journal. Each step records its status, mutation flag, evidence, errors, and completion boundary. The journal hash excludes only its own hash field, is recalculated on every write, and is checked before progress, resume, rollback, or final-report reads. Journal writes validate the central transition graph; an interrupted partial live swap becomes `recovery-required` and cannot be auto-resumed.
 
 ## Dry run and preflight
 
@@ -36,7 +36,7 @@ The plan fails closed for:
 - wrong source or target identity;
 - a non-upgrade or invalid semantic version relation;
 - missing source state or package;
-- a live state owner;
+- a live or unprovable state owner, detected from Gateway PID/lock markers and the configured loopback port rather than caller-supplied booleans;
 - unsafe, relative, root, equal, or nested state paths;
 - an external supervisor when AgentOS would need to replace the process.
 
@@ -54,11 +54,11 @@ The target package is copied and its identity is re-read before use. AgentOS the
 
 1. `doctor --lint --json --no-workspace-suggestions` for read-only preflight;
 2. `database preflight --json <sqlite>` for each staged database;
-3. `doctor --fix --non-interactive --yes --no-workspace-suggestions` as the explicit state/config migration;
+3. `doctor --fix --non-interactive --yes --no-workspace-suggestions` as the explicit state/config migration, with before/after manifest delta classification;
 4. a second read-only doctor lint;
 5. `doctor --post-upgrade --json --no-workspace-suggestions` after the target Gateway starts.
 
-Doctor output is preserved as bounded, redacted command evidence. Structured findings and non-zero advisory lint are visible; missing machine-readable output or a failed repair blocks the run. AgentOS does not silently treat doctor warnings as success.
+Doctor output is preserved as bounded, redacted command evidence. Structured findings and non-zero advisory lint are visible; missing machine-readable output or a failed repair blocks the run. The mutation allowlist distinguishes config, SQLite, session/transcript migration, cron, plugin/skill, generated backup, and workspace metadata changes from unexpected workspace user-file changes. AgentOS does not silently treat doctor warnings as success.
 
 ## Runtime certification and preservation
 
@@ -75,9 +75,9 @@ The preservation report compares stable agent/session/automation/model identitie
 
 ## Commit, rollback, and interrupted recovery
 
-The explicit commit point is after all required success-gate checks pass. It performs guarded filesystem moves of the staged package and migrated state/config into the explicitly supplied managed install and live paths, retaining pre-commit package/state/config backups in the run journal's rollback area. Cleanup removes only disposable staging paths; the verified snapshot, journal, preservation report, and rollback package remain.
+The staged Gateway is stopped and its stop contract is verified before any live path is changed. The guarded swap durably records package/state/config sub-phases and retains pre-commit backups. The target is then booted from the managed install against the canonical live state/config; native session history and durable session creation are checked, stale staging paths are rejected, and canonical SQLite is inspected directly plus through target `database preflight --json` (using a WAL-aware consolidated file when sidecars exist). Only then is the explicit commit point recorded. Cleanup removes disposable staging paths; the verified snapshot, journal, preservation report, and rollback package remain.
 
-Rollback requires a verified snapshot, no live AgentOS-detected owner, and an AgentOS-managed supervisor. It stops the migration-owned Gateway, restores state/config from the snapshot, restores the source package backup, and records `rolled-back`. A failure during rollback becomes `recovery-required` and remains visible.
+Rollback requires a verified snapshot, no live detected owner, and an AgentOS-managed supervisor. It stops the migration-owned Gateway, restores partial or complete live-swap backups, restores state/config from the snapshot, restores the source package, boots the source runtime on canonical paths, and certifies source health, history/session write, model/streaming/restart/cron, and SQLite integrity. Only a passing rollback gate records `rolled-back`; a failure remains `recovery-required`.
 
 An interrupted run can be marked `interrupted` and resumed from its durable journal. Resume preserves completed inspect/preflight/plan/snapshot/staging/validation/migration work, discards only later volatile step completion, and re-runs target start, post-doctor, certification, preservation, commit, and cleanup. A run that already crossed the commit point cannot be resumed automatically.
 

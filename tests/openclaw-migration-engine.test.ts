@@ -11,7 +11,10 @@ import {
   OPENCLAW_PHASE_2B_TARGET_COMMIT,
   OPENCLAW_PHASE_2B_TARGET_VERSION
 } from "@/lib/openclaw/migration-engine/engine";
-import { readMigrationRun } from "@/lib/openclaw/migration-engine/journal";
+import { readMigrationRun, saveMigrationRun } from "@/lib/openclaw/migration-engine/journal";
+import { detectOpenClawMigrationOwnership } from "@/lib/openclaw/migration-engine/ownership";
+import { resolveMigrationPaths } from "@/lib/openclaw/migration-engine/paths";
+import { assertOpenClawMigrationTransition } from "@/lib/openclaw/migration-engine/transitions";
 import type { OpenClawMigrationCommandResult, OpenClawMigrationRuntimeHooks } from "@/lib/openclaw/migration-engine/types";
 
 test("OpenClaw migration dry-run is structured and mutation-free", async () => {
@@ -101,6 +104,52 @@ test("OpenClaw migration resumes an interrupted run from its durable journal", a
   }
 });
 
+test("OpenClaw migration journal rejects illegal transitions and partial swap interruption", async () => {
+  assert.throws(() => assertOpenClawMigrationTransition("planned", "completed"), /Illegal OpenClaw migration state transition/);
+  const fixture = await createFixture();
+  try {
+    const engine = new OpenClawMigrationEngine({ ...fixture.input, failureInjection: { step: "start-target" as const, once: true } }, createHooks());
+    const failed = await engine.execute(await engine.createPlan());
+    const partial = await saveMigrationRun({ ...failed, liveSwap: { ...failed.liveSwap, phase: "state-installed", stateBackedUp: true, stateInstalled: true } });
+    const interrupted = await engine.markInterrupted(partial.journalPath);
+    assert.equal(interrupted.state, "recovery-required");
+    assert.equal(interrupted.recoveryRequired, true);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("OpenClaw migration ownership and path safety are server-derived", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-ownership-test-"));
+  try {
+    await writeFile(path.join(root, "gateway.pid"), `${process.pid}\n`);
+    const ownership = await detectOpenClawMigrationOwnership({ stateDir: root, supervisorMode: "agentos-managed" });
+    assert.equal(ownership.status, "active");
+    await assert.rejects(() => resolveMigrationPaths({
+      sourceBinaryPath: path.join(root, "source", "openclaw.mjs"),
+      targetBinaryPath: path.join(root, "target", "openclaw.mjs"),
+      sourceStateDir: path.join(root, "state"),
+      sourceConfigPath: path.join(root, "config", "openclaw.json"),
+      targetStateDir: path.join(root, "target-state"),
+      targetConfigPath: path.join(root, "target-config", "openclaw.json"),
+      workRoot: path.join(root, "state", "unsafe-work")
+    }, "run"), /Migration work root/);
+    await assert.rejects(() => resolveMigrationPaths({
+      sourceBinaryPath: path.join(root, "source", "openclaw.mjs"),
+      sourcePackageRoot: path.join(root, "source"),
+      targetBinaryPath: path.join(root, "target", "openclaw.mjs"),
+      targetPackageRoot: path.join(root, "target"),
+      sourceStateDir: path.join(root, "state"),
+      sourceConfigPath: path.join(root, "config", "openclaw.json"),
+      targetStateDir: path.join(root, "target-state"),
+      targetConfigPath: path.join(root, "target-config", "openclaw.json"),
+      workRoot: path.join(root, "source", "unsafe-work")
+    }, "run"), /source package must not overlap migration work/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 async function createFixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "agentos-openclaw-migration-test-"));
   const sourcePackage = await createPackage(root, "source-package", "2026.6.11", "e085fa1a3ffd32d0ea6917e1e6fb4ecbffbb77d2");
@@ -168,13 +217,13 @@ function createHooks(): OpenClawMigrationRuntimeHooks {
     gateway: {
       start: async () => ({ pid: 4242, stop: async () => {} })
     },
-    certify: async () => ({
+    certify: async (input) => ({
       id: "runtime-certification",
       step: "runtime-certification",
       kind: "runtime",
       status: "pass",
       summary: "Fixture runtime certification passed.",
-      details: { checks: ["gateway.health", "model", "streaming", "gateway.restart", "cron.run"] },
+      details: { checks: ["gateway.health", "model", "streaming", "gateway.restart", "cron.run", ...(input.phase === "canonical" ? ["canonical.session-history", "canonical.session-write"] : input.phase === "rollback" ? ["rollback.session-history", "rollback.session-write"] : [])] },
       createdAt: new Date().toISOString()
     })
   };

@@ -13,9 +13,9 @@ export function createDefaultMigrationRuntimeHooks(): OpenClawMigrationRuntimeHo
   return {
     runCommand: runOpenClawMigrationCommand,
     gateway: { start: startMigrationGateway },
-    certify: async ({ gatewayUrl, token }) => {
+    certify: async ({ gatewayUrl, token, phase, expectedVersion, expectedCommit, existingSessionKey }) => {
       if (!token) throw new Error("A Gateway token is required for migration runtime certification.");
-      return certifyOpenClawMigrationRuntime({ gatewayUrl, token });
+      return certifyOpenClawMigrationRuntime({ gatewayUrl, token, phase, expectedVersion, expectedCommit, existingSessionKey });
     }
   };
 }
@@ -26,6 +26,7 @@ async function startMigrationGateway(input: {
   configPath: string;
   port: number;
   token: string;
+  phase?: "staged" | "canonical" | "rollback";
 }) {
   const child = spawn(process.execPath, [
     input.binaryPath,
@@ -62,21 +63,29 @@ async function startMigrationGateway(input: {
   }
   return {
     pid: child.pid ?? -1,
+    isRunning: () => !exited && child.exitCode === null,
     stop: async () => {
-      if (child.exitCode !== null) return;
+      if (exited || child.exitCode !== null) return;
       child.kill("SIGTERM");
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(() => {
-          child.kill("SIGKILL");
-          resolve();
-        }, 3_000);
-        child.once("close", () => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
+      await waitForChildClose(child, 3_000);
+      if (!exited && child.exitCode === null) {
+        child.kill("SIGKILL");
+        await waitForChildClose(child, 3_000);
+      }
+      if (!exited && child.exitCode === null) throw new Error("Migration Gateway process did not exit after SIGKILL.");
     }
   };
+}
+
+function waitForChildClose(child: ReturnType<typeof spawn>, timeoutMs: number) {
+  if (child.exitCode !== null) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, timeoutMs);
+    child.once("close", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
 }
 
 export async function runOpenClawMigrationCommand(input: {
