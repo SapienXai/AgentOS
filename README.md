@@ -181,13 +181,13 @@ Install a specific published version:
 macOS or Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.7.6 bash
+curl -fsSL https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.sh | AGENTOS_VERSION=0.7.7 bash
 ```
 
 Windows PowerShell:
 
 ```powershell
-$env:AGENTOS_VERSION='0.7.6'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
+$env:AGENTOS_VERSION='0.7.7'; iwr https://raw.githubusercontent.com/SapienXai/AgentOS/main/install.ps1 | iex
 ```
 
 ### Start AgentOS
@@ -325,7 +325,7 @@ Several operations spawn local processes, inspect transcript files, or write to 
 
 ## Compatibility
 
-The current `0.7.6` package uses OpenClaw `2026.8.1` as its supported baseline:
+The current `0.7.7` package uses OpenClaw `2026.8.1` as its supported baseline:
 
 - Node.js 24 or newer;
 - OpenClaw 2026.8.1 or newer;
@@ -427,8 +427,8 @@ For a real local release rehearsal, follow [`docs/agentos-clean-install-smoke-ch
 ```bash
 pnpm check:release
 pnpm smoke:agentos-package
-git tag agentos-v0.7.6
-git push origin agentos-v0.7.6
+git tag agentos-v0.7.7
+git push origin agentos-v0.7.7
 ```
 
 The release workflow builds and smoke-tests packages for:
