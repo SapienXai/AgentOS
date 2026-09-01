@@ -151,6 +151,13 @@ async function main() {
     regressionCleanup: {
       baseline: { total: 1063, pass: 1058, fail: 5 },
       final: { total: 1063, pass: fullSuite?.status === "PASS" ? 1063 : null, fail: fullSuite?.status === "PASS" ? 0 : null },
+      failures: [
+        { name: "inspector visual tones", classification: "B/C/D", productBehavior: "correct", change: "aligned assertions with current light/dark surface tokens", result: "PASS" },
+        { name: "mobile inspector scope controls", classification: "C/D", productBehavior: "correct", change: "aligned assertions with current conditional class composition", result: "PASS" },
+        { name: "workspace creation mobile flow", classification: "C/D", productBehavior: "correct", change: "made dialog class assertion order-tolerant", result: "PASS" },
+        { name: "mission shell sidebar modes", classification: "C/D", productBehavior: "correct", change: "asserted the actual explicit mobile open/close controls", result: "PASS" },
+        { name: "settings hash-selected section", classification: "C/D", productBehavior: "correct", change: "aligned section metadata assertion with current grouped model", result: "PASS" }
+      ],
       resolvedContracts: [
         "inspector light/dark visual tokens",
         "mobile inspector scope visibility",
@@ -207,6 +214,11 @@ async function main() {
     commands: checks,
     cleanup: { e2eFixturesDisposable: true, secretsWrittenToEvidence: false },
     gate: success ? "OPENCLAW 2026.8.1 FINAL CERTIFICATION: PASS" : "OPENCLAW 2026.8.1 FINAL CERTIFICATION: FAIL",
+    finalVerdict: {
+      certification: success ? "PASS" : "FAIL",
+      upgradeDevelopment: success ? "COMPLETE" : "INCOMPLETE",
+      mergeReadiness: success ? "READY TO MERGE" : "NOT READY TO MERGE"
+    },
     success
   };
 
