@@ -11,8 +11,11 @@ import WebSocket from "ws";
 
 import { mapOpenClawTaskListToRuntimes } from "@/lib/openclaw/application/runtime-state-service";
 import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
+import { normalizeGatewayTurnEvent } from "@/lib/openclaw/client/native-ws-gateway-mappers";
+import type { GatewayEventFrame, WebSocketFactory } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
 import { OPENCLAW_IDENTITY_CONTRACT_BUILD, OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, OPENCLAW_IDENTITY_CONTRACT_VERSION } from "@/lib/openclaw/identity/contract";
+import { createOpenClawRuntimeProviderFixture } from "@/scripts/openclaw-runtime-provider-fixture";
 
 const execFileAsync = promisify(execFile);
 const PACKAGE_INPUT = process.env.OPENCLAW_SESSION_TASK_E2E_PACKAGE?.trim();
@@ -36,7 +39,24 @@ async function main() {
   const configPath = path.join(disposableRoot, "openclaw.json");
   const port = await reservePort();
   const token = `agentos-session-task-e2e-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  let gateway = await startGateway({ packageRoot, stateDir, workspaceDir, configPath, port, token });
+  const fixture = await createOpenClawRuntimeProviderFixture({ modelId: "agentos-session-task-fixture" });
+  let gateway: ChildProcess;
+  try {
+    gateway = await startGateway({
+      packageRoot,
+      stateDir,
+      workspaceDir,
+      configPath,
+      port,
+      token,
+      fixtureBaseUrl: fixture.baseUrl,
+      fixtureModelId: fixture.modelId
+    });
+  } catch (error) {
+    await fixture.close().catch(() => {});
+    await rm(disposableRoot, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
   let client: NativeWsOpenClawGatewayClient | null = null;
   let success = false;
   const evidence = {
@@ -93,9 +113,13 @@ async function main() {
       taskIdentityProvenance: "not-observed-in-empty-ledger-fixture"
     },
     missionDispatch: {
-      dispatchSidecar: "not used for native session creation",
-      nativeMissionTurn: "not executed because the disposable fixture has no model/provider credential",
-      fallback: "not used"
+      dispatchSidecar: "AgentOS bootstrap correlation only; native task/session remains authoritative",
+      dispatchIdClassification: "disposable AgentOS correlation ID; never used as OpenClaw task/session identity",
+      nativeMissionTurn: "pending",
+      fallback: "not used",
+      modelFixture: "loopback-http-fixture",
+      dispatchIdPresent: false,
+      runIdPresent: false
     },
     sessionCorrelation: [] as Array<Record<string, unknown>>,
     nativeTaskIntegration: {
@@ -103,17 +127,23 @@ async function main() {
       taskIds: [] as string[],
       taskGetChecks: [] as Array<Record<string, unknown>>,
       taskCancelChecks: [] as Array<Record<string, unknown>>,
-      emptyLedgerExplanation: "The exact disposable fixture created a session but no task-producing model turn; no task ID was fabricated."
+      emptyLedgerExplanation: null as string | null
     },
     taskProjection: [] as Array<Record<string, unknown>>,
     taskControlSemantics: {
       continue: "reuses exact sessionKey/sessionId when a projected task exposes one",
       abort: "uses tasks.cancel for an exact task ID; otherwise sessions.abort for exact run/session",
-      assignment: "unsupported and fails closed without transport"
+      assignment: "unsupported and fails closed without transport",
+      taskCancelProbe: null as Record<string, unknown> | null,
+      separateAbortProbe: null as Record<string, unknown> | null,
+      steer: "not observed after the bounded loopback turn completed",
+      inject: "covered by focused Gateway contract tests"
     },
     followUpContinue: {
-      canonicalReuse: "covered by focused unit contract; live turn skipped without model fixture",
-      duplicateSessionCreation: "not observed"
+      canonicalReuse: "pending",
+      duplicateSessionCreation: false,
+      historyAssistantCount: 0,
+      sameSession: false
     },
     restartContinuity: [] as Array<Record<string, unknown>>,
     multiUserSemantics: {
@@ -182,6 +212,19 @@ async function main() {
     assert.ok(described);
     evidence.sessionCorrelation.push({ operation: "sessions.describe", result: "PASS", exactKey: sessionKey !== null });
 
+    const dispatchId = `dispatch-session-task-e2e-${Date.now()}`;
+    const firstTurn = await runTurn(client, sessionKey, "AGENTOS_SYNTHETIC_FIRST_PROMPT", 1);
+    evidence.missionDispatch.nativeMissionTurn = "PASS";
+    evidence.missionDispatch.dispatchIdPresent = Boolean(dispatchId);
+    evidence.missionDispatch.runIdPresent = Boolean(firstTurn.runId);
+    evidence.sessionCorrelation.push({
+      operation: "native mission turn",
+      result: "PASS",
+      dispatchIdClassification: "AgentOS bootstrap correlation only",
+      runIdPresent: Boolean(firstTurn.runId),
+      historyAssistantCount: firstTurn.historyAssistantCount
+    });
+
     const taskPayload = await client.listTasks({ sessionKey }, { timeoutMs: REQUEST_TIMEOUT_MS });
     const taskRuntimes = mapOpenClawTaskListToRuntimes(taskPayload, {
       agentConfig: [{ id: "main", workspace: workspaceDir }],
@@ -191,6 +234,9 @@ async function main() {
     const taskRecords = buildTaskRecords(taskRuntimes, []);
     const taskIds = taskRuntimes.map((runtime) => runtime.taskId).filter((value): value is string => Boolean(value));
     evidence.nativeTaskIntegration.taskIds = taskIds;
+    if (taskIds.length === 0) {
+      evidence.nativeTaskIntegration.emptyLedgerExplanation = "The exact 8.1 runtime completed the loopback model turn but exposed no task ledger row for this session; no task ID was fabricated.";
+    }
     evidence.taskProjection = taskRecords.map((task) => ({
       taskIdPresent: Boolean(task.metadata.openClawTaskId),
       status: task.status,
@@ -214,19 +260,77 @@ async function main() {
       }
     }
 
+    const continuation = await runTurn(client, sessionKey, "AGENTOS_SYNTHETIC_SECOND_CONTINUITY_PROMPT", 2);
+    assert.ok(continuation.historyAssistantCount >= 2);
+    evidence.followUpContinue = {
+      canonicalReuse: "PASS",
+      duplicateSessionCreation: false,
+      historyAssistantCount: continuation.historyAssistantCount,
+      sameSession: true
+    };
+
+    const controlSessionKey = `agent:main:session-task-e2e-control-${Date.now()}`;
+    await client.callNative<Record<string, unknown>>(
+      "sessions.create",
+      { key: controlSessionKey, agentId: "main" },
+      { timeoutMs: REQUEST_TIMEOUT_MS },
+      { safety: "mutation", timeoutMs: REQUEST_TIMEOUT_MS }
+    );
+    try {
+      const cancelProbe = await client.cancelTask(
+        { taskId: `task-not-found-session-task-e2e-${Date.now()}`, reason: "disposable cancellation probe" },
+        { timeoutMs: REQUEST_TIMEOUT_MS }
+      );
+      const cancelRecord = cancelProbe as Record<string, unknown>;
+      evidence.taskControlSemantics.taskCancelProbe = {
+        result: "PASS",
+        found: cancelRecord.found ?? null,
+        cancelled: cancelRecord.cancelled ?? null
+      };
+      const abortProbe = await client.callNative<Record<string, unknown>>(
+        "sessions.abort",
+        { key: controlSessionKey },
+        { timeoutMs: REQUEST_TIMEOUT_MS },
+        { safety: "mutation", timeoutMs: REQUEST_TIMEOUT_MS }
+      );
+      evidence.taskControlSemantics.separateAbortProbe = {
+        result: "PASS",
+        responseShape: Object.keys(abortProbe).sort().slice(0, 8)
+      };
+    } finally {
+      await client.callNative(
+        "sessions.delete",
+        { key: controlSessionKey, deleteTranscript: true },
+        { timeoutMs: REQUEST_TIMEOUT_MS },
+        { safety: "mutation", timeoutMs: REQUEST_TIMEOUT_MS }
+      ).catch(() => {});
+    }
+
     client.close("session/task restart continuity");
     client = null;
     await stopProcess(gateway);
-    gateway = await startGateway({ packageRoot, stateDir, workspaceDir, configPath, port, token });
+    gateway = await startGateway({
+      packageRoot,
+      stateDir,
+      workspaceDir,
+      configPath,
+      port,
+      token,
+      fixtureBaseUrl: fixture.baseUrl,
+      fixtureModelId: fixture.modelId
+    });
     const reconnected = createClient(port, token, "0.1.0-agentos-session-task-e2e-reconnect");
     client = reconnected;
     const reconnectIdentity = await reconnected.getOperatorIdentity({ timeoutMs: REQUEST_TIMEOUT_MS });
     const sessionsAfterRestart = await reconnected.listSessions({ search: sessionKey }, { timeoutMs: REQUEST_TIMEOUT_MS });
     const recovered = sessionsAfterRestart.sessions.find((entry) => entry.key === sessionKey) ?? null;
+    const restartedContinuation = await runTurn(reconnected, sessionKey, "AGENTOS_SYNTHETIC_POST_RESTART_CONTINUITY_PROMPT", 3);
+    assert.ok(restartedContinuation.historyAssistantCount >= 3);
     evidence.restartContinuity.push({
       handshake: reconnectIdentity.authenticated ? "PASS" : "FAIL",
       exactSessionKeyReused: Boolean(recovered),
-      duplicateSessionCreated: sessionsAfterRestart.sessions.filter((entry) => entry.key === sessionKey).length > 1
+      duplicateSessionCreated: sessionsAfterRestart.sessions.filter((entry) => entry.key === sessionKey).length > 1,
+      continuationAfterRestart: restartedContinuation.historyAssistantCount >= 3 ? "PASS" : "FAIL"
     });
     evidence.staleStateHandling.exactSessionReListAfterRestart = Boolean(recovered);
     assert.ok(recovered);
@@ -240,6 +344,7 @@ async function main() {
       cleanupClient.close("session/task cleanup complete");
     }
     await stopProcess(gateway).catch(() => {});
+    await fixture.close().catch(() => {});
     await rm(disposableRoot, { recursive: true, force: true }).catch(() => {});
     evidence.cleanup.status = "complete";
     evidence.cleanup.disposableRootRemoved = !(await pathExists(disposableRoot));
@@ -259,6 +364,83 @@ async function main() {
   console.log(`Evidence: ${OUTPUT_PATH}`);
 }
 
+async function runTurn(
+  client: NativeWsOpenClawGatewayClient,
+  sessionKey: string,
+  message: string,
+  minimumAssistantMessages: number
+) {
+  const frames: GatewayEventFrame[] = [];
+  const subscription = await client.subscribeNativeEvents(
+    { subscribeSessions: true, sessionKeys: [sessionKey] },
+    { onEvent: (frame) => frames.push(frame) },
+    { timeoutMs: REQUEST_TIMEOUT_MS }
+  );
+
+  try {
+    const dispatch = await client.callNative<Record<string, unknown>>(
+      "chat.send",
+      { sessionKey, message, idempotencyKey: `session-task-e2e-${Date.now()}` },
+      { timeoutMs: REQUEST_TIMEOUT_MS },
+      { safety: "mutation", timeoutMs: REQUEST_TIMEOUT_MS }
+    );
+    const runId = typeof dispatch.runId === "string" ? dispatch.runId : null;
+    await waitForTerminal(frames, sessionKey, runId, 45_000);
+    const history = await readHistory(client, sessionKey, minimumAssistantMessages);
+    const assistantMessages = readAssistantMessages(history);
+    const expectedReply = /SECOND|CONTINUITY/i.test(message)
+      ? "AGENTOS_FIXTURE_SECOND_REPLY"
+      : "AGENTOS_FIXTURE_FIRST_REPLY";
+    assert.ok(assistantMessages.some((entry) => entry.includes(expectedReply)));
+    assert.ok(frames.some((frame) => normalizeGatewayTurnEvent(frame, sessionKey, runId)?.done));
+    return { runId, historyAssistantCount: assistantMessages.length };
+  } finally {
+    subscription.close();
+  }
+}
+
+async function waitForTerminal(frames: GatewayEventFrame[], sessionKey: string, runId: string | null, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (frames.some((frame) => normalizeGatewayTurnEvent(frame, sessionKey, runId)?.done)) return;
+    await wait(100);
+  }
+  throw new Error("OpenClaw session/task E2E timed out waiting for a terminal turn event.");
+}
+
+async function readHistory(client: NativeWsOpenClawGatewayClient, sessionKey: string, minimumAssistantMessages: number) {
+  let last: unknown = null;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    last = await client.callNative(
+      "chat.history",
+      { sessionKey, limit: 50 },
+      { timeoutMs: REQUEST_TIMEOUT_MS },
+      { safety: "read", timeoutMs: REQUEST_TIMEOUT_MS }
+    );
+    if (readAssistantMessages(last).length >= minimumAssistantMessages) return last;
+    await wait(250);
+  }
+  return last;
+}
+
+function readAssistantMessages(payload: unknown) {
+  const messages = (payload as { messages?: unknown[] } | null)?.messages;
+  if (!Array.isArray(messages)) return [];
+  return messages.flatMap((entry) => {
+    const record = entry && typeof entry === "object" ? entry as { role?: unknown; content?: unknown } : null;
+    if (record?.role !== "assistant") return [];
+    if (typeof record.content === "string") return [record.content];
+    if (Array.isArray(record.content)) {
+      return [record.content.map((part) => typeof part === "object" && part ? String((part as { text?: unknown }).text ?? "") : "").join("")];
+    }
+    return [];
+  }).filter(Boolean);
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function createClient(port: number, token: string, clientVersion: string) {
   return new NativeWsOpenClawGatewayClient({
     url: `ws://127.0.0.1:${port}`,
@@ -268,16 +450,40 @@ function createClient(port: number, token: string, clientVersion: string) {
     timeoutMs: REQUEST_TIMEOUT_MS,
     clientName: "gateway-client",
     clientVersion,
-    webSocketFactory: WebSocket as unknown as import("@/lib/openclaw/client/native-ws-gateway-types").WebSocketFactory
+    webSocketFactory: WebSocket as unknown as WebSocketFactory
   });
 }
 
-async function startGateway(input: { packageRoot: string; stateDir: string; workspaceDir: string; configPath: string; port: number; token: string }) {
+async function startGateway(input: {
+  packageRoot: string;
+  stateDir: string;
+  workspaceDir: string;
+  configPath: string;
+  port: number;
+  token: string;
+  fixtureBaseUrl: string;
+  fixtureModelId: string;
+}) {
   await mkdir(input.workspaceDir, { recursive: true, mode: 0o700 });
   await mkdir(input.stateDir, { recursive: true, mode: 0o700 });
   await writeFile(input.configPath, `${JSON.stringify({
     gateway: { mode: "local", bind: "loopback", auth: { mode: "token", token: input.token } },
-    agents: { defaults: { workspace: input.workspaceDir }, list: [{ id: "main", workspace: input.workspaceDir }] },
+    agents: {
+      defaults: { workspace: input.workspaceDir, model: { primary: `agentos-fixture/${input.fixtureModelId}` } },
+      list: [{ id: "main", workspace: input.workspaceDir }]
+    },
+    models: {
+      mode: "merge",
+      providers: {
+        "agentos-fixture": {
+          baseUrl: input.fixtureBaseUrl,
+          api: "openai-completions",
+          apiKey: "agentos-session-task-fixture",
+          timeoutSeconds: 30,
+          models: [{ id: input.fixtureModelId, name: "AgentOS Session Task Fixture", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32_768, maxTokens: 128 }]
+        }
+      }
+    },
     cron: { enabled: false }
   }, null, 2)}\n`, { mode: 0o600 });
   const child = spawn(process.execPath, [

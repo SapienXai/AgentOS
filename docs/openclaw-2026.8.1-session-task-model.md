@@ -16,6 +16,7 @@ The native Gateway surfaces used by AgentOS are:
 | `sessions.create` | Create or adopt a session by exact key | Mission/session dispatch |
 | `sessions.describe` | Describe one exact session | Session detail and verification |
 | `sessions.send` | Send work to an existing session | Native runtime dispatch |
+| `sessions.steer` | Deprecated steering alias for an exact active session | Compatibility control path; target/runtime authorization still applies |
 | `sessions.abort` | Abort an exact run/session target | Abort fallback when no task ID exists |
 | `sessions.patch` | Patch an exact session | Runtime/session mutation, subject to target authorization |
 | `sessions.assignOwner` | Assign an owner where the caller is authorized | Session ownership control; this is not task assignment |
@@ -67,6 +68,10 @@ AgentOS uses a typed execution identity envelope containing the OpenClaw task ID
 
 Follow-up and continue operations reuse the canonical execution identity when present. A derived or heuristic target is not silently upgraded to high-confidence native identity. The existing warning/disabled behavior remains for targets that do not expose an exact session or task reference.
 
+## Run identity
+
+An OpenClaw `runId` is retained when the Gateway returns one for a turn or task. It is a correlation/control reference, not a replacement for the session key or task ID. AgentOS uses the exact `runId` for abort when available and never derives a run ID from prompt text.
+
 ## Mission dispatch
 
 Mission dispatch may create an AgentOS dispatch sidecar before the Gateway accepts work. Its generated identifier is a bootstrap correlation ID, not an OpenClaw task ID and not a canonical session ID. The native session key returned or confirmed by OpenClaw is authoritative after acceptance.
@@ -77,7 +82,7 @@ The sidecar remains useful for submission progress, recovery diagnostics, and co
 
 AgentOS stores and reuses exact session keys/IDs from Gateway responses and task summaries. After reconnect/restart, it re-reads the session index and matches the exact requested/returned key. It does not create a replacement session merely because a sidecar or in-memory observation was lost.
 
-The isolated certification harness creates one disposable exact 8.1 session, verifies it through list/describe, restarts the disposable Gateway with the same isolated state, reconnects, and verifies that the same exact session key remains singular. No existing user Gateway or provider credential is used.
+The isolated certification harness creates one disposable exact 8.1 session, verifies it through list/describe, executes a turn against a local loopback model fixture, restarts the disposable Gateway with the same isolated state, reconnects, and verifies that the same exact session key remains singular before continuing it again. No existing user Gateway or real provider credential is used.
 
 ## Task projection and controls
 
@@ -88,8 +93,16 @@ Control behavior is bounded as follows:
 - continue/follow-up reuses an exact session key/ID from the execution identity when one exists;
 - abort uses `tasks.cancel` for an exact task ID;
 - abort uses `sessions.abort` only when an exact run/session target exists and no task ID is available;
+- steer uses the exact `sessions.steer` path for a controllable target; the deprecated method remains subject to native target/runtime authorization;
+- inject uses the exact `chat.inject` compatibility surface where the product action requires context injection;
 - task assignment is unsupported in 8.1 and fails closed without Gateway or CLI transport;
 - no control action is authorized solely by a fabricated or first-row session reference.
+
+For the isolated runtime, `tasks.cancel` is also probed with a disposable nonexistent task ID and `sessions.abort` is probed against a separate disposable session. This records the exact control surfaces without manufacturing a task or cancelling unrelated work.
+
+## Direct chat versus mission
+
+Both direct chat and mission execution ultimately use OpenClaw session/run state. AgentOS Mission Control may keep a dispatch sidecar and a workforce-oriented `TaskRecord`, while a direct chat session is not promoted into a mission task merely because it has messages. Native task rows are projected when OpenClaw exposes them; the absence of a task row is an observed runtime result, not a reason to create a local task authority.
 
 ## Multi-user semantics
 
@@ -107,6 +120,6 @@ The existing CLI fallback remains available for supported task list/get/cancel o
 
 ## Known limitations and next phase
 
-The disposable 8.1 runtime fixture used for certification does not include a model/provider turn, so it may produce an empty task ledger. The harness records that as an observed fixture limitation and never fabricates a task ID. A model-backed task-producing runtime test belongs with the Phase 5B automation/cron and conversation-bound work.
+The disposable 8.1 runtime fixture uses a local loopback model so session turn and history continuity are real, but the completed turn may still produce an empty task ledger because normal chat is not necessarily represented as a Gateway task. The harness records that exact runtime result and never fabricates a task ID. A task-producing automation/cron workload belongs with the Phase 5B automation/cron and conversation-bound work.
 
 This phase does not redesign sessions, tasks, cron, automations, or conversation ownership. It establishes the source-of-truth and correlation boundary required before that work.
