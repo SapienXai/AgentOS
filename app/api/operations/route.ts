@@ -15,7 +15,7 @@ const trigger = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("every"), everyMs: z.number().int().min(10_000) })
 ]);
 const createSchema = z.object({
-  action: z.literal("create"), name: z.string().min(1).max(160), description: z.string().max(2_000).optional().nullable(), agentId: z.string().min(1), workspaceId: z.string().min(1), prompt: z.string().min(1).max(20_000), model: z.string().max(200).optional().nullable(), thinking: z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]).optional().nullable(), trigger,
+  action: z.literal("create"), name: z.string().min(1).max(160), description: z.string().max(2_000).optional().nullable(), automationId: z.string().min(1).max(200).optional().nullable(), idempotencyKey: z.string().min(1).max(200).optional().nullable(), agentId: z.string().min(1), workspaceId: z.string().min(1), prompt: z.string().min(1).max(20_000), model: z.string().max(200).optional().nullable(), thinking: z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]).optional().nullable(), trigger,
   context: z.object({ sessionTarget: z.union([z.literal("isolated"), z.literal("main"), z.string().regex(/^session:[^\s]+$/)]).optional(), lightContext: z.boolean().optional() }).optional(),
   safety: z.object({ accountTargetId: z.string().optional().nullable(), requiresApproval: z.boolean().optional(), fileLease: z.string().max(500).optional().nullable(), concurrency: z.enum(["allow", "forbid", "replace"]).optional() }).optional()
 });

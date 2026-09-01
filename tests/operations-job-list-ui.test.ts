@@ -36,8 +36,8 @@ test("operations job controls stay capability-aware and use real API actions", a
   assert.match(source, /job\.enabled \? "pause" : "resume"/);
   assert.match(source, /perform\("delete", job\)/);
   assert.match(source, /Delete operation\?/);
-  assert.match(service, /\["cron\.remove", \{ jobId \}\]/);
-  assert.match(service, /\["cron\.run", \{ jobId, mode: "force" \}\]/);
-  assert.match(service, /\["cron\.update", \{ jobId, patch: \{ enabled: action === "resume" \} \}\]/);
+  assert.match(service, /\["cron\.remove", \{ id: jobId \}\]/);
+  assert.match(service, /\["cron\.run", \{ id: jobId, mode: "force" \}\]/);
+  assert.match(service, /\["cron\.update", \{ id: jobId, patch: \{ enabled: action === "resume" \} \}\]/);
   assert.match(source, /run cancellation is unsupported/);
 });
