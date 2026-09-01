@@ -16,6 +16,8 @@ import type { GatewayEventFrame, WebSocketFactory } from "@/lib/openclaw/client/
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
 import { OPENCLAW_IDENTITY_CONTRACT_BUILD, OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, OPENCLAW_IDENTITY_CONTRACT_VERSION } from "@/lib/openclaw/identity/contract";
 import { createOpenClawRuntimeProviderFixture } from "@/scripts/openclaw-runtime-provider-fixture";
+import { createMissionDispatchRecord } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
+import { buildMissionDispatchTranscriptRuntime } from "@/lib/openclaw/domains/mission-dispatch-runtime";
 
 const execFileAsync = promisify(execFile);
 const PACKAGE_INPUT = process.env.OPENCLAW_SESSION_TASK_E2E_PACKAGE?.trim();
@@ -212,10 +214,42 @@ async function main() {
     assert.ok(described);
     evidence.sessionCorrelation.push({ operation: "sessions.describe", result: "PASS", exactKey: sessionKey !== null });
 
-    const dispatchId = `dispatch-session-task-e2e-${Date.now()}`;
+    const dispatchRecord = createMissionDispatchRecord({
+      clientRequestId: "session-task-e2e",
+      agentId: "main",
+      mission: "AgentOS synthetic session/task mission",
+      routedMission: "AgentOS synthetic session/task mission",
+      thinking: "medium",
+      requestedModelId: `agentos-fixture/${fixture.modelId}`,
+      workspaceId: "disposable-workspace",
+      workspacePath: workspaceDir,
+      outputDir: null,
+      outputDirRelative: null,
+      notesDirRelative: null
+    });
     const firstTurn = await runTurn(client, sessionKey, "AGENTOS_SYNTHETIC_FIRST_PROMPT", 1);
+    const observedDispatchRecord = {
+      ...dispatchRecord,
+      status: "completed" as const,
+      updatedAt: new Date().toISOString(),
+      runner: {
+        ...dispatchRecord.runner,
+        startedAt: dispatchRecord.submittedAt,
+        finishedAt: new Date().toISOString(),
+        lastHeartbeatAt: new Date().toISOString()
+      },
+      observation: {
+        runtimeId: firstTurn.runId ? `runtime:gateway:${firstTurn.runId}` : null,
+        observedAt: new Date().toISOString()
+      },
+      result: {
+        runId: firstTurn.runId ?? undefined,
+        status: "completed"
+      }
+    };
+    const dispatchRuntime = buildMissionDispatchTranscriptRuntime(observedDispatchRecord, sessionKey);
     evidence.missionDispatch.nativeMissionTurn = "PASS";
-    evidence.missionDispatch.dispatchIdPresent = Boolean(dispatchId);
+    evidence.missionDispatch.dispatchIdPresent = Boolean(dispatchRecord.id);
     evidence.missionDispatch.runIdPresent = Boolean(firstTurn.runId);
     evidence.sessionCorrelation.push({
       operation: "native mission turn",
@@ -231,7 +265,11 @@ async function main() {
       agentsList: [{ id: "main", workspace: workspaceDir }],
       resolveWorkspaceId: () => "disposable-workspace"
     });
-    const taskRecords = buildTaskRecords(taskRuntimes, []);
+    const nativeTaskRecords = buildTaskRecords(taskRuntimes, []);
+    const taskRecords = buildTaskRecords(
+      taskRuntimes.length > 0 ? taskRuntimes : [dispatchRuntime],
+      []
+    );
     const taskIds = taskRuntimes.map((runtime) => runtime.taskId).filter((value): value is string => Boolean(value));
     evidence.nativeTaskIntegration.taskIds = taskIds;
     if (taskIds.length === 0) {
@@ -243,7 +281,8 @@ async function main() {
       sourceOfTruth: task.metadata.sourceOfTruth,
       identityProvenance: task.metadata.identityProvenance
     }));
-    assert.equal(taskRecords.length, taskIds.length);
+    assert.equal(nativeTaskRecords.length, taskIds.length);
+    assert.equal(taskRecords.length, taskIds.length > 0 ? taskIds.length : 1);
 
     for (const taskId of taskIds) {
       const task = await client.getTask({ taskId }, { timeoutMs: REQUEST_TIMEOUT_MS });
