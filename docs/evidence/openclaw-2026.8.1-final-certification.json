@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-01T11:09:23.524Z",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "branch": "upgrade/openclaw-2026.8.1",
+    "codeCommitUnderTest": "7b75eaa018d45ffc4b7fce3317f8fd73df762f6f",
+    "evidenceCommit": null,
+    "openClawPackageVersion": "2026.8.1",
+    "openClawSourceCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
+    "openClawBuild": "2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z",
+    "openClawPackageHash": "7c0eb75f8337d5a0eb73aefd27ad6978dccf486ae1fd7ae0759ed3a3c2e1bb52",
+    "migrationSourceVersion": "2026.6.11"
+  },
+  "openClaw": {
+    "version": "2026.8.1",
+    "sourceCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
+    "build": "2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z",
+    "packageMode": "exact-npm-package-fixture",
+    "isolatedGatewayRequired": true,
+    "realProviderCredentialsUsed": false,
+    "userGatewayUntouched": true
+  },
+  "regressionCleanup": {
+    "baseline": {
+      "total": 1063,
+      "pass": 1058,
+      "fail": 5
+    },
+    "final": {
+      "total": 1063,
+      "pass": 1063,
+      "fail": 0
+    },
+    "resolvedContracts": [
+      "inspector light/dark visual tokens",
+      "mobile inspector scope visibility",
+      "mobile workspace dialog class ordering",
+      "mission mobile navigation controls",
+      "settings hash-section metadata"
+    ],
+    "rootCauseClassification": "test-contract drift and source-shape brittleness; no runtime implementation regression identified"
+  },
+  "gates": {
+    "fullSuite": "PASS",
+    "freshBaseline": "PASS",
+    "migration": "PASS",
+    "rollback": "PASS",
+    "lifecycle": "PASS",
+    "identity": "PASS",
+    "multiUser": "PASS",
+    "sessionTask": "PASS",
+    "automation": "PASS",
+    "simulatedCompatibility": "PASS-DEGRADED-ALLOWED"
+  },
+  "architectureBoundary": {
+    "agentOsAuthentication": "per-user signed AgentOS sessions and server-derived actors",
+    "productAuthorization": "central AgentOS owner/member policy",
+    "openClawIdentity": "shared trusted backend Gateway operator connection",
+    "finalRuntimeAuthority": "OpenClaw 2026.8.1 Gateway role/scope and target authorization",
+    "perHumanOpenClawDelegation": "not claimed; no fake credentials or profile authentication introduced",
+    "hostileTenantBoundary": "mutually untrusted tenants require isolated AgentOS/OpenClaw security domains"
+  },
+  "taskCancellation": {
+    "attempted": true,
+    "result": "SKIPPED-runtime-timing",
+    "evidence": "exact loopback task was terminal before a safe positive cancellation window; no unsafe cancellation claim was made"
+  },
+  "restartReconnect": {
+    "lifecycle": "PASS",
+    "sessionTask": "PASS",
+    "automation": "PASS"
+  },
+  "security": {
+    "noSecretsInFinalArtifact": true,
+    "noUserGatewayTouched": true,
+    "browserControlledPrivilege": "denied by server-side actor/product policy",
+    "sharedServiceBoundary": "member control-plane denials occur before privileged transport",
+    "expectedAuthorizationDenials": "preserved as evidence, not classified as functional failures"
+  },
+  "evidenceInputs": {
+    "freshBaseline": "present-and-parsed",
+    "migration": "present-and-parsed",
+    "lifecycle": "present-and-parsed",
+    "identity": "present-and-parsed",
+    "multiUser": "present-and-parsed",
+    "sessionTask": "present-and-parsed",
+    "automation": "present-and-parsed"
+  },
+  "commands": [
+    {
+      "command": "pnpm test",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 20425,
+      "markerPresent": true,
+      "status": "PASS"
+    },
+    {
+      "command": "pnpm typecheck",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 2430,
+      "markerPresent": true,
+      "status": "PASS"
+    },
+    {
+      "command": "pnpm lint",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 23748,
+      "markerPresent": true,
+      "status": "PASS"
+    },
+    {
+      "command": "pnpm build",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 27259,
+      "markerPresent": true,
+      "status": "PASS"
+    },
+    {
+      "command": "pnpm check:release",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 353,
+      "markerPresent": true,
+      "status": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 40,
+      "markerPresent": true,
+      "status": "PASS"
+    },
+    {
+      "command": "pnpm openclaw:fresh-baseline-e2e",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 42978,
+      "expectedMarker": "OPENCLAW 8.1 FRESH BASELINE: PASS",
+      "markerPresent": true,
+      "status": "PASS"
+    },
+    {
+      "command": "pnpm openclaw:migration-e2e",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 174228,
+      "expectedMarker": "MIGRATION SUCCESS GATE: PASS",
+      "requiredMarkers": [
+        "ROLLBACK SUCCESS GATE: PASS"
+      ],
+      "markerPresent": true,
+      "status": "PASS"
+    },
+    {
+      "command": "pnpm openclaw:lifecycle-e2e",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 64985,
+      "expectedMarker": "OPENCLAW 8.1 LIFECYCLE GATE: PASS",
+      "markerPresent": true,
+      "status": "PASS"
+    },
+    {
+      "command": "pnpm openclaw:identity-e2e",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 19882,
+      "expectedMarker": "OPENCLAW 8.1 IDENTITY/AUTHORIZATION GATE: PASS",
+      "markerPresent": true,
+      "status": "PASS"
+    },
+    {
+      "command": "pnpm openclaw:multi-user-e2e",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 14856,
+      "expectedMarker": "AGENTOS / OPENCLAW 8.1 MULTI-USER GATE: PASS",
+      "markerPresent": true,
+      "status": "PASS"
+    },
+    {
+      "command": "pnpm openclaw:session-task-e2e",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 21957,
+      "expectedMarker": "OPENCLAW 8.1 SESSION/TASK ALIGNMENT GATE: PASS",
+      "markerPresent": true,
+      "status": "PASS"
+    },
+    {
+      "command": "pnpm openclaw:automation-e2e",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 22079,
+      "expectedMarker": "OPENCLAW 8.1 AUTOMATION/CRON ALIGNMENT GATE: PASS",
+      "markerPresent": true,
+      "status": "PASS"
+    },
+    {
+      "command": "pnpm openclaw:compat --target simulated-stable --json-only --allow-degraded",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 534,
+      "markerPresent": true,
+      "status": "PASS"
+    }
+  ],
+  "cleanup": {
+    "e2eFixturesDisposable": true,
+    "secretsWrittenToEvidence": false
+  },
+  "gate": "OPENCLAW 2026.8.1 FINAL CERTIFICATION: PASS",
+  "success": true
+}
