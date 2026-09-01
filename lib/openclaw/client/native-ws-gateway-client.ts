@@ -722,9 +722,13 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   }
 
   listTasks(input: OpenClawTaskListInput = {}, options: OpenClawCommandOptions = {}) {
+    const { sessionId, ...taskListInput } = input;
     return this.gatewayFirst<OpenClawTaskListPayload>(
       "tasks.list",
-      { ...input },
+      {
+        ...taskListInput,
+        sessionKey: taskListInput.sessionKey ?? sessionId
+      },
       options,
       (payload) => parseObjectGatewayPayload<OpenClawTaskListPayload>("tasks.list", payload),
       () => this.fallback.listTasks(input, options)
@@ -742,15 +746,16 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   }
 
   assignTask(input: OpenClawTaskAssignInput, options: OpenClawCommandOptions = {}) {
-    return this.gatewayFirstCompatible<OpenClawTaskPayload>(
-      "taskAssign",
-      {
-        ...input,
-        reason: input.reason ?? undefined
-      },
-      options,
-      (payload) => parseObjectGatewayPayload<OpenClawTaskPayload>("tasks.assign", payload),
-      () => this.fallback.assignTask(input, options)
+    void input;
+    void options;
+    // OpenClaw 2026.8.1 exposes tasks.list/get/cancel, but not tasks.assign.
+    // Keep the compatibility surface for callers while preventing an invented
+    // RPC or CLI fallback from mutating runtime state.
+    return Promise.reject<OpenClawTaskPayload>(
+      new OpenClawGatewayClientError(
+        "OpenClaw 2026.8.1 does not expose task assignment through Gateway or CLI.",
+        "unsupported"
+      )
     );
   }
 

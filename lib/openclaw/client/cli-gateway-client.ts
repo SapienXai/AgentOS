@@ -8,6 +8,7 @@ import {
 } from "@/lib/openclaw/cli";
 import { stringifyCommandFailure } from "@/lib/openclaw/command-failure";
 import { containsRedactedOpenClawSecret } from "@/lib/openclaw/client/native-ws-gateway-utils";
+import { OpenClawGatewayClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import { OPENCLAW_GATEWAY_PROTOCOL_RANGE } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 import type {
@@ -519,7 +520,14 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
   }
 
   assignTask(input: OpenClawTaskAssignInput, options: OpenClawCommandOptions = {}) {
-    return this.call<OpenClawTaskPayload>("tasks.assign", { ...input, reason: input.reason ?? undefined }, options);
+    void input;
+    void options;
+    return Promise.reject<OpenClawTaskPayload>(
+      new OpenClawGatewayClientError(
+        "OpenClaw 2026.8.1 does not expose task assignment through Gateway or CLI.",
+        "unsupported"
+      )
+    );
   }
 
   cancelTask(input: OpenClawTaskCancelInput, options: OpenClawCommandOptions = {}) {

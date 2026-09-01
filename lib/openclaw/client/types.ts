@@ -517,6 +517,9 @@ export interface OpenClawTaskListInput {
   status?: string;
   agentId?: string;
   workspace?: string;
+  /** Exact 8.1 `tasks.list` filter. */
+  sessionKey?: string;
+  /** @deprecated Use the exact Gateway `sessionKey` field. */
   sessionId?: string;
   limit?: number;
   cursor?: string | number | null;
@@ -542,6 +545,7 @@ export interface OpenClawTaskCancelInput {
 
 export type OpenClawTaskListPayload = Record<string, unknown> & {
   tasks?: unknown[];
+  nextCursor?: string | number | null;
   cursor?: string | number | null;
 };
 

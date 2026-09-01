@@ -119,17 +119,19 @@ test("set default model smoke stays Gateway-native before explicit recovery fall
   assert.match(stateService, /AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK/);
 });
 
-test("agent create and dispatch smoke keep Gateway-first calls with visible CLI fallback", () => {
+test("agent create and dispatch smoke keeps unsupported task assignment fail-closed", () => {
   const nativeClient = source("lib/openclaw/client/native-ws-gateway-client.ts");
   const cliClient = source("lib/openclaw/client/cli-gateway-client.ts");
 
   assert.match(nativeClient, /gatewayFirst\(\s*"agents\.create"/);
-  assert.match(nativeClient, /gatewayFirstCompatible<OpenClawTaskPayload>\(\s*"taskAssign"/);
+  assert.doesNotMatch(nativeClient, /gatewayFirstCompatible<OpenClawTaskPayload>\(\s*"taskAssign"/);
+  assert.match(nativeClient, /does not expose task assignment through Gateway or CLI/);
   assert.match(nativeClient, /callNative<MissionCommandPayload>\(\s*"chat\.send"/);
   assert.match(nativeClient, /callNative<MissionCommandPayload>\(\s*"sessions\.send"/);
   assert.match(nativeClient, /agentDir[\s\S]*official CLI path until Gateway exposes it/);
   assert.match(cliClient, /"agents",\s*"add"/);
   assert.match(cliClient, /"agent",\s*"--agent"/);
+  assert.match(cliClient, /does not expose task assignment through Gateway or CLI/);
 });
 
 test("CLI fallback visibility smoke rejects outdated baseline assumptions", () => {

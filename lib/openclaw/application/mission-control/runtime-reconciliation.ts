@@ -4,12 +4,14 @@ import {
   readOpenClawEventBridgeRuntimes
 } from "@/lib/openclaw/application/event-bridge-service";
 import {
-  mapOpenClawRuntimeSnapshotToRuntimes
+  mapOpenClawRuntimeSnapshotToRuntimes,
+  mapOpenClawTaskListToRuntimes
 } from "@/lib/openclaw/application/runtime-state-service";
 import type {
   AgentConfigPayload,
   AgentPayload,
-  OpenClawRuntimeSnapshotPayload
+  OpenClawRuntimeSnapshotPayload,
+  OpenClawTaskListPayload
 } from "@/lib/openclaw/client/gateway-client";
 import {
   annotateAgentChatRuntimes,
@@ -78,6 +80,7 @@ export async function reconcileMissionControlRuntimes(input: {
   agentConfig: AgentConfigPayload;
   agentsList: AgentPayload;
   runtimeSnapshot?: OpenClawRuntimeSnapshotPayload;
+  taskList?: OpenClawTaskListPayload;
   systemProfile: boolean;
   dispatchRecords: Awaited<ReturnType<typeof readMissionDispatchRecords>>;
   resolveWorkspaceId: (workspacePath: string) => string;
@@ -100,11 +103,17 @@ export async function reconcileMissionControlRuntimes(input: {
       resolveWorkspaceId: input.resolveWorkspaceId
     }
   );
+  const taskLedgerRuntimes = mapOpenClawTaskListToRuntimes(input.taskList, {
+    agentConfig: input.agentConfig,
+    agentsList: input.agentsList,
+    resolveWorkspaceId: input.resolveWorkspaceId
+  });
   const eventBridgeRuntimes = input.systemProfile ? [] : await readOpenClawEventBridgeRuntimes();
   const agentChatSessionIndex = await readAgentChatSessionIndex();
   const runtimeCandidates = annotateAgentChatRuntimes(
     [
       ...eventBridgeRuntimes,
+      ...taskLedgerRuntimes,
       ...gatewaySnapshotRuntimes,
       ...liveSessionRuntimes
     ],

@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { compactMissionText, stripMissionRouting } from "@/lib/openclaw/presenters";
 import type { OpenClawAgent, RuntimeCreatedFile, RuntimeRecord, TaskRecord } from "@/lib/openclaw/types";
 import { deriveTaskFollowUpsFromRuntimes } from "@/lib/openclaw/domains/task-follow-up-records";
+import { executionIdentityFromRuntime } from "@/lib/openclaw/domains/execution-identity";
+import { resolveCanonicalTaskStatus } from "@/lib/openclaw/domains/task-status";
 
 export function buildTaskRecords(runtimes: RuntimeRecord[], agents: OpenClawAgent[]): TaskRecord[] {
   const taskRuntimes = runtimes.filter((runtime) => !isDirectChatRuntime(runtime));
@@ -37,7 +39,9 @@ export function buildTaskRecord(
 ): TaskRecord {
   const sortedRuntimes = [...runtimes].sort(sortRuntimesByUpdatedAtDesc);
   const signalRuntimes = selectTaskSignalRuntimes(sortedRuntimes);
+  const nativeTaskRuntime = sortedRuntimes.find(isNativeTaskRuntime);
   const primaryRuntime =
+    nativeTaskRuntime ??
     [...signalRuntimes].sort((left, right) => scoreTaskRuntime(right) - scoreTaskRuntime(left))[0] ??
     signalRuntimes[0] ??
     sortedRuntimes[0];
@@ -83,6 +87,13 @@ export function buildTaskRecord(
   const sessionKey = resolveTaskSessionKey(sortedRuntimes);
   const sessionId = resolveTaskSessionId(sortedRuntimes, sessionIds, sessionKey);
   const continuationConfidence = resolveTaskContinuationConfidence(provenance, sessionKey, sessionId);
+  const executionIdentity = resolveTaskExecutionIdentity(sortedRuntimes, {
+    dispatchId: dispatchId ?? null,
+    sessionKey,
+    sessionId,
+    agentId: primaryAgentId ?? null,
+    workspaceId: workspaceId ?? null
+  });
 
   return {
     id: createTaskRecordId(groupKey),
@@ -125,6 +136,9 @@ export function buildTaskRecord(
       openClawSessionId: sessionId,
       openClawSessionKey: sessionKey,
       openClawRunId: runIds[0] ?? null,
+      executionIdentity,
+      identityProvenance: executionIdentity.provenance,
+      sourceOfTruth: nativeTaskRuntime ? "openclaw-tasks.list" : "agentos-dispatch-or-runtime",
       modelId: primaryRuntime?.modelId ?? modelIds[0] ?? null,
       modelIds,
       requestedModelId:
@@ -550,35 +564,19 @@ function resolveTaskStatus(
   runtimes: RuntimeRecord[],
   dispatchStatus: RuntimeRecord["status"] | null = null
 ): RuntimeRecord["status"] {
-  if (dispatchStatus && isTerminalTaskStatus(dispatchStatus)) {
-    return dispatchStatus;
-  }
-
-  if (runtimes.some((runtime) => runtime.status === "running")) {
-    return "running";
-  }
-
-  if (runtimes.some((runtime) => runtime.status === "cancelled")) {
-    return "cancelled";
-  }
-
-  if (runtimes.some((runtime) => runtime.status === "queued")) {
-    return "queued";
-  }
-
-  if (runtimes.some((runtime) => runtime.status === "stalled")) {
-    return "stalled";
-  }
-
-  if (runtimes.some((runtime) => runtime.status === "idle")) {
-    return "idle";
-  }
-
-  return runtimes[0]?.status ?? "completed";
+  return resolveCanonicalTaskStatus({
+    nativeTaskStatus: resolveNativeTaskStatus(runtimes),
+    runtimeStatuses: runtimes.map((runtime) => runtime.status),
+    dispatchStatus
+  });
 }
 
 function countLiveTaskRuntimes(runtimes: RuntimeRecord[], dispatchStatus: RuntimeRecord["status"] | null) {
-  if (dispatchStatus && isTerminalTaskStatus(dispatchStatus)) {
+  const nativeTaskStatus = resolveNativeTaskStatus(runtimes);
+  if (
+    (nativeTaskStatus && isTerminalTaskStatus(resolveCanonicalTaskStatus({ nativeTaskStatus, runtimeStatuses: [] }))) ||
+    (!nativeTaskStatus && dispatchStatus && isTerminalTaskStatus(dispatchStatus))
+  ) {
     return 0;
   }
 
@@ -641,10 +639,42 @@ function resolveTaskProvenance(runtimes: RuntimeRecord[], dispatchId: string | u
   return "runtime-derived";
 }
 
+function resolveTaskExecutionIdentity(
+  runtimes: RuntimeRecord[],
+  overrides: Partial<ReturnType<typeof executionIdentityFromRuntime>>
+) {
+  const base = executionIdentityFromRuntime(runtimes.find(isNativeTaskRuntime) ?? runtimes[0]!);
+  const hasNativeTask = runtimes.some(isNativeTaskRuntime);
+
+  return {
+    ...base,
+    ...overrides,
+    provenance: hasNativeTask ? "authoritative" as const : base.provenance
+  };
+}
+
 function resolveOpenClawTaskId(runtimes: RuntimeRecord[]) {
   return runtimes
     .map(resolveNativeRuntimeTaskId)
     .find((value): value is string => Boolean(value)) ?? null;
+}
+
+function resolveNativeTaskStatus(runtimes: RuntimeRecord[]) {
+  const nativeTaskRuntimes = runtimes
+    .filter(isNativeTaskRuntime)
+    .sort((left, right) => {
+      const leftLedger = left.metadata.sourceOfTruth === "openclaw-tasks.list" ? 1 : 0;
+      const rightLedger = right.metadata.sourceOfTruth === "openclaw-tasks.list" ? 1 : 0;
+      return rightLedger - leftLedger || sortRuntimesByUpdatedAtDesc(left, right);
+    });
+
+  for (const runtime of nativeTaskRuntimes) {
+    if (typeof runtime.metadata.openClawTaskStatus === "string" && runtime.metadata.openClawTaskStatus.trim()) {
+      return runtime.metadata.openClawTaskStatus.trim();
+    }
+  }
+
+  return null;
 }
 
 function resolveNativeRuntimeTaskId(runtime: RuntimeRecord) {

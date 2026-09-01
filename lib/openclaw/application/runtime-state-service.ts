@@ -8,11 +8,16 @@ import type {
   OpenClawRuntimeSnapshotPayload
 } from "@/lib/openclaw/client/gateway-client";
 import {
+  executionIdentityFromTaskSummary,
+  normalizeOpenClawTaskSummary
+} from "@/lib/openclaw/domains/execution-identity";
+import {
   createRuntimeId,
   mapSessionCatalogEntryToRuntime,
   type RuntimeAgentConfigInput,
   type RuntimeAgentInput
 } from "@/lib/openclaw/domains/runtime-normalizer";
+import { mapOpenClawTaskStatus } from "@/lib/openclaw/domains/task-status";
 import { workspaceIdFromPath } from "@/lib/openclaw/domains/workspace-id";
 import type { SessionsPayload } from "@/lib/openclaw/domains/session-catalog";
 import type { RuntimeCreatedFile, RuntimeRecord } from "@/lib/openclaw/types";
@@ -63,6 +68,72 @@ export function mapOpenClawRuntimeSnapshotToRuntimes(
     ...readRecordArray(payload.tasks).flatMap((entry) => normalizeTaskRuntime(entry, context)),
     ...readRecordArray(payload.artifacts).flatMap((entry) => normalizeArtifactRuntime(entry, context))
   ];
+}
+
+/** Map the exact `tasks.list` ledger into AgentOS runtime-neutral records. */
+export function mapOpenClawTaskListToRuntimes(
+  payload: { tasks?: unknown[] } | null | undefined,
+  context: RuntimeSnapshotMappingContext
+) {
+  if (!isRecord(payload) || !Array.isArray(payload.tasks)) {
+    return [];
+  }
+
+  return payload.tasks.flatMap((entry) => {
+    const summary = normalizeOpenClawTaskSummary(entry);
+    if (!summary) {
+      return [];
+    }
+
+    const status = mapOpenClawTaskStatus(summary.status);
+    const sessionKey = summary.sessionKey ?? summary.childSessionKey;
+    const sessionId = extractExplicitSessionId(sessionKey);
+    const updatedAt = readTaskTimestamp(summary.updatedAt ?? summary.endedAt ?? summary.createdAt);
+    const workspaceId = resolveWorkspaceIdFromAgent(summary.agentId, context);
+    const executionIdentity = executionIdentityFromTaskSummary(summary, { workspaceId });
+    const subtitle = summary.error ?? summary.summary ?? `OpenClaw task · ${status.status}`;
+
+    return [{
+      id: `runtime:openclaw-task:${encodeURIComponent(summary.id)}`,
+      source: "turn",
+      key: `task:${summary.id}`,
+      title: summary.title ?? summary.kind ?? "OpenClaw task",
+      subtitle,
+      status: status.status,
+      updatedAt,
+      ageMs: updatedAt ? Math.max(0, Date.now() - updatedAt) : null,
+      agentId: summary.agentId ?? undefined,
+      workspaceId: workspaceId ?? undefined,
+      sessionId: sessionId ?? undefined,
+      taskId: summary.id,
+      runId: summary.runId ?? undefined,
+      metadata: {
+        origin: "openclaw-task-ledger",
+        gatewayObjectKind: "task",
+        sourceOfTruth: "openclaw-tasks.list",
+        openClawTaskStatus: summary.status,
+        openClawStatusKnown: status.known,
+        openClawTaskKind: summary.kind,
+        openClawTaskRuntime: summary.runtime,
+        openClawTaskId: summary.id,
+        taskId: summary.id,
+        sessionKey,
+        openClawSessionKey: sessionKey,
+        openClawSessionId: sessionId,
+        childSessionKey: summary.childSessionKey,
+        ownerKey: summary.ownerKey,
+        runId: summary.runId,
+        flowId: summary.flowId,
+        parentTaskId: summary.parentTaskId,
+        sourceId: summary.sourceId,
+        progress: summary.progress,
+        createdAt: summary.createdAt,
+        updatedAt: summary.updatedAt,
+        endedAt: summary.endedAt,
+        executionIdentity
+      }
+    } satisfies RuntimeRecord];
+  });
 }
 
 export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEventFrame): RuntimeRecord | null {
@@ -253,6 +324,8 @@ function normalizeTaskRuntime(entry: Record<string, unknown>, context: RuntimeSn
     extractExplicitSessionId(rawSessionKey);
   const sessionKey = rawSessionKey ?? (rawSessionId && agentId ? `agent:${agentId}:explicit:${rawSessionId}` : null);
   const timestamp = readTimestamp(entry.updatedAt ?? entry.timestamp ?? entry.ts ?? entry.createdAt);
+  const taskStatus = readString(entry.status);
+  const normalizedTaskStatus = mapOpenClawTaskStatus(taskStatus);
   const workspacePath = readWorkspacePath(entry);
   const workspaceId =
     readString(entry.workspaceId) ??
@@ -267,7 +340,7 @@ function normalizeTaskRuntime(entry: Record<string, unknown>, context: RuntimeSn
     key: taskId ?? `agent:${agentId}:task`,
     title: readString(entry.title) ?? "Gateway task",
     subtitle: readString(entry.summary) ?? readString(entry.message) ?? readString(entry.status) ?? "OpenClaw task update",
-    status: normalizeStatus(readString(entry.status) ?? ""),
+    status: normalizedTaskStatus.status,
     updatedAt: timestamp,
     ageMs: readNumber(entry.ageMs) ?? (timestamp ? Math.max(0, Date.now() - timestamp) : null),
     agentId: agentId ?? undefined,
@@ -289,7 +362,19 @@ function normalizeTaskRuntime(entry: Record<string, unknown>, context: RuntimeSn
       openClawSessionId: rawSessionId ?? null,
       openClawSessionKey: sessionKey,
       dispatchId: readString(entry.dispatchId) ?? null,
-      createdFiles
+      createdFiles,
+      openClawTaskStatus: taskStatus,
+      openClawStatusKnown: normalizedTaskStatus.known,
+      executionIdentity: {
+        dispatchId: readString(entry.dispatchId),
+        openClawTaskId: taskId,
+        sessionKey,
+        sessionId: rawSessionId,
+        runId: readString(entry.runId),
+        agentId,
+        workspaceId,
+        provenance: "authoritative"
+      }
     }
   } satisfies RuntimeRecord];
 }
@@ -487,6 +572,19 @@ function readTimestamp(value: unknown) {
   }
 
   return Date.now();
+}
+
+function readTaskTimestamp(value: string | number | null) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value < 10_000_000_000 ? value * 1000 : value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  return null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

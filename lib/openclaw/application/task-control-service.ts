@@ -9,6 +9,7 @@ import {
 } from "@/lib/openclaw/application/mission-control-service";
 import { getTaskDetail } from "@/lib/openclaw/application/runtime-service";
 import { resolveTaskFollowUpContext } from "@/lib/openclaw/domains/task-follow-up";
+import { readExecutionIdentity } from "@/lib/openclaw/domains/execution-identity";
 import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 import type { MissionControlSnapshot, TaskDetailRecord } from "@/lib/openclaw/types";
@@ -250,14 +251,17 @@ function resolveContinuationWarning(target: RunningTaskControlTarget) {
 function resolveRunningTaskControlTarget(taskDetail: TaskDetailRecord): RunningTaskControlTarget {
   const task = taskDetail.task;
   const activeRun = taskDetail.runs.find((run) => isControllableStatus(run.status)) ?? taskDetail.runs[0] ?? null;
+  const executionIdentity = readExecutionIdentity(task.metadata.executionIdentity);
   const followUpContext = resolveTaskFollowUpContext(task);
   const agentId =
+    executionIdentity?.agentId ||
     followUpContext.agentId ||
     activeRun?.agentId?.trim() ||
     task.primaryAgentId?.trim() ||
     firstNonEmpty(task.agentIds) ||
     null;
   const sessionId =
+    executionIdentity?.sessionId ||
     followUpContext.sessionId ||
     readMetadataString(activeRun?.metadata, "openClawSessionId") ||
     readMetadataString(activeRun?.metadata, "sessionId") ||
@@ -269,6 +273,7 @@ function resolveRunningTaskControlTarget(taskDetail: TaskDetailRecord): RunningT
     readMetadataString(task.metadata, "openClawSessionId") ||
     null;
   const explicitSessionKey =
+    executionIdentity?.sessionKey ||
     followUpContext.sessionKey ||
     readMetadataString(task.metadata, "continuationSessionKey") ||
     readMetadataString(task.metadata, "openClawSessionKey") ||
@@ -279,7 +284,15 @@ function resolveRunningTaskControlTarget(taskDetail: TaskDetailRecord): RunningT
     readMetadataString(activeRun?.metadata, "gatewaySessionKey") ||
     (activeRun?.key.trim().startsWith("agent:") ? activeRun.key.trim() : null);
   const sessionKey = explicitSessionKey ?? resolveSessionKey(agentId, sessionId);
-  const runId = activeRun?.runId?.trim() || firstNonEmpty(task.runIds) || null;
+  const runId = executionIdentity?.runId || activeRun?.runId?.trim() || firstNonEmpty(task.runIds) || null;
+  const provenance = executionIdentity?.provenance ?? followUpContext.provenance;
+  const confidence = executionIdentity
+    ? executionIdentity.provenance === "authoritative"
+      ? "high"
+      : executionIdentity.provenance === "correlated"
+        ? "medium"
+        : "none"
+    : followUpContext.confidence;
 
   return {
     agentId,
@@ -287,8 +300,8 @@ function resolveRunningTaskControlTarget(taskDetail: TaskDetailRecord): RunningT
     sessionKey,
     runId,
     openClawTaskId: followUpContext.openClawTaskId,
-    provenance: followUpContext.provenance,
-    confidence: followUpContext.confidence
+    provenance,
+    confidence
   };
 }
 

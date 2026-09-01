@@ -1,4 +1,5 @@
 import type { RuntimeCreatedFile, TaskRecord } from "@/lib/openclaw/types";
+import { readExecutionIdentity } from "@/lib/openclaw/domains/execution-identity";
 
 export type TaskFollowUpAvailability = {
   available: boolean;
@@ -82,17 +83,21 @@ export function resolveTaskFollowUpContext(task: Pick<
   TaskRecord,
   "agentIds" | "dispatchId" | "metadata" | "primaryAgentId" | "sessionIds"
 >): TaskFollowUpContext {
+  const executionIdentity = readExecutionIdentity(task.metadata.executionIdentity);
   const agentId =
+    executionIdentity?.agentId ||
     readTaskMetadataString(task, "primaryAgentId") ||
     task.primaryAgentId?.trim() ||
     firstNonEmpty(task.agentIds);
   const rawSessionKey =
+    executionIdentity?.sessionKey ||
     readTaskMetadataString(task, "continuationSessionKey") ||
     readTaskMetadataString(task, "openClawSessionKey") ||
     readTaskMetadataString(task, "sessionKey") ||
     readTaskMetadataString(task, "gatewaySessionKey") ||
     firstAgentSessionKey(task.sessionIds);
   const rawSessionId =
+    executionIdentity?.sessionId ||
     readTaskMetadataString(task, "continuationSessionId") ||
     readTaskMetadataString(task, "openClawSessionId") ||
     readTaskMetadataString(task, "sessionId") ||
@@ -101,7 +106,9 @@ export function resolveTaskFollowUpContext(task: Pick<
     extractExplicitSessionId(rawSessionKey);
   const sessionKey = rawSessionKey ?? (rawSessionId && agentId ? `agent:${agentId}:explicit:${rawSessionId}` : null);
   const sessionId = rawSessionId ? extractExplicitSessionId(rawSessionId) ?? rawSessionId : extractExplicitSessionId(sessionKey);
-  const provenance = normalizeTaskProvenance(readTaskMetadataString(task, "provenance"));
+  const provenance = executionIdentity?.openClawTaskId
+    ? "native-task"
+    : normalizeTaskProvenance(readTaskMetadataString(task, "provenance"));
   const confidence = normalizeContinuationConfidence(
     readTaskMetadataString(task, "continuationConfidence"),
     provenance,
@@ -113,7 +120,7 @@ export function resolveTaskFollowUpContext(task: Pick<
     agentId: agentId ?? null,
     sessionId: sessionId ?? null,
     sessionKey,
-    openClawTaskId: readTaskMetadataString(task, "openClawTaskId"),
+    openClawTaskId: executionIdentity?.openClawTaskId ?? readTaskMetadataString(task, "openClawTaskId"),
     dispatchId: task.dispatchId?.trim() || readTaskMetadataString(task, "dispatchId"),
     provenance,
     confidence
