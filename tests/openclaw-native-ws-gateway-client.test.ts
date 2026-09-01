@@ -3904,6 +3904,7 @@ test("native WS gateway client provisions automations through Gateway before CLI
     message: "Summarize updates",
     thinking: "medium",
     timeoutSeconds: 120,
+    declarationKey: "agentos:test:digest",
     schedule: { kind: "every", value: "1d" },
     announce: { channel: "telegram", target: "team" }
   });
@@ -3912,13 +3913,15 @@ test("native WS gateway client provisions automations through Gateway before CLI
   assert.deepEqual(sentFrames[1]?.params, {
     name: "Digest",
     description: "Daily digest",
+    declarationKey: "agentos:test:digest",
     agentId: "agent-1",
-    agent: "agent-1",
-    message: "Summarize updates",
-    thinking: "medium",
-    timeoutSeconds: 120,
-    schedule: { kind: "every", value: "1d" },
-    announce: { channel: "telegram", target: "team" }
+    enabled: true,
+    schedule: { kind: "every", everyMs: 86_400_000 },
+    sessionTarget: "isolated",
+    wakeMode: "now",
+    payload: { kind: "agentTurn", message: "Summarize updates", thinking: "medium", timeoutSeconds: 120 },
+    delivery: { mode: "announce", channel: "telegram", to: "team" },
+    deleteAfterRun: false
   });
   assert.deepEqual(fallback.calls, []);
 });

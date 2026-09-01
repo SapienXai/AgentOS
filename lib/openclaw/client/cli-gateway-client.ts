@@ -48,6 +48,11 @@ import type {
   OpenClawConfigSchemaLookupPayload,
   OpenClawCronListInput,
   OpenClawCronListPayload,
+  OpenClawCronGetInput,
+  OpenClawCronRunInput,
+  OpenClawCronRunPayload,
+  OpenClawCronRunsInput,
+  OpenClawCronRunsPayload,
   OpenClawCronStatusPayload,
   OpenClawDescribeSessionInput,
   OpenClawDeviceApproveInput,
@@ -1055,6 +1060,22 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
 
   listCronJobs(input: OpenClawCronListInput = {}, options: OpenClawCommandOptions = {}) {
     return this.call<OpenClawCronListPayload>("cron.list", { ...input }, options);
+  }
+
+  getCronJob(input: OpenClawCronGetInput, options: OpenClawCommandOptions = {}) {
+    return this.call<Record<string, unknown>>("cron.get", { id: input.id }, options);
+  }
+
+  runCronJob(input: OpenClawCronRunInput, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawCronRunPayload>("cron.run", {
+      id: input.id,
+      mode: input.mode,
+      expectedProcessInstanceId: input.expectedProcessInstanceId
+    }, options);
+  }
+
+  listCronRuns(input: OpenClawCronRunsInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.call<OpenClawCronRunsPayload>("cron.runs", { ...input }, options);
   }
 }
 

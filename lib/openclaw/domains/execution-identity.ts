@@ -18,6 +18,65 @@ export type OpenClawExecutionIdentity = {
   provenance: ExecutionIdentityProvenance;
 };
 
+export type AutomationIdentitySourceOfTruth =
+  | "openclaw.cron.job"
+  | "openclaw.cron.runs"
+  | "openclaw.tasks"
+  | "agentos.dispatch"
+  | "compatibility";
+
+/**
+ * The canonical identity vocabulary for scheduled work. An AgentOS automation
+ * key is a correlation key; OpenClaw cron/task/session/run values remain the
+ * runtime authorities and are never interchangeable.
+ */
+export type OpenClawAutomationExecutionIdentity = OpenClawExecutionIdentity & {
+  automationId: string | null;
+  cronJobId: string | null;
+  cronRunId: string | null;
+  taskId: string | null;
+  sourceOfTruth: AutomationIdentitySourceOfTruth;
+};
+
+export function automationExecutionIdentityFromCron(input: {
+  automationId?: string | null;
+  cronJobId?: string | null;
+  cronRunId?: string | null;
+  taskId?: string | null;
+  sessionKey?: string | null;
+  sessionId?: string | null;
+  agentId?: string | null;
+  workspaceId?: string | null;
+  dispatchId?: string | null;
+  provenance?: ExecutionIdentityProvenance;
+  sourceOfTruth?: AutomationIdentitySourceOfTruth;
+}): OpenClawAutomationExecutionIdentity {
+  const taskId = cleanIdentityValue(input.taskId);
+  const cronRunId = cleanIdentityValue(input.cronRunId);
+  const cronJobId = cleanIdentityValue(input.cronJobId);
+  const sessionKey = cleanIdentityValue(input.sessionKey);
+  const sessionId = cleanIdentityValue(input.sessionId);
+  const dispatchId = cleanIdentityValue(input.dispatchId);
+  const provenance = input.provenance ?? (taskId || cronRunId ? "authoritative" : sessionKey || sessionId || dispatchId ? "correlated" : "derived");
+  const sourceOfTruth = input.sourceOfTruth ?? (taskId ? "openclaw.tasks" : cronRunId ? "openclaw.cron.runs" : cronJobId ? "openclaw.cron.job" : dispatchId ? "agentos.dispatch" : "compatibility");
+
+  return {
+    dispatchId,
+    openClawTaskId: taskId,
+    sessionKey,
+    sessionId,
+    runId: cronRunId,
+    agentId: cleanIdentityValue(input.agentId),
+    workspaceId: cleanIdentityValue(input.workspaceId),
+    provenance,
+    automationId: cleanIdentityValue(input.automationId),
+    cronJobId,
+    cronRunId,
+    taskId,
+    sourceOfTruth
+  };
+}
+
 export type NormalizedOpenClawTaskSummary = {
   id: string;
   status: string;
@@ -167,6 +226,10 @@ function readProvenance(value: unknown): ExecutionIdentityProvenance {
 
 function readString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function cleanIdentityValue(value: string | null | undefined) {
+  return value?.trim() || null;
 }
 
 function readFiniteNumber(value: unknown) {

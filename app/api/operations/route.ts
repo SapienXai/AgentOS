@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createOperation, getOperationsSnapshot, operateOperation, updateOperationSchedule } from "@/lib/agentos/application/operations-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,9 @@ const createSchema = z.object({
 const actionSchema = z.object({ action: z.enum(["run", "pause", "resume", "cancel", "retry", "disable", "delete"]), jobId: z.string().min(1) });
 const updateSchema = z.object({ action: z.literal("update"), jobId: z.string().min(1), trigger });
 
-export async function GET() {
+export async function GET(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "tasks.use");
+  if ("response" in permission) return permission.response;
   try { return NextResponse.json(redactSecrets(await getOperationsSnapshot())); }
   catch (error) { return NextResponse.json({ error: redactErrorMessage(error, "Unable to load operations.") }, { status: 500 }); }
 }
@@ -42,23 +45,24 @@ export async function POST(request: Request) {
     const authorization = await requireAgentOsOpenClawPreflight(request, {
       operation: `operations.${action}`,
       method: operation.method,
-      params: operation.targetId ? { jobId: operation.targetId } : {},
+      params: operation.targetId ? { id: operation.targetId } : {},
       targetKind: "openclaw-cron",
       targetId: operation.targetId,
     securityClass: "privileged-mutation",
       executionPath: "gateway-native",
-      productPermission: "tasks.use"
+      productPermission: "automations.manage"
     });
     if ("response" in authorization) return authorization.response;
 
     const result = action === "create"
-      ? await createOperation(input as Parameters<typeof createOperation>[0], authorization.commandOptions)
+      ? await createOperation(input as Parameters<typeof createOperation>[0], authorization.commandOptions, { actor: authorization.actor })
       : action === "update"
-        ? await updateOperationSchedule(input, authorization.commandOptions)
+        ? await updateOperationSchedule(input, authorization.commandOptions, { actor: authorization.actor })
         : await operateOperation(
             input.action,
             input.jobId,
-            authorization.commandOptions
+            authorization.commandOptions,
+            { actor: authorization.actor }
           );
     return NextResponse.json(redactSecrets(result), { status: 202 });
   } catch (error) { return NextResponse.json({ error: redactErrorMessage(error, "Operations action failed.") }, { status: 400 }); }

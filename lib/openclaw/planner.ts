@@ -5,6 +5,8 @@ import path from "node:path";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { resolveAgentPolicy } from "@/lib/openclaw/agent-presets";
+import { canAgentOsActorUseProductPermission } from "@/lib/security/agentos-product-authorization";
+import type { AgentOsActorContext } from "@/lib/security/agentos-actor";
 import {
   buildPlannerDeployProgressTemplate,
   createOperationProgressTracker
@@ -74,6 +76,7 @@ const PLANNER_RUNTIME_SYSTEM_TAG = "mission-control-planner";
 
 type WorkspacePlanDeployOptions = {
   onProgress?: (snapshot: OperationProgressSnapshot) => Promise<void> | void;
+  actor?: AgentOsActorContext;
 };
 
 type PlannerOperationProgressUpdate = {
@@ -422,6 +425,9 @@ export async function deployWorkspacePlan(
     (channel) => channel.enabled && channel.type !== "internal"
   );
   const hasAutomations = nextPlan.operations.automations.some((automation) => automation.enabled);
+  if (hasAutomations && options.actor && !canAgentOsActorUseProductPermission(options.actor, "automations.manage")) {
+    throw new Error("AgentOS automation management permission is required to deploy enabled automations.");
+  }
   const hasPlannerKickoffs = nextPlan.deploy.firstMissions.some((mission) => mission.trim().length > 0);
   const progress = createOperationProgressTracker({
     template: buildPlannerDeployProgressTemplate({
@@ -2117,6 +2123,7 @@ function buildAutomationProvisionInput(
   const provisioningInput = {
     name: automation.name,
     description: automation.description || automation.name,
+    declarationKey: `agentos:planner:${automation.id}`,
     agentId: mappedAgentId,
     message: automation.mission,
     thinking: automation.thinking,

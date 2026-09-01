@@ -131,6 +131,11 @@ import type {
   OpenClawConfigSchemaLookupPayload,
   OpenClawCronListInput,
   OpenClawCronListPayload,
+  OpenClawCronGetInput,
+  OpenClawCronRunInput,
+  OpenClawCronRunPayload,
+  OpenClawCronRunsInput,
+  OpenClawCronRunsPayload,
   OpenClawCronStatusPayload,
   OpenClawDescribeSessionInput,
   OpenClawDeviceApproveInput,
@@ -1829,6 +1834,44 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       options,
       (payload) => (isObjectRecord(payload) ? payload as OpenClawCronListPayload : {}),
       () => this.fallback.listCronJobs?.(input, options) ?? this.fallback.call<OpenClawCronListPayload>("cron.list", { ...input }, options)
+    );
+  }
+
+  getCronJob(input: OpenClawCronGetInput, options: OpenClawCommandOptions = {}) {
+    return this.gatewayFirst<Record<string, unknown>>(
+      "cron.get",
+      { id: input.id },
+      options,
+      (payload) => isObjectRecord(payload) ? payload : {},
+      () => this.fallback.getCronJob?.(input, options) ?? this.fallback.call<Record<string, unknown>>("cron.get", { id: input.id }, options)
+    );
+  }
+
+  runCronJob(input: OpenClawCronRunInput, options: OpenClawCommandOptions = {}) {
+    return this.gatewayFirst<OpenClawCronRunPayload>(
+      "cron.run",
+      {
+        id: input.id,
+        mode: input.mode,
+        expectedProcessInstanceId: input.expectedProcessInstanceId
+      },
+      options,
+      (payload) => isObjectRecord(payload) ? payload as OpenClawCronRunPayload : {},
+      () => this.fallback.runCronJob?.(input, options) ?? this.fallback.call<OpenClawCronRunPayload>("cron.run", {
+        id: input.id,
+        mode: input.mode,
+        expectedProcessInstanceId: input.expectedProcessInstanceId
+      }, options)
+    );
+  }
+
+  listCronRuns(input: OpenClawCronRunsInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.gatewayFirst<OpenClawCronRunsPayload>(
+      "cron.runs",
+      { ...input },
+      options,
+      (payload) => isObjectRecord(payload) ? payload as OpenClawCronRunsPayload : {},
+      () => this.fallback.listCronRuns?.(input, options) ?? this.fallback.call<OpenClawCronRunsPayload>("cron.runs", { ...input }, options)
     );
   }
 

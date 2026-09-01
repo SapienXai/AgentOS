@@ -37,6 +37,11 @@ import type {
   OpenClawConfigSchemaLookupPayload,
   OpenClawCronListInput,
   OpenClawCronListPayload,
+  OpenClawCronGetInput,
+  OpenClawCronRunInput,
+  OpenClawCronRunPayload,
+  OpenClawCronRunsInput,
+  OpenClawCronRunsPayload,
   OpenClawCronStatusPayload,
   OpenClawDescribeSessionInput,
   OpenClawDeviceApproveInput,
@@ -231,6 +236,9 @@ export interface OpenClawAdapter {
   ): Promise<OpenClawExecApprovalResolvePayload>;
   getCronStatus(options?: OpenClawCommandOptions): Promise<OpenClawCronStatusPayload>;
   listCronJobs(input?: OpenClawCronListInput, options?: OpenClawCommandOptions): Promise<OpenClawCronListPayload>;
+  getCronJob?(input: OpenClawCronGetInput, options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
+  runCronJob?(input: OpenClawCronRunInput, options?: OpenClawCommandOptions): Promise<OpenClawCronRunPayload>;
+  listCronRuns?(input?: OpenClawCronRunsInput, options?: OpenClawCommandOptions): Promise<OpenClawCronRunsPayload>;
 }
 
 export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
@@ -687,6 +695,25 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
   listCronJobs(input: OpenClawCronListInput = {}, options: OpenClawCommandOptions = {}) {
     const client = this.getClient();
     return client.listCronJobs?.(input, options) ?? client.call<OpenClawCronListPayload>("cron.list", { ...input }, options);
+  }
+
+  getCronJob(input: OpenClawCronGetInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    return client.getCronJob?.(input, options) ?? client.call<Record<string, unknown>>("cron.get", { id: input.id }, options);
+  }
+
+  runCronJob(input: OpenClawCronRunInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    return client.runCronJob?.(input, options) ?? client.call<OpenClawCronRunPayload>("cron.run", {
+      id: input.id,
+      mode: input.mode,
+      expectedProcessInstanceId: input.expectedProcessInstanceId
+    }, options);
+  }
+
+  listCronRuns(input: OpenClawCronRunsInput = {}, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    return client.listCronRuns?.(input, options) ?? client.call<OpenClawCronRunsPayload>("cron.runs", { ...input }, options);
   }
 }
 

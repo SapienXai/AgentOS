@@ -33,7 +33,7 @@ export async function POST(
     const input = deploySchema.parse(await request.json());
 
     if (!input.stream) {
-      const result = await deployWorkspacePlan(planId, input.plan);
+      const result = await deployWorkspacePlan(planId, input.plan, { actor: permission.actor });
       return NextResponse.json(redactSecrets(result));
     }
 
@@ -55,6 +55,7 @@ export async function POST(
     void (async () => {
       try {
         const result = await deployWorkspacePlan(planId, input.plan, {
+          actor: permission.actor,
           onProgress: async (progress) => {
             latestProgress = progress;
             await send({

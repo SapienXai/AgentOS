@@ -48,17 +48,52 @@ export function buildAgentIdentityParams(input: OpenClawAgentIdentityInput) {
 }
 
 export function buildAutomationProvisionParams(input: OpenClawAutomationProvisionInput) {
+  const schedule = input.schedule.kind === "every"
+    ? { kind: "every" as const, everyMs: parseOpenClawDurationMs(input.schedule.value) }
+    : { kind: "cron" as const, expr: input.schedule.value };
+  const delivery = input.announce
+    ? {
+        mode: "announce" as const,
+        channel: input.announce.channel,
+        to: input.announce.target?.trim() || undefined
+      }
+    : { mode: "none" as const };
+
   return {
     name: input.name,
-    description: input.description || input.name,
+    description: input.description?.trim() || input.name,
+    declarationKey: input.declarationKey?.trim() || undefined,
     agentId: input.agentId,
-    agent: input.agentId,
-    message: input.message,
-    thinking: input.thinking || "medium",
-    timeoutSeconds: input.timeoutSeconds ?? 120,
-    schedule: input.schedule,
-    announce: input.announce ?? undefined
+    enabled: true,
+    schedule,
+    sessionTarget: input.sessionTarget ?? "isolated",
+    wakeMode: "now",
+    payload: {
+      kind: "agentTurn" as const,
+      message: input.message,
+      thinking: input.thinking?.trim() || "medium",
+      timeoutSeconds: input.timeoutSeconds ?? 120
+    },
+    delivery,
+    deleteAfterRun: false
   };
+}
+
+export function parseOpenClawDurationMs(value: string) {
+  const normalized = value.trim().toLowerCase();
+  const match = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)$/.exec(normalized);
+  if (!match) {
+    throw new Error("OpenClaw every schedules must use a duration such as 15m or 24h.");
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2];
+  const multiplier = unit === "ms" ? 1 : unit === "s" ? 1_000 : unit === "m" ? 60_000 : unit === "h" ? 3_600_000 : 86_400_000;
+  const milliseconds = amount * multiplier;
+  if (!Number.isSafeInteger(milliseconds) || milliseconds <= 0) {
+    throw new Error("OpenClaw every schedule duration is outside the supported range.");
+  }
+  return milliseconds;
 }
 
 export function buildAgentSessionKey(agentId?: string | null, sessionId?: string | null) {

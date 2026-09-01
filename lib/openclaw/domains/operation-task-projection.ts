@@ -49,6 +49,9 @@ export function mergeOperationTaskProjections(
         ...task.metadata,
         ...operationMetadata(job, snapshot.runs),
         operationRunId: latestRun?.id ?? null,
+        operationCronRunId: latestRun?.cronRunId ?? null,
+        operationIdentityProvenance: latestRun?.identityProvenance ?? "heuristic",
+        operationSourceOfTruth: latestRun?.sourceOfTruth ?? "compatibility",
         operationRunStatus: latestRun?.status ?? null,
         operationLastError: latestRun?.error ?? null
       }
@@ -80,7 +83,9 @@ function buildOperationTaskProjection(job: OperationJob, agentNames: Map<string,
     subtitle: describeSchedule(job), status: taskStatus(job), updatedAt: Number.isFinite(updatedAt) ? updatedAt : null, ageMs: null,
     workspaceId: job.workspaceId ?? undefined, primaryAgentId: job.agentId ?? undefined,
     primaryAgentName: job.agentId ? agentNames.get(job.agentId) ?? job.agentId : null,
-    runtimeIds: [], agentIds: job.agentId ? [job.agentId] : [], sessionIds: [], runIds: [], runtimeCount: operationRuns.length, updateCount: 0,
+    runtimeIds: [], agentIds: job.agentId ? [job.agentId] : [],
+    sessionIds: uniqueStrings(operationRuns.map((run) => run.sessionId)),
+    runIds: uniqueStrings(operationRuns.map((run) => run.cronRunId)), runtimeCount: operationRuns.length, updateCount: 0,
     liveRunCount: job.status === "running" ? 1 : 0, artifactCount: 0, warningCount: job.health.degraded ? 1 : 0,
     tokenUsage: aggregateOperationTokenUsage(operationRuns),
     metadata: operationMetadata(job, runs)
@@ -92,11 +97,18 @@ function operationMetadata(job: OperationJob, runs: OperationRun[]) {
     .filter((run) => run.jobId === job.id)
     .sort((left, right) => Date.parse(right.endedAt ?? right.startedAt ?? "") - Date.parse(left.endedAt ?? left.startedAt ?? ""))
     .slice(0, 24)
-    .map((run) => ({ id: run.id, timestamp: run.endedAt ?? run.startedAt ?? new Date().toISOString(), status: run.status, output: run.output, error: run.error, durationMs: run.durationMs, tokens: run.tokens }));
+    .map((run) => {
+      const base = { id: run.id, timestamp: run.endedAt ?? run.startedAt ?? new Date().toISOString(), status: run.status, output: run.output, error: run.error, durationMs: run.durationMs, tokens: run.tokens };
+      const hasIdentityEvidence = Boolean(run.cronRunId || run.taskId || run.sessionKey || run.sessionId || run.identityProvenance || run.sourceOfTruth);
+      return hasIdentityEvidence
+        ? { ...base, cronRunId: run.cronRunId ?? null, taskId: run.taskId ?? null, identityProvenance: run.identityProvenance ?? "heuristic", sourceOfTruth: run.sourceOfTruth ?? "compatibility" }
+        : base;
+    });
   if (operationRuns.length === 0 && job.lastRunStatus === "error" && job.lastRunAt) {
     operationRuns.push({ id: `last-error:${job.id}:${job.lastRunAt}`, timestamp: job.lastRunAt, status: "error", output: null, error: null, durationMs: null, tokens: null });
   }
-  return { source: "openclaw-cron", operationJobId: job.id, scheduleLabel: describeSchedule(job), scheduledAt: job.nextRunAt,
+  const latestRun = latestOperationRun(runs, job.id);
+  return { source: "openclaw-cron", operationJobId: job.id, automationId: job.automationId ?? null, cronJobId: job.cronJobId ?? job.id, cronRunId: latestRun?.cronRunId ?? null, identityProvenance: latestRun?.identityProvenance ?? (job.cronJobId ? "authoritative" : "heuristic"), sourceOfTruth: latestRun?.sourceOfTruth ?? (job.cronJobId ? "openclaw.cron.job" : "compatibility"), scheduleLabel: describeSchedule(job), scheduledAt: job.nextRunAt,
     dueLabel: job.nextRunAt ? `Next run ${new Date(job.nextRunAt).toLocaleString()}` : "No next run reported", cronExpression: job.trigger?.kind === "cron" ? job.trigger.expression : null,
     timezone: job.trigger?.kind === "cron" ? job.trigger.timezone : null, lastRunStatus: job.lastRunStatus, operationStatus: job.status,
     recurrence: job.trigger?.kind ?? null, concurrency: job.safety?.concurrency ?? null, nextRunAt: job.nextRunAt,
@@ -106,6 +118,10 @@ function operationMetadata(job: OperationJob, runs: OperationRun[]) {
     operationRunHistory: operationRuns,
     operationRunCount: runs.filter((run) => run.jobId === job.id).length,
     operationRecoveryHistory: buildOperationRecoveryHistory(job) };
+}
+
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return [...new Set(values.filter((value): value is string => Boolean(value && value.trim())))];
 }
 
 function aggregateOperationTokenUsage(runs: OperationRun[]): TaskRecord["tokenUsage"] {
@@ -156,16 +172,40 @@ function buildOperationRecoveryHistory(job: OperationJob) {
 function operationJobIdForRuntimeTask(task: TaskRecord, jobsById: Map<string, OperationJob>) {
   const direct = typeof task.metadata.operationJobId === "string" ? task.metadata.operationJobId : null;
   if (direct && jobsById.has(direct)) return direct;
-  const runIds = [...task.runIds, typeof task.metadata.openClawRunId === "string" ? task.metadata.openClawRunId : ""];
+  const cronJobId = typeof task.metadata.cronJobId === "string" ? task.metadata.cronJobId : null;
+  if (cronJobId && jobsById.has(cronJobId)) return cronJobId;
+  const runIds = [
+    ...task.runIds,
+    typeof task.metadata.cronRunId === "string" ? task.metadata.cronRunId : "",
+    typeof task.metadata.operationCronRunId === "string" ? task.metadata.operationCronRunId : "",
+    typeof task.metadata.openClawRunId === "string" ? task.metadata.openClawRunId : ""
+  ];
   const sessionKeys = [
     typeof task.metadata.openClawSessionKey === "string" ? task.metadata.openClawSessionKey : "",
     typeof task.metadata.continuationSessionKey === "string" ? task.metadata.continuationSessionKey : "",
     task.key
   ];
+  for (const [jobId, job] of jobsById) {
+    const exactRun = runIds.some((runId) =>
+      snapshotRunIdMatches(runId, jobId)
+    );
+    if (exactRun) return jobId;
+    const exactSession = sessionKeys.some((sessionKey) => sessionKey && (
+      sessionKey === job.sessionKey ||
+      sessionKey === `cron:${jobId}`
+    ));
+    if (exactSession) return jobId;
+  }
+  // Compatibility for pre-5B runtime records. These matches are intentionally
+  // last and are not treated as authoritative identity evidence.
   return [...jobsById.keys()].find((jobId) =>
     runIds.some((runId) => runId.startsWith(`cron:${jobId}:`)) ||
     sessionKeys.some((sessionKey) => sessionKey.includes(`:cron:${jobId}`))
   ) ?? null;
+}
+
+function snapshotRunIdMatches(runId: string, jobId: string) {
+  return runId === jobId || runId.startsWith(`${jobId}:`) || runId.startsWith(`cron:${jobId}:`);
 }
 
 function latestOperationRun(runs: OperationRun[], jobId: string) {

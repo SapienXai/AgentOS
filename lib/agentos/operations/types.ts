@@ -14,6 +14,10 @@ export type OperationSafety = {
 
 export type OperationJob = {
   id: string;
+  /** AgentOS-side stable automation key, when the job was provisioned by AgentOS. */
+  automationId?: string | null;
+  /** Exact OpenClaw cron job identity. Kept separate from the AgentOS key. */
+  cronJobId?: string | null;
   name: string;
   description: string | null;
   enabled: boolean;
@@ -32,6 +36,7 @@ export type OperationJob = {
   recentResults?: OperationResult[];
   sessionKey?: string | null;
   sessionId?: string | null;
+  sessionTarget?: string | null;
   safety: OperationSafety | null;
   health: { consecutiveFailures: number; successRate: number | null; degraded: boolean };
   capabilities: { readable: boolean; mutable: boolean; runHistory: boolean; reason: string | null };
@@ -40,6 +45,14 @@ export type OperationJob = {
 export type OperationRun = {
   id: string;
   jobId: string;
+  /** Exact OpenClaw cron run identity, when exposed by cron.runs. */
+  cronRunId?: string | null;
+  taskId?: string | null;
+  sessionKey?: string | null;
+  completionStatus?: string | null;
+  deliveryStatus?: string | null;
+  identityProvenance?: "authoritative" | "correlated" | "derived" | "heuristic";
+  sourceOfTruth?: "openclaw.cron.job" | "openclaw.cron.runs" | "openclaw.tasks" | "agentos.dispatch" | "compatibility";
   status: "queued" | "running" | "ok" | "error" | "skipped" | "unknown";
   startedAt: string | null;
   endedAt: string | null;
@@ -66,6 +79,10 @@ export type OperationAuditEntry = {
   outcome: "accepted" | "blocked" | "failed";
   detail: string;
   requestId: string;
+  actorId?: string | null;
+  actorKind?: string | null;
+  authenticationMethod?: string | null;
+  sourceOfTruth?: string | null;
 };
 
 export type OperationsSnapshot = {
@@ -79,6 +96,8 @@ export type OperationsSnapshot = {
 };
 
 export type OperationJobInput = {
+  automationId?: string | null;
+  idempotencyKey?: string | null;
   name: string;
   description?: string | null;
   agentId: string;

@@ -13,6 +13,7 @@ export type AgentOsProductPermission =
   | "runtime.use"
   | "sessions.use"
   | "tasks.use"
+  | "automations.manage"
   | "missions.use"
   | "agents.read"
   | "agents.manage"
@@ -47,6 +48,7 @@ const SERVICE_PERMISSIONS = new Set<AgentOsProductPermission>([
   "missions.use",
   "agents.read",
   "agents.manage",
+  "automations.manage",
   "gateway.manage",
   "updates.manage",
   "migrations.manage"
@@ -59,6 +61,7 @@ const INTERNAL_SERVICE_PERMISSIONS = new Set<AgentOsProductPermission>([
   "missions.use",
   "agents.read",
   "agents.manage",
+  "automations.manage",
   "workspace.manage",
   "gateway.manage",
   "lifecycle.manage",
@@ -79,6 +82,7 @@ const OWNER_PERMISSIONS = new Set<AgentOsProductPermission>([
   "workspace.manage",
   "profile.manage",
   "users.manage",
+  "automations.manage",
   "gateway.manage",
   "lifecycle.manage",
   "updates.manage",
@@ -147,7 +151,7 @@ export async function requireAgentOsProductPermission(
 
 export function requireOwnerProductPermission(
   actor: AgentOsActorContext,
-  permission: Extract<AgentOsProductPermission, "users.manage" | "gateway.manage" | "lifecycle.manage" | "updates.manage" | "migrations.manage" | "security.manage" | "secrets.manage" | "openclaw.roles.manage">
+  permission: Extract<AgentOsProductPermission, "users.manage" | "automations.manage" | "gateway.manage" | "lifecycle.manage" | "updates.manage" | "migrations.manage" | "security.manage" | "secrets.manage" | "openclaw.roles.manage">
 ) {
   return actor.kind === "instance-operator" && actor.agentOsRole === "owner" && canAgentOsActorUseProductPermission(actor, permission);
 }
