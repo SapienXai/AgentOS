@@ -1,16 +1,23 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-01T11:09:23.524Z",
+  "generatedAt": "2026-09-01T11:27:26.348Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "upgrade/openclaw-2026.8.1",
-    "codeCommitUnderTest": "7b75eaa018d45ffc4b7fce3317f8fd73df762f6f",
+    "startingHead": "a929914efa8037c527e1196662cb2b49e55228ad",
+    "codeCommitUnderTest": "79cae30012561af78f18b7d8ddcbfb245433537b",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.8.1",
     "openClawSourceCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
     "openClawBuild": "2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z",
     "openClawPackageHash": "7c0eb75f8337d5a0eb73aefd27ad6978dccf486ae1fd7ae0759ed3a3c2e1bb52",
-    "migrationSourceVersion": "2026.6.11"
+    "migrationSourceVersion": "2026.6.11",
+    "migrationSourceCommit": "e085fa1a3ffd32d0ea6917e1e6fb4ecbffbb77d2",
+    "environment": {
+      "node": "v24.15.0",
+      "pnpm": "10.30.3",
+      "os": "darwin 25.5.0 (arm64)"
+    }
   },
   "openClaw": {
     "version": "2026.8.1",
@@ -32,6 +39,43 @@
       "pass": 1063,
       "fail": 0
     },
+    "failures": [
+      {
+        "name": "inspector visual tones",
+        "classification": "B/C/D",
+        "productBehavior": "correct",
+        "change": "aligned assertions with current light/dark surface tokens",
+        "result": "PASS"
+      },
+      {
+        "name": "mobile inspector scope controls",
+        "classification": "C/D",
+        "productBehavior": "correct",
+        "change": "aligned assertions with current conditional class composition",
+        "result": "PASS"
+      },
+      {
+        "name": "workspace creation mobile flow",
+        "classification": "C/D",
+        "productBehavior": "correct",
+        "change": "made dialog class assertion order-tolerant",
+        "result": "PASS"
+      },
+      {
+        "name": "mission shell sidebar modes",
+        "classification": "C/D",
+        "productBehavior": "correct",
+        "change": "asserted the actual explicit mobile open/close controls",
+        "result": "PASS"
+      },
+      {
+        "name": "settings hash-selected section",
+        "classification": "C/D",
+        "productBehavior": "correct",
+        "change": "aligned section metadata assertion with current grouped model",
+        "result": "PASS"
+      }
+    ],
     "resolvedContracts": [
       "inspector light/dark visual tokens",
       "mobile inspector scope visibility",
@@ -44,13 +88,23 @@
   "gates": {
     "fullSuite": "PASS",
     "freshBaseline": "PASS",
+    "runtime": "PASS",
     "migration": "PASS",
     "rollback": "PASS",
     "lifecycle": "PASS",
     "identity": "PASS",
+    "authorization": "PASS",
     "multiUser": "PASS",
     "sessionTask": "PASS",
+    "sessions": "PASS",
+    "tasks": "PASS",
     "automation": "PASS",
+    "cron": "PASS",
+    "restart": "PASS",
+    "cancellation": "SKIPPED-runtime-timing",
+    "build": "PASS",
+    "lint": "PASS",
+    "typecheck": "PASS",
     "simulatedCompatibility": "PASS-DEGRADED-ALLOWED"
   },
   "architectureBoundary": {
@@ -63,6 +117,10 @@
   },
   "taskCancellation": {
     "attempted": true,
+    "exactTaskIdAvailable": true,
+    "preState": "terminal",
+    "cancelMethod": "tasks.cancel not invoked after terminal observation",
+    "postState": "terminal",
     "result": "SKIPPED-runtime-timing",
     "evidence": "exact loopback task was terminal before a safe positive cancellation window; no unsafe cancellation claim was made"
   },
@@ -93,7 +151,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "durationMs": 20425,
+      "durationMs": 18815,
       "markerPresent": true,
       "status": "PASS"
     },
@@ -102,7 +160,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "durationMs": 2430,
+      "durationMs": 2054,
       "markerPresent": true,
       "status": "PASS"
     },
@@ -111,7 +169,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "durationMs": 23748,
+      "durationMs": 21916,
       "markerPresent": true,
       "status": "PASS"
     },
@@ -120,7 +178,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "durationMs": 27259,
+      "durationMs": 23506,
       "markerPresent": true,
       "status": "PASS"
     },
@@ -129,7 +187,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "durationMs": 353,
+      "durationMs": 335,
       "markerPresent": true,
       "status": "PASS"
     },
@@ -138,7 +196,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "durationMs": 40,
+      "durationMs": 43,
       "markerPresent": true,
       "status": "PASS"
     },
@@ -147,7 +205,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "durationMs": 42978,
+      "durationMs": 39406,
       "expectedMarker": "OPENCLAW 8.1 FRESH BASELINE: PASS",
       "markerPresent": true,
       "status": "PASS"
@@ -157,7 +215,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "durationMs": 174228,
+      "durationMs": 168729,
       "expectedMarker": "MIGRATION SUCCESS GATE: PASS",
       "requiredMarkers": [
         "ROLLBACK SUCCESS GATE: PASS"
@@ -170,7 +228,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "durationMs": 64985,
+      "durationMs": 65538,
       "expectedMarker": "OPENCLAW 8.1 LIFECYCLE GATE: PASS",
       "markerPresent": true,
       "status": "PASS"
@@ -180,7 +238,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "durationMs": 19882,
+      "durationMs": 19860,
       "expectedMarker": "OPENCLAW 8.1 IDENTITY/AUTHORIZATION GATE: PASS",
       "markerPresent": true,
       "status": "PASS"
@@ -190,7 +248,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "durationMs": 14856,
+      "durationMs": 16432,
       "expectedMarker": "AGENTOS / OPENCLAW 8.1 MULTI-USER GATE: PASS",
       "markerPresent": true,
       "status": "PASS"
@@ -200,7 +258,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "durationMs": 21957,
+      "durationMs": 21939,
       "expectedMarker": "OPENCLAW 8.1 SESSION/TASK ALIGNMENT GATE: PASS",
       "markerPresent": true,
       "status": "PASS"
@@ -210,7 +268,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "durationMs": 22079,
+      "durationMs": 20506,
       "expectedMarker": "OPENCLAW 8.1 AUTOMATION/CRON ALIGNMENT GATE: PASS",
       "markerPresent": true,
       "status": "PASS"
@@ -220,7 +278,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "durationMs": 534,
+      "durationMs": 530,
       "markerPresent": true,
       "status": "PASS"
     }
@@ -230,5 +288,10 @@
     "secretsWrittenToEvidence": false
   },
   "gate": "OPENCLAW 2026.8.1 FINAL CERTIFICATION: PASS",
+  "finalVerdict": {
+    "certification": "PASS",
+    "upgradeDevelopment": "COMPLETE",
+    "mergeReadiness": "READY TO MERGE"
+  },
   "success": true
 }
