@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-01T07:47:46.293Z",
+  "generatedAt": "2026-09-01T07:54:12.840Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "upgrade/openclaw-2026.8.1",
-    "codeCommitUnderTest": "97898414b1671ca0229e294d71021837313bb5c1",
+    "codeCommitUnderTest": "83b2eb07843bd915556021209a999948caeee2ed",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.8.1",
     "openClawSourceCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
@@ -135,7 +135,14 @@
     "taskCancelChecks": [],
     "emptyLedgerExplanation": "The exact 8.1 runtime completed the loopback model turn but exposed no task ledger row for this session; no task ID was fabricated."
   },
-  "taskProjection": [],
+  "taskProjection": [
+    {
+      "taskIdPresent": false,
+      "status": "completed",
+      "sourceOfTruth": "agentos-dispatch-or-runtime",
+      "identityProvenance": "correlated"
+    }
+  ],
   "taskControlSemantics": {
     "continue": "reuses exact sessionKey/sessionId when a projected task exposes one",
     "abort": "uses tasks.cancel for an exact task ID; otherwise sessions.abort for exact run/session",
