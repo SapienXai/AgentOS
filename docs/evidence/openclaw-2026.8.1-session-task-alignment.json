@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-01T07:35:18.752Z",
+  "generatedAt": "2026-09-01T07:47:46.293Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "upgrade/openclaw-2026.8.1",
-    "codeCommitUnderTest": "e5a9841afd8e7ef03ab578ea34e8f4cd33aab33c",
+    "codeCommitUnderTest": "97898414b1671ca0229e294d71021837313bb5c1",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.8.1",
     "openClawSourceCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
@@ -92,9 +92,13 @@
     "taskIdentityProvenance": "native-handshake"
   },
   "missionDispatch": {
-    "dispatchSidecar": "not used for native session creation",
-    "nativeMissionTurn": "not executed because the disposable fixture has no model/provider credential",
-    "fallback": "not used"
+    "dispatchSidecar": "AgentOS bootstrap correlation only; native task/session remains authoritative",
+    "dispatchIdClassification": "disposable AgentOS correlation ID; never used as OpenClaw task/session identity",
+    "nativeMissionTurn": "PASS",
+    "fallback": "not used",
+    "modelFixture": "loopback-http-fixture",
+    "dispatchIdPresent": true,
+    "runIdPresent": true
   },
   "sessionCorrelation": [
     {
@@ -115,6 +119,13 @@
       "operation": "sessions.describe",
       "result": "PASS",
       "exactKey": true
+    },
+    {
+      "operation": "native mission turn",
+      "result": "PASS",
+      "dispatchIdClassification": "AgentOS bootstrap correlation only",
+      "runIdPresent": true,
+      "historyAssistantCount": 1
     }
   ],
   "nativeTaskIntegration": {
@@ -122,23 +133,41 @@
     "taskIds": [],
     "taskGetChecks": [],
     "taskCancelChecks": [],
-    "emptyLedgerExplanation": "The exact disposable fixture created a session but no task-producing model turn; no task ID was fabricated."
+    "emptyLedgerExplanation": "The exact 8.1 runtime completed the loopback model turn but exposed no task ledger row for this session; no task ID was fabricated."
   },
   "taskProjection": [],
   "taskControlSemantics": {
     "continue": "reuses exact sessionKey/sessionId when a projected task exposes one",
     "abort": "uses tasks.cancel for an exact task ID; otherwise sessions.abort for exact run/session",
-    "assignment": "unsupported and fails closed without transport"
+    "assignment": "unsupported and fails closed without transport",
+    "taskCancelProbe": {
+      "result": "PASS",
+      "found": false,
+      "cancelled": false
+    },
+    "separateAbortProbe": {
+      "result": "PASS",
+      "responseShape": [
+        "abortedRunId",
+        "ok",
+        "status"
+      ]
+    },
+    "steer": "not observed after the bounded loopback turn completed",
+    "inject": "covered by focused Gateway contract tests"
   },
   "followUpContinue": {
-    "canonicalReuse": "covered by focused unit contract; live turn skipped without model fixture",
-    "duplicateSessionCreation": "not observed"
+    "canonicalReuse": "PASS",
+    "duplicateSessionCreation": false,
+    "historyAssistantCount": 2,
+    "sameSession": true
   },
   "restartContinuity": [
     {
       "handshake": "PASS",
       "exactSessionKeyReused": true,
-      "duplicateSessionCreated": false
+      "duplicateSessionCreated": false,
+      "continuationAfterRestart": "PASS"
     }
   ],
   "multiUserSemantics": {
