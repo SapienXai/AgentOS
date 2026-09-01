@@ -640,7 +640,7 @@ test("workspace creation provides a compact mobile-first basic flow", () => {
     "utf8"
   );
 
-  assert.match(source, /contentClassName="h-\[100dvh\] max-h-\[100dvh\] w-screen rounded-none/);
+  assert.match(source, /contentClassName="[^"]*h-\[100dvh\][^"]*max-h-\[100dvh\][^"]*w-screen[^"]*rounded-none/);
   assert.match(source, /<MobileWorkspaceCreateForm/);
   assert.match(source, /id="mobile-workspace-name"/);
   assert.match(source, /id="mobile-workspace-goal"/);
@@ -653,7 +653,7 @@ test("workspace creation provides a compact mobile-first basic flow", () => {
 
 test("mission shell supports hover and pinned sidebar modes", () => {
   const source = readFileSync(path.join(rootDir, "components/mission-control/mission-control-shell.tsx"), "utf8");
-  const mobileSettingsHeaderStart = source.indexOf('"fixed inset-x-0 top-0 z-[60] flex min-h-16');
+  const mobileSettingsHeaderStart = source.indexOf('"fixed inset-x-0 top-0 z-');
   const mobileSettingsHeaderEnd = source.indexOf('"pointer-events-auto fixed inset-y-0 left-0 z-50', mobileSettingsHeaderStart);
 
   assert.match(source, /const \[isSidebarOpenState, setIsSidebarOpen\] = useState\(false\);/);
@@ -678,7 +678,10 @@ test("mission shell supports hover and pinned sidebar modes", () => {
     /onBlurCapture=\{\(event\) => \{\s*if \(isSidebarPinned \|\| shouldKeepSidebarOpenForPortal\(event\.relatedTarget\)\) \{\s*return;\s*\}\s*if \(!event\.currentTarget\.contains\(event\.relatedTarget as Node \| null\)\) \{\s*setIsSidebarOpen\(false\);/
   );
   assert.match(source, /sidebarPinned=\{isSidebarPinned\}[\s\S]*?onToggleCollapsed=\{handleSidebarPinToggle\}/);
-  assert.match(source, /aria-label=\{isSidebarOpen \? "Close navigation" : "Open navigation"\}/);
+  assert.match(source, /aria-label="Close navigation"/);
+  assert.match(source, /aria-label="Open navigation"/);
+  assert.match(source, /onClick=\{\(\) => setIsSidebarOpen\(true\)\}/);
+  assert.match(source, /onClick=\{\(\) => setIsSidebarOpen\(false\)\}/);
   assert.match(source, /isSidebarOpen \? "translate-x-0" : "-translate-x-full"/);
   assert.match(source, /aria-label=\{isInspectorOpen \? "Close inspector" : "Open inspector"\}/);
   assert.equal(source.match(/<MissionControlCanvasTitlePill surfaceTheme=\{surfaceTheme\} \/>/g)?.length, 1);
@@ -781,7 +784,7 @@ test("settings control center renders a single hash-selected section", () => {
   assert.match(source, /type SettingsSectionId =[\s\S]*?"danger-zone";/);
   assert.match(source, /const \[activeSection, setActiveSection\] = useState<SettingsSectionId>\(\(\) => resolveInitialSettingsSection\(\)\)/);
   assert.match(source, /window\.addEventListener\("hashchange", syncActiveSectionFromHash\)/);
-  assert.match(source, /\{ id: "general", label: "General", icon: Wrench \}/);
+  assert.match(source, /\{ id: "general", label: "General", icon: Wrench, group: "Core" \}/);
   assert.match(source, /case "general":\s*case "tools":\s*return "general"/);
 });
 

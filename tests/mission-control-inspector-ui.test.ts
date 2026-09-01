@@ -15,12 +15,15 @@ test("inspector visual tones provide distinct light and dark compact surfaces", 
   const light = resolveInspectorSurfaceTone("light");
   const dark = resolveInspectorSurfaceTone("dark");
 
-  assert.match(light.shell, /255,253,251/);
+  assert.match(light.shell, /bg-\[#fbf7f3\]/);
+  assert.match(light.content, /bg-\[#fffdfa\]/);
   assert.match(light.title, /#30251f/);
   assert.match(light.primaryButton, /text-\[#fffaf4\]/);
   assert.doesNotMatch(light.primaryButton, /text-white/);
   assert.match(dark.shell, /7,14,25/);
   assert.match(dark.title, /text-white/);
+  assert.notEqual(light.shell, dark.shell);
+  assert.notEqual(light.title, dark.title);
 });
 
 test("inspector summary actions preserve task status priority", () => {

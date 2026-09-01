@@ -780,7 +780,8 @@ test("mobile inspector moves scope controls into the header and reserves the rai
 
   assert.match(source, /hidden h-full shrink-0 flex-col items-center px-1\.5 py-3 lg:flex/);
   assert.match(source, /aria-label="Inspector scope"/);
-  assert.match(source, /mt-3 grid grid-cols-3[\s\S]*lg:hidden/);
+  assert.match(source, /mt-3 grid-cols-3 gap-1 rounded-\[10px\] border p-1 lg:hidden/);
+  assert.match(source, /isChatView \? "hidden" : "grid"/);
   assert.match(source, /aria-label=\{`Show \$\{item\.label\} inspector`\}/);
   assert.match(source, /style=\{isLight \? \{ backdropFilter: "none", WebkitBackdropFilter: "none" \} : undefined\}/);
   assert.match(source, /isLight \? "backdrop-blur-none" : "backdrop-blur-2xl"/);
