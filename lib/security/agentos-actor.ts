@@ -2,14 +2,12 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 
-import { ensureAgentOsUserStore } from "@/lib/agentos/application/agentos-account-service";
 import { hasValidAgentOsApiToken } from "@/lib/security/api-auth";
 import {
   readInstanceProtectionState,
   readInstanceSessionCookie,
-  readInstanceSessionIdentity,
+  resolveActiveInstanceSession,
 } from "@/lib/security/instance-protection";
-import { getAgentOsUserByActorId } from "@/lib/security/agentos-user-store";
 import { evaluateLocalOperatorRequest } from "@/lib/security/local-operator";
 
 export type AgentOsActorKind = "instance-operator" | "service" | "internal-service";
@@ -66,17 +64,8 @@ export async function resolveAgentOsActorContext(
   const state = await readInstanceProtectionState(env);
 
   if (state) {
-    await ensureAgentOsUserStore(env);
-    const sessionIdentity = readInstanceSessionIdentity(readInstanceSessionCookie(request.headers), state);
-    if (!sessionIdentity) {
-      return null;
-    }
-
-    const user = await getAgentOsUserByActorId(sessionIdentity.actorId, env);
-    if (!user || user.status !== "active" || user.sessionVersion !== sessionIdentity.sessionVersion) {
-      return null;
-    }
-    return createInstanceOperatorActor(user);
+    const activeSession = await resolveActiveInstanceSession(readInstanceSessionCookie(request.headers), state, env);
+    return activeSession ? createInstanceOperatorActor(activeSession.user) : null;
   }
 
   if (hasValidAgentOsApiToken(request.headers, env)) {

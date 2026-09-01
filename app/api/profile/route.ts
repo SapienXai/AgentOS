@@ -13,7 +13,7 @@ import {
   updateManagedAgentOsUserProfile
 } from "@/lib/agentos/application/agentos-account-service";
 import { redactErrorMessage } from "@/lib/security/redaction";
-import { requireAgentOsActorContext } from "@/lib/security/agentos-actor";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
 
 export const runtime = "nodejs";
@@ -32,10 +32,10 @@ const profileSchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const actorResult = await requireAgentOsActorContext(request);
-    if ("response" in actorResult) return actorResult.response;
-    if (actorResult.actor.authenticationMethod === "instance-session") {
-      const user = await getCurrentAgentOsUser(actorResult.actor.actorId);
+    const authorization = await requireAgentOsProductPermission(request, "profile.manage");
+    if ("response" in authorization) return authorization.response;
+    if (authorization.actor.authenticationMethod === "instance-session") {
+      const user = await getCurrentAgentOsUser(authorization.actor.actorId);
       if (!user) return NextResponse.json({ error: "AgentOS account is unavailable." }, { status: 503 });
       return NextResponse.json({
         fullName: user.profile.displayName,
@@ -60,19 +60,20 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const actorResult = await requireAgentOsActorContext(request);
-    if ("response" in actorResult) return actorResult.response;
+    const authorization = await requireAgentOsProductPermission(request, "profile.manage");
+    if ("response" in authorization) return authorization.response;
+    const actor = authorization.actor;
 
     const profile = profileSchema.parse(await request.json());
     let saved: OperatorProfile = { ...profile, updatedAt: null };
-    if (actorResult.actor.authenticationMethod === "instance-session") {
-      if (profile.username !== actorResult.actor.username) {
+    if (actor.authenticationMethod === "instance-session") {
+      if (profile.username !== actor.username) {
         return NextResponse.json(
           { error: "Login username changes must be performed through Instance Protection settings.", code: "username-change-requires-security-settings" },
           { status: 400 }
         );
       }
-      const user = await updateManagedAgentOsUserProfile(actorResult.actor.actorId, {
+      const user = await updateManagedAgentOsUserProfile(actor.actorId, {
         displayName: profile.fullName,
         email: profile.email,
         avatarDataUrl: profile.avatarDataUrl
@@ -91,7 +92,7 @@ export async function PATCH(request: Request) {
       saved = await saveOperatorProfile(profile);
     }
     await recordAgentOsAuditEvent({
-      actor: actorResult.actor,
+      actor,
       operation: "profile.update",
       targetKind: "operator-profile",
       result: "succeeded"

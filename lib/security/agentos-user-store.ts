@@ -53,7 +53,15 @@ export type AgentOsUserStore = {
 
 export type AgentOsUserSummary = Omit<AgentOsUser, "passwordSalt" | "passwordHash">;
 
-type UserStoreErrorCode = "invalid-input" | "conflict" | "not-found" | "last-owner" | "invalid-credentials" | "rate-limited";
+type UserStoreErrorCode =
+  | "invalid-input"
+  | "conflict"
+  | "not-found"
+  | "last-owner"
+  | "invalid-credentials"
+  | "rate-limited"
+  | "orphaned-security-state"
+  | "linkage-conflict";
 
 export class AgentOsUserStoreError extends Error {
   constructor(
@@ -68,6 +76,7 @@ export class AgentOsUserStoreError extends Error {
 
 type LoginRateEntry = { failures: number[]; lockedUntil: number };
 const loginAttempts = new Map<string, LoginRateEntry>();
+const userStoreMutationTails = new Map<string, Promise<void>>();
 const LOGIN_WINDOW_MS = 5 * 60 * 1000;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
 const LOGIN_MAX_FAILURES = 5;
@@ -100,7 +109,8 @@ export async function readAgentOsUserStore(env: NodeJS.ProcessEnv = process.env)
   return parseUserStore(payload);
 }
 
-export async function writeAgentOsUserStore(store: AgentOsUserStore, env: NodeJS.ProcessEnv = process.env) {
+async function writeAgentOsUserStore(store: AgentOsUserStore, env: NodeJS.ProcessEnv = process.env) {
+  assertAgentOsUserStoreInvariants(store);
   const targetPath = resolveAgentOsUserStorePath(env);
   const temporaryPath = `${targetPath}.${randomUUID()}.tmp`;
   await mkdir(path.dirname(targetPath), { recursive: true, mode: 0o700 });
@@ -108,6 +118,24 @@ export async function writeAgentOsUserStore(store: AgentOsUserStore, env: NodeJS
   await chmod(temporaryPath, 0o600);
   await rename(temporaryPath, targetPath);
   await chmod(targetPath, 0o600);
+}
+
+/**
+ * Serialize account-store read/modify/write transactions for one AgentOS
+ * runtime directory. Atomic rename protects readers, while this boundary
+ * prevents same-process lost updates between concurrent account operations.
+ */
+export async function mutateAgentOsUserStore<T>(
+  env: NodeJS.ProcessEnv,
+  mutation: (store: AgentOsUserStore) => Promise<T> | T
+) {
+  return withAgentOsUserStoreLock(env, async () => {
+    const store = await requireUserStore(env);
+    const result = await mutation(store);
+    assertAgentOsUserStoreInvariants(store);
+    await writeAgentOsUserStore(store, env);
+    return result;
+  });
 }
 
 export async function createOwnerUserFromInstanceState(input: {
@@ -118,29 +146,41 @@ export async function createOwnerUserFromInstanceState(input: {
   sessionVersion: number;
   profile?: Partial<AgentOsUserProfile>;
 }, env: NodeJS.ProcessEnv = process.env) {
-  const existing = await readAgentOsUserStore(env);
-  if (existing) return existing;
-  const now = new Date().toISOString();
-  const owner: AgentOsUser = {
-    actorId: input.actorId,
-    username: normalizeAgentOsUsername(input.username),
-    role: "owner",
-    status: "active",
-    passwordSalt: input.passwordSalt,
-    passwordHash: input.passwordHash,
-    sessionVersion: Number.isSafeInteger(input.sessionVersion) && input.sessionVersion > 0 ? input.sessionVersion : 1,
-    createdAt: now,
-    updatedAt: now,
-    profile: {
-      displayName: readString(input.profile?.displayName),
-      email: readString(input.profile?.email).toLocaleLowerCase("en-US"),
-      avatarDataUrl: typeof input.profile?.avatarDataUrl === "string" ? input.profile.avatarDataUrl : null
-    },
-    openClaw: emptyOpenClawLinkage()
-  };
-  const store: AgentOsUserStore = { version: AGENTOS_USER_STORE_VERSION, users: [owner] };
-  await writeAgentOsUserStore(store, env);
-  return store;
+  return withAgentOsUserStoreLock(env, async () => {
+    const existing = await readAgentOsUserStore(env);
+    if (existing) {
+      const owner = existing.users.find((user) => user.actorId === input.actorId);
+      if (!owner || owner.role !== "owner" || owner.status !== "active") {
+        throw new AgentOsUserStoreError(
+          "Instance Protection and AgentOS user accounts refer to different security identities.",
+          409,
+          "orphaned-security-state"
+        );
+      }
+      return existing;
+    }
+    const now = new Date().toISOString();
+    const owner: AgentOsUser = {
+      actorId: input.actorId,
+      username: normalizeAgentOsUsername(input.username),
+      role: "owner",
+      status: "active",
+      passwordSalt: input.passwordSalt,
+      passwordHash: input.passwordHash,
+      sessionVersion: Number.isSafeInteger(input.sessionVersion) && input.sessionVersion > 0 ? input.sessionVersion : 1,
+      createdAt: now,
+      updatedAt: now,
+      profile: {
+        displayName: readString(input.profile?.displayName),
+        email: readString(input.profile?.email).toLocaleLowerCase("en-US"),
+        avatarDataUrl: typeof input.profile?.avatarDataUrl === "string" ? input.profile.avatarDataUrl : null
+      },
+      openClaw: emptyOpenClawLinkage()
+    };
+    const store: AgentOsUserStore = { version: AGENTOS_USER_STORE_VERSION, users: [owner] };
+    await writeAgentOsUserStore(store, env);
+    return store;
+  });
 }
 
 export async function getAgentOsUserByActorId(actorId: string, env: NodeJS.ProcessEnv = process.env) {
@@ -193,83 +233,87 @@ export async function createAgentOsUser(input: {
 }, env: NodeJS.ProcessEnv = process.env) {
   validatePasswordForStore(input.password);
   const username = normalizeAgentOsUsername(input.username);
-  const store = await requireUserStore(env);
-  if (store.users.some((user) => user.username === username)) {
-    throw new AgentOsUserStoreError("That username is already in use.", 409, "conflict");
-  }
-  const now = new Date().toISOString();
-  const passwordSalt = createPasswordSalt();
-  const user: AgentOsUser = {
-    actorId: randomUUID(),
-    username,
-    role: input.role ?? "member",
-    status: "active",
-    passwordSalt,
-    passwordHash: await hashPassword(input.password, passwordSalt),
-    sessionVersion: 1,
-    createdAt: now,
-    updatedAt: now,
-    profile: {
-      displayName: readString(input.profile?.displayName),
-      email: readString(input.profile?.email).toLocaleLowerCase("en-US"),
-      avatarDataUrl: typeof input.profile?.avatarDataUrl === "string" ? input.profile.avatarDataUrl : null
-    },
-    openClaw: emptyOpenClawLinkage()
-  };
-  store.users.push(user);
-  await writeAgentOsUserStore(store, env);
-  return user;
+  return mutateAgentOsUserStore(env, async (store) => {
+    if (store.users.some((user) => user.username === username)) {
+      throw new AgentOsUserStoreError("That username is already in use.", 409, "conflict");
+    }
+    const now = new Date().toISOString();
+    const passwordSalt = createPasswordSalt();
+    const user: AgentOsUser = {
+      actorId: randomUUID(),
+      username,
+      role: input.role ?? "member",
+      status: "active",
+      passwordSalt,
+      passwordHash: await hashPassword(input.password, passwordSalt),
+      sessionVersion: 1,
+      createdAt: now,
+      updatedAt: now,
+      profile: {
+        displayName: readString(input.profile?.displayName),
+        email: readString(input.profile?.email).toLocaleLowerCase("en-US"),
+        avatarDataUrl: typeof input.profile?.avatarDataUrl === "string" ? input.profile.avatarDataUrl : null
+      },
+      openClaw: emptyOpenClawLinkage()
+    };
+    store.users.push(user);
+    return user;
+  });
 }
 
 export async function updateAgentOsUserRole(actorId: string, role: AgentOsUserRole, env: NodeJS.ProcessEnv = process.env) {
-  const store = await requireUserStore(env);
-  const user = findUserOrThrow(store, actorId);
-  if (user.role === "owner" && role !== "owner" && countActiveOwners(store) <= 1) {
-    throw new AgentOsUserStoreError("At least one active owner is required.", 409, "last-owner");
-  }
-  user.role = role;
-  user.sessionVersion += 1;
-  user.updatedAt = new Date().toISOString();
-  await writeAgentOsUserStore(store, env);
-  return user;
+  return mutateAgentOsUserStore(env, (store) => {
+    const user = findUserOrThrow(store, actorId);
+    if (user.role === "owner" && role !== "owner" && countActiveOwners(store) <= 1) {
+      throw new AgentOsUserStoreError("At least one active owner is required.", 409, "last-owner");
+    }
+    if (user.role !== role) {
+      user.role = role;
+      user.sessionVersion += 1;
+      user.updatedAt = new Date().toISOString();
+    }
+    return user;
+  });
 }
 
 export async function setAgentOsUserStatus(actorId: string, status: AgentOsUserStatus, env: NodeJS.ProcessEnv = process.env) {
-  const store = await requireUserStore(env);
-  const user = findUserOrThrow(store, actorId);
-  if (user.status === "active" && status === "disabled" && user.role === "owner" && countActiveOwners(store) <= 1) {
-    throw new AgentOsUserStoreError("At least one active owner is required.", 409, "last-owner");
-  }
-  user.status = status;
-  user.sessionVersion += 1;
-  user.updatedAt = new Date().toISOString();
-  await writeAgentOsUserStore(store, env);
-  return user;
+  return mutateAgentOsUserStore(env, (store) => {
+    const user = findUserOrThrow(store, actorId);
+    if (user.status === "active" && status === "disabled" && user.role === "owner" && countActiveOwners(store) <= 1) {
+      throw new AgentOsUserStoreError("At least one active owner is required.", 409, "last-owner");
+    }
+    if (user.status !== status) {
+      user.status = status;
+      user.sessionVersion += 1;
+      user.updatedAt = new Date().toISOString();
+    }
+    return user;
+  });
 }
 
 export async function setAgentOsUserPassword(actorId: string, password: string, env: NodeJS.ProcessEnv = process.env) {
   validatePasswordForStore(password);
-  const store = await requireUserStore(env);
-  const user = findUserOrThrow(store, actorId);
-  user.passwordSalt = createPasswordSalt();
-  user.passwordHash = await hashPassword(password, user.passwordSalt);
-  user.sessionVersion += 1;
-  user.updatedAt = new Date().toISOString();
-  await writeAgentOsUserStore(store, env);
-  return user;
+  return mutateAgentOsUserStore(env, async (store) => {
+    const user = findUserOrThrow(store, actorId);
+    user.passwordSalt = createPasswordSalt();
+    user.passwordHash = await hashPassword(password, user.passwordSalt);
+    user.sessionVersion += 1;
+    user.updatedAt = new Date().toISOString();
+    return user;
+  });
 }
 
 export async function updateAgentOsUserProfile(actorId: string, profile: AgentOsUserProfile, env: NodeJS.ProcessEnv = process.env) {
-  const store = await requireUserStore(env);
-  const user = findUserOrThrow(store, actorId);
-  user.profile = {
-    displayName: profile.displayName.trim(),
-    email: profile.email.trim().toLocaleLowerCase("en-US"),
-    avatarDataUrl: profile.avatarDataUrl
-  };
-  user.updatedAt = new Date().toISOString();
-  await writeAgentOsUserStore(store, env);
-  return user;
+  return mutateAgentOsUserStore(env, (store) => {
+    const user = findUserOrThrow(store, actorId);
+    user.profile = {
+      displayName: profile.displayName.trim(),
+      email: profile.email.trim().toLocaleLowerCase("en-US"),
+      avatarDataUrl: profile.avatarDataUrl
+    };
+    user.updatedAt = new Date().toISOString();
+    return user;
+  });
 }
 
 export async function updateAgentOsUserOpenClawLinkage(input: {
@@ -279,17 +323,46 @@ export async function updateAgentOsUserOpenClawLinkage(input: {
   linkageState: AgentOsOpenClawLinkageState;
   lastVerifiedAt?: string | null;
 }, env: NodeJS.ProcessEnv = process.env) {
-  const store = await requireUserStore(env);
-  const user = findUserOrThrow(store, input.actorId);
-  user.openClaw = {
-    profileId: input.profileId,
-    role: input.role,
-    linkageState: input.linkageState,
-    lastVerifiedAt: input.lastVerifiedAt ?? new Date().toISOString()
-  };
-  user.updatedAt = new Date().toISOString();
-  await writeAgentOsUserStore(store, env);
-  return user;
+  return mutateAgentOsUserStore(env, (store) => {
+    const user = findUserOrThrow(store, input.actorId);
+    if (input.profileId && store.users.some((entry) => entry.actorId !== input.actorId && entry.openClaw.profileId === input.profileId)) {
+      throw new AgentOsUserStoreError("That OpenClaw profile is already linked to another AgentOS user.", 409, "linkage-conflict");
+    }
+    user.openClaw = {
+      profileId: input.profileId,
+      role: input.role,
+      linkageState: input.linkageState,
+      lastVerifiedAt: input.lastVerifiedAt ?? new Date().toISOString()
+    };
+    user.updatedAt = new Date().toISOString();
+    return user;
+  });
+}
+
+export async function updateAgentOsUserCredentials(input: {
+  actorId: string;
+  username: string;
+  passwordSalt: string;
+  passwordHash: string;
+  sessionVersion: number;
+  updatedAt?: string;
+}, env: NodeJS.ProcessEnv = process.env) {
+  const username = normalizeAgentOsUsername(input.username);
+  if (!Number.isSafeInteger(input.sessionVersion) || input.sessionVersion <= 0) {
+    throw new AgentOsUserStoreError("User session version is invalid.", 400, "invalid-input");
+  }
+  return mutateAgentOsUserStore(env, (store) => {
+    const user = findUserOrThrow(store, input.actorId);
+    if (store.users.some((entry) => entry.actorId !== input.actorId && entry.username === username)) {
+      throw new AgentOsUserStoreError("That username is already in use.", 409, "conflict");
+    }
+    user.username = username;
+    user.passwordSalt = input.passwordSalt;
+    user.passwordHash = input.passwordHash;
+    user.sessionVersion = input.sessionVersion;
+    user.updatedAt = input.updatedAt ?? new Date().toISOString();
+    return user;
+  });
 }
 
 export function emptyOpenClawLinkage(): AgentOsOpenClawLinkage {
@@ -300,6 +373,23 @@ async function requireUserStore(env: NodeJS.ProcessEnv) {
   const store = await readAgentOsUserStore(env);
   if (!store) throw new AgentOsUserStoreError("AgentOS user accounts are not initialized.", 409, "not-found");
   return store;
+}
+
+async function withAgentOsUserStoreLock<T>(env: NodeJS.ProcessEnv, operation: () => Promise<T> | T) {
+  const key = resolveAgentOsUserStorePath(env);
+  const previous = userStoreMutationTails.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  userStoreMutationTails.set(key, current);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (userStoreMutationTails.get(key) === current) userStoreMutationTails.delete(key);
+  }
 }
 
 async function getAgentOsUserByUsernameSafe(username: string, env: NodeJS.ProcessEnv) {
@@ -328,12 +418,17 @@ function parseUserStore(payload: unknown): AgentOsUserStore {
   return { version: AGENTOS_USER_STORE_VERSION, users };
 }
 
+export function assertAgentOsUserStoreInvariants(store: AgentOsUserStore) {
+  parseUserStore(store);
+}
+
 function parseUser(value: unknown): AgentOsUser {
   if (!value || typeof value !== "object") throw new Error("AgentOS user account data is unavailable or invalid.");
   const input = value as Partial<AgentOsUser>;
+  const sessionVersion = input.sessionVersion;
   if (!isStableActorId(input.actorId) || typeof input.username !== "string" || normalizeForParse(input.username) !== input.username ||
     (input.role !== "owner" && input.role !== "member") || (input.status !== "active" && input.status !== "disabled") ||
-    typeof input.passwordSalt !== "string" || typeof input.passwordHash !== "string" || !Number.isSafeInteger(input.sessionVersion) ||
+    typeof input.passwordSalt !== "string" || typeof input.passwordHash !== "string" || !Number.isSafeInteger(sessionVersion) || (sessionVersion as number) <= 0 ||
     typeof input.createdAt !== "string" || typeof input.updatedAt !== "string") {
     throw new Error("AgentOS user account data is unavailable or invalid.");
   }

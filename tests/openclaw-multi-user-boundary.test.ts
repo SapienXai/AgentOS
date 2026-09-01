@@ -23,13 +23,17 @@ test("high-value mutation routes carry a central AgentOS product permission", as
     "app/api/openclaw/migrations/route.ts",
     "app/api/update/route.ts",
     "app/api/users/route.ts",
-    "app/api/users/openclaw/route.ts"
+    "app/api/users/openclaw/route.ts",
+    "app/api/profile/route.ts",
+    "app/api/workspaces/[workspaceId]/files/route.ts"
   ].map((file) => readFile(file, "utf8")));
   for (const source of routeSources) assert.match(source, /requireAgentOsProductPermission|productPermission/);
   const agentRoute = routeSources[0]!;
   assert.match(agentRoute, /productPermission: "agents\.manage"/);
   assert.match(await readFile("app/api/gateway/control/route.ts", "utf8"), /"lifecycle\.manage"/);
   assert.match(await readFile("app/api/users/route.ts", "utf8"), /"users\.manage"/);
+  assert.match(await readFile("app/api/profile/route.ts", "utf8"), /"profile\.manage"/);
+  assert.match(await readFile("app/api/workspaces/[workspaceId]/files/route.ts", "utf8"), /"workspace\.manage"/);
 });
 
 test("shared transport boundary is encoded before OpenClaw preflight", async () => {

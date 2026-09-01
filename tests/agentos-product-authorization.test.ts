@@ -38,3 +38,18 @@ test("permission matrix is bounded and explicit for service/internal actors", ()
   assert.ok(!matrix.member.includes("lifecycle.manage"));
   assert.ok(!matrix.service.includes("users.manage"));
 });
+
+test("reported permission matrix matches effective enforcement", () => {
+  const matrix = getAgentOsProductPermissionMatrix();
+  const actors = { owner, member, service, internalService: { ...owner, kind: "internal-service" as const, agentOsRole: null, authenticationMethod: "internal-service" as const, actorId: "service:agentos-internal" } };
+  const permissions = new Set(Object.values(matrix).flat());
+  for (const permission of permissions) {
+    for (const [actorName, actor] of Object.entries(actors)) {
+      assert.equal(
+        canAgentOsActorUseProductPermission(actor, permission),
+        matrix[actorName as keyof typeof matrix].includes(permission),
+        `${actorName} / ${permission}`
+      );
+    }
+  }
+});

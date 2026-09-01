@@ -1,10 +1,14 @@
 import "server-only";
 
 import { readOperatorProfileRecord } from "@/lib/agentos/application/operator-profile-service";
-import { readInstanceProtectionState } from "@/lib/security/instance-protection";
+import {
+  readInstanceProtectionState,
+  synchronizeInstanceOwnerCredential
+} from "@/lib/security/instance-protection";
 import {
   createAgentOsUser,
   createOwnerUserFromInstanceState,
+  AgentOsUserStoreError,
   getAgentOsUserByActorId,
   readAgentOsUserStore,
   setAgentOsUserPassword,
@@ -21,7 +25,17 @@ import {
 
 export async function ensureAgentOsUserStore(env: NodeJS.ProcessEnv = process.env) {
   const existing = await readAgentOsUserStore(env);
-  if (existing) return existing;
+  if (existing) {
+    const state = await readInstanceProtectionState(env);
+    if (state && !existing.users.some((user) => user.actorId === state.actorId)) {
+      throw new AgentOsUserStoreError(
+        "Instance Protection and AgentOS user accounts refer to different security identities.",
+        409,
+        "orphaned-security-state"
+      );
+    }
+    return existing;
+  }
   const state = await readInstanceProtectionState(env);
   if (!state) return null;
   const profileRecord = await readOperatorProfileRecord(env);
@@ -68,7 +82,16 @@ export async function updateManagedAgentOsUserStatus(actorId: string, status: Ag
 }
 
 export async function resetManagedAgentOsUserPassword(actorId: string, password: string, env: NodeJS.ProcessEnv = process.env) {
-  return setAgentOsUserPassword(actorId, password, env);
+  const updated = await setAgentOsUserPassword(actorId, password, env);
+  const state = await readInstanceProtectionState(env);
+  if (state?.actorId === actorId) {
+    await synchronizeInstanceOwnerCredential({
+      actorId,
+      passwordSalt: updated.passwordSalt,
+      passwordHash: updated.passwordHash
+    }, env);
+  }
+  return updated;
 }
 
 export async function updateManagedAgentOsUserProfile(actorId: string, profile: AgentOsUserProfile, env: NodeJS.ProcessEnv = process.env) {

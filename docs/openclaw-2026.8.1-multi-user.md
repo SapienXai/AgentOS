@@ -110,3 +110,29 @@ This is a trusted-team foundation, not hostile tenant isolation. Native per-huma
 ## Evidence
 
 The isolated runtime certification artifact is `docs/evidence/openclaw-2026.8.1-multi-user.json`. It records the exact OpenClaw package identity, AgentOS code commit under test, account/session checks, shared-service escalation check, runtime session result, audit differentiation, cleanup, and gate without recording secrets.
+
+## Phase 4B.1 consistency hardening
+
+The canonical protected-session path is now:
+
+```text
+signed cookie
+  -> instance signing epoch
+  -> canonical actor ID
+  -> agentos-users.json lookup
+  -> active status and per-user sessionVersion
+  -> AgentOsActorContext
+  -> central product permission
+```
+
+`getInstanceProtectionStatus` and actor resolution use the same active-session validator. A valid signature alone is insufficient: unknown, disabled, stale, malformed, or missing-store actors fail closed. The only missing-store compatibility path is a controlled migration for the legacy Instance Protection owner whose signed actor and session version still match the v2 state. Corrupt account data never falls back to the legacy owner.
+
+Account-store writes are read/modify/write transactions serialized by runtime-directory key. Atomic rename remains the individual-write durability boundary; the process-local queue prevents lost updates between concurrent account mutations in the supported single-process deployment. Multi-replica concurrent writers are not certified by this phase and require a shared lock or database before horizontal writes are enabled.
+
+Every durable store mutation is validated for unique actor IDs and normalized usernames, valid owner/member roles, valid active/disabled status, positive session versions, valid profile/linkage shapes, and at least one active owner. Role, password, and status changes increment only the target user's session version. Profile changes do not revoke sessions. The final active owner cannot be demoted or disabled, including when competing mutations run concurrently.
+
+Protection lifecycle is intentionally deterministic. Disabling protection is rejected with `multi-user-protection-required` when more than one AgentOS account exists. With exactly one active owner, the API removes the Instance Protection state and canonical account security store together; re-enabling creates one fresh owner actor from the new credentials. The explicit CLI auth reset follows the same security-state cleanup while preserving workspaces, agents, tasks, integrations, and OpenClaw data. An account store found without matching Instance Protection state is treated as orphaned security state and cannot silently become a new protected instance.
+
+The historical `operator-profile.json` remains an owner compatibility sidecar. Protected member profile edits update only that member's canonical account profile; they do not overwrite the owner sidecar. The profile endpoint is product-permission-gated, and workspace `USER.md` is shared workspace context rather than a personal profile. Its write route requires `workspace.manage`, which members do not receive.
+
+OpenClaw linkage remains metadata only because the shared trusted service credential does not establish a per-human OpenClaw identity. A profile ID may be linked to at most one AgentOS actor. Native role mutation updates linkage metadata only after OpenClaw succeeds, and duplicate linkage is rejected. OpenClaw remains the final runtime authority; AgentOS product policy must run before any shared privileged transport call.

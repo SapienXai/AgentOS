@@ -13,7 +13,9 @@ import {
   createOwnerUserFromInstanceState,
   normalizeAgentOsUsername,
   readAgentOsUserStore,
-  writeAgentOsUserStore
+  resolveAgentOsUserStorePath,
+  updateAgentOsUserCredentials,
+  type AgentOsUser
 } from "@/lib/security/agentos-user-store";
 
 export const INSTANCE_PROTECTION_COOKIE = "agentos_instance_session";
@@ -52,6 +54,7 @@ type LoginRateEntry = {
 };
 
 const loginAttempts = new Map<string, LoginRateEntry>();
+const protectionMutationTails = new Map<string, Promise<void>>();
 
 export function resolveInstanceProtectionPath(env: NodeJS.ProcessEnv = process.env) {
   return join(resolveAgentOsRuntimeDir(env), INSTANCE_PROTECTION_FILE);
@@ -124,19 +127,15 @@ export async function getInstanceProtectionStatus(
     };
   }
 
-  const sessionIdentity = readInstanceSessionIdentity(cookieValue, state);
-  const userStore = await readAgentOsUserStore(env) ?? await ensureAgentOsUserStoreForMigration(env);
-  const sessionUser = sessionIdentity
-    ? userStore?.users.find((entry) => entry.actorId === sessionIdentity.actorId) ?? null
-    : null;
+  const activeSession = await resolveActiveInstanceSession(cookieValue, state, env);
 
   return {
     protectionEnabled: true,
-    authenticated: await isActiveInstanceSession(cookieValue, state, env),
-    username: sessionUser?.username ?? state.username,
+    authenticated: Boolean(activeSession),
+    username: activeSession?.user.username ?? state.username,
     credentialConfigured: true,
-    actorId: sessionIdentity?.actorId ?? null,
-    role: sessionUser?.role ?? await resolveInstanceSessionRole(cookieValue, state, env)
+    actorId: activeSession?.user.actorId ?? null,
+    role: activeSession?.user.role ?? null
   };
 }
 
@@ -144,31 +143,47 @@ export async function enableInstanceProtection(
   input: { username: string; password: string },
   env: NodeJS.ProcessEnv = process.env
 ) {
-  const existing = await readInstanceProtectionState(env);
-  if (existing) {
-    throw new InstanceProtectionError("Protection is already enabled.", 409, "already-enabled");
-  }
+  return withProtectionMutation(env, async () => {
+    const existing = await readInstanceProtectionState(env);
+    if (existing) {
+      throw new InstanceProtectionError("Protection is already enabled.", 409, "already-enabled");
+    }
+    if (await readAgentOsUserStore(env)) {
+      throw new InstanceProtectionError(
+        "AgentOS account data exists without matching Instance Protection state.",
+        409,
+        "orphaned-security-state"
+      );
+    }
 
-  const username = validateUsername(input.username);
-  validatePassword(input.password);
-  const passwordSalt = createPasswordSalt();
-  const passwordHash = await hashPassword(input.password, passwordSalt);
-  const state: InstanceProtectionState = {
-    version: 2,
-    enabled: true,
-    actorId: randomUUID(),
-    username,
-    passwordSalt,
-    passwordHash,
-    sessionSecret: randomBytes(32).toString("base64url"),
-    sessionVersion: 1,
-    updatedAt: new Date().toISOString()
-  };
+    const username = validateUsername(input.username);
+    validatePassword(input.password);
+    const passwordSalt = createPasswordSalt();
+    const passwordHash = await hashPassword(input.password, passwordSalt);
+    const state: InstanceProtectionState = {
+      version: 2,
+      enabled: true,
+      actorId: randomUUID(),
+      username,
+      passwordSalt,
+      passwordHash,
+      sessionSecret: randomBytes(32).toString("base64url"),
+      sessionVersion: 1,
+      updatedAt: new Date().toISOString()
+    };
 
-  await writeInstanceProtectionState(state, env);
-  await createOwnerUserFromInstanceState(state, env);
-  const session = createInstanceSession(state);
-  return { status: await getInstanceProtectionStatus(session, env), session };
+    await writeInstanceProtectionState(state, env);
+    try {
+      await createOwnerUserFromInstanceState(state, env);
+    } catch (error) {
+      await rm(resolveInstanceProtectionPath(env), { force: true }).catch(() => {});
+      throw error;
+    }
+    return state;
+  }).then(async (state) => {
+    const session = createInstanceSession(state);
+    return { status: await getInstanceProtectionStatus(session, env), session };
+  });
 }
 
 export async function loginToInstance(
@@ -203,66 +218,152 @@ export async function updateInstanceCredentials(
   input: { username: string; currentPassword: string; newPassword?: string },
   env: NodeJS.ProcessEnv = process.env
 ) {
-  const state = await requireState(env);
-  if (!(await verifyPassword(input.currentPassword, state.passwordSalt, state.passwordHash))) {
-    throw new InstanceProtectionError("Current password is incorrect.", 401, "invalid-current-password");
-  }
+  const result = await withProtectionMutation(env, async () => {
+    const state = await requireState(env);
+    if (!(await verifyPassword(input.currentPassword, state.passwordSalt, state.passwordHash))) {
+      throw new InstanceProtectionError("Current password is incorrect.", 401, "invalid-current-password");
+    }
 
-  const username = validateUsername(input.username);
-  const nextPassword = input.newPassword?.length ? input.newPassword : null;
-  if (nextPassword) {
-    validatePassword(nextPassword);
-  }
+    const username = validateUsername(input.username);
+    const nextPassword = input.newPassword?.length ? input.newPassword : null;
+    if (nextPassword) validatePassword(nextPassword);
 
-  const passwordSalt = nextPassword ? createPasswordSalt() : state.passwordSalt;
-  const passwordHash = nextPassword ? await hashPassword(nextPassword, passwordSalt) : state.passwordHash;
-  const nextState: InstanceProtectionState = {
-    ...state,
-    username,
-    passwordSalt,
-    passwordHash,
-    // The state version is the instance-wide signing epoch. Per-user
-    // credentials use the account store's sessionVersion so changing the
-    // owner's password does not revoke unrelated team sessions.
-    sessionVersion: state.sessionVersion,
-    updatedAt: new Date().toISOString()
-  };
-  await writeInstanceProtectionState(nextState, env);
-  const userStore = await readAgentOsUserStore(env) ?? await ensureAgentOsUserStoreForMigration(env);
-  const owner = userStore?.users.find((user) => user.actorId === state.actorId);
-  const ownerSessionVersion = (owner?.sessionVersion ?? state.sessionVersion) + 1;
-  if (owner && userStore) {
-    owner.username = username.toLocaleLowerCase("en-US");
-    owner.passwordSalt = passwordSalt;
-    owner.passwordHash = passwordHash;
-    owner.sessionVersion = ownerSessionVersion;
-    owner.updatedAt = nextState.updatedAt;
-    await writeAgentOsUserStore(userStore, env);
-  } else if (!userStore) {
-    await createOwnerUserFromInstanceState({ ...nextState, sessionVersion: ownerSessionVersion }, env);
-  }
-  const session = createInstanceSession(nextState, state.actorId, ownerSessionVersion);
+    const passwordSalt = nextPassword ? createPasswordSalt() : state.passwordSalt;
+    const passwordHash = nextPassword ? await hashPassword(nextPassword, passwordSalt) : state.passwordHash;
+    const nextState: InstanceProtectionState = {
+      ...state,
+      username,
+      passwordSalt,
+      passwordHash,
+      // The state version is the instance-wide signing epoch. Per-user
+      // credentials use the account store's sessionVersion so changing the
+      // owner's password does not revoke unrelated team sessions.
+      sessionVersion: state.sessionVersion,
+      updatedAt: new Date().toISOString()
+    };
+    const userStore = await readAgentOsUserStore(env) ?? await ensureAgentOsUserStoreForMigration(env);
+    const owner = userStore?.users.find((user) => user.actorId === state.actorId);
+    if (!owner) {
+      throw new InstanceProtectionError(
+        "Instance Protection and AgentOS user accounts refer to different security identities.",
+        409,
+        "orphaned-security-state"
+      );
+    }
+    const ownerBefore = { ...owner };
+    const ownerSessionVersion = owner.sessionVersion + 1;
+    try {
+      await writeInstanceProtectionState(nextState, env);
+      await updateAgentOsUserCredentials({
+        actorId: owner.actorId,
+        username,
+        passwordSalt,
+        passwordHash,
+        sessionVersion: ownerSessionVersion,
+        updatedAt: nextState.updatedAt
+      }, env);
+    } catch (error) {
+      await writeInstanceProtectionState(state, env).catch(() => {});
+      if (ownerBefore) {
+        await updateAgentOsUserCredentials({
+          actorId: ownerBefore.actorId,
+          username: ownerBefore.username,
+          passwordSalt: ownerBefore.passwordSalt,
+          passwordHash: ownerBefore.passwordHash,
+          sessionVersion: ownerBefore.sessionVersion,
+          updatedAt: ownerBefore.updatedAt
+        }, env).catch(() => {});
+      }
+      throw error;
+    }
+    return { state: nextState, actorId: owner.actorId, sessionVersion: ownerSessionVersion };
+  });
+  const session = createInstanceSession(result.state, result.actorId, result.sessionVersion);
   return { status: await getInstanceProtectionStatus(session, env), session };
+}
+
+export async function synchronizeInstanceOwnerCredential(input: {
+  actorId: string;
+  passwordSalt: string;
+  passwordHash: string;
+}, env: NodeJS.ProcessEnv = process.env) {
+  await withProtectionMutation(env, async () => {
+    const state = await requireState(env);
+    if (state.actorId !== input.actorId) {
+      throw new InstanceProtectionError("The AgentOS owner identity does not match Instance Protection.", 409, "orphaned-security-state");
+    }
+    await writeInstanceProtectionState({
+      ...state,
+      passwordSalt: input.passwordSalt,
+      passwordHash: input.passwordHash,
+      updatedAt: new Date().toISOString()
+    }, env);
+  });
 }
 
 export async function disableInstanceProtection(
   currentPassword: string,
   env: NodeJS.ProcessEnv = process.env
 ) {
-  const state = await requireState(env);
-  if (!(await verifyPassword(currentPassword, state.passwordSalt, state.passwordHash))) {
-    throw new InstanceProtectionError("Current password is incorrect.", 401, "invalid-current-password");
-  }
-
-  await resetInstanceProtection(env);
+  await withProtectionMutation(env, async () => {
+    const state = await requireState(env);
+    if (!(await verifyPassword(currentPassword, state.passwordSalt, state.passwordHash))) {
+      throw new InstanceProtectionError("Current password is incorrect.", 401, "invalid-current-password");
+    }
+    const store = await readAgentOsUserStore(env) ?? await ensureAgentOsUserStoreForMigration(env);
+    if (!store) {
+      throw new InstanceProtectionError("AgentOS user accounts are not initialized.", 409, "orphaned-security-state");
+    }
+    if (store.users.length > 1) {
+      throw new InstanceProtectionError(
+        "Instance Protection cannot be disabled while multiple AgentOS accounts exist.",
+        409,
+        "multi-user-protection-required"
+      );
+    }
+    const owner = store.users[0];
+    if (!owner || owner.role !== "owner" || owner.status !== "active" || owner.actorId !== state.actorId) {
+      throw new InstanceProtectionError(
+        "Instance Protection and AgentOS user accounts are inconsistent.",
+        409,
+        "orphaned-security-state"
+      );
+    }
+    await removeInstanceSecurityState(env);
+  });
 }
 
 export async function resetInstanceProtection(env: NodeJS.ProcessEnv = process.env) {
-  await rm(resolveInstanceProtectionPath(env), { force: true });
+  await withProtectionMutation(env, () => removeInstanceSecurityState(env));
 }
 
 export function verifyInstanceSession(cookieValue: string | null, state: InstanceProtectionState) {
   return Boolean(readInstanceSessionIdentity(cookieValue, state));
+}
+
+/**
+ * Canonical protected-session validation used by both status reporting and
+ * actor resolution. A signed cookie is not authenticated until its actor is
+ * present, active, and current in the canonical account store.
+ */
+export async function resolveActiveInstanceSession(
+  cookieValue: string | null,
+  state: InstanceProtectionState,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<{ identity: { actorId: string; sessionVersion: number }; user: AgentOsUser } | null> {
+  const identity = readInstanceSessionIdentity(cookieValue, state);
+  if (!identity) return null;
+
+  let store = await readAgentOsUserStore(env);
+  if (!store) {
+    // Only a legacy owner cookie may trigger the controlled v2 -> account
+    // store migration. An unknown signed actor must never bootstrap a user.
+    if (identity.actorId !== state.actorId || identity.sessionVersion !== state.sessionVersion) return null;
+    store = await ensureAgentOsUserStoreForMigration(env);
+  }
+  const user = store?.users.find((entry) => entry.actorId === identity.actorId) ?? null;
+  if (!user || user.status !== "active" || user.sessionVersion !== identity.sessionVersion) return null;
+  return { identity, user };
 }
 
 export function readInstanceSessionIdentity(cookieValue: string | null, state: InstanceProtectionState): {
@@ -288,7 +389,9 @@ export function readInstanceSessionIdentity(cookieValue: string | null, state: I
     if (payload.version !== state.sessionVersion) return null;
     const actorId = typeof payload.actorId === "string" ? payload.actorId : state.actorId;
     const sessionVersion = typeof payload.sessionVersion === "number" ? payload.sessionVersion : state.sessionVersion;
-    return Number.isSafeInteger(sessionVersion) ? { actorId, sessionVersion } : null;
+    return isStableActorId(actorId) && Number.isSafeInteger(sessionVersion) && sessionVersion > 0
+      ? { actorId, sessionVersion }
+      : null;
   } catch {
     return null;
   }
@@ -361,6 +464,49 @@ async function writeInstanceProtectionState(state: InstanceProtectionState, env:
   await chmod(targetPath, 0o600);
 }
 
+async function removeInstanceSecurityState(env: NodeJS.ProcessEnv) {
+  const protectionPath = resolveInstanceProtectionPath(env);
+  const userStorePath = resolveAgentOsUserStorePath(env);
+  const previousProtection = await readOptionalFile(protectionPath);
+  await rm(protectionPath, { force: true });
+  try {
+    await rm(userStorePath, { force: true });
+  } catch (error) {
+    if (previousProtection !== null) {
+      await mkdir(dirname(protectionPath), { recursive: true, mode: 0o700 });
+      await writeFile(protectionPath, previousProtection, { encoding: "utf8", mode: 0o600 });
+      await chmod(protectionPath, 0o600);
+    }
+    throw error;
+  }
+}
+
+async function withProtectionMutation<T>(env: NodeJS.ProcessEnv, operation: () => Promise<T> | T) {
+  const key = resolveInstanceProtectionPath(env);
+  const previous = protectionMutationTails.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  protectionMutationTails.set(key, current);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (protectionMutationTails.get(key) === current) protectionMutationTails.delete(key);
+  }
+}
+
+async function readOptionalFile(filePath: string) {
+  try {
+    return await readFile(filePath, "utf8");
+  } catch (error) {
+    if (isMissingFileError(error)) return null;
+    throw error;
+  }
+}
+
 async function requireState(env: NodeJS.ProcessEnv) {
   const state = await readInstanceProtectionState(env);
   if (!state) {
@@ -415,21 +561,6 @@ function isMissingFileError(error: unknown) {
 
 function isStableActorId(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-async function isActiveInstanceSession(cookieValue: string | null, state: InstanceProtectionState, env: NodeJS.ProcessEnv) {
-  const identity = readInstanceSessionIdentity(cookieValue, state);
-  if (!identity) return false;
-  const store = await readAgentOsUserStore(env);
-  const user = store?.users.find((entry) => entry.actorId === identity.actorId);
-  return !user || (user.status === "active" && user.sessionVersion === identity.sessionVersion);
-}
-
-async function resolveInstanceSessionRole(cookieValue: string | null, state: InstanceProtectionState, env: NodeJS.ProcessEnv) {
-  const identity = readInstanceSessionIdentity(cookieValue, state);
-  if (!identity) return null;
-  const store = await readAgentOsUserStore(env);
-  return store?.users.find((entry) => entry.actorId === identity.actorId)?.role ?? "owner";
 }
 
 async function ensureAgentOsUserStoreForMigration(env: NodeJS.ProcessEnv) {

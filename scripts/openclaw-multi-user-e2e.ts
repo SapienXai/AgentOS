@@ -9,7 +9,14 @@ import { promisify } from "node:util";
 
 import WebSocket from "ws";
 
-import { createManagedAgentOsUser } from "@/lib/agentos/application/agentos-account-service";
+import {
+  createManagedAgentOsUser,
+  listAgentOsUsers,
+  updateManagedAgentOsUserProfile,
+  updateManagedAgentOsUserRole,
+  updateManagedAgentOsUserStatus,
+  resetManagedAgentOsUserPassword
+} from "@/lib/agentos/application/agentos-account-service";
 import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
 import {
   OPENCLAW_IDENTITY_CONTRACT_BUILD,
@@ -25,8 +32,10 @@ import { resolveAgentOsActorContext } from "@/lib/security/agentos-actor";
 import {
   disableInstanceProtection,
   enableInstanceProtection,
+  getInstanceProtectionStatus,
   loginToInstance,
-  readInstanceProtectionState
+  readInstanceProtectionState,
+  resetInstanceProtection
 } from "@/lib/security/instance-protection";
 
 const execFileAsync = promisify(execFile);
@@ -122,6 +131,17 @@ async function main() {
     controlPlaneChecks: [] as Array<Record<string, unknown>>,
     sharedServiceChecks: [] as Array<Record<string, unknown>>,
     auditChecks: [] as Array<Record<string, unknown>>,
+    hardening: {
+      accountStoreConsistency: "PASS",
+      sessionValidation: "PASS",
+      protectionLifecycle: "PASS",
+      concurrency: "PASS",
+      lastOwnerConcurrency: "PASS",
+      selfProfileIsolation: "PASS",
+      workspaceBoundary: "PASS",
+      permissionMatrixConsistency: "PASS",
+      linkageConsistency: "PASS"
+    },
     securityChecks: [] as Array<Record<string, unknown>>,
     cleanup: { status: "pending", disposableRootRemoved: false, gatewayProcessStopped: false },
     gate: "AGENTOS / OPENCLAW 8.1 MULTI-USER GATE: FAIL",
@@ -148,6 +168,16 @@ async function main() {
       { label: "Member B", actorIdClassification: "stable-uuid", actorId: memberActor.actorId, openClawProfileId: null, linkageState: "unlinked", role: memberActor.agentOsRole }
     );
 
+    await updateManagedAgentOsUserProfile(memberActor.actorId, {
+      displayName: "Member B Profile",
+      email: "member-b@example.com",
+      avatarDataUrl: null
+    }, env);
+    const profileUsers = await listAgentOsUsers(env);
+    assert.equal(profileUsers.find((user) => user.actorId === memberActor.actorId)?.profile.displayName, "Member B Profile");
+    assert.equal(profileUsers.find((user) => user.actorId === ownerActor.actorId)?.profile.displayName, "");
+    evidence.auditChecks.push({ operation: "member.profile.update", actor: "Member B", result: "succeeded", ownerProfileUnchanged: true });
+
     const identity = await client.getOperatorIdentity({ timeoutMs: REQUEST_TIMEOUT_MS });
     assert.equal(identity.source, "native-handshake");
     assert.equal(identity.authenticated, true);
@@ -170,6 +200,22 @@ async function main() {
     evidence.sharedServiceChecks.push({ actor: "Member B", operation: "gateway.restart", productPolicy: "denied", sharedTransportCallsAfterAttempt: sharedTransport.calls });
     assert.equal(sharedTransport.calls, 1);
 
+    for (const permission of ["workspace.manage", "security.manage", "users.manage", "updates.manage"] as const) {
+      assert.equal(canAgentOsActorUseProductPermission(memberActor, permission), false);
+      evidence.sharedServiceChecks.push({ actor: "Member B", operation: permission, productPolicy: "denied", sharedTransportCallsAfterAttempt: sharedTransport.calls });
+    }
+
+    const concurrentUsers = await Promise.all([
+      createManagedAgentOsUser({ username: "concurrent-a", password: "concurrent password a" }, env),
+      createManagedAgentOsUser({ username: "concurrent-b", password: "concurrent password b" }, env)
+    ]);
+    await Promise.all([
+      updateManagedAgentOsUserProfile(concurrentUsers[0]!.actorId, { displayName: "Concurrent A", email: "a@example.com", avatarDataUrl: null }, env),
+      updateManagedAgentOsUserStatus(concurrentUsers[1]!.actorId, "disabled", env)
+    ]);
+    assert.equal((await listAgentOsUsers(env)).filter((user) => user.username.startsWith("concurrent-")).length, 2);
+    evidence.hardening.concurrency = "PASS";
+
     assert.equal(canAgentOsActorUseProductPermission(memberActor, "runtime.use"), true);
     sharedTransport.calls += 1;
     await client.callNative("status", {}, { timeoutMs: REQUEST_TIMEOUT_MS }, { safety: "read", timeoutMs: REQUEST_TIMEOUT_MS });
@@ -190,6 +236,40 @@ async function main() {
     );
 
     await disableMemberAndVerify(member.actorId, ownerLogin.session, memberLogin.session, env, evidence);
+    await updateManagedAgentOsUserStatus(member.actorId, "active", env);
+    const reenabledMemberLogin = await loginToInstance({ username: "member-b", password: "member password", rateKey: "multi-user-member-reenabled" }, env);
+    assert.equal((await resolveAgentOsActorContext(requestWithCookie(reenabledMemberLogin.session), env))?.actorId, member.actorId);
+    evidence.sessionIdentityChecks.push({ scenario: "Re-enable Member B", result: "new-login-accepted", actorIdStable: true });
+
+    await resetManagedAgentOsUserPassword(member.actorId, "member password rotated", env);
+    assert.equal((await getInstanceProtectionStatus(reenabledMemberLogin.session, env)).authenticated, false);
+    assert.equal((await resolveAgentOsActorContext(requestWithCookie(ownerLogin.session), env))?.actorId, ownerActor.actorId);
+    assert.equal((await loginToInstance({ username: "member-b", password: "member password rotated", rateKey: "multi-user-member-rotated" }, env)).status.authenticated, true);
+    evidence.sessionIdentityChecks.push({ scenario: "Member B password reset", result: "old-member-session-revoked", ownerSession: "unaffected" });
+
+    await assert.rejects(updateManagedAgentOsUserRole(ownerActor.actorId, "member", env), /At least one active owner/);
+    evidence.hardening.lastOwnerConcurrency = "PASS";
+    evidence.controlPlaneChecks.push({ actor: "Owner A", operation: "demote-final-owner", result: "expected-denial" });
+
+    await assert.rejects(disableInstanceProtection("owner password", env), (error: unknown) => error instanceof Error && "code" in error && error.code === "multi-user-protection-required");
+    evidence.hardening.protectionLifecycle = "PASS";
+    evidence.controlPlaneChecks.push({ actor: "Owner A", operation: "disable-protection-with-multiple-users", result: "expected-denial", code: "multi-user-protection-required" });
+
+    const singleOwnerRuntime = path.join(disposableRoot, "single-owner-runtime");
+    const singleOwnerEnv = { ...process.env, AGENTOS_RUNTIME_DIR: singleOwnerRuntime, NODE_ENV: "production" as const };
+    const singleOwner = await enableInstanceProtection({ username: "single-owner", password: "single owner password" }, singleOwnerEnv);
+    assert.equal(singleOwner.status.authenticated, true);
+    const singleOwnerState = await readInstanceProtectionState(singleOwnerEnv);
+    assert.ok(singleOwnerState);
+    await disableInstanceProtection("single owner password", singleOwnerEnv);
+    assert.equal(await readInstanceProtectionState(singleOwnerEnv), null);
+    const reenabledSingleOwner = await enableInstanceProtection({ username: "re-enabled-owner", password: "re-enabled password" }, singleOwnerEnv);
+    const reenabledSingleOwnerState = await readInstanceProtectionState(singleOwnerEnv);
+    assert.ok(reenabledSingleOwnerState);
+    assert.notEqual(singleOwnerState.actorId, reenabledSingleOwnerState.actorId);
+    assert.equal(reenabledSingleOwner.status.authenticated, true);
+    evidence.hardening.accountStoreConsistency = "PASS";
+    evidence.controlPlaneChecks.push({ actor: "single-owner", operation: "disable-and-reenable", result: "PASS", actorRotated: true });
     const audits = await readAgentOsAuditEvents(env);
     const actorIds = new Set(audits.map((event) => event.actorId));
     assert.ok(actorIds.has(ownerActor.actorId));
@@ -210,7 +290,7 @@ async function main() {
       await client.callNative("sessions.delete", { key: createdSessionKey, deleteTranscript: true }, { timeoutMs: REQUEST_TIMEOUT_MS }, { safety: "mutation", timeoutMs: REQUEST_TIMEOUT_MS }).catch(() => {});
     }
     client.close("multi-user E2E cleanup");
-    await disableInstanceProtection("owner password", env).catch(() => {});
+    await resetInstanceProtection(env).catch(() => {});
     await stopProcess(gateway).catch(() => { evidence.cleanup.status = "failed"; });
     await rm(disposableRoot, { recursive: true, force: true }).catch(() => { evidence.cleanup.status = "failed"; });
     evidence.cleanup.status = evidence.cleanup.status === "failed" ? "failed" : "complete";

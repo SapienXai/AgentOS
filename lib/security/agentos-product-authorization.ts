@@ -52,6 +52,23 @@ const SERVICE_PERMISSIONS = new Set<AgentOsProductPermission>([
   "migrations.manage"
 ]);
 
+const INTERNAL_SERVICE_PERMISSIONS = new Set<AgentOsProductPermission>([
+  "runtime.use",
+  "sessions.use",
+  "tasks.use",
+  "missions.use",
+  "agents.read",
+  "agents.manage",
+  "workspace.manage",
+  "gateway.manage",
+  "lifecycle.manage",
+  "updates.manage",
+  "migrations.manage",
+  "security.manage",
+  "secrets.manage",
+  "openclaw.roles.manage"
+]);
+
 const OWNER_PERMISSIONS = new Set<AgentOsProductPermission>([
   "runtime.use",
   "sessions.use",
@@ -76,7 +93,7 @@ export function getAgentOsProductPermissionMatrix() {
     owner: [...OWNER_PERMISSIONS],
     member: [...MEMBER_PERMISSIONS],
     service: [...SERVICE_PERMISSIONS],
-    internalService: [...OWNER_PERMISSIONS]
+    internalService: [...INTERNAL_SERVICE_PERMISSIONS]
   } satisfies Record<string, AgentOsProductPermission[]>;
 }
 
@@ -85,7 +102,7 @@ export function canAgentOsActorUseProductPermission(
   permission: AgentOsProductPermission
 ) {
   if (actor.authenticationMethod === "unprotected-local") return true;
-  if (actor.kind === "internal-service") return permission !== "users.manage" && permission !== "profile.manage";
+  if (actor.kind === "internal-service") return INTERNAL_SERVICE_PERMISSIONS.has(permission);
   if (actor.kind === "service") return SERVICE_PERMISSIONS.has(permission);
   if (actor.agentOsRole === "owner") return OWNER_PERMISSIONS.has(permission);
   if (actor.agentOsRole === "member") return MEMBER_PERMISSIONS.has(permission);

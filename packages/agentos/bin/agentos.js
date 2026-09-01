@@ -24,6 +24,7 @@ const runtimeInstallRoot = resolveRuntimeInstallRoot();
 const runtimeStateDir = path.join(runtimeInstallRoot, "run");
 const apiTokenPath = path.join(runtimeInstallRoot, "api-token");
 const instanceProtectionPath = path.join(runtimeInstallRoot, "instance-protection.json");
+const agentOsUserStorePath = path.join(runtimeInstallRoot, "agentos-users.json");
 const updateCacheDir = path.join(runtimeInstallRoot, "cache");
 const updateCachePath = path.join(updateCacheDir, "update-check.json");
 const stopPollIntervalMs = 100;
@@ -1790,15 +1791,16 @@ Commands:
   reset   Remove Instance Protection credentials and invalidate all browser sessions.
 
 Notes:
-  This does not modify workspaces, agents, tasks, accounts, integrations, or OpenClaw data.
+  This does not modify workspaces, agents, tasks, integrations, or OpenClaw data.
 `);
 }
 
 function resetInstanceProtection() {
-  const existed = existsSync(instanceProtectionPath);
+  const existed = existsSync(instanceProtectionPath) || existsSync(agentOsUserStorePath);
   rmSync(instanceProtectionPath, { force: true });
+  rmSync(agentOsUserStorePath, { force: true });
   console.log(existed
-    ? "AgentOS Instance Protection was reset. Credentials were removed and all sessions were invalidated."
+    ? "AgentOS Instance Protection was reset. Credentials and account security state were removed, and all sessions were invalidated."
     : "AgentOS Instance Protection is already disabled. No other data was changed.");
 }
 
