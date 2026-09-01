@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-01T07:54:12.840Z",
+  "generatedAt": "2026-09-01T08:58:43.887Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "upgrade/openclaw-2026.8.1",
-    "codeCommitUnderTest": "83b2eb07843bd915556021209a999948caeee2ed",
+    "codeCommitUnderTest": "4d990a1b06bb0b99c45c98bea33ac7a874d31a68",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.8.1",
     "openClawSourceCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",

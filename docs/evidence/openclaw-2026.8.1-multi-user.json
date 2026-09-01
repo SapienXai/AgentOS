@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-01T05:20:00.051Z",
+  "generatedAt": "2026-09-01T08:58:00.760Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "upgrade/openclaw-2026.8.1",
-    "codeCommitUnderTest": "3aeba58c58b46d73e8c0737e270d61535d823ee9",
+    "codeCommitUnderTest": "4d990a1b06bb0b99c45c98bea33ac7a874d31a68",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.8.1",
     "openClawSourceCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
@@ -35,6 +35,7 @@
       "workspace.manage",
       "profile.manage",
       "users.manage",
+      "automations.manage",
       "gateway.manage",
       "lifecycle.manage",
       "updates.manage",
@@ -58,6 +59,7 @@
       "missions.use",
       "agents.read",
       "agents.manage",
+      "automations.manage",
       "gateway.manage",
       "updates.manage",
       "migrations.manage"
@@ -69,6 +71,7 @@
       "missions.use",
       "agents.read",
       "agents.manage",
+      "automations.manage",
       "workspace.manage",
       "gateway.manage",
       "lifecycle.manage",
@@ -90,6 +93,7 @@
       "workspace.manage",
       "profile.manage",
       "users.manage",
+      "automations.manage",
       "gateway.manage",
       "lifecycle.manage",
       "updates.manage",
@@ -113,6 +117,7 @@
       "missions.use",
       "agents.read",
       "agents.manage",
+      "automations.manage",
       "gateway.manage",
       "updates.manage",
       "migrations.manage"
@@ -124,6 +129,7 @@
       "missions.use",
       "agents.read",
       "agents.manage",
+      "automations.manage",
       "workspace.manage",
       "gateway.manage",
       "lifecycle.manage",
@@ -146,7 +152,7 @@
     {
       "label": "Owner A",
       "actorIdClassification": "stable-uuid",
-      "actorId": "23f00567-d6a8-4496-ba6c-8d7ca1a4e01d",
+      "actorId": "15c7e4c3-7560-4718-9866-5e10c95fa6d5",
       "openClawProfileId": null,
       "linkageState": "unlinked",
       "role": "owner"
@@ -154,7 +160,7 @@
     {
       "label": "Member B",
       "actorIdClassification": "stable-uuid",
-      "actorId": "8e441a64-dcb9-4b62-9fd3-6314680926e4",
+      "actorId": "7466abf6-4e60-42aa-a83e-436e2a20bf6b",
       "openClawProfileId": null,
       "linkageState": "unlinked",
       "role": "member"
@@ -195,7 +201,7 @@
         ],
         "grantedScopesKnown": true,
         "deviceId": null,
-        "connectionId": "b97f14b1-ebe1-446a-8d88-953c95034f49",
+        "connectionId": "8b778660-6e61-459d-9f6a-23f1e6692dd2",
         "authenticated": true,
         "source": "native-handshake"
       },
