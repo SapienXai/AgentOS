@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-31T23:24:11.507Z",
+  "generatedAt": "2026-09-01T05:20:00.051Z",
   "provenance": {
     "repository": "SapienXai/AgentOS",
     "branch": "upgrade/openclaw-2026.8.1",
-    "codeCommitUnderTest": "9d734add1cbaba6e7114d908e77e68f7209b7e91",
+    "codeCommitUnderTest": "3aeba58c58b46d73e8c0737e270d61535d823ee9",
     "evidenceCommit": null,
     "openClawPackageVersion": "2026.8.1",
     "openClawSourceCommit": "ea806575e6450e4d1efdfc72c19f04be982a1b9b",
@@ -70,8 +70,6 @@
       "agents.read",
       "agents.manage",
       "workspace.manage",
-      "profile.manage",
-      "users.manage",
       "gateway.manage",
       "lifecycle.manage",
       "updates.manage",
@@ -127,8 +125,6 @@
       "agents.read",
       "agents.manage",
       "workspace.manage",
-      "profile.manage",
-      "users.manage",
       "gateway.manage",
       "lifecycle.manage",
       "updates.manage",
@@ -150,7 +146,7 @@
     {
       "label": "Owner A",
       "actorIdClassification": "stable-uuid",
-      "actorId": "cf111ef6-1ffe-469c-9d34-1747a1dadce2",
+      "actorId": "23f00567-d6a8-4496-ba6c-8d7ca1a4e01d",
       "openClawProfileId": null,
       "linkageState": "unlinked",
       "role": "owner"
@@ -158,7 +154,7 @@
     {
       "label": "Member B",
       "actorIdClassification": "stable-uuid",
-      "actorId": "aba5e323-3acd-486e-b121-925b95d6bb17",
+      "actorId": "8e441a64-dcb9-4b62-9fd3-6314680926e4",
       "openClawProfileId": null,
       "linkageState": "unlinked",
       "role": "member"
@@ -199,7 +195,7 @@
         ],
         "grantedScopesKnown": true,
         "deviceId": null,
-        "connectionId": "b368de21-79a0-45f2-ba8f-db98141582bb",
+        "connectionId": "b97f14b1-ebe1-446a-8d88-953c95034f49",
         "authenticated": true,
         "source": "native-handshake"
       },
@@ -218,6 +214,16 @@
     {
       "scenario": "Disable Member B",
       "disabledSession": "revoked",
+      "ownerSession": "unaffected"
+    },
+    {
+      "scenario": "Re-enable Member B",
+      "result": "new-login-accepted",
+      "actorIdStable": true
+    },
+    {
+      "scenario": "Member B password reset",
+      "result": "old-member-session-revoked",
       "ownerSession": "unaffected"
     }
   ],
@@ -249,12 +255,53 @@
       "actor": "Owner A",
       "permission": "gateway.manage",
       "result": "allowed"
+    },
+    {
+      "actor": "Owner A",
+      "operation": "demote-final-owner",
+      "result": "expected-denial"
+    },
+    {
+      "actor": "Owner A",
+      "operation": "disable-protection-with-multiple-users",
+      "result": "expected-denial",
+      "code": "multi-user-protection-required"
+    },
+    {
+      "actor": "single-owner",
+      "operation": "disable-and-reenable",
+      "result": "PASS",
+      "actorRotated": true
     }
   ],
   "sharedServiceChecks": [
     {
       "actor": "Member B",
       "operation": "gateway.restart",
+      "productPolicy": "denied",
+      "sharedTransportCallsAfterAttempt": 1
+    },
+    {
+      "actor": "Member B",
+      "operation": "workspace.manage",
+      "productPolicy": "denied",
+      "sharedTransportCallsAfterAttempt": 1
+    },
+    {
+      "actor": "Member B",
+      "operation": "security.manage",
+      "productPolicy": "denied",
+      "sharedTransportCallsAfterAttempt": 1
+    },
+    {
+      "actor": "Member B",
+      "operation": "users.manage",
+      "productPolicy": "denied",
+      "sharedTransportCallsAfterAttempt": 1
+    },
+    {
+      "actor": "Member B",
+      "operation": "updates.manage",
       "productPolicy": "denied",
       "sharedTransportCallsAfterAttempt": 1
     },
@@ -268,12 +315,29 @@
   ],
   "auditChecks": [
     {
+      "operation": "member.profile.update",
+      "actor": "Member B",
+      "result": "succeeded",
+      "ownerProfileUnchanged": true
+    },
+    {
       "distinctHumanActorIds": true,
       "ownerActorIdPresent": true,
       "memberActorIdPresent": true,
       "secretsRecorded": false
     }
   ],
+  "hardening": {
+    "accountStoreConsistency": "PASS",
+    "sessionValidation": "PASS",
+    "protectionLifecycle": "PASS",
+    "concurrency": "PASS",
+    "lastOwnerConcurrency": "PASS",
+    "selfProfileIsolation": "PASS",
+    "workspaceBoundary": "PASS",
+    "permissionMatrixConsistency": "PASS",
+    "linkageConsistency": "PASS"
+  },
   "securityChecks": [
     {
       "check": "actor spoofing",
