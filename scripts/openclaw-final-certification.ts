@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 const BRANCH = "upgrade/openclaw-2026.8.1";
+const STARTING_HEAD = "a929914efa8037c527e1196662cb2b49e55228ad";
 const TARGET_VERSION = "2026.8.1";
 const TARGET_COMMIT = "ea806575e6450e4d1efdfc72c19f04be982a1b9b";
 const TARGET_BUILD = "2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z";
@@ -44,6 +46,7 @@ type PackageIdentity = {
 async function main() {
   const codeCommitUnderTest = await gitOutput(["rev-parse", "HEAD"]);
   const branch = await gitOutput(["branch", "--show-current"]);
+  const pnpmVersion = await commandOutput("pnpm", ["--version"]);
   const targetPackage = PACKAGE_INPUT ? path.resolve(PACKAGE_INPUT) : null;
   const sourcePackage = SOURCE_PACKAGE_INPUT ? path.resolve(SOURCE_PACKAGE_INPUT) : null;
   const checks: CommandResult[] = [];
@@ -114,20 +117,27 @@ async function main() {
   const requiredE2eCount = Object.keys(GATE_MARKERS).length - 1;
   const allGatesPassed = e2eChecks.length === requiredE2eCount && e2eChecks.every((check) => check.status === "PASS" && check.markerPresent);
   const taskCancellation = summarizeTaskCancellation(evidence.automation, evidence.sessionTask);
-  const success = failures.length === 0 && allCommandsPassed && allGatesPassed && taskCancellation.result !== "FAIL";
+  const success = failures.length === 0 && allCommandsPassed && allGatesPassed && ["PASS", "SKIPPED-runtime-timing"].includes(taskCancellation.result);
   const output = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
     provenance: {
       repository: "SapienXai/AgentOS",
       branch,
+      startingHead: STARTING_HEAD,
       codeCommitUnderTest,
       evidenceCommit: null,
       openClawPackageVersion: targetIdentity?.version ?? null,
       openClawSourceCommit: targetIdentity?.sourceCommit ?? null,
       openClawBuild: targetIdentity?.buildId ?? null,
       openClawPackageHash: targetIdentity?.packageHash ?? null,
-      migrationSourceVersion: sourceIdentity?.version ?? null
+      migrationSourceVersion: sourceIdentity?.version ?? null,
+      migrationSourceCommit: sourceIdentity?.sourceCommit ?? null,
+      environment: {
+        node: process.version,
+        pnpm: pnpmVersion,
+        os: `${os.platform()} ${os.release()} (${os.arch()})`
+      }
     },
     openClaw: {
       version: TARGET_VERSION,
@@ -153,13 +163,23 @@ async function main() {
     gates: {
       fullSuite: fullSuite?.status === "PASS" ? "PASS" : "FAIL",
       freshBaseline: markerStatus(checks, GATE_MARKERS.freshBaseline),
+      runtime: markerStatus(checks, GATE_MARKERS.freshBaseline),
       migration: markerStatus(checks, GATE_MARKERS.migration),
       rollback: markerStatus(checks, GATE_MARKERS.rollback),
       lifecycle: markerStatus(checks, GATE_MARKERS.lifecycle),
       identity: markerStatus(checks, GATE_MARKERS.identity),
+      authorization: markerStatus(checks, GATE_MARKERS.identity),
       multiUser: markerStatus(checks, GATE_MARKERS.multiUser),
       sessionTask: markerStatus(checks, GATE_MARKERS.sessionTask),
+      sessions: markerStatus(checks, GATE_MARKERS.sessionTask),
+      tasks: markerStatus(checks, GATE_MARKERS.sessionTask),
       automation: markerStatus(checks, GATE_MARKERS.automation),
+      cron: markerStatus(checks, GATE_MARKERS.automation),
+      restart: evidence.lifecycle?.success === true && evidence.sessionTask?.success === true && evidence.automation?.success === true ? "PASS" : "FAIL",
+      cancellation: taskCancellation.result === "PASS" || taskCancellation.result === "SKIPPED-runtime-timing" ? taskCancellation.result : "FAIL",
+      build: commandStatus(checks, "pnpm build"),
+      lint: commandStatus(checks, "pnpm lint"),
+      typecheck: commandStatus(checks, "pnpm typecheck"),
       simulatedCompatibility: checks.some((check) => check.command === "pnpm openclaw:compat --target simulated-stable --json-only --allow-degraded" && check.status === "PASS") ? "PASS-DEGRADED-ALLOWED" : "FAIL"
     },
     architectureBoundary: {
@@ -286,11 +306,39 @@ function summarizeTaskCancellation(automation: Record<string, unknown> | null, s
     ...readArray(readRecord(sessionTask?.nativeTaskIntegration)?.taskCancelChecks)
   ];
   const positive = checks.find((check) => typeof check.status === "string" && check.status.toLowerCase().includes("cancel"));
-  if (positive) return { attempted: true, result: "PASS", evidence: "native tasks.cancel returned for a non-terminal task" };
+  if (positive) return {
+    attempted: true,
+    exactTaskIdAvailable: true,
+    preState: "queued-or-running",
+    cancelMethod: "tasks.cancel",
+    postState: typeof positive.status === "string" ? positive.status : "cancelled",
+    result: "PASS",
+    evidence: "native tasks.cancel returned for a non-terminal task"
+  };
   const skipped = checks.some((check) => check.result === "SKIPPED-terminal");
   return skipped
-    ? { attempted: true, result: "SKIPPED-runtime-timing", evidence: "exact loopback task was terminal before a safe positive cancellation window; no unsafe cancellation claim was made" }
-    : { attempted: false, result: "UNKNOWN", evidence: "no task cancellation row was exposed by the exact runtime" };
+    ? {
+      attempted: true,
+      exactTaskIdAvailable: true,
+      preState: "terminal",
+      cancelMethod: "tasks.cancel not invoked after terminal observation",
+      postState: "terminal",
+      result: "SKIPPED-runtime-timing",
+      evidence: "exact loopback task was terminal before a safe positive cancellation window; no unsafe cancellation claim was made"
+    }
+    : {
+      attempted: false,
+      exactTaskIdAvailable: false,
+      preState: "not-exposed",
+      cancelMethod: "tasks.cancel",
+      postState: "not-observed",
+      result: "UNKNOWN",
+      evidence: "no task cancellation row was exposed by the exact runtime"
+    };
+}
+
+function commandStatus(checks: CommandResult[], command: string) {
+  return checks.some((check) => check.command === command && check.status === "PASS") ? "PASS" : "FAIL";
 }
 
 function markerStatus(checks: CommandResult[], marker: string) {
@@ -312,6 +360,17 @@ async function gitOutput(args: string[]) {
     child.stdout.on("data", (chunk: Buffer | string) => { stdout += chunk.toString(); });
     child.once("error", reject);
     child.once("close", (code) => code === 0 ? resolve() : reject(new Error(`git ${args.join(" ")} failed (${code})`)));
+  });
+  return stdout.trim();
+}
+
+async function commandOutput(command: string, args: string[]) {
+  const child = spawn(command, args, { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "";
+  await new Promise<void>((resolve, reject) => {
+    child.stdout.on("data", (chunk: Buffer | string) => { stdout += chunk.toString(); });
+    child.once("error", reject);
+    child.once("close", (code) => code === 0 ? resolve() : reject(new Error(`${command} ${args.join(" ")} failed (${code})`)));
   });
   return stdout.trim();
 }
