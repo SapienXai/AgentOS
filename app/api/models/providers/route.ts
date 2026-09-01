@@ -229,11 +229,9 @@ class ProviderCatalogFallbackError extends Error {
   }
 }
 
-export async function GET(request?: Request) {
-  if (request) {
-    const permission = await requireAgentOsProductPermission(request, "runtime.use");
-    if ("response" in permission) return permission.response;
-  }
+export async function GET(request: Request) {
+  const permission = await requireAgentOsProductPermission(request, "runtime.use");
+  if ("response" in permission) return permission.response;
   try {
     const providers = await readOpenClawExplicitProviderSummaries();
 

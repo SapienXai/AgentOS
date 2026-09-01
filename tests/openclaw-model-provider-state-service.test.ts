@@ -26,7 +26,7 @@ const legacyProviderFileFallbackEnv = "AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FAL
 const originalFetch = globalThis.fetch;
 
 function fetchRouteGet() {
-  return modelsProviderGet();
+  return modelsProviderGet(new Request("http://agentos.test/api/models/providers"));
 }
 
 afterEach(() => {
