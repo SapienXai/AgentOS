@@ -125,6 +125,10 @@ export class PersistentOpenClawGatewayConnection {
     }
 
     if (policy?.safety !== "read" || options.signal) {
+      // A mutation invalidates cached read projections. Without this, a
+      // cron.update followed by cron.get could truthfully return the previous
+      // job for the read-cache TTL and make the scheduler projection stale.
+      if (policy?.safety !== "read") this.readRequestCache.clear();
       return sendGatewayRequest<TPayload>(socket, this.pending, method, params, timeoutMs, options.signal);
     }
 
