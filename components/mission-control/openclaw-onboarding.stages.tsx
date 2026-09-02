@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { PikoLoader } from "@/components/ui/piko-loader";
+import { ProviderLogo } from "@/components/mission-control/provider-logo";
 import { toast } from "@/components/ui/sonner";
 import type {
   AddModelsProviderId,
@@ -20,6 +21,7 @@ import {
   stepIconClassName,
   resolveSelectedModelLabel,
   isChatGptConnectionReady,
+  isChatGptProviderConnected,
   resolveChatGptOnboardingState,
   resolveChatGptProgressCopy,
   resolveChatGptRecoveryMessage,
@@ -281,7 +283,8 @@ export function ModelStage({
   onConnectChatGPT,
   chatGptBrowserAuth,
   onSubmitChatGptRedirect,
-  onContinueFromAi
+  onContinueFromAi,
+  onRunModelSetDefault
 }: {
   snapshot: MissionControlSnapshot;
   surfaceTheme: SurfaceTheme;
@@ -303,6 +306,7 @@ export function ModelStage({
   chatGptBrowserAuth: ChatGptBrowserAuthSnapshot | null;
   onSubmitChatGptRedirect: (redirectUrl: string) => void;
   onContinueFromAi: () => void;
+  onRunModelSetDefault: (modelId?: string) => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [chatGptAttempted, setChatGptAttempted] = useState(false);
@@ -343,6 +347,12 @@ export function ModelStage({
       snapshot.diagnostics.modelReadiness.defaultModel ||
       null;
   const modelReady = isOpenClawOnboardingModelReady(snapshot);
+  const chatGptState = resolveChatGptOnboardingState({
+    runState: run.runState,
+    phase: modelPhase,
+    modelReady: isChatGptConnectionReady(snapshot),
+    chatGptConnected: isChatGptProviderConnected(snapshot)
+  });
   const defaultModelLabel = resolveModelDisplayLabel(defaultModelId, availableModels);
   const switchTargetLabel = resolveModelDisplayLabel(selectedModelId, availableModels);
   const hasPendingModelSwitch = Boolean(
@@ -377,11 +387,7 @@ export function ModelStage({
       {!advancedProviderFlowOpen && modelSwitchFeedback.phase === "idle" && !buildScene ? (
         <ConnectAiStage
           surfaceTheme={surfaceTheme}
-          state={resolveChatGptOnboardingState({
-            runState: run.runState,
-            phase: modelPhase,
-            modelReady: isChatGptConnectionReady(snapshot)
-          })}
+          state={chatGptState}
           chatGptReady={isChatGptConnectionReady(snapshot)}
           chatGptAttempted={chatGptAttempted}
           chatGptBrowserAuth={chatGptBrowserAuth}
@@ -393,6 +399,12 @@ export function ModelStage({
           }}
           onSubmitChatGptRedirect={onSubmitChatGptRedirect}
           onContinueFromAi={onContinueFromAi}
+          onRunModelSetDefault={onRunModelSetDefault}
+          snapshot={effectiveSnapshot}
+          selectedModelId={selectedModelId}
+          onSelectedModelIdChange={onSelectedModelIdChange}
+          onOpenAddModels={onOpenAddModels}
+          onSnapshotChange={onSnapshotChange}
           onUseAnotherProvider={() => onAdvancedProviderFlowOpenChange(true)}
         />
       ) : (
@@ -488,6 +500,12 @@ function ConnectAiStage({
   onConnectChatGPT,
   onSubmitChatGptRedirect,
   onContinueFromAi,
+  onRunModelSetDefault,
+  snapshot,
+  selectedModelId,
+  onSelectedModelIdChange,
+  onOpenAddModels,
+  onSnapshotChange,
   onUseAnotherProvider
 }: {
   surfaceTheme: SurfaceTheme;
@@ -500,6 +518,12 @@ function ConnectAiStage({
   onConnectChatGPT: (force?: boolean) => void;
   onSubmitChatGptRedirect: (redirectUrl: string) => void;
   onContinueFromAi: () => void;
+  onRunModelSetDefault: (modelId?: string) => void;
+  snapshot: MissionControlSnapshot;
+  selectedModelId: string;
+  onSelectedModelIdChange: (value: string) => void;
+  onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
+  onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
   onUseAnotherProvider: () => void;
 }) {
   const isBusy = state === "connecting" || state === "verifying";
@@ -528,7 +552,7 @@ function ConnectAiStage({
         {isReady
           ? "Your AI workforce is ready."
           : needsModelSelection
-            ? "Your ChatGPT account is connected. Choose a model to continue."
+            ? "Your ChatGPT account is connected. Select a usable model to continue."
             : "Connect your ChatGPT account to power your agents and start using AgentOS."}
       </p>
 
@@ -632,6 +656,39 @@ function ConnectAiStage({
             <ArrowRight className="ml-1.5 h-3 w-3" />
           </Button>
         </div>
+      ) : needsModelSelection ? (
+        <div className={cn("mt-5 w-full max-w-[420px] rounded-[16px] border px-3 py-3 text-left", surfaceTheme === "light" ? "border-emerald-200 bg-emerald-50/70" : "border-emerald-300/20 bg-emerald-300/10")}>
+          <div className="flex items-center gap-2">
+            <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded-full border", surfaceTheme === "light" ? "border-emerald-300 bg-white text-emerald-700" : "border-emerald-300/30 bg-emerald-300/10 text-emerald-200")}>
+              <Check className="h-3.5 w-3.5" />
+            </span>
+            <div className="min-w-0">
+              <p className={cn("text-[12px] font-semibold", surfaceTheme === "light" ? "text-emerald-900" : "text-emerald-100")}>ChatGPT connected</p>
+              <p className={cn("mt-0.5 text-[10px]", surfaceTheme === "light" ? "text-emerald-800/75" : "text-emerald-100/70")}>Select a usable model to finish setup.</p>
+            </div>
+          </div>
+          <OpenClawOnboardingProviderFlow
+            snapshot={snapshot}
+            surfaceTheme={surfaceTheme}
+            selectedModelId={selectedModelId}
+            onSelectedModelIdChange={onSelectedModelIdChange}
+            onOpenAddModels={onOpenAddModels}
+            onSnapshotChange={onSnapshotChange}
+            autoDiscover
+            compactSelection
+            onContinue={() => onRunModelSetDefault(selectedModelId)}
+          />
+          <button
+            type="button"
+            onClick={onUseAnotherProvider}
+            className={cn(
+              "mt-3 w-full rounded-full px-3 py-1.5 text-[11px] underline underline-offset-4",
+              surfaceTheme === "light" ? "text-[#765845]" : "text-slate-300"
+            )}
+          >
+            Use another provider
+          </button>
+        </div>
       ) : (
         <>
           {isError ? (
@@ -648,19 +705,14 @@ function ConnectAiStage({
           ) : null}
           <Button
             type="button"
-            onClick={() => {
-              if (needsModelSelection) {
-                onUseAnotherProvider();
-                return;
-              }
-
-              onConnectChatGPT(isError);
-            }}
+            onClick={() => onConnectChatGPT(isError)}
             disabled={isBusy || Boolean(browserAuthBusy)}
-            className="mt-6 h-11 min-w-[230px] rounded-full px-5 text-[13px] shadow-[0_14px_30px_hsl(var(--primary)/0.22)]"
+            className="chatgpt-connect-button group relative mt-6 h-12 min-w-[250px] overflow-hidden rounded-[14px] border border-slate-200/90 !bg-white !px-5 text-[13px] font-semibold !text-slate-900 !shadow-[0_2px_0_rgba(15,23,42,0.12),0_12px_24px_rgba(15,23,42,0.16),inset_0_1px_0_rgba(255,255,255,0.96),inset_0_-1px_0_rgba(15,23,42,0.08)] transition-transform hover:-translate-y-0.5 hover:!bg-white hover:!shadow-[0_3px_0_rgba(15,23,42,0.12),0_16px_30px_rgba(15,23,42,0.2),inset_0_1px_0_rgba(255,255,255,0.96),inset_0_-1px_0_rgba(15,23,42,0.08)] active:translate-y-[1px] focus-visible:ring-slate-400/70 focus-visible:ring-offset-2 disabled:hover:translate-y-0"
           >
-            {needsModelSelection ? "Choose a model" : isError ? "Reconnect ChatGPT" : "Continue with ChatGPT"}
-            <ArrowRight className="ml-1.5 h-3 w-3" />
+            <span className="relative z-10 inline-flex items-center gap-2.5">
+              <ProviderLogo provider="openai-codex" className="h-6 w-6 rounded-[7px] border-slate-200/80 bg-white" />
+              <span>{isError ? "Reconnect ChatGPT" : "Continue with ChatGPT"}</span>
+            </span>
           </Button>
           <button
             type="button"

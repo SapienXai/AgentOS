@@ -2810,7 +2810,7 @@ export function MissionControlShell({
     if (
       currentDefaultModelId &&
       targetModelId.trim() === currentDefaultModelId.trim() &&
-      isOpenClawOnboardingModelReady
+      resolveOpenClawModelReady(snapshot)
     ) {
       return;
     }

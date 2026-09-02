@@ -33,6 +33,7 @@ export function resolveChatGptOnboardingState(params: {
   runState: RunState;
   phase: OpenClawModelOnboardingPhase | null;
   modelReady: boolean;
+  chatGptConnected?: boolean;
 }) : ChatGptOnboardingState {
   if (params.runState === "error") {
     return "error";
@@ -46,7 +47,7 @@ export function resolveChatGptOnboardingState(params: {
     return "ready";
   }
 
-  if (params.runState === "success") {
+  if (params.runState === "success" || params.chatGptConnected) {
     return "needs-model";
   }
 
@@ -95,11 +96,13 @@ export function resolveChatGptRecoveryMessage(message?: string | null) {
 }
 
 export function isChatGptConnectionReady(snapshot: MissionControlSnapshot) {
-  const chatGptProviderConnected = snapshot.diagnostics.modelReadiness.authProviders.some(
+  return isChatGptProviderConnected(snapshot) && isOpenClawOnboardingModelReady(snapshot);
+}
+
+export function isChatGptProviderConnected(snapshot: MissionControlSnapshot) {
+  return snapshot.diagnostics.modelReadiness.authProviders.some(
     (provider) => provider.connected && (provider.provider === "openai-codex" || provider.provider === "codex")
   );
-
-  return chatGptProviderConnected && isOpenClawOnboardingModelReady(snapshot);
 }
 
 export function isOnboardingModelStepComplete(params: {
@@ -679,6 +682,10 @@ export function resolveInitialOnboardingProviderId(
   }
 
   return "openrouter";
+}
+
+export function resolvePreferredChatGptModelId(models: Array<{ id: string }>) {
+  return models.find((model) => model.id === "openai/gpt-5.4-mini")?.id || models[0]?.id || null;
 }
 
 function shouldTreatOpenAiModelAsCodex(snapshot: MissionControlSnapshot, modelId: string) {

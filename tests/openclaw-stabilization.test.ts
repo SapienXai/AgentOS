@@ -89,6 +89,7 @@ import {
   resolveChatGptOnboardingState,
   resolveChatGptProgressCopy,
   resolveChatGptRecoveryMessage,
+  resolvePreferredChatGptModelId,
   isOnboardingModelStepComplete
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import { isNewerSnapshot, preserveConfirmedStatus } from "@/hooks/use-mission-control-data";
@@ -1428,6 +1429,10 @@ test("ChatGPT-first onboarding keeps the normal model step focused and advanced 
     path.join(process.cwd(), "components/mission-control/openclaw-onboarding.tsx"),
     "utf8"
   );
+  const providerFlowSource = readFileSync(
+    path.join(process.cwd(), "components/mission-control/openclaw-onboarding-provider-flow.tsx"),
+    "utf8"
+  );
 
   assert.equal(steps[1]?.label, "Connect AI");
   assert.equal(steps[1]?.description, "Connect your AI");
@@ -1448,7 +1453,10 @@ test("ChatGPT-first onboarding keeps the normal model step focused and advanced 
   );
   assert.match(shellSource, /markModelProviderConnected\("openai-codex"/);
   assert.match(onboardingSource, /needsModelSelection/);
-  assert.match(onboardingSource, /Choose a model/);
+  assert.match(onboardingSource, /compactSelection/);
+  assert.match(onboardingSource, /Continue to AgentOS/);
+  assert.match(providerFlowSource, /id="chatgpt-model-select"/);
+  assert.match(providerFlowSource, /resolvePreferredChatGptModelId/);
   assert.match(shellSource, /setIsOnboardingDismissed\(false\);\s+setIsOnboardingForcedOpen\(true\);\s+if \(!isContinuation\)/);
   assert.match(shellSource, /stage === undefined && onboardingAiReady/);
   assert.doesNotMatch(onboardingSource, /gpt-\d/);
@@ -1456,7 +1464,7 @@ test("ChatGPT-first onboarding keeps the normal model step focused and advanced 
 
 test("ChatGPT onboarding state and recovery copy stay honest", () => {
   assert.equal(
-    resolveChatGptOnboardingState({ runState: "idle", phase: null, modelReady: false }),
+  resolveChatGptOnboardingState({ runState: "idle", phase: null, modelReady: false }),
     "idle"
   );
   assert.equal(
@@ -1472,6 +1480,10 @@ test("ChatGPT onboarding state and recovery copy stay honest", () => {
     "needs-model"
   );
   assert.equal(
+    resolveChatGptOnboardingState({ runState: "idle", phase: null, modelReady: false, chatGptConnected: true }),
+    "needs-model"
+  );
+  assert.equal(
     resolveChatGptOnboardingState({ runState: "error", phase: "authenticating", modelReady: false }),
     "error"
   );
@@ -1479,6 +1491,21 @@ test("ChatGPT onboarding state and recovery copy stay honest", () => {
   assert.equal(resolveChatGptProgressCopy("verifying"), "Verifying the account and a usable AI route in OpenClaw.");
   assert.match(resolveChatGptRecoveryMessage("ChatGPT sign-in timed out."), /took too long/i);
   assert.match(resolveChatGptRecoveryMessage("local AgentOS on linux"), /local AgentOS machine/i);
+});
+
+test("ChatGPT onboarding prefers the available mini model", () => {
+  assert.equal(
+    resolvePreferredChatGptModelId([
+      { id: "openai/gpt-5.5" },
+      { id: "openai/gpt-5.4-mini" }
+    ]),
+    "openai/gpt-5.4-mini"
+  );
+  assert.equal(
+    resolvePreferredChatGptModelId([{ id: "openai/gpt-5.5" }]),
+    "openai/gpt-5.5"
+  );
+  assert.equal(resolvePreferredChatGptModelId([]), null);
 });
 
 test("first-run onboarding cannot treat an existing model as completed ChatGPT setup", () => {

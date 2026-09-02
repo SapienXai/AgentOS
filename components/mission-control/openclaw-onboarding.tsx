@@ -384,6 +384,7 @@ export function OpenClawOnboarding({
                 chatGptBrowserAuth={chatGptBrowserAuth}
                 onSubmitChatGptRedirect={onSubmitChatGptRedirect}
                 onContinueFromAi={onContinueFromAi}
+                onRunModelSetDefault={onRunModelSetDefault}
               />
             )}
           </div>

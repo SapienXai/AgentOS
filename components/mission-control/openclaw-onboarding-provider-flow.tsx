@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, LoaderCircle, Plus, RefreshCw, Search, SquareTerminal } from "lucide-react";
+import { ArrowRight, Copy, LoaderCircle, Plus, RefreshCw, Search, SquareTerminal } from "lucide-react";
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import { ProviderCard } from "@/components/mission-control/add-models/provider-card";
@@ -20,7 +20,8 @@ import type {
 import {
   formatProviderLabel,
   resolveSelectedOnboardingProviderId,
-  resolveInitialOnboardingProviderId
+  resolveInitialOnboardingProviderId,
+  resolvePreferredChatGptModelId
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import {
   getModelProviderDescriptor,
@@ -78,7 +79,9 @@ export function OpenClawOnboardingProviderFlow({
   onSelectedModelIdChange,
   onOpenAddModels,
   onSnapshotChange,
-  autoDiscover = true
+  autoDiscover = true,
+  compactSelection = false,
+  onContinue
 }: {
   snapshot: MissionControlSnapshot;
   surfaceTheme?: "dark" | "light";
@@ -87,10 +90,12 @@ export function OpenClawOnboardingProviderFlow({
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
   autoDiscover?: boolean;
+  compactSelection?: boolean;
+  onContinue?: () => void;
 }) {
   const isLight = surfaceTheme === "light";
   const [activeProviderId, setActiveProviderId] = useState<AddModelsProviderId>(() =>
-    resolveInitialOnboardingProviderId(snapshot, selectedModelId)
+    compactSelection ? "openai-codex" : resolveInitialOnboardingProviderId(snapshot, selectedModelId)
   );
   const [providerDrafts, setProviderDrafts] = useState<Partial<Record<AddModelsProviderId, ProviderDraft>>>(
     {}
@@ -295,6 +300,22 @@ export function OpenClawOnboardingProviderFlow({
         : activeDraft.statusMessage || `Checking ${activeDescriptor.shortLabel}...`;
   const canShowSearch = activeModels.length > 6 || Boolean(activeDescriptor.searchPlaceholder);
   const canShowModelList = activeConnection.connected || activeModels.length > 0 || Boolean(activeDraft.emptyState);
+
+  useEffect(() => {
+    if (!compactSelection || activeModels.length === 0) {
+      return;
+    }
+
+    if (activeModels.some((model) => model.id === selectedModelId)) {
+      return;
+    }
+
+    const preferredModelId = resolvePreferredChatGptModelId(activeModels);
+
+    if (preferredModelId) {
+      onSelectedModelIdChange(preferredModelId);
+    }
+  }, [activeModels, compactSelection, onSelectedModelIdChange, selectedModelId]);
 
   async function ensureProviderStatus(providerId: AddModelsProviderId) {
     const draft = resolveDraft(providerDrafts[providerId]);
@@ -562,7 +583,7 @@ export function OpenClawOnboardingProviderFlow({
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className={cn("whitespace-nowrap text-[8px] font-medium", isLight ? "text-[#8f7664]" : "text-slate-500")}>
-            Provider first : {providerDescriptors.length} providers
+            {compactSelection ? "ChatGPT model" : `Provider first : ${providerDescriptors.length} providers`}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-1.5">
@@ -581,7 +602,7 @@ export function OpenClawOnboardingProviderFlow({
         </div>
       ) : null}
 
-      <div className="mt-3 flex snap-x snap-mandatory flex-nowrap gap-2 overflow-x-auto overflow-y-hidden pb-2 pr-1">
+      {!compactSelection ? <div className="mt-3 flex snap-x snap-mandatory flex-nowrap gap-2 overflow-x-auto overflow-y-hidden pb-2 pr-1">
         <div className="w-[128px] shrink-0 snap-start sm:w-[136px]">
           <button
             type="button"
@@ -652,7 +673,7 @@ export function OpenClawOnboardingProviderFlow({
             </span>
           </button>
         </div>
-      </div>
+      </div> : null}
 
       <div
         className={cn(
@@ -929,7 +950,72 @@ export function OpenClawOnboardingProviderFlow({
           </div>
         ) : null}
 
-        {canShowModelList && !showLoadingHero ? (
+        {compactSelection ? (
+          <div className="mt-3">
+            {activeModels.length > 0 && !showLoadingHero ? (
+              <>
+                <label
+                  htmlFor="chatgpt-model-select"
+                  className={cn("block text-[9px] uppercase tracking-[0.16em]", isLight ? "text-[#8c8177]" : "text-slate-500")}
+                >
+                  Available ChatGPT models
+                </label>
+                <select
+                  id="chatgpt-model-select"
+                  aria-label="ChatGPT model"
+                  value={selectedModelId}
+                  onChange={(event) => onSelectedModelIdChange(event.target.value)}
+                  className={cn(
+                    "mt-2 h-10 w-full rounded-[12px] border bg-transparent px-3 text-[12px] outline-none transition-colors",
+                    isLight
+                      ? "border-[#d8c9bc] bg-white text-[#2d241f] focus:border-cyan-400"
+                      : "border-white/12 bg-slate-950/70 text-white focus:border-cyan-300/60"
+                  )}
+                >
+                  {activeModels.map((model) => (
+                    <option
+                      key={model.id}
+                      value={model.id}
+                      className={isLight ? "bg-white text-[#2d241f]" : "bg-slate-950 text-white"}
+                    >
+                      {model.name} ({model.id})
+                    </option>
+                  ))}
+                </select>
+                <p className={cn("mt-2 text-[10px] leading-4", isLight ? "text-[#74665c]" : "text-slate-400")}>
+                  The mini model is selected by default. You can change it before continuing.
+                </p>
+                {onContinue ? (
+                  <Button
+                    type="button"
+                    onClick={onContinue}
+                    disabled={!selectedModelId || activeDraft.flowState === "discovering"}
+                    className="mt-4 h-10 w-full rounded-full text-[12px]"
+                  >
+                    Continue to AgentOS
+                    <ArrowRight className="ml-1.5 h-3 w-3" />
+                  </Button>
+                ) : null}
+              </>
+            ) : !showLoadingHero ? (
+              <div className={cn("rounded-[16px] border border-dashed px-3 py-4 text-[11px]", isLight ? "border-[#d8cfc2] bg-white/60 text-[#74665c]" : "border-white/10 bg-white/[0.02] text-slate-400")}>
+                No ChatGPT models are available yet. Refresh the provider and try again.
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    void refreshProvider(activeProviderId);
+                  }}
+                  className="mt-3 h-7 rounded-full px-2.5 text-[10px]"
+                >
+                  <RefreshCw className="mr-1.5 h-3 w-3" />
+                  Refresh ChatGPT models
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        ) : canShowModelList && !showLoadingHero ? (
           <>
             <div className="mt-4 flex flex-nowrap items-center justify-between gap-2 overflow-x-auto pb-1">
               <p className={cn("shrink-0 whitespace-nowrap text-[9px] uppercase tracking-[0.16em]", isLight ? "text-[#8c8177]" : "text-slate-500")}>
@@ -1048,7 +1134,7 @@ export function OpenClawOnboardingProviderFlow({
           </>
         ) : null}
 
-        {selectedModelLabel && !showLoadingHero ? (
+        {!compactSelection && selectedModelLabel && !showLoadingHero ? (
           <div
             className={cn(
               "mt-3 flex items-center justify-between gap-2 rounded-[16px] border px-3 py-2",

@@ -1256,6 +1256,46 @@
   }
 }
 
+@keyframes chatgpt-connect-button-shine {
+  0%,
+  22% {
+    opacity: 0;
+    transform: translateX(-180%) skewX(-18deg);
+  }
+
+  34% {
+    opacity: 0.9;
+  }
+
+  62%,
+  100% {
+    opacity: 0;
+    transform: translateX(420%) skewX(-18deg);
+  }
+}
+
+.chatgpt-connect-button::after {
+  position: absolute;
+  z-index: 0;
+  top: -45%;
+  bottom: -45%;
+  left: 0;
+  width: 34%;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgb(148 163 184 / 0.06) 30%,
+    rgb(255 255 255 / 0.96) 50%,
+    rgb(148 163 184 / 0.14) 70%,
+    transparent 100%
+  );
+  content: "";
+  filter: blur(1px);
+  pointer-events: none;
+  transform: translateX(-180%) skewX(-18deg);
+  animation: chatgpt-connect-button-shine 3.8s ease-in-out infinite;
+}
+
 .openclaw-onboarding-backdrop::before,
 .openclaw-onboarding-backdrop::after {
   content: "";
@@ -1818,6 +1858,11 @@ html:not(.dark) .agent-node > .relative.z-10 > .relative > .relative > .absolute
   .openclaw-onboarding-backdrop::before,
   .openclaw-onboarding-backdrop::after {
     animation: none !important;
+  }
+
+  .chatgpt-connect-button::after {
+    animation: none !important;
+    opacity: 0 !important;
   }
 
   .agent-profile-media::before,
