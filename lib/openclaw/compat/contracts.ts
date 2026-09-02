@@ -166,7 +166,7 @@ const methodProbes: Record<string, ContractProbe> = {
   },
   "system-presence": {
     params: {},
-    validate: isObjectRecord
+    validate: (payload) => Array.isArray(payload) || isObjectRecord(payload)
   },
   "sessions.list": {
     params: { limit: 1 },

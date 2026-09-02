@@ -10,14 +10,14 @@ import {
   OPENCLAW_SUPPORTED_BASELINE_VERSION
 } from "@/lib/openclaw/versions";
 
-test("OpenClaw 2026.8.1 is the recommended and supported fresh baseline", () => {
-  assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.8.1");
-  assert.equal(OPENCLAW_SUPPORTED_BASELINE_VERSION, "2026.8.1");
-  assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.recommendedVersion, "2026.8.1");
+test("OpenClaw 2026.8.2 is the recommended and supported fresh baseline", () => {
+  assert.equal(OPENCLAW_RECOMMENDED_VERSION, "2026.8.2");
+  assert.equal(OPENCLAW_SUPPORTED_BASELINE_VERSION, "2026.8.2");
+  assert.equal(LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.recommendedVersion, "2026.8.2");
   assert.deepEqual(
-    LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions.find((entry) => entry.version === "2026.8.1"),
+    LOCAL_OPENCLAW_COMPATIBILITY_MANIFEST.versions.find((entry) => entry.version === "2026.8.2"),
     {
-      version: "2026.8.1",
+      version: "2026.8.2",
       status: "certified",
       minRequiredAgentOsVersion: "0.7.2",
       notes: "Recommended stable OpenClaw version for AgentOS Gateway-first operation.",
@@ -42,7 +42,7 @@ test("the historical 6.11 runtime is below the promoted normal-support baseline"
   assert.equal(decision.status, "blocked");
   assert.equal(decision.allowed, false);
   assert.equal(decision.defaultVisible, false);
-  assert.match(decision.reason, /AgentOS requires OpenClaw 2026\.8\.1 or newer/);
+  assert.match(decision.reason, /AgentOS requires OpenClaw 2026\.8\.2 or newer/);
 });
 
 test("fresh baseline certification does not invoke the historical migration engine", () => {

@@ -42,6 +42,23 @@ test("compatibility report marks the stable advertised Gateway contract compatib
   assert.ok(report.summary.nativeGatewayCoveragePercent > 50);
 });
 
+test("compatibility report accepts the OpenClaw 2026.8.2 system-presence array", async () => {
+  const gateway = createCompatibilityGateway([
+    ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
+    ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS
+  ]);
+  gateway.route("system-presence", (_frame, context) => context.respond([]));
+
+  const report = await generateOpenClawCompatibilityReport({
+    ...baseReportOptions(gateway),
+    includeLiveShapeChecks: true
+  });
+
+  const presenceContract = report.contracts.find((check) => check.operation === "presence");
+  assert.equal(presenceContract?.responseShapeStatus, "valid");
+  assert.notEqual(presenceContract?.status, "failed");
+});
+
 test("compatibility report cache keeps stale simulated data without real-local warmup", async () => {
   const gateway = createCompatibilityGateway([
     ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
