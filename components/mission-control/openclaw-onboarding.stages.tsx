@@ -529,11 +529,26 @@ function ConnectAiStage({
   const isBusy = state === "connecting" || state === "verifying";
   const isReady = state === "ready";
   const needsModelSelection = state === "needs-model";
+  const showModelSelection = isReady || needsModelSelection;
   const isError = state === "error";
   const browserAuthBusy = chatGptBrowserAuth && !["completed", "error"].includes(chatGptBrowserAuth.state);
   const connectedTitle = chatGptReady || chatGptAttempted || needsModelSelection ? "ChatGPT connected" : "AI connected";
   const modelDetail = defaultModelId?.trim() ? `Using ${formatModelLabel(defaultModelId)}` : null;
   const [redirectUrl, setRedirectUrl] = useState("");
+  const handleModelContinue = () => {
+    const targetModelId = selectedModelId.trim();
+
+    if (!targetModelId) {
+      return;
+    }
+
+    if (isReady && targetModelId === (defaultModelId?.trim() ?? "")) {
+      onContinueFromAi();
+      return;
+    }
+
+    onRunModelSetDefault(targetModelId);
+  };
 
   return (
     <div className="mx-auto flex min-h-[320px] max-w-[640px] flex-col items-center justify-center py-8 text-center">
@@ -546,14 +561,12 @@ function ConnectAiStage({
         Step 2
       </p>
       <h2 className={cn("mt-2 text-[22px] font-medium tracking-[-0.02em]", surfaceTheme === "light" ? "text-[#33251c]" : "text-white")}>
-        {isReady || needsModelSelection ? connectedTitle : "Connect your AI"}
+        {showModelSelection ? connectedTitle : "Connect your AI"}
       </h2>
       <p className={cn("mt-2 max-w-[420px] text-[12px] leading-5", surfaceTheme === "light" ? "text-[#705b4d]" : "text-slate-400")}>
-        {isReady
-          ? "Your AI workforce is ready."
-          : needsModelSelection
-            ? "Your ChatGPT account is connected. Select a usable model to continue."
-            : "Connect your ChatGPT account to power your agents and start using AgentOS."}
+        {showModelSelection
+          ? "Your ChatGPT account is connected. Select a model or continue with the current default."
+          : "Connect your ChatGPT account to power your agents and start using AgentOS."}
       </p>
 
       {chatGptBrowserAuth ? (
@@ -636,35 +649,17 @@ function ConnectAiStage({
         </div>
       ) : null}
 
-      {isReady ? (
-        <div className={cn("mt-5 w-full max-w-[420px] rounded-[16px] border px-4 py-3 text-left", surfaceTheme === "light" ? "border-emerald-200 bg-emerald-50/70" : "border-emerald-300/20 bg-emerald-300/10")}>
-          <div className="flex items-center gap-2">
-            <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded-full border", surfaceTheme === "light" ? "border-emerald-300 bg-white text-emerald-700" : "border-emerald-300/30 bg-emerald-300/10 text-emerald-200")}>
-              <Check className="h-3.5 w-3.5" />
-            </span>
-            <div className="min-w-0">
-              <p className={cn("text-[12px] font-semibold", surfaceTheme === "light" ? "text-emerald-900" : "text-emerald-100")}>{connectedTitle}</p>
-              {modelDetail ? <p className={cn("mt-0.5 truncate text-[10px]", surfaceTheme === "light" ? "text-emerald-800/75" : "text-emerald-100/70")}>{modelDetail}</p> : null}
-            </div>
-          </div>
-          <Button
-            type="button"
-            onClick={onContinueFromAi}
-            className="mt-4 h-10 w-full rounded-full text-[12px]"
-          >
-            Continue to AgentOS
-            <ArrowRight className="ml-1.5 h-3 w-3" />
-          </Button>
-        </div>
-      ) : needsModelSelection ? (
+      {showModelSelection ? (
         <div className={cn("mt-5 w-full max-w-[420px] rounded-[16px] border px-3 py-3 text-left", surfaceTheme === "light" ? "border-emerald-200 bg-emerald-50/70" : "border-emerald-300/20 bg-emerald-300/10")}>
           <div className="flex items-center gap-2">
             <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded-full border", surfaceTheme === "light" ? "border-emerald-300 bg-white text-emerald-700" : "border-emerald-300/30 bg-emerald-300/10 text-emerald-200")}>
               <Check className="h-3.5 w-3.5" />
             </span>
             <div className="min-w-0">
-              <p className={cn("text-[12px] font-semibold", surfaceTheme === "light" ? "text-emerald-900" : "text-emerald-100")}>ChatGPT connected</p>
-              <p className={cn("mt-0.5 text-[10px]", surfaceTheme === "light" ? "text-emerald-800/75" : "text-emerald-100/70")}>Select a usable model to finish setup.</p>
+              <p className={cn("text-[12px] font-semibold", surfaceTheme === "light" ? "text-emerald-900" : "text-emerald-100")}>{connectedTitle}</p>
+              <p className={cn("mt-0.5 text-[10px]", surfaceTheme === "light" ? "text-emerald-800/75" : "text-emerald-100/70")}>
+                {modelDetail || "Choose the model AgentOS should use for your agents."}
+              </p>
             </div>
           </div>
           <OpenClawOnboardingProviderFlow
@@ -676,7 +671,7 @@ function ConnectAiStage({
             onSnapshotChange={onSnapshotChange}
             autoDiscover
             compactSelection
-            onContinue={() => onRunModelSetDefault(selectedModelId)}
+            onContinue={handleModelContinue}
           />
           <button
             type="button"

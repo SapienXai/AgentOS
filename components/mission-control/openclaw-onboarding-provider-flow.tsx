@@ -248,17 +248,23 @@ export function OpenClawOnboardingProviderFlow({
       snapshot.models
     ]
   );
-  const activeCatalogModels = useMemo(
-    () => enrichCatalogModels(
-      activeDraft.models.length > 0 ? activeDraft.models : snapshotProviderModels,
-      sharedCatalogModels
-    ),
-    [activeDraft.models, sharedCatalogModels, snapshotProviderModels]
-  );
+  const activeCatalogModels = useMemo(() => {
+    const providerCatalogModels = sharedCatalogModels.filter((model) =>
+      modelMatchesProvider(activeProviderId, model.id, model.provider)
+    );
+    const sourceModels = activeDraft.models.length > 0
+      ? activeDraft.models
+      : providerCatalogModels.length > 0
+        ? providerCatalogModels
+        : snapshotProviderModels;
+
+    return enrichCatalogModels(sourceModels, sharedCatalogModels);
+  }, [activeDraft.models, activeProviderId, sharedCatalogModels, snapshotProviderModels]);
   const activeModels = useMemo(() => {
     const query = activeDraft.search.trim().toLowerCase();
 
     return activeCatalogModels
+      .filter((model) => model.available !== false && !model.missing)
       .slice()
       .sort((left, right) => {
         const rightScore = Number(right.recommended) + Number(right.isFree) + Number(right.supportsTools);

@@ -906,6 +906,16 @@ test("onboarding refreshes full model snapshot before entering model setup", () 
   assert.doesNotMatch(source, /onContinueToModels=\{\(\) => setOnboardingStage\("models"\)\}/);
 });
 
+test("connected ChatGPT onboarding keeps the live model picker visible", () => {
+  const stagesSource = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding.stages.tsx"), "utf8");
+  const flowSource = readFileSync(path.join(rootDir, "components/mission-control/openclaw-onboarding-provider-flow.tsx"), "utf8");
+
+  assert.match(stagesSource, /const showModelSelection = isReady \|\| needsModelSelection;/);
+  assert.match(stagesSource, /showModelSelection \? \([\s\S]*compactSelection/);
+  assert.match(flowSource, /sharedCatalogModels\.filter\(\(model\) =>[\s\S]*modelMatchesProvider\(/);
+  assert.match(flowSource, /filter\(\(model\) => model\.available !== false && !model\.missing\)/);
+});
+
 test("model onboarding verifies delayed default model writes before surfacing Gateway timeout", () => {
   const source = readFileSync(path.join(rootDir, "app/api/onboarding/models/route.ts"), "utf8");
   const timeoutCheckIndex = source.indexOf("Gateway response timed out. Checking whether OpenClaw applied the default model");
