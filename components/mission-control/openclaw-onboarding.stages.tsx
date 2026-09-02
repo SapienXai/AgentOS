@@ -504,9 +504,10 @@ function ConnectAiStage({
 }) {
   const isBusy = state === "connecting" || state === "verifying";
   const isReady = state === "ready";
+  const needsModelSelection = state === "needs-model";
   const isError = state === "error";
   const browserAuthBusy = chatGptBrowserAuth && !["completed", "error"].includes(chatGptBrowserAuth.state);
-  const connectedTitle = chatGptReady || chatGptAttempted ? "ChatGPT connected" : "AI connected";
+  const connectedTitle = chatGptReady || chatGptAttempted || needsModelSelection ? "ChatGPT connected" : "AI connected";
   const modelDetail = defaultModelId?.trim() ? `Using ${formatModelLabel(defaultModelId)}` : null;
   const [redirectUrl, setRedirectUrl] = useState("");
 
@@ -521,10 +522,14 @@ function ConnectAiStage({
         Step 2
       </p>
       <h2 className={cn("mt-2 text-[22px] font-medium tracking-[-0.02em]", surfaceTheme === "light" ? "text-[#33251c]" : "text-white")}>
-        {isReady ? connectedTitle : "Connect your AI"}
+        {isReady || needsModelSelection ? connectedTitle : "Connect your AI"}
       </h2>
       <p className={cn("mt-2 max-w-[420px] text-[12px] leading-5", surfaceTheme === "light" ? "text-[#705b4d]" : "text-slate-400")}>
-        {isReady ? "Your AI workforce is ready." : "Connect your ChatGPT account to power your agents and start using AgentOS."}
+        {isReady
+          ? "Your AI workforce is ready."
+          : needsModelSelection
+            ? "Your ChatGPT account is connected. Choose a model to continue."
+            : "Connect your ChatGPT account to power your agents and start using AgentOS."}
       </p>
 
       {chatGptBrowserAuth ? (
@@ -643,11 +648,18 @@ function ConnectAiStage({
           ) : null}
           <Button
             type="button"
-            onClick={() => onConnectChatGPT(isError)}
+            onClick={() => {
+              if (needsModelSelection) {
+                onUseAnotherProvider();
+                return;
+              }
+
+              onConnectChatGPT(isError);
+            }}
             disabled={isBusy || Boolean(browserAuthBusy)}
             className="mt-6 h-11 min-w-[230px] rounded-full px-5 text-[13px] shadow-[0_14px_30px_hsl(var(--primary)/0.22)]"
           >
-            {isError ? "Reconnect ChatGPT" : "Continue with ChatGPT"}
+            {needsModelSelection ? "Choose a model" : isError ? "Reconnect ChatGPT" : "Continue with ChatGPT"}
             <ArrowRight className="ml-1.5 h-3 w-3" />
           </Button>
           <button

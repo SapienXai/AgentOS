@@ -27,7 +27,7 @@ export type StageRunDetails = {
   docsUrl: string | null;
 };
 
-export type ChatGptOnboardingState = "idle" | "connecting" | "verifying" | "ready" | "error";
+export type ChatGptOnboardingState = "idle" | "connecting" | "verifying" | "ready" | "needs-model" | "error";
 
 export function resolveChatGptOnboardingState(params: {
   runState: RunState;
@@ -42,8 +42,12 @@ export function resolveChatGptOnboardingState(params: {
     return params.phase === "authenticating" ? "connecting" : "verifying";
   }
 
-  if (params.runState === "success" || params.modelReady) {
+  if (params.modelReady) {
     return "ready";
+  }
+
+  if (params.runState === "success") {
+    return "needs-model";
   }
 
   return "idle";
@@ -636,6 +640,17 @@ export function resolveInitialOnboardingProviderId(
   selectedModelId?: string | null
 ): AddModelsProviderId {
   const selectedProvider = resolveOnboardingModelProviderId(snapshot, selectedModelId);
+
+  const connectedCodexProvider = snapshot.diagnostics.modelReadiness.authProviders.find(
+    (provider) => provider.provider === "openai-codex" && provider.connected
+  );
+  const connectedOpenAiProvider = snapshot.diagnostics.modelReadiness.authProviders.find(
+    (provider) => provider.provider === "openai" && provider.connected
+  );
+
+  if (selectedProvider === "openai" && connectedCodexProvider && !connectedOpenAiProvider) {
+    return "openai-codex";
+  }
 
   if (selectedProvider) {
     return selectedProvider;

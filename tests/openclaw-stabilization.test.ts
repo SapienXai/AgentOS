@@ -932,6 +932,33 @@ test("onboarding starts on the selected, connected, or preferred provider", () =
   } as unknown as MissionControlSnapshot;
 
   assert.equal(resolveInitialOnboardingProviderId(connectedSnapshot, undefined), "ollama");
+
+  const connectedChatGptSnapshot = {
+    diagnostics: {
+      modelReadiness: {
+        preferredLoginProvider: "openai",
+        authProviders: [
+          {
+            provider: "openai-codex",
+            connected: true,
+            canLogin: true,
+            detail: "OAuth connected"
+          },
+          {
+            provider: "openai",
+            connected: false,
+            canLogin: true,
+            detail: null
+          }
+        ]
+      }
+    }
+  } as unknown as MissionControlSnapshot;
+
+  assert.equal(
+    resolveInitialOnboardingProviderId(connectedChatGptSnapshot, "openai/gpt-5.6-sol"),
+    "openai-codex"
+  );
 });
 
 test("live gateway probe overrides a stale ready snapshot", () => {
@@ -1420,6 +1447,8 @@ test("ChatGPT-first onboarding keeps the normal model step focused and advanced 
     /readModelProviderStatus\("openai-codex",\s*\{\s*includeSnapshot:\s*true\s*\}\)/
   );
   assert.match(shellSource, /markModelProviderConnected\("openai-codex"/);
+  assert.match(onboardingSource, /needsModelSelection/);
+  assert.match(onboardingSource, /Choose a model/);
   assert.match(shellSource, /setIsOnboardingDismissed\(false\);\s+setIsOnboardingForcedOpen\(true\);\s+if \(!isContinuation\)/);
   assert.match(shellSource, /stage === undefined && onboardingAiReady/);
   assert.doesNotMatch(onboardingSource, /gpt-\d/);
@@ -1440,7 +1469,7 @@ test("ChatGPT onboarding state and recovery copy stay honest", () => {
   );
   assert.equal(
     resolveChatGptOnboardingState({ runState: "success", phase: "ready", modelReady: false }),
-    "ready"
+    "needs-model"
   );
   assert.equal(
     resolveChatGptOnboardingState({ runState: "error", phase: "authenticating", modelReady: false }),
