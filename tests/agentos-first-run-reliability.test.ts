@@ -72,11 +72,26 @@ test("system onboarding keeps setup rows compact and the log collapsed", () => {
   assert.match(source, /h-7 w-7 shrink-0 items-center justify-center rounded-full border text-\[12px\]/);
   assert.match(source, /id: "system", label: "Setup"/);
   assert.match(source, /text-\[16px\] font-semibold leading-5 tracking-\[-0\.01em\]/);
+  assert.match(source, /grid-cols-\[minmax\(0,1fr\)_48px_minmax\(0,1fr\)_48px_minmax\(0,1fr\)\]/);
+  assert.match(source, /flex min-w-0 flex-col items-center gap-1 text-center/);
+  assert.match(source, /relative mt-3\.5 h-0\.5 w-full self-start overflow-hidden rounded-full bg-border/);
+  assert.match(source, /transition=\{\{ duration: 1\.2, ease: \[0\.22, 1, 0\.36, 1\] \}\}/);
   assert.doesNotMatch(source, /<p className="mt-0\.5 text-\[12px\] leading-4 text-muted-foreground">\{step\.description\}/);
   assert.match(source, /const \[detailsOpen, setDetailsOpen\] = useState\(false\)/);
   assert.match(source, /aria-controls="onboarding-setup-log-details"/);
   assert.match(source, /OpenClaw setup target:/);
   assert.doesNotMatch(source, /What happens next\?/);
+});
+
+test("launchpad uses the same compact status-row language as setup", () => {
+  const source = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding.stages.tsx"), "utf8");
+
+  assert.match(source, /text-\[16px\] font-semibold leading-5 tracking-\[-0\.01em\]/);
+  assert.match(source, /flex min-h-\[58px\] items-center justify-between gap-3 rounded-\[12px\] border px-4 py-3/);
+  assert.match(source, /<Info className=\{cn\("h-3\.5 w-3\.5 shrink-0"/);
+  assert.match(source, /Next: \{nextStep\}/);
+  assert.doesNotMatch(source, /const launchSummary =/);
+  assert.doesNotMatch(source, /detail=\{modelMetricDetail\}/);
 });
 
 test("first-run write actions return actionable readiness failures before mutation", () => {

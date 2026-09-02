@@ -778,12 +778,14 @@ function SetupStepper({
   ] as const;
 
   return (
-    <div className="mx-auto mb-6 mt-6 grid max-w-[640px] grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-1 sm:mb-8 sm:mt-8 sm:gap-2 max-md:w-full max-md:grid-cols-[1fr_auto_1fr_auto_1fr]">
+    <div className="mx-auto mb-6 mt-6 grid max-w-[640px] grid-cols-[minmax(0,1fr)_48px_minmax(0,1fr)_48px_minmax(0,1fr)] items-start gap-1 sm:mb-8 sm:mt-8 sm:gap-2 max-md:w-full max-md:grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)_28px_minmax(0,1fr)]">
       {steps.map((step, index) => {
         const isActive = activeStep === step.order;
         const isComplete = step.complete;
+        const connectorProgress =
+          index + 1 < activeStep || step.complete ? "100%" : index + 1 === activeStep ? "42%" : "0%";
         const content = (
-          <div className="flex items-center gap-2 text-left max-md:flex-col max-md:items-center max-md:gap-0.5 max-md:text-center">
+          <div className="flex min-w-0 flex-col items-center gap-1 text-center">
             <span
               className={cn(
                 "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold transition-colors max-md:h-5 max-md:w-5 max-md:text-[9px]",
@@ -798,10 +800,8 @@ function SetupStepper({
             >
               {isComplete && !isActive ? <Check className="h-3 w-3 max-md:h-2 max-md:w-2" /> : step.order}
             </span>
-            <span className="min-w-0">
-              <span className={cn("block text-[12px] font-semibold leading-4 max-md:text-[10px] max-md:leading-3", isActive ? "text-primary" : "text-foreground")}>
-                {step.label}
-              </span>
+            <span className={cn("block max-w-full truncate text-[12px] font-semibold leading-4", isActive ? "text-primary" : "text-foreground")}>
+              {step.label}
             </span>
           </div>
         );
@@ -816,21 +816,19 @@ function SetupStepper({
               <button
                 type="button"
                 onClick={() => onSelectStage(step.id)}
-                className="rounded-[12px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className="min-w-0 rounded-[12px] px-1 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 aria-current={isActive ? "step" : undefined}
               >
                 {content}
               </button>
             )}
             {index < steps.length - 1 ? (
-              <div className="h-px w-[72px] bg-border max-md:w-full max-md:min-w-3">
+              <div aria-hidden="true" className="relative mt-3.5 h-0.5 w-full self-start overflow-hidden rounded-full bg-border max-md:mt-2.5">
                 <motion.div
-                  className="h-full bg-primary max-md:w-full"
+                  className="absolute inset-y-0 left-0 rounded-full bg-primary"
                   initial={false}
-                  animate={{
-                    width: index + 1 < activeStep ? "100%" : index + 1 === activeStep ? "48%" : "0%"
-                  }}
-                  transition={{ duration: 0.35, ease: "easeOut" }}
+                  animate={{ width: connectorProgress }}
+                  transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
                 />
               </div>
             ) : null}

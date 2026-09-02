@@ -1064,26 +1064,21 @@ export function LaunchpadStage({
   const isBuildingWorkspace = createRunState === "running" && Boolean(createProgress);
   const hasWorkspaceCreateError = createRunState === "error" && Boolean(createProgress);
   const showBuildScene = Boolean(createProgress) && (isBuildingWorkspace || hasWorkspaceCreateError);
-  const launchSummary = hasWorkspaces
-    ? workspaceSetupReady
-      ? `You already have ${workspaceCount} workspace${workspaceCount === 1 ? "" : "s"} online. Use AgentOS to inspect them or create another workspace for a new mission.`
-      : "The workspace shell is visible. AgentOS is waiting for the starter agent before opening the canvas."
-    : isBuildingWorkspace
-      ? "AgentOS Workspace is being provisioned now. The scaffold and starter agent are being built in the background."
-      : hasWorkspaceCreateError
-        ? "The first workspace creation needs attention. Review the output, then try again."
-        : "No workspace exists yet. Create one first so the live system has a place to keep context and deliverables.";
-  const modelMetricLabel = workspaceSetupReady ? "Default model" : "Detected default";
-  const modelMetricDetail = workspaceSetupReady
-    ? "Usable model route selected"
-    : "Detected on this machine, not yet confirmed by a workspace.";
+  const modelMetricLabel = workspaceSetupReady ? "Model" : "Detected model";
   const runtimeSmokeMetric = resolveRuntimeSmokeMetric(runtimeSmokeStatus, runtimeSmokeDetail);
+  const nextStep = hasWorkspaces
+    ? canEnterAgentOS
+      ? "Enter AgentOS"
+      : operationalReady
+        ? "Finish setup"
+        : "Verify runtime"
+    : "Create workspace";
 
   return (
     <>
       <div
         className={cn(
-          "mt-3 rounded-[16px] border px-3 py-3",
+          "mt-3 rounded-[14px] border px-3 py-3",
           surfaceTheme === "light"
             ? "border-emerald-200/80 bg-[linear-gradient(180deg,rgba(240,250,245,0.95),rgba(248,244,236,0.95))]"
             : "border-emerald-300/15 bg-[linear-gradient(180deg,rgba(9,18,19,0.96),rgba(7,11,18,0.94))]"
@@ -1101,58 +1096,38 @@ export function LaunchpadStage({
             <Check className="h-3.5 w-3.5" />
           </span>
           <div className="min-w-0">
-            <p
-              className={cn(
-                "text-[7px] uppercase tracking-[0.18em]",
-                surfaceTheme === "light" ? "text-emerald-700/75" : "text-emerald-200/75"
-              )}
-            >
-              Launchpad
-            </p>
             <h2
               className={cn(
-                "mt-1 text-[13px] font-medium",
+                "text-[16px] font-semibold leading-5 tracking-[-0.01em]",
                 surfaceTheme === "light" ? "text-[#2d2118]" : "text-white"
               )}
             >
               OpenClaw is ready.
             </h2>
-            <p
-              className={cn(
-                "mt-1 text-[10px] leading-[0.95rem]",
-                surfaceTheme === "light" ? "text-[#5f4b3e]" : "text-slate-300"
-              )}
-            >
-              {launchSummary}
-            </p>
           </div>
         </div>
 
         {!showBuildScene ? (
-          <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
+          <div className="mt-3 space-y-1.5">
             <LaunchpadMetric
               surfaceTheme={surfaceTheme}
               label="System"
               value="Online"
-              detail="CLI, gateway, and runtime access verified"
             />
             <LaunchpadMetric
               surfaceTheme={surfaceTheme}
               label={modelMetricLabel}
               value={defaultModelLabel}
-              detail={modelMetricDetail}
             />
             <LaunchpadMetric
               surfaceTheme={surfaceTheme}
               label="Runtime"
               value={runtimeSmokeMetric.value}
-              detail={runtimeSmokeMetric.detail}
             />
             <LaunchpadMetric
               surfaceTheme={surfaceTheme}
-              label={hasWorkspaces ? "Starter agent" : "Workspaces"}
+              label="Workspace"
               value={hasWorkspaces ? (agentCount > 0 ? "Visible" : "Pending") : String(workspaceCount)}
-              detail={hasWorkspaces ? "Required before canvas handoff" : "Create one to begin"}
             />
           </div>
         ) : null}
@@ -1163,33 +1138,16 @@ export function LaunchpadStage({
       ) : (
         <div
           className={cn(
-            "mt-2.5 rounded-[12px] border px-2.5 py-2",
+            "mt-2.5 rounded-[12px] border px-3 py-2.5",
             surfaceTheme === "light" ? "border-[#e5d5c9] bg-[#fffaf6]" : "border-white/8 bg-[rgba(255,255,255,0.02)]"
           )}
         >
-          <p
-            className={cn(
-              "text-[7px] uppercase tracking-[0.16em]",
-              surfaceTheme === "light" ? "text-[#977b69]" : "text-slate-500"
-            )}
-          >
-            Next step
-          </p>
-          <p
-            className={cn(
-              "mt-1 text-[11px] leading-[1rem]",
-              surfaceTheme === "light" ? "text-[#5f4b3e]" : "text-slate-300"
-            )}
-          >
-            {hasWorkspaces
-              ? canEnterAgentOS
-                ? "Open AgentOS to inspect the live graph, or create another workspace if you want a separate mission lane."
-                : "Finish system, model, and workspace setup before entering the canvas."
-              : "Create the first workspace now. That is the shortest path from a ready system to a real mission."}
-            {canEnterAgentOS && !operationalReady
-              ? " Runtime smoke has not passed yet, so mission dispatch remains guarded until OpenClaw verifies a real agent turn."
-              : ""}
-          </p>
+          <div className="flex min-w-0 items-center gap-2">
+            <Info className={cn("h-3.5 w-3.5 shrink-0", surfaceTheme === "light" ? "text-[#977b69]" : "text-slate-500")} />
+            <p className={cn("truncate text-[12px] font-medium", surfaceTheme === "light" ? "text-[#5f4b3e]" : "text-slate-300")}>
+              Next: {nextStep}
+            </p>
+          </div>
         </div>
       )}
     </>
@@ -1203,17 +1161,17 @@ function resolveRuntimeSmokeMetric(
   switch (status) {
     case "passed":
       return {
-        value: "Smoke test passed",
+        value: "Passed",
         detail: detail?.trim() || "A live agent turn was verified"
       };
     case "failed":
       return {
-        value: "Smoke test failed",
+        value: "Failed",
         detail: detail?.trim() || "A real OpenClaw agent turn could not be verified"
       };
     case "not-run":
       return {
-        value: "Not verified",
+        value: "Pending",
         detail: "Run model setup to verify a real OpenClaw agent turn"
       };
     default:
@@ -1617,25 +1575,23 @@ function LaunchpadBuildScene({
 export function LaunchpadMetric({
   surfaceTheme,
   label,
-  value,
-  detail
+  value
 }: {
   surfaceTheme: SurfaceTheme;
   label: string;
   value: string;
-  detail: string;
 }) {
   return (
     <div
       className={cn(
-        "rounded-[12px] border px-2.5 py-2",
+        "flex min-h-[58px] items-center justify-between gap-3 rounded-[12px] border px-4 py-3",
         surfaceTheme === "light" ? "border-[#e6d7cb] bg-white" : "border-white/10 bg-white/[0.03]"
       )}
     >
       <p
         className={cn(
-          "text-[7px] uppercase tracking-[0.16em]",
-          surfaceTheme === "light" ? "text-[#977b69]" : "text-slate-500"
+          "min-w-0 truncate text-[16px] font-semibold leading-5 tracking-[-0.01em]",
+          surfaceTheme === "light" ? "text-[#33251c]" : "text-white"
         )}
       >
         {label}
@@ -1643,19 +1599,11 @@ export function LaunchpadMetric({
       <p
         title={value}
         className={cn(
-          "mt-1 truncate text-[10px]",
-          surfaceTheme === "light" ? "text-[#33251c]" : "text-white"
+          "min-w-0 shrink-0 truncate text-right text-[11px] font-semibold uppercase tracking-[0.08em]",
+          surfaceTheme === "light" ? "text-[#8f7664]" : "text-slate-300"
         )}
       >
         {value}
-      </p>
-      <p
-        className={cn(
-          "mt-0.5 text-[8px] leading-[0.85rem]",
-          surfaceTheme === "light" ? "text-[#8f7664]" : "text-slate-500"
-        )}
-      >
-        {detail}
       </p>
     </div>
   );
