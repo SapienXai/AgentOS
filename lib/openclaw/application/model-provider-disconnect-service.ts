@@ -372,10 +372,6 @@ function resolveExpectedCredentialCleanup(
     return "not-required";
   }
 
-  if (provider === "openai-codex") {
-    return "retained-unsupported";
-  }
-
   if (provider === "openai" || ["openrouter", "anthropic", "xai", "google", "deepseek", "mistral"].includes(provider) || !isBuiltInAddModelsProviderId(provider)) {
     return "removed";
   }

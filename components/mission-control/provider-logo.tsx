@@ -17,10 +17,6 @@ type ProviderLogoConfig =
 const simpleIconMap = simpleIcons as Record<string, SimpleIconData | undefined>;
 
 const providerLogoConfig: Record<string, ProviderLogoConfig> = {
-  "openai-codex": {
-    kind: "asset",
-    src: "/assets/provider-logos/openai.svg"
-  },
   openai: {
     kind: "asset",
     src: "/assets/provider-logos/openai.svg"

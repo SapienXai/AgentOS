@@ -1,5 +1,10 @@
-import type { AgentStatus, ModelReadiness, RuntimeRecord } from "@/lib/openclaw/types";
-import { isKnownOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
+import type {
+  AddModelsProviderAuthMethod,
+  AgentStatus,
+  ModelReadiness,
+  RuntimeRecord
+} from "@/lib/openclaw/types";
+import { isUnsupportedLegacyProviderId } from "@/lib/openclaw/model-provider-registry";
 
 type RuntimeLike = {
   status?: RuntimeRecord["status"] | string;
@@ -40,6 +45,8 @@ type ModelAuthProvider = {
 type ModelOauthProvider = {
   provider?: string | null;
   status?: string | null;
+  profiles?: unknown[] | null;
+  effectiveProfiles?: unknown[] | null;
 };
 
 type ModelAuthProviderLike = ModelAuthProvider | null;
@@ -198,21 +205,28 @@ export function resolveModelReadiness(
       .filter((modelId): modelId is string => Boolean(modelId))
   );
   const readyModels = models.filter((model) => isReadyModelRecord(model));
+  const legacyModelIds = models
+    .map((model) => model.key)
+    .filter((modelId) => isUnsupportedLegacyProviderId(resolveAuthProviderIdForModel(modelId)));
   const providerIds = unique(
     [
       ...models.map((model) => resolveAuthProviderIdForModel(model.key)),
       ...((modelStatus?.auth?.providers ?? []).map((entry) => entry?.provider).filter(isNonEmptyString)),
       ...((modelStatus?.auth?.oauth?.providers ?? []).map((entry) => entry?.provider).filter(isNonEmptyString))
     ].filter(isNonEmptyString)
-  );
+  ).filter((provider) => !isUnsupportedLegacyProviderId(provider));
   const authProviderMap = new Map(
     (modelStatus?.auth?.providers ?? [])
-      .filter((entry): entry is ModelAuthProvider & { provider: string } => isNonEmptyString(entry?.provider))
+      .filter((entry): entry is ModelAuthProvider & { provider: string } =>
+        isNonEmptyString(entry?.provider) && !isUnsupportedLegacyProviderId(entry.provider)
+      )
       .map((entry) => [entry.provider, entry])
   );
   const oauthProviderMap = new Map(
     (modelStatus?.auth?.oauth?.providers ?? [])
-      .filter((entry): entry is ModelOauthProvider & { provider: string } => isNonEmptyString(entry?.provider))
+      .filter((entry): entry is ModelOauthProvider & { provider: string } =>
+        isNonEmptyString(entry?.provider) && !isUnsupportedLegacyProviderId(entry.provider)
+      )
       .map((entry) => [entry.provider, entry])
   );
   const resolvedDefaultModel = normalizeOptionalValue(modelStatus?.resolvedDefault ?? undefined);
@@ -244,26 +258,15 @@ export function resolveModelReadiness(
       provider === "ollama"
         ? providerModels.some((model) => model.local)
         : provider === "openai"
-          ? isOpenAiApiAuthConnected(providerAuth)
-          : provider === "openai-codex"
-            ? isOpenAiCodexAuthConnected(
-                providerAuth ?? authProviderMap.get("openai"),
-                oauthStatus ?? oauthProviderMap.get("openai"),
-                modelStatus
-              )
+          ? isOpenAiAuthConnected(providerAuth, oauthStatus, modelStatus)
           : (providerAuth?.profiles?.count ?? 0) > 0 || oauthStatus?.status === "ok";
     let detail: string | null = null;
 
-    if (
-      provider !== "openai" &&
-      (oauthStatus?.status === "ok" ||
-        (provider === "openai-codex" && oauthProviderMap.get("openai")?.status === "ok"))
-    ) {
-      detail = "OAuth connected";
+    if (provider === "openai" && isUsableOpenAiOauthStatus(oauthStatus)) {
+      detail = "ChatGPT OAuth connected";
     } else if (
       providerAuth &&
-      (providerAuth.profiles?.count ?? 0) > 0 &&
-      (provider !== "openai" || isOpenAiApiAuthConnected(providerAuth))
+      (providerAuth.profiles?.count ?? 0) > 0
     ) {
       detail = `${providerAuth?.profiles?.count} auth profile${providerAuth?.profiles?.count === 1 ? "" : "s"}`;
     } else if (provider === "ollama" && connected) {
@@ -276,6 +279,10 @@ export function resolveModelReadiness(
 
     return {
       provider,
+      authMethod: provider === "openai" ? resolveOpenAiAuthMethod(providerAuth, oauthStatus, modelStatus) : null,
+      availableAuthMethods: provider === "openai"
+        ? ["api-key", "chatgpt-oauth"] as AddModelsProviderAuthMethod[]
+        : [],
       connected,
       canLogin,
       detail
@@ -310,6 +317,10 @@ export function resolveModelReadiness(
 
   if (unusableProfileCount > 0) {
     issues.push("Some stored model auth profiles are not usable.");
+  }
+
+  if (legacyModelIds.length > 0) {
+    issues.push("OpenClaw reported a stale legacy model route. Use OpenClaw's supported migration flow, then refresh AgentOS.");
   }
 
   const preferredLoginProvider = resolvePreferredLoginProvider({
@@ -347,7 +358,7 @@ function resolvePreferredLoginProvider(input: {
   readyModels: ModelLike[];
 }) {
   const defaultProviderCandidates = input.defaultProvider
-    ? resolveAuthProvidersForModel(input.defaultProvider, input.defaultModelId)
+    ? resolveAuthProvidersForModel(input.defaultProvider)
     : [];
 
   if (
@@ -377,7 +388,7 @@ function resolvePreferredLoginProvider(input: {
   }
 
   return input.authProviders.find((provider) => !provider.connected && provider.canLogin)?.provider ??
-    (input.providerIds.includes("openai-codex") || input.readyModels.length === 0 ? "openai-codex" : null);
+    (input.providerIds.includes("openai") || input.readyModels.length === 0 ? "openai" : null);
 }
 
 function isModelProviderAuthenticated(
@@ -396,7 +407,7 @@ function isModelProviderAuthenticated(
     return models.some((model) => modelMatchesAuthProvider(provider, model.key) && model.local === true);
   }
 
-  return resolveAuthProvidersForModel(provider, modelId).some((authProvider) =>
+  return resolveAuthProvidersForModel(provider).some((authProvider) =>
     isAuthProviderConnected(authProvider, authProviderMap, oauthProviderMap, modelStatus)
   );
 }
@@ -408,15 +419,7 @@ function isAuthProviderConnected(
   modelStatus?: ModelStatusLike
 ) {
   if (provider === "openai") {
-    return isOpenAiApiAuthConnected(authProviderMap.get(provider));
-  }
-
-  if (provider === "openai-codex") {
-    return isOpenAiCodexAuthConnected(
-      authProviderMap.get(provider) ?? authProviderMap.get("openai"),
-      oauthProviderMap.get(provider) ?? oauthProviderMap.get("openai"),
-      modelStatus
-    );
+    return isOpenAiAuthConnected(authProviderMap.get(provider), oauthProviderMap.get(provider), modelStatus);
   }
 
   const providerAuth = authProviderMap.get(provider);
@@ -424,53 +427,105 @@ function isAuthProviderConnected(
   return (providerAuth?.profiles?.count ?? 0) > 0 || oauthStatus?.status === "ok";
 }
 
-function isOpenAiApiAuthConnected(providerAuth: ModelAuthProvider | undefined) {
-  const effectiveKind = providerAuth?.effective?.kind?.trim().toLowerCase();
-  const tokenProfileCount = providerAuth?.profiles?.token ?? 0;
-  const apiKeyProfileCount = providerAuth?.profiles?.apiKey ?? 0;
-  const oauthProfileCount = providerAuth?.profiles?.oauth ?? 0;
-  const profileCount = providerAuth?.profiles?.count ?? 0;
-
-  return Boolean(
-    tokenProfileCount + apiKeyProfileCount > 0 ||
-    (effectiveKind && ["token", "apikey", "api-key"].includes(effectiveKind)) ||
-    (effectiveKind === "profiles" && profileCount > 0 && oauthProfileCount === 0)
-  );
-}
-
-function isOpenAiCodexAuthConnected(
+function isOpenAiAuthConnected(
   providerAuth: ModelAuthProvider | undefined,
   oauthStatus: ModelOauthProvider | undefined,
   modelStatus?: ModelStatusLike
 ) {
   const effectiveKind = providerAuth?.effective?.kind?.trim().toLowerCase();
-  const oauthProfileCount = providerAuth?.profiles?.oauth ?? 0;
-  const syntheticAuthValue = providerAuth?.syntheticAuth?.value?.trim();
+  const usableOauthStatus = isUsableOpenAiOauthStatus(oauthStatus);
+  const oauthProfileCount = Math.max(
+    oauthStatus?.profiles
+      ? countUsableOpenAiOauthProfiles(oauthStatus.profiles)
+      : usableOauthStatus || !oauthStatus
+        ? providerAuth?.profiles?.oauth ?? 0
+        : 0,
+    0
+  );
+  const apiKeyProfileCount = (providerAuth?.profiles?.token ?? 0) + (providerAuth?.profiles?.apiKey ?? 0);
 
   return Boolean(
-    oauthStatus?.status === "ok" ||
+    usableOauthStatus ||
     oauthProfileCount > 0 ||
-    syntheticAuthValue ||
-    hasUsableOpenAiCodexRuntimeAuthRoute(modelStatus) ||
+    hasUsableOpenAiRuntimeAuthRoute(modelStatus) ||
     effectiveKind === "oauth" ||
-    effectiveKind === "synthetic"
+    apiKeyProfileCount > 0 ||
+    (effectiveKind && ["token", "apikey", "api-key"].includes(effectiveKind)) ||
+    (!oauthStatus && (providerAuth?.profiles?.count ?? 0) > 0)
   );
 }
 
-function hasUsableOpenAiCodexRuntimeAuthRoute(modelStatus?: ModelStatusLike) {
+function resolveOpenAiAuthMethod(
+  providerAuth: ModelAuthProvider | undefined,
+  oauthStatus: ModelOauthProvider | undefined,
+  modelStatus?: ModelStatusLike
+) {
+  const effectiveKind = providerAuth?.effective?.kind?.trim().toLowerCase();
+  const usableOauthStatus = isUsableOpenAiOauthStatus(oauthStatus);
+  const oauthProfileCount = Math.max(
+    oauthStatus?.profiles
+      ? countUsableOpenAiOauthProfiles(oauthStatus.profiles)
+      : usableOauthStatus || !oauthStatus
+        ? providerAuth?.profiles?.oauth ?? 0
+        : 0,
+    0
+  );
+  const hasOauth = Boolean(
+    usableOauthStatus ||
+    oauthProfileCount > 0 ||
+    hasUsableOpenAiRuntimeAuthRoute(modelStatus) ||
+    effectiveKind === "oauth"
+  );
+
+  if (hasOauth) {
+    return "chatgpt-oauth" as const;
+  }
+
+  const apiKeyProfileCount = (providerAuth?.profiles?.token ?? 0) + (providerAuth?.profiles?.apiKey ?? 0);
+  return apiKeyProfileCount > 0 || ["token", "apikey", "api-key"].includes(effectiveKind ?? "")
+    ? "api-key" as const
+    : null;
+}
+
+function countUsableOpenAiOauthProfiles(profiles: unknown[] | null | undefined) {
+  return (profiles ?? []).filter((entry) => {
+    if (!isRecord(entry)) {
+      return false;
+    }
+
+    const profileId = normalizeOptionalValue(
+      typeof entry.profileId === "string" ? entry.profileId :
+        typeof entry.id === "string" ? entry.id : undefined
+    );
+    const status = normalizeOptionalValue(typeof entry.status === "string" ? entry.status : undefined)?.toLowerCase();
+
+    return Boolean(profileId?.toLowerCase().startsWith("openai:")) &&
+      !["expired", "missing", "invalid", "error", "disabled", "revoked"].includes(status ?? "");
+  }).length;
+}
+
+function isUsableOpenAiOauthStatus(oauthStatus: ModelOauthProvider | undefined) {
+  if (!oauthStatus || oauthStatus.status?.trim().toLowerCase() !== "ok") {
+    return false;
+  }
+
+  return !oauthStatus.profiles || countUsableOpenAiOauthProfiles(oauthStatus.profiles) > 0;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasUsableOpenAiRuntimeAuthRoute(modelStatus?: ModelStatusLike) {
   return (modelStatus?.auth?.runtimeAuthRoutes ?? []).some((entry) => {
     const provider = entry?.provider?.trim().toLowerCase();
     const runtime = entry?.runtime?.trim().toLowerCase();
     const authProvider = entry?.authProvider?.trim().toLowerCase();
     const status = entry?.status?.trim().toLowerCase();
 
-    const codexRuntime =
-      runtime === "codex" ||
-      runtime === "openai-codex" ||
-      runtime === "app-server" ||
-      runtime === "codex-app-server";
-    const openAiRoute = provider === "openai" || provider === "codex" || provider === "openai-codex";
-    const openAiAuth = !authProvider || authProvider === "openai" || authProvider === "codex" || authProvider === "openai-codex";
+    const codexRuntime = runtime === "codex";
+    const openAiRoute = provider === "openai";
+    const openAiAuth = authProvider === "openai";
     const usableStatus = !status || ["ok", "usable", "ready", "connected"].includes(status);
 
     return codexRuntime && openAiRoute && openAiAuth && usableStatus;
@@ -478,26 +533,16 @@ function hasUsableOpenAiCodexRuntimeAuthRoute(modelStatus?: ModelStatusLike) {
 }
 
 function resolveAuthProviderIdForModel(modelId: string) {
-  return isKnownOpenAiCodexModelId(modelId) ? "openai-codex" : modelId.split("/")[0] || "unknown";
+  return modelId.split("/")[0] || "unknown";
 }
 
 function modelMatchesAuthProvider(provider: string, modelId: string) {
   const modelProvider = resolveModelProviderId(modelId) ?? "unknown";
 
-  if (provider === "openai-codex") {
-    return modelProvider === "openai-codex" ||
-      modelProvider === "codex" ||
-      (modelProvider === "openai" && isKnownOpenAiCodexModelId(modelId));
-  }
-
   return modelProvider === provider;
 }
 
-function resolveAuthProvidersForModel(provider: string, modelId: string | null) {
-  if (provider === "openai" && modelId && isKnownOpenAiCodexModelId(modelId)) {
-    return ["openai", "openai-codex"];
-  }
-
+function resolveAuthProvidersForModel(provider: string) {
   return [provider];
 }
 
@@ -515,10 +560,6 @@ export function formatProviderLabel(provider: string) {
 
   if (normalized === "openrouter") {
     return "OpenRouter";
-  }
-
-  if (normalized === "openai-codex") {
-    return "ChatGPT";
   }
 
   if (normalized === "openai") {
@@ -558,10 +599,6 @@ export function formatProviderLabel(provider: string) {
 export function resolveProviderSetupDetail(provider: string) {
   const normalized = provider.trim().toLowerCase();
 
-  if (normalized === "openai-codex") {
-    return "Use the ChatGPT account-based login flow in terminal to use this route.";
-  }
-
   if (
     normalized === "openrouter" ||
     normalized === "openai" ||
@@ -572,7 +609,9 @@ export function resolveProviderSetupDetail(provider: string) {
     normalized === "deepseek" ||
     normalized === "mistral"
   ) {
-    return `Add your ${formatProviderLabel(provider)} API key in terminal to use this route.`;
+    return normalized === "openai"
+      ? "Connect an OpenAI API key or ChatGPT account through AgentOS to use this route."
+      : `Add your ${formatProviderLabel(provider)} API key in terminal to use this route.`;
   }
 
   return `Connect ${formatProviderLabel(provider)} auth in terminal to use this route.`;

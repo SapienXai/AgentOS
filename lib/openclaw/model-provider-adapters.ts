@@ -14,7 +14,7 @@ export type ModelProviderAdapter = {
   id: AddModelsProviderId;
   descriptor: ModelProviderDescriptor;
   getConnectionStatus: () => Promise<AddModelsProviderActionResult>;
-  connect: (input?: { apiKey?: string; endpoint?: string; providerName?: string; modelId?: string; force?: boolean }) => Promise<AddModelsProviderActionResult>;
+  connect: (input?: { apiKey?: string; endpoint?: string; providerName?: string; modelId?: string; authMethod?: "api-key" | "chatgpt-oauth"; force?: boolean }) => Promise<AddModelsProviderActionResult>;
   updateProvider: (input: { endpoint?: string | null; api?: string }) => Promise<AddModelsProviderActionResult>;
   replaceCredential: (apiKey: string) => Promise<AddModelsProviderActionResult>;
   switchAccount: () => Promise<AddModelsProviderActionResult>;
@@ -55,8 +55,8 @@ async function runProviderAction(
       },
       body: JSON.stringify(request),
       signal: AbortSignal.timeout(
-        request.provider === "openai-codex" &&
-        (request.action === "connect" || request.action === "switch-account")
+        request.provider === "openai" &&
+        ((request.action === "connect" && request.authMethod === "chatgpt-oauth") || request.action === "switch-account")
           ? CHATGPT_PROVIDER_REQUEST_TIMEOUT_MS
           : MODEL_PROVIDER_REQUEST_TIMEOUT_MS
       )
@@ -104,6 +104,7 @@ function createModelProviderAdapter(providerId: AddModelsProviderId): ModelProvi
         apiKey: input?.apiKey?.trim() ? input.apiKey.trim() : undefined,
         endpoint: input?.endpoint?.trim() ? input.endpoint.trim() : undefined,
         modelId: input?.modelId?.trim() ? input.modelId.trim() : undefined,
+        authMethod: input?.authMethod,
         force: input?.force === true ? true : undefined
       }),
     updateProvider: (input) =>

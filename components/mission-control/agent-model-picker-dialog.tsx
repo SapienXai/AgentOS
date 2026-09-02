@@ -32,9 +32,8 @@ import {
   isAddModelsProviderId
 } from "@/lib/openclaw/model-provider-registry";
 import {
-  isKnownOpenAiCodexModelId,
   modelRecordIdentityKey,
-  normalizeOpenAiCodexModelId
+  normalizeOpenAiModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
 import { formatAgentDisplayName, formatContextWindow, formatModelLabel } from "@/lib/openclaw/presenters";
 import type {
@@ -69,7 +68,7 @@ export function AgentModelPickerDialog({
 }) {
   const isLight = surfaceTheme === "light";
   const agent = agentId ? snapshot.agents.find((entry) => entry.id === agentId) ?? null : null;
-  const currentModelId = agent?.modelId && agent.modelId !== "unassigned" ? normalizeOpenAiCodexModelId(agent.modelId) : "";
+  const currentModelId = agent?.modelId && agent.modelId !== "unassigned" ? normalizeOpenAiModelId(agent.modelId) : "";
   const [selectedModelId, setSelectedModelId] = useState(currentModelId);
   const [search, setSearch] = useState("");
   const [providerFilter, setProviderFilter] = useState("all");
@@ -108,7 +107,7 @@ export function AgentModelPickerDialog({
       runtime.agentId === agent?.id &&
       Boolean(runtime.sessionId) &&
       Boolean(runtime.modelId) &&
-      normalizeOpenAiCodexModelId(runtime.modelId ?? "") !== currentModelId
+      normalizeOpenAiModelId(runtime.modelId ?? "") !== currentModelId
   );
   const setupRequiredCount = modelOptions.filter((model) => !isSelectableModel(model)).length;
 
@@ -134,7 +133,7 @@ export function AgentModelPickerDialog({
         ? pendingModel.id
         : currentAgent.modelId === "unassigned"
           ? ""
-          : normalizeOpenAiCodexModelId(currentAgent.modelId)
+          : normalizeOpenAiModelId(currentAgent.modelId)
     );
     setSearch("");
     setProviderFilter("all");
@@ -287,7 +286,7 @@ export function AgentModelPickerDialog({
   };
 
   const handleOpenProviderSetup = (model: AgentModelRecord) => {
-    pendingSetupModelIdRef.current = normalizeOpenAiCodexModelId(model.id);
+    pendingSetupModelIdRef.current = normalizeOpenAiModelId(model.id);
     setSelectedModelId(model.id);
     const provider = resolvePickerModelProvider(model);
     onOpenAddModels(isAddModelsProviderId(provider) ? provider : null);
@@ -354,14 +353,14 @@ export function AgentModelPickerDialog({
         throw new Error(payload.error || "Unable to remove the model.");
       }
 
-      const removedModelId = normalizeOpenAiCodexModelId(deleteTargetModel.id);
+      const removedModelId = normalizeOpenAiModelId(deleteTargetModel.id);
       const nextSnapshot = removeSnapshotModel(payload.snapshot ?? snapshotRef.current, removedModelId);
 
       snapshotRef.current = nextSnapshot;
       onSnapshotChange?.(() => nextSnapshot);
       void refreshSharedCatalog(true);
       setSelectedModelId((currentSelected) =>
-        normalizeOpenAiCodexModelId(currentSelected) === removedModelId
+        normalizeOpenAiModelId(currentSelected) === removedModelId
           ? resolveFallbackSelectedModelId(nextSnapshot)
           : currentSelected
       );
@@ -491,7 +490,7 @@ export function AgentModelPickerDialog({
             <div className={cn("mt-2.5 rounded-[14px] border p-2.5", isLight ? "border-border bg-muted/35" : "border-white/10 bg-white/[0.035]")}>
               <div className="flex items-center gap-2.5">
                 <div className={cn("flex h-8 w-8 items-center justify-center rounded-[11px] border", isLight ? "border-primary/20 bg-primary/10 text-primary" : "border-violet-300/20 bg-violet-400/15 text-violet-100")}>
-                  <ProviderGlyph provider={currentModel ? resolvePickerModelProvider(currentModel) : "openai-codex"} />
+                  <ProviderGlyph provider={currentModel ? resolvePickerModelProvider(currentModel) : "openai"} />
                 </div>
                 <div className="min-w-0">
                   <p className={cn("text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Agent assignment</p>
@@ -909,7 +908,7 @@ function isSelectableModel(model: AgentModelRecord) {
 }
 
 function ProviderGlyph({ provider }: { provider: string }) {
-  if (provider === "openai-codex" || provider === "openai") {
+  if (provider === "openai") {
     return <Sparkles className="h-5 w-5" />;
   }
 
@@ -1030,7 +1029,7 @@ function NativeFilter({
 function getProviderIconTone(provider: string, surfaceTheme: "dark" | "light" = "dark") {
   const isLight = surfaceTheme === "light";
 
-  if (provider === "openai-codex" || provider === "openai") {
+  if (provider === "openai") {
     return isLight
       ? "border-primary/20 bg-primary/10 text-primary shadow-[0_16px_34px_rgba(124,58,237,0.10)]"
       : "border-violet-300/25 bg-violet-500/15 text-violet-100 shadow-[0_0_28px_rgba(124,58,237,0.16)]";
@@ -1091,16 +1090,6 @@ function resolveModelSetupHint(model: AgentModelRecord) {
 }
 
 function resolvePickerModelProvider(model: AgentModelRecord) {
-  const canonicalModelId = normalizeOpenAiCodexModelId(model.id);
-
-  if (
-    model.provider === "codex" ||
-    model.provider === "openai-codex" ||
-    isKnownOpenAiCodexModelId(canonicalModelId)
-  ) {
-    return "openai-codex";
-  }
-
   return model.provider;
 }
 
@@ -1109,7 +1098,7 @@ function updateSnapshotAgentModel(
   agentId: string,
   modelId: string
 ) {
-  const canonicalModelId = normalizeOpenAiCodexModelId(modelId);
+  const canonicalModelId = normalizeOpenAiModelId(modelId);
   const nextAgents = snapshot.agents.map((agent) =>
     agent.id === agentId
       ? {
@@ -1127,7 +1116,7 @@ function updateSnapshotAgentModel(
       continue;
     }
 
-    const canonicalAssignedModelId = normalizeOpenAiCodexModelId(assignedModelId);
+    const canonicalAssignedModelId = normalizeOpenAiModelId(assignedModelId);
     modelUsage.set(canonicalAssignedModelId, (modelUsage.get(canonicalAssignedModelId) ?? 0) + 1);
   }
 
@@ -1145,9 +1134,9 @@ function removeSnapshotModel(
   snapshot: MissionControlSnapshot,
   modelId: string
 ) {
-  const canonicalModelId = normalizeOpenAiCodexModelId(modelId);
+  const canonicalModelId = normalizeOpenAiModelId(modelId);
   const nextModels = dedupeSnapshotModels(snapshot.models).filter(
-    (model) => normalizeOpenAiCodexModelId(model.id) !== canonicalModelId
+    (model) => normalizeOpenAiModelId(model.id) !== canonicalModelId
   );
 
   return {
@@ -1166,16 +1155,16 @@ function findModelByCanonicalId(
   models: AgentModelRecord[],
   modelId: string
 ) {
-  const canonicalModelId = normalizeOpenAiCodexModelId(modelId);
+  const canonicalModelId = normalizeOpenAiModelId(modelId);
 
-  return models.find((entry) => normalizeOpenAiCodexModelId(entry.id) === canonicalModelId) ?? null;
+  return models.find((entry) => normalizeOpenAiModelId(entry.id) === canonicalModelId) ?? null;
 }
 
 function dedupeSnapshotModels(models: AgentModelRecord[]) {
   const recordsByIdentity = new Map<string, AgentModelRecord>();
 
   for (const model of models) {
-    const canonicalId = normalizeOpenAiCodexModelId(model.id);
+    const canonicalId = normalizeOpenAiModelId(model.id);
     const provider = resolvePickerModelProvider(model);
     const normalizedModel = canonicalId === model.id
       ? {
@@ -1256,10 +1245,6 @@ function scoreSnapshotModelRecord(model: AgentModelRecord) {
 
   if (!model.missing) {
     score += 50;
-  }
-
-  if (model.provider === "openai-codex") {
-    score += 10;
   }
 
   if (model.usageCount > 0) {

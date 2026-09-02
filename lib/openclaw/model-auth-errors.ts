@@ -1,15 +1,14 @@
-export function isOpenAiCodexAuthRefreshFailure(output: string) {
+export function isOpenAiAuthRefreshFailure(output: string) {
   const normalized = output.trim();
 
   return (
     /OAuth token refresh failed for openai/i.test(normalized) ||
-    /OAuth token refresh failed for openai-codex/i.test(normalized) ||
-    /OpenAI Codex token refresh failed\s*\(401\)/i.test(normalized) ||
+    /OpenAI (?:Codex )?token refresh failed\s*\(401\)/i.test(normalized) ||
     /refresh token has already been used to generate a new access token/i.test(normalized)
   );
 }
 
-export function isOpenAiCodexProviderPluginMissing(output: string) {
+export function isOpenAiProviderPluginMissing(output: string) {
   const normalized = output.trim();
 
   return (
@@ -19,48 +18,48 @@ export function isOpenAiCodexProviderPluginMissing(output: string) {
   );
 }
 
-export function isOpenAiCodexAuthRecoveryMessage(output: string) {
+export function isOpenAiAuthRecoveryMessage(output: string) {
   const normalized = output.trim();
 
   return (
-    /Your ChatGPT\/Codex session has expired/i.test(normalized) &&
-    /models auth login --provider (?:openai|openai-codex|codex)/i.test(normalized)
+    /Your ChatGPT session has expired/i.test(normalized) &&
+    /models auth login --provider openai/i.test(normalized)
   );
 }
 
-export function isOpenAiCodexAuthFailure(output: string) {
+export function isOpenAiAuthFailure(output: string) {
   return (
-    isOpenAiCodexAuthRefreshFailure(output) ||
-    isOpenAiCodexAuthRecoveryMessage(output) ||
-    isOpenAiCodexProviderPluginMissing(output)
+    isOpenAiAuthRefreshFailure(output) ||
+    isOpenAiAuthRecoveryMessage(output) ||
+    isOpenAiProviderPluginMissing(output)
   );
 }
 
-export function isOpenAiCodexDiscoveryTimeout(output: string) {
+export function isOpenAiDiscoveryTimeout(output: string) {
   return /OpenClaw command timed out after \d+ seconds|Command exceeded \d+ seconds/i.test(output);
 }
 
-export function resolveOpenAiCodexAuthRecoveryMessage(command: string) {
+export function resolveOpenAiAuthRecoveryMessage(command: string) {
   return [
-    "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification.",
+    "Your ChatGPT session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification.",
     `Run: ${command}`
   ].join(" ");
 }
 
-export function buildOpenAiCodexAuthLoginCommand(commandBin: string, options?: { force?: boolean }) {
+export function buildOpenAiAuthLoginCommand(commandBin: string, options?: { force?: boolean }) {
   const forceFlag = options?.force ? " --force" : "";
 
   return `${quoteShellArg(commandBin)} models auth login --provider openai${forceFlag} --set-default`;
 }
 
-export function buildOpenAiCodexAuthRepairCommand(commandBin: string, options?: { force?: boolean }) {
+export function buildOpenAiAuthRepairCommand(commandBin: string, options?: { force?: boolean }) {
   const command = quoteShellArg(commandBin);
   const forceFlag = options?.force ? " --force" : "";
 
-  return `${command} plugins install --force @openclaw/codex && ${command} doctor --fix && ${command} gateway restart && ${command} models auth login --provider openai${forceFlag} --set-default`;
+  return `${command} plugins install --force @openclaw/codex && ${command} gateway restart && ${command} models auth login --provider openai${forceFlag} --set-default`;
 }
 
-export function resolveOpenAiCodexAuthHandoff(
+export function resolveOpenAiAuthHandoff(
   commandBin: string,
   pluginReady: boolean,
   options?: {
@@ -68,34 +67,31 @@ export function resolveOpenAiCodexAuthHandoff(
     intent?: "setup" | "refresh" | "switch-account";
   }
 ) {
-  const actionLabel = resolveOpenAiCodexAuthActionLabel(options);
+  void commandBin;
+  const actionLabel = resolveOpenAiAuthActionLabel(options);
 
   if (pluginReady) {
-    const command = buildOpenAiCodexAuthLoginCommand(commandBin, options);
-
     return {
-      command,
-      statusMessage: "Preparing Codex app-server setup in terminal...",
+      command: null,
+      statusMessage: "Opening ChatGPT authorization in your browser...",
       continueMessage:
-        `Continue in terminal to ${actionLabel}. After auth completes, return here and refresh setup.`,
+        `Complete the OpenClaw ChatGPT authorization page in your browser. AgentOS will verify the ${actionLabel} automatically.`,
       verificationMessage:
-        `The model was saved. Continue in terminal to ${actionLabel} and finish setup.`
+        `OpenClaw finished the ChatGPT authorization flow. AgentOS will verify ${actionLabel} before continuing.`
     };
   }
 
-  const command = buildOpenAiCodexAuthRepairCommand(commandBin, options);
-
   return {
-    command,
-    statusMessage: "Preparing Codex plugin setup in terminal...",
+    command: null,
+    statusMessage: "Installing the OpenClaw Codex runtime and opening ChatGPT authorization...",
     continueMessage:
-      `Continue in terminal to install the Codex provider plugin, then ${actionLabel}.`,
+      `OpenClaw is installing @openclaw/codex and will open ChatGPT authorization in your browser for ${actionLabel}.`,
     verificationMessage:
-      `The model was saved. Install the Codex provider plugin, then ${actionLabel}.`
+      `OpenClaw installed @openclaw/codex. Complete ChatGPT authorization in your browser, then AgentOS will verify ${actionLabel}.`
     };
 }
 
-function resolveOpenAiCodexAuthActionLabel(options?: {
+function resolveOpenAiAuthActionLabel(options?: {
   force?: boolean;
   intent?: "setup" | "refresh" | "switch-account";
 }) {
@@ -110,10 +106,10 @@ function resolveOpenAiCodexAuthActionLabel(options?: {
   return "finish the Codex app-server setup";
 }
 
-export function resolveOpenAiCodexProviderPluginRecoveryMessage(command: string) {
+export function resolveOpenAiProviderPluginRecoveryMessage(command: string) {
   return [
-    "OpenClaw needs the Codex provider plugin installed and enabled before auth login can continue.",
-    "Install the plugin, refresh the registry, restart the gateway, then retry.",
+    "OpenClaw needs @openclaw/codex installed and enabled before ChatGPT authorization can continue.",
+    "Install the plugin through OpenClaw, restart the Gateway, then retry ChatGPT authorization.",
     `Run: ${command}`
   ].join(" ");
 }

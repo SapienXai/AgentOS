@@ -517,7 +517,7 @@ function groupModelsByProvider(models: ModelRecord[]) {
 }
 
 function normalizeModelProviderKey(value: string) {
-  return value.trim().toLowerCase().split("/")[0].replace(/^openai-codex$/, "openai");
+  return value.trim().toLowerCase().split("/")[0];
 }
 
 function readAccountError(accounts: SurfaceAccountRecord[]) {

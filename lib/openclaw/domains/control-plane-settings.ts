@@ -9,9 +9,9 @@ import type {
 } from "@/lib/agentos/contracts";
 import type { RuntimeIssueState } from "@/lib/openclaw/runtime-issues";
 import {
-  buildOpenAiCodexAuthLoginCommand,
-  isOpenAiCodexAuthFailure,
-  resolveOpenAiCodexAuthRecoveryMessage
+  buildOpenAiAuthLoginCommand,
+  isOpenAiAuthFailure,
+  resolveOpenAiAuthRecoveryMessage
 } from "@/lib/openclaw/model-auth-errors";
 
 const missionControlRootPath = path.join(/*turbopackIgnore: true*/ process.cwd(), ".mission-control");
@@ -500,12 +500,12 @@ export async function persistOpenClawCompatibilitySmokeTest(result: OpenClawComp
   });
 }
 
-export async function clearOpenAiCodexAuthRuntimeSmokeFailures() {
+export async function clearOpenAiAuthRuntimeSmokeFailures() {
   const settings = await readMissionControlSettings();
   const smokeTests = settings.runtimePreflight?.smokeTests ?? {};
   const nextSmokeTests = Object.fromEntries(
     Object.entries(smokeTests).filter(([, entry]) => {
-      return !(entry.status === "failed" && isOpenAiCodexAuthFailure(entry.error ?? ""));
+      return !(entry.status === "failed" && isOpenAiAuthFailure(entry.error ?? ""));
     })
   );
 
@@ -527,11 +527,11 @@ export async function clearOpenAiCodexAuthRuntimeSmokeFailures() {
   return true;
 }
 
-export function getLatestOpenAiCodexAuthRuntimeSmokeFailure(settings: MissionControlSettings) {
+export function getLatestOpenAiAuthRuntimeSmokeFailure(settings: MissionControlSettings) {
   const latest = listRuntimeSmokeTestEntries(settings).find(([, entry]) => {
     return (
       entry.status === "failed" &&
-      isOpenAiCodexAuthFailure(entry.error ?? "") &&
+      isOpenAiAuthFailure(entry.error ?? "") &&
       !isStaleProviderAuthSmokeTestFailure(entry)
     );
   });
@@ -722,13 +722,13 @@ function normalizeRuntimeSmokeTestError(error: string | null) {
     return null;
   }
 
-  return isOpenAiCodexAuthFailure(error)
-    ? resolveOpenAiCodexAuthRecoveryMessage(buildOpenAiCodexAuthLoginCommand("openclaw"))
+  return isOpenAiAuthFailure(error)
+    ? resolveOpenAiAuthRecoveryMessage(buildOpenAiAuthLoginCommand("openclaw"))
     : error;
 }
 
 function isStaleProviderAuthSmokeTestFailure(entry: RuntimeSmokeTestCacheEntry) {
-  if (entry.status !== "failed" || !isOpenAiCodexAuthFailure(entry.error ?? "")) {
+  if (entry.status !== "failed" || !isOpenAiAuthFailure(entry.error ?? "")) {
     return false;
   }
 

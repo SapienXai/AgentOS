@@ -15,6 +15,7 @@ import {
   resolveConfiguredGatewaySecretFromLocalConfig,
   resolveGatewayAuth
 } from "@/lib/openclaw/client/native-ws-gateway-auth";
+import { normalizeModelStatusPayload } from "@/lib/openclaw/client/native-ws-gateway-payloads";
 import { parseConfigPath } from "@/lib/openclaw/client/native-ws-gateway-utils";
 import type {
   ModelsStatusPayload,
@@ -22,6 +23,7 @@ import type {
   OpenClawCommandOptions,
   OpenClawGatewayClient
 } from "@/lib/openclaw/client/gateway-client";
+import { buildModelStatusConnectionStatus } from "@/lib/openclaw/domains/model-provider-connection";
 import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-normalization";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import type { OpenClawNativeAuthorizationProof } from "@/lib/openclaw/identity/types";
@@ -54,6 +56,82 @@ test("config paths preserve quoted model IDs as one segment", () => {
     parseConfigPath('agents.defaults.models["ollama/qwen3.5:9b"]'),
     ["agents", "defaults", "models", "ollama/qwen3.5:9b"]
   );
+});
+
+test("native model auth normalization keeps OpenAI API keys separate from ChatGPT OAuth", () => {
+  const status = normalizeModelStatusPayload(
+    {
+      providers: [{
+        provider: "openai",
+        status: "ok",
+        profiles: [{ profileId: "openai-api-key", type: "api-key", status: "ok" }]
+      }]
+    },
+    {
+      models: [{ id: "gpt-5.5", provider: "openai", name: "gpt-5.5" }]
+    }
+  );
+
+  assert.deepEqual(status.auth?.providers?.[0]?.profiles, {
+    count: 1,
+    oauth: 0,
+    token: 0,
+    apiKey: 1
+  });
+  assert.equal(status.auth?.providers?.[0]?.effective?.kind, "api-key");
+  assert.notEqual(status.auth?.oauth?.providers?.[0]?.status, "ok");
+
+  const connection = buildModelStatusConnectionStatus("openai", status, ["openai/gpt-5.5"]);
+  assert.equal(connection?.connected, true);
+  assert.equal(connection?.authMethod, "api-key");
+});
+
+test("native model auth normalization recognizes only canonical OpenAI OAuth profiles", () => {
+  const status = normalizeModelStatusPayload(
+    {
+      providers: [{
+        provider: "openai",
+        status: "ok",
+        profiles: [{ profileId: "openai:user@example.com", type: "oauth", status: "ok" }]
+      }]
+    },
+    {
+      models: [{ id: "gpt-5.5", provider: "openai", name: "gpt-5.5" }]
+    }
+  );
+
+  assert.equal(status.auth?.providers?.[0]?.effective?.kind, "ok");
+  assert.equal(status.auth?.oauth?.providers?.[0]?.status, "ok");
+  assert.deepEqual(status.auth?.oauth?.providers?.[0]?.profiles, [
+    { profileId: "openai:user@example.com", type: "oauth", status: "ok" }
+  ]);
+
+  const connection = buildModelStatusConnectionStatus("openai", status, ["openai/gpt-5.5"]);
+  assert.equal(connection?.connected, true);
+  assert.equal(connection?.authMethod, "chatgpt-oauth");
+});
+
+test("native model auth normalization does not promote a legacy OpenAI OAuth namespace", () => {
+  const status = normalizeModelStatusPayload(
+    {
+      providers: [{
+        provider: "openai",
+        status: "ok",
+        profiles: [{ profileId: "openai-codex:user@example.com", type: "oauth", status: "ok" }]
+      }]
+    },
+    {
+      models: [{ id: "gpt-5.5", provider: "openai", name: "gpt-5.5" }]
+    }
+  );
+
+  assert.equal(status.auth?.providers?.[0]?.profiles?.count, 0);
+  assert.equal(status.auth?.providers?.[0]?.effective?.kind, "unusable");
+  assert.notEqual(status.auth?.oauth?.providers?.[0]?.status, "ok");
+
+  const connection = buildModelStatusConnectionStatus("openai", status, ["openai/gpt-5.5"]);
+  assert.equal(connection?.connected, false);
+  assert.equal(connection?.authMethod, null);
 });
 
 class FallbackGatewayClient implements OpenClawGatewayClient {
@@ -1326,19 +1404,19 @@ test("native WS gateway client treats mixed model auth profiles as connected whe
           : frame.method === "models.authStatus"
             ? {
                 providers: [{
-                  provider: "openai-codex",
+                  provider: "openai",
                   status: "expired",
                   profiles: [
-                    { profileId: "openai-codex:default", status: "expired" },
-                    { profileId: "openai-codex:user@example.com", status: "ok" },
-                    { profileId: "openai-codex:old@example.com", status: "missing" }
+                    { profileId: "openai:default", status: "expired" },
+                    { profileId: "openai:user@example.com", status: "ok" },
+                    { profileId: "openai:old@example.com", status: "missing" }
                   ]
                 }]
               }
             : {
                 models: [{
                   id: "gpt-5.5",
-                  provider: "openai-codex",
+                  provider: "openai",
                   name: "gpt-5.5"
                 }]
               };
@@ -1359,7 +1437,7 @@ test("native WS gateway client treats mixed model auth profiles as connected whe
 
   const status = await client.getModelStatus();
 
-  assert.deepEqual(status.allowed, ["openai-codex/gpt-5.5"]);
+  assert.deepEqual(status.allowed, ["openai/gpt-5.5"]);
   assert.equal(status.auth?.providers?.[0]?.effective?.kind, "ok");
   assert.equal(status.auth?.providers?.[0]?.profiles?.count, 1);
   assert.equal(status.auth?.oauth?.providers?.[0]?.status, "ok");
@@ -1380,9 +1458,9 @@ test("native WS gateway client derives default model from configured model tags"
           : frame.method === "models.authStatus"
             ? {
                 providers: [{
-                  provider: "openai-codex",
+                  provider: "openai",
                   status: "ok",
-                  profiles: [{ profileId: "openai-codex:user@example.com", status: "ok" }]
+                  profiles: [{ profileId: "openai:user@example.com", status: "ok" }]
                 }]
               }
             : {
@@ -1476,7 +1554,7 @@ test("native WS gateway client preserves Codex runtime auth routes for readiness
   assert.equal(readiness.ready, true);
   assert.equal(readiness.defaultModelReady, true);
   assert.equal(
-    readiness.authProviders.find((provider) => provider.provider === "openai-codex")?.connected,
+    readiness.authProviders.find((provider) => provider.provider === "openai")?.connected,
     true
   );
   assert.deepEqual(fallback.calls, []);
@@ -1596,16 +1674,16 @@ test("native WS gateway client reads agent model status through Gateway methods"
             ? {
                 agentDir: "/tmp/agent-1",
                 providers: [{
-                  provider: "openai-codex",
+                  provider: "openai",
                   status: "expired",
-                  profiles: [{ profileId: "openai-codex:user@example.com", status: "ok" }],
-                  effectiveProfiles: [{ profileId: "openai-codex:user@example.com" }]
+                  profiles: [{ profileId: "openai:user@example.com", status: "ok" }],
+                  effectiveProfiles: [{ profileId: "openai:user@example.com" }]
                 }]
               }
             : {
                 models: [{
                   id: "gpt-5.5",
-                  provider: "openai-codex",
+                  provider: "openai",
                   name: "gpt-5.5"
                 }]
               };
@@ -1627,13 +1705,13 @@ test("native WS gateway client reads agent model status through Gateway methods"
   const status = await client.getAgentModelStatus({ agentId: "agent-1" });
 
   assert.equal(status.agentDir, "/tmp/agent-1");
-  assert.deepEqual(status.allowed, ["openai-codex/gpt-5.5"]);
+  assert.deepEqual(status.allowed, ["openai/gpt-5.5"]);
   assert.equal(status.auth?.oauth?.providers?.[0]?.status, "ok");
   assert.deepEqual(status.auth?.oauth?.providers?.[0]?.profiles, [
-    { profileId: "openai-codex:user@example.com", status: "ok" }
+    { profileId: "openai:user@example.com", status: "ok" }
   ]);
   assert.deepEqual(status.auth?.oauth?.providers?.[0]?.effectiveProfiles, [
-    { profileId: "openai-codex:user@example.com" }
+    { profileId: "openai:user@example.com" }
   ]);
   assert.deepEqual(
     sentFrames.map((frame) => [frame.method, frame.params]).filter(([method]) => method !== "connect"),
@@ -1665,7 +1743,7 @@ test("native WS gateway client sets model auth order through Gateway before CLI 
   });
 
   const result = await client.setModelAuthOrder({
-    provider: "openai-codex",
+    provider: "openai",
     agentId: "agent-1",
     profileIds: ["profile-1"]
   });
@@ -1675,7 +1753,7 @@ test("native WS gateway client sets model auth order through Gateway before CLI 
     sentFrames.map((frame) => [frame.method, frame.params]).filter(([method]) => method !== "connect"),
     [
       ["models.authOrder.set", {
-        provider: "openai-codex",
+        provider: "openai",
         agentId: "agent-1",
         profileIds: ["profile-1"]
       }]
@@ -1706,7 +1784,7 @@ test("native WS gateway client uses model auth order compatibility aliases befor
   });
 
   await client.setModelAuthOrder({
-    provider: "openai-codex",
+    provider: "openai",
     agentId: "agent-1",
     profileIds: ["profile-1"]
   });

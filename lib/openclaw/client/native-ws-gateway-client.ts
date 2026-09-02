@@ -76,7 +76,6 @@ import {
   resolveNativeTimeoutMs,
   shouldUseCliFallback
 } from "@/lib/openclaw/client/native-ws-gateway-policy";
-import { isKnownOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
 import {
   CONNECT_METHOD,
   OPENCLAW_GATEWAY_PROTOCOL_RANGE,
@@ -94,6 +93,7 @@ import {
   setConfigPathValue,
   unsetConfigPathValue
 } from "@/lib/openclaw/client/native-ws-gateway-utils";
+import { isUnsupportedLegacyProviderId } from "@/lib/openclaw/model-provider-registry";
 import type { CommandResult } from "@/lib/openclaw/cli";
 import type {
   GatewayStatusPayload,
@@ -221,9 +221,9 @@ export function clearOpenClawGatewayFallbackDiagnosticsForTesting() {
 
 function shouldRecoverPartialModelAuthStatusWithCli(status: ModelsStatusPayload) {
   const allowed = status.allowed ?? [];
-  const hasOpenAiCodexRoute = allowed.some((modelId) => isKnownOpenAiCodexModelId(modelId));
+  const hasOpenAiRoute = allowed.some((modelId) => /^openai\//i.test(modelId));
 
-  if (!hasOpenAiCodexRoute) {
+  if (!hasOpenAiRoute) {
     return false;
   }
 
@@ -237,27 +237,24 @@ function shouldRecoverPartialModelAuthStatusWithCli(status: ModelsStatusPayload)
       .map((entry) => entry.provider?.trim())
       .filter((provider): provider is string => Boolean(provider))
   );
-  const hasOpenAiCodexAuthRoute = (status.auth?.runtimeAuthRoutes ?? []).some((entry) => {
+  const hasOpenAiAuthRoute = (status.auth?.runtimeAuthRoutes ?? []).some((entry) => {
     const provider = entry.provider?.trim().toLowerCase();
     const runtime = entry.runtime?.trim().toLowerCase();
     const authProvider = entry.authProvider?.trim().toLowerCase();
-    const routeProvider = provider === "openai" || provider === "codex" || provider === "openai-codex";
-    const codexRuntime = runtime === "codex" || runtime === "openai-codex" || runtime === "app-server" || runtime === "codex-app-server";
-    const openAiAuth = !authProvider || authProvider === "openai" || authProvider === "codex" || authProvider === "openai-codex";
+    const routeProvider = provider === "openai";
+    const codexRuntime = runtime === "codex";
+    const openAiAuth = authProvider === "openai";
 
     return routeProvider && codexRuntime && openAiAuth;
   });
 
-  if (hasOpenAiCodexAuthRoute) {
+  if (hasOpenAiAuthRoute) {
     return false;
   }
 
-  return !authProviders.has("openai") &&
-    !authProviders.has("codex") &&
-    !authProviders.has("openai-codex") &&
-    !oauthProviders.has("openai") &&
-    !oauthProviders.has("codex") &&
-    !oauthProviders.has("openai-codex");
+  const hasLegacyAuthIdentity = [...authProviders, ...oauthProviders].some(isUnsupportedLegacyProviderId);
+
+  return !hasLegacyAuthIdentity && !authProviders.has("openai") && !oauthProviders.has("openai");
 }
 
 export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {

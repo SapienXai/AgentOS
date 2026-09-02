@@ -371,10 +371,10 @@ test("initial onboarding model uses a ready default without forcing discovery", 
       modelReadiness: {
         resolvedDefaultModel: null,
         defaultModel: null,
-        recommendedModelId: "openai-codex/gpt-5.4",
+        recommendedModelId: "openai/gpt-5.4",
         authProviders: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             connected: false,
             canLogin: true
           }
@@ -386,13 +386,13 @@ test("initial onboarding model uses a ready default without forcing discovery", 
     workspaces: [],
     diagnostics: {
       modelReadiness: {
-        resolvedDefaultModel: "openai-codex/gpt-5.4",
-        defaultModel: "openai-codex/gpt-5.4",
+        resolvedDefaultModel: "openai/gpt-5.4",
+        defaultModel: "openai/gpt-5.4",
         defaultModelReady: false,
-        recommendedModelId: "openai-codex/gpt-5.4",
+        recommendedModelId: "openai/gpt-5.4",
         authProviders: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             connected: false,
             canLogin: true
           }
@@ -406,10 +406,10 @@ test("initial onboarding model uses a ready default without forcing discovery", 
       modelReadiness: {
         resolvedDefaultModel: null,
         defaultModel: null,
-        recommendedModelId: "openai-codex/gpt-5.4",
+        recommendedModelId: "openai/gpt-5.4",
         authProviders: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             connected: true,
             canLogin: true
           }
@@ -421,13 +421,13 @@ test("initial onboarding model uses a ready default without forcing discovery", 
     workspaces: [],
     diagnostics: {
       modelReadiness: {
-        resolvedDefaultModel: "openai-codex/gpt-5.4",
-        defaultModel: "openai-codex/gpt-5.4",
+        resolvedDefaultModel: "openai/gpt-5.4",
+        defaultModel: "openai/gpt-5.4",
         defaultModelReady: true,
-        recommendedModelId: "openai-codex/gpt-5.4",
+        recommendedModelId: "openai/gpt-5.4",
         authProviders: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             connected: true,
             canLogin: true
           }
@@ -443,13 +443,13 @@ test("initial onboarding model uses a ready default without forcing discovery", 
     ],
     diagnostics: {
       modelReadiness: {
-        resolvedDefaultModel: "openai-codex/gpt-5.4",
-        defaultModel: "openai-codex/gpt-5.4",
+        resolvedDefaultModel: "openai/gpt-5.4",
+        defaultModel: "openai/gpt-5.4",
         defaultModelReady: true,
-        recommendedModelId: "openai-codex/gpt-5.4",
+        recommendedModelId: "openai/gpt-5.4",
         authProviders: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             connected: true,
             canLogin: true
           }
@@ -461,8 +461,8 @@ test("initial onboarding model uses a ready default without forcing discovery", 
   assert.equal(resolveInitialOnboardingModelId(blankSnapshot), null);
   assert.equal(resolveInitialOnboardingModelId(staleDefaultSnapshot), null);
   assert.equal(resolveInitialOnboardingModelId(connectedSnapshot), null);
-  assert.equal(resolveInitialOnboardingModelId(readyDefaultSnapshot), "openai-codex/gpt-5.4");
-  assert.equal(resolveInitialOnboardingModelId(workspaceSnapshot), "openai-codex/gpt-5.4");
+  assert.equal(resolveInitialOnboardingModelId(readyDefaultSnapshot), "openai/gpt-5.4");
+  assert.equal(resolveInitialOnboardingModelId(workspaceSnapshot), "openai/gpt-5.4");
 });
 
 test("onboarding launchpad requires confirmed setup or a workspace-backed model", () => {

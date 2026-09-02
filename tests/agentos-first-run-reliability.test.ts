@@ -190,7 +190,7 @@ test("workspace-backed agent models keep first-run actions usable when the globa
     {
       id: "openai/gpt-5.4-mini",
       name: "GPT 5.4 Mini",
-      provider: "openai-codex",
+      provider: "openai",
       input: "remote",
       contextWindow: null,
       local: false,

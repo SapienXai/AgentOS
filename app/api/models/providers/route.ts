@@ -13,20 +13,18 @@ import {
   scanOpenClawModels
 } from "@/lib/openclaw/application/catalog-service";
 import {
-  isOpenAiCodexAuthRefreshFailure,
-  isOpenAiCodexProviderPluginMissing,
-  isOpenAiCodexDiscoveryTimeout
+  isOpenAiAuthRefreshFailure,
+  isOpenAiProviderPluginMissing
 } from "@/lib/openclaw/model-auth-errors";
 import { connectOpenClawChatGptProvider } from "@/lib/openclaw/application/chatgpt-provider-auth-service";
 import {
-  clearOpenAiCodexAuthRuntimeSmokeFailures,
-  getLatestOpenAiCodexAuthRuntimeSmokeFailure,
+  clearOpenAiAuthRuntimeSmokeFailures,
+  getLatestOpenAiAuthRuntimeSmokeFailure,
   readMissionControlSettings
 } from "@/lib/openclaw/domains/control-plane-settings";
 import {
   buildModelStatusConnectionStatus,
-  isKnownOpenAiCodexModelId,
-  normalizeOpenAiCodexModelId
+  normalizeOpenAiModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
 import { mergeOllamaCatalogModels } from "@/lib/openclaw/domains/model-provider-catalog";
 import { clearMissionControlCaches, getMissionControlSnapshot } from "@/lib/agentos/control-plane";
@@ -90,7 +88,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const addModelsDocsUrl = "https://docs.openclaw.ai/cli/models";
-const codexDiscoveryTimeoutMs = 15_000;
+const openAiDiscoveryTimeoutMs = 15_000;
 const explicitProviderDiscoveryTimeoutMs = 8_000;
 const explicitProviderIdSchema = z.string().trim().min(2).max(63).refine(
   (value) => isAddModelsProviderId(value),
@@ -118,6 +116,7 @@ const requestSchema = z.discriminatedUnion("action", [
     apiKey: optionalInputString,
     endpoint: optionalInputString,
     modelId: optionalInputString,
+    authMethod: z.enum(["api-key", "chatgpt-oauth"]).optional(),
     force: z.boolean().optional()
   }),
   z.object({
@@ -219,13 +218,6 @@ class ProviderAuthActionError extends Error {
   ) {
     super(message);
     this.name = "ProviderAuthActionError";
-  }
-}
-
-class ProviderCatalogFallbackError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ProviderCatalogFallbackError";
   }
 }
 
@@ -531,15 +523,18 @@ async function handleProviderAction(
       return discoverProviderModels(input.provider);
     }
 
-    if (input.provider === "openai-codex") {
+    if (input.provider === "openai" && input.authMethod === "chatgpt-oauth") {
       const statusContext = await readProviderConnectionContext(input.provider);
 
-      if (statusContext.connection.connected) {
+      if (
+        statusContext.connection.connected &&
+        statusContext.connection.authMethod === "chatgpt-oauth"
+      ) {
         return buildActionResult({
           ok: true,
           action: input.action,
           provider: input.provider,
-          message: "Codex app-server is already connected. Discover models to refresh the catalog.",
+          message: "ChatGPT is already connected through OpenClaw. Discover models to refresh the catalog.",
           connection: statusContext.connection,
           models: [],
           manualCommand: null,
@@ -565,7 +560,7 @@ async function handleProviderAction(
           action: input.action,
           provider: input.provider,
           message: refreshedStatus.connection.connected
-            ? `${authResult.pluginInstalled ? "Installed the Codex plugin and connected" : "Connected"} ChatGPT through OpenClaw. Found ${models.length} available model${models.length === 1 ? "" : "s"}.`
+            ? `${authResult.pluginInstalled ? "Installed @openclaw/codex and connected" : "Connected"} ChatGPT through OpenClaw. Found ${models.length} available model${models.length === 1 ? "" : "s"}.`
             : "OpenClaw finished ChatGPT sign-in but did not report a usable account yet. Try connecting again.",
           connection: {
             ...refreshedStatus.connection,
@@ -693,7 +688,7 @@ async function handleProviderAction(
   if (input.action === "switch-account") {
     const statusContext = await readProviderConnectionContext(input.provider);
 
-    if (input.provider !== "openai-codex") {
+    if (input.provider !== "openai") {
       return buildActionResult({
         ok: false,
         action: input.action,
@@ -701,6 +696,19 @@ async function handleProviderAction(
         message: `${getModelProviderDescriptor(input.provider).shortLabel} account switching is not available in OpenClaw yet.`,
         connection: statusContext.connection,
         models: [],
+        docsUrl: addModelsDocsUrl
+      });
+    }
+
+    if (statusContext.connection.authMethod !== "chatgpt-oauth") {
+      return buildActionResult({
+        ok: false,
+        action: input.action,
+        provider: input.provider,
+        message: "Switch account is available only for an existing ChatGPT OAuth connection.",
+        connection: statusContext.connection,
+        models: [],
+        manualCommand: null,
         docsUrl: addModelsDocsUrl
       });
     }
@@ -798,9 +806,6 @@ async function handleProviderAction(
     });
   }
 
-  if (input.provider === "openai-codex" && await clearOpenAiCodexAuthRuntimeSmokeFailures()) {
-    clearModelProviderCaches();
-  }
   clearModelCatalogCache();
   const refreshedSnapshot = await getMissionControlSnapshot({ force: true });
   const statusContext = await readProviderConnectionContext(input.provider);
@@ -1031,9 +1036,6 @@ async function setProviderDefaultModel(
     });
   }
 
-  if (provider === "openai-codex" && await clearOpenAiCodexAuthRuntimeSmokeFailures()) {
-    clearModelProviderCaches();
-  }
   clearModelCatalogCache();
   const refreshedSnapshot = await getMissionControlSnapshot({ force: true });
   const statusContext = await readProviderConnectionContext(provider);
@@ -1113,8 +1115,6 @@ async function discoverProviderModels(
   const { connection, ollamaState, configuredModelIds } = await readProviderConnectionContext(provider);
   const isCustomOpenAiEndpoint = provider === "openai" && isCustomOpenAiEndpointConnection(connection);
   let models: AddModelsCatalogModel[];
-  let fallbackMessage: string | null = null;
-
   try {
     models = await readProviderCatalog(provider, configuredModelIds, {
       preferScan: isCustomOpenAiEndpoint
@@ -1123,12 +1123,7 @@ async function discoverProviderModels(
       models = models.filter((model) => !model.alreadyAdded);
     }
   } catch (error) {
-    if (provider === "openai-codex" && (error instanceof ProviderAuthActionError || error instanceof ProviderCatalogFallbackError)) {
-      fallbackMessage = error instanceof ProviderAuthActionError
-        ? "OpenClaw still reported a Codex auth issue, so AgentOS is showing known Codex routes. Runtime verification will re-check ChatGPT auth."
-        : error.message;
-      models = buildFallbackCodexCatalog(configuredModelIds);
-    } else if (error instanceof ProviderAuthActionError) {
+    if (error instanceof ProviderAuthActionError) {
       return buildActionResult({
         ok: false,
         action: "discover",
@@ -1137,7 +1132,7 @@ async function discoverProviderModels(
         connection: {
           ...connection,
           connected: false,
-          detail: "Reconnect ChatGPT to refresh the OpenAI Codex OAuth session."
+          detail: "Reconnect ChatGPT to refresh the OpenAI OAuth session."
         },
         models: [],
         emptyState: {
@@ -1152,20 +1147,13 @@ async function discoverProviderModels(
 
     throw error;
   }
-  const snapshot = provider === "openai-codex"
-    ? await getMissionControlSnapshot({ force: true, loadProfile: "system" }).catch(() => undefined)
-    : undefined;
-
   return buildActionResult({
     ok: true,
     action: "discover",
     provider,
-    message: fallbackMessage ??
-      (provider === "openai-codex"
-        ? `Showing ${models.length} ChatGPT/Codex model route${models.length === 1 ? "" : "s"}. Runtime verification will re-check ChatGPT auth.`
-        : models.length
-          ? `Found ${models.length} model${models.length === 1 ? "" : "s"}.`
-          : "No models were returned for this provider."),
+    message: models.length
+      ? `Found ${models.length} model${models.length === 1 ? "" : "s"}.`
+      : "No models were returned for this provider.",
     connection,
     models,
     emptyState:
@@ -1178,7 +1166,6 @@ async function discoverProviderModels(
               description: "This provider connected, but no selectable models were returned yet."
             }
         : null,
-    snapshot,
     docsUrl: addModelsDocsUrl
   });
 }
@@ -1188,22 +1175,6 @@ async function readProviderCatalog(
   configuredModelIds: Set<string>,
   options: { preferScan?: boolean } = {}
 ): Promise<AddModelsCatalogModel[]> {
-  if (provider === "openai-codex") {
-    try {
-      const providerPayload = await readProviderModelPayload(provider, { all: true, provider: "openai" });
-      const providerModels = normalizeCatalogModels(provider, providerPayload.models, configuredModelIds)
-        .filter((model) => isKnownOpenAiCodexModelId(model.id) || model.tags.some(isCodexModelTag));
-
-      if (providerModels.length > 0) {
-        return providerModels;
-      }
-    } catch {
-      // Fall through to known canonical Codex routes below.
-    }
-
-    return buildFallbackCodexCatalog(configuredModelIds);
-  }
-
   if (options.preferScan) {
     const scanPayload = await scanProviderModels(provider);
     const scanModels = normalizeScanModels(provider, scanPayload, configuredModelIds);
@@ -1411,7 +1382,7 @@ async function readProviderModelPayload(
 ) {
   try {
     return await listOpenClawModels(input, {
-      timeoutMs: provider === "openai-codex" ? codexDiscoveryTimeoutMs : undefined
+      timeoutMs: provider === "openai" ? openAiDiscoveryTimeoutMs : undefined
     });
   } catch (error) {
     throw normalizeProviderCatalogError(provider, error);
@@ -1424,7 +1395,7 @@ async function scanProviderModels(provider: AddModelsProviderId) {
       yes: true,
       noInput: true,
       noProbe: true,
-      timeoutMs: provider === "openai-codex" ? codexDiscoveryTimeoutMs : undefined
+      timeoutMs: provider === "openai" ? openAiDiscoveryTimeoutMs : undefined
     });
   } catch (error) {
     throw normalizeProviderCatalogError(provider, error);
@@ -1435,26 +1406,20 @@ function normalizeProviderCatalogError(provider: AddModelsProviderId, error: unk
   const message = stringifyProviderError(error);
 
   if (
-    provider === "openai-codex" &&
-    isOpenAiCodexProviderPluginMissing(message)
+    provider === "openai" &&
+    isOpenAiProviderPluginMissing(message)
   ) {
     return new ProviderAuthActionError(
-      "OpenClaw needs the Codex provider plugin before model discovery can continue. Use Connect ChatGPT in AgentOS to install it and start authorization."
+      "OpenClaw needs the @openclaw/codex plugin before ChatGPT authorization can continue. Use Connect ChatGPT in AgentOS to install it and start authorization."
     );
   }
 
   if (
-    provider === "openai-codex" &&
-    isOpenAiCodexAuthRefreshFailure(message)
+    provider === "openai" &&
+    isOpenAiAuthRefreshFailure(message)
   ) {
     return new ProviderAuthActionError(
       "Your ChatGPT session needs authorization. Use Connect ChatGPT in AgentOS to reopen OpenClaw's sign-in page."
-    );
-  }
-
-  if (provider === "openai-codex" && isOpenAiCodexDiscoveryTimeout(message)) {
-    return new ProviderCatalogFallbackError(
-      "OpenClaw Codex model discovery timed out, so AgentOS is showing known Codex routes without extending the timeout."
     );
   }
 
@@ -1511,37 +1476,6 @@ function normalizeCatalogModels(
     supportsTools: model.input.includes("text"),
     isFree: /:free$/i.test(model.key) || /\(free\)/i.test(model.name),
     tags: Array.isArray(model.tags) ? model.tags : []
-  }));
-}
-
-function buildFallbackCodexCatalog(configuredModelIds: Set<string>): AddModelsCatalogModel[] {
-  return [
-    {
-      id: "openai/gpt-5.5",
-      name: "GPT-5.5",
-      contextWindow: 272000,
-      recommended: true
-    },
-    {
-      id: "openai/gpt-5.4-mini",
-      name: "GPT-5.4 Mini",
-      contextWindow: 272000,
-      recommended: true
-    }
-  ].map((model) => ({
-    id: model.id,
-    name: model.name,
-    provider: "openai-codex",
-    input: "text+tools",
-    contextWindow: model.contextWindow,
-    local: false,
-    available: true,
-    missing: false,
-    alreadyAdded: configuredModelIds.has(model.id),
-    recommended: model.recommended,
-    supportsTools: true,
-    isFree: false,
-    tags: ["known-route"]
   }));
 }
 
@@ -1790,13 +1724,19 @@ async function resolveProviderConnectionStatus(
     ? buildCustomOpenAiEndpointConnectionStatus(openAiGatewayConfig, configuredModelIds)
     : null;
 
-  if (customOpenAiConnection) {
+  if (modelStatusConnection?.connected) {
+    return modelStatusConnection;
+  }
+
+  if (customOpenAiConnection?.connected) {
     return customOpenAiConnection;
   }
 
   const credentialConfigured = await readOpenClawProviderCredentialConfigured(provider);
 
   if (credentialConfigured) {
+    const authMethods = getModelProviderDescriptor(provider).authMethods;
+
     return {
       provider,
       connected: true,
@@ -1804,6 +1744,8 @@ async function resolveProviderConnectionStatus(
       canConnect: true,
       needsTerminal: false,
       source: "openclaw-config" as const,
+      authMethod: "api-key" as const,
+      availableAuthMethods: authMethods ? [...authMethods] : undefined,
       degraded: false,
       stale: false,
       recovery: null,
@@ -1811,19 +1753,19 @@ async function resolveProviderConnectionStatus(
     };
   }
 
-  return modelStatusConnection ?? fileBasedStatus;
+  return modelStatusConnection ?? customOpenAiConnection ?? fileBasedStatus;
 }
 
 async function applyProviderRuntimeFailure(
   provider: AddModelsProviderId,
   connection: AddModelsProviderConnectionStatus
 ) {
-  if (provider !== "openai-codex") {
+  if (provider !== "openai") {
     return connection;
   }
 
   if (connection.connected) {
-    if (await clearOpenAiCodexAuthRuntimeSmokeFailures()) {
+    if (await clearOpenAiAuthRuntimeSmokeFailures()) {
       clearModelProviderCaches();
     }
 
@@ -1831,7 +1773,7 @@ async function applyProviderRuntimeFailure(
   }
 
   const settings = await readMissionControlSettings().catch(() => ({}));
-  const authFailure = getLatestOpenAiCodexAuthRuntimeSmokeFailure(settings);
+  const authFailure = getLatestOpenAiAuthRuntimeSmokeFailure(settings);
 
   if (!authFailure) {
     return connection;
@@ -1842,10 +1784,10 @@ async function applyProviderRuntimeFailure(
     connected: false,
     degraded: true,
     stale: false,
-    recovery: "Reconnect ChatGPT to refresh the OpenAI Codex OAuth session.",
+    recovery: "Reconnect ChatGPT to refresh the OpenAI OAuth session.",
     detail:
       authFailure.error ||
-      "Reconnect ChatGPT to refresh the OpenAI Codex OAuth session."
+      "Reconnect ChatGPT to refresh the OpenAI OAuth session."
   };
 }
 
@@ -1883,9 +1825,12 @@ function buildCustomOpenAiEndpointConnectionStatus(
 
   const configuredCount = [...configuredModelIds].filter((modelId) => modelMatchesProvider("openai", modelId)).length;
   const hasApiKey = Boolean(readOpenAiApiKeyFromProviderConfig(providerConfig));
+  const authMethods = getModelProviderDescriptor("openai").authMethods;
 
   return {
     provider: "openai",
+    authMethod: hasApiKey ? "api-key" : null,
+    availableAuthMethods: authMethods ? [...authMethods] : undefined,
     connected: hasApiKey,
     canConnect: true,
     needsTerminal: false,
@@ -2018,11 +1963,7 @@ async function readLocalOllamaCatalog(configuredModelIds: Set<string>): Promise<
 }
 
 function normalizeModelIdForProvider(provider: AddModelsProviderId, modelId: string) {
-  if (provider === "openai-codex") {
-    return normalizeOpenAiCodexModelId(modelId);
-  }
-
-  return modelId;
+  return provider === "openai" ? normalizeOpenAiModelId(modelId) : modelId;
 }
 
 function validateApiKey(provider: AddModelsProviderId, token: string) {
@@ -2054,12 +1995,6 @@ function resolveProviderFromModelId(modelId: string) {
 function modelMatchesProvider(provider: AddModelsProviderId, modelId: string) {
   const modelProvider = resolveProviderFromModelId(modelId);
 
-  if (provider === "openai-codex") {
-    return modelProvider === "codex" ||
-      modelProvider === "openai-codex" ||
-      isKnownOpenAiCodexModelId(modelId);
-  }
-
   return modelProvider === provider && isAddModelsProviderId(modelProvider);
 }
 
@@ -2076,10 +2011,6 @@ function isRecommendedModel(provider: AddModelsProviderId, modelId: string) {
 
   if (provider === "openrouter") {
     return /gpt-5|claude-sonnet|gemini-2\.5|gemini-3|qwen3-coder|codestral|openrouter\/auto/.test(normalized);
-  }
-
-  if (provider === "openai-codex") {
-    return /openai\/gpt-5\.5|openai\/gpt-5\.4-mini|codex/.test(normalized);
   }
 
   if (provider === "ollama") {
@@ -2111,10 +2042,6 @@ function isRecommendedModel(provider: AddModelsProviderId, modelId: string) {
   }
 
   return false;
-}
-
-function isCodexModelTag(tag: string) {
-  return /^(codex|openai-codex|chatgpt|app-server|codex-app-server)$/i.test(tag.trim());
 }
 
 function readProviderCredentialVerificationError(provider: AddModelsProviderId, error: unknown) {

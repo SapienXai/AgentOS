@@ -176,13 +176,17 @@ test("model provider API route keeps ChatGPT OAuth behind the application servic
 
   assert.match(routeSource, /connectOpenClawChatGptProvider/);
   assert.match(routeSource, /statusContext\.connection\.connected/);
-  assert.doesNotMatch(routeSource, /resolveOpenAiCodexAuthHandoff|manualCommand:\s*authHandoff\.command/);
+  assert.doesNotMatch(routeSource, /resolveOpenAiAuthHandoff|manualCommand:\s*authHandoff\.command/);
   assert.match(serviceSource, /readOpenClawCodexPluginReady/);
   assert.match(serviceSource, /\["plugins",\s*"install",\s*"--force",\s*"@openclaw\/codex"\]/);
   assert.match(serviceSource, /"models",\s*"auth",\s*"login"/);
   assert.match(serviceSource, /"openai"/);
-  assert.match(serviceSource, /"oauth"/);
+  assert.match(serviceSource, /openclaw-cli-interactive/);
   assert.match(serviceSource, /"\/usr\/bin\/script"/);
+  assert.match(routeSource, /authMethod:\s*z\.enum\(\["api-key",\s*"chatgpt-oauth"\]\)/);
+  assert.match(routeSource, /input\.provider === "openai" && input\.authMethod === "chatgpt-oauth"/);
+  assert.match(routeSource, /requireAgentOsProductPermission\(request, "secrets\.manage"\)/);
+  assert.doesNotMatch(routeSource, /input\.(scopes|actor|profileId)/);
   assert.doesNotMatch(routeSource, /models\s+auth\s+login\s+--provider\s+openai-codex\s+--set-default/);
 });
 
@@ -220,9 +224,13 @@ test("model onboarding route installs the Codex plugin before provider login whe
   const routeSource = readFileSync(path.join(rootDir, "app/api/onboarding/models/route.ts"), "utf8");
 
   assert.match(routeSource, /readOpenClawCodexPluginReady/);
-  assert.match(routeSource, /resolveOpenAiCodexAuthHandoff/);
+  assert.match(routeSource, /resolveOpenAiAuthHandoff/);
   assert.match(routeSource, /codexPluginReady/);
   assert.match(routeSource, /force:\s*input\.intent === "login-provider"\s*\?\s*input\.force === true\s*:\s*false/);
+  assert.match(routeSource, /normalizeAddModelsProviderId/);
+  assert.match(routeSource, /isBuiltInAddModelsProviderId/);
+  assert.match(routeSource, /requireAgentOsProductPermission\(request, "secrets\.manage"\)/);
+  assert.doesNotMatch(routeSource, /input\.(scopes|actor|profileId)/);
   assert.doesNotMatch(routeSource, /readOpenClawCodexPluginReady\(\)\.catch\(\(\) => true\)/);
 });
 
@@ -232,7 +240,7 @@ test("agent chat recovery forces ChatGPT auth refresh instead of trusting stale 
 
   assert.match(shellSource, /force:\s*options\.forceAuth\s*\|\|\s*undefined/);
   assert.match(shellSource, /autoOpenTerminal:\s*true,\s*forceAuth:\s*true/);
-  assert.match(chatRouteSource, /recoverSilentOpenAiCodexChatFailure/);
+  assert.match(chatRouteSource, /recoverSilentOpenAiChatFailure/);
 });
 
 test("local Gateway port probes do not claim authenticated RPC readiness", () => {

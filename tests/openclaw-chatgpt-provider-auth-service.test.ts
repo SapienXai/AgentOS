@@ -48,7 +48,6 @@ test("ChatGPT provider auth installs and repairs the Codex plugin before login",
 
   assert.deepEqual(calls, [
     "plugins install --force @openclaw/codex",
-    "doctor --fix",
     "gateway restart",
     "login force=false"
   ]);

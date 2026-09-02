@@ -68,7 +68,6 @@ export async function connectOpenClawChatGptProvider(
       ["plugins", "install", "--force", "@openclaw/codex"],
       pluginSetupTimeoutMs
     );
-    await dependencies.runSetupCommand(["doctor", "--fix"], pluginSetupTimeoutMs);
     await dependencies.runSetupCommand(["gateway", "restart"], pluginSetupTimeoutMs);
     pluginInstalled = true;
   }
@@ -95,8 +94,6 @@ async function runOpenClawChatGptInteractiveLogin(input: {
     "login",
     "--provider",
     "openai",
-    "--method",
-    "oauth",
     ...(input.force ? ["--force"] : []),
     "--set-default"
   ];

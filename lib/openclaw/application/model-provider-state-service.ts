@@ -1,6 +1,6 @@
 import "server-only";
 
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -13,9 +13,8 @@ import {
 } from "@/lib/openclaw/client/native-ws-gateway-config";
 import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import {
-  isKnownOpenAiCodexModelId,
   mergeModelStatusWithGatewayCredentials,
-  normalizeOpenAiCodexModelId
+  normalizeOpenAiModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
 import {
   getModelProviderDescriptor,
@@ -38,7 +37,7 @@ type OpenClawConfigPayload = {
     lastTouchedAt?: string;
   };
   auth?: {
-    profiles?: Record<string, { provider?: string; mode?: string }>;
+    profiles?: Record<string, { provider?: string; mode?: string; type?: string; status?: string; expiresAt?: number }>;
   };
   plugins?: {
     allow?: string[];
@@ -94,6 +93,9 @@ type OpenClawAuthProfilesPayload = {
     {
       type?: string;
       provider?: string;
+      mode?: string;
+      status?: string;
+      expiresAt?: number;
       token?: string;
     }
   >;
@@ -115,7 +117,6 @@ const openClawAuthProfilesPath = path.join(
   "agent",
   "auth-profiles.json"
 );
-const legacyProviderFileFallbackEnv = "AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK";
 const gatewayConfigPatchRetryDelaysMs = [750, 1_500, 3_000];
 const maxInlineGatewayConfigRateLimitRetryMs = 3_000;
 const googleGenerativeAiBaseUrl = "https://generativelanguage.googleapis.com/v1beta";
@@ -199,18 +200,32 @@ export async function buildOpenClawFileBasedProviderConnectionStatus(
   const configuredCount = [...configuredModelIds].filter(
     (modelId) => modelMatchesProvider(provider, modelId)
   ).length;
-  const providerAuthCount = [
-    ...Object.values(config.auth?.profiles ?? {}),
-    ...Object.values(authProfiles.profiles ?? {})
-  ].filter((entry) => providerAuthEntryMatchesAddModelsProvider(entry, provider)).length;
+  const providerAuthEntries: Array<{
+    profileId: string;
+    provider?: string;
+    type?: string;
+    mode?: string;
+    status?: string;
+    expiresAt?: number;
+  }> = [
+    ...Object.entries(config.auth?.profiles ?? {}).map(([profileId, entry]) => ({ profileId, ...entry })),
+    ...Object.entries(authProfiles.profiles ?? {}).map(([profileId, entry]) => ({ profileId, ...entry }))
+  ]
+    .filter((entry) => providerAuthEntryMatchesAddModelsProvider(entry, provider))
+    .filter(isUsableFileAuthEntry);
+  const providerAuthCount = providerAuthEntries.length;
   const customEndpoint = provider === "openai" ? readOpenAiBaseUrl(config) : null;
   const hasOpenAiApiKey = provider === "openai" ? Boolean(readOpenAiApiKey(config)) : false;
+  const hasOpenAiOAuthProfile = provider === "openai" && providerAuthEntries.some((entry) =>
+    entry.mode?.toLowerCase() === "oauth" || entry.type?.toLowerCase() === "oauth"
+  );
   const connected = providerAuthCount > 0 ||
-    (provider === "openai" && hasOpenAiApiKey) ||
-    (provider === "openai-codex" && configuredCount > 0 && isCodexHarnessEnabled(config));
+    (provider === "openai" && hasOpenAiApiKey);
 
   return {
     provider,
+    authMethod: hasOpenAiOAuthProfile ? "chatgpt-oauth" : hasOpenAiApiKey ? "api-key" : null,
+    availableAuthMethods: descriptor.authMethods ? [...descriptor.authMethods] : undefined,
     connected,
     canConnect: true,
     needsTerminal: descriptor.connectKind === "oauth",
@@ -344,7 +359,7 @@ export async function readOpenClawProviderConfigSummary(
     modelCount: Array.isArray(providerConfig?.models) ? providerConfig.models.length : 0,
     credentialConfigured,
     endpointOverride: Boolean(baseUrl),
-    editable: provider !== "openai-codex" && provider !== "ollama"
+    editable: provider !== "ollama"
   };
 }
 
@@ -360,7 +375,7 @@ export async function updateOpenClawProviderSettings(
   const isBuiltIn = isBuiltInAddModelsProviderId(provider);
   const existingProviderConfig = await readOpenClawExplicitProviderConfig(configProvider);
 
-  if (provider === "openai-codex" || provider === "ollama") {
+  if (provider === "ollama") {
     throw new Error(`${getModelProviderDescriptor(provider).shortLabel} connection settings are managed by OpenClaw.`);
   }
 
@@ -704,41 +719,8 @@ export async function addOpenClawModelsToConfig(provider: AddModelsProviderId, m
     await addModelsToConfigViaGateway(provider, normalizedModelIds);
     return;
   } catch (error) {
-    if (!isLegacyProviderFileFallbackEnabled()) {
-      throw new Error(buildGatewayConfigMutationFailureMessage("adding models", error));
-    }
+    throw new Error(buildGatewayConfigMutationFailureMessage("adding models", error));
   }
-
-  const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
-
-  config.meta = {
-    ...config.meta,
-    lastTouchedAt: new Date().toISOString()
-  };
-  config.agents = config.agents || {};
-  config.agents.defaults = config.agents.defaults || {};
-  config.agents.defaults.models = config.agents.defaults.models || {};
-
-  if (provider === "openai-codex") {
-    enableCodexHarness(config);
-  }
-
-  applyProviderModelRegistry(config, provider, normalizedModelIds);
-
-  for (const modelId of normalizedModelIds) {
-    config.agents.defaults.models[modelId] = config.agents.defaults.models[modelId] || {};
-    applyModelRuntimePolicyToModelEntries(config.agents.defaults.models, modelId, provider);
-  }
-
-  if (!config.agents.defaults.model?.primary && normalizedModelIds[0]) {
-    config.agents.defaults.model = {
-      ...(config.agents.defaults.model || {}),
-      primary: normalizedModelIds[0]
-    };
-  }
-
-  stripLegacyAgentRuntimeFromDefaults(config.agents.defaults);
-  await writeJsonFile(openClawConfigPath, config);
 }
 
 export async function removeOpenClawConfiguredModelFromConfig(
@@ -747,7 +729,7 @@ export async function removeOpenClawConfiguredModelFromConfig(
 ) {
   const requestedModelId = modelId.trim();
   const provider = options.provider ?? resolveProviderFromModelIdForRuntime(requestedModelId);
-  const canonicalModelId = normalizeOpenAiCodexModelId(requestedModelId);
+  const canonicalModelId = normalizeOpenAiModelId(requestedModelId);
 
   if (!requestedModelId) {
     return {
@@ -765,20 +747,8 @@ export async function removeOpenClawConfiguredModelFromConfig(
       via: "gateway" as const
     };
   } catch (error) {
-    if (!isLegacyProviderFileFallbackEnabled()) {
-      throw new Error(buildGatewayConfigMutationFailureMessage("removing the model", error));
-    }
+    throw new Error(buildGatewayConfigMutationFailureMessage("removing the model", error));
   }
-
-  const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
-  applyModelConfigRemovalToFileConfig(config, provider, canonicalModelId, requestedModelId);
-  await writeJsonFile(openClawConfigPath, config);
-
-  return {
-    modelId: canonicalModelId,
-    provider,
-    via: "legacy-file" as const
-  };
 }
 
 export async function removeOpenClawProviderConfiguration(provider: AddModelsProviderId) {
@@ -787,16 +757,14 @@ export async function removeOpenClawProviderConfiguration(provider: AddModelsPro
   let providerConfigRemoved = false;
   let authMetadataRemoved = 0;
 
-  if (provider !== "openai-codex") {
-    const providerConfig = await adapter.getConfig<OpenClawProviderModelsEntry>(
-      `models.providers.${configProvider}`,
-      { timeoutMs: 5_000 }
-    ).catch(() => null);
+  const providerConfig = await adapter.getConfig<OpenClawProviderModelsEntry>(
+    `models.providers.${configProvider}`,
+    { timeoutMs: 5_000 }
+  ).catch(() => null);
 
-    if (providerConfig) {
-      await adapter.unsetConfig(`models.providers.${configProvider}`, { timeoutMs: 5_000 });
-      providerConfigRemoved = true;
-    }
+  if (providerConfig) {
+    await adapter.unsetConfig(`models.providers.${configProvider}`, { timeoutMs: 5_000 });
+    providerConfigRemoved = true;
   }
 
   const authProfiles = await adapter.getConfig<Record<string, { provider?: string }>>(
@@ -860,33 +828,8 @@ export async function ensureOpenClawModelRuntimeConfig(
       via: "gateway" as const
     };
   } catch (error) {
-    if (!isLegacyProviderFileFallbackEnabled()) {
-      throw new Error(buildGatewayConfigMutationFailureMessage("preparing the model runtime", error));
-    }
+    throw new Error(buildGatewayConfigMutationFailureMessage("preparing the model runtime", error));
   }
-
-  const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
-
-  config.meta = {
-    ...config.meta,
-    lastTouchedAt: new Date().toISOString()
-  };
-  config.agents = config.agents || {};
-  config.agents.defaults = config.agents.defaults || {};
-  config.agents.defaults.models = config.agents.defaults.models || {};
-  config.agents.defaults.models[normalizedModelId] =
-    config.agents.defaults.models[normalizedModelId] || {};
-  applyProviderModelRegistry(config, provider, [normalizedModelId]);
-  applyDefaultModelRuntime(config, provider, normalizedModelId);
-  stripLegacyAgentRuntimeFromDefaults(config.agents.defaults);
-
-  await writeJsonFile(openClawConfigPath, config);
-
-  return {
-    modelId: normalizedModelId,
-    provider,
-    via: "legacy-file" as const
-  };
 }
 
 export async function setOpenClawDefaultModel(
@@ -905,37 +848,8 @@ export async function setOpenClawDefaultModel(
       via: "gateway" as const
     };
   } catch (error) {
-    if (!isLegacyProviderFileFallbackEnabled()) {
-      throw new Error(buildGatewayConfigMutationFailureMessage("setting the default model", error));
-    }
+    throw new Error(buildGatewayConfigMutationFailureMessage("setting the default model", error));
   }
-
-  const config = await readJsonFile<OpenClawConfigPayload>(openClawConfigPath, {});
-
-  config.meta = {
-    ...config.meta,
-    lastTouchedAt: new Date().toISOString()
-  };
-  config.agents = config.agents || {};
-  config.agents.defaults = config.agents.defaults || {};
-  config.agents.defaults.models = config.agents.defaults.models || {};
-  config.agents.defaults.models[normalizedModelId] =
-    config.agents.defaults.models[normalizedModelId] || {};
-  config.agents.defaults.model = {
-    ...(config.agents.defaults.model || {}),
-    primary: normalizedModelId
-  };
-  applyProviderModelRegistry(config, provider, [normalizedModelId]);
-  applyDefaultModelRuntime(config, provider, normalizedModelId);
-  stripLegacyAgentRuntimeFromDefaults(config.agents.defaults);
-
-  await writeJsonFile(openClawConfigPath, config);
-
-  return {
-    modelId: normalizedModelId,
-    provider,
-    via: "legacy-file" as const
-  };
 }
 
 async function addModelsToConfigViaGateway(provider: AddModelsProviderId, normalizedModelIds: string[]) {
@@ -974,7 +888,6 @@ async function addModelsToConfigViaGatewayOnce(provider: AddModelsProviderId, no
 
   for (const modelId of normalizedModelIds) {
     nextModels[modelId] = isRecord(nextModels[modelId]) ? nextModels[modelId] : {};
-    applyModelRuntimePolicyToModelEntries(nextModels, modelId, provider);
   }
 
   nextDefaults.models = nextModels;
@@ -986,12 +899,7 @@ async function addModelsToConfigViaGatewayOnce(provider: AddModelsProviderId, no
     };
   }
 
-  stripLegacyAgentRuntimeFromDefaults(nextDefaults);
   await adapter.setConfig("agents.defaults", nextDefaults, { timeoutMs: 5_000 });
-
-  if (provider === "openai-codex") {
-    await adapter.setConfig("plugins.entries.codex.enabled", true, { timeoutMs: 5_000 });
-  }
 }
 
 async function setDefaultModelViaGateway(
@@ -1052,7 +960,7 @@ async function ensureModelRuntimeConfigViaGatewayOnce(provider: AddModelsProvide
     { timeoutMs: 5_000 }
   );
 
-  if (isModelRuntimePrepared(existingDefaults, normalizedModelId, provider)) {
+  if (isModelRuntimePrepared(existingDefaults, normalizedModelId)) {
     return;
   }
 
@@ -1062,14 +970,8 @@ async function ensureModelRuntimeConfigViaGatewayOnce(provider: AddModelsProvide
   nextModels[normalizedModelId] = isRecord(nextModels[normalizedModelId])
     ? nextModels[normalizedModelId]
     : {};
-  applyModelRuntimePolicyToModelEntries(nextModels, normalizedModelId, provider);
   nextDefaults.models = nextModels;
-  stripLegacyAgentRuntimeFromDefaults(nextDefaults);
   await adapter.setConfig("agents.defaults", nextDefaults, { timeoutMs: 5_000 });
-
-  if (provider === "openai-codex") {
-    await adapter.setConfig("plugins.entries.codex.enabled", true, { timeoutMs: 5_000 });
-  }
 }
 
 async function removeOpenClawConfiguredModelViaGateway(
@@ -1112,7 +1014,7 @@ async function removeOpenClawConfiguredModelViaGatewayOnce(
   const nextDefaults = cloneAgentDefaults(existingDefaults);
   const nextModels = cloneModelEntries(nextDefaults.models);
   const matchingModelIds = Object.keys(nextModels).filter(
-    (modelId) => normalizeOpenAiCodexModelId(modelId) === canonicalModelId
+    (modelId) => normalizeOpenAiModelId(modelId) === canonicalModelId
   );
   let changed = false;
 
@@ -1130,7 +1032,7 @@ async function removeOpenClawConfiguredModelViaGatewayOnce(
 
   if (
     nextDefaults.model?.primary &&
-    normalizeOpenAiCodexModelId(nextDefaults.model.primary) === canonicalModelId
+    normalizeOpenAiModelId(nextDefaults.model.primary) === canonicalModelId
   ) {
     const nextPrimary = Object.keys(nextModels)[0];
 
@@ -1147,7 +1049,6 @@ async function removeOpenClawConfiguredModelViaGatewayOnce(
   }
 
   if (changed) {
-    stripLegacyAgentRuntimeFromDefaults(nextDefaults);
     await adapter.setConfig("agents.defaults", nextDefaults, { timeoutMs: 5_000 });
   }
 
@@ -1156,7 +1057,7 @@ async function removeOpenClawConfiguredModelViaGatewayOnce(
     { timeoutMs: 5_000 }
   );
   const removalPersisted = !Object.keys(isRecord(persistedModels) ? persistedModels : {}).some(
-    (modelId) => normalizeOpenAiCodexModelId(modelId) === canonicalModelId
+    (modelId) => normalizeOpenAiModelId(modelId) === canonicalModelId
   );
 
   if (!removalPersisted) {
@@ -1194,62 +1095,6 @@ async function removeProviderModelEntryViaGateway(
   return true;
 }
 
-function applyModelConfigRemovalToFileConfig(
-  config: OpenClawConfigPayload,
-  provider: AddModelsProviderId | null,
-  canonicalModelId: string,
-  requestedModelId: string
-) {
-  config.meta = {
-    ...config.meta,
-    lastTouchedAt: new Date().toISOString()
-  };
-  config.agents = config.agents || {};
-  config.agents.defaults = config.agents.defaults || {};
-  config.agents.defaults.models = config.agents.defaults.models || {};
-
-  delete config.agents.defaults.models[canonicalModelId];
-
-  if (config.agents.defaults.model?.primary === canonicalModelId) {
-    const remainingModelIds = Object.keys(config.agents.defaults.models);
-    if (remainingModelIds[0]) {
-      config.agents.defaults.model = {
-        ...(config.agents.defaults.model || {}),
-        primary: remainingModelIds[0]
-      };
-    } else {
-      delete config.agents.defaults.model;
-    }
-  }
-
-  if (provider) {
-    removeProviderModelEntryFromFileConfig(config, provider, canonicalModelId, requestedModelId);
-  }
-
-  stripLegacyAgentRuntimeFromDefaults(config.agents.defaults);
-}
-
-function removeProviderModelEntryFromFileConfig(
-  config: OpenClawConfigPayload,
-  provider: AddModelsProviderId,
-  canonicalModelId: string,
-  requestedModelId: string
-) {
-  const configProvider = resolveProviderConfigId(provider);
-  if (!configProvider) {
-    return;
-  }
-
-  const providerConfig = config.models?.providers?.[configProvider];
-  const modelIndex = findProviderModelEntryIndex(providerConfig?.models ?? [], configProvider, canonicalModelId, requestedModelId);
-
-  if (modelIndex < 0 || !providerConfig?.models) {
-    return;
-  }
-
-  providerConfig.models.splice(modelIndex, 1);
-}
-
 function findProviderModelEntryIndex(
   models: OpenClawProviderModelEntry[],
   provider: string,
@@ -1276,7 +1121,7 @@ function normalizeProviderModelIdentity(
       continue;
     }
 
-    const canonical = normalizeOpenAiCodexModelId(trimmed);
+    const canonical = normalizeOpenAiModelId(trimmed);
     const scoped = normalizeExplicitProviderModelId(provider, canonical);
     if (scoped) {
       return scoped.toLowerCase();
@@ -1289,19 +1134,14 @@ function normalizeProviderModelIdentity(
 }
 
 function resolveProviderConfigId(provider: AddModelsProviderId) {
-  if (provider === "openai-codex") {
-    return "openai";
-  }
-
   return provider.trim();
 }
 
 function isModelRuntimePrepared(
   defaults: OpenClawAgentDefaultsConfig | null,
-  modelId: string,
-  provider: AddModelsProviderId
+  modelId: string
 ) {
-  const expectedRuntimeId = resolveModelScopedRuntimeId(provider);
+  const expectedRuntimeId = resolveModelScopedRuntimeId();
 
   if (!expectedRuntimeId) {
     return true;
@@ -1336,13 +1176,7 @@ async function setDefaultModelViaGatewayOnce(
     ...(nextDefaults.model || {}),
     primary: normalizedModelId
   };
-  applyModelRuntimePolicyToModelEntries(nextModels, normalizedModelId, provider);
-  stripLegacyAgentRuntimeFromDefaults(nextDefaults);
   await adapter.setConfig("agents.defaults", nextDefaults, { timeoutMs: 5_000 });
-
-  if (provider === "openai-codex") {
-    await adapter.setConfig("plugins.entries.codex.enabled", true, { timeoutMs: 5_000 });
-  }
 }
 
 function resolveGatewayConfigPatchRetryDelayMs(error: unknown, attempt: number) {
@@ -1398,7 +1232,7 @@ function buildGatewayConfigMutationFailureMessage(action: string, error: unknown
     return `OpenClaw Gateway was not reachable while ${action}. AgentOS retried the Gateway config update and attempted to start the Gateway. Start or repair the Gateway from system setup, then retry model setup. AgentOS did not use CLI or legacy file fallback for this model change. ${readErrorMessage(error)}`;
   }
 
-  return `OpenClaw Gateway config update failed while ${action}. Legacy file fallback is disabled; set ${legacyProviderFileFallbackEnv}=1 only for explicit recovery. ${readErrorMessage(error)}`;
+  return `OpenClaw Gateway config update failed while ${action}. AgentOS did not edit OpenClaw state files. ${readErrorMessage(error)}`;
 }
 
 function formatRetryAfter(ms: number) {
@@ -1424,8 +1258,6 @@ function cloneAgentDefaults(value: unknown): OpenClawAgentDefaultsConfig {
   } else if (value.model === undefined) {
     delete output.model;
   }
-
-  stripLegacyAgentRuntimeFromDefaults(output);
 
   return output;
 }
@@ -1453,34 +1285,9 @@ function cloneModelDefaultsEntry(value: unknown): OpenClawModelDefaultsEntry {
 
   if (isRecord(value.agentRuntime)) {
     output.agentRuntime = { ...value.agentRuntime };
-  } else {
-    delete output.agentRuntime;
   }
 
   return output;
-}
-
-function applyModelRuntimePolicyToModelEntries(
-  models: Record<string, OpenClawModelDefaultsEntry>,
-  modelId: string,
-  provider: AddModelsProviderId | null
-) {
-  const runtimeId = resolveModelScopedRuntimeId(provider);
-
-  if (!runtimeId) {
-    return;
-  }
-
-  const entry = models[modelId] || {};
-  const existingRuntime = isRecord(entry.agentRuntime) ? entry.agentRuntime : {};
-
-  models[modelId] = {
-    ...entry,
-    agentRuntime: {
-      ...existingRuntime,
-      id: runtimeId
-    }
-  };
 }
 
 async function ensureProviderModelRegistryViaGateway(
@@ -1532,39 +1339,6 @@ async function ensureProviderModelRegistryViaGateway(
   if (changed) {
     await adapter.setConfig(`models.providers.${configProvider}`, nextProviderConfig, { timeoutMs: 5_000 });
   }
-}
-
-function applyProviderModelRegistry(
-  config: OpenClawConfigPayload,
-  provider: AddModelsProviderId | null,
-  normalizedModelIds: string[]
-) {
-  if (provider !== "ollama" && provider !== "google") {
-    return;
-  }
-
-  config.models = config.models || {};
-  config.models.providers = config.models.providers || {};
-
-  const configProvider = resolveProviderConfigId(provider);
-  const nextProviderConfig = cloneProviderModelsEntry(config.models.providers[configProvider]);
-  applyBuiltInProviderConfigDefaults(nextProviderConfig, provider);
-  const existingIds = new Set(
-    nextProviderConfig.models
-      ?.map((entry) => entry.id?.trim())
-      .filter((id): id is string => Boolean(id)) ?? []
-  );
-
-  for (const modelId of normalizedModelIds) {
-    const id = toProviderScopedModelId(provider, modelId);
-
-    if (id && !existingIds.has(id)) {
-      nextProviderConfig.models = [...(nextProviderConfig.models ?? []), { id, name: id }];
-      existingIds.add(id);
-    }
-  }
-
-  config.models.providers[configProvider] = nextProviderConfig;
 }
 
 function applyBuiltInProviderConfigDefaults(
@@ -1705,24 +1479,12 @@ function toProviderScopedModelId(provider: AddModelsProviderId, modelId: string)
   return trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : trimmed;
 }
 
-function resolveModelScopedRuntimeId(provider: AddModelsProviderId | null) {
-  if (provider === "openai-codex") {
-    return "codex";
-  }
-
-  if (provider === "openai") {
-    return "openclaw";
-  }
-
+function resolveModelScopedRuntimeId() {
   return null;
 }
 
 function normalizeModelIdForProvider(provider: AddModelsProviderId, modelId: string) {
-  if (provider === "openai-codex" && modelId.startsWith("openai-codex/")) {
-    return `openai/${modelId.slice("openai-codex/".length)}`;
-  }
-
-  return modelId;
+  return provider === "openai" ? normalizeOpenAiModelId(modelId) : modelId;
 }
 
 function resolveProviderFromModelId(modelId: string): AddModelsProviderId | null {
@@ -1731,48 +1493,7 @@ function resolveProviderFromModelId(modelId: string): AddModelsProviderId | null
 }
 
 function resolveProviderFromModelIdForRuntime(modelId: string): AddModelsProviderId | null {
-  if (modelMatchesProvider("openai-codex", normalizeModelIdForProvider("openai-codex", modelId))) {
-    return "openai-codex";
-  }
-
   return resolveProviderFromModelId(modelId);
-}
-
-function applyDefaultModelRuntime(
-  config: OpenClawConfigPayload,
-  provider: AddModelsProviderId | null,
-  modelId: string
-) {
-  config.agents = config.agents || {};
-  config.agents.defaults = config.agents.defaults || {};
-  config.agents.defaults.models = config.agents.defaults.models || {};
-  config.agents.defaults.models[modelId] = config.agents.defaults.models[modelId] || {};
-
-  if (provider === "openai-codex") {
-    enableCodexHarness(config);
-  }
-
-  applyModelRuntimePolicyToModelEntries(config.agents.defaults.models, modelId, provider);
-}
-
-function enableCodexHarness(config: OpenClawConfigPayload) {
-  config.plugins = config.plugins || {};
-  config.plugins.entries = config.plugins.entries || {};
-  config.plugins.entries.codex = {
-    ...config.plugins.entries.codex,
-    enabled: true
-  };
-
-  if (Array.isArray(config.plugins.allow) && !config.plugins.allow.includes("codex")) {
-    config.plugins.allow = [...config.plugins.allow, "codex"];
-  }
-}
-
-function isCodexHarnessEnabled(config: OpenClawConfigPayload) {
-  const entry = config.plugins?.entries?.codex;
-  const allowed = Array.isArray(config.plugins?.allow) && config.plugins.allow.includes("codex");
-
-  return (Boolean(entry) && entry?.enabled !== false) || allowed;
 }
 
 function isReadyCodexPlugin(plugin: { id: string; name: string; status?: string }) {
@@ -1782,10 +1503,6 @@ function isReadyCodexPlugin(plugin: { id: string; name: string; status?: string 
   const isCodexPlugin = id === "codex" || id === "@openclaw/codex" || name === "codex" || name === "@openclaw/codex";
 
   return isCodexPlugin && !["disabled", "missing", "error", "failed", "blocked"].includes(status);
-}
-
-function stripLegacyAgentRuntimeFromDefaults(defaults: OpenClawAgentDefaultsConfig) {
-  delete (defaults as Record<string, unknown>).agentRuntime;
 }
 
 export function applyProviderEndpointConfig(
@@ -1844,23 +1561,6 @@ async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
   }
 }
 
-async function writeJsonFile(filePath: string, value: unknown) {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: filePath === openClawAuthProfilesPath ? 0o600 : 0o644
-  });
-
-  if (filePath === openClawAuthProfilesPath) {
-    await chmod(filePath, 0o600);
-  }
-}
-
-function isLegacyProviderFileFallbackEnabled() {
-  const value = process.env[legacyProviderFileFallbackEnv];
-  return value === "1" || value?.toLowerCase() === "true" || value?.toLowerCase() === "on";
-}
-
 function readErrorMessage(error: unknown) {
   return redactSecretText(error instanceof Error ? error.message : String(error || "Unknown Gateway error."));
 }
@@ -1868,17 +1568,11 @@ function readErrorMessage(error: unknown) {
 function modelMatchesProvider(provider: AddModelsProviderId, modelId: string) {
   const modelProvider = modelId.split("/")[0] ?? "";
 
-  if (provider === "openai-codex") {
-    return modelProvider === "codex" ||
-      modelProvider === "openai-codex" ||
-      isKnownOpenAiCodexModelId(modelId);
-  }
-
   return modelProvider === provider && isAddModelsProviderId(modelProvider);
 }
 
 function providerAuthEntryMatchesAddModelsProvider(
-  entry: { provider?: string; type?: string; mode?: string },
+  entry: { provider?: string; type?: string; mode?: string; profileId?: string },
   provider: AddModelsProviderId
 ) {
   const entryProvider = entry.provider;
@@ -1886,13 +1580,26 @@ function providerAuthEntryMatchesAddModelsProvider(
     return false;
   }
 
-  if (provider === "openai-codex") {
-    return entryProvider === "codex" ||
-      entryProvider === "openai-codex" ||
-      (entryProvider === "openai" && ["oauth", "app-server", "codex-app-server"].includes(entry.type ?? entry.mode ?? ""));
+  if (entryProvider !== provider) {
+    return false;
   }
 
-  return entryProvider === provider;
+  if (provider === "openai" && (entry.mode?.toLowerCase() === "oauth" || entry.type?.toLowerCase() === "oauth")) {
+    return entry.profileId?.toLowerCase().startsWith("openai:") ?? false;
+  }
+
+  return true;
+}
+
+function isUsableFileAuthEntry(
+  entry: { status?: string; expiresAt?: number }
+) {
+  const status = entry.status?.trim().toLowerCase();
+  if (status && ["expired", "missing", "invalid", "error", "disabled", "revoked"].includes(status)) {
+    return false;
+  }
+
+  return !(typeof entry.expiresAt === "number" && entry.expiresAt > 0 && entry.expiresAt <= Date.now());
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

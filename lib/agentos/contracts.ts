@@ -71,6 +71,7 @@ export type {
   AddModelsProviderAction,
   AddModelsProviderActionRequest,
   AddModelsProviderActionResult,
+  AddModelsProviderAuthMethod,
   AddModelsProviderCategory,
   AddModelsProviderConnectKind,
   AddModelsProviderConfigSummary,

@@ -1,5 +1,6 @@
 import type {
   AddModelsProviderCategory,
+  AddModelsProviderAuthMethod,
   AddModelsProviderConnectKind,
   AddModelsProviderId,
   BuiltInAddModelsProviderId
@@ -13,6 +14,7 @@ export type ModelProviderDescriptor = {
   description: string;
   category: AddModelsProviderCategory;
   connectKind: AddModelsProviderConnectKind;
+  authMethods?: readonly AddModelsProviderAuthMethod[];
   accent: string;
   helperText: string;
   kind?: "builtin" | "explicit" | "action";
@@ -53,21 +55,28 @@ export const modelProviderCredentialRegistry: Partial<Record<AddModelsProviderId
   }
 };
 
+const unsupportedLegacyProviderIds = new Set(["codex", "openai-codex"]);
+
+export function isUnsupportedLegacyProviderId(value: unknown): boolean {
+  return typeof value === "string" && unsupportedLegacyProviderIds.has(value.trim().toLowerCase());
+}
+
 export function getModelProviderCredentialTarget(provider: AddModelsProviderId) {
   return modelProviderCredentialRegistry[provider] ?? null;
 }
 
 export const modelProviderRegistry: Array<ModelProviderDescriptor & { id: BuiltInAddModelsProviderId; kind: "builtin" }> = [
   {
-    id: "openai-codex",
+    id: "openai",
     kind: "builtin",
-    label: "ChatGPT",
-    shortLabel: "ChatGPT",
-    description: "Use OpenClaw's Codex app-server provider and pull in Codex-ready models.",
+    label: "OpenAI / ChatGPT",
+    shortLabel: "OpenAI",
+    description: "Use an OpenAI API key or connect ChatGPT through OpenClaw's Codex runtime.",
     category: "primary",
-    connectKind: "oauth",
+    connectKind: "apiKey",
+    authMethods: ["api-key", "chatgpt-oauth"],
     accent: "from-[#d8f5eb] via-[#ebfbf5] to-white",
-    helperText: `OpenClaw ${OPENCLAW_RECOMMENDED_VERSION} uses the Codex app-server plugin for this route.`
+    helperText: `OpenClaw ${OPENCLAW_RECOMMENDED_VERSION} uses provider openai with runtime codex for ChatGPT OAuth.`
   },
   {
     id: "openrouter",
@@ -102,17 +111,6 @@ export const modelProviderRegistry: Array<ModelProviderDescriptor & { id: BuiltI
     connectKind: "apiKey",
     accent: "from-[#efe9ff] via-[#f7f3ff] to-white",
     helperText: "Simple API key connection."
-  },
-  {
-    id: "openai",
-    kind: "builtin",
-    label: "OpenAI API",
-    shortLabel: "OpenAI",
-    description: "Connect a standard OpenAI API key for direct GPT model access.",
-    category: "other",
-    connectKind: "apiKey",
-    accent: "from-[#e8f8e8] via-[#f4fbf4] to-white",
-    helperText: "Use this for API-key-based OpenAI routing."
   },
   {
     id: "google",
@@ -182,14 +180,12 @@ export function isBuiltInAddModelsProviderId(value: unknown): value is BuiltInAd
 }
 
 export function isAddModelsProviderId(value: unknown): value is AddModelsProviderId {
-  return typeof value === "string" && isValidExplicitProviderId(value);
+  return typeof value === "string" &&
+    !isUnsupportedLegacyProviderId(value) &&
+    isValidExplicitProviderId(value);
 }
 
 export function normalizeAddModelsProviderId(value: unknown): AddModelsProviderId | null {
-  if (value === "codex") {
-    return "openai-codex";
-  }
-
   if (value === "gemini") {
     return "google";
   }
@@ -200,10 +196,6 @@ export function normalizeAddModelsProviderId(value: unknown): AddModelsProviderI
 
   if (value && typeof value === "object" && "id" in value) {
     const candidateId = (value as { id?: unknown }).id;
-
-    if (candidateId === "codex") {
-      return "openai-codex";
-    }
 
     if (candidateId === "gemini") {
       return "google";
@@ -218,10 +210,6 @@ export function normalizeAddModelsProviderId(value: unknown): AddModelsProviderI
 }
 
 export function formatModelProviderLabel(providerId: string) {
-  if (providerId === "codex") {
-    return "Codex";
-  }
-
   const descriptor = modelProviderRegistry.find((provider) => provider.id === providerId);
 
   if (descriptor) {
@@ -239,12 +227,14 @@ export function isValidExplicitProviderId(value: string) {
 }
 
 export function normalizeExplicitProviderId(value: string) {
-  return value
+  const normalized = value
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 63);
+
+  return isUnsupportedLegacyProviderId(normalized) ? "" : normalized;
 }
 
 export function buildExplicitModelProviderDescriptor(providerId: string, label?: string | null): ModelProviderDescriptor {
