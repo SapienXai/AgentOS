@@ -1413,7 +1413,13 @@ test("ChatGPT-first onboarding keeps the normal model step focused and advanced 
   assert.match(onboardingSource, /modelReady: isChatGptConnectionReady\(snapshot\)/);
   assert.match(shellSource, /startChatGptBrowserAuth\(force\)/);
   assert.match(shellSource, /submitChatGptBrowserAuth\(chatGptBrowserAuth\.sessionId, redirectUrl\)/);
-  assert.match(shellSource, /window\.open\("about:blank", "_blank"\)/);
+  assert.doesNotMatch(shellSource, /window\.open\("about:blank", "_blank"\)/);
+  assert.match(shellSource, /window\.open\(currentAuthFlow\.browserUrl, "_blank"/);
+  assert.match(
+    shellSource,
+    /readModelProviderStatus\("openai-codex",\s*\{\s*includeSnapshot:\s*true\s*\}\)/
+  );
+  assert.match(shellSource, /markModelProviderConnected\("openai-codex"/);
   assert.match(shellSource, /setIsOnboardingDismissed\(false\);\s+setIsOnboardingForcedOpen\(true\);\s+if \(!isContinuation\)/);
   assert.match(shellSource, /stage === undefined && onboardingAiReady/);
   assert.doesNotMatch(onboardingSource, /gpt-\d/);

@@ -554,7 +554,6 @@ export function MissionControlShell({
   const modelOperationToastIdRef = useRef<string | number | null>(null);
   const modelAuthTerminalAutoOpenRef = useRef<{ command: string; openedAt: number } | null>(null);
   const modelAuthStatusPollRunRef = useRef(0);
-  const chatGptAuthWindowRef = useRef<Window | null>(null);
   const updateOperationToastIdRef = useRef<string | number | null>(null);
   const {
     recentDispatchId,
@@ -2718,19 +2717,10 @@ export function MissionControlShell({
     setModelSwitchFeedback(initialModelSwitchFeedback);
     setChatGptBrowserAuth(null);
 
-    const authWindow = typeof window !== "undefined" ? window.open("about:blank", "_blank") : null;
-    chatGptAuthWindowRef.current = authWindow;
-
-    if (authWindow) {
-      try {
-        authWindow.document.title = "AgentOS · Preparing ChatGPT sign-in";
-      } catch {
-        // The browser may return a restricted blank tab; the in-app link remains available.
-      }
-    }
-
+    let authWindow: Window | null = null;
     let authFlow: ChatGptBrowserAuthSnapshot | null = null;
     let authUrlOpened = false;
+    let authUrlOpenAttempted = false;
     try {
       authFlow = await startChatGptBrowserAuth(force);
       setChatGptBrowserAuth(authFlow);
@@ -2741,14 +2731,16 @@ export function MissionControlShell({
           throw new Error("ChatGPT sign-in did not start.");
         }
 
-        if (!authUrlOpened && currentAuthFlow.browserUrl && authWindow && !authWindow.closed) {
-          try {
-            authWindow.location.href = currentAuthFlow.browserUrl;
+        if (!authUrlOpenAttempted && currentAuthFlow.browserUrl) {
+          authUrlOpenAttempted = true;
+          const openedWindow =
+            typeof window !== "undefined"
+              ? window.open(currentAuthFlow.browserUrl, "_blank", "noopener,noreferrer")
+              : null;
+          if (openedWindow) {
+            authWindow = openedWindow;
             authUrlOpened = true;
-          } catch {
-            // The visible in-app sign-in link is the fallback when a popup cannot navigate.
           }
-          chatGptAuthWindowRef.current = null;
         }
 
         if (currentAuthFlow.state === "completed" || currentAuthFlow.state === "error") {
@@ -2764,14 +2756,14 @@ export function MissionControlShell({
         throw new Error(authFlow?.error || "ChatGPT sign-in did not complete.");
       }
 
-      const result = await readModelProviderStatus("openai", { includeSnapshot: true });
+      const result = await readModelProviderStatus("openai-codex", { includeSnapshot: true });
 
       if (!result.connection.connected) {
         throw new Error("ChatGPT sign-in completed, but OpenClaw did not report an active account yet.");
       }
 
       setChatGptBrowserAuth(null);
-      markModelProviderConnected("openai", result.connection.detail, result.snapshot);
+      markModelProviderConnected("openai-codex", result.connection.detail, result.snapshot);
     } catch (error) {
       if (!authUrlOpened && authWindow && !authWindow.closed) {
         authWindow.close();
