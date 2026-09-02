@@ -64,8 +64,13 @@ test("onboarding overlay is portaled and does not create outer page scroll", () 
 test("system onboarding keeps setup rows compact and the log collapsed", () => {
   const source = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding.tsx"), "utf8");
 
+  assert.match(source, /role="switch"/);
+  assert.match(source, /aria-label=\{surfaceTheme === "light" \? "Switch to dark theme" : "Switch to light theme"\}/);
+  assert.match(source, /max-sm:invisible sm:mt-2 sm:min-h-5/);
+  assert.match(source, /h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-\[9px\]/);
   assert.match(source, /mb-6 mt-6 grid max-w-\[640px\]/);
-  assert.match(source, /h-8 w-8 shrink-0 items-center justify-center rounded-full border text-\[13px\]/);
+  assert.match(source, /h-7 w-7 shrink-0 items-center justify-center rounded-full border text-\[12px\]/);
+  assert.match(source, /id: "system", label: "Setup"/);
   assert.match(source, /text-\[16px\] font-semibold leading-5 tracking-\[-0\.01em\]/);
   assert.doesNotMatch(source, /<p className="mt-0\.5 text-\[12px\] leading-4 text-muted-foreground">\{step\.description\}/);
   assert.match(source, /const \[detailsOpen, setDetailsOpen\] = useState\(false\)/);

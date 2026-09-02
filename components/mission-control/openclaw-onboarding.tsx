@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, Copy, Info, LoaderCircle, SquareTerminal, XCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, Copy, Info, LoaderCircle, MoonStar, SquareTerminal, SunMedium, XCircle } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 
 import { Button } from "@/components/ui/button";
@@ -53,6 +53,7 @@ type OnboardingVisualStage = WizardStage | "finish";
 export function OpenClawOnboarding({
   snapshot,
   surfaceTheme,
+  onToggleTheme,
   stage,
   systemReady,
   modelReady,
@@ -96,6 +97,7 @@ export function OpenClawOnboarding({
 }: {
   snapshot: MissionControlSnapshot;
   surfaceTheme: SurfaceTheme;
+  onToggleTheme: () => void;
   stage: WizardStage;
   systemReady?: boolean;
   modelReady?: boolean;
@@ -300,18 +302,21 @@ export function OpenClawOnboarding({
         )}
       >
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="px-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-8 sm:pt-6 lg:px-10">
+          <div className="relative px-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-8 sm:pt-6 lg:px-10">
+            <div className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-10 sm:right-8 sm:top-6 lg:right-10">
+              <OnboardingThemeSwitch surfaceTheme={surfaceTheme} onToggleTheme={onToggleTheme} />
+            </div>
             <div className="flex justify-center">
               <div className="flex min-w-0 flex-col items-center text-center">
-                <div className="flex items-center justify-center gap-3 sm:gap-4">
+                <div className="flex items-center justify-center gap-2.5 sm:gap-3">
                   <AgentOSMark />
                   <div className="min-w-0">
-                    <span className="block text-[21px] font-bold tracking-[-0.02em] sm:text-[23px]">
+                    <span className="block text-[19px] font-bold tracking-[-0.02em] sm:text-[21px]">
                       Agent<span className="text-primary">OS</span>
                     </span>
                   </div>
                 </div>
-                <p className="mt-1.5 text-[12px] leading-4 text-muted-foreground sm:mt-2 sm:text-[13px] sm:leading-5">
+                <p className="mt-1.5 min-h-4 text-[12px] leading-4 text-muted-foreground max-sm:invisible sm:mt-2 sm:min-h-5 sm:text-[13px] sm:leading-5">
                   Connect your local OpenClaw and prepare your environment.
                 </p>
               </div>
@@ -702,7 +707,7 @@ function SetupBackground({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
 
 function AgentOSMark() {
   return (
-    <span className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-[10px]" aria-hidden="true">
+    <span className="relative inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-[9px]" aria-hidden="true">
       <video
         autoPlay
         loop
@@ -715,6 +720,39 @@ function AgentOSMark() {
         <source src="/assets/logo.webm" type="video/webm" />
       </video>
     </span>
+  );
+}
+
+function OnboardingThemeSwitch({
+  surfaceTheme,
+  onToggleTheme
+}: {
+  surfaceTheme: SurfaceTheme;
+  onToggleTheme: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-label={surfaceTheme === "light" ? "Switch to dark theme" : "Switch to light theme"}
+      aria-checked={surfaceTheme === "light"}
+      onClick={onToggleTheme}
+      className={cn(
+        "relative inline-flex h-7 w-14 items-center rounded-full border transition-[background-color,border-color,transform] duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
+        surfaceTheme === "light"
+          ? "border-[#d0bcae] bg-[#eaded3] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] hover:bg-[#e3d5c8] hover:border-[#c8b09f] active:bg-[#d9c8ba]"
+          : "border-white/12 bg-white/[0.08] hover:bg-white/[0.12] hover:border-white/16 active:bg-white/[0.16]"
+      )}
+    >
+      <span
+        className={cn(
+          "absolute left-1 inline-flex h-5 w-5 items-center justify-center rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.18)] transition-[transform,background-color,color] duration-150",
+          surfaceTheme === "light" ? "translate-x-7 bg-[#c8946f] text-white" : "translate-x-0 bg-cyan-300 text-slate-950"
+        )}
+      >
+        {surfaceTheme === "light" ? <SunMedium className="h-3 w-3" /> : <MoonStar className="h-3 w-3" />}
+      </span>
+    </button>
   );
 }
 
@@ -734,7 +772,7 @@ function SetupStepper({
   onSelectStage: (stage: OnboardingVisualStage) => void;
 }) {
   const steps = [
-    { order: 1, id: "system", label: "System Setup", complete: systemReady },
+    { order: 1, id: "system", label: "Setup", complete: systemReady },
     { order: 2, id: "models", label: "Connect AI", complete: modelReady },
     { order: 3, id: "finish", label: "Finish", complete: finishReady }
   ] as const;
@@ -748,7 +786,7 @@ function SetupStepper({
           <div className="flex items-center gap-2 text-left max-md:flex-col max-md:items-center max-md:gap-0.5 max-md:text-center">
             <span
               className={cn(
-                "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[13px] font-semibold transition-colors max-md:h-6 max-md:w-6 max-md:text-[10px]",
+                "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold transition-colors max-md:h-5 max-md:w-5 max-md:text-[9px]",
                 isActive
                   ? "border-primary bg-primary text-primary-foreground shadow-[0_10px_26px_hsl(var(--primary)/0.22)]"
                   : isComplete
@@ -758,10 +796,10 @@ function SetupStepper({
                     : "border-border bg-card text-muted-foreground"
               )}
             >
-              {isComplete && !isActive ? <Check className="h-3.5 w-3.5 max-md:h-2.5 max-md:w-2.5" /> : step.order}
+              {isComplete && !isActive ? <Check className="h-3 w-3 max-md:h-2 max-md:w-2" /> : step.order}
             </span>
             <span className="min-w-0">
-              <span className={cn("block text-[13px] font-semibold leading-4 max-md:text-[11px] max-md:leading-3", isActive ? "text-primary" : "text-foreground")}>
+              <span className={cn("block text-[12px] font-semibold leading-4 max-md:text-[10px] max-md:leading-3", isActive ? "text-primary" : "text-foreground")}>
                 {step.label}
               </span>
             </span>
@@ -785,7 +823,7 @@ function SetupStepper({
               </button>
             )}
             {index < steps.length - 1 ? (
-              <div className="h-px w-[88px] bg-border max-md:w-full max-md:min-w-3">
+              <div className="h-px w-[72px] bg-border max-md:w-full max-md:min-w-3">
                 <motion.div
                   className="h-full bg-primary max-md:w-full"
                   initial={false}

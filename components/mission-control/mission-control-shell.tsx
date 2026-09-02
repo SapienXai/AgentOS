@@ -3865,6 +3865,7 @@ export function MissionControlShell({
           key={`onboarding-${onboardingSessionKey}`}
           snapshot={snapshot}
           surfaceTheme={surfaceTheme}
+          onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
           stage={effectiveOnboardingStage}
           systemReady={onboardingRunState === "success" || isOpenClawOnboardingSystemReady}
           modelReady={
@@ -5014,6 +5015,7 @@ export function MissionControlShell({
             key={`onboarding-${onboardingSessionKey}`}
             snapshot={snapshot}
             surfaceTheme={surfaceTheme}
+            onToggleTheme={() => setSurfaceTheme((current) => (current === "light" ? "dark" : "light"))}
             stage={effectiveOnboardingStage}
             systemReady={onboardingRunState === "success" || isOpenClawOnboardingSystemReady}
             modelReady={
