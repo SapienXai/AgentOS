@@ -87,7 +87,8 @@ test("launchpad uses the same compact status-row language as setup", () => {
   const source = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding.stages.tsx"), "utf8");
 
   assert.match(source, /text-\[16px\] font-semibold leading-5 tracking-\[-0\.01em\]/);
-  assert.match(source, /flex min-h-\[58px\] items-center justify-between gap-3 rounded-\[12px\] border px-4 py-3/);
+  assert.match(source, /mt-3 grid grid-cols-2 gap-2/);
+  assert.match(source, /flex min-h-\[58px\] min-w-0 items-center justify-between gap-3 rounded-\[12px\] border px-4 py-3/);
   assert.match(source, /<Info className=\{cn\("h-3\.5 w-3\.5 shrink-0"/);
   assert.match(source, /Next: \{nextStep\}/);
   assert.doesNotMatch(source, /const launchSummary =/);

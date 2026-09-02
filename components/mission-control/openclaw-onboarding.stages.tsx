@@ -1103,7 +1103,7 @@ export function LaunchpadStage({
         </div>
 
         {!showBuildScene ? (
-          <div className="mt-3 space-y-1.5">
+          <div className="mt-3 grid grid-cols-2 gap-2">
             <LaunchpadMetric
               surfaceTheme={surfaceTheme}
               label="System"
@@ -1579,7 +1579,7 @@ export function LaunchpadMetric({
   return (
     <div
       className={cn(
-        "flex min-h-[58px] items-center justify-between gap-3 rounded-[12px] border px-4 py-3",
+        "flex min-h-[58px] min-w-0 items-center justify-between gap-3 rounded-[12px] border px-4 py-3",
         surfaceTheme === "light" ? "border-[#e6d7cb] bg-white" : "border-white/10 bg-white/[0.03]"
       )}
     >
