@@ -1409,6 +1409,35 @@ test("ChatGPT provider connection stays in-app and clears legacy terminal handof
   assert.doesNotMatch(routeSource, /manualCommand:\s*authHandoff\.command/);
 });
 
+test("ChatGPT onboarding hands browser auth through a server-side session", () => {
+  const routeSource = readFileSync(path.join(rootDir, "app/api/models/chatgpt-auth/route.ts"), "utf8");
+  const serviceSource = readFileSync(
+    path.join(rootDir, "lib/openclaw/application/chatgpt-provider-auth-service.ts"),
+    "utf8"
+  );
+  const adapterSource = readFileSync(path.join(rootDir, "lib/openclaw/model-provider-adapters.ts"), "utf8");
+  const onboardingSource = readFileSync(
+    path.join(rootDir, "components/mission-control/openclaw-onboarding.stages.tsx"),
+    "utf8"
+  );
+
+  assert.match(routeSource, /requireAgentOsProductPermission\(request, "secrets\.manage"\)/);
+  assert.match(routeSource, /action: z\.literal\("start"\)/);
+  assert.match(routeSource, /action: z\.literal\("submit"\)/);
+  assert.match(serviceSource, /models\",\s*\"auth\",\s*\"login\"/);
+  assert.match(serviceSource, /onBrowserUrl/);
+  assert.match(serviceSource, /onManualInputRequired/);
+  assert.match(serviceSource, /stdio: \["pipe", "pipe", "pipe"\]/);
+  assert.match(serviceSource, /auth\.openai\.com/);
+  assert.match(serviceSource, /\["localhost", "127\.0\.0\.1", "\[::1\]"\]/);
+  assert.match(serviceSource, /url\.port !== "1455"/);
+  assert.match(serviceSource, /url\.pathname !== "\/auth\/callback"/);
+  assert.match(adapterSource, /\/api\/models\/chatgpt-auth/);
+  assert.match(onboardingSource, /Open ChatGPT sign-in in a new tab/);
+  assert.match(onboardingSource, /Mobile callback fallback/);
+  assert.doesNotMatch(onboardingSource, /Continue in terminal to connect OpenAI/);
+});
+
 test("phase three model surfaces separate setup, assignment, and session scope", () => {
   const pickerSource = readFileSync(
     path.join(rootDir, "components/mission-control/agent-model-picker-dialog.tsx"),

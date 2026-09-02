@@ -10,6 +10,7 @@ import type {
   AddModelsProviderId,
   ModelProviderAuthMethod
 } from "@/lib/openclaw/types";
+import type { ChatGptBrowserAuthSnapshot } from "@/lib/agentos/contracts";
 
 export type ModelProviderAdapter = {
   id: AddModelsProviderId;
@@ -41,6 +42,75 @@ export class ModelProviderActionError extends Error {
 
 const MODEL_PROVIDER_REQUEST_TIMEOUT_MS = 30_000;
 const CHATGPT_PROVIDER_REQUEST_TIMEOUT_MS = 13 * 60_000;
+
+async function runChatGptBrowserAuthRequest(
+  request: { action: "start"; force?: boolean } | { action: "submit"; sessionId: string; redirectUrl: string }
+): Promise<ChatGptBrowserAuthSnapshot> {
+  const response = await fetch("/api/models/chatgpt-auth", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(request)
+  });
+  const result = (await response.json().catch(() => null)) as
+    | ChatGptBrowserAuthSnapshot
+    | { error?: string }
+    | null;
+
+  if (!result) {
+    throw new Error("ChatGPT sign-in request failed.");
+  }
+
+  if (!("sessionId" in result)) {
+    throw new Error(result.error || "ChatGPT sign-in request failed.");
+  }
+
+  if (!response.ok) {
+    throw new Error("ChatGPT sign-in request failed.");
+  }
+
+  return result;
+}
+
+export function startChatGptBrowserAuth(force = false) {
+  return runChatGptBrowserAuthRequest({
+    action: "start",
+    force: force || undefined
+  });
+}
+
+export async function readChatGptBrowserAuth(sessionId: string) {
+  const response = await fetch(`/api/models/chatgpt-auth?sessionId=${encodeURIComponent(sessionId)}`, {
+    cache: "no-store"
+  });
+  const result = (await response.json().catch(() => null)) as
+    | ChatGptBrowserAuthSnapshot
+    | { error?: string }
+    | null;
+
+  if (!result) {
+    throw new Error("ChatGPT sign-in status failed.");
+  }
+
+  if (!("sessionId" in result)) {
+    throw new Error(result.error || "ChatGPT sign-in status failed.");
+  }
+
+  if (!response.ok) {
+    throw new Error("ChatGPT sign-in status failed.");
+  }
+
+  return result;
+}
+
+export function submitChatGptBrowserAuth(sessionId: string, redirectUrl: string) {
+  return runChatGptBrowserAuthRequest({
+    action: "submit",
+    sessionId,
+    redirectUrl
+  });
+}
 
 async function runProviderAction(
   request: AddModelsProviderActionRequest,

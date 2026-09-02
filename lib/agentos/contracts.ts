@@ -48,6 +48,22 @@ export type RuntimeEventSubscriptionRequest = {
   artifactIds?: string[];
 };
 
+export type ChatGptBrowserAuthState =
+  | "preparing"
+  | "waiting-for-browser"
+  | "waiting-for-redirect"
+  | "completing"
+  | "completed"
+  | "error";
+
+export type ChatGptBrowserAuthSnapshot = {
+  sessionId: string;
+  state: ChatGptBrowserAuthState;
+  browserUrl: string | null;
+  message: string;
+  error: string | null;
+};
+
 export type RuntimeSnapshotRecord = {
   agents?: unknown[];
   sessions?: unknown[];

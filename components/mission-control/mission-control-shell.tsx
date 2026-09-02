@@ -113,6 +113,7 @@ import {
 import type {
   AddModelsProviderActionResult,
   AddModelsProviderId,
+  ChatGptBrowserAuthSnapshot,
   DiscoveredModelCandidate,
   MissionResponse,
   MissionControlSnapshot,
@@ -138,8 +139,9 @@ import {
   normalizeAddModelsProviderId
 } from "@/lib/openclaw/model-provider-registry";
 import {
-  getModelProviderAdapter,
-  ModelProviderActionError
+  readChatGptBrowserAuth,
+  startChatGptBrowserAuth,
+  submitChatGptBrowserAuth
 } from "@/lib/openclaw/model-provider-adapters";
 import { cn } from "@/lib/utils";
 
@@ -506,6 +508,7 @@ export function MissionControlShell({
   const [modelOnboardingLog, setModelOnboardingLog] = useState("");
   const [modelOnboardingManualCommand, setModelOnboardingManualCommand] = useState<string | null>(null);
   const [modelOnboardingDocsUrl, setModelOnboardingDocsUrl] = useState<string | null>(null);
+  const [chatGptBrowserAuth, setChatGptBrowserAuth] = useState<ChatGptBrowserAuthSnapshot | null>(null);
   const [modelSwitchFeedback, setModelSwitchFeedback] =
     useState<ModelSwitchFeedback>(initialModelSwitchFeedback);
   const [isOnboardingDismissed, setIsOnboardingDismissed] = useState(false);
@@ -551,6 +554,7 @@ export function MissionControlShell({
   const modelOperationToastIdRef = useRef<string | number | null>(null);
   const modelAuthTerminalAutoOpenRef = useRef<{ command: string; openedAt: number } | null>(null);
   const modelAuthStatusPollRunRef = useRef(0);
+  const chatGptAuthWindowRef = useRef<Window | null>(null);
   const updateOperationToastIdRef = useRef<string | number | null>(null);
   const {
     recentDispatchId,
@@ -2712,34 +2716,90 @@ export function MissionControlShell({
     setModelOnboardingDocsUrl(null);
     setModelOnboardingLog("");
     setModelSwitchFeedback(initialModelSwitchFeedback);
+    setChatGptBrowserAuth(null);
 
+    const authWindow = typeof window !== "undefined" ? window.open("about:blank", "_blank") : null;
+    chatGptAuthWindowRef.current = authWindow;
+
+    if (authWindow) {
+      try {
+        authWindow.document.title = "AgentOS · Preparing ChatGPT sign-in";
+      } catch {
+        // The browser may return a restricted blank tab; the in-app link remains available.
+      }
+    }
+
+    let authFlow: ChatGptBrowserAuthSnapshot | null = null;
+    let authUrlOpened = false;
     try {
-      const result = await getModelProviderAdapter("openai").connect({
-        authMethod: "chatgpt",
-        force
-      });
+      authFlow = await startChatGptBrowserAuth(force);
+      setChatGptBrowserAuth(authFlow);
 
-      if (result.snapshot) {
-        setSnapshot(result.snapshot);
-        hydrateOnboardingModelSelection(result.snapshot);
+      for (let attempt = 0; attempt < 360; attempt += 1) {
+        const currentAuthFlow = authFlow;
+        if (!currentAuthFlow) {
+          throw new Error("ChatGPT sign-in did not start.");
+        }
+
+        if (!authUrlOpened && currentAuthFlow.browserUrl && authWindow && !authWindow.closed) {
+          try {
+            authWindow.location.href = currentAuthFlow.browserUrl;
+            authUrlOpened = true;
+          } catch {
+            // The visible in-app sign-in link is the fallback when a popup cannot navigate.
+          }
+          chatGptAuthWindowRef.current = null;
+        }
+
+        if (currentAuthFlow.state === "completed" || currentAuthFlow.state === "error") {
+          break;
+        }
+
+        await new Promise((resolve) => globalThis.setTimeout(resolve, 1_000));
+        authFlow = await readChatGptBrowserAuth(currentAuthFlow.sessionId);
+        setChatGptBrowserAuth(authFlow);
       }
 
-      await runModelOnboarding({ intent: "verify" });
+      if (!authFlow || authFlow.state !== "completed") {
+        throw new Error(authFlow?.error || "ChatGPT sign-in did not complete.");
+      }
+
+      const result = await readModelProviderStatus("openai", { includeSnapshot: true });
+
+      if (!result.connection.connected) {
+        throw new Error("ChatGPT sign-in completed, but OpenClaw did not report an active account yet.");
+      }
+
+      setChatGptBrowserAuth(null);
+      markModelProviderConnected("openai", result.connection.detail, result.snapshot);
     } catch (error) {
-      const providerResult = error instanceof ModelProviderActionError ? error.result : null;
-
-      if (providerResult?.snapshot) {
-        setSnapshot(providerResult.snapshot);
-        hydrateOnboardingModelSelection(providerResult.snapshot);
+      if (!authUrlOpened && authWindow && !authWindow.closed) {
+        authWindow.close();
       }
-
-      const message = resolveChatGptRecoveryMessage(error instanceof Error ? error.message : null);
+      const message = resolveChatGptRecoveryMessage(
+        authFlow?.state === "error" ? authFlow.error : error instanceof Error ? error.message : null
+      );
       setModelOnboardingRunState("error");
       setModelOnboardingPhase("authenticating");
       setModelOnboardingStatusMessage(null);
       setModelOnboardingResultMessage(message);
       toast.error("ChatGPT connection needs attention.", {
         description: message
+      });
+    }
+  };
+
+  const submitChatGptBrowserRedirect = async (redirectUrl: string) => {
+    if (!chatGptBrowserAuth) {
+      return;
+    }
+
+    try {
+      const result = await submitChatGptBrowserAuth(chatGptBrowserAuth.sessionId, redirectUrl);
+      setChatGptBrowserAuth(result);
+    } catch (error) {
+      toast.error("ChatGPT callback was not accepted.", {
+        description: error instanceof Error ? error.message : "Paste the complete OpenAI localhost callback URL."
       });
     }
   };
@@ -3862,6 +3922,8 @@ export function MissionControlShell({
           onConnectChatGPT={(force = false) => {
             void runChatGptOnboarding(force);
           }}
+          chatGptBrowserAuth={chatGptBrowserAuth}
+          onSubmitChatGptRedirect={submitChatGptBrowserRedirect}
           onContinueFromAi={continueFromAi}
           onEnterAgentOS={enterAgentOS}
           onSkipSetup={dismissOnboarding}
@@ -5009,6 +5071,8 @@ export function MissionControlShell({
             onConnectChatGPT={(force = false) => {
               void runChatGptOnboarding(force);
             }}
+            chatGptBrowserAuth={chatGptBrowserAuth}
+            onSubmitChatGptRedirect={submitChatGptBrowserRedirect}
             onContinueFromAi={continueFromAi}
             onEnterAgentOS={enterAgentOS}
             onSkipSetup={dismissOnboarding}

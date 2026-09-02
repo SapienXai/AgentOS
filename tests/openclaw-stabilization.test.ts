@@ -1411,8 +1411,9 @@ test("ChatGPT-first onboarding keeps the normal model step focused and advanced 
   assert.match(onboardingModalSource, /const onboardingAiReady = isOnboardingModelStepComplete/);
   assert.match(onboardingModalSource, /const showLaunchpad = onboardingAiReady &&/);
   assert.match(onboardingSource, /modelReady: isChatGptConnectionReady\(snapshot\)/);
-  assert.match(shellSource, /getModelProviderAdapter\("openai"\)\.connect/);
-  assert.match(shellSource, /authMethod: "chatgpt"/);
+  assert.match(shellSource, /startChatGptBrowserAuth\(force\)/);
+  assert.match(shellSource, /submitChatGptBrowserAuth\(chatGptBrowserAuth\.sessionId, redirectUrl\)/);
+  assert.match(shellSource, /window\.open\("about:blank", "_blank"\)/);
   assert.match(shellSource, /setIsOnboardingDismissed\(false\);\s+setIsOnboardingForcedOpen\(true\);\s+if \(!isContinuation\)/);
   assert.match(shellSource, /stage === undefined && onboardingAiReady/);
   assert.doesNotMatch(onboardingSource, /gpt-\d/);

@@ -16,6 +16,7 @@ import {
 import type {
   DiscoveredModelCandidate,
   AddModelsProviderId,
+  ChatGptBrowserAuthSnapshot,
   MissionControlSnapshot,
   OpenClawModelOnboardingPhase,
   OpenClawOnboardingPhase,
@@ -87,6 +88,8 @@ export function OpenClawOnboarding({
   onBackToSystem,
   onSelectStage,
   onConnectChatGPT,
+  chatGptBrowserAuth,
+  onSubmitChatGptRedirect,
   onContinueFromAi,
   launchpadCreateProgress,
   launchpadCreateRunState
@@ -128,6 +131,8 @@ export function OpenClawOnboarding({
   onBackToSystem: () => void;
   onSelectStage: (stage: WizardStage) => void;
   onConnectChatGPT: (force?: boolean) => void;
+  chatGptBrowserAuth: ChatGptBrowserAuthSnapshot | null;
+  onSubmitChatGptRedirect: (redirectUrl: string) => void;
   onContinueFromAi: () => void;
   launchpadCreateProgress: OperationProgressSnapshot | null;
   launchpadCreateRunState: "idle" | "running" | "success" | "error";
@@ -376,6 +381,8 @@ export function OpenClawOnboarding({
                 advancedProviderFlowOpen={advancedProviderFlowOpen}
                 onAdvancedProviderFlowOpenChange={setAdvancedProviderFlowOpen}
                 onConnectChatGPT={onConnectChatGPT}
+                chatGptBrowserAuth={chatGptBrowserAuth}
+                onSubmitChatGptRedirect={onSubmitChatGptRedirect}
                 onContinueFromAi={onContinueFromAi}
               />
             )}

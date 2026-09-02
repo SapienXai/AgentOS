@@ -1,6 +1,7 @@
 import "server-only";
 
-import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { spawn, type ChildProcess } from "node:child_process";
 
 import {
   buildOpenClawSpawnEnv,
@@ -9,9 +10,14 @@ import {
 import { resolveOpenClawBin, runOpenClaw } from "@/lib/openclaw/cli";
 import { readOpenClawCodexPluginReady } from "@/lib/openclaw/application/model-provider-state-service";
 import { getOpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
+import type {
+  ChatGptBrowserAuthSnapshot
+} from "@/lib/agentos/contracts";
 
 const chatGptAuthTimeoutMs = 6 * 60_000;
 const pluginSetupTimeoutMs = 2 * 60_000;
+const chatGptAuthSessionRetentionMs = 10 * 60_000;
+const openAiAuthorizationUrlPattern = /https:\/\/auth\.openai\.com\/oauth\/authorize\S+/ig;
 
 type ChatGptProviderAuthDependencies = {
   platform: NodeJS.Platform;
@@ -20,6 +26,9 @@ type ChatGptProviderAuthDependencies = {
   runInteractiveLogin: (input: {
     force: boolean;
     signal?: AbortSignal;
+    onBrowserUrl?: (url: string) => void;
+    onManualInputRequired?: () => void;
+    onChild?: (child: ChildProcess) => void;
   }) => Promise<void>;
 };
 
@@ -27,6 +36,28 @@ export type ChatGptProviderAuthResult = {
   pluginInstalled: boolean;
   authMode: "openclaw-cli-interactive";
 };
+
+type ChatGptBrowserAuthSession = ChatGptBrowserAuthSnapshot & {
+  child: ChildProcess | null;
+  abortController: AbortController;
+  completion: Promise<void>;
+};
+
+export class ChatGptBrowserAuthError extends Error {
+  constructor(
+    message: string,
+    readonly code:
+      | "chatgpt-auth-unsupported"
+      | "chatgpt-auth-session-not-found"
+      | "chatgpt-auth-session-complete"
+      | "chatgpt-auth-redirect-invalid"
+  ) {
+    super(message);
+    this.name = "ChatGptBrowserAuthError";
+  }
+}
+
+const chatGptAuthSessions = new Map<string, ChatGptBrowserAuthSession>();
 
 const defaultDependencies: ChatGptProviderAuthDependencies = {
   platform: process.platform,
@@ -40,6 +71,217 @@ const defaultDependencies: ChatGptProviderAuthDependencies = {
   },
   runInteractiveLogin: runOpenClawChatGptInteractiveLogin
 };
+
+export async function startOpenClawChatGptBrowserAuth(input: { force?: boolean } = {}) {
+  if (process.platform !== "darwin") {
+    throw new ChatGptBrowserAuthError(
+      "Browser ChatGPT sign-in currently requires local AgentOS on macOS.",
+      "chatgpt-auth-unsupported"
+    );
+  }
+
+  const activeSession = [...chatGptAuthSessions.values()].find((session) =>
+    !["completed", "error"].includes(session.state)
+  );
+
+  if (activeSession && input.force !== true) {
+    return toChatGptBrowserAuthSnapshot(activeSession);
+  }
+
+  if (activeSession) {
+    activeSession.abortController.abort();
+    chatGptAuthSessions.delete(activeSession.sessionId);
+  }
+
+  const session: ChatGptBrowserAuthSession = {
+    sessionId: randomUUID(),
+    state: "preparing",
+    browserUrl: null,
+    message: "Preparing secure ChatGPT sign-in...",
+    error: null,
+    child: null,
+    abortController: new AbortController(),
+    completion: Promise.resolve()
+  };
+
+  chatGptAuthSessions.set(session.sessionId, session);
+  session.completion = runBrowserAuthSession(session, input.force === true);
+  void session.completion;
+  scheduleChatGptAuthSessionCleanup(session.sessionId);
+
+  return toChatGptBrowserAuthSnapshot(session);
+}
+
+export function getOpenClawChatGptBrowserAuth(sessionId: string) {
+  const session = chatGptAuthSessions.get(sessionId);
+
+  if (!session) {
+    throw new ChatGptBrowserAuthError(
+      "The ChatGPT sign-in session is no longer available. Start again.",
+      "chatgpt-auth-session-not-found"
+    );
+  }
+
+  return toChatGptBrowserAuthSnapshot(session);
+}
+
+export function submitOpenClawChatGptBrowserAuth(input: {
+  sessionId: string;
+  redirectUrl: string;
+}) {
+  const session = chatGptAuthSessions.get(input.sessionId);
+
+  if (!session) {
+    throw new ChatGptBrowserAuthError(
+      "The ChatGPT sign-in session is no longer available. Start again.",
+      "chatgpt-auth-session-not-found"
+    );
+  }
+
+  if (["completed", "error"].includes(session.state) || !session.child?.stdin) {
+    throw new ChatGptBrowserAuthError(
+      "This ChatGPT sign-in session is no longer waiting for a redirect URL.",
+      "chatgpt-auth-session-complete"
+    );
+  }
+
+  const redirectUrl = validateOpenAiRedirectInput(input.redirectUrl);
+  session.state = "completing";
+  session.message = "Finishing ChatGPT sign-in...";
+  session.error = null;
+  session.child.stdin.write(`${redirectUrl}\n`);
+
+  return toChatGptBrowserAuthSnapshot(session);
+}
+
+export function cancelOpenClawChatGptBrowserAuth(sessionId: string) {
+  const session = chatGptAuthSessions.get(sessionId);
+
+  if (!session) {
+    return;
+  }
+
+  session.abortController.abort();
+  chatGptAuthSessions.delete(sessionId);
+}
+
+async function runBrowserAuthSession(session: ChatGptBrowserAuthSession, force: boolean) {
+  try {
+    await prepareChatGptProviderAuth(defaultDependencies);
+    session.state = "waiting-for-browser";
+    session.message = "Open the ChatGPT sign-in page in the new browser tab.";
+
+    await defaultDependencies.runInteractiveLogin({
+      force,
+      signal: session.abortController.signal,
+      onChild: (child) => {
+        session.child = child;
+      },
+      onBrowserUrl: (browserUrl) => {
+        session.browserUrl = browserUrl;
+        session.state = "waiting-for-redirect";
+        session.message = "Complete ChatGPT sign-in. If the callback page cannot load on this device, paste its full URL below.";
+      },
+      onManualInputRequired: () => {
+        session.state = "waiting-for-redirect";
+        session.message = "Paste the full redirect URL from the ChatGPT callback page to finish sign-in.";
+      }
+    });
+
+    session.state = "completed";
+    session.message = "ChatGPT sign-in completed. Refreshing model status...";
+    session.error = null;
+  } catch (error) {
+    session.state = "error";
+    session.message = "ChatGPT sign-in could not be completed.";
+    session.error = error instanceof Error
+      ? error.message
+      : "OpenClaw did not complete ChatGPT sign-in.";
+  } finally {
+    session.child = null;
+  }
+}
+
+async function prepareChatGptProviderAuth(dependencies: ChatGptProviderAuthDependencies) {
+  const pluginReady = await dependencies.readPluginReady().catch(() => false);
+
+  if (pluginReady) {
+    return false;
+  }
+
+  await dependencies.runSetupCommand(
+    ["plugins", "install", "--force", "@openclaw/codex"],
+    pluginSetupTimeoutMs
+  );
+  await dependencies.runSetupCommand(["doctor", "--fix"], pluginSetupTimeoutMs);
+  await dependencies.runSetupCommand(["gateway", "restart"], pluginSetupTimeoutMs);
+  return true;
+}
+
+function toChatGptBrowserAuthSnapshot(session: ChatGptBrowserAuthSession): ChatGptBrowserAuthSnapshot {
+  return {
+    sessionId: session.sessionId,
+    state: session.state,
+    browserUrl: session.browserUrl,
+    message: session.message,
+    error: session.error
+  };
+}
+
+function scheduleChatGptAuthSessionCleanup(sessionId: string) {
+  const timer = setTimeout(() => {
+    chatGptAuthSessions.delete(sessionId);
+  }, chatGptAuthSessionRetentionMs);
+  timer.unref?.();
+}
+
+export function extractOpenAiAuthorizationUrl(output: string) {
+  const cleanOutput = output.replace(/\u001b\[[0-?]*[ -\/]*[@-~]/g, "");
+
+  for (const match of cleanOutput.matchAll(openAiAuthorizationUrlPattern)) {
+    const candidate = match[0].replace(/[),.;]+$/g, "");
+
+    try {
+      const url = new URL(candidate);
+      if (url.protocol === "https:" && url.hostname === "auth.openai.com" && url.pathname === "/oauth/authorize") {
+        return url.toString();
+      }
+    } catch {
+      // Ignore partial or malformed terminal output.
+    }
+  }
+
+  return null;
+}
+
+function validateOpenAiRedirectInput(value: string) {
+  const redirectUrl = value.trim();
+
+  try {
+    const url = new URL(redirectUrl);
+    const allowedHosts = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+    if (
+      url.protocol !== "http:" ||
+      !allowedHosts.has(url.hostname) ||
+      url.port !== "1455" ||
+      url.pathname !== "/auth/callback" ||
+      !url.searchParams.get("code") ||
+      !url.searchParams.get("state")
+    ) {
+      throw new Error("The redirect URL must be the complete OpenAI localhost callback URL.");
+    }
+
+    return redirectUrl;
+  } catch (error) {
+    throw new ChatGptBrowserAuthError(
+      error instanceof Error && error.message
+        ? error.message
+        : "Paste the complete OpenAI localhost callback URL.",
+      "chatgpt-auth-redirect-invalid"
+    );
+  }
+}
 
 /**
  * Runs OpenClaw's official provider-auth flow without handing a shell command to
@@ -64,12 +306,7 @@ export async function connectOpenClawChatGptProvider(
   const pluginReady = await dependencies.readPluginReady().catch(() => false);
 
   if (!pluginReady) {
-    await dependencies.runSetupCommand(
-      ["plugins", "install", "--force", "@openclaw/codex"],
-      pluginSetupTimeoutMs
-    );
-    await dependencies.runSetupCommand(["doctor", "--fix"], pluginSetupTimeoutMs);
-    await dependencies.runSetupCommand(["gateway", "restart"], pluginSetupTimeoutMs);
+    await prepareChatGptProviderAuth(dependencies);
     pluginInstalled = true;
   }
 
@@ -87,6 +324,9 @@ export async function connectOpenClawChatGptProvider(
 async function runOpenClawChatGptInteractiveLogin(input: {
   force: boolean;
   signal?: AbortSignal;
+  onBrowserUrl?: (url: string) => void;
+  onManualInputRequired?: () => void;
+  onChild?: (child: ChildProcess) => void;
 }) {
   const openClawBin = await resolveOpenClawBin();
   const args = [
@@ -107,10 +347,28 @@ async function runOpenClawChatGptInteractiveLogin(input: {
       {
         detached: true,
         env: buildOpenClawSpawnEnv(),
-        stdio: ["ignore", "ignore", "ignore"],
+        stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true
       }
     );
+    input.onChild?.(child);
+    let outputBuffer = "";
+    let browserUrlReported: string | null = null;
+    const handleOutput = (chunk: Buffer | string) => {
+      outputBuffer = `${outputBuffer}${String(chunk)}`.slice(-16_384);
+      const browserUrl = extractOpenAiAuthorizationUrl(outputBuffer);
+
+      if (browserUrl && browserUrl !== browserUrlReported) {
+        browserUrlReported = browserUrl;
+        input.onBrowserUrl?.(browserUrl);
+      }
+
+      if (/Paste the authorization code|Paste the redirect URL/i.test(outputBuffer)) {
+        input.onManualInputRequired?.();
+      }
+    };
+    child.stdout?.on("data", handleOutput);
+    child.stderr?.on("data", handleOutput);
     let settled = false;
     let killTimer: ReturnType<typeof setTimeout> | null = null;
 

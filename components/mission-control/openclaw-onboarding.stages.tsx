@@ -1,13 +1,17 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, Check, Copy, LoaderCircle, Route, SquareTerminal } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, Copy, Info, LoaderCircle, Route, SquareTerminal } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { PikoLoader } from "@/components/ui/piko-loader";
 import { toast } from "@/components/ui/sonner";
-import type { AddModelsProviderId, MissionControlSnapshot } from "@/lib/agentos/contracts";
+import type {
+  AddModelsProviderId,
+  ChatGptBrowserAuthSnapshot,
+  MissionControlSnapshot
+} from "@/lib/agentos/contracts";
 import type { OpenClawModelOnboardingPhase, OperationProgressSnapshot } from "@/lib/agentos/contracts";
 import {
   secondaryActionClassName,
@@ -275,6 +279,8 @@ export function ModelStage({
   advancedProviderFlowOpen,
   onAdvancedProviderFlowOpenChange,
   onConnectChatGPT,
+  chatGptBrowserAuth,
+  onSubmitChatGptRedirect,
   onContinueFromAi
 }: {
   snapshot: MissionControlSnapshot;
@@ -294,6 +300,8 @@ export function ModelStage({
   advancedProviderFlowOpen: boolean;
   onAdvancedProviderFlowOpenChange: (open: boolean) => void;
   onConnectChatGPT: (force?: boolean) => void;
+  chatGptBrowserAuth: ChatGptBrowserAuthSnapshot | null;
+  onSubmitChatGptRedirect: (redirectUrl: string) => void;
   onContinueFromAi: () => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(true);
@@ -376,12 +384,14 @@ export function ModelStage({
           })}
           chatGptReady={isChatGptConnectionReady(snapshot)}
           chatGptAttempted={chatGptAttempted}
+          chatGptBrowserAuth={chatGptBrowserAuth}
           defaultModelId={defaultModelId}
           statusMessage={run.statusMessage || run.resultMessage}
           onConnectChatGPT={(force) => {
             setChatGptAttempted(true);
             onConnectChatGPT(force);
           }}
+          onSubmitChatGptRedirect={onSubmitChatGptRedirect}
           onContinueFromAi={onContinueFromAi}
           onUseAnotherProvider={() => onAdvancedProviderFlowOpenChange(true)}
         />
@@ -472,9 +482,11 @@ function ConnectAiStage({
   state,
   chatGptReady,
   chatGptAttempted,
+  chatGptBrowserAuth,
   defaultModelId,
   statusMessage,
   onConnectChatGPT,
+  onSubmitChatGptRedirect,
   onContinueFromAi,
   onUseAnotherProvider
 }: {
@@ -482,17 +494,21 @@ function ConnectAiStage({
   state: ReturnType<typeof resolveChatGptOnboardingState>;
   chatGptReady: boolean;
   chatGptAttempted: boolean;
+  chatGptBrowserAuth: ChatGptBrowserAuthSnapshot | null;
   defaultModelId: string | null;
   statusMessage: string | null;
   onConnectChatGPT: (force?: boolean) => void;
+  onSubmitChatGptRedirect: (redirectUrl: string) => void;
   onContinueFromAi: () => void;
   onUseAnotherProvider: () => void;
 }) {
   const isBusy = state === "connecting" || state === "verifying";
   const isReady = state === "ready";
   const isError = state === "error";
+  const browserAuthBusy = chatGptBrowserAuth && !["completed", "error"].includes(chatGptBrowserAuth.state);
   const connectedTitle = chatGptReady || chatGptAttempted ? "ChatGPT connected" : "AI connected";
   const modelDetail = defaultModelId?.trim() ? `Using ${formatModelLabel(defaultModelId)}` : null;
+  const [redirectUrl, setRedirectUrl] = useState("");
 
   return (
     <div className="mx-auto flex min-h-[320px] max-w-[640px] flex-col items-center justify-center py-8 text-center">
@@ -510,6 +526,86 @@ function ConnectAiStage({
       <p className={cn("mt-2 max-w-[420px] text-[12px] leading-5", surfaceTheme === "light" ? "text-[#705b4d]" : "text-slate-400")}>
         {isReady ? "Your AI workforce is ready." : "Connect your ChatGPT account to power your agents and start using AgentOS."}
       </p>
+
+      {chatGptBrowserAuth ? (
+        <div
+          className={cn(
+            "mt-5 w-full max-w-[420px] rounded-[16px] border px-4 py-3 text-left",
+            surfaceTheme === "light"
+              ? "border-sky-200 bg-sky-50/80 text-sky-950"
+              : "border-sky-300/20 bg-sky-300/10 text-sky-100"
+          )}
+        >
+          <div className="flex items-start gap-2">
+            {browserAuthBusy ? <LoaderCircle className="mt-0.5 h-4 w-4 shrink-0 animate-spin" /> : <Info className="mt-0.5 h-4 w-4 shrink-0" />}
+            <div className="min-w-0">
+              <p className="text-[12px] font-semibold">ChatGPT sign-in</p>
+              <p className="mt-1 text-[11px] leading-4 opacity-80">{chatGptBrowserAuth.message}</p>
+            </div>
+          </div>
+
+          {chatGptBrowserAuth.browserUrl && chatGptBrowserAuth.state !== "completed" ? (
+            <a
+              href={chatGptBrowserAuth.browserUrl}
+              target="_blank"
+              rel="noreferrer"
+              className={cn(
+                "mt-3 inline-flex h-9 items-center rounded-full border px-3 text-[11px] font-semibold transition-colors",
+                surfaceTheme === "light"
+                  ? "border-sky-300 bg-white text-sky-800 hover:bg-sky-100"
+                  : "border-sky-200/30 bg-white/10 text-sky-100 hover:bg-white/15"
+              )}
+            >
+              Open ChatGPT sign-in in a new tab
+              <ArrowRight className="ml-1.5 h-3 w-3" />
+            </a>
+          ) : null}
+
+          {chatGptBrowserAuth.state === "waiting-for-redirect" ? (
+            <div className="mt-3">
+              <label
+                htmlFor="chatgpt-redirect-url"
+                className={cn("text-[10px] font-medium", surfaceTheme === "light" ? "text-sky-900/75" : "text-sky-100/75")}
+              >
+                Mobile callback fallback
+              </label>
+              <p className="mt-1 text-[10px] leading-4 opacity-70">
+                After sign-in, if the callback page cannot load, paste its full address here.
+              </p>
+              <input
+                id="chatgpt-redirect-url"
+                type="url"
+                inputMode="url"
+                autoComplete="off"
+                value={redirectUrl}
+                onChange={(event) => setRedirectUrl(event.target.value)}
+                placeholder="http://localhost:1455/auth/callback?..."
+                className={cn(
+                  "mt-2 h-9 w-full rounded-lg border bg-transparent px-3 text-[10px] outline-none",
+                  surfaceTheme === "light"
+                    ? "border-sky-300 bg-white placeholder:text-sky-900/35 focus:border-sky-500"
+                    : "border-sky-200/25 placeholder:text-sky-100/35 focus:border-sky-200/60"
+                )}
+              />
+              <Button
+                type="button"
+                onClick={() => {
+                  onSubmitChatGptRedirect(redirectUrl);
+                  setRedirectUrl("");
+                }}
+                disabled={!redirectUrl.trim()}
+                className="mt-2 h-9 w-full rounded-full text-[11px]"
+              >
+                Finish sign-in
+              </Button>
+            </div>
+          ) : null}
+
+          {chatGptBrowserAuth.state === "error" && chatGptBrowserAuth.error ? (
+            <p className="mt-2 text-[10px] leading-4 text-rose-300">{resolveChatGptRecoveryMessage(chatGptBrowserAuth.error)}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {isReady ? (
         <div className={cn("mt-5 w-full max-w-[420px] rounded-[16px] border px-4 py-3 text-left", surfaceTheme === "light" ? "border-emerald-200 bg-emerald-50/70" : "border-emerald-300/20 bg-emerald-300/10")}>
@@ -548,7 +644,7 @@ function ConnectAiStage({
           <Button
             type="button"
             onClick={() => onConnectChatGPT(isError)}
-            disabled={isBusy}
+            disabled={isBusy || Boolean(browserAuthBusy)}
             className="mt-6 h-11 min-w-[230px] rounded-full px-5 text-[13px] shadow-[0_14px_30px_hsl(var(--primary)/0.22)]"
           >
             {isError ? "Reconnect ChatGPT" : "Continue with ChatGPT"}

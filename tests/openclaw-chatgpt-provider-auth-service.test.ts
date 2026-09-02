@@ -1,7 +1,25 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { connectOpenClawChatGptProvider } from "@/lib/openclaw/application/chatgpt-provider-auth-service";
+import {
+  connectOpenClawChatGptProvider,
+  extractOpenAiAuthorizationUrl
+} from "@/lib/openclaw/application/chatgpt-provider-auth-service";
+
+test("ChatGPT browser auth extracts only the official OpenAI authorization URL", () => {
+  const authorizationUrl = extractOpenAiAuthorizationUrl(
+    "Open the following URL: \u001b[36mhttps://auth.openai.com/oauth/authorize?client_id=agentos&state=test\u001b[0m"
+  );
+
+  assert.equal(
+    authorizationUrl,
+    "https://auth.openai.com/oauth/authorize?client_id=agentos&state=test"
+  );
+  assert.equal(
+    extractOpenAiAuthorizationUrl("https://evil.example/oauth/authorize?state=test"),
+    null
+  );
+});
 
 test("ChatGPT provider auth runs OpenClaw login directly when the Codex plugin is ready", async () => {
   const setupCalls: string[][] = [];
