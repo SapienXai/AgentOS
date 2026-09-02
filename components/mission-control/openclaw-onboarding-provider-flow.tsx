@@ -589,7 +589,7 @@ export function OpenClawOnboardingProviderFlow({
       />
       <div
         className={cn(
-          compactSelection ? "mt-3" : "mt-3 rounded-[16px] border px-3 py-3",
+          compactSelection ? "mt-0" : "mt-3 rounded-[16px] border px-3 py-3",
           !compactSelection &&
             (isLight ? "border-[#e3d5c8] bg-[#fffaf6]" : "border-white/8 bg-[rgba(255,255,255,0.03)]")
         )}
@@ -864,7 +864,7 @@ export function OpenClawOnboardingProviderFlow({
           </div>
         ) : null}
 
-        {activeProviderId === "openai" && !showLoadingHero ? (
+        {activeProviderId === "openai" && !showLoadingHero && !compactSelection ? (
           <div className={cn("mt-4 rounded-[20px] border p-3", isLight ? "border-[#e3d5c8] bg-white/70" : "border-white/10 bg-white/[0.03]")}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -907,7 +907,7 @@ export function OpenClawOnboardingProviderFlow({
         ) : null}
 
         {compactSelection ? (
-          <div className="mt-3">
+          <div className="mt-0">
             {activeModels.length > 0 && !showLoadingHero ? (
               <>
                 <label
@@ -938,9 +938,6 @@ export function OpenClawOnboardingProviderFlow({
                     </option>
                   ))}
                 </select>
-                <p className={cn("mt-2 text-[10px] leading-4", isLight ? "text-[#74665c]" : "text-slate-400")}>
-                  OpenClaw&apos;s current default is preferred when available. You can change it before continuing.
-                </p>
                 {onContinue ? (
                   <Button
                     type="button"

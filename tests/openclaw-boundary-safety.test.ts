@@ -914,6 +914,8 @@ test("connected ChatGPT onboarding keeps the live model picker visible", () => {
   assert.match(stagesSource, /showModelSelection \? \([\s\S]*compactSelection/);
   assert.match(flowSource, /sharedCatalogModels\.filter\(\(model\) =>[\s\S]*modelMatchesProvider\(/);
   assert.match(flowSource, /filter\(\(model\) => model\.available !== false && !model\.missing\)/);
+  assert.match(flowSource, /activeProviderId === "openai" && !showLoadingHero && !compactSelection/);
+  assert.doesNotMatch(flowSource, /OpenClaw&apos;s current default is preferred/);
 });
 
 test("model onboarding verifies delayed default model writes before surfacing Gateway timeout", () => {

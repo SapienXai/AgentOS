@@ -533,7 +533,6 @@ function ConnectAiStage({
   const isError = state === "error";
   const browserAuthBusy = chatGptBrowserAuth && !["completed", "error"].includes(chatGptBrowserAuth.state);
   const connectedTitle = chatGptReady || chatGptAttempted || needsModelSelection ? "ChatGPT connected" : "AI connected";
-  const modelDetail = defaultModelId?.trim() ? `Using ${formatModelLabel(defaultModelId)}` : null;
   const [redirectUrl, setRedirectUrl] = useState("");
   const handleModelContinue = () => {
     const targetModelId = selectedModelId.trim();
@@ -650,18 +649,7 @@ function ConnectAiStage({
       ) : null}
 
       {showModelSelection ? (
-        <div className={cn("mt-5 w-full max-w-[420px] rounded-[16px] border px-3 py-3 text-left", surfaceTheme === "light" ? "border-emerald-200 bg-emerald-50/70" : "border-emerald-300/20 bg-emerald-300/10")}>
-          <div className="flex items-center gap-2">
-            <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded-full border", surfaceTheme === "light" ? "border-emerald-300 bg-white text-emerald-700" : "border-emerald-300/30 bg-emerald-300/10 text-emerald-200")}>
-              <Check className="h-3.5 w-3.5" />
-            </span>
-            <div className="min-w-0">
-              <p className={cn("text-[12px] font-semibold", surfaceTheme === "light" ? "text-emerald-900" : "text-emerald-100")}>{connectedTitle}</p>
-              <p className={cn("mt-0.5 text-[10px]", surfaceTheme === "light" ? "text-emerald-800/75" : "text-emerald-100/70")}>
-                {modelDetail || "Choose the model AgentOS should use for your agents."}
-              </p>
-            </div>
-          </div>
+        <div className="mt-5 w-full max-w-[420px] text-left">
           <OpenClawOnboardingProviderFlow
             snapshot={snapshot}
             surfaceTheme={surfaceTheme}
