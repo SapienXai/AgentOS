@@ -84,6 +84,10 @@ export function IntegrationsPageContent({
   const statuses: Array<"All Statuses" | IntegrationStatus> = [
     "All Statuses",
     "connected",
+    "running",
+    "linked",
+    "configured",
+    "stopped",
     "unknown",
     "pending-setup",
     "missing-credentials",
@@ -115,7 +119,11 @@ export function IntegrationsPageContent({
   const selectedIntegration = filteredIntegrations.find((integration) => integration.id === selectedId) ?? filteredIntegrations[0] ?? null;
   const connectedCount = filteredIntegrations.filter((integration) => integration.status === "connected").length;
   const pendingCount = filteredIntegrations.filter((integration) =>
+    integration.status === "running" ||
+    integration.status === "linked" ||
     integration.status === "pending-setup" ||
+    integration.status === "configured" ||
+    integration.status === "stopped" ||
     integration.status === "missing-credentials" ||
     integration.status === "needs-authentication"
   ).length;

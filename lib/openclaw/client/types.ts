@@ -821,12 +821,13 @@ export type OpenClawChannelStatusPayload = {
     lastError?: string;
     healthState?: string;
   }>>;
-  channelDefaultAccountId: Record<string, string>;
+  channelDefaultAccountId: Record<string, string | null>;
 };
 
 export interface OpenClawChannelStatusInput {
   probe?: boolean;
   timeoutMs?: number;
+  channel?: string;
 }
 
 export interface OpenClawWebLoginStartInput {
@@ -852,6 +853,27 @@ export interface OpenClawChannelLogoutInput {
   channel: string;
   accountId?: string;
 }
+
+export interface OpenClawChannelLifecycleInput {
+  channel: string;
+  accountId?: string;
+}
+
+export type OpenClawChannelLifecycleOutcome =
+  | { status: "handed-off" }
+  | { status: "retry"; reason: "stop-in-flight" | "task-owned" | "start-in-flight" }
+  | {
+      status: "skipped";
+      reason: "unsupported" | "autostart-suppressed" | "ambient-suppressed" | "disabled" | "unconfigured" | "secret-unavailable" | "unlinked" | "manual-stop";
+    };
+
+export type OpenClawChannelLifecycleResult = Record<string, unknown> & {
+  channel?: string;
+  accountId?: string;
+  started?: boolean;
+  stopped?: boolean;
+  outcome?: OpenClawChannelLifecycleOutcome;
+};
 
 export type ModelsStatusPayload = {
   agentDir?: string | null;
@@ -1216,6 +1238,8 @@ export interface OpenClawGatewayClient {
     input?: OpenClawChannelStatusInput,
     options?: OpenClawCommandOptions
   ): Promise<OpenClawChannelStatusPayload>;
+  startChannel?(input: OpenClawChannelLifecycleInput, options?: OpenClawCommandOptions): Promise<OpenClawChannelLifecycleResult>;
+  stopChannel?(input: OpenClawChannelLifecycleInput, options?: OpenClawCommandOptions): Promise<OpenClawChannelLifecycleResult>;
   startWebLogin?(input?: OpenClawWebLoginStartInput, options?: OpenClawCommandOptions): Promise<OpenClawWebLoginResult>;
   waitForWebLogin?(input?: OpenClawWebLoginWaitInput, options?: OpenClawCommandOptions): Promise<OpenClawWebLoginResult>;
   logoutChannel?(input: OpenClawChannelLogoutInput, options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;

@@ -115,6 +115,8 @@ import type {
   OpenClawChannelAccountRemoveInput,
   OpenClawChannelStatusInput,
   OpenClawChannelStatusPayload,
+  OpenClawChannelLifecycleInput,
+  OpenClawChannelLifecycleResult,
   OpenClawChannelLogoutInput,
   OpenClawWebLoginResult,
   OpenClawWebLoginStartInput,
@@ -999,6 +1001,36 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       ),
       () => this.fallback.getChannelStatus(input, options)
     );
+  }
+
+  startChannel(input: OpenClawChannelLifecycleInput, options: OpenClawCommandOptions = {}) {
+    if (this.options.forceCli || options.forceCli || isCliGatewayClientForcedByEnv()) {
+      return Promise.reject(new OpenClawGatewayClientError(
+        "OpenClaw channel start requires the native Gateway transport; CLI fallback is disabled.",
+        "unsupported"
+      ));
+    }
+    return this.callNative<unknown>(
+      "channels.start",
+      { channel: input.channel, accountId: input.accountId },
+      options,
+      { safety: "mutation", timeoutMs: options.timeoutMs, allowCliFallback: false }
+    ).then((payload) => parseObjectGatewayPayload<OpenClawChannelLifecycleResult>("channels.start", payload));
+  }
+
+  stopChannel(input: OpenClawChannelLifecycleInput, options: OpenClawCommandOptions = {}) {
+    if (this.options.forceCli || options.forceCli || isCliGatewayClientForcedByEnv()) {
+      return Promise.reject(new OpenClawGatewayClientError(
+        "OpenClaw channel stop requires the native Gateway transport; CLI fallback is disabled.",
+        "unsupported"
+      ));
+    }
+    return this.callNative<unknown>(
+      "channels.stop",
+      { channel: input.channel, accountId: input.accountId },
+      options,
+      { safety: "mutation", timeoutMs: options.timeoutMs, allowCliFallback: false }
+    ).then((payload) => parseObjectGatewayPayload<OpenClawChannelLifecycleResult>("channels.stop", payload));
   }
 
   startWebLogin(input: OpenClawWebLoginStartInput = {}, options: OpenClawCommandOptions = {}) {

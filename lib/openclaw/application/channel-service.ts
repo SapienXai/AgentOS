@@ -42,8 +42,7 @@ import { writeTextFileEnsured } from "@/lib/openclaw/domains/workspace-bootstrap
 import { normalizeOptionalValue } from "@/lib/openclaw/domains/control-plane-normalization";
 import {
   channelRegistryPath,
-  missionControlRootPath,
-  openClawStateRootPath
+  missionControlRootPath
 } from "@/lib/openclaw/state/paths";
 import { measureTiming, type TimingCollector } from "@/lib/openclaw/timing";
 import { redactSecrets } from "@/lib/security/redaction";
@@ -905,13 +904,6 @@ export async function createTelegramChannelAccount(
   timings?: TimingCollector
 ) {
   const accountId = normalizeOptionalValue(input.accountId) ?? (await buildTelegramAccountId(input.name, timings));
-  const before = new Set(
-    (
-      await measureTiming(timings, "telegram.read-before", () => readChannelAccounts())
-    )
-      .filter((account) => account.type === "telegram")
-      .map((account) => account.id)
-  );
 
   await measureTiming(timings, "telegram.openclaw-add", () =>
     getOpenClawAdapter().provisionChannelAccount(
@@ -943,69 +935,9 @@ export async function createTelegramChannelAccount(
     };
   }
 
-  const resolveDeadline = Date.now() + 8000;
-  let created: ChannelAccountRecord | null = null;
-  let attempt = 0;
-
-  while (Date.now() < resolveDeadline) {
-    attempt += 1;
-    const after = (
-      await measureTiming(timings, `telegram.resolve.${attempt}.read-channel-accounts`, () => readChannelAccounts())
-    ).filter((account) => account.type === "telegram");
-    created =
-      after.find((account) => account.id === accountId) ??
-      after.find((account) => !before.has(account.id) && account.name === input.name) ??
-      after.find((account) => !before.has(account.id)) ??
-      after.find((account) => account.name === input.name) ??
-      null;
-
-    if (created) {
-      break;
-    }
-
-    const pairingAccounts = await measureTiming(
-      timings,
-      `telegram.resolve.${attempt}.read-pairing-accounts`,
-      () => readTelegramPairingAccounts()
-    );
-    created =
-      pairingAccounts.find((account) => !before.has(account.id) && account.name === input.name) ??
-      pairingAccounts.find((account) => !before.has(account.id)) ??
-      pairingAccounts.find((account) => account.name === input.name) ??
-      null;
-
-    if (created) {
-      break;
-    }
-
-    await measureTiming(timings, `telegram.resolve.${attempt}.sleep`, () =>
-      new Promise((resolve) => setTimeout(resolve, 750))
-    );
-  }
-
-  if (!created) {
-    const existing = await measureTiming(timings, "telegram.resolve.token-lookup", async () =>
-      findTelegramAccountByToken(
-        input.token,
-        (
-          await measureTiming(timings, "telegram.resolve.token-lookup.read-channel-accounts", () =>
-            readChannelAccounts()
-          )
-        ).filter((account) => account.type === "telegram"),
-        timings
-      )
-    );
-
-    if (existing) {
-      created = existing;
-    } else {
-      created = explicitAccount;
-    }
-  }
-
   return {
-    ...created,
-    name: input.name.trim() || created.name
+    ...explicitAccount,
+    name: input.name.trim() || explicitAccount.name
   };
 }
 
@@ -1477,93 +1409,6 @@ async function buildManagedSurfaceAccountId(
 
 async function buildTelegramAccountId(name: string, timings?: TimingCollector) {
   return buildManagedSurfaceAccountId("telegram", name, timings);
-}
-
-type TelegramPairingRequest = {
-  id?: string;
-  code?: string;
-  createdAt?: string;
-  lastSeenAt?: string;
-  meta?: {
-    username?: string;
-    firstName?: string;
-    accountId?: string;
-  };
-};
-
-async function readTelegramPairingAccounts() {
-  try {
-    const raw = await readFile(path.join(openClawStateRootPath, "credentials", "telegram-pairing.json"), "utf8");
-    const parsed = JSON.parse(raw) as { requests?: TelegramPairingRequest[] } | null;
-    const requests = Array.isArray(parsed?.requests) ? parsed.requests : [];
-    const accounts = new Map<string, ChannelAccountRecord>();
-
-    for (const request of requests) {
-      const accountId = normalizeOptionalValue(request.meta?.accountId);
-      if (!accountId) {
-        continue;
-      }
-
-      accounts.set(accountId, {
-        id: accountId,
-        type: "telegram",
-        name:
-          normalizeOptionalValue(request.meta?.username) ??
-          normalizeOptionalValue(request.meta?.firstName) ??
-          accountId,
-        enabled: true
-      });
-    }
-
-    return Array.from(accounts.values());
-  } catch {
-    return [] as ChannelAccountRecord[];
-  }
-}
-
-async function readTelegramAccountBotIds(timings?: TimingCollector) {
-  try {
-    const telegramDir = path.join(openClawStateRootPath, "telegram");
-    const files = await measureTiming(timings, "telegram.resolve.read-bot-id-files", () => readdir(telegramDir));
-    const pairs = await Promise.all(
-      files
-        .filter((fileName) => fileName.startsWith("update-offset-") && fileName.endsWith(".json"))
-        .map(async (fileName) => {
-          try {
-            const raw = await measureTiming(timings, `telegram.resolve.read-bot-id-file.${fileName}`, () =>
-              readFile(path.join(telegramDir, fileName), "utf8")
-            );
-            const parsed = JSON.parse(raw) as { botId?: string } | null;
-            const botId = normalizeOptionalValue(parsed?.botId);
-            const accountId = fileName.slice("update-offset-".length, -".json".length);
-
-            if (!botId || !accountId) {
-              return null;
-            }
-
-            return [accountId, botId] as const;
-          } catch {
-            return null;
-          }
-        })
-    );
-
-    return new Map(pairs.filter((entry): entry is readonly [string, string] => Boolean(entry)));
-  } catch {
-    return new Map<string, string>();
-  }
-}
-
-async function findTelegramAccountByToken(token: string, accounts: ChannelAccountRecord[], timings?: TimingCollector) {
-  const botId = normalizeOptionalValue(token.split(":", 1)[0]);
-  if (!botId) {
-    return null;
-  }
-
-  const accountBotIds = await measureTiming(timings, "telegram.resolve.read-bot-ids", () =>
-    readTelegramAccountBotIds(timings)
-  );
-  return accounts.find((account) => accountBotIds.get(account.id) === botId) ?? null;
 }
 
 function getManagedSurfaceConfigPath(provider: MissionControlSurfaceProvider) {
@@ -2355,7 +2200,7 @@ function normalizeChannelId(value: string) {
 }
 
 function isPlannerChannelTypeValue(value: unknown): value is PlannerChannelType {
-  return value === "internal" || value === "slack" || value === "telegram" || value === "discord" || value === "googlechat";
+  return value === "internal" || value === "slack" || value === "telegram" || value === "whatsapp" || value === "discord" || value === "googlechat";
 }
 
 function slugify(value: string) {

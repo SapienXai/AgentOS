@@ -26,6 +26,8 @@ import {
 } from "@/lib/openclaw/gateway-auth-actions";
 import { redactErrorMessage, redactSecretText } from "@/lib/security/redaction";
 
+export { normalizeSurfaceIntegrationStatus } from "@/lib/openclaw/surface-status";
+
 type ManagedOpenClawBinding = {
   agentId: string;
   match: {
@@ -165,7 +167,8 @@ export function normalizeSurfaceRuntimeFromChannelStatus(
       const account = normalizeSurfaceAccountRuntimeStatus(provider, rawAccount, {
         source: options.source,
         checkedAt: options.checkedAt,
-        providerLabel: providerLabels[provider] ?? getSurfaceCatalogEntry(provider).label
+        providerLabel: providerLabels[provider] ?? getSurfaceCatalogEntry(provider).label,
+        providerDefaultAccountId: payload.channelDefaultAccountId?.[provider] ?? null
       });
 
       if (!account) {
@@ -212,7 +215,8 @@ export function createConfigOnlySurfaceRuntimeSnapshot(
   }
 
   for (const account of channelAccounts) {
-    const status = account.enabled === false ? "disabled" : "configured";
+    const configured = account.configured !== false;
+    const status = account.enabled === false ? "disabled" : configured ? "configured" : "unknown";
     const runtimeAccount: SurfaceAccountRuntimeStatus = {
       key: buildSurfaceAccountKey(account.type, account.id),
       provider: account.type,
@@ -220,13 +224,15 @@ export function createConfigOnlySurfaceRuntimeSnapshot(
       name: account.name,
       label: account.name,
       enabled: account.enabled !== false,
-      configured: true,
+      configured,
       linked: false,
       running: false,
       connected: false,
+      isDefault: account.isDefault ?? null,
+      authenticationRequired: null,
       disabled: account.enabled === false,
       failed: false,
-      status,
+      status: account.enabled === false ? "disabled" : status,
       healthState: null,
       errorMessage: null,
       source: "config-only",
@@ -634,115 +640,6 @@ export function mergeManagedOpenClawBindings(input: {
   return dedupeBindings([...preserved, ...expected]);
 }
 
-export function normalizeSurfaceIntegrationStatus(
-  surfaceRuntime: SurfaceRuntimeSnapshot,
-  provider: MissionControlSurfaceProvider
-) {
-  const providerAccounts = Object.values(surfaceRuntime.accountsByProvider[provider] ?? {});
-  const accountError = providerAccounts.find((account) => account.errorMessage);
-
-  if (surfaceRuntime.gatewayAccess.blocked) {
-    return {
-      status: "unknown" as const,
-      statusLabel: "Gateway Blocked",
-      connectionHealth: {
-        label: "Gateway access blocked",
-        detail: surfaceRuntime.gatewayAccess.issue ?? "OpenClaw Gateway access needs approval before live status can be checked."
-      },
-      errorMessage: surfaceRuntime.gatewayAccess.issue
-    };
-  }
-
-  if (accountError?.errorMessage) {
-    return {
-      status: "failed" as const,
-      statusLabel: "Failed",
-      connectionHealth: {
-        label: "Connector error",
-        detail: accountError.errorMessage
-      },
-      errorMessage: accountError.errorMessage
-    };
-  }
-
-  if (surfaceRuntime.source === "unavailable" && providerAccounts.length === 0) {
-    return {
-      status: "unknown" as const,
-      statusLabel: "Unknown",
-      connectionHealth: {
-        label: "OpenClaw status unavailable",
-        detail: surfaceRuntime.issue ?? "OpenClaw channel status is unavailable."
-      },
-      errorMessage: surfaceRuntime.issue
-    };
-  }
-
-  if (providerAccounts.length === 0) {
-    return {
-      status: "missing-credentials" as const,
-      statusLabel: "Missing Credentials",
-      connectionHealth: {
-        label: "No OpenClaw account",
-        detail: "OpenClaw channel status did not return an account for this provider."
-      },
-      errorMessage: null
-    };
-  }
-
-  if (providerAccounts.every((account) => account.disabled)) {
-    return {
-      status: "disabled" as const,
-      statusLabel: "Disabled",
-      connectionHealth: {
-        label: "Disabled",
-        detail: "OpenClaw returned account records, but every account is disabled."
-      },
-      errorMessage: null
-    };
-  }
-
-  const connectedAccounts = providerAccounts.filter((account) =>
-    account.connected || account.running || account.linked
-  );
-  if (connectedAccounts.length > 0) {
-    return {
-      status: "connected" as const,
-      statusLabel: "Connected",
-      connectionHealth: {
-        label: "Verified by OpenClaw",
-        detail: `${connectedAccounts.length} account${connectedAccounts.length === 1 ? "" : "s"} returned connected, running, or linked from channels.status.`
-      },
-      errorMessage: null
-    };
-  }
-
-  const configuredAccounts = providerAccounts.filter((account) => account.configured || account.enabled);
-  if (configuredAccounts.length > 0) {
-    return {
-      status: "unknown" as const,
-      statusLabel: surfaceRuntime.source === "config-only" ? "Configured" : "Unknown",
-      connectionHealth: {
-        label: surfaceRuntime.source === "config-only" ? "Configured, not live-verified" : "Configured, not live-verified",
-        detail:
-          surfaceRuntime.source === "config-only"
-            ? "OpenClaw configuration exists, but live channel status was unavailable."
-            : "OpenClaw returned configured account records, but no account reported connected, running, or linked."
-      },
-      errorMessage: null
-    };
-  }
-
-  return {
-    status: "pending-setup" as const,
-    statusLabel: "Pending Setup",
-    connectionHealth: {
-      label: "Setup incomplete",
-      detail: "OpenClaw returned account records without configured or connected state."
-    },
-    errorMessage: null
-  };
-}
-
 function normalizeSurfaceAccountRuntimeStatus(
   provider: MissionControlSurfaceProvider,
   rawAccount: Record<string, unknown> & {
@@ -760,6 +657,7 @@ function normalizeSurfaceAccountRuntimeStatus(
     source: SurfaceRuntimeSource;
     checkedAt: string;
     providerLabel: string;
+    providerDefaultAccountId: string | null;
   }
 ): SurfaceAccountRuntimeStatus | null {
   const accountId = normalizeOptionalString(rawAccount.accountId);
@@ -769,19 +667,22 @@ function normalizeSurfaceAccountRuntimeStatus(
 
   const errorMessage = normalizeOptionalString(rawAccount.lastError);
   const enabled = rawAccount.enabled !== false;
-  const configured = rawAccount.configured === true || (rawAccount.configured !== false && rawAccount.enabled === true);
+  const configured = rawAccount.configured === true;
   const linked = rawAccount.linked === true;
   const running = rawAccount.running === true;
   const connected = rawAccount.connected === true;
   const disabled = rawAccount.enabled === false;
   const failed = Boolean(errorMessage);
+  const authenticationRequired = provider === "whatsapp" && configured && !connected && !running && !linked;
   const status = resolveSurfaceAccountStatus({
     failed,
     disabled,
     connected,
     running,
     linked,
-    configured
+    configured,
+    authenticationRequired,
+    source: options.source
   });
   const name = normalizeOptionalString(rawAccount.name) ?? accountId;
 
@@ -796,6 +697,8 @@ function normalizeSurfaceAccountRuntimeStatus(
     linked,
     running,
     connected,
+    isDefault: options.providerDefaultAccountId === accountId || rawAccount.isDefault === true,
+    authenticationRequired,
     disabled,
     failed,
     status,
@@ -837,6 +740,8 @@ function resolveSurfaceAccountStatus(input: {
   running: boolean;
   linked: boolean;
   configured: boolean;
+  authenticationRequired: boolean;
+  source: SurfaceRuntimeSource;
 }): SurfaceAccountHealthStatus {
   if (input.failed) {
     return "failed";
@@ -853,8 +758,11 @@ function resolveSurfaceAccountStatus(input: {
   if (input.linked) {
     return "linked";
   }
+  if (input.authenticationRequired) {
+    return "needs-authentication";
+  }
   if (input.configured) {
-    return "configured";
+    return input.source === "config-only" ? "configured" : "stopped";
   }
   return "unknown";
 }

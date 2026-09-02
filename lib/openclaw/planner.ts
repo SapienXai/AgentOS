@@ -1776,6 +1776,7 @@ function isPlannerChannelTypeValue(value: unknown): value is PlannerChannelSpec[
     value === "internal" ||
     value === "slack" ||
     value === "telegram" ||
+    value === "whatsapp" ||
     value === "discord" ||
     value === "googlechat"
   );

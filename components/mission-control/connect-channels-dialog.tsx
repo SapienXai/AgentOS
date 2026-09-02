@@ -11,11 +11,13 @@ import {
   Link2,
   Loader2,
   MessageCircle,
+  Play,
   Plug,
   QrCode,
   RefreshCw,
   ShieldCheck,
-  Unplug
+  Unplug,
+  Square
 } from "lucide-react";
 
 import { SurfaceIcon } from "@/components/mission-control/surface-icon";
@@ -58,9 +60,12 @@ type ProviderView = {
     accountId: string;
     name: string;
     configured: boolean;
+    enabled: boolean;
+    isDefault: boolean | null;
     linked: boolean;
     running: boolean;
     connected: boolean;
+    authenticationRequired: boolean;
     lastError: string | null;
   }>;
 };
@@ -208,13 +213,14 @@ export function ConnectChannelsDialog({
     }
   };
 
-  const waitForQrLogin = useCallback(async (provider: ProviderView, currentQr: string, runId: number) => {
+  const waitForQrLogin = useCallback(async (provider: ProviderView, currentQr: string, runId: number, accountId?: string) => {
     let qr = currentQr;
     while (loginRunRef.current === runId) {
       try {
         const result = await postAction<{ connected?: boolean; qrDataUrl?: string; message?: string }>({
           action: "web-login-wait",
           provider: provider.id,
+          accountId,
           currentQrDataUrl: qr
         });
         if (loginRunRef.current !== runId) return;
@@ -239,7 +245,7 @@ export function ConnectChannelsDialog({
     }
   }, [loadOverview]);
 
-  const handleQrStart = async () => {
+  const handleQrStart = async (accountId?: string) => {
     if (!selectedProvider) return;
     const runId = loginRunRef.current + 1;
     loginRunRef.current = runId;
@@ -249,6 +255,7 @@ export function ConnectChannelsDialog({
       const result = await postAction<{ connected?: boolean; qrDataUrl?: string; message?: string }>({
         action: "web-login-start",
         provider: selectedProvider.id,
+        accountId,
         force: true
       });
       if (result.connected) {
@@ -262,7 +269,7 @@ export function ConnectChannelsDialog({
       }
       setQrDataUrl(result.qrDataUrl);
       setQrMessage(result.message ?? "Open WhatsApp → Linked devices → Link a device.");
-      void waitForQrLogin(selectedProvider, result.qrDataUrl, runId);
+      void waitForQrLogin(selectedProvider, result.qrDataUrl, runId, accountId);
     } catch (error) {
       setBusyAction(null);
       setQrMessage(error instanceof Error ? error.message : "QR login could not be started.");
@@ -301,7 +308,7 @@ export function ConnectChannelsDialog({
       setToken("");
       setAppToken("");
       setAccountName("");
-      toast.success(`${selectedProvider.label} connected.`, { description: `${normalizedName} is routed to ${workspace.name}.` });
+      toast.success(`${selectedProvider.label} account configured.`, { description: `${normalizedName} is routed to ${workspace.name}. Live OpenClaw status is shown after refresh.` });
       await Promise.all([loadOverview(), onRefresh?.() ?? Promise.resolve()]);
     } catch (error) {
       toast.error(`${selectedProvider.label} connection failed.`, {
@@ -381,6 +388,29 @@ export function ConnectChannelsDialog({
     }
   };
 
+  const handleLifecycle = async (action: "start" | "stop" | "restart", accountId: string) => {
+    if (!selectedProvider) return;
+    setBusyAction(`${action}:${accountId}`);
+    try {
+      const result = await postAction<Record<string, unknown>>({
+        action,
+        provider: selectedProvider.id,
+        accountId
+      });
+      const outcome = formatLifecycleOutcome(result, action);
+      toast.success(`${selectedProvider.label} ${action === "restart" ? "restarted" : action === "start" ? "started" : "stopped"}.`, {
+        description: outcome ? `OpenClaw lifecycle outcome: ${outcome}.` : "OpenClaw status was refreshed after the action."
+      });
+      await Promise.all([loadOverview(), onRefresh?.() ?? Promise.resolve()]);
+    } catch (error) {
+      toast.error(`${selectedProvider.label} ${action} failed.`, {
+        description: error instanceof Error ? error.message : "OpenClaw could not complete the channel lifecycle action."
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[calc(100vw-1.5rem)] max-w-[760px] gap-0 overflow-hidden rounded-[22px] p-0 shadow-2xl">
@@ -432,10 +462,13 @@ export function ConnectChannelsDialog({
               onAppTokenChange={setAppToken}
               onPairingCodeChange={setPairingCode}
               onInstall={() => void handleInstall()}
-              onQrStart={() => void handleQrStart()}
+              onQrStart={(accountId) => void handleQrStart(accountId)}
               onProvision={() => void handleProvision()}
               onAttach={(account) => void handleAttach(account)}
               onLogout={(accountId) => void handleLogout(accountId)}
+              onStart={(accountId) => void handleLifecycle("start", accountId)}
+              onStop={(accountId) => void handleLifecycle("stop", accountId)}
+              onRestart={(accountId) => void handleLifecycle("restart", accountId)}
               onApprovePairing={(accountId) => void handleApprovePairing(accountId)}
             />
           ) : null}
@@ -496,10 +529,13 @@ function ProviderSetup(props: {
   onAppTokenChange: (value: string) => void;
   onPairingCodeChange: (value: string) => void;
   onInstall: () => void;
-  onQrStart: () => void;
+  onQrStart: (accountId?: string) => void;
   onProvision: () => void;
   onAttach: (account: ProviderView["accounts"][number]) => void;
   onLogout: (accountId: string) => void;
+  onStart: (accountId: string) => void;
+  onStop: (accountId: string) => void;
+  onRestart: (accountId: string) => void;
   onApprovePairing: (accountId: string) => void;
 }) {
   const { provider } = props;
@@ -510,13 +546,16 @@ function ProviderSetup(props: {
     return <PluginInstallStep {...props} />;
   }
   const activeAccounts = provider.accounts.filter(
-    (account) => account.linked || account.connected || account.running
+    (account) => account.configured || account.linked || account.connected || account.running
   );
   const routedAccounts = activeAccounts.filter(
     (account) => props.routedAccountIds.has(account.accountId) || props.attachedAccountId === account.accountId
   );
   const selectedAgent = props.workspaceAgents.find((agent) => agent.id === props.agentId) ?? null;
-  const needsWhatsAppLink = provider.id === "whatsapp" && activeAccounts.length === 0;
+  const whatsappAccountNeedingLink = provider.accounts.find(
+    (account) => !account.linked && !account.connected && !account.running
+  );
+  const needsWhatsAppLink = provider.id === "whatsapp" && Boolean(whatsappAccountNeedingLink);
 
   return (
     <div className="space-y-4">
@@ -540,13 +579,15 @@ function ProviderSetup(props: {
       ) : null}
       {activeAccounts.length > 0 ? (
         <section className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">2 · Route connected account</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">2 · Route channel account</p>
           {activeAccounts.map((account) => (
             <div key={account.accountId} className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 p-3">
-              <span className={cn("flex h-8 w-8 items-center justify-center rounded-full", account.connected || account.running ? "bg-emerald-500/10 text-emerald-600" : "bg-muted text-muted-foreground")}><Check className="h-4 w-4" /></span>
-              <div className="min-w-[150px] flex-1"><p className="truncate text-sm font-medium">{account.name}</p><p className="truncate text-xs text-muted-foreground">{account.connected ? "Connected" : account.running ? "Running" : account.configured ? "Configured" : "Needs attention"}{account.lastError ? ` · ${account.lastError}` : ""}</p></div>
+              <span className={cn("flex h-8 w-8 items-center justify-center rounded-full", account.connected ? "bg-emerald-500/10 text-emerald-600" : account.running ? "bg-blue-500/10 text-blue-600" : "bg-muted text-muted-foreground")}><Check className="h-4 w-4" /></span>
+              <div className="min-w-[150px] flex-1"><p className="truncate text-sm font-medium">{account.name}{account.isDefault ? " · Default" : ""}</p><p className="truncate text-xs text-muted-foreground">{account.enabled === false ? "Disabled" : account.connected ? "Connected" : account.running ? "Running" : account.linked ? "Linked" : account.authenticationRequired ? "Needs authentication" : account.configured ? "Stopped" : "Needs setup"}{account.lastError ? ` · ${account.lastError}` : ""}</p></div>
               <Button size="sm" variant="secondary" disabled={!props.workspaceId || !props.agentId || Boolean(props.busyAction)} onClick={() => props.onAttach(account)}>{props.busyAction === `attach:${account.accountId}` ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Link2 className="mr-1.5 h-3.5 w-3.5" />}{props.routedAccountIds.has(account.accountId) || props.attachedAccountId === account.accountId ? "Update route" : "Route to agent"}</Button>
-              <Button size="icon" variant="ghost" disabled={Boolean(props.busyAction)} onClick={() => props.onLogout(account.accountId)} aria-label={`Log out ${account.name}`}>{props.busyAction === `logout:${account.accountId}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unplug className="h-4 w-4" />}</Button>
+              {!account.running && account.enabled && (account.configured || account.linked || account.connected) && !(provider.id === "whatsapp" && !account.linked && !account.connected) ? <Button size="sm" variant="ghost" disabled={Boolean(props.busyAction)} onClick={() => props.onStart(account.accountId)}>{props.busyAction === `start:${account.accountId}` ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1.5 h-3.5 w-3.5" />}Start</Button> : null}
+              {account.running ? <><Button size="sm" variant="ghost" disabled={Boolean(props.busyAction)} onClick={() => props.onRestart(account.accountId)}>{props.busyAction === `restart:${account.accountId}` ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}Restart</Button><Button size="sm" variant="ghost" disabled={Boolean(props.busyAction)} onClick={() => props.onStop(account.accountId)}>{props.busyAction === `stop:${account.accountId}` ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Square className="mr-1.5 h-3.5 w-3.5" />}Stop</Button></> : null}
+              {account.configured || account.linked || account.connected || account.running ? <Button size="icon" variant="ghost" disabled={Boolean(props.busyAction)} onClick={() => props.onLogout(account.accountId)} aria-label={`Log out ${account.name}`} title="Logout / unlink — authentication must be established again">{props.busyAction === `logout:${account.accountId}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unplug className="h-4 w-4" />}</Button> : null}
             </div>
           ))}
         </section>
@@ -562,8 +603,8 @@ function ProviderSetup(props: {
           onApprove={() => props.onApprovePairing(routedAccounts[0].accountId)}
         />
       ) : null}
-      {provider.setupMode === "qr" && activeAccounts.length === 0 ? (
-        <QrSetup {...props} />
+      {provider.setupMode === "qr" && (activeAccounts.length === 0 || needsWhatsAppLink) ? (
+        <QrSetup {...props} accountId={whatsappAccountNeedingLink?.accountId} />
       ) : provider.setupMode !== "qr" ? (
         <>
           {provider.accounts.length === 0 ? <RoutingFields {...props} /> : null}
@@ -638,16 +679,16 @@ function WhatsAppChatReady({
   );
 }
 
-function QrSetup(props: Parameters<typeof ProviderSetup>[0]) {
+function QrSetup(props: Parameters<typeof ProviderSetup>[0] & { accountId?: string }) {
   return (
     <section className="rounded-2xl border border-border/70 bg-muted/20 p-4">
       {props.qrDataUrl ? (
         <div className="grid gap-4 sm:grid-cols-[210px_1fr]">
           <div className="rounded-xl bg-white p-2 shadow-sm"><Image unoptimized src={props.qrDataUrl} alt="WhatsApp connection QR code" width={194} height={194} className="h-auto w-full" /></div>
-          <div className="flex flex-col justify-center"><span className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600"><QrCode className="h-5 w-5" /></span><p className="text-sm font-semibold">Scan with WhatsApp</p><p className="mt-1 text-xs leading-relaxed text-muted-foreground">Open WhatsApp → Settings → Linked devices → Link a device.</p><p className="mt-3 text-xs text-muted-foreground">{props.qrMessage || "Waiting for confirmation…"}</p><Button className="mt-4 self-start" size="sm" variant="secondary" disabled={props.busyAction === "qr"} onClick={props.onQrStart}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh QR</Button></div>
+          <div className="flex flex-col justify-center"><span className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600"><QrCode className="h-5 w-5" /></span><p className="text-sm font-semibold">Scan with WhatsApp</p><p className="mt-1 text-xs leading-relaxed text-muted-foreground">Open WhatsApp → Settings → Linked devices → Link a device.</p><p className="mt-3 text-xs text-muted-foreground">{props.qrMessage || "Waiting for confirmation…"}</p><Button className="mt-4 self-start" size="sm" variant="secondary" disabled={props.busyAction === "qr"} onClick={() => props.onQrStart(props.accountId)}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh QR</Button></div>
         </div>
       ) : (
-        <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><QrCode className="h-5 w-5" /></span><div className="flex-1"><p className="text-sm font-semibold">Link WhatsApp with a QR code</p><p className="mt-1 text-xs leading-relaxed text-muted-foreground">OpenClaw stores the linked session. A dedicated number is recommended for reliable agent routing.</p>{props.qrMessage ? <p className="mt-2 text-xs text-destructive">{props.qrMessage}</p> : null}<Button className="mt-3" size="sm" disabled={props.busyAction === "qr"} onClick={props.onQrStart}>{props.busyAction === "qr" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <QrCode className="mr-1.5 h-3.5 w-3.5" />}Generate QR</Button></div></div>
+        <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><QrCode className="h-5 w-5" /></span><div className="flex-1"><p className="text-sm font-semibold">Link WhatsApp with a QR code</p><p className="mt-1 text-xs leading-relaxed text-muted-foreground">OpenClaw stores the linked session. A dedicated number is recommended for reliable agent routing.</p>{props.qrMessage ? <p className="mt-2 text-xs text-destructive">{props.qrMessage}</p> : null}<Button className="mt-3" size="sm" disabled={props.busyAction === "qr"} onClick={() => props.onQrStart(props.accountId)}>{props.busyAction === "qr" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <QrCode className="mr-1.5 h-3.5 w-3.5" />}Generate QR</Button></div></div>
       )}
     </section>
   );
@@ -700,8 +741,9 @@ function UnavailableSetup({ provider }: { provider: ProviderView }) {
 }
 
 function ProviderStatus({ provider }: { provider: ProviderView }) {
-  const needsLink = provider.id === "whatsapp" && provider.configured && !provider.connected && !provider.running;
-  const label = provider.connected ? "Connected" : provider.running ? "Running" : needsLink ? "Needs link" : provider.configured ? "Configured" : !provider.available ? "Guided" : provider.pluginInstalled ? "Ready" : "Plugin";
+  const linked = provider.accounts.some((account) => account.linked || account.connected);
+  const needsLink = provider.id === "whatsapp" && provider.configured && !linked;
+  const label = provider.connected ? "Connected" : provider.running ? "Running" : linked ? "Linked" : needsLink ? "Needs link" : provider.configured ? "Configured" : !provider.available ? "Guided" : provider.pluginInstalled ? "Ready" : "Plugin";
   return <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-semibold", provider.connected || provider.running ? "bg-emerald-500/10 text-emerald-600" : needsLink ? "bg-amber-500/10 text-amber-700 dark:text-amber-300" : provider.configured || provider.pluginInstalled ? "bg-blue-500/10 text-blue-600" : "bg-muted text-muted-foreground")}>{label}</span>;
 }
 
@@ -715,4 +757,22 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 
 function providerSetupUrl(provider: ProviderId) {
   return `https://docs.openclaw.ai/channels/${provider}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatLifecycleOutcome(result: Record<string, unknown>, action: "start" | "stop" | "restart") {
+  const candidates = action === "restart"
+    ? [["stop", result.stop], ["start", result.start]] as const
+    : [[action, result]] as const;
+  const outcomes = candidates.flatMap(([label, value]) => {
+    const payload = isRecord(value) && isRecord(value.outcome) ? value.outcome : null;
+    if (!payload || typeof payload.status !== "string") {
+      return [];
+    }
+    return [`${label}: ${payload.status}${typeof payload.reason === "string" ? ` (${payload.reason})` : ""}`];
+  });
+  return outcomes.length > 0 ? outcomes.join("; ") : null;
 }

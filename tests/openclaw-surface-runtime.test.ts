@@ -45,11 +45,76 @@ test("normalizes channels.status account health without deriving live status fro
   assert.equal(runtime.source, "gateway-probe");
   assert.equal(runtime.accountsByKey["telegram:tg-main"].status, "connected");
   assert.equal(runtime.accountsByKey["discord:discord-bot"].status, "running");
-  assert.equal(runtime.accountsByKey["gmail:gmail-primary"].status, "configured");
+  assert.equal(runtime.accountsByKey["gmail:gmail-primary"].status, "stopped");
   assert.equal(runtime.accountsByKey["webhook:disabled-hook"].status, "disabled");
   assert.equal(runtime.accountsByKey["email:support"].status, "failed");
   assert.equal(runtime.accountsByKey["malformed:missing-account-id"], undefined);
   assert.equal(runtime.accountsByKey["email:support"].errorMessage?.includes("xoxb-secret"), false);
+});
+
+test("normalizes WhatsApp multi-account runtime state and native default identity", () => {
+  const runtime = normalizeSurfaceRuntimeFromChannelStatus(
+    {
+      ts: 1,
+      channelOrder: ["whatsapp"],
+      channelMeta: [],
+      channelLabels: {},
+      channels: {},
+      channelDefaultAccountId: { whatsapp: "support" },
+      channelAccounts: {
+        whatsapp: [
+          {
+            accountId: "default",
+            name: "Personal",
+            enabled: true,
+            configured: true,
+            linked: true,
+            running: true,
+            connected: true
+          },
+          {
+            accountId: "support",
+            name: "Support",
+            enabled: true,
+            configured: true,
+            linked: true,
+            running: false,
+            connected: false
+          }
+        ]
+      }
+    },
+    {
+      source: "gateway-probe",
+      checkedAt: "2026-06-02T00:00:00.000Z"
+    }
+  );
+
+  assert.equal(runtime.accountsByKey["whatsapp:default"].status, "connected");
+  assert.equal(runtime.accountsByKey["whatsapp:default"].isDefault, false);
+  assert.equal(runtime.accountsByKey["whatsapp:support"].status, "linked");
+  assert.equal(runtime.accountsByKey["whatsapp:support"].isDefault, true);
+  assert.equal(runtime.accountsByKey["whatsapp:support"].authenticationRequired, false);
+});
+
+test("marks an unlinked configured WhatsApp account as needing authentication", () => {
+  const runtime = normalizeSurfaceRuntimeFromChannelStatus(
+    {
+      ts: 1,
+      channelOrder: ["whatsapp"],
+      channelMeta: [],
+      channelLabels: {},
+      channels: {},
+      channelDefaultAccountId: { whatsapp: "support" },
+      channelAccounts: {
+        whatsapp: [{ accountId: "support", configured: true, linked: false, running: false, connected: false }]
+      }
+    },
+    { source: "gateway-probe", checkedAt: "2026-06-02T00:00:00.000Z" }
+  );
+
+  assert.equal(runtime.accountsByKey["whatsapp:support"].status, "needs-authentication");
+  assert.equal(runtime.accountsByKey["whatsapp:support"].authenticationRequired, true);
 });
 
 test("skips placeholder default runtime accounts when a concrete account exists", () => {

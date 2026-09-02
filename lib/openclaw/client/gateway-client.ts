@@ -24,6 +24,8 @@ export type {
   OpenClawChannelAccountRemoveInput,
   OpenClawChannelStatusInput,
   OpenClawChannelStatusPayload,
+  OpenClawChannelLifecycleInput,
+  OpenClawChannelLifecycleResult,
   OpenClawChannelLogoutInput,
   OpenClawWebLoginResult,
   OpenClawWebLoginStartInput,

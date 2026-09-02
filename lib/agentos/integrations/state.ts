@@ -20,9 +20,15 @@ import {
   type IntegrationManagedBy,
   type IntegrationProviderType
 } from "@/lib/agentos/integrations/registry";
+import { normalizeSurfaceIntegrationStatus } from "@/lib/openclaw/surface-status";
+import type { SurfaceAccountRuntimeStatus } from "@/lib/openclaw/types";
 
 export type IntegrationStatus =
   | "connected"
+  | "running"
+  | "linked"
+  | "configured"
+  | "stopped"
   | "disabled"
   | "pending-setup"
   | "failed"
@@ -78,6 +84,10 @@ export type IntegrationState = {
 
 export const integrationStatusLabels: Record<IntegrationStatus, string> = {
   connected: "Connected",
+  running: "Running",
+  linked: "Linked",
+  configured: "Configured",
+  stopped: "Stopped",
   disabled: "Disabled",
   "pending-setup": "Pending Setup",
   failed: "Failed",
@@ -102,6 +112,7 @@ export function buildIntegrationStates(snapshot: MissionControlSnapshot): Integr
   const agentsById = new Map(snapshot.agents.map((agent) => [agent.id, agent]));
   const channelsByProvider = groupChannelsByProvider(snapshot.channelRegistry.channels);
   const accountsByProvider = groupAccountsByProvider(snapshot.channelAccounts);
+  mergeRuntimeAccountsByProvider(accountsByProvider, snapshot);
   const modelsByProvider = groupModelsByProvider(snapshot.models);
 
   return integrationRegistry.map((descriptor) => {
@@ -166,7 +177,9 @@ export function buildIntegrationStates(snapshot: MissionControlSnapshot): Integr
       surfaceProvider: descriptor.surfaceProvider ?? null,
       modelProvider: descriptor.modelProvider ?? null,
       status: state.status,
-      statusLabel: integrationStatusLabels[state.status],
+      statusLabel: "statusLabel" in state && state.statusLabel
+        ? state.statusLabel
+        : integrationStatusLabels[state.status],
       connectionHealth: state.connectionHealth,
       lastSyncLabel: lastActiveMs ? `Snapshot ${formatRelativeTime(lastActiveMs, referenceMs)}` : "Unavailable",
       lastActiveMs,
@@ -178,7 +191,7 @@ export function buildIntegrationStates(snapshot: MissionControlSnapshot): Integr
       setupRequirements: descriptor.setupRequirements,
       missingConfiguration: state.missingConfiguration,
       sourceMethods: uniqueStrings(sources),
-      accountIds: accounts.map((account) => account.id),
+      accountIds: accounts.map((account) => resolveChannelAccountId(account)),
       channelIds: channels.map((channel) => channel.id),
       modelIds: models.map((model) => model.id),
       errorMessage: state.errorMessage,
@@ -198,7 +211,11 @@ export function summarizeIntegrationStates(integrations: IntegrationState[]): In
     total: integrations.length,
     connected: integrations.filter((integration) => integration.status === "connected").length,
     pending: integrations.filter((integration) =>
+      integration.status === "running" ||
+      integration.status === "linked" ||
       integration.status === "pending-setup" ||
+      integration.status === "configured" ||
+      integration.status === "stopped" ||
       integration.status === "missing-credentials" ||
       integration.status === "needs-authentication"
     ).length,
@@ -246,6 +263,22 @@ function resolveIntegrationStatus(input: {
       rateLimitLabel: "Unavailable",
       hasOperationalData: false
     };
+  }
+
+  if (descriptor.surfaceProvider && snapshot.surfaceRuntime) {
+    const runtime = normalizeSurfaceIntegrationStatus(snapshot.surfaceRuntime, descriptor.surfaceProvider);
+    if (runtime.status !== "missing-credentials" || Object.keys(snapshot.surfaceRuntime.accountsByProvider[descriptor.surfaceProvider] ?? {}).length > 0) {
+      return {
+        status: runtime.status,
+        statusLabel: runtime.statusLabel,
+        connectionHealth: runtime.connectionHealth,
+        missingConfiguration: [],
+        errorMessage: runtime.errorMessage,
+        uptimeLabel: "Unavailable",
+        rateLimitLabel: "Unavailable",
+        hasOperationalData: true
+      };
+    }
   }
 
   if (accountError) {
@@ -505,6 +538,10 @@ function groupAccountsByProvider(accounts: SurfaceAccountRecord[]) {
   return grouped;
 }
 
+function resolveChannelAccountId(account: Pick<SurfaceAccountRecord, "id" | "accountId">) {
+  return account.accountId?.trim() || account.id;
+}
+
 function groupModelsByProvider(models: ModelRecord[]) {
   const grouped = new Map<string, ModelRecord[]>();
 
@@ -514,6 +551,43 @@ function groupModelsByProvider(models: ModelRecord[]) {
   }
 
   return grouped;
+}
+
+function mergeRuntimeAccountsByProvider(
+  grouped: Map<string, SurfaceAccountRecord[]>,
+  snapshot: MissionControlSnapshot
+) {
+  const runtimeAccounts = Object.values(snapshot.surfaceRuntime?.accountsByKey ?? {});
+  for (const account of runtimeAccounts) {
+    const key = normalizeIntegrationLookupKey(account.provider);
+    const current = grouped.get(key) ?? [];
+    if (current.some((candidate) => resolveChannelAccountId(candidate) === account.accountId)) {
+      continue;
+    }
+
+    current.push(toSurfaceAccountRecord(account));
+    grouped.set(key, current);
+  }
+}
+
+function toSurfaceAccountRecord(account: SurfaceAccountRuntimeStatus): SurfaceAccountRecord {
+  return {
+    id: account.accountId,
+    accountId: account.accountId,
+    type: account.provider,
+    name: account.name,
+    enabled: account.enabled,
+    configured: account.configured,
+    isDefault: account.isDefault === true,
+    kind: "chat",
+    capabilities: ["chat"],
+    metadata: {
+      source: "surfaceRuntime",
+      status: account.status,
+      healthState: account.healthState,
+      ...(account.errorMessage ? { lastError: account.errorMessage } : {})
+    }
+  };
 }
 
 function normalizeModelProviderKey(value: string) {

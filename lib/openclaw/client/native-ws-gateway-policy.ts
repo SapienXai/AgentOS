@@ -16,6 +16,9 @@ import type {
 } from "@/lib/openclaw/client/types";
 
 const explicitGatewayMutationMethods = new Set([
+  "channels.start",
+  "channels.stop",
+  "channels.logout",
   "channels.pairing.approve",
   "device.pair.approve",
   "device.pair.setupCode",

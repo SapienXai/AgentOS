@@ -26,6 +26,8 @@ import type {
   OpenClawChannelAccountRemoveInput,
   OpenClawChannelStatusInput,
   OpenClawChannelStatusPayload,
+  OpenClawChannelLifecycleInput,
+  OpenClawChannelLifecycleResult,
   OpenClawChannelLogoutInput,
   OpenClawWebLoginResult,
   OpenClawWebLoginStartInput,
@@ -172,6 +174,8 @@ export interface OpenClawAdapter {
     input?: OpenClawChannelStatusInput,
     options?: OpenClawCommandOptions
   ): Promise<OpenClawChannelStatusPayload>;
+  startChannel?(input: OpenClawChannelLifecycleInput, options?: OpenClawCommandOptions): Promise<OpenClawChannelLifecycleResult>;
+  stopChannel?(input: OpenClawChannelLifecycleInput, options?: OpenClawCommandOptions): Promise<OpenClawChannelLifecycleResult>;
   startWebLogin?(input?: OpenClawWebLoginStartInput, options?: OpenClawCommandOptions): Promise<OpenClawWebLoginResult>;
   waitForWebLogin?(input?: OpenClawWebLoginWaitInput, options?: OpenClawCommandOptions): Promise<OpenClawWebLoginResult>;
   logoutChannel?(input: OpenClawChannelLogoutInput, options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
@@ -498,6 +502,20 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
 
   getChannelStatus(input: OpenClawChannelStatusInput = {}, options: OpenClawCommandOptions = {}) {
     return this.getClient().getChannelStatus(input, options);
+  }
+
+  startChannel(input: OpenClawChannelLifecycleInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    return client.startChannel?.(input, options) ?? Promise.reject(
+      new Error("OpenClaw native channel lifecycle is unavailable: channels.start is not supported by this adapter.")
+    );
+  }
+
+  stopChannel(input: OpenClawChannelLifecycleInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    return client.stopChannel?.(input, options) ?? Promise.reject(
+      new Error("OpenClaw native channel lifecycle is unavailable: channels.stop is not supported by this adapter.")
+    );
   }
 
   startWebLogin(input: OpenClawWebLoginStartInput = {}, options: OpenClawCommandOptions = {}) {

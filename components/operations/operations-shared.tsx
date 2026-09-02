@@ -30,6 +30,10 @@ export type IntegrationRuntimeOverride = Partial<Pick<
 
 export const integrationStatusToneMap: Record<IntegrationStatus, IntegrationView["statusTone"]> = {
   connected: "success",
+  running: "info",
+  linked: "warning",
+  configured: "warning",
+  stopped: "warning",
   disabled: "muted",
   "pending-setup": "warning",
   failed: "danger",
@@ -61,6 +65,14 @@ export function formatIntegrationStatusLabel(status: IntegrationStatus) {
   switch (status) {
     case "connected":
       return "Connected";
+    case "running":
+      return "Running";
+    case "linked":
+      return "Linked";
+    case "configured":
+      return "Configured";
+    case "stopped":
+      return "Stopped";
     case "disabled":
       return "Disabled";
     case "pending-setup":
@@ -104,7 +116,7 @@ export function statusIconClassName(status: IntegrationStatus) {
     return "text-[hsl(var(--status-danger-foreground))]";
   }
 
-  if (status === "pending-setup" || status === "missing-credentials" || status === "needs-authentication") {
+  if (status === "pending-setup" || status === "running" || status === "linked" || status === "configured" || status === "stopped" || status === "missing-credentials" || status === "needs-authentication") {
     return "text-[hsl(var(--status-warning-foreground))]";
   }
 

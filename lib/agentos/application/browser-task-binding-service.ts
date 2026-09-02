@@ -58,8 +58,12 @@ export async function prepareBrowserTaskBinding(input: {
     workspaceId: input.workspaceId
   });
 
-  if (!account.lastVerifiedAt || account.verificationSource === "unknown") {
-    throw new Error("Confirm the browser login before assigning this account to an agent task.");
+  if (
+    account.connectionStatus !== "connected" ||
+    account.verificationSource !== "provider_verified" ||
+    !account.lastVerifiedAt
+  ) {
+    throw new Error("Provider verification is required before assigning this account to an agent task.");
   }
 
   const lease = await acquireBrowserAccountLease({
@@ -94,7 +98,8 @@ export async function prepareBrowserTaskBinding(input: {
     if (
       authentication.status === "expired" ||
       authentication.status === "unverified" ||
-      authentication.status === "needs_user_action"
+      authentication.status === "needs_user_action" ||
+      authentication.status === "unknown"
     ) {
       throw new Error(
         "The browser login could not be revalidated. Open Live View and sign in again."

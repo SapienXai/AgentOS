@@ -9,6 +9,10 @@ import {
   resolveExactOpenClawPluginSpec
 } from "@/lib/openclaw/application/channel-plugin-compat";
 import { getSurfaceCatalogEntry } from "@/lib/openclaw/surface-catalog";
+import {
+  parseChatSurfaceAccounts,
+  resolveProviderDefaultAccount
+} from "@/lib/openclaw/surface-adapters";
 
 test("channel connect catalog exposes WhatsApp QR and complete Slack Socket Mode credentials", () => {
   const whatsapp = getSurfaceCatalogEntry("whatsapp");
@@ -21,6 +25,45 @@ test("channel connect catalog exposes WhatsApp QR and complete Slack Socket Mode
     slack.provisionFields.filter((field) => field.required).map((field) => field.key),
     ["botToken", "appToken"]
   );
+});
+
+test("config hydration preserves named WhatsApp and Telegram account identity and defaults", () => {
+  const accounts = parseChatSurfaceAccounts({
+    telegram: {
+      defaultAccount: "operations",
+      accounts: {
+        main: { name: "Main", enabled: true },
+        operations: { label: "Operations", enabled: true },
+        support: { name: "Support", enabled: false }
+      }
+    },
+    whatsapp: {
+      defaultAccount: "support",
+      accounts: {
+        default: { name: "Personal", authDir: "/tmp/whatsapp-default" },
+        support: { name: "Support", authDir: "/tmp/whatsapp-support" }
+      }
+    }
+  });
+
+  assert.deepEqual(
+    accounts.map((account) => [account.type, account.accountId, account.name, account.isDefault]),
+    [
+      ["telegram", "main", "Main", false],
+      ["telegram", "operations", "Operations", true],
+      ["telegram", "support", "Support", false],
+      ["whatsapp", "default", "Personal", false],
+      ["whatsapp", "support", "Support", true]
+    ]
+  );
+  assert.equal(accounts.find((account) => account.accountId === "support" && account.type === "telegram")?.configured, false);
+  assert.equal(accounts.filter((account) => account.type === "whatsapp").every((account) => account.configured === true), true);
+  assert.equal(resolveProviderDefaultAccount("telegram", { defaultAccount: "operations" }, { operations: {} }), "operations");
+  assert.equal(
+    resolveProviderDefaultAccount("telegram", { defaultAccount: "missing" }, { operations: {}, support: {} }),
+    "operations"
+  );
+  assert.equal(resolveProviderDefaultAccount("whatsapp", { accounts: { default: {}, support: {} } }), "default");
 });
 
 test("Google Chat does not expose the obsolete single-webhook provisioning form", () => {
@@ -120,4 +163,15 @@ test("WhatsApp sender pairing stays behind an explicit redacted CLI fallback", (
   assert.match(source, /args\.push\("--notify"\)/);
   assert.match(source, /transport: "cli-fallback" as const/);
   assert.doesNotMatch(source, /stdout:/);
+});
+
+test("modern Telegram account identity does not depend on pairing or offset files", () => {
+  const source = readFileSync(
+    `${process.cwd()}/lib/openclaw/application/channel-service.ts`,
+    "utf8"
+  );
+
+  assert.match(source, /provisionChannelAccount\(/);
+  assert.match(source, /readChannelAccounts\(\)/);
+  assert.doesNotMatch(source, /telegram-pairing\.json|update-offset-|readTelegramPairingAccounts|findTelegramAccountByToken/);
 });

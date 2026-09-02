@@ -61,6 +61,7 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "channelList"
   | "channelLogs"
   | "channelLogin"
+  | "channelLifecycle"
   | "channelProvisioning"
   | "channelRemoval"
   | "gmailProvisioning"
@@ -324,6 +325,14 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   },
   { id: "channelLogin", label: "Channel and web login", methods: ["channels.logout", "web.login.start", "web.login.wait"], baseline: "optional" },
   {
+    id: "channelLifecycle",
+    label: "Channel account lifecycle",
+    methods: ["channels.start", "channels.stop"],
+    recovery: "Use the native Gateway lifecycle RPC; do not emulate start or stop with login, logout, restart, or config writes.",
+    fallbackAllowed: false,
+    baseline: "required"
+  },
+  {
     id: "channelProvisioning",
     label: "Channel provisioning",
     methods: ["channels.add", "channels.create", "channels.configure"],
@@ -405,6 +414,8 @@ export const OPENCLAW_2026_6_8_REQUIRED_GATEWAY_METHODS = [
   "config.patch",
   "config.apply",
   "channels.status",
+  "channels.start",
+  "channels.stop",
   "logs.tail"
 ] as const;
 
@@ -557,8 +568,6 @@ export const OPENCLAW_EXPERIMENTAL_GATEWAY_METHODS = [
   "artifacts.put",
   "artifacts.delete",
   "channels.list",
-  "channels.start",
-  "channels.stop",
   "cron.create",
   "devices.list",
   "gateway.restart.preflight",

@@ -10,6 +10,7 @@ import {
 
 export type IntegrationId =
   | "telegram"
+  | "whatsapp"
   | "discord"
   | "gmail"
   | "slack"
@@ -113,6 +114,12 @@ export const integrationRegistry: readonly IntegrationDescriptor[] = [
     provider: "telegram",
     category: "Communication",
     permissions: ["Chat routing", "Group routing", "Bot token required", "Route discovery"]
+  }),
+  openClawSurfaceDescriptor({
+    id: "whatsapp",
+    provider: "whatsapp",
+    category: "Communication",
+    permissions: ["Chat routing", "QR-linked session", "OpenClaw-owned authentication"]
   }),
   openClawSurfaceDescriptor({
     id: "discord",

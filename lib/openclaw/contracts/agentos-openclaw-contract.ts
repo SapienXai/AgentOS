@@ -44,6 +44,7 @@ const areaByOperation: Record<string, OpenClawCompatibilityLabAreaId> = {
   deviceApproval: "channels-accounts-scopes",
   cronRead: "channels-accounts-scopes",
   channels: "channels-accounts-scopes",
+  channelLifecycle: "channels-accounts-scopes",
   channelList: "channels-accounts-scopes",
   channelLogs: "channels-accounts-scopes",
   channelProvisioning: "channels-accounts-scopes",

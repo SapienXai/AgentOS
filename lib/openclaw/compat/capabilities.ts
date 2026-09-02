@@ -118,7 +118,7 @@ const capabilityDefinitions: CapabilityDefinition[] = [
   {
     id: "channels",
     label: "Channels",
-    methods: ["channels.status", "channels.logout", "send", "push.test", "voicewake.get", "voicewake.set", "voicewake.routing.get", "voicewake.routing.set"],
+    methods: ["channels.status", "channels.start", "channels.stop", "channels.logout", "send", "push.test", "voicewake.get", "voicewake.set", "voicewake.routing.get", "voicewake.routing.set"],
     events: ["voicewake.changed"]
   },
   {

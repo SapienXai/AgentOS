@@ -150,6 +150,20 @@ test("browser profile service uses OpenClaw browser.request and sanitizes URL fi
             cdpUrl: "ws://127.0.0.1:9222/devtools/browser/abc?token=query-secret",
             running: true,
             tabCount: 2
+          },
+          {
+            name: "user",
+            driver: "existing-session",
+            transport: "chrome-mcp",
+            running: false,
+            tabCount: 1
+          },
+          {
+            name: "relay",
+            driver: "extension",
+            transport: "extension",
+            running: true,
+            tabCount: 3
           }
         ]
       };
@@ -175,6 +189,14 @@ test("browser profile service uses OpenClaw browser.request and sanitizes URL fi
 
   assert.deepEqual(calls.map((call) => call.method), ["browser.request", "browser.request", "browser.request"]);
   assert.equal(profiles.profiles[0]?.cdpUrl?.includes("query-secret"), false);
+  assert.deepEqual(
+    profiles.profiles.map((profile) => [profile.driver, profile.driverLabel, profile.transportLabel]),
+    [
+      ["openclaw", "Managed Browser", "CDP"],
+      ["existing-session", "Existing Session", "Chrome MCP"],
+      ["extension", "Chrome Extension", "Chrome extension relay"]
+    ]
+  );
   assert.deepEqual(calls[1]?.params.query, { profile: "openclaw" });
   assert.deepEqual(calls[2]?.params.query, { profile: "openclaw" });
   assert.deepEqual(calls[2]?.params.body, {

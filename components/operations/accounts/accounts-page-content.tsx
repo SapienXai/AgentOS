@@ -130,10 +130,11 @@ export function AccountsPageContent({
   const runningCount = usableProfiles.filter((profile) => profile.running).length;
   const managedCount = usableProfiles.filter((profile) => profile.driver === "openclaw").length;
   const existingSessionCount = usableProfiles.filter((profile) => profile.driver === "existing-session").length;
+  const extensionCount = usableProfiles.filter((profile) => profile.driver === "extension").length;
   const tabCount = usableProfiles.reduce((total, profile) => total + profile.tabCount, 0);
   const driverFilters: Array<"all" | OpenClawBrowserDriver> = deployment.existingBrowserSession === "supported"
-    ? ["all", "openclaw", "existing-session"]
-    : ["all", "openclaw"];
+    ? ["all", "openclaw", "existing-session", "extension"]
+    : ["all", "openclaw", "extension"];
   const statusFilters: Array<"all" | "running" | "stopped"> = ["all", "running", "stopped"];
   const profileNames = useMemo(() => new Set(usableProfiles.map((profile) => profile.name)), [usableProfiles]);
   const accessRulesByTargetId = useMemo(() => {
@@ -597,7 +598,7 @@ export function AccountsPageContent({
             </PageHeader>
 
             <StatGrid columns={5}>
-              <StatCard label="Profiles" value={loading ? "-" : String(usableProfiles.length)} detail={`${managedCount} managed, ${existingSessionCount} attached session`} icon={Chrome} tone="info" />
+              <StatCard label="Profiles" value={loading ? "-" : String(usableProfiles.length)} detail={`${managedCount} managed, ${existingSessionCount} attached, ${extensionCount} extension`} icon={Chrome} tone="info" />
               <StatCard label="Login Targets" value={targetsLoading ? "-" : String(loginTargets.length)} detail="Created through Connect Account" icon={KeyRound} tone={loginTargets.length > 0 ? "success" : "muted"} />
               <StatCard label="Running" value={loading ? "-" : String(runningCount)} detail={`${tabCount} open browser tabs`} icon={Fingerprint} tone={runningCount > 0 ? "success" : "muted"} />
               <StatCard label="Runnable Access" value={accessRulesLoading ? "-" : String(runnableAccessRuleCount)} detail={`${browserAgentCount} browser-capable agents · ${approvalBlockedAccessRuleCount} approval-blocked`} icon={UserCog} tone={runnableAccessRuleCount > 0 ? "success" : "muted"} />
@@ -728,7 +729,7 @@ export function AccountsPageContent({
                           <p className="mt-1 truncate text-[0.7rem] text-muted-foreground">{account.primaryDomain}</p>
                         </div>
                         <StatusBadge
-                          label={account.connectionStatus.replaceAll("_", " ")}
+                          label={formatSecureBrowserConnectionStatus(account.connectionStatus)}
                           tone={account.connectionStatus === "revoked" ? "muted" : account.connectionStatus === "connected" ? "success" : "warning"}
                         />
                       </div>
@@ -764,6 +765,7 @@ export function AccountsPageContent({
                           disabled={
                             account.connectionStatus === "revoked" ||
                             account.sessionState === "recovery_required" ||
+                            account.verificationSource !== "provider_verified" ||
                             !account.lastVerifiedAt ||
                             account.allowedAgentIds.length === 0 ||
                             secureBrowserCapabilities?.typedTaskDispatch !== "supported"
@@ -2556,7 +2558,24 @@ function formatBrowserProfileStateFilter(status: "all" | "running" | "stopped") 
 }
 
 function formatBrowserDriverFilter(driver: "all" | OpenClawBrowserDriver) {
-  return driver === "all" ? "All" : driver === "existing-session" ? "Existing session" : "Managed";
+  return driver === "all"
+    ? "All"
+    : driver === "existing-session"
+      ? "Existing session"
+      : driver === "extension"
+        ? "Chrome extension"
+        : "Managed";
+}
+
+function formatSecureBrowserConnectionStatus(status: SecureBrowserAccountView["connectionStatus"]) {
+  if (status === "needs_verification") {
+    return "Signed in — verification pending";
+  }
+
+  return status
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function isUsableAccountBrowserProfile(profile: OpenClawBrowserProfileView) {

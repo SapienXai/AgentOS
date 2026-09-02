@@ -207,19 +207,18 @@ export async function confirmBrowserAccountLogin(input: {
 
   await mutateRegistry((registry) => {
     const account = requireOwnedAccount(registry, input);
-    assertAccountUsable(account, { allowExpired: true });
+    assertAccountUsable(account, { allowExpired: true, allowNeedsVerification: true });
     account.connectionStatus =
-      authenticationStatus === "expired"
-        ? "expired"
-        : "connected";
+      authenticationStatus === "verified"
+        ? "connected"
+        : authenticationStatus === "expired"
+          ? "expired"
+          : "needs_verification";
     account.verificationSource =
       authenticationStatus === "verified" ? "provider_verified" : "user_confirmed";
-    account.lastVerifiedAt =
-      authenticationStatus === "verified"
-        ? providerVerifiedAt ?? confirmedAt
-        : authenticationStatus === "expired"
-          ? null
-          : confirmedAt;
+    account.lastVerifiedAt = authenticationStatus === "verified"
+      ? providerVerifiedAt ?? confirmedAt
+      : null;
     account.updatedAt = confirmedAt;
     appendAudit(registry, account, input.actor.userId, "login_user_confirmed", {
       detail:
@@ -237,7 +236,8 @@ export async function confirmBrowserAccountLogin(input: {
       });
     } else if (
       authenticationStatus === "unverified" ||
-      authenticationStatus === "needs_user_action"
+      authenticationStatus === "needs_user_action" ||
+      authenticationStatus === "unknown"
     ) {
       appendAudit(registry, account, actor.userId, "authentication_failed", {
         detail: "The provider-specific authentication marker was not present."
@@ -302,9 +302,6 @@ export async function recordBrowserAuthenticationVerification(input: {
   status: BrowserAuthenticationStatus;
   verifiedAt: string | null;
 }) {
-  if (input.status === "unknown") {
-    return getBrowserAccount(input);
-  }
   let result: BrowserAccountRecord | null = null;
   await mutateRegistry((registry) => {
     const account = requireOwnedAccount(registry, input);
@@ -316,7 +313,7 @@ export async function recordBrowserAuthenticationVerification(input: {
       appendAudit(registry, account, input.actor.userId, "authentication_verified", {
         detail: "The provider-specific authentication marker was revalidated before task use."
       });
-    } else {
+    } else if (input.status === "expired") {
       account.connectionStatus = "expired";
       account.verificationSource = "unknown";
       account.lastVerifiedAt = null;
@@ -329,6 +326,13 @@ export async function recordBrowserAuthenticationVerification(input: {
           detail: "Browser authentication could not be revalidated; reconnect is required."
         }
       );
+    } else {
+      account.connectionStatus = "needs_verification";
+      account.verificationSource = "unknown";
+      account.lastVerifiedAt = null;
+      appendAudit(registry, account, input.actor.userId, "authentication_failed", {
+        detail: "Provider authentication could not be independently verified; reconnect is required."
+      });
     }
     account.updatedAt = now;
     result = account;
@@ -346,7 +350,7 @@ export async function startBrowserAccountLiveView(input: {
   const now = input.now ?? new Date();
   const registry = await readRegistry();
   const existing = requireOwnedAccount(registry, input);
-  assertAccountUsable(existing, { allowExpired: true });
+  assertAccountUsable(existing, { allowExpired: true, allowNeedsVerification: true });
   const provider = getBrowserProvider(existing.provider);
   const capabilities = await provider.getCapabilities();
   if (capabilities.liveView !== "supported" || capabilities.humanTakeover !== "supported") {
@@ -360,7 +364,7 @@ export async function startBrowserAccountLiveView(input: {
   let lease: BrowserAccountLease | null = null;
   await mutateRegistry((nextRegistry) => {
     const account = requireOwnedAccount(nextRegistry, input);
-    assertAccountUsable(account, { allowExpired: true });
+    assertAccountUsable(account, { allowExpired: true, allowNeedsVerification: true });
     const current = account.concurrencyLease;
     if (current && Date.parse(current.expiresAt) > now.getTime()) {
       throw new BrowserAccountError(
@@ -996,7 +1000,7 @@ export function buildBrowserProfileId(input: {
 
 function assertAccountUsable(
   account: BrowserAccountRecord,
-  options: { allowExpired?: boolean } = {}
+  options: { allowExpired?: boolean; allowNeedsVerification?: boolean } = {}
 ) {
   if (account.revokedAt || account.connectionStatus === "revoked") {
     throw new BrowserAccountError("The browser account has been revoked.", 409, "account-revoked");
@@ -1006,6 +1010,13 @@ function assertAccountUsable(
       "Secure Live View and typed task-bound browser dispatch are unavailable for this account.",
       409,
       "browser-dispatch-unsupported"
+    );
+  }
+  if (account.connectionStatus === "needs_verification" && !options.allowNeedsVerification) {
+    throw new BrowserAccountError(
+      "Verify the browser account with the provider before starting an agent task.",
+      409,
+      "browser-authentication-unverified"
     );
   }
   if (

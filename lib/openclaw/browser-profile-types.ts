@@ -6,8 +6,8 @@ export type OpenClawBrowserStatusTone =
   | "muted"
   | "purple";
 
-export type OpenClawBrowserDriver = "openclaw" | "existing-session";
-export type OpenClawBrowserTransport = "cdp" | "chrome-mcp";
+export type OpenClawBrowserDriver = "openclaw" | "existing-session" | "extension";
+export type OpenClawBrowserTransport = "cdp" | "chrome-mcp" | "extension";
 
 export type OpenClawBrowserProfileView = {
   name: string;

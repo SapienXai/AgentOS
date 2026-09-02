@@ -90,7 +90,7 @@ export function mergeRuntimeSurfaceAccounts(
   configuredAccounts: ChannelAccountRecord[],
   runtimeAccounts: SurfaceAccountRuntimeStatus[]
 ) {
-  const accountsById = new Map(configuredAccounts.map((account) => [account.id, account]));
+  const accountsById = new Map(configuredAccounts.map((account) => [resolveChannelAccountId(account), account]));
 
   for (const runtimeAccount of runtimeAccounts) {
     if (accountsById.has(runtimeAccount.accountId)) {
@@ -99,6 +99,7 @@ export function mergeRuntimeSurfaceAccounts(
 
     accountsById.set(runtimeAccount.accountId, {
       id: runtimeAccount.accountId,
+      accountId: runtimeAccount.accountId,
       type: runtimeAccount.provider,
       name: runtimeAccount.name || runtimeAccount.label || runtimeAccount.accountId,
       enabled: runtimeAccount.enabled,
@@ -110,6 +111,10 @@ export function mergeRuntimeSurfaceAccounts(
   }
 
   return sortSurfaceAccounts(Array.from(accountsById.values()));
+}
+
+function resolveChannelAccountId(account: Pick<ChannelAccountRecord, "id" | "accountId">) {
+  return account.accountId?.trim() || account.id;
 }
 
 export function getSurfaceAccountRuntime(
@@ -156,6 +161,10 @@ export function formatSurfaceAccountStatus(
       return "Running";
     case "linked":
       return "Linked";
+    case "stopped":
+      return "Stopped";
+    case "needs-authentication":
+      return "Needs authentication";
     case "configured":
       return "Configured";
     case "disabled":
@@ -182,6 +191,10 @@ export function getSurfaceRuntimeBadgeClass(
     case "running":
     case "linked":
       return "border-emerald-300/45 bg-emerald-50 text-emerald-700 dark:border-emerald-300/25 dark:bg-emerald-400/10 dark:text-emerald-100";
+    case "stopped":
+      return "border-amber-300/45 bg-amber-50 text-amber-700 dark:border-amber-300/25 dark:bg-amber-400/10 dark:text-amber-100";
+    case "needs-authentication":
+      return "border-amber-300/45 bg-amber-50 text-amber-700 dark:border-amber-300/25 dark:bg-amber-400/10 dark:text-amber-100";
     case "configured":
       return "border-cyan-300/45 bg-cyan-50 text-cyan-700 dark:border-cyan-300/25 dark:bg-cyan-400/10 dark:text-cyan-100";
     case "disabled":

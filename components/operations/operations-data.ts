@@ -20,6 +20,7 @@ import {
   Github,
   Globe2,
   HardDrive,
+  Link2,
   Mail,
   MessageCircle,
   Puzzle,
@@ -139,6 +140,10 @@ export type FileView = {
 
 const integrationStatusTones: Record<IntegrationStatus, StatusTone> = {
   connected: "success",
+  running: "info",
+  linked: "warning",
+  configured: "warning",
+  stopped: "warning",
   disabled: "muted",
   "pending-setup": "warning",
   failed: "danger",
@@ -808,6 +813,10 @@ export const taskStatusIcons: Record<TaskView["status"], LucideIcon> = {
 
 export const integrationStatusIcons: Record<IntegrationStatus, LucideIcon> = {
   connected: CircleCheck,
+  running: Zap,
+  linked: Link2,
+  configured: CircleDashed,
+  stopped: CirclePause,
   disabled: Archive,
   "pending-setup": CircleDashed,
   failed: XCircle,

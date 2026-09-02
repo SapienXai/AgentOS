@@ -254,15 +254,28 @@ function normalizeBrowserProfile(value: unknown): OpenClawBrowserProfileView | n
   }
 
   const driver = readDriver(profile.driver);
+  if (!driver) {
+    return null;
+  }
   const transport = readTransport(profile.transport);
   const running = profile.running === true;
 
   return {
     name,
     driver,
-    driverLabel: driver === "existing-session" ? "Existing Chrome session" : "Managed OpenClaw profile",
+    driverLabel: driver === "existing-session"
+      ? "Existing Session"
+      : driver === "extension"
+        ? "Chrome Extension"
+        : "Managed Browser",
     transport,
-    transportLabel: transport === "chrome-mcp" ? "Chrome MCP" : transport === "cdp" ? "CDP" : "Not reported",
+    transportLabel: transport === "chrome-mcp"
+      ? "Chrome MCP"
+      : transport === "extension"
+        ? "Chrome extension relay"
+        : transport === "cdp"
+          ? "CDP"
+          : "Not reported",
     cdpPort: readNumber(profile.cdpPort),
     cdpUrl: readRedactedString(profile.cdpUrl),
     color: readString(profile.color) || managedProfileColor,
@@ -326,12 +339,14 @@ function normalizeOptionalLabel(value: string | undefined) {
   return label ? label.slice(0, 48) : undefined;
 }
 
-function readDriver(value: unknown): OpenClawBrowserDriver {
-  return value === "existing-session" ? "existing-session" : "openclaw";
+function readDriver(value: unknown): OpenClawBrowserDriver | null {
+  return value === "openclaw" || value === "existing-session" || value === "extension"
+    ? value
+    : null;
 }
 
 function readTransport(value: unknown): OpenClawBrowserTransport | null {
-  return value === "cdp" || value === "chrome-mcp" ? value : null;
+  return value === "cdp" || value === "chrome-mcp" || value === "extension" ? value : null;
 }
 
 function readString(value: unknown) {

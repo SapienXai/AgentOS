@@ -134,6 +134,11 @@ const channelDefinitions: Record<
       }
     ]
   },
+  whatsapp: {
+    label: "WhatsApp",
+    requiresCredentials: false,
+    credentials: []
+  },
   discord: {
     label: "Discord",
     requiresCredentials: true,

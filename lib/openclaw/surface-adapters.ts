@@ -8,7 +8,7 @@ import type {
   PlannerChannelType
 } from "@/lib/openclaw/types";
 
-const CHAT_PROVIDERS = new Set<PlannerChannelType>(["telegram", "discord", "slack", "googlechat"]);
+const CHAT_PROVIDERS = new Set<PlannerChannelType>(["telegram", "whatsapp", "discord", "slack", "googlechat"]);
 const ACCOUNT_ID_FALLBACKS: Record<string, string> = {
   cron: "cron-default",
   email: "email-default",
@@ -64,7 +64,7 @@ async function readOpenClawCronJobs() {
   }
 }
 
-function parseChatSurfaceAccounts(channelsConfig: Record<string, unknown> | null) {
+export function parseChatSurfaceAccounts(channelsConfig: Record<string, unknown> | null) {
   if (!isObjectRecord(channelsConfig)) {
     return [] as ChannelAccountRecord[];
   }
@@ -78,29 +78,30 @@ function parseChatSurfaceAccounts(channelsConfig: Record<string, unknown> | null
 
     const config = rawConfig as Record<string, unknown>;
     const namedAccounts = isObjectRecord(config.accounts) ? (config.accounts as Record<string, unknown>) : {};
+    const defaultAccountId = resolveProviderDefaultAccount(provider, config, namedAccounts);
 
     for (const [accountId, account] of Object.entries(namedAccounts)) {
       const accountConfig = isObjectRecord(account) ? account as Record<string, unknown> : {};
-      if (!hasDirectAccountConfig(accountConfig)) {
-        continue;
-      }
 
       accounts.push(
         buildSurfaceAccount(provider, accountId, accountConfig, {
           fallbackName: buildDefaultAccountLabel(provider, accountId),
-          source: "config.channels.accounts"
+          source: "config.channels.accounts",
+          configured: hasDirectAccountConfig(accountConfig),
+          isDefault: accountId === defaultAccountId
         })
       );
     }
 
-    const directDefaultAccountId =
-      normalizeOptionalString(config.defaultAccount) ?? (hasDirectAccountConfig(config) ? "default" : null);
+    const directDefaultAccountId = defaultAccountId;
 
     if (directDefaultAccountId && !(directDefaultAccountId in namedAccounts)) {
       accounts.push(
         buildSurfaceAccount(provider, directDefaultAccountId, config, {
           fallbackName: buildDefaultAccountLabel(provider, directDefaultAccountId),
-          source: "config.channels.default"
+          source: "config.channels.default",
+          configured: hasDirectAccountConfig(config),
+          isDefault: true
         })
       );
     }
@@ -238,6 +239,8 @@ function buildSurfaceAccount(
   options: {
     fallbackName: string;
     source: string;
+    configured?: boolean;
+    isDefault?: boolean;
   }
 ): ChannelAccountRecord {
   const config = isObjectRecord(rawConfig) ? (rawConfig as Record<string, unknown>) : {};
@@ -254,9 +257,12 @@ function buildSurfaceAccount(
 
   return {
     id: accountId,
+    accountId,
     type: provider,
     name,
     enabled: config.enabled !== false,
+    configured: options.configured ?? hasDirectAccountConfig(config),
+    isDefault: options.isDefault,
     kind: getSurfaceKind(provider),
     capabilities: inferSurfaceCapabilities(provider, config),
     metadata: {
@@ -270,7 +276,7 @@ function buildSurfaceAccount(
 function inferSurfaceCapabilities(provider: MissionControlSurfaceProvider, config: Record<string, unknown>) {
   const capabilities = new Set<string>();
 
-  if (provider === "telegram" || provider === "discord" || provider === "slack" || provider === "googlechat") {
+  if (provider === "telegram" || provider === "whatsapp" || provider === "discord" || provider === "slack" || provider === "googlechat") {
     capabilities.add("chat");
   }
 
@@ -306,8 +312,11 @@ function dedupeSurfaceAccounts(accounts: ChannelAccountRecord[]) {
 
     seen.set(key, {
       ...existing,
+      accountId: existing.accountId ?? account.accountId,
       name: existing.name || account.name,
       enabled: existing.enabled || account.enabled,
+      configured: existing.configured || account.configured,
+      isDefault: existing.isDefault || account.isDefault,
       capabilities: Array.from(new Set([...(existing.capabilities ?? []), ...(account.capabilities ?? [])])),
       metadata: {
         ...(account.metadata ?? {}),
@@ -320,7 +329,33 @@ function dedupeSurfaceAccounts(accounts: ChannelAccountRecord[]) {
 }
 
 function hasDirectAccountConfig(config: Record<string, unknown>) {
-  return config.enabled === true || hasAnyValue(config, ["account", "token", "botToken", "appToken", "webhookUrl", "webhook", "clientId"]);
+  return config.enabled === true || hasAnyValue(config, ["account", "authDir", "token", "tokenFile", "botToken", "appToken", "webhookUrl", "webhook", "clientId"]);
+}
+
+export function resolveProviderDefaultAccount(
+  _provider: MissionControlSurfaceProvider,
+  config: Record<string, unknown>,
+  namedAccounts: Record<string, unknown> = isObjectRecord(config.accounts) ? config.accounts : {}
+) {
+  const explicit = normalizeOptionalString(config.defaultAccount);
+  const namedAccountIds = Object.keys(namedAccounts).filter(Boolean);
+  const hasImplicitDefault = hasDirectAccountConfig(config);
+  const listedAccountIds = hasImplicitDefault ? [...namedAccountIds, "default"] : namedAccountIds;
+
+  if (explicit && listedAccountIds.includes(explicit)) {
+    return explicit;
+  }
+
+  if (namedAccountIds.includes("default")) {
+    return "default";
+  }
+
+  if (hasImplicitDefault) {
+    return "default";
+  }
+
+  const accountIds = namedAccountIds.sort((left, right) => left.localeCompare(right));
+  return accountIds[0] ?? null;
 }
 
 function hasInboxAccountConfig(config: Record<string, unknown>) {

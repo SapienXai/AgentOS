@@ -57,11 +57,14 @@ Raw VNC and remote CDP endpoints are never returned by an AgentOS API and have
 no Railway public port.
 
 The provider boundary remains
-`lib/agentos/browser-accounts/provider.ts`. The default
-`self-hosted-openclaw` adapter uses the AgentOS browser worker for human login
-and persistence while preserving a future OpenClaw task adapter boundary.
-Optional provider identifiers do not install or require paid SDKs. OpenClaw
-core is not forked.
+`lib/agentos/browser-accounts/provider.ts`. Secure Browser Accounts are the
+AgentOS policy/control abstraction over a browser provider: they own identity,
+workspace, agent/domain ACLs, leases, fencing, human login, recovery, and
+audit. The provider may be an OpenClaw managed profile, an OpenClaw
+`existing-session`, an OpenClaw `extension` relay, or an AgentOS
+self-hosted/cloud worker. OpenClaw remains the browser runtime and source of
+truth for native profiles and drivers; AgentOS does not copy cookies,
+localStorage, CDP credentials, or access tokens into its persistence.
 
 The worker keeps Chromium's raw ephemeral CDP endpoint private. AgentOS rewrites
 the worker route to a stable loopback-only CDP relay in the main service and
@@ -89,10 +92,12 @@ through AgentOS HTTP.
 8. The operator enters passwords and verification codes directly into the
    remote browser pixels/input channel. They are not submitted to an AgentOS
    form, API, prompt, model, transcript, or audit event.
-9. **I’m signed in** records user confirmation, stops the browser processes,
-   releases the lease, and leaves the Chromium profile on the volume. When a
-   stable provider rule exists, verification runs inside the private worker
-   before shutdown and returns only a marker result and hostname.
+9. **I’m signed in** records user confirmation. When a stable provider rule
+   exists, verification runs inside the private worker and returns only a
+   marker result and hostname. Only a provider-verified result becomes
+   `connected`; an unavailable or unknown result remains
+   `needs_verification`. Stop Live View separately to revoke the Live View
+   session and release its lease while preserving the profile volume.
 10. A later Live View starts Chromium with the same `user-data-dir`.
 11. Revoke invalidates Live View credentials and removes the scoped profile.
 
@@ -138,9 +143,10 @@ credential leaves the worker. Domains without a stable rule remain
 `unknown/user_confirmed`, never `connected`.
 
 Before an agent task uses a provider with a rule, AgentOS starts the isolated
-profile and revalidates the marker. A missing/expired marker changes the
-account to `expired`, stops the session, releases the lease, and instructs the
-operator to reconnect through Live View.
+profile and revalidates the marker. An expired marker changes the account to
+`expired`; an unknown, unverified, or user-action-required result changes it
+to `needs_verification`. In either case dispatch is blocked, the session is
+cleaned up, and the operator is instructed to reconnect through Live View.
 
 ## Storage and isolation
 
@@ -230,6 +236,21 @@ for a future multi-tenant SaaS deployment.
 - `unsupported`: required runtime capability is missing.
 - `revoked`: profile and account use are denied.
 
+## Native OpenClaw browser drivers
+
+OpenClaw reports these native drivers without collapsing them into one
+category:
+
+- `openclaw`: Managed Browser, an isolated OpenClaw-managed profile.
+- `existing-session`: Existing Session, an already available host browser
+  session attached through OpenClaw.
+- `extension`: Chrome Extension, an authenticated browser extension relay.
+
+AgentOS shows the driver and capability labels but never exposes raw CDP
+credentials, relay secrets, cookies, or browser storage. A Secure Browser
+Account remains bound to its exact provider/profile; an existing session or
+extension profile cannot silently replace that binding.
+
 ## Operations
 
 ### Health and recovery
@@ -309,7 +330,8 @@ maintenance deployment, not while production browser sessions are active.
 
 AgentOS Railway is pinned to OpenClaw `2026.8.2`. Native OpenClaw
 documentation describes managed profiles, `profile` selection, `cdpUrl`,
-`attachOnly`, browser-node proxying, and manual login:
+`attachOnly`, browser-node proxying, manual login, and the native
+`openclaw`/`existing-session`/`extension` driver boundary:
 
 - [Managed browser](https://docs.openclaw.ai/browser)
 - [Browser login](https://docs.openclaw.ai/tools/browser-login)

@@ -6,6 +6,7 @@ import {
   summarizeIntegrationStates
 } from "@/lib/agentos/integrations/state";
 import type { AgentRecord, MissionControlSnapshot } from "@/lib/agentos/contracts";
+import { normalizeSurfaceRuntimeFromChannelStatus } from "@/lib/openclaw/surface-runtime";
 
 test("integration state does not fake connected channel status from config alone", () => {
   const snapshot = buildSnapshot({
@@ -48,6 +49,89 @@ test("integration state does not fake connected channel status from config alone
   assert.equal(telegram?.linkedAgentCount, 1);
   assert.ok(telegram?.sourceMethods.includes("snapshot.channelAccounts"));
   assert.ok(telegram?.sourceMethods.includes("snapshot.channelRegistry.channels"));
+});
+
+test("integrations use the live SurfaceRuntime account status consistently", () => {
+  const surfaceRuntime = normalizeSurfaceRuntimeFromChannelStatus(
+    {
+      ts: 1,
+      channelOrder: ["telegram"],
+      channelMeta: [],
+      channelLabels: {},
+      channels: {},
+      channelDefaultAccountId: { telegram: "operations" },
+      channelAccounts: {
+        telegram: [{
+          accountId: "operations",
+          name: "Operations",
+          enabled: true,
+          configured: true,
+          running: false,
+          connected: false
+        }]
+      }
+    },
+    { source: "gateway-probe", checkedAt: "2026-06-02T00:00:00.000Z" }
+  );
+  const snapshot = buildSnapshot({
+    channelAccounts: [{
+      id: "operations",
+      accountId: "operations",
+      type: "telegram",
+      name: "Operations",
+      enabled: true,
+      configured: true,
+      kind: "chat",
+      capabilities: ["chat"]
+    }],
+    surfaceRuntime
+  });
+
+  const telegram = buildIntegrationStates(snapshot).find((integration) => integration.id === "telegram");
+
+  assert.equal(telegram?.status, "stopped");
+  assert.equal(telegram?.statusLabel, "Stopped");
+  assert.deepEqual(telegram?.accountIds, ["operations"]);
+});
+
+test("integrations preserve running and linked channel states without calling them connected", () => {
+  const runningRuntime = normalizeSurfaceRuntimeFromChannelStatus(
+    {
+      ts: 1,
+      channelOrder: ["telegram"],
+      channelMeta: [],
+      channelLabels: {},
+      channels: {},
+      channelDefaultAccountId: { telegram: "operations" },
+      channelAccounts: {
+        telegram: [{ accountId: "operations", configured: true, running: true, connected: false }]
+      }
+    },
+    { source: "gateway-probe", checkedAt: "2026-06-02T00:00:00.000Z" }
+  );
+  const running = buildIntegrationStates(buildSnapshot({ surfaceRuntime: runningRuntime }))
+    .find((integration) => integration.id === "telegram");
+  assert.equal(running?.status, "running");
+  assert.equal(running?.statusLabel, "Running");
+
+  const linkedRuntime = normalizeSurfaceRuntimeFromChannelStatus(
+    {
+      ts: 1,
+      channelOrder: ["whatsapp"],
+      channelMeta: [],
+      channelLabels: {},
+      channels: {},
+      channelDefaultAccountId: { whatsapp: "support" },
+      channelAccounts: {
+        whatsapp: [{ accountId: "support", configured: true, linked: true, running: false, connected: false }]
+      }
+    },
+    { source: "gateway-probe", checkedAt: "2026-06-02T00:00:00.000Z" }
+  );
+  const linked = buildIntegrationStates(buildSnapshot({ surfaceRuntime: linkedRuntime }))
+    .find((integration) => integration.id === "whatsapp");
+  assert.equal(linked?.status, "linked");
+  assert.equal(linked?.statusLabel, "Linked");
 });
 
 test("integration state marks available model providers connected from real model routes", () => {

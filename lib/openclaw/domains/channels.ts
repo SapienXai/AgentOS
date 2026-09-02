@@ -18,6 +18,10 @@ import type {
 
 export { parseDiscordRouteId };
 
+export function resolveChannelAccountId(account: Pick<ChannelAccountRecord, "id" | "accountId">) {
+  return account.accountId?.trim() || account.id;
+}
+
 const missionControlRootPath = path.join(/*turbopackIgnore: true*/ process.cwd(), ".mission-control");
 const channelRegistryPath = path.join(missionControlRootPath, "channel-registry.json");
 

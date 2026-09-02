@@ -531,6 +531,56 @@ test("native WS gateway client handshakes and correlates request responses", asy
   assert.equal(fallback.calls.length, 0);
 });
 
+test("native channel lifecycle uses channels.start and channels.stop without CLI fallback", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? { protocol: 4 }
+          : frame.method === "channels.start"
+            ? {
+                channel: "telegram",
+                accountId: "operations",
+                started: false,
+                outcome: { status: "retry", reason: "start-in-flight" }
+              }
+            : { channel: "telegram", accountId: "operations", stopped: true }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  const started = await client.startChannel({ channel: "telegram", accountId: "operations" });
+  const stopped = await client.stopChannel({ channel: "telegram", accountId: "operations" });
+
+  assert.deepEqual(started, {
+    channel: "telegram",
+    accountId: "operations",
+    started: false,
+    outcome: { status: "retry", reason: "start-in-flight" }
+  });
+  assert.deepEqual(stopped, {
+    channel: "telegram",
+    accountId: "operations",
+    stopped: true
+  });
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "channels.start", "channels.stop"]);
+  assert.deepEqual(sentFrames.slice(1).map((frame) => frame.params), [
+    { channel: "telegram", accountId: "operations" },
+    { channel: "telegram", accountId: "operations" }
+  ]);
+  assert.equal(fallback.calls.length, 0);
+});
+
 test("Railway rejects Gateway lifecycle control without invoking the CLI fallback", async () => {
   const previousPlatform = process.env.AGENTOS_DEPLOYMENT_PLATFORM;
   process.env.AGENTOS_DEPLOYMENT_PLATFORM = "railway";

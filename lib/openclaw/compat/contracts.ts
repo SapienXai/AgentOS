@@ -69,6 +69,7 @@ const operationSurfaceMap: Partial<Record<string, OpenClawCompatibilityCapabilit
   channelList: "channels",
   channelLogs: "channels",
   channelLogin: "channels",
+  channelLifecycle: "channels",
   channelProvisioning: "channels",
   channelRemoval: "channels",
   gmailProvisioning: "channels",

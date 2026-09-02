@@ -342,6 +342,8 @@ export const OPENCLAW_DYNAMIC_METHODS = [
   "channels.pairing.approve",
   "web.login.start",
   "web.login.wait",
+  "channels.start",
+  "channels.stop",
   "channels.logout",
   "plugins.install"
 ] as const;
@@ -365,6 +367,8 @@ export const OPENCLAW_STATIC_METHOD_SCOPES: Record<string, readonly string[]> = 
   "device.pair.setupCode": ["operator.admin"],
   "web.login.start": ["operator.admin"],
   "web.login.wait": ["operator.admin"],
+  "channels.start": ["operator.admin"],
+  "channels.stop": ["operator.admin"],
   "channels.logout": ["operator.admin"],
   "plugins.install": ["operator.admin"],
   "config.patch": ["operator.admin"]

@@ -4,8 +4,17 @@ import type {
   BrowserProviderCapabilities
 } from "@/lib/agentos/browser-accounts/types";
 
+/** Runtime implementation behind a Secure Browser Account. Persisted account
+ * provider IDs remain in BrowserAccountProviderId for migration safety. */
+export type BrowserProviderRuntime =
+  | "openclaw-managed"
+  | "openclaw-existing-session"
+  | "openclaw-extension"
+  | "self-hosted-worker";
+
 export type BrowserProviderProfile = {
   provider: BrowserAccountProviderId;
+  runtimeProvider?: BrowserProviderRuntime;
   externalProfileId: string | null;
   browserProfileId: string;
   persistent: boolean;

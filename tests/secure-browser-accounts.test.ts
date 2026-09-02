@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
@@ -150,13 +150,14 @@ test("browser profile ids are isolated even for the same owner and workspace", a
 
 test("durable leases enforce agent ACL, single writer, stale recovery, and fencing", async () => {
   await useTemporaryRegistry();
-  setBrowserProviderForTesting(fakeProvider());
+  setBrowserProviderForTesting(fakeProvider({}, "verified"));
   const created = await createBrowserAccount(baseCreateInput());
   const account = {
     actor: { userId: "owner-a" },
     accountId: created.account.id,
     workspaceId: "workspace-a"
   };
+  await markAccountProviderVerified(created.account.id);
   const start = new Date("2026-07-23T10:00:00.000Z");
 
   await assert.rejects(
@@ -168,7 +169,6 @@ test("durable leases enforce agent ACL, single writer, stale recovery, and fenci
     }),
     (error) => error instanceof BrowserAccountError && error.code === "agent-access-denied"
   );
-
   const first = await acquireBrowserAccountLease({
     ...account,
     agentId: "agent-a",
@@ -219,7 +219,7 @@ test("durable leases enforce agent ACL, single writer, stale recovery, and fenci
 
 test("browser account ACL updates remain owner/workspace scoped and lock during active leases", async () => {
   await useTemporaryRegistry();
-  setBrowserProviderForTesting(fakeProvider());
+  setBrowserProviderForTesting(fakeProvider({}, "verified"));
   const created = await createBrowserAccount(baseCreateInput());
   const account = {
     actor: { userId: "owner-a" },
@@ -245,6 +245,7 @@ test("browser account ACL updates remain owner/workspace scoped and lock during 
     }),
     accessDenied
   );
+  await markAccountProviderVerified(created.account.id);
 
   const lease = await acquireBrowserAccountLease({
     ...account,
@@ -360,7 +361,7 @@ test("provider-verified Live View confirmation promotes only a matched session t
   assert.equal(confirmed.verificationSource, "provider_verified");
 });
 
-test("user-confirmed Live View confirmation stays connected when provider verification is unavailable", async () => {
+test("user-confirmed Live View confirmation stays pending when provider verification is unavailable", async () => {
   await useTemporaryRegistry();
   setBrowserProviderForTesting(fakeProvider({}, "unknown"));
   const created = await createBrowserAccount(baseCreateInput());
@@ -380,9 +381,9 @@ test("user-confirmed Live View confirmation stays connected when provider verifi
     providerSessionId: exchange.providerSessionId
   });
   assert.equal(confirmed.authenticationStatus, "unknown");
-  assert.equal(confirmed.connectionStatus, "connected");
+  assert.equal(confirmed.connectionStatus, "needs_verification");
   assert.equal(confirmed.verificationSource, "user_confirmed");
-  assert.ok(confirmed.lastVerifiedAt);
+  assert.equal(confirmed.lastVerifiedAt, null);
 });
 
 test("browser authentication verification cannot inspect another account session", async () => {
@@ -562,7 +563,7 @@ test("internal browser policy channel denies missing tokens and accepts only the
 test("task binding forces a private OpenClaw profile and releases it without persisting CDP", async () => {
   const root = await useTemporaryRegistry();
   setBrowserTaskBindingRegistryRootForTesting(root);
-  setBrowserProviderForTesting(fakeProvider());
+  setBrowserProviderForTesting(fakeProvider({}, "verified"));
   const mutations: Array<{ operation: string; path: string; value?: unknown }> = [];
   setOpenClawAdapterForTesting({
     async setConfig(path: string, value: unknown) {
@@ -576,11 +577,7 @@ test("task binding forces a private OpenClaw profile and releases it without per
   } as unknown as OpenClawAdapter);
 
   const created = await createBrowserAccount(baseCreateInput());
-  await confirmBrowserAccountLogin({
-    actor: { userId: "owner-a" },
-    accountId: created.account.id,
-    workspaceId: "workspace-a"
-  });
+  await markAccountProviderVerified(created.account.id);
   const binding = await prepareBrowserTaskBinding({
     request: {
       accountId: created.account.id,
@@ -622,7 +619,7 @@ test("task binding forces a private OpenClaw profile and releases it without per
 test("policy heartbeat renews the durable lease and rejects a mismatched agent", async () => {
   const root = await useTemporaryRegistry();
   setBrowserTaskBindingRegistryRootForTesting(root);
-  setBrowserProviderForTesting(fakeProvider());
+  setBrowserProviderForTesting(fakeProvider({}, "verified"));
   setOpenClawAdapterForTesting({
     async setConfig() {
       return { stdout: "{}", stderr: "", exitCode: 0 };
@@ -632,11 +629,7 @@ test("policy heartbeat renews the durable lease and rejects a mismatched agent",
     }
   } as unknown as OpenClawAdapter);
   const created = await createBrowserAccount(baseCreateInput());
-  await confirmBrowserAccountLogin({
-    actor: { userId: "owner-a" },
-    accountId: created.account.id,
-    workspaceId: "workspace-a"
-  });
+  await markAccountProviderVerified(created.account.id);
   const binding = await prepareBrowserTaskBinding({
     request: { accountId: created.account.id, actorUserId: "owner-a" },
     workspaceId: "workspace-a",
@@ -673,7 +666,7 @@ test("policy heartbeat renews the durable lease and rejects a mismatched agent",
   );
 });
 
-test("task dispatch revalidates supported providers and expires a missing login marker", async () => {
+test("task dispatch revalidates supported providers and requires action for a missing login marker", async () => {
   const root = await useTemporaryRegistry();
   setBrowserTaskBindingRegistryRootForTesting(root);
   setBrowserProviderForTesting(fakeProvider({}, "needs_user_action"));
@@ -686,11 +679,7 @@ test("task dispatch revalidates supported providers and expires a missing login 
     }
   } as unknown as OpenClawAdapter);
   const created = await createBrowserAccount(baseCreateInput());
-  await confirmBrowserAccountLogin({
-    actor: { userId: "owner-a" },
-    accountId: created.account.id,
-    workspaceId: "workspace-a"
-  });
+  await markAccountProviderVerified(created.account.id);
   await assert.rejects(
     () => prepareBrowserTaskBinding({
       request: { accountId: created.account.id, actorUserId: "owner-a" },
@@ -706,14 +695,14 @@ test("task dispatch revalidates supported providers and expires a missing login 
     accountId: created.account.id,
     workspaceId: "workspace-a"
   });
-  assert.equal(account.connectionStatus, "expired");
+  assert.equal(account.connectionStatus, "needs_verification");
   assert.equal(account.concurrencyLease, null);
 });
 
 test("expired task bindings are recovered and failed cleanup remains retryable", async () => {
   const root = await useTemporaryRegistry();
   setBrowserTaskBindingRegistryRootForTesting(root);
-  setBrowserProviderForTesting(fakeProvider());
+  setBrowserProviderForTesting(fakeProvider({}, "verified"));
   let failCleanup = true;
   setOpenClawAdapterForTesting({
     async setConfig() {
@@ -725,11 +714,7 @@ test("expired task bindings are recovered and failed cleanup remains retryable",
     }
   } as unknown as OpenClawAdapter);
   const created = await createBrowserAccount(baseCreateInput());
-  await confirmBrowserAccountLogin({
-    actor: { userId: "owner-a" },
-    accountId: created.account.id,
-    workspaceId: "workspace-a"
-  });
+  await markAccountProviderVerified(created.account.id);
   await prepareBrowserTaskBinding({
     request: { accountId: created.account.id, actorUserId: "owner-a" },
     workspaceId: "workspace-a",
@@ -761,7 +746,7 @@ test("expired task bindings are recovered and failed cleanup remains retryable",
 test("browser worker restart immediately fences active accounts and task bindings", async () => {
   const root = await useTemporaryRegistry();
   setBrowserTaskBindingRegistryRootForTesting(root);
-  setBrowserProviderForTesting(fakeProvider());
+  setBrowserProviderForTesting(fakeProvider({}, "verified"));
   setOpenClawAdapterForTesting({
     async setConfig() {
       return { stdout: "{}", stderr: "", exitCode: 0 };
@@ -771,11 +756,7 @@ test("browser worker restart immediately fences active accounts and task binding
     }
   } as unknown as OpenClawAdapter);
   const created = await createBrowserAccount(baseCreateInput());
-  await confirmBrowserAccountLogin({
-    actor: { userId: "owner-a" },
-    accountId: created.account.id,
-    workspaceId: "workspace-a"
-  });
+  await markAccountProviderVerified(created.account.id);
   await prepareBrowserTaskBinding({
     request: { accountId: created.account.id, actorUserId: "owner-a" },
     workspaceId: "workspace-a",
@@ -869,6 +850,19 @@ async function useTemporaryRegistry() {
   temporaryRoots.push(root);
   setBrowserAccountRegistryRootForTesting(root);
   return root;
+}
+
+async function markAccountProviderVerified(accountId: string) {
+  const registryPath = getBrowserAccountRegistryPathForTesting();
+  const registry = JSON.parse(await readFile(registryPath, "utf8")) as {
+    accounts: Array<Record<string, unknown>>;
+  };
+  const account = registry.accounts.find((entry) => entry.id === accountId);
+  assert.ok(account);
+  account.connectionStatus = "connected";
+  account.verificationSource = "provider_verified";
+  account.lastVerifiedAt = new Date().toISOString();
+  await writeFile(registryPath, `${JSON.stringify(registry)}\n`, "utf8");
 }
 
 function baseCreateInput() {

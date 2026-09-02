@@ -820,9 +820,13 @@ export interface ChannelRegistry {
 
 export interface ChannelAccountRecord {
   id: string;
+  /** Canonical OpenClaw accountId; id remains the persisted compatibility key. */
+  accountId?: string;
   type: MissionControlSurfaceProvider;
   name: string;
   enabled: boolean;
+  configured?: boolean;
+  isDefault?: boolean;
   kind?: MissionControlSurfaceKind;
   capabilities?: string[];
   metadata?: Record<string, unknown>;
@@ -834,6 +838,8 @@ export type SurfaceAccountHealthStatus =
   | "connected"
   | "running"
   | "linked"
+  | "stopped"
+  | "needs-authentication"
   | "configured"
   | "disabled"
   | "failed"
@@ -851,6 +857,8 @@ export interface SurfaceAccountRuntimeStatus {
   linked: boolean;
   running: boolean;
   connected: boolean;
+  isDefault?: boolean | null;
+  authenticationRequired?: boolean | null;
   disabled: boolean;
   failed: boolean;
   status: SurfaceAccountHealthStatus;
@@ -1898,7 +1906,7 @@ export type PlannerCompanyType =
   | "internal-ops"
   | "custom";
 
-export type PlannerChannelType = "internal" | "slack" | "telegram" | "discord" | "googlechat";
+export type PlannerChannelType = "internal" | "slack" | "telegram" | "whatsapp" | "discord" | "googlechat";
 
 export type PlannerWorkflowTrigger = "manual" | "event" | "cron" | "launch";
 

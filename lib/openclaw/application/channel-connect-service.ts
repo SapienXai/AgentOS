@@ -8,9 +8,11 @@ import {
 } from "@/lib/openclaw/application/channel-plugin-compat";
 import { resolveOpenClawVersion, runOpenClaw, runOpenClawJson } from "@/lib/openclaw/cli";
 import type { OpenClawChannelStatusPayload } from "@/lib/openclaw/client/types";
+import type { ChannelAccountRecord } from "@/lib/openclaw/types";
 import { OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 import { redactErrorMessage } from "@/lib/security/redaction";
 import { getOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
+import { readChannelAccounts } from "@/lib/openclaw/domains/channels";
 import {
   isVerifiedNativeAuthorizationProof,
   resolveRequiredScopes
@@ -50,9 +52,12 @@ export type ChannelConnectProviderView = {
     accountId: string;
     name: string;
     configured: boolean;
+    enabled: boolean;
+    isDefault: boolean | null;
     linked: boolean;
     running: boolean;
     connected: boolean;
+    authenticationRequired: boolean;
     lastError: string | null;
   }>;
 };
@@ -148,7 +153,7 @@ const PROVIDERS: ProviderDefinition[] = [
 
 export async function getChannelConnectOverview(): Promise<ChannelConnectOverview> {
   const adapter = getOpenClawAdapter();
-  const [version, statusResult, pluginsResult] = await Promise.all([
+  const [version, statusResult, pluginsResult, configAccounts] = await Promise.all([
     resolveOpenClawVersion(),
     adapter.getChannelStatus({ probe: false, timeoutMs: 8_000 }, { timeoutMs: 12_000 }).then(
       (value) => ({ value, error: null }),
@@ -157,7 +162,8 @@ export async function getChannelConnectOverview(): Promise<ChannelConnectOvervie
     adapter.listPlugins({ timeoutMs: 15_000 }).then(
       (value) => ({ value, error: null }),
       (error) => ({ value: null, error: redactErrorMessage(error, "OpenClaw plugin discovery is unavailable.") })
-    )
+    ),
+    readChannelAccounts()
   ]);
 
   const status = statusResult.value;
@@ -188,7 +194,7 @@ export async function getChannelConnectOverview(): Promise<ChannelConnectOvervie
       );
       const bundledInspection = bundledPluginInspections.get(definition.id);
       const inspectedPlugin = bundledInspection?.plugin ?? null;
-      const accounts = normalizeAccounts(status, definition.id);
+      const accounts = normalizeAccounts(status, definition.id, configAccounts);
       const pluginInstalled = Boolean(plugin || inspectedPlugin || definition.bundledPluginId) || accounts.length > 0;
       const pluginEnabled = Boolean(
         accounts.length > 0
@@ -211,7 +217,7 @@ export async function getChannelConnectOverview(): Promise<ChannelConnectOvervie
         pluginStateSource: plugin ? "gateway" : inspectedPlugin ? "cli-fallback" : "inferred",
         pluginStateError: bundledInspection?.error ?? null,
         configured: accounts.some((account) => account.configured),
-        connected: accounts.some((account) => account.connected || account.linked),
+        connected: accounts.some((account) => account.connected),
         running: accounts.some((account) => account.running),
         available: definition.implemented,
         availabilityReason: definition.implemented ? null : definition.availabilityReason ?? "This setup is not available yet.",
@@ -371,6 +377,45 @@ export async function logoutConnectedChannel(
   );
 }
 
+export async function startChannelAccount(
+  input: { provider: ChannelConnectProviderId; accountId?: string },
+  options: OpenClawCommandOptions = {}
+) {
+  requireProvider(input.provider);
+  const adapter = getOpenClawAdapter();
+  if (!adapter.startChannel) {
+    throw new Error("This OpenClaw adapter does not support native channel start.");
+  }
+  return adapter.startChannel(
+    { channel: input.provider, accountId: normalizeAccountId(input.accountId) },
+    { ...options, timeoutMs: 30_000 }
+  );
+}
+
+export async function stopChannelAccount(
+  input: { provider: ChannelConnectProviderId; accountId?: string },
+  options: OpenClawCommandOptions = {}
+) {
+  requireProvider(input.provider);
+  const adapter = getOpenClawAdapter();
+  if (!adapter.stopChannel) {
+    throw new Error("This OpenClaw adapter does not support native channel stop.");
+  }
+  return adapter.stopChannel(
+    { channel: input.provider, accountId: normalizeAccountId(input.accountId) },
+    { ...options, timeoutMs: 30_000 }
+  );
+}
+
+export async function restartChannelAccount(
+  input: { provider: ChannelConnectProviderId; accountId?: string },
+  options: OpenClawCommandOptions = {}
+) {
+  const stop = await stopChannelAccount(input, options);
+  const start = await startChannelAccount(input, options);
+  return { stop, start };
+}
+
 export async function approveChannelPairing(input: {
   provider: ChannelConnectProviderId;
   code: string;
@@ -437,18 +482,43 @@ function normalizeAccountId(value?: string) {
   return normalized || undefined;
 }
 
-function normalizeAccounts(status: OpenClawChannelStatusPayload | null, provider: ChannelConnectProviderId) {
-  return (status?.channelAccounts?.[provider] ?? []).map((account) => ({
-    accountId: account.accountId,
-    name: account.name?.trim() || account.accountId,
-    configured: account.configured === true,
-    linked: account.linked === true,
-    running: account.running === true,
-    connected: account.connected === true,
-    lastError: typeof account.lastError === "string" && account.lastError.trim()
-      ? redactErrorMessage(account.lastError, "OpenClaw reported a channel error.")
-      : null
-  }));
+function normalizeAccounts(
+  status: OpenClawChannelStatusPayload | null,
+  provider: ChannelConnectProviderId,
+  configAccounts: ChannelAccountRecord[]
+) {
+  const liveAccounts = status?.channelAccounts?.[provider] ?? [];
+  const byId = new Map<string, { live: (typeof liveAccounts)[number] | null; config: ChannelAccountRecord | null }>();
+  for (const account of configAccounts.filter((candidate) => candidate.type === provider)) {
+    byId.set(account.accountId?.trim() || account.id, { live: null, config: account });
+  }
+  for (const account of liveAccounts) {
+    const current = byId.get(account.accountId) ?? { live: null, config: null };
+    current.live = account;
+    byId.set(account.accountId, current);
+  }
+
+  const defaultAccountId = status?.channelDefaultAccountId?.[provider] ??
+    configAccounts.find((account) => account.type === provider && account.isDefault)?.accountId ?? null;
+
+  return Array.from(byId.entries()).map(([accountId, entry]) => {
+    const live = entry.live;
+    const config = entry.config;
+    return {
+      accountId,
+      name: live?.name?.trim() || config?.name?.trim() || accountId,
+      configured: live?.configured === true || config?.configured === true,
+      enabled: live?.enabled ?? config?.enabled !== false,
+      isDefault: defaultAccountId ? defaultAccountId === accountId : config?.isDefault ?? null,
+      linked: live?.linked === true,
+      running: live?.running === true,
+      connected: live?.connected === true,
+      authenticationRequired: provider === "whatsapp" && (live?.configured === true || config?.configured === true) && live?.linked !== true && live?.connected !== true && live?.running !== true,
+      lastError: typeof live?.lastError === "string" && live.lastError.trim()
+        ? redactErrorMessage(live.lastError, "OpenClaw reported a channel error.")
+        : null
+    };
+  }).sort((left, right) => left.accountId.localeCompare(right.accountId));
 }
 
 function resolveProviderAddress(status: OpenClawChannelStatusPayload | null, provider: ChannelConnectProviderId) {
