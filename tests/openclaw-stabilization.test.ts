@@ -88,7 +88,8 @@ import {
   buildWizardSteps,
   resolveChatGptOnboardingState,
   resolveChatGptProgressCopy,
-  resolveChatGptRecoveryMessage
+  resolveChatGptRecoveryMessage,
+  isOnboardingModelStepComplete
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import { isNewerSnapshot, preserveConfirmedStatus } from "@/hooks/use-mission-control-data";
 import {
@@ -1396,6 +1397,10 @@ test("ChatGPT-first onboarding keeps the normal model step focused and advanced 
     path.join(process.cwd(), "components/mission-control/mission-control-shell.tsx"),
     "utf8"
   );
+  const onboardingModalSource = readFileSync(
+    path.join(process.cwd(), "components/mission-control/openclaw-onboarding.tsx"),
+    "utf8"
+  );
 
   assert.equal(steps[1]?.label, "Connect AI");
   assert.equal(steps[1]?.description, "Connect your AI");
@@ -1403,8 +1408,13 @@ test("ChatGPT-first onboarding keeps the normal model step focused and advanced 
   assert.match(onboardingSource, /Use another provider/);
   assert.match(onboardingSource, /advancedProviderFlowOpen/);
   assert.match(onboardingSource, /OpenClawOnboardingProviderFlow/);
+  assert.match(onboardingModalSource, /const onboardingAiReady = isOnboardingModelStepComplete/);
+  assert.match(onboardingModalSource, /const showLaunchpad = onboardingAiReady &&/);
+  assert.match(onboardingSource, /modelReady: isChatGptConnectionReady\(snapshot\)/);
   assert.match(shellSource, /getModelProviderAdapter\("openai"\)\.connect/);
   assert.match(shellSource, /authMethod: "chatgpt"/);
+  assert.match(shellSource, /setIsOnboardingDismissed\(false\);\s+setIsOnboardingForcedOpen\(true\);\s+if \(!isContinuation\)/);
+  assert.match(shellSource, /stage === undefined && onboardingAiReady/);
   assert.doesNotMatch(onboardingSource, /gpt-\d/);
 });
 
@@ -1433,6 +1443,45 @@ test("ChatGPT onboarding state and recovery copy stay honest", () => {
   assert.equal(resolveChatGptProgressCopy("verifying"), "Verifying the account and a usable AI route in OpenClaw.");
   assert.match(resolveChatGptRecoveryMessage("ChatGPT sign-in timed out."), /took too long/i);
   assert.match(resolveChatGptRecoveryMessage("local AgentOS on linux"), /local AgentOS machine/i);
+});
+
+test("first-run onboarding cannot treat an existing model as completed ChatGPT setup", () => {
+  assert.equal(
+    isOnboardingModelStepComplete({
+      chatGptConnectionReady: false,
+      explicitSetupComplete: false
+    }),
+    false
+  );
+  assert.equal(
+    isOnboardingModelStepComplete({
+      chatGptConnectionReady: true,
+      explicitSetupComplete: false
+    }),
+    true
+  );
+  assert.equal(
+    isOnboardingModelStepComplete({
+      chatGptConnectionReady: false,
+      explicitSetupComplete: true
+    }),
+    true
+  );
+
+  assert.deepEqual(
+    resolvePrimaryAction({
+      stage: "system",
+      systemReady: true,
+      modelReady: false,
+      systemActionLabel: "Start OpenClaw",
+      selectedModelId: "",
+      defaultModelId: "openai/gpt-5.6-sol"
+    }),
+    {
+      kind: "continue",
+      label: "Continue to model setup"
+    }
+  );
 });
 
 test("canonical ChatGPT auth uses OpenClaw's openai provider while legacy Codex remains compatible", () => {

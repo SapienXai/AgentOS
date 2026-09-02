@@ -95,7 +95,9 @@ import {
 import {
   resolveEffectiveWizardStage,
   resolveInitialOnboardingModelId,
-  resolveChatGptRecoveryMessage
+  resolveChatGptRecoveryMessage,
+  isChatGptConnectionReady,
+  isOnboardingModelStepComplete
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import { compactPath } from "@/lib/openclaw/presenters";
 import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
@@ -869,6 +871,10 @@ export function MissionControlShell({
   const shouldShowLaunchpadReadyState = shouldShowOnboardingLaunchpad(snapshot, {
     hasSeenMissionReady,
     modelSwitchSucceeded: modelSwitchFeedback.phase === "success"
+  });
+  const onboardingAiReady = isOnboardingModelStepComplete({
+    chatGptConnectionReady: isChatGptConnectionReady(snapshot),
+    explicitSetupComplete: showOnboardingReadyState || modelSwitchFeedback.phase === "success"
   });
   const needsWorkspaceSetup =
     isOpenClawOnboardingSystemReady &&
@@ -2006,6 +2012,7 @@ export function MissionControlShell({
         ? "Checking Gateway configuration..."
         : "Starting OpenClaw Gateway...";
     setIsOnboardingDismissed(false);
+    setIsOnboardingForcedOpen(true);
     if (!isContinuation) {
       resetOnboardingProgressState();
     }
@@ -3016,7 +3023,9 @@ export function MissionControlShell({
     setOnboardingSessionKey((current) => current + 1);
     setOnboardingStage(resolvedStage);
     setIsOnboardingDismissed(false);
-    setShowOnboardingReadyState(stage === undefined && (shouldShowLaunchpadReadyState || isOnboardingFullyReady));
+    setShowOnboardingReadyState(
+      stage === undefined && onboardingAiReady && (shouldShowLaunchpadReadyState || isOnboardingFullyReady)
+    );
     setIsOnboardingForcedOpen(true);
 
     if (resolvedStage === "models") {
@@ -3038,6 +3047,14 @@ export function MissionControlShell({
   };
 
   const enterAgentOS = useCallback(async () => {
+    if (!onboardingAiReady) {
+      setIsOnboardingForcedOpen(true);
+      setIsOnboardingDismissed(false);
+      setShowOnboardingReadyState(false);
+      setOnboardingStage("models");
+      return;
+    }
+
     let entrySnapshot = snapshot;
 
     if (!hasAgentOSWorkspaceSetup(entrySnapshot)) {
@@ -3071,6 +3088,7 @@ export function MissionControlShell({
     activeWorkspaceId,
     dismissOnboarding,
     openWorkspaceOnCanvas,
+    onboardingAiReady,
     refreshSnapshot,
     runLaunchpadWorkspaceCreate,
     setSnapshot,
@@ -3078,13 +3096,20 @@ export function MissionControlShell({
   ]);
 
   const continueFromAi = useCallback(() => {
+    if (!isChatGptConnectionReady(snapshot)) {
+      setIsOnboardingForcedOpen(true);
+      setIsOnboardingDismissed(false);
+      setOnboardingStage("models");
+      return;
+    }
+
     if (hasWorkspaceSetup) {
       void enterAgentOS();
       return;
     }
 
     setShowOnboardingReadyState(true);
-  }, [enterAgentOS, hasWorkspaceSetup]);
+  }, [enterAgentOS, hasWorkspaceSetup, snapshot]);
 
   const controlGateway = async (action: GatewayControlAction) => {
     setGatewayControlAction(action);

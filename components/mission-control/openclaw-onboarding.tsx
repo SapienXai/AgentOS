@@ -32,6 +32,8 @@ import {
   resolveStageDescription,
   resolveSystemStepActionLabel,
   resolveSystemPhaseLabel,
+  isChatGptConnectionReady,
+  isOnboardingModelStepComplete,
   type StageRunDetails,
   type SurfaceTheme,
   type StepState,
@@ -142,15 +144,18 @@ export function OpenClawOnboarding({
       showReadyState ||
       isOpenClawOnboardingModelReady(snapshot)
     );
-  const canEnterAgentOS = hasWorkspaceSetup && onboardingSystemReady && onboardingModelReady;
-  const showLaunchpad = onboardingModelReady && (
+  const onboardingAiReady = isOnboardingModelStepComplete({
+    chatGptConnectionReady: isChatGptConnectionReady(snapshot),
+    explicitSetupComplete: showReadyState || modelSwitchFeedback.phase === "success"
+  });
+  const canEnterAgentOS = hasWorkspaceSetup && onboardingSystemReady && onboardingAiReady;
+  const showLaunchpad = onboardingAiReady && (
     showReadyState ||
-    hasWorkspaceSetup ||
     launchpadCreateRunState === "running" ||
     launchpadCreateRunState === "success" ||
     launchpadCreateRunState === "error"
   );
-  const canShowFinish = onboardingSystemReady && onboardingModelReady && (hasWorkspaceSetup || showReadyState);
+  const canShowFinish = onboardingSystemReady && onboardingAiReady && (hasWorkspaceSetup || showReadyState);
   const isLaunchpadBuilding = launchpadCreateRunState === "running";
   const workspaceCount = snapshot.workspaces.length;
   const agentCount = snapshot.agents.length;
@@ -214,7 +219,7 @@ export function OpenClawOnboarding({
   const primaryAction = resolvePrimaryAction({
     stage: activeWizardStage,
     systemReady: onboardingSystemReady,
-    modelReady: onboardingModelReady,
+    modelReady: activeWizardStage === "system" ? onboardingAiReady : onboardingModelReady,
     systemActionLabel: effectiveSystemActionLabel,
     selectedModelId,
     defaultModelId
@@ -310,7 +315,7 @@ export function OpenClawOnboarding({
             <SetupStepper
               activeStep={activeStepNumber}
               systemReady={onboardingSystemReady}
-              modelReady={onboardingModelReady}
+              modelReady={onboardingAiReady}
               finishReady={canShowFinish}
               surfaceTheme={surfaceTheme}
               onSelectStage={(nextStage) => {

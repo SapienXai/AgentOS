@@ -372,7 +372,7 @@ export function ModelStage({
           state={resolveChatGptOnboardingState({
             runState: run.runState,
             phase: modelPhase,
-            modelReady
+            modelReady: isChatGptConnectionReady(snapshot)
           })}
           chatGptReady={isChatGptConnectionReady(snapshot)}
           chatGptAttempted={chatGptAttempted}

@@ -981,7 +981,7 @@ test("onboarding launchpad does not block canvas entry on runtime smoke alone", 
 
   assert.match(
     onboardingSource,
-    /const canEnterAgentOS = hasWorkspaceSetup && onboardingSystemReady && onboardingModelReady;/
+    /const canEnterAgentOS = hasWorkspaceSetup && onboardingSystemReady && onboardingAiReady;/
   );
   assert.match(onboardingSource, /disabled=\{!canEnterAgentOS\}/);
   assert.doesNotMatch(onboardingSource, /disabled=\{!operationalReady\}/);

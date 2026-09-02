@@ -98,6 +98,13 @@ export function isChatGptConnectionReady(snapshot: MissionControlSnapshot) {
   return chatGptProviderConnected && isOpenClawOnboardingModelReady(snapshot);
 }
 
+export function isOnboardingModelStepComplete(params: {
+  chatGptConnectionReady: boolean;
+  explicitSetupComplete: boolean;
+}) {
+  return params.chatGptConnectionReady || params.explicitSetupComplete;
+}
+
 export function buildWizardSteps(stage: WizardStage, systemReady: boolean, modelReady: boolean) {
   return [
     {
