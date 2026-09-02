@@ -197,12 +197,12 @@ export function OpenClawOnboardingProviderFlow({
   );
 
   useEffect(() => {
-    if (selectedProviderId) {
+    if (!compactSelection && selectedProviderId) {
       setActiveProviderId((currentProviderId) =>
         currentProviderId === selectedProviderId ? currentProviderId : selectedProviderId
       );
     }
-  }, [selectedProviderId]);
+  }, [compactSelection, selectedProviderId]);
 
   useEffect(() => {
     void ensureProviderStatus(activeProviderId);
@@ -576,24 +576,27 @@ export function OpenClawOnboardingProviderFlow({
       />
       <div
         className={cn(
-          "mt-3 rounded-[16px] border px-3 py-3",
-          isLight ? "border-[#e3d5c8] bg-[#fffaf6]" : "border-white/8 bg-[rgba(255,255,255,0.03)]"
+          compactSelection ? "mt-3" : "mt-3 rounded-[16px] border px-3 py-3",
+          !compactSelection &&
+            (isLight ? "border-[#e3d5c8] bg-[#fffaf6]" : "border-white/8 bg-[rgba(255,255,255,0.03)]")
         )}
       >
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className={cn("whitespace-nowrap text-[8px] font-medium", isLight ? "text-[#8f7664]" : "text-slate-500")}>
-            {compactSelection ? "ChatGPT model" : `Provider first : ${providerDescriptors.length} providers`}
-          </p>
+      {!compactSelection ? (
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className={cn("whitespace-nowrap text-[8px] font-medium", isLight ? "text-[#8f7664]" : "text-slate-500")}>
+              {`Provider first : ${providerDescriptors.length} providers`}
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-1.5">
+            {selectedModelLabel ? (
+              <Badge variant="default" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
+                Selected
+              </Badge>
+            ) : null}
+          </div>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-1.5">
-          {selectedModelLabel ? (
-            <Badge variant="default" className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]">
-              Selected
-            </Badge>
-          ) : null}
-        </div>
-      </div>
+      ) : null}
 
       {sharedCatalogError || sharedCatalogWarning || explicitProviderError ? (
         <div className={cn("mt-2 rounded-[12px] border px-2.5 py-2 text-[9px] leading-4", isLight ? "border-amber-200 bg-amber-50 text-amber-800" : "border-amber-300/20 bg-amber-300/[0.06] text-amber-100")}
@@ -677,28 +680,31 @@ export function OpenClawOnboardingProviderFlow({
 
       <div
         className={cn(
-          "mt-3 rounded-[18px] border p-3",
-          isLight
-            ? "border-[#e3d5c8] bg-[linear-gradient(180deg,rgba(255,252,248,0.98),rgba(247,241,234,0.95))]"
-            : "border-white/10 bg-[linear-gradient(180deg,rgba(11,18,32,0.96),rgba(6,10,18,0.98))]"
+          compactSelection ? "mt-3" : "mt-3 rounded-[18px] border p-3",
+          !compactSelection &&
+            (isLight
+              ? "border-[#e3d5c8] bg-[linear-gradient(180deg,rgba(255,252,248,0.98),rgba(247,241,234,0.95))]"
+              : "border-white/10 bg-[linear-gradient(180deg,rgba(11,18,32,0.96),rgba(6,10,18,0.98))]")
         )}
       >
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className={cn("font-display text-[0.88rem]", isLight ? "text-[#2d241f]" : "text-white")}>
-              {activeDescriptor.label}
-            </p>
+        {!compactSelection ? (
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className={cn("font-display text-[0.88rem]", isLight ? "text-[#2d241f]" : "text-white")}>
+                {activeDescriptor.label}
+              </p>
+            </div>
+
+            <Badge
+              variant={activeConnection.verification === "verified" ? "success" : "muted"}
+              className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]"
+            >
+              {activeConnectionLabel}
+            </Badge>
           </div>
+        ) : null}
 
-          <Badge
-            variant={activeConnection.verification === "verified" ? "success" : "muted"}
-            className="px-1.5 py-0.5 text-[9px] tracking-[0.12em]"
-          >
-            {activeConnectionLabel}
-          </Badge>
-        </div>
-
-        {activeDraft.statusMessage && !showLoadingHero ? (
+        {activeDraft.statusMessage && !showLoadingHero && !compactSelection ? (
           <div className={cn("mt-3 rounded-[16px] border px-3 py-2", isLight ? "border-[#e3d5c8] bg-white/70" : "border-white/10 bg-white/[0.04]")}>
             <p className={cn("text-[11px]", isLight ? "text-[#4f3d31]" : "text-slate-200")}>{activeDraft.statusMessage}</p>
           </div>

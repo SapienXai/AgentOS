@@ -1457,6 +1457,7 @@ test("ChatGPT-first onboarding keeps the normal model step focused and advanced 
   assert.match(onboardingSource, /Continue to AgentOS/);
   assert.match(providerFlowSource, /id="chatgpt-model-select"/);
   assert.match(providerFlowSource, /resolvePreferredChatGptModelId/);
+  assert.match(providerFlowSource, /if \(!compactSelection && selectedProviderId\)/);
   assert.match(shellSource, /setIsOnboardingDismissed\(false\);\s+setIsOnboardingForcedOpen\(true\);\s+if \(!isContinuation\)/);
   assert.match(shellSource, /stage === undefined && onboardingAiReady/);
   assert.doesNotMatch(onboardingSource, /gpt-\d/);
