@@ -478,7 +478,7 @@ Capability: admin-capable`;
     {
       kind: "provider-auth",
       detail:
-        "OpenClaw needs the Codex provider plugin installed and enabled before auth login can continue. Install the plugin, refresh the registry, restart the gateway, then retry. Run: openclaw plugins install --force @openclaw/codex && openclaw doctor --fix && openclaw gateway restart && openclaw models auth login --provider openai --set-default"
+        "OpenClaw needs the Codex provider plugin installed and enabled before auth login can continue. Install the plugin, refresh the registry, restart the gateway, then retry. Run: openclaw plugins install --force --accept-capabilities @openclaw/codex && openclaw doctor --fix && openclaw gateway restart && openclaw models auth login --provider openai --set-default"
     }
   );
 });
@@ -544,7 +544,7 @@ test("codex auth handoff installs the provider plugin before login when needed",
     "/Users/example/.openclaw/bin/openclaw models auth login --provider openai --force --set-default"
   );
   assert.match(switchAccount.continueMessage, /switch the ChatGPT account for Codex app-server/);
-  assert.match(missing.command, /plugins install --force @openclaw\/codex/);
+  assert.match(missing.command, /plugins install --force --accept-capabilities @openclaw\/codex/);
   assert.match(missing.command, /doctor --fix/);
   assert.match(missing.command, /gateway restart/);
   assert.match(missing.command, /models auth login --provider openai --set-default/);

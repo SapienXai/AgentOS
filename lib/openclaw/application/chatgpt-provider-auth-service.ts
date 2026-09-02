@@ -212,7 +212,7 @@ async function prepareChatGptProviderAuth(dependencies: ChatGptProviderAuthDepen
   }
 
   await dependencies.runSetupCommand(
-    ["plugins", "install", "--force", "@openclaw/codex"],
+    ["plugins", "install", "--force", "--accept-capabilities", "@openclaw/codex"],
     pluginSetupTimeoutMs
   );
   await dependencies.runSetupCommand(["doctor", "--fix"], pluginSetupTimeoutMs);
