@@ -479,7 +479,7 @@ Capability: admin-capable`;
     {
       kind: "provider-auth",
       detail:
-        "OpenClaw needs @openclaw/codex installed and enabled before ChatGPT authorization can continue. Install the plugin through OpenClaw, restart the Gateway, then retry ChatGPT authorization. Run: openclaw plugins install --force @openclaw/codex && openclaw gateway restart && openclaw models auth login --provider openai --set-default"
+        "OpenClaw needs @openclaw/codex installed and enabled before ChatGPT authorization can continue. Install the plugin through OpenClaw, restart the Gateway, then retry ChatGPT authorization. Run: openclaw plugins install --force --accept-capabilities @openclaw/codex && openclaw gateway restart && openclaw models auth login --provider openai --set-default"
     }
   );
 });

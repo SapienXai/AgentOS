@@ -21,7 +21,7 @@ import {
   formatProviderLabel,
   resolveSelectedOnboardingProviderId,
   resolveInitialOnboardingProviderId,
-  resolvePreferredChatGptModelId
+  resolveOnboardingModelSelection
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import {
   getModelProviderDescriptor,
@@ -310,12 +310,15 @@ export function OpenClawOnboardingProviderFlow({
       return;
     }
 
-    const preferredModelId = resolvePreferredChatGptModelId(activeModels);
+    const preferredModelId = resolveOnboardingModelSelection(
+      snapshot.diagnostics.modelReadiness,
+      activeModels
+    );
 
     if (preferredModelId) {
       onSelectedModelIdChange(preferredModelId);
     }
-  }, [activeModels, compactSelection, onSelectedModelIdChange, selectedModelId]);
+  }, [activeModels, compactSelection, onSelectedModelIdChange, selectedModelId, snapshot.diagnostics.modelReadiness]);
 
   async function ensureProviderStatus(providerId: AddModelsProviderId) {
     const draft = resolveDraft(providerDrafts[providerId]);
@@ -930,7 +933,7 @@ export function OpenClawOnboardingProviderFlow({
                   ))}
                 </select>
                 <p className={cn("mt-2 text-[10px] leading-4", isLight ? "text-[#74665c]" : "text-slate-400")}>
-                  The mini model is selected by default. You can change it before continuing.
+                  OpenClaw&apos;s current default is preferred when available. You can change it before continuing.
                 </p>
                 {onContinue ? (
                   <Button

@@ -75,6 +75,10 @@ export function resolveChatGptProgressCopy(
 export function resolveChatGptRecoveryMessage(message?: string | null) {
   const normalized = message?.trim().toLowerCase() || "";
 
+  if (/capability consent|requires capability|codex.*plugin|plugin.*codex|agent harness/.test(normalized)) {
+    return "OpenClaw needs the official Codex plugin enabled with its required capability consent before ChatGPT sign-in can continue. Retry to repair the local OpenClaw setup.";
+  }
+
   if (/macos|local agentos|oauth.*gateway|not available in this environment/.test(normalized)) {
     return "ChatGPT sign-in is available from the local AgentOS machine. Use another provider here, or sign in locally first.";
   }
@@ -659,8 +663,32 @@ export function resolveInitialOnboardingProviderId(
   return "openrouter";
 }
 
-export function resolvePreferredChatGptModelId(models: Array<{ id: string }>) {
-  return models.find((model) => model.id === "openai/gpt-5.4-mini")?.id || models[0]?.id || null;
+export function resolveOnboardingModelSelection(
+  modelReadiness: Pick<
+    MissionControlSnapshot["diagnostics"]["modelReadiness"],
+    "resolvedDefaultModel" | "recommendedModelId" | "defaultModel"
+  >,
+  models: Array<{ id: string }>
+) {
+  const normalizedModelIds = new Map(
+    models.map((model) => [model.id.trim().toLowerCase(), model.id])
+  );
+  const candidates = [
+    modelReadiness.resolvedDefaultModel,
+    modelReadiness.recommendedModelId,
+    modelReadiness.defaultModel
+  ];
+
+  for (const candidate of candidates) {
+    const normalizedCandidate = candidate?.trim().toLowerCase();
+    const discoveredModelId = normalizedCandidate ? normalizedModelIds.get(normalizedCandidate) : undefined;
+
+    if (discoveredModelId) {
+      return discoveredModelId;
+    }
+  }
+
+  return models[0]?.id || null;
 }
 
 export function resolveInitialOnboardingModelId(snapshot: MissionControlSnapshot) {

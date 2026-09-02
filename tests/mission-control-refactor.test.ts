@@ -32,11 +32,111 @@ import {
   resolveWorkspaceContextEngineAgent,
   shouldDeferWorkspaceSelectionHydration
 } from "@/components/mission-control/mission-control-shell.utils";
-import { resolveInitialOnboardingModelId } from "@/components/mission-control/openclaw-onboarding.utils";
+import {
+  resolveChatGptRecoveryMessage,
+  resolveChatGptOnboardingState,
+  resolveInitialOnboardingModelId,
+  resolveOnboardingModelSelection
+} from "@/components/mission-control/openclaw-onboarding.utils";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import type { MissionControlSnapshot, OperationProgressSnapshot } from "@/lib/agentos/contracts";
 
 const rootDir = process.cwd();
+
+test("onboarding model selection follows live OpenClaw readiness metadata", () => {
+  const models = [
+    { id: "openai/gpt-5.6-terra" },
+    { id: "openai/gpt-5.6-sol" },
+    { id: "openai/gpt-5.6-luna" }
+  ];
+
+  assert.equal(
+    resolveOnboardingModelSelection(
+      {
+        resolvedDefaultModel: "openai/gpt-5.6-sol",
+        recommendedModelId: "openai/gpt-5.6-terra",
+        defaultModel: "openai/gpt-5.6-luna"
+      },
+      models
+    ),
+    "openai/gpt-5.6-sol"
+  );
+  assert.equal(
+    resolveOnboardingModelSelection(
+      {
+        resolvedDefaultModel: "openai/gpt-5.6-unknown",
+        recommendedModelId: "openai/gpt-5.6-luna",
+        defaultModel: "openai/gpt-5.6-terra"
+      },
+      models
+    ),
+    "openai/gpt-5.6-luna"
+  );
+  assert.equal(
+    resolveOnboardingModelSelection(
+      {
+        resolvedDefaultModel: null,
+        recommendedModelId: null,
+        defaultModel: null
+      },
+      models
+    ),
+    "openai/gpt-5.6-terra"
+  );
+});
+
+test("ChatGPT onboarding exposes a recoverable Codex plugin setup error", () => {
+  assert.match(
+    resolveChatGptRecoveryMessage(
+      'Plugin "codex" requires capability consent before it can be enabled.'
+    ),
+    /official Codex plugin enabled with its required capability consent/
+  );
+});
+
+test("ChatGPT onboarding preserves the browser-auth state machine", () => {
+  assert.equal(
+    resolveChatGptOnboardingState({
+      runState: "running",
+      phase: "authenticating",
+      modelReady: false
+    }),
+    "connecting"
+  );
+  assert.equal(
+    resolveChatGptOnboardingState({
+      runState: "running",
+      phase: "verifying",
+      modelReady: false
+    }),
+    "verifying"
+  );
+  assert.equal(
+    resolveChatGptOnboardingState({
+      runState: "success",
+      phase: null,
+      modelReady: false,
+      chatGptConnected: true
+    }),
+    "needs-model"
+  );
+  assert.equal(
+    resolveChatGptOnboardingState({
+      runState: "idle",
+      phase: null,
+      modelReady: true
+    }),
+    "ready"
+  );
+  assert.equal(
+    resolveChatGptOnboardingState({
+      runState: "error",
+      phase: "authenticating",
+      modelReady: false
+    }),
+    "error"
+  );
+});
 
 test("agent draft helpers keep create flows stable", () => {
   const draft = buildAgentDraft("workspace-1", {

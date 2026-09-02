@@ -93,7 +93,7 @@ test("add ChatGPT/Codex model smoke uses the canonical OpenAI provider handoff",
 
   assert.match(loginCommand, /models auth login --provider openai --set-default/);
   assert.doesNotMatch(loginCommand, staleCodexAuthCommandPattern);
-  assert.match(repairCommand, /plugins install --force @openclaw\/codex/);
+  assert.match(repairCommand, /plugins install --force --accept-capabilities @openclaw\/codex/);
   assert.doesNotMatch(repairCommand, /doctor --fix/);
   assert.match(repairCommand, /gateway restart/);
   assert.match(repairCommand, /models auth login --provider openai --set-default/);

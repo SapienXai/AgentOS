@@ -6,6 +6,7 @@ import {
   enrichCatalogModels,
   mergeCatalogWithConfiguredModels
 } from "@/lib/openclaw/domains/model-catalog-projection";
+import { modelMatchesAddModelsProvider } from "@/lib/openclaw/domains/model-provider-connection";
 
 const catalogModel: AddModelsCatalogModel = {
   id: "openai/o4-mini",
@@ -70,4 +71,30 @@ test("provider discovery models use shared catalog presentation metadata", () =>
   assert.equal(models[0]?.available, true);
   assert.equal(models[0]?.alreadyAdded, false);
   assert.deepEqual(models[0]?.tags, ["catalog", "discovered"]);
+});
+
+test("live OpenAI model ids remain intact through provider catalog projection", () => {
+  const modelIds = [
+    "openai/gpt-5.6-sol",
+    "openai/gpt-5.6-terra",
+    "openai/gpt-5.6-luna",
+    "openai/gpt-5.5",
+    "openai/gpt-5.2"
+  ];
+  const discoveredModels = modelIds.map((id) => ({
+    ...catalogModel,
+    id,
+    name: id,
+    available: true,
+    alreadyAdded: false,
+    tags: ["discovered"]
+  }));
+
+  const projectedModels = enrichCatalogModels(discoveredModels, []);
+
+  assert.deepEqual(projectedModels.map((model) => model.id), modelIds);
+  assert.equal(
+    projectedModels.every((model) => modelMatchesAddModelsProvider("openai", model.id, model.provider)),
+    true
+  );
 });

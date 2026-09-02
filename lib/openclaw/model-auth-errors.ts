@@ -56,7 +56,7 @@ export function buildOpenAiAuthRepairCommand(commandBin: string, options?: { for
   const command = quoteShellArg(commandBin);
   const forceFlag = options?.force ? " --force" : "";
 
-  return `${command} plugins install --force @openclaw/codex && ${command} gateway restart && ${command} models auth login --provider openai${forceFlag} --set-default`;
+  return `${command} plugins install --force --accept-capabilities @openclaw/codex && ${command} gateway restart && ${command} models auth login --provider openai${forceFlag} --set-default`;
 }
 
 export function resolveOpenAiAuthHandoff(

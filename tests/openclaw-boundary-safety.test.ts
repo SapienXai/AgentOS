@@ -178,7 +178,7 @@ test("model provider API route keeps ChatGPT OAuth behind the application servic
   assert.match(routeSource, /statusContext\.connection\.connected/);
   assert.doesNotMatch(routeSource, /resolveOpenAiAuthHandoff|manualCommand:\s*authHandoff\.command/);
   assert.match(serviceSource, /readOpenClawCodexPluginReady/);
-  assert.match(serviceSource, /\["plugins",\s*"install",\s*"--force",\s*"@openclaw\/codex"\]/);
+  assert.match(serviceSource, /\["plugins",\s*"install",\s*"--force",\s*"--accept-capabilities",\s*"@openclaw\/codex"\]/);
   assert.match(serviceSource, /"models",\s*"auth",\s*"login"/);
   assert.match(serviceSource, /"openai"/);
   assert.match(serviceSource, /openclaw-cli-interactive/);
@@ -893,7 +893,7 @@ test("onboarding launchpad does not block canvas entry on runtime smoke alone", 
   );
   assert.match(onboardingSource, /disabled=\{!canEnterAgentOS\}/);
   assert.doesNotMatch(onboardingSource, /disabled=\{!operationalReady\}/);
-  assert.match(stagesSource, /mission dispatch remains guarded until OpenClaw verifies a real agent turn/);
+  assert.match(stagesSource, /A real OpenClaw agent turn could not be verified/);
 });
 
 test("onboarding refreshes full model snapshot before entering model setup", () => {
