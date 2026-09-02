@@ -18,6 +18,7 @@ import { useMemo } from "react";
 
 import type { TransportStatusTone } from "@/components/mission-control/settings-control-center.utils";
 import { Button } from "@/components/ui/button";
+import type { AgentOsSurfaceTheme } from "@/components/ui/design-system";
 import type {
   OpenClawGatewayGoldenPathStep,
   OpenClawGatewayProductSurface,
@@ -29,7 +30,7 @@ import type {
 } from "@/lib/openclaw/application/gateway-surface-types";
 import { cn } from "@/lib/utils";
 
-export type GatewaySurfaceTheme = "dark" | "light";
+export type GatewaySurfaceTheme = AgentOsSurfaceTheme;
 
 export function GatewayProductSurfacePanel({
   snapshot,

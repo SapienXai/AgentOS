@@ -50,6 +50,26 @@
     --status-muted-foreground: 220 10% 42%;
     --status-purple: 264 58% 54%;
     --status-purple-foreground: 264 48% 42%;
+    /* AgentOS semantic aliases: use meaning first and keep feature-local values local. */
+    --agentos-surface-base: 220 27% 97%;
+    --agentos-surface-panel: 0 0% 100%;
+    --agentos-surface-inset: 220 18% 96%;
+    --agentos-surface-strong: 0 0% 100%;
+    --agentos-border-default: 220 17% 88%;
+    --agentos-border-subtle: 220 17% 88%;
+    --agentos-text-default: 224 30% 10%;
+    --agentos-text-muted: 220 10% 42%;
+    --agentos-text-subtle: 220 10% 48%;
+    --agentos-brand-primary: 345 100% 49%;
+    --agentos-operational-accent: 264 58% 54%;
+    --agentos-interactive-brand: 345 100% 49%;
+    --agentos-interactive-operational: 264 58% 54%;
+    --agentos-focus: 345 100% 49%;
+    --agentos-status-success: 153 64% 40%;
+    --agentos-status-info: 345 100% 49%;
+    --agentos-status-warning: 38 91% 48%;
+    --agentos-status-danger: 0 74% 52%;
+    --agentos-status-muted: 220 10% 48%;
     --lock-glass-surface: 238 244 255;
     --lock-glass-surface-alpha: 0.22;
     --lock-glass-border: 255 255 255;
@@ -108,6 +128,25 @@
     --status-muted-foreground: 218 13% 74%;
     --status-purple: 264 70% 64%;
     --status-purple-foreground: 264 82% 82%;
+    --agentos-surface-base: 222 36% 6%;
+    --agentos-surface-panel: 222 28% 10%;
+    --agentos-surface-inset: 222 20% 15%;
+    --agentos-surface-strong: 222 28% 10%;
+    --agentos-border-default: 220 18% 19%;
+    --agentos-border-subtle: 220 18% 19%;
+    --agentos-text-default: 215 24% 94%;
+    --agentos-text-muted: 218 13% 66%;
+    --agentos-text-subtle: 218 13% 74%;
+    --agentos-brand-primary: 345 100% 49%;
+    --agentos-operational-accent: 264 70% 64%;
+    --agentos-interactive-brand: 345 100% 49%;
+    --agentos-interactive-operational: 264 70% 64%;
+    --agentos-focus: 345 100% 49%;
+    --agentos-status-success: 153 71% 49%;
+    --agentos-status-info: 345 100% 49%;
+    --agentos-status-warning: 38 92% 60%;
+    --agentos-status-danger: 0 73% 57%;
+    --agentos-status-muted: 218 13% 66%;
     --lock-glass-surface: 2 7 17;
     --lock-glass-surface-alpha: 0.36;
     --lock-glass-border: 255 255 255;
@@ -247,7 +286,7 @@
 @layer utilities {
   .panel-surface {
     @apply border backdrop-blur-xl;
-    border-color: var(--surface-panel-border);
+    border-color: hsl(var(--agentos-border-subtle) / 0.92);
     background: var(--surface-panel);
     box-shadow: var(--shadow-panel);
   }
@@ -395,6 +434,25 @@
   --status-muted-foreground: 220 10% 42%;
   --status-purple: 264 58% 54%;
   --status-purple-foreground: 264 48% 42%;
+  --agentos-surface-base: 220 27% 97%;
+  --agentos-surface-panel: 0 0% 100%;
+  --agentos-surface-inset: 220 18% 96%;
+  --agentos-surface-strong: 0 0% 100%;
+  --agentos-border-default: 220 17% 88%;
+  --agentos-border-subtle: 220 17% 88%;
+  --agentos-text-default: 224 30% 10%;
+  --agentos-text-muted: 220 10% 42%;
+  --agentos-text-subtle: 220 10% 48%;
+  --agentos-brand-primary: 345 100% 49%;
+  --agentos-operational-accent: 264 58% 54%;
+  --agentos-interactive-brand: 345 100% 49%;
+  --agentos-interactive-operational: 264 58% 54%;
+  --agentos-focus: 345 100% 49%;
+  --agentos-status-success: 153 64% 40%;
+  --agentos-status-info: 345 100% 49%;
+  --agentos-status-warning: 38 91% 48%;
+  --agentos-status-danger: 0 74% 52%;
+  --agentos-status-muted: 220 10% 48%;
   color: hsl(var(--foreground));
   background: linear-gradient(180deg, hsl(220 33% 98%) 0%, hsl(220 24% 96%) 54%, hsl(220 22% 94%) 100%);
 }
@@ -630,6 +688,14 @@
 }
 
 .mission-shell {
+  --mission-surface: hsl(var(--background));
+  --mission-panel: hsl(var(--card) / 0.96);
+  --mission-panel-strong: hsl(var(--card));
+  --mission-inset: hsl(var(--muted) / 0.44);
+  --mission-border: hsl(var(--border) / 0.88);
+  --mission-text: hsl(var(--foreground));
+  --mission-text-muted: hsl(var(--muted-foreground));
+  --mission-accent: hsl(var(--agentos-operational-accent));
   --workspace-chip-border: rgba(255, 255, 255, 0.06);
   --workspace-chip-border-hover: rgba(255, 255, 255, 0.12);
   --workspace-chip-bg: rgba(8, 15, 28, 0.68);

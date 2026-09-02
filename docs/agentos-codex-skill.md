@@ -36,6 +36,94 @@ Before implementing, inspect the relevant local surfaces:
 - Do not duplicate OpenClaw concepts unless AgentOS needs a UI projection, cache, adapter, or workspace-local sidecar.
 - Keep AgentOS-specific state separate from OpenClaw runtime state.
 
+## Upstream-First Feature Discovery
+
+This is a mandatory decision gate for every feature that touches or may overlap with OpenClaw. It applies to agents, sessions, chat, tasks, skills, tools, plugins, models, model auth, provider credentials, memory, context, files/artifacts, automations/cron, integrations, accounts, channels, browser, devices/nodes, approvals, config, runtime state, orchestration, routing, sandboxing, policies, identity/auth, usage/cost, updates, and Gateway lifecycle or protocol work.
+
+Before designing or implementing such a feature, the implementer must:
+
+1. Identify the requested AgentOS user outcome.
+2. Read `OPENCLAW_RECOMMENDED_VERSION` and `OPENCLAW_SUPPORTED_BASELINE_VERSION` from `lib/openclaw/versions.ts`.
+3. Inspect the relevant capability in the currently supported OpenClaw architecture and source contract.
+4. Check latest stable OpenClaw when capability behavior may have changed since the supported baseline. Check latest beta/current upstream source when the capability is actively evolving, an upcoming change may eliminate AgentOS work, the supported version lacks the capability, or the user explicitly asks about current or upcoming behavior.
+5. Identify the exact OpenClaw ownership and implementation surface: Gateway methods, Gateway events, config/schema, CLI, skill system, plugin system, tool system, session/task APIs, model APIs, integration/channel APIs, device/node APIs, and filesystem/workspace conventions.
+6. Inspect the current AgentOS integration for that capability.
+7. Write an explicit gap analysis covering what OpenClaw owns, what AgentOS already exposes, what is genuinely missing, and what AgentOS-specific value is justified.
+8. Implement only the smallest AgentOS-owned gap.
+9. Add or update compatibility or contract tests when the OpenClaw boundary changes.
+
+Do not start from the desired UI and invent a backend model first. Never design an AgentOS backend abstraction solely from a product or UI requirement when the capability overlaps with OpenClaw; derive the design from the current OpenClaw capability and ownership model first.
+
+For unrelated AgentOS-only UI work, unnecessary latest stable or beta upstream research is not required.
+
+## Ownership Decision Matrix
+
+Classify meaningful new work before coding:
+
+| Category | Typical examples | Required action |
+| --- | --- | --- |
+| **A. OpenClaw-owned capability** | Agent runtime, sessions, tasks, skills, tools, models, channels, device/runtime state | Reuse the native OpenClaw capability, expose it through typed AgentOS boundaries, normalize it for the UI, and do not recreate backend truth. |
+| **B. OpenClaw-owned without a stable native Gateway path** | An OpenClaw capability currently available only through a supported CLI or transitional surface | Use the existing fallback only when necessary; isolate it, make it observable and recoverable, and never promote it into a parallel AgentOS implementation. |
+| **C. AgentOS projection** | UI projections, read models, normalized status, caches, operator indexes | Label it as a projection and never allow it to replace OpenClaw runtime truth. |
+| **D. AgentOS sidecar** | Operator metadata, mission/role descriptions, labels, AgentOS coordination state | Document AgentOS ownership, store it separately from OpenClaw runtime truth, and do not present it as OpenClaw state. |
+| **E. AgentOS higher-level composition** | Approval UX, coordination flows, and multi-step workflows spanning OpenClaw primitives | Compose existing OpenClaw primitives; do not duplicate those primitives internally. |
+| **F. Unclear ownership** | Any capability whose authority or lifecycle is not established | Stop implementation, document the architecture question, and resolve ownership before coding. |
+
+## Source-Of-Truth Priority
+
+For runtime capabilities and catalogs, use this priority:
+
+1. Live OpenClaw Gateway/runtime capability.
+2. The supported OpenClaw version contract/schema.
+3. AgentOS compatibility normalization.
+4. AgentOS static fallback knowledge.
+
+The rule is: **live OpenClaw capability > supported OpenClaw contract > AgentOS static fallback knowledge**. Static AgentOS catalogs must never silently become authoritative when OpenClaw can report the real capability dynamically. This applies especially to skills, tools, plugins, models, Gateway methods/events, and integration capabilities.
+
+## Skill And Static Catalog Ownership
+
+AgentOS does not own a parallel skill engine. OpenClaw remains authoritative for runtime skill capabilities and for `skills.status`, `skills.search`, `skills.detail`, `skills.install`, and `skills.update` behavior. AgentOS may list, search, inspect, show eligibility, assign/configure where OpenClaw supports it, display bundled/plugin/workspace/custom sources, improve operator UX, and author explicitly AgentOS-owned policy/guidance skills. It must not create an independent skill runtime or authorization engine.
+
+Distinguish these cases:
+
+- **OpenClaw runtime skills:** OpenClaw-owned and authoritative.
+- **Workspace-local skills consumed by OpenClaw:** still OpenClaw runtime behavior; AgentOS may help create or manage the `SKILL.md` files without owning execution.
+- **AgentOS-generated policy/guidance skills:** AgentOS-authored sidecars/guidance consumed by OpenClaw; they are not a replacement runtime authorization engine.
+- **AgentOS static skill knowledge:** preset defaults, managed-workspace scaffolding, or compatibility metadata only; it is never authoritative over live OpenClaw discovery.
+
+`OPENCLAW_SKILL_ID_SET`, `OPENCLAW_BUILTIN_TOOL_CATALOG`, tool groups, presets, and similar static lists must remain fallback metadata, UI metadata, preset defaults, or compatibility knowledge. When live OpenClaw discovery is available, it wins; when it is unavailable, the fallback must remain explicit and observable.
+
+## OpenClaw Feature Decision
+
+For significant OpenClaw-overlapping work, establish and report this short decision record before implementation. It need not become a permanent document for every tiny change.
+
+**User outcome:**
+What should the operator be able to do?
+
+**OpenClaw ownership:**
+What part is already owned by OpenClaw?
+
+**Current OpenClaw surface:**
+Gateway methods/events, config/schema, CLI, skills, plugins, tools, sessions/tasks, models, integrations, devices, or workspace conventions.
+
+**Current AgentOS surface:**
+What AgentOS already exposes.
+
+**Gap:**
+What is actually missing?
+
+**AgentOS responsibility:**
+Projection, sidecar, UX, composition, compatibility adapter, or none.
+
+**Source of truth:**
+Which system is authoritative?
+
+**Fallback:**
+Whether any explicit fallback is needed and how it is exposed and recovered.
+
+**Compatibility risk:**
+Supported/recommended version, latest stable, beta/current upstream, and any known drift.
+
 Decision gate for new behavior:
 
 - If OpenClaw owns it, add or reuse a typed Gateway/client/adapter path and cover fallback behavior.
@@ -149,8 +237,9 @@ Rules:
 - Keep AgentOS UI dependent on AgentOS-normalized domain models, not raw OpenClaw response shapes.
 - Do not spread OpenClaw calls directly into React components or unrelated API routes.
 - Route OpenClaw access through the existing adapter/client/application-service boundary.
+- Always inspect `OPENCLAW_RECOMMENDED_VERSION` and `OPENCLAW_SUPPORTED_BASELINE_VERSION` for OpenClaw-overlapping work.
 - Preserve compatibility with the recommended OpenClaw version defined in the repo.
-- When practical, check behavior against latest stable OpenClaw and latest beta OpenClaw.
+- Check latest stable when behavior may have changed since the supported baseline. Check latest beta/current upstream when the capability is actively evolving, the supported version lacks it, an upcoming upstream change may eliminate AgentOS work, or the user explicitly asks about current/upcoming behavior.
 - If an OpenClaw response shape, lifecycle behavior, auth behavior, model discovery behavior, session/task behavior, or fallback behavior changes, add or update a contract test.
 - If a feature cannot be connected to a real OpenClaw capability, do not leave mock/local/demo behavior behind.
 - Show `unknown`, `not available`, `unsupported`, or `degraded` states honestly when runtime data is missing.

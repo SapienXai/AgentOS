@@ -5,6 +5,14 @@ import { test } from "node:test";
 
 const rootDir = process.cwd();
 
+function readProjectFile(relativePath: string) {
+  return readFileSync(path.join(rootDir, relativePath), "utf8");
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function toProjectPath(filePath: string) {
   return path.relative(rootDir, filePath).split(path.sep).join("/");
 }
@@ -34,6 +42,97 @@ function readProjectSourceFiles(dirs: string[]) {
     walkFiles(path.join(rootDir, dir), (filePath) => /\.(ts|tsx)$/.test(filePath))
   );
 }
+
+test("repository entrypoint requires the upstream-first AgentOS project skill", () => {
+  const agentsSource = readProjectFile("AGENTS.md");
+  const skillSource = readProjectFile("docs/agentos-codex-skill.md");
+
+  assert.match(
+    agentsSource,
+    /Before adding or changing a feature that touches or may overlap with OpenClaw, inspect the current upstream OpenClaw capability and ownership model first/
+  );
+  assert.match(agentsSource, /docs\/agentos-codex-skill\.md/);
+  assert.match(skillSource, /## Upstream-First Feature Discovery/);
+  assert.match(skillSource, /Do not start from the desired UI and invent a backend model first/);
+  assert.match(skillSource, /OPENCLAW_RECOMMENDED_VERSION/);
+  assert.match(skillSource, /OPENCLAW_SUPPORTED_BASELINE_VERSION/);
+  assert.match(skillSource, /latest stable OpenClaw/);
+  assert.match(skillSource, /latest beta\/current upstream source/);
+  assert.match(skillSource, /explicit gap analysis/);
+  assert.match(skillSource, /smallest AgentOS-owned gap/);
+  assert.match(skillSource, /compatibility or contract tests/);
+});
+
+test("OpenClaw governance documents define ownership and source-of-truth priority", () => {
+  const skillSource = readProjectFile("docs/agentos-codex-skill.md");
+  const priorityMarkers = [
+    "1. Live OpenClaw Gateway/runtime capability.",
+    "2. The supported OpenClaw version contract/schema.",
+    "3. AgentOS compatibility normalization.",
+    "4. AgentOS static fallback knowledge."
+  ];
+
+  let previousIndex = -1;
+  for (const marker of priorityMarkers) {
+    const markerIndex = skillSource.indexOf(marker);
+    assert.ok(markerIndex > previousIndex, `${marker} must preserve source-of-truth order`);
+    previousIndex = markerIndex;
+  }
+
+  for (const category of [
+    "**A. OpenClaw-owned capability**",
+    "**B. OpenClaw-owned without a stable native Gateway path**",
+    "**C. AgentOS projection**",
+    "**D. AgentOS sidecar**",
+    "**E. AgentOS higher-level composition**",
+    "**F. Unclear ownership**"
+  ]) {
+    assert.match(skillSource, new RegExp(escapeRegExp(category)));
+  }
+
+  assert.match(skillSource, /live OpenClaw capability > supported OpenClaw contract > AgentOS static fallback knowledge/);
+  assert.match(skillSource, /Static AgentOS catalogs must never silently become authoritative/);
+  assert.match(skillSource, /AgentOS does not own a parallel skill engine/);
+  assert.match(skillSource, /AgentOS static skill knowledge/);
+  assert.match(skillSource, /AgentOS-generated policy\/guidance skills/);
+});
+
+test("significant OpenClaw work has a reusable feature decision record", () => {
+  const skillSource = readProjectFile("docs/agentos-codex-skill.md");
+
+  assert.match(skillSource, /## OpenClaw Feature Decision/);
+  for (const field of [
+    "**User outcome:**",
+    "**OpenClaw ownership:**",
+    "**Current OpenClaw surface:**",
+    "**Current AgentOS surface:**",
+    "**Gap:**",
+    "**AgentOS responsibility:**",
+    "**Source of truth:**",
+    "**Fallback:**",
+    "**Compatibility risk:**"
+  ]) {
+    assert.match(skillSource, new RegExp(escapeRegExp(field)));
+  }
+});
+
+test("live tool discovery wins over static AgentOS capability metadata", () => {
+  const routeSource = readProjectFile("app/api/openclaw/capabilities/route.ts");
+  const serviceSource = readProjectFile("lib/openclaw/application/catalog-service.ts");
+  const dialogSource = readProjectFile("components/mission-control/agent-capability-editor-dialog.tsx");
+  const staticCatalogSource = readProjectFile("lib/openclaw/tool-catalog.ts");
+  const presetSource = readProjectFile("lib/openclaw/agent-presets.ts");
+
+  assert.match(routeSource, /listOpenClawTools\(\{ includePlugins: true \}/);
+  assert.match(routeSource, /normalizeOpenClawToolsCatalog\(toolCatalogResult\.value\)/);
+  assert.match(routeSource, /toolSource/);
+  assert.match(routeSource, /liveTools \?\? fallbackTools/);
+  assert.match(serviceSource, /getToolsCatalog\(input, options\)/);
+  assert.match(serviceSource, /static tool catalog is intentionally not consulted/);
+  assert.match(dialogSource, /capabilityCatalog\?\.toolSource === "openclaw-gateway"/);
+  assert.match(staticCatalogSource, /Static fallback\/preset metadata only/);
+  assert.match(presetSource, /Static AgentOS preset and managed-workspace knowledge only/);
+});
 
 test("OpenClaw production code does not import the legacy service entrypoint", () => {
   const productionFiles = readProjectSourceFiles(["app", "components", "hooks", "lib"]).filter(

@@ -1,6 +1,7 @@
 import type { RuntimeStatus } from "@/lib/agentos/contracts";
+import type { AgentOsSurfaceTheme } from "@/components/ui/design-system";
 
-export type InspectorSurfaceTheme = "dark" | "light";
+export type InspectorSurfaceTheme = AgentOsSurfaceTheme;
 export type InspectorSummaryAction =
   | "steer-task"
   | "review-result"

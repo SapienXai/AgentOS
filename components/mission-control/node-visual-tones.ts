@@ -1,4 +1,5 @@
 import type { BadgeProps } from "@/components/ui/badge";
+import type { AgentOsSurfaceTheme } from "@/components/ui/design-system";
 import type { AgentStatus, RuntimeStatus } from "@/lib/agentos/contracts";
 import { badgeVariantForRuntimeStatus, toneForRuntimeStatus } from "@/lib/openclaw/presenters";
 
@@ -7,7 +8,7 @@ import type { TaskReviewStatus } from "./task-review-state";
 type BadgeVariant = Exclude<BadgeProps["variant"], null | undefined>;
 
 export type TaskNodeToneKey = "aborted" | "review" | "live" | "success" | "fresh" | "default";
-export type TaskNodeSurfaceTheme = "dark" | "light";
+export type TaskNodeSurfaceTheme = AgentOsSurfaceTheme;
 
 export type TaskNodeSurfaceTone = Readonly<{
   outer: string;

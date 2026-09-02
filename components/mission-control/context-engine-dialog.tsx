@@ -34,6 +34,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import type { AgentOsSurfaceTheme } from "@/components/ui/design-system";
 import {
   Dialog,
   DialogContent,
@@ -66,7 +67,7 @@ import { cn } from "@/lib/utils";
 
 type ContextEngineTab = "overview" | "project" | "skills" | "memory" | "attachments" | "preview";
 type InspectorMode = "preview" | "edit";
-type ContextEngineSurfaceTheme = "dark" | "light";
+type ContextEngineSurfaceTheme = AgentOsSurfaceTheme;
 type ContextEngineThemeStyle = CSSProperties & Record<`--ce-${string}`, string>;
 
 const contextEngineThemeStyles: Record<ContextEngineSurfaceTheme, ContextEngineThemeStyle> = {

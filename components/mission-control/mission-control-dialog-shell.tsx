@@ -12,6 +12,7 @@ import {
   DialogTitle,
   DialogTrigger
 } from "@/components/ui/dialog";
+import type { AgentOsSurfaceTheme } from "@/components/ui/design-system";
 import { cn } from "@/lib/utils";
 
 type MissionControlDialogShellProps = {
@@ -19,7 +20,7 @@ type MissionControlDialogShellProps = {
   onOpenChange: (open: boolean) => void;
   title: ReactNode;
   description: ReactNode;
-  surfaceTheme?: "dark" | "light";
+  surfaceTheme?: AgentOsSurfaceTheme;
   icon?: LucideIcon;
   trigger?: ReactNode;
   chips?: ReactNode;
@@ -66,22 +67,22 @@ export function MissionControlDialogShell({
         onPointerDownOutside={disableOutsideDismiss ? (event) => event.preventDefault() : undefined}
         overlayClassName={isLight ? "bg-[rgba(26,22,18,0.26)] backdrop-blur-lg" : "bg-black/78 backdrop-blur-lg"}
         closeClassName={cn(
-          "right-3 top-3 h-7 w-7",
+          "right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] h-9 w-9 sm:right-3 sm:top-3 sm:h-7 sm:w-7",
           isLight
             ? "text-[#756b61] hover:bg-[#f1ebe3] hover:text-[#2d241f]"
             : "text-slate-300 hover:bg-white/[0.06] hover:text-white"
         )}
         className={cn(
-          "grid h-[min(calc(100vh-72px),760px)] max-h-[calc(100vh-72px)] w-[min(90vw,1060px)] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-2xl border border-violet-300/28 bg-[radial-gradient(circle_at_10%_0%,rgba(124,58,237,0.16),transparent_28%),linear-gradient(135deg,rgba(16,20,31,0.98),rgba(8,11,19,0.98)_62%,rgba(13,15,25,0.98))] p-0 text-slate-100 shadow-[0_0_0_1px_rgba(167,139,250,0.14),0_24px_80px_rgba(0,0,0,0.68)]",
-          isWorkerProfile && "h-[min(calc(100vh-56px),780px)] max-h-[calc(100vh-56px)] w-[min(94vw,1120px)] rounded-[24px] border-violet-300/30 shadow-[0_0_0_1px_rgba(167,139,250,0.16),0_26px_86px_rgba(0,0,0,0.68)]",
+          "grid h-dvh max-h-dvh w-screen max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-none border-0 border-violet-300/28 bg-[radial-gradient(circle_at_10%_0%,rgba(124,58,237,0.16),transparent_28%),linear-gradient(135deg,rgba(16,20,31,0.98),rgba(8,11,19,0.98)_62%,rgba(13,15,25,0.98))] p-0 text-slate-100 shadow-[0_0_0_1px_rgba(167,139,250,0.14),0_24px_80px_rgba(0,0,0,0.68)] sm:h-[min(calc(100dvh-72px),760px)] sm:max-h-[calc(100dvh-72px)] sm:w-[min(90vw,1060px)] sm:rounded-2xl sm:border",
+          isWorkerProfile && "sm:h-[min(calc(100dvh-56px),780px)] sm:max-h-[calc(100dvh-56px)] sm:w-[min(94vw,1120px)] sm:rounded-[24px] sm:border-violet-300/30 sm:shadow-[0_0_0_1px_rgba(167,139,250,0.16),0_26px_86px_rgba(0,0,0,0.68)]",
           isLight && "agentos-light-modal",
           contentClassName
         )}
       >
         <DialogHeader
           className={cn(
-            "relative space-y-0 border-b px-6 pb-2 pt-3",
-            isWorkerProfile && "overflow-hidden px-5 pb-3.5 pt-4 sm:px-7",
+            "relative space-y-0 border-b px-4 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6 sm:pt-3",
+            isWorkerProfile && "overflow-hidden px-5 pb-3.5 sm:px-7 sm:pt-4",
             isLight ? "border-[#e7dfd4]" : "border-white/[0.06]",
             headerClassName
           )}
@@ -132,7 +133,7 @@ export function MissionControlDialogShell({
         <div className={cn("min-h-0 overflow-y-auto px-4 py-3", isWorkerProfile && "bg-[linear-gradient(180deg,rgba(255,255,255,0.018),transparent_24%)]", bodyClassName)}>{children}</div>
 
         {footer ? (
-          <DialogFooter className={cn("gap-0 border-t px-4 py-1.5", isWorkerProfile && "px-5 py-2 sm:px-7", isLight ? "border-[#e7dfd4]" : "border-white/[0.07]", footerClassName)}>
+          <DialogFooter className={cn("gap-0 border-t px-4 pb-[max(0.375rem,env(safe-area-inset-bottom))] pt-1.5 sm:py-1.5", isWorkerProfile && "px-5 sm:px-7 sm:py-2", isLight ? "border-[#e7dfd4]" : "border-white/[0.07]", footerClassName)}>
             <div className={cn("flex w-full items-center justify-between rounded-[8px] px-1.5 py-1", isWorkerProfile && "rounded-xl px-1.5 py-1", isLight ? "bg-white/45" : "bg-white/[0.018]", footerInnerClassName)}>
               {footer}
             </div>
@@ -150,7 +151,7 @@ export function MissionControlDialogChip({
 }: {
   children: ReactNode;
   tone?: "muted" | "violet" | "blue" | "amber" | "emerald";
-  surfaceTheme?: "dark" | "light";
+  surfaceTheme?: AgentOsSurfaceTheme;
 }) {
   const isLight = surfaceTheme === "light";
 
@@ -172,7 +173,7 @@ export function MissionControlDialogChip({
 
 export function missionControlDialogButtonClassName(
   kind: "primary" | "secondary" = "secondary",
-  surfaceTheme: "dark" | "light" = "dark"
+  surfaceTheme: AgentOsSurfaceTheme = "dark"
 ) {
   const isLight = surfaceTheme === "light";
 

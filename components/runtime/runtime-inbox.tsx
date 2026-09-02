@@ -26,8 +26,9 @@ import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot, OpenClawUpdateStreamEvent, RuntimeIssue } from "@/lib/agentos/contracts";
 import { useDeploymentCapabilities } from "@/hooks/use-deployment-capabilities";
 import { cn } from "@/lib/utils";
+import type { AgentOsSurfaceTheme } from "@/components/ui/design-system";
 
-type SurfaceTheme = "dark" | "light";
+type SurfaceTheme = AgentOsSurfaceTheme;
 type RuntimeAction =
   | "reviewDevices"
   | "approveRequest"

@@ -19,14 +19,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RuntimeIssueIndicator } from "@/components/runtime/runtime-inbox";
+import type { AgentOsStatusTone, AgentOsSurfaceTheme } from "@/components/ui/design-system";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
 
-export type StatusTone = "success" | "info" | "warning" | "danger" | "muted" | "purple";
-export type OperationsSurfaceTheme = "dark" | "light";
+export type StatusTone = AgentOsStatusTone;
+export type OperationsSurfaceTheme = AgentOsSurfaceTheme;
 
 export const pageSurface =
-  "border border-border bg-card/95 text-card-foreground shadow-card backdrop-blur-xl";
+  "border border-[hsl(var(--agentos-border-default))] bg-[hsl(var(--agentos-surface-panel)/0.95)] text-card-foreground shadow-card backdrop-blur-xl";
 
 const toneStyles: Record<StatusTone, string> = {
   success: "border-[hsl(var(--status-success)/0.25)] bg-[hsl(var(--status-success)/0.10)] text-[hsl(var(--status-success-foreground))]",
@@ -34,7 +35,7 @@ const toneStyles: Record<StatusTone, string> = {
   warning: "border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.10)] text-[hsl(var(--status-warning-foreground))]",
   danger: "border-[hsl(var(--status-danger)/0.28)] bg-[hsl(var(--status-danger)/0.10)] text-[hsl(var(--status-danger-foreground))]",
   muted: "border-border bg-muted text-muted-foreground",
-  purple: "border-[hsl(var(--status-purple)/0.25)] bg-[hsl(var(--status-purple)/0.10)] text-[hsl(var(--status-purple-foreground))]"
+  purple: "border-[hsl(var(--agentos-operational-accent)/0.25)] bg-[hsl(var(--agentos-operational-accent)/0.10)] text-[hsl(var(--status-purple-foreground))]"
 };
 
 const dotStyles: Record<StatusTone, string> = {
@@ -43,7 +44,7 @@ const dotStyles: Record<StatusTone, string> = {
   warning: "bg-[hsl(var(--status-warning))]",
   danger: "bg-[hsl(var(--status-danger))]",
   muted: "bg-[hsl(var(--status-muted))]",
-  purple: "bg-[hsl(var(--status-purple))]"
+  purple: "bg-[hsl(var(--agentos-operational-accent))]"
 };
 
 const iconToneStyles: Record<StatusTone, string> = {
@@ -52,7 +53,7 @@ const iconToneStyles: Record<StatusTone, string> = {
   warning: "border-[hsl(var(--status-warning)/0.20)] bg-[hsl(var(--status-warning)/0.10)] text-[hsl(var(--status-warning-foreground))]",
   danger: "border-[hsl(var(--status-danger)/0.22)] bg-[hsl(var(--status-danger)/0.10)] text-[hsl(var(--status-danger-foreground))]",
   muted: "border-border bg-muted text-muted-foreground",
-  purple: "border-[hsl(var(--status-purple)/0.20)] bg-[hsl(var(--status-purple)/0.10)] text-[hsl(var(--status-purple-foreground))]"
+  purple: "border-[hsl(var(--agentos-operational-accent)/0.20)] bg-[hsl(var(--agentos-operational-accent)/0.10)] text-[hsl(var(--status-purple-foreground))]"
 };
 
 export function OperationsTopBar({
@@ -523,7 +524,7 @@ export function ProgressBar({
     warning: "bg-amber-300",
     danger: "bg-[hsl(var(--status-danger))]",
     muted: "bg-slate-400",
-    purple: "bg-violet-400"
+    purple: "bg-[hsl(var(--agentos-operational-accent))]"
   };
 
   return (

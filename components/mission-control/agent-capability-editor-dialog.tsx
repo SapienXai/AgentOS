@@ -119,8 +119,11 @@ export function AgentCapabilityEditorDialog({
   const observedTools = normalizeCapabilityValues(agent?.observedTools ?? []);
   const workspaceSkillIds = normalizeCapabilityValues(workspace?.bootstrap.localSkillIds ?? []);
   const fallbackToolEntries = useMemo(
-    () => [...OPENCLAW_BUILTIN_TOOL_CATALOG, ...OPENCLAW_TOOL_GROUP_CATALOG],
-    []
+    () =>
+      capabilityCatalog?.toolSource === "openclaw-gateway"
+        ? []
+        : [...OPENCLAW_BUILTIN_TOOL_CATALOG, ...OPENCLAW_TOOL_GROUP_CATALOG],
+    [capabilityCatalog?.toolSource]
   );
 
   useEffect(() => {
@@ -460,7 +463,7 @@ export function AgentCapabilityEditorDialog({
                 helperLabel={
                   isSkillsEditor
                     ? "Workspace skills and OpenClaw skills are shown first in Available to add."
-                    : "Built-ins, plugins, and groups are shown first in Available to add. Observed tools are read-only."
+                    : `${capabilityCatalog?.toolSource === "static-fallback" ? "OpenClaw tool discovery is unavailable; showing static fallback metadata. " : ""}Built-ins, plugins, and groups are shown first in Available to add. Observed tools are read-only.`
                 }
                 currentHintLabel={
                   isSkillsEditor

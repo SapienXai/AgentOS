@@ -3,9 +3,10 @@
 import type { ReactNode } from "react";
 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import type { AgentOsSurfaceTheme } from "@/components/ui/design-system";
 import { cn } from "@/lib/utils";
 
-type SurfaceTheme = "dark" | "light";
+type SurfaceTheme = AgentOsSurfaceTheme;
 
 type RailTooltipProps = {
   label: string;

@@ -27,6 +27,8 @@ type PresetMeta = {
 
 export const DEFAULT_AGENT_PRESET: AgentPreset = "worker";
 
+// Static AgentOS preset and managed-workspace knowledge only. OpenClaw's live
+// skills.status and tools.catalog surfaces remain authoritative at runtime.
 const OPENCLAW_SKILL_ID_SET = new Set([
   "project-builder",
   "project-reviewer",

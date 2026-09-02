@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 
 import {
   listOpenClawPlugins,
-  listOpenClawSkills
+  listOpenClawSkills,
+  listOpenClawTools,
+  normalizeOpenClawToolsCatalog,
+  type OpenClawCapabilityToolEntry
 } from "@/lib/openclaw/application/catalog-service";
 import {
   OPENCLAW_BUILTIN_TOOL_CATALOG,
-  OPENCLAW_TOOL_GROUP_CATALOG,
-  type OpenClawToolCatalogEntry
+  OPENCLAW_TOOL_GROUP_CATALOG
 } from "@/lib/openclaw/tool-catalog";
 
 type CapabilitySkillEntry = {
@@ -18,21 +20,18 @@ type CapabilitySkillEntry = {
   eligible: boolean;
 };
 
-type CapabilityToolEntry = OpenClawToolCatalogEntry & {
-  pluginId?: string;
-  pluginName?: string;
-};
-
 type CapabilityCatalogResponse = {
   generatedAt: string;
   skills: CapabilitySkillEntry[];
-  tools: CapabilityToolEntry[];
+  tools: OpenClawCapabilityToolEntry[];
+  toolSource: "openclaw-gateway" | "static-fallback";
 };
 
 export async function GET() {
-  const [skillResult, pluginResult] = await Promise.allSettled([
+  const [skillResult, pluginResult, toolCatalogResult] = await Promise.allSettled([
     listOpenClawSkills({ eligible: true, timeoutMs: 15_000 }),
-    listOpenClawPlugins({ timeoutMs: 15_000 })
+    listOpenClawPlugins({ timeoutMs: 15_000 }),
+    listOpenClawTools({ includePlugins: true }, { timeoutMs: 15_000 })
   ]);
 
   const skills =
@@ -48,14 +47,19 @@ export async function GET() {
           .filter((skill) => Boolean(skill.name))
       : [];
 
-  const builtinTools = [...OPENCLAW_BUILTIN_TOOL_CATALOG, ...OPENCLAW_TOOL_GROUP_CATALOG];
-  const toolMap = new Map<string, CapabilityToolEntry>();
+  const liveTools =
+    toolCatalogResult.status === "fulfilled"
+      ? normalizeOpenClawToolsCatalog(toolCatalogResult.value)
+      : null;
+  const toolSource = liveTools === null ? "static-fallback" : "openclaw-gateway";
+  const fallbackTools = [...OPENCLAW_BUILTIN_TOOL_CATALOG, ...OPENCLAW_TOOL_GROUP_CATALOG];
+  const toolMap = new Map<string, OpenClawCapabilityToolEntry>();
 
-  for (const entry of builtinTools) {
+  for (const entry of liveTools ?? fallbackTools) {
     toolMap.set(entry.name, entry);
   }
 
-  if (pluginResult.status === "fulfilled" && Array.isArray(pluginResult.value.plugins)) {
+  if (liveTools === null && pluginResult.status === "fulfilled" && Array.isArray(pluginResult.value.plugins)) {
     for (const plugin of pluginResult.value.plugins) {
       if (plugin.status !== "loaded" || !Array.isArray(plugin.toolNames)) {
         continue;
@@ -82,6 +86,7 @@ export async function GET() {
   const response: CapabilityCatalogResponse = {
     generatedAt: new Date().toISOString(),
     skills,
+    toolSource,
     tools: Array.from(toolMap.values()).sort(sortCatalogEntries)
   };
 
@@ -101,7 +106,7 @@ function normalizeDescription(value: string | undefined) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function sortCatalogEntries(left: CapabilityToolEntry, right: CapabilityToolEntry) {
+function sortCatalogEntries(left: OpenClawCapabilityToolEntry, right: OpenClawCapabilityToolEntry) {
   const categoryRank = getCategoryRank(left.category) - getCategoryRank(right.category);
   if (categoryRank !== 0) {
     return categoryRank;
@@ -115,7 +120,7 @@ function sortCatalogEntries(left: CapabilityToolEntry, right: CapabilityToolEntr
   return left.name.localeCompare(right.name);
 }
 
-function getCategoryRank(category: CapabilityToolEntry["category"]) {
+function getCategoryRank(category: OpenClawCapabilityToolEntry["category"]) {
   if (category === "builtin") {
     return 0;
   }

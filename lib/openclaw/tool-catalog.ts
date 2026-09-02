@@ -7,6 +7,8 @@ export interface OpenClawToolCatalogEntry {
   category: OpenClawToolCatalogCategory;
 }
 
+// Static fallback/preset metadata only. Live OpenClaw tools.catalog discovery
+// is authoritative whenever the Gateway can provide it.
 export const OPENCLAW_BUILTIN_TOOL_CATALOG: OpenClawToolCatalogEntry[] = [
   {
     name: "exec",

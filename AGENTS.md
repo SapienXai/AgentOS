@@ -42,10 +42,15 @@ If the task touches OpenClaw, releases, npm publishing, GitHub releases, auth, a
 
 ## OpenClaw Integration Rules
 
+- Before adding or changing a feature that touches or may overlap with OpenClaw, inspect the current upstream OpenClaw capability and ownership model first. Do not derive a new backend abstraction directly from a UI or product requirement.
+- Prefer OpenClaw's current primitives, Gateway/API surfaces, config/schema, and lifecycle over AgentOS-owned runtime concepts. Implement only the smallest AgentOS-specific gap.
+- Classify the work as OpenClaw-owned, an explicit fallback, an AgentOS projection, an AgentOS sidecar, or higher-level composition before coding. If ownership is unclear, stop and resolve the architecture question first.
+- The mandatory discovery workflow, ownership matrix, source-of-truth hierarchy, and feature decision record are defined in `docs/agentos-codex-skill.md`.
 - Prefer native OpenClaw Gateway/API integration whenever a stable path exists.
 - Use CLI fallback only when no stable native Gateway/API path exists.
 - CLI fallback must be explicit, observable, and recoverable. Do not hide it.
 - Do not make CLI fallback the default path if a native Gateway/API path exists.
+- Do not duplicate OpenClaw runtime concepts or build a parallel runtime, orchestrator, skill engine, tool engine, model layer, or task engine inside AgentOS.
 - Do not call OpenClaw directly from random React components.
 - Route OpenClaw access through the existing adapter/client/application-service boundaries.
 - Do not depend on raw OpenClaw response shapes in UI when an AgentOS-normalized domain model is appropriate.
@@ -56,14 +61,19 @@ If the task touches OpenClaw, releases, npm publishing, GitHub releases, auth, a
 ## UI / UX Rules
 
 - For AgentOS UI, UX, responsive layout, modal, card, form, or theme work, read and follow `skills/agentos-ui-ux/SKILL.md` before editing.
+- Inspect the existing product surface, interaction patterns, primitives, and semantic tokens before creating a new UI pattern; reuse or extend the closest canonical pattern first.
+- A new feature does not justify a new visual language. Keep foundations, primitives, patterns, product surfaces, and feature flows aligned with the existing hierarchy.
 - Do not build fake working UI.
 - Every button, action, link, filter, sort, metric, and status should either:
   - work against real data,
   - be disabled with a clear reason,
   - or be clearly marked as coming soon.
-- Prefer clear operator visibility over decorative UI.
+- Keep current scope, state, next action, failure detail, and recovery path visible near the affected operation.
+- Make mobile behavior, safe areas, keyboard access, focus, contrast, motion, and touch reachability intentional for every meaningful flow.
+- Prefer clear operator visibility over decorative UI and use semantic tokens before recurring local colors.
 - AgentOS UI should help users understand what agents are doing, what OpenClaw is doing, what failed, what needs approval, and what can be recovered.
 - Do not add visual complexity that hides runtime state or broken behavior.
+- Detailed UI architecture, state vocabulary, canonical patterns, and decision-record guidance live in `skills/agentos-ui-ux/SKILL.md`.
 
 ## Security Rules
 
