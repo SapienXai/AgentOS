@@ -43,6 +43,7 @@ const workspaceSchema = z.object({
   brief: z.string().optional(),
   directory: z.string().optional(),
   modelId: z.string().optional(),
+  thinking: z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]).optional(),
   sourceMode: z.enum(["empty", "clone", "existing"]).optional(),
   repoUrl: z.string().optional(),
   existingPath: z.string().optional(),

@@ -29,6 +29,7 @@ import type {
   WorkspaceCreateInput,
   WorkspaceCreateRules,
   WorkspaceDocOverride,
+  OpenClawThinkingLevel,
   WorkspaceModelProfile,
   WorkspaceSourceMode,
   WorkspaceTemplate
@@ -42,6 +43,7 @@ export type ResolvedWorkspaceBootstrapInput = {
   brief?: string;
   directory?: string;
   modelId?: string;
+  thinking?: OpenClawThinkingLevel;
   repoUrl?: string;
   existingPath?: string;
   sourceMode: WorkspaceSourceMode;
@@ -805,6 +807,7 @@ export function resolveWorkspaceBootstrapInput(input: WorkspaceCreateInput): Res
     brief: normalizeOptionalValue(input.brief) ?? undefined,
     directory: normalizeOptionalValue(input.directory) ?? undefined,
     modelId: normalizeOptionalValue(input.modelId) ?? undefined,
+    thinking: input.thinking,
     repoUrl: normalizeOptionalValue(input.repoUrl) ?? undefined,
     existingPath: normalizeOptionalValue(input.existingPath) ?? undefined,
     sourceMode,

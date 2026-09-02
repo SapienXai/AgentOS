@@ -83,6 +83,20 @@ test("system onboarding keeps setup rows compact and the log collapsed", () => {
   assert.doesNotMatch(source, /What happens next\?/);
 });
 
+test("ChatGPT return stays on model selection until the user confirms", () => {
+  const onboardingSource = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding.tsx"), "utf8");
+  const flowSource = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding-provider-flow.tsx"), "utf8");
+  const shellSource = readFileSync(path.join(process.cwd(), "components/mission-control/mission-control-shell.tsx"), "utf8");
+
+  assert.match(onboardingSource, /const modelSetupConfirmed = showReadyState \|\| modelSwitchFeedback\.phase === "success";/);
+  assert.match(onboardingSource, /const showLaunchpad = modelSetupConfirmed &&/);
+  assert.match(onboardingSource, /modelReady=\{modelSetupConfirmed\}/);
+  assert.match(flowSource, /id="chatgpt-model-select"/);
+  assert.match(flowSource, /id="chatgpt-reasoning-select"/);
+  assert.match(flowSource, /\["xhigh", "Xhigh"\]/);
+  assert.match(shellSource, /thinking: selectedOnboardingThinking/);
+});
+
 test("launchpad uses the same compact status-row language as setup", () => {
   const source = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding.stages.tsx"), "utf8");
 

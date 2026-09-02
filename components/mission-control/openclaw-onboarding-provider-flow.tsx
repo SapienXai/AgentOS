@@ -15,13 +15,15 @@ import type {
   AddModelsProviderActionResult,
   AddModelsProviderConnectionStatus,
   AddModelsProviderId,
+  OpenClawThinkingLevel,
   MissionControlSnapshot
 } from "@/lib/agentos/contracts";
 import {
   formatProviderLabel,
   resolveSelectedOnboardingProviderId,
   resolveInitialOnboardingProviderId,
-  resolveOnboardingModelSelection
+  resolveOnboardingModelSelection,
+  ONBOARDING_DEFAULT_THINKING
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import {
   getModelProviderDescriptor,
@@ -76,7 +78,9 @@ export function OpenClawOnboardingProviderFlow({
   snapshot,
   surfaceTheme = "dark",
   selectedModelId,
+  selectedThinking = ONBOARDING_DEFAULT_THINKING,
   onSelectedModelIdChange,
+  onSelectedThinkingChange = () => {},
   onOpenAddModels,
   onSnapshotChange,
   autoDiscover = true,
@@ -86,7 +90,9 @@ export function OpenClawOnboardingProviderFlow({
   snapshot: MissionControlSnapshot;
   surfaceTheme?: "dark" | "light";
   selectedModelId: string;
+  selectedThinking?: OpenClawThinkingLevel;
   onSelectedModelIdChange: (value: string) => void;
+  onSelectedThinkingChange?: (value: OpenClawThinkingLevel) => void;
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
   autoDiscover?: boolean;
@@ -935,6 +941,41 @@ export function OpenClawOnboardingProviderFlow({
                       className={isLight ? "bg-white text-[#2d241f]" : "bg-slate-950 text-white"}
                     >
                       {model.name} ({model.id})
+                    </option>
+                  ))}
+                </select>
+                <label
+                  htmlFor="chatgpt-reasoning-select"
+                  className={cn("mt-4 block text-[9px] uppercase tracking-[0.16em]", isLight ? "text-[#8c8177]" : "text-slate-500")}
+                >
+                  Reasoning
+                </label>
+                <select
+                  id="chatgpt-reasoning-select"
+                  aria-label="Reasoning level"
+                  value={selectedThinking}
+                  onChange={(event) => onSelectedThinkingChange(event.target.value as OpenClawThinkingLevel)}
+                  className={cn(
+                    "mt-2 h-10 w-full rounded-[12px] border bg-transparent px-3 text-[12px] outline-none transition-colors",
+                    isLight
+                      ? "border-[#d8c9bc] bg-white text-[#2d241f] focus:border-cyan-400"
+                      : "border-white/12 bg-slate-950/70 text-white focus:border-cyan-300/60"
+                  )}
+                >
+                  {[
+                    ["off", "Off"],
+                    ["minimal", "Minimal"],
+                    ["low", "Low"],
+                    ["medium", "Medium"],
+                    ["high", "High"],
+                    ["xhigh", "Xhigh"]
+                  ].map(([value, label]) => (
+                    <option
+                      key={value}
+                      value={value}
+                      className={isLight ? "bg-white text-[#2d241f]" : "bg-slate-950 text-white"}
+                    >
+                      {label}
                     </option>
                   ))}
                 </select>

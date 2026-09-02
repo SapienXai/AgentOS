@@ -4365,6 +4365,7 @@ test("workspace bootstrap input keeps the path contract stable", () => {
   const input = {
     name: "  Alpha Workspace  ",
     directory: "  alpha-workspace  ",
+    thinking: "xhigh",
     sourceMode: "empty",
     rules: {
       workspaceOnly: true,
@@ -4410,6 +4411,7 @@ test("workspace bootstrap input keeps the path contract stable", () => {
   assert.equal(resolved.name, "Alpha Workspace");
   assert.equal(resolved.slug, "alpha-workspace");
   assert.equal(resolved.directory, "alpha-workspace");
+  assert.equal(resolved.thinking, "xhigh");
   assert.equal(resolved.rules.workspaceOnly, true);
   assert.equal(resolved.agents[0].id, "primary-lead");
   assert.equal(resolved.agents[0].role, "Lead");

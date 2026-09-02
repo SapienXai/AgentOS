@@ -1716,6 +1716,8 @@ export type WorkspaceTeamPreset = "solo" | "core" | "custom";
 
 export type WorkspaceModelProfile = "balanced" | "fast" | "quality";
 
+export type OpenClawThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
 export interface WorkspaceCreateRules {
   workspaceOnly: boolean;
   generateStarterDocs: boolean;
@@ -1749,6 +1751,7 @@ export interface WorkspaceCreateInput {
   brief?: string;
   directory?: string;
   modelId?: string;
+  thinking?: OpenClawThinkingLevel;
   sourceMode?: WorkspaceSourceMode;
   repoUrl?: string;
   existingPath?: string;

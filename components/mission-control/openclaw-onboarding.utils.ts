@@ -17,6 +17,9 @@ export type WizardStage = "system" | "models";
 export type StepState = "complete" | "current" | "pending";
 type SystemStepId = "cli" | "gateway" | "runtime";
 
+export const OPENAI_ONBOARDING_DEFAULT_MODEL_ID = "openai/gpt-5.6-luna";
+export const ONBOARDING_DEFAULT_THINKING = "xhigh" as const;
+
 export type StageRunDetails = {
   runState: RunState;
   statusMessage: string | null;
@@ -673,6 +676,12 @@ export function resolveOnboardingModelSelection(
   const normalizedModelIds = new Map(
     models.map((model) => [model.id.trim().toLowerCase(), model.id])
   );
+  const preferredModelId = normalizedModelIds.get(OPENAI_ONBOARDING_DEFAULT_MODEL_ID);
+
+  if (preferredModelId) {
+    return preferredModelId;
+  }
+
   const candidates = [
     modelReadiness.resolvedDefaultModel,
     modelReadiness.recommendedModelId,
@@ -692,6 +701,17 @@ export function resolveOnboardingModelSelection(
 }
 
 export function resolveInitialOnboardingModelId(snapshot: MissionControlSnapshot) {
+  const preferredModel = (snapshot.models ?? []).find(
+    (model) =>
+      model.id.trim().toLowerCase() === OPENAI_ONBOARDING_DEFAULT_MODEL_ID &&
+      model.available !== false &&
+      !model.missing
+  );
+
+  if (preferredModel) {
+    return preferredModel.id;
+  }
+
   const resolvedDefaultModel =
     snapshot.diagnostics.modelReadiness.resolvedDefaultModel ||
     snapshot.diagnostics.modelReadiness.defaultModel ||

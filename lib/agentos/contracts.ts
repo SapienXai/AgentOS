@@ -154,6 +154,7 @@ export type {
   OpenClawSmokeTestCheck,
   OpenClawSmokeTestCheckStatus,
   OpenClawUpdateStreamEvent,
+  OpenClawThinkingLevel,
   OperationProgressActivity,
   OperationProgressSnapshot,
   OperationProgressStepSnapshot,

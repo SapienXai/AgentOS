@@ -6,7 +6,8 @@ import type {
 import type {
   AgentMemorySearchConfig,
   AgentSandboxConfig,
-  AgentToolPolicyConfig
+  AgentToolPolicyConfig,
+  OpenClawThinkingLevel
 } from "@/lib/openclaw/types";
 
 export interface OpenClawCommandOptions {
@@ -900,7 +901,7 @@ export interface OpenClawAgentTurnInput {
   agentId: string;
   sessionId?: string;
   message: string;
-  thinking?: "off" | "minimal" | "low" | "medium" | "high";
+  thinking?: OpenClawThinkingLevel;
   timeoutSeconds?: number;
   workspace?: string | null;
   dispatchId?: string | null;

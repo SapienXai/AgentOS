@@ -104,6 +104,7 @@ import type {
   WorkspaceEditSeed,
   WorkspacePlan,
   WorkspaceProject,
+  OpenClawThinkingLevel,
   WorkspaceModelProfile,
   WorkspaceTeamPreset,
   WorkspaceTemplate,
@@ -351,6 +352,7 @@ async function createWorkspaceProjectInternal(
         agentId: primaryAgentId,
         brief: normalized.brief,
         modelProfile: normalized.modelProfile,
+        thinking: normalized.thinking,
         template: normalized.template,
         rules: normalized.rules
       }, {
@@ -1343,6 +1345,7 @@ async function runWorkspaceKickoffMission(
     agentId: string;
     brief?: string;
     modelProfile: WorkspaceModelProfile;
+    thinking?: OpenClawThinkingLevel;
     template: WorkspaceTemplate;
     rules: WorkspaceCreateRules;
   },
@@ -1351,12 +1354,13 @@ async function runWorkspaceKickoffMission(
   } = {}
 ) {
   const prompt = buildWorkspaceKickoffPrompt(params.template, params.brief, params.rules);
-  const thinking =
+  const thinking = params.thinking ?? (
     params.modelProfile === "fast"
       ? "low"
       : params.modelProfile === "quality"
         ? "high"
-      : "medium";
+        : "medium"
+  );
   const emittedRuntimeMessages = new Set<string>();
 
   await options.onProgress?.({

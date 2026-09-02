@@ -97,7 +97,8 @@ import {
   resolveInitialOnboardingModelId,
   resolveChatGptRecoveryMessage,
   isChatGptConnectionReady,
-  isOnboardingModelStepComplete
+  isOnboardingModelStepComplete,
+  ONBOARDING_DEFAULT_THINKING
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import { compactPath } from "@/lib/openclaw/presenters";
 import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
@@ -124,6 +125,7 @@ import type {
   OpenClawModelOnboardingStreamEvent,
   OpenClawOnboardingPhase,
   OpenClawOnboardingStreamEvent,
+  OpenClawThinkingLevel,
   OperationProgressSnapshot,
   ResetPreview,
   ResetStreamEvent,
@@ -500,6 +502,7 @@ export function MissionControlShell({
     window.localStorage.setItem(openClawCertificationScorecardStorageKey, JSON.stringify(updateCertificationScorecard));
   }, [updateCertificationScorecard]);
   const [selectedOnboardingModelId, setSelectedOnboardingModelId] = useState<string>("");
+  const [selectedOnboardingThinking, setSelectedOnboardingThinking] = useState<OpenClawThinkingLevel>(ONBOARDING_DEFAULT_THINKING);
   const [discoveredModels, setDiscoveredModels] = useState<DiscoveredModelCandidate[]>([]);
   const [modelOnboardingRunState, setModelOnboardingRunState] = useState<UpdateRunState>("idle");
   const [modelOnboardingPhase, setModelOnboardingPhase] = useState<OpenClawModelOnboardingPhase | null>(null);
@@ -1543,6 +1546,7 @@ export function MissionControlShell({
     setModelOnboardingLog("");
     setDiscoveredModels([]);
     setSelectedOnboardingModelId("");
+    setSelectedOnboardingThinking(ONBOARDING_DEFAULT_THINKING);
     setModelSwitchFeedback(initialModelSwitchFeedback);
     setShowOnboardingReadyState(false);
     setHasSeenMissionReady(false);
@@ -2796,7 +2800,11 @@ export function MissionControlShell({
     }
   };
 
-  const runModelSetDefault = async (modelId?: string) => {
+  const runModelSetDefault = async (modelId?: string, thinking?: OpenClawThinkingLevel) => {
+    if (thinking) {
+      setSelectedOnboardingThinking(thinking);
+    }
+
     const targetModelId = modelId || selectedOnboardingModelId;
     const currentDefaultModelId =
       snapshot.diagnostics.modelReadiness.resolvedDefaultModel ||
@@ -2989,6 +2997,7 @@ export function MissionControlShell({
           name: "AgentOS Workspace",
           brief: "First workspace created from the AgentOS launchpad.",
           modelId: targetModelId,
+          thinking: selectedOnboardingThinking,
           sourceMode: "empty",
           template: "software",
           teamPreset: "solo",
@@ -3061,6 +3070,7 @@ export function MissionControlShell({
     launchpadWorkspaceCreateTarget,
     activeWorkspaceId,
     selectedOnboardingModelId,
+    selectedOnboardingThinking,
     snapshot,
     waitForLaunchpadWorkspaceHandoff
   ]);
@@ -3147,7 +3157,11 @@ export function MissionControlShell({
     snapshot
   ]);
 
-  const continueFromAi = useCallback(() => {
+  const continueFromAi = useCallback((thinking?: OpenClawThinkingLevel) => {
+    if (thinking) {
+      setSelectedOnboardingThinking(thinking);
+    }
+
     if (!isChatGptConnectionReady(snapshot)) {
       setIsOnboardingForcedOpen(true);
       setIsOnboardingDismissed(false);
@@ -3904,8 +3918,10 @@ export function MissionControlShell({
           }}
           modelSwitchFeedback={modelSwitchFeedback}
           selectedModelId={selectedOnboardingModelId}
+          selectedThinking={selectedOnboardingThinking}
           discoveredModels={discoveredModels}
           onSelectedModelIdChange={setSelectedOnboardingModelId}
+          onSelectedThinkingChange={setSelectedOnboardingThinking}
           onClearModelSwitchFeedback={() => setModelSwitchFeedback(initialModelSwitchFeedback)}
           onSnapshotChange={setSnapshot}
           onRunSystemSetup={runOpenClawOnboarding}
@@ -5054,8 +5070,10 @@ export function MissionControlShell({
             }}
             modelSwitchFeedback={modelSwitchFeedback}
             selectedModelId={selectedOnboardingModelId}
+            selectedThinking={selectedOnboardingThinking}
             discoveredModels={discoveredModels}
             onSelectedModelIdChange={setSelectedOnboardingModelId}
+            onSelectedThinkingChange={setSelectedOnboardingThinking}
             onClearModelSwitchFeedback={() => setModelSwitchFeedback(initialModelSwitchFeedback)}
             onSnapshotChange={setSnapshot}
             onRunSystemSetup={runOpenClawOnboarding}

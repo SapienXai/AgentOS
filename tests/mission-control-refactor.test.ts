@@ -36,7 +36,9 @@ import {
   resolveChatGptRecoveryMessage,
   resolveChatGptOnboardingState,
   resolveInitialOnboardingModelId,
-  resolveOnboardingModelSelection
+  resolveOnboardingModelSelection,
+  OPENAI_ONBOARDING_DEFAULT_MODEL_ID,
+  ONBOARDING_DEFAULT_THINKING
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import type { MissionControlSnapshot, OperationProgressSnapshot } from "@/lib/agentos/contracts";
@@ -59,7 +61,7 @@ test("onboarding model selection follows live OpenClaw readiness metadata", () =
       },
       models
     ),
-    "openai/gpt-5.6-sol"
+    OPENAI_ONBOARDING_DEFAULT_MODEL_ID
   );
   assert.equal(
     resolveOnboardingModelSelection(
@@ -81,7 +83,7 @@ test("onboarding model selection follows live OpenClaw readiness metadata", () =
       },
       models
     ),
-    "openai/gpt-5.6-terra"
+    OPENAI_ONBOARDING_DEFAULT_MODEL_ID
   );
 });
 
@@ -563,6 +565,36 @@ test("initial onboarding model uses a ready default without forcing discovery", 
   assert.equal(resolveInitialOnboardingModelId(connectedSnapshot), null);
   assert.equal(resolveInitialOnboardingModelId(readyDefaultSnapshot), "openai/gpt-5.4");
   assert.equal(resolveInitialOnboardingModelId(workspaceSnapshot), "openai/gpt-5.4");
+});
+
+test("onboarding prefers the live Luna model and xhigh reasoning defaults", () => {
+  const snapshot = {
+    models: [
+      {
+        id: OPENAI_ONBOARDING_DEFAULT_MODEL_ID,
+        available: true,
+        missing: false
+      },
+      {
+        id: "openai/gpt-5.6-sol",
+        available: true,
+        missing: false
+      }
+    ],
+    workspaces: [],
+    diagnostics: {
+      modelReadiness: {
+        resolvedDefaultModel: "openai/gpt-5.6-sol",
+        defaultModel: "openai/gpt-5.6-sol",
+        defaultModelReady: true,
+        recommendedModelId: "openai/gpt-5.6-sol",
+        authProviders: []
+      }
+    }
+  } as unknown as MissionControlSnapshot;
+
+  assert.equal(resolveInitialOnboardingModelId(snapshot), OPENAI_ONBOARDING_DEFAULT_MODEL_ID);
+  assert.equal(ONBOARDING_DEFAULT_THINKING, "xhigh");
 });
 
 test("onboarding launchpad requires confirmed setup or a workspace-backed model", () => {

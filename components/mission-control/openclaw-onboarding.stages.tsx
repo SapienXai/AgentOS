@@ -11,7 +11,8 @@ import { toast } from "@/components/ui/sonner";
 import type {
   AddModelsProviderId,
   ChatGptBrowserAuthSnapshot,
-  MissionControlSnapshot
+  MissionControlSnapshot,
+  OpenClawThinkingLevel
 } from "@/lib/agentos/contracts";
 import type { OpenClawModelOnboardingPhase, OperationProgressSnapshot } from "@/lib/agentos/contracts";
 import {
@@ -272,9 +273,11 @@ export function ModelStage({
   run,
   modelPhase,
   selectedModelId,
+  selectedThinking,
   modelSwitchFeedback,
   localModelStatus,
   onSelectedModelIdChange,
+  onSelectedThinkingChange,
   onClearModelSwitchFeedback,
   onOpenAddModels,
   onSnapshotChange,
@@ -294,9 +297,11 @@ export function ModelStage({
   run: StageRunDetails;
   modelPhase: OpenClawModelOnboardingPhase | null;
   selectedModelId: string;
+  selectedThinking: OpenClawThinkingLevel;
   modelSwitchFeedback: ModelSwitchFeedback;
   localModelStatus?: { checked: boolean; defaultModelId: string | null; modelIds: string[] };
   onSelectedModelIdChange: (value: string) => void;
+  onSelectedThinkingChange: (value: OpenClawThinkingLevel) => void;
   onClearModelSwitchFeedback: () => void;
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
@@ -305,8 +310,8 @@ export function ModelStage({
   onConnectChatGPT: (force?: boolean) => void;
   chatGptBrowserAuth: ChatGptBrowserAuthSnapshot | null;
   onSubmitChatGptRedirect: (redirectUrl: string) => void;
-  onContinueFromAi: () => void;
-  onRunModelSetDefault: (modelId?: string) => void;
+  onContinueFromAi: (thinking?: OpenClawThinkingLevel) => void;
+  onRunModelSetDefault: (modelId?: string, thinking?: OpenClawThinkingLevel) => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [chatGptAttempted, setChatGptAttempted] = useState(false);
@@ -402,7 +407,9 @@ export function ModelStage({
           onRunModelSetDefault={onRunModelSetDefault}
           snapshot={effectiveSnapshot}
           selectedModelId={selectedModelId}
+          selectedThinking={selectedThinking}
           onSelectedModelIdChange={onSelectedModelIdChange}
+          onSelectedThinkingChange={onSelectedThinkingChange}
           onOpenAddModels={onOpenAddModels}
           onSnapshotChange={onSnapshotChange}
           onUseAnotherProvider={() => onAdvancedProviderFlowOpenChange(true)}
@@ -503,7 +510,9 @@ function ConnectAiStage({
   onRunModelSetDefault,
   snapshot,
   selectedModelId,
+  selectedThinking,
   onSelectedModelIdChange,
+  onSelectedThinkingChange,
   onOpenAddModels,
   onSnapshotChange,
   onUseAnotherProvider
@@ -517,11 +526,13 @@ function ConnectAiStage({
   statusMessage: string | null;
   onConnectChatGPT: (force?: boolean) => void;
   onSubmitChatGptRedirect: (redirectUrl: string) => void;
-  onContinueFromAi: () => void;
-  onRunModelSetDefault: (modelId?: string) => void;
+  onContinueFromAi: (thinking?: OpenClawThinkingLevel) => void;
+  onRunModelSetDefault: (modelId?: string, thinking?: OpenClawThinkingLevel) => void;
   snapshot: MissionControlSnapshot;
   selectedModelId: string;
+  selectedThinking: OpenClawThinkingLevel;
   onSelectedModelIdChange: (value: string) => void;
+  onSelectedThinkingChange: (value: OpenClawThinkingLevel) => void;
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
   onUseAnotherProvider: () => void;
@@ -542,11 +553,11 @@ function ConnectAiStage({
     }
 
     if (isReady && targetModelId === (defaultModelId?.trim() ?? "")) {
-      onContinueFromAi();
+      onContinueFromAi(selectedThinking);
       return;
     }
 
-    onRunModelSetDefault(targetModelId);
+    onRunModelSetDefault(targetModelId, selectedThinking);
   };
 
   return (
@@ -654,7 +665,9 @@ function ConnectAiStage({
             snapshot={snapshot}
             surfaceTheme={surfaceTheme}
             selectedModelId={selectedModelId}
+            selectedThinking={selectedThinking}
             onSelectedModelIdChange={onSelectedModelIdChange}
+            onSelectedThinkingChange={onSelectedThinkingChange}
             onOpenAddModels={onOpenAddModels}
             onSnapshotChange={onSnapshotChange}
             autoDiscover

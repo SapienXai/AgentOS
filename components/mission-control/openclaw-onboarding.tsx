@@ -20,6 +20,7 @@ import type {
   MissionControlSnapshot,
   OpenClawModelOnboardingPhase,
   OpenClawOnboardingPhase,
+  OpenClawThinkingLevel,
   OperationProgressSnapshot
 } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
@@ -74,8 +75,10 @@ export function OpenClawOnboarding({
   modelRun,
   modelSwitchFeedback,
   selectedModelId,
+  selectedThinking,
   discoveredModels,
   onSelectedModelIdChange,
+  onSelectedThinkingChange,
   onClearModelSwitchFeedback,
   onSnapshotChange,
   onRunSystemSetup,
@@ -118,12 +121,14 @@ export function OpenClawOnboarding({
   modelRun: StageRunDetails;
   modelSwitchFeedback: ModelSwitchFeedback;
   selectedModelId: string;
+  selectedThinking: OpenClawThinkingLevel;
   discoveredModels: DiscoveredModelCandidate[];
   onSelectedModelIdChange: (value: string) => void;
+  onSelectedThinkingChange: (value: OpenClawThinkingLevel) => void;
   onClearModelSwitchFeedback: () => void;
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
   onRunSystemSetup: () => void;
-  onRunModelSetDefault: (modelId?: string) => void;
+  onRunModelSetDefault: (modelId?: string, thinking?: OpenClawThinkingLevel) => void;
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
   onOpenGatewayAuthSettings: () => void;
   onCreateWorkspace: () => void;
@@ -135,7 +140,7 @@ export function OpenClawOnboarding({
   onConnectChatGPT: (force?: boolean) => void;
   chatGptBrowserAuth: ChatGptBrowserAuthSnapshot | null;
   onSubmitChatGptRedirect: (redirectUrl: string) => void;
-  onContinueFromAi: () => void;
+  onContinueFromAi: (thinking?: OpenClawThinkingLevel) => void;
   launchpadCreateProgress: OperationProgressSnapshot | null;
   launchpadCreateRunState: "idle" | "running" | "success" | "error";
 }) {
@@ -155,14 +160,15 @@ export function OpenClawOnboarding({
     chatGptConnectionReady: isChatGptConnectionReady(snapshot),
     explicitSetupComplete: showReadyState || modelSwitchFeedback.phase === "success"
   });
-  const canEnterAgentOS = hasWorkspaceSetup && onboardingSystemReady && onboardingAiReady;
-  const showLaunchpad = onboardingAiReady && (
+  const modelSetupConfirmed = showReadyState || modelSwitchFeedback.phase === "success";
+  const canEnterAgentOS = hasWorkspaceSetup && onboardingSystemReady && modelSetupConfirmed;
+  const showLaunchpad = modelSetupConfirmed && (
     showReadyState ||
     launchpadCreateRunState === "running" ||
     launchpadCreateRunState === "success" ||
     launchpadCreateRunState === "error"
   );
-  const canShowFinish = onboardingSystemReady && onboardingAiReady && (hasWorkspaceSetup || showReadyState);
+  const canShowFinish = onboardingSystemReady && modelSetupConfirmed && (hasWorkspaceSetup || showReadyState);
   const isLaunchpadBuilding = launchpadCreateRunState === "running";
   const workspaceCount = snapshot.workspaces.length;
   const agentCount = snapshot.agents.length;
@@ -325,7 +331,7 @@ export function OpenClawOnboarding({
             <SetupStepper
               activeStep={activeStepNumber}
               systemReady={onboardingSystemReady}
-              modelReady={onboardingAiReady}
+              modelReady={modelSetupConfirmed}
               finishReady={canShowFinish}
               surfaceTheme={surfaceTheme}
               onSelectStage={(nextStage) => {
@@ -377,9 +383,11 @@ export function OpenClawOnboarding({
                 run={stageRun}
                 modelPhase={modelPhase}
                 selectedModelId={selectedModelId}
+                selectedThinking={selectedThinking}
                 modelSwitchFeedback={modelSwitchFeedback}
                 localModelStatus={localModelStatus}
                 onSelectedModelIdChange={onSelectedModelIdChange}
+                onSelectedThinkingChange={onSelectedThinkingChange}
                 onClearModelSwitchFeedback={onClearModelSwitchFeedback}
                 onOpenAddModels={onOpenAddModels}
                 onSnapshotChange={onSnapshotChange}
