@@ -61,6 +61,19 @@ test("onboarding overlay is portaled and does not create outer page scroll", () 
   assert.match(source, /max-h-\[calc\(100dvh-32px\)\]/);
 });
 
+test("system onboarding keeps setup rows compact and the log collapsed", () => {
+  const source = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding.tsx"), "utf8");
+
+  assert.match(source, /mb-6 mt-6 grid max-w-\[640px\]/);
+  assert.match(source, /h-8 w-8 shrink-0 items-center justify-center rounded-full border text-\[13px\]/);
+  assert.match(source, /text-\[16px\] font-semibold leading-5 tracking-\[-0\.01em\]/);
+  assert.doesNotMatch(source, /<p className="mt-0\.5 text-\[12px\] leading-4 text-muted-foreground">\{step\.description\}/);
+  assert.match(source, /const \[detailsOpen, setDetailsOpen\] = useState\(false\)/);
+  assert.match(source, /aria-controls="onboarding-setup-log-details"/);
+  assert.match(source, /OpenClaw setup target:/);
+  assert.doesNotMatch(source, /What happens next\?/);
+});
+
 test("first-run write actions return actionable readiness failures before mutation", () => {
   const snapshot = createErrorSnapshot("OpenClaw CLI is not installed on this machine.", {
     installed: false,

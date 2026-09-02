@@ -734,21 +734,21 @@ function SetupStepper({
   onSelectStage: (stage: OnboardingVisualStage) => void;
 }) {
   const steps = [
-    { order: 1, id: "system", label: "System Setup", description: "Configure core services", complete: systemReady },
-    { order: 2, id: "models", label: "Connect AI", description: "Connect your AI", complete: modelReady },
-    { order: 3, id: "finish", label: "Finish", description: "You're all set", complete: finishReady }
+    { order: 1, id: "system", label: "System Setup", complete: systemReady },
+    { order: 2, id: "models", label: "Connect AI", complete: modelReady },
+    { order: 3, id: "finish", label: "Finish", complete: finishReady }
   ] as const;
 
   return (
-    <div className="mx-auto mt-4 grid max-w-[760px] grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-1.5 sm:mt-6 sm:gap-3 max-md:w-full max-md:grid-cols-[1fr_auto_1fr_auto_1fr]">
+    <div className="mx-auto mb-6 mt-6 grid max-w-[640px] grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-1 sm:mb-8 sm:mt-8 sm:gap-2 max-md:w-full max-md:grid-cols-[1fr_auto_1fr_auto_1fr]">
       {steps.map((step, index) => {
         const isActive = activeStep === step.order;
         const isComplete = step.complete;
         const content = (
-          <div className="flex items-center gap-3 text-left max-md:flex-col max-md:items-center max-md:gap-1 max-md:text-center">
+          <div className="flex items-center gap-2 text-left max-md:flex-col max-md:items-center max-md:gap-0.5 max-md:text-center">
             <span
               className={cn(
-                "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-[14px] font-semibold transition-colors max-md:h-7 max-md:w-7 max-md:text-[11px]",
+                "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[13px] font-semibold transition-colors max-md:h-6 max-md:w-6 max-md:text-[10px]",
                 isActive
                   ? "border-primary bg-primary text-primary-foreground shadow-[0_10px_26px_hsl(var(--primary)/0.22)]"
                   : isComplete
@@ -758,13 +758,12 @@ function SetupStepper({
                     : "border-border bg-card text-muted-foreground"
               )}
             >
-              {isComplete && !isActive ? <Check className="h-4 w-4 max-md:h-3 max-md:w-3" /> : step.order}
+              {isComplete && !isActive ? <Check className="h-3.5 w-3.5 max-md:h-2.5 max-md:w-2.5" /> : step.order}
             </span>
             <span className="min-w-0">
-              <span className={cn("block text-[13px] font-semibold max-md:text-[10px] max-md:leading-3", isActive ? "text-primary" : "text-foreground")}>
+              <span className={cn("block text-[13px] font-semibold leading-4 max-md:text-[11px] max-md:leading-3", isActive ? "text-primary" : "text-foreground")}>
                 {step.label}
               </span>
-              <span className="mt-0.5 hidden text-[12px] leading-4 text-muted-foreground sm:block">{step.description}</span>
             </span>
           </div>
         );
@@ -786,7 +785,7 @@ function SetupStepper({
               </button>
             )}
             {index < steps.length - 1 ? (
-              <div className="h-px w-[112px] bg-border max-md:w-full max-md:min-w-3">
+              <div className="h-px w-[88px] bg-border max-md:w-full max-md:min-w-3">
                 <motion.div
                   className="h-full bg-primary max-md:w-full"
                   initial={false}
@@ -907,23 +906,10 @@ function SetupRunDetailsPanel({
   phaseLabel: string;
   run: StageRunDetails;
 }) {
-  const hasDetails =
-    run.log.trim().length > 0 ||
-    Boolean(run.manualCommand) ||
-    Boolean(run.statusMessage) ||
-    Boolean(run.resultMessage) ||
-    run.runState === "running" ||
-    run.runState === "error";
-  const [detailsOpen, setDetailsOpen] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [isOpeningTerminal, setIsOpeningTerminal] = useState(false);
   const canOpenTerminal = isOpenClawTerminalCommand(run.manualCommand);
   const displayStatus = run.statusMessage || run.resultMessage || statusCopy;
-
-  useEffect(() => {
-    if (hasDetails) {
-      setDetailsOpen(true);
-    }
-  }, [hasDetails]);
 
   const copyCommand = async () => {
     if (!run.manualCommand) {
@@ -989,32 +975,30 @@ function SetupRunDetailsPanel({
       <button
         type="button"
         onClick={() => setDetailsOpen((value) => !value)}
+        aria-expanded={detailsOpen}
+        aria-controls="onboarding-setup-log-details"
         className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
       >
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[12px] font-semibold">Setup log</p>
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em]",
-                run.runState === "running"
-                  ? "bg-primary/10 text-primary"
-                  : run.runState === "error"
-                    ? "bg-destructive/10 text-destructive"
-                    : run.runState === "success"
-                      ? surfaceTheme === "light"
-                        ? "bg-emerald-50 text-emerald-700"
-                        : "bg-emerald-300/10 text-emerald-200"
-                      : "bg-muted text-muted-foreground"
-              )}
-            >
-              {run.runState === "running" ? <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" /> : null}
-              {phaseLabel}
-            </span>
-          </div>
-          <p className="mt-0.5 truncate text-[11px] leading-4 text-muted-foreground max-sm:whitespace-normal">
-            {displayStatus}
-          </p>
+        <div className="flex min-w-0 items-center gap-2">
+          <p className="shrink-0 text-[12px] font-semibold">Setup log</p>
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em]",
+              run.runState === "running"
+                ? "bg-primary/10 text-primary"
+                : run.runState === "error"
+                  ? "bg-destructive/10 text-destructive"
+                  : run.runState === "success"
+                    ? surfaceTheme === "light"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-emerald-300/10 text-emerald-200"
+                    : "bg-muted text-muted-foreground"
+            )}
+          >
+            {run.runState === "running" ? <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" /> : null}
+            {phaseLabel}
+          </span>
+          <p className="min-w-0 truncate text-[11px] leading-4 text-muted-foreground">{displayStatus}</p>
         </div>
         <ChevronDown
           className={cn(
@@ -1025,7 +1009,10 @@ function SetupRunDetailsPanel({
       </button>
 
       {detailsOpen ? (
-        <div className={cn("border-t px-3 py-2.5", surfaceTheme === "light" ? "border-border/70" : "border-white/8")}>
+        <div
+          id="onboarding-setup-log-details"
+          className={cn("border-t px-3 py-2.5", surfaceTheme === "light" ? "border-border/70" : "border-white/8")}
+        >
           <pre
             className={cn(
               "max-h-[92px] min-h-[46px] overflow-auto whitespace-pre-wrap break-words rounded-[8px] border px-2.5 py-1.5 font-mono text-[9px] leading-3",
@@ -1123,7 +1110,7 @@ function SetupTaskRow({
     <motion.div
       layout
       className={cn(
-        "relative flex min-h-[50px] items-center gap-3 overflow-hidden rounded-[12px] border px-3 py-2 max-sm:grid max-sm:grid-cols-[30px_minmax(0,1fr)] max-sm:items-start max-sm:gap-x-2.5 max-sm:gap-y-1.5",
+        "relative flex min-h-[58px] items-center gap-3 overflow-hidden rounded-[12px] border px-4 py-3",
         surfaceTheme === "light"
           ? "border-slate-200 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
           : "border-slate-700/80 bg-slate-950 shadow-[0_10px_24px_rgba(0,0,0,0.2)]",
@@ -1140,7 +1127,7 @@ function SetupTaskRow({
       ) : null}
       <span
         className={cn(
-          "relative z-[1] inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold max-sm:row-span-2",
+          "relative z-[1] inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[13px] font-semibold",
           step.state === "complete"
             ? surfaceTheme === "light"
               ? "border-emerald-300 bg-emerald-50 text-emerald-700"
@@ -1161,12 +1148,11 @@ function SetupTaskRow({
         )}
       </span>
       <div className="relative z-[1] min-w-0 flex-1">
-        <p className="text-[14px] font-semibold tracking-[-0.01em]">{step.label}</p>
-        <p className="mt-0.5 text-[12px] leading-4 text-muted-foreground">{step.description}</p>
+        <p className="truncate text-[16px] font-semibold leading-5 tracking-[-0.01em]">{step.label}</p>
       </div>
       <span
         className={cn(
-          "relative z-[1] inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] max-sm:col-start-2 max-sm:w-fit",
+          "relative z-[1] inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em]",
           isRunning
             ? "bg-primary/10 text-primary"
             : step.state === "complete"
@@ -1205,25 +1191,19 @@ function SetupStatusPanel({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
   return (
     <div
       className={cn(
-        "mt-3 rounded-[12px] border px-3 py-2.5 shadow-[0_10px_24px_rgba(15,23,42,0.06)]",
+        "mt-3 rounded-[12px] border px-3 py-2 shadow-[0_10px_24px_rgba(15,23,42,0.06)]",
         surfaceTheme === "light"
           ? "border-primary/20 bg-[#f8f5ff]"
           : "border-primary/25 bg-slate-900 shadow-[0_12px_28px_rgba(0,0,0,0.24)]"
       )}
     >
-      <div className="flex items-start gap-3">
-        <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
           <Info className="h-3.5 w-3.5" />
         </span>
-        <div>
-          <p className="text-[12px] font-semibold">What happens next?</p>
-          <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
-            We&apos;ll install the CLI if needed, start the gateway, and verify connectivity.
-          </p>
-          <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
-            Recommended setup target: <span className="font-semibold text-primary">v{OPENCLAW_RECOMMENDED_VERSION}</span>
-          </p>
-        </div>
+        <p className="min-w-0 truncate text-[11px] font-medium text-muted-foreground">
+          OpenClaw setup target: <span className="font-semibold text-primary">v{OPENCLAW_RECOMMENDED_VERSION}</span>
+        </p>
       </div>
     </div>
   );
