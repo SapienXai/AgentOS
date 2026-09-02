@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -83,7 +84,11 @@ import {
   resolveInitialOnboardingProviderId,
   resolveOnboardingModelProviderId,
   resolvePrimaryAction,
-  resolveSelectedOnboardingProviderId
+  resolveSelectedOnboardingProviderId,
+  buildWizardSteps,
+  resolveChatGptOnboardingState,
+  resolveChatGptProgressCopy,
+  resolveChatGptRecoveryMessage
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import { isNewerSnapshot, preserveConfirmedStatus } from "@/hooks/use-mission-control-data";
 import {
@@ -1379,6 +1384,71 @@ test("model onboarding requires an explicit selection before verification", () =
     successTitle: "Default model saved.",
     errorTitle: "Default model save failed."
   });
+});
+
+test("ChatGPT-first onboarding keeps the normal model step focused and advanced flow available", () => {
+  const steps = buildWizardSteps("models", true, false);
+  const onboardingSource = readFileSync(
+    path.join(process.cwd(), "components/mission-control/openclaw-onboarding.stages.tsx"),
+    "utf8"
+  );
+  const shellSource = readFileSync(
+    path.join(process.cwd(), "components/mission-control/mission-control-shell.tsx"),
+    "utf8"
+  );
+
+  assert.equal(steps[1]?.label, "Connect AI");
+  assert.equal(steps[1]?.description, "Connect your AI");
+  assert.match(onboardingSource, /Continue with ChatGPT/);
+  assert.match(onboardingSource, /Use another provider/);
+  assert.match(onboardingSource, /advancedProviderFlowOpen/);
+  assert.match(onboardingSource, /OpenClawOnboardingProviderFlow/);
+  assert.match(shellSource, /getModelProviderAdapter\("openai"\)\.connect/);
+  assert.match(shellSource, /authMethod: "chatgpt"/);
+  assert.doesNotMatch(onboardingSource, /gpt-\d/);
+});
+
+test("ChatGPT onboarding state and recovery copy stay honest", () => {
+  assert.equal(
+    resolveChatGptOnboardingState({ runState: "idle", phase: null, modelReady: false }),
+    "idle"
+  );
+  assert.equal(
+    resolveChatGptOnboardingState({ runState: "running", phase: "authenticating", modelReady: false }),
+    "connecting"
+  );
+  assert.equal(
+    resolveChatGptOnboardingState({ runState: "running", phase: "verifying", modelReady: false }),
+    "verifying"
+  );
+  assert.equal(
+    resolveChatGptOnboardingState({ runState: "success", phase: "ready", modelReady: false }),
+    "ready"
+  );
+  assert.equal(
+    resolveChatGptOnboardingState({ runState: "error", phase: "authenticating", modelReady: false }),
+    "error"
+  );
+  assert.equal(resolveChatGptProgressCopy("authenticating"), "Waiting for ChatGPT sign-in to finish.");
+  assert.equal(resolveChatGptProgressCopy("verifying"), "Verifying the account and a usable AI route in OpenClaw.");
+  assert.match(resolveChatGptRecoveryMessage("ChatGPT sign-in timed out."), /took too long/i);
+  assert.match(resolveChatGptRecoveryMessage("local AgentOS on linux"), /local AgentOS machine/i);
+});
+
+test("canonical ChatGPT auth uses OpenClaw's openai provider while legacy Codex remains compatible", () => {
+  const routeSource = readFileSync(path.join(process.cwd(), "app/api/models/providers/route.ts"), "utf8");
+  const adapterSource = readFileSync(path.join(process.cwd(), "lib/openclaw/model-provider-adapters.ts"), "utf8");
+  const authServiceSource = readFileSync(
+    path.join(process.cwd(), "lib/openclaw/application/chatgpt-provider-auth-service.ts"),
+    "utf8"
+  );
+
+  assert.match(routeSource, /input\.provider === "openai" && input\.authMethod === "chatgpt"/);
+  assert.match(routeSource, /const runtimeProvider = "openai-codex"/);
+  assert.match(adapterSource, /authMethod: input\?\.authMethod/);
+  assert.match(authServiceSource, /"--provider",\s*"openai"/);
+  assert.doesNotMatch(authServiceSource, /"--method",\s*"oauth"/);
+  assert.match(authServiceSource, /"--set-default"/);
 });
 
 test("remote provider connection depends on auth rather than configured models", () => {

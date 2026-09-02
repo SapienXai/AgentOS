@@ -15,7 +15,7 @@ import type {
 type UpdateRunState = "idle" | "running" | "success" | "error";
 type UpdateMode = "recommended" | "candidate" | "advanced";
 type SurfaceTheme = "dark" | "light";
-type ModelOnboardingIntent = "auto" | "refresh" | "discover" | "set-default" | "login-provider";
+type ModelOnboardingIntent = "auto" | "refresh" | "discover" | "set-default" | "login-provider" | "verify";
 const workspaceSelectionStorageKeyPrefix = "mission-control-active-workspace-id";
 const workspaceSelectionStorageAllValue = "__all__";
 
@@ -558,6 +558,10 @@ export function resolveModelOnboardingStartPhase(intent: ModelOnboardingIntent):
     return "configuring-default";
   }
 
+  if (intent === "verify") {
+    return "verifying";
+  }
+
   return "detecting";
 }
 
@@ -575,6 +579,14 @@ export function resolveModelOnboardingActionCopy(intent: ModelOnboardingIntent) 
       statusMessage: "Checking auth...",
       successTitle: "Provider connected.",
       errorTitle: "Provider auth needs attention."
+    };
+  }
+
+  if (intent === "verify") {
+    return {
+      statusMessage: "Verifying ChatGPT...",
+      successTitle: "ChatGPT connected.",
+      errorTitle: "ChatGPT connection needs attention."
     };
   }
 

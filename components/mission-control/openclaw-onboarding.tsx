@@ -84,6 +84,8 @@ export function OpenClawOnboarding({
   onContinueToModels,
   onBackToSystem,
   onSelectStage,
+  onConnectChatGPT,
+  onContinueFromAi,
   launchpadCreateProgress,
   launchpadCreateRunState
 }: {
@@ -123,6 +125,8 @@ export function OpenClawOnboarding({
   onContinueToModels: () => void;
   onBackToSystem: () => void;
   onSelectStage: (stage: WizardStage) => void;
+  onConnectChatGPT: (force?: boolean) => void;
+  onContinueFromAi: () => void;
   launchpadCreateProgress: OperationProgressSnapshot | null;
   launchpadCreateRunState: "idle" | "running" | "success" | "error";
 }) {
@@ -141,7 +145,7 @@ export function OpenClawOnboarding({
   const canEnterAgentOS = hasWorkspaceSetup && onboardingSystemReady && onboardingModelReady;
   const showLaunchpad = onboardingModelReady && (
     showReadyState ||
-    !hasWorkspaceSetup ||
+    hasWorkspaceSetup ||
     launchpadCreateRunState === "running" ||
     launchpadCreateRunState === "success" ||
     launchpadCreateRunState === "error"
@@ -164,6 +168,7 @@ export function OpenClawOnboarding({
   );
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const [selectedVisualStage, setSelectedVisualStage] = useState<OnboardingVisualStage | null>(null);
+  const [advancedProviderFlowOpen, setAdvancedProviderFlowOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const systemPhaseForSteps = onboardingSystemReady ? "ready" : systemPhase;
   const systemSteps = buildSystemSteps(snapshot, systemPhaseForSteps, {
@@ -363,6 +368,10 @@ export function OpenClawOnboarding({
                 onClearModelSwitchFeedback={onClearModelSwitchFeedback}
                 onOpenAddModels={onOpenAddModels}
                 onSnapshotChange={onSnapshotChange}
+                advancedProviderFlowOpen={advancedProviderFlowOpen}
+                onAdvancedProviderFlowOpenChange={setAdvancedProviderFlowOpen}
+                onConnectChatGPT={onConnectChatGPT}
+                onContinueFromAi={onContinueFromAi}
               />
             )}
           </div>
@@ -408,7 +417,7 @@ export function OpenClawOnboarding({
                         ? "Needs attention"
                         : "Ready"}
                 </span>
-              ) : visualStage === "models" ? (
+              ) : visualStage === "models" && advancedProviderFlowOpen ? (
                 <Button
                   type="button"
                   variant="ghost"
@@ -472,7 +481,7 @@ export function OpenClawOnboarding({
                 </>
               ) : (
                 <>
-                  {visualStage === "models" && !onboardingModelReady ? (
+                  {visualStage === "models" && advancedProviderFlowOpen && !onboardingModelReady ? (
                     <Button
                       type="button"
                       variant="secondary"
@@ -498,7 +507,7 @@ export function OpenClawOnboarding({
                     </Button>
                   ) : null}
 
-                  <Button
+                  {visualStage === "models" && !advancedProviderFlowOpen ? null : <Button
                     type="button"
                     onClick={() => {
                       if (visualStage === "system") {
@@ -552,7 +561,7 @@ export function OpenClawOnboarding({
                         <ArrowRight className="ml-1.5 h-3 w-3" />
                       </>
                     )}
-                  </Button>
+                  </Button>}
                 </>
               )}
             </div>
@@ -713,7 +722,7 @@ function SetupStepper({
 }) {
   const steps = [
     { order: 1, id: "system", label: "System Setup", description: "Configure core services", complete: systemReady },
-    { order: 2, id: "models", label: "Model Setup", description: "Choose model & auth", complete: modelReady },
+    { order: 2, id: "models", label: "Connect AI", description: "Connect your AI", complete: modelReady },
     { order: 3, id: "finish", label: "Finish", description: "You're all set", complete: finishReady }
   ] as const;
 

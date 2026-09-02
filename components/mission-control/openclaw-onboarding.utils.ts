@@ -27,6 +27,77 @@ export type StageRunDetails = {
   docsUrl: string | null;
 };
 
+export type ChatGptOnboardingState = "idle" | "connecting" | "verifying" | "ready" | "error";
+
+export function resolveChatGptOnboardingState(params: {
+  runState: RunState;
+  phase: OpenClawModelOnboardingPhase | null;
+  modelReady: boolean;
+}) : ChatGptOnboardingState {
+  if (params.runState === "error") {
+    return "error";
+  }
+
+  if (params.runState === "running") {
+    return params.phase === "authenticating" ? "connecting" : "verifying";
+  }
+
+  if (params.runState === "success" || params.modelReady) {
+    return "ready";
+  }
+
+  return "idle";
+}
+
+export function resolveChatGptProgressCopy(
+  phase: OpenClawModelOnboardingPhase | null,
+  statusMessage?: string | null
+) {
+  if (phase === "authenticating") {
+    return "Waiting for ChatGPT sign-in to finish.";
+  }
+
+  if (phase === "verifying") {
+    return "Verifying the account and a usable AI route in OpenClaw.";
+  }
+
+  if (phase === "refreshing" || phase === "detecting" || phase === "discovering") {
+    return "Preparing your AI connection.";
+  }
+
+  return statusMessage?.trim() || "Connecting your AI through OpenClaw.";
+}
+
+export function resolveChatGptRecoveryMessage(message?: string | null) {
+  const normalized = message?.trim().toLowerCase() || "";
+
+  if (/macos|local agentos|oauth.*gateway|not available in this environment/.test(normalized)) {
+    return "ChatGPT sign-in is available from the local AgentOS machine. Use another provider here, or sign in locally first.";
+  }
+
+  if (/expired|reconnect|stale|account.*again|sign-in.*again|reauthor/.test(normalized)) {
+    return "ChatGPT needs to be connected again. Reconnect to continue.";
+  }
+
+  if (/cancel|interrupted/.test(normalized)) {
+    return "ChatGPT sign-in was cancelled before OpenClaw could save the account.";
+  }
+
+  if (/timed out|timeout/.test(normalized)) {
+    return "ChatGPT sign-in took too long. Close any stale sign-in tab and try again.";
+  }
+
+  return "We couldn't finish connecting ChatGPT. Try again or use another provider.";
+}
+
+export function isChatGptConnectionReady(snapshot: MissionControlSnapshot) {
+  const chatGptProviderConnected = snapshot.diagnostics.modelReadiness.authProviders.some(
+    (provider) => provider.connected && (provider.provider === "openai-codex" || provider.provider === "codex")
+  );
+
+  return chatGptProviderConnected && isOpenClawOnboardingModelReady(snapshot);
+}
+
 export function buildWizardSteps(stage: WizardStage, systemReady: boolean, modelReady: boolean) {
   return [
     {
@@ -39,8 +110,8 @@ export function buildWizardSteps(stage: WizardStage, systemReady: boolean, model
     {
       id: "models",
       order: 2,
-      label: "Model setup",
-      description: "Default model, auth",
+      label: "Connect AI",
+      description: "Connect your AI",
       state: resolveStepState(modelReady, stage === "models" && !modelReady)
     }
   ] as Array<{ id: string; order: number; label: string; description: string; state: StepState }>;
@@ -340,7 +411,7 @@ export function resolveStageDescription(
     return `Selected model: ${selectedModelLabel}.`;
   }
 
-  return "Choose a provider, connect it, and then pick a model.";
+  return "Connect your AI to power your agents.";
 }
 
 export function resolveStepState(complete: boolean, current: boolean): StepState {

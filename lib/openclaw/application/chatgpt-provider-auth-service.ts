@@ -95,8 +95,6 @@ async function runOpenClawChatGptInteractiveLogin(input: {
     "login",
     "--provider",
     "openai",
-    "--method",
-    "oauth",
     ...(input.force ? ["--force"] : []),
     "--set-default"
   ];

@@ -49,6 +49,9 @@ const modelOnboardingSchema = z.discriminatedUnion("intent", [
     intent: z.literal("refresh")
   }),
   z.object({
+    intent: z.literal("verify")
+  }),
+  z.object({
     intent: z.literal("discover")
   }),
   z.object({
@@ -246,6 +249,8 @@ export async function POST(request: Request) {
         phase:
           input.intent === "refresh"
             ? "refreshing"
+            : input.intent === "verify"
+              ? "verifying"
             : input.intent === "discover"
               ? "discovering"
               : "detecting",
@@ -328,6 +333,11 @@ export async function POST(request: Request) {
           }),
           docsUrl
         });
+        return;
+      }
+
+      if (input.intent === "verify") {
+        await verifyReady("ChatGPT connected, but no usable default model was verified yet.");
         return;
       }
 
@@ -882,6 +892,10 @@ function resolveInitialStatusMessage(intent: ModelOnboardingInput["intent"]) {
 
   if (intent === "discover") {
     return "Scanning remote model routes...";
+  }
+
+  if (intent === "verify") {
+    return "Verifying model readiness...";
   }
 
   return "Checking available models and provider auth...";

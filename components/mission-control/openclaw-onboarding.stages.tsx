@@ -15,6 +15,10 @@ import {
   stepContainerClassName,
   stepIconClassName,
   resolveSelectedModelLabel,
+  isChatGptConnectionReady,
+  resolveChatGptOnboardingState,
+  resolveChatGptProgressCopy,
+  resolveChatGptRecoveryMessage,
   type StageRunDetails,
   type SurfaceTheme,
   type StepState
@@ -267,7 +271,11 @@ export function ModelStage({
   onSelectedModelIdChange,
   onClearModelSwitchFeedback,
   onOpenAddModels,
-  onSnapshotChange
+  onSnapshotChange,
+  advancedProviderFlowOpen,
+  onAdvancedProviderFlowOpenChange,
+  onConnectChatGPT,
+  onContinueFromAi
 }: {
   snapshot: MissionControlSnapshot;
   surfaceTheme: SurfaceTheme;
@@ -283,8 +291,13 @@ export function ModelStage({
   onClearModelSwitchFeedback: () => void;
   onOpenAddModels: (provider?: AddModelsProviderId | null) => void;
   onSnapshotChange?: (snapshot: MissionControlSnapshot) => void;
+  advancedProviderFlowOpen: boolean;
+  onAdvancedProviderFlowOpenChange: (open: boolean) => void;
+  onConnectChatGPT: (force?: boolean) => void;
+  onContinueFromAi: () => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(true);
+  const [chatGptAttempted, setChatGptAttempted] = useState(false);
   const effectiveSnapshot = useMemo(() => {
     if (!localModelStatus?.checked || localModelStatus.modelIds.length === 0) {
       return snapshot;
@@ -342,73 +355,216 @@ export function ModelStage({
     <>
       <PikoLoader
         open={run.runState === "running" || modelSwitchFeedback.phase === "saving"}
-        title={modelSwitchFeedback.phase === "saving" ? "Switching default model" : "Preparing model setup"}
-        description={statusCopy || "Connecting the model route and verifying it in OpenClaw."}
+        title={modelSwitchFeedback.phase === "saving"
+          ? "Switching default model"
+          : advancedProviderFlowOpen
+            ? "Preparing model setup"
+            : "Connecting your AI"}
+        description={modelSwitchFeedback.phase === "saving"
+          ? statusCopy || "Saving the selected model in OpenClaw."
+          : advancedProviderFlowOpen
+            ? statusCopy || "Connecting the model route and verifying it in OpenClaw."
+            : resolveChatGptProgressCopy(modelPhase === "verifying" ? "verifying" : "authenticating", statusCopy)}
       />
-      <div className="mt-3">
-        <p className={cn("text-[11px] font-medium", surfaceTheme === "light" ? "text-[#33251c]" : "text-white")}>
-          Step 2: Model setup
-        </p>
-      </div>
-
-      {buildScene ? (
-        <WorkspaceBuildScene
+      {!advancedProviderFlowOpen && modelSwitchFeedback.phase === "idle" && !buildScene ? (
+        <ConnectAiStage
           surfaceTheme={surfaceTheme}
-          statusCopy={statusCopy}
-          phaseLabel={phaseLabel}
-          buildScene={buildScene}
+          state={resolveChatGptOnboardingState({
+            runState: run.runState,
+            phase: modelPhase,
+            modelReady
+          })}
+          chatGptReady={isChatGptConnectionReady(snapshot)}
+          chatGptAttempted={chatGptAttempted}
+          defaultModelId={defaultModelId}
+          statusMessage={run.statusMessage || run.resultMessage}
+          onConnectChatGPT={(force) => {
+            setChatGptAttempted(true);
+            onConnectChatGPT(force);
+          }}
+          onContinueFromAi={onContinueFromAi}
+          onUseAnotherProvider={() => onAdvancedProviderFlowOpenChange(true)}
         />
-      ) : modelSwitchFeedback.phase !== "idle" ? (
-        <>
-          <ModelSwitchScene
-            surfaceTheme={surfaceTheme}
-            feedback={modelSwitchFeedback}
-            defaultModelLabel={resolveModelDisplayLabel(modelSwitchFeedback.previousModelId, availableModels)}
-            nextModelLabel={resolveModelDisplayLabel(modelSwitchFeedback.nextModelId, availableModels)}
-            onChangeAgain={onClearModelSwitchFeedback}
-          />
-
-          <StageConsole
-            surfaceTheme={surfaceTheme}
-            statusCopy={statusCopy}
-            showDetails={showDetails}
-            phaseLabel={phaseLabel}
-            detailsOpen={detailsOpen}
-            onDetailsOpenChange={setDetailsOpen}
-            run={run}
-          />
-        </>
       ) : (
         <>
-          <ModelDefaultSummary
-            surfaceTheme={surfaceTheme}
-            defaultModelLabel={defaultModelLabel}
-            switchTargetLabel={switchTargetLabel}
-            hasPendingModelSwitch={hasPendingModelSwitch}
-          />
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <p className={cn("text-[11px] font-medium", surfaceTheme === "light" ? "text-[#33251c]" : "text-white")}>
+              Step 2: Advanced model setup
+            </p>
+            {advancedProviderFlowOpen && modelSwitchFeedback.phase === "idle" ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onAdvancedProviderFlowOpenChange(false)}
+                className={cn("h-8 rounded-full px-3 text-[11px]", secondaryActionClassName(surfaceTheme))}
+              >
+                Back to Connect AI
+              </Button>
+            ) : null}
+          </div>
 
-          <OpenClawOnboardingProviderFlow
-            snapshot={effectiveSnapshot}
-            surfaceTheme={surfaceTheme}
-            selectedModelId={selectedModelId}
-            onSelectedModelIdChange={onSelectedModelIdChange}
-            onOpenAddModels={onOpenAddModels}
-            onSnapshotChange={onSnapshotChange}
-            autoDiscover={!modelReady}
-          />
+          {buildScene ? (
+            <WorkspaceBuildScene
+              surfaceTheme={surfaceTheme}
+              statusCopy={statusCopy}
+              phaseLabel={phaseLabel}
+              buildScene={buildScene}
+            />
+          ) : modelSwitchFeedback.phase !== "idle" ? (
+            <>
+              <ModelSwitchScene
+                surfaceTheme={surfaceTheme}
+                feedback={modelSwitchFeedback}
+                defaultModelLabel={resolveModelDisplayLabel(modelSwitchFeedback.previousModelId, availableModels)}
+                nextModelLabel={resolveModelDisplayLabel(modelSwitchFeedback.nextModelId, availableModels)}
+                onChangeAgain={onClearModelSwitchFeedback}
+              />
 
-          <StageConsole
-            surfaceTheme={surfaceTheme}
-            statusCopy={statusCopy}
-            showDetails={showDetails}
-            phaseLabel={phaseLabel}
-            detailsOpen={detailsOpen}
-            onDetailsOpenChange={setDetailsOpen}
-            run={run}
-          />
+              <StageConsole
+                surfaceTheme={surfaceTheme}
+                statusCopy={statusCopy}
+                showDetails={showDetails}
+                phaseLabel={phaseLabel}
+                detailsOpen={detailsOpen}
+                onDetailsOpenChange={setDetailsOpen}
+                run={run}
+              />
+            </>
+          ) : (
+            <>
+              <ModelDefaultSummary
+                surfaceTheme={surfaceTheme}
+                defaultModelLabel={defaultModelLabel}
+                switchTargetLabel={switchTargetLabel}
+                hasPendingModelSwitch={hasPendingModelSwitch}
+              />
+
+              <OpenClawOnboardingProviderFlow
+                snapshot={effectiveSnapshot}
+                surfaceTheme={surfaceTheme}
+                selectedModelId={selectedModelId}
+                onSelectedModelIdChange={onSelectedModelIdChange}
+                onOpenAddModels={onOpenAddModels}
+                onSnapshotChange={onSnapshotChange}
+                autoDiscover={!modelReady}
+              />
+
+              <StageConsole
+                surfaceTheme={surfaceTheme}
+                statusCopy={statusCopy}
+                showDetails={showDetails}
+                phaseLabel={phaseLabel}
+                detailsOpen={detailsOpen}
+                onDetailsOpenChange={setDetailsOpen}
+                run={run}
+              />
+            </>
+          )}
         </>
       )}
     </>
+  );
+}
+
+function ConnectAiStage({
+  surfaceTheme,
+  state,
+  chatGptReady,
+  chatGptAttempted,
+  defaultModelId,
+  statusMessage,
+  onConnectChatGPT,
+  onContinueFromAi,
+  onUseAnotherProvider
+}: {
+  surfaceTheme: SurfaceTheme;
+  state: ReturnType<typeof resolveChatGptOnboardingState>;
+  chatGptReady: boolean;
+  chatGptAttempted: boolean;
+  defaultModelId: string | null;
+  statusMessage: string | null;
+  onConnectChatGPT: (force?: boolean) => void;
+  onContinueFromAi: () => void;
+  onUseAnotherProvider: () => void;
+}) {
+  const isBusy = state === "connecting" || state === "verifying";
+  const isReady = state === "ready";
+  const isError = state === "error";
+  const connectedTitle = chatGptReady || chatGptAttempted ? "ChatGPT connected" : "AI connected";
+  const modelDetail = defaultModelId?.trim() ? `Using ${formatModelLabel(defaultModelId)}` : null;
+
+  return (
+    <div className="mx-auto flex min-h-[320px] max-w-[640px] flex-col items-center justify-center py-8 text-center">
+      <p
+        className={cn(
+          "text-[8px] uppercase tracking-[0.2em]",
+          surfaceTheme === "light" ? "text-[#977b69]" : "text-slate-500"
+        )}
+      >
+        Step 2
+      </p>
+      <h2 className={cn("mt-2 text-[22px] font-medium tracking-[-0.02em]", surfaceTheme === "light" ? "text-[#33251c]" : "text-white")}>
+        {isReady ? connectedTitle : "Connect your AI"}
+      </h2>
+      <p className={cn("mt-2 max-w-[420px] text-[12px] leading-5", surfaceTheme === "light" ? "text-[#705b4d]" : "text-slate-400")}>
+        {isReady ? "Your AI workforce is ready." : "Connect your ChatGPT account to power your agents and start using AgentOS."}
+      </p>
+
+      {isReady ? (
+        <div className={cn("mt-5 w-full max-w-[420px] rounded-[16px] border px-4 py-3 text-left", surfaceTheme === "light" ? "border-emerald-200 bg-emerald-50/70" : "border-emerald-300/20 bg-emerald-300/10")}>
+          <div className="flex items-center gap-2">
+            <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded-full border", surfaceTheme === "light" ? "border-emerald-300 bg-white text-emerald-700" : "border-emerald-300/30 bg-emerald-300/10 text-emerald-200")}>
+              <Check className="h-3.5 w-3.5" />
+            </span>
+            <div className="min-w-0">
+              <p className={cn("text-[12px] font-semibold", surfaceTheme === "light" ? "text-emerald-900" : "text-emerald-100")}>{connectedTitle}</p>
+              {modelDetail ? <p className={cn("mt-0.5 truncate text-[10px]", surfaceTheme === "light" ? "text-emerald-800/75" : "text-emerald-100/70")}>{modelDetail}</p> : null}
+            </div>
+          </div>
+          <Button
+            type="button"
+            onClick={onContinueFromAi}
+            className="mt-4 h-10 w-full rounded-full text-[12px]"
+          >
+            Continue to AgentOS
+            <ArrowRight className="ml-1.5 h-3 w-3" />
+          </Button>
+        </div>
+      ) : (
+        <>
+          {isError ? (
+            <div className={cn("mt-5 w-full max-w-[420px] rounded-[14px] border px-3 py-2.5 text-left", surfaceTheme === "light" ? "border-rose-200 bg-rose-50 text-rose-900" : "border-rose-300/20 bg-rose-300/10 text-rose-100")}>
+              <p className="text-[11px] font-semibold">ChatGPT needs attention</p>
+              <p className="mt-1 text-[11px] leading-4 opacity-80">{resolveChatGptRecoveryMessage(statusMessage)}</p>
+            </div>
+          ) : null}
+          {isBusy ? (
+            <div className={cn("mt-5 flex items-center gap-2 text-[11px]", surfaceTheme === "light" ? "text-[#705b4d]" : "text-slate-300")}>
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+              {resolveChatGptProgressCopy(state === "connecting" ? "authenticating" : "verifying", statusMessage)}
+            </div>
+          ) : null}
+          <Button
+            type="button"
+            onClick={() => onConnectChatGPT(isError)}
+            disabled={isBusy}
+            className="mt-6 h-11 min-w-[230px] rounded-full px-5 text-[13px] shadow-[0_14px_30px_hsl(var(--primary)/0.22)]"
+          >
+            {isError ? "Reconnect ChatGPT" : "Continue with ChatGPT"}
+            <ArrowRight className="ml-1.5 h-3 w-3" />
+          </Button>
+          <button
+            type="button"
+            onClick={onUseAnotherProvider}
+            disabled={isBusy}
+            className={cn("mt-3 rounded-full px-3 py-1.5 text-[11px] underline underline-offset-4 disabled:cursor-not-allowed disabled:opacity-50", surfaceTheme === "light" ? "text-[#765845]" : "text-slate-300")}
+          >
+            Use another provider
+          </button>
+        </>
+      )}
+    </div>
   );
 }
 

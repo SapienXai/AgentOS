@@ -94,7 +94,8 @@ import {
 } from "@/components/mission-control/mission-control-shell.utils";
 import {
   resolveEffectiveWizardStage,
-  resolveInitialOnboardingModelId
+  resolveInitialOnboardingModelId,
+  resolveChatGptRecoveryMessage
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import { compactPath } from "@/lib/openclaw/presenters";
 import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
@@ -134,6 +135,10 @@ import {
   getModelProviderDescriptor,
   normalizeAddModelsProviderId
 } from "@/lib/openclaw/model-provider-registry";
+import {
+  getModelProviderAdapter,
+  ModelProviderActionError
+} from "@/lib/openclaw/model-provider-adapters";
 import { cn } from "@/lib/utils";
 
 const MissionCanvasView = dynamic(
@@ -155,7 +160,7 @@ type ComposeIntent = {
 type UpdateRunState = "idle" | "running" | "success" | "error";
 type OnboardingWizardStage = "system" | "models";
 type GatewayControlAction = "start" | "stop" | "restart" | "doctor";
-type ModelOnboardingIntent = "auto" | "refresh" | "discover" | "set-default" | "login-provider";
+type ModelOnboardingIntent = "auto" | "refresh" | "discover" | "set-default" | "login-provider" | "verify";
 type ModelOnboardingRunOptions = {
   autoOpenTerminal?: boolean;
   forceOpen?: boolean;
@@ -2353,7 +2358,8 @@ export function MissionControlShell({
       | { intent: Extract<ModelOnboardingIntent, "refresh"> }
       | { intent: Extract<ModelOnboardingIntent, "discover"> }
       | { intent: Extract<ModelOnboardingIntent, "set-default">; modelId: string }
-      | { intent: Extract<ModelOnboardingIntent, "login-provider">; provider: string; force?: boolean },
+      | { intent: Extract<ModelOnboardingIntent, "login-provider">; provider: string; force?: boolean }
+      | { intent: Extract<ModelOnboardingIntent, "verify"> },
     options: ModelOnboardingRunOptions = {}
   ) => {
     const actionCopy = resolveModelOnboardingActionCopy(payload.intent);
@@ -2685,6 +2691,50 @@ export function MissionControlShell({
       verifyProvider: providerId,
       ...options
     });
+  };
+
+  const runChatGptOnboarding = async (force = false) => {
+    setIsOnboardingForcedOpen(true);
+    setIsOnboardingDismissed(false);
+    setOnboardingStage("models");
+    setModelOnboardingRunState("running");
+    setModelOnboardingPhase("authenticating");
+    setModelOnboardingStatusMessage("Opening secure ChatGPT sign-in...");
+    setModelOnboardingResultMessage(null);
+    setModelOnboardingManualCommand(null);
+    setModelOnboardingDocsUrl(null);
+    setModelOnboardingLog("");
+    setModelSwitchFeedback(initialModelSwitchFeedback);
+
+    try {
+      const result = await getModelProviderAdapter("openai").connect({
+        authMethod: "chatgpt",
+        force
+      });
+
+      if (result.snapshot) {
+        setSnapshot(result.snapshot);
+        hydrateOnboardingModelSelection(result.snapshot);
+      }
+
+      await runModelOnboarding({ intent: "verify" });
+    } catch (error) {
+      const providerResult = error instanceof ModelProviderActionError ? error.result : null;
+
+      if (providerResult?.snapshot) {
+        setSnapshot(providerResult.snapshot);
+        hydrateOnboardingModelSelection(providerResult.snapshot);
+      }
+
+      const message = resolveChatGptRecoveryMessage(error instanceof Error ? error.message : null);
+      setModelOnboardingRunState("error");
+      setModelOnboardingPhase("authenticating");
+      setModelOnboardingStatusMessage(null);
+      setModelOnboardingResultMessage(message);
+      toast.error("ChatGPT connection needs attention.", {
+        description: message
+      });
+    }
   };
 
   const runModelSetDefault = async (modelId?: string) => {
@@ -3026,6 +3076,15 @@ export function MissionControlShell({
     setSnapshot,
     snapshot
   ]);
+
+  const continueFromAi = useCallback(() => {
+    if (hasWorkspaceSetup) {
+      void enterAgentOS();
+      return;
+    }
+
+    setShowOnboardingReadyState(true);
+  }, [enterAgentOS, hasWorkspaceSetup]);
 
   const controlGateway = async (action: GatewayControlAction) => {
     setGatewayControlAction(action);
@@ -3775,6 +3834,10 @@ export function MissionControlShell({
           onRunModelSetDefault={runModelSetDefault}
           onOpenAddModels={openAddModelsDialog}
           onOpenGatewayAuthSettings={openGatewayAuthSettings}
+          onConnectChatGPT={(force = false) => {
+            void runChatGptOnboarding(force);
+          }}
+          onContinueFromAi={continueFromAi}
           onEnterAgentOS={enterAgentOS}
           onSkipSetup={dismissOnboarding}
           onCreateWorkspace={runLaunchpadWorkspaceCreate}
@@ -4918,6 +4981,10 @@ export function MissionControlShell({
             onRunModelSetDefault={runModelSetDefault}
             onOpenAddModels={openAddModelsDialog}
             onOpenGatewayAuthSettings={openGatewayAuthSettings}
+            onConnectChatGPT={(force = false) => {
+              void runChatGptOnboarding(force);
+            }}
+            onContinueFromAi={continueFromAi}
             onEnterAgentOS={enterAgentOS}
             onSkipSetup={dismissOnboarding}
             onCreateWorkspace={runLaunchpadWorkspaceCreate}

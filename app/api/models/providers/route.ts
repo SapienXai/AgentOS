@@ -114,6 +114,7 @@ const requestSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("connect"),
     provider: explicitProviderIdSchema,
+    authMethod: z.enum(["chatgpt", "api-key"]).optional(),
     providerName: optionalInputString,
     apiKey: optionalInputString,
     endpoint: optionalInputString,
@@ -529,16 +530,26 @@ async function handleProviderAction(
       return discoverProviderModels(input.provider);
     }
 
-    if (input.provider === "openai-codex") {
-      const statusContext = await readProviderConnectionContext(input.provider);
+    const usesChatGptAuth = input.provider === "openai-codex" ||
+      (input.provider === "openai" && input.authMethod === "chatgpt");
 
-      if (statusContext.connection.connected) {
+    if (usesChatGptAuth) {
+      const runtimeProvider = "openai-codex" as const;
+      const statusContext = await readProviderConnectionContext(runtimeProvider);
+
+      if (statusContext.connection.connected && input.force !== true) {
         return buildActionResult({
           ok: true,
           action: input.action,
           provider: input.provider,
-          message: "Codex app-server is already connected. Discover models to refresh the catalog.",
-          connection: statusContext.connection,
+          message: input.provider === "openai"
+            ? "ChatGPT is already connected through OpenClaw."
+            : "Codex app-server is already connected. Discover models to refresh the catalog.",
+          connection: {
+            ...statusContext.connection,
+            provider: input.provider,
+            needsTerminal: false
+          },
           models: [],
           manualCommand: null,
           docsUrl: addModelsDocsUrl
@@ -551,9 +562,9 @@ async function handleProviderAction(
           signal
         });
         clearModelProviderCaches();
-        const refreshedStatus = await readProviderConnectionContext(input.provider);
+        const refreshedStatus = await readProviderConnectionContext(runtimeProvider);
         const models = await readProviderCatalog(
-          input.provider,
+          runtimeProvider,
           refreshedStatus.configuredModelIds
         ).catch(() => []);
         const snapshot = await getMissionControlSnapshot({ force: true }).catch(() => undefined);
@@ -567,12 +578,19 @@ async function handleProviderAction(
             : "OpenClaw finished ChatGPT sign-in but did not report a usable account yet. Try connecting again.",
           connection: {
             ...refreshedStatus.connection,
+            provider: input.provider,
             needsTerminal: false,
             recovery: refreshedStatus.connection.connected
               ? null
               : "Try the in-app ChatGPT sign-in again. AgentOS will reopen OpenClaw's authorization page."
           },
-          models,
+          models: input.provider === "openai"
+            ? models.map((model) => ({
+                ...model,
+                id: normalizeOpenAiCodexModelId(model.id),
+                provider: input.provider
+              }))
+            : models,
           snapshot,
           manualCommand: null,
           docsUrl: addModelsDocsUrl

@@ -1542,6 +1542,8 @@ export type AddModelsProviderAction =
   | "delete-provider-impact"
   | "delete-provider";
 
+export type ModelProviderAuthMethod = "chatgpt" | "api-key";
+
 export interface AddModelsProviderDisconnectImpact {
   providerModelIds: string[];
   affectedAgents: Array<{
@@ -1581,6 +1583,7 @@ export type AddModelsProviderActionRequest =
   | {
       action: "connect";
       provider: AddModelsProviderId;
+      authMethod?: ModelProviderAuthMethod;
       providerName?: string;
       apiKey?: string;
       endpoint?: string;

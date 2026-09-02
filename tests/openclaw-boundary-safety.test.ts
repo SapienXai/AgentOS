@@ -181,7 +181,8 @@ test("model provider API route keeps ChatGPT OAuth behind the application servic
   assert.match(serviceSource, /\["plugins",\s*"install",\s*"--force",\s*"@openclaw\/codex"\]/);
   assert.match(serviceSource, /"models",\s*"auth",\s*"login"/);
   assert.match(serviceSource, /"openai"/);
-  assert.match(serviceSource, /"oauth"/);
+  assert.doesNotMatch(serviceSource, /"--method",\s*"oauth"/);
+  assert.match(serviceSource, /"--set-default"/);
   assert.match(serviceSource, /"\/usr\/bin\/script"/);
   assert.doesNotMatch(routeSource, /models\s+auth\s+login\s+--provider\s+openai-codex\s+--set-default/);
 });

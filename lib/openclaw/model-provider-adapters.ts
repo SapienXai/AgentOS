@@ -7,14 +7,15 @@ import {
 import type {
   AddModelsProviderActionRequest,
   AddModelsProviderActionResult,
-  AddModelsProviderId
+  AddModelsProviderId,
+  ModelProviderAuthMethod
 } from "@/lib/openclaw/types";
 
 export type ModelProviderAdapter = {
   id: AddModelsProviderId;
   descriptor: ModelProviderDescriptor;
   getConnectionStatus: () => Promise<AddModelsProviderActionResult>;
-  connect: (input?: { apiKey?: string; endpoint?: string; providerName?: string; modelId?: string; force?: boolean }) => Promise<AddModelsProviderActionResult>;
+  connect: (input?: { apiKey?: string; endpoint?: string; providerName?: string; modelId?: string; force?: boolean; authMethod?: ModelProviderAuthMethod }) => Promise<AddModelsProviderActionResult>;
   updateProvider: (input: { endpoint?: string | null; api?: string }) => Promise<AddModelsProviderActionResult>;
   replaceCredential: (apiKey: string) => Promise<AddModelsProviderActionResult>;
   switchAccount: () => Promise<AddModelsProviderActionResult>;
@@ -55,8 +56,11 @@ async function runProviderAction(
       },
       body: JSON.stringify(request),
       signal: AbortSignal.timeout(
-        request.provider === "openai-codex" &&
-        (request.action === "connect" || request.action === "switch-account")
+        ((request.provider === "openai-codex" &&
+          (request.action === "connect" || request.action === "switch-account")) ||
+          (request.provider === "openai" &&
+            request.action === "connect" &&
+            request.authMethod === "chatgpt"))
           ? CHATGPT_PROVIDER_REQUEST_TIMEOUT_MS
           : MODEL_PROVIDER_REQUEST_TIMEOUT_MS
       )
@@ -100,6 +104,7 @@ function createModelProviderAdapter(providerId: AddModelsProviderId): ModelProvi
       runProviderAction({
         action: "connect",
         provider: providerId,
+        authMethod: input?.authMethod,
         providerName: input?.providerName?.trim() ? input.providerName.trim() : undefined,
         apiKey: input?.apiKey?.trim() ? input.apiKey.trim() : undefined,
         endpoint: input?.endpoint?.trim() ? input.endpoint.trim() : undefined,
