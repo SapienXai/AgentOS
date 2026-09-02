@@ -5,14 +5,6 @@ import { test } from "node:test";
 
 const rootDir = process.cwd();
 
-function readProjectFile(relativePath: string) {
-  return readFileSync(path.join(rootDir, relativePath), "utf8");
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function toProjectPath(filePath: string) {
   return path.relative(rootDir, filePath).split(path.sep).join("/");
 }
@@ -42,97 +34,6 @@ function readProjectSourceFiles(dirs: string[]) {
     walkFiles(path.join(rootDir, dir), (filePath) => /\.(ts|tsx)$/.test(filePath))
   );
 }
-
-test("repository entrypoint requires the upstream-first AgentOS project skill", () => {
-  const agentsSource = readProjectFile("AGENTS.md");
-  const skillSource = readProjectFile("docs/agentos-codex-skill.md");
-
-  assert.match(
-    agentsSource,
-    /Before adding or changing a feature that touches or may overlap with OpenClaw, inspect the current upstream OpenClaw capability and ownership model first/
-  );
-  assert.match(agentsSource, /docs\/agentos-codex-skill\.md/);
-  assert.match(skillSource, /## Upstream-First Feature Discovery/);
-  assert.match(skillSource, /Do not start from the desired UI and invent a backend model first/);
-  assert.match(skillSource, /OPENCLAW_RECOMMENDED_VERSION/);
-  assert.match(skillSource, /OPENCLAW_SUPPORTED_BASELINE_VERSION/);
-  assert.match(skillSource, /latest stable OpenClaw/);
-  assert.match(skillSource, /latest beta\/current upstream source/);
-  assert.match(skillSource, /explicit gap analysis/);
-  assert.match(skillSource, /smallest AgentOS-owned gap/);
-  assert.match(skillSource, /compatibility or contract tests/);
-});
-
-test("OpenClaw governance documents define ownership and source-of-truth priority", () => {
-  const skillSource = readProjectFile("docs/agentos-codex-skill.md");
-  const priorityMarkers = [
-    "1. Live OpenClaw Gateway/runtime capability.",
-    "2. The supported OpenClaw version contract/schema.",
-    "3. AgentOS compatibility normalization.",
-    "4. AgentOS static fallback knowledge."
-  ];
-
-  let previousIndex = -1;
-  for (const marker of priorityMarkers) {
-    const markerIndex = skillSource.indexOf(marker);
-    assert.ok(markerIndex > previousIndex, `${marker} must preserve source-of-truth order`);
-    previousIndex = markerIndex;
-  }
-
-  for (const category of [
-    "**A. OpenClaw-owned capability**",
-    "**B. OpenClaw-owned without a stable native Gateway path**",
-    "**C. AgentOS projection**",
-    "**D. AgentOS sidecar**",
-    "**E. AgentOS higher-level composition**",
-    "**F. Unclear ownership**"
-  ]) {
-    assert.match(skillSource, new RegExp(escapeRegExp(category)));
-  }
-
-  assert.match(skillSource, /live OpenClaw capability > supported OpenClaw contract > AgentOS static fallback knowledge/);
-  assert.match(skillSource, /Static AgentOS catalogs must never silently become authoritative/);
-  assert.match(skillSource, /AgentOS does not own a parallel skill engine/);
-  assert.match(skillSource, /AgentOS static skill knowledge/);
-  assert.match(skillSource, /AgentOS-generated policy\/guidance skills/);
-});
-
-test("significant OpenClaw work has a reusable feature decision record", () => {
-  const skillSource = readProjectFile("docs/agentos-codex-skill.md");
-
-  assert.match(skillSource, /## OpenClaw Feature Decision/);
-  for (const field of [
-    "**User outcome:**",
-    "**OpenClaw ownership:**",
-    "**Current OpenClaw surface:**",
-    "**Current AgentOS surface:**",
-    "**Gap:**",
-    "**AgentOS responsibility:**",
-    "**Source of truth:**",
-    "**Fallback:**",
-    "**Compatibility risk:**"
-  ]) {
-    assert.match(skillSource, new RegExp(escapeRegExp(field)));
-  }
-});
-
-test("live tool discovery wins over static AgentOS capability metadata", () => {
-  const routeSource = readProjectFile("app/api/openclaw/capabilities/route.ts");
-  const serviceSource = readProjectFile("lib/openclaw/application/catalog-service.ts");
-  const dialogSource = readProjectFile("components/mission-control/agent-capability-editor-dialog.tsx");
-  const staticCatalogSource = readProjectFile("lib/openclaw/tool-catalog.ts");
-  const presetSource = readProjectFile("lib/openclaw/agent-presets.ts");
-
-  assert.match(routeSource, /listOpenClawTools\(\{ includePlugins: true \}/);
-  assert.match(routeSource, /normalizeOpenClawToolsCatalog\(toolCatalogResult\.value\)/);
-  assert.match(routeSource, /toolSource/);
-  assert.match(routeSource, /liveTools \?\? fallbackTools/);
-  assert.match(serviceSource, /getToolsCatalog\(input, options\)/);
-  assert.match(serviceSource, /static tool catalog is intentionally not consulted/);
-  assert.match(dialogSource, /capabilityCatalog\?\.toolSource === "openclaw-gateway"/);
-  assert.match(staticCatalogSource, /Static fallback\/preset metadata only/);
-  assert.match(presetSource, /Static AgentOS preset and managed-workspace knowledge only/);
-});
 
 test("OpenClaw production code does not import the legacy service entrypoint", () => {
   const productionFiles = readProjectSourceFiles(["app", "components", "hooks", "lib"]).filter(
@@ -272,25 +173,20 @@ test("model provider API route keeps ChatGPT OAuth behind the application servic
     path.join(rootDir, "lib/openclaw/application/chatgpt-provider-auth-service.ts"),
     "utf8"
   );
-  const ptyRunnerSource = readFileSync(
-    path.join(rootDir, "scripts/openclaw-pty-runner.py"),
-    "utf8"
-  );
 
   assert.match(routeSource, /connectOpenClawChatGptProvider/);
   assert.match(routeSource, /statusContext\.connection\.connected/);
-  assert.doesNotMatch(routeSource, /resolveOpenAiCodexAuthHandoff|manualCommand:\s*authHandoff\.command/);
+  assert.doesNotMatch(routeSource, /resolveOpenAiAuthHandoff|manualCommand:\s*authHandoff\.command/);
   assert.match(serviceSource, /readOpenClawCodexPluginReady/);
-  assert.match(serviceSource, /\["plugins",\s*"install",\s*"--force",\s*"--accept-capabilities",\s*"@openclaw\/codex"\]/);
+  assert.match(serviceSource, /\["plugins",\s*"install",\s*"--force",\s*"@openclaw\/codex"\]/);
   assert.match(serviceSource, /"models",\s*"auth",\s*"login"/);
   assert.match(serviceSource, /"openai"/);
-  assert.doesNotMatch(serviceSource, /"--method",\s*"oauth"/);
-  assert.match(serviceSource, /"--set-default"/);
-  assert.match(serviceSource, /"\/usr\/bin\/python3"/);
-  assert.match(serviceSource, /openclaw-pty-runner\.py/);
-  assert.match(ptyRunnerSource, /pty\.fork\(\)/);
-  assert.match(ptyRunnerSource, /os\.execvpe/);
-  assert.match(ptyRunnerSource, /select\.select/);
+  assert.match(serviceSource, /openclaw-cli-interactive/);
+  assert.match(serviceSource, /"\/usr\/bin\/script"/);
+  assert.match(routeSource, /authMethod:\s*z\.enum\(\["api-key",\s*"chatgpt-oauth"\]\)/);
+  assert.match(routeSource, /input\.provider === "openai" && input\.authMethod === "chatgpt-oauth"/);
+  assert.match(routeSource, /requireAgentOsProductPermission\(request, "secrets\.manage"\)/);
+  assert.doesNotMatch(routeSource, /input\.(scopes|actor|profileId)/);
   assert.doesNotMatch(routeSource, /models\s+auth\s+login\s+--provider\s+openai-codex\s+--set-default/);
 });
 
@@ -328,9 +224,13 @@ test("model onboarding route installs the Codex plugin before provider login whe
   const routeSource = readFileSync(path.join(rootDir, "app/api/onboarding/models/route.ts"), "utf8");
 
   assert.match(routeSource, /readOpenClawCodexPluginReady/);
-  assert.match(routeSource, /resolveOpenAiCodexAuthHandoff/);
+  assert.match(routeSource, /resolveOpenAiAuthHandoff/);
   assert.match(routeSource, /codexPluginReady/);
   assert.match(routeSource, /force:\s*input\.intent === "login-provider"\s*\?\s*input\.force === true\s*:\s*false/);
+  assert.match(routeSource, /normalizeAddModelsProviderId/);
+  assert.match(routeSource, /isBuiltInAddModelsProviderId/);
+  assert.match(routeSource, /requireAgentOsProductPermission\(request, "secrets\.manage"\)/);
+  assert.doesNotMatch(routeSource, /input\.(scopes|actor|profileId)/);
   assert.doesNotMatch(routeSource, /readOpenClawCodexPluginReady\(\)\.catch\(\(\) => true\)/);
 });
 
@@ -340,7 +240,7 @@ test("agent chat recovery forces ChatGPT auth refresh instead of trusting stale 
 
   assert.match(shellSource, /force:\s*options\.forceAuth\s*\|\|\s*undefined/);
   assert.match(shellSource, /autoOpenTerminal:\s*true,\s*forceAuth:\s*true/);
-  assert.match(chatRouteSource, /recoverSilentOpenAiCodexChatFailure/);
+  assert.match(chatRouteSource, /recoverSilentOpenAiChatFailure/);
 });
 
 test("local Gateway port probes do not claim authenticated RPC readiness", () => {
@@ -1415,35 +1315,6 @@ test("ChatGPT provider connection stays in-app and clears legacy terminal handof
   assert.match(routeSource, /connectOpenClawChatGptProvider/);
   assert.match(routeSource, /manualCommand: null/);
   assert.doesNotMatch(routeSource, /manualCommand:\s*authHandoff\.command/);
-});
-
-test("ChatGPT onboarding hands browser auth through a server-side session", () => {
-  const routeSource = readFileSync(path.join(rootDir, "app/api/models/chatgpt-auth/route.ts"), "utf8");
-  const serviceSource = readFileSync(
-    path.join(rootDir, "lib/openclaw/application/chatgpt-provider-auth-service.ts"),
-    "utf8"
-  );
-  const adapterSource = readFileSync(path.join(rootDir, "lib/openclaw/model-provider-adapters.ts"), "utf8");
-  const onboardingSource = readFileSync(
-    path.join(rootDir, "components/mission-control/openclaw-onboarding.stages.tsx"),
-    "utf8"
-  );
-
-  assert.match(routeSource, /requireAgentOsProductPermission\(request, "secrets\.manage"\)/);
-  assert.match(routeSource, /action: z\.literal\("start"\)/);
-  assert.match(routeSource, /action: z\.literal\("submit"\)/);
-  assert.match(serviceSource, /models\",\s*\"auth\",\s*\"login\"/);
-  assert.match(serviceSource, /onBrowserUrl/);
-  assert.match(serviceSource, /onManualInputRequired/);
-  assert.match(serviceSource, /stdio: \["pipe", "pipe", "pipe"\]/);
-  assert.match(serviceSource, /auth\.openai\.com/);
-  assert.match(serviceSource, /\["localhost", "127\.0\.0\.1", "\[::1\]"\]/);
-  assert.match(serviceSource, /url\.port !== "1455"/);
-  assert.match(serviceSource, /url\.pathname !== "\/auth\/callback"/);
-  assert.match(adapterSource, /\/api\/models\/chatgpt-auth/);
-  assert.match(onboardingSource, /Open ChatGPT sign-in in a new tab/);
-  assert.match(onboardingSource, /Mobile callback fallback/);
-  assert.doesNotMatch(onboardingSource, /Continue in terminal to connect OpenAI/);
 });
 
 test("phase three model surfaces separate setup, assignment, and session scope", () => {

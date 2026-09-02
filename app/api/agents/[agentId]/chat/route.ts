@@ -31,8 +31,8 @@ import {
 } from "@/lib/openclaw/domains/agent-chat-transcript";
 import { extractMissionControlAction, type MissionControlAction } from "@/lib/openclaw/chat-actions";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
-import { ensureOpenAiCodexAuthOrderForAgent } from "@/lib/openclaw/application/model-auth-service";
-import { isOpenAiCodexBackedModel } from "@/lib/openclaw/domains/model-provider-connection";
+import { ensureOpenAiAuthOrderForAgent } from "@/lib/openclaw/application/model-auth-service";
+import { isOpenAiBackedModel } from "@/lib/openclaw/domains/model-provider-connection";
 import {
   forgetAgentChatSession,
   readAgentChatSessionsForAgent,
@@ -43,7 +43,7 @@ import { persistRuntimeSmokeTest } from "@/lib/openclaw/domains/control-plane-se
 import { openClawStateRootPath } from "@/lib/openclaw/state/paths";
 import { inspectOpenClawRuntimeState } from "@/lib/openclaw/state/runtime-state";
 import { stringifyCommandFailure } from "@/lib/openclaw/command-failure";
-import { isOpenAiCodexAuthFailure } from "@/lib/openclaw/model-auth-errors";
+import { isOpenAiAuthFailure } from "@/lib/openclaw/model-auth-errors";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 import {
   resolveOpenClawRuntimeFailureMessage,
@@ -471,10 +471,9 @@ export async function POST(
           return;
         }
 
-        await ensureOpenAiCodexAuthOrderForAgent({
+        await ensureOpenAiAuthOrderForAgent({
           agentId,
-          modelId: agent.modelId,
-          agentDir: agent.agentDir
+          modelId: agent.modelId
         });
 
         let message = submittedMessage;
@@ -581,7 +580,7 @@ export async function POST(
           const emptyResponseDiagnosticMessage = resolveEmptyAgentChatDiagnosticMessage(result, {
             modelId: activeAgentModelId
           });
-          response = recoverSilentOpenAiCodexChatFailure(response, activeAgentModelId);
+          response = recoverSilentOpenAiChatFailure(response, activeAgentModelId);
           response = recoverDirectIdentityResponse(response, formatAgentDisplayName(agent), operatorMessage);
           response = attachStreamMissionControlAction(response, latestStreamAction);
           response = recoverCompletedEmptyAgentChatResponse(response, emptyResponseDiagnosticMessage);
@@ -657,7 +656,7 @@ export async function POST(
           clearMissionControlCaches();
         }
 
-        if (isOpenAiCodexAuthFailure(rawFailure) || isOpenAiCodexAuthFailure(failureMessage)) {
+        if (isOpenAiAuthFailure(rawFailure) || isOpenAiAuthFailure(failureMessage)) {
           await persistRuntimeSmokeTest({
             status: "failed",
             checkedAt: new Date().toISOString(),
@@ -1009,8 +1008,8 @@ function recoverCompletedEmptyAgentChatResponse(
   };
 }
 
-function recoverSilentOpenAiCodexChatFailure(response: MissionResponse, modelId?: string | null): MissionResponse {
-  if (!modelId || !isOpenAiCodexBackedModel(modelId) || response.status !== "stalled") {
+function recoverSilentOpenAiChatFailure(response: MissionResponse, modelId?: string | null): MissionResponse {
+  if (!modelId || !isOpenAiBackedModel(modelId) || response.status !== "stalled") {
     return response;
   }
 
@@ -1020,8 +1019,8 @@ function recoverSilentOpenAiCodexChatFailure(response: MissionResponse, modelId?
   }
 
   const message = [
-    "OpenClaw reported the ChatGPT/Codex chat stream failed before assistant text was available, but did not expose the provider error.",
-    "Reconnect ChatGPT, then retry this message.",
+    "OpenClaw reported the OpenAI chat stream failed before assistant text was available, but did not expose the provider error.",
+    "Reconnect the OpenAI provider, then retry this message.",
     "If it repeats after reconnecting, inspect `openclaw logs --follow`."
   ].join(" ");
 

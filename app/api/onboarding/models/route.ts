@@ -21,12 +21,17 @@ import {
   resolveGatewayAuthSetupIssueFromSnapshot,
   runWithGatewayAuthSetupRecovery
 } from "@/lib/openclaw/model-setup-recovery";
-import { resolveOpenAiCodexAuthHandoff } from "@/lib/openclaw/model-auth-errors";
+import { resolveOpenAiAuthHandoff } from "@/lib/openclaw/model-auth-errors";
+import { connectOpenClawChatGptProvider } from "@/lib/openclaw/application/chatgpt-provider-auth-service";
 import { resolveRequiredLoginProvider } from "@/lib/openclaw/model-onboarding";
-import { isAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
-import { isKnownOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
+import {
+  isAddModelsProviderId,
+  isBuiltInAddModelsProviderId,
+  normalizeAddModelsProviderId
+} from "@/lib/openclaw/model-provider-registry";
 import { readOpenClawCodexPluginReady } from "@/lib/openclaw/application/model-provider-state-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
+import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import type {
   DiscoveredModelCandidate,
   MissionControlSnapshot,
@@ -87,6 +92,22 @@ export async function POST(request: Request) {
       },
       { status: 400 }
     );
+  }
+
+  if (input.intent === "login-provider") {
+    const provider = normalizeAddModelsProviderId(input.provider);
+
+    if (!provider || !isBuiltInAddModelsProviderId(provider)) {
+      return NextResponse.json(
+        { error: "Provider login must target a supported bundled OpenClaw provider." },
+        { status: 400 }
+      );
+    }
+
+    const permission = await requireAgentOsProductPermission(request, "secrets.manage");
+    if ("response" in permission) return permission.response;
+
+    input = { ...input, provider };
   }
 
   const stream = new TransformStream();
@@ -181,12 +202,12 @@ export async function POST(request: Request) {
 
         await fail("verifying", failure.message || message, {
           snapshot,
-          manualCommand:
-            manualCommand ??
-            failure.manualCommand ??
-            buildModelManualCommand(snapshot, preferredModelId, manualCommandBin, {
-              codexPluginReady
-            }),
+            manualCommand:
+              manualCommand ??
+              failure.manualCommand ??
+              buildModelManualCommand(snapshot, preferredModelId, manualCommandBin, {
+                codexPluginReady
+              }) ?? undefined,
           docsUrl
         });
         return null;
@@ -217,7 +238,7 @@ export async function POST(request: Request) {
               manualCommand ??
               buildModelManualCommand(freshSnapshot, preferredModelId, manualCommandBin, {
                 codexPluginReady
-              }),
+              }) ?? undefined,
             docsUrl
           }
         );
@@ -330,7 +351,7 @@ export async function POST(request: Request) {
           snapshot,
           manualCommand: buildModelManualCommand(snapshot, undefined, manualCommandBin, {
             codexPluginReady
-          }),
+          }) ?? undefined,
           docsUrl
         });
         return;
@@ -502,6 +523,30 @@ export async function POST(request: Request) {
           return true;
         }
 
+        const normalizedProvider = normalizeOpenClawAuthProvider(provider);
+
+        if (normalizedProvider === "openai") {
+          await send({
+            type: "status",
+            phase: "authenticating",
+            message: "Opening ChatGPT authorization in your browser..."
+          });
+
+          try {
+            await connectOpenClawChatGptProvider({
+              force: input.intent === "login-provider" && input.force === true
+            });
+            snapshot = await getMissionControlSnapshot({ force: true });
+            return true;
+          } catch (error) {
+            await fail("authenticating", readErrorMessage(error), {
+              exitCode: null,
+              docsUrl
+            });
+            return false;
+          }
+        }
+
         const authHandoff = resolveProviderAuthHandoff(provider, openClawBin, {
           codexPluginReady,
           force: input.intent === "login-provider" ? input.force === true : false
@@ -522,7 +567,7 @@ export async function POST(request: Request) {
           authHandoff.continueMessage,
           {
             exitCode: null,
-            manualCommand: authHandoff.command,
+            manualCommand: authHandoff.command ?? undefined,
             docsUrl
           }
         );
@@ -822,40 +867,12 @@ function resolveSetDefaultProvider(
   )?.provider;
 
   if (isAddModelsProviderId(snapshotProvider)) {
-    if (snapshotProvider === "openai" && shouldTreatOpenAiModelAsCodex(snapshot, normalizedModelId)) {
-      return "openai-codex";
-    }
-
     return snapshotProvider;
   }
 
   const modelProvider = normalizedModelId.split("/", 1)[0] || null;
 
-  if (modelProvider === "openai" && shouldTreatOpenAiModelAsCodex(snapshot, normalizedModelId)) {
-    return "openai-codex";
-  }
-
   return isAddModelsProviderId(modelProvider) ? modelProvider : null;
-}
-
-function shouldTreatOpenAiModelAsCodex(snapshot: MissionControlSnapshot, modelId: string) {
-  if (!isKnownOpenAiCodexModelId(modelId)) {
-    return false;
-  }
-
-  const providers = snapshot.diagnostics.modelReadiness.authProviders;
-  const codexProvider = providers.find((provider) => provider.provider === "openai-codex");
-  const openAiProvider = providers.find((provider) => provider.provider === "openai");
-
-  if (codexProvider?.connected) {
-    return true;
-  }
-
-  if (snapshot.diagnostics.modelReadiness.preferredLoginProvider === "openai-codex") {
-    return true;
-  }
-
-  return Boolean(codexProvider?.canLogin && !openAiProvider?.connected);
 }
 
 function resolveVerificationFailure(
@@ -873,7 +890,7 @@ function resolveVerificationFailure(
 
     return {
       message: authHandoff.verificationMessage,
-      manualCommand: authHandoff.command
+      manualCommand: authHandoff.command ?? undefined
     };
   }
 
@@ -908,12 +925,8 @@ function formatProviderLabel(provider: string) {
     return "OpenRouter";
   }
 
-  if (normalized === "openai-codex") {
-    return "ChatGPT";
-  }
-
   if (normalized === "openai") {
-    return "OpenAI";
+    return "OpenAI / ChatGPT";
   }
 
   if (normalized === "anthropic") {
@@ -967,8 +980,8 @@ function resolveProviderAuthHandoff(
     };
   }
 
-  if (normalized === "codex" || normalized === "openai-codex") {
-    return resolveOpenAiCodexAuthHandoff(bin, options?.codexPluginReady ?? true, {
+  if (normalized === "openai") {
+    return resolveOpenAiAuthHandoff(bin, options?.codexPluginReady ?? true, {
       force: options?.force,
       intent: options?.force ? "refresh" : undefined
     });

@@ -126,11 +126,8 @@ async function runProviderAction(
       },
       body: JSON.stringify(request),
       signal: AbortSignal.timeout(
-        ((request.provider === "openai-codex" &&
-          (request.action === "connect" || request.action === "switch-account")) ||
-          (request.provider === "openai" &&
-            request.action === "connect" &&
-            request.authMethod === "chatgpt"))
+        request.provider === "openai" &&
+        ((request.action === "connect" && request.authMethod === "chatgpt-oauth") || request.action === "switch-account")
           ? CHATGPT_PROVIDER_REQUEST_TIMEOUT_MS
           : MODEL_PROVIDER_REQUEST_TIMEOUT_MS
       )

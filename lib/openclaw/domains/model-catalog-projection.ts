@@ -1,7 +1,7 @@
 import type { AddModelsCatalogModel, ModelRecord } from "@/lib/agentos/contracts";
 import {
   modelRecordIdentityKey,
-  normalizeOpenAiCodexModelId
+  normalizeOpenAiModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
 
 function identityKey(model: Pick<AddModelsCatalogModel, "id" | "provider">) {
@@ -12,7 +12,7 @@ function snapshotModelToCatalogModel(
   model: ModelRecord,
   recommendedModelIds: ReadonlySet<string>
 ): AddModelsCatalogModel {
-  const normalizedId = normalizeOpenAiCodexModelId(model.id);
+  const normalizedId = normalizeOpenAiModelId(model.id);
 
   return {
     id: normalizedId,
@@ -56,7 +56,7 @@ export function mergeCatalogWithConfiguredModels(
   recommendedModelIds: Iterable<string> = []
 ) {
   const recommendedIds = new Set(
-    Array.from(recommendedModelIds, (modelId) => normalizeOpenAiCodexModelId(modelId).toLowerCase())
+    Array.from(recommendedModelIds, (modelId) => normalizeOpenAiModelId(modelId).toLowerCase())
   );
   const records = new Map<string, AddModelsCatalogModel>(
     catalogModels.map((model) => [identityKey(model), { ...model, alreadyAdded: false }] as const)
@@ -104,11 +104,11 @@ export function markConfiguredCatalogModels(
   configuredModelIds: Iterable<string>
 ): AddModelsCatalogModel[] {
   const configuredIds = new Set(
-    Array.from(configuredModelIds, (modelId) => normalizeOpenAiCodexModelId(modelId).toLowerCase())
+    Array.from(configuredModelIds, (modelId) => normalizeOpenAiModelId(modelId).toLowerCase())
   );
 
   return models.map((model) => ({
     ...model,
-    alreadyAdded: configuredIds.has(normalizeOpenAiCodexModelId(model.id).toLowerCase())
+    alreadyAdded: configuredIds.has(normalizeOpenAiModelId(model.id).toLowerCase())
   }));
 }

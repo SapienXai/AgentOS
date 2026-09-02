@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -33,7 +32,14 @@ import {
   resolveOpenClawBinarySelectionPath
 } from "@/lib/openclaw/binary-selection";
 import { resolveRequiredLoginProvider } from "@/lib/openclaw/model-onboarding";
-import { resolveOpenAiCodexAuthHandoff } from "@/lib/openclaw/model-auth-errors";
+import { resolveOpenAiAuthHandoff } from "@/lib/openclaw/model-auth-errors";
+import {
+  isAddModelsProviderId,
+  isUnsupportedLegacyProviderId,
+  modelProviderRegistry,
+  normalizeAddModelsProviderId,
+  normalizeExplicitProviderId
+} from "@/lib/openclaw/model-provider-registry";
 import { resolveUpdateInfo } from "@/lib/openclaw/domains/control-plane-normalization";
 import { mapRuntimeSmokeTestEntry } from "@/lib/openclaw/domains/control-plane-settings";
 import { createMissionDispatchResultFromRuntimeOutput } from "@/lib/openclaw/domains/mission-dispatch-model";
@@ -73,8 +79,8 @@ import {
   mergeModelStatusWithAgentConfigDefaults
 } from "@/lib/openclaw/adapter/model-adapter";
 import {
-  resolveOpenAiCodexAuthOrderRepair,
-  resolveOpenAiCodexRuntimeAuthBlock
+  resolveOpenAiAuthOrderRepair,
+  resolveOpenAiRuntimeAuthBlock
 } from "@/lib/openclaw/application/model-auth-service";
 import { inferSessionKindFromCatalogEntry } from "@/lib/openclaw/domains/session-catalog";
 import {
@@ -84,13 +90,7 @@ import {
   resolveInitialOnboardingProviderId,
   resolveOnboardingModelProviderId,
   resolvePrimaryAction,
-  resolveSelectedOnboardingProviderId,
-  buildWizardSteps,
-  resolveChatGptOnboardingState,
-  resolveChatGptProgressCopy,
-  resolveChatGptRecoveryMessage,
-  resolvePreferredChatGptModelId,
-  isOnboardingModelStepComplete
+  resolveSelectedOnboardingProviderId
 } from "@/components/mission-control/openclaw-onboarding.utils";
 import { isNewerSnapshot, preserveConfirmedStatus } from "@/hooks/use-mission-control-data";
 import {
@@ -442,7 +442,7 @@ Capability: admin-capable`;
   assert.equal(isOpenClawGatewayReadyOutput("Gateway Health\nOK"), true);
   assert.equal(isOpenClawGatewayReadyOutput("Connectivity probe: failed"), false);
   assert.equal(
-    buildOpenClawRuntimeSmokeTestRecoveryCommand("/Users/example/.openclaw/bin/openclaw", "Unknown model: openai-codex/gpt-5.4-mini"),
+    buildOpenClawRuntimeSmokeTestRecoveryCommand("/Users/example/.openclaw/bin/openclaw", "Unknown model: openai/gpt-5.4-mini"),
     "/Users/example/.openclaw/bin/openclaw doctor --fix && /Users/example/.openclaw/bin/openclaw gateway restart && /Users/example/.openclaw/bin/openclaw gateway status --deep"
   );
   assert.deepEqual(
@@ -461,7 +461,7 @@ Capability: admin-capable`;
     {
       kind: "model-route",
       detail:
-        "OpenClaw rejected a legacy Codex model route. Use canonical `openai/gpt-5.5` model refs with the Codex harness enabled, then run `openclaw doctor --fix` to migrate stale `openai-codex/gpt-*` config entries."
+        "OpenClaw rejected a stale legacy model route. AgentOS accepts canonical `openai/*` model refs and does not migrate OpenClaw state. Run the supported OpenClaw doctor/migration flow, then refresh AgentOS."
     }
   );
   assert.deepEqual(
@@ -471,7 +471,7 @@ Capability: admin-capable`;
     {
       kind: "provider-auth",
       detail:
-        "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai --set-default"
+        "Your ChatGPT session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai --set-default"
     }
   );
   assert.deepEqual(
@@ -479,7 +479,7 @@ Capability: admin-capable`;
     {
       kind: "provider-auth",
       detail:
-        "OpenClaw needs the Codex provider plugin installed and enabled before auth login can continue. Install the plugin, refresh the registry, restart the gateway, then retry. Run: openclaw plugins install --force --accept-capabilities @openclaw/codex && openclaw doctor --fix && openclaw gateway restart && openclaw models auth login --provider openai --set-default"
+        "OpenClaw needs @openclaw/codex installed and enabled before ChatGPT authorization can continue. Install the plugin through OpenClaw, restart the Gateway, then retry ChatGPT authorization. Run: openclaw plugins install --force @openclaw/codex && openclaw gateway restart && openclaw models auth login --provider openai --set-default"
     }
   );
 });
@@ -489,18 +489,18 @@ test("openclaw runtime failure message explains codex route rejection", () => {
     resolveOpenClawRuntimeFailureMessage(
       "GatewayClientRequestError: FailoverError: Unknown model: openai-codex/gpt-5.4-mini."
     ),
-    "OpenClaw rejected a legacy Codex model route. Use canonical `openai/gpt-5.5` model refs with the Codex harness enabled, then run `openclaw doctor --fix` to migrate stale `openai-codex/gpt-*` config entries."
+    "OpenClaw rejected a stale legacy model route. AgentOS accepts canonical `openai/*` model refs and does not migrate OpenClaw state. Run the supported OpenClaw doctor/migration flow, then refresh AgentOS."
   );
   assert.equal(resolveOpenClawRuntimeFailureMessage("unrelated failure"), null);
   assert.equal(
     resolveOpenClawRuntimeFailureMessage("OpenAI Codex token refresh failed (401)"),
-    "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai --set-default"
+    "Your ChatGPT session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai --set-default"
   );
   assert.equal(
     resolveOpenClawRuntimeFailureMessage("Agent failed before reply: auth refresh request timed out after 10s.", {
       modelId: "openai/gpt-5.4-mini"
     }),
-    "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai --set-default"
+    "Your ChatGPT session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai --set-default"
   );
   assert.equal(
     resolveOpenClawRuntimeFailureMessage("429 Provider returned error", {
@@ -516,40 +516,27 @@ test("openclaw runtime failure message explains codex route rejection", () => {
   );
 });
 
-test("codex auth handoff installs the provider plugin before login when needed", () => {
-  const ready = resolveOpenAiCodexAuthHandoff("/Users/example/.openclaw/bin/openclaw", true);
-  const refresh = resolveOpenAiCodexAuthHandoff("/Users/example/.openclaw/bin/openclaw", true, {
+test("ChatGPT OAuth handoff opens the browser without a terminal fallback", () => {
+  const ready = resolveOpenAiAuthHandoff("/Users/example/.openclaw/bin/openclaw", true);
+  const refresh = resolveOpenAiAuthHandoff("/Users/example/.openclaw/bin/openclaw", true, {
     force: true
   });
-  const switchAccount = resolveOpenAiCodexAuthHandoff("/Users/example/.openclaw/bin/openclaw", true, {
+  const switchAccount = resolveOpenAiAuthHandoff("/Users/example/.openclaw/bin/openclaw", true, {
     force: true,
     intent: "switch-account"
   });
-  const missing = resolveOpenAiCodexAuthHandoff("/Users/example/.openclaw/bin/openclaw", false);
+  const missing = resolveOpenAiAuthHandoff("/Users/example/.openclaw/bin/openclaw", false);
 
-  assert.equal(
-    ready.command,
-    "/Users/example/.openclaw/bin/openclaw models auth login --provider openai --set-default"
-  );
-  assert.equal(
-    ready.continueMessage,
-    "Continue in terminal to finish the Codex app-server setup. After auth completes, return here and refresh setup."
-  );
-  assert.equal(
-    refresh.command,
-    "/Users/example/.openclaw/bin/openclaw models auth login --provider openai --force --set-default"
-  );
+  assert.equal(ready.command, null);
+  assert.match(ready.statusMessage, /browser/);
+  assert.doesNotMatch(ready.continueMessage, /terminal/i);
+  assert.equal(refresh.command, null);
   assert.match(refresh.continueMessage, /refresh the Codex app-server setup/);
-  assert.equal(
-    switchAccount.command,
-    "/Users/example/.openclaw/bin/openclaw models auth login --provider openai --force --set-default"
-  );
+  assert.equal(switchAccount.command, null);
   assert.match(switchAccount.continueMessage, /switch the ChatGPT account for Codex app-server/);
-  assert.match(missing.command, /plugins install --force --accept-capabilities @openclaw\/codex/);
-  assert.match(missing.command, /doctor --fix/);
-  assert.match(missing.command, /gateway restart/);
-  assert.match(missing.command, /models auth login --provider openai --set-default/);
-  assert.match(missing.continueMessage, /install the Codex provider plugin/i);
+  assert.equal(missing.command, null);
+  assert.match(missing.continueMessage, /@openclaw\/codex/i);
+  assert.doesNotMatch(missing.continueMessage, /terminal/i);
 });
 
 test("stale codex auth smoke failures do not keep runtime warnings pinned", () => {
@@ -558,7 +545,7 @@ test("stale codex auth smoke failures do not keep runtime warnings pinned", () =
       status: "failed",
       checkedAt: "2020-01-01T00:00:00.000Z",
       error:
-        "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai --set-default"
+        "Your ChatGPT session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai --set-default"
     }).status,
     "not-run"
   );
@@ -567,7 +554,7 @@ test("stale codex auth smoke failures do not keep runtime warnings pinned", () =
       status: "failed",
       checkedAt: new Date().toISOString(),
       error:
-        "Your ChatGPT/Codex session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai --set-default"
+        "Your ChatGPT session has expired. Reconnect ChatGPT, then retry model discovery or runtime verification. Run: openclaw models auth login --provider openai --set-default"
     }).status,
     "failed"
   );
@@ -643,7 +630,7 @@ test("agent model labels show missing assignments explicitly", () => {
       "unassigned",
       [
         {
-          id: "openai-codex/gpt-5.4-mini",
+          id: "openai/gpt-5.4-mini",
           name: "GPT-5.4 Mini"
         }
       ]
@@ -651,7 +638,7 @@ test("agent model labels show missing assignments explicitly", () => {
     "Unassigned"
   );
   assert.equal(
-    resolveAgentModelLabel("openai-codex/gpt-5.5", []),
+    resolveAgentModelLabel("openai/gpt-5.5", []),
     "gpt-5.5"
   );
 });
@@ -794,7 +781,7 @@ test("openrouter selection keeps openrouter auth prioritized", () => {
             canLogin: true
           },
           {
-            provider: "openai-codex",
+            provider: "openai",
             connected: false,
             canLogin: true
           }
@@ -810,16 +797,30 @@ test("openrouter selection keeps openrouter auth prioritized", () => {
   assert.equal(resolveRequiredLoginProvider(snapshot, undefined), "openrouter");
 });
 
+test("model provider registry keeps ChatGPT as an OpenAI auth method", () => {
+  const openAiDescriptors = modelProviderRegistry.filter((provider) => provider.id === "openai");
+
+  assert.equal(openAiDescriptors.length, 1);
+  assert.deepEqual(openAiDescriptors[0]?.authMethods, ["api-key", "chatgpt-oauth"]);
+  assert.equal(isAddModelsProviderId("openai"), true);
+  assert.equal(isAddModelsProviderId("codex"), false);
+  assert.equal(isAddModelsProviderId("openai-codex"), false);
+  assert.equal(isUnsupportedLegacyProviderId("codex"), true);
+  assert.equal(isUnsupportedLegacyProviderId("openai-codex"), true);
+  assert.equal(normalizeAddModelsProviderId("openai-codex"), null);
+  assert.equal(normalizeExplicitProviderId("openai-codex"), "");
+});
+
 test("openai canonical model requests ChatGPT login when Codex owns the route", () => {
   const snapshot = {
     diagnostics: {
       modelReadiness: {
         resolvedDefaultModel: "openai/gpt-5.5",
         defaultModel: "openai/gpt-5.5",
-        preferredLoginProvider: "openai-codex",
+        preferredLoginProvider: "openai",
         authProviders: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             connected: false,
             canLogin: true
           },
@@ -833,7 +834,7 @@ test("openai canonical model requests ChatGPT login when Codex owns the route", 
     }
   } as unknown as MissionControlSnapshot;
 
-  assert.equal(resolveRequiredLoginProvider(snapshot, "openai/gpt-5.5"), "openai-codex");
+  assert.equal(resolveRequiredLoginProvider(snapshot, "openai/gpt-5.5"), "openai");
 });
 
 test("ollama never requires provider auth handoff", () => {
@@ -893,7 +894,7 @@ test("onboarding starts on the selected, connected, or preferred provider", () =
             detail: null
           },
           {
-            provider: "openai-codex",
+            provider: "openai",
             connected: false,
             canLogin: true,
             detail: null
@@ -933,33 +934,6 @@ test("onboarding starts on the selected, connected, or preferred provider", () =
   } as unknown as MissionControlSnapshot;
 
   assert.equal(resolveInitialOnboardingProviderId(connectedSnapshot, undefined), "ollama");
-
-  const connectedChatGptSnapshot = {
-    diagnostics: {
-      modelReadiness: {
-        preferredLoginProvider: "openai",
-        authProviders: [
-          {
-            provider: "openai-codex",
-            connected: true,
-            canLogin: true,
-            detail: "OAuth connected"
-          },
-          {
-            provider: "openai",
-            connected: false,
-            canLogin: true,
-            detail: null
-          }
-        ]
-      }
-    }
-  } as unknown as MissionControlSnapshot;
-
-  assert.equal(
-    resolveInitialOnboardingProviderId(connectedChatGptSnapshot, "openai/gpt-5.6-sol"),
-    "openai-codex"
-  );
 });
 
 test("live gateway probe overrides a stale ready snapshot", () => {
@@ -1162,7 +1136,7 @@ test("local model probe reads the configured default without a full snapshot", a
     JSON.stringify({
       agents: {
         defaults: {
-          model: { primary: "openai-codex/gpt-5.2" },
+          model: { primary: "openai/gpt-5.2" },
           models: { "anthropic/claude-sonnet-4": {} }
         }
       }
@@ -1172,8 +1146,8 @@ test("local model probe reads the configured default without a full snapshot", a
 
   assert.deepEqual(await probeLocalDefaultModel({ homeDir, env: { NODE_ENV: "test" } }), {
     checked: true,
-    defaultModelId: "openai-codex/gpt-5.2",
-    modelIds: ["openai-codex/gpt-5.2", "anthropic/claude-sonnet-4"]
+    defaultModelId: "openai/gpt-5.2",
+    modelIds: ["openai/gpt-5.2", "anthropic/claude-sonnet-4"]
   });
 });
 
@@ -1255,10 +1229,10 @@ test("onboarding treats canonical OpenAI model refs as ChatGPT when Codex auth o
     diagnostics: {
       modelReadiness: {
         recommendedModelId: "openai/gpt-5.5",
-        preferredLoginProvider: "openai-codex",
+        preferredLoginProvider: "openai",
         authProviders: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             connected: true,
             canLogin: true,
             detail: "OAuth connected"
@@ -1274,8 +1248,8 @@ test("onboarding treats canonical OpenAI model refs as ChatGPT when Codex auth o
     }
   } as unknown as MissionControlSnapshot;
 
-  assert.equal(resolveOnboardingModelProviderId(snapshot, "openai/gpt-5.5"), "openai-codex");
-  assert.equal(resolveInitialOnboardingProviderId(snapshot, "openai/gpt-5.5"), "openai-codex");
+  assert.equal(resolveOnboardingModelProviderId(snapshot, "openai/gpt-5.5"), "openai");
+  assert.equal(resolveInitialOnboardingProviderId(snapshot, "openai/gpt-5.5"), "openai");
 });
 
 test("onboarding preserves provider context for ChatGPT catalog selections", () => {
@@ -1286,7 +1260,7 @@ test("onboarding preserves provider context for ChatGPT catalog selections", () 
         preferredLoginProvider: "openai",
         authProviders: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             connected: false,
             canLogin: false,
             detail: null
@@ -1306,10 +1280,10 @@ test("onboarding preserves provider context for ChatGPT catalog selections", () 
     resolveSelectedOnboardingProviderId(snapshot, "openai/gpt-5.5", [
       {
         id: "openai/gpt-5.5",
-        provider: "openai-codex"
+        provider: "openai"
       }
     ]),
-    "openai-codex"
+    "openai"
   );
 });
 
@@ -1383,21 +1357,6 @@ test("model onboarding requires an explicit selection before verification", () =
       systemReady: true,
       modelReady: true,
       systemActionLabel: "Continue",
-      selectedModelId: "openai-codex/gpt-5.4",
-      defaultModelId: "openai/gpt-5.4"
-    }),
-    {
-      kind: "set-default",
-      label: "Set as default"
-    }
-  );
-
-  assert.deepEqual(
-    resolvePrimaryAction({
-      stage: "models",
-      systemReady: true,
-      modelReady: true,
-      systemActionLabel: "Continue",
       selectedModelId: "openai/gpt-5.4",
       defaultModelId: "openai/gpt-5.4"
     }),
@@ -1413,155 +1372,6 @@ test("model onboarding requires an explicit selection before verification", () =
     successTitle: "Default model saved.",
     errorTitle: "Default model save failed."
   });
-});
-
-test("ChatGPT-first onboarding keeps the normal model step focused and advanced flow available", () => {
-  const steps = buildWizardSteps("models", true, false);
-  const onboardingSource = readFileSync(
-    path.join(process.cwd(), "components/mission-control/openclaw-onboarding.stages.tsx"),
-    "utf8"
-  );
-  const shellSource = readFileSync(
-    path.join(process.cwd(), "components/mission-control/mission-control-shell.tsx"),
-    "utf8"
-  );
-  const onboardingModalSource = readFileSync(
-    path.join(process.cwd(), "components/mission-control/openclaw-onboarding.tsx"),
-    "utf8"
-  );
-  const providerFlowSource = readFileSync(
-    path.join(process.cwd(), "components/mission-control/openclaw-onboarding-provider-flow.tsx"),
-    "utf8"
-  );
-
-  assert.equal(steps[1]?.label, "Connect AI");
-  assert.equal(steps[1]?.description, "Connect your AI");
-  assert.match(onboardingSource, /Continue with ChatGPT/);
-  assert.match(onboardingSource, /Use another provider/);
-  assert.match(onboardingSource, /advancedProviderFlowOpen/);
-  assert.match(onboardingSource, /OpenClawOnboardingProviderFlow/);
-  assert.match(onboardingModalSource, /const onboardingAiReady = isOnboardingModelStepComplete/);
-  assert.match(onboardingModalSource, /const showLaunchpad = onboardingAiReady &&/);
-  assert.match(onboardingSource, /modelReady: isChatGptConnectionReady\(snapshot\)/);
-  assert.match(shellSource, /startChatGptBrowserAuth\(force\)/);
-  assert.match(shellSource, /submitChatGptBrowserAuth\(chatGptBrowserAuth\.sessionId, redirectUrl\)/);
-  assert.doesNotMatch(shellSource, /window\.open\("about:blank", "_blank"\)/);
-  assert.match(shellSource, /window\.open\(currentAuthFlow\.browserUrl, "_blank"/);
-  assert.match(
-    shellSource,
-    /readModelProviderStatus\("openai-codex",\s*\{\s*includeSnapshot:\s*true\s*\}\)/
-  );
-  assert.match(shellSource, /markModelProviderConnected\("openai-codex"/);
-  assert.match(onboardingSource, /needsModelSelection/);
-  assert.match(onboardingSource, /compactSelection/);
-  assert.match(onboardingSource, /Continue to AgentOS/);
-  assert.match(providerFlowSource, /id="chatgpt-model-select"/);
-  assert.match(providerFlowSource, /resolvePreferredChatGptModelId/);
-  assert.match(providerFlowSource, /if \(!compactSelection && selectedProviderId\)/);
-  assert.match(shellSource, /setIsOnboardingDismissed\(false\);\s+setIsOnboardingForcedOpen\(true\);\s+if \(!isContinuation\)/);
-  assert.match(shellSource, /stage === undefined && onboardingAiReady/);
-  assert.doesNotMatch(onboardingSource, /gpt-\d/);
-});
-
-test("ChatGPT onboarding state and recovery copy stay honest", () => {
-  assert.equal(
-  resolveChatGptOnboardingState({ runState: "idle", phase: null, modelReady: false }),
-    "idle"
-  );
-  assert.equal(
-    resolveChatGptOnboardingState({ runState: "running", phase: "authenticating", modelReady: false }),
-    "connecting"
-  );
-  assert.equal(
-    resolveChatGptOnboardingState({ runState: "running", phase: "verifying", modelReady: false }),
-    "verifying"
-  );
-  assert.equal(
-    resolveChatGptOnboardingState({ runState: "success", phase: "ready", modelReady: false }),
-    "needs-model"
-  );
-  assert.equal(
-    resolveChatGptOnboardingState({ runState: "idle", phase: null, modelReady: false, chatGptConnected: true }),
-    "needs-model"
-  );
-  assert.equal(
-    resolveChatGptOnboardingState({ runState: "error", phase: "authenticating", modelReady: false }),
-    "error"
-  );
-  assert.equal(resolveChatGptProgressCopy("authenticating"), "Waiting for ChatGPT sign-in to finish.");
-  assert.equal(resolveChatGptProgressCopy("verifying"), "Verifying the account and a usable AI route in OpenClaw.");
-  assert.match(resolveChatGptRecoveryMessage("ChatGPT sign-in timed out."), /took too long/i);
-  assert.match(resolveChatGptRecoveryMessage("local AgentOS on linux"), /local AgentOS machine/i);
-});
-
-test("ChatGPT onboarding prefers the available mini model", () => {
-  assert.equal(
-    resolvePreferredChatGptModelId([
-      { id: "openai/gpt-5.5" },
-      { id: "openai/gpt-5.4-mini" }
-    ]),
-    "openai/gpt-5.4-mini"
-  );
-  assert.equal(
-    resolvePreferredChatGptModelId([{ id: "openai/gpt-5.5" }]),
-    "openai/gpt-5.5"
-  );
-  assert.equal(resolvePreferredChatGptModelId([]), null);
-});
-
-test("first-run onboarding cannot treat an existing model as completed ChatGPT setup", () => {
-  assert.equal(
-    isOnboardingModelStepComplete({
-      chatGptConnectionReady: false,
-      explicitSetupComplete: false
-    }),
-    false
-  );
-  assert.equal(
-    isOnboardingModelStepComplete({
-      chatGptConnectionReady: true,
-      explicitSetupComplete: false
-    }),
-    true
-  );
-  assert.equal(
-    isOnboardingModelStepComplete({
-      chatGptConnectionReady: false,
-      explicitSetupComplete: true
-    }),
-    true
-  );
-
-  assert.deepEqual(
-    resolvePrimaryAction({
-      stage: "system",
-      systemReady: true,
-      modelReady: false,
-      systemActionLabel: "Start OpenClaw",
-      selectedModelId: "",
-      defaultModelId: "openai/gpt-5.6-sol"
-    }),
-    {
-      kind: "continue",
-      label: "Continue to model setup"
-    }
-  );
-});
-
-test("canonical ChatGPT auth uses OpenClaw's openai provider while legacy Codex remains compatible", () => {
-  const routeSource = readFileSync(path.join(process.cwd(), "app/api/models/providers/route.ts"), "utf8");
-  const adapterSource = readFileSync(path.join(process.cwd(), "lib/openclaw/model-provider-adapters.ts"), "utf8");
-  const authServiceSource = readFileSync(
-    path.join(process.cwd(), "lib/openclaw/application/chatgpt-provider-auth-service.ts"),
-    "utf8"
-  );
-
-  assert.match(routeSource, /input\.provider === "openai" && input\.authMethod === "chatgpt"/);
-  assert.match(routeSource, /const runtimeProvider = "openai-codex"/);
-  assert.match(adapterSource, /authMethod: input\?\.authMethod/);
-  assert.match(authServiceSource, /"--provider",\s*"openai"/);
-  assert.doesNotMatch(authServiceSource, /"--method",\s*"oauth"/);
-  assert.match(authServiceSource, /"--set-default"/);
 });
 
 test("remote provider connection depends on auth rather than configured models", () => {
@@ -1644,7 +1454,7 @@ test("model status keeps agent config default when native status omits it", () =
       auth: {
         providers: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             profiles: {
               count: 1
             }
@@ -1672,7 +1482,7 @@ test("model status keeps live agent default when state config lags after setup",
       auth: {
         providers: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             profiles: {
               count: 1
             }
@@ -1681,7 +1491,7 @@ test("model status keeps live agent default when state config lags after setup",
         oauth: {
           providers: [
             {
-              provider: "openai-codex",
+              provider: "openai",
               status: "ok"
             }
           ]
@@ -1730,7 +1540,7 @@ test("canonical OpenAI models can be ready through ChatGPT Codex auth", () => {
       auth: {
         providers: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             profiles: {
               count: 1
             }
@@ -1745,7 +1555,7 @@ test("canonical OpenAI models can be ready through ChatGPT Codex auth", () => {
         oauth: {
           providers: [
             {
-              provider: "openai-codex",
+              provider: "openai",
               status: "ok"
             },
             {
@@ -1763,13 +1573,13 @@ test("canonical OpenAI models can be ready through ChatGPT Codex auth", () => {
   assert.equal(readiness.ready, true);
   assert.equal(readiness.defaultModelReady, true);
   assert.equal(
-    readiness.authProviders.find((provider) => provider.provider === "openai-codex")?.connected,
+    readiness.authProviders.find((provider) => provider.provider === "openai")?.connected,
     true
   );
   assert.equal(readiness.preferredLoginProvider, null);
 });
 
-test("OpenAI API-only models are not ready through ChatGPT Codex auth", () => {
+test("OpenAI OAuth and API-key auth remain distinct under one provider", () => {
   const readiness = resolveModelReadiness(
     [
       {
@@ -1785,7 +1595,7 @@ test("OpenAI API-only models are not ready through ChatGPT Codex auth", () => {
       auth: {
         providers: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             profiles: {
               count: 1
             }
@@ -1800,7 +1610,7 @@ test("OpenAI API-only models are not ready through ChatGPT Codex auth", () => {
         oauth: {
           providers: [
             {
-              provider: "openai-codex",
+              provider: "openai",
               status: "ok"
             },
             {
@@ -1815,21 +1625,21 @@ test("OpenAI API-only models are not ready through ChatGPT Codex auth", () => {
     } as never
   );
 
-  assert.equal(readiness.ready, false);
-  assert.equal(readiness.defaultModelReady, false);
-  assert.equal(readiness.preferredLoginProvider, "openai");
-  assert.equal(readiness.issues.includes("The selected default model is not ready yet."), true);
+  assert.equal(readiness.ready, true);
+  assert.equal(readiness.defaultModelReady, true);
+  assert.equal(readiness.authProviders.find((provider) => provider.provider === "openai")?.connected, true);
+  assert.equal(readiness.preferredLoginProvider, null);
 });
 
 test("provider status treats mixed ChatGPT OAuth profiles as connected", () => {
   const connection = buildModelStatusConnectionStatus(
-    "openai-codex",
+    "openai",
     {
       allowed: ["openai/gpt-5.5"],
       auth: {
         providers: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             effective: {
               kind: "profiles"
             },
@@ -1841,15 +1651,15 @@ test("provider status treats mixed ChatGPT OAuth profiles as connected", () => {
         oauth: {
           providers: [
             {
-              provider: "openai-codex",
+              provider: "openai",
               status: "expired",
               profiles: [
                 {
-                  profileId: "openai-codex:default",
+                  profileId: "openai:default",
                   status: "expired"
                 },
                 {
-                  profileId: "openai-codex:user@example.com",
+                  profileId: "openai:user@example.com",
                   status: "ok"
                 }
               ]
@@ -1862,12 +1672,12 @@ test("provider status treats mixed ChatGPT OAuth profiles as connected", () => {
   );
 
   assert.equal(connection?.connected, true);
-  assert.equal(connection?.detail, "OAuth connected");
+  assert.equal(connection?.detail, "ChatGPT OAuth connected");
 });
 
 test("provider status does not treat OpenAI API keys as ChatGPT OAuth", () => {
   const connection = buildModelStatusConnectionStatus(
-    "openai-codex",
+    "openai",
     {
       allowed: ["openai/gpt-5.4-pro"],
       auth: {
@@ -1890,7 +1700,8 @@ test("provider status does not treat OpenAI API keys as ChatGPT OAuth", () => {
     new Set(["openai/gpt-5.4-pro"])
   );
 
-  assert.equal(connection?.connected, false);
+  assert.equal(connection?.connected, true);
+  assert.equal(connection?.authMethod, "api-key");
 });
 
 test("provider status does not treat ChatGPT OAuth as an OpenAI API key", () => {
@@ -1923,7 +1734,8 @@ test("provider status does not treat ChatGPT OAuth as an OpenAI API key", () => 
     new Set(["openai/gpt-5.4-pro"])
   );
 
-  assert.equal(connection?.connected, false);
+  assert.equal(connection?.connected, true);
+  assert.equal(connection?.authMethod, "chatgpt-oauth");
 });
 
 test("provider status does not treat Codex runtime OAuth profiles as OpenAI API connection", () => {
@@ -1979,12 +1791,13 @@ test("provider status does not treat Codex runtime OAuth profiles as OpenAI API 
     new Set(["openai/gpt-5.5"])
   );
 
-  assert.equal(connection?.connected, false);
+  assert.equal(connection?.connected, true);
+  assert.equal(connection?.authMethod, "chatgpt-oauth");
 });
 
 test("provider status treats usable Codex runtime auth routes as ChatGPT connection", () => {
   const connection = buildModelStatusConnectionStatus(
-    "openai-codex",
+    "openai",
     {
       allowed: ["openai/gpt-5.5"],
       auth: {
@@ -2006,7 +1819,7 @@ test("provider status treats usable Codex runtime auth routes as ChatGPT connect
   );
 
   assert.equal(connection?.connected, true);
-  assert.equal(connection?.detail, "OAuth connected");
+  assert.equal(connection?.detail, "ChatGPT OAuth connected");
 });
 
 test("provider status treats OpenAI API key profiles as OpenAI connection", () => {
@@ -2040,11 +1853,11 @@ test("provider status treats OpenAI API key profiles as OpenAI connection", () =
   assert.equal(connection?.connected, true);
 });
 
-test("provider status treats Codex app-server synthetic auth as connected", () => {
+test("provider status rejects unsupported Codex app-server provider auth", () => {
   const connection = buildModelStatusConnectionStatus(
-    "openai-codex",
+    "openai",
     {
-      allowed: ["codex/gpt-5.5"],
+      allowed: ["openai/gpt-5.5"],
       auth: {
         providers: [
           {
@@ -2066,22 +1879,22 @@ test("provider status treats Codex app-server synthetic auth as connected", () =
         ]
       }
     },
-    new Set(["codex/gpt-5.5"])
+    new Set(["openai/gpt-5.5"])
   );
 
-  assert.equal(connection?.connected, true);
-  assert.equal(connection?.detail, "Codex app-server connected with 1 available model.");
+  assert.equal(connection?.connected, false);
+  assert.equal(connection?.authMethod, null);
 });
 
 test("provider status rejects expired-only ChatGPT OAuth profiles", () => {
   const connection = buildModelStatusConnectionStatus(
-    "openai-codex",
+    "openai",
     {
       allowed: ["openai/gpt-5.5"],
       auth: {
         providers: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             effective: {
               kind: "profiles"
             },
@@ -2093,11 +1906,11 @@ test("provider status rejects expired-only ChatGPT OAuth profiles", () => {
         oauth: {
           providers: [
             {
-              provider: "openai-codex",
+              provider: "openai",
               status: "expired",
               profiles: [
                 {
-                  profileId: "openai-codex:default",
+                  profileId: "openai:default",
                   status: "expired"
                 }
               ]
@@ -2142,7 +1955,7 @@ test("snapshot model records display canonical OpenAI Codex routes as ChatGPT", 
       auth: {
         providers: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             profiles: {
               count: 1
             }
@@ -2151,11 +1964,11 @@ test("snapshot model records display canonical OpenAI Codex routes as ChatGPT", 
         oauth: {
           providers: [
             {
-              provider: "openai-codex",
+              provider: "openai",
               status: "ok",
               profiles: [
                 {
-                  profileId: "openai-codex:user@example.com",
+                  profileId: "openai:user@example.com",
                   status: "ok"
                 }
               ]
@@ -2166,7 +1979,7 @@ test("snapshot model records display canonical OpenAI Codex routes as ChatGPT", 
     }
   );
 
-  assert.equal(records[0]?.provider, "openai-codex");
+  assert.equal(records[0]?.provider, "openai");
   assert.equal(records[0]?.available, true);
   assert.equal(records[1]?.provider, "openai");
   assert.equal(records[1]?.available, false);
@@ -2199,7 +2012,7 @@ test("snapshot model records keep known Codex routes as ChatGPT without live mod
     []
   );
 
-  assert.equal(records[0]?.provider, "openai-codex");
+  assert.equal(records[0]?.provider, "openai");
   assert.equal(records[1]?.provider, "openai");
 });
 
@@ -2217,7 +2030,7 @@ test("snapshot model records collapse Codex aliases to canonical routes", () => 
         tags: []
       },
       {
-        key: "codex/gpt-5.5",
+        key: "openai/gpt-5.5",
         name: "GPT-5.5",
         input: "text",
         contextWindow: 272000,
@@ -2230,14 +2043,14 @@ test("snapshot model records collapse Codex aliases to canonical routes", () => 
     [
       {
         id: "main",
-        modelId: "codex/gpt-5.5"
+        modelId: "openai/gpt-5.5"
       } as OpenClawAgent
     ]
   );
 
   assert.equal(records.length, 1);
   assert.equal(records[0]?.id, "openai/gpt-5.5");
-  assert.equal(records[0]?.provider, "openai-codex");
+  assert.equal(records[0]?.provider, "openai");
   assert.equal(records[0]?.usageCount, 1);
 });
 
@@ -2251,11 +2064,11 @@ test("snapshot model records include configured Codex routes missing from live p
         oauth: {
           providers: [
             {
-              provider: "openai-codex",
+              provider: "openai",
               status: "ok",
               profiles: [
                 {
-                  profileId: "openai-codex:user@example.com",
+                  profileId: "openai:user@example.com",
                   status: "ok"
                 }
               ]
@@ -2268,7 +2081,7 @@ test("snapshot model records include configured Codex routes missing from live p
 
   assert.equal(records.length, 1);
   assert.equal(records[0]?.id, "openai/gpt-5.5");
-  assert.equal(records[0]?.provider, "openai-codex");
+  assert.equal(records[0]?.provider, "openai");
   assert.equal(records[0]?.available, true);
   assert.equal(records[0]?.missing, false);
 });
@@ -2287,7 +2100,7 @@ test("configured model merge does not duplicate live Codex model payloads", () =
         tags: []
       }
     ],
-    ["openai-codex/gpt-5.5"]
+    ["openai/gpt-5.5"]
   );
 
   assert.equal(models.length, 1);
@@ -2346,30 +2159,30 @@ test("mission control model selection retains models assigned to agents", () => 
 });
 
 test("ChatGPT auth order repair prefers usable Codex OAuth profiles", () => {
-  const repair = resolveOpenAiCodexAuthOrderRepair({
+  const repair = resolveOpenAiAuthOrderRepair({
     auth: {
       oauth: {
         providers: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             status: "expired",
             profiles: [
               {
-                profileId: "openai-codex:default",
+                profileId: "openai:default",
                 status: "expired"
               },
               {
-                profileId: "openai-codex:user@example.com",
+                profileId: "openai:user@example.com",
                 status: "ok"
               }
             ],
             effectiveProfiles: [
               {
-                profileId: "openai-codex:default",
+                profileId: "openai:default",
                 status: "expired"
               },
               {
-                profileId: "openai-codex:user@example.com",
+                profileId: "openai:user@example.com",
                 status: "ok"
               }
             ]
@@ -2380,26 +2193,26 @@ test("ChatGPT auth order repair prefers usable Codex OAuth profiles", () => {
   });
 
   assert.equal(repair.needsRepair, true);
-  assert.deepEqual(repair.profileIds, ["openai-codex:user@example.com"]);
+  assert.deepEqual(repair.profileIds, ["openai:user@example.com"]);
 });
 
 test("ChatGPT auth order repair is skipped when effective profile is usable", () => {
-  const repair = resolveOpenAiCodexAuthOrderRepair({
+  const repair = resolveOpenAiAuthOrderRepair({
     auth: {
       oauth: {
         providers: [
           {
-            provider: "openai-codex",
+            provider: "openai",
             status: "ok",
             profiles: [
               {
-                profileId: "openai-codex:user@example.com",
+                profileId: "openai:user@example.com",
                 status: "ok"
               }
             ],
             effectiveProfiles: [
               {
-                profileId: "openai-codex:user@example.com",
+                profileId: "openai:user@example.com",
                 status: "ok"
               }
             ]
@@ -2410,11 +2223,11 @@ test("ChatGPT auth order repair is skipped when effective profile is usable", ()
   });
 
   assert.equal(repair.needsRepair, false);
-  assert.deepEqual(repair.profileIds, ["openai-codex:user@example.com"]);
+  assert.deepEqual(repair.profileIds, ["openai:user@example.com"]);
 });
 
 test("ChatGPT runtime auth preflight blocks cooldown profiles before dispatch", () => {
-  const block = resolveOpenAiCodexRuntimeAuthBlock({
+  const block = resolveOpenAiRuntimeAuthBlock({
     auth: {
       unusableProfiles: [
         {
@@ -2558,7 +2371,7 @@ test("fallback model metadata keeps local and context hints", () => {
     contextWindow: 262144,
     local: true
   });
-  assert.deepEqual(inferFallbackModelMetadata("openai-codex/gpt-5.4-mini"), {
+  assert.deepEqual(inferFallbackModelMetadata("openai/gpt-5.4-mini"), {
     contextWindow: 272000,
     local: false
   });

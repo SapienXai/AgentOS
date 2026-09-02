@@ -419,6 +419,11 @@ export function AddModelsDialog({
     ? resolveConnectionDetail(snapshot, providerDrafts, activeProviderId)
     : null;
   const activeConnectionReady = isProviderConnectionReady(activeConnection);
+  const activeChatGptConnected = Boolean(
+    activeProviderId === "openai" &&
+    activeConnectionReady &&
+    activeConnection?.authMethod === "chatgpt-oauth"
+  );
   const activeConnectionLabel = resolveProviderConnectionLabel(activeConnection, activeDescriptor?.connectKind);
   const switchAccountProvider = switchAccountProviderId ? getModelProviderDescriptor(switchAccountProviderId) : null;
   const switchAccountDraft = switchAccountProviderId ? resolveDraft(providerDrafts[switchAccountProviderId]) : null;
@@ -496,7 +501,7 @@ export function AddModelsDialog({
       : activeDraft.flowState === "disconnecting"
         ? "Removing provider models, checking affected agents, and updating the OpenClaw global default when needed."
       : activeDraft.flowState === "connecting"
-        ? activeProviderId === "openai-codex"
+        ? activeProviderId === "openai"
           ? "Complete the OpenClaw authorization page in your browser. AgentOS will refresh the provider automatically."
           : "Preparing the provider connection."
         : "Checking provider status before discovery.";
@@ -728,6 +733,7 @@ export function AddModelsDialog({
       endpoint?: string;
       providerName?: string;
       modelId?: string;
+      authMethod?: "api-key" | "chatgpt-oauth";
     }
   ) {
     const adapter = getModelProviderAdapter(providerId);
@@ -738,7 +744,7 @@ export function AddModelsDialog({
       errorMessage: null,
       manualCommand: null,
       statusMessage:
-        providerId === "openai-codex"
+        providerId === "openai" && options?.authMethod === "chatgpt-oauth"
           ? options?.force
             ? "Refreshing ChatGPT authorization..."
             : "Opening ChatGPT authorization..."
@@ -753,6 +759,7 @@ export function AddModelsDialog({
         endpoint: options?.endpoint,
         providerName: options?.providerName,
         modelId: options?.modelId,
+        authMethod: options?.authMethod,
         force: options?.force
       });
 
@@ -1758,8 +1765,9 @@ export function AddModelsDialog({
                         snapshot.models.filter((model) => modelMatchesProvider(provider.id, model.id, model.provider)).length +
                         providerDraft.models.length;
                       const active = activeProviderId === provider.id && activeSetupMode === "standard";
-                      const isChatGPTProvider = provider.id === "openai-codex";
-                      const showSwitchAccountAction = isChatGPTProvider && providerReady;
+                      const isChatGPTProvider = provider.id === "openai";
+                      const showSwitchAccountAction =
+                        isChatGPTProvider && providerReady && connection.authMethod === "chatgpt-oauth";
 
                       return (
                         <div key={provider.id} className="h-full">
@@ -2004,13 +2012,13 @@ export function AddModelsDialog({
 
                       {!showLoadingHero ? (
                         <>
-                          {activeProviderId === "openai-codex" ? (
+                          {activeProviderId === "openai" ? (
                             <div className={cn("mt-4 rounded-[20px] border p-3", isLight ? "border-border bg-muted/35" : "border-white/10 bg-white/[0.03]")}>
                               <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
-                                  <p className={cn("font-display text-[0.88rem]", isLight ? "text-foreground" : "text-white")}>Use Codex app-server</p>
+                                    <p className={cn("font-display text-[0.88rem]", isLight ? "text-foreground" : "text-white")}>Connect ChatGPT</p>
                                   <p className={cn("mt-1 max-w-[500px] text-[10px] leading-[0.98rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>
-                                    OpenClaw {OPENCLAW_RECOMMENDED_VERSION} uses the Codex app-server plugin for ChatGPT-backed models.
+                                    OpenClaw {OPENCLAW_RECOMMENDED_VERSION} uses provider <code>openai</code>, runtime <code>codex</code>, and plugin <code>@openclaw/codex</code> for ChatGPT OAuth.
                                   </p>
                                 </div>
                                 <Button
@@ -2018,12 +2026,12 @@ export function AddModelsDialog({
                                   className="h-8 rounded-full px-3 text-[10px]"
                                   disabled={activeDraft.flowState === "connecting" && !activeDraft.manualCommand}
                                   onClick={() => {
-                                    if (activeConnectionReady) {
+                                    if (activeChatGptConnected) {
                                       void runStatus(activeProviderId);
                                       return;
                                     }
 
-                                    void connectProvider(activeProviderId);
+                                    void connectProvider(activeProviderId, { authMethod: "chatgpt-oauth" });
                                   }}
                                 >
                                   {activeDraft.flowState === "connecting" && !activeDraft.manualCommand ? (
@@ -2032,7 +2040,7 @@ export function AddModelsDialog({
                                       Connecting...
                                     </>
                                   ) : (
-                                    activeConnectionReady ? "Refresh status" : "Connect ChatGPT"
+                                    activeChatGptConnected ? "Refresh status" : "Connect ChatGPT"
                                   )}
                                 </Button>
                                 <Button
@@ -2041,81 +2049,18 @@ export function AddModelsDialog({
                                   className="h-8 rounded-full px-3 text-[10px]"
                                   disabled={activeDraft.flowState === "connecting" && !activeDraft.manualCommand}
                                   onClick={() => {
-                                    if (activeConnectionReady) {
+                                    if (activeChatGptConnected) {
                                       void switchProviderAccount(activeProviderId);
                                       return;
                                     }
 
-                                    void connectProvider(activeProviderId, { force: true });
+                                    void connectProvider(activeProviderId, { force: true, authMethod: "chatgpt-oauth" });
                                   }}
                                 >
-                                  {activeConnectionReady ? "Switch account" : "Refresh setup"}
+                                  {activeChatGptConnected ? "Switch account" : "Refresh setup"}
                                 </Button>
                               </div>
 
-                              {activeDraft.manualCommand ? (
-                                <div className={cn("mt-3 rounded-[16px] border p-3", isLight ? "border-cyan-200 bg-cyan-50" : "border-cyan-300/15 bg-cyan-300/[0.07]")}>
-                                  <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div>
-                                      <p className={cn("text-[11px] font-medium", isLight ? "text-cyan-900" : "text-cyan-50")}>Finish setup in Terminal</p>
-                                      <p className={cn("mt-1 max-w-[480px] text-[10px] leading-[0.98rem]", isLight ? "text-cyan-800" : "text-cyan-100/80")}>
-                                        Open Terminal, complete the Codex app-server setup, then return here and check discovery.
-                                      </p>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                      <Button
-                                        type="button"
-                                        variant="secondary"
-                                        size="sm"
-                                        className="h-7 rounded-full px-2.5 text-[10px]"
-                                        disabled={isOpeningTerminal}
-                                        onClick={() => {
-                                          void openTerminal(activeDraft.manualCommand || "");
-                                        }}
-                                      >
-                                        {isOpeningTerminal ? (
-                                          <>
-                                            <LoaderCircle className="mr-1.5 h-3 w-3 animate-spin" />
-                                            Opening...
-                                          </>
-                                        ) : (
-                                          <>
-                                            <SquareTerminal className="mr-1.5 h-3 w-3" />
-                                            Open Terminal
-                                          </>
-                                        )}
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-7 rounded-full px-2.5 text-[10px]"
-                                        onClick={() => {
-                                          void copyText(activeDraft.manualCommand || "");
-                                        }}
-                                      >
-                                        <Copy className="mr-1.5 h-3 w-3" />
-                                        Copy command
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-7 rounded-full px-2.5 text-[10px]"
-                                        onClick={() => {
-                                          void discoverProvider(activeProviderId);
-                                        }}
-                                      >
-                                        <RefreshCw className="mr-1.5 h-3 w-3" />
-                                        I&apos;ve connected it
-                                      </Button>
-                                    </div>
-                                  </div>
-                                  <div className={cn("mt-2.5 overflow-x-auto rounded-[14px] border px-3 py-2", isLight ? "border-cyan-200 bg-white/70" : "border-white/10 bg-slate-950/60")}>
-                                    <code className={cn("text-[10px]", isLight ? "text-foreground" : "text-slate-200")}>{activeDraft.manualCommand}</code>
-                                  </div>
-                                </div>
-                              ) : null}
                             </div>
                           ) : null}
 
@@ -3531,21 +3476,28 @@ function resolveConnectionDetail(
   }
 
   const connected = Boolean(readinessProvider?.connected);
+  const descriptor = getModelProviderDescriptor(providerId);
 
   return {
     provider: providerId,
+    authMethod: readinessProvider?.authMethod ?? null,
+    availableAuthMethods: readinessProvider?.availableAuthMethods ?? (
+      descriptor.authMethods
+        ? [...descriptor.authMethods]
+        : undefined
+    ),
     connected,
     canConnect: true,
-    needsTerminal: providerId === "openai-codex",
+    needsTerminal: false,
     source: readinessProvider ? "gateway" : "openclaw-config",
     degraded: !connected && localModelCount > 0,
     stale: false,
-    recovery: connected ? null : `Connect ${getModelProviderDescriptor(providerId).shortLabel} through OpenClaw, then refresh discovery.`,
+    recovery: connected ? null : `Connect ${descriptor.shortLabel} through OpenClaw, then refresh discovery.`,
     detail: connected
-      ? readinessProvider?.detail || getModelProviderDescriptor(providerId).helperText
+      ? readinessProvider?.detail || descriptor.helperText
       : localModelCount > 0
-        ? `${localModelCount} model${localModelCount === 1 ? "" : "s"} are already saved in AgentOS. Connect ${getModelProviderDescriptor(providerId).shortLabel} to use them.`
-        : getModelProviderDescriptor(providerId).helperText
+        ? `${localModelCount} model${localModelCount === 1 ? "" : "s"} are already saved in AgentOS. Connect ${descriptor.shortLabel} to use them.`
+        : descriptor.helperText
   };
 }
 
@@ -3604,6 +3556,10 @@ function resolveProviderConnectionLabel(
   }
 
   if (connection.verification === "credential-stored") {
+    if (connection.authMethod === "chatgpt-oauth") {
+      return "ChatGPT connected";
+    }
+
     return "Credential stored";
   }
 

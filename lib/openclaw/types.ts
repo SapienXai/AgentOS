@@ -102,6 +102,8 @@ export interface AgentBootstrapFileInput {
 
 export interface ModelAuthProviderStatus {
   provider: string;
+  authMethod?: AddModelsProviderAuthMethod | null;
+  availableAuthMethods?: AddModelsProviderAuthMethod[];
   connected: boolean;
   canLogin: boolean;
   detail: string | null;
@@ -1441,7 +1443,6 @@ export type OpenClawModelOnboardingStreamEvent =
     };
 
 export type BuiltInAddModelsProviderId =
-  | "openai-codex"
   | "openrouter"
   | "ollama"
   | "openai"
@@ -1456,6 +1457,8 @@ export type AddModelsProviderId = BuiltInAddModelsProviderId | (string & {});
 export type AddModelsProviderCategory = "primary" | "other";
 
 export type AddModelsProviderConnectKind = "oauth" | "apiKey" | "local";
+
+export type AddModelsProviderAuthMethod = "api-key" | "chatgpt-oauth";
 
 export type AddModelsFlowState =
   | "idle"
@@ -1486,6 +1489,8 @@ export interface AddModelsCatalogModel {
 
 export interface AddModelsProviderConnectionStatus {
   provider: string;
+  authMethod?: AddModelsProviderAuthMethod | null;
+  availableAuthMethods?: AddModelsProviderAuthMethod[];
   connected: boolean;
   verification?: "not-configured" | "credential-stored" | "verified" | "degraded" | "unknown";
   canConnect: boolean;
@@ -1542,7 +1547,7 @@ export type AddModelsProviderAction =
   | "delete-provider-impact"
   | "delete-provider";
 
-export type ModelProviderAuthMethod = "chatgpt" | "api-key";
+export type ModelProviderAuthMethod = AddModelsProviderAuthMethod;
 
 export interface AddModelsProviderDisconnectImpact {
   providerModelIds: string[];

@@ -1,5 +1,5 @@
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
-import { normalizeOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
+import { normalizeOpenAiModelId } from "@/lib/openclaw/domains/model-provider-connection";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
 
 export type SessionModelOverrideRecord = {
@@ -28,9 +28,9 @@ export function buildSessionModelOverrides(
       const agent = agents.get(runtime.agentId);
       const agentModelId =
         agent?.modelId && agent.modelId !== "unassigned"
-          ? normalizeOpenAiCodexModelId(agent.modelId)
+          ? normalizeOpenAiModelId(agent.modelId)
           : "";
-      const sessionModelId = normalizeOpenAiCodexModelId(runtime.modelId);
+      const sessionModelId = normalizeOpenAiModelId(runtime.modelId);
 
       if (!agent || !agentModelId || modelIdsShareRoute(sessionModelId, agentModelId)) {
         return [];

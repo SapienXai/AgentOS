@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
-import { ensureOpenAiCodexAuthOrderForAgent } from "@/lib/openclaw/application/model-auth-service";
+import { ensureOpenAiAuthOrderForAgent } from "@/lib/openclaw/application/model-auth-service";
 import { stringifyCommandFailure } from "@/lib/openclaw/command-failure";
 import {
   clearMissionControlRuntimeHistoryCache,
@@ -22,9 +22,9 @@ import {
   readMissionControlSettings
 } from "@/lib/openclaw/domains/control-plane-settings";
 import {
-  buildOpenAiCodexAuthLoginCommand,
-  isOpenAiCodexAuthFailure,
-  resolveOpenAiCodexAuthRecoveryMessage
+  buildOpenAiAuthLoginCommand,
+  isOpenAiAuthFailure,
+  resolveOpenAiAuthRecoveryMessage
 } from "@/lib/openclaw/model-auth-errors";
 import { resolveOpenClawBin } from "@/lib/openclaw/cli";
 import { openClawStateRootPath } from "@/lib/openclaw/state/paths";
@@ -140,10 +140,9 @@ export async function ensureOpenClawRuntimeSmokeTest(options: {
   await assertOpenClawRuntimeStateAccess(agentId, smokeAgent?.agentDir);
 
   try {
-    await ensureOpenAiCodexAuthOrderForAgent({
+    await ensureOpenAiAuthOrderForAgent({
       agentId,
-      modelId: smokeAgent?.modelId,
-      agentDir: smokeAgent?.agentDir
+      modelId: smokeAgent?.modelId
     });
 
     const payload = await getOpenClawAdapter().runAgentTurn(
@@ -172,9 +171,9 @@ export async function ensureOpenClawRuntimeSmokeTest(options: {
     return result;
   } catch (error) {
     const rawError = stringifyCommandFailure(error) || "OpenClaw runtime smoke test failed.";
-    const errorMessage = isOpenAiCodexAuthFailure(rawError)
-      ? resolveOpenAiCodexAuthRecoveryMessage(
-          buildOpenAiCodexAuthLoginCommand(await resolveOpenClawBin().catch(() => "openclaw"))
+    const errorMessage = isOpenAiAuthFailure(rawError)
+      ? resolveOpenAiAuthRecoveryMessage(
+          buildOpenAiAuthLoginCommand(await resolveOpenClawBin().catch(() => "openclaw"))
         )
       : rawError;
     const result: OpenClawRuntimeSmokeTest = {

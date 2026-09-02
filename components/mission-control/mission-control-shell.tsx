@@ -2756,14 +2756,14 @@ export function MissionControlShell({
         throw new Error(authFlow?.error || "ChatGPT sign-in did not complete.");
       }
 
-      const result = await readModelProviderStatus("openai-codex", { includeSnapshot: true });
+      const result = await readModelProviderStatus("openai", { includeSnapshot: true });
 
       if (!result.connection.connected) {
         throw new Error("ChatGPT sign-in completed, but OpenClaw did not report an active account yet.");
       }
 
       setChatGptBrowserAuth(null);
-      markModelProviderConnected("openai-codex", result.connection.detail, result.snapshot);
+      markModelProviderConnected("openai", result.connection.detail, result.snapshot);
     } catch (error) {
       if (!authUrlOpened && authWindow && !authWindow.closed) {
         authWindow.close();

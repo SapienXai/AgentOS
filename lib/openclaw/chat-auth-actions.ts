@@ -57,7 +57,7 @@ function resolveProviderFromAuthCommand(message: string) {
   );
 
   if (authCommandMatch?.[1] === "login" && authCommandMatch[3] === "openai") {
-    return "openai-codex";
+    return "openai";
   }
 
   if (authCommandMatch?.[3]) {
@@ -71,7 +71,7 @@ function resolveProviderFromAuthCommand(message: string) {
 
 function resolveProviderFromKnownCopy(message: string) {
   if (/\bChatGPT\/Codex\b|\bChatGPT\b|\bCodex\b/i.test(message)) {
-    return "openai-codex";
+    return "openai";
   }
 
   const lowerMessage = message.toLowerCase();
@@ -100,7 +100,7 @@ function resolveProviderFromModelId(modelId: string | null | undefined, message:
   }
 
   if (modelProvider === "openai" && (/\bChatGPT\b|\bCodex\b/i.test(message) || /\bauth refresh request timed out\b/i.test(message))) {
-    return "openai-codex";
+    return "openai";
   }
 
   return normalizeAddModelsProviderId(modelProvider);

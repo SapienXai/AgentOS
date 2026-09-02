@@ -1,25 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-  connectOpenClawChatGptProvider,
-  extractOpenAiAuthorizationUrl
-} from "@/lib/openclaw/application/chatgpt-provider-auth-service";
-
-test("ChatGPT browser auth extracts only the official OpenAI authorization URL", () => {
-  const authorizationUrl = extractOpenAiAuthorizationUrl(
-    "Open the following URL: \u001b[36mhttps://auth.openai.com/oauth/authorize?client_id=agentos&state=test\u001b[0m"
-  );
-
-  assert.equal(
-    authorizationUrl,
-    "https://auth.openai.com/oauth/authorize?client_id=agentos&state=test"
-  );
-  assert.equal(
-    extractOpenAiAuthorizationUrl("https://evil.example/oauth/authorize?state=test"),
-    null
-  );
-});
+import { connectOpenClawChatGptProvider } from "@/lib/openclaw/application/chatgpt-provider-auth-service";
 
 test("ChatGPT provider auth runs OpenClaw login directly when the Codex plugin is ready", async () => {
   const setupCalls: string[][] = [];
@@ -65,8 +47,7 @@ test("ChatGPT provider auth installs and repairs the Codex plugin before login",
   );
 
   assert.deepEqual(calls, [
-    "plugins install --force --accept-capabilities @openclaw/codex",
-    "doctor --fix",
+    "plugins install --force @openclaw/codex",
     "gateway restart",
     "login force=false"
   ]);

@@ -12,8 +12,8 @@ test("agent chat auth action detects ChatGPT Codex reconnect messages", () => {
     "openai/gpt-5.4-mini"
   );
 
-  assert.equal(action?.provider, "openai-codex");
-  assert.equal(action?.label, "ChatGPT");
+  assert.equal(action?.provider, "openai");
+  assert.equal(action?.label, "OpenAI");
 });
 
 test("agent chat auth action understands Codex provider login commands", () => {
@@ -22,8 +22,8 @@ test("agent chat auth action understands Codex provider login commands", () => {
     "openai/gpt-5.4-mini"
   );
 
-  assert.equal(action?.provider, "openai-codex");
-  assert.equal(action?.label, "ChatGPT");
+  assert.equal(action?.provider, "openai");
+  assert.equal(action?.label, "OpenAI");
 });
 
 test("agent chat auth action detects Codex auth refresh timeout diagnostics", () => {
@@ -32,8 +32,8 @@ test("agent chat auth action detects Codex auth refresh timeout diagnostics", ()
     "openai/gpt-5.4-mini"
   );
 
-  assert.equal(action?.provider, "openai-codex");
-  assert.equal(action?.label, "ChatGPT");
+  assert.equal(action?.provider, "openai");
+  assert.equal(action?.label, "OpenAI");
 });
 
 test("agent chat auth action detects silent Codex chat stream failures", () => {
@@ -42,8 +42,8 @@ test("agent chat auth action detects silent Codex chat stream failures", () => {
     "openai/gpt-5.4-mini"
   );
 
-  assert.equal(action?.provider, "openai-codex");
-  assert.equal(action?.label, "ChatGPT");
+  assert.equal(action?.provider, "openai");
+  assert.equal(action?.label, "OpenAI");
 });
 
 test("agent chat auth action reads provider from OpenClaw auth command", () => {

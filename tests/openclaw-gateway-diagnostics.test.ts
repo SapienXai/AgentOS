@@ -39,7 +39,7 @@ const modelReadiness: ModelReadiness = {
   resolvedDefaultModel: "openai/gpt-5.5",
   defaultModelReady: true,
   recommendedModelId: "openai/gpt-5.5",
-  preferredLoginProvider: "openai-codex",
+  preferredLoginProvider: "openai",
   totalModelCount: 1,
   availableModelCount: 1,
   localModelCount: 0,

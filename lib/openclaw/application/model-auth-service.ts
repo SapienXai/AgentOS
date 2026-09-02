@@ -1,40 +1,33 @@
 import "server-only";
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
-import { isOpenAiCodexBackedModel } from "@/lib/openclaw/domains/model-provider-connection";
+import { isOpenAiBackedModel } from "@/lib/openclaw/domains/model-provider-connection";
 import {
-  buildOpenAiCodexAuthLoginCommand,
-  resolveOpenAiCodexAuthRecoveryMessage
+  buildOpenAiAuthLoginCommand,
+  resolveOpenAiAuthRecoveryMessage
 } from "@/lib/openclaw/model-auth-errors";
 import type { ModelsStatusPayload } from "@/lib/openclaw/client/gateway-client";
 
-type OpenAiCodexAuthOrderRepair = {
+type OpenAiAuthOrderRepair = {
   needsRepair: boolean;
   profileIds: string[];
   reason: "not-needed" | "no-usable-profile" | "needs-order";
 };
 
 const repairCacheTtlMs = 5 * 60 * 1000;
-const legacyProviderFileFallbackEnv = "AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK";
 const repairedAuthOrderCache = new Map<string, { expiresAt: number; profileKey: string }>();
 
-export async function ensureOpenAiCodexAuthOrderForAgent({
+export async function ensureOpenAiAuthOrderForAgent({
   agentId,
-  modelId,
-  agentDir
+  modelId
 }: {
   agentId: string;
   modelId?: string | null;
-  agentDir?: string | null;
 }) {
-  if (!agentId.trim() || !modelId || !isOpenAiCodexBackedModel(modelId)) {
+  if (!agentId.trim() || !modelId || !isOpenAiBackedModel(modelId)) {
     return {
       repaired: false,
-      reason: "not-codex-model" as const
+      reason: "not-openai-model" as const
     };
   }
 
@@ -43,20 +36,16 @@ export async function ensureOpenAiCodexAuthOrderForAgent({
   try {
     status = await getOpenClawAdapter().getAgentModelStatus({ agentId }, { timeoutMs: 8_000 });
   } catch (error) {
-    const copiedProfileIds = agentDir && isLegacyProviderFileFallbackEnabled()
-      ? await copyOpenAiCodexProfilesFromMainStore(agentDir).catch(() => [])
-      : [];
-
     return {
-      repaired: copiedProfileIds.length > 0,
-      reason: copiedProfileIds.length > 0 ? "profile-copy-fallback" as const : "status-failed" as const,
-      profileIds: copiedProfileIds,
+      repaired: false,
+      reason: "status-failed" as const,
+      profileIds: [],
       error
     };
   }
 
-  const repair = resolveOpenAiCodexAuthOrderRepair(status);
-  const authBlock = resolveOpenAiCodexRuntimeAuthBlock(status);
+  const repair = resolveOpenAiAuthOrderRepair(status);
+  const authBlock = resolveOpenAiRuntimeAuthBlock(status);
 
   if (authBlock) {
     throw new Error(authBlock);
@@ -80,18 +69,12 @@ export async function ensureOpenAiCodexAuthOrderForAgent({
     };
   }
 
-  const resolvedAgentDir = readString((status as Record<string, unknown>).agentDir) ?? agentDir ?? null;
-
-  if (resolvedAgentDir && isLegacyProviderFileFallbackEnabled()) {
-    await persistOpenAiCodexProfileCopies(resolvedAgentDir, repair.profileIds).catch(() => undefined);
-  }
-
   try {
     if (agentId !== "main") {
-      await setOpenAiCodexAuthOrderWithRetry("main", repair.profileIds).catch(() => undefined);
+      await setOpenAiAuthOrderWithRetry("main", repair.profileIds).catch(() => undefined);
     }
 
-    await setOpenAiCodexAuthOrderWithRetry(agentId, repair.profileIds);
+    await setOpenAiAuthOrderWithRetry(agentId, repair.profileIds);
     repairedAuthOrderCache.set(cacheKey, {
       expiresAt: Date.now() + repairCacheTtlMs,
       profileKey
@@ -111,7 +94,7 @@ export async function ensureOpenAiCodexAuthOrderForAgent({
   }
 }
 
-async function setOpenAiCodexAuthOrderWithRetry(agentId: string, profileIds: string[]) {
+async function setOpenAiAuthOrderWithRetry(agentId: string, profileIds: string[]) {
   let lastError: unknown = null;
 
   for (const delayMs of [0, 750, 1500]) {
@@ -137,105 +120,15 @@ async function setOpenAiCodexAuthOrderWithRetry(agentId: string, profileIds: str
   throw lastError;
 }
 
-async function persistOpenAiCodexProfileCopies(agentDir: string, profileIds: string[]) {
-  const sourceStore = await readAuthProfileStore(mainOpenAiCodexAuthStorePath());
-  const targetStorePath = path.join(agentDir, "auth-profiles.json");
-  const targetStore = await readAuthProfileStore(targetStorePath);
-  let changed = false;
-
-  targetStore.version = 1;
-  targetStore.profiles = targetStore.profiles ?? {};
-
-  for (const profileId of profileIds) {
-    const sourceProfile = sourceStore.profiles?.[profileId];
-
-    if (!isOpenAiCodexOAuthCredential(sourceProfile)) {
-      continue;
-    }
-
-    const targetProfile = targetStore.profiles[profileId];
-    if (JSON.stringify(targetProfile) === JSON.stringify(sourceProfile)) {
-      continue;
-    }
-
-    targetStore.profiles[profileId] = sourceProfile;
-    changed = true;
-  }
-
-  if (!changed) {
-    return;
-  }
-
-  await mkdir(path.dirname(targetStorePath), { recursive: true });
-  await writeFile(targetStorePath, `${JSON.stringify(targetStore, null, 2)}\n`, "utf8");
-}
-
-async function copyOpenAiCodexProfilesFromMainStore(agentDir: string) {
-  const sourceStore = await readAuthProfileStore(mainOpenAiCodexAuthStorePath());
-  const profileIds = Object.entries(sourceStore.profiles ?? {})
-    .filter(([, profile]) => isOpenAiCodexOAuthCredential(profile))
-    .map(([profileId]) => profileId);
-
-  if (profileIds.length === 0) {
-    return [];
-  }
-
-  await persistOpenAiCodexProfileCopies(agentDir, profileIds);
-  return profileIds;
-}
-
-function mainOpenAiCodexAuthStorePath() {
-  return path.join(os.homedir(), ".openclaw", "agents", "main", "agent", "auth-profiles.json");
-}
-
-async function readAuthProfileStore(filePath: string): Promise<{
-  version?: number;
-  profiles?: Record<string, Record<string, unknown>>;
-}> {
-  try {
-    const raw = await readFile(filePath, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-
-    if (isRecord(parsed)) {
-      return {
-        version: typeof parsed.version === "number" ? parsed.version : 1,
-        profiles: isRecord(parsed.profiles)
-          ? Object.fromEntries(
-              Object.entries(parsed.profiles).filter((entry): entry is [string, Record<string, unknown>] =>
-                isRecord(entry[1])
-              )
-            )
-          : {}
-      };
-    }
-  } catch {}
-
-  return {
-    version: 1,
-    profiles: {}
-  };
-}
-
-function isOpenAiCodexOAuthCredential(value: unknown): value is Record<string, unknown> {
-  return (
-    isRecord(value) &&
-    value.type === "oauth" &&
-    (value.provider === "openai" || value.provider === "openai-codex") &&
-    isRecord(value.oauthRef)
-  );
-}
-
-export function resolveOpenAiCodexAuthOrderRepair(
+export function resolveOpenAiAuthOrderRepair(
   modelStatus: ModelsStatusPayload
-): OpenAiCodexAuthOrderRepair {
-  const oauthProvider = modelStatus.auth?.oauth?.providers?.find(
-    (entry) => entry.provider === "openai"
-  ) ?? modelStatus.auth?.oauth?.providers?.find(
-    (entry) => entry.provider === "openai-codex"
-  );
+): OpenAiAuthOrderRepair {
+  const oauthProvider = modelStatus.auth?.oauth?.providers?.find((entry) => entry.provider === "openai");
   const profiles = Array.isArray(oauthProvider?.profiles) ? oauthProvider.profiles : [];
   const usableProfiles = profiles.filter(isUsableAuthProfile);
-  const profileIds = usableProfiles.map((profile) => readString(profile.profileId)).filter(isNonEmptyString);
+  const profileIds = usableProfiles
+    .map((profile) => readString(profile.profileId))
+    .filter((profileId): profileId is string => Boolean(profileId?.toLowerCase().startsWith("openai:")));
 
   if (profileIds.length === 0) {
     return {
@@ -273,7 +166,7 @@ export function resolveOpenAiCodexAuthOrderRepair(
   };
 }
 
-export function resolveOpenAiCodexRuntimeAuthBlock(modelStatus: ModelsStatusPayload) {
+export function resolveOpenAiRuntimeAuthBlock(modelStatus: ModelsStatusPayload) {
   const unusableProfiles = Array.isArray(modelStatus.auth?.unusableProfiles)
     ? modelStatus.auth.unusableProfiles
     : [];
@@ -289,7 +182,8 @@ export function resolveOpenAiCodexRuntimeAuthBlock(modelStatus: ModelsStatusPayl
     const issue = readString(entry.issue)?.toLowerCase();
 
     return (
-      (provider === "openai" || provider === "openai-codex" || profileId?.startsWith("openai:")) &&
+      provider === "openai" &&
+      profileId?.startsWith("openai:") &&
       ["cooldown", "expired", "missing", "invalid", "error", "disabled", "revoked"].some((value) =>
         kind === value || status === value || issue?.includes(value)
       )
@@ -300,14 +194,9 @@ export function resolveOpenAiCodexRuntimeAuthBlock(modelStatus: ModelsStatusPayl
     return null;
   }
 
-  return resolveOpenAiCodexAuthRecoveryMessage(
-    buildOpenAiCodexAuthLoginCommand("openclaw", { force: true })
+  return resolveOpenAiAuthRecoveryMessage(
+    buildOpenAiAuthLoginCommand("openclaw", { force: true })
   );
-}
-
-function isLegacyProviderFileFallbackEnabled() {
-  const value = process.env[legacyProviderFileFallbackEnv];
-  return value === "1" || value?.toLowerCase() === "true" || value?.toLowerCase() === "on";
 }
 
 function isUsableAuthProfile(value: unknown): value is Record<string, unknown> {
@@ -316,7 +205,7 @@ function isUsableAuthProfile(value: unknown): value is Record<string, unknown> {
   }
 
   const profileId = readString(value.profileId);
-  if (!profileId) {
+  if (!profileId || !profileId.toLowerCase().startsWith("openai:")) {
     return false;
   }
 
@@ -326,10 +215,6 @@ function isUsableAuthProfile(value: unknown): value is Record<string, unknown> {
 
 function readString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function isNonEmptyString(value: string | null): value is string {
-  return Boolean(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

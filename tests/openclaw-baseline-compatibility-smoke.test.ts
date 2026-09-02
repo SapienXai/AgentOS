@@ -4,8 +4,8 @@ import { test } from "node:test";
 
 import { getOpenClawInstallCommand } from "@/lib/openclaw/install";
 import {
-  buildOpenAiCodexAuthLoginCommand,
-  buildOpenAiCodexAuthRepairCommand
+  buildOpenAiAuthLoginCommand,
+  buildOpenAiAuthRepairCommand
 } from "@/lib/openclaw/model-auth-errors";
 import {
   OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS,
@@ -88,12 +88,13 @@ test("gateway status and probe smoke use documented CLI commands", () => {
 });
 
 test("add ChatGPT/Codex model smoke uses the canonical OpenAI provider handoff", () => {
-  const loginCommand = buildOpenAiCodexAuthLoginCommand("openclaw");
-  const repairCommand = buildOpenAiCodexAuthRepairCommand("openclaw");
+  const loginCommand = buildOpenAiAuthLoginCommand("openclaw");
+  const repairCommand = buildOpenAiAuthRepairCommand("openclaw");
 
   assert.match(loginCommand, /models auth login --provider openai --set-default/);
   assert.doesNotMatch(loginCommand, staleCodexAuthCommandPattern);
-  assert.match(repairCommand, /doctor --fix/);
+  assert.match(repairCommand, /plugins install --force @openclaw\/codex/);
+  assert.doesNotMatch(repairCommand, /doctor --fix/);
   assert.match(repairCommand, /gateway restart/);
   assert.match(repairCommand, /models auth login --provider openai --set-default/);
   assert.doesNotMatch(repairCommand, staleCodexAuthCommandPattern);
@@ -115,8 +116,8 @@ test("set default model smoke stays Gateway-native before explicit recovery fall
 
   assert.match(stateService, /setDefaultModelViaGateway/);
   assert.match(stateService, /adapter\.setConfig\("agents\.defaults"/);
-  assert.match(stateService, /Legacy file fallback is disabled/);
-  assert.match(stateService, /AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK/);
+  assert.match(stateService, /AgentOS did not use CLI or legacy file fallback/);
+  assert.doesNotMatch(stateService, /AGENTOS_OPENCLAW_LEGACY_PROVIDER_FILE_FALLBACK/);
 });
 
 test("agent create and dispatch smoke keeps unsupported task assignment fail-closed", () => {

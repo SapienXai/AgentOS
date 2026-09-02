@@ -24,16 +24,16 @@ export function resolveRequiredLoginProvider(
   }
 
   if (preferredProvider === "openai") {
-    const openAiCodexProvider = snapshot.diagnostics.modelReadiness.authProviders.find(
-      (provider) => provider.provider === "openai-codex"
+    const openAiProvider = snapshot.diagnostics.modelReadiness.authProviders.find(
+      (provider) => provider.provider === "openai"
     );
 
-    if (openAiCodexProvider?.connected) {
+    if (openAiProvider?.connected) {
       return null;
     }
 
-    if (openAiCodexProvider && !openAiCodexProvider.connected && openAiCodexProvider.canLogin) {
-      return "openai-codex";
+    if (openAiProvider && !openAiProvider.connected && openAiProvider.canLogin) {
+      return "openai";
     }
   }
 

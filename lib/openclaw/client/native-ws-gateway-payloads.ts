@@ -306,18 +306,31 @@ export function normalizeModelStatusPayload(authPayload: unknown, modelsPayload:
     allowed,
     auth: {
       providers: authProviders.map((entry) => {
-        const usableProfileCount = countUsableAuthProfiles(entry.profiles);
+        const profileSummary = summarizeAuthProfiles(
+          readNonEmptyString(entry.provider),
+          entry.profiles
+        );
+        const rawEffectiveKind = readAuthKind(entry.effective) ??
+          readAuthKind(entry) ??
+          readNonEmptyString(entry.kind)?.toLowerCase();
+        const effectiveKind = resolveNormalizedAuthKind({
+          provider: readNonEmptyString(entry.provider),
+          profileSummary,
+          rawEffectiveKind,
+          status: readNonEmptyString(entry.status)
+        });
 
         return {
           provider: readNonEmptyString(entry.provider) ?? undefined,
           effective: {
-            kind: usableProfileCount > 0
-              ? "ok"
-              : readNonEmptyString(entry.status) ?? readNonEmptyString(entry.kind) ?? undefined,
+            kind: effectiveKind,
             detail: readNonEmptyString(entry.detail) ?? undefined
           },
           profiles: {
-            count: Array.isArray(entry.profiles) ? usableProfileCount : undefined
+            count: profileSummary.hasProfileList ? profileSummary.usableCount : undefined,
+            oauth: profileSummary.hasProfileList ? profileSummary.usableOauthCount : undefined,
+            token: profileSummary.hasProfileList ? profileSummary.usableTokenCount : undefined,
+            apiKey: profileSummary.hasProfileList ? profileSummary.usableApiKeyCount : undefined
           }
         };
       }),
@@ -327,16 +340,185 @@ export function normalizeModelStatusPayload(authPayload: unknown, modelsPayload:
         : [],
       unusableProfiles: Array.isArray(auth.unusableProfiles) ? auth.unusableProfiles : [],
       oauth: {
-        providers: authProviders.map((entry) => ({
-          provider: readNonEmptyString(entry.provider) ?? undefined,
-          status: countUsableAuthProfiles(entry.profiles) > 0
-            ? "ok"
-            : readNonEmptyString(entry.status) ?? undefined,
-          profiles: Array.isArray(entry.profiles) ? entry.profiles : undefined,
-          effectiveProfiles: Array.isArray(entry.effectiveProfiles) ? entry.effectiveProfiles : undefined
-        }))
+        providers: authProviders.map((entry) => normalizeOauthProviderEntry(entry))
       }
     }
+  };
+}
+
+type AuthProfileSummary = {
+  hasProfileList: boolean;
+  usableCount: number;
+  usableOauthCount: number;
+  usableTokenCount: number;
+  usableApiKeyCount: number;
+  oauthProfiles: unknown[];
+};
+
+function summarizeAuthProfiles(provider: string | null, value: unknown): AuthProfileSummary {
+  if (!Array.isArray(value)) {
+    return {
+      hasProfileList: false,
+      usableCount: 0,
+      usableOauthCount: 0,
+      usableTokenCount: 0,
+      usableApiKeyCount: 0,
+      oauthProfiles: []
+    };
+  }
+
+  let usableCount = 0;
+  let usableOauthCount = 0;
+  let usableTokenCount = 0;
+  let usableApiKeyCount = 0;
+  const oauthProfiles: unknown[] = [];
+
+  for (const profile of value) {
+    const classification = classifyAuthProfile(provider, profile);
+    if (!isUsableAuthProfile(profile)) {
+      if (classification === "oauth") {
+        oauthProfiles.push(profile);
+      }
+      continue;
+    }
+
+    if (provider?.toLowerCase() === "openai" && classification === "unknown") {
+      continue;
+    }
+
+    usableCount += 1;
+    if (classification === "oauth") {
+      usableOauthCount += 1;
+      oauthProfiles.push(profile);
+    } else if (classification === "api-key") {
+      usableApiKeyCount += 1;
+    } else {
+      usableTokenCount += 1;
+    }
+  }
+
+  return {
+    hasProfileList: true,
+    usableCount,
+    usableOauthCount,
+    usableTokenCount,
+    usableApiKeyCount,
+    oauthProfiles
+  };
+}
+
+function classifyAuthProfile(provider: string | null, value: unknown): "oauth" | "api-key" | "unknown" {
+  if (!isObjectRecord(value)) {
+    return "unknown";
+  }
+
+  const profileId = readNonEmptyString(value.profileId) ?? readNonEmptyString(value.id);
+  const rawKind = readAuthKind(value);
+  if (
+    provider?.toLowerCase() === "openai" &&
+    rawKind === "oauth" &&
+    !profileId?.toLowerCase().startsWith("openai:")
+  ) {
+    return "unknown";
+  }
+  if (rawKind === "oauth") {
+    return "oauth";
+  }
+  if (rawKind === "api-key") {
+    return "api-key";
+  }
+
+  if (provider?.toLowerCase() === "openai" && profileId?.toLowerCase().startsWith("openai:")) {
+    return "oauth";
+  }
+
+  return "unknown";
+}
+
+function readAuthKind(value: unknown): "oauth" | "api-key" | null {
+  if (!isObjectRecord(value)) {
+    return null;
+  }
+
+  const rawValues = [value.authMethod, value.method, value.type, value.mode, value.kind]
+    .map(readNonEmptyString)
+    .filter((entry): entry is string => Boolean(entry));
+
+  for (const rawValue of rawValues) {
+    const normalized = rawValue.toLowerCase().replace(/[_\s]/g, "-");
+    if (["oauth", "chatgpt-oauth", "chatgpt"].includes(normalized)) {
+      return "oauth";
+    }
+    if (["api-key", "apikey", "api-key-auth", "token", "api-token", "key"].includes(normalized)) {
+      return "api-key";
+    }
+  }
+
+  return null;
+}
+
+function resolveNormalizedAuthKind({
+  provider,
+  profileSummary,
+  rawEffectiveKind,
+  status
+}: {
+  provider: string | null;
+  profileSummary: AuthProfileSummary;
+  rawEffectiveKind: string | undefined;
+  status: string | null;
+}) {
+  if (profileSummary.usableOauthCount > 0) {
+    return "ok";
+  }
+  if (profileSummary.usableApiKeyCount > 0) {
+    return "api-key";
+  }
+
+  const normalizedRawKind = rawEffectiveKind?.toLowerCase().replace(/[_\s]/g, "-");
+  if (
+    profileSummary.hasProfileList &&
+    profileSummary.oauthProfiles.length > 0 &&
+    profileSummary.usableOauthCount === 0
+  ) {
+    return "unusable";
+  }
+
+  if (provider?.toLowerCase() === "openai" && profileSummary.hasProfileList && profileSummary.usableCount === 0) {
+    return "unusable";
+  }
+
+  if (normalizedRawKind === "oauth") {
+    return profileSummary.hasProfileList ? "unusable" : "oauth";
+  }
+  if (["api-key", "apikey", "token"].includes(normalizedRawKind ?? "")) {
+    return profileSummary.hasProfileList ? "unusable" : "api-key";
+  }
+
+  return status ?? rawEffectiveKind;
+}
+
+function normalizeOauthProviderEntry(entry: Record<string, unknown>) {
+  const provider = readNonEmptyString(entry.provider);
+  const profileSummary = summarizeAuthProfiles(provider, entry.profiles);
+  const rawEffectiveKind = readAuthKind(entry.effective) ??
+    readAuthKind(entry) ??
+    readNonEmptyString(entry.kind)?.toLowerCase();
+  const explicitOauth = rawEffectiveKind?.toLowerCase().replace(/[_\s]/g, "-") === "oauth";
+  const hasOauthState = profileSummary.oauthProfiles.length > 0 ||
+    (explicitOauth && !profileSummary.hasProfileList);
+
+  return {
+    provider: provider ?? undefined,
+    status: profileSummary.usableOauthCount > 0
+      ? "ok"
+      : hasOauthState
+        ? readNonEmptyString(entry.status) ?? undefined
+        : undefined,
+    profiles: profileSummary.oauthProfiles.length > 0 ? profileSummary.oauthProfiles : undefined,
+    effectiveProfiles: Array.isArray(entry.effectiveProfiles)
+      ? entry.effectiveProfiles.filter((profile) => classifyAuthProfile(provider, profile) === "oauth")
+      : undefined
   };
 }
 

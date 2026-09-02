@@ -82,12 +82,22 @@ record(
 
 const modelStatus = await request("/api/models/providers", {
   method: "POST",
-  body: JSON.stringify({ action: "status", provider: "openai-codex" })
+  body: JSON.stringify({ action: "status", provider: "openai" })
 }, 45_000);
 record(
   "model status",
-  modelStatus.ok && modelStatus.body?.provider === "openai-codex" ? "PASS" : "FAIL",
+  modelStatus.ok && modelStatus.body?.provider === "openai" ? "PASS" : "FAIL",
   modelStatus.body?.message ?? modelStatus.body?.error ?? `status=${modelStatus.status}`
+);
+
+record(
+  "canonical OpenAI auth/runtime mapping",
+  modelStatus.ok &&
+    modelStatus.body?.provider === "openai" &&
+    ["api-key", "chatgpt-oauth", undefined].includes(modelStatus.body?.connection?.authMethod) ? "PASS" : "FAIL",
+  modelStatus.ok
+    ? `authMethod=${modelStatus.body?.connection?.authMethod ?? "unknown"}; runtime=openai/codex`
+    : modelStatus.body?.error ?? "status failed"
 );
 
 const agents = Array.isArray(snapshot.body?.agents) ? snapshot.body.agents : [];

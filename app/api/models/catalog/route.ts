@@ -17,7 +17,7 @@ import {
   type ModelCatalogCacheSource,
   writeModelCatalogCache
 } from "@/lib/openclaw/application/model-catalog-cache-service";
-import { normalizeOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
+import { normalizeOpenAiModelId } from "@/lib/openclaw/domains/model-provider-connection";
 import { isAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
 import { markConfiguredCatalogModels } from "@/lib/openclaw/domains/model-catalog-projection";
 import {
@@ -242,8 +242,8 @@ function normalizeCatalogProvider(provider: string): AddModelsProviderId {
 }
 
 function normalizeCatalogModelId(provider: AddModelsProviderId, modelId: string) {
-  if (provider === "openai-codex") {
-    return normalizeOpenAiCodexModelId(modelId);
+  if (provider === "openai") {
+    return normalizeOpenAiModelId(modelId);
   }
 
   if (modelId.startsWith("gemini/")) {
@@ -258,10 +258,6 @@ function isRecommendedModel(provider: string, modelId: string) {
 
   if (provider === "openrouter") {
     return /gpt-5|claude-sonnet|gemini-2\.5|gemini-3|qwen3-coder|codestral|openrouter\/auto/.test(normalized);
-  }
-
-  if (provider === "openai-codex") {
-    return /gpt-5\.4|gpt-5\.3-codex|codex/.test(normalized);
   }
 
   if (provider === "ollama") {

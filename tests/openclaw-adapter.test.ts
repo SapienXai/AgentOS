@@ -547,7 +547,7 @@ test("OpenClaw adapter exposes catalog, config, agent turn, and probe methods", 
   await adapter.listModels({ all: true }, { timeoutMs: 3 });
   await adapter.getAgentModelStatus({ agentId: "agent-1" }, { timeoutMs: 3 });
   await adapter.setModelAuthOrder(
-    { provider: "openai-codex", agentId: "agent-1", profileIds: ["profile-1"] },
+    { provider: "openai", agentId: "agent-1", profileIds: ["profile-1"] },
     { timeoutMs: 3 }
   );
   await adapter.scanModels({ yes: true, noInput: true, timeoutMs: 4 });

@@ -805,6 +805,9 @@ export type ModelsStatusPayload = {
       };
       profiles?: {
         count?: number;
+        oauth?: number;
+        token?: number;
+        apiKey?: number;
       };
       syntheticAuth?: {
         value?: string;

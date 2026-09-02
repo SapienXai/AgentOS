@@ -5,8 +5,9 @@ import type {
 } from "@/lib/openclaw/client/gateway-client";
 import {
   buildModelStatusConnectionStatus,
+  isUnsupportedLegacyModelId,
   modelRecordIdentityKey,
-  normalizeOpenAiCodexModelId,
+  normalizeOpenAiModelId,
   resolveModelRecordProvider
 } from "@/lib/openclaw/domains/model-provider-connection";
 import type { AddModelsProviderId, ModelRecord, OpenClawAgent } from "@/lib/openclaw/types";
@@ -56,11 +57,11 @@ export function mergeConfiguredModelsIntoModelsPayload(
   models: ModelsPayload["models"],
   configuredModelIds: Iterable<string>
 ): ModelsPayload["models"] {
-  const seenModelIds = new Set(models.map((model) => normalizeOpenAiCodexModelId(model.key).toLowerCase()));
+  const seenModelIds = new Set(models.map((model) => normalizeOpenAiModelId(model.key).toLowerCase()));
   const mergedModels = [...models];
 
   for (const modelId of configuredModelIds) {
-    const normalizedModelId = normalizeOpenAiCodexModelId(modelId);
+    const normalizedModelId = normalizeOpenAiModelId(modelId);
 
     if (!normalizedModelId || seenModelIds.has(normalizedModelId.toLowerCase())) {
       continue;
@@ -94,12 +95,12 @@ export function filterModelsToConfiguredSelection(
       ...Array.from(configuredModelIds),
       ...agents.map((agent) => readAgentModel(agent) ?? "")
     ]
-      .map((modelId) => normalizeOpenAiCodexModelId(modelId).toLowerCase())
+      .map((modelId) => normalizeOpenAiModelId(modelId).toLowerCase())
       .filter(Boolean)
   );
 
   return models.filter((model) =>
-    selectedModelIds.has(normalizeOpenAiCodexModelId(model.key).toLowerCase())
+    selectedModelIds.has(normalizeOpenAiModelId(model.key).toLowerCase())
   );
 }
 
@@ -118,7 +119,7 @@ export function inferFallbackModelMetadata(modelId: string): {
     };
   }
 
-  if (provider === "openai" || provider === "openai-codex") {
+  if (provider === "openai") {
     return {
       contextWindow: route.startsWith("gpt-5") ? 272000 : null,
       local: false
@@ -237,15 +238,18 @@ export function buildModelRecords(
   const modelUsage = new Map<string, number>();
 
   for (const agent of agents) {
-    const canonicalModelId = normalizeOpenAiCodexModelId(agent.modelId);
+    const canonicalModelId = normalizeOpenAiModelId(agent.modelId);
     modelUsage.set(canonicalModelId, (modelUsage.get(canonicalModelId) ?? 0) + 1);
   }
 
   const recordsByIdentity = new Map<string, ModelRecord>();
 
   for (const model of models) {
-    const provider = resolveModelRecordProvider(model.key, modelStatus, model);
-    const id = normalizeOpenAiCodexModelId(model.key);
+    const staleLegacyRoute = isUnsupportedLegacyModelId(model.key);
+    const provider = staleLegacyRoute
+      ? "unsupported"
+      : resolveModelRecordProvider(model.key, modelStatus, model);
+    const id = normalizeOpenAiModelId(model.key);
     const record: ModelRecord = {
       id,
       name: model.name,
@@ -253,9 +257,9 @@ export function buildModelRecords(
       input: model.input,
       contextWindow: model.contextWindow,
       local: model.local,
-      available: resolveModelRecordAvailability(model, provider, modelStatus),
-      missing: model.missing,
-      tags: model.tags,
+      available: staleLegacyRoute ? false : resolveModelRecordAvailability(model, provider, modelStatus),
+      missing: model.missing || staleLegacyRoute,
+      tags: staleLegacyRoute ? uniqueStrings([...model.tags, "stale-legacy-route"]) : model.tags,
       usageCount: modelUsage.get(id) ?? 0
     };
     const identityKey = modelRecordIdentityKey(model.key, provider);
@@ -295,10 +299,6 @@ function scoreModelRecord(record: ModelRecord) {
     score += 50;
   }
 
-  if (record.provider === "openai-codex") {
-    score += 10;
-  }
-
   if (record.usageCount > 0) {
     score += 5;
   }
@@ -315,13 +315,17 @@ function resolveModelRecordAvailability(
     return model.available;
   }
 
-  const connection = buildModelStatusConnectionStatus(provider, modelStatus, [normalizeOpenAiCodexModelId(model.key)]);
+  const allowedModelIds = modelStatus.allowed ?? [];
+  if (allowedModelIds.length > 0 && !allowedModelIds.includes(normalizeOpenAiModelId(model.key))) {
+    return false;
+  }
+
+  const connection = buildModelStatusConnectionStatus(provider, modelStatus, [normalizeOpenAiModelId(model.key)]);
   return connection?.connected ? model.available : false;
 }
 
 function isAddModelsProviderId(provider: string): provider is AddModelsProviderId {
   return [
-    "openai-codex",
     "openrouter",
     "ollama",
     "openai",

@@ -710,7 +710,7 @@ function ConnectAiStage({
             className="chatgpt-connect-button group relative mt-6 h-12 min-w-[250px] overflow-hidden rounded-[14px] border border-slate-200/90 !bg-white !px-5 text-[13px] font-semibold !text-slate-900 !shadow-[0_2px_0_rgba(15,23,42,0.12),0_12px_24px_rgba(15,23,42,0.16),inset_0_1px_0_rgba(255,255,255,0.96),inset_0_-1px_0_rgba(15,23,42,0.08)] transition-transform hover:-translate-y-0.5 hover:!bg-white hover:!shadow-[0_3px_0_rgba(15,23,42,0.12),0_16px_30px_rgba(15,23,42,0.2),inset_0_1px_0_rgba(255,255,255,0.96),inset_0_-1px_0_rgba(15,23,42,0.08)] active:translate-y-[1px] focus-visible:ring-slate-400/70 focus-visible:ring-offset-2 disabled:hover:translate-y-0"
           >
             <span className="relative z-10 inline-flex items-center gap-2.5">
-              <ProviderLogo provider="openai-codex" className="h-6 w-6 rounded-[7px] border-slate-200/80 bg-white" />
+              <ProviderLogo provider="openai" className="h-6 w-6 rounded-[7px] border-slate-200/80 bg-white" />
               <span>{isError ? "Reconnect ChatGPT" : "Continue with ChatGPT"}</span>
             </span>
           </Button>

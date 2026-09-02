@@ -26,7 +26,6 @@ import {
   getMissionControlSnapshot,
   invalidateMissionControlSnapshotCache
 } from "@/lib/openclaw/application/mission-control-service";
-import { ensureOpenClawModelRuntimeConfig } from "@/lib/openclaw/application/model-provider-state-service";
 import { assertGatewayNativeConfigMutationAccess } from "@/lib/openclaw/application/settings-service";
 import {
   buildAgentPolicySkillId,
@@ -52,8 +51,8 @@ import {
 import { syncWorkspaceAgentsMarkdown } from "@/lib/openclaw/domains/workspace-agents-document-sync";
 import { normalizeOptionalValue } from "@/lib/openclaw/domains/control-plane-normalization";
 import {
-  isOpenAiCodexBackedModel,
-  normalizeOpenAiCodexModelId
+  isOpenAiBackedModel,
+  normalizeOpenAiModelId
 } from "@/lib/openclaw/domains/model-provider-connection";
 import { runWithGatewayAuthSetupRecovery } from "@/lib/openclaw/model-setup-recovery";
 import { writeTextFileEnsured } from "@/lib/openclaw/domains/workspace-bootstrap";
@@ -286,8 +285,8 @@ function readErrorMessage(error: unknown) {
 
 function normalizeAgentModelIdForUpdate(modelId: string | null | undefined) {
   const normalized = normalizeOptionalValue(modelId);
-  return normalized && isOpenAiCodexBackedModel(normalized)
-    ? normalizeOpenAiCodexModelId(normalized)
+  return normalized && isOpenAiBackedModel(normalized)
+    ? normalizeOpenAiModelId(normalized)
     : normalized;
 }
 
@@ -305,16 +304,6 @@ function resolveAgentToolPolicyInput(
       workspaceOnly: fileAccess === "workspace-only"
     }
   };
-}
-
-async function prepareAgentModelRuntimeConfig(modelId: string | undefined) {
-  if (!modelId || !isOpenAiCodexBackedModel(modelId)) {
-    return;
-  }
-
-  await runAgentGatewayMutation("preparing the agent model runtime", () =>
-    ensureOpenClawModelRuntimeConfig(modelId, { provider: "openai-codex" })
-  );
 }
 
 async function updateAgentGatewayMetadataOrDeferToConfig(
@@ -431,8 +420,6 @@ export async function updateAgent(input: AgentUpdateInput, gatewayOptions: OpenC
   }
 
   if (onlyModelChanged) {
-    await prepareAgentModelRuntimeConfig(nextModelId);
-
     await updateAgentGatewayMetadataOrDeferToConfig(
       {
         id: agentId,
@@ -510,8 +497,6 @@ export async function updateAgent(input: AgentUpdateInput, gatewayOptions: OpenC
   for (const skillId of nextDeclaredSkills) {
     await ensureWorkspaceSkillMarkdownFromProvisioning(resolvedWorkspacePath, skillId);
   }
-
-  await prepareAgentModelRuntimeConfig(nextModelId);
 
   await updateAgentGatewayMetadataOrDeferToConfig(
     {

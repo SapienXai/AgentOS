@@ -3,7 +3,6 @@ import {
   isOpenClawOnboardingModelReady,
   isOpenClawSystemReady
 } from "@/lib/openclaw/readiness";
-import { isKnownOpenAiCodexModelId } from "@/lib/openclaw/domains/model-provider-connection";
 import { isAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
 import type {
   AddModelsProviderId,
@@ -34,7 +33,7 @@ export function resolveChatGptOnboardingState(params: {
   phase: OpenClawModelOnboardingPhase | null;
   modelReady: boolean;
   chatGptConnected?: boolean;
-}) : ChatGptOnboardingState {
+}): ChatGptOnboardingState {
   if (params.runState === "error") {
     return "error";
   }
@@ -101,7 +100,7 @@ export function isChatGptConnectionReady(snapshot: MissionControlSnapshot) {
 
 export function isChatGptProviderConnected(snapshot: MissionControlSnapshot) {
   return snapshot.diagnostics.modelReadiness.authProviders.some(
-    (provider) => provider.connected && (provider.provider === "openai-codex" || provider.provider === "codex")
+    (provider) => provider.connected && provider.provider === "openai" && provider.authMethod === "chatgpt-oauth"
   );
 }
 
@@ -124,8 +123,8 @@ export function buildWizardSteps(stage: WizardStage, systemReady: boolean, model
     {
       id: "models",
       order: 2,
-      label: "Connect AI",
-      description: "Connect your AI",
+      label: "Model setup",
+      description: "Default model, auth",
       state: resolveStepState(modelReady, stage === "models" && !modelReady)
     }
   ] as Array<{ id: string; order: number; label: string; description: string; state: StepState }>;
@@ -425,7 +424,7 @@ export function resolveStageDescription(
     return `Selected model: ${selectedModelLabel}.`;
   }
 
-  return "Connect your AI to power your agents.";
+  return "Choose a provider, connect it, and then pick a model.";
 }
 
 export function resolveStepState(complete: boolean, current: boolean): StepState {
@@ -537,10 +536,6 @@ export function formatProviderLabel(provider: string) {
     return "OpenRouter";
   }
 
-  if (normalized === "openai-codex") {
-    return "ChatGPT";
-  }
-
   if (normalized === "openai") {
     return "OpenAI";
   }
@@ -590,15 +585,10 @@ export function resolveOnboardingModelProviderId(
   snapshot: MissionControlSnapshot,
   modelId?: string | null
 ): AddModelsProviderId | null {
-  const normalizedModelId = modelId?.trim() ?? "";
   const modelProvider = resolveModelProvider(modelId);
 
   if (!modelProvider) {
     return null;
-  }
-
-  if (modelProvider === "openai" && shouldTreatOpenAiModelAsCodex(snapshot, normalizedModelId)) {
-    return "openai-codex";
   }
 
   return isAddModelsProviderId(modelProvider) ? modelProvider : null;
@@ -628,10 +618,6 @@ export function resolveSelectedOnboardingProviderId(
   )?.provider;
 
   if (isAddModelsProviderId(snapshotProvider)) {
-    if (snapshotProvider === "openai" && shouldTreatOpenAiModelAsCodex(snapshot, normalizedModelId)) {
-      return "openai-codex";
-    }
-
     return snapshotProvider;
   }
 
@@ -643,17 +629,6 @@ export function resolveInitialOnboardingProviderId(
   selectedModelId?: string | null
 ): AddModelsProviderId {
   const selectedProvider = resolveOnboardingModelProviderId(snapshot, selectedModelId);
-
-  const connectedCodexProvider = snapshot.diagnostics.modelReadiness.authProviders.find(
-    (provider) => provider.provider === "openai-codex" && provider.connected
-  );
-  const connectedOpenAiProvider = snapshot.diagnostics.modelReadiness.authProviders.find(
-    (provider) => provider.provider === "openai" && provider.connected
-  );
-
-  if (selectedProvider === "openai" && connectedCodexProvider && !connectedOpenAiProvider) {
-    return "openai-codex";
-  }
 
   if (selectedProvider) {
     return selectedProvider;
@@ -686,26 +661,6 @@ export function resolveInitialOnboardingProviderId(
 
 export function resolvePreferredChatGptModelId(models: Array<{ id: string }>) {
   return models.find((model) => model.id === "openai/gpt-5.4-mini")?.id || models[0]?.id || null;
-}
-
-function shouldTreatOpenAiModelAsCodex(snapshot: MissionControlSnapshot, modelId: string) {
-  if (!isKnownOpenAiCodexModelId(modelId)) {
-    return false;
-  }
-
-  const providers = snapshot.diagnostics.modelReadiness.authProviders;
-  const codexProvider = providers.find((provider) => provider.provider === "openai-codex");
-  const openAiProvider = providers.find((provider) => provider.provider === "openai");
-
-  if (codexProvider?.connected) {
-    return true;
-  }
-
-  if (snapshot.diagnostics.modelReadiness.preferredLoginProvider === "openai-codex") {
-    return true;
-  }
-
-  return Boolean(codexProvider?.canLogin && !openAiProvider?.connected);
 }
 
 export function resolveInitialOnboardingModelId(snapshot: MissionControlSnapshot) {

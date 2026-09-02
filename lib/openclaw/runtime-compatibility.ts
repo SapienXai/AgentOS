@@ -1,11 +1,11 @@
 import type { MissionControlSnapshot } from "@/lib/openclaw/types";
 import {
-  buildOpenAiCodexAuthLoginCommand,
-  buildOpenAiCodexAuthRepairCommand,
-  isOpenAiCodexAuthFailure,
-  isOpenAiCodexProviderPluginMissing,
-  resolveOpenAiCodexAuthRecoveryMessage,
-  resolveOpenAiCodexProviderPluginRecoveryMessage
+  buildOpenAiAuthLoginCommand,
+  buildOpenAiAuthRepairCommand,
+  isOpenAiAuthFailure,
+  isOpenAiProviderPluginMissing,
+  resolveOpenAiAuthRecoveryMessage,
+  resolveOpenAiProviderPluginRecoveryMessage
 } from "@/lib/openclaw/model-auth-errors";
 
 type SmokeTestFailureKind =
@@ -60,23 +60,23 @@ export function classifyOpenClawRuntimeSmokeTestFailure(
   }
 
   if (
-    isOpenAiCodexProviderPluginMissing(normalized)
+    isOpenAiProviderPluginMissing(normalized)
   ) {
     return {
       kind: "provider-auth",
-      detail: resolveOpenAiCodexProviderPluginRecoveryMessage(
-        buildOpenAiCodexAuthRepairCommand("openclaw")
+      detail: resolveOpenAiProviderPluginRecoveryMessage(
+        buildOpenAiAuthRepairCommand("openclaw")
       )
     };
   }
 
   if (
-    isOpenAiCodexAuthFailure(normalized) ||
-    isOpenAiCodexAuthRefreshTimeout(normalized, options.modelId)
+    isOpenAiAuthFailure(normalized) ||
+    isOpenAiAuthRefreshTimeout(normalized, options.modelId)
   ) {
     return {
       kind: "provider-auth",
-      detail: resolveOpenAiCodexAuthRecoveryMessage(buildOpenAiCodexAuthLoginCommand("openclaw"))
+      detail: resolveOpenAiAuthRecoveryMessage(buildOpenAiAuthLoginCommand("openclaw"))
     };
   }
 
@@ -99,7 +99,7 @@ export function classifyOpenClawRuntimeSmokeTestFailure(
     return {
       kind: "model-route",
       detail:
-        "OpenClaw rejected a legacy Codex model route. Use canonical `openai/gpt-5.5` model refs with the Codex harness enabled, then run `openclaw doctor --fix` to migrate stale `openai-codex/gpt-*` config entries."
+        "OpenClaw rejected a stale legacy model route. AgentOS accepts canonical `openai/*` model refs and does not migrate OpenClaw state. Run the supported OpenClaw doctor/migration flow, then refresh AgentOS."
     };
   }
 
@@ -126,9 +126,9 @@ export function buildOpenClawRuntimeSmokeTestRecoveryCommand(command: string, ou
   }
 
   if (classification?.kind === "provider-auth") {
-    return isOpenAiCodexProviderPluginMissing(output)
-      ? buildOpenAiCodexAuthRepairCommand(command)
-      : buildOpenAiCodexAuthLoginCommand(command);
+    return isOpenAiProviderPluginMissing(output)
+      ? buildOpenAiAuthRepairCommand(command)
+      : buildOpenAiAuthLoginCommand(command);
   }
 
   if (classification?.kind === "session-store-permission") {
@@ -164,7 +164,7 @@ function isOpenRouterRateLimitFailure(output: string, modelId?: string | null) {
   return /\b429\b|too many requests|rate limit(?:ed)?|quota|out of credits|insufficient credits/i.test(output);
 }
 
-function isOpenAiCodexAuthRefreshTimeout(output: string, modelId?: string | null) {
+function isOpenAiAuthRefreshTimeout(output: string, modelId?: string | null) {
   const modelProvider = modelId?.split("/", 1)[0]?.trim().toLowerCase();
   const mentionsCodexProvider = /\b(openai|openai-codex|chatgpt|codex)\b/i.test(output) || modelProvider === "openai";
 
