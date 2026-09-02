@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 
-import { modelManagementModelToCatalogModel } from "@/lib/openclaw/domains/model-management";
+import { modelManagementModelToCatalogModel, presentModelProviderSetupHint } from "@/lib/openclaw/domains/model-management";
 import { normalizeModelsPayload } from "@/lib/openclaw/client/native-ws-gateway-payloads";
 import { formatModelProviderLabel, modelProviderPresentationRegistry } from "@/lib/openclaw/model-provider-registry";
 
@@ -43,6 +43,44 @@ test("native model management preserves aliases, roles, and unavailable state wi
   assert.equal(model.missing, true);
   assert.equal(model.available, false);
   assert.equal(model.supportsTools, true);
+});
+
+test("model projection preserves unknown native availability and capabilities", () => {
+  const model = modelManagementModelToCatalogModel({
+    id: "new-provider/opaque-model",
+    name: "Opaque Model",
+    provider: "new-provider",
+    providerName: "New Provider",
+    input: "text",
+    contextWindow: null,
+    available: null,
+    reasoning: undefined,
+    supportsTools: undefined,
+    tags: ["catalog"],
+    role: "available",
+    linkedAgents: 0,
+    advanced: {
+      rawId: "new-provider/opaque-model",
+      providerId: "new-provider",
+      deprecated: false,
+      disabled: false
+    }
+  });
+
+  assert.equal(model.available, null);
+  assert.equal(model.supportsTools, null);
+  assert.equal(model.recommended, false);
+});
+
+test("provider setup hints do not expose terminal commands in normal connection UI", () => {
+  assert.equal(
+    presentModelProviderSetupHint("Token created by running 'claude setup-token' in your terminal"),
+    "Requires a provider credential prepared outside AgentOS."
+  );
+  assert.equal(
+    presentModelProviderSetupHint("Stored and validated by OpenClaw"),
+    "Stored and validated by OpenClaw"
+  );
 });
 
 test("models.list keeps the 8.2 provider and capability metadata", () => {
@@ -89,15 +127,23 @@ test("post-onboarding management reads OpenClaw provider and auth metadata", () 
     path.join(rootDir, "app/api/models/management/route.ts"),
     "utf8"
   );
+  const wizardServiceSource = readFileSync(
+    path.join(rootDir, "lib/openclaw/application/model-setup-wizard-service.ts"),
+    "utf8"
+  );
 
   assert.match(serviceSource, /listOpenClawModels\(/);
   assert.match(serviceSource, /models\.authStatus/);
   assert.match(serviceSource, /openclaw\.setup\.detect/);
   assert.match(serviceSource, /providerOutcomes/);
   assert.doesNotMatch(serviceSource, /modelProviderRegistry/);
-  assert.match(serviceSource, /openclaw\.setup\.activate/);
-  assert.match(routeSource, /wizard\.next/);
+  assert.match(wizardServiceSource, /wizard\.next/);
+  assert.match(routeSource, /openclaw\.setup\.activate\.start/);
+  assert.match(routeSource, /openclaw\.setup\.prepare\.start/);
   assert.match(serviceSource, /models\.authLogout/);
+  assert.match(routeSource, /models\.manage/);
+  assert.match(routeSource, /secrets\.manage/);
+  assert.match(routeSource, /wizard-status[\s\S]*runtime\.use/);
 });
 
 test("the global Models UX does not use agents.defaults.models as an allowlist", () => {

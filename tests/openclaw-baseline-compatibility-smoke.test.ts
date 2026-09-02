@@ -104,6 +104,7 @@ test("legacy provider credential compatibility stays outside post-onboarding man
   const stateService = source("lib/openclaw/application/model-provider-state-service.ts");
   const registry = source("lib/openclaw/model-provider-registry.ts");
   const managementService = source("lib/openclaw/application/model-management-service.ts");
+  const wizardService = source("lib/openclaw/application/model-setup-wizard-service.ts");
 
   assert.match(stateService, /persistProviderCredentialViaGateway/);
   assert.match(stateService, /\.setConfig\(target\.configPath, credential/);
@@ -112,7 +113,7 @@ test("legacy provider credential compatibility stays outside post-onboarding man
   assert.match(registry, /not a provider capability registry/);
   assert.doesNotMatch(managementService, /modelProviderCredentialRegistry/);
   assert.match(managementService, /models\.authStatus/);
-  assert.match(managementService, /openclaw\.setup\.activate/);
+  assert.match(wizardService, /openclaw\.setup\.activate\.start/);
   assert.doesNotMatch(stateService, /Gateway-native provider token persistence is not available yet/);
 });
 

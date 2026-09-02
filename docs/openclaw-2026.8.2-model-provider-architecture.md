@@ -8,7 +8,7 @@ architecture and reuse it wherever possible.
 
 ## Provenance
 
-- AgentOS starting HEAD: `c1123d14`
+- AgentOS hardening review starting HEAD: `ca0add4083a0493446b88b58622de9eea8e9708d`
 - OpenClaw source: `2026.8.2`
 - OpenClaw source commit: `0965053fe6b9341776df147a6934b7485c60b5ca`
 - OpenClaw build: `2026.8.2-0965053fe6b9-2026-09-01T09-44-31.342Z`
@@ -84,14 +84,48 @@ Mutations use native OpenClaw state:
 - fallback order: `agents.defaults.model.fallbacks`
 - policy: `agents.defaults.modelPolicy.allow`
 - profile logout: `models.authLogout`
-- API-key setup: `openclaw.setup.activate` with the selected `authChoice`
-- interactive setup: `openclaw.setup.auth.start` followed by `wizard.next`
+- API-key setup: `openclaw.setup.activate.start` with the selected `authChoice`
+- interactive setup: `openclaw.setup.auth.start` followed by the shared
+  `wizard.next` runner
+- provider-owned/local preparation: `openclaw.setup.prepare.start`, followed by
+  `openclaw.setup.activate.start` for the returned `preparedModelRef`
+- wizard lifecycle: `wizard.next`, `wizard.cancel`, and `wizard.status`, with
+  terminal success accepted only for `{ done: true, status: "done" }`
 - custom providers: `models.providers.<providerId>` through the existing
   Gateway-backed config service
 
 AgentOS never returns submitted credentials. API-key fields are password
 inputs, requests are permission-gated, and responses pass through secret
 redaction.
+
+### Wizard contract
+
+The post-onboarding connection dialog consumes the released 8.2 Gateway wizard
+contract through `lib/openclaw/application/model-setup-wizard-service.ts` and
+`lib/openclaw/domains/model-setup-wizard.ts`. It models `note`, `select`,
+`multiselect`, `text`, `confirm`, `progress`, and `action` steps, preserves
+opaque option values, masks sensitive text, renders provider URLs/device codes,
+and submits confirmation as a boolean. Gateway-owned progress steps are
+advanced automatically with a bounded, cancellable loop; client-owned steps
+remain user actions.
+
+The start response is interpreted before any `wizard.next` call. A terminal
+error or cancellation is never rendered as a connected provider. Preparation
+does not imply readiness: a `preparedModelRef` starts a separate activation
+wizard, and only `modelActivation` establishes readiness. If activation reports
+`gatewayRestartRequired`, AgentOS reports that OpenClaw must restart and does
+not claim the model is ready prematurely.
+
+Native auth profiles remain OpenClaw-owned. Profile-level logout is offered only
+when `logoutSupported` is true; config-bound credentials remain managed by
+OpenClaw and are not presented with a fake disconnect action.
+
+Model reads require `runtime.use`. Model configuration mutations (default,
+fallback order, and `modelPolicy.allow`) require `models.manage`. Provider
+authentication, API keys, custom-provider credentials, wizard cancellation, and
+profile logout require `secrets.manage`. The browser receives the resulting
+permission projection and renders the surface read-only when the actor cannot
+perform a mutation, while the route remains the enforcement boundary.
 
 ## Models and providers UX
 

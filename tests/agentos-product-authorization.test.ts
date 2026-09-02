@@ -28,6 +28,7 @@ test("central product policy separates owner controls from member runtime access
   assert.equal(canAgentOsActorUseProductPermission(member, "users.manage"), false);
   assert.equal(canAgentOsActorUseProductPermission(member, "gateway.manage"), false);
   assert.equal(canAgentOsActorUseProductPermission(member, "secrets.manage"), false);
+  assert.equal(canAgentOsActorUseProductPermission(member, "models.manage"), false);
   assert.equal(canAgentOsActorUseProductPermission(member, "automations.manage"), false);
   assert.equal(canAgentOsActorUseProductPermission(service, "users.manage"), false);
   assert.equal(canAgentOsActorUseProductPermission(service, "gateway.manage"), true);
@@ -36,6 +37,7 @@ test("central product policy separates owner controls from member runtime access
 test("permission matrix is bounded and explicit for service/internal actors", () => {
   const matrix = getAgentOsProductPermissionMatrix();
   assert.ok(matrix.owner.includes("users.manage"));
+  assert.ok(matrix.owner.includes("models.manage"));
   assert.ok(matrix.member.includes("runtime.use"));
   assert.ok(!matrix.member.includes("lifecycle.manage"));
   assert.ok(!matrix.service.includes("users.manage"));

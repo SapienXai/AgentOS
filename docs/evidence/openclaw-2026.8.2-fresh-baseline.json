@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-02T17:09:20.814Z",
+  "generatedAt": "2026-09-02T20:46:03.357Z",
   "provenance": {
-    "agentosCommit": "c1123d140dd2965d70be56bf41716f6285b14fee",
+    "agentosCommit": "ed4250772989d55f35992dccff6f1b27f190b376",
     "targetVersion": "2026.8.2",
     "targetCommit": "0965053fe6b9341776df147a6934b7485c60b5ca",
     "targetBuildId": "2026.8.2-0965053fe6b9-2026-09-01T09-44-31.342Z",
@@ -30,7 +30,7 @@
     "configCreatedFromFreshRoot": true
   },
   "gateway": {
-    "url": "ws://127.0.0.1:55157/",
+    "url": "ws://127.0.0.1:49692/",
     "protocol": 4,
     "installedVersion": "2026.8.2",
     "buildId": "2026.8.2-0965053fe6b9-2026-09-01T09-44-31.342Z"
@@ -38,9 +38,9 @@
   "runtimeCertification": {
     "runtime": {
       "schemaVersion": 2,
-      "generatedAt": "2026-09-02T17:09:09.599Z",
+      "generatedAt": "2026-09-02T20:45:53.232Z",
       "targetVersion": "2026.8.2",
-      "gatewayUrl": "ws://127.0.0.1:55157/",
+      "gatewayUrl": "ws://127.0.0.1:49692/",
       "installedVersion": "2026.8.2",
       "buildId": "2026.8.2-0965053fe6b9-2026-09-01T09-44-31.342Z",
       "protocolVersion": 4,
@@ -1277,14 +1277,14 @@
             "operator.talk",
             "operator.talk.secrets"
           ],
-          "expectedOutcome": "positive",
-          "actualOutcome": "failure",
-          "status": "FAIL",
+          "expectedOutcome": "invalid-parameters",
+          "actualOutcome": "invalid-parameters",
+          "status": "PASS",
           "proofKind": "invalid-parameters",
           "evidenceDimensions": {
             "availability": "proven",
             "authorization": "not-tested",
-            "positiveExecution": "failed",
+            "positiveExecution": "not-tested",
             "responseShape": "not-tested",
             "lifecycle": "not-tested"
           },
@@ -1294,7 +1294,7 @@
           "failureKind": "invalid-parameters",
           "retryable": false,
           "evidence": [
-            "Native Gateway request failed."
+            "The target Gateway rejected malformed or incomplete parameters as expected."
           ]
         },
         {
@@ -1320,14 +1320,14 @@
             "operator.talk",
             "operator.talk.secrets"
           ],
-          "expectedOutcome": "positive",
-          "actualOutcome": "failure",
-          "status": "FAIL",
+          "expectedOutcome": "invalid-parameters",
+          "actualOutcome": "invalid-parameters",
+          "status": "PASS",
           "proofKind": "invalid-parameters",
           "evidenceDimensions": {
             "availability": "proven",
             "authorization": "not-tested",
-            "positiveExecution": "failed",
+            "positiveExecution": "not-tested",
             "responseShape": "not-tested",
             "lifecycle": "not-tested"
           },
@@ -1337,7 +1337,7 @@
           "failureKind": "invalid-parameters",
           "retryable": false,
           "evidence": [
-            "Native Gateway request failed."
+            "The target Gateway rejected malformed or incomplete parameters as expected."
           ]
         },
         {
@@ -3969,15 +3969,15 @@
           "evidenceDimensions": {
             "availability": "proven",
             "authorization": "not-tested",
-            "positiveExecution": "failed",
+            "positiveExecution": "not-tested",
             "responseShape": "not-tested",
             "lifecycle": "not-tested"
           },
-          "outcome": "failed",
+          "outcome": "partially-certified",
           "proofIds": [
             "sessions-dispatch"
           ],
-          "reason": "A required evidence dimension or runtime proof failed."
+          "reason": "Runtime evidence exists, but required dimensions remain unproven: positiveExecution, responseShape."
         },
         {
           "operationId": "sessions.move",
@@ -3992,15 +3992,15 @@
           "evidenceDimensions": {
             "availability": "proven",
             "authorization": "not-tested",
-            "positiveExecution": "failed",
+            "positiveExecution": "not-tested",
             "responseShape": "not-tested",
             "lifecycle": "not-tested"
           },
-          "outcome": "failed",
+          "outcome": "partially-certified",
           "proofIds": [
             "sessions-move"
           ],
-          "reason": "A required evidence dimension or runtime proof failed."
+          "reason": "Runtime evidence exists, but required dimensions remain unproven: positiveExecution, responseShape."
         },
         {
           "operationId": "session.continuity",
@@ -5036,8 +5036,8 @@
       ],
       "summary": {
         "total": 74,
-        "passed": 49,
-        "failed": 2,
+        "passed": 51,
+        "failed": 0,
         "skipped": 10,
         "expectedDenials": 13,
         "unknown": 0,
@@ -5161,11 +5161,11 @@
           },
           {
             "operationId": "sessions.dispatch",
-            "outcome": "failed"
+            "outcome": "partially-certified"
           },
           {
             "operationId": "sessions.move",
-            "outcome": "failed"
+            "outcome": "partially-certified"
           },
           {
             "operationId": "config.schema",
@@ -11027,14 +11027,14 @@
                 "operator.talk",
                 "operator.talk.secrets"
               ],
-              "expectedOutcome": "positive",
-              "actualOutcome": "failure",
-              "status": "FAIL",
+              "expectedOutcome": "invalid-parameters",
+              "actualOutcome": "invalid-parameters",
+              "status": "PASS",
               "proofKind": "invalid-parameters",
               "evidenceDimensions": {
                 "availability": "proven",
                 "authorization": "not-tested",
-                "positiveExecution": "failed",
+                "positiveExecution": "not-tested",
                 "responseShape": "not-tested",
                 "lifecycle": "not-tested"
               },
@@ -11044,7 +11044,7 @@
               "failureKind": "invalid-parameters",
               "retryable": false,
               "evidence": [
-                "Native Gateway request failed."
+                "The target Gateway rejected malformed or incomplete parameters as expected."
               ]
             }
           ],
@@ -11061,18 +11061,18 @@
             "evidenceDimensions": {
               "availability": "proven",
               "authorization": "not-tested",
-              "positiveExecution": "failed",
+              "positiveExecution": "not-tested",
               "responseShape": "not-tested",
               "lifecycle": "not-tested"
             },
-            "outcome": "failed",
+            "outcome": "partially-certified",
             "proofIds": [
               "sessions-dispatch"
             ],
-            "reason": "A required evidence dimension or runtime proof failed."
+            "reason": "Runtime evidence exists, but required dimensions remain unproven: positiveExecution, responseShape."
           },
-          "outcome": "failed",
-          "reason": "A required evidence dimension or runtime proof failed."
+          "outcome": "partially-certified",
+          "reason": "Runtime evidence exists, but required dimensions remain unproven: positiveExecution, responseShape."
         },
         {
           "method": "sessions.files.reveal",
@@ -11223,14 +11223,14 @@
                 "operator.talk",
                 "operator.talk.secrets"
               ],
-              "expectedOutcome": "positive",
-              "actualOutcome": "failure",
-              "status": "FAIL",
+              "expectedOutcome": "invalid-parameters",
+              "actualOutcome": "invalid-parameters",
+              "status": "PASS",
               "proofKind": "invalid-parameters",
               "evidenceDimensions": {
                 "availability": "proven",
                 "authorization": "not-tested",
-                "positiveExecution": "failed",
+                "positiveExecution": "not-tested",
                 "responseShape": "not-tested",
                 "lifecycle": "not-tested"
               },
@@ -11240,7 +11240,7 @@
               "failureKind": "invalid-parameters",
               "retryable": false,
               "evidence": [
-                "Native Gateway request failed."
+                "The target Gateway rejected malformed or incomplete parameters as expected."
               ]
             }
           ],
@@ -11257,18 +11257,18 @@
             "evidenceDimensions": {
               "availability": "proven",
               "authorization": "not-tested",
-              "positiveExecution": "failed",
+              "positiveExecution": "not-tested",
               "responseShape": "not-tested",
               "lifecycle": "not-tested"
             },
-            "outcome": "failed",
+            "outcome": "partially-certified",
             "proofIds": [
               "sessions-move"
             ],
-            "reason": "A required evidence dimension or runtime proof failed."
+            "reason": "Runtime evidence exists, but required dimensions remain unproven: positiveExecution, responseShape."
           },
-          "outcome": "failed",
-          "reason": "A required evidence dimension or runtime proof failed."
+          "outcome": "partially-certified",
+          "reason": "Runtime evidence exists, but required dimensions remain unproven: positiveExecution, responseShape."
         },
         {
           "method": "sessions.observer.visibility",
@@ -12537,8 +12537,8 @@
       ],
       "summary": {
         "certified": 19,
-        "partiallyCertified": 8,
-        "failed": 3,
+        "partiallyCertified": 10,
+        "failed": 1,
         "uncertified": 2,
         "staticOnly": 200
       }

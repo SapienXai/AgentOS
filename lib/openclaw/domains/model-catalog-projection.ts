@@ -21,11 +21,11 @@ function snapshotModelToCatalogModel(
     input: model.input,
     contextWindow: model.contextWindow,
     local: Boolean(model.local),
-    available: model.available !== false,
+    available: model.available,
     missing: model.missing,
     alreadyAdded: true,
     recommended: recommendedModelIds.has(normalizedId.toLowerCase()),
-    supportsTools: model.tags.includes("tools") || model.input.includes("text"),
+    supportsTools: model.supportsTools ?? null,
     isFree: model.tags.includes("free") || /:free$/i.test(normalizedId) || /\(free\)/i.test(model.name),
     tags: model.tags
   };
@@ -44,7 +44,7 @@ function mergeCatalogModel(
     missing: configuredModel.missing,
     alreadyAdded: catalogModel.alreadyAdded || configuredModel.alreadyAdded,
     recommended: catalogModel.recommended || configuredModel.recommended,
-    supportsTools: catalogModel.supportsTools || configuredModel.supportsTools,
+    supportsTools: mergeNativeBoolean(catalogModel.supportsTools, configuredModel.supportsTools),
     isFree: catalogModel.isFree || configuredModel.isFree,
     tags: Array.from(new Set([...catalogModel.tags, ...configuredModel.tags]))
   };
@@ -92,11 +92,17 @@ export function enrichCatalogModels(
       contextWindow: catalogModel.contextWindow ?? model.contextWindow,
       local: catalogModel.local,
       recommended: catalogModel.recommended || model.recommended,
-      supportsTools: catalogModel.supportsTools || model.supportsTools,
+      supportsTools: mergeNativeBoolean(catalogModel.supportsTools, model.supportsTools),
       isFree: catalogModel.isFree || model.isFree,
       tags: Array.from(new Set([...catalogModel.tags, ...model.tags]))
     };
   });
+}
+
+function mergeNativeBoolean(left: boolean | null, right: boolean | null): boolean | null {
+  if (left === true || right === true) return true;
+  if (left === false || right === false) return false;
+  return null;
 }
 
 export function markConfiguredCatalogModels(

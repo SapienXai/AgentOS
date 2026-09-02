@@ -32,12 +32,29 @@ type SetupMetadata = {
     brandId?: string;
     groupLabel?: string;
     label: string;
+    hint?: string;
+    icon?: string;
+    website?: string;
   }>;
   authOptions: Array<{
     id: string;
     brandId?: string;
     label: string;
+    hint?: string;
+    groupLabel?: string;
+    icon?: string;
+    website?: string;
+    featured?: boolean;
     kind: "oauth" | "device-code";
+  }>;
+  prepareOptions: Array<{
+    id: string;
+    brandId?: string;
+    label: string;
+    hint?: string;
+    actionLabel?: string;
+    icon?: string;
+    website?: string;
   }>;
 };
 
@@ -186,11 +203,24 @@ export async function readModelManagementState(
 }
 
 export async function setModelManagementDefault(modelId: string) {
-  await updateDefaultsModel({ primary: requiredModelRef(modelId) });
+  const primary = requiredModelRef(modelId);
+  const adapter = getOpenClawAdapter();
+  const current = await adapter.getConfig<JsonRecord>("agents.defaults", { timeoutMs: 8_000 });
+  const defaults = normalizeDefaults(current);
+  const fallbacks = defaults.model.fallbacks.filter((fallback) => fallback.toLowerCase() !== primary.toLowerCase());
+  await updateDefaultsModel(
+    { primary, fallbacks },
+    ["agents.defaults.model.primary", "agents.defaults.model.fallbacks"]
+  );
 }
 
 export async function setModelManagementFallbacks(modelIds: string[]) {
-  await updateDefaultsModel({ fallbacks: normalizeModelRefs(modelIds) }, ["agents.defaults.model.fallbacks"]);
+  const adapter = getOpenClawAdapter();
+  const current = await adapter.getConfig<JsonRecord>("agents.defaults", { timeoutMs: 8_000 });
+  const defaults = normalizeDefaults(current);
+  const primary = defaults.model.primary?.toLowerCase();
+  const fallbacks = normalizeModelRefs(modelIds).filter((modelId) => modelId.toLowerCase() !== primary);
+  await updateDefaultsModel({ fallbacks }, ["agents.defaults.model.fallbacks"]);
 }
 
 export async function setModelManagementPolicy(allow: string[] | null) {
@@ -225,27 +255,6 @@ export async function logoutModelProvider(provider: string, profileIds?: string[
     removedProfiles: Array.isArray(payload.removedProfiles) ? payload.removedProfiles : [],
     abortedRunIds: Array.isArray(payload.abortedRunIds) ? payload.abortedRunIds : []
   };
-}
-
-export async function activateModelProviderApiKey(input: {
-  authChoice: string;
-  apiKey: string;
-  modelRef?: string;
-  agentId?: string;
-}) {
-  const apiKey = requiredText(input.apiKey, "Enter an API key or token.");
-  const authChoice = requiredText(input.authChoice, "Choose an OpenClaw authentication method.");
-  return getOpenClawAdapter().call<JsonRecord>(
-    "openclaw.setup.activate",
-    {
-      kind: "api-key",
-      authChoice,
-      apiKey,
-      ...(input.modelRef ? { modelRef: input.modelRef } : {}),
-      ...(input.agentId ? { agentId: input.agentId } : {})
-    },
-    { timeoutMs: 45_000 }
-  );
 }
 
 async function updateDefaultsModel(patch: { primary?: string; fallbacks?: string[] }, replacePaths: string[] = []) {
@@ -297,14 +306,11 @@ function buildProviders(input: {
   for (const outcome of input.outcomes) if (outcome.provider) providerIds.add(outcome.provider);
   for (const choice of input.setup?.manualProviders ?? []) if (choice.brandId || choice.id) providerIds.add(choice.brandId ?? choice.id.split("-", 1)[0] ?? choice.id);
   for (const option of input.setup?.authOptions ?? []) if (option.brandId) providerIds.add(option.brandId);
+  for (const option of input.setup?.prepareOptions ?? []) providerIds.add(option.brandId ?? option.id);
 
   const authByProvider = new Map((input.auth?.providers ?? []).map((entry) => [entry.provider ?? "", entry]));
   const capabilityByProvider = new Map((input.auth?.providerCapabilities ?? []).map((entry) => [entry.provider ?? "", entry]));
   const outcomeByProvider = new Map(input.outcomes.map((outcome) => [outcome.provider, outcome.status]));
-
-  for (const model of input.models) {
-    if (!outcomeByProvider.has(model.provider)) outcomeByProvider.set(model.provider, model.available === false ? "unavailable" : "ready");
-  }
 
   const providers = [...providerIds].filter(Boolean).map((id) => {
     const models = input.models.filter((model) => model.provider === id);
@@ -318,7 +324,8 @@ function buildProviders(input: {
       logoutSupported: profile.logoutSupported === true
     }] : []);
     const setupMethods = resolveSetupMethods(id, input.setup);
-    const status = resolveProviderStatus(auth?.status, outcomeByProvider.get(id), models, profiles);
+    const prepareOptions = resolvePrepareOptions(id, input.setup);
+    const status = resolveProviderStatus(auth?.status, outcomeByProvider.get(id), models, profiles, id);
     return {
       id,
       name: modelProviderPresentationRegistry[id]?.displayName || auth?.displayName || formatModelProviderLabel(id),
@@ -328,12 +335,13 @@ function buildProviders(input: {
         label: formatAuthType(profile.type),
         kind: toAuthKind(profile.type)
       })),
+      prepareOptions,
       profiles,
       modelCount: models.length,
-      availableModelCount: models.filter((model) => model.available !== false).length,
+      availableModelCount: models.filter((model) => model.available === true).length,
       local: models.length > 0 && models.every((model) => model.advanced.providerId === "ollama" || model.tags.includes("local")),
       source: "openclaw" as const,
-      setupAvailable: setupMethods.length > 0 || capabilityByProvider.has(id),
+      setupAvailable: setupMethods.length > 0 || prepareOptions.length > 0 || capabilityByProvider.has(id),
       canLogout: profiles.some((profile) => profile.logoutSupported),
       presentation: {
         ...(modelProviderPresentationRegistry[id]?.accent ? { accent: modelProviderPresentationRegistry[id].accent } : {})
@@ -346,31 +354,41 @@ function buildProviders(input: {
 
 function resolveSetupMethods(providerId: string, setup: SetupMetadata | null) {
   if (!setup) return [];
-  const methods = new Map<string, { id: string; label: string; kind: "api-key" | "oauth" | "device-code" | "other" }>();
+  const methods = new Map<string, { id: string; label: string; kind: "api-key" | "oauth" | "device-code" | "other"; hint?: string; brandId?: string; groupLabel?: string; icon?: string; website?: string; featured?: boolean }>();
   for (const choice of setup.manualProviders) {
     const choiceProvider = choice.brandId ?? choice.id.split("-", 1)[0] ?? choice.id;
     if (choiceProvider !== providerId && !choice.id.startsWith(`${providerId}-`)) continue;
-    methods.set(choice.id, { id: choice.id, label: choice.label, kind: "api-key" });
+    methods.set(choice.id, { id: choice.id, label: choice.label, ...(choice.brandId ? { brandId: choice.brandId } : {}), ...(choice.groupLabel ? { groupLabel: choice.groupLabel } : {}), ...(choice.hint ? { hint: choice.hint } : {}), ...(choice.icon ? { icon: choice.icon } : {}), ...(choice.website ? { website: choice.website } : {}), kind: "api-key" });
   }
   for (const option of setup.authOptions) {
     if (option.brandId !== providerId && !option.id.startsWith(`${providerId}-`)) continue;
-    methods.set(option.id, { id: option.id, label: option.label, kind: option.kind });
+    methods.set(option.id, { id: option.id, label: option.label, ...(option.brandId ? { brandId: option.brandId } : {}), ...(option.groupLabel ? { groupLabel: option.groupLabel } : {}), ...(option.hint ? { hint: option.hint } : {}), ...(option.icon ? { icon: option.icon } : {}), ...(option.website ? { website: option.website } : {}), ...(option.featured !== undefined ? { featured: option.featured } : {}), kind: option.kind });
   }
   return [...methods.values()];
+}
+
+function resolvePrepareOptions(providerId: string, setup: SetupMetadata | null) {
+  if (!setup) return [];
+  return setup.prepareOptions.filter((option) => {
+    const optionProvider = option.brandId ?? option.id;
+    return optionProvider === providerId || option.id.startsWith(`${providerId}-`);
+  });
 }
 
 function resolveProviderStatus(
   authStatus: string | undefined,
   outcome: string | undefined,
   models: ModelManagementModel[],
-  profiles: ModelManagementAuthProfile[]
+  profiles: ModelManagementAuthProfile[],
+  providerId: string
 ): ModelManagementProvider["status"] {
   const auth = authStatus?.toLowerCase();
   if (auth === "expired" || auth === "missing" || auth === "expiring") return "needs-attention";
   if (outcome === "auth-rejected") return "needs-attention";
   if (outcome === "unavailable") return "unavailable";
+  if (outcome === "ready") return "connected";
   if (auth === "ok" || auth === "static" || profiles.some((profile) => ["ok", "static", "expiring"].includes(profile.status))) return "connected";
-  if (models.some((model) => model.available === true)) return "connected";
+  if (providerId === "ollama" && models.some((model) => model.available === true)) return "connected";
   if (models.length > 0 && models.every((model) => model.available === false)) return "unavailable";
   return "not-connected";
 }
@@ -379,11 +397,23 @@ function normalizeSetupMetadata(payload: JsonRecord): SetupMetadata {
   return {
     manualProviders: readArray(payload.manualProviders).flatMap((entry) => {
       if (!isRecord(entry) || typeof entry.id !== "string" || typeof entry.label !== "string") return [];
-      return [{ id: entry.id, ...(typeof entry.brandId === "string" ? { brandId: entry.brandId } : {}), ...(typeof entry.groupLabel === "string" ? { groupLabel: entry.groupLabel } : {}), label: entry.label }];
+      return [{ id: entry.id, ...(typeof entry.brandId === "string" ? { brandId: entry.brandId } : {}), ...(typeof entry.groupLabel === "string" ? { groupLabel: entry.groupLabel } : {}), label: entry.label, ...(typeof entry.hint === "string" ? { hint: entry.hint } : {}), ...(typeof entry.icon === "string" ? { icon: entry.icon } : {}), ...(typeof entry.website === "string" ? { website: entry.website } : {}) }];
     }),
     authOptions: readArray(payload.authOptions).flatMap((entry) => {
       if (!isRecord(entry) || typeof entry.id !== "string" || typeof entry.label !== "string" || (entry.kind !== "oauth" && entry.kind !== "device-code")) return [];
-      return [{ id: entry.id, ...(typeof entry.brandId === "string" ? { brandId: entry.brandId } : {}), label: entry.label, kind: entry.kind }];
+      return [{ id: entry.id, ...(typeof entry.brandId === "string" ? { brandId: entry.brandId } : {}), label: entry.label, ...(typeof entry.hint === "string" ? { hint: entry.hint } : {}), ...(typeof entry.groupLabel === "string" ? { groupLabel: entry.groupLabel } : {}), ...(typeof entry.icon === "string" ? { icon: entry.icon } : {}), ...(typeof entry.website === "string" ? { website: entry.website } : {}), ...(typeof entry.featured === "boolean" ? { featured: entry.featured } : {}), kind: entry.kind }];
+    }),
+    prepareOptions: readArray(payload.prepareOptions).flatMap((entry) => {
+      if (!isRecord(entry) || typeof entry.id !== "string" || typeof entry.label !== "string") return [];
+      return [{
+        id: entry.id,
+        ...(typeof entry.brandId === "string" ? { brandId: entry.brandId } : {}),
+        label: entry.label,
+        ...(typeof entry.hint === "string" ? { hint: entry.hint } : {}),
+        ...(typeof entry.actionLabel === "string" ? { actionLabel: entry.actionLabel } : {}),
+        ...(typeof entry.icon === "string" ? { icon: entry.icon } : {}),
+        ...(typeof entry.website === "string" ? { website: entry.website } : {})
+      }];
     })
   };
 }
@@ -413,7 +443,17 @@ function readConfiguredProviderIds(value: JsonRecord | null) {
 
 function normalizeModelRefs(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return [...new Set(value.filter((entry): entry is string => typeof entry === "string").map(normalizeOpenAiModelId).filter(Boolean))];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const modelId = normalizeOpenAiModelId(entry);
+    const key = modelId.toLowerCase();
+    if (!modelId || seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(modelId);
+  }
+  return normalized;
 }
 
 function normalizeOptionalModelRef(value: unknown) {

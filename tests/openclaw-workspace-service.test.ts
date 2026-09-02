@@ -5,6 +5,8 @@ import { afterEach, test } from "node:test";
 import {
   clearMissionControlCaches
 } from "@/lib/openclaw/application/mission-control-service";
+import { resetOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
+import { resetOpenClawEventBridgeForTesting } from "@/lib/openclaw/application/event-bridge-service";
 import {
   createWorkspaceProject as createApplicationWorkspaceProject,
   deleteWorkspaceProject as deleteApplicationWorkspaceProject,
@@ -75,6 +77,8 @@ async function readErrorMessage(action: () => Promise<unknown>) {
 
 afterEach(() => {
   clearMissionControlCaches();
+  resetOpenClawEventBridgeForTesting();
+  resetOpenClawGatewayClient("workspace service test teardown");
 });
 
 test("workspace application service preserves edit seed missing-workspace shape", async () => {

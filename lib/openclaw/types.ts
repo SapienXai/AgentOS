@@ -1491,11 +1491,13 @@ export interface AddModelsCatalogModel {
   input: string;
   contextWindow: number | null;
   local: boolean;
-  available: boolean;
+  /** null means OpenClaw did not report availability, rather than available. */
+  available: boolean | null;
   missing: boolean;
   alreadyAdded: boolean;
   recommended: boolean;
-  supportsTools: boolean;
+  /** null means the native catalog did not report tool support. */
+  supportsTools: boolean | null;
   isFree: boolean;
   tags: string[];
 }

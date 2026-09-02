@@ -1,18 +1,25 @@
 import { NextResponse } from "next/server";
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import {
-  activateModelProviderApiKey,
   logoutModelProvider,
   readModelManagementState,
   setModelManagementDefault,
   setModelManagementFallbacks,
   setModelManagementPolicy
 } from "@/lib/openclaw/application/model-management-service";
+import {
+  advanceModelSetupWizardSession,
+  cancelModelSetupWizardSession,
+  readModelSetupWizardStatus,
+  startModelSetupWizard
+} from "@/lib/openclaw/application/model-setup-wizard-service";
 import { persistOpenClawExplicitProviderConfig } from "@/lib/openclaw/application/model-provider-state-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
-import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
+import {
+  canAgentOsActorUseProductPermission,
+  requireAgentOsProductPermission
+} from "@/lib/security/agentos-product-authorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +27,18 @@ export const dynamic = "force-dynamic";
 const viewSchema = z.enum(["default", "configured", "provider-config", "all"]);
 const providerIdSchema = z.string().trim().min(2).max(63).regex(/^[a-z0-9][a-z0-9_-]{1,62}$/);
 const modelRefSchema = z.string().trim().min(1).max(512);
+const activationKindSchema = z.string().trim().min(1).max(256).refine(
+  (value) => [
+    "existing-model",
+    "openai-api-key",
+    "anthropic-api-key",
+    "claude-cli",
+    "codex-cli",
+    "gemini-cli",
+    "api-key"
+  ].includes(value) || /^provider-auto:.+$/.test(value),
+  "OpenClaw does not support this activation kind."
+);
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("set-default"), modelId: modelRefSchema }),
@@ -44,11 +63,27 @@ const actionSchema = z.discriminatedUnion("action", [
     workspace: z.string().trim().min(1).max(2048).optional()
   }),
   z.object({
+    action: z.literal("start-prepare"),
+    authChoice: z.string().trim().min(1).max(256),
+    agentId: z.string().trim().min(1).max(128).optional(),
+    workspace: z.string().trim().min(1).max(2048).optional()
+  }),
+  z.object({
+    action: z.literal("start-activation"),
+    kind: activationKindSchema,
+    authChoice: z.string().trim().min(1).max(256).optional(),
+    apiKey: z.string().min(1).max(4096).optional(),
+    modelRef: modelRefSchema.optional(),
+    agentId: z.string().trim().min(1).max(128).optional(),
+    workspace: z.string().trim().min(1).max(2048).optional()
+  }),
+  z.object({
     action: z.literal("wizard-next"),
     sessionId: z.string().trim().min(1).max(256),
     answer: z.object({ stepId: z.string().trim().min(1).max(256), value: z.unknown().optional() }).optional()
   }),
   z.object({ action: z.literal("wizard-cancel"), sessionId: z.string().trim().min(1).max(256) }),
+  z.object({ action: z.literal("wizard-status"), sessionId: z.string().trim().min(1).max(256) }),
   z.object({
     action: z.literal("create-custom-provider"),
     providerId: providerIdSchema,
@@ -74,8 +109,15 @@ export async function GET(request: Request) {
   const refresh = url.searchParams.get("refresh") === "1";
 
   try {
+    const state = await readModelManagementState({ view, includeSetup, refresh });
     return NextResponse.json(
-      redactSecrets(await readModelManagementState({ view, includeSetup, refresh })),
+      redactSecrets({
+        ...state,
+        permissions: {
+          canManageModels: canAgentOsActorUseProductPermission(permission.actor, "models.manage"),
+          canManageSecrets: canAgentOsActorUseProductPermission(permission.actor, "secrets.manage")
+        }
+      }),
       { status: 200 }
     );
   } catch (error) {
@@ -87,7 +129,15 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const permission = await requireAgentOsProductPermission(request, "secrets.manage");
+  const rawAction = await request.clone().json().catch(() => null) as { action?: unknown } | null;
+  const requiredPermission = (["set-default", "set-fallbacks", "set-policy"] as const).includes(
+    rawAction?.action as "set-default" | "set-fallbacks" | "set-policy"
+  )
+    ? ("models.manage" as const)
+    : rawAction?.action === "wizard-status"
+      ? ("runtime.use" as const)
+      : ("secrets.manage" as const);
+  const permission = await requireAgentOsProductPermission(request, requiredPermission);
   if ("response" in permission) return permission.response;
 
   let input: z.infer<typeof actionSchema>;
@@ -120,31 +170,60 @@ export async function POST(request: Request) {
         message = "Provider connection removed.";
         break;
       case "activate-api-key":
-        await activateModelProviderApiKey(input);
-        message = "Provider connected through OpenClaw.";
-        break;
+        {
+          const { sessionId, wizard } = await startModelSetupWizard({
+            method: "openclaw.setup.activate.start",
+            kind: "api-key",
+            authChoice: input.authChoice,
+            apiKey: input.apiKey,
+            modelRef: input.modelRef,
+            agentId: input.agentId
+          });
+          return NextResponse.json(redactSecrets({ ok: true, message: "OpenClaw provider activation started.", sessionId, wizard }), { status: 200 });
+        }
       case "start-auth": {
-        const sessionId = randomUUID();
-        const start = await adapterCall("openclaw.setup.auth.start", {
-          sessionId,
+        const { sessionId, wizard } = await startModelSetupWizard({
+          method: "openclaw.setup.auth.start",
           authChoice: input.authChoice,
-          ...(input.agentId ? { agentId: input.agentId } : {}),
-          ...(input.workspace ? { workspace: input.workspace } : {})
+          agentId: input.agentId,
+          workspace: input.workspace
         });
-        const next = await adapterCall("wizard.next", { sessionId });
-        return NextResponse.json(redactSecrets({ ok: true, message: "OpenClaw sign-in started.", sessionId, start, wizard: next }), { status: 200 });
+        return NextResponse.json(redactSecrets({ ok: true, message: "OpenClaw sign-in started.", sessionId, wizard }), { status: 200 });
+      }
+      case "start-prepare": {
+        const { sessionId, wizard } = await startModelSetupWizard({
+          method: "openclaw.setup.prepare.start",
+          authChoice: input.authChoice,
+          agentId: input.agentId,
+          workspace: input.workspace
+        });
+        return NextResponse.json(redactSecrets({ ok: true, message: "OpenClaw model preparation started.", sessionId, wizard }), { status: 200 });
+      }
+      case "start-activation": {
+        const { sessionId, wizard } = await startModelSetupWizard({
+          method: "openclaw.setup.activate.start",
+          kind: input.kind,
+          authChoice: input.authChoice,
+          apiKey: input.apiKey,
+          modelRef: input.modelRef,
+          agentId: input.agentId,
+          workspace: input.workspace
+        });
+        return NextResponse.json(redactSecrets({ ok: true, message: "OpenClaw model activation started.", sessionId, wizard }), { status: 200 });
       }
       case "wizard-next": {
-        const wizard = await adapterCall("wizard.next", {
-          sessionId: input.sessionId,
-          ...(input.answer ? { answer: input.answer } : {})
-        });
-        return NextResponse.json(redactSecrets({ ok: true, message: "OpenClaw sign-in advanced.", sessionId: input.sessionId, wizard }), { status: 200 });
+        const wizard = await advanceModelSetupWizardSession(input.sessionId, input.answer, request.signal);
+        return NextResponse.json(redactSecrets({ ok: true, message: "OpenClaw setup advanced.", sessionId: input.sessionId, wizard }), { status: 200 });
       }
-      case "wizard-cancel":
-        await adapterCall("wizard.cancel", { sessionId: input.sessionId });
-        message = "OpenClaw sign-in cancelled.";
+      case "wizard-status": {
+        const status = await readModelSetupWizardStatus(input.sessionId);
+        return NextResponse.json(redactSecrets({ ok: true, sessionId: input.sessionId, status }), { status: 200 });
+      }
+      case "wizard-cancel": {
+        const status = await cancelModelSetupWizardSession(input.sessionId);
+        message = status.status === "cancelled" ? "OpenClaw provider setup cancelled." : "OpenClaw setup is no longer running.";
         break;
+      }
       case "create-custom-provider":
         await persistOpenClawExplicitProviderConfig(input.providerId, {
           baseUrl: input.baseUrl,
@@ -166,9 +245,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-}
-
-async function adapterCall(method: string, params: Record<string, unknown>) {
-  const { getOpenClawAdapter } = await import("@/lib/openclaw/adapter/openclaw-adapter");
-  return getOpenClawAdapter().call<Record<string, unknown>>(method, params, { timeoutMs: 45_000 });
 }
