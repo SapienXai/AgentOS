@@ -1,6 +1,8 @@
 # OpenClaw 2026.8.1 Compatibility Audit
 
-Status: Historical Phase 1 static compatibility analysis retained for provenance. Phase 2C promotes the separately certified OpenClaw `2026.8.1` runtime to the active AgentOS baseline; see [`docs/openclaw-2026.8.1-fresh-baseline.md`](openclaw-2026.8.1-fresh-baseline.md).
+> Historical 2026.8.1 artifact. The active certified AgentOS baseline is OpenClaw 2026.8.2; see [the current model/provider architecture](openclaw-2026.8.2-model-provider-architecture.md).
+
+Status: Historical Phase 1 static compatibility analysis retained for provenance. The active AgentOS baseline is the separately certified OpenClaw `2026.8.2` runtime; see [`docs/openclaw-2026.8.2-model-provider-architecture.md`](openclaw-2026.8.2-model-provider-architecture.md).
 
 ## Provenance
 
@@ -17,10 +19,12 @@ Status: Historical Phase 1 static compatibility analysis retained for provenance
 
 ## Baseline Constants
 
-The active AgentOS baseline constants are now promoted:
+These were the historical AgentOS baseline constants at the time of this audit:
 
 - `OPENCLAW_RECOMMENDED_VERSION = "2026.8.1"`
 - `OPENCLAW_SUPPORTED_BASELINE_VERSION = "2026.8.1"`
+
+The active constants are now `2026.8.2`; this document retains the 8.1 values only as historical comparison evidence.
 
 The `2026.6.11` to `2026.8.1` comparison below is retained as historical static compatibility evidence, not as the active runtime policy.
 - Current AgentOS package root version: `0.1.0`

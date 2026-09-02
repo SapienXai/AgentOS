@@ -174,7 +174,7 @@ export function resolveOpenClawModelReadinessIssue(
     return `OpenClaw model setup is incomplete. Default model ${readiness.defaultModel} is not ready.`;
   }
 
-  return "OpenClaw model setup is incomplete. Configure a usable default model in Add Models.";
+  return "OpenClaw model setup is incomplete. Connect a provider and choose a usable default model in Models.";
 }
 
 function redactOptionalDiagnostic(value: string | null | undefined) {

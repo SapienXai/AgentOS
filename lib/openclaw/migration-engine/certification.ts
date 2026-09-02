@@ -5,6 +5,7 @@ import { normalizeGatewayTurnEvent } from "@/lib/openclaw/client/native-ws-gatew
 import type { GatewayEventFrame, WebSocketFactory } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { DEFAULT_NATIVE_TIMEOUT_MS } from "@/lib/openclaw/client/native-ws-gateway-types";
 import type { OpenClawMigrationEvidence } from "@/lib/openclaw/migration-engine/types";
+import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 
 export async function certifyOpenClawMigrationRuntime(input: {
   gatewayUrl: string;
@@ -28,7 +29,7 @@ export async function certifyOpenClawMigrationRuntime(input: {
   let sessionId: string | null = null;
   let cronId: string | null = null;
   const phase = input.phase ?? "staged";
-  const expectedVersion = input.expectedVersion ?? "2026.8.1";
+  const expectedVersion = input.expectedVersion ?? OPENCLAW_SUPPORTED_BASELINE_VERSION;
   try {
     const handshake = await retryHandshake(client, 30_000);
     if (handshake.server?.version !== expectedVersion) throw new Error(`Runtime certification connected to ${handshake.server?.version ?? "unknown"}, not ${expectedVersion}.`);

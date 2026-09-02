@@ -172,7 +172,8 @@ export function AddModelsDialog({
     refresh: refreshGlobalCatalog
   } = useModelCatalog({
     enabled: open,
-    snapshot
+    snapshot,
+    view: "all"
   });
   const handleInitialProviderOpen = useEffectEvent((providerId: AddModelsProviderId) => {
     setActiveSetupMode("standard");

@@ -92,10 +92,8 @@ export function OperationsPage({
           return (
             <ModelsPageContent
               snapshot={context.rootSnapshot}
-              rootSnapshot={context.rootSnapshot}
               surfaceTheme={context.surfaceTheme}
               refresh={context.refresh}
-              setSnapshot={context.setSnapshot}
             />
           );
         }

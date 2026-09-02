@@ -226,7 +226,7 @@ test("topbar surface tone resolvers preserve health and gateway theme styling", 
   );
   assert.equal(
     resolveGatewayModeBadgeClasses("warning", "light"),
-    "border-amber-300/80 bg-amber-50 text-amber-700"
+    "border-amber-300/90 bg-amber-50 text-amber-700"
   );
   assert.equal(
     resolveGatewayModeBadgeClasses("neutral", "dark"),

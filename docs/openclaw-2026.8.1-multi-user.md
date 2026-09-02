@@ -1,5 +1,7 @@
 # AgentOS / OpenClaw 2026.8.1 Trusted-Team Multi-User Foundation
 
+> Historical 2026.8.1 artifact. The active certified AgentOS baseline is OpenClaw 2026.8.2; see [the current model/provider architecture](openclaw-2026.8.2-model-provider-architecture.md).
+
 ## Product scope
 
 Phase 4B defines one protected AgentOS instance as one trusted team/workspace. It supports multiple AgentOS human accounts with `owner` and `member` product roles. It does not provide hostile-tenant isolation, organizations, billing, SSO, invitations, or enterprise directory synchronization.

@@ -11,11 +11,11 @@ import { OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION } fro
 import { serializeOpenClawRuntimeCertificationArtifact } from "@/lib/openclaw/runtime-certification/serialization";
 import { redactSecretText } from "@/lib/security/redaction";
 
-const TARGET_VERSION = "2026.8.1";
-const TARGET_COMMIT = "ea806575e6450e4d1efdfc72c19f04be982a1b9b";
+const TARGET_VERSION = "2026.8.2";
+const TARGET_COMMIT = "0965053fe6b9341776df147a6934b7485c60b5ca";
 const TARGET_PACKAGE_INPUT = process.env.OPENCLAW_FRESH_BASELINE_PACKAGE?.trim();
 const OUTPUT_PATH = process.env.OPENCLAW_FRESH_BASELINE_OUTPUT?.trim() ||
-  path.resolve("docs/evidence/openclaw-2026.8.1-fresh-baseline.json");
+  path.resolve("docs/evidence/openclaw-2026.8.2-fresh-baseline.json");
 const REQUIRED_PROBE_IDS = [
   "gateway-health",
   "sessions-create",
@@ -40,7 +40,7 @@ type ExactPackageIdentity = {
 
 async function main() {
   if (!TARGET_PACKAGE_INPUT) {
-    throw new Error("Set OPENCLAW_FRESH_BASELINE_PACKAGE to an exact OpenClaw 2026.8.1 package root.");
+    throw new Error("Set OPENCLAW_FRESH_BASELINE_PACKAGE to an exact OpenClaw 2026.8.2 package root.");
   }
 
   const inputPackage = path.resolve(TARGET_PACKAGE_INPUT);
@@ -191,7 +191,7 @@ async function main() {
     await writeFile(OUTPUT_PATH, serializeOpenClawRuntimeCertificationArtifact(output), { mode: 0o600 });
 
     if (!output.success) throw new Error("Fresh OpenClaw baseline gate failed after cleanup.");
-    console.log("OPENCLAW 8.1 FRESH BASELINE: PASS");
+    console.log("OPENCLAW 8.2 FRESH BASELINE: PASS");
     console.log(`Evidence: ${OUTPUT_PATH}`);
     return 0;
   } catch (error) {
@@ -348,7 +348,7 @@ async function runRuntimeCertification(input: {
         .join("; ")
       : "";
     const detail = redactSecretText(`${failures}\n${result.stderr}\n${result.stdout}`).trim().slice(-4_000);
-    throw new Error(`The real 8.1 Gateway certification child process failed.${detail ? ` ${detail}` : ""}`);
+    throw new Error(`The real 8.2 Gateway certification child process failed.${detail ? ` ${detail}` : ""}`);
   }
   return certification;
 }

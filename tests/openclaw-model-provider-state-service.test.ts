@@ -527,7 +527,7 @@ test("custom provider connect writes an explicit OpenClaw provider and namespace
   ]);
 });
 
-test("adding custom provider models writes explicit provider metadata and AgentOS defaults", async () => {
+test("adding custom provider models writes explicit provider metadata without an AgentOS allowlist", async () => {
   const calls: string[] = [];
   const configs = new Map<string, unknown>([
     [
@@ -579,9 +579,7 @@ test("adding custom provider models writes explicit provider metadata and AgentO
 
   assert.deepEqual(calls, [
     "get:models.providers.entrim",
-    "set:models.providers.entrim.models",
-    "get:agents.defaults",
-    "set:agents.defaults"
+    "set:models.providers.entrim.models"
   ]);
   assert.deepEqual(configs.get("models.providers.entrim.models"), [
     {
@@ -602,11 +600,7 @@ test("adding custom provider models writes explicit provider metadata and AgentO
     apiKey: "[redacted]",
     baseUrl: "https://api.entrim.ai/v1"
   });
-  assert.deepEqual(configs.get("agents.defaults"), {
-    models: {
-      "entrim/gpt-oss-120b": {}
-    }
-  });
+  assert.deepEqual(configs.get("agents.defaults"), {});
 });
 
 test("custom provider list returns explicit providers without exposing secrets", async () => {
@@ -988,7 +982,7 @@ function createTestLifecycleService() {
       authenticated: true,
       health: "live",
       protocolVersion: 4,
-      version: "2026.8.1",
+      version: "2026.8.2",
       sourceCommit: null,
       checkedAt: new Date().toISOString(),
       reason: null

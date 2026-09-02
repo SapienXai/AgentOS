@@ -1,5 +1,7 @@
 # OpenClaw 2026.8.1 Lifecycle and Supervisor
 
+> Historical 2026.8.1 artifact. The active certified AgentOS baseline is OpenClaw 2026.8.2; see [the current model/provider architecture](openclaw-2026.8.2-model-provider-architecture.md).
+
 This document defines the single AgentOS lifecycle boundary for the OpenClaw
 Gateway. AgentOS owns operator intent, normalized state, readiness evidence, and
 coordination. OpenClaw owns Gateway protocol behavior and the external supervisor

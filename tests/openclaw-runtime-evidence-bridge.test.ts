@@ -12,11 +12,11 @@ import type { OpenClawServerMethodContractDiffReport } from "@/lib/openclaw/type
 test("evidence bridge certifies only an exact target-version method proof", () => {
   const result = bridgeOpenClawStaticRuntimeEvidence({
     staticReport: createStaticReport({
-      targetVersion: "2026.8.1",
+      targetVersion: "2026.8.2",
       changes: [{ method: "sessions.create", status: "unknown", authorizationEvidence: "runtime-required" }]
     }),
     runtimeReport: createRuntimeReport({
-      targetVersion: "2026.8.1",
+      targetVersion: "2026.8.2",
       results: [runtimeResult("sessions.create", "PASS", createRuntimeEvidence({ availability: "proven", authorization: "proven", positiveExecution: "proven", responseShape: "proven" }))]
     })
   });
@@ -29,11 +29,11 @@ test("evidence bridge certifies only an exact target-version method proof", () =
 test("evidence bridge ignores a proof for the wrong method", () => {
   const result = bridgeOpenClawStaticRuntimeEvidence({
     staticReport: createStaticReport({
-      targetVersion: "2026.8.1",
+      targetVersion: "2026.8.2",
       changes: [{ method: "sessions.create", status: "unknown", authorizationEvidence: "runtime-required" }]
     }),
     runtimeReport: createRuntimeReport({
-      targetVersion: "2026.8.1",
+      targetVersion: "2026.8.2",
       results: [runtimeResult("sessions.patch", "PASS", createRuntimeEvidence({ availability: "proven", positiveExecution: "proven", responseShape: "proven" }))]
     })
   });
@@ -45,11 +45,11 @@ test("evidence bridge ignores a proof for the wrong method", () => {
 test("evidence bridge ignores a proof for the wrong target version", () => {
   const result = bridgeOpenClawStaticRuntimeEvidence({
     staticReport: createStaticReport({
-      targetVersion: "2026.8.1",
+      targetVersion: "2026.8.2",
       changes: [{ method: "sessions.create", status: "warning", authorizationEvidence: "static" }]
     }),
     runtimeReport: createRuntimeReport({
-      targetVersion: "2026.8.2",
+      targetVersion: "2026.8.1",
       results: [runtimeResult("sessions.create", "PASS", createRuntimeEvidence({ availability: "proven", positiveExecution: "proven", responseShape: "proven" }))]
     })
   });
@@ -62,11 +62,11 @@ test("evidence bridge ignores a proof for the wrong target version", () => {
 test("evidence bridge lets a failed runtime proof override static optimism", () => {
   const result = bridgeOpenClawStaticRuntimeEvidence({
     staticReport: createStaticReport({
-      targetVersion: "2026.8.1",
+      targetVersion: "2026.8.2",
       changes: [{ method: "talk.config", status: "safe", authorizationEvidence: "static" }]
     }),
     runtimeReport: createRuntimeReport({
-      targetVersion: "2026.8.1",
+      targetVersion: "2026.8.2",
       results: [runtimeResult("talk.config", "FAIL", createRuntimeEvidence({ availability: "proven", positiveExecution: "failed" }))]
     })
   });
@@ -78,11 +78,11 @@ test("evidence bridge lets a failed runtime proof override static optimism", () 
 test("evidence bridge keeps authorization denial partial until positive execution exists", () => {
   const result = bridgeOpenClawStaticRuntimeEvidence({
     staticReport: createStaticReport({
-      targetVersion: "2026.8.1",
+      targetVersion: "2026.8.2",
       changes: [{ method: "node.invoke", status: "unknown", authorizationEvidence: "runtime-required" }]
     }),
     runtimeReport: createRuntimeReport({
-      targetVersion: "2026.8.1",
+      targetVersion: "2026.8.2",
       results: [runtimeResult("node.invoke", "EXPECTED-DENIAL", createRuntimeEvidence({ availability: "proven", authorization: "proven" }), "authorization-denial")]
     })
   });
@@ -94,11 +94,11 @@ test("evidence bridge keeps authorization denial partial until positive executio
 test("evidence bridge promotes combined positive and denial proofs", () => {
   const result = bridgeOpenClawStaticRuntimeEvidence({
     staticReport: createStaticReport({
-      targetVersion: "2026.8.1",
+      targetVersion: "2026.8.2",
       changes: [{ method: "chat.send", status: "unknown", authorizationEvidence: "runtime-required" }]
     }),
     runtimeReport: createRuntimeReport({
-      targetVersion: "2026.8.1",
+      targetVersion: "2026.8.2",
       results: [
         runtimeResult("chat.send", "PASS", createRuntimeEvidence({ availability: "proven", positiveExecution: "proven", responseShape: "proven" })),
         runtimeResult("chat.send", "EXPECTED-DENIAL", createRuntimeEvidence({ availability: "proven", authorization: "proven" }), "authorization-denial")

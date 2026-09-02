@@ -110,13 +110,31 @@ export const modelsPayloadSchema = z
           name: z.string(),
           input: z.union([z.string(), z.array(z.string())]).optional().default("text"),
           contextWindow: z.number().nullable().optional().default(null),
+          contextWindows: z.array(z.object({ id: z.string(), label: z.string(), contextWindow: z.number() }).passthrough()).optional(),
+          contextWindowDefault: z.string().optional(),
           local: z.boolean().nullable().optional().default(null),
           available: z.boolean().nullable().optional().default(null),
+          unavailableReason: z.string().optional(),
+          unavailableUntil: z.number().optional(),
+          reasoning: z.boolean().optional(),
+          thinkingLevels: z.array(z.object({ id: z.string(), label: z.string() }).passthrough()).optional(),
+          thinkingDefault: z.string().optional(),
+          supportsTools: z.boolean().optional(),
+          alias: z.string().optional(),
+          apiKeySupported: z.boolean().optional(),
+          agentRuntime: z.object({ id: z.string() }).passthrough().optional(),
+          deprecated: z.boolean().optional(),
+          disabled: z.boolean().optional(),
           tags: z.array(z.string()).optional().default([]),
           missing: z.boolean().optional().default(false)
         })
         .passthrough()
-    )
+    ),
+    providerOutcomes: z.array(z.object({
+      provider: z.string(),
+      profileId: z.string().optional(),
+      status: z.string()
+    }).passthrough()).optional()
   })
   .passthrough();
 
@@ -277,10 +295,26 @@ export function normalizeModelsPayload(payload: unknown): ModelsPayload {
       return {
         key: key ?? readNonEmptyString(entry.name) ?? "unknown",
         name: readNonEmptyString(entry.name) ?? key ?? id ?? "Unknown model",
+        ...(provider ? { provider } : {}),
         input,
         contextWindow: typeof entry.contextWindow === "number" ? entry.contextWindow : null,
+        ...(Array.isArray(entry.contextWindows) ? { contextWindows: entry.contextWindows } : {}),
+        ...(typeof entry.contextWindowDefault === "string" ? { contextWindowDefault: entry.contextWindowDefault } : {}),
         local: typeof entry.local === "boolean" ? entry.local : null,
         available: typeof entry.available === "boolean" ? entry.available : null,
+        ...(typeof entry.unavailableReason === "string" ? { unavailableReason: entry.unavailableReason } : {}),
+        ...(typeof entry.unavailableUntil === "number" ? { unavailableUntil: entry.unavailableUntil } : {}),
+        ...(typeof entry.reasoning === "boolean" ? { reasoning: entry.reasoning } : {}),
+        ...(Array.isArray(entry.thinkingLevels) ? { thinkingLevels: entry.thinkingLevels } : {}),
+        ...(typeof entry.thinkingDefault === "string" ? { thinkingDefault: entry.thinkingDefault } : {}),
+        ...(typeof entry.supportsTools === "boolean" ? { supportsTools: entry.supportsTools } : {}),
+        ...(typeof entry.alias === "string" ? { alias: entry.alias } : {}),
+        ...(typeof entry.apiKeySupported === "boolean" ? { apiKeySupported: entry.apiKeySupported } : {}),
+        ...(isObjectRecord(entry.agentRuntime) && typeof entry.agentRuntime.id === "string"
+          ? { agentRuntime: entry.agentRuntime as { id: string; fallback?: "openclaw" | "none"; source?: string } }
+          : {}),
+        ...(typeof entry.deprecated === "boolean" ? { deprecated: entry.deprecated } : {}),
+        ...(typeof entry.disabled === "boolean" ? { disabled: entry.disabled } : {}),
         tags,
         missing: entry.missing === true
       };

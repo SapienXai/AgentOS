@@ -1,8 +1,10 @@
 # Historical OpenClaw 2026.6.11 to 2026.8.1 Migration Engine
 
+> Historical 2026.8.1 artifact. The active certified AgentOS baseline is OpenClaw 2026.8.2; see [the current model/provider architecture](openclaw-2026.8.2-model-provider-architecture.md).
+
 This document describes the retained AgentOS Phase 2B migration boundary for upgrading a historical OpenClaw runtime from `2026.6.11` to the exact `2026.8.1` build at commit `ea806575e6450e4d1efdfc72c19f04be982a1b9b`.
 
-The 6.11 fixture and migration journal are compatibility infrastructure and evidence only. They are not the active AgentOS install or support path; fresh installs provision the current `2026.8.1` baseline directly.
+The 6.11 fixture and migration journal are compatibility infrastructure and evidence only. They are not the active AgentOS install or support path; fresh installs provision the current `2026.8.2` baseline directly.
 
 OpenClaw remains the source of truth for runtime behavior, state schemas, migrations, Gateway RPC, sessions, transcripts, models, and cron. AgentOS owns the operator-facing plan, journal, isolation boundary, evidence, commit point, rollback control, and recovery API. The implementation is in [`lib/openclaw/migration-engine/`](../lib/openclaw/migration-engine/) and is exposed through the server-only migration service and authenticated [`/api/openclaw/migrations`](../app/api/openclaw/migrations/route.ts) route.
 
@@ -12,7 +14,7 @@ The engine is intentionally narrow:
 
 - Source must be OpenClaw `2026.6.11`.
 - Target must be OpenClaw `2026.8.1` with the exact source commit above.
-- AgentOS policy is recommended and supported baseline `2026.8.1`; this historical migration flow remains available for regression coverage only.
+- AgentOS policy is recommended and supported baseline `2026.8.2`; this historical 8.1 migration flow remains available for regression coverage only.
 - The target package is staged and started in an isolated state/config root before any live replacement.
 - The managed install package is replaced only after the target doctor, runtime certification, and preservation gates pass.
 - External process supervisors remain the owner of process replacement when detected or explicitly configured.

@@ -1,8 +1,10 @@
 # OpenClaw 2026.8.1 Runtime Certification
 
+> Historical 2026.8.1 artifact. The active runtime certification is [OpenClaw 2026.8.2](evidence/openclaw-2026.8.2-runtime-certification.json); see [the current model/provider architecture](openclaw-2026.8.2-model-provider-architecture.md).
+
 Certification date: 2026-08-31
 
-This document records the Phase 2A.1 hardening run against an isolated OpenClaw `2026.8.1` Gateway. Phase 2C now promotes that certified runtime to the AgentOS recommended and supported baseline; the run still did not mutate production configuration or production SQLite state.
+This document records the historical Phase 2A.1 hardening run against an isolated OpenClaw `2026.8.1` Gateway. The active AgentOS recommended and supported baseline is now `2026.8.2`; this run still did not mutate production configuration or production SQLite state.
 
 ## Provenance
 

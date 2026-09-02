@@ -14,6 +14,8 @@ export interface OpenClawCommandOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   forceCli?: boolean;
+  /** Exact array paths whose removal is intentional for a native config mutation. */
+  replacePaths?: string[];
   /** Server-created native handshake proof required for mutation CLI fallback. */
   authorizationProof?: OpenClawNativeAuthorizationProof;
   /** Dedicated local Gateway-auth bootstrap path; never accepted from HTTP input. */
@@ -385,14 +387,35 @@ export type ModelsPayload = {
   models: Array<{
     key: string;
     name: string;
+    provider?: string;
     input: string;
     contextWindow: number | null;
+    contextWindows?: Array<{ id: string; label: string; contextWindow: number }>;
+    contextWindowDefault?: string;
     local: boolean | null;
     available: boolean | null;
+    unavailableReason?: "missing-auth" | "auth-failed" | "cooldown" | string;
+    unavailableUntil?: number;
+    reasoning?: boolean;
+    thinkingLevels?: Array<{ id: string; label: string }>;
+    thinkingDefault?: string;
+    supportsTools?: boolean;
+    alias?: string;
+    apiKeySupported?: boolean;
+    agentRuntime?: { id: string; fallback?: "openclaw" | "none"; source?: string };
+    deprecated?: boolean;
+    disabled?: boolean;
     tags: string[];
     missing: boolean;
   }>;
+  providerOutcomes?: Array<{
+    provider: string;
+    profileId?: string;
+    status: "ready" | "auth-rejected" | "unavailable" | string;
+  }>;
 };
+
+export type OpenClawModelsListView = "default" | "configured" | "provider-config" | "all";
 
 export type OpenClawSkillListPayload = {
   skills: Array<{
@@ -436,7 +459,45 @@ export type OpenClawModelScanPayload = Array<{
 export interface OpenClawListModelsInput {
   all?: boolean;
   provider?: string;
+  /** OpenClaw 2026.8.2 catalog view. `default` is the fast prepared view. */
+  view?: OpenClawModelsListView;
+  preparedOnly?: boolean;
+  refresh?: boolean;
+  includeProviderCapabilities?: boolean;
 }
+
+/** Secret-free projection returned by OpenClaw's native models.authStatus RPC. */
+export type OpenClawModelAuthStatusPayload = {
+  ts?: number;
+  providers?: Array<{
+    provider?: string;
+    displayName?: string;
+    status?: string;
+    expiry?: { at?: number; remainingMs?: number; label?: string };
+    profiles?: Array<{
+      profileId?: string;
+      type?: "oauth" | "token" | "api_key" | string;
+      status?: string;
+      reasonCode?: string;
+      expiry?: { at?: number; remainingMs?: number; label?: string };
+      logoutSupported?: boolean;
+    }>;
+    apiKey?: { source?: "config" | "env" | string; envVar?: string };
+    usage?: Record<string, unknown>;
+  }>;
+  unavailable?: { code?: string; message?: string };
+  providerCapabilities?: Array<{
+    provider?: string;
+    apiKeySupported?: boolean;
+    quickApiKeySetup?: boolean;
+  }>;
+};
+
+export type OpenClawModelAuthLogoutPayload = {
+  provider?: string;
+  removedProfiles?: string[];
+  abortedRunIds?: string[];
+};
 
 export interface OpenClawListSessionsInput {
   limit?: number;
@@ -520,7 +581,7 @@ export interface OpenClawTaskListInput {
   status?: string;
   agentId?: string;
   workspace?: string;
-  /** Exact 8.1 `tasks.list` filter. */
+  /** Certified OpenClaw `tasks.list` filter. */
   sessionKey?: string;
   /** @deprecated Use the exact Gateway `sessionKey` field. */
   sessionId?: string;

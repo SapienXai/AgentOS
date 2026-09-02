@@ -22,10 +22,41 @@ export type ModelProviderDescriptor = {
 };
 
 /**
- * The supported OpenClaw baseline resolves bundled provider API keys from its runtime
- * environment. Persist them under config-backed env.vars so the Gateway owns
- * storage, validation, reload, and redeploy persistence without turning a
- * bundled provider into a custom models.providers entry.
+ * Presentation-only provider overrides. OpenClaw supplies provider existence,
+ * capabilities, authentication, and model inventory; this map only keeps
+ * familiar product language and artwork stable when a provider is known.
+ */
+export type ModelProviderPresentationOverride = {
+  displayName?: string;
+  shortLabel?: string;
+  accent?: string;
+};
+
+export const modelProviderPresentationRegistry: Readonly<Record<string, ModelProviderPresentationOverride>> = {
+  openai: { displayName: "OpenAI", shortLabel: "OpenAI" },
+  openrouter: { displayName: "OpenRouter", shortLabel: "OpenRouter" },
+  ollama: { displayName: "Ollama", shortLabel: "Ollama" },
+  anthropic: { displayName: "Anthropic", shortLabel: "Anthropic" },
+  google: { displayName: "Google", shortLabel: "Google" },
+  "google-vertex": { displayName: "Google Vertex", shortLabel: "Google Vertex" },
+  "github-copilot": { displayName: "GitHub Copilot", shortLabel: "GitHub Copilot" },
+  huggingface: { displayName: "Hugging Face", shortLabel: "Hugging Face" },
+  litellm: { displayName: "LiteLLM", shortLabel: "LiteLLM" },
+  lmstudio: { displayName: "LM Studio", shortLabel: "LM Studio" },
+  minimax: { displayName: "MiniMax", shortLabel: "MiniMax" },
+  "minimax-portal": { displayName: "MiniMax Portal", shortLabel: "MiniMax Portal" },
+  "opencode-go": { displayName: "OpenCode Go", shortLabel: "OpenCode Go" },
+  "ollama-cloud": { displayName: "Ollama Cloud", shortLabel: "Ollama Cloud" },
+  vllm: { displayName: "vLLM", shortLabel: "vLLM" },
+  deepseek: { displayName: "DeepSeek", shortLabel: "DeepSeek" },
+  mistral: { displayName: "Mistral", shortLabel: "Mistral" },
+  xai: { displayName: "xAI", shortLabel: "xAI" }
+};
+
+/**
+ * Legacy compatibility targets for the pre-8.2 onboarding/adapter flow. The
+ * post-onboarding management surface must use OpenClaw setup/auth metadata and
+ * auth profiles instead; this map is not a provider capability registry.
  */
 export type ModelProviderCredentialTarget = {
   configPath: string;
@@ -65,6 +96,11 @@ export function getModelProviderCredentialTarget(provider: AddModelsProviderId) 
   return modelProviderCredentialRegistry[provider] ?? null;
 }
 
+/**
+ * Legacy descriptors kept for first-run and backwards-compatible Add Models
+ * flows. Do not use this array to discover providers or capabilities in the
+ * post-onboarding Models surface.
+ */
 export const modelProviderRegistry: Array<ModelProviderDescriptor & { id: BuiltInAddModelsProviderId; kind: "builtin" }> = [
   {
     id: "openai",
@@ -210,8 +246,13 @@ export function normalizeAddModelsProviderId(value: unknown): AddModelsProviderI
 }
 
 export function formatModelProviderLabel(providerId: string) {
-  const descriptor = modelProviderRegistry.find((provider) => provider.id === providerId);
+  const normalized = providerId.trim().toLowerCase();
+  const presentation = modelProviderPresentationRegistry[normalized];
+  const descriptor = modelProviderRegistry.find((provider) => provider.id === normalized);
 
+  if (presentation?.shortLabel || presentation?.displayName) {
+    return presentation.shortLabel ?? presentation.displayName ?? providerId;
+  }
   if (descriptor) {
     return descriptor.shortLabel;
   }

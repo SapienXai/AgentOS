@@ -1357,7 +1357,7 @@ test("phase three model surfaces separate setup, assignment, and session scope",
   assert.match(routeSource, /action: z\.literal\("inherit"\)/);
 });
 
-test("phase four model control reconciles catalog evidence and bulk session overrides", () => {
+test("global Models surface stays separate from session overrides", () => {
   const hookSource = readFileSync(path.join(rootDir, "hooks/use-model-catalog.ts"), "utf8");
   const dialogSource = readFileSync(
     path.join(rootDir, "components/mission-control/add-models/add-models-dialog.tsx"),
@@ -1376,8 +1376,12 @@ test("phase four model control reconciles catalog evidence and bulk session over
   assert.match(hookSource, /MODEL_CATALOG_RECONCILE_INTERVAL_MS = 60_000/);
   assert.match(dialogSource, /Reconcile library/);
   assert.match(dialogSource, /OpenClaw verified/);
-  assert.match(modelsSource, /Session Model Overrides/);
-  assert.match(modelsSource, /Reset all/);
+  assert.match(hookSource, /view = "default"/);
+  assert.match(modelsSource, /action: "set-default"/);
+  assert.match(modelsSource, /action: "set-fallbacks"/);
+  assert.match(modelsSource, /Model access policy/);
+  assert.doesNotMatch(modelsSource, /Session Model Overrides/);
+  assert.doesNotMatch(modelsSource, /Reset all/);
   assert.match(routeSource, /action: z\.literal\("inherit-many"\)/);
   assert.match(serviceSource, /buildSessionModelOverrides\(currentSnapshot\)/);
   assert.match(serviceSource, /for \(const target of targets\)/);

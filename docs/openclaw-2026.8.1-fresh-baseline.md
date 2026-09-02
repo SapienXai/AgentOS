@@ -1,6 +1,8 @@
 # OpenClaw 2026.8.1 Fresh Baseline
 
-Phase 2C promotes OpenClaw `2026.8.1` at commit `ea806575e6450e4d1efdfc72c19f04be982a1b9b` to both the AgentOS recommended version and supported baseline. A clean AgentOS install provisions this version directly; it does not require the historical 6.11 migration engine.
+> Historical 2026.8.1 artifact. The active fresh-install baseline is OpenClaw 2026.8.2; see [the current model/provider architecture](openclaw-2026.8.2-model-provider-architecture.md).
+
+This document records the historical 8.1 fresh-baseline gate at commit `ea806575e6450e4d1efdfc72c19f04be982a1b9b`. The active AgentOS recommended and supported baseline is now OpenClaw `2026.8.2`; the current fresh-install evidence is [`docs/evidence/openclaw-2026.8.2-fresh-baseline.json`](evidence/openclaw-2026.8.2-fresh-baseline.json). A clean AgentOS install provisions the active baseline directly and does not require the historical 6.11 migration engine.
 
 ## Certification command
 

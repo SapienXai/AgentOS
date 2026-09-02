@@ -4,6 +4,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+// Historical 2026.8.1 final-certification wrapper. The active 2026.8.2
+// baseline uses openclaw-runtime-certification.ts and fresh-baseline-e2e.ts.
 const BRANCH = "upgrade/openclaw-2026.8.1";
 const STARTING_HEAD = "a929914efa8037c527e1196662cb2b49e55228ad";
 const TARGET_VERSION = "2026.8.1";

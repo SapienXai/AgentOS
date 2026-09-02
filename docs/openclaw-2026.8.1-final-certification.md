@@ -1,5 +1,7 @@
 # OpenClaw 2026.8.1 Final Certification
 
+> Historical 2026.8.1 artifact. The active certified AgentOS baseline is OpenClaw 2026.8.2; see [the current model/provider architecture](openclaw-2026.8.2-model-provider-architecture.md).
+
 This document defines the final regression and certification boundary for the AgentOS `upgrade/openclaw-2026.8.1` branch. It covers the first-stable roadmap gates after the lifecycle, identity, trusted-team multi-user, session/task, and automation/cron phases.
 
 ## Scope

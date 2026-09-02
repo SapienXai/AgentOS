@@ -545,20 +545,10 @@ export async function addOpenClawExplicitProviderModelsToConfig(
     { timeoutMs: 5_000 }
   );
 
-  const existingDefaults = await adapter.getConfig<OpenClawAgentDefaultsConfig>(
-    "agents.defaults",
-    { timeoutMs: 5_000 }
-  );
-  const nextDefaults = cloneAgentDefaults(existingDefaults);
-  const nextModels = cloneModelEntries(nextDefaults.models);
-
-  for (const modelId of normalizedModelIds) {
-    const modelRef = `${providerId}/${modelId}`;
-    nextModels[modelRef] = isRecord(nextModels[modelRef]) ? nextModels[modelRef] : {};
-  }
-
-  nextDefaults.models = nextModels;
-  await adapter.setConfig("agents.defaults", nextDefaults, { timeoutMs: 5_000 });
+  // Catalog discovery and provider model definitions do not imply aliases or
+  // per-model settings. Keep agents.defaults.models reserved for the native
+  // OpenClaw alias/settings surface rather than using it as an AgentOS
+  // allowlist.
 }
 
 export async function persistOpenClawProviderToken(

@@ -529,7 +529,7 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
     void options;
     return Promise.reject<OpenClawTaskPayload>(
       new OpenClawGatewayClientError(
-        "OpenClaw 2026.8.1 does not expose task assignment through Gateway or CLI.",
+        "The certified OpenClaw Gateway does not expose task assignment through Gateway or CLI.",
         "unsupported"
       )
     );

@@ -1,5 +1,7 @@
 # OpenClaw 2026.8.1 Identity and Authorization Foundation
 
+> Historical 2026.8.1 artifact. The active certified AgentOS baseline is OpenClaw 2026.8.2; see [the current model/provider architecture](openclaw-2026.8.2-model-provider-architecture.md).
+
 Status: Phase 4A.1 evidence and architecture record.
 
 This document describes the identity boundary currently implemented by AgentOS and the exact OpenClaw 2026.8.1 contract used for runtime verification. It does not introduce the Phase 4B multi-user product.

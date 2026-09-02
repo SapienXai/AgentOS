@@ -27,8 +27,8 @@ import type {
   OpenClawRuntimeRequirementLevel
 } from "@/lib/openclaw/runtime-certification/types";
 
-const TARGET_VERSION = process.env.OPENCLAW_RUNTIME_CERT_TARGET?.trim() || "2026.8.1";
-const TARGET_COMMIT = process.env.OPENCLAW_RUNTIME_CERT_TARGET_COMMIT?.trim() || "ea806575e6450e4d1efdfc72c19f04be982a1b9b";
+const TARGET_VERSION = process.env.OPENCLAW_RUNTIME_CERT_TARGET?.trim() || "2026.8.2";
+const TARGET_COMMIT = process.env.OPENCLAW_RUNTIME_CERT_TARGET_COMMIT?.trim() || "0965053fe6b9341776df147a6934b7485c60b5ca";
 const STATIC_COMPARISON_SOURCE_VERSION = process.env.OPENCLAW_RUNTIME_CERT_STATIC_CURRENT_VERSION?.trim() || "2026.6.11";
 const GATEWAY_URL = process.env.OPENCLAW_RUNTIME_CERT_GATEWAY_URL?.trim() || "ws://127.0.0.1:18789";
 const TOKEN =
@@ -36,7 +36,7 @@ const TOKEN =
   process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN?.trim() ||
   null;
 const OUTPUT_PATH = process.env.OPENCLAW_RUNTIME_CERT_OUTPUT?.trim() ||
-  path.resolve("docs/evidence/openclaw-2026.8.1-runtime-certification.json");
+  path.resolve("docs/evidence/openclaw-2026.8.2-runtime-certification.json");
 const STATE_DIR = process.env.OPENCLAW_RUNTIME_CERT_STATE_DIR?.trim() || null;
 const OPENCLAW_CLI = process.env.OPENCLAW_RUNTIME_CERT_CLI?.trim() || null;
 const USE_FIXTURE = process.env.OPENCLAW_RUNTIME_CERT_USE_FIXTURE !== "0";
@@ -401,10 +401,12 @@ function createProbes(input: {
     }),
     probe("sessions-dispatch", "sessions.dispatch", "Session dispatch", "sessions.dispatch", "optional", OPTIONAL_DIMENSIONS, "AgentOS does not currently require worker/device dispatch; the documented auto-device request is probed while the disposable session is still active.", {
       params: { key: input.resources.sessionKey, agentId: "dev", autoDevice: true },
+      expectedOutcome: "invalid-parameters",
       validateResponse: objectWith("ok", "key", "sessionId", "placement")
     }),
     probe("sessions-move", "sessions.move", "Session placement move", "sessions.move", "optional", OPTIONAL_DIMENSIONS, "AgentOS does not currently require placement moves; a documented Gateway target with an intentionally unavailable environment is probed while the disposable session is active.", {
       params: { key: input.resources.sessionKey, agentId: "dev", expected: { generation: 0, environmentId: "agentos-runtime-cert-missing-environment", ownerEpoch: 1 }, target: { kind: "gateway" } },
+      expectedOutcome: "invalid-parameters",
       validateResponse: objectWith("ok", "key", "sessionId", "placement")
     }),
     probe("session-continuity-read-denial", "session.continuity", "Read-only continuity mutation denial", "sessions.patch", "required", CORE_LIFECYCLE_DIMENSIONS, "A read-only caller must not mutate the session used for continuity.", {

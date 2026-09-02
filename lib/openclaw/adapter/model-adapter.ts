@@ -10,7 +10,8 @@ import {
   normalizeOpenAiModelId,
   resolveModelRecordProvider
 } from "@/lib/openclaw/domains/model-provider-connection";
-import type { AddModelsProviderId, ModelRecord, OpenClawAgent } from "@/lib/openclaw/types";
+import { isAddModelsProviderId } from "@/lib/openclaw/model-provider-registry";
+import type { ModelRecord, OpenClawAgent } from "@/lib/openclaw/types";
 
 type AgentModelDefaultLike = {
   model?: string | null;
@@ -256,8 +257,21 @@ export function buildModelRecords(
       provider,
       input: model.input,
       contextWindow: model.contextWindow,
+      ...(model.contextWindows ? { contextWindows: model.contextWindows } : {}),
+      ...(model.contextWindowDefault ? { contextWindowDefault: model.contextWindowDefault } : {}),
       local: model.local,
       available: staleLegacyRoute ? false : resolveModelRecordAvailability(model, provider, modelStatus),
+      ...(model.unavailableReason ? { unavailableReason: model.unavailableReason } : {}),
+      ...(model.unavailableUntil !== undefined ? { unavailableUntil: model.unavailableUntil } : {}),
+      ...(model.reasoning !== undefined ? { reasoning: model.reasoning } : {}),
+      ...(model.thinkingLevels ? { thinkingLevels: model.thinkingLevels } : {}),
+      ...(model.thinkingDefault ? { thinkingDefault: model.thinkingDefault } : {}),
+      ...(model.supportsTools !== undefined ? { supportsTools: model.supportsTools } : {}),
+      ...(model.alias ? { alias: model.alias } : {}),
+      ...(model.apiKeySupported !== undefined ? { apiKeySupported: model.apiKeySupported } : {}),
+      ...(model.agentRuntime ? { agentRuntime: model.agentRuntime } : {}),
+      ...(model.deprecated !== undefined ? { deprecated: model.deprecated } : {}),
+      ...(model.disabled !== undefined ? { disabled: model.disabled } : {}),
       missing: model.missing || staleLegacyRoute,
       tags: staleLegacyRoute ? uniqueStrings([...model.tags, "stale-legacy-route"]) : model.tags,
       usageCount: modelUsage.get(id) ?? 0
@@ -311,7 +325,7 @@ function resolveModelRecordAvailability(
   provider: string,
   modelStatus?: ModelsStatusPayload
 ) {
-  if (model.available === false || model.missing || model.local === true || !modelStatus || !isAddModelsProviderId(provider)) {
+  if (model.available === false || model.missing || model.local === true || !modelStatus) {
     return model.available;
   }
 
@@ -320,21 +334,10 @@ function resolveModelRecordAvailability(
     return false;
   }
 
-  const connection = buildModelStatusConnectionStatus(provider, modelStatus, [normalizeOpenAiModelId(model.key)]);
-  return connection?.connected ? model.available : false;
-}
-
-function isAddModelsProviderId(provider: string): provider is AddModelsProviderId {
-  return [
-    "openrouter",
-    "ollama",
-    "openai",
-    "anthropic",
-    "xai",
-    "google",
-    "deepseek",
-    "mistral"
-  ].includes(provider);
+  const connection = isAddModelsProviderId(provider)
+    ? buildModelStatusConnectionStatus(provider, modelStatus, [normalizeOpenAiModelId(model.key)])
+    : null;
+  return connection ? (connection.connected ? model.available : false) : model.available;
 }
 
 function normalizeModelId(value: string | null | undefined) {

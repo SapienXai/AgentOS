@@ -48,7 +48,7 @@ test("the historical 6.11 runtime is below the promoted normal-support baseline"
 test("fresh baseline certification does not invoke the historical migration engine", () => {
   const source = readFileSync(path.join(process.cwd(), "scripts/openclaw-fresh-baseline-e2e.ts"), "utf8");
   const evidence = JSON.parse(readFileSync(
-    path.join(process.cwd(), "docs/evidence/openclaw-2026.8.1-fresh-baseline.json"),
+    path.join(process.cwd(), "docs/evidence/openclaw-2026.8.2-fresh-baseline.json"),
     "utf8"
   )) as {
     success?: boolean;
@@ -62,7 +62,7 @@ test("fresh baseline certification does not invoke the historical migration engi
   assert.match(source, /sourceStateProvided: false/);
   assert.match(source, /noHistoricalMigrationFixture: true/);
   assert.match(source, /migrationEngineInvoked: false/);
-  assert.match(source, /OPENCLAW 8\.1 FRESH BASELINE: PASS/);
+  assert.match(source, /OPENCLAW 8\.2 FRESH BASELINE: PASS/);
   assert.equal(evidence.success, true);
   assert.equal(evidence.freshState?.sourceStateProvided, false);
   assert.equal(evidence.freshState?.historicalMigrationFixtureUsed, false);
@@ -77,5 +77,5 @@ test("historical migration infrastructure remains pinned to the 6.11 fixture", (
   const source = readFileSync(path.join(process.cwd(), "lib/openclaw/migration-engine/engine.ts"), "utf8");
 
   assert.match(source, /OPENCLAW_PHASE_2B_SOURCE_VERSION = "2026\.6\.11"/);
-  assert.match(source, /OPENCLAW_PHASE_2B_TARGET_VERSION = "2026\.8\.1"/);
+  assert.match(source, /OPENCLAW_PHASE_2B_TARGET_VERSION = OPENCLAW_SUPPORTED_BASELINE_VERSION/);
 });

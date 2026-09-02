@@ -1,9 +1,10 @@
 import type { OpenClawCapability } from "@/lib/openclaw/identity/types";
+import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 
 export const OPENCLAW_IDENTITY_CONTRACT_SCHEMA_VERSION = 1;
-export const OPENCLAW_IDENTITY_CONTRACT_VERSION = "2026.8.1";
-export const OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT = "ea806575e6450e4d1efdfc72c19f04be982a1b9b";
-export const OPENCLAW_IDENTITY_CONTRACT_BUILD = "2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z";
+export const OPENCLAW_IDENTITY_CONTRACT_VERSION = OPENCLAW_SUPPORTED_BASELINE_VERSION;
+export const OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT = "0965053fe6b9341776df147a6934b7485c60b5ca";
+export const OPENCLAW_IDENTITY_CONTRACT_BUILD = "2026.8.2-0965053fe6b9-2026-09-01T09-44-31.342Z";
 
 export const OPENCLAW_OPERATOR_ROLES = ["operator", "node"] as const;
 
@@ -32,7 +33,7 @@ export type OpenClawIdentityInventoryEntry = {
   sourceNote: string;
 };
 
-export const OPENCLAW_8_1_IDENTITY_INVENTORY = [
+export const OPENCLAW_8_2_IDENTITY_INVENTORY = [
   {
     classification: "connection-identity",
     methodOrField: "connect.client.id/mode/instanceId",
@@ -83,7 +84,7 @@ export const OPENCLAW_8_1_IDENTITY_INVENTORY = [
     connectionLocal: false,
     deviceIdentityInvolved: true,
     currentAgentOsUse: "used",
-    sourceNote: "The 8.1 mobile setup-code RPC is admin-only and intentionally omitted from advertised discovery."
+    sourceNote: "The 8.2 mobile setup-code RPC is admin-only and intentionally omitted from advertised discovery."
   },
   {
     classification: "user-directory",
@@ -96,7 +97,7 @@ export const OPENCLAW_8_1_IDENTITY_INVENTORY = [
     connectionLocal: false,
     deviceIdentityInvolved: false,
     currentAgentOsUse: "not-used",
-    sourceNote: "8.1 exposes durable Gateway user profiles; AgentOS does not yet delegate its users."
+    sourceNote: "8.2 exposes durable Gateway user profiles; AgentOS does not yet delegate its users."
   },
   {
     classification: "user-directory",
@@ -200,7 +201,7 @@ export const OPENCLAW_8_1_IDENTITY_INVENTORY = [
     connectionLocal: false,
     deviceIdentityInvolved: false,
     currentAgentOsUse: "used",
-    sourceNote: "8.1 also persists createdActor, owner, participants, visibility, and sharingRole where applicable."
+    sourceNote: "8.2 also persists createdActor, owner, participants, visibility, and sharingRole where applicable."
   },
   {
     classification: "agent-authority",
@@ -226,7 +227,7 @@ export const OPENCLAW_8_1_IDENTITY_INVENTORY = [
     connectionLocal: true,
     deviceIdentityInvolved: false,
     currentAgentOsUse: "used",
-    sourceNote: "8.1 exposes these channel methods as admin-protected Gateway operations."
+    sourceNote: "8.2 exposes these channel methods as admin-protected Gateway operations."
   },
   {
     classification: "pairing-authority",

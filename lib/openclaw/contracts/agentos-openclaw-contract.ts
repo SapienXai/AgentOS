@@ -82,7 +82,7 @@ const regressionTestsByArea: Record<OpenClawCompatibilityLabAreaId, string[]> = 
 
 export const AGENTOS_OPENCLAW_CONTRACT: AgentOsOpenClawContract = {
   schemaVersion: 1,
-  agentOsContractVersion: "2026.8.1-agentos.1",
+  agentOsContractVersion: "2026.8.2-agentos.1",
   certifiedOpenClawBaseline: OPENCLAW_SUPPORTED_BASELINE_VERSION,
   operations: OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS.map(toContractOperation)
 };

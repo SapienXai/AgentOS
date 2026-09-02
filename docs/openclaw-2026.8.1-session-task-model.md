@@ -1,5 +1,7 @@
 # AgentOS / OpenClaw 2026.8.1 Session and Task Model
 
+> Historical 2026.8.1 artifact. The active certified AgentOS baseline is OpenClaw 2026.8.2; see [the current model/provider architecture](openclaw-2026.8.2-model-provider-architecture.md).
+
 ## Scope
 
 Phase 5A aligns AgentOS session and task views with the exact OpenClaw 2026.8.1 Gateway contract. OpenClaw remains the source of truth for runtime sessions, tasks, runs, task status, and Gateway control. AgentOS keeps only the projections and bootstrap metadata needed to present and operate those runtime objects.

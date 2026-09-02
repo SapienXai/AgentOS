@@ -750,12 +750,12 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   assignTask(input: OpenClawTaskAssignInput, options: OpenClawCommandOptions = {}) {
     void input;
     void options;
-    // OpenClaw 2026.8.1 exposes tasks.list/get/cancel, but not tasks.assign.
+    // The certified OpenClaw Gateway exposes tasks.list/get/cancel, but not tasks.assign.
     // Keep the compatibility surface for callers while preventing an invented
     // RPC or CLI fallback from mutating runtime state.
     return Promise.reject<OpenClawTaskPayload>(
       new OpenClawGatewayClientError(
-        "OpenClaw 2026.8.1 does not expose task assignment through Gateway or CLI.",
+        "The certified OpenClaw Gateway does not expose task assignment through Gateway or CLI.",
         "unsupported"
       )
     );
@@ -1105,9 +1105,18 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   }
 
   async listModels(input: OpenClawListModelsInput = {}, options: OpenClawCommandOptions = {}) {
+    const view = input.view ?? (input.all ? "all" : "default");
     const models = await this.gatewayFirst(
       "models.list",
-      { view: input.all ? "all" : "configured" },
+      {
+        view,
+        ...(input.provider ? { provider: input.provider } : {}),
+        ...(input.preparedOnly !== undefined ? { preparedOnly: input.preparedOnly } : {}),
+        ...(input.refresh !== undefined ? { refresh: input.refresh } : {}),
+        ...(input.includeProviderCapabilities !== undefined
+          ? { includeProviderCapabilities: input.includeProviderCapabilities }
+          : {})
+      },
       options,
       (payload) => {
         const normalized = normalizeModelsPayload(payload);
@@ -1118,9 +1127,9 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       () => this.fallback.listModels(input, options)
     );
 
-    const requiresCompleteProviderCatalog = input.all && input.provider === "google";
+    const requiresCompleteProviderCatalog = view === "all" && input.provider === "google";
 
-    if (!input.all || !input.provider || (models.models.length > 0 && !requiresCompleteProviderCatalog)) {
+    if (view !== "all" || !input.provider || (models.models.length > 0 && !requiresCompleteProviderCatalog)) {
       return models;
     }
 
@@ -2283,6 +2292,9 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
 
       if (path === "agents.list") {
         patchParams.replacePaths = ["agents.list[].skills"];
+      }
+      if (options.replacePaths?.length) {
+        patchParams.replacePaths = [...new Set([...(Array.isArray(patchParams.replacePaths) ? patchParams.replacePaths : []), ...options.replacePaths])];
       }
 
       if (baseHash) {

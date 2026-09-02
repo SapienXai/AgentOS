@@ -15,15 +15,15 @@ import { DEFAULT_NATIVE_TIMEOUT_MS, type WebSocketFactory } from "@/lib/openclaw
 import { redactSecrets } from "@/lib/security/redaction";
 import { OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 
-const TARGET_PACKAGE_ROOT = process.env.OPENCLAW_MIGRATION_TARGET_PACKAGE?.trim() || "/tmp/agentos-openclaw-2026.8.1-runtime.3O13Q3/package";
+const TARGET_PACKAGE_ROOT = process.env.OPENCLAW_MIGRATION_TARGET_PACKAGE?.trim() || "/tmp/agentos-openclaw-2026.8.2-runtime/package";
 const SOURCE_PACKAGE_INPUT = process.env.OPENCLAW_MIGRATION_SOURCE_PACKAGE?.trim() || "/tmp/agentos-openclaw-source-X2592F/openclaw-2026.6.11/package";
-const OUTPUT_PATH = process.env.OPENCLAW_MIGRATION_E2E_OUTPUT?.trim() || "docs/evidence/openclaw-2026.6.11-to-2026.8.1-migration.json";
+const OUTPUT_PATH = process.env.OPENCLAW_MIGRATION_E2E_OUTPUT?.trim() || "docs/evidence/openclaw-2026.6.11-to-2026.8.2-migration.json";
 const KEEP_FIXTURE = process.env.OPENCLAW_MIGRATION_KEEP_FIXTURE === "1";
 
 async function main() {
   const targetIdentity = await readOpenClawRuntimeIdentity({ binaryPath: path.join(TARGET_PACKAGE_ROOT, "openclaw.mjs"), packageRoot: TARGET_PACKAGE_ROOT });
   if (targetIdentity.version !== OPENCLAW_PHASE_2B_TARGET_VERSION || targetIdentity.sourceCommit !== OPENCLAW_PHASE_2B_TARGET_COMMIT) {
-    throw new Error("The configured target package is not the exact OpenClaw 2026.8.1 target.");
+    throw new Error("The configured target package is not the exact OpenClaw 2026.8.2 target.");
   }
 
   const dependencyRoot = await createSourceDependencyRoot();

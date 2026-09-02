@@ -100,14 +100,19 @@ test("add ChatGPT/Codex model smoke uses the canonical OpenAI provider handoff",
   assert.doesNotMatch(repairCommand, staleCodexAuthCommandPattern);
 });
 
-test("add OpenRouter key smoke keeps provider credentials Gateway-native", () => {
+test("legacy provider credential compatibility stays outside post-onboarding management", () => {
   const stateService = source("lib/openclaw/application/model-provider-state-service.ts");
   const registry = source("lib/openclaw/model-provider-registry.ts");
+  const managementService = source("lib/openclaw/application/model-management-service.ts");
 
   assert.match(stateService, /persistProviderCredentialViaGateway/);
   assert.match(stateService, /\.setConfig\(target\.configPath, credential/);
   assert.match(registry, /env\.vars\.OPENROUTER_API_KEY/);
-  assert.match(registry, /config-backed env\.vars/);
+  assert.match(registry, /Legacy compatibility targets/);
+  assert.match(registry, /not a provider capability registry/);
+  assert.doesNotMatch(managementService, /modelProviderCredentialRegistry/);
+  assert.match(managementService, /models\.authStatus/);
+  assert.match(managementService, /openclaw\.setup\.activate/);
   assert.doesNotMatch(stateService, /Gateway-native provider token persistence is not available yet/);
 });
 

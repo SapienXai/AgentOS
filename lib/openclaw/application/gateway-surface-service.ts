@@ -222,11 +222,11 @@ const surfaceDefinitions: SurfaceDefinition[] = [
     label: "Models, auth, Codex runtime config",
     category: "Models",
     operations: ["models", "modelAuth", "modelAuthOrder", "modelScan"],
-    currentAgentOsPath: "Models page + Add Models dialog",
+    currentAgentOsPath: "Models page + Connect Provider dialog",
     uiDestination: "Models page / Settings > Models",
     testTarget: "tests/openclaw-model-provider-state-service.test.ts",
     productHref: "/models",
-    agentOsRoutes: ["/models", "/api/models/catalog", "/api/models/providers", "/api/onboarding/models"],
+    agentOsRoutes: ["/models", "/api/models/management", "/api/models/catalog", "/api/models/providers", "/api/onboarding/models"],
     agentOsServices: [
       "lib/openclaw/application/model-provider-state-service.ts",
       "lib/openclaw/application/model-auth-service.ts"

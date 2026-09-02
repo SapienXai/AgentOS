@@ -196,7 +196,7 @@ function normalizeCatalogModels(
     local: Boolean(model.local),
     available: model.available !== false,
     missing: Boolean(model.missing),
-    recommended: isRecommendedModel(model.provider, model.id),
+    recommended: hasNativeRecommendationTag(model.tags),
     supportsTools: model.input.includes("text"),
     isFree: /:free$/i.test(model.id) || /\(free\)/i.test(model.name),
     tags: Array.isArray(model.tags) ? model.tags : []
@@ -216,7 +216,7 @@ function normalizeSnapshotModels(
       local: Boolean(model.local),
       available: model.available !== false,
       missing: Boolean(model.missing),
-      recommended: isRecommendedModel(model.provider, model.id),
+      recommended: hasNativeRecommendationTag(model.tags),
       supportsTools: model.input.includes("text"),
       isFree: /:free$/i.test(model.id) || /\(free\)/i.test(model.name),
       tags: Array.isArray(model.tags) ? model.tags : []
@@ -253,40 +253,6 @@ function normalizeCatalogModelId(provider: AddModelsProviderId, modelId: string)
   return modelId;
 }
 
-function isRecommendedModel(provider: string, modelId: string) {
-  const normalized = modelId.toLowerCase();
-
-  if (provider === "openrouter") {
-    return /gpt-5|claude-sonnet|gemini-2\.5|gemini-3|qwen3-coder|codestral|openrouter\/auto/.test(normalized);
-  }
-
-  if (provider === "ollama") {
-    return /qwen|llama3/.test(normalized);
-  }
-
-  if (provider === "anthropic") {
-    return /claude-sonnet|claude-opus/.test(normalized);
-  }
-
-  if (provider === "openai") {
-    return /gpt-5|o3|o4/.test(normalized);
-  }
-
-  if (provider === "xai") {
-    return /grok-4|grok-code/.test(normalized);
-  }
-
-  if (provider === "google") {
-    return /gemini-2\.|gemini-3/.test(normalized);
-  }
-
-  if (provider === "deepseek") {
-    return /deepseek-(chat|reasoner|coder|r1|v3)/.test(normalized);
-  }
-
-  if (provider === "mistral") {
-    return /mistral-(large|small|medium|tiny)|codestral|pixtral|ministral/.test(normalized);
-  }
-
-  return false;
+function hasNativeRecommendationTag(tags: string[]) {
+  return tags.some((tag) => ["recommended", "featured", "default"].includes(tag.trim().toLowerCase()));
 }

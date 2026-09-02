@@ -1832,6 +1832,7 @@ test("native WS gateway client clears operation fallback diagnostics after Gatew
     models: [{
       key: "openai/gpt-5.5",
       name: "GPT 5.5",
+      provider: "openai",
       input: "text",
       contextWindow: null,
       local: null,

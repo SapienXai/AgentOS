@@ -1,5 +1,7 @@
 # OpenClaw 2026.8.1 Automation and Cron Model
 
+> Historical 2026.8.1 artifact. The active certified AgentOS baseline is OpenClaw 2026.8.2; see [the current model/provider architecture](openclaw-2026.8.2-model-provider-architecture.md).
+
 This document describes the bounded Phase 5B automation boundary in AgentOS. OpenClaw 2026.8.1 remains the scheduler and runtime source of truth. AgentOS projects that state into Operations, Mission Control, and audit surfaces.
 
 ## Exact 8.1 contract

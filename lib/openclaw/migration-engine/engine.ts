@@ -27,10 +27,11 @@ import type {
   OpenClawMigrationStepId,
   OpenClawMigrationSuccessGate
 } from "@/lib/openclaw/migration-engine/types";
+import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 
 export const OPENCLAW_PHASE_2B_SOURCE_VERSION = "2026.6.11";
-export const OPENCLAW_PHASE_2B_TARGET_VERSION = "2026.8.1";
-export const OPENCLAW_PHASE_2B_TARGET_COMMIT = "ea806575e6450e4d1efdfc72c19f04be982a1b9b";
+export const OPENCLAW_PHASE_2B_TARGET_VERSION = OPENCLAW_SUPPORTED_BASELINE_VERSION;
+export const OPENCLAW_PHASE_2B_TARGET_COMMIT = "0965053fe6b9341776df147a6934b7485c60b5ca";
 
 const STEP_DEFINITIONS: Array<Omit<OpenClawMigrationStep, "status">> = [
   { id: "inspect", state: "preflight", description: "Inspect source state, config, runtime identity, and mutation ownership.", mutation: false, retryable: true },
