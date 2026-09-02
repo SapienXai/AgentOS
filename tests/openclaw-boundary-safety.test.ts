@@ -272,6 +272,10 @@ test("model provider API route keeps ChatGPT OAuth behind the application servic
     path.join(rootDir, "lib/openclaw/application/chatgpt-provider-auth-service.ts"),
     "utf8"
   );
+  const ptyRunnerSource = readFileSync(
+    path.join(rootDir, "scripts/openclaw-pty-runner.py"),
+    "utf8"
+  );
 
   assert.match(routeSource, /connectOpenClawChatGptProvider/);
   assert.match(routeSource, /statusContext\.connection\.connected/);
@@ -282,7 +286,11 @@ test("model provider API route keeps ChatGPT OAuth behind the application servic
   assert.match(serviceSource, /"openai"/);
   assert.doesNotMatch(serviceSource, /"--method",\s*"oauth"/);
   assert.match(serviceSource, /"--set-default"/);
-  assert.match(serviceSource, /"\/usr\/bin\/script"/);
+  assert.match(serviceSource, /"\/usr\/bin\/python3"/);
+  assert.match(serviceSource, /openclaw-pty-runner\.py/);
+  assert.match(ptyRunnerSource, /pty\.fork\(\)/);
+  assert.match(ptyRunnerSource, /os\.execvpe/);
+  assert.match(ptyRunnerSource, /select\.select/);
   assert.doesNotMatch(routeSource, /models\s+auth\s+login\s+--provider\s+openai-codex\s+--set-default/);
 });
 

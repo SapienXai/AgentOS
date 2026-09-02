@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
+import { join } from "node:path";
 
 import {
   buildOpenClawSpawnEnv,
@@ -18,6 +19,7 @@ const chatGptAuthTimeoutMs = 6 * 60_000;
 const pluginSetupTimeoutMs = 2 * 60_000;
 const chatGptAuthSessionRetentionMs = 10 * 60_000;
 const openAiAuthorizationUrlPattern = /https:\/\/auth\.openai\.com\/oauth\/authorize\S+/ig;
+const openClawPtyRunnerPath = join(process.cwd(), "scripts", "openclaw-pty-runner.py");
 
 type ChatGptProviderAuthDependencies = {
   platform: NodeJS.Platform;
@@ -342,8 +344,10 @@ async function runOpenClawChatGptInteractiveLogin(input: {
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn(
-      "/usr/bin/script",
-      ["-q", "/dev/null", invocation.command, ...invocation.args],
+      process.platform === "darwin" ? "/usr/bin/python3" : "/usr/bin/script",
+      process.platform === "darwin"
+        ? [openClawPtyRunnerPath, invocation.command, ...invocation.args]
+        : ["-q", "/dev/null", invocation.command, ...invocation.args],
       {
         detached: true,
         env: buildOpenClawSpawnEnv(),
