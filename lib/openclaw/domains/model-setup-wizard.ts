@@ -53,6 +53,11 @@ export type ModelSetupWizardResult = {
   modelActivation?: ModelSetupWizardActivation;
 };
 
+export type ModelSetupWizardStatusResult = {
+  status: ModelSetupWizardStatus;
+  error?: string;
+};
+
 export type ModelSetupWizardStartResult = ModelSetupWizardResult & {
   sessionId: string;
 };
@@ -120,7 +125,7 @@ export function parseModelSetupWizardStartResult(payload: unknown): ModelSetupWi
   };
 }
 
-export function parseModelSetupWizardStatus(payload: unknown) {
+export function parseModelSetupWizardStatus(payload: unknown): ModelSetupWizardStatusResult {
   return modelSetupWizardStatusSchema.parse(payload);
 }
 
@@ -256,11 +261,17 @@ export type ModelSetupWizardNextTransport = (
   answer?: { stepId: string; value?: unknown }
 ) => Promise<ModelSetupWizardResult>;
 
+export type ModelSetupWizardStatusTransport = () => Promise<ModelSetupWizardStatusResult>;
+
 export type ModelSetupWizardAdvanceOptions = {
   maxGatewaySteps?: number;
+  maxReconciliationAttempts?: number;
   deadlineMs?: number;
+  reconciliationDelayMs?: number | ((attempt: number) => number);
   now?: () => number;
+  primeRunningWithoutStep?: boolean;
   signal?: AbortSignal;
+  status?: ModelSetupWizardStatusTransport;
 };
 
 /**
@@ -273,22 +284,85 @@ export async function advanceModelSetupWizard(
   options: ModelSetupWizardAdvanceOptions = {}
 ): Promise<ModelSetupWizardResult> {
   const maxGatewaySteps = options.maxGatewaySteps ?? 32;
+  const maxReconciliationAttempts = options.maxReconciliationAttempts ?? 12;
   const deadline = (options.now ?? Date.now)() + (options.deadlineMs ?? 120_000);
   let current = initial;
-  let steps = 0;
-  let primeRunningSession = !initial.step && initial.done === false && initial.status === "running";
+  let nextCalls = 0;
+
+  const requestNext = async () => {
+    if (nextCalls >= maxGatewaySteps) {
+      throw new Error("OpenClaw provider setup is taking longer than expected. Try again.");
+    }
+    if ((options.now ?? Date.now)() >= deadline) {
+      throw new Error("OpenClaw provider setup is taking longer than expected. Try again.");
+    }
+    nextCalls += 1;
+    return parseModelSetupWizardResult(await next());
+  };
+
+  const waitForReconciliation = async (milliseconds: number) => {
+    if (options.signal?.aborted) throw new DOMException("Wizard request was cancelled.", "AbortError");
+    if (milliseconds <= 0) {
+      await Promise.resolve();
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        options.signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, milliseconds);
+      const onAbort = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        options.signal?.removeEventListener("abort", onAbort);
+        reject(new DOMException("Wizard request was cancelled.", "AbortError"));
+      };
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+    });
+  };
+
+  const reconcileRunningWithoutStep = async (running: ModelSetupWizardResult) => {
+    if (!options.status) return running;
+    let reconciled = running;
+    for (let attempt = 0; ; attempt += 1) {
+      if (attempt >= maxReconciliationAttempts || (options.now ?? Date.now)() >= deadline) {
+        throw new Error("OpenClaw is still working on this provider connection. Try again or reconnect.");
+      }
+      const status = await options.status();
+      if (status.status !== "running") {
+        return {
+          done: true,
+          status: status.status,
+          ...(status.error ? { error: status.error } : {})
+        } satisfies ModelSetupWizardResult;
+      }
+      const delay = typeof options.reconciliationDelayMs === "function"
+        ? options.reconciliationDelayMs(attempt)
+        : options.reconciliationDelayMs ?? 250;
+      await waitForReconciliation(Math.max(0, delay));
+      reconciled = await requestNext();
+      if (reconciled.step || reconciled.done || reconciled.status !== "running") return reconciled;
+    }
+  };
+
+  if (options.primeRunningWithoutStep !== false && !initial.step && initial.done === false && initial.status === "running") {
+    current = await requestNext();
+  }
 
   while (true) {
     if (options.signal?.aborted) throw new DOMException("Wizard request was cancelled.", "AbortError");
     const phase = modelSetupWizardResultPhase(current);
     if (phase === "done" || phase === "error" || phase === "cancelled") return current;
-    const shouldAdvance = current.step?.executor === "gateway" || (primeRunningSession && !current.step);
-    if (!shouldAdvance) return current;
-    primeRunningSession = false;
-    if (steps >= maxGatewaySteps || (options.now ?? Date.now)() >= deadline) {
-      throw new Error("OpenClaw provider setup is taking longer than expected. Try again.");
+    if (!current.step && current.done === false && current.status === "running") {
+      if (!options.status) return current;
+      current = await reconcileRunningWithoutStep(current);
+      continue;
     }
-    current = parseModelSetupWizardResult(await next());
-    steps += 1;
+    if (current.step?.executor !== "gateway") return current;
+    current = await requestNext();
   }
 }

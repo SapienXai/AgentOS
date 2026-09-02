@@ -172,55 +172,63 @@ export async function POST(request: Request) {
       case "activate-api-key":
         {
           const { sessionId, wizard } = await startModelSetupWizard({
+            actorId: permission.actor.actorId,
             method: "openclaw.setup.activate.start",
             kind: "api-key",
             authChoice: input.authChoice,
             apiKey: input.apiKey,
             modelRef: input.modelRef,
-            agentId: input.agentId
+            agentId: input.agentId,
+            signal: request.signal
           });
           return NextResponse.json(redactSecrets({ ok: true, message: "OpenClaw provider activation started.", sessionId, wizard }), { status: 200 });
         }
       case "start-auth": {
         const { sessionId, wizard } = await startModelSetupWizard({
+          actorId: permission.actor.actorId,
           method: "openclaw.setup.auth.start",
           authChoice: input.authChoice,
           agentId: input.agentId,
-          workspace: input.workspace
+          workspace: input.workspace,
+          signal: request.signal
         });
         return NextResponse.json(redactSecrets({ ok: true, message: "OpenClaw sign-in started.", sessionId, wizard }), { status: 200 });
       }
       case "start-prepare": {
         const { sessionId, wizard } = await startModelSetupWizard({
+          actorId: permission.actor.actorId,
           method: "openclaw.setup.prepare.start",
           authChoice: input.authChoice,
           agentId: input.agentId,
-          workspace: input.workspace
+          workspace: input.workspace,
+          signal: request.signal
         });
         return NextResponse.json(redactSecrets({ ok: true, message: "OpenClaw model preparation started.", sessionId, wizard }), { status: 200 });
       }
       case "start-activation": {
         const { sessionId, wizard } = await startModelSetupWizard({
+          actorId: permission.actor.actorId,
           method: "openclaw.setup.activate.start",
           kind: input.kind,
           authChoice: input.authChoice,
           apiKey: input.apiKey,
           modelRef: input.modelRef,
           agentId: input.agentId,
-          workspace: input.workspace
+          workspace: input.workspace,
+          signal: request.signal
         });
         return NextResponse.json(redactSecrets({ ok: true, message: "OpenClaw model activation started.", sessionId, wizard }), { status: 200 });
       }
       case "wizard-next": {
-        const wizard = await advanceModelSetupWizardSession(input.sessionId, input.answer, request.signal);
+        const wizard = await advanceModelSetupWizardSession(input.sessionId, input.answer, request.signal, permission.actor.actorId);
         return NextResponse.json(redactSecrets({ ok: true, message: "OpenClaw setup advanced.", sessionId: input.sessionId, wizard }), { status: 200 });
       }
       case "wizard-status": {
-        const status = await readModelSetupWizardStatus(input.sessionId);
+        const status = await readModelSetupWizardStatus(input.sessionId, permission.actor.actorId);
         return NextResponse.json(redactSecrets({ ok: true, sessionId: input.sessionId, status }), { status: 200 });
       }
       case "wizard-cancel": {
-        const status = await cancelModelSetupWizardSession(input.sessionId);
+        const status = await cancelModelSetupWizardSession(input.sessionId, permission.actor.actorId);
         message = status.status === "cancelled" ? "OpenClaw provider setup cancelled." : "OpenClaw setup is no longer running.";
         break;
       }

@@ -102,6 +102,10 @@ import type {
 } from "@/lib/openclaw/client/gateway-client";
 
 export interface OpenClawAdapter {
+  /** Capture a stable Gateway-backed adapter for long-lived setup sessions. */
+  capture?(): OpenClawAdapter;
+  /** Identity used to prevent answers crossing a Gateway reconnect. */
+  getConnectionIdentity?(): { client: OpenClawGatewayClient; connectionId: string | null };
   getHealth(options?: OpenClawCommandOptions): Promise<OpenClawHealthPayload>;
   getStatus(options?: OpenClawCommandOptions): Promise<StatusPayload>;
   getUpdateStatus(options?: OpenClawCommandOptions): Promise<OpenClawUpdateStatusPayload>;
@@ -243,6 +247,19 @@ export interface OpenClawAdapter {
 
 export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
   constructor(private readonly getClient: () => OpenClawGatewayClient = getOpenClawGatewayClient) {}
+
+  capture() {
+    const client = this.getClient();
+    return new GatewayBackedOpenClawAdapter(() => client);
+  }
+
+  getConnectionIdentity() {
+    const client = this.getClient();
+    return {
+      client,
+      connectionId: client.getDiagnostics?.()?.operatorIdentity?.connectionId ?? null
+    };
+  }
 
   getHealth(options: OpenClawCommandOptions = {}) {
     return this.getClient().getHealth(options);

@@ -116,6 +116,15 @@ wizard, and only `modelActivation` establishes readiness. If activation reports
 `gatewayRestartRequired`, AgentOS reports that OpenClaw must restart and does
 not claim the model is ready prematurely.
 
+The server-owned lifecycle retains each generated start promise past the
+30-second client deadline for a bounded transport window. If the client aborts
+or the start response arrives late, the exact session ID is cancelled after
+admission rather than being dropped. Active sessions retain their captured
+Gateway adapter and reject answers after a Gateway identity change. Follow-up
+advancement is single-lane; a `running` result without a step is reconciled
+through `wizard.status` plus bounded `wizard.next` retries before the UI shows a
+recoverable timeout.
+
 Native auth profiles remain OpenClaw-owned. Profile-level logout is offered only
 when `logoutSupported` is true; config-bound credentials remain managed by
 OpenClaw and are not presented with a fake disconnect action.
