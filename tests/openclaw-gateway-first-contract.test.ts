@@ -92,7 +92,7 @@ test("capability matrix detects advertised Gateway-first methods", async () => {
   assert.equal(matrix.authMode, "device");
   assert.equal(matrix.authRole, "operator");
   assert.deepEqual(matrix.authScopes, ["operator.read", "operator.write"]);
-  assert.deepEqual(matrix.requestedProtocolRange, { min: 3, max: 4 });
+  assert.deepEqual(matrix.requestedProtocolRange, { min: 4, max: 4 });
   assert.equal(matrix.configSchemaLookup, "supported");
   assert.equal(matrix.nativeMissionDispatch, "supported");
   assert.equal(matrix.nativeAgentLifecycle, "supported");
@@ -407,7 +407,13 @@ test("task abort cancels native Gateway tasks without requiring dispatch records
 });
 
 test("running task steering resolves a native Gateway session key", async () => {
-  const calls: Array<{ key?: string | null; sessionId?: string | null; message: string }> = [];
+  const calls: Array<{
+    key?: string | null;
+    sessionId?: string | null;
+    agentId?: string | null;
+    message: string;
+    idempotencyKey?: string | null;
+  }> = [];
   const taskDetail = createRunningTaskDetail();
 
   const response = await controlRunningTaskSession(
@@ -431,29 +437,33 @@ test("running task steering resolves a native Gateway session key", async () => 
   assert.equal(response.ok, true);
   assert.equal(response.target.sessionKey, "agent:agent-1:explicit:session-1");
   assert.deepEqual(response.transport, {
-    requestedMethod: "sessions.steer",
-    actualMethod: "sessions.steer",
+    requestedMethod: "chat.send",
+    actualMethod: "chat.send",
     fallback: "none",
     reason: null
   });
-  assert.deepEqual(calls, [{
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0], {
     key: "agent:agent-1:explicit:session-1",
     sessionId: null,
-    message: "Focus on tests"
-  }]);
+    message: "Focus on tests",
+    agentId: "agent-1",
+    idempotencyKey: calls[0]?.idempotencyKey
+  });
+  assert.match(calls[0]?.idempotencyKey ?? "", /^task-1:control:/);
 });
 
-test("running task steering falls back to chat injection when sessions.steer is unsupported", async () => {
-  const calls: Array<{ sessionKey?: string | null; sessionId?: string | null; message: string }> = [];
+test("running task steering fails honestly when modern chat control is unavailable", async () => {
+  const calls: Array<{ sessionKey?: string | null; sessionId?: string | null; agentId?: string | null; message: string }> = [];
   const taskDetail = createRunningTaskDetail();
 
-  const response = await controlRunningTaskSession(
+  await assert.rejects(() => controlRunningTaskSession(
     "task-1",
     { action: "steer", message: "Focus on tests" },
     {
       adapter: {
         async steerSession() {
-          throw new Error('OpenClaw Gateway does not advertise method "sessions.steer".');
+          throw new Error('OpenClaw Gateway does not advertise method "chat.send".');
         },
         async injectChat(input) {
           calls.push(input);
@@ -463,18 +473,8 @@ test("running task steering falls back to chat injection when sessions.steer is 
       getTaskDetail: async () => taskDetail,
       invalidateMissionControlSnapshotCache: () => {}
     }
-  );
-
-  assert.equal(response.ok, true);
-  assert.equal(response.transport?.requestedMethod, "sessions.steer");
-  assert.equal(response.transport?.actualMethod, "chat.inject");
-  assert.equal(response.transport?.fallback, "gateway-compatibility");
-  assert.match(response.transport?.reason ?? "", /does not advertise method "sessions\.steer"/);
-  assert.deepEqual(calls, [{
-    sessionKey: "agent:agent-1:explicit:session-1",
-    sessionId: null,
-    message: "Focus on tests"
-  }]);
+  ), /does not advertise method "chat\.send"/);
+  assert.deepEqual(calls, []);
 });
 
 test("running task context injection uses chat.inject semantics", async () => {
@@ -502,6 +502,7 @@ test("running task context injection uses chat.inject semantics", async () => {
   assert.deepEqual(calls, [{
     sessionKey: "agent:agent-1:explicit:session-1",
     sessionId: null,
+    agentId: "agent-1",
     message: "Use this reference"
   }]);
 });

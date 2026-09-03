@@ -34,6 +34,7 @@ import {
   prepareBrowserTaskBinding
 } from "@/lib/agentos/application/browser-task-binding-service";
 import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
+import { buildAgentSessionKey } from "@/lib/openclaw/client/native-ws-gateway-mappers";
 
 export type MissionDispatchWorkflowDependencies = {
   getMissionControlSnapshot: (options?: { force?: boolean; includeHidden?: boolean }) => Promise<MissionControlSnapshot>;
@@ -62,6 +63,7 @@ export async function submitMissionDispatch(
   }
 
   const missionAgent = snapshot.agents.find((entry) => entry.id === agentId);
+  const sessionKey = buildAgentSessionKey(agentId);
   const missionWorkspace =
     snapshot.workspaces.find((entry) => entry.id === (input.workspaceId || missionAgent?.workspaceId)) ??
     (missionAgent
@@ -158,15 +160,13 @@ export async function submitMissionDispatch(
     }
 
     if (input.browserAccount) {
-      if (!dispatchRecord.sessionId) {
-        throw new Error("OpenClaw did not allocate a task session for the browser account binding.");
-      }
       const binding = await prepareBrowserTaskBinding({
         request: input.browserAccount,
         workspaceId: missionWorkspace?.id ?? input.workspaceId ?? "",
         agentId,
         dispatchId: dispatchRecord.id,
-        openClawSessionId: dispatchRecord.sessionId
+        openClawSessionKey: sessionKey,
+        openClawSessionId: null
       });
       dispatchRecord = {
         ...dispatchRecord,
@@ -186,7 +186,7 @@ export async function submitMissionDispatch(
       const payload = await getOpenClawAdapter().runAgentTurn(
         {
           agentId,
-          sessionId: dispatchRecord.sessionId ?? undefined,
+          sessionKey,
           message: routedMission,
           thinking,
           timeoutSeconds: 45,
@@ -204,6 +204,7 @@ export async function submitMissionDispatch(
         : resolveGatewayMissionDispatchStatus(payload.status);
       dispatchRecord = {
         ...dispatchRecord,
+        sessionId: payload.sessionId ?? dispatchRecord.sessionId,
         status: nextStatus,
         updatedAt: now,
         runner: {
@@ -339,10 +340,12 @@ export async function abortMissionDispatchTask(
     }, { ...gatewayOptions, timeoutMs: 15_000 }).catch(() => null);
   }
 
-  if (runId || dispatchRecord.sessionId) {
+  const sessionKey = readDispatchSessionKey(dispatchRecord);
+  if (runId || dispatchRecord.sessionId || sessionKey) {
     await adapter.abortAgentTurn({
       runId,
       sessionId: dispatchRecord.sessionId,
+      sessionKey,
       agentId: dispatchRecord.agentId,
       reason: abortReason
     }, { ...gatewayOptions, timeoutMs: 15_000 }).catch(() => null);
@@ -363,6 +366,16 @@ export async function abortMissionDispatchTask(
     childPid: killedChildPid ?? nextRecord.runner.childPid,
     abortedAt
   };
+}
+
+function readDispatchSessionKey(record: MissionDispatchRecordLike) {
+  const result = record.result;
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+
+  const value = (result as Record<string, unknown>).sessionKey;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 async function finalizeDispatchBrowserBinding<T extends MissionDispatchRecordLike>(record: T): Promise<T> {

@@ -107,7 +107,7 @@ test("agent chat display keeps only the active turn pending", () => {
   );
 });
 
-test("agent chat rehydration merges OpenClaw history without duplicating local messages", () => {
+test("agent chat rehydration preserves distinct transcript messages with equal text", () => {
   const currentMessages: AgentChatMessage[] = [
     {
       id: "local-user",
@@ -154,7 +154,40 @@ test("agent chat rehydration merges OpenClaw history without duplicating local m
     [
       { role: "user", text: "Hello", status: "sent", runId: undefined },
       { role: "assistant", text: "Local reply", status: "sent", runId: undefined },
+      { role: "user", text: "Hello", status: "sent", runId: undefined },
       { role: "assistant", text: "OpenClaw reply", status: "sent", runId: "run-1" }
     ]
   );
+});
+
+test("agent chat rehydration upgrades a provisional message by submission identity", () => {
+  const merged = mergeAgentChatMessagesForRehydration(
+    [{
+      id: "local-user",
+      role: "user",
+      text: "Hello",
+      createdAt: 1,
+      status: "sending",
+      submissionId: "submission-1"
+    }],
+    [{
+      id: "native-message-7",
+      role: "user",
+      text: "Hello",
+      createdAt: 2,
+      status: "sent",
+      submissionId: "submission-1",
+      messageSeq: 7
+    }]
+  );
+
+  assert.deepEqual(merged, [{
+    id: "native-message-7",
+    role: "user",
+    text: "Hello",
+    createdAt: 1,
+    status: "sent",
+    submissionId: "submission-1",
+    messageSeq: 7
+  }]);
 });

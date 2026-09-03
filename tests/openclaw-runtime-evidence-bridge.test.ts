@@ -155,6 +155,7 @@ function createRuntimeReport(input: {
     scopes: ["operator.admin"],
     advertisedMethods: [],
     advertisedEvents: [],
+    capabilities: [],
     methodCount: 0,
     eventCount: 0,
     connectionStatus: "connected",

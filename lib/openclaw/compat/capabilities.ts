@@ -45,7 +45,6 @@ const capabilityDefinitions: CapabilityDefinition[] = [
       "sessions.reset",
       "sessions.delete",
       "sessions.compact",
-      "sessions.steer",
       "sessions.preview",
       "sessions.get",
       "sessions.describe",

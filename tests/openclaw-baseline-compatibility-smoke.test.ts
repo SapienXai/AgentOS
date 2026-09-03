@@ -135,7 +135,8 @@ test("agent create and dispatch smoke keeps unsupported task assignment fail-clo
   assert.match(nativeClient, /does not expose task assignment through Gateway or CLI/);
   assert.match(nativeClient, /callNative<MissionCommandPayload>\(\s*"chat\.send"/);
   assert.match(nativeClient, /callNative<MissionCommandPayload>\(\s*"sessions\.send"/);
-  assert.match(nativeClient, /agentDir[\s\S]*official CLI path until Gateway exposes it/);
+  assert.match(nativeClient, /name: input\.id/);
+  assert.doesNotMatch(nativeClient, /agents\.create[\s\S]{0,900}agentDir: input\.agentDir/);
   assert.match(cliClient, /"agents",\s*"add"/);
   assert.match(cliClient, /"agent",\s*"--agent"/);
   assert.match(cliClient, /does not expose task assignment through Gateway or CLI/);

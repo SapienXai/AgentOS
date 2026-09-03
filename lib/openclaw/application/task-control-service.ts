@@ -10,7 +10,6 @@ import {
 import { getTaskDetail } from "@/lib/openclaw/application/runtime-service";
 import { resolveTaskFollowUpContext } from "@/lib/openclaw/domains/task-follow-up";
 import { readExecutionIdentity } from "@/lib/openclaw/domains/execution-identity";
-import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 import type { MissionControlSnapshot, TaskDetailRecord } from "@/lib/openclaw/types";
 
@@ -103,12 +102,13 @@ export async function controlRunningTaskSession(
 
   const control =
     input.action === "steer"
-      ? await steerSessionWithCompatibilityFallback(adapter, target, message, gatewayOptions)
+      ? await steerSession(adapter, target, message, input, taskDetail.task.id, gatewayOptions)
       : {
           result: await adapter.injectChat(
             {
               sessionKey: target.sessionKey,
               sessionId: target.sessionKey ? null : target.sessionId,
+              agentId: target.agentId,
               message
             },
             { ...gatewayOptions, timeoutMs: 10000 }
@@ -133,60 +133,40 @@ export async function controlRunningTaskSession(
   };
 }
 
-async function steerSessionWithCompatibilityFallback(
+async function steerSession(
   adapter: TaskControlAdapter,
   target: RunningTaskControlTarget,
   message: string,
+  input: RunningTaskControlInput,
+  taskId: string,
   gatewayOptions: OpenClawCommandOptions
 ) {
-  try {
-    const result = await adapter.steerSession(
-      {
-        key: target.sessionKey,
-        sessionId: target.sessionKey ? null : target.sessionId,
+  const result = await adapter.steerSession(
+    {
+      key: target.sessionKey,
+      sessionId: target.sessionKey ? null : target.sessionId,
+      agentId: target.agentId,
+      message,
+      idempotencyKey: resolveControlIdempotencyKey({
+        taskId,
+        dispatchId: input.dispatchId ?? null,
+        runId: target.runId,
+        inputKey: input.idempotencyKey,
         message
-      },
-      { ...gatewayOptions, timeoutMs: 10000 }
-    );
+      })
+    },
+    { ...gatewayOptions, timeoutMs: 10000 }
+  );
 
-    return {
-      result,
-      transport: {
-        requestedMethod: "sessions.steer",
-        actualMethod: "sessions.steer",
-        fallback: "none" as const,
-        reason: null
-      }
-    };
-  } catch (error) {
-    const normalized = normalizeClientError(error);
-    if (!shouldFallbackSteerToInject(normalized)) {
-      throw error;
+  return {
+    result,
+    transport: {
+      requestedMethod: "chat.send",
+      actualMethod: "chat.send",
+      fallback: "none" as const,
+      reason: null
     }
-
-    if (!adapter.injectChat) {
-      throw error;
-    }
-
-    const result = await adapter.injectChat(
-      {
-        sessionKey: target.sessionKey,
-        sessionId: target.sessionKey ? null : target.sessionId,
-        message
-      },
-      { ...gatewayOptions, timeoutMs: 10000 }
-    );
-
-    return {
-      result,
-      transport: {
-        requestedMethod: "sessions.steer",
-        actualMethod: "chat.inject",
-        fallback: "gateway-compatibility" as const,
-        reason: normalized.message
-      }
-    };
-  }
+  };
 }
 
 async function continueTaskSession(
@@ -397,9 +377,19 @@ function resolveContinuationIdempotencyKey(input: {
   return `${input.dispatchId || input.taskId}:continue:${digest}`;
 }
 
-function shouldFallbackSteerToInject(normalized: ReturnType<typeof normalizeClientError>) {
-  return (
-    /sessions\.steer/i.test(normalized.message) &&
-    (normalized.kind === "unsupported" || /does not advertise method/i.test(normalized.message))
-  );
+function resolveControlIdempotencyKey(input: {
+  taskId: string;
+  dispatchId: string | null;
+  runId: string | null;
+  inputKey?: string | null;
+  message: string;
+}) {
+  const normalizedInputKey = input.inputKey?.trim();
+  if (normalizedInputKey) {
+    return normalizedInputKey;
+  }
+
+  const stableSource = `${input.taskId}\n${input.dispatchId ?? ""}\n${input.runId ?? ""}\n${input.message}`;
+  const digest = createHash("sha256").update(stableSource).digest("hex").slice(0, 20);
+  return `${input.dispatchId || input.taskId}:control:${digest}`;
 }

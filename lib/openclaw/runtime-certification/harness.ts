@@ -56,6 +56,7 @@ export async function runOpenClawRuntimeCertification(
 
   const advertisedMethods = readStringList(input.handshake.features?.methods);
   const advertisedEvents = readStringList(input.handshake.features?.events);
+  const capabilities = readStringList(input.handshake.features?.capabilities);
   const results = context.results;
   const summary = {
     total: results.length,
@@ -84,6 +85,7 @@ export async function runOpenClawRuntimeCertification(
     scopes: readStringList(input.handshake.auth?.scopes),
     advertisedMethods,
     advertisedEvents,
+    capabilities,
     methodCount: advertisedMethods.length,
     eventCount: advertisedEvents.length,
     connectionStatus: "connected",

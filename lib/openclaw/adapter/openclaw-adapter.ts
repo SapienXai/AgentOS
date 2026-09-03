@@ -648,7 +648,7 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
     const client = this.getClient();
 
     if (!client.steerSession) {
-      throw new Error("Native OpenClaw Gateway is required for sessions.steer.");
+      throw new Error("Native OpenClaw Gateway is required for chat.send steering.");
     }
 
     return client.steerSession(input, options);

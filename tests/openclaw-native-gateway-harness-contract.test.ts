@@ -72,7 +72,7 @@ test("fake OpenClaw Gateway exposes protocol mismatch errors without CLI fallbac
     () => client.probeNativeHandshake(),
     (error) => {
       assert.equal(readErrorKind(error), "protocol-mismatch");
-      assert.match(error instanceof Error ? error.message : String(error), /supported range 3-4/);
+      assert.match(error instanceof Error ? error.message : String(error), /supported range 4-4/);
       return true;
     }
   );
@@ -153,10 +153,11 @@ test("chat.send unsupported responses fall through to sessions.send without CLI 
     context.respond({ runId: "run-1", status: "running" });
   });
 
-  assert.deepEqual(
-    await client.runAgentTurn({ agentId: "agent-1", message: "hello", workspace: "/workspace" }),
-    { runId: "run-1", status: "running" }
-  );
+  const result = await client.runAgentTurn({ agentId: "agent-1", message: "hello", workspace: "/workspace" });
+  assert.equal(result.runId, "run-1");
+  assert.equal(result.status, "running");
+  assert.equal(result.sessionKey, "agent:agent-1:main");
+  assert.equal(result.meta?.openClawAdmission && typeof result.meta.openClawAdmission === "object", true);
   assert.deepEqual(gateway.methods(), ["connect", "chat.send", "sessions.send"]);
   assert.equal(Object.hasOwn(gateway.sentFrames[1]?.params ?? {}, "workspace"), false);
   assert.equal(Object.hasOwn(gateway.sentFrames[2]?.params ?? {}, "workspace"), false);

@@ -113,7 +113,7 @@ export type BrowserTaskBindingRecord = {
   workspaceId: string;
   ownerUserId: string;
   agentId: string;
-  openClawSessionId: string;
+  openClawSessionId: string | null;
   openClawSessionKey: string;
   openClawProfileName: string;
   providerSessionId: string;

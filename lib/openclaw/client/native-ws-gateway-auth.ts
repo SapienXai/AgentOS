@@ -1,5 +1,7 @@
 import "server-only";
 
+import { GATEWAY_CLIENT_CAPS } from "@openclaw/gateway-protocol/client-info";
+
 import { createPrivateKey, createPublicKey, sign } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -428,7 +430,7 @@ export async function buildConnectParams(
       },
       role: options.role ?? "operator",
       scopes,
-      caps: ["tool-events"],
+      caps: [GATEWAY_CLIENT_CAPS.AGENT_KIND, GATEWAY_CLIENT_CAPS.TOOL_EVENTS],
       ...(auth ? { auth } : {}),
       ...(device ? { device } : {}),
       userAgent: "AgentOS",

@@ -9,6 +9,8 @@ export type AgentChatMessage = {
   status?: AgentChatStatus;
   errorMessage?: string | null;
   runId?: string | null;
+  submissionId?: string | null;
+  messageSeq?: number | null;
 };
 
 export const agentChatMessageStoragePrefix = "mission-control-agent-chat:v1";
@@ -54,6 +56,9 @@ function isAgentChatMessage(candidate: unknown): candidate is AgentChatMessage {
       entry.status === "sending" ||
       entry.status === "sent" ||
       entry.status === "error")
+    && (entry.submissionId === undefined || entry.submissionId === null || typeof entry.submissionId === "string")
+    && (entry.messageSeq === undefined || entry.messageSeq === null ||
+      (typeof entry.messageSeq === "number" && Number.isSafeInteger(entry.messageSeq) && entry.messageSeq >= 0))
   );
 }
 
@@ -122,37 +127,26 @@ export function mergeAgentChatMessagesForRehydration(
   rehydratedMessages: readonly AgentChatMessage[]
 ) {
   const byId = new Map<string, AgentChatMessage>();
-  const byContent = new Map<string, AgentChatMessage>();
+  const byIdentity = new Map<string, AgentChatMessage>();
 
   for (const message of [...currentMessages, ...rehydratedMessages]) {
     if (!isAgentChatMessage(message)) {
       continue;
     }
 
-    const existingById = byId.get(message.id);
-    const nextById = existingById ? chooseRehydratedAgentChatMessage(existingById, message) : message;
-    byId.set(message.id, nextById);
-
-    const contentKey = createAgentChatContentKey(nextById);
-    if (!contentKey) {
-      continue;
+    const identityKey = message.submissionId?.trim()
+      ? `submission:${message.submissionId.trim()}`
+      : `message:${message.id}`;
+    const existing = byIdentity.get(identityKey);
+    const next = existing ? chooseRehydratedAgentChatMessage(existing, message) : message;
+    byIdentity.set(identityKey, next);
+    if (existing && existing.id !== next.id) {
+      byId.delete(existing.id);
     }
-
-    const existingByContent = byContent.get(contentKey);
-    byContent.set(
-      contentKey,
-      existingByContent ? chooseRehydratedAgentChatMessage(existingByContent, nextById) : nextById
-    );
+    byId.set(next.id, next);
   }
 
-  const withContentDedupe = new Map<string, AgentChatMessage>();
-  for (const message of byId.values()) {
-    const contentKey = createAgentChatContentKey(message);
-    const canonical = contentKey ? byContent.get(contentKey) : null;
-    withContentDedupe.set((canonical ?? message).id, canonical ?? message);
-  }
-
-  return [...withContentDedupe.values()]
+  return [...byId.values()]
     .sort((left, right) => left.createdAt - right.createdAt)
     .slice(-maxAgentChatMessages);
 }
@@ -183,11 +177,6 @@ export function readAgentInboxLastSeenAt(agentId: string): number | null {
   } catch {
     return null;
   }
-}
-
-function createAgentChatContentKey(message: AgentChatMessage) {
-  const text = message.text.replace(/\s+/g, " ").trim().toLowerCase();
-  return text ? `${message.role}:${text}` : null;
 }
 
 function chooseRehydratedAgentChatMessage(left: AgentChatMessage, right: AgentChatMessage) {

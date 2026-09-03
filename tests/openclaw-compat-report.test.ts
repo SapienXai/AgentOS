@@ -299,12 +299,14 @@ function createCompatibilityGateway(
     handshake: {
       type: "hello-ok",
       protocol: 4,
-      server: { version: OPENCLAW_SUPPORTED_BASELINE_VERSION },
+      server: { version: OPENCLAW_SUPPORTED_BASELINE_VERSION, connId: "compat-connection" },
       features: {
         methods: options.advertiseMethods === false ? [] : methods,
         events
       },
-      auth: { role: "operator", scopes: authScopes }
+      snapshot: {},
+      auth: { role: "operator", scopes: authScopes },
+      policy: { maxPayload: 1000000, maxBufferedBytes: 1000000, tickIntervalMs: 15000 }
     }
   });
 

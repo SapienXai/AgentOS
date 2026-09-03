@@ -74,7 +74,7 @@ test("8.2 dedicated scopes remain distinct and dynamic operations stay runtime-r
   assert.equal((await service.authorizeMethod("talk.config", { includeSecrets: true })).state, "denied");
   assert.equal((await service.authorizeMethod("sessions.patch", { key: "agent:main:main" })).state, "runtime-required");
   assert.equal((await service.authorizeMethod("chat.send", { sessionKey: "agent:main:main" })).state, "runtime-required");
-  assert.equal((await service.authorizeMethod("sessions.steer", { key: "agent:main:main" })).state, "runtime-required");
+  assert.equal((await service.authorizeMethod("chat.send", { sessionKey: "agent:main:main" })).state, "runtime-required");
   assert.equal((await service.authorizeMethod("node.invoke", { nodeId: "node-1", command: "system.run" })).state, "runtime-required");
   assert.equal((await service.authorizeMethod("config.patch", { raw: {} })).state, "denied");
 });
@@ -85,7 +85,6 @@ test("8.2 mutation policy classifies non-suffix mutation methods for fallback sa
     "device.pair.approve",
     "device.pair.setupCode",
     "plugins.install",
-    "sessions.steer",
     "chat.inject",
     "web.login.wait"
   ]) {
@@ -471,7 +470,7 @@ test("selected public OpenClaw mutation routes require preflight and pass server
     ["app/api/agents/route.ts", "agents.create", "agents.update", "agents.delete"],
     ["app/api/agents/[agentId]/chat/route.ts", "chat.send"],
     ["app/api/mission/route.ts", "chat.send"],
-    ["app/api/tasks/[taskId]/control/route.ts", "sessions.steer", "chat.inject", "chat.send"],
+    ["app/api/tasks/[taskId]/control/route.ts", "chat.send", "chat.inject"],
     ["app/api/tasks/[taskId]/abort/route.ts", "sessions.abort"],
     ["app/api/operations/route.ts", "cron.add", "cron.update", "cron.remove"],
     ["app/api/settings/gateway/route.ts", "config.patch", "device.pair.approve"],

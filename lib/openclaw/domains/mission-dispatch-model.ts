@@ -4,6 +4,8 @@ import type { MissionDispatchStatus, MissionSubmission, RuntimeCreatedFile, Runt
 
 type MissionCommandPayloadLike = {
   runId?: string;
+  sessionKey?: string;
+  sessionId?: string;
   status?: string;
   summary?: string;
   payloads?: Array<{

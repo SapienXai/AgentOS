@@ -754,13 +754,14 @@ test("native WS gateway client exposes handshake feature discovery", async () =>
         payload: {
           type: "hello-ok",
           protocol: 4,
-          server: { version: OPENCLAW_RECOMMENDED_VERSION },
+              server: { version: OPENCLAW_RECOMMENDED_VERSION, connId: "connection-1" },
           features: {
             methods: ["status", "chat.send", "sessions.subscribe"],
             events: ["chat", "sessions.changed"]
           },
+          snapshot: {},
           auth: { role: "operator", scopes: ["operator.read"] },
-          policy: { tickIntervalMs: 15000 }
+          policy: { maxPayload: 1000000, maxBufferedBytes: 1000000, tickIntervalMs: 15000 }
         }
       });
     });
@@ -792,8 +793,11 @@ test("native WS gateway client records requested and granted operator identity s
           ? {
               type: "hello-ok",
               protocol: 4,
-              server: { connId: "connection-1" },
-              auth: { role: "operator", scopes: ["operator.read"] }
+              server: { version: OPENCLAW_RECOMMENDED_VERSION, connId: "connection-1" },
+              features: { methods: [], events: [] },
+              snapshot: {},
+              auth: { role: "operator", scopes: ["operator.read"] },
+              policy: { maxPayload: 1000000, maxBufferedBytes: 1000000, tickIntervalMs: 15000 }
             }
           : { ok: true }
       });
@@ -848,8 +852,8 @@ test("native WS gateway client records protocol mismatch recovery diagnostics", 
   assert.deepEqual(getRecentOpenClawGatewayFallbackDiagnostics(), []);
   const diagnostics = client.getDiagnostics();
   assert.equal(diagnostics.gatewayMode, "unreachable");
-  assert.match(diagnostics.lastNativeError ?? "", /supported range 3-4/);
-  assert.match(diagnostics.recovery ?? "", /supported range 3-4/);
+  assert.match(diagnostics.lastNativeError ?? "", /supported range 4-4/);
+  assert.match(diagnostics.recovery ?? "", /supported range 4-4/);
 });
 
 test("native WS gateway client uses Gateway first for typed status requests", async () => {
@@ -898,7 +902,7 @@ test("native WS gateway client uses Gateway first for typed status requests", as
     platform: process.platform,
     mode: "backend"
   });
-  assert.equal(sentFrames[0]?.params.minProtocol, 3);
+  assert.equal(sentFrames[0]?.params.minProtocol, 4);
   assert.equal(sentFrames[0]?.params.maxProtocol, 4);
   assert.deepEqual(sentFrames[0]?.params.scopes, [
     "operator.admin",
@@ -3379,15 +3383,15 @@ test("native WS gateway client uses Gateway first for critical workflows with co
 
   assert.deepEqual(sentFrames.map((frame) => frame.method), [
     "connect",
+    "agents.create",
     "agents.delete",
     "chat.send",
     "sessions.abort"
   ]);
-  assert.deepEqual(fallback.calls.map((call) => call.method), ["addAgent"]);
-  assert.deepEqual(fallback.calls.find((call) => call.method === "addAgent")?.params, {
-    id: "agent-1",
-    workspace: "/workspace",
-    agentDir: "/agent"
+  assert.deepEqual(fallback.calls, []);
+  assert.deepEqual(sentFrames.find((frame) => frame.method === "agents.create")?.params, {
+    name: "agent-1",
+    workspace: "/workspace"
   });
   const chatParams = sentFrames.find((frame) => frame.method === "chat.send")?.params;
   assert.equal(chatParams?.sessionKey, "agent:agent-1:main");
@@ -3671,20 +3675,21 @@ test("native WS gateway client sends task steering and context injection without
     timeoutMs: 250
   });
 
-  assert.deepEqual(
-    await client.steerSession({ key: "agent:agent-1:main", message: "Focus on tests" }),
-    { ok: true, method: "sessions.steer" }
-  );
+  const steerResult = await client.steerSession({ key: "agent:agent-1:main", message: "Focus on tests" });
+  assert.deepEqual(steerResult, { ok: true, method: "chat.send" });
   assert.deepEqual(
     await client.injectChat({ sessionKey: "agent:agent-1:main", message: "Use this reference" }),
     { ok: true, method: "chat.inject" }
   );
 
-  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "sessions.steer", "chat.inject"]);
-  assert.deepEqual(sentFrames.find((frame) => frame.method === "sessions.steer")?.params, {
-    key: "agent:agent-1:main",
-    message: "Focus on tests"
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "chat.send", "chat.inject"]);
+  assert.deepEqual(sentFrames.find((frame) => frame.method === "chat.send")?.params, {
+    sessionKey: "agent:agent-1:main",
+    message: "Focus on tests",
+    queueMode: "steer",
+    idempotencyKey: sentFrames.find((frame) => frame.method === "chat.send")?.params.idempotencyKey
   });
+  assert.equal(typeof sentFrames.find((frame) => frame.method === "chat.send")?.params.idempotencyKey, "string");
   assert.deepEqual(sentFrames.find((frame) => frame.method === "chat.inject")?.params, {
     sessionKey: "agent:agent-1:main",
     message: "Use this reference"
@@ -3823,7 +3828,7 @@ test("native WS gateway client keeps direct chat moving when session creation pa
   assert.deepEqual(fallback.calls, []);
 });
 
-test("native WS gateway client uses CLI agent creation to preserve explicit agentDir", async () => {
+test("native WS gateway client keeps agent creation on the native lifecycle", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
@@ -3836,7 +3841,7 @@ test("native WS gateway client uses CLI agent creation to preserve explicit agen
           ? {
               protocol: 4,
               features: {
-                methods: ["agents.list", "agents.delete"]
+                methods: ["agents.list", "agents.create", "agents.delete"]
               }
             }
           : { ok: true }
@@ -3850,17 +3855,15 @@ test("native WS gateway client uses CLI agent creation to preserve explicit agen
     timeoutMs: 250
   });
 
-  await assert.rejects(
-    async () => client.addAgent({ id: "agent-1", workspace: "/workspace", agentDir: "/agent" }),
-    /CLI fallback for OpenClaw mutation agents\.create requires a current native Gateway authorization proof/
-  );
+  await client.addAgent({ id: "agent-1", workspace: "/workspace", agentDir: "/agent" });
 
-  assert.deepEqual(sentFrames.map((frame) => frame.method), []);
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "agents.create"]);
+  assert.deepEqual(sentFrames[1]?.params, { name: "agent-1", workspace: "/workspace" });
   assert.deepEqual(fallback.calls, []);
   assert.deepEqual(getRecentOpenClawGatewayFallbackDiagnostics(), []);
 });
 
-test("native CLI agent creation requires a live proof after disconnect", async () => {
+test("native agent creation refreshes its connection after disconnect", async () => {
   const fallback = new FallbackGatewayClient();
   const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
     globalThis.queueMicrotask(() => {
@@ -3885,21 +3888,9 @@ test("native CLI agent creation requires a live proof after disconnect", async (
     timeoutMs: 250
   });
 
-  await client.probeNativeHandshake();
-  const proof = nativeAuthorizationProof();
-  await client.addAgent({ id: "agent-1", workspace: "/workspace", agentDir: "/agent" }, {
-    authorizationProof: proof
-  });
-  assert.deepEqual(fallback.calls.map((call) => call.method), ["addAgent"]);
-
   client.close("identity freshness test");
-  await assert.rejects(
-    async () => client.addAgent({ id: "agent-2", workspace: "/workspace", agentDir: "/agent-2" }, {
-      authorizationProof: proof
-    }),
-    /requires a current native Gateway authorization proof/
-  );
-  assert.deepEqual(fallback.calls.map((call) => call.method), ["addAgent"]);
+  await client.addAgent({ id: "agent-2", workspace: "/workspace", agentDir: "/agent-2" });
+  assert.deepEqual(fallback.calls, []);
 });
 
 test("native WS gateway client uses agents.update when supported", async () => {

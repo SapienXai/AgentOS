@@ -3,6 +3,7 @@ import "server-only";
 import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import { type GatewayEventFrame } from "@/lib/openclaw/client/native-ws-gateway-types";
 import {
+  createRequestId,
   isObjectRecord,
   readNonEmptyString
 } from "@/lib/openclaw/client/native-ws-gateway-utils";
@@ -117,11 +118,7 @@ export function buildSessionReferenceParams(input: OpenClawSessionReferenceInput
 
   const sessionId = input.sessionId?.trim();
   const agentId = input.agentId?.trim();
-  return {
-    agentId: agentId || undefined,
-    sessionId: sessionId || undefined,
-    key: agentId || sessionId ? buildAgentSessionKey(agentId, sessionId) : undefined
-  };
+  return { key: agentId || sessionId ? buildAgentSessionKey(agentId, sessionId) : undefined };
 }
 
 export function buildSessionHistoryParams(input: OpenClawSessionHistoryInput = {}) {
@@ -145,11 +142,8 @@ export function buildSessionPreviewParams(input: OpenClawSessionHistoryInput = {
   const reference = buildSessionReferenceParams(input);
   const key = reference.key;
   return {
-    key,
-    sessionKey: key,
-    sessionKeys: key ? [key] : undefined,
-    limit: input.limit,
-    cursor: input.cursor ?? undefined
+    keys: key ? [key] : [],
+    limit: input.limit
   };
 }
 
@@ -179,24 +173,34 @@ export function buildRuntimeSnapshotArtifactListInput(input: OpenClawRuntimeSnap
 }
 
 export function buildSessionSteerParams(input: OpenClawSessionSteerInput) {
-  const key = input.key?.trim();
-  const sessionId = input.sessionId?.trim();
+  const sessionKey = input.key?.trim() || input.sessionKey?.trim();
+
+  if (!sessionKey) {
+    throw new Error("OpenClaw chat.send steering requires the exact session key returned by the Gateway.");
+  }
 
   return {
-    key: key || undefined,
-    sessionId: key ? undefined : sessionId || undefined,
-    message: input.message
+    sessionKey,
+    agentId: input.agentId?.trim() || undefined,
+    sessionId: input.sessionId?.trim() || undefined,
+    message: input.message,
+    queueMode: "steer" as const,
+    idempotencyKey: input.idempotencyKey?.trim() || createRequestId()
   };
 }
 
 export function buildChatInjectParams(input: OpenClawChatInjectInput) {
   const sessionKey = input.sessionKey?.trim();
-  const sessionId = input.sessionId?.trim();
+
+  if (!sessionKey) {
+    throw new Error("OpenClaw chat.inject requires the exact session key returned by the Gateway.");
+  }
 
   return {
-    sessionKey: sessionKey || undefined,
-    sessionId: sessionKey ? undefined : sessionId || undefined,
-    message: input.message
+    sessionKey,
+    agentId: input.agentId?.trim() || undefined,
+    message: input.message,
+    label: input.label?.trim() || undefined
   };
 }
 

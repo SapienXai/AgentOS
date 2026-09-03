@@ -25,7 +25,6 @@ const explicitGatewayMutationMethods = new Set([
   "plugins.install",
   "plugins.setEnabled",
   "plugins.uninstall",
-  "sessions.steer",
   "chat.inject",
   "web.login.wait"
 ]);

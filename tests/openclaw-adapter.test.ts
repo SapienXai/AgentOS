@@ -271,7 +271,7 @@ function createMockGatewayClient(overrides: Partial<OpenClawGatewayClient> = {})
     },
     async steerSession(input, options?: OpenClawCommandOptions) {
       calls.push({ method: "steerSession", action: input.key ?? input.sessionId ?? undefined, options });
-      return { ok: true, method: "sessions.steer" };
+      return { ok: true, method: "chat.send" };
     },
     async injectChat(input, options?: OpenClawCommandOptions) {
       calls.push({ method: "injectChat", action: input.sessionKey ?? input.sessionId ?? undefined, options });
@@ -610,7 +610,7 @@ test("OpenClaw adapter exposes catalog, config, agent turn, and probe methods", 
   });
   assert.deepEqual(await adapter.steerSession({ key: "agent:agent-1:main", message: "Focus on tests" }, { timeoutMs: 11 }), {
     ok: true,
-    method: "sessions.steer"
+    method: "chat.send"
   });
   assert.deepEqual(await adapter.injectChat({ sessionKey: "agent:agent-1:main", message: "Use this reference" }, { timeoutMs: 11 }), {
     ok: true,

@@ -983,6 +983,10 @@ export interface SurfaceConfigRepairMutation {
 
 export interface OpenClawAgent {
   id: string;
+  kind?: "agent" | "system";
+  createdVia?: "operator" | "agent" | "claw";
+  creatorAgentId?: string | null;
+  createdAt?: number;
   name: string;
   identityName?: string;
   workspaceId: string;

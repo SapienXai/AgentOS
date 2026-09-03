@@ -26,7 +26,7 @@ Evidence sources:
 Confirmed Gateway methods relevant to this pass:
 
 - `agents.list`: already Gateway-first.
-- `agents.create`: method exists. AgentOS passes its requested `id` and `agentDir` to avoid Gateway-generated duplicate agent records, but AgentOS still owns bindings, skills, and workspace metadata side effects.
+- `agents.create`: method exists. AgentOS maps its requested identity to the native `name` field and sends the exact 2026.8.2 payload; `id` and `agentDir` are not sent because they are not accepted by the native schema. AgentOS still owns bindings, skills, and workspace metadata side effects.
 - `agents.update`: method exists, but only accepts `agentId`, optional `name`, optional `workspace`, optional `model`, and optional `avatar`.
 - `agents.delete`: method exists, accepts `agentId` and optional `deleteFiles`.
 - `chat.send`, `sessions.send`, `sessions.abort`, and `chat.abort` exist for native mission dispatch and abort.

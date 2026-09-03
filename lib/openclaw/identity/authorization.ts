@@ -221,7 +221,7 @@ export function resolveRequiredScopes(method: string, params: Record<string, unk
     ADMIN_ONLY_NODE_COMMANDS.has(params.command as string) ? "operator.admin" : "operator.write"
   ];
   if (method === "chat.send" || method === "sessions.send") return ["operator.write"];
-  if (method === "chat.inject" || method === "sessions.steer" || method === "sessions.abort") return ["operator.write"];
+  if (method === "chat.inject" || method === "sessions.abort") return ["operator.write"];
   if (method === "fs.listDir") return [Object.hasOwn(params, "nodeId") ? "operator.admin" : "operator.write"];
   if (method === "channels.pairing.approve") return [params.bootstrapCommandOwner === true ? "operator.admin" : "operator.pairing", "operator.pairing"];
   if (method.startsWith("question.")) return ["operator.questions"];

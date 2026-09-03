@@ -11,7 +11,11 @@ This pass moves AgentOS closer to the target provider shape:
 
 `AgentOS UI/API -> AgentOS Control Plane Contract -> OpenClawAdapter -> OpenClawGatewayClient -> Gateway-first implementation -> CLI fallback`
 
-The OpenClaw CLI remains the complete fallback implementation. No OpenClaw SDK import was added because the App SDK is not public/stable.
+The OpenClaw CLI remains the bounded fallback implementation. AgentOS now consumes the public
+`@openclaw/gateway-protocol@2026.8.2` package for protocol constants and capability names. The
+AgentOS WebSocket client remains custom so it can preserve application-level fallback policy,
+diagnostics, and lifecycle behavior; the official `@openclaw/gateway-client` package was not
+introduced as a wholesale replacement.
 
 ## Current Import Graph
 
@@ -172,7 +176,7 @@ Current fragile areas:
 - Native WS cannot use secrets that OpenClaw only returns in redacted form. Set an env token/password or use a future stable SDK/device-auth path to avoid CLI fallback in those environments.
 - AgentOS Settings now exposes native Gateway auth status, a secure credential form, and a server-side auth test. It reports redacted config secrets, env credential presence, disabled native WS flags, and the current recovery recommendation without returning raw token/password values. Saved credentials are written only to local `.env.local`, which is gitignored, and are applied to the current server session.
 - Gateway start/stop/restart still cannot be Gateway-first because it controls the Gateway process itself.
-- Agent create/update/delete are Gateway-first when the Gateway advertises the lifecycle methods. Native create carries AgentOS' requested `id` and `agentDir`; AgentOS still owns local metadata, identity, policy skill, bootstrap, and workspace manifest side effects around those native calls.
+- Agent create/update/delete are Gateway-first when the Gateway advertises the lifecycle methods. Native `agents.create` receives only the 2026.8.2 fields it accepts (`name`, `workspace`, `model`, `emoji`, and `avatar`); AgentOS keeps its product-owned id/path, identity, policy skill, bootstrap, and workspace-manifest side effects outside that native payload.
 - Agent snapshots collapse legacy duplicate native-create records when OpenClaw has both a global generated agent and the AgentOS workspace-local agent with the same workspace/display name.
 - Mission dispatch and abort are Gateway-first when `chat.send`/`sessions.send` and `sessions.abort`/`chat.abort` are available. CLI runner fallback remains for older or unsupported Gateway versions.
 - Native streaming is represented through the persistent Gateway event bridge when `sessions.subscribe` / `sessions.messages.subscribe` is available; CLI/session transcript fallback remains for current snapshot compatibility.

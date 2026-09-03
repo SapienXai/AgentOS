@@ -20,6 +20,8 @@ export type AgentChatHistoryMessage = {
   role: "user" | "assistant";
   text: string;
   timestamp: string | number | null;
+  messageSeq?: number | null;
+  idempotencyKey?: string | null;
 };
 
 export function sanitizeAgentChatReplyText(value: unknown) {
@@ -93,11 +95,16 @@ export function extractAgentChatMessagesFromSessionHistory(payload: unknown): Ag
       return [];
     }
 
+    const messageSeq = readHistoryRecordMessageSeq(record);
+    const idempotencyKey = readHistoryRecordIdempotencyKey(record);
+
     return [{
       id: readHistoryRecordId(record) ?? `history:${role}:${index}`,
       role,
       text,
-      timestamp: readHistoryRecordTimestamp(record)
+      timestamp: readHistoryRecordTimestamp(record),
+      ...(messageSeq !== null ? { messageSeq } : {}),
+      ...(idempotencyKey !== null ? { idempotencyKey } : {})
     }];
   });
 }
@@ -292,7 +299,20 @@ function resolveHistoryRecordRole(record: Record<string, unknown>): AgentChatHis
 }
 
 function readHistoryRecordId(record: Record<string, unknown>) {
-  const value = record.id ?? record.messageId ?? record.turnId;
+  const metadata = isRecord(record.__openclaw) ? record.__openclaw : null;
+  const value = record.id ?? record.messageId ?? record.turnId ?? metadata?.id;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readHistoryRecordMessageSeq(record: Record<string, unknown>) {
+  const metadata = isRecord(record.__openclaw) ? record.__openclaw : null;
+  const value = record.messageSeq ?? record.seq ?? metadata?.seq;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function readHistoryRecordIdempotencyKey(record: Record<string, unknown>) {
+  const metadata = isRecord(record.__openclaw) ? record.__openclaw : null;
+  const value = record.idempotencyKey ?? metadata?.idempotencyKey;
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 

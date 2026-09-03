@@ -100,7 +100,9 @@ export function createMissionDispatchRecord(payload: MissionDispatchPayload): Mi
     clientRequestId: payload.clientRequestId,
     status: "queued",
     agentId: payload.agentId,
-    sessionId: randomUUID(),
+    // OpenClaw owns session identity. A dispatch record starts without a
+    // session id and is enriched only after the native Gateway returns one.
+    sessionId: null,
     mission: payload.mission,
     routedMission: payload.routedMission,
     thinking: payload.thinking,

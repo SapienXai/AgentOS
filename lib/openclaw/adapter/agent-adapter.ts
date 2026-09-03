@@ -13,6 +13,7 @@ export function buildAgentPayloadsFromConfig(
 ): AgentPayload {
   return dedupeLegacyAgentPayloads(agentConfig.map((entry) => ({
     id: entry.id,
+    kind: "agent" as const,
     name: resolveConfigAgentDisplayName(entry),
     identityName: entry.identity?.name,
     identityEmoji: entry.identity?.emoji,
@@ -31,7 +32,7 @@ export function buildAgentPayloadsFromGatewayList(
 ): AgentPayload {
   const configByAgent = new Map(agentConfig.map((entry) => [entry.id, entry]));
 
-  return dedupeLegacyAgentPayloads(gatewayPayload.agents.map((entry) => {
+  return dedupeLegacyAgentPayloads(gatewayPayload.agents.filter((entry) => entry.kind !== "system").map((entry) => {
     const configured = configByAgent.get(entry.id);
     const identity = entry.identity ?? configured?.identity;
     const workspace = normalizeOptionalValue(entry.workspace) ?? normalizeOptionalValue(configured?.workspace) ?? "";
@@ -39,6 +40,10 @@ export function buildAgentPayloadsFromGatewayList(
 
     return {
       id: entry.id,
+      ...(entry.kind ? { kind: entry.kind } : {}),
+      ...(entry.createdVia ? { createdVia: entry.createdVia } : {}),
+      ...(entry.creatorAgentId !== undefined ? { creatorAgentId: entry.creatorAgentId } : {}),
+      ...(entry.createdAt !== undefined ? { createdAt: entry.createdAt } : {}),
       name: resolveGatewayAgentDisplayName(entry.id, entry.name, identity?.name, configured?.name),
       identityName: identity?.name,
       identityEmoji: identity?.emoji,

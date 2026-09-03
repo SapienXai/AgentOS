@@ -98,7 +98,8 @@ export function sendAgentChatMessage({
     role: "user",
     text: trimmedText,
     createdAt,
-    status: "sending"
+    status: "sending",
+    submissionId: userMessageId
   };
 
   const assistantMessage: AgentChatMessage = {
@@ -142,7 +143,8 @@ export function sendAgentChatMessage({
   const payload = {
     message: trimmedText,
     rawMessage: trimmedText,
-    history: promptHistory
+    history: promptHistory,
+    idempotencyKey: userMessageId
   };
 
   run.promise = runAgentChatTurn({
@@ -178,6 +180,7 @@ async function runAgentChatTurn({
     message: string;
     rawMessage: string;
     history: Array<{ role: "user" | "assistant"; text: string }>;
+    idempotencyKey: string;
     thinking?: "off" | "minimal" | "low" | "medium" | "high";
   };
   agentName: string;
@@ -218,10 +221,6 @@ async function runAgentChatTurn({
       throw new Error(errorPayload?.error || "OpenClaw rejected the message.");
     }
 
-    updateAgentChatMessages(agentId, (current) =>
-      current.map((entry) => (entry.id === userMessageId ? { ...entry, status: "sent" as const } : entry))
-    );
-
     let finalResponse: MissionResponse | null = null;
 
     await consumeNdjsonStream<AgentChatStreamEvent>(response, async (event) => {
@@ -261,7 +260,7 @@ async function runAgentChatTurn({
         updateAgentChatMessages(agentId, (current) =>
           current.map((entry) => {
             if (entry.id === userMessageId) {
-              return { ...entry, status: "sent" as const };
+              return entry;
             }
 
             if (entry.id === assistantMessageId) {
@@ -293,7 +292,13 @@ async function runAgentChatTurn({
       updateAgentChatMessages(agentId, (current) =>
         current.map((entry) => {
           if (entry.id === userMessageId) {
-            return { ...entry, status: "sent" as const };
+            const admission = readOpenClawAdmission(finalResponse?.meta);
+            return {
+              ...entry,
+              status: "sent" as const,
+              submissionId: admission?.idempotencyKey ?? entry.submissionId,
+              messageSeq: admission?.messageSeq ?? entry.messageSeq
+            };
           }
 
           if (entry.id === assistantMessageId) {
@@ -410,6 +415,19 @@ function readRenamedAgent(meta: MissionResponse["meta"]) {
 
   const normalized = action.name.trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function readOpenClawAdmission(meta: MissionResponse["meta"]) {
+  const candidate = meta?.openClawAdmission;
+  if (!candidate || typeof candidate !== "object") {
+    return null;
+  }
+
+  const record = candidate as Record<string, unknown>;
+  return {
+    idempotencyKey: typeof record.idempotencyKey === "string" ? record.idempotencyKey : null,
+    messageSeq: typeof record.messageSeq === "number" ? record.messageSeq : null
+  };
 }
 
 function applyAgentRename(snapshot: MissionControlSnapshot, agentId: string, name: string): MissionControlSnapshot {

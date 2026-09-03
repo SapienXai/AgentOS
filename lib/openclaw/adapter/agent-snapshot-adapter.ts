@@ -132,6 +132,10 @@ export function buildSnapshotAgentEntry(input: {
 
   const agent: OpenClawAgent = {
     id: input.rawAgent.id,
+    kind: input.rawAgent.kind,
+    createdVia: input.rawAgent.createdVia,
+    creatorAgentId: input.rawAgent.creatorAgentId,
+    createdAt: input.rawAgent.createdAt,
     name: agentName,
     identityName:
       resolveSnapshotAgentIdentityName(

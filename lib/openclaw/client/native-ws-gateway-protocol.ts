@@ -57,6 +57,22 @@ export function readAdvertisedGatewayEvents(hello?: NativeHandshakePayload | nul
     : [];
 }
 
+export function readAdvertisedGatewayCapabilities(hello?: NativeHandshakePayload | null) {
+  return Array.isArray(hello?.features?.capabilities)
+    ? hello.features.capabilities.filter((capability): capability is string =>
+      typeof capability === "string" && capability.trim().length > 0
+    )
+    : [];
+}
+
+export function supportsGatewayCapability(hello: NativeHandshakePayload | null | undefined, capability: string) {
+  if (!Array.isArray(hello?.features?.capabilities)) {
+    return true;
+  }
+
+  return readAdvertisedGatewayCapabilities(hello).includes(capability);
+}
+
 export function supportsGatewayMethod(hello: NativeHandshakePayload | null | undefined, method: string) {
   if (method === CONNECT_METHOD) {
     return true;
@@ -78,8 +94,28 @@ export function validateGatewayHandshakePayload(hello: NativeHandshakePayload | 
     });
   }
 
+  if (hello.type === "hello-ok") {
+    if (hello.protocol === undefined || !hello.server?.version || !hello.server.connId ||
+      !Array.isArray(hello.features?.methods) || !Array.isArray(hello.features?.events) ||
+      hello.snapshot === undefined || !hello.auth?.role || !Array.isArray(hello.auth.scopes) ||
+      !Number.isFinite(hello.policy?.maxPayload as number) ||
+      !Number.isFinite(hello.policy?.maxBufferedBytes as number) ||
+      !Number.isFinite(hello.policy?.tickIntervalMs as number)) {
+      throw new NativeGatewayError("OpenClaw Gateway hello-ok response was incomplete.", {
+        kind: "malformed-response"
+      });
+    }
+  }
+
   const protocol = hello.protocol;
   if (typeof protocol !== "number" || !Number.isFinite(protocol)) {
+    return;
+  }
+
+  // Very old fixtures/CLI bridges omitted the hello type and did not carry
+  // the complete HelloOk envelope. Keep that shape bounded for compatibility,
+  // while exact typed hello-ok frames must negotiate the official range.
+  if (protocol < MIN_CONTROL_PROTOCOL_VERSION && hello.type === undefined) {
     return;
   }
 

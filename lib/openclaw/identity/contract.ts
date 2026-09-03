@@ -330,7 +330,6 @@ export const OPENCLAW_DYNAMIC_METHODS = [
   "agent",
   "chat.send",
   "chat.inject",
-  "sessions.steer",
   "node.invoke",
   "config.patch",
   "config.apply",

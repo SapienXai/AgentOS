@@ -69,7 +69,8 @@ const chatSchema = z.object({
   message: z.string().min(1),
   rawMessage: z.string().min(1).optional(),
   history: z.array(chatHistoryEntrySchema).optional(),
-  thinking: z.enum(["off", "minimal", "low", "medium", "high"]).optional()
+  thinking: z.enum(["off", "minimal", "low", "medium", "high"]).optional(),
+  idempotencyKey: z.string().trim().min(1).max(240).optional()
 });
 
 const activeAgentChatSessionTurns = new Map<string, { lockId: symbol; startedAt: number }>();
@@ -90,6 +91,11 @@ type AgentChatPayloadResult = {
 
 type AgentChatCommandPayload = {
   runId?: string | null;
+  sessionKey?: string | null;
+  sessionId?: string | null;
+  runStarted?: boolean;
+  messageSeq?: number | null;
+  idempotencyKey?: string | null;
   status?: string;
   summary?: string;
   payloads?: AgentChatPayloadEntry[];
@@ -121,6 +127,8 @@ type RehydratedAgentChatMessage = {
   createdAt: number;
   status: "sent";
   runId?: string | null;
+  submissionId?: string | null;
+  messageSeq?: number | null;
 };
 
 export async function GET(
@@ -523,6 +531,7 @@ export async function POST(
               thinking: input.thinking,
               timeoutSeconds: 90,
               workspace: agent.workspacePath,
+              idempotencyKey: input.idempotencyKey,
               local: !snapshot.diagnostics.rpcOk
             },
             {
@@ -723,7 +732,9 @@ async function readAgentChatHistoryMessages(agentId: string, sessionId: string):
       text: message.text,
       createdAt: normalizeAgentChatMessageTimestamp(message.timestamp, index),
       status: "sent" as const,
-      runId: null
+      runId: null,
+      submissionId: message.idempotencyKey,
+      messageSeq: message.messageSeq
     }));
   } catch {
     return [];
@@ -731,7 +742,7 @@ async function readAgentChatHistoryMessages(agentId: string, sessionId: string):
 }
 
 function dedupeRehydratedAgentChatMessages(messages: RehydratedAgentChatMessage[]) {
-  const byKey = new Map<string, RehydratedAgentChatMessage>();
+  const byId = new Map<string, RehydratedAgentChatMessage>();
 
   for (const message of messages) {
     const text = message.text.replace(/\s+/g, " ").trim();
@@ -739,17 +750,16 @@ function dedupeRehydratedAgentChatMessages(messages: RehydratedAgentChatMessage[
       continue;
     }
 
-    const key = `${message.role}:${text.toLowerCase()}`;
-    const existing = byKey.get(key);
+    const existing = byId.get(message.id);
     if (!existing || message.createdAt > existing.createdAt) {
-      byKey.set(key, {
+      byId.set(message.id, {
         ...message,
         text
       });
     }
   }
 
-  return [...byKey.values()].sort((left, right) => left.createdAt - right.createdAt);
+  return [...byId.values()].sort((left, right) => left.createdAt - right.createdAt);
 }
 
 function normalizeAgentChatMessageTimestamp(value: string | number | null, index: number) {

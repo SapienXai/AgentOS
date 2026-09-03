@@ -116,6 +116,49 @@ test("agent adapter keeps configured display name when Gateway reports id as nam
   assert.equal(agents[0]?.identityName, "Manyak Musti");
 });
 
+test("agent adapter excludes typed system agents from workforce projections", () => {
+  const agents = buildAgentPayloadsFromGatewayList(
+    {
+      defaultId: "worker-a",
+      agents: [
+        {
+          id: "system-setup",
+          kind: "system",
+          name: "System Setup",
+          workspace: "/Users/example/.openclaw"
+        },
+        {
+          id: "worker-a",
+          kind: "agent",
+          createdVia: "operator",
+          creatorAgentId: null,
+          createdAt: 1_725_000_000_000,
+          name: "Worker A",
+          workspace: "/Users/example/project"
+        }
+      ]
+    },
+    [],
+    "/Users/example/.openclaw"
+  );
+
+  assert.deepEqual(agents, [{
+    id: "worker-a",
+    kind: "agent",
+    createdVia: "operator",
+    creatorAgentId: null,
+    createdAt: 1_725_000_000_000,
+    name: "Worker A",
+    identityName: undefined,
+    identityEmoji: undefined,
+    identitySource: undefined,
+    workspace: "/Users/example/project",
+    agentDir: "/Users/example/.openclaw/agents/worker-a/agent",
+    model: undefined,
+    isDefault: true
+  }]);
+});
+
 test("agent adapter falls back to identity name when config name is the id", () => {
   const agents = buildAgentPayloadsFromConfig([
     {

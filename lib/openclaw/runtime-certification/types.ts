@@ -155,6 +155,7 @@ export type OpenClawRuntimeCertificationReport = {
   scopes: string[];
   advertisedMethods: string[];
   advertisedEvents: string[];
+  capabilities: string[];
   methodCount: number;
   eventCount: number;
   connectionStatus: "connected" | "unreachable" | "unknown";

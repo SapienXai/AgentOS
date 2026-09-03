@@ -48,7 +48,8 @@ export async function prepareBrowserTaskBinding(input: {
   workspaceId: string;
   agentId: string;
   dispatchId: string;
-  openClawSessionId: string;
+  openClawSessionId?: string | null;
+  openClawSessionKey?: string | null;
 }) {
   await recoverExpiredBrowserTaskBindings().catch(() => null);
   const actor = { userId: input.request.actorUserId };
@@ -120,14 +121,21 @@ export async function prepareBrowserTaskBinding(input: {
     profileConfigured = true;
 
     const now = new Date();
+    const openClawSessionId = input.openClawSessionId?.trim() || null;
+    const openClawSessionKey = input.openClawSessionKey?.trim() ||
+      (openClawSessionId ? buildOpenClawExplicitSessionKey(input.agentId, openClawSessionId) : null);
+    if (!openClawSessionKey) {
+      throw new Error("OpenClaw session identity is required before creating a secure browser task binding.");
+    }
+
     const binding: BrowserTaskBindingRecord = {
       dispatchId: input.dispatchId,
       accountId: account.id,
       workspaceId: account.workspaceId,
       ownerUserId: actor.userId,
       agentId: input.agentId,
-      openClawSessionId: input.openClawSessionId,
-      openClawSessionKey: buildOpenClawExplicitSessionKey(input.agentId, input.openClawSessionId),
+      openClawSessionId,
+      openClawSessionKey,
       openClawProfileName: profileName,
       providerSessionId: session.sessionId,
       allowedDomains: account.allowedDomains,

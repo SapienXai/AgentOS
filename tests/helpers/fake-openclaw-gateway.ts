@@ -135,10 +135,17 @@ export class FakeOpenClawGateway {
     return {
       type: "hello-ok",
       protocol: this.options.protocol ?? 4,
+      server: {
+        version: "2026.8.2",
+        connId: "fake-connection"
+      },
       features: {
-        methods: this.options.methods,
-        events: this.options.events
-      }
+        methods: this.options.methods ?? [],
+        events: this.options.events ?? []
+      },
+      snapshot: {},
+      auth: { role: "operator", scopes: ["operator.read", "operator.write"] },
+      policy: { maxPayload: 1_000_000, maxBufferedBytes: 1_000_000, tickIntervalMs: 15_000 }
     };
   }
 }

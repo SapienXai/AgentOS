@@ -7,6 +7,7 @@ import {
 } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import {
   assertGatewayMethodSupported,
+  readAdvertisedGatewayCapabilities,
   resolveEventSubscriptionRequests,
   supportsGatewayEvent,
   validateGatewayHandshakePayload
@@ -81,6 +82,7 @@ export class PersistentOpenClawGatewayConnection {
     OpenClawGatewayClientDiagnostics,
     | "connectionState"
     | "protocolVersion"
+    | "gatewayCapabilities"
     | "pendingRequestCount"
     | "sharedInFlightRequestCount"
     | "cachedReadRequestCount"
@@ -92,6 +94,7 @@ export class PersistentOpenClawGatewayConnection {
     return {
       connectionState: this.state,
       protocolVersion: typeof this.hello?.protocol === "number" ? this.hello.protocol : null,
+      gatewayCapabilities: readAdvertisedGatewayCapabilities(this.hello),
       pendingRequestCount: this.pending.size,
       sharedInFlightRequestCount: this.sharedReadRequests.size,
       cachedReadRequestCount: this.readRequestCache.size,
@@ -242,8 +245,22 @@ export class PersistentOpenClawGatewayConnection {
         closed = true;
         this.eventListeners.delete(listener);
         this.closeListeners.delete(closeListener);
-        if (subscriptionRequests.length > 0) {
-          this.close("event subscription closed");
+        if (this.socket?.readyState === 1 && this.hello) {
+          for (const request of subscriptionRequests) {
+            if (request.method !== "sessions.messages.subscribe") {
+              continue;
+            }
+
+            void this.request(
+              "sessions.messages.unsubscribe",
+              request.params,
+              options,
+              timeoutMs,
+              { safety: "mutation" }
+            ).catch(() => {
+              // The connection may close while the best-effort subscription cleanup is in flight.
+            });
+          }
         }
       }
     };
@@ -416,8 +433,15 @@ export class PersistentOpenClawGatewayConnection {
     this.socket = null;
     this.hello = null;
     this.operatorIdentity = {
-      ...this.operatorIdentity,
-      authenticated: false
+      requestedRole: this.operatorIdentity.requestedRole,
+      role: null,
+      requestedScopes: [...this.operatorIdentity.requestedScopes],
+      grantedScopes: [],
+      grantedScopesKnown: false,
+      deviceId: null,
+      connectionId: null,
+      authenticated: false,
+      source: "unavailable"
     };
     this.state = options.state;
     this.sharedReadRequests.clear();

@@ -1015,7 +1015,7 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
   ): Promise<OpenClawSessionControlPayload> {
     void input;
     void options;
-    throw new Error("Native OpenClaw Gateway is required for sessions.steer.");
+    throw new Error("Native OpenClaw Gateway is required for chat.send steering.");
   }
 
   async injectChat(

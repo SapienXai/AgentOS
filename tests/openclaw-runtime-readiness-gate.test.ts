@@ -89,6 +89,7 @@ function createReport(operations: OpenClawRuntimeOperationEvidence[]): OpenClawR
     scopes: ["operator.read", "operator.write"],
     advertisedMethods: [],
     advertisedEvents: [],
+    capabilities: [],
     methodCount: 0,
     eventCount: 0,
     connectionStatus: "connected",

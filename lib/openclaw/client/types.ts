@@ -71,6 +71,7 @@ export type OpenClawGatewayClientDiagnostics = {
     min: number;
     max: number;
   };
+  gatewayCapabilities?: string[];
   fallbackCounts: Record<string, number>;
   fallbackTotal: number;
   pendingRequestCount?: number;
@@ -327,6 +328,10 @@ export type StatusPayload = {
 
 export type AgentPayload = Array<{
   id: string;
+  kind?: "agent" | "system";
+  createdVia?: "operator" | "agent" | "claw";
+  creatorAgentId?: string | null;
+  createdAt?: number;
   name?: string;
   identityName?: string;
   identityEmoji?: string;
@@ -344,6 +349,10 @@ export type OpenClawAgentListPayload = {
   scope?: "per-sender" | "global" | string;
   agents: Array<{
     id: string;
+    kind?: "agent" | "system";
+    createdVia?: "operator" | "agent" | "claw";
+    creatorAgentId?: string | null;
+    createdAt?: number;
     name?: string;
     identity?: {
       name?: string;
@@ -943,6 +952,12 @@ export type PresencePayload = Array<{
 
 export type MissionCommandPayload = {
   runId?: string;
+  sessionKey?: string;
+  sessionId?: string;
+  agentId?: string;
+  runStarted?: boolean;
+  messageSeq?: number;
+  idempotencyKey?: string;
   status?: string;
   summary?: string;
   payloads?: Array<{
@@ -982,6 +997,8 @@ export interface OpenClawUpdateAgentInput {
 
 export interface OpenClawAgentTurnInput {
   agentId: string;
+  /** Caller-selected OpenClaw session key, when a workflow already owns one. */
+  sessionKey?: string;
   sessionId?: string;
   message: string;
   thinking?: OpenClawThinkingLevel;
@@ -993,21 +1010,28 @@ export interface OpenClawAgentTurnInput {
 }
 
 export interface OpenClawAbortTurnInput {
+  sessionKey?: string | null;
   runId?: string | null;
   sessionId?: string | null;
   agentId?: string | null;
   reason?: string | null;
+  clearQueued?: boolean;
 }
 
 export interface OpenClawSessionSteerInput {
   key?: string | null;
+  sessionKey?: string | null;
   sessionId?: string | null;
+  agentId?: string | null;
   message: string;
+  idempotencyKey?: string | null;
 }
 
 export interface OpenClawChatInjectInput {
   sessionKey?: string | null;
   sessionId?: string | null;
+  agentId?: string | null;
+  label?: string | null;
   message: string;
 }
 

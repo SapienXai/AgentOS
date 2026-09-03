@@ -36,6 +36,10 @@ export const agentListPayloadSchema = z
       z
         .object({
           id: z.string(),
+          kind: z.enum(["agent", "system"]).optional(),
+          createdVia: z.enum(["operator", "agent", "claw"]).optional(),
+          creatorAgentId: z.string().nullable().optional(),
+          createdAt: z.number().int().nonnegative().optional(),
           name: z.string().optional(),
           identity: z
             .object({

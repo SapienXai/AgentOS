@@ -1,5 +1,10 @@
 import "server-only";
 
+import {
+  MIN_CLIENT_PROTOCOL_VERSION,
+  PROTOCOL_VERSION
+} from "@openclaw/gateway-protocol/version";
+
 import type {
   OpenClawGatewayClient,
   OpenClawGatewayEventFrame
@@ -15,9 +20,9 @@ export const DEFAULT_NATIVE_STREAM_TIMEOUT_MS = 30_000;
 
 export const CONNECT_METHOD = "connect";
 
-export const MIN_CONTROL_PROTOCOL_VERSION = 3;
+export const MIN_CONTROL_PROTOCOL_VERSION = MIN_CLIENT_PROTOCOL_VERSION;
 
-export const MAX_CONTROL_PROTOCOL_VERSION = 4;
+export const MAX_CONTROL_PROTOCOL_VERSION = PROTOCOL_VERSION;
 
 export const OPENCLAW_GATEWAY_PROTOCOL_RANGE = {
   min: MIN_CONTROL_PROTOCOL_VERSION,
@@ -104,6 +109,7 @@ export type NativeHandshakePayload = {
   features?: {
     methods?: string[];
     events?: string[];
+    capabilities?: string[];
   };
   snapshot?: unknown;
   auth?: {

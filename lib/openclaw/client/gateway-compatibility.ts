@@ -174,7 +174,7 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   {
     id: "sessionLifecycle",
     label: "Session lifecycle",
-    methods: ["sessions.list", "sessions.resolve", "sessions.create", "sessions.send", "sessions.steer", "sessions.abort"],
+    methods: ["sessions.list", "sessions.resolve", "sessions.create", "sessions.send", "sessions.abort"],
     baseline: "required"
   },
   {
@@ -508,7 +508,6 @@ export const OPENCLAW_2026_6_8_OPTIONAL_GATEWAY_METHODS = [
   "sessions.patch",
   "sessions.reset",
   "sessions.resolve",
-  "sessions.steer",
   "sessions.subscribe",
   "sessions.unsubscribe",
   "sessions.usage",

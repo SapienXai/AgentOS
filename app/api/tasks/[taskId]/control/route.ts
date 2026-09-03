@@ -43,7 +43,7 @@ export async function POST(
   const authorization = await requireAgentOsOpenClawPreflight(request, {
     operation: `task.${parseResult.data.action}`,
     method: parseResult.data.action === "steer"
-      ? "sessions.steer"
+      ? "chat.send"
       : parseResult.data.action === "inject"
         ? "chat.inject"
         : "chat.send",
