@@ -26,7 +26,7 @@ export type GatewayMethodSupportState =
   | "auth-denied"
   | "unknown-not-advertised";
 
-const knownGatewayMethods = new Set([
+const knownGatewayMethods = new Set<string>([
   ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
   ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS
 ]);
@@ -102,8 +102,17 @@ export function supportsGatewayEvent(hello: NativeHandshakePayload | null | unde
 
 export function resolveGatewayMethodSupportState(
   hello: NativeHandshakePayload | null | undefined,
-  method: string
-): Exclude<GatewayMethodSupportState, "proven-unsupported" | "auth-denied"> {
+  method: string,
+  evidence?: { kind?: "unsupported" | "auth-denied" }
+): GatewayMethodSupportState {
+  if (evidence?.kind === "unsupported") {
+    return "proven-unsupported";
+  }
+
+  if (evidence?.kind === "auth-denied") {
+    return "auth-denied";
+  }
+
   if (method === CONNECT_METHOD || readAdvertisedGatewayMethods(hello).includes(method)) {
     return method === CONNECT_METHOD ? "known-by-contract" : "explicitly-advertised";
   }
@@ -117,8 +126,17 @@ export function resolveGatewayMethodSupportState(
 
 export function resolveGatewayEventSupportState(
   hello: NativeHandshakePayload | null | undefined,
-  event: string
-): Exclude<GatewayMethodSupportState, "proven-unsupported" | "auth-denied"> {
+  event: string,
+  evidence?: { kind?: "unsupported" | "auth-denied" }
+): GatewayMethodSupportState {
+  if (evidence?.kind === "unsupported") {
+    return "proven-unsupported";
+  }
+
+  if (evidence?.kind === "auth-denied") {
+    return "auth-denied";
+  }
+
   return readAdvertisedGatewayEvents(hello).includes(event)
     ? "explicitly-advertised"
     : "unknown-not-advertised";
@@ -167,8 +185,7 @@ export function validateGatewayHandshakePayload(hello: NativeHandshakePayload | 
 export function assertGatewayMethodSupported(hello: NativeHandshakePayload | null | undefined, method: string) {
   // Keep this boundary for callers, but do not turn conservative discovery
   // metadata into a false unsupported result before the RPC is attempted.
-  void hello;
-  void method;
+  return resolveGatewayMethodSupportState(hello, method);
 }
 
 export function isGatewayMethodUnsupported(error: unknown) {

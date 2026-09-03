@@ -4,7 +4,6 @@ import {
   normalizeClientError,
   type OpenClawGatewayClientErrorKind
 } from "@/lib/openclaw/client/native-ws-gateway-errors";
-import { supportsGatewayMethod } from "@/lib/openclaw/client/native-ws-gateway-protocol";
 import { aggregateOpenClawRuntimeEvidence, createRuntimeEvidence } from "@/lib/openclaw/runtime-certification/evidence-model";
 import type {
   OpenClawRuntimeCertificationClientContext,
@@ -133,23 +132,6 @@ export async function executeOpenClawRuntimeProbe(input: {
       failureKind: "runtime-error",
       retryable: false,
       evidence: ["The runtime certification client was not configured."]
-    };
-  }
-
-  const advertised = supportsGatewayMethod(clientContext.handshake, probe.method);
-  if (!advertised) {
-    return {
-      ...base,
-      actualOutcome: "skip",
-      status: "SKIPPED",
-      proofKind: "skip",
-      evidenceDimensions: createRuntimeEvidence({ availability: "failed" }),
-      responseShape: "not-checked",
-      errorCode: null,
-      errorMessage: `OpenClaw Gateway does not advertise method "${probe.method}".`,
-      failureKind: "method-unavailable",
-      retryable: false,
-      evidence: ["The method was absent from the target Gateway handshake inventory.", ...(probe.evidence ?? [])]
     };
   }
 

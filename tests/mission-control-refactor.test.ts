@@ -20,6 +20,7 @@ import {
   createOptimisticMissionTaskRecord,
   buildLaunchpadWorkspaceHandoffProgress,
   buildWorkspaceSelectionStorageKey,
+  hasCompleteAgentOSWorkspaceSnapshot,
   hasAgentOSWorkspaceSetup,
   mergeSnapshotWithOptimisticTasks,
   resolveGatewayDraft,
@@ -40,6 +41,7 @@ import {
   OPENAI_ONBOARDING_DEFAULT_MODEL_ID,
   ONBOARDING_DEFAULT_THINKING
 } from "@/components/mission-control/openclaw-onboarding.utils";
+import { preserveMissionControlSnapshotCollections } from "@/hooks/use-mission-control-data";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import type { MissionControlSnapshot, OperationProgressSnapshot } from "@/lib/agentos/contracts";
 
@@ -757,6 +759,39 @@ test("workspace setup requires a workspace-backed agent", () => {
   assert.equal(hasAgentOSWorkspaceSetup(unrelatedRecords), false);
   assert.equal(hasAgentOSWorkspaceSetup(linkedByWorkspaceAgentIds), true);
   assert.equal(hasAgentOSWorkspaceSetup(linkedByPath), true);
+});
+
+test("workspace setup treats an incomplete snapshot as still syncing", () => {
+  const incompleteSnapshot = {
+    workspaces: undefined,
+    agents: undefined
+  } as unknown as MissionControlSnapshot;
+
+  assert.equal(hasCompleteAgentOSWorkspaceSnapshot(incompleteSnapshot), false);
+  assert.equal(hasAgentOSWorkspaceSetup(incompleteSnapshot), false);
+  assert.equal(
+    resolveLaunchpadWorkspaceSetupReadiness(incompleteSnapshot, null).ready,
+    false
+  );
+});
+
+test("snapshot state preserves known collections during a partial refresh", () => {
+  const currentSnapshot = {
+    workspaces: [{ id: "workspace-1" }],
+    agents: [{ id: "agent-1" }],
+    models: [{ id: "model-1" }]
+  } as unknown as MissionControlSnapshot;
+  const partialSnapshot = {
+    ...currentSnapshot,
+    workspaces: undefined,
+    agents: undefined
+  };
+
+  const preservedSnapshot = preserveMissionControlSnapshotCollections(currentSnapshot, partialSnapshot);
+
+  assert.deepEqual(preservedSnapshot.workspaces, currentSnapshot.workspaces);
+  assert.deepEqual(preservedSnapshot.agents, currentSnapshot.agents);
+  assert.deepEqual(preservedSnapshot.models, currentSnapshot.models);
 });
 
 test("launchpad workspace handoff waits for the workspace and starter agent", () => {

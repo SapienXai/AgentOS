@@ -40,6 +40,35 @@ but not adopted wholesale: the existing client carries AgentOS-specific fallback
 authorization-proof, and application-boundary behavior. The replacement point remains the Gateway
 client factory.
 
+## Phase 1 protocol authority
+
+Phase 1 pins `@openclaw/gateway-protocol` to `2026.8.2`, matching OpenClaw source commit
+`0965053fe6b9341776df147a6934b7485c60b5ca`. The package is the canonical authority at the native
+boundary for:
+
+- protocol versions and the exact operator/client range `4-4`;
+- the closed client-id/mode registry (`gateway-client` / `backend` for AgentOS);
+- official client capability names (`agent-kind` and `tool-events` only);
+- response/event frame guards and their official envelope types;
+- structured connect-error and Gateway-error details.
+
+AgentOS keeps its Zod payload parsers as a normalized, additive compatibility projection. They are
+not a second wire-protocol authority and do not expose the upstream TypeBox schemas through product
+or UI code. AgentOS-owned policy still decides redaction, recovery, fallback eligibility, and
+whether `kind: "system"` entries appear in workforce selectors.
+
+`hello-ok.features.methods` and `features.events` are conservative discovery hints, not exhaustive
+callable inventories. Native decisions distinguish explicitly advertised, known-by-contract,
+unknown/not-advertised, proven-unsupported, and authorization-denied states. Omission alone never
+causes CLI fallback; an authoritative native response must prove unsupported behavior. The official
+`connect.challenge` timestamp is validated and used as the v3 device-auth `signedAt` value.
+
+The retained production transport is still `NativeWsOpenClawGatewayClient` over
+`PersistentOpenClawGatewayConnection`; `native-ws-gateway-wire.ts` remains the AgentOS transport
+boundary. This phase intentionally does not add `@openclaw/gateway-client` or migrate reconnect,
+event sequencing, or transport ownership. The next phase is **Phase 2 — Official Gateway Transport
+Integration**.
+
 ## Ownership boundaries
 
 AgentOS Workspace is a product/project concept. It owns organization, manifests, policies, UI state,
@@ -111,9 +140,10 @@ disconnect so a later Gateway cannot inherit stale authority. Subscription liste
 without closing the shared WebSocket; message subscriptions send the native unsubscribe call when
 supported.
 
-Methods are selected from live advertisement where available. Missing methods produce explicit
-unsupported/degraded outcomes. Authorization errors remain authorization errors and are not converted
-into unsupported-method fallbacks.
+Methods are selected from live advertisement where available, but omission from a conservative
+advertisement is only unknown. AgentOS attempts the native method and records an explicit
+unsupported/degraded outcome only after an authoritative Gateway error. Authorization errors remain
+authorization errors and are not converted into unsupported-method fallbacks.
 
 ## Retained compatibility fallbacks
 

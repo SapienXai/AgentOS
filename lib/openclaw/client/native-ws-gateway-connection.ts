@@ -1,5 +1,9 @@
 import "server-only";
 
+import {
+  isGatewayEventFrame,
+  isGatewayResponseFrame
+} from "@openclaw/gateway-protocol/frame-guards";
 import { buildConnectParams } from "@/lib/openclaw/client/native-ws-gateway-auth";
 import {
   NativeGatewayError,
@@ -8,6 +12,7 @@ import {
 import {
   assertGatewayMethodSupported,
   readAdvertisedGatewayCapabilities,
+  readAdvertisedGatewayMethods,
   resolveEventSubscriptionRequests,
   validateGatewayHandshakePayload
 } from "@/lib/openclaw/client/native-ws-gateway-protocol";
@@ -110,6 +115,10 @@ export class PersistentOpenClawGatewayConnection {
       requestedScopes: [...this.operatorIdentity.requestedScopes],
       grantedScopes: [...this.operatorIdentity.grantedScopes]
     };
+  }
+
+  getAdvertisedGatewayMethods() {
+    return readAdvertisedGatewayMethods(this.hello);
   }
 
   async request<TPayload>(
@@ -227,6 +236,11 @@ export class PersistentOpenClawGatewayConnection {
         if (this.socket?.readyState === 1 && this.hello) {
           for (const request of subscriptionRequests) {
             if (request.method !== "sessions.messages.subscribe") {
+              continue;
+            }
+
+            const advertisedMethods = readAdvertisedGatewayMethods(this.hello);
+            if (advertisedMethods.length > 0 && !advertisedMethods.includes("sessions.messages.unsubscribe")) {
               continue;
             }
 
@@ -354,14 +368,14 @@ export class PersistentOpenClawGatewayConnection {
         return;
       }
 
-      if (frame.type === "event") {
+      if (isGatewayEventFrame(frame)) {
         for (const listener of [...this.eventListeners]) {
           listener(frame as GatewayEventFrame);
         }
         return;
       }
 
-      if (frame.type !== "res" || frame.id === undefined) {
+      if (!isGatewayResponseFrame(frame)) {
         return;
       }
 

@@ -673,7 +673,17 @@ export function resolveOnboardingAction(
   };
 }
 
+export function hasCompleteAgentOSWorkspaceSnapshot(
+  snapshot: Pick<MissionControlSnapshot, "workspaces" | "agents"> | null | undefined
+) {
+  return Array.isArray(snapshot?.workspaces) && Array.isArray(snapshot?.agents);
+}
+
 export function hasAgentOSWorkspaceSetup(snapshot: Pick<MissionControlSnapshot, "workspaces" | "agents">) {
+  if (!hasCompleteAgentOSWorkspaceSnapshot(snapshot)) {
+    return false;
+  }
+
   return snapshot.workspaces.some((workspace) => {
     const workspaceAgentIds = new Set(workspace.agentIds ?? []);
     const workspacePath = normalizeSetupPath(workspace.path);
@@ -691,14 +701,16 @@ function normalizeSetupPath(value?: string | null) {
 }
 
 export function resolveLaunchpadWorkspaceSetupReadiness(
-  snapshot: Pick<MissionControlSnapshot, "workspaces" | "agents">,
+  snapshot: Pick<MissionControlSnapshot, "workspaces" | "agents"> | null | undefined,
   target: Pick<WorkspaceCreateResult, "workspaceId" | "agentIds" | "primaryAgentId"> | null
 ): LaunchpadWorkspaceSetupReadiness {
+  const workspaces = Array.isArray(snapshot?.workspaces) ? snapshot.workspaces : [];
+  const agents = Array.isArray(snapshot?.agents) ? snapshot.agents : [];
   const workspace = target
-    ? snapshot.workspaces.find((entry) => entry.id === target.workspaceId) ?? null
-    : snapshot.workspaces[0] ?? null;
+    ? workspaces.find((entry) => entry.id === target.workspaceId) ?? null
+    : workspaces[0] ?? null;
   const workspaceAgents = workspace
-    ? snapshot.agents.filter((agent) => agent.workspaceId === workspace.id)
+    ? agents.filter((agent) => agent.workspaceId === workspace.id)
     : [];
   const expectedAgentIds = target?.agentIds?.filter(Boolean) ?? workspace?.agentIds?.filter(Boolean) ?? [];
   const expectedAgentIdSet = new Set(expectedAgentIds);

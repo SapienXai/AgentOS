@@ -17,6 +17,12 @@ AgentOS WebSocket client remains custom so it can preserve application-level fal
 diagnostics, and lifecycle behavior; the official `@openclaw/gateway-client` package was not
 introduced as a wholesale replacement.
 
+Phase 1 official-protocol authority is documented in
+[`openclaw-2026.8.2-native-architecture.md`](./openclaw-2026.8.2-native-architecture.md). The
+package owns wire versions, client ids/modes, capability names, frame guards, and structured error
+details. AgentOS retains the native WS transport, normalized payload projections, fallback policy,
+and diagnostics.
+
 ## Current Import Graph
 
 Primary production flow:
@@ -128,7 +134,10 @@ Capability detection:
 
 - `OpenClawCapabilityMatrix` probes the native Gateway `connect` handshake and reads `hello-ok.features.methods` / `hello-ok.features.events`. Test hooks still support older discovery-shaped payloads.
 - Diagnostics and Settings expose OpenClaw version, AgentOS' requested protocol range, negotiated Gateway protocol version, auth mode, auth role/scopes, advertised RPC methods/events, per-operation Gateway/CLI/degraded decisions, native mission dispatch support, config schema/lookup/patch support, event bridge support, logs support, cron support, channel support, skills support, approval support, and update support.
-- When OpenClaw does not advertise a method list, support is reported as `unknown` and the operation still degrades through the existing Gateway-first/CLI fallback path.
+- `hello-ok.features.methods` and `features.events` are conservative discovery hints. An omitted
+  method is reported as `unknown` / `not-advertised`, not as proven unsupported; AgentOS attempts
+  the native request and uses CLI fallback only after an authoritative unsupported response or an
+  allowed transport/shape failure.
 
 Persistent event bridge:
 
@@ -172,7 +181,9 @@ No SDK placeholder import or fake implementation was added.
 
 Current fragile areas:
 
-- Gateway RPC method names for typed catalog/status/config reads are assumed from the local protocol shape and are protected by graceful fallback. If OpenClaw changes method names, AgentOS should degrade to CLI and show diagnostics.
+- Gateway RPC method candidates remain an AgentOS compatibility registry, while the official package
+  owns the wire envelope and structured errors. If OpenClaw authoritatively rejects a method,
+  AgentOS records that evidence and may degrade to CLI according to the operation policy.
 - Native WS cannot use secrets that OpenClaw only returns in redacted form. Set an env token/password or use a future stable SDK/device-auth path to avoid CLI fallback in those environments.
 - AgentOS Settings now exposes native Gateway auth status, a secure credential form, and a server-side auth test. It reports redacted config secrets, env credential presence, disabled native WS flags, and the current recovery recommendation without returning raw token/password values. Saved credentials are written only to local `.env.local`, which is gitignored, and are applied to the current server session.
 - Gateway start/stop/restart still cannot be Gateway-first because it controls the Gateway process itself.

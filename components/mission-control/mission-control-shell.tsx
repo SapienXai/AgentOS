@@ -71,6 +71,7 @@ import {
   createOptimisticScheduledTaskRecord,
   findReplacementTaskForOptimisticTask,
   buildLaunchpadWorkspaceHandoffProgress,
+  hasCompleteAgentOSWorkspaceSnapshot,
   hasAgentOSWorkspaceSetup,
   isDirectChatRuntime,
   isTaskHiddenByPreferences,
@@ -3165,6 +3166,22 @@ export function MissionControlShell({
 
     let entrySnapshot = currentSnapshot;
 
+    if (!hasCompleteAgentOSWorkspaceSnapshot(entrySnapshot)) {
+      const refreshedSnapshot = await refreshSnapshot({ force: true }).catch(() => null);
+
+      if (refreshedSnapshot) {
+        entrySnapshot = refreshedSnapshot;
+        setSnapshot(refreshedSnapshot);
+      }
+    }
+
+    if (!hasCompleteAgentOSWorkspaceSnapshot(entrySnapshot)) {
+      toast.message("AgentOS is still syncing.", {
+        description: "Workspace state is not ready yet. Try entering AgentOS again in a moment."
+      });
+      return;
+    }
+
     if (!hasAgentOSWorkspaceSetup(entrySnapshot)) {
       if (entrySnapshot.workspaces.length === 0) {
         const refreshedSnapshot = await refreshSnapshot({ force: true }).catch(() => null);
@@ -3173,6 +3190,13 @@ export function MissionControlShell({
           entrySnapshot = refreshedSnapshot;
           setSnapshot(refreshedSnapshot);
         }
+      }
+
+      if (!hasCompleteAgentOSWorkspaceSnapshot(entrySnapshot)) {
+        toast.message("AgentOS is still syncing.", {
+          description: "Workspace state is not ready yet. Try entering AgentOS again in a moment."
+        });
+        return;
       }
 
       if (!hasAgentOSWorkspaceSetup(entrySnapshot) && entrySnapshot.workspaces.length === 0) {

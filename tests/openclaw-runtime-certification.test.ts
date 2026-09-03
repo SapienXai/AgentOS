@@ -109,8 +109,12 @@ test("runtime certification treats expected invalid parameters as a passing vali
   assert.equal(result.evidenceDimensions.positiveExecution, "not-tested");
 });
 
-test("runtime certification preserves skips for absent methods and environmental work", async () => {
-  const client = createClient(async () => ({ ok: true }));
+test("runtime certification attempts omitted methods and preserves environmental skips", async () => {
+  const calls: string[] = [];
+  const client = createClient(async (method) => {
+    calls.push(method);
+    return { ok: true };
+  });
   const context: OpenClawRuntimeCertificationContext = {
     clients: { default: { client, handshake } },
     results: [],
@@ -125,9 +129,10 @@ test("runtime certification preserves skips for absent methods and environmental
     probe: makeProbe({ id: "models-probe", operationId: "models.probe", operation: "Models", method: "models.probe", skipReason: "Credentials are not configured." })
   });
 
-  assert.equal(absent.status, "SKIPPED");
-  assert.equal(absent.failureKind, "method-unavailable");
-  assert.equal(absent.evidenceDimensions.availability, "failed");
+  assert.equal(absent.status, "PASS");
+  assert.equal(absent.failureKind, "none");
+  assert.equal(absent.evidenceDimensions.availability, "proven");
+  assert.deepEqual(calls, ["talk.session.create"]);
   assert.equal(environmental.status, "SKIPPED");
   assert.equal(environmental.failureKind, "environmental-skip");
   assert.equal(environmental.evidenceDimensions.availability, "proven");

@@ -106,15 +106,15 @@ test("capability matrix detects advertised Gateway-first methods", async () => {
   assert.equal(matrix.operations?.agentCreate.label, "Agent creation");
   assert.equal(matrix.operations?.modelAuthOrder.mode, "gateway-native");
   assert.equal(matrix.operations?.missionStream.mode, "gateway-native");
-  assert.ok(matrix.unsupportedGatewayMethods.includes("models.list"));
+  assert.equal(matrix.unsupportedGatewayMethods.includes("models.list"), false);
   assert.equal(matrix.operations?.modelAuthOrder.compatibility, "preferred");
   assert.equal(matrix.compatibility?.protocol.status, "compatible");
-  assert.equal(matrix.compatibility?.methodContract.status, "drift");
+  assert.equal(matrix.compatibility?.methodContract.status, "advertised");
   assert.equal(matrix.compatibility?.methodContract.source, "rpc.discover");
   assert.equal(matrix.compatibility?.methodContract.refreshIntervalMs, 60_000);
   assert.ok(matrix.compatibility?.methodContract.missingMethods.includes("models.list"));
   assert.equal(matrix.compatibility?.methodContract.baselineVersion, OPENCLAW_GATEWAY_BASELINE_VERSION);
-  assert.ok(matrix.compatibility?.methodContract.missingOperations.includes("runtimeSnapshot"));
+  assert.equal(matrix.compatibility?.methodContract.missingOperations.includes("runtimeSnapshot"), false);
   assert.equal(matrix.compatibility?.methodContract.missingOperations.includes("agentIdentity"), false);
 });
 
@@ -163,10 +163,7 @@ test("capability matrix reports fully advertised Gateway method contract without
   assert.deepEqual(matrix.compatibility?.methodContract.missingMethods, []);
   assert.deepEqual(matrix.compatibility?.methodContract.missingOperations, []);
   assert.equal(matrix.compatibility?.methodContract.missingOptionalMethods?.length, OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS.length);
-  assert.equal(
-    matrix.compatibility?.methodContract.reason?.includes(`required ${OPENCLAW_GATEWAY_BASELINE_VERSION} baseline`),
-    true
-  );
+  assert.match(matrix.compatibility?.methodContract.reason ?? "", /conservative method metadata/i);
 });
 
 test("capability matrix treats missing optional methods as informational", async () => {
@@ -202,11 +199,11 @@ test("capability matrix reports Gateway compatibility aliases without degrading 
   assert.equal(matrix.operations?.modelAuthOrder.supportedMethod, "models.auth.order.set");
   assert.deepEqual(matrix.compatibility?.aliasOperations, ["modelAuthOrder: models.auth.order.set"]);
   assert.equal(matrix.compatibility?.degradedOperations.includes("modelAuthOrder"), false);
-  assert.equal(matrix.compatibility?.methodContract.status, "drift");
+  assert.equal(matrix.compatibility?.methodContract.status, "advertised");
   assert.equal(matrix.compatibility?.methodContract.missingOperations.includes("modelAuthOrder"), false);
 });
 
-test("capability matrix marks agent update unavailable without a fake fallback", async () => {
+test("capability matrix keeps omitted agent update unknown without a fake fallback", async () => {
   setOpenClawAdapterForTesting(createContractAdapter());
   setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({
     protocolVersion: 4,
@@ -215,15 +212,15 @@ test("capability matrix marks agent update unavailable without a fake fallback",
 
   const matrix = await getOpenClawCapabilityMatrix({ force: true });
 
-  assert.equal(matrix.nativeAgentLifecycle, "unsupported");
+  assert.equal(matrix.nativeAgentLifecycle, "unknown");
   assert.equal(matrix.operations?.agentCreate.mode, "gateway-native");
   assert.equal(matrix.operations?.agentDelete.mode, "gateway-native");
-  assert.equal(matrix.operations?.agentUpdate.mode, "disabled");
+  assert.equal(matrix.operations?.agentUpdate.mode, "unknown");
   assert.equal(matrix.operations?.agentUpdate.fallbackAllowed, false);
-  assert.match(matrix.operations?.agentUpdate.reason ?? "", /no safe fallback is available/i);
-  assert.match(matrix.operations?.agentUpdate.recovery ?? "", /unavailable until OpenClaw exposes/i);
-  assert.equal(matrix.compatibility?.degradedOperations.includes("agentUpdate"), true);
-  assert.equal(matrix.degradedFeatures?.some((entry) => /agentUpdate:.*Recovery:/i.test(entry)), true);
+  assert.match(matrix.operations?.agentUpdate.reason ?? "", /conservative/i);
+  assert.match(matrix.operations?.agentUpdate.recovery ?? "", /authoritative Gateway response/i);
+  assert.equal(matrix.compatibility?.degradedOperations.includes("agentUpdate"), false);
+  assert.equal(matrix.degradedFeatures?.some((entry) => /agentUpdate:/i.test(entry)), false);
 });
 
 test("capability matrix carries explicit recovery guidance for degraded OpenClaw surfaces", async () => {
@@ -235,13 +232,13 @@ test("capability matrix carries explicit recovery guidance for degraded OpenClaw
 
   const matrix = await getOpenClawCapabilityMatrix({ force: true });
 
-  assert.equal(matrix.operations?.modelScan.mode, "degraded");
+  assert.equal(matrix.operations?.modelScan.mode, "unknown");
   assert.match(matrix.operations?.modelScan.recovery ?? "", /explicit model refresh.*native models\.scan/i);
-  assert.equal(matrix.operations?.taskAssign.mode, "disabled");
+  assert.equal(matrix.operations?.taskAssign.mode, "unknown");
   assert.match(matrix.operations?.taskAssign.recovery ?? "", /unavailable until OpenClaw exposes tasks\.assign/i);
-  assert.equal(matrix.operations?.channelProvisioning.mode, "degraded");
+  assert.equal(matrix.operations?.channelProvisioning.mode, "unknown");
   assert.match(matrix.operations?.channelProvisioning.recovery ?? "", /marked limited/i);
-  assert.equal(matrix.degradedFeatures?.some((entry) => /modelScan:.*Recovery:.*models\.scan/i.test(entry)), true);
+  assert.equal(matrix.degradedFeatures?.some((entry) => /modelScan:/i.test(entry)), false);
 });
 
 test("capability matrix tracks Phase 2 Gateway-native runtime surfaces", async () => {

@@ -68,6 +68,7 @@ import {
 } from "@/lib/openclaw/client/native-ws-gateway-payloads";
 import {
   isGatewayMethodUnsupported,
+  readAdvertisedGatewayMethods,
   resolveLatestPendingDeviceRequestId
 } from "@/lib/openclaw/client/native-ws-gateway-protocol";
 import {
@@ -1777,6 +1778,16 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     }
 
     try {
+      const hello = await this.probeNativeHandshake(options);
+      const advertisedMethods = readAdvertisedGatewayMethods(hello);
+      if (advertisedMethods.length > 0 && !advertisedMethods.includes("sessions.create")) {
+        return null;
+      }
+    } catch {
+      // The chat request remains the authoritative native attempt.
+    }
+
+    try {
       const payload = await this.callNative<Record<string, unknown>>(
         "sessions.create",
         buildNativeSessionCreateParams(input, sessionKey),
@@ -1808,6 +1819,16 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
 
     const waitMs = resolveAgentTurnWaitMs(input, options);
     const requestTimeoutMs = resolveNativeAgentWaitRequestTimeoutMs(waitMs);
+
+    try {
+      const hello = await this.probeNativeHandshake(options);
+      const advertisedMethods = readAdvertisedGatewayMethods(hello);
+      if (advertisedMethods.length > 0 && !advertisedMethods.includes("agent.wait")) {
+        return null;
+      }
+    } catch {
+      // The already-dispatched native turn remains the source of truth.
+    }
 
     try {
       const payload = await this.callNative<MissionCommandPayload>(
@@ -2193,7 +2214,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     fallback: () => Promise<TPayload>
   ) {
     const operation = getOpenClawGatewayCompatibilityOperation(operationId);
-    const methods = getOpenClawGatewayMethodCandidates(operationId);
+    let methods = getOpenClawGatewayMethodCandidates(operationId);
 
     if (this.options.forceCli || isCliGatewayClientForcedByEnv()) {
       if (operation.fallbackAllowed === false) {
@@ -2208,6 +2229,24 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         this.assertVerifiedCliMutationFallback(fallbackMethod, params, options);
       }
 
+      return fallback();
+    }
+
+    try {
+      const hello = await this.probeNativeHandshake(options);
+      const advertisedMethods = readAdvertisedGatewayMethods(hello);
+      if (advertisedMethods.length > 0) {
+        methods = [
+          ...methods.filter((method) => advertisedMethods.includes(method)),
+          ...methods.filter((method) => !advertisedMethods.includes(method))
+        ];
+      }
+    } catch (error) {
+      this.options.onNativeFailure?.(error, operationId);
+      if (!shouldUseCliFallback(error, operationId, { safety: "read" })) {
+        throw this.cliFallbackDisabledError(operationId, error);
+      }
+      this.recordGatewayFallback(operationId, error);
       return fallback();
     }
 

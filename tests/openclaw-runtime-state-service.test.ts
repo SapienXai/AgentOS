@@ -108,7 +108,7 @@ test("runtime snapshot mapper preserves workspace linkage without agent catalog 
 
 test("Gateway event normalizers preserve runtime-neutral task and artifact state", () => {
   const frame = {
-    type: "event",
+    type: "event" as const,
     event: "artifact.updated",
     payload: {
       agentId: "agent-1",

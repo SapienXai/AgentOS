@@ -8,9 +8,7 @@ import type {
 
 import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
 import {
-  OPENCLAW_GATEWAY_PROTOCOL_RANGE,
-  SERVER_OPERATOR_CLIENT_ID,
-  SERVER_OPERATOR_CLIENT_MODE
+  OPENCLAW_GATEWAY_PROTOCOL_RANGE
 } from "@/lib/openclaw/client/openclaw-protocol";
 
 export const DEFAULT_GATEWAY_URL = "ws://127.0.0.1:18789";

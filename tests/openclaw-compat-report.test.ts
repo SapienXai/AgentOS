@@ -96,9 +96,9 @@ test("compatibility report uses version safe defaults when Gateway omits method 
   assert.equal(report.gateway.capabilitySource, "version-default");
   assert.equal(report.capabilities.find((capability) => capability.id === "sessions")?.source, "version-default");
   assert.equal(report.capabilities.find((capability) => capability.id === "sessions")?.status, "supported");
-  assert.equal(report.contracts.find((check) => check.operation === "models")?.nativeGatewaySupported, false);
-  assert.equal(report.contracts.find((check) => check.operation === "models")?.status, "degraded");
-  assert.equal(report.status, "degraded");
+  assert.equal(report.contracts.find((check) => check.operation === "models")?.nativeGatewaySupported, true);
+  assert.equal(report.contracts.find((check) => check.operation === "models")?.status, "ok");
+  assert.equal(report.status, "compatible");
 });
 
 test("compatibility report fails a required contract when live response shape drifts", async () => {
