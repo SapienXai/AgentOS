@@ -1,3 +1,4 @@
+import type { EventFrame } from "@openclaw/gateway-protocol/frame-guards";
 import type { CommandResult } from "@/lib/openclaw/cli";
 import type {
   OpenClawNativeAuthorizationProof,
@@ -139,11 +140,7 @@ export type OpenClawHealthPayload = Record<string, unknown> & {
   ok?: boolean;
 };
 
-export type OpenClawGatewayEventFrame = {
-  type?: string;
-  event?: string;
-  payload?: unknown;
-};
+export type OpenClawGatewayEventFrame = EventFrame;
 
 export interface OpenClawGatewayEventCallbacks {
   onEvent: (event: OpenClawGatewayEventFrame) => void;

@@ -327,7 +327,10 @@ async function checkOperationContract(
   const missingScopes = input.authScopes.length > 0 && advertisedNativeSupport
     ? requiredScopes.filter((scope) => !input.authScopes.some((grantedScope) => authorizesScope(grantedScope, scope)))
     : [];
-  const nativeGatewaySupported = advertisedNativeSupport && missingScopes.length === 0 && liveCapabilityMetadata;
+  // Discovery metadata is advisory. A method omitted from a conservative
+  // list remains a native candidate when the exact supported contract is
+  // known; only the RPC response can prove it unsupported.
+  const nativeGatewaySupported = advertisedNativeSupport && missingScopes.length === 0;
   const fallbackAllowed = operation.fallbackAllowed !== false;
   const cliFallbackAvailable = fallbackAllowed && input.cliFallbackAvailable;
   const baseline = operation.baseline ?? "optional";

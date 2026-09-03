@@ -295,13 +295,23 @@ export function resolveOpenClawCompatibilityMethods(input: {
 }) {
   const advertisedMethods = uniqueSorted(input.advertisedMethods);
   const advertisedEvents = uniqueSorted(input.advertisedEvents);
+  const knownByContractMethods = isAtLeastBaseline(input.installedVersion)
+    ? uniqueSorted([
+      ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
+      ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS
+    ])
+    : [];
 
   if (advertisedMethods.length > 0 || advertisedEvents.length > 0) {
     return {
       advertisedMethods,
       advertisedEvents,
-      effectiveMethods: advertisedMethods,
+      // OpenClaw's discovery lists are conservative. The installed exact
+      // contract is the second source of truth, so omission is not proof of
+      // unsupported behavior and must not trigger CLI fallback.
+      effectiveMethods: uniqueSorted([...advertisedMethods, ...knownByContractMethods]),
       effectiveEvents: advertisedEvents,
+      knownByContractMethods,
       source: input.source === "unavailable" ? "gateway-advertised" as const : input.source
     };
   }
@@ -315,6 +325,7 @@ export function resolveOpenClawCompatibilityMethods(input: {
         ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS
       ]),
       effectiveEvents: [],
+      knownByContractMethods,
       source: "version-default" as const
     };
   }
@@ -324,6 +335,7 @@ export function resolveOpenClawCompatibilityMethods(input: {
     advertisedEvents,
     effectiveMethods: [],
     effectiveEvents: [],
+    knownByContractMethods,
     source: "unavailable" as const
   };
 }

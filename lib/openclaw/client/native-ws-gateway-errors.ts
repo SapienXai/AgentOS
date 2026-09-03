@@ -1,6 +1,16 @@
 import "server-only";
 
 import {
+  classifyGatewayConnectFailure,
+  ConnectErrorDetailCodes,
+  readConnectErrorDetailCode
+} from "@openclaw/gateway-protocol/connect-error-details";
+import {
+  ErrorCodes,
+  GatewayErrorDetailCodes,
+  readMissingScopeErrorDetails
+} from "@openclaw/gateway-protocol/gateway-error-details";
+import {
   MAX_CONTROL_PROTOCOL_VERSION,
   MIN_CONTROL_PROTOCOL_VERSION
 } from "@/lib/openclaw/client/native-ws-gateway-types";
@@ -30,7 +40,7 @@ export class NativeGatewayError extends Error {
   ) {
     super(message);
     this.name = "NativeGatewayError";
-    this.kind = options.kind ?? classifyGatewayError(message);
+    this.kind = options.kind ?? classifyGatewayError(message, options.cause);
     this.cause = options.cause;
   }
 }
@@ -116,12 +126,17 @@ export function normalizeClientError(error: unknown) {
   }
 
   const message = error instanceof Error ? error.message : String(error || "OpenClaw Gateway request failed.");
-  return new OpenClawGatewayClientError(sanitizeGatewayDiagnosticText(message), classifyGatewayError(message), {
+  return new OpenClawGatewayClientError(sanitizeGatewayDiagnosticText(message), classifyGatewayError(message, error), {
     cause: error
   });
 }
 
-export function classifyGatewayError(message: string): OpenClawGatewayClientErrorKind {
+export function classifyGatewayError(message: string, cause?: unknown): OpenClawGatewayClientErrorKind {
+  const structuredKind = classifyStructuredGatewayError(cause, message);
+  if (structuredKind) {
+    return structuredKind;
+  }
+
   if (/protocol|version|hello|handshake/i.test(message)) {
     return "protocol-mismatch";
   }
@@ -161,6 +176,79 @@ export function classifyGatewayError(message: string): OpenClawGatewayClientErro
   return "unknown";
 }
 
+function classifyStructuredGatewayError(cause: unknown, message: string): OpenClawGatewayClientErrorKind | null {
+  const gatewayError = readGatewayErrorRecord(cause);
+  if (!gatewayError) {
+    return null;
+  }
+
+  const detailCode = readConnectErrorDetailCode(gatewayError.details);
+  const missingScope = readMissingScopeErrorDetails(gatewayError.details);
+
+  if (detailCode === GatewayErrorDetailCodes.MISSING_SCOPE || missingScope ||
+    (gatewayError.code === ErrorCodes.FORBIDDEN && /scope|permission/i.test(gatewayError.message ?? message))) {
+    return "scope-limited";
+  }
+
+  if (detailCode === ConnectErrorDetailCodes.PROTOCOL_MISMATCH) {
+    return "protocol-mismatch";
+  }
+
+  if (gatewayError.code === ErrorCodes.INVALID_REQUEST && /unknown method|method not found|unsupported method/i.test(gatewayError.message ?? message)) {
+    return "unsupported";
+  }
+
+  if (gatewayError.code === ErrorCodes.UNAVAILABLE) {
+    return /rate limit|retry after|too many requests/i.test(gatewayError.message ?? message)
+      ? "rate-limited"
+      : "unreachable";
+  }
+
+  if (gatewayError.code === ErrorCodes.NOT_PAIRED || detailCode === ConnectErrorDetailCodes.PAIRING_REQUIRED) {
+    return "auth";
+  }
+
+  if (detailCode?.startsWith("AUTH_") || detailCode?.startsWith("DEVICE_AUTH_")) {
+    const connectFailure = classifyGatewayConnectFailure({
+      details: gatewayError.details,
+      message: gatewayError.message ?? message
+    });
+
+    if (connectFailure.kind === "rate-limited") {
+      return "rate-limited";
+    }
+
+    if (connectFailure.kind === "scope-mismatch") {
+      return "scope-limited";
+    }
+
+    return "auth";
+  }
+
+  return null;
+}
+
+function readGatewayErrorRecord(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const candidate = record.error && typeof record.error === "object"
+    ? record.error as Record<string, unknown>
+    : record;
+
+  if (typeof candidate.code !== "string" && typeof candidate.message !== "string" && candidate.details === undefined) {
+    return null;
+  }
+
+  return {
+    code: typeof candidate.code === "string" ? candidate.code : null,
+    message: typeof candidate.message === "string" ? candidate.message : null,
+    details: candidate.details
+  };
+}
+
 export function resolveGatewayRecoveryMessage(error: OpenClawGatewayClientError) {
   switch (error.kind) {
     case "auth":
@@ -174,7 +262,7 @@ export function resolveGatewayRecoveryMessage(error: OpenClawGatewayClientError)
     case "rate-limited":
       return "Wait for the OpenClaw Gateway config cooldown to expire, then retry the action.";
     case "unsupported":
-      return "OpenClaw does not advertise this Gateway method; AgentOS will use the compatibility fallback when available.";
+      return "OpenClaw returned an authoritative unsupported-method response; AgentOS will use the compatibility fallback when available.";
     case "timeout":
       return "Restart the OpenClaw Gateway, inspect diagnostics for slow handlers, then retry the action.";
     case "unreachable":

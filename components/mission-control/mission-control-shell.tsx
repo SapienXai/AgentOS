@@ -177,6 +177,7 @@ type InspectorScopeShortcut = "workspace" | "agent" | "tasks";
 
 const modelAuthTerminalAutoOpenCooldownMs = 2 * 60 * 1000;
 const modelAuthStatusPollDelaysMs = [4_000, 8_000, 15_000, 30_000, 45_000, 60_000];
+const chatGptStatusRetryDelaysMs = [0, 500, 1_000, 2_000, 4_000, 8_000];
 const launchpadWorkspaceHandoffPollDelaysMs = [0, 800, 1_200, 1_800, 2_600, 3_600, 5_000, 6_500];
 const launchpadWorkspaceHandoffSuccessPauseMs = 450;
 const openClawCapabilityDiffStorageKey = "agentos:last-openclaw-capability-diff";
@@ -2242,6 +2243,40 @@ export function MissionControlShell({
     }
   };
 
+  const waitForChatGptProviderStatus = async () => {
+    let lastResult: Awaited<ReturnType<typeof readModelProviderStatus>> | null = null;
+    let lastError: unknown = null;
+
+    for (const [index, delayMs] of chatGptStatusRetryDelaysMs.entries()) {
+      if (delayMs > 0) {
+        await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs));
+      }
+
+      try {
+        const result = await readModelProviderStatus("openai", { includeSnapshot: true });
+        lastResult = result;
+
+        if (result.connection.connected) {
+          return result;
+        }
+      } catch (error) {
+        lastError = error;
+      }
+
+      if (index === chatGptStatusRetryDelaysMs.length - 1) {
+        break;
+      }
+    }
+
+    if (lastResult) {
+      return lastResult;
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("OpenClaw could not refresh the ChatGPT account status yet.");
+  };
+
   const markModelProviderConnected = (
     provider: AddModelsProviderId,
     detail?: string | null,
@@ -2760,10 +2795,16 @@ export function MissionControlShell({
         throw new Error(authFlow?.error || "ChatGPT sign-in did not complete.");
       }
 
-      const result = await readModelProviderStatus("openai", { includeSnapshot: true });
+      setChatGptBrowserAuth((current) => current
+        ? {
+            ...current,
+            message: "ChatGPT sign-in completed. Checking the account and model catalog..."
+          }
+        : current);
+      const result = await waitForChatGptProviderStatus();
 
       if (!result.connection.connected) {
-        throw new Error("ChatGPT sign-in completed, but OpenClaw did not report an active account yet.");
+        throw new Error("ChatGPT sign-in completed, but OpenClaw is still refreshing the account and model catalog. Try again in a moment.");
       }
 
       setChatGptBrowserAuth(null);

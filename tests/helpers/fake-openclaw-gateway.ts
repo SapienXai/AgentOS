@@ -103,7 +103,7 @@ export class FakeOpenClawGateway {
           type: "res",
           id: frame.id,
           ok: false,
-          error: { message, code: options.code }
+          error: { message, code: options.code ?? "INVALID_REQUEST" }
         });
       },
       unsupported: (message = `INVALID_REQUEST: unknown method: ${frame.method}`) => {
@@ -111,7 +111,7 @@ export class FakeOpenClawGateway {
           type: "res",
           id: frame.id,
           ok: false,
-          error: { message }
+          error: { code: "INVALID_REQUEST", message }
         });
       },
       malformedJson: () => socket.emitRaw("{malformed-json"),

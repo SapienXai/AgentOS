@@ -86,16 +86,20 @@ export function resolveChatGptRecoveryMessage(message?: string | null) {
     return "ChatGPT sign-in is available from the local AgentOS machine. Use another provider here, or sign in locally first.";
   }
 
-  if (/expired|reconnect|stale|account.*again|sign-in.*again|reauthor/.test(normalized)) {
-    return "ChatGPT needs to be connected again. Reconnect to continue.";
-  }
-
   if (/cancel|interrupted/.test(normalized)) {
     return "ChatGPT sign-in was cancelled before OpenClaw could save the account.";
   }
 
   if (/timed out|timeout/.test(normalized)) {
     return "ChatGPT sign-in took too long. Close any stale sign-in tab and try again.";
+  }
+
+  if (/model status|model catalog|active account|still refreshing|models\.list|gateway-native operation failed/.test(normalized)) {
+    return "ChatGPT sign-in completed, but OpenClaw could not refresh the model catalog yet. Try again in a moment.";
+  }
+
+  if (/expired|reconnect|stale|account.*again|sign-in.*again|reauthor/.test(normalized)) {
+    return "ChatGPT needs to be connected again. Reconnect to continue.";
   }
 
   return "We couldn't finish connecting ChatGPT. Try again or use another provider.";

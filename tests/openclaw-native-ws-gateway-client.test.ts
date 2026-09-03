@@ -1394,6 +1394,42 @@ test("native WS gateway client does not hide malformed Gateway typed responses b
   assert.match(client.getDiagnostics().lastNativeError ?? "", /malformed response/);
 });
 
+test("native models.list keeps provider filtering client-side for the 8.2 Gateway contract", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? { protocol: 4 }
+          : {
+              models: [
+                { id: "gpt-5.6-terra", provider: "openai", name: "GPT-5.6 Terra" },
+                { id: "claude-sonnet-5", provider: "anthropic", name: "Claude Sonnet 5" }
+              ]
+            }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  const result = await client.listModels({ all: true, provider: "openai" });
+
+  assert.deepEqual(result.models.map((model) => model.key), ["openai/gpt-5.6-terra"]);
+  assert.deepEqual(
+    sentFrames.map((frame) => [frame.method, frame.params]).filter(([method]) => method !== "connect"),
+    [["models.list", { view: "all" }]]
+  );
+  assert.deepEqual(fallback.calls, []);
+});
+
 test("native WS gateway client falls back to CLI when Google provider catalog is incomplete", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();

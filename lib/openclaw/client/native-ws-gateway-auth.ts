@@ -1,7 +1,5 @@
 import "server-only";
 
-import { GATEWAY_CLIENT_CAPS } from "@openclaw/gateway-protocol/client-info";
-
 import { createPrivateKey, createPublicKey, sign } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -10,15 +8,19 @@ import { join } from "node:path";
 import { readAgentOsGatewayAuthCredential } from "@/lib/agentos/runtime-auth";
 import { OpenClawGatewayClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import {
+  AGENTOS_GATEWAY_CLIENT_CAPABILITIES,
+  resolveGatewayClientId
+} from "@/lib/openclaw/client/openclaw-protocol";
+import {
   DEFAULT_OPERATOR_SCOPES,
   ED25519_SPKI_PREFIX,
   MAX_CONTROL_PROTOCOL_VERSION,
   MIN_CONTROL_PROTOCOL_VERSION,
   OPENCLAW_DEVICE_AUTH_FILE_NAME,
   OPENCLAW_DEVICE_IDENTITY_FILE_NAME,
-  SERVER_OPERATOR_CLIENT_ID,
   SERVER_OPERATOR_CLIENT_MODE,
   type ConnectParamsContext,
+  type GatewayConnectChallenge,
   type LocalDeviceAuth,
   type NativeWsOpenClawGatewayClientOptions
 } from "@/lib/openclaw/client/native-ws-gateway-types";
@@ -356,7 +358,9 @@ export function buildDeviceAuthPayloadV3(params: {
 }
 
 export function normalizeDeviceMetadataForAuth(value: unknown) {
-  return typeof value === "string" ? value.trim().replaceAll("|", "") : "";
+  return typeof value === "string"
+    ? value.trim().replaceAll("|", "").replace(/[A-Z]/g, (character) => character.toLowerCase())
+    : "";
 }
 
 export async function buildConnectParams(
@@ -364,7 +368,7 @@ export async function buildConnectParams(
   options: NativeWsOpenClawGatewayClientOptions,
   url: string,
   commandOptions: OpenClawCommandOptions,
-  nonce?: string | null
+  challenge?: GatewayConnectChallenge | null
 ): Promise<ConnectParamsContext> {
   const deviceAuth = await resolveLocalGatewayDeviceAuth(url, options);
   const scopes = options.scopes ?? DEFAULT_OPERATOR_SCOPES;
@@ -390,9 +394,10 @@ export async function buildConnectParams(
     : password
       ? { password }
       : undefined;
-  const signedAtMs = Date.now();
+  const signedAtMs = challenge?.ts ?? Date.now();
   const platform = process.platform;
-  const device = activeDeviceAuth && nonce
+  const clientId = resolveGatewayClientId(options.clientName);
+  const device = activeDeviceAuth && challenge
     ? {
       id: activeDeviceAuth.deviceId,
       publicKey: publicKeyRawBase64UrlFromPem(activeDeviceAuth.publicKeyPem),
@@ -400,19 +405,19 @@ export async function buildConnectParams(
         activeDeviceAuth.privateKeyPem,
         buildDeviceAuthPayloadV3({
           deviceId: activeDeviceAuth.deviceId,
-          clientId: options.clientName ?? SERVER_OPERATOR_CLIENT_ID,
+          clientId,
           clientMode: SERVER_OPERATOR_CLIENT_MODE,
           role: options.role ?? "operator",
           scopes,
           signedAtMs,
           token: authToken ?? null,
-          nonce,
+          nonce: challenge.nonce,
           platform,
           deviceFamily: null
         })
       ),
       signedAt: signedAtMs,
-      nonce
+      nonce: challenge.nonce
     }
     : undefined;
 
@@ -422,7 +427,7 @@ export async function buildConnectParams(
       minProtocol: MIN_CONTROL_PROTOCOL_VERSION,
       maxProtocol: MAX_CONTROL_PROTOCOL_VERSION,
       client: {
-        id: options.clientName ?? SERVER_OPERATOR_CLIENT_ID,
+        id: clientId,
         version: options.clientVersion ?? "agentos",
         platform,
         mode: SERVER_OPERATOR_CLIENT_MODE,
@@ -430,7 +435,7 @@ export async function buildConnectParams(
       },
       role: options.role ?? "operator",
       scopes,
-      caps: [GATEWAY_CLIENT_CAPS.AGENT_KIND, GATEWAY_CLIENT_CAPS.TOOL_EVENTS],
+      caps: [...AGENTOS_GATEWAY_CLIENT_CAPABILITIES],
       ...(auth ? { auth } : {}),
       ...(device ? { device } : {}),
       userAgent: "AgentOS",

@@ -149,18 +149,19 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
       return "unknown";
     }
 
-    return methods.some((method) => methodSet.has(method)) ? "supported" : "unsupported";
+    return methods.some((method) => methodSet.has(method)) ? "supported" : "unknown";
   };
   const supportAll = (...methods: string[]): OpenClawCapabilitySupport => {
     if (methodSet.size === 0) {
       return "unknown";
     }
 
-    return methods.every((method) => methodSet.has(method)) ? "supported" : "unsupported";
+    return methods.every((method) => methodSet.has(method)) ? "supported" : "unknown";
   };
-  const unsupportedGatewayMethods = methodSet.size > 0
-    ? OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS.filter((method) => !methodSet.has(method))
-    : [];
+  // The Gateway method list is conservative discovery metadata. Missing
+  // entries are not proven unsupported until a native RPC returns an
+  // authoritative unsupported-method error.
+  const unsupportedGatewayMethods: string[] = [];
   const operation = (
     label: string,
     methods: string[],
@@ -217,6 +218,22 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
         aliasMethods: methods.slice(1),
         compatibility: supportedMethod && supportedMethod !== methods[0] ? "alias" : "preferred",
         recovery: null
+      };
+    }
+
+    if (methodSet.size > 0 || eventSet.size > 0) {
+      return {
+        label,
+        mode: "unknown",
+        methods,
+        events,
+        fallbackAllowed,
+        reason: "Gateway discovery metadata is conservative and did not advertise this operation; AgentOS will attempt the native call before considering compatibility fallback.",
+        preferredMethod: methods[0] ?? null,
+        supportedMethod: null,
+        aliasMethods: methods.slice(1),
+        compatibility: "unknown",
+        recovery: recovery ?? "Retry the native operation and inspect the authoritative Gateway response before using compatibility fallback."
       };
     }
 
@@ -292,9 +309,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
     chatEvents: support(...getOpenClawGatewayMethodCandidates("missionDispatch"), "chat.history") === "supported" ||
       (getOpenClawGatewayCompatibilityOperation("missionStream").events ?? []).some((event) => eventSet.has(event))
       ? "supported"
-      : methodSet.size === 0
-        ? "unknown"
-        : "unsupported",
+      : "unknown",
     logsTail: support(...getOpenClawGatewayMethodCandidates("logsTail")),
     cronRead: support(...getOpenClawGatewayMethodCandidates("cronRead")),
     channels: support(...getOpenClawGatewayMethodCandidates("channels")),
@@ -322,9 +337,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
         "plugin.approval.requested"
       ].some((event) => eventSet.has(event))
       ? "supported"
-      : methodSet.size === 0
-        ? "unknown"
-        : "unsupported",
+      : "unknown",
     operations,
     compatibility: {
       protocol: {
@@ -429,10 +442,7 @@ function buildGatewayMethodContractAudit(input: {
     };
   }
 
-  const missingOperations = Object.entries(input.operations)
-    .filter(([, value]) => value.baseline === "required" && value.compatibility === "missing")
-    .map(([name]) => name);
-  const status = missingRequiredMethods.length > 0 ? "drift" : "advertised";
+  const status = "advertised" as const;
 
   return {
     status,
@@ -443,7 +453,7 @@ function buildGatewayMethodContractAudit(input: {
     advertisedMethodCount: input.methodSet.size,
     missingMethodCount: missingRequiredMethods.length,
     missingMethods: missingRequiredMethods,
-    missingOperations,
+    missingOperations: [],
     baselineVersion: OPENCLAW_GATEWAY_BASELINE_VERSION,
     requiredMethodCount: OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS.length,
     missingRequiredMethods,
@@ -451,9 +461,7 @@ function buildGatewayMethodContractAudit(input: {
     missingOptionalMethods,
     experimentalMethodCount: OPENCLAW_GATEWAY_EXPERIMENTAL_METHODS.length,
     missingExperimentalMethods,
-    reason: status === "advertised"
-      ? `OpenClaw Gateway advertises every required ${OPENCLAW_GATEWAY_BASELINE_VERSION} baseline method; optional and experimental gaps are informational.`
-      : `OpenClaw Gateway advertised method metadata, but one or more required ${OPENCLAW_GATEWAY_BASELINE_VERSION} baseline methods are missing.`
+    reason: `OpenClaw Gateway provided conservative method metadata. Unlisted ${OPENCLAW_GATEWAY_BASELINE_VERSION} methods are not proven unsupported; native RPC responses remain the authority.`
   };
 }
 

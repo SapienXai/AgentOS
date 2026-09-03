@@ -96,6 +96,15 @@ test("ChatGPT onboarding exposes a recoverable Codex plugin setup error", () => 
   );
 });
 
+test("ChatGPT onboarding explains a post-auth model refresh failure", () => {
+  assert.match(
+    resolveChatGptRecoveryMessage(
+      "ChatGPT sign-in completed, but OpenClaw is still refreshing the account and model catalog. Try again in a moment."
+    ),
+    /could not refresh the model catalog yet/
+  );
+});
+
 test("ChatGPT onboarding preserves the browser-auth state machine", () => {
   assert.equal(
     resolveChatGptOnboardingState({

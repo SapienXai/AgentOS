@@ -1,14 +1,17 @@
 import "server-only";
 
-import {
-  MIN_CLIENT_PROTOCOL_VERSION,
-  PROTOCOL_VERSION
-} from "@openclaw/gateway-protocol/version";
-
 import type {
-  OpenClawGatewayClient,
-  OpenClawGatewayEventFrame
-} from "@/lib/openclaw/client/types";
+  EventFrame,
+  HelloOk,
+  ResponseFrame
+} from "@openclaw/gateway-protocol/frame-guards";
+
+import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
+import {
+  OPENCLAW_GATEWAY_PROTOCOL_RANGE,
+  SERVER_OPERATOR_CLIENT_ID,
+  SERVER_OPERATOR_CLIENT_MODE
+} from "@/lib/openclaw/client/openclaw-protocol";
 
 export const DEFAULT_GATEWAY_URL = "ws://127.0.0.1:18789";
 
@@ -20,18 +23,11 @@ export const DEFAULT_NATIVE_STREAM_TIMEOUT_MS = 30_000;
 
 export const CONNECT_METHOD = "connect";
 
-export const MIN_CONTROL_PROTOCOL_VERSION = MIN_CLIENT_PROTOCOL_VERSION;
+export const MIN_CONTROL_PROTOCOL_VERSION = OPENCLAW_GATEWAY_PROTOCOL_RANGE.min;
 
-export const MAX_CONTROL_PROTOCOL_VERSION = PROTOCOL_VERSION;
+export const MAX_CONTROL_PROTOCOL_VERSION = OPENCLAW_GATEWAY_PROTOCOL_RANGE.max;
 
-export const OPENCLAW_GATEWAY_PROTOCOL_RANGE = {
-  min: MIN_CONTROL_PROTOCOL_VERSION,
-  max: MAX_CONTROL_PROTOCOL_VERSION
-} as const;
-
-export const SERVER_OPERATOR_CLIENT_ID = "gateway-client";
-
-export const SERVER_OPERATOR_CLIENT_MODE = "backend";
+export { OPENCLAW_GATEWAY_PROTOCOL_RANGE, SERVER_OPERATOR_CLIENT_ID, SERVER_OPERATOR_CLIENT_MODE } from "@/lib/openclaw/client/openclaw-protocol";
 
 export const OPENCLAW_DEVICE_AUTH_FILE_NAME = "device-auth.json";
 
@@ -86,37 +82,23 @@ export type NativeWsOpenClawGatewayClientOptions = {
   onNativeFailure?: (error: unknown, method: string) => void;
 };
 
-export type GatewayResponseFrame = {
-  type?: string;
-  id?: string | number;
-  ok?: boolean;
-  payload?: unknown;
-  error?: unknown;
-  message?: string;
-  code?: string;
-};
+export type GatewayResponseFrame = ResponseFrame;
 
-export type GatewayEventFrame = OpenClawGatewayEventFrame;
+export type GatewayEventFrame = EventFrame;
 
 export type NativeHandshakePayload = {
   type?: string;
-  protocol?: number;
-  server?: {
-    version?: string;
-    buildId?: string;
-    connId?: string;
-  };
-  features?: {
-    methods?: string[];
-    events?: string[];
-    capabilities?: string[];
-  };
+  protocol?: HelloOk["protocol"];
+  server?: Partial<HelloOk["server"]> & Record<string, unknown>;
+  features?: Partial<HelloOk["features"]> & Record<string, unknown>;
   snapshot?: unknown;
-  auth?: {
-    role?: string;
-    scopes?: string[];
-  };
-  policy?: Record<string, unknown>;
+  auth?: Partial<HelloOk["auth"]> & Record<string, unknown>;
+  policy?: Partial<HelloOk["policy"]> & Record<string, unknown>;
+};
+
+export type GatewayConnectChallenge = {
+  nonce: string;
+  ts: number;
 };
 
 export type LocalDeviceAuth = {

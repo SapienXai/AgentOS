@@ -14,6 +14,22 @@ import {
   isObjectRecord,
   readNonEmptyString
 } from "@/lib/openclaw/client/native-ws-gateway-utils";
+import {
+  OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS,
+  OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS
+} from "@/lib/openclaw/client/gateway-compatibility";
+
+export type GatewayMethodSupportState =
+  | "explicitly-advertised"
+  | "known-by-contract"
+  | "proven-unsupported"
+  | "auth-denied"
+  | "unknown-not-advertised";
+
+const knownGatewayMethods = new Set([
+  ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
+  ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS
+]);
 
 export function resolveEventSubscriptionRequests(params: Record<string, unknown>, hello?: NativeHandshakePayload | null) {
   const requests: Array<{ method: string; params: Record<string, unknown> }> = [];
@@ -74,17 +90,38 @@ export function supportsGatewayCapability(hello: NativeHandshakePayload | null |
 }
 
 export function supportsGatewayMethod(hello: NativeHandshakePayload | null | undefined, method: string) {
-  if (method === CONNECT_METHOD) {
-    return true;
-  }
-
-  const advertisedMethods = readAdvertisedGatewayMethods(hello);
-  return advertisedMethods.length === 0 || advertisedMethods.includes(method);
+  // hello-ok.features.methods is a conservative discovery hint, not an
+  // exhaustive RPC inventory. Only an authoritative RPC error can prove a
+  // method unsupported; omission must still attempt the native request.
+  return resolveGatewayMethodSupportState(hello, method) !== "proven-unsupported";
 }
 
 export function supportsGatewayEvent(hello: NativeHandshakePayload | null | undefined, event: string) {
-  const advertisedEvents = readAdvertisedGatewayEvents(hello);
-  return advertisedEvents.length === 0 || advertisedEvents.includes(event);
+  return resolveGatewayEventSupportState(hello, event) !== "proven-unsupported";
+}
+
+export function resolveGatewayMethodSupportState(
+  hello: NativeHandshakePayload | null | undefined,
+  method: string
+): Exclude<GatewayMethodSupportState, "proven-unsupported" | "auth-denied"> {
+  if (method === CONNECT_METHOD || readAdvertisedGatewayMethods(hello).includes(method)) {
+    return method === CONNECT_METHOD ? "known-by-contract" : "explicitly-advertised";
+  }
+
+  if (knownGatewayMethods.has(method)) {
+    return "known-by-contract";
+  }
+
+  return "unknown-not-advertised";
+}
+
+export function resolveGatewayEventSupportState(
+  hello: NativeHandshakePayload | null | undefined,
+  event: string
+): Exclude<GatewayMethodSupportState, "proven-unsupported" | "auth-denied"> {
+  return readAdvertisedGatewayEvents(hello).includes(event)
+    ? "explicitly-advertised"
+    : "unknown-not-advertised";
 }
 
 export function validateGatewayHandshakePayload(hello: NativeHandshakePayload | null | undefined) {
@@ -128,13 +165,10 @@ export function validateGatewayHandshakePayload(hello: NativeHandshakePayload | 
 }
 
 export function assertGatewayMethodSupported(hello: NativeHandshakePayload | null | undefined, method: string) {
-  if (supportsGatewayMethod(hello, method)) {
-    return;
-  }
-
-  throw new NativeGatewayError(`OpenClaw Gateway does not advertise method "${method}".`, {
-    kind: "unsupported"
-  });
+  // Keep this boundary for callers, but do not turn conservative discovery
+  // metadata into a false unsupported result before the RPC is attempted.
+  void hello;
+  void method;
 }
 
 export function isGatewayMethodUnsupported(error: unknown) {

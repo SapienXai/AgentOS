@@ -797,20 +797,19 @@ function safeStringify(value: unknown) {
 }
 
 function supportsAnyMethod(matrix: OpenClawCapabilityMatrix, methods: string[]) {
-  if (matrix.supportedMethods.length === 0) {
-    return true;
-  }
-
-  return methods.some((method) => matrix.supportedMethods.includes(method));
+  void matrix;
+  void methods;
+  // Gateway discovery lists are conservative. A missing method is unknown,
+  // not a reason to skip the native probe or force CLI fallback.
+  return true;
 }
 
 function supportsAnyEvent(matrix: OpenClawCapabilityMatrix, events: string[]) {
-  const supportedEvents = matrix.supportedEvents ?? [];
-  if (supportedEvents.length === 0) {
-    return false;
-  }
-
-  return events.some((event) => supportedEvents.includes(event));
+  void matrix;
+  void events;
+  // Event metadata is also advisory; let the native subscription prove the
+  // capability instead of skipping because an event was omitted.
+  return true;
 }
 
 function isGatewayProtocolCompatible(protocol: string) {

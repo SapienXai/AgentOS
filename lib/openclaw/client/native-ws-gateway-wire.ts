@@ -1,6 +1,10 @@
 import "server-only";
 
 import { WebSocket as NodeWebSocket } from "ws";
+import {
+  isGatewayEventFrame,
+  isGatewayResponseFrame
+} from "@openclaw/gateway-protocol/frame-guards";
 
 import {
   type GatewayEventFrame,
@@ -12,7 +16,10 @@ import {
   NativeGatewayError,
   NativeGatewayRequestError
 } from "@/lib/openclaw/client/native-ws-gateway-errors";
-import { createRequestId } from "@/lib/openclaw/client/native-ws-gateway-utils";
+import {
+  createRequestId,
+  isObjectRecord
+} from "@/lib/openclaw/client/native-ws-gateway-utils";
 
 export function resolveWebSocketFactory(input?: WebSocketFactory): WebSocketFactory {
   const factory = input ?? resolveDefaultWebSocketFactory();
@@ -119,12 +126,15 @@ export function normalizeGatewayError(error: unknown) {
   }
 
   if (error && typeof error === "object") {
-    const record = error as { message?: unknown; detail?: unknown; code?: unknown };
+    const record = error as { message?: unknown; detail?: unknown; details?: unknown; code?: unknown };
     const message = typeof record.message === "string" ? record.message : null;
     const detail = typeof record.detail === "string" ? record.detail : null;
     const code = typeof record.code === "string" ? record.code : null;
+    const detailCode = isObjectRecord(record.details) && typeof record.details.code === "string"
+      ? record.details.code
+      : null;
 
-    return [code, message, detail].filter(Boolean).join(": ");
+    return [code, detailCode, message, detail].filter(Boolean).join(": ");
   }
 
   return "";
@@ -133,13 +143,11 @@ export function normalizeGatewayError(error: unknown) {
 export function normalizeGatewayResponseFailure(frame: GatewayResponseFrame) {
   return (
     normalizeGatewayError(frame.error) ||
-    frame.message ||
-    frame.code ||
     "OpenClaw Gateway request failed."
   );
 }
 
-export function parseGatewayFrameData(data: unknown): GatewayResponseFrame | null {
+export function parseGatewayFrameData(data: unknown): GatewayResponseFrame | GatewayEventFrame | null {
   if (typeof data !== "string") {
     if (data instanceof ArrayBuffer) {
       data = new TextDecoder().decode(data);
@@ -151,10 +159,44 @@ export function parseGatewayFrameData(data: unknown): GatewayResponseFrame | nul
   }
 
   try {
-    return JSON.parse(data as string) as GatewayResponseFrame;
+    const frame: unknown = JSON.parse(data as string);
+
+    if (isGatewayResponseFrame(frame) || isGatewayEventFrame(frame)) {
+      return frame;
+    }
+
+    // Keep a narrow compatibility projection for older Gateways that emitted
+    // response ids as numbers or omitted the structured error code. The
+    // normalized result still has to pass the official frame guard.
+    const legacy = normalizeLegacyGatewayFrame(frame);
+    return isGatewayResponseFrame(legacy) || isGatewayEventFrame(legacy) ? legacy : null;
   } catch (error) {
     throw new NativeGatewayError("OpenClaw Gateway returned invalid JSON.", { cause: error });
   }
+}
+
+function normalizeLegacyGatewayFrame(frame: unknown): unknown {
+  if (!isObjectRecord(frame) || frame.type !== "res" ||
+    (typeof frame.id !== "string" && typeof frame.id !== "number") || typeof frame.ok !== "boolean") {
+    return null;
+  }
+
+  const normalized: Record<string, unknown> = {
+    ...frame,
+    id: String(frame.id)
+  };
+
+  if (frame.ok === false && frame.error !== undefined && isObjectRecord(frame.error)) {
+    normalized.error = {
+      ...frame.error,
+      code: typeof frame.error.code === "string" && frame.error.code.trim() ? frame.error.code : "UNKNOWN",
+      message: typeof frame.error.message === "string" && frame.error.message.trim()
+        ? frame.error.message
+        : "OpenClaw Gateway request failed."
+    };
+  }
+
+  return normalized;
 }
 
 export function throwIfAborted(signal?: AbortSignal) {
@@ -218,7 +260,7 @@ export async function waitForSocketOpen(socket: WebSocketLike, timeoutMs: number
 export async function waitForConnectChallenge(socket: WebSocketLike, timeoutMs: number, signal?: AbortSignal) {
   throwIfAborted(signal);
 
-  return await new Promise<string>((resolve, reject) => {
+  return await new Promise<{ nonce: string; ts: number }>((resolve, reject) => {
     let settled = false;
     const cleanupCallbacks: Array<() => void> = [];
 
@@ -254,14 +296,21 @@ export async function waitForConnectChallenge(socket: WebSocketLike, timeoutMs: 
             return;
           }
 
-          const nonce = (frame.payload as { nonce?: unknown } | null)?.nonce;
+          const payload = isObjectRecord(frame.payload) ? frame.payload : null;
+          const nonce = payload?.nonce;
+          const ts = payload?.ts;
 
           if (typeof nonce !== "string" || !nonce.trim()) {
             settle(() => reject(new NativeGatewayError("OpenClaw Gateway connect challenge is missing a nonce.")));
             return;
           }
 
-          settle(() => resolve(nonce.trim()));
+          if (typeof ts !== "number" || !Number.isInteger(ts) || ts < 0) {
+            settle(() => reject(new NativeGatewayError("OpenClaw Gateway connect challenge is missing a valid timestamp.")));
+            return;
+          }
+
+          settle(() => resolve({ nonce: nonce.trim(), ts }));
         } catch (error) {
           settle(() => reject(error));
         }

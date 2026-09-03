@@ -9,7 +9,6 @@ import {
   assertGatewayMethodSupported,
   readAdvertisedGatewayCapabilities,
   resolveEventSubscriptionRequests,
-  supportsGatewayEvent,
   validateGatewayHandshakePayload
 } from "@/lib/openclaw/client/native-ws-gateway-protocol";
 import { resolveGatewayUrl } from "@/lib/openclaw/client/native-ws-gateway-policy";
@@ -192,26 +191,6 @@ export class PersistentOpenClawGatewayConnection {
   ): Promise<OpenClawGatewayEventSubscription> {
     const hello = await this.ensureConnected(options, timeoutMs);
     const subscriptionRequests = resolveEventSubscriptionRequests(params, hello);
-    if (
-      subscriptionRequests.length === 0 &&
-      !supportsGatewayEvent(hello, "chat") &&
-      !supportsGatewayEvent(hello, "agent") &&
-      !supportsGatewayEvent(hello, "session.message") &&
-      !supportsGatewayEvent(hello, "session.tool") &&
-      !supportsGatewayEvent(hello, "sessions.changed") &&
-      !supportsGatewayEvent(hello, "task") &&
-      !supportsGatewayEvent(hello, "task.updated") &&
-      !supportsGatewayEvent(hello, "task.completed") &&
-      !supportsGatewayEvent(hello, "artifact") &&
-      !supportsGatewayEvent(hello, "artifact.updated") &&
-      !supportsGatewayEvent(hello, "exec.approval.requested") &&
-      !supportsGatewayEvent(hello, "plugin.approval.requested")
-    ) {
-      throw new NativeGatewayError(
-        "OpenClaw Gateway does not advertise compatible runtime event streaming.",
-        { kind: "unsupported" }
-      );
-    }
 
     const listener: GatewayEventListener = (frame) => {
       try {
