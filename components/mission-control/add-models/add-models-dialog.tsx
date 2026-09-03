@@ -123,6 +123,7 @@ export function AddModelsDialog({
   snapshot,
   initialProvider = null,
   onBack,
+  onSwitchChatGptAccount,
   onSnapshotChange,
   onProviderSnapshotReady,
   surfaceTheme = "dark"
@@ -132,6 +133,7 @@ export function AddModelsDialog({
   snapshot: MissionControlSnapshot;
   initialProvider?: AddModelsProviderId | null;
   onBack?: () => void;
+  onSwitchChatGptAccount?: () => void;
   onSnapshotChange: (snapshot: MissionControlSnapshot) => void;
   onProviderSnapshotReady?: (snapshot: MissionControlSnapshot) => void;
   surfaceTheme?: "dark" | "light";
@@ -150,7 +152,6 @@ export function AddModelsDialog({
   const [activeSetupMode, setActiveSetupMode] = useState<"standard" | "custom-openai-compatible">("standard");
   const [sidebarFilter, setSidebarFilter] = useState<SidebarFilter>("providers");
   const [explicitProviderIds, setExplicitProviderIds] = useState<string[]>([]);
-  const [switchAccountProviderId, setSwitchAccountProviderId] = useState<AddModelsProviderId | null>(null);
   const [connectionEditorOpen, setConnectionEditorOpen] = useState(false);
   const [connectionEditorEndpoint, setConnectionEditorEndpoint] = useState("");
   const [connectionEditorApi, setConnectionEditorApi] = useState("openai-completions");
@@ -265,7 +266,6 @@ export function AddModelsDialog({
       setActiveSetupMode("standard");
       setCatalogSearch("");
       setCatalogVisibleCount(CATALOG_PAGE_SIZE);
-      setSwitchAccountProviderId(null);
       setConnectionEditorOpen(false);
       setConnectionEditorEndpoint("");
       setConnectionEditorApi("openai-completions");
@@ -426,9 +426,6 @@ export function AddModelsDialog({
     activeConnection?.authMethod === "chatgpt-oauth"
   );
   const activeConnectionLabel = resolveProviderConnectionLabel(activeConnection, activeDescriptor?.connectKind);
-  const switchAccountProvider = switchAccountProviderId ? getModelProviderDescriptor(switchAccountProviderId) : null;
-  const switchAccountDraft = switchAccountProviderId ? resolveDraft(providerDrafts[switchAccountProviderId]) : null;
-  const switchAccountCommand = switchAccountDraft?.manualCommand ?? null;
   const connectedProviderCount = providerDescriptorsByStatus.connected.length;
   const availableProviderCards = providerCards.filter(({ connection }) => isProviderConnectionReady(connection));
   const localProviderCards = providerCards.filter(({ provider }) => provider.connectKind === "local");
@@ -849,35 +846,6 @@ export function AddModelsDialog({
       updateDraft(providerId, {
         flowState: "auth-error",
         errorMessage: message
-      });
-    }
-  }
-
-  async function switchProviderAccount(providerId: AddModelsProviderId) {
-    const adapter = getModelProviderAdapter(providerId);
-
-    updateDraft(providerId, {
-      flowState: "connecting",
-      errorMessage: null,
-      manualCommand: null,
-      statusMessage: "Opening ChatGPT account switch..."
-    });
-
-    try {
-      const result = await adapter.switchAccount();
-
-      applyActionResult(providerId, result, result.models.length ? "discovery-success" : "idle");
-
-      if (result.snapshot) {
-        onSnapshotChange(result.snapshot);
-      }
-    } catch (error) {
-      const actionResult = readProviderActionErrorResult(error);
-      updateDraft(providerId, {
-        flowState: "auth-error",
-        errorMessage: error instanceof Error ? error.message : "Provider account switch failed.",
-        manualCommand: actionResult?.manualCommand ?? null,
-        docsUrl: actionResult?.docsUrl ?? null
       });
     }
   }
@@ -1844,7 +1812,7 @@ export function AddModelsDialog({
                                 <span className={cn("inline-flex h-6 min-w-0 items-center truncate rounded-[9px] border px-2.5 text-[0.64rem] font-medium", isLight ? "border-border bg-muted/45 text-foreground" : "border-white/10 bg-white/[0.04] text-white")}>
                                   {providerFooterLabel}
                                 </span>
-                                {showSwitchAccountAction ? (
+                                {showSwitchAccountAction && onSwitchChatGptAccount ? (
                                   <Button
                                     type="button"
                                     variant="secondary"
@@ -1856,8 +1824,7 @@ export function AddModelsDialog({
                                     )}
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      setSwitchAccountProviderId(provider.id);
-                                      void switchProviderAccount(provider.id);
+                                      onSwitchChatGptAccount();
                                     }}
                                   >
                                     <span className="truncate">Switch account</span>
@@ -2044,22 +2011,24 @@ export function AddModelsDialog({
                                     activeChatGptConnected ? "Refresh status" : "Connect ChatGPT"
                                   )}
                                 </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  className="h-8 rounded-full px-3 text-[10px]"
-                                  disabled={activeDraft.flowState === "connecting" && !activeDraft.manualCommand}
-                                  onClick={() => {
-                                    if (activeChatGptConnected) {
-                                      void switchProviderAccount(activeProviderId);
-                                      return;
-                                    }
+                                {!activeChatGptConnected || onSwitchChatGptAccount ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    className="h-8 rounded-full px-3 text-[10px]"
+                                    disabled={activeDraft.flowState === "connecting" && !activeDraft.manualCommand}
+                                    onClick={() => {
+                                      if (activeChatGptConnected) {
+                                        onSwitchChatGptAccount?.();
+                                        return;
+                                      }
 
-                                    void connectProvider(activeProviderId, { force: true, authMethod: "chatgpt-oauth" });
-                                  }}
-                                >
-                                  {activeChatGptConnected ? "Switch account" : "Refresh setup"}
-                                </Button>
+                                      void connectProvider(activeProviderId, { force: true, authMethod: "chatgpt-oauth" });
+                                    }}
+                                  >
+                                    {activeChatGptConnected ? "Switch account" : "Refresh setup"}
+                                  </Button>
+                                ) : null}
                               </div>
 
                             </div>
@@ -2882,123 +2851,6 @@ export function AddModelsDialog({
             </TabsContent>
           </div>
         </Tabs>
-        <Dialog
-          open={switchAccountProviderId !== null}
-          onOpenChange={(open) => {
-            if (!open) {
-              setSwitchAccountProviderId(null);
-            }
-          }}
-        >
-          <DialogContent
-            className={cn(
-              "w-[min(92vw,420px)] rounded-[22px] p-0",
-              isLight
-                ? "border-border bg-card text-card-foreground shadow-[0_30px_90px_rgba(63,47,34,0.18),0_0_0_1px_rgba(120,92,66,0.08)]"
-                : "border-white/10 bg-[#070a14] text-white shadow-[0_30px_90px_rgba(0,0,0,0.5)]"
-            )}
-          >
-            <div className={cn("border-b px-4 py-3.5", isLight ? "border-border" : "border-white/10")}>
-              <DialogTitle className={cn("font-display text-[1rem]", isLight ? "text-foreground" : "text-white")}>Switch account</DialogTitle>
-              <DialogDescription className={cn("mt-1 text-[0.78rem] leading-5", isLight ? "text-muted-foreground" : "text-slate-400")}>
-                {switchAccountProvider?.label || "This provider"} will refresh its OpenClaw account connection.
-              </DialogDescription>
-            </div>
-            <div className="px-4 py-4">
-              <div className={cn("rounded-[16px] border px-3 py-2.5", isLight ? "border-cyan-200 bg-cyan-50" : "border-cyan-300/15 bg-cyan-300/[0.07]")}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className={cn("text-[11px] font-medium", isLight ? "text-cyan-900" : "text-cyan-50")}>Finish setup in Terminal</p>
-                    <p className={cn("mt-1 max-w-[420px] text-[10px] leading-[0.98rem]", isLight ? "text-cyan-800" : "text-cyan-100/80")}>
-                      Open Terminal, paste the command there, then return here and check discovery.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="h-7 rounded-full px-2.5 text-[10px]"
-                      disabled={isOpeningTerminal || !switchAccountCommand}
-                      onClick={() => {
-                        void openTerminal(switchAccountCommand || "");
-                      }}
-                    >
-                      {isOpeningTerminal ? (
-                        <>
-                          <LoaderCircle className="mr-1.5 h-3 w-3 animate-spin" />
-                          Opening...
-                        </>
-                      ) : (
-                        <>
-                          <SquareTerminal className="mr-1.5 h-3 w-3" />
-                          Open Terminal
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 rounded-full px-2.5 text-[10px]"
-                      disabled={!switchAccountCommand}
-                      onClick={() => {
-                        void copyText(switchAccountCommand || "");
-                      }}
-                    >
-                      <Copy className="mr-1.5 h-3 w-3" />
-                      Copy command
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 rounded-full px-2.5 text-[10px]"
-                      disabled={!switchAccountProviderId}
-                      onClick={() => {
-                        if (!switchAccountProviderId) {
-                          return;
-                        }
-
-                        void discoverProvider(switchAccountProviderId);
-                      }}
-                    >
-                      <RefreshCw className="mr-1.5 h-3 w-3" />
-                      I&apos;ve connected it
-                    </Button>
-                  </div>
-                </div>
-                <div className={cn("mt-2.5 overflow-x-auto rounded-[14px] border px-3 py-2", isLight ? "border-cyan-200 bg-white/70" : "border-white/10 bg-slate-950/60")}>
-                  <code className={cn("text-[10px]", isLight ? "text-foreground" : "text-slate-200")}>
-                    {switchAccountCommand || "Preparing terminal command..."}
-                  </code>
-                </div>
-              </div>
-              <div className="mt-4 flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="h-8 rounded-full px-3 text-[10px]"
-                  onClick={() => setSwitchAccountProviderId(null)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  className="h-8 rounded-full px-3 text-[10px]"
-                  onClick={() => {
-                    if (!switchAccountProviderId) {
-                      return;
-                    }
-                    setSwitchAccountProviderId(null);
-                  }}
-                >
-                  Done
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
         <Dialog
           open={connectionEditorOpen}
           onOpenChange={(nextOpen) => {

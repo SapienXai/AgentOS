@@ -113,6 +113,19 @@ test("ChatGPT return stays on model selection until the user confirms", () => {
   assert.match(shellSource, /thinking: selectedOnboardingThinking/);
 });
 
+test("Model Library ChatGPT account switching returns to live model selection", () => {
+  const addModelsSource = readFileSync(path.join(process.cwd(), "components/mission-control/add-models/add-models-dialog.tsx"), "utf8");
+  const shellSource = readFileSync(path.join(process.cwd(), "components/mission-control/mission-control-shell.tsx"), "utf8");
+
+  assert.match(addModelsSource, /showSwitchAccountAction && onSwitchChatGptAccount/);
+  assert.match(addModelsSource, /onSwitchChatGptAccount\(\);/);
+  assert.doesNotMatch(addModelsSource, /switchAccountProviderId/);
+  assert.doesNotMatch(addModelsSource, /Preparing terminal command/);
+  assert.match(shellSource, /const handleChatGptAccountSwitch = \(\) => \{/);
+  assert.match(shellSource, /void runChatGptOnboarding\(true\);/);
+  assert.match(shellSource, /onSwitchChatGptAccount=\{handleChatGptAccountSwitch\}/);
+});
+
 test("launchpad uses the same compact status-row language as setup", () => {
   const source = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding.stages.tsx"), "utf8");
 

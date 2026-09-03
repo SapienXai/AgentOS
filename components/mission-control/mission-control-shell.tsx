@@ -3222,6 +3222,13 @@ export function MissionControlShell({
     setIsAddModelsDialogOpen(true);
   };
 
+  const handleChatGptAccountSwitch = () => {
+    setIsAddModelsDialogOpen(false);
+    setReturnToAgentModelId(null);
+    setInitialAddModelsProvider(null);
+    void runChatGptOnboarding(true);
+  };
+
   const handleAddModelsProviderSnapshotReady = (nextSnapshot: MissionControlSnapshot) => {
     setSnapshot(nextSnapshot);
 
@@ -3970,6 +3977,7 @@ export function MissionControlShell({
         onOpenChange={handleAddModelsDialogOpenChange}
         snapshot={snapshot}
         initialProvider={initialAddModelsProvider}
+        onSwitchChatGptAccount={handleChatGptAccountSwitch}
         onSnapshotChange={setSnapshot}
         onProviderSnapshotReady={handleAddModelsProviderSnapshotReady}
         onBack={returnToAgentModelId ? handleBackToAgentModelPicker : undefined}
@@ -5122,6 +5130,7 @@ export function MissionControlShell({
           onOpenChange={handleAddModelsDialogOpenChange}
           snapshot={snapshot}
           initialProvider={initialAddModelsProvider}
+          onSwitchChatGptAccount={handleChatGptAccountSwitch}
           onSnapshotChange={setSnapshot}
           onProviderSnapshotReady={handleAddModelsProviderSnapshotReady}
           onBack={returnToAgentModelId ? handleBackToAgentModelPicker : undefined}
