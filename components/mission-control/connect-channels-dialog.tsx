@@ -35,7 +35,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/sonner";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
+import { presentChannelLifecycleResult } from "@/lib/openclaw/domains/channel-lifecycle-presenter";
 import { formatAgentDisplayName } from "@/lib/openclaw/presenters";
+import type {
+  OpenClawChannelLifecycleResult,
+  OpenClawChannelStatusPayload
+} from "@/lib/openclaw/client/types";
 import { cn } from "@/lib/utils";
 
 type ProviderId = "whatsapp" | "telegram" | "discord" | "slack" | "googlechat" | "imessage" | "signal";
@@ -65,6 +70,7 @@ type ProviderView = {
     linked: boolean;
     running: boolean;
     connected: boolean;
+    liveStatusAvailable: boolean;
     authenticationRequired: boolean;
     lastError: string | null;
   }>;
@@ -80,7 +86,12 @@ type Overview = {
   providers: ProviderView[];
 };
 
-type ActionResponse<T> = { result?: T; error?: string };
+type ActionResponse<T> = {
+  result?: T;
+  status?: OpenClawChannelStatusPayload | null;
+  statusError?: string;
+  error?: string;
+};
 
 export function ConnectChannelsDialog({
   open,
@@ -165,18 +176,22 @@ export function ConnectChannelsDialog({
     setAgentId((current) => workspaceAgents.some((agent) => agent.id === current) ? current : workspaceAgents[0]?.id ?? "");
   }, [workspaceAgents]);
 
-  const postAction = async <T,>(body: Record<string, unknown>) => {
+  const postActionResponse = useCallback(async <T,>(body: Record<string, unknown>) => {
     const response = await fetch("/api/openclaw/channels/connect", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
     const result = (await response.json()) as ActionResponse<T>;
-    if (!response.ok || result.error || !result.result) {
+    if (!response.ok || result.error || typeof result.result === "undefined") {
       throw new Error(result.error || "OpenClaw could not complete the channel action.");
     }
-    return result.result;
-  };
+    return result as ActionResponse<T> & { result: T };
+  }, []);
+
+  const postAction = useCallback(async <T,>(body: Record<string, unknown>) => {
+    return (await postActionResponse<T>(body)).result;
+  }, [postActionResponse]);
 
   const handleInstall = async () => {
     if (!selectedProvider) return;
@@ -243,7 +258,7 @@ export function ConnectChannelsDialog({
         return;
       }
     }
-  }, [loadOverview]);
+  }, [loadOverview, postAction]);
 
   const handleQrStart = async (accountId?: string) => {
     if (!selectedProvider) return;
@@ -392,15 +407,28 @@ export function ConnectChannelsDialog({
     if (!selectedProvider) return;
     setBusyAction(`${action}:${accountId}`);
     try {
-      const result = await postAction<Record<string, unknown>>({
+      const response = await postActionResponse<OpenClawChannelLifecycleResult>({
         action,
         provider: selectedProvider.id,
         accountId
       });
-      const outcome = formatLifecycleOutcome(result, action);
-      toast.success(`${selectedProvider.label} ${action === "restart" ? "restarted" : action === "start" ? "started" : "stopped"}.`, {
-        description: outcome ? `OpenClaw lifecycle outcome: ${outcome}.` : "OpenClaw status was refreshed after the action."
+      const presentation = presentChannelLifecycleResult({
+        action,
+        provider: selectedProvider.id,
+        accountId,
+        result: response.result,
+        status: response.status,
+        statusError: response.statusError
       });
+      const message = `${selectedProvider.label}: ${presentation.title}`;
+      const options = { description: presentation.detail };
+      if (presentation.tone === "success") {
+        toast.success(message, options);
+      } else if (presentation.tone === "danger") {
+        toast.error(message, options);
+      } else {
+        toast(message, options);
+      }
       await Promise.all([loadOverview(), onRefresh?.() ?? Promise.resolve()]);
     } catch (error) {
       toast.error(`${selectedProvider.label} ${action} failed.`, {
@@ -552,9 +580,7 @@ function ProviderSetup(props: {
     (account) => props.routedAccountIds.has(account.accountId) || props.attachedAccountId === account.accountId
   );
   const selectedAgent = props.workspaceAgents.find((agent) => agent.id === props.agentId) ?? null;
-  const whatsappAccountNeedingLink = provider.accounts.find(
-    (account) => !account.linked && !account.connected && !account.running
-  );
+  const whatsappAccountNeedingLink = provider.accounts.find((account) => account.authenticationRequired);
   const needsWhatsAppLink = provider.id === "whatsapp" && Boolean(whatsappAccountNeedingLink);
 
   return (
@@ -583,7 +609,7 @@ function ProviderSetup(props: {
           {activeAccounts.map((account) => (
             <div key={account.accountId} className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 p-3">
               <span className={cn("flex h-8 w-8 items-center justify-center rounded-full", account.connected ? "bg-emerald-500/10 text-emerald-600" : account.running ? "bg-blue-500/10 text-blue-600" : "bg-muted text-muted-foreground")}><Check className="h-4 w-4" /></span>
-              <div className="min-w-[150px] flex-1"><p className="truncate text-sm font-medium">{account.name}{account.isDefault ? " · Default" : ""}</p><p className="truncate text-xs text-muted-foreground">{account.enabled === false ? "Disabled" : account.connected ? "Connected" : account.running ? "Running" : account.linked ? "Linked" : account.authenticationRequired ? "Needs authentication" : account.configured ? "Stopped" : "Needs setup"}{account.lastError ? ` · ${account.lastError}` : ""}</p></div>
+              <div className="min-w-[150px] flex-1"><p className="truncate text-sm font-medium">{account.name}{account.isDefault ? " · Default" : ""}</p><p className="truncate text-xs text-muted-foreground">{account.enabled === false ? "Disabled" : account.connected ? "Connected" : account.running ? "Running" : account.linked ? "Linked" : account.authenticationRequired ? "Needs authentication" : !account.liveStatusAvailable ? "Live status unavailable" : account.configured ? "Stopped" : "Needs setup"}{account.lastError ? ` · ${account.lastError}` : ""}</p></div>
               <Button size="sm" variant="secondary" disabled={!props.workspaceId || !props.agentId || Boolean(props.busyAction)} onClick={() => props.onAttach(account)}>{props.busyAction === `attach:${account.accountId}` ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Link2 className="mr-1.5 h-3.5 w-3.5" />}{props.routedAccountIds.has(account.accountId) || props.attachedAccountId === account.accountId ? "Update route" : "Route to agent"}</Button>
               {!account.running && account.enabled && (account.configured || account.linked || account.connected) && !(provider.id === "whatsapp" && !account.linked && !account.connected) ? <Button size="sm" variant="ghost" disabled={Boolean(props.busyAction)} onClick={() => props.onStart(account.accountId)}>{props.busyAction === `start:${account.accountId}` ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1.5 h-3.5 w-3.5" />}Start</Button> : null}
               {account.running ? <><Button size="sm" variant="ghost" disabled={Boolean(props.busyAction)} onClick={() => props.onRestart(account.accountId)}>{props.busyAction === `restart:${account.accountId}` ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}Restart</Button><Button size="sm" variant="ghost" disabled={Boolean(props.busyAction)} onClick={() => props.onStop(account.accountId)}>{props.busyAction === `stop:${account.accountId}` ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Square className="mr-1.5 h-3.5 w-3.5" />}Stop</Button></> : null}
@@ -742,7 +768,7 @@ function UnavailableSetup({ provider }: { provider: ProviderView }) {
 
 function ProviderStatus({ provider }: { provider: ProviderView }) {
   const linked = provider.accounts.some((account) => account.linked || account.connected);
-  const needsLink = provider.id === "whatsapp" && provider.configured && !linked;
+  const needsLink = provider.accounts.some((account) => account.authenticationRequired);
   const label = provider.connected ? "Connected" : provider.running ? "Running" : linked ? "Linked" : needsLink ? "Needs link" : provider.configured ? "Configured" : !provider.available ? "Guided" : provider.pluginInstalled ? "Ready" : "Plugin";
   return <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-semibold", provider.connected || provider.running ? "bg-emerald-500/10 text-emerald-600" : needsLink ? "bg-amber-500/10 text-amber-700 dark:text-amber-300" : provider.configured || provider.pluginInstalled ? "bg-blue-500/10 text-blue-600" : "bg-muted text-muted-foreground")}>{label}</span>;
 }
@@ -757,22 +783,4 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 
 function providerSetupUrl(provider: ProviderId) {
   return `https://docs.openclaw.ai/channels/${provider}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function formatLifecycleOutcome(result: Record<string, unknown>, action: "start" | "stop" | "restart") {
-  const candidates = action === "restart"
-    ? [["stop", result.stop], ["start", result.start]] as const
-    : [[action, result]] as const;
-  const outcomes = candidates.flatMap(([label, value]) => {
-    const payload = isRecord(value) && isRecord(value.outcome) ? value.outcome : null;
-    if (!payload || typeof payload.status !== "string") {
-      return [];
-    }
-    return [`${label}: ${payload.status}${typeof payload.reason === "string" ? ` (${payload.reason})` : ""}`];
-  });
-  return outcomes.length > 0 ? outcomes.join("; ") : null;
 }

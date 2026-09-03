@@ -673,7 +673,11 @@ function normalizeSurfaceAccountRuntimeStatus(
   const connected = rawAccount.connected === true;
   const disabled = rawAccount.enabled === false;
   const failed = Boolean(errorMessage);
-  const authenticationRequired = provider === "whatsapp" && configured && !connected && !running && !linked;
+  const authenticationRequired = provider === "whatsapp" &&
+    rawAccount.configured === true &&
+    rawAccount.linked === false &&
+    rawAccount.connected === false &&
+    rawAccount.running === false;
   const status = resolveSurfaceAccountStatus({
     failed,
     disabled,

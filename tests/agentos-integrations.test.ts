@@ -7,6 +7,7 @@ import {
 } from "@/lib/agentos/integrations/state";
 import type { AgentRecord, MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { normalizeSurfaceRuntimeFromChannelStatus } from "@/lib/openclaw/surface-runtime";
+import { createConfigOnlySurfaceRuntimeSnapshot } from "@/lib/openclaw/surface-runtime";
 
 test("integration state does not fake connected channel status from config alone", () => {
   const snapshot = buildSnapshot({
@@ -132,6 +133,35 @@ test("integrations preserve running and linked channel states without calling th
     .find((integration) => integration.id === "whatsapp");
   assert.equal(linked?.status, "linked");
   assert.equal(linked?.statusLabel, "Linked");
+});
+
+test("config-only WhatsApp integrations do not report needs authentication", () => {
+  const surfaceRuntime = createConfigOnlySurfaceRuntimeSnapshot([
+    {
+      id: "support",
+      accountId: "support",
+      type: "whatsapp",
+      name: "Support",
+      enabled: true,
+      configured: true
+    }
+  ], { version: 1, channels: [] });
+  const whatsapp = buildIntegrationStates(buildSnapshot({
+    channelAccounts: [{
+      id: "support",
+      accountId: "support",
+      type: "whatsapp",
+      name: "Support",
+      enabled: true,
+      configured: true,
+      kind: "chat",
+      capabilities: ["chat"]
+    }],
+    surfaceRuntime
+  })).find((integration) => integration.id === "whatsapp");
+
+  assert.equal(whatsapp?.status, "configured");
+  assert.notEqual(whatsapp?.status, "needs-authentication");
 });
 
 test("integration state marks available model providers connected from real model routes", () => {

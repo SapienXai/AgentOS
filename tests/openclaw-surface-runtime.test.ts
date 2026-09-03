@@ -12,6 +12,7 @@ import {
   validateSurfaceReconcilePreviewForApply,
   type SurfaceReconcilePreviewAudit
 } from "@/lib/openclaw/surface-runtime";
+import { normalizeSurfaceIntegrationStatus } from "@/lib/openclaw/surface-status";
 import type {
   ChannelAccountRecord,
   ChannelRegistry,
@@ -115,6 +116,47 @@ test("marks an unlinked configured WhatsApp account as needing authentication", 
 
   assert.equal(runtime.accountsByKey["whatsapp:support"].status, "needs-authentication");
   assert.equal(runtime.accountsByKey["whatsapp:support"].authenticationRequired, true);
+});
+
+test("keeps config-only WhatsApp state configured and authentication unknown", () => {
+  const account: ChannelAccountRecord = {
+    id: "support",
+    accountId: "support",
+    type: "whatsapp",
+    name: "Support",
+    enabled: true,
+    configured: true,
+    isDefault: true
+  };
+  const runtime = createConfigOnlySurfaceRuntimeSnapshot([account], {
+    version: 1,
+    channels: []
+  });
+  const normalized = runtime.accountsByKey["whatsapp:support"];
+
+  assert.equal(normalized.authenticationRequired, null);
+  assert.equal(normalized.status, "configured");
+  assert.equal(normalizeSurfaceIntegrationStatus(runtime, "whatsapp").status, "configured");
+});
+
+test("does not infer WhatsApp authentication from incomplete live account fields", () => {
+  const runtime = normalizeSurfaceRuntimeFromChannelStatus(
+    {
+      ts: 1,
+      channelOrder: ["whatsapp"],
+      channelMeta: [],
+      channelLabels: {},
+      channels: {},
+      channelDefaultAccountId: { whatsapp: "support" },
+      channelAccounts: {
+        whatsapp: [{ accountId: "support", configured: true }]
+      }
+    },
+    { source: "gateway-probe", checkedAt: "2026-06-02T00:00:00.000Z" }
+  );
+
+  assert.equal(runtime.accountsByKey["whatsapp:support"].authenticationRequired, false);
+  assert.equal(runtime.accountsByKey["whatsapp:support"].status, "stopped");
 });
 
 test("skips placeholder default runtime accounts when a concrete account exists", () => {
