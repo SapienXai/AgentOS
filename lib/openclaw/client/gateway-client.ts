@@ -123,6 +123,17 @@ export {
 export {
   OfficialOpenClawGatewayConnectionCoordinator
 } from "@/lib/openclaw/client/official-gateway-coordinator";
+export {
+  AgentOsGatewayRequestPolicy,
+  AGENTOS_GATEWAY_READ_CACHE_TTL_MS,
+  buildGatewayRequestCacheKey,
+  stableStringify
+} from "@/lib/openclaw/client/gateway-request-policy";
+export type {
+  AgentOsGatewayRequestPolicyConnectionSnapshot,
+  AgentOsGatewayRequestPolicyConnectionState,
+  AgentOsGatewayRequestPolicyOptions
+} from "@/lib/openclaw/client/gateway-request-policy";
 export type {
   OfficialGatewayRequestOptions,
   OfficialGatewayTransportCallbacks,

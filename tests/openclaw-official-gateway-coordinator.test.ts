@@ -8,8 +8,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import { test } from "node:test";
 
 import {
+  AgentOsGatewayRequestPolicy,
   createAgentOsGatewayClientHostDeps,
-  createOfficialBackedOpenClawGatewayClient
+  createOfficialBackedOpenClawGatewayClient,
+  NativeGatewayRequestError
 } from "@/lib/openclaw/client/gateway-client";
 import { publicKeyRawBase64UrlFromPem } from "@/lib/openclaw/client/native-ws-gateway-auth";
 import { OfficialGatewayHarness } from "@/tests/helpers/official-gateway-harness";
@@ -68,6 +70,183 @@ test("official-backed domain client preserves representative reads and identity"
     ]);
   } finally {
     client.close?.("phase3 test cleanup");
+    await harness.close();
+  }
+});
+
+test("official-backed domain path preserves AgentOS read-policy semantics", async () => {
+  let now = 1_000;
+  let readCount = 0;
+  let failedReadAttempts = 0;
+  const harness = await OfficialGatewayHarness.create({
+    routes: {
+      "policy.read": ({ respond }) => {
+        readCount += 1;
+        respond({ value: readCount });
+      },
+      "policy.failed": ({ fail, respond }) => {
+        failedReadAttempts += 1;
+        if (failedReadAttempts === 1) {
+          fail({ code: "INTERNAL", message: "controlled read failure" });
+          return;
+        }
+        respond({ value: "retry-success" });
+      },
+      "policy.update": ({ respond }) => respond({ ok: true })
+    }
+  });
+  const client = createOfficialBackedOpenClawGatewayClient({
+    url: harness.url,
+    token: "policy-token",
+    requestPolicy: new AgentOsGatewayRequestPolicy({ now: () => now })
+  });
+
+  try {
+    const [first, equivalent] = await Promise.all([
+      client.call<{ value: number }>("policy.read", { a: 1, b: 2 }),
+      client.call<{ value: number }>("policy.read", { b: 2, a: 1 })
+    ]);
+    assert.deepEqual(first, { value: 1 });
+    assert.deepEqual(equivalent, { value: 1 });
+    assert.equal(countRequests(harness, "policy.read"), 1);
+
+    assert.deepEqual(await client.call("policy.read", { a: 1, b: 2 }), { value: 1 });
+    assert.equal(countRequests(harness, "policy.read"), 1);
+    now += 301;
+    assert.deepEqual(await client.call("policy.read", { a: 1, b: 2 }), { value: 2 });
+    assert.equal(countRequests(harness, "policy.read"), 2);
+
+    await assert.rejects(client.call("policy.failed"));
+    assert.deepEqual(await client.call("policy.failed"), { value: "retry-success" });
+    assert.equal(countRequests(harness, "policy.failed"), 2);
+
+    await client.call("policy.read", { id: "mutation" });
+    await client.call("policy.update", { id: "mutation" });
+    assert.deepEqual(await client.call("policy.read", { id: "mutation" }), { value: 4 });
+    assert.equal(countRequests(harness, "policy.read"), 4);
+    assert.equal(client.getDiagnostics().cachedReadRequestCount, 1);
+  } finally {
+    client.close?.("official request-policy test cleanup");
+    await harness.close();
+  }
+});
+
+test("official-backed request policy isolates aborts, reports diagnostics, and fences sent mutations", async () => {
+  let readCount = 0;
+  let respondPending: (payload?: unknown) => void = () => {
+    throw new Error("The pending request responder was not initialized.");
+  };
+  const harness = await OfficialGatewayHarness.create({
+    routes: {
+      "policy.pending": (context) => {
+        respondPending = context.respond;
+      },
+      "policy.signal": (context) => {
+        if (countRequests(harness, "policy.signal") === 1) {
+          context.leaveOpen();
+          return;
+        }
+        context.respond({ value: "normal" });
+      },
+      "policy.read": ({ respond }) => {
+        readCount += 1;
+        respond({ value: readCount });
+      },
+      "policy.update": ({ request, leaveOpen, respond }) => {
+        if (request.params && typeof request.params === "object" && "ambiguous" in request.params) {
+          leaveOpen();
+          return;
+        }
+        respond({ ok: true });
+      }
+    }
+  });
+  const client = createOfficialBackedOpenClawGatewayClient({
+    url: harness.url,
+    token: "policy-token"
+  });
+
+  try {
+    const pending = client.callNative("policy.pending", {}, {}, { safety: "read" });
+    await waitFor(() => countRequests(harness, "policy.pending") === 1);
+    assert.equal(client.getDiagnostics().sharedInFlightRequestCount, 1);
+    assert.equal(client.getDiagnostics().pendingRequestCount, undefined);
+    respondPending({ value: "pending" });
+    assert.deepEqual(await pending, { value: "pending" });
+    assert.equal(client.getDiagnostics().sharedInFlightRequestCount, 0);
+
+    const controller = new AbortController();
+    const signalled = client.callNative(
+      "policy.signal",
+      { key: "same-read" },
+      { signal: controller.signal },
+      { safety: "read" }
+    );
+    await waitFor(() => countRequests(harness, "policy.signal") === 1);
+    const normal = client.callNative(
+      "policy.signal",
+      { key: "same-read" },
+      {},
+      { safety: "read" }
+    );
+    await waitFor(() => countRequests(harness, "policy.signal") === 2);
+    controller.abort();
+    assert.deepEqual(await normal, { value: "normal" });
+    await assert.rejects(signalled);
+    assert.equal(countRequests(harness, "policy.signal"), 2);
+
+    await client.call("policy.read", { id: "ambiguous" });
+    await assert.rejects(
+      client.callNative(
+        "policy.update",
+        { ambiguous: true },
+        { timeoutMs: 20 },
+        { safety: "mutation" }
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof NativeGatewayRequestError);
+        assert.equal(error.sent, true);
+        return true;
+      }
+    );
+    await client.call("policy.read", { id: "ambiguous" });
+    assert.equal(readCount, 2);
+    assert.equal(client.getDiagnostics().cachedReadRequestCount, 1);
+  } finally {
+    client.close?.("official request-policy test cleanup");
+    await harness.close();
+  }
+});
+
+test("official-backed request policy clears cached projections after reconnect", async () => {
+  let readCount = 0;
+  let lifecycleState = "stopped";
+  const harness = await OfficialGatewayHarness.create({
+    routes: {
+      "policy.read": ({ respond }) => {
+        readCount += 1;
+        respond({ value: readCount });
+      }
+    }
+  });
+  const client = createOfficialBackedOpenClawGatewayClient({
+    url: harness.url,
+    token: "policy-token",
+    callbacks: { onConnectionStateChange: (state) => { lifecycleState = state; } }
+  });
+
+  try {
+    assert.deepEqual(await client.call("policy.read", { id: "reconnect" }), { value: 1 });
+    assert.deepEqual(await client.call("policy.read", { id: "reconnect" }), { value: 1 });
+    assert.equal(readCount, 1);
+
+    harness.closeSockets(1012, "restart");
+    await waitFor(() => lifecycleState === "reconnecting", 2_000);
+    await waitFor(() => harness.connectionCount >= 2, 5_000);
+    assert.deepEqual(await client.call("policy.read", { id: "reconnect" }), { value: 2 });
+    assert.equal(readCount, 2);
+  } finally {
+    client.close?.("official request-policy test cleanup");
     await harness.close();
   }
 });

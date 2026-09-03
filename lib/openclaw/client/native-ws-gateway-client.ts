@@ -15,6 +15,7 @@ import {
   readConfigReloadKindFromSchemaLookup
 } from "@/lib/openclaw/client/native-ws-gateway-config";
 import { PersistentOpenClawGatewayConnection } from "@/lib/openclaw/client/native-ws-gateway-connection";
+import { AgentOsGatewayRequestPolicy } from "@/lib/openclaw/client/gateway-request-policy";
 import {
   clearGatewayFallbackDiagnostic,
   clearGatewayFallbackDiagnosticsForTesting,
@@ -266,6 +267,7 @@ function shouldRecoverPartialModelAuthStatusWithCli(status: ModelsStatusPayload)
 export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   private readonly fallback: OpenClawGatewayClient;
   private readonly connection: OpenClawGatewayTransport;
+  private readonly requestPolicy: AgentOsGatewayRequestPolicy;
   private readonly fallbackCounts: Record<string, number> = {};
   private lastNativeFailure: {
     at: string;
@@ -276,12 +278,14 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   } | null = null;
 
   constructor(private readonly options: NativeWsOpenClawGatewayClientOptions = {}) {
+    this.requestPolicy = options.requestPolicy ?? new AgentOsGatewayRequestPolicy();
     this.fallback = options.fallback ?? new CliOpenClawGatewayClient();
     this.connection = options.transport ?? new PersistentOpenClawGatewayConnection(this.fallback, options);
   }
 
   close(reason = "closed") {
     this.connection.close(reason);
+    this.requestPolicy.reset(this.connection.getGeneration());
   }
 
   async getOperatorIdentity(options: OpenClawCommandOptions = {}): Promise<OpenClawOperatorIdentity> {
@@ -295,7 +299,9 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   }
 
   getDiagnostics(): OpenClawGatewayClientDiagnostics {
+    this.observeRequestPolicyState();
     const connection = this.connection.getDiagnostics();
+    const requestPolicy = this.requestPolicy.getDiagnostics();
     const forceCli = this.options.forceCli || isCliGatewayClientForcedByEnv();
     const fallbackTotal = Object.values(this.fallbackCounts).reduce((total, value) => {
       return Number.isFinite(value) && value > 0 ? total + value : total;
@@ -336,8 +342,8 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       fallbackCounts: { ...this.fallbackCounts },
       fallbackTotal,
       pendingRequestCount: connection.pendingRequestCount,
-      sharedInFlightRequestCount: connection.sharedInFlightRequestCount,
-      cachedReadRequestCount: connection.cachedReadRequestCount,
+      sharedInFlightRequestCount: requestPolicy.sharedInFlightRequestCount,
+      cachedReadRequestCount: requestPolicy.cachedReadRequestCount,
       recentFallbackDiagnostics,
       lastNativeError: lastNativeError || null,
       lastNativeFailureAt: this.lastNativeFailure?.at ?? null,
@@ -2013,7 +2019,31 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     policy: OpenClawGatewayRequestPolicy = resolveGatewayRequestPolicy(method, options)
   ) {
     const timeoutMs = resolveNativeTimeoutMs(policy.timeoutMs ?? options.timeoutMs ?? this.options.timeoutMs, method);
-    return this.connection.request<TPayload>(method, params, options, timeoutMs, policy);
+    this.observeRequestPolicyState();
+    const requestState = this.readRequestPolicyConnectionState();
+    return this.requestPolicy.request(
+      method,
+      params,
+      options,
+      policy,
+      () => this.connection.request<TPayload>(method, params, options, timeoutMs),
+      requestState
+    );
+  }
+
+  private observeRequestPolicyState() {
+    this.requestPolicy.observeConnectionState(this.readRequestPolicyConnectionState());
+  }
+
+  private readRequestPolicyConnectionState() {
+    return {
+      lifecycleState: this.connection.getLifecycleState(),
+      generation: this.connection.getGeneration(),
+      getCurrentState: () => ({
+        lifecycleState: this.connection.getLifecycleState(),
+        generation: this.connection.getGeneration()
+      })
+    };
   }
 
   async probeNativeHandshake(options: OpenClawCommandOptions = {}) {
@@ -2027,7 +2057,20 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     options: OpenClawCommandOptions = {}
   ): Promise<OpenClawGatewayEventSubscription> {
     const timeoutMs = resolveNativeTimeoutMs(options.timeoutMs ?? this.options.timeoutMs, "sessions.subscribe");
-    return this.connection.subscribe(params, callbacks, options, timeoutMs);
+    this.requestPolicy.invalidateReadCache();
+    const subscription = await this.connection.subscribe(params, callbacks, options, timeoutMs);
+    let closed = false;
+    return {
+      ...subscription,
+      close: () => {
+        if (closed) {
+          return;
+        }
+        closed = true;
+        this.requestPolicy.invalidateReadCache();
+        subscription.close();
+      }
+    };
   }
 
   private async gatewaySurfaceCall<TPayload extends OpenClawGatewaySurfacePayload = OpenClawGatewaySurfacePayload>(

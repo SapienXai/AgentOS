@@ -12,9 +12,11 @@ import type {
   OpenClawGatewayClientDiagnostics,
   OpenClawGatewayEventCallbacks,
   OpenClawGatewayEventSubscription,
-  OpenClawGatewayRequestPolicy
+  OpenClawGatewayConnectionState,
+  OpenClawGatewayEventConnectionState
 } from "@/lib/openclaw/client/types";
 import type { OpenClawOperatorIdentity } from "@/lib/openclaw/identity/types";
+import type { AgentOsGatewayRequestPolicy } from "@/lib/openclaw/client/gateway-request-policy";
 import {
   OPENCLAW_GATEWAY_PROTOCOL_RANGE
 } from "@/lib/openclaw/client/openclaw-protocol";
@@ -85,6 +87,8 @@ export type NativeWsOpenClawGatewayClientOptions = {
   fallback?: OpenClawGatewayClient;
   /** Optional AgentOS transport implementation used by migration paths. */
   transport?: OpenClawGatewayTransport;
+  /** Testable/shared AgentOS request policy; production creates one per client. */
+  requestPolicy?: AgentOsGatewayRequestPolicy;
   webSocketFactory?: WebSocketFactory;
   forceCli?: boolean;
   onNativeFailure?: (error: unknown, method: string) => void;
@@ -101,8 +105,7 @@ export type OpenClawGatewayTransport = {
     method: string,
     params: Record<string, unknown>,
     options: OpenClawCommandOptions,
-    timeoutMs: number,
-    policy?: Pick<OpenClawGatewayRequestPolicy, "safety">
+    timeoutMs: number
   ): Promise<TPayload>;
   probe(options: OpenClawCommandOptions, timeoutMs: number): Promise<NativeHandshakePayload>;
   subscribe(
@@ -126,6 +129,8 @@ export type OpenClawGatewayTransport = {
     | "operatorIdentity"
   >;
   getOperatorIdentity(): OpenClawOperatorIdentity;
+  getGeneration(): number;
+  getLifecycleState(): OpenClawGatewayConnectionState | OpenClawGatewayEventConnectionState;
 };
 
 export type GatewayResponseFrame = ResponseFrame;

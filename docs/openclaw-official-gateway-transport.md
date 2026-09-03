@@ -5,7 +5,7 @@ Phase 3 extends the additive certification path for the exact OpenClaw
 
 - `@openclaw/gateway-client@2026.8.2`
 - `@openclaw/gateway-protocol@2026.8.2`
-- OpenClaw source commit `0965053fe6b9341776df1476a6934b7485c60b5ca`
+- OpenClaw source commit `0965053fe6b9341776df147a6934b7485c60b5ca`
 - Gateway protocol v4
 
 The package is pinned exactly in the root `package.json` and lockfile. The
@@ -30,6 +30,13 @@ upstream `GatewaySessionMessageSubscriptionCoordinator` for per-session-key
 `sessions.messages.subscribe` leases, so shared wire subscriptions and
 release/acquire races remain aligned with the official implementation. Runtime
 intent may include tasks, but AgentOS never sends a `tasks.subscribe` method.
+
+The `AgentOsGatewayRequestPolicy` is the shared AgentOS policy layer above
+both the custom and official transport boundaries. It owns the 300 ms read
+projection cache, deterministic method/parameter cache identity, identical
+read coalescing, mutation invalidation, lifecycle/generation cleanup, and
+truthful cache/coalescing diagnostics. Neither Gateway transport nor the
+official package contains this AgentOS policy.
 
 ## Host-state boundary
 
@@ -78,7 +85,7 @@ after the bridge is reset.
 The production factory intentionally continues to return AgentOS's custom
 `NativeWsOpenClawGatewayClient` with its existing CLI fallback policy. The
 official transport is not wired into the default factory in Phase 3. Existing
-application services, normalizers, caching/coalescing, diagnostics, auth
+application services, normalizers, request policy, diagnostics, auth
 attribution, runtime projection, and orchestration behavior therefore retain
 their current production path. Phase 4 owns the explicit cutover decision.
 

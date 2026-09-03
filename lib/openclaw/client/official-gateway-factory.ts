@@ -12,11 +12,13 @@ import {
   OfficialOpenClawGatewayTransport,
   type OfficialGatewayTransportOptions
 } from "@/lib/openclaw/client/official-gateway-transport";
+import { AgentOsGatewayRequestPolicy } from "@/lib/openclaw/client/gateway-request-policy";
 
 export type OfficialBackedOpenClawGatewayClientOptions = OfficialGatewayTransportOptions & {
   fallback?: OpenClawGatewayClient;
   forceCli?: boolean;
   onNativeFailure?: NativeWsOpenClawGatewayClientOptions["onNativeFailure"];
+  requestPolicy?: AgentOsGatewayRequestPolicy;
 };
 
 /**
@@ -28,6 +30,7 @@ export function createOfficialBackedOpenClawGatewayClient(
   options: OfficialBackedOpenClawGatewayClientOptions = {}
 ) {
   let coordinator: OfficialOpenClawGatewayConnectionCoordinator | null = null;
+  const requestPolicy = options.requestPolicy ?? new AgentOsGatewayRequestPolicy();
   const callbacks = options.callbacks ?? {};
   const transport = new OfficialOpenClawGatewayTransport({
     ...options,
@@ -58,14 +61,16 @@ export function createOfficialBackedOpenClawGatewayClient(
     }
   });
   coordinator = new OfficialOpenClawGatewayConnectionCoordinator(transport, {
-    replayTimeoutMs: options.requestTimeoutMs ?? options.timeoutMs
+    replayTimeoutMs: options.requestTimeoutMs ?? options.timeoutMs,
+    requestPolicy
   });
 
   const client = new NativeWsOpenClawGatewayClient({
     fallback: options.fallback,
     forceCli: options.forceCli,
     onNativeFailure: options.onNativeFailure,
-    transport: coordinator
+    transport: coordinator,
+    requestPolicy
   });
   return client;
 }

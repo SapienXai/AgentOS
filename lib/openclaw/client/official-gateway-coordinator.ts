@@ -16,8 +16,7 @@ import type {
   OpenClawGatewayEventCallbacks,
   OpenClawGatewayEventConnectionState,
   OpenClawGatewayEventFrame,
-  OpenClawGatewayEventSubscription,
-  OpenClawGatewayRequestPolicy
+  OpenClawGatewayEventSubscription
 } from "@/lib/openclaw/client/types";
 import type { OpenClawOperatorIdentity } from "@/lib/openclaw/identity/types";
 import {
@@ -26,6 +25,7 @@ import {
 } from "@/lib/openclaw/client/native-ws-gateway-protocol";
 import type { NativeHandshakePayload } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { OfficialOpenClawGatewayTransport } from "@/lib/openclaw/client/official-gateway-transport";
+import { AgentOsGatewayRequestPolicy } from "@/lib/openclaw/client/gateway-request-policy";
 
 type RuntimeLease = {
   callbacks: OpenClawGatewayEventCallbacks;
@@ -36,6 +36,7 @@ type RuntimeLease = {
 
 type OfficialCoordinatorOptions = {
   replayTimeoutMs?: number;
+  requestPolicy?: AgentOsGatewayRequestPolicy;
 };
 
 const defaultReplayTimeoutMs = 5_000;
@@ -51,6 +52,7 @@ export class OfficialOpenClawGatewayConnectionCoordinator {
   readonly lifecycleOwner = "official" as const;
   readonly #transport: OfficialOpenClawGatewayTransport;
   readonly #replayTimeoutMs: number;
+  readonly #requestPolicy: AgentOsGatewayRequestPolicy | null;
   readonly #leases = new Set<RuntimeLease>();
   #state: OpenClawGatewayEventConnectionState = "stopped";
   #generation = 0;
@@ -66,6 +68,7 @@ export class OfficialOpenClawGatewayConnectionCoordinator {
     options: OfficialCoordinatorOptions = {}
   ) {
     this.#transport = transport;
+    this.#requestPolicy = options.requestPolicy ?? null;
     this.#replayTimeoutMs = typeof options.replayTimeoutMs === "number" && Number.isFinite(options.replayTimeoutMs)
       ? Math.max(1, options.replayTimeoutMs)
       : defaultReplayTimeoutMs;
@@ -202,10 +205,8 @@ export class OfficialOpenClawGatewayConnectionCoordinator {
     method: string,
     params: Record<string, unknown>,
     options: OpenClawCommandOptions,
-    timeoutMs: number,
-    _policy?: Pick<OpenClawGatewayRequestPolicy, "safety">
+    timeoutMs: number
   ): Promise<TPayload> {
-    void _policy;
     const deadline = Date.now() + timeoutMs;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const remainingMs = Math.max(1, deadline - Date.now());
@@ -303,6 +304,9 @@ export class OfficialOpenClawGatewayConnectionCoordinator {
   > {
     const hello = this.#transport.getHandshake();
     const transportState = this.#transport.getLifecycleState();
+    const requestPolicy = this.#requestPolicy;
+    requestPolicy?.observeConnectionState(this.#requestPolicyConnectionState());
+    const requestPolicyDiagnostics = requestPolicy?.getDiagnostics();
     return {
       connectionState: transportState === "connected"
         ? "connected"
@@ -314,8 +318,8 @@ export class OfficialOpenClawGatewayConnectionCoordinator {
       protocolVersion: typeof hello?.protocol === "number" ? hello.protocol : null,
       gatewayCapabilities: readAdvertisedGatewayCapabilities(hello),
       pendingRequestCount: undefined,
-      sharedInFlightRequestCount: undefined,
-      cachedReadRequestCount: undefined,
+      sharedInFlightRequestCount: requestPolicyDiagnostics?.sharedInFlightRequestCount,
+      cachedReadRequestCount: requestPolicyDiagnostics?.cachedReadRequestCount,
       lastNativeError: this.#transport.getLastError(),
       lastConnectedAt: this.#transport.getLastConnectedAt(),
       lastDisconnectedAt: this.#transport.getLastDisconnectedAt(),
@@ -349,6 +353,21 @@ export class OfficialOpenClawGatewayConnectionCoordinator {
 
   getLifecycleState() {
     return this.#state;
+  }
+
+  getGeneration() {
+    return this.#transport.getGeneration();
+  }
+
+  #requestPolicyConnectionState() {
+    return {
+      lifecycleState: this.#state,
+      generation: this.#transport.getGeneration(),
+      getCurrentState: () => ({
+        lifecycleState: this.#state,
+        generation: this.#transport.getGeneration()
+      })
+    };
   }
 
   #setState(state: OpenClawGatewayEventConnectionState) {

@@ -40,7 +40,6 @@ import type {
   OpenClawCommandOptions,
   OpenClawGatewayClient,
   OpenClawGatewayClientDiagnostics,
-  OpenClawGatewayRequestPolicy,
   OpenClawGatewayEventSubscription
 } from "@/lib/openclaw/client/types";
 import type { OpenClawOperatorIdentity } from "@/lib/openclaw/identity/types";
@@ -49,19 +48,16 @@ export type GatewayEventListener = (event: GatewayEventFrame) => void;
 
 export type GatewayCloseListener = () => void;
 
-const readRequestCacheTtlMs = 300;
-
 export class PersistentOpenClawGatewayConnection {
   private socket: WebSocketLike | null = null;
   private pending = new Map<string, PendingRequest>();
-  private sharedReadRequests = new Map<string, Promise<unknown>>();
-  private readRequestCache = new Map<string, { expiresAt: number; payload: unknown }>();
   private cleanupCallbacks: Array<() => void> = [];
   private eventListeners = new Set<GatewayEventListener>();
   private closeListeners = new Set<GatewayCloseListener>();
   private connectPromise: Promise<NativeHandshakePayload> | null = null;
   private hello: NativeHandshakePayload | null = null;
   private state: OpenClawGatewayClientDiagnostics["connectionState"] = "idle";
+  private generation = 0;
   private lastNativeError: string | null = null;
   private lastConnectedAt: string | null = null;
   private lastDisconnectedAt: string | null = null;
@@ -100,8 +96,8 @@ export class PersistentOpenClawGatewayConnection {
       protocolVersion: typeof this.hello?.protocol === "number" ? this.hello.protocol : null,
       gatewayCapabilities: readAdvertisedGatewayCapabilities(this.hello),
       pendingRequestCount: this.pending.size,
-      sharedInFlightRequestCount: this.sharedReadRequests.size,
-      cachedReadRequestCount: this.readRequestCache.size,
+      sharedInFlightRequestCount: undefined,
+      cachedReadRequestCount: undefined,
       lastNativeError: this.lastNativeError,
       lastConnectedAt: this.lastConnectedAt,
       lastDisconnectedAt: this.lastDisconnectedAt,
@@ -121,12 +117,19 @@ export class PersistentOpenClawGatewayConnection {
     return readAdvertisedGatewayMethods(this.hello);
   }
 
+  getGeneration() {
+    return this.generation;
+  }
+
+  getLifecycleState() {
+    return this.state;
+  }
+
   async request<TPayload>(
     method: string,
     params: Record<string, unknown>,
     options: OpenClawCommandOptions,
-    timeoutMs: number,
-    policy?: Pick<OpenClawGatewayRequestPolicy, "safety">
+    timeoutMs: number
   ) {
     const hello = await this.ensureConnected(options, timeoutMs);
     assertGatewayMethodSupported(hello, method);
@@ -135,53 +138,7 @@ export class PersistentOpenClawGatewayConnection {
       throw new NativeGatewayError("OpenClaw Gateway connection is not ready.");
     }
 
-    if (policy?.safety !== "read" || options.signal) {
-      // A mutation invalidates cached read projections. Without this, a
-      // cron.update followed by cron.get could truthfully return the previous
-      // job for the read-cache TTL and make the scheduler projection stale.
-      if (policy?.safety !== "read") this.readRequestCache.clear();
-      return sendGatewayRequest<TPayload>(socket, this.pending, method, params, timeoutMs, options.signal);
-    }
-
-    this.pruneExpiredReadCache();
-    const cacheKey = buildReadRequestCacheKey(method, params);
-    const cached = this.readRequestCache.get(cacheKey);
-
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.payload as TPayload;
-    }
-
-    const existing = this.sharedReadRequests.get(cacheKey);
-
-    if (existing) {
-      return existing as Promise<TPayload>;
-    }
-
-    const request = sendGatewayRequest<TPayload>(socket, this.pending, method, params, timeoutMs)
-      .then((payload) => {
-        this.readRequestCache.set(cacheKey, {
-          expiresAt: Date.now() + readRequestCacheTtlMs,
-          payload
-        });
-
-        return payload;
-      })
-      .finally(() => {
-        this.sharedReadRequests.delete(cacheKey);
-      });
-
-    this.sharedReadRequests.set(cacheKey, request);
-    return request;
-  }
-
-  private pruneExpiredReadCache() {
-    const now = Date.now();
-
-    for (const [key, entry] of this.readRequestCache) {
-      if (entry.expiresAt <= now) {
-        this.readRequestCache.delete(key);
-      }
-    }
+    return sendGatewayRequest<TPayload>(socket, this.pending, method, params, timeoutMs, options.signal);
   }
 
   async probe(options: OpenClawCommandOptions, timeoutMs: number) {
@@ -248,8 +205,7 @@ export class PersistentOpenClawGatewayConnection {
               "sessions.messages.unsubscribe",
               request.params,
               options,
-              timeoutMs,
-              { safety: "mutation" }
+              timeoutMs
             ).catch(() => {
               // The connection may close while the best-effort subscription cleanup is in flight.
             });
@@ -348,6 +304,7 @@ export class PersistentOpenClawGatewayConnection {
         source: "native-handshake"
       };
       this.hello = hello;
+      this.generation += 1;
       this.state = "connected";
       this.lastConnectedAt = new Date().toISOString();
       this.lastNativeError = null;
@@ -437,8 +394,6 @@ export class PersistentOpenClawGatewayConnection {
       source: "unavailable"
     };
     this.state = options.state;
-    this.sharedReadRequests.clear();
-    this.readRequestCache.clear();
     if (options.state !== "connecting" && hadSocket) {
       this.lastDisconnectedAt = new Date().toISOString();
     }
@@ -473,26 +428,6 @@ function readStringArray(value: unknown) {
 
 function readRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
-}
-
-function buildReadRequestCacheKey(method: string, params: Record<string, unknown>) {
-  return `${method}:${stableStringify(params)}`;
-}
-
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
-  }
-
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
-      .join(",")}}`;
-  }
-
-  return JSON.stringify(value);
 }
 
 function closeSocketForDisconnect(socket: WebSocketLike) {

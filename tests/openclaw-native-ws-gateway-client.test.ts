@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { test } from "node:test";
 
 import {
@@ -22,6 +23,10 @@ import type {
   OpenClawAddAgentInput,
   OpenClawCommandOptions,
   OpenClawGatewayClient
+} from "@/lib/openclaw/client/gateway-client";
+import {
+  AgentOsGatewayRequestPolicy,
+  NativeGatewayRequestError
 } from "@/lib/openclaw/client/gateway-client";
 import { buildModelStatusConnectionStatus } from "@/lib/openclaw/domains/model-provider-connection";
 import { resolveModelReadiness } from "@/lib/openclaw/domains/control-plane-normalization";
@@ -498,6 +503,16 @@ function createFakeWebSocket(
     sentFrames,
     sockets
   };
+}
+
+async function waitForNativePolicy(predicate: () => boolean, timeoutMs = 1_000) {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error("Timed out waiting for custom Gateway request-policy state.");
+    }
+    await delay(1);
+  }
 }
 
 test("native WS gateway client handshakes and correlates request responses", async () => {
@@ -2071,6 +2086,131 @@ test("native WS gateway client dedupes concurrent config snapshot reads", async 
   assert.equal(client.getDiagnostics().cachedReadRequestCount, 1);
   assert.equal(client.getDiagnostics().sharedInFlightRequestCount, 0);
   assert.deepEqual(fallback.calls, []);
+});
+
+test("custom transport preserves shared AgentOS request-policy semantics", async () => {
+  let now = 1_000;
+  let readCount = 0;
+  const pendingResponses = new Map<string, (payload: unknown) => void>();
+  const fallback = new FallbackGatewayClient();
+  const { WebSocketImpl, sentFrames, sockets } = createFakeWebSocket((socket, frame) => {
+    if (frame.method === "policy.signal") {
+      if (sentFrames.filter((sent) => sent.method === "policy.signal").length === 1) {
+        pendingResponses.set(frame.id, (payload) => socket.emitMessage({
+          type: "res",
+          id: frame.id,
+          ok: true,
+          payload
+        }));
+        return;
+      }
+      globalThis.queueMicrotask(() => {
+        socket.emitMessage({
+          type: "res",
+          id: frame.id,
+          ok: true,
+          payload: { value: "normal" }
+        });
+      });
+      return;
+    }
+
+    if (frame.method === "policy.pending") {
+      pendingResponses.set(frame.id, (payload) => socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload
+      }));
+      return;
+    }
+
+    if (frame.method === "policy.update" && frame.params?.ambiguous === true) {
+      return;
+    }
+
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? { protocol: 4 }
+          : frame.method === "policy.read"
+            ? { value: ++readCount }
+            : { ok: true }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    requestPolicy: new AgentOsGatewayRequestPolicy({ now: () => now }),
+    webSocketFactory: WebSocketImpl,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  try {
+    const [first, equivalent] = await Promise.all([
+      client.call<{ value: number }>("policy.read", { a: 1, b: 2 }),
+      client.call<{ value: number }>("policy.read", { b: 2, a: 1 })
+    ]);
+    assert.deepEqual(first, { value: 1 });
+    assert.deepEqual(equivalent, { value: 1 });
+    assert.equal(sentFrames.filter((frame) => frame.method === "policy.read").length, 1);
+
+    now += 301;
+    assert.deepEqual(await client.call("policy.read", { a: 1, b: 2 }), { value: 2 });
+    await client.call("policy.update", {});
+    assert.deepEqual(await client.call("policy.read", { a: 1, b: 2 }), { value: 3 });
+
+    const pending = client.callNative("policy.pending", {}, {}, { safety: "read" });
+    await waitForNativePolicy(() => sentFrames.filter((frame) => frame.method === "policy.pending").length === 1);
+    assert.equal(client.getDiagnostics().sharedInFlightRequestCount, 1);
+    pendingResponses.get(sentFrames.find((frame) => frame.method === "policy.pending")?.id ?? "")?.({ ok: true });
+    await pending;
+    assert.equal(client.getDiagnostics().sharedInFlightRequestCount, 0);
+
+    const controller = new AbortController();
+    const signalled = client.callNative(
+      "policy.signal",
+      { key: "same-read" },
+      { signal: controller.signal },
+      { safety: "read" }
+    );
+    await waitForNativePolicy(() => sentFrames.filter((frame) => frame.method === "policy.signal").length === 1);
+    const normal = client.callNative("policy.signal", { key: "same-read" }, {}, { safety: "read" });
+    await waitForNativePolicy(() => sentFrames.filter((frame) => frame.method === "policy.signal").length === 2);
+    controller.abort();
+    await assert.rejects(signalled);
+    const signalFrames = sentFrames.filter((frame) => frame.method === "policy.signal");
+    sockets[0]?.emitMessage({ type: "res", id: signalFrames[1]?.id, ok: true, payload: { value: "normal" } });
+    assert.deepEqual(await normal, { value: "normal" });
+
+    await client.call("policy.read", { id: "ambiguous" });
+    await assert.rejects(
+      client.callNative(
+        "policy.update",
+        { ambiguous: true },
+        { timeoutMs: 20 },
+        { safety: "mutation" }
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof NativeGatewayRequestError);
+        assert.equal(error.sent, true);
+        return true;
+      }
+    );
+    await client.call("policy.read", { id: "ambiguous" });
+
+    client.close("custom policy reconnect");
+    await delay(0);
+    await client.call("policy.read", { a: 1, b: 2 });
+    assert.equal(sentFrames.filter((frame) => frame.method === "policy.read").length, 6);
+    assert.deepEqual(fallback.calls, []);
+  } finally {
+    client.close("custom request-policy test cleanup");
+  }
 });
 
 test("native WS gateway client uses Gateway first for session list", async () => {
