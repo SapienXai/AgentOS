@@ -29,6 +29,10 @@ export type OfficialGatewayHarnessOptions = {
   events?: string[];
   scopes?: string[];
   version?: string;
+  challengeNonce?: string;
+  challengeTimestamp?: number;
+  deviceToken?: string;
+  connectFailure?: { code: string; message: string; details?: unknown };
   routes?: Record<string, OfficialGatewayRoute>;
 };
 
@@ -41,7 +45,7 @@ type HarnessConnection = {
 export class OfficialGatewayHarness {
   readonly #server: WebSocketServer;
   readonly #options: Required<Pick<OfficialGatewayHarnessOptions, "methods" | "events" | "scopes" | "version">> &
-    Pick<OfficialGatewayHarnessOptions, "routes">;
+    Pick<OfficialGatewayHarnessOptions, "challengeNonce" | "challengeTimestamp" | "connectFailure" | "deviceToken" | "routes">;
   readonly #connections: HarnessConnection[] = [];
   readonly #requests: OfficialGatewayRequest[] = [];
   readonly #waiters = new Map<string, Array<(request: OfficialGatewayRequest) => void>>();
@@ -53,6 +57,10 @@ export class OfficialGatewayHarness {
       events: options.events ?? [],
       scopes: options.scopes ?? ["operator.admin", "operator.read", "operator.write"],
       version: options.version ?? "2026.8.2",
+      challengeNonce: options.challengeNonce ?? "harness-nonce",
+      challengeTimestamp: options.challengeTimestamp ?? Date.now(),
+      connectFailure: options.connectFailure,
+      deviceToken: options.deviceToken,
       routes: options.routes
     };
 
@@ -141,8 +149,8 @@ export class OfficialGatewayHarness {
       type: "event",
       event: "connect.challenge",
       payload: {
-        nonce: `harness-nonce-${this.#connections.length}`,
-        ts: Date.now()
+        nonce: `${this.#options.challengeNonce}-${this.#connections.length}`,
+        ts: this.#options.challengeTimestamp
       }
     }));
 
@@ -183,6 +191,10 @@ export class OfficialGatewayHarness {
       };
 
       if (request.method === "connect") {
+        if (this.#options.connectFailure) {
+          context.fail(this.#options.connectFailure);
+          return;
+        }
         context.respond({
           type: "hello-ok",
           protocol: 4,
@@ -197,7 +209,8 @@ export class OfficialGatewayHarness {
           snapshot: {},
           auth: {
             role: "operator",
-            scopes: this.#options.scopes
+            scopes: this.#options.scopes,
+            ...(this.#options.deviceToken ? { deviceToken: this.#options.deviceToken } : {})
           },
           policy: {
             maxPayload: 1_000_000,

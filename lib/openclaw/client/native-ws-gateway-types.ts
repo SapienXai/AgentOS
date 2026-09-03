@@ -6,7 +6,15 @@ import type {
   ResponseFrame
 } from "@openclaw/gateway-protocol/frame-guards";
 
-import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
+import type {
+  OpenClawCommandOptions,
+  OpenClawGatewayClient,
+  OpenClawGatewayClientDiagnostics,
+  OpenClawGatewayEventCallbacks,
+  OpenClawGatewayEventSubscription,
+  OpenClawGatewayRequestPolicy
+} from "@/lib/openclaw/client/types";
+import type { OpenClawOperatorIdentity } from "@/lib/openclaw/identity/types";
 import {
   OPENCLAW_GATEWAY_PROTOCOL_RANGE
 } from "@/lib/openclaw/client/openclaw-protocol";
@@ -75,9 +83,49 @@ export type NativeWsOpenClawGatewayClientOptions = {
   role?: string;
   scopes?: string[];
   fallback?: OpenClawGatewayClient;
+  /** Optional AgentOS transport implementation used by migration paths. */
+  transport?: OpenClawGatewayTransport;
   webSocketFactory?: WebSocketFactory;
   forceCli?: boolean;
   onNativeFailure?: (error: unknown, method: string) => void;
+};
+
+/**
+ * The small request/event boundary shared by the custom and official paths.
+ * Transport implementations own wire mechanics; the domain client owns
+ * normalization, policy, fallback, and product semantics above this boundary.
+ */
+export type OpenClawGatewayTransport = {
+  readonly lifecycleOwner?: "agentos" | "official";
+  request<TPayload>(
+    method: string,
+    params: Record<string, unknown>,
+    options: OpenClawCommandOptions,
+    timeoutMs: number,
+    policy?: Pick<OpenClawGatewayRequestPolicy, "safety">
+  ): Promise<TPayload>;
+  probe(options: OpenClawCommandOptions, timeoutMs: number): Promise<NativeHandshakePayload>;
+  subscribe(
+    params: Record<string, unknown>,
+    callbacks: OpenClawGatewayEventCallbacks,
+    options: OpenClawCommandOptions,
+    timeoutMs: number
+  ): Promise<OpenClawGatewayEventSubscription>;
+  close(reason?: string): void;
+  getDiagnostics(): Pick<
+    OpenClawGatewayClientDiagnostics,
+    | "connectionState"
+    | "protocolVersion"
+    | "gatewayCapabilities"
+    | "pendingRequestCount"
+    | "sharedInFlightRequestCount"
+    | "cachedReadRequestCount"
+    | "lastNativeError"
+    | "lastConnectedAt"
+    | "lastDisconnectedAt"
+    | "operatorIdentity"
+  >;
+  getOperatorIdentity(): OpenClawOperatorIdentity;
 };
 
 export type GatewayResponseFrame = ResponseFrame;

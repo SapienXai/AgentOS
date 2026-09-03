@@ -347,6 +347,12 @@ export interface OpenClawEventBridgeStreamStatus {
   lastError: string | null;
   message: string | null;
   recovery: string | null;
+  lastSequenceGapAt?: string | null;
+  expectedSeq?: number | null;
+  receivedSeq?: number | null;
+  reconciliationState?: "idle" | "in-flight" | "failed";
+  lastReconciledAt?: string | null;
+  gapCount?: number;
 }
 
 export interface OpenClawCapabilityMatrix {

@@ -7,6 +7,7 @@ import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getOpenClawCapabilityMatrix } from "@/lib/openclaw/application/capability-matrix-service";
 import type {
   OpenClawGatewayEventFrame,
+  OpenClawGatewayEventConnectionState,
   OpenClawGatewayEventSubscription
 } from "@/lib/openclaw/client/gateway-client";
 import { normalizeOpenClawGatewayEventToRuntime } from "@/lib/openclaw/application/runtime-state-service";
@@ -29,23 +30,40 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempt = 0;
 let reconnecting = false;
 let suppressNextReconnect = false;
+let officialLifecycleManaged = false;
+let officialLifecycleState: OpenClawGatewayEventConnectionState = "stopped";
 let reconnectBaseMs = defaultReconnectBaseMs;
 let reconnectMaxMs = defaultReconnectMaxMs;
 let bridgeGeneration = 0;
+let lastSequenceGapAt: string | null = null;
+let expectedSequence: number | null = null;
+let receivedSequence: number | null = null;
+let reconciliationState: "idle" | "in-flight" | "failed" = "idle";
+let lastReconciledAt: string | null = null;
+let sequenceGapCount = 0;
+let reconciliationPromise: Promise<void> | null = null;
+let reconciliationDirty = false;
+let reconciliationFollowUp = false;
 const bridgeEventSubscribers = new Set<(frame: GatewayEventFrame) => void>();
 
 export function getOpenClawEventBridgeStatus() {
   return {
-    connected: Boolean(subscription),
+    connected: isBridgeConnected(),
     reconnecting,
     reconnectAttempt,
     lastEventAt,
-    lastError
+    lastError,
+    lastSequenceGapAt,
+    expectedSequence,
+    receivedSequence,
+    reconciliationState,
+    lastReconciledAt,
+    sequenceGapCount
   };
 }
 
 export function getOpenClawEventBridgeStreamStatus(): OpenClawEventBridgeStreamStatus {
-  const connected = Boolean(subscription);
+  const connected = isBridgeConnected();
   const sanitizedLastError = lastError
     ? redactErrorMessage(lastError, "OpenClaw Gateway event stream failed.")
     : null;
@@ -58,6 +76,12 @@ export function getOpenClawEventBridgeStreamStatus(): OpenClawEventBridgeStreamS
       reconnectAttempt,
       lastEventAt,
       lastError: sanitizedLastError,
+      lastSequenceGapAt,
+      expectedSeq: expectedSequence,
+      receivedSeq: receivedSequence,
+      reconciliationState,
+      lastReconciledAt,
+      gapCount: sequenceGapCount,
       message: null,
       recovery: null
     };
@@ -71,6 +95,12 @@ export function getOpenClawEventBridgeStreamStatus(): OpenClawEventBridgeStreamS
       reconnectAttempt,
       lastEventAt,
       lastError: sanitizedLastError,
+      lastSequenceGapAt,
+      expectedSeq: expectedSequence,
+      receivedSeq: receivedSequence,
+      reconciliationState,
+      lastReconciledAt,
+      gapCount: sequenceGapCount,
       message: "OpenClaw event streaming is reconnecting. AgentOS is refreshing task snapshots by polling until the stream returns.",
       recovery: sanitizedLastError ?? "Wait for the Gateway event stream to reconnect, or inspect Gateway diagnostics if it stays degraded."
     };
@@ -83,6 +113,12 @@ export function getOpenClawEventBridgeStreamStatus(): OpenClawEventBridgeStreamS
     reconnectAttempt,
     lastEventAt,
     lastError: sanitizedLastError,
+    lastSequenceGapAt,
+    expectedSeq: expectedSequence,
+    receivedSeq: receivedSequence,
+    reconciliationState,
+    lastReconciledAt,
+    gapCount: sequenceGapCount,
     message: "OpenClaw event streaming is unavailable. AgentOS is refreshing task snapshots by polling.",
     recovery: sanitizedLastError ?? "Inspect Gateway event capabilities and compatibility diagnostics if live updates stay unavailable."
   };
@@ -159,9 +195,37 @@ async function startEventBridge(generation: number) {
         onError: (error) => {
           lastError = redactErrorMessage(error, "OpenClaw Gateway event stream failed.");
         },
+        onConnectionStateChange: (state) => {
+          officialLifecycleManaged = true;
+          officialLifecycleState = state;
+          if (state === "reconnecting") {
+            if (!reconnecting) {
+              reconnectAttempt += 1;
+            }
+            reconnecting = true;
+            return;
+          }
+          if (state === "connected") {
+            reconnecting = false;
+            return;
+          }
+          if (state === "reconnect-paused" || state === "stopped") {
+            reconnecting = false;
+          }
+        },
+        onReconnected: () => scheduleRuntimeReconciliation(),
+        onGap: (gap) => {
+          lastSequenceGapAt = new Date().toISOString();
+          expectedSequence = gap.expected;
+          receivedSequence = gap.received;
+          sequenceGapCount += 1;
+          scheduleRuntimeReconciliation();
+        },
         onClose: () => {
           subscription = null;
-          scheduleEventBridgeReconnect(generation);
+          if (!officialLifecycleManaged) {
+            scheduleEventBridgeReconnect(generation);
+          }
         }
       },
       { timeoutMs: 5_000 }
@@ -172,9 +236,15 @@ async function startEventBridge(generation: number) {
     }
 
     subscription = nextSubscription;
+    officialLifecycleManaged = nextSubscription.reconnectManagedByClient === true;
+    if (!officialLifecycleManaged) {
+      officialLifecycleState = "stopped";
+    }
     lastError = null;
-    reconnectAttempt = 0;
-    reconnecting = false;
+    if (!officialLifecycleManaged) {
+      reconnectAttempt = 0;
+      reconnecting = false;
+    }
   } catch (error) {
     if (bridgeGeneration !== generation) {
       return;
@@ -197,7 +267,7 @@ function scheduleEventBridgeReconnect(generation = bridgeGeneration) {
     return;
   }
 
-  if (subscription || starting || reconnectTimer) {
+  if (officialLifecycleManaged || subscription || starting || reconnectTimer) {
     return;
   }
 
@@ -214,6 +284,69 @@ function scheduleEventBridgeReconnect(generation = bridgeGeneration) {
     reconnectTimer = null;
     startOpenClawEventBridge();
   }, delayMs);
+}
+
+function isBridgeConnected() {
+  return Boolean(subscription) && (!officialLifecycleManaged || officialLifecycleState === "connected");
+}
+
+function scheduleRuntimeReconciliation() {
+  reconciliationDirty = true;
+  if (reconciliationPromise) {
+    reconciliationFollowUp = true;
+    return reconciliationPromise;
+  }
+  return reconcileRuntimeProjection();
+}
+
+function reconcileRuntimeProjection() {
+  if (reconciliationPromise) {
+    return reconciliationPromise;
+  }
+
+  const generation = bridgeGeneration;
+  reconciliationPromise = (async () => {
+    if (bridgeGeneration !== generation) {
+      return;
+    }
+    reconciliationState = "in-flight";
+    // One refresh plus one coalesced follow-up is enough to capture events that
+    // arrived while the snapshot was being fetched without creating a loop.
+    for (let pass = 0; pass < 2; pass += 1) {
+      reconciliationDirty = false;
+      reconciliationFollowUp = false;
+      try {
+        const adapter = getOpenClawAdapter();
+        await Promise.all([
+          adapter.listSessions({}, { timeoutMs: 5_000 }),
+          adapter.listTasks({}, { timeoutMs: 5_000 })
+        ]);
+        if (bridgeGeneration !== generation) {
+          return;
+        }
+        lastReconciledAt = new Date().toISOString();
+        lastError = null;
+      } catch (error) {
+        if (bridgeGeneration !== generation) {
+          return;
+        }
+        reconciliationState = "failed";
+        lastError = redactErrorMessage(error, "OpenClaw Gateway runtime reconciliation failed.");
+        return;
+      }
+      if (!reconciliationDirty && !reconciliationFollowUp) {
+        break;
+      }
+    }
+    if (bridgeGeneration === generation) {
+      reconciliationState = "idle";
+    }
+  })().finally(() => {
+    if (bridgeGeneration === generation) {
+      reconciliationPromise = null;
+    }
+  });
+  return reconciliationPromise;
 }
 
 function notifyBridgeEventSubscribers(frame: GatewayEventFrame) {
@@ -289,6 +422,17 @@ export function resetOpenClawEventBridgeForTesting() {
   lastEventAt = null;
   reconnecting = false;
   reconnectAttempt = 0;
+  officialLifecycleManaged = false;
+  officialLifecycleState = "stopped";
+  lastSequenceGapAt = null;
+  expectedSequence = null;
+  receivedSequence = null;
+  reconciliationState = "idle";
+  lastReconciledAt = null;
+  sequenceGapCount = 0;
+  reconciliationPromise = null;
+  reconciliationDirty = false;
+  reconciliationFollowUp = false;
   suppressNextReconnect = false;
   bridgeEventSubscribers.clear();
   if (reconnectTimer) {

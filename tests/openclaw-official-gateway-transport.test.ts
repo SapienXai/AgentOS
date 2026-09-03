@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { generateKeyPairSync, verify } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -18,6 +19,7 @@ import {
   createAgentOsGatewayClientHostDeps,
   NativeGatewayRequestError
 } from "@/lib/openclaw/client/gateway-client";
+import { buildDeviceAuthPayloadV3 } from "@/lib/openclaw/client/native-ws-gateway-auth";
 import { OfficialGatewayHarness } from "@/tests/helpers/official-gateway-harness";
 
 test("official transport sends the canonical AgentOS handshake and correlates requests", async () => {
@@ -255,6 +257,40 @@ test("official transport reconnects after a socket close and can be explicitly s
   }
 });
 
+test("official transport honors a terminal reconnect pause", async () => {
+  const harness = await OfficialGatewayHarness.create({
+    connectFailure: {
+      code: "FORBIDDEN",
+      message: "gateway token rejected",
+      details: { code: "AUTH_TOKEN_MISMATCH" }
+    }
+  });
+  let pausedInfo: { reason: string; detailCode: string | null } | null = null;
+  const states: string[] = [];
+  const transport = new OfficialOpenClawGatewayTransport({
+    url: harness.url,
+    token: "rejected-token",
+    callbacks: {
+      onReconnectPaused: (info) => { pausedInfo = { reason: info.reason, detailCode: info.detailCode }; },
+      onConnectionStateChange: (state) => { states.push(state); }
+    }
+  });
+
+  try {
+    transport.start();
+    await delay(300);
+    assert.equal(transport.getLifecycleState(), "reconnect-paused", JSON.stringify({ pausedInfo, states, connections: harness.connectionCount }));
+    assert.deepEqual(pausedInfo, { reason: "connect failed", detailCode: "AUTH_TOKEN_MISMATCH" });
+    const connectionsAtPause = harness.connectionCount;
+    await delay(1_200);
+    assert.equal(harness.connectionCount, connectionsAtPause);
+    assert.equal(transport.getLifecycleState(), "reconnect-paused");
+  } finally {
+    await transport.stopAndWait({ timeoutMs: 500 });
+    await harness.close();
+  }
+});
+
 test("official events remain consumable by the existing AgentOS runtime normalizers", async () => {
   const harness = await OfficialGatewayHarness.create();
   let received: EventFrame | null = null;
@@ -331,6 +367,75 @@ test("read-only official host dependencies read shared identity/auth without mut
   assert.equal(await readFile(authFile, "utf8"), beforeAuth);
 });
 
+test("official device auth verifies the v3 challenge signature and persists rotated tokens only in managed-write mode", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "agentos-official-device-auth-"));
+  const identityDir = join(stateDir, "identity");
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const challengeTimestamp = 1_700_000_000_000;
+  await mkdir(identityDir, { recursive: true });
+  await writeFile(join(identityDir, "device.json"), JSON.stringify({
+    deviceId: "device-phase3",
+    publicKeyPem,
+    privateKeyPem
+  }));
+  await writeFile(join(identityDir, "device-auth.json"), JSON.stringify({
+    deviceId: "device-phase3",
+    tokens: { operator: { token: "old-device-token", scopes: ["operator.read"] } }
+  }));
+
+  const harness = await OfficialGatewayHarness.create({
+    challengeNonce: "phase3-challenge",
+    challengeTimestamp,
+    deviceToken: "rotated-device-token"
+  });
+  const transport = new OfficialOpenClawGatewayTransport({
+    url: harness.url,
+    stateDir,
+    sharedStateMode: "managed-write"
+  });
+
+  try {
+    transport.start();
+    const connect = await harness.waitForRequest("connect");
+    await waitFor(() => transport.getHandshake() !== null);
+    const params = connect.params as Record<string, unknown>;
+    const device = params.device as Record<string, unknown>;
+    const expectedPayload = buildDeviceAuthPayloadV3({
+      deviceId: "device-phase3",
+      clientId: GATEWAY_CLIENT_NAMES.GATEWAY_CLIENT,
+      clientMode: GATEWAY_CLIENT_MODES.BACKEND,
+      role: "operator",
+      scopes: [...DEFAULT_OPERATOR_SCOPES],
+      signedAtMs: challengeTimestamp,
+      token: "old-device-token",
+      nonce: "phase3-challenge-1",
+      platform: process.platform,
+      deviceFamily: null
+    });
+
+    assert.deepEqual(params.auth, { token: "old-device-token", deviceToken: "old-device-token" });
+    assert.equal(device.id, "device-phase3");
+    assert.equal(device.signedAt, challengeTimestamp);
+    assert.equal(device.nonce, "phase3-challenge-1");
+    assert.equal(
+      verify(null, Buffer.from(expectedPayload, "utf8"), publicKeyPem, decodeBase64Url(String(device.signature))),
+      true
+    );
+
+    const rotated = JSON.parse(await readFile(join(identityDir, "device-auth.json"), "utf8")) as {
+      tokens?: { operator?: { token?: string; scopes?: string[] } };
+    };
+    assert.equal(rotated.tokens?.operator?.token, "rotated-device-token");
+    assert.deepEqual(rotated.tokens?.operator?.scopes, ["operator.admin", "operator.read", "operator.write"]);
+  } finally {
+    await transport.stopAndWait({ timeoutMs: 500 });
+    await harness.close();
+    await rm(stateDir, { recursive: true, force: true });
+  }
+});
+
 test("password auth remains an explicit official-client mode", async () => {
   const harness = await OfficialGatewayHarness.create();
   const transport = new OfficialOpenClawGatewayTransport({ url: harness.url, password: "phase2-password" });
@@ -353,4 +458,8 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2_000) {
     }
     await delay(10);
   }
+}
+
+function decodeBase64Url(value: string) {
+  return Buffer.from(value.replaceAll("-", "+").replaceAll("_", "/").padEnd(Math.ceil(value.length / 4) * 4, "="), "base64");
 }

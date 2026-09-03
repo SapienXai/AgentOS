@@ -64,6 +64,7 @@ export type {
   OpenClawGatewayConnectionState,
   OpenClawGatewayControlOptions,
   OpenClawGatewayEventCallbacks,
+  OpenClawGatewayEventConnectionState,
   OpenClawGatewayEventFrame,
   OpenClawGatewayEventSubscription,
   OpenClawGatewayRequestPolicy,
@@ -116,11 +117,20 @@ export { CliOpenClawGatewayClient } from "@/lib/openclaw/client/cli-gateway-clie
 export {
   OfficialOpenClawGatewayTransport
 } from "@/lib/openclaw/client/official-gateway-transport";
+export {
+  createOfficialBackedOpenClawGatewayClient
+} from "@/lib/openclaw/client/official-gateway-factory";
+export {
+  OfficialOpenClawGatewayConnectionCoordinator
+} from "@/lib/openclaw/client/official-gateway-coordinator";
 export type {
   OfficialGatewayRequestOptions,
   OfficialGatewayTransportCallbacks,
   OfficialGatewayTransportOptions
 } from "@/lib/openclaw/client/official-gateway-transport";
+export type {
+  OfficialBackedOpenClawGatewayClientOptions
+} from "@/lib/openclaw/client/official-gateway-factory";
 export {
   createAgentOsGatewayClientHostDeps
 } from "@/lib/openclaw/client/official-gateway-host";

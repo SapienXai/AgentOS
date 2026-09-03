@@ -146,10 +146,23 @@ export interface OpenClawGatewayEventCallbacks {
   onEvent: (event: OpenClawGatewayEventFrame) => void;
   onError?: (error: unknown) => void;
   onClose?: () => void;
+  /** Official-path lifecycle notifications; custom transports may omit them. */
+  onConnectionStateChange?: (state: OpenClawGatewayEventConnectionState) => void;
+  onReconnected?: (details: { generation: number }) => Promise<void> | void;
+  onGap?: (info: { expected: number; received: number }) => Promise<void> | void;
 }
+
+export type OpenClawGatewayEventConnectionState =
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "reconnect-paused"
+  | "stopped";
 
 export type OpenClawGatewayEventSubscription = {
   close: () => void;
+  /** True when the official client, rather than AgentOS, owns reconnect. */
+  reconnectManagedByClient?: boolean;
 };
 
 export interface OpenClawLogsTailInput {

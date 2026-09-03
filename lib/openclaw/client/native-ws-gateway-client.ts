@@ -81,6 +81,7 @@ import {
   CONNECT_METHOD,
   OPENCLAW_GATEWAY_PROTOCOL_RANGE,
   type NativeWsOpenClawGatewayClientOptions,
+  type OpenClawGatewayTransport,
   type WebSocketFactory
 } from "@/lib/openclaw/client/native-ws-gateway-types";
 import {
@@ -210,6 +211,7 @@ export {
 };
 export type {
   NativeWsOpenClawGatewayClientOptions,
+  OpenClawGatewayTransport,
   WebSocketFactory
 };
 export type { OpenClawGatewayFallbackDiagnostic } from "@/lib/openclaw/client/native-ws-gateway-errors";
@@ -263,7 +265,7 @@ function shouldRecoverPartialModelAuthStatusWithCli(status: ModelsStatusPayload)
 
 export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   private readonly fallback: OpenClawGatewayClient;
-  private readonly connection: PersistentOpenClawGatewayConnection;
+  private readonly connection: OpenClawGatewayTransport;
   private readonly fallbackCounts: Record<string, number> = {};
   private lastNativeFailure: {
     at: string;
@@ -275,7 +277,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
 
   constructor(private readonly options: NativeWsOpenClawGatewayClientOptions = {}) {
     this.fallback = options.fallback ?? new CliOpenClawGatewayClient();
-    this.connection = new PersistentOpenClawGatewayConnection(this.fallback, options);
+    this.connection = options.transport ?? new PersistentOpenClawGatewayConnection(this.fallback, options);
   }
 
   close(reason = "closed") {
