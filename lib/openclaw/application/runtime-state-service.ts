@@ -140,14 +140,30 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
   const payload = isRecord(frame.payload) ? frame.payload : {};
   const payloadMetadata = readNestedRecord(payload, "metadata");
   const eventName = readString(frame.event) ?? readString(payload.type) ?? "event";
-  const sessionKey = readString(payload.sessionKey) ?? readString(payload.key);
-  const agentId = readString(payload.agentId) ?? readString(payload.agent) ?? parseAgentIdFromSessionKey(sessionKey);
+  const task = eventName === "task" ? readNestedRecord(payload, "task") : null;
+  const sessionKey =
+    readString(payload.sessionKey) ??
+    readString(payload.key) ??
+    readString(task?.sessionKey) ??
+    readString(task?.childSessionKey);
+  const agentId =
+    readString(payload.agentId) ??
+    readString(payload.agent) ??
+    readString(task?.agentId) ??
+    parseAgentIdFromSessionKey(sessionKey);
   const sessionId = readString(payload.sessionId) ?? readString(payload.session) ?? sessionKey;
-  const runId = readString(payload.runId) ?? readString(payload.run) ?? readString(payload.clientRunId);
-  const taskId = readString(payload.taskId) ?? readString(readNestedRecord(payload, "task")?.id);
+  const runId =
+    readString(payload.runId) ??
+    readString(payload.run) ??
+    readString(payload.clientRunId) ??
+    readString(task?.runId);
+  const taskId =
+    readString(payload.taskId) ??
+    readString(task?.taskId) ??
+    readString(task?.id);
   const artifactId = readString(payload.artifactId) ?? readString(readNestedRecord(payload, "artifact")?.id);
-  const timestamp = readTimestamp(payload.timestamp ?? payload.ts ?? payload.updatedAt);
-  const status = normalizeStatus(readString(payload.status) ?? eventName);
+  const timestamp = readTimestamp(payload.timestamp ?? payload.ts ?? payload.updatedAt ?? task?.updatedAt ?? task?.endedAt ?? task?.createdAt);
+  const status = normalizeStatus(readString(payload.status) ?? readString(task?.status) ?? eventName);
   const workspacePath = readWorkspacePath(payload);
   const workspaceId = readString(payload.workspaceId) ?? (workspacePath ? workspaceIdFromPath(workspacePath) : null);
   const text =
@@ -155,6 +171,10 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
     readString(payload.message) ??
     readString(payload.summary) ??
     readString(payload.detail) ??
+    readString(task?.error) ??
+    readString(task?.summary) ??
+    readString(task?.terminalSummary) ??
+    readString(task?.progressSummary) ??
     eventName;
   const runtimeId =
     readString(payload.runtimeId) ??
@@ -170,7 +190,7 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
     id: runtimeId,
     source: "turn",
     key: runId || sessionId || taskId || artifactId || runtimeId,
-    title: readString(payload.title) ?? (taskId ? "Gateway task event" : "Gateway runtime event"),
+    title: readString(payload.title) ?? readString(task?.title) ?? (taskId ? "Gateway task event" : "Gateway runtime event"),
     subtitle: text,
     status,
     updatedAt: timestamp,
@@ -194,6 +214,7 @@ export function normalizeOpenClawGatewayEventToRuntime(frame: OpenClawGatewayEve
       artifactId: artifactId ?? null,
       dispatchId: readString(payload.dispatchId) ?? readString(payloadMetadata?.dispatchId) ?? null,
       kind: readString(payload.kind) ?? readString(payloadMetadata?.kind) ?? null,
+      taskAction: eventName === "task" ? readString(payload.action) ?? null : null,
       chatType: readString(payload.chatType) ?? readString(payloadMetadata?.chatType) ?? null,
       mission: readString(payload.mission) ?? readString(payload.prompt) ?? null,
       createdFiles

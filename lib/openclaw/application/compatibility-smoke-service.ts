@@ -522,8 +522,8 @@ export async function runOpenClawCompatibilitySmokeTest(): Promise<OpenClawCompa
 
       if (
         capabilityMatrix &&
-        !supportsAnyMethod(capabilityMatrix, ["sessions.subscribe", "sessions.messages.subscribe", "tasks.subscribe"]) &&
-        !supportsAnyEvent(capabilityMatrix, ["session.message", "session.operation", "sessions.changed", "task", "task.updated"])
+        !supportsAnyMethod(capabilityMatrix, ["sessions.subscribe", "sessions.messages.subscribe"]) &&
+        !supportsAnyEvent(capabilityMatrix, ["session.message", "session.operation", "sessions.changed", "task"])
       ) {
         return skippedOptional("Gateway does not advertise runtime event subscription support.");
       }

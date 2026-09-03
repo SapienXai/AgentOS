@@ -138,22 +138,35 @@ test("Gateway event normalizers preserve runtime-neutral task and artifact state
   assert.equal(event.receivedAt, "2026-05-18T10:00:00.000Z");
 });
 
-test("Gateway event normalizer preserves workspace path linkage", () => {
-  const runtime = normalizeOpenClawGatewayEventToRuntime({
+test("Gateway event normalizer accepts the canonical task event payload", () => {
+  const frame = {
     type: "event",
-    event: "task.updated",
+    event: "task",
     payload: {
-      agentId: "agent-1",
-      sessionId: "session-1",
-      taskId: "task-1",
       workspacePath: "/tmp/runtime-only-workspace",
-      message: "Task is still running"
+      action: "upserted",
+      task: {
+        id: "task-1",
+        taskId: "task-1",
+        agentId: "agent-1",
+        sessionKey: "agent:agent-1:main",
+        status: "running",
+        summary: "Task is still running"
+      }
     }
-  });
+  } as const;
+
+  const runtime = normalizeOpenClawGatewayEventToRuntime(frame);
+  const event = normalizeOpenClawGatewayEventFrame(frame);
 
   assert.ok(runtime);
+  assert.equal(runtime.status, "running");
+  assert.equal(runtime.taskId, "task-1");
+  assert.equal(runtime.agentId, "agent-1");
   assert.equal(runtime.workspaceId, "runtime-only-workspace");
   assert.equal(runtime.workspacePath, "/tmp/runtime-only-workspace");
+  assert.equal(event.kind, "task");
+  assert.equal(event.taskId, "task-1");
 });
 
 test("Gateway event normalizer preserves AgentOS direct chat origin metadata", () => {

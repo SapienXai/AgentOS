@@ -213,26 +213,20 @@
           "tasks.assign",
           "tasks.cancel",
           "tasks.get",
-          "tasks.list",
-          "tasks.subscribe"
+          "tasks.list"
         ],
         "events": [
-          "task",
-          "task.completed",
-          "task.updated"
+          "task"
         ],
         "supportedMethods": [
           "tasks.cancel",
           "tasks.get",
-          "tasks.list",
-          "tasks.subscribe"
+          "tasks.list"
         ],
         "supportedEvents": [
-          "task",
-          "task.completed",
-          "task.updated"
+          "task"
         ],
-        "reason": "Tasks is available via Gateway capability metadata (tasks.cancel, tasks.get, tasks.list, tasks.subscribe)."
+        "reason": "Tasks is available via Gateway capability metadata (tasks.cancel, tasks.get, tasks.list) and the canonical task event."
       },
       {
         "id": "config",
@@ -703,16 +697,13 @@
         "required": false,
         "baseline": "optional",
         "methods": [
-          "tasks.subscribe",
           "tasks.get",
           "tasks.list"
         ],
         "events": [
-          "task",
-          "task.updated",
-          "task.completed"
+          "task"
         ],
-        "supportedMethod": "tasks.subscribe",
+        "supportedMethod": "tasks.list",
         "supportedEvent": "task",
         "requiredScopes": [],
         "missingScopes": [],
@@ -721,7 +712,7 @@
         "responseShapeStatus": "not-checked",
         "responseShapeValid": null,
         "status": "ok",
-        "reason": "Task events is native through tasks.subscribe; response shape was not checked in this report.",
+        "reason": "Task events are native through the Gateway task event; tasks.list/tasks.get remain the snapshot reads. Response shape was not checked in this report.",
         "suggestedRecovery": "No recovery action required."
       },
       {

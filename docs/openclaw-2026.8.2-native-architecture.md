@@ -128,6 +128,15 @@ OpenClaw task identity and status remain authoritative when available. AgentOS u
 Native statuses are preserved as `queued`, `running`, `completed`, `failed`, `cancelled`, or
 `timed_out`, with unknown values treated as unknown/degraded rather than success.
 
+Task lifecycle delivery follows the exact v2026.8.2 Gateway event contract. In source commit
+`0965053fe6b9341776df147a6934b7485c60b5ca`, `src/gateway/server-runtime-subscriptions.ts`
+broadcasts the raw `task` event, `src/gateway/server-methods-list.ts` registers `task` in the
+Gateway event roster, and `src/gateway/server-broadcast.ts` gates it on `operator.read`. The core
+method descriptors contain `tasks.list`, `tasks.get`, and `tasks.cancel`, but no task subscription
+RPC. AgentOS therefore keeps `includeTasks` as product-level event-bridge intent: it listens on the
+authenticated Gateway event stream and reconciles with `tasks.list`/`tasks.get` snapshots when needed.
+It does not derive a `<event>.subscribe` method from the raw event name.
+
 Dispatch records are AgentOS orchestration ledgers. They contain request/actor/workspace correlation,
 but do not preallocate a native session ID or replace native task/session/run identity. A dispatch
 record is enriched only after native response or runtime evidence supplies the corresponding identity.

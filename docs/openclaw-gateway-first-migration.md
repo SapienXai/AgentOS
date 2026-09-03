@@ -142,6 +142,7 @@ Capability detection:
 Persistent event bridge:
 
 - AgentOS starts a sidecar Gateway WebSocket subscription through `sessions.subscribe` and optional `sessions.messages.subscribe` when supported.
+- OpenClaw task lifecycle changes arrive as the authenticated raw `task` broadcast; `includeTasks` remains AgentOS product intent and does not derive a task subscription RPC. Task snapshots continue to use `tasks.list` and `tasks.get`.
 - Chat, tool, log, session, and approval events are normalized into `RuntimeRecord` entries under AgentOS mission-control state.
 - Existing snapshot, SSE, task, and runtime rendering remains unchanged; the bridge records are merged with session and mission-dispatch runtimes.
 

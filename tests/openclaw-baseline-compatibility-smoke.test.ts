@@ -75,6 +75,7 @@ test("gateway native connection smoke covers the supported OpenClaw method basel
   assert.equal(OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS.includes("config.set"), true);
   assert.equal(OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS.includes("tasks.cancel"), true);
   assert.equal((OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS as readonly string[]).includes("tasks.assign"), false);
+  assert.equal(OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS.includes("tasks.subscribe"), false);
 });
 
 test("gateway status and probe smoke use documented CLI commands", () => {

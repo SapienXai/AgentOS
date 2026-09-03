@@ -48,15 +48,9 @@ export function resolveEventSubscriptionRequests(params: Record<string, unknown>
     }
   }
 
-  const taskIds = Array.isArray(params.taskIds)
-    ? params.taskIds.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-    : [];
-  if ((params.subscribeTasks === true || taskIds.length > 0) && supportsGatewayMethod(hello, "tasks.subscribe")) {
-    requests.push({
-      method: "tasks.subscribe",
-      params: taskIds.length > 0 ? { taskIds: taskIds.map((entry) => entry.trim()) } : {}
-    });
-  }
+  // OpenClaw broadcasts task lifecycle changes on the authenticated event
+  // stream. Task inclusion is AgentOS product intent, not a derived RPC
+  // subscription, so it must not add a task-specific request here.
 
   return requests;
 }

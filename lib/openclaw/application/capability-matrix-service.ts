@@ -329,8 +329,6 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
         "session.message",
         "session.tool",
         "task",
-        "task.updated",
-        "task.completed",
         "artifact",
         "artifact.updated",
         "exec.approval.requested",

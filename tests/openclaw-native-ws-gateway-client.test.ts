@@ -4447,11 +4447,10 @@ test("native WS runtime snapshot only queries artifacts with an explicit Gateway
   assert.deepEqual(fallback.calls, []);
 });
 
-test("native WS gateway client subscribes to Phase 3 runtime event streams", async () => {
+test("native WS gateway client receives canonical task events without a task RPC", async () => {
   const fallback = new FallbackGatewayClient();
   const events: unknown[] = [];
-  let subscriptionSocket: { emitMessage: (frame: Record<string, unknown>) => void } | null = null;
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { WebSocketImpl, sentFrames, sockets } = createFakeWebSocket((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4461,21 +4460,12 @@ test("native WS gateway client subscribes to Phase 3 runtime event streams", asy
           ? {
               protocol: 4,
               features: {
-                methods: ["tasks.subscribe"],
-                events: ["task.updated"]
+                methods: [],
+                events: ["task"]
               }
             }
           : { ok: true }
       });
-
-      if (frame.method === "tasks.subscribe") {
-        subscriptionSocket = socket;
-        subscriptionSocket.emitMessage({
-          type: "event",
-          event: "task.updated",
-          payload: { taskId: "task-1", status: "running" }
-        });
-      }
     });
   });
   const client = new NativeWsOpenClawGatewayClient({
@@ -4494,16 +4484,26 @@ test("native WS gateway client subscribes to Phase 3 runtime event streams", asy
     },
     { timeoutMs: 250 }
   );
+  sockets[0]?.emitMessage({
+    type: "event",
+    event: "task",
+    payload: {
+      action: "upserted",
+      task: { id: "task-1", taskId: "task-1", status: "running" }
+    }
+  });
 
   await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
   subscription.close();
 
-  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "tasks.subscribe"]);
-  assert.deepEqual(sentFrames[1]?.params, { taskIds: ["task-1"] });
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect"]);
   assert.deepEqual(events, [{
     type: "event",
-    event: "task.updated",
-    payload: { taskId: "task-1", status: "running" }
+    event: "task",
+    payload: {
+      action: "upserted",
+      task: { id: "task-1", taskId: "task-1", status: "running" }
+    }
   }]);
   assert.deepEqual(fallback.calls, []);
 });

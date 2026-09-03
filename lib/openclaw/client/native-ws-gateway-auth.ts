@@ -357,10 +357,22 @@ export function buildDeviceAuthPayloadV3(params: {
   ].join("|");
 }
 
-export function normalizeDeviceMetadataForAuth(value: unknown) {
-  return typeof value === "string"
-    ? value.trim().replaceAll("|", "").replace(/[A-Z]/g, (character) => character.toLowerCase())
-    : "";
+/**
+ * Temporary v3 signing compatibility helper copied from OpenClaw 2026.8.2
+ * packages/gateway-client/src/device-auth.ts. Migrate to the official client
+ * helper when Phase 2/3 adopts @openclaw/gateway-client.
+ */
+export function normalizeDeviceMetadataForAuth(value?: string | null) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  return trimmed.replace(/[A-Z]/g, (character) => String.fromCharCode(character.charCodeAt(0) + 32));
 }
 
 export async function buildConnectParams(

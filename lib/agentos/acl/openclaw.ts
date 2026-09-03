@@ -29,25 +29,37 @@ export function normalizeControlPlaneSnapshot(snapshot: ControlPlaneSnapshot): C
 export function normalizeOpenClawGatewayEventFrame(frame: OpenClawGatewayEventFrameInput): RuntimeEventFrame {
   const payload = isRecord(frame.payload) ? frame.payload : {};
   const event = normalizeString(frame.event) || normalizeString(payload.type) || "event";
+  const task = event === "task" && isRecord(payload.task) ? payload.task : null;
 
   return {
     kind: resolveRuntimeEventKind(event, payload),
     source: "gateway",
     event,
     payload: frame.payload,
-    receivedAt: normalizeEventTimestamp(payload.timestamp ?? payload.ts ?? payload.updatedAt),
-    agentId: normalizeOptionalString(payload.agentId) ?? normalizeOptionalString(payload.agent) ?? undefined,
+    receivedAt: normalizeEventTimestamp(payload.timestamp ?? payload.ts ?? payload.updatedAt ?? task?.updatedAt),
+    agentId:
+      normalizeOptionalString(payload.agentId) ??
+      normalizeOptionalString(payload.agent) ??
+      normalizeOptionalString(task?.agentId) ??
+      undefined,
     sessionId:
       normalizeOptionalString(payload.sessionId) ??
       normalizeOptionalString(payload.session) ??
       normalizeOptionalString(payload.sessionKey) ??
       normalizeOptionalString(payload.key) ??
+      normalizeOptionalString(task?.sessionKey) ??
+      normalizeOptionalString(task?.childSessionKey) ??
       undefined,
-    taskId: normalizeOptionalString(payload.taskId) ?? undefined,
+    taskId:
+      normalizeOptionalString(payload.taskId) ??
+      normalizeOptionalString(task?.taskId) ??
+      normalizeOptionalString(task?.id) ??
+      undefined,
     runId:
       normalizeOptionalString(payload.runId) ??
       normalizeOptionalString(payload.run) ??
       normalizeOptionalString(payload.clientRunId) ??
+      normalizeOptionalString(task?.runId) ??
       undefined
   };
 }

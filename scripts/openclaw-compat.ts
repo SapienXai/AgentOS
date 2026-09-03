@@ -427,7 +427,7 @@ async function startCompatibilityTestGateway(target: OpenClawCompatibilityTarget
   const channel = target.name === "simulated-beta-shape" ? "beta" : "stable";
   const label = target.label;
   const methodSet = new Set(methods);
-  const events = ["chat", "agent", "session.message", "session.tool", "task", "task.updated", "task.completed"];
+  const events = ["chat", "agent", "session.message", "session.tool", "task"];
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
 
   server.on("connection", (socket) => {

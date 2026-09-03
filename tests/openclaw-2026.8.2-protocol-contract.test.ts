@@ -17,8 +17,13 @@ import {
   GATEWAY_CLIENT_MODES
 } from "@openclaw/gateway-protocol/client-info";
 
-import { buildConnectParams, normalizeDeviceMetadataForAuth } from "@/lib/openclaw/client/native-ws-gateway-auth";
+import {
+  buildConnectParams,
+  buildDeviceAuthPayloadV3,
+  normalizeDeviceMetadataForAuth
+} from "@/lib/openclaw/client/native-ws-gateway-auth";
 import { resolveGatewayClientId } from "@/lib/openclaw/client/openclaw-protocol";
+import { getOpenClawGatewayCompatibilityOperation } from "@/lib/openclaw/client/gateway-compatibility";
 import {
   NativeGatewayRequestError,
   normalizeClientError
@@ -114,7 +119,46 @@ test("AgentOS uses the official client registry and only implemented capabilitie
     () => resolveGatewayClientId("not-a-registered-client"),
     /Unsupported OpenClaw Gateway client id/
   );
-  assert.equal(normalizeDeviceMetadataForAuth(" Darwin|ARM64 "), "darwinarm64");
+});
+
+test("AgentOS device-auth metadata normalization matches the official 8.2 helper", () => {
+  const vectors: Array<[string | null | undefined, string]> = [
+    [undefined, ""],
+    [null, ""],
+    ["", ""],
+    ["   ", ""],
+    ["  DARWIN  ", "darwin"],
+    [process.platform, process.platform.toLowerCase()],
+    [" MacBookPro18,3 ", "macbookpro18,3"],
+    [" Darwin|ARM64 ", "darwin|arm64"]
+  ];
+
+  for (const [input, expected] of vectors) {
+    assert.equal(normalizeDeviceMetadataForAuth(input), expected, input ?? "missing");
+  }
+
+  assert.equal(
+    buildDeviceAuthPayloadV3({
+      deviceId: "device-1",
+      clientId: "gateway-client",
+      clientMode: "backend",
+      role: "operator",
+      scopes: ["operator.read"],
+      signedAtMs: 42,
+      token: "token",
+      nonce: "nonce",
+      platform: " Darwin|ARM64 ",
+      deviceFamily: " MacBookPro18,3 "
+    }),
+    "v3|device-1|gateway-client|backend|operator|operator.read|42|token|nonce|darwin|arm64|macbookpro18,3"
+  );
+});
+
+test("the 8.2 task contract uses snapshot RPCs plus the raw task event", () => {
+  const taskEvents = getOpenClawGatewayCompatibilityOperation("taskEvents");
+
+  assert.deepEqual(taskEvents?.methods, ["tasks.list", "tasks.get"]);
+  assert.deepEqual(taskEvents?.events, ["task"]);
 });
 
 test("official Gateway discovery omission remains unknown rather than unsupported", () => {

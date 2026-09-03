@@ -291,7 +291,7 @@ function createCompatibilityGateway(
   ];
   const events = options.advertiseMethods === false
     ? []
-    : ["chat", "agent", "session.message", "session.tool", "task", "task.updated", "task.completed"];
+    : ["chat", "agent", "session.message", "session.tool", "task"];
   const gateway = new FakeOpenClawGateway({
     protocol: 4,
     methods: options.advertiseMethods === false ? [] : methods,

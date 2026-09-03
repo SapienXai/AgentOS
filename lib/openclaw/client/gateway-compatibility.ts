@@ -233,7 +233,7 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     id: "taskEvents",
     label: "Task events",
     methods: ["tasks.list", "tasks.get"],
-    events: ["session.operation", "sessions.changed", "task", "task.updated", "task.completed"],
+    events: ["task"],
     baseline: "optional"
   },
   {

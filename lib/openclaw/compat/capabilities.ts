@@ -156,7 +156,7 @@ const capabilityDefinitions: CapabilityDefinition[] = [
     id: "tasks",
     label: "Tasks",
     methods: ["tasks.list", "tasks.get", "tasks.cancel"],
-    events: ["session.operation", "sessions.changed", "task", "task.updated", "task.completed"]
+    events: ["task"]
   },
   {
     id: "artifacts",

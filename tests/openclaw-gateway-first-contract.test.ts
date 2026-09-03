@@ -252,14 +252,13 @@ test("capability matrix tracks Phase 2 Gateway-native runtime surfaces", async (
       "chat.history",
       "tasks.list",
       "tasks.get",
-      "tasks.subscribe",
       "artifacts.list",
       "artifacts.get",
       "artifacts.download",
       "tools.catalog",
       "tools.effective"
     ],
-    events: ["task.updated", "artifact.updated"]
+    events: ["task", "artifact.updated"]
   }));
 
   const matrix = await getOpenClawCapabilityMatrix({ force: true });
@@ -270,7 +269,6 @@ test("capability matrix tracks Phase 2 Gateway-native runtime surfaces", async (
   assert.equal(matrix.operations?.runtimeSnapshot.mode, "gateway-native");
   assert.equal(matrix.operations?.tools.mode, "gateway-native");
   assert.equal(matrix.eventBridge, "supported");
-  assert.ok(!matrix.unsupportedGatewayMethods.includes("tasks.subscribe"));
   assert.ok(!matrix.unsupportedGatewayMethods.includes("sessions.list"));
 });
 
@@ -801,8 +799,8 @@ test("Gateway event bridge reconnects after subscription close without duplicate
 test("Gateway event bridge stream status exposes polling recovery without leaking subscription errors", async () => {
   setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({
     protocolVersion: 4,
-    methods: ["sessions.subscribe", "tasks.subscribe"],
-    events: ["session.message", "task.updated"]
+    methods: ["sessions.subscribe"],
+    events: ["session.message", "task"]
   }));
   setOpenClawEventBridgeReconnectPolicyForTesting({ baseMs: 10, maxMs: 10 });
   setOpenClawAdapterForTesting(createContractAdapter({

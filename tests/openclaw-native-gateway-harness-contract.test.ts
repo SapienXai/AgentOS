@@ -206,18 +206,14 @@ test("agent.wait unsupported, timeout, and malformed responses are ignored after
   });
 });
 
-test("runtime event subscription forwards Gateway event frames to callbacks", async () => {
+test("task inclusion does not send a task-specific RPC and forwards the canonical task event", async () => {
   const { client, fallback, gateway } = createNativeGatewayTestClient({
     gatewayOptions: {
-      methods: ["tasks.subscribe"],
-      events: ["task.updated"]
+      methods: [],
+      events: ["task"]
     }
   });
   const events: unknown[] = [];
-  gateway.route("tasks.subscribe", (_frame, context) => {
-    context.respond({ subscribed: true });
-    context.emitEvent("task.updated", { taskId: "task-1", status: "running" });
-  });
 
   const subscription = await client.subscribeRuntimeEvents(
     { includeSessions: false, includeTasks: true, taskIds: ["task-1"] },
@@ -227,15 +223,42 @@ test("runtime event subscription forwards Gateway event frames to callbacks", as
       }
     }
   );
+  gateway.sockets[0]?.emitEvent("task", {
+    action: "upserted",
+    task: { id: "task-1", taskId: "task-1", status: "running" }
+  });
   subscription.close();
 
-  assert.deepEqual(gateway.methods(), ["connect", "tasks.subscribe"]);
-  assert.deepEqual(gateway.sentFrames[1]?.params, { taskIds: ["task-1"] });
+  assert.deepEqual(gateway.methods(), ["connect"]);
   assert.deepEqual(events, [{
     type: "event",
-    event: "task.updated",
-    payload: { taskId: "task-1", status: "running" }
+    event: "task",
+    payload: {
+      action: "upserted",
+      task: { id: "task-1", taskId: "task-1", status: "running" }
+    }
   }]);
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("task inclusion does not replace the real session subscription RPC", async () => {
+  const { client, fallback, gateway } = createNativeGatewayTestClient({
+    gatewayOptions: {
+      methods: ["sessions.subscribe"],
+      events: ["session.message", "task"]
+    }
+  });
+  gateway.route("sessions.subscribe", (_frame, context) => {
+    context.respond({ subscribed: true });
+  });
+
+  const subscription = await client.subscribeRuntimeEvents(
+    { includeSessions: true, includeTasks: true },
+    { onEvent: () => {} }
+  );
+  subscription.close();
+
+  assert.deepEqual(gateway.methods(), ["connect", "sessions.subscribe"]);
   assert.deepEqual(fallback.calls, []);
 });
 
