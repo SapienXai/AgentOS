@@ -44,7 +44,7 @@ export type AgentToolPolicyConfig = {
   };
 };
 
-/** A supported-field patch for an OpenClaw agents.list[].tools entry. */
+/** A supported-field patch for an OpenClaw agents.entries.<agentId>.tools entry. */
 export type AgentToolPolicyInput = {
   profile?: AgentToolProfile | null;
   allow?: string[] | null;
@@ -64,7 +64,7 @@ export type AgentSandboxConfig = {
   workspaceAccess?: AgentSandboxWorkspaceAccess;
 };
 
-/** A supported-field patch for an OpenClaw agents.list[].sandbox entry. */
+/** A supported-field patch for an OpenClaw agents.entries.<agentId>.sandbox entry. */
 export type AgentSandboxInput = {
   mode?: AgentSandboxMode | null;
   scope?: AgentSandboxScope | null;
@@ -74,7 +74,7 @@ export type AgentSandboxInput = {
 export type AgentMemorySearchSource = "memory" | "sessions";
 
 /**
- * Deliberately narrow subset of agents.list[].memorySearch. Provider, paths,
+ * Deliberately narrow subset of agents.entries.<agentId>.memory.search. Provider, paths,
  * and credential-backed settings stay in OpenClaw settings rather than an
  * employee profile.
  */

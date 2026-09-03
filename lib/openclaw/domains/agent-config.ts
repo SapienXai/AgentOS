@@ -53,6 +53,9 @@ export type MutableAgentConfigEntry = {
   default?: boolean;
 } & Record<string, unknown>;
 
+const OPENCLAW_AGENT_CONFIG_PATH = "agents.entries";
+const LEGACY_OPENCLAW_AGENT_CONFIG_PATH = "agents.list";
+
 function normalizeOptionalValue(value: string | null | undefined) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
@@ -138,28 +141,61 @@ export async function readAgentConfigList(
   snapshot?: MissionControlSnapshot,
   options: OpenClawCommandOptions = {}
 ) {
+  let modernConfigError: unknown;
+
   try {
-    const config = await getOpenClawAdapter().getConfig<MutableAgentConfigEntry[]>("agents.list", options);
+    const config = await getOpenClawAdapter().getConfig<unknown>(OPENCLAW_AGENT_CONFIG_PATH, options);
+    const normalizedConfig = normalizeAgentConfigList(config);
 
-    if (Array.isArray(config)) {
-      return config;
+    if (normalizedConfig) {
+      return normalizedConfig;
     }
-
-    return config == null && snapshot ? buildAgentConfigListFromSnapshot(snapshot) : [];
   } catch (error) {
-    if (isMissingAgentConfigListError(error)) {
-      return snapshot ? buildAgentConfigListFromSnapshot(snapshot) : [];
-    }
-
-    throw error;
+    modernConfigError = error;
   }
+
+  try {
+    const legacyConfig = await getOpenClawAdapter().getConfig<unknown>(LEGACY_OPENCLAW_AGENT_CONFIG_PATH, options);
+    const normalizedLegacyConfig = normalizeAgentConfigList(legacyConfig);
+
+    if (normalizedLegacyConfig) {
+      return normalizedLegacyConfig;
+    }
+  } catch (error) {
+    if (!isMissingAgentConfigPathError(error, LEGACY_OPENCLAW_AGENT_CONFIG_PATH)) {
+      throw error;
+    }
+  }
+
+  if (modernConfigError && !isMissingAgentConfigPathError(modernConfigError, OPENCLAW_AGENT_CONFIG_PATH)) {
+    throw modernConfigError;
+  }
+
+  return snapshot ? buildAgentConfigListFromSnapshot(snapshot) : [];
 }
 
 export async function writeAgentConfigList(
   configList: MutableAgentConfigEntry[],
   options: OpenClawCommandOptions = {}
 ) {
-  await getOpenClawAdapter().setConfig("agents.list", configList, { ...options, strictJson: true });
+  const entries = Object.fromEntries(
+    configList
+      .filter((entry) => entry.id.trim().length > 0)
+      .map((entry) => [entry.id, serializeAgentConfigEntry(entry)])
+  );
+
+  try {
+    await getOpenClawAdapter().setConfig(OPENCLAW_AGENT_CONFIG_PATH, entries, { ...options, strictJson: true });
+  } catch (error) {
+    if (!isMissingAgentConfigPathError(error, OPENCLAW_AGENT_CONFIG_PATH)) {
+      throw error;
+    }
+
+    await getOpenClawAdapter().setConfig(LEGACY_OPENCLAW_AGENT_CONFIG_PATH, configList, {
+      ...options,
+      strictJson: true
+    });
+  }
 }
 
 export async function upsertAgentConfigEntry(
@@ -582,9 +618,52 @@ function buildAgentConfigListFromSnapshot(snapshot: MissionControlSnapshot) {
   });
 }
 
-function isMissingAgentConfigListError(error: unknown) {
+function normalizeAgentConfigList(value: unknown): MutableAgentConfigEntry[] | null {
+  if (Array.isArray(value)) {
+    return value as MutableAgentConfigEntry[];
+  }
+
+  if (!isObjectRecord(value)) {
+    return null;
+  }
+
+  return Object.entries(value).flatMap(([id, entry]) => {
+    if (!isObjectRecord(entry)) {
+      return [];
+    }
+
+    return [{ ...entry, id } as MutableAgentConfigEntry];
+  });
+}
+
+function serializeAgentConfigEntry(entry: MutableAgentConfigEntry) {
+  const configEntry = { ...entry } as Record<string, unknown>;
+  const memorySearch = configEntry.memorySearch;
+  delete configEntry.id;
+  delete configEntry.default;
+  delete configEntry.memorySearch;
+  const existingMemory = isObjectRecord(configEntry.memory) ? configEntry.memory : {};
+
+  return {
+    ...configEntry,
+    ...(memorySearch
+      ? {
+          memory: {
+            ...existingMemory,
+            search: memorySearch
+          }
+        }
+      : {})
+  };
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isMissingAgentConfigPathError(error: unknown, configPath: string) {
   const message = extractErrorMessage(error);
-  return /Config path not found:\s*agents\.list|Config path not found:\s*agents\.list/i.test(message);
+  return message.toLowerCase().replace(/\s+/g, " ").includes(`config path not found: ${configPath}`.toLowerCase());
 }
 
 function jsonValuesEqual(left: unknown, right: unknown) {

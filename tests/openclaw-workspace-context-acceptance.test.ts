@@ -179,14 +179,22 @@ function createContextAdapter(state: ReturnType<typeof createAdapterState>): Ope
       return { stdout: "", stderr: "" };
     },
     async getConfig(pathName) {
-      if (pathName === "agents.list") {
-        return state.agentConfig;
+      if (pathName === "agents.entries") {
+        return Object.fromEntries(
+          state.agentConfig.map((entry) => {
+            const { id, ...config } = entry;
+            return [id, config];
+          })
+        );
       }
       return null;
     },
     async setConfig(pathName, value) {
-      if (pathName === "agents.list" && Array.isArray(value)) {
-        state.agentConfig = value as Array<Record<string, unknown>>;
+      if (pathName === "agents.entries" && value && typeof value === "object" && !Array.isArray(value)) {
+        state.agentConfig = Object.entries(value as Record<string, Record<string, unknown>>).map(([id, config]) => ({
+          ...config,
+          id
+        }));
       }
       return { stdout: "", stderr: "" };
     },

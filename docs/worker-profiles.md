@@ -12,14 +12,14 @@ Worker Profiles are the operator-facing representation of an OpenClaw agent in A
 
 | Worker Profile field | OpenClaw mapping |
 | --- | --- |
-| Display name / emoji / theme / avatar | `agents.list[].name` and `identity` |
-| Mission | `agents.list[].description` |
-| Model | `agents.list[].model` |
-| Skills | `agents.list[].skills` |
-| Tool profile and allow/deny | `agents.list[].tools.profile`, `allow`, `deny` |
-| Workspace-only files | `agents.list[].tools.fs.workspaceOnly` |
-| Sandbox | `agents.list[].sandbox.mode`, `scope`, `workspaceAccess` |
-| Memory access | `agents.list[].memorySearch.enabled`, `sources` |
+| Display name / emoji / theme / avatar | `agents.entries.<agentId>.name` and `identity` |
+| Mission | `agents.entries.<agentId>.description` |
+| Model | `agents.entries.<agentId>.model` |
+| Skills | `agents.entries.<agentId>.skills` |
+| Tool profile and allow/deny | `agents.entries.<agentId>.tools.profile`, `allow`, `deny` |
+| Workspace-only files | `agents.entries.<agentId>.tools.fs.workspaceOnly` |
+| Sandbox | `agents.entries.<agentId>.sandbox.mode`, `scope`, `workspaceAccess` |
+| Memory access | `agents.entries.<agentId>.memory.search.enabled`, `sources` |
 
 AgentOS limits its profile editor to these schema-verified fields. It does not store or transmit credentials, OAuth tokens, browser cookies, sandbox environment variables, host mounts, extra memory paths, or provider configuration.
 

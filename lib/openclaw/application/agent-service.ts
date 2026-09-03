@@ -315,9 +315,10 @@ async function updateAgentGatewayMetadataOrDeferToConfig(
     await runAgentGatewayMutation(operationLabel, () =>
       getOpenClawAdapter().updateAgent(input, { ...gatewayOptions, timeoutMs: 15_000 })
     );
+    return true;
   } catch (error) {
     if (isRecoverableAgentUpdateGatewayDrift(error)) {
-      return;
+      return false;
     }
 
     throw error;
@@ -420,7 +421,7 @@ export async function updateAgent(input: AgentUpdateInput, gatewayOptions: OpenC
   }
 
   if (onlyModelChanged) {
-    await updateAgentGatewayMetadataOrDeferToConfig(
+    const updatedViaGateway = await updateAgentGatewayMetadataOrDeferToConfig(
       {
         id: agentId,
         workspace: resolvedWorkspacePath,
@@ -430,18 +431,20 @@ export async function updateAgent(input: AgentUpdateInput, gatewayOptions: OpenC
       gatewayOptions
     );
 
-    await upsertAgentConfigEntryWithRecovery(
-      agentId,
-      resolvedWorkspacePath,
-      {
-        agentDir: agent.agentDir ?? buildWorkspaceAgentStatePath(resolvedWorkspacePath, agentId),
-        description: workerProfile.employment.mission,
-        model: nextModelId
-      },
-      snapshot,
-      undefined,
-      gatewayOptions
-    );
+    if (!updatedViaGateway) {
+      await upsertAgentConfigEntryWithRecovery(
+        agentId,
+        resolvedWorkspacePath,
+        {
+          agentDir: agent.agentDir ?? buildWorkspaceAgentStatePath(resolvedWorkspacePath, agentId),
+          description: workerProfile.employment.mission,
+          model: nextModelId
+        },
+        snapshot,
+        undefined,
+        gatewayOptions
+      );
+    }
 
     await upsertWorkspaceProjectAgentMetadata(resolvedWorkspacePath, {
       id: agentId,

@@ -9,9 +9,8 @@ afterEach(() => {
 });
 
 test("agent config upsert preserves omitted fields while updating identity and model", async () => {
-  let config: MutableAgentConfigEntry[] = [
-    {
-      id: "agent-1",
+  let config: Record<string, Omit<MutableAgentConfigEntry, "id">> = {
+    "agent-1": {
       workspace: "/workspace",
       agentDir: "/workspace/.openclaw/agents/agent-1/agent",
       name: "Agent One",
@@ -21,16 +20,16 @@ test("agent config upsert preserves omitted fields while updating identity and m
         emoji: "A"
       }
     }
-  ];
+  };
 
   setOpenClawAdapterForTesting({
     async getConfig(pathName: string) {
-      assert.equal(pathName, "agents.list");
+      assert.equal(pathName, "agents.entries");
       return config;
     },
     async setConfig(pathName: string, value: unknown) {
-      assert.equal(pathName, "agents.list");
-      config = value as MutableAgentConfigEntry[];
+      assert.equal(pathName, "agents.entries");
+      config = value as Record<string, Omit<MutableAgentConfigEntry, "id">>;
       return { stdout: "", stderr: "" };
     }
   } as unknown as OpenClawAdapter);
@@ -39,8 +38,7 @@ test("agent config upsert preserves omitted fields while updating identity and m
     model: "openai/new"
   });
 
-  assert.deepEqual(config[0], {
-    id: "agent-1",
+  assert.deepEqual(config["agent-1"], {
     workspace: "/workspace",
     agentDir: "/workspace/.openclaw/agents/agent-1/agent",
     name: "Agent One",
@@ -58,17 +56,16 @@ test("agent config upsert preserves omitted fields while updating identity and m
     }
   });
 
-  assert.equal(config[0]?.name, "Agent One");
-  assert.deepEqual(config[0]?.identity, {
+  assert.equal(config["agent-1"]?.name, "Agent One");
+  assert.deepEqual(config["agent-1"]?.identity, {
     name: "Agent Prime",
     theme: "violet"
   });
 });
 
 test("agent config maps only supported Worker Profile runtime fields and preserves unknown tool settings", async () => {
-  let config: MutableAgentConfigEntry[] = [
-    {
-      id: "agent-1",
+  let config: Record<string, Omit<MutableAgentConfigEntry, "id">> = {
+    "agent-1": {
       workspace: "/workspace",
       tools: {
         alsoAllow: ["web_fetch"],
@@ -80,14 +77,14 @@ test("agent config maps only supported Worker Profile runtime fields and preserv
         backend: "docker"
       }
     }
-  ];
+  };
 
   setOpenClawAdapterForTesting({
     async getConfig<TPayload>() {
       return config as TPayload;
     },
     async setConfig(_pathName: string, value: unknown) {
-      config = value as MutableAgentConfigEntry[];
+      config = value as Record<string, Omit<MutableAgentConfigEntry, "id">>;
       return { stdout: "", stderr: "" };
     }
   } as unknown as OpenClawAdapter);
@@ -111,7 +108,7 @@ test("agent config maps only supported Worker Profile runtime fields and preserv
     }
   });
 
-  assert.deepEqual(config[0]?.tools, {
+  assert.deepEqual(config["agent-1"]?.tools, {
     alsoAllow: ["web_fetch"],
     profile: "coding",
     allow: ["read", "write"],
@@ -120,15 +117,16 @@ test("agent config maps only supported Worker Profile runtime fields and preserv
       workspaceOnly: true
     }
   });
-  assert.deepEqual(config[0]?.sandbox, {
+  assert.deepEqual(config["agent-1"]?.sandbox, {
     backend: "docker",
     mode: "all",
     scope: "agent",
     workspaceAccess: "ro"
   });
-  assert.deepEqual(config[0]?.memorySearch, {
+  const persistedMemory = config["agent-1"]?.memory as { search?: unknown } | undefined;
+  assert.deepEqual(persistedMemory?.search, {
     enabled: true,
     sources: ["memory", "sessions"]
   });
-  assert.equal(config[0]?.description, "Deliver a concise daily brief.");
+  assert.equal(config["agent-1"]?.description, "Deliver a concise daily brief.");
 });

@@ -171,6 +171,7 @@ export function clearMissionControlCaches() {
 
 export function invalidateMissionControlSnapshotCache() {
   missionControlCacheService.clear();
+  clearMissionControlPayloadCaches();
 }
 
 export async function getMissionControlSnapshot(

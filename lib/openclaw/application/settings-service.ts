@@ -715,7 +715,7 @@ export async function assertGatewayNativeConfigMutationAccess() {
   const client = new NativeWsOpenClawGatewayClient();
 
   try {
-    return await client.callNative("config.schema.lookup", { path: "agents.list" }, {
+    return await client.callNative("config.schema.lookup", { path: "agents.entries" }, {
       timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
     });
   } finally {

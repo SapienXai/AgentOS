@@ -4813,7 +4813,9 @@ export function MissionControlShell({
           snapshot={uiSnapshot}
           onOpenChange={handleAgentModelPickerOpenChange}
           onSnapshotChange={(updater) => setSnapshot(updater)}
-          onRefresh={refresh}
+          onRefresh={async () => {
+            await refreshSnapshot({ force: true });
+          }}
           onOpenAddModels={openAddModelsFromModelPicker}
           surfaceTheme={surfaceTheme}
         />

@@ -309,7 +309,8 @@ test("read-only agent config and channel discovery use the OpenClaw adapter", ()
   );
   const channelsSource = readFileSync(path.join(rootDir, "lib/openclaw/domains/channels.ts"), "utf8");
 
-  assert.match(agentConfigSource, /getOpenClawAdapter\(\)\.getConfig<MutableAgentConfigEntry\[\]>\("agents\.list", options\)/);
+  assert.match(agentConfigSource, /const OPENCLAW_AGENT_CONFIG_PATH = "agents\.entries"/);
+  assert.match(agentConfigSource, /getOpenClawAdapter\(\)\.getConfig<unknown>\(OPENCLAW_AGENT_CONFIG_PATH, options\)/);
   assert.match(channelsSource, /getOpenClawAdapter\(\)\.getConfig<TelegramAllowlistConfig>\("channels\.telegram\.groups"\)/);
   assert.match(channelsSource, /getOpenClawAdapter\(\)\.getConfig<DiscordGuildConfig>\("channels\.discord\.guilds"\)/);
   assert.match(channelsSource, /getOpenClawAdapter\(\)\.getChannelLogs/);
@@ -322,7 +323,7 @@ test("agent config writes stay behind the OpenClaw adapter without workspace ide
 
   assert.doesNotMatch(source, /from\s+["']@\/lib\/openclaw\/cli["']/);
   assert.doesNotMatch(source, /runOpenClaw/);
-  assert.match(source, /getOpenClawAdapter\(\)\.setConfig\("agents\.list", configList, \{ \.\.\.options, strictJson: true \}\)/);
+  assert.match(source, /getOpenClawAdapter\(\)\.setConfig\(OPENCLAW_AGENT_CONFIG_PATH, entries, \{ \.\.\.options, strictJson: true \}\)/);
   assert.doesNotMatch(source, /getOpenClawAdapter\(\)\.setAgentIdentity/);
   assert.match(source, /writeFile\(identityFilePath, identityMarkdown, "utf8"\)/);
 });
