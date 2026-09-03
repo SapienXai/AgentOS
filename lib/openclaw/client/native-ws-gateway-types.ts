@@ -91,6 +91,7 @@ export type NativeWsOpenClawGatewayClientOptions = {
   requestPolicy?: AgentOsGatewayRequestPolicy;
   webSocketFactory?: WebSocketFactory;
   forceCli?: boolean;
+  transportSelectionWarning?: string | null;
   onNativeFailure?: (error: unknown, method: string) => void;
 };
 

@@ -18,13 +18,14 @@ export type OfficialBackedOpenClawGatewayClientOptions = OfficialGatewayTranspor
   fallback?: OpenClawGatewayClient;
   forceCli?: boolean;
   onNativeFailure?: NativeWsOpenClawGatewayClientOptions["onNativeFailure"];
+  transportSelectionWarning?: NativeWsOpenClawGatewayClientOptions["transportSelectionWarning"];
   requestPolicy?: AgentOsGatewayRequestPolicy;
 };
 
 /**
- * Constructs the Phase 3 official-backed domain path without changing the
- * production factory. NativeWsOpenClawGatewayClient remains the domain and
- * policy implementation; only its transport boundary is replaced.
+ * Constructs the official-backed domain path. NativeWsOpenClawGatewayClient
+ * remains the domain and policy implementation; only its transport boundary
+ * is replaced.
  */
 export function createOfficialBackedOpenClawGatewayClient(
   options: OfficialBackedOpenClawGatewayClientOptions = {}
@@ -69,6 +70,7 @@ export function createOfficialBackedOpenClawGatewayClient(
     fallback: options.fallback,
     forceCli: options.forceCli,
     onNativeFailure: options.onNativeFailure,
+    transportSelectionWarning: options.transportSelectionWarning,
     transport: coordinator,
     requestPolicy
   });

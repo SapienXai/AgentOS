@@ -20,6 +20,7 @@
     "openclaw:runtime-cert": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-runtime-certification.ts",
     "openclaw:official-transport-cert": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-official-transport-certification.ts",
     "openclaw:official-lifecycle-cert": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-official-gateway-lifecycle-certification.ts",
+    "openclaw:official-production-cert": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-official-production-certification.ts",
     "openclaw:lifecycle-e2e": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-lifecycle-e2e.ts",
     "openclaw:identity-e2e": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-identity-e2e.ts",
     "openclaw:multi-user-e2e": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-multi-user-e2e.ts",

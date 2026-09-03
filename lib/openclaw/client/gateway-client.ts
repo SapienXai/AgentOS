@@ -161,6 +161,14 @@ export {
   OPENCLAW_GATEWAY_PROTOCOL_RANGE,
   OpenClawGatewayClientError
 } from "@/lib/openclaw/client/native-ws-gateway-client";
+export {
+  AGENTOS_OPENCLAW_TRANSPORT_ENV,
+  resolveOpenClawTransportSelection
+} from "@/lib/openclaw/client/native-ws-gateway-policy";
+export type {
+  OpenClawTransportImplementation,
+  OpenClawTransportSelection
+} from "@/lib/openclaw/client/native-ws-gateway-policy";
 export type {
   OpenClawGatewayFallbackDiagnostic,
   NativeWsOpenClawGatewayClientOptions,

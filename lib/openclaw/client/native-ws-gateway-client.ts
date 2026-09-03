@@ -331,6 +331,12 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
 
     return {
       mode: forceCli ? "cli" : "native-ws",
+      transportImplementation: forceCli
+        ? "cli"
+        : this.connection.lifecycleOwner === "official"
+          ? "official"
+          : "custom",
+      transportSelectionWarning: this.options.transportSelectionWarning ?? null,
       gatewayMode,
       statusLabel: resolveGatewayStatusLabel(gatewayMode),
       recovery: resolveGatewayStatusRecovery(gatewayMode, activeNativeFailure?.recovery ?? null),

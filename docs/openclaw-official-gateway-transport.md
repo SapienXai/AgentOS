@@ -1,6 +1,6 @@
 # Official OpenClaw Gateway transport
 
-Phase 3 extends the additive certification path for the exact OpenClaw
+Phase 4 makes the official-backed client the production default for the exact OpenClaw
 2026.8.2 Gateway client package:
 
 - `@openclaw/gateway-client@2026.8.2`
@@ -82,12 +82,31 @@ after the bridge is reset.
 
 ## Production selection
 
-The production factory intentionally continues to return AgentOS's custom
-`NativeWsOpenClawGatewayClient` with its existing CLI fallback policy. The
-official transport is not wired into the default factory in Phase 3. Existing
-application services, normalizers, request policy, diagnostics, auth
-attribution, runtime projection, and orchestration behavior therefore retain
-their current production path. Phase 4 owns the explicit cutover decision.
+The production factory returns the existing AgentOS
+`NativeWsOpenClawGatewayClient` domain/policy layer with the official Gateway
+transport by default. Existing application services, normalizers, request
+policy, diagnostics, auth attribution, runtime projection, and orchestration
+behavior remain above the transport boundary.
+
+The server-side migration selector is `AGENTOS_OPENCLAW_TRANSPORT`:
+
+- unset or `official`: official-backed production transport;
+- `custom`: explicit bounded rollback to the legacy custom transport;
+- any other value: fail closed to the official transport and expose a safe
+  diagnostic warning.
+
+`AGENTOS_OPENCLAW_GATEWAY_CLIENT=cli`, `OPENCLAW_GATEWAY_CLIENT=cli`, and
+`AGENTOS_OPENCLAW_NATIVE_WS=0|false|off` remain the explicit CLI-only override.
+CLI is an AgentOS policy fallback/recovery path, not an automatic transport
+rollback. The custom transport remains temporarily available for migration
+rollback and is not exposed in normal user UI.
+
+Normal official production clients use `sharedStateMode: "managed-write"` so
+the official package can persist and clear rotated device tokens through the
+AgentOS host adapter's fenced canonical OpenClaw state boundary. Explicit
+token/password environment inputs retain their credential behavior, and the
+official host's debug/error hooks remain redacted/no-op because AgentOS already
+projects sanitized lifecycle diagnostics.
 
 ## Certification coverage
 
@@ -99,22 +118,27 @@ lease races, no `tasks.subscribe`, event delivery, sequence-gap reporting,
 bounded reconciliation, canonical SQLite state, stale-token fencing, and log
 redaction.
 
-The exact-runtime certification runs against a disposable OpenClaw 2026.8.2
-Gateway process and writes a sanitized evidence artifact:
+The Phase 4 exact-runtime certification runs against a disposable OpenClaw
+2026.8.2 Gateway process through the true production factory and writes a
+sanitized evidence artifact:
 
 ```sh
-OPENCLAW_OFFICIAL_LIFECYCLE_PACKAGE=/path/to/exact/openclaw/package \
-  pnpm openclaw:official-lifecycle-cert
+OPENCLAW_OFFICIAL_PRODUCTION_PACKAGE=/path/to/exact/openclaw/package \
+  pnpm openclaw:official-production-cert
 ```
 
-The Phase 3 gate passed with the exact package/source commit, official v4
-handshake, canonical device identity/token state, official-backed domain
-reads, reconnect after an isolated Gateway restart, and no parallel reconnect
-owner. Evidence is recorded in
+The gate checks the exact package/source commit, official v4 handshake,
+canonical device identity/token state, the default and explicit selector
+paths, core Gateway reads, reconnect after an isolated Gateway restart,
+subscription replay, request-policy continuity, custom rollback, forced CLI,
+and invalid-selector fail-closed behavior. Evidence is recorded in
+`docs/evidence/openclaw-2026.8.2-production-cutover-certification.json`.
+The earlier Phase 3 lifecycle evidence remains recorded in
 `docs/evidence/openclaw-2026.8.2-official-gateway-lifecycle-certification.json`.
 
 ## Intentionally unchanged
 
-There is no Phase 4 production cutover, no removal of the custom transport or
-CLI fallback, no UI change, no new AgentOS runtime/orchestrator, and no
-publishing, release, push, or deployment in this phase.
+The Phase 4 cutover does not remove the custom transport, custom tests, or CLI
+fallback. It does not add UI, a new AgentOS runtime/orchestrator, Phase 5
+cleanup, publishing, release, push, or deployment. Legacy transport cleanup is
+reserved for Phase 5 after the rollback window and architecture-lock review.
