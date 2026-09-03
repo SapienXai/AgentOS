@@ -17,6 +17,7 @@ import {
   type ConfigUpdatePacingSettings
 } from "@/lib/openclaw/domains/control-plane-settings";
 import type { ConfigUpdatePacingSnapshot } from "@/lib/openclaw/config-pacing-types";
+import { missionControlRootPath } from "@/lib/openclaw/state/paths";
 
 type ConfigMutationOperation = "set" | "unset";
 type ConfigMutationOptions = OpenClawCommandOptions & { strictJson?: boolean };
@@ -49,7 +50,7 @@ type PersistedConfigPacingQueue = {
   queuedMutations: PersistedQueuedConfigMutation[];
 };
 
-const configPacingQueuePath = path.join(process.cwd(), ".mission-control", "config-pacing-queue.json");
+const defaultConfigPacingQueuePath = path.join(missionControlRootPath, "config-pacing-queue.json");
 
 const queuedMutations = new Map<string, QueuedConfigMutation>();
 let gatewayCooldownUntilMs = 0;
@@ -60,6 +61,7 @@ let lastIssue: string | null = null;
 let lastUpdatedAtMs: number | null = null;
 let pacingSettingsForTesting: ConfigUpdatePacingSettings | null = null;
 let persistentQueueLoaded = false;
+let configPacingQueuePathForTesting: string | null = null;
 
 export async function runGatewayConfigMutationWithPacing(input: {
   path: string;
@@ -128,8 +130,18 @@ export function resetConfigUpdatePacingForTesting(options: { clearPersistentQueu
   }
 
   if (options.clearPersistentQueue) {
-    rmSync(configPacingQueuePath, { force: true });
+    rmSync(resolveConfigPacingQueuePath(), { force: true });
   }
+}
+
+export function setConfigUpdatePacingQueuePathForTesting(queuePath: string | null) {
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+
+  configPacingQueuePathForTesting = queuePath ? path.resolve(queuePath) : null;
+  persistentQueueLoaded = false;
 }
 
 export function setConfigUpdatePacingForTesting(settings: ConfigUpdatePacingSettings | null) {
@@ -142,6 +154,8 @@ function ensurePersistentQueueLoaded() {
   }
 
   persistentQueueLoaded = true;
+
+  const configPacingQueuePath = resolveConfigPacingQueuePath();
 
   if (!existsSync(configPacingQueuePath)) {
     return;
@@ -378,6 +392,7 @@ async function persistConfigPacingQueue() {
       queuedAt: mutation.queuedAt
     }))
   };
+  const configPacingQueuePath = resolveConfigPacingQueuePath();
   const directory = path.dirname(configPacingQueuePath);
   const tempPath = `${configPacingQueuePath}.${process.pid}.${Date.now()}.tmp`;
 
@@ -386,6 +401,10 @@ async function persistConfigPacingQueue() {
   await chmod(tempPath, 0o600).catch(() => undefined);
   await rename(tempPath, configPacingQueuePath);
   await chmod(configPacingQueuePath, 0o600).catch(() => undefined);
+}
+
+function resolveConfigPacingQueuePath() {
+  return configPacingQueuePathForTesting ?? defaultConfigPacingQueuePath;
 }
 
 function sanitizeMutationOptions(options: ConfigMutationOptions): ConfigMutationOptions | undefined {

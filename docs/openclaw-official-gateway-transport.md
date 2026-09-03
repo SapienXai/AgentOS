@@ -133,6 +133,13 @@ paths, core Gateway reads, reconnect after an isolated Gateway restart,
 subscription replay, request-policy continuity, custom rollback, forced CLI,
 and invalid-selector fail-closed behavior. Evidence is recorded in
 `docs/evidence/openclaw-2026.8.2-production-cutover-certification.json`.
+Authoritative runs require a clean worktree and capture `agentosHead`,
+`certifiedCodeHead`, `branch`, `workingTreeClean`, and the repository dirty-file
+count before exercising the runtime. The certification also verifies that the
+captured code HEAD does not change during the run. Because an evidence file
+cannot contain the hash of the commit that contains itself, `certifiedCodeHead`
+identifies the exact code revision executed; the later commit that stores the
+resulting evidence is reported separately as the evidence commit.
 The earlier Phase 3 lifecycle evidence remains recorded in
 `docs/evidence/openclaw-2026.8.2-official-gateway-lifecycle-certification.json`.
 

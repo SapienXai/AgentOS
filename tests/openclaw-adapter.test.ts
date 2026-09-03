@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, test } from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
 
 import { controlGateway } from "@/lib/openclaw/application/gateway-service";
 import {
@@ -17,6 +18,7 @@ import {
 import {
   getConfigUpdatePacingSnapshot,
   resetConfigUpdatePacingForTesting,
+  setConfigUpdatePacingQueuePathForTesting,
   setConfigUpdatePacingForTesting
 } from "@/lib/openclaw/application/config-pacing-service";
 import {
@@ -45,7 +47,12 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const configPacingQueuePath = path.join(process.cwd(), ".mission-control", "config-pacing-queue.json");
+let configPacingTestRoot: string | null = null;
+
+function configPacingQueuePath() {
+  assert.ok(configPacingTestRoot);
+  return path.join(configPacingTestRoot, "config-pacing-queue.json");
+}
 
 function createMockGatewayClient(overrides: Partial<OpenClawGatewayClient> = {}) {
   const calls: MockCall[] = [];
@@ -303,12 +310,24 @@ function createMockGatewayClient(overrides: Partial<OpenClawGatewayClient> = {})
   return { client, calls };
 }
 
-afterEach(() => {
+beforeEach(async () => {
+  configPacingTestRoot = await mkdtemp(path.join(tmpdir(), "agentos-config-pacing-"));
+  setConfigUpdatePacingQueuePathForTesting(configPacingQueuePath());
+  resetConfigUpdatePacingForTesting({ clearPersistentQueue: true });
+});
+
+afterEach(async () => {
   setOpenClawGatewayClientProvider(null);
   setOpenClawGatewayClientForTesting(null);
   setOpenClawAdapterForTesting(null);
   setOpenClawLifecycleServiceForTesting(null);
   resetConfigUpdatePacingForTesting({ clearPersistentQueue: true });
+  setConfigUpdatePacingQueuePathForTesting(null);
+
+  if (configPacingTestRoot) {
+    await rm(configPacingTestRoot, { recursive: true, force: true });
+    configPacingTestRoot = null;
+  }
 });
 
 test("OpenClaw adapter status slice uses the injected gateway client", async () => {
@@ -479,7 +498,7 @@ test("OpenClaw adapter persists pending config mutations and resumes retry after
     async setConfig() {
       attempt += 1;
       throw new Error(
-        "UNAVAILABLE: rate limit exceeded for config.patch; retry after 0.05s Gateway-native operation failed; CLI fallback disabled for this operation."
+        "UNAVAILABLE: rate limit exceeded for config.patch; retry after 0.5s Gateway-native operation failed; CLI fallback disabled for this operation."
       );
     }
   } as unknown as OpenClawGatewayClient));
@@ -490,13 +509,13 @@ test("OpenClaw adapter persists pending config mutations and resumes retry after
   assert.equal(queued.metadata?.pending, true);
   assert.equal(attempt, 1);
 
-  const persisted = JSON.parse(await readFile(configPacingQueuePath, "utf8"));
+  const persisted = JSON.parse(await readFile(configPacingQueuePath(), "utf8"));
   assert.equal(persisted.version, 1);
   assert.equal(persisted.queuedMutations.length, 1);
   assert.equal(persisted.queuedMutations[0].path, "agents.defaults");
   assert.deepEqual(persisted.queuedMutations[0].value, { model: "openai/gpt-5.5" });
   assert.deepEqual(persisted.queuedMutations[0].options, { timeoutMs: 6 });
-  assert.equal((await stat(configPacingQueuePath)).mode & 0o777, 0o600);
+  assert.equal((await stat(configPacingQueuePath())).mode & 0o777, 0o600);
 
   resetConfigUpdatePacingForTesting();
 
@@ -515,7 +534,7 @@ test("OpenClaw adapter persists pending config mutations and resumes retry after
   assert.deepEqual(restoredSnapshot.pendingPaths, ["agents.defaults"]);
   assert.ok(restoredSnapshot.pendingSince);
 
-  await delay(90);
+  await delay(650);
 
   assert.deepEqual(appliedValues, [
     { value: { model: "openai/gpt-5.5" }, options: { timeoutMs: 6 } }
@@ -524,8 +543,8 @@ test("OpenClaw adapter persists pending config mutations and resumes retry after
 });
 
 test("OpenClaw adapter falls back safely when the persistent config queue is corrupt", { concurrency: false }, async () => {
-  await mkdir(path.dirname(configPacingQueuePath), { recursive: true });
-  await writeFile(configPacingQueuePath, "{invalid", { encoding: "utf8", mode: 0o600 });
+  await mkdir(path.dirname(configPacingQueuePath()), { recursive: true });
+  await writeFile(configPacingQueuePath(), "{invalid", { encoding: "utf8", mode: 0o600 });
 
   const snapshot = await getConfigUpdatePacingSnapshot();
 

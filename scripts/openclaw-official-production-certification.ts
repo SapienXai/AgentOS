@@ -49,6 +49,13 @@ type PackageIdentity = {
 };
 
 async function main() {
+  const certificationProvenance = await readCertificationGitProvenance();
+  if (!certificationProvenance.workingTreeClean) {
+    throw new Error(
+      `Refusing authoritative production certification from a dirty worktree (${certificationProvenance.dirtyFilesCount} changed paths). Commit or stash changes before running the certification.`
+    );
+  }
+
   if (!PACKAGE_INPUT) {
     throw new Error("Set OPENCLAW_OFFICIAL_PRODUCTION_PACKAGE to an exact OpenClaw 2026.8.2 package root.");
   }
@@ -81,8 +88,12 @@ async function main() {
     generatedAt: new Date().toISOString(),
     provenance: {
       repository: "SapienXai/AgentOS",
-      agentosHead: await gitHead(),
-      branch: await gitBranch(),
+      agentosHead: certificationProvenance.head,
+      certifiedCodeHead: certificationProvenance.head,
+      branch: certificationProvenance.branch,
+      workingTreeClean: certificationProvenance.workingTreeClean,
+      repositoryDirtyFilesCount: certificationProvenance.dirtyFilesCount,
+      gitDescribe: certificationProvenance.gitDescribe,
       openClaw: {
         version: packageIdentity.version,
         sourceCommit: packageIdentity.sourceCommit,
@@ -365,6 +376,15 @@ async function main() {
     evidence.cleanup.disposableRootRemoved = !(await pathExists(disposableRoot));
     if (evidence.cleanup.status !== "failed") {
       evidence.cleanup.status = "complete";
+    }
+    const endProvenance = await readCertificationGitProvenance();
+    if (endProvenance.head !== evidence.provenance.certifiedCodeHead) {
+      addRow(evidence, "provenance", "certified code HEAD remained stable", "git", "FAIL", "The repository HEAD changed during certification.");
+      evidence.success = false;
+    }
+    if (!endProvenance.workingTreeClean) {
+      addRow(evidence, "provenance", "certification source remained clean", "git", "FAIL", "Tracked source changes appeared during certification.");
+      evidence.success = false;
     }
     evidence.summary = summarize(evidence.matrix);
     evidence.success = evidence.success && evidence.cleanup.status === "complete" && evidence.cleanup.disposableRootRemoved;
@@ -804,6 +824,18 @@ async function gitBranch() {
   return await command("git", ["branch", "--show-current"]);
 }
 
+async function readCertificationGitProvenance() {
+  const status = await command("git", ["status", "--porcelain"]);
+  const dirtyFilesCount = status ? status.split("\n").filter(Boolean).length : 0;
+  return {
+    head: await gitHead(),
+    branch: await gitBranch(),
+    gitDescribe: readString(await command("git", ["describe", "--always", "--dirty"])),
+    workingTreeClean: dirtyFilesCount === 0,
+    dirtyFilesCount
+  };
+}
+
 async function command(executable: string, args: string[]) {
   return await new Promise<string>((resolve) => {
     const child = spawn(executable, args, { cwd: process.cwd(), stdio: ["ignore", "pipe", "ignore"] });
@@ -850,7 +882,11 @@ type CertificationEvidence = {
   provenance: {
     repository: string;
     agentosHead: string;
+    certifiedCodeHead: string;
     branch: string;
+    workingTreeClean: boolean;
+    repositoryDirtyFilesCount: number;
+    gitDescribe: string | null;
     openClaw: {
       version: string;
       sourceCommit: string | null;
