@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@openclaw/gateway-client':
+        specifier: 2026.8.2
+        version: 2026.8.2
       '@openclaw/gateway-protocol':
         specifier: 2026.8.2
         version: 2026.8.2
@@ -519,6 +522,10 @@ packages:
   '@nolyfill/is-core-module@1.0.39':
     resolution: {integrity: sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==}
     engines: {node: '>=12.4.0'}
+
+  '@openclaw/gateway-client@2026.8.2':
+    resolution: {integrity: sha512-SoBgMgDA6mRShoVMv8rzPvEBn+P+DioonqbWvGb2hRvqoCX7tEn0F9/GNooc0ragx+WTzIb5RUeKWTKbA2voRA==}
+    engines: {node: '>=22.19.0'}
 
   '@openclaw/gateway-protocol@2026.8.2':
     resolution: {integrity: sha512-kRwi/A4sJknG24sAdjUM5lKGShIgnj/dqFxcmrW02jkn0FL2VlFl24cZ1GO3o+RBVbzeGOxszUB9U9KvOeuaZA==}
@@ -1824,6 +1831,10 @@ packages:
     resolution: {integrity: sha512-4gd7VpWNQNB4UKKCFFVcp1AVv+FMOgs9NKzjHKusc8jTMhd5eL1NqQqOpE0KzMds804/yHlglp3uxgluOqAPLw==}
     engines: {node: '>= 0.4'}
 
+  ipaddr.js@2.5.0:
+    resolution: {integrity: sha512-aq+t5NAc+cS6rZQQVWC2x98CPqGtKKTMDd4Gaodv0wShnItdKg/51djkGJ1hqH+Oy0ivDftCbSLCQob8zso01w==}
+    engines: {node: '>= 10'}
+
   is-array-buffer@3.0.5:
     resolution: {integrity: sha512-DDfANUiiG2wC1qawP66qlTugJeL5HyzMpfr8lLK+jMQirGzNod0B12cFB/9q838Ru27sBwfw78/rdoU7RERz6A==}
     engines: {node: '>= 0.4'}
@@ -2706,6 +2717,18 @@ packages:
       utf-8-validate:
         optional: true
 
+  ws@8.21.3:
+    resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   y18n@4.0.3:
     resolution: {integrity: sha512-JKhqTOwSrqNA1NY5lSztJ1GrBiUodLMmIZuLiDaMRJ+itFd+ABVE8XBjOvIWL+rSqNDC74LCSFmlb/U4UZ4hJQ==}
 
@@ -3108,6 +3131,15 @@ snapshots:
       fastq: 1.20.1
 
   '@nolyfill/is-core-module@1.0.39': {}
+
+  '@openclaw/gateway-client@2026.8.2':
+    dependencies:
+      '@openclaw/gateway-protocol': 2026.8.2
+      ipaddr.js: 2.5.0
+      ws: 8.21.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   '@openclaw/gateway-protocol@2026.8.2':
     dependencies:
@@ -4527,6 +4559,8 @@ snapshots:
       hasown: 2.0.2
       side-channel: 1.1.0
 
+  ipaddr.js@2.5.0: {}
+
   is-array-buffer@3.0.5:
     dependencies:
       call-bind: 1.0.8
@@ -5521,6 +5555,8 @@ snapshots:
       strip-ansi: 6.0.1
 
   ws@8.20.1: {}
+
+  ws@8.21.3: {}
 
   y18n@4.0.3: {}
 

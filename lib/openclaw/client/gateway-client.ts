@@ -114,6 +114,25 @@ export type {
 
 export { CliOpenClawGatewayClient } from "@/lib/openclaw/client/cli-gateway-client";
 export {
+  OfficialOpenClawGatewayTransport
+} from "@/lib/openclaw/client/official-gateway-transport";
+export type {
+  OfficialGatewayRequestOptions,
+  OfficialGatewayTransportCallbacks,
+  OfficialGatewayTransportOptions
+} from "@/lib/openclaw/client/official-gateway-transport";
+export {
+  createAgentOsGatewayClientHostDeps
+} from "@/lib/openclaw/client/official-gateway-host";
+export type {
+  AgentOsGatewayClientHostOptions
+} from "@/lib/openclaw/client/official-gateway-host";
+export { DEFAULT_OPERATOR_SCOPES } from "@/lib/openclaw/client/native-ws-gateway-types";
+export {
+  NativeGatewayError,
+  NativeGatewayRequestError
+} from "@/lib/openclaw/client/native-ws-gateway-errors";
+export {
   clearOpenClawGatewayFallbackDiagnosticsForTesting,
   getRecentOpenClawGatewayFallbackDiagnostics,
   isCliGatewayClientForcedByEnv,
