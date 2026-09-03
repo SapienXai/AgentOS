@@ -1,5 +1,10 @@
 import "server-only";
 
+/**
+ * ROLLBACK-ONLY: AgentOS-owned WebSocket framing and socket helpers for the
+ * legacy custom transport. Official production traffic uses
+ * @openclaw/gateway-client instead.
+ */
 import { WebSocket as NodeWebSocket } from "ws";
 import {
   isGatewayEventFrame,

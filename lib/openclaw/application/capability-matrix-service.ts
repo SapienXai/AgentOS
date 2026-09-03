@@ -3,11 +3,11 @@ import "server-only";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import type { OpenClawGatewayClientError } from "@/lib/openclaw/client/gateway-client";
 import {
-  NativeWsOpenClawGatewayClient,
   OPENCLAW_GATEWAY_PROTOCOL_RANGE,
   getRecentOpenClawGatewayFallbackDiagnostics,
   isCliGatewayClientForcedByEnv
 } from "@/lib/openclaw/client/gateway-client";
+import { createOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import {
   OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS,
   OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS,
@@ -122,7 +122,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
       supportedEvents = readSupportedEvents(capabilityPayload);
     } else {
       try {
-        const client = new NativeWsOpenClawGatewayClient({ timeoutMs: 2_500 });
+        const client = createOpenClawGatewayClient({ timeoutMs: 2_500 });
         const hello = await client.probeNativeHandshake({
           timeoutMs: 2_500
         }).finally(() => {

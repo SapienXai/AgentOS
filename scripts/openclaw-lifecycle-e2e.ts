@@ -7,15 +7,15 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
-import WebSocket from "ws";
-
-import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
-import type { GatewayEventFrame, WebSocketFactory } from "@/lib/openclaw/client/native-ws-gateway-types";
+import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
+import type { GatewayEventFrame } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { normalizeGatewayTurnEvent } from "@/lib/openclaw/client/native-ws-gateway-mappers";
 import { OPENCLAW_RECOMMENDED_VERSION } from "@/lib/openclaw/versions";
 import { createOpenClawRuntimeProviderFixture } from "@/scripts/openclaw-runtime-provider-fixture";
 import { OpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
 import { requestSupervisorCommand, type SupervisorResponse } from "@/lib/openclaw/lifecycle/supervisor-ipc";
+
+type OfficialBackedGatewayClient = ReturnType<typeof createOfficialBackedOpenClawGatewayClient>;
 
 const execFileAsync = promisify(execFile);
 const PACKAGE_INPUT = process.env.OPENCLAW_LIFECYCLE_PACKAGE?.trim();
@@ -380,18 +380,18 @@ async function waitForManagedRecovery(service: OpenClawLifecycleService, previou
 }
 
 function createNativeClient(url: string, token: string) {
-  return new NativeWsOpenClawGatewayClient({
+  return createOfficialBackedOpenClawGatewayClient({
     url,
     token,
     scopes: ["operator.admin", "operator.read", "operator.write", "operator.approvals", "operator.questions"],
     timeoutMs: 8_000,
     clientName: "gateway-client",
     clientVersion: "0.1.0-agentos-lifecycle-e2e",
-    webSocketFactory: WebSocket as unknown as WebSocketFactory
+    sharedStateMode: "read-only"
   });
 }
 
-async function configureProvider(client: NativeWsOpenClawGatewayClient, baseUrl: string) {
+async function configureProvider(client: OfficialBackedGatewayClient, baseUrl: string) {
   const current = await client.callNative<Record<string, unknown>>("config.get", {}, { timeoutMs: 8_000 }, { safety: "read", timeoutMs: 8_000 });
   const hash = typeof current.hash === "string" ? current.hash : undefined;
   await client.callNative("config.patch", {
@@ -415,14 +415,14 @@ async function configureProvider(client: NativeWsOpenClawGatewayClient, baseUrl:
   return true;
 }
 
-async function createSession(client: NativeWsOpenClawGatewayClient, label: string) {
+async function createSession(client: OfficialBackedGatewayClient, label: string) {
   const key = `agent:dev:agentos-lifecycle-${label}-${Date.now()}`;
   const payload = await client.callNative<Record<string, unknown>>("sessions.create", { key, agentId: "dev", label: `AgentOS lifecycle ${label}` }, { timeoutMs: 8_000 }, { safety: "mutation", timeoutMs: 8_000 });
   assert.ok(typeof payload.sessionId === "string" || typeof (payload.entry as Record<string, unknown> | undefined)?.sessionId === "string");
   return { key, sessionId: typeof payload.sessionId === "string" ? payload.sessionId : String((payload.entry as Record<string, unknown>).sessionId) };
 }
 
-async function runTurn(client: NativeWsOpenClawGatewayClient, sessionKey: string, message: string) {
+async function runTurn(client: OfficialBackedGatewayClient, sessionKey: string, message: string) {
   const frames: GatewayEventFrame[] = [];
   const subscription = await client.subscribeNativeEvents({ subscribeSessions: true, sessionKeys: [sessionKey] }, { onEvent: (frame) => frames.push(frame) }, { timeoutMs: 8_000 });
   try {
@@ -448,7 +448,7 @@ async function waitForTerminal(frames: GatewayEventFrame[], sessionKey: string, 
   throw new Error("Gateway lifecycle E2E timed out waiting for a terminal turn event.");
 }
 
-async function readHistory(client: NativeWsOpenClawGatewayClient, sessionKey: string, minimumAssistantMessages: number) {
+async function readHistory(client: OfficialBackedGatewayClient, sessionKey: string, minimumAssistantMessages: number) {
   let last: unknown = null;
   for (let attempt = 0; attempt < 40; attempt += 1) {
     last = await client.callNative("chat.history", { sessionKey, limit: 50 }, { timeoutMs: 8_000 }, { safety: "read", timeoutMs: 8_000 });

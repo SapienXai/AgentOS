@@ -1,5 +1,10 @@
 import "server-only";
 
+/**
+ * Shared AgentOS domain/policy client. Its transport is injected by the
+ * official factory in production; the custom connection remains an explicit
+ * rollback implementation behind the transport selector.
+ */
 import { CliOpenClawGatewayClient } from "@/lib/openclaw/client/cli-gateway-client";
 import {
   getOpenClawGatewayCompatibilityOperation,

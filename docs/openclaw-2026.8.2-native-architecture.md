@@ -1,5 +1,8 @@
 # OpenClaw 2026.8.2 Native Architecture
 
+> Historical Phase 1 architecture record. The current Phase 5A ownership model and production
+> transport selection are documented in [openclaw-official-gateway-transport.md](./openclaw-official-gateway-transport.md).
+
 Status: aligned with documented compatibility fallbacks
 
 Validated release: OpenClaw `v2026.8.2`

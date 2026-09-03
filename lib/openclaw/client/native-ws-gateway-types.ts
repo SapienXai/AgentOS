@@ -72,6 +72,7 @@ export type WebSocketLike = {
   onclose?: ((event: unknown) => void) | null;
 };
 
+/** Rollback-only socket injection type; official transport owns its socket. */
 export type WebSocketFactory = new (url: string) => WebSocketLike;
 
 export type NativeWsOpenClawGatewayClientOptions = {

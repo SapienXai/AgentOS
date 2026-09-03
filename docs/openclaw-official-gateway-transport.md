@@ -16,6 +16,50 @@ challenge/connect, request correlation, timeouts, aborts, reconnect, event
 delivery, sequence-gap reporting, and device-auth protocol behavior remain
 owned by the official package.
 
+## Phase 5A architecture lock
+
+The migration is split into four dependency classes. This classification is
+an architecture boundary, not a deletion plan:
+
+| Class | Files and responsibility |
+| --- | --- |
+| Production-shared | `native-ws-gateway-client.ts` (AgentOS domain/policy client), `native-ws-gateway-types.ts` (transport contract and shared payload types), `native-ws-gateway-errors.ts`, `native-ws-gateway-mappers.ts`, `native-ws-gateway-payloads.ts`, `native-ws-gateway-policy.ts`, `gateway-request-policy.ts`, and the capability/contract helpers in `native-ws-gateway-protocol.ts` |
+| Official-specific | `official-gateway-transport.ts`, `official-gateway-host.ts`, `official-gateway-coordinator.ts`, `official-gateway-factory.ts`, plus neutral `gateway-state.ts` and `gateway-device-auth.ts` |
+| Rollback-only | `native-ws-gateway-connection.ts`, `native-ws-gateway-wire.ts`, and the custom connect/auth assembly in `native-ws-gateway-auth.ts`; these are reachable only through the explicit `AGENTOS_OPENCLAW_TRANSPORT=custom` selector or an explicitly injected rollback test socket |
+| Test/certification-only | `tests/openclaw-native-ws-gateway-client.test.ts`, the compatibility report's injected `webSocketFactory` seam, legacy custom protocol fixtures, migration rollback certification, and disposable custom WebSocket fixtures |
+
+The old `native-ws-gateway-auth.ts` name remains as a compatibility module for
+the rollback path. Official production code imports neutral state and
+device-signing helpers directly; it does not import the mixed custom auth
+assembly. The neutral helpers preserve device ID derivation, Ed25519 key
+conversion, the v3 signature payload, signed-at/nonce handling, state path
+resolution, and JSON compatibility reads.
+
+The intentional dependency graph is:
+
+```text
+AgentOS application/services
+          |
+          v
+  gateway-client-factory -- default/official --> official-gateway-factory
+          |                                      |
+          |                                      v
+          |                         official transport + coordinator
+          |                                      |
+          v                                      v
+  NativeWsOpenClawGatewayClient <------ OpenClaw GatewayClient
+          |
+          +-- explicit custom selector --> PersistentOpenClawGatewayConnection
+                                             +--> native-ws-gateway-wire
+                                             +--> custom auth assembly
+```
+
+The shared AgentOS request policy remains above both branches. `tasks.subscribe`
+is not part of either production request path: task lifecycle arrives on the
+authenticated event stream and is retained as a raw task event before AgentOS
+projection. The event bridge may reconcile snapshots, but it does not own
+official reconnect; the official package owns that lifecycle.
+
 ## Ownership split
 
 `OfficialOpenClawGatewayTransport` is the sole socket, reconnect, request, and
@@ -88,6 +132,11 @@ transport by default. Existing application services, normalizers, request
 policy, diagnostics, auth attribution, runtime projection, and orchestration
 behavior remain above the transport boundary.
 
+Current runtime, lifecycle, automation, identity, multi-user, and
+session/task certification entrypoints construct the official-backed client or
+use the true production factory. Direct custom construction is retained only
+for the explicit migration/rollback and compatibility-test seams listed above.
+
 The server-side migration selector is `AGENTOS_OPENCLAW_TRANSPORT`:
 
 - unset or `official`: official-backed production transport;
@@ -148,4 +197,5 @@ The earlier Phase 3 lifecycle evidence remains recorded in
 The Phase 4 cutover does not remove the custom transport, custom tests, or CLI
 fallback. It does not add UI, a new AgentOS runtime/orchestrator, Phase 5
 cleanup, publishing, release, push, or deployment. Legacy transport cleanup is
-reserved for Phase 5 after the rollback window and architecture-lock review.
+reserved for a later Phase 5B decision after the rollback window and this
+architecture-lock review.

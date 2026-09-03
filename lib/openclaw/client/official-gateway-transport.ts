@@ -223,6 +223,13 @@ export class OfficialOpenClawGatewayTransport {
       return Promise.resolve(this.#hello);
     }
 
+    if (this.#lifecycleState === "reconnect-paused") {
+      return Promise.reject(new NativeGatewayError(
+        this.#lastError ?? "OpenClaw Gateway reconnect is paused.",
+        { kind: "auth" }
+      ));
+    }
+
     this.start();
     const timeoutMs = typeof options.timeoutMs === "number" && Number.isFinite(options.timeoutMs)
       ? Math.max(1, options.timeoutMs)

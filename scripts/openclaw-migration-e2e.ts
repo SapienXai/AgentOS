@@ -6,6 +6,7 @@ import path from "node:path";
 
 import WebSocket from "ws";
 
+/** TEST/CERTIFICATION-ONLY: exercises the legacy migration fixture path. */
 import { createDefaultMigrationRuntimeHooks } from "@/lib/openclaw/migration-engine/runtime";
 import { OpenClawMigrationEngine, OPENCLAW_PHASE_2B_SOURCE_VERSION, OPENCLAW_PHASE_2B_TARGET_COMMIT, OPENCLAW_PHASE_2B_TARGET_VERSION, buildRollbackGate, buildSuccessGate } from "@/lib/openclaw/migration-engine/engine";
 import { readOpenClawRuntimeIdentity } from "@/lib/openclaw/migration-engine/paths";

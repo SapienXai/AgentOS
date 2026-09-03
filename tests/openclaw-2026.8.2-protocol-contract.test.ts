@@ -18,10 +18,10 @@ import {
 } from "@openclaw/gateway-protocol/client-info";
 
 import {
-  buildConnectParams,
   buildDeviceAuthPayloadV3,
   normalizeDeviceMetadataForAuth
-} from "@/lib/openclaw/client/native-ws-gateway-auth";
+} from "@/lib/openclaw/client/gateway-device-auth";
+import { buildConnectParams } from "@/lib/openclaw/client/native-ws-gateway-auth";
 import { resolveGatewayClientId } from "@/lib/openclaw/client/openclaw-protocol";
 import { getOpenClawGatewayCompatibilityOperation } from "@/lib/openclaw/client/gateway-compatibility";
 import {

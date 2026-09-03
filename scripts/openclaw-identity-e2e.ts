@@ -7,9 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import WebSocket from "ws";
-
-import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
+import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
 import type { OpenClawOperatorIdentity } from "@/lib/openclaw/identity/types";
 import {
@@ -23,6 +21,8 @@ import {
   buildOpenClawNativeAuthorizationProof,
   OpenClawAuthorizationService
 } from "@/lib/openclaw/identity/authorization";
+
+type OfficialBackedGatewayClient = ReturnType<typeof createOfficialBackedOpenClawGatewayClient>;
 
 const execFileAsync = promisify(execFile);
 const PACKAGE_INPUT = process.env.OPENCLAW_IDENTITY_E2E_PACKAGE?.trim();
@@ -60,7 +60,7 @@ async function main() {
   const port = await reservePort();
   const token = `agentos-identity-e2e-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const gateway = await startGateway({ packageRoot, stateDir, workspaceDir, configPath, port, token });
-  const clients: NativeWsOpenClawGatewayClient[] = [];
+  const clients: OfficialBackedGatewayClient[] = [];
   const checks: CheckResult[] = [];
   const dynamicChecks: CheckResult[] = [];
   const profiles: ConnectionProfileEvidence[] = [];
@@ -259,7 +259,7 @@ async function main() {
 }
 
 async function runCheck(
-  client: NativeWsOpenClawGatewayClient,
+  client: OfficialBackedGatewayClient,
   profile: string,
   method: string,
   params: Record<string, unknown>,
@@ -292,7 +292,7 @@ function createClient(input: {
   scopes: string[];
   fallback?: OpenClawGatewayClient;
 }) {
-  return new NativeWsOpenClawGatewayClient({
+  return createOfficialBackedOpenClawGatewayClient({
     url: input.url,
     token: input.token,
     role: "operator",
@@ -301,7 +301,7 @@ function createClient(input: {
     clientName: "gateway-client",
     clientVersion: "0.1.0-agentos-identity-e2e",
     fallback: input.fallback,
-    webSocketFactory: WebSocket as unknown as import("@/lib/openclaw/client/native-ws-gateway-types").WebSocketFactory
+    sharedStateMode: "read-only"
   });
 }
 
@@ -315,7 +315,7 @@ async function verifyCliFallbackSafety(
     port: number;
     token: string;
   },
-  clients: NativeWsOpenClawGatewayClient[],
+  clients: OfficialBackedGatewayClient[],
   evidence: {
     cliFallbackSafety: {
       provenNativeAdmin: Record<string, unknown> | null;
@@ -376,7 +376,7 @@ async function verifyCliFallbackSafety(
   };
 
   const unknownCalls: string[] = [];
-  const unknownClient = new NativeWsOpenClawGatewayClient({
+  const unknownClient = createOfficialBackedOpenClawGatewayClient({
     forceCli: true,
     fallback: {
       addAgent: async () => {

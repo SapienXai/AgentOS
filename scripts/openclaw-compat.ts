@@ -18,7 +18,7 @@ import {
   resolveOpenClawCompatibilityExit,
   resolveOpenClawCompatibilityTarget
 } from "@/lib/openclaw/compat";
-import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client";
+import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import {
   OPENCLAW_RECOMMENDED_VERSION,
   OPENCLAW_SUPPORTED_BASELINE_VERSION
@@ -383,7 +383,7 @@ async function waitForRealGatewayReady(input: {
   let lastSummary = "No Gateway readiness attempt completed.";
 
   while (Date.now() - startedAt <= input.timeoutMs) {
-    const client = new NativeWsOpenClawGatewayClient({
+    const client = createOfficialBackedOpenClawGatewayClient({
       ...(input.gatewayUrl ? { url: input.gatewayUrl } : {}),
       timeoutMs: input.nativeTimeoutMs
     });

@@ -2,9 +2,9 @@ import "server-only";
 
 import { CliOpenClawGatewayClient } from "@/lib/openclaw/client/cli-gateway-client";
 import {
-  NativeWsOpenClawGatewayClient,
   OPENCLAW_GATEWAY_PROTOCOL_RANGE
 } from "@/lib/openclaw/client/gateway-client";
+import { createOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import { getOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getOpenClawCapabilityMatrix } from "@/lib/openclaw/application/capability-matrix-service";
@@ -255,7 +255,7 @@ export async function runOpenClawCompatibilitySmokeTest(): Promise<OpenClawCompa
         throw new Error("OpenClaw binary is unavailable.");
       }
 
-      const client = new NativeWsOpenClawGatewayClient({ timeoutMs: optionalNativeTimeoutMs });
+      const client = createOpenClawGatewayClient({ timeoutMs: optionalNativeTimeoutMs });
       try {
         const hello = await client.probeNativeHandshake({ timeoutMs: optionalNativeTimeoutMs });
         const protocol = typeof hello.protocol === "number" ? String(hello.protocol) : null;
@@ -301,7 +301,7 @@ export async function runOpenClawCompatibilitySmokeTest(): Promise<OpenClawCompa
         throw new Error("OpenClaw binary is unavailable.");
       }
 
-      const client = new NativeWsOpenClawGatewayClient({ timeoutMs: requiredNativeTimeoutMs });
+      const client = createOpenClawGatewayClient({ timeoutMs: requiredNativeTimeoutMs });
       try {
         const [health, status] = await Promise.all([
           client.callNative<Record<string, unknown>>("health", {}, { timeoutMs: requiredNativeTimeoutMs }),
@@ -554,7 +554,7 @@ export async function runOpenClawCompatibilitySmokeTest(): Promise<OpenClawCompa
         return skippedOptional("OpenClaw binary is unavailable.");
       }
 
-      const client = new NativeWsOpenClawGatewayClient({
+      const client = createOpenClawGatewayClient({
         url: "ws://127.0.0.1:9",
         timeoutMs: 250,
         fallback: new CliOpenClawGatewayClient()

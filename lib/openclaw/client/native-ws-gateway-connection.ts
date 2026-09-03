@@ -1,5 +1,9 @@
 import "server-only";
 
+/**
+ * ROLLBACK-ONLY: persistent socket, reconnect, and custom connect assembly
+ * retained for the explicit AGENTOS_OPENCLAW_TRANSPORT=custom rollback.
+ */
 import {
   isGatewayEventFrame,
   isGatewayResponseFrame

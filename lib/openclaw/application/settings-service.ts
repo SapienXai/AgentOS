@@ -27,10 +27,12 @@ import {
   writeMissionControlSettings
 } from "@/lib/openclaw/domains/control-plane-settings";
 import {
-  isCliGatewayClientForcedByEnv,
-  NativeWsOpenClawGatewayClient
-} from "@/lib/openclaw/client/native-ws-gateway-client";
-import { resetOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
+  isCliGatewayClientForcedByEnv
+} from "@/lib/openclaw/client/native-ws-gateway-policy";
+import {
+  createOpenClawGatewayClient,
+  resetOpenClawGatewayClient
+} from "@/lib/openclaw/client/gateway-client-factory";
 import { getOpenClawLifecycleService } from "@/lib/openclaw/lifecycle/service";
 import { isOpenClawInvalidConfigError } from "@/lib/openclaw/command-failure";
 import { OPENCLAW_OPERATOR_SCOPES } from "@/lib/openclaw/identity/contract";
@@ -317,10 +319,18 @@ export async function getGatewayNativeAuthStatus(
   }
 
   try {
-    await (options.nativeProbe ?? (() =>
-      new NativeWsOpenClawGatewayClient().callNative("status", {}, {
-        timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
-      })))();
+    if (options.nativeProbe) {
+      await options.nativeProbe();
+    } else {
+      const client = createOpenClawGatewayClient();
+      try {
+        await client.callNative("status", {}, {
+          timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
+        });
+      } finally {
+        client.close("gateway auth status probe completed");
+      }
+    }
 
     return {
       mode,
@@ -574,10 +584,19 @@ async function waitForGeneratedGatewayTokenAuth(
   verifyDelaysMs: readonly number[] = GATEWAY_AUTH_RESTART_VERIFY_DELAYS_MS
 ) {
   let issue: string | null = null;
-  const verify = verifyNativeAuth ?? ((value: string) =>
-    new NativeWsOpenClawGatewayClient({ token: value }).callNative("status", {}, {
+  const verify = verifyNativeAuth ?? (async (value: string) => {
+    const client = createOpenClawGatewayClient({
+      token: value,
       timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
-    }));
+    });
+    try {
+      return await client.callNative("status", {}, {
+        timeoutMs: GATEWAY_NATIVE_AUTH_CHECK_TIMEOUT_MS
+      });
+    } finally {
+      client.close("gateway auth token verification completed");
+    }
+  });
 
   for (const delayMs of verifyDelaysMs.length > 0 ? verifyDelaysMs : [0]) {
     if (delayMs > 0) {
@@ -712,7 +731,7 @@ async function approveLatestOpenClawDeviceAccess(
 }
 
 export async function assertGatewayNativeConfigMutationAccess() {
-  const client = new NativeWsOpenClawGatewayClient();
+  const client = createOpenClawGatewayClient();
 
   try {
     return await client.callNative("config.schema.lookup", { path: "agents.entries" }, {

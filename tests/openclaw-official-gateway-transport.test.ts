@@ -17,9 +17,10 @@ import {
   DEFAULT_OPERATOR_SCOPES,
   OfficialOpenClawGatewayTransport,
   createAgentOsGatewayClientHostDeps,
+  NativeGatewayError,
   NativeGatewayRequestError
 } from "@/lib/openclaw/client/gateway-client";
-import { buildDeviceAuthPayloadV3 } from "@/lib/openclaw/client/native-ws-gateway-auth";
+import { buildDeviceAuthPayloadV3 } from "@/lib/openclaw/client/gateway-device-auth";
 import { OfficialGatewayHarness } from "@/tests/helpers/official-gateway-harness";
 
 test("official transport sends the canonical AgentOS handshake and correlates requests", async () => {
@@ -285,6 +286,14 @@ test("official transport honors a terminal reconnect pause", async () => {
     await delay(1_200);
     assert.equal(harness.connectionCount, connectionsAtPause);
     assert.equal(transport.getLifecycleState(), "reconnect-paused");
+    await assert.rejects(
+      transport.request("health", undefined, { timeoutMs: 5_000 }),
+      (error: unknown) => {
+        assert.ok(error instanceof NativeGatewayRequestError || error instanceof NativeGatewayError);
+        assert.equal((error as { kind?: string }).kind, "auth");
+        return true;
+      }
+    );
   } finally {
     await transport.stopAndWait({ timeoutMs: 500 });
     await harness.close();

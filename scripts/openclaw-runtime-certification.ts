@@ -2,14 +2,11 @@ import { spawn } from "node:child_process";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import WebSocket from "ws";
-
 import { getOpenClawServerMethodContractDiff } from "@/lib/openclaw/application/update-contract-diff-service";
-import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
+import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import {
   DEFAULT_NATIVE_TIMEOUT_MS,
-  type GatewayEventFrame,
-  type WebSocketFactory
+  type GatewayEventFrame
 } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { normalizeGatewayTurnEvent } from "@/lib/openclaw/client/native-ws-gateway-mappers";
 import { normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
@@ -26,6 +23,8 @@ import type {
   OpenClawRuntimeEvidenceDimension,
   OpenClawRuntimeRequirementLevel
 } from "@/lib/openclaw/runtime-certification/types";
+
+type OfficialBackedGatewayClient = ReturnType<typeof createOfficialBackedOpenClawGatewayClient>;
 
 const TARGET_VERSION = process.env.OPENCLAW_RUNTIME_CERT_TARGET?.trim() || "2026.8.2";
 const TARGET_COMMIT = process.env.OPENCLAW_RUNTIME_CERT_TARGET_COMMIT?.trim() || "0965053fe6b9341776df147a6934b7485c60b5ca";
@@ -226,14 +225,15 @@ async function main() {
 }
 
 function createClient(scopes: string[]) {
-  return new NativeWsOpenClawGatewayClient({
+  return createOfficialBackedOpenClawGatewayClient({
     url: GATEWAY_URL,
     token: TOKEN,
     scopes,
     timeoutMs: DEFAULT_NATIVE_TIMEOUT_MS,
     clientName: "gateway-client",
     clientVersion: "0.1.0-runtime-certification",
-    webSocketFactory: WebSocket as unknown as WebSocketFactory
+    ...(STATE_DIR ? { stateDir: STATE_DIR } : {}),
+    sharedStateMode: "read-only"
   });
 }
 
@@ -784,7 +784,7 @@ function buildFixtureConfigPatch(fixture: Awaited<ReturnType<typeof createOpenCl
 }
 
 async function configureFixtureProvider(
-  client: NativeWsOpenClawGatewayClient,
+  client: OfficialBackedGatewayClient,
   fixture: Awaited<ReturnType<typeof createOpenClawRuntimeProviderFixture>>
 ) {
   const snapshot = await client.callNative<Record<string, unknown>>("config.get", {}, { timeoutMs: 8_000 }, { safety: "read", timeoutMs: 8_000 });
@@ -803,7 +803,7 @@ async function runStreamingTurn(input: {
   idempotencyKey: string;
 }) {
   const frames: GatewayEventFrame[] = [];
-  const nativeClient = input.client as NativeWsOpenClawGatewayClient;
+  const nativeClient = input.client as OfficialBackedGatewayClient;
   let eventSubscription: { close: () => void } | null = null;
   try {
     eventSubscription = await nativeClient.subscribeNativeEvents(
@@ -893,7 +893,7 @@ function findCronRun(payload: unknown, runId: string) {
 }
 
 async function cleanupResources(
-  client: NativeWsOpenClawGatewayClient,
+  client: OfficialBackedGatewayClient,
   resources: RuntimeResources
 ): Promise<NonNullable<OpenClawRuntimeCertificationReport["cleanup"]>> {
   const output: NonNullable<OpenClawRuntimeCertificationReport["cleanup"]> = {

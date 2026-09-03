@@ -22,9 +22,9 @@ import type {
 
 import {
   publicKeyRawBase64UrlFromPem,
-  resolveOpenClawStateDir,
   signDevicePayload
-} from "@/lib/openclaw/client/native-ws-gateway-auth";
+} from "@/lib/openclaw/client/gateway-device-auth";
+import { resolveOpenClawStateDir } from "@/lib/openclaw/client/gateway-state";
 import { redactSecretText } from "@/lib/security/redaction";
 
 export type AgentOsGatewayClientHostOptions = {

@@ -10,6 +10,7 @@ import {
   OPENCLAW_GATEWAY_PROTOCOL_RANGE,
   isCliGatewayClientForcedByEnv
 } from "@/lib/openclaw/client/gateway-client";
+import { createOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
 import type { NativeWsOpenClawGatewayClientOptions } from "@/lib/openclaw/client/native-ws-gateway-client";
 import type { OpenClawGatewayClientDiagnostics } from "@/lib/openclaw/client/types";
 import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
@@ -389,10 +390,30 @@ async function detectNativeCapabilities(input: {
     return emptyNativeDetection("Native Gateway WS is disabled by environment configuration.");
   }
 
-  const client = new NativeWsOpenClawGatewayClient({
-    timeoutMs: input.options.nativeTimeoutMs ?? defaultNativeTimeoutMs,
-    ...input.options.nativeClientOptions
-  });
+  const nativeOptions = input.options.nativeClientOptions ?? {};
+  // A test-provided WebSocketFactory is the explicit compatibility seam for
+  // the rollback transport. Real compatibility probing stays on the selector
+  // and therefore official-backed by default.
+  const client = nativeOptions.webSocketFactory
+    ? new NativeWsOpenClawGatewayClient({
+      timeoutMs: input.options.nativeTimeoutMs ?? defaultNativeTimeoutMs,
+      ...nativeOptions
+    })
+    : createOpenClawGatewayClient({
+      url: nativeOptions.url ?? undefined,
+      token: nativeOptions.token,
+      password: nativeOptions.password,
+      timeoutMs: nativeOptions.timeoutMs ?? input.options.nativeTimeoutMs ?? defaultNativeTimeoutMs,
+      clientName: nativeOptions.clientName,
+      clientVersion: nativeOptions.clientVersion,
+      instanceId: nativeOptions.instanceId,
+      role: nativeOptions.role,
+      scopes: nativeOptions.scopes,
+      fallback: nativeOptions.fallback,
+      forceCli: nativeOptions.forceCli,
+      requestPolicy: nativeOptions.requestPolicy,
+      transportSelectionWarning: nativeOptions.transportSelectionWarning
+    });
 
   try {
     const hello = await client.probeNativeHandshake({

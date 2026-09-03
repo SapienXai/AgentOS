@@ -1,5 +1,10 @@
 import WebSocket from "ws";
 
+/**
+ * TEST/CERTIFICATION-ONLY: migration certification retains the custom client
+ * so staged and rollback fixtures can be compared without changing the
+ * production Gateway selector.
+ */
 import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
 import { normalizeGatewayTurnEvent } from "@/lib/openclaw/client/native-ws-gateway-mappers";
 import type { GatewayEventFrame, WebSocketFactory } from "@/lib/openclaw/client/native-ws-gateway-types";

@@ -2,13 +2,12 @@ import "server-only";
 
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
-import WebSocket from "ws";
 
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
-  NativeWsOpenClawGatewayClient
-} from "@/lib/openclaw/client/native-ws-gateway-client";
-import { resetOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
+  createOpenClawGatewayClient,
+  resetOpenClawGatewayClient
+} from "@/lib/openclaw/client/gateway-client-factory";
 import { resolveOpenClawSpawnInvocation, buildOpenClawSpawnEnv } from "@/lib/openclaw/install";
 import { compareVersionStrings } from "@/lib/openclaw/domains/control-plane-normalization";
 import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
@@ -390,14 +389,15 @@ async function probeNativeGatewayReadiness(
     return { ready: false, authenticated: false, health: "not-live", protocolVersion: null, version: null, sourceCommit: null, checkedAt, reason: "Gateway liveness endpoint is not available." };
   }
 
-  const client = new NativeWsOpenClawGatewayClient({
+  const client = createOpenClawGatewayClient({
     url: descriptor.gatewayUrl,
     token: env.AGENTOS_OPENCLAW_GATEWAY_TOKEN?.trim() || env.OPENCLAW_GATEWAY_TOKEN?.trim(),
     password: env.AGENTOS_OPENCLAW_GATEWAY_PASSWORD?.trim() || env.OPENCLAW_GATEWAY_PASSWORD?.trim(),
     timeoutMs: 5_000,
     clientName: "gateway-client",
     clientVersion: "0.1.0-agentos-lifecycle",
-    webSocketFactory: WebSocket as unknown as import("@/lib/openclaw/client/native-ws-gateway-types").WebSocketFactory
+    ...(env.OPENCLAW_STATE_DIR?.trim() ? { stateDir: env.OPENCLAW_STATE_DIR.trim() } : {}),
+    sharedStateMode: "read-only"
   });
   try {
     const hello = await client.probeNativeHandshake({ timeoutMs: 5_000 });

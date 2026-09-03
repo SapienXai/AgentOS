@@ -171,6 +171,5 @@ export type {
 } from "@/lib/openclaw/client/native-ws-gateway-policy";
 export type {
   OpenClawGatewayFallbackDiagnostic,
-  NativeWsOpenClawGatewayClientOptions,
-  WebSocketFactory
+  NativeWsOpenClawGatewayClientOptions
 } from "@/lib/openclaw/client/native-ws-gateway-client";

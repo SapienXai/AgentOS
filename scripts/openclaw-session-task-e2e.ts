@@ -7,17 +7,17 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import WebSocket from "ws";
-
 import { mapOpenClawTaskListToRuntimes } from "@/lib/openclaw/application/runtime-state-service";
-import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
+import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import { normalizeGatewayTurnEvent } from "@/lib/openclaw/client/native-ws-gateway-mappers";
-import type { GatewayEventFrame, WebSocketFactory } from "@/lib/openclaw/client/native-ws-gateway-types";
+import type { GatewayEventFrame } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
 import { OPENCLAW_IDENTITY_CONTRACT_BUILD, OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, OPENCLAW_IDENTITY_CONTRACT_VERSION } from "@/lib/openclaw/identity/contract";
 import { createOpenClawRuntimeProviderFixture } from "@/scripts/openclaw-runtime-provider-fixture";
 import { createMissionDispatchRecord } from "@/lib/openclaw/domains/mission-dispatch-lifecycle";
 import { buildMissionDispatchTranscriptRuntime } from "@/lib/openclaw/domains/mission-dispatch-runtime";
+
+type OfficialBackedGatewayClient = ReturnType<typeof createOfficialBackedOpenClawGatewayClient>;
 
 const execFileAsync = promisify(execFile);
 const PACKAGE_INPUT = process.env.OPENCLAW_SESSION_TASK_E2E_PACKAGE?.trim();
@@ -59,7 +59,7 @@ async function main() {
     await rm(disposableRoot, { recursive: true, force: true }).catch(() => {});
     throw error;
   }
-  let client: NativeWsOpenClawGatewayClient | null = null;
+  let client: ReturnType<typeof createOfficialBackedOpenClawGatewayClient> | null = null;
   let success = false;
   const evidence = {
     schemaVersion: 1,
@@ -404,7 +404,7 @@ async function main() {
 }
 
 async function runTurn(
-  client: NativeWsOpenClawGatewayClient,
+  client: OfficialBackedGatewayClient,
   sessionKey: string,
   message: string,
   minimumAssistantMessages: number
@@ -447,7 +447,7 @@ async function waitForTerminal(frames: GatewayEventFrame[], sessionKey: string, 
   throw new Error("OpenClaw session/task E2E timed out waiting for a terminal turn event.");
 }
 
-async function readHistory(client: NativeWsOpenClawGatewayClient, sessionKey: string, minimumAssistantMessages: number) {
+async function readHistory(client: OfficialBackedGatewayClient, sessionKey: string, minimumAssistantMessages: number) {
   let last: unknown = null;
   for (let attempt = 0; attempt < 40; attempt += 1) {
     last = await client.callNative(
@@ -481,7 +481,7 @@ function wait(ms: number) {
 }
 
 function createClient(port: number, token: string, clientVersion: string) {
-  return new NativeWsOpenClawGatewayClient({
+  return createOfficialBackedOpenClawGatewayClient({
     url: `ws://127.0.0.1:${port}`,
     token,
     role: "operator",
@@ -489,7 +489,7 @@ function createClient(port: number, token: string, clientVersion: string) {
     timeoutMs: REQUEST_TIMEOUT_MS,
     clientName: "gateway-client",
     clientVersion,
-    webSocketFactory: WebSocket as unknown as WebSocketFactory
+    sharedStateMode: "read-only"
   });
 }
 

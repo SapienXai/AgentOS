@@ -11,7 +11,7 @@ import {
   createOfficialBackedOpenClawGatewayClient,
   OfficialOpenClawGatewayTransport
 } from "@/lib/openclaw/client/gateway-client";
-import { publicKeyRawBase64UrlFromPem } from "@/lib/openclaw/client/native-ws-gateway-auth";
+import { publicKeyRawBase64UrlFromPem } from "@/lib/openclaw/client/gateway-device-auth";
 
 const TARGET_VERSION = "2026.8.2";
 const TARGET_COMMIT = "0965053fe6b9341776df147a6934b7485c60b5ca";

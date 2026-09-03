@@ -14,7 +14,7 @@ import type {
   OpenClawGatewayClient,
   OpenClawGatewayEventSubscription
 } from "@/lib/openclaw/client/types";
-import { publicKeyRawBase64UrlFromPem } from "@/lib/openclaw/client/native-ws-gateway-auth";
+import { publicKeyRawBase64UrlFromPem } from "@/lib/openclaw/client/gateway-device-auth";
 import { serializeOpenClawRuntimeCertificationArtifact } from "@/lib/openclaw/runtime-certification/serialization";
 
 const TARGET_VERSION = "2026.8.2";

@@ -7,16 +7,15 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import WebSocket from "ws";
-
-import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
-import type { WebSocketFactory } from "@/lib/openclaw/client/native-ws-gateway-types";
+import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import { createOpenClawRuntimeProviderFixture } from "@/scripts/openclaw-runtime-provider-fixture";
 import {
   OPENCLAW_IDENTITY_CONTRACT_BUILD,
   OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
   OPENCLAW_IDENTITY_CONTRACT_VERSION
 } from "@/lib/openclaw/identity/contract";
+
+type OfficialBackedGatewayClient = ReturnType<typeof createOfficialBackedOpenClawGatewayClient>;
 
 const execFileAsync = promisify(execFile);
 const PACKAGE_INPUT = process.env.OPENCLAW_AUTOMATION_E2E_PACKAGE?.trim() || process.env.OPENCLAW_SESSION_TASK_E2E_PACKAGE?.trim();
@@ -39,7 +38,7 @@ async function main() {
   const token = `agentos-automation-e2e-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const fixture = await createOpenClawRuntimeProviderFixture({ modelId: "agentos-automation-fixture" });
   let gateway: ChildProcess | null = null;
-  let client: NativeWsOpenClawGatewayClient | null = null;
+  let client: OfficialBackedGatewayClient | null = null;
   let success = false;
   const evidence = {
     schemaVersion: 1,
@@ -217,7 +216,7 @@ async function main() {
   console.log(`Evidence: ${OUTPUT_PATH}`);
 }
 
-async function runAndObserve(client: NativeWsOpenClawGatewayClient, jobId: string, evidence: { runChecks: Array<Record<string, unknown>>; taskIntegration: { taskIds: string[]; taskGetChecks: Array<Record<string, unknown>>; taskCancelChecks: Array<Record<string, unknown>>; noTaskIdFabricated: boolean } }) {
+async function runAndObserve(client: OfficialBackedGatewayClient, jobId: string, evidence: { runChecks: Array<Record<string, unknown>>; taskIntegration: { taskIds: string[]; taskGetChecks: Array<Record<string, unknown>>; taskCancelChecks: Array<Record<string, unknown>>; noTaskIdFabricated: boolean } }) {
   const enqueue = await client.runCronJob({ id: jobId, mode: "force" }, { timeoutMs: REQUEST_TIMEOUT_MS });
   assert.equal(enqueue.ok, true);
   const runId = string(enqueue.runId);
@@ -254,7 +253,7 @@ async function runAndObserve(client: NativeWsOpenClawGatewayClient, jobId: strin
 }
 
 function createClient(port: number, token: string, clientVersion: string) {
-  return new NativeWsOpenClawGatewayClient({ url: `ws://127.0.0.1:${port}`, token, role: "operator", scopes: ["operator.admin", "operator.read", "operator.write", "operator.approvals", "operator.questions", "operator.pairing", "operator.talk"], timeoutMs: REQUEST_TIMEOUT_MS, clientName: "gateway-client", clientVersion, webSocketFactory: WebSocket as unknown as WebSocketFactory });
+  return createOfficialBackedOpenClawGatewayClient({ url: `ws://127.0.0.1:${port}`, token, role: "operator", scopes: ["operator.admin", "operator.read", "operator.write", "operator.approvals", "operator.questions", "operator.pairing", "operator.talk"], timeoutMs: REQUEST_TIMEOUT_MS, clientName: "gateway-client", clientVersion, sharedStateMode: "read-only" });
 }
 
 async function startGateway(input: { packageRoot: string; stateDir: string; workspaceDir: string; configPath: string; port: number; token: string; fixtureBaseUrl: string; fixtureModelId: string }) {

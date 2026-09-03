@@ -13,7 +13,7 @@ import {
   createOfficialBackedOpenClawGatewayClient,
   NativeGatewayRequestError
 } from "@/lib/openclaw/client/gateway-client";
-import { publicKeyRawBase64UrlFromPem } from "@/lib/openclaw/client/native-ws-gateway-auth";
+import { publicKeyRawBase64UrlFromPem } from "@/lib/openclaw/client/gateway-device-auth";
 import { OfficialGatewayHarness } from "@/tests/helpers/official-gateway-harness";
 
 test("official-backed domain client preserves representative reads and identity", async () => {

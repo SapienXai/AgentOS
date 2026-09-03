@@ -7,8 +7,6 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import WebSocket from "ws";
-
 import {
   createManagedAgentOsUser,
   listAgentOsUsers,
@@ -17,7 +15,7 @@ import {
   updateManagedAgentOsUserStatus,
   resetManagedAgentOsUserPassword
 } from "@/lib/agentos/application/agentos-account-service";
-import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
+import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import {
   OPENCLAW_IDENTITY_CONTRACT_BUILD,
   OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
@@ -72,7 +70,7 @@ async function main() {
   const gatewayToken = `agentos-multi-user-e2e-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const gateway = await startGateway({ packageRoot, stateDir, workspaceDir, configPath, port, token: gatewayToken });
   const env = { ...process.env, AGENTOS_RUNTIME_DIR: agentOsRuntimeDir, NODE_ENV: "production" as const };
-  const client = new NativeWsOpenClawGatewayClient({
+  const client = createOfficialBackedOpenClawGatewayClient({
     url: `ws://127.0.0.1:${port}`,
     token: gatewayToken,
     role: "operator",
@@ -80,7 +78,7 @@ async function main() {
     timeoutMs: REQUEST_TIMEOUT_MS,
     clientName: "gateway-client",
     clientVersion: "0.1.0-agentos-multi-user-e2e",
-    webSocketFactory: WebSocket as unknown as import("@/lib/openclaw/client/native-ws-gateway-types").WebSocketFactory
+    sharedStateMode: "read-only"
   });
 
   const evidence = {
