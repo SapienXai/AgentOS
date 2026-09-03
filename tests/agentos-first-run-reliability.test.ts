@@ -83,6 +83,22 @@ test("system onboarding keeps setup rows compact and the log collapsed", () => {
   assert.doesNotMatch(source, /What happens next\?/);
 });
 
+test("default model switching uses a compact feedback state", () => {
+  const stagesSource = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding.stages.tsx"), "utf8");
+  const onboardingSource = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding.tsx"), "utf8");
+  const switchStart = stagesSource.indexOf("function ModelSwitchScene");
+  const switchEnd = stagesSource.indexOf("function resolveModelDisplayLabel", switchStart);
+  const switchSource = stagesSource.slice(switchStart, switchEnd);
+
+  assert.match(stagesSource, /open=\{run\.runState === "running" && modelSwitchFeedback\.phase === "idle"\}/);
+  assert.match(switchSource, /max-w-\[560px\] rounded-\[14px\]/);
+  assert.match(switchSource, /role="status"/);
+  assert.doesNotMatch(switchSource, /min-h-\[300px\]|Saving model route|Previous|Model route/);
+  assert.match(onboardingSource, /const isModelSwitchActive = visualStage === "models" && modelSwitchFeedback\.phase !== "idle";/);
+  assert.match(onboardingSource, /isModelSwitchActive && "!overflow-y-hidden"/);
+  assert.match(onboardingSource, /isModelSwitchActive && "!hidden"/);
+});
+
 test("ChatGPT return stays on model selection until the user confirms", () => {
   const onboardingSource = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding.tsx"), "utf8");
   const flowSource = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding-provider-flow.tsx"), "utf8");

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, Check, Copy, Info, LoaderCircle, Route, SquareTerminal } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, Copy, Info, LoaderCircle, SquareTerminal } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 
@@ -313,7 +313,7 @@ export function ModelStage({
   onContinueFromAi: (thinking?: OpenClawThinkingLevel) => void;
   onRunModelSetDefault: (modelId?: string, thinking?: OpenClawThinkingLevel) => void;
 }) {
-  const [detailsOpen, setDetailsOpen] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [chatGptAttempted, setChatGptAttempted] = useState(false);
   const effectiveSnapshot = useMemo(() => {
     if (!localModelStatus?.checked || localModelStatus.modelIds.length === 0) {
@@ -377,7 +377,7 @@ export function ModelStage({
   return (
     <>
       <PikoLoader
-        open={run.runState === "running" || modelSwitchFeedback.phase === "saving"}
+        open={run.runState === "running" && modelSwitchFeedback.phase === "idle"}
         title={modelSwitchFeedback.phase === "saving"
           ? "Switching default model"
           : advancedProviderFlowOpen
@@ -416,22 +416,24 @@ export function ModelStage({
         />
       ) : (
         <>
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <p className={cn("text-[11px] font-medium", surfaceTheme === "light" ? "text-[#33251c]" : "text-white")}>
-              Step 2: Advanced model setup
-            </p>
-            {advancedProviderFlowOpen && modelSwitchFeedback.phase === "idle" ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onAdvancedProviderFlowOpenChange(false)}
-                className={cn("h-8 rounded-full px-3 text-[11px]", secondaryActionClassName(surfaceTheme))}
-              >
-                Back to Connect AI
-              </Button>
-            ) : null}
-          </div>
+          {modelSwitchFeedback.phase === "idle" ? (
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <p className={cn("text-[11px] font-medium", surfaceTheme === "light" ? "text-[#33251c]" : "text-white")}>
+                Step 2: Advanced model setup
+              </p>
+              {advancedProviderFlowOpen ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onAdvancedProviderFlowOpenChange(false)}
+                  className={cn("h-8 rounded-full px-3 text-[11px]", secondaryActionClassName(surfaceTheme))}
+                >
+                  Back to Connect AI
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
 
           {buildScene ? (
             <WorkspaceBuildScene
@@ -445,20 +447,21 @@ export function ModelStage({
               <ModelSwitchScene
                 surfaceTheme={surfaceTheme}
                 feedback={modelSwitchFeedback}
-                defaultModelLabel={resolveModelDisplayLabel(modelSwitchFeedback.previousModelId, availableModels)}
                 nextModelLabel={resolveModelDisplayLabel(modelSwitchFeedback.nextModelId, availableModels)}
                 onChangeAgain={onClearModelSwitchFeedback}
               />
 
-              <StageConsole
-                surfaceTheme={surfaceTheme}
-                statusCopy={statusCopy}
-                showDetails={showDetails}
-                phaseLabel={phaseLabel}
-                detailsOpen={detailsOpen}
-                onDetailsOpenChange={setDetailsOpen}
-                run={run}
-              />
+              {modelSwitchFeedback.phase === "error" ? (
+                <StageConsole
+                  surfaceTheme={surfaceTheme}
+                  statusCopy={statusCopy}
+                  showDetails={showDetails}
+                  phaseLabel={phaseLabel}
+                  detailsOpen={detailsOpen}
+                  onDetailsOpenChange={setDetailsOpen}
+                  run={run}
+                />
+              ) : null}
             </>
           ) : (
             <>
@@ -782,13 +785,11 @@ function ModelDefaultSummary({
 function ModelSwitchScene({
   surfaceTheme,
   feedback,
-  defaultModelLabel,
   nextModelLabel,
   onChangeAgain
 }: {
   surfaceTheme: SurfaceTheme;
   feedback: ModelSwitchFeedback;
-  defaultModelLabel: string | null;
   nextModelLabel: string | null;
   onChangeAgain: () => void;
 }) {
@@ -796,6 +797,7 @@ function ModelSwitchScene({
   const isRunning = feedback.phase === "saving";
   const isSuccess = feedback.phase === "success";
   const isError = feedback.phase === "error";
+  const statusLabel = isSuccess ? "Saved" : isError ? "Error" : "Saving";
   const title = isSuccess
     ? "Default model updated"
     : isError
@@ -807,140 +809,78 @@ function ModelSwitchScene({
       : isError
         ? "Review the log below, then try again."
         : "Saving the route, refreshing OpenClaw config, and updating AgentOS.");
-  const steps = [
-    "Saving model route",
-    "Refreshing OpenClaw config",
-    "Verifying selected provider",
-    "Updating AgentOS snapshot"
-  ];
-  const currentStepIndex = resolveModelSwitchStepIndex(feedback);
-
   return (
     <div
       className={cn(
-        "mt-3 overflow-hidden rounded-[22px] border",
+        "mx-auto mt-4 w-full max-w-[560px] rounded-[14px] border px-3 py-3 sm:px-4",
         isLight
-          ? "border-[#e1d0c2] bg-[linear-gradient(180deg,rgba(255,250,246,0.98),rgba(248,240,232,0.98))]"
-          : "border-cyan-300/16 bg-[radial-gradient(circle_at_top,rgba(16,28,44,0.98),rgba(6,10,18,0.98)_72%)]"
+          ? isError
+            ? "border-rose-200 bg-rose-50/70"
+            : isSuccess
+              ? "border-emerald-200 bg-emerald-50/70"
+              : "border-[#e6d7cb] bg-white/80"
+          : isError
+            ? "border-rose-300/20 bg-rose-300/[0.07]"
+            : isSuccess
+              ? "border-emerald-300/18 bg-emerald-300/[0.06]"
+              : "border-white/10 bg-white/[0.03]"
       )}
+      role="status"
+      aria-live="polite"
     >
-      <div className="relative isolate min-h-[300px] overflow-hidden px-4 py-4 text-center">
-        <div
-          aria-hidden="true"
-          className={cn(
-            "pointer-events-none absolute inset-0",
-            isLight
-              ? "bg-[radial-gradient(circle_at_50%_0%,rgba(232,186,151,0.22),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.4),transparent_48%)]"
-              : "bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.18),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.04),transparent_48%)]"
-          )}
-        />
-
-        <div className="relative z-[1] flex flex-col items-center">
-          <div className="relative flex h-20 w-20 items-center justify-center">
-            {isRunning ? (
-              <>
-                <motion.div
-                  aria-hidden="true"
-                  className={cn("absolute h-20 w-20 rounded-full border", isLight ? "border-[#d1a98b]" : "border-cyan-200/24")}
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
-                />
-                <motion.div
-                  aria-hidden="true"
-                  className={cn("absolute h-14 w-14 rounded-full border border-dashed", isLight ? "border-[#c8946f]" : "border-cyan-200/40")}
-                  animate={{ rotate: -360 }}
-                  transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
-                />
-              </>
-            ) : null}
-            <span
-              className={cn(
-                "relative z-[1] inline-flex h-12 w-12 items-center justify-center rounded-full border",
-                isSuccess
+      <div className="flex min-w-0 items-center gap-2.5">
+          <span
+            className={cn(
+              "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border",
+              isSuccess
+                ? isLight
+                  ? "border-emerald-300 bg-white text-emerald-700"
+                  : "border-emerald-300/25 bg-emerald-300/10 text-emerald-200"
+                : isError
                   ? isLight
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                    : "border-emerald-300/25 bg-emerald-300/10 text-emerald-200"
-                  : isError
+                    ? "border-rose-300 bg-white text-rose-700"
+                    : "border-rose-300/25 bg-rose-300/10 text-rose-200"
+                  : isLight
+                    ? "border-[#d9b59a] bg-white text-[#8b6d5a]"
+                    : "border-cyan-200/20 bg-cyan-300/10 text-cyan-100"
+            )}
+          >
+            {isSuccess ? <Check className="h-3.5 w-3.5" /> : isError ? <AlertTriangle className="h-3.5 w-3.5" /> : <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
+          </span>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className={cn("truncate text-[12px] font-medium", isLight ? "text-[#33251c]" : "text-white")}>
+                {title}
+              </h3>
+              <span
+                className={cn(
+                  "shrink-0 text-[8px] uppercase tracking-[0.16em]",
+                  isSuccess
                     ? isLight
-                      ? "border-rose-300 bg-rose-50 text-rose-700"
-                      : "border-rose-300/25 bg-rose-300/10 text-rose-200"
-                    : isLight
-                      ? "border-[#d7b59a] bg-white text-[#9a6a48]"
-                      : "border-cyan-300/20 bg-cyan-300/10 text-cyan-100"
-              )}
-            >
-              {isSuccess ? <Check className="h-5 w-5" /> : isRunning ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Route className="h-5 w-5" />}
-            </span>
-          </div>
-
-          <p
-            className={cn(
-              "mt-3 text-[8px] uppercase tracking-[0.22em]",
-              isLight ? "text-[#94735e]" : "text-cyan-200/70"
-            )}
-          >
-            Model route
-          </p>
-          <h3 className={cn("mt-1 text-[17px] font-medium tracking-[-0.03em]", isLight ? "text-[#2d2118]" : "text-white")}>
-            {title}
-          </h3>
-          <p className={cn("mt-1 max-w-[320px] text-[10px] leading-[1rem]", isLight ? "text-[#6d5647]" : "text-slate-300")}>
-            {detail}
-          </p>
-
-          <div
-            className={cn(
-              "mt-4 grid w-full gap-2 rounded-[16px] border px-3 py-3 text-left",
-              isLight ? "border-[#ead8c8] bg-white/70" : "border-white/8 bg-white/[0.04]"
-            )}
-          >
-            <ModelSwitchLine label="Previous" value={defaultModelLabel ?? "Not set"} surfaceTheme={surfaceTheme} muted />
-            <ModelSwitchLine label="New default" value={nextModelLabel ?? "Not selected"} surfaceTheme={surfaceTheme} />
-          </div>
-
-          {isRunning ? (
-            <div className="mt-4 grid w-full gap-1.5 text-left">
-              {steps.map((step, index) => (
-                <div
-                  key={step}
-                  className={cn(
-                    "flex items-center gap-2 rounded-[12px] border px-2.5 py-2",
-                    index === currentStepIndex
+                      ? "text-emerald-700"
+                      : "text-emerald-200"
+                    : isError
                       ? isLight
-                        ? "border-[#c8946f] bg-[#fff5ed]"
-                        : "border-cyan-300/24 bg-cyan-300/[0.07]"
-                      : index < currentStepIndex
-                        ? isLight
-                          ? "border-emerald-200 bg-emerald-50/60"
-                          : "border-emerald-300/16 bg-emerald-300/[0.05]"
-                        : isLight
-                          ? "border-[#ead8c8] bg-white/55"
-                          : "border-white/8 bg-white/[0.03]"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "inline-flex h-4 w-4 items-center justify-center rounded-full border text-[8px]",
-                      index < currentStepIndex
-                        ? isLight
-                          ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                          : "border-emerald-300/25 bg-emerald-300/10 text-emerald-200"
-                        : index === currentStepIndex
-                        ? isLight
-                          ? "border-[#c8946f] bg-[#f8eadf] text-[#8c5d3d]"
-                          : "border-cyan-300/30 bg-cyan-300/10 text-cyan-100"
-                        : isLight
-                          ? "border-[#e0cec0] bg-white text-[#9a7f6c]"
-                          : "border-white/10 bg-white/[0.03] text-slate-500"
-                    )}
-                  >
-                    {index < currentStepIndex ? <Check className="h-2.5 w-2.5" /> : index + 1}
-                  </span>
-                  <p className={cn("text-[10px]", isLight ? "text-[#5f4b3e]" : "text-slate-300")}>{step}</p>
-                </div>
-              ))}
+                        ? "text-rose-700"
+                        : "text-rose-200"
+                      : isLight
+                        ? "text-[#977b69]"
+                        : "text-slate-400"
+                )}
+              >
+                {statusLabel}
+              </span>
             </div>
-          ) : null}
+            <p className={cn("mt-0.5 line-clamp-2 text-[10px] leading-4", isLight ? "text-[#705b4d]" : "text-slate-400")}>
+              {detail}
+            </p>
+            {nextModelLabel ? (
+              <p className={cn("mt-1 truncate text-[9px]", isLight ? "text-[#8f7664]" : "text-slate-500")} title={nextModelLabel}>
+                Selected: {nextModelLabel}
+              </p>
+            ) : null}
+          </div>
 
           {!isRunning ? (
             <Button
@@ -948,74 +888,12 @@ function ModelSwitchScene({
               variant="secondary"
               size="sm"
               onClick={onChangeAgain}
-              className={cn("mt-4 h-8 rounded-full px-3 text-[10px]", secondaryActionClassName(surfaceTheme))}
+              className={cn("h-7 shrink-0 rounded-md px-2.5 text-[10px]", secondaryActionClassName(surfaceTheme))}
             >
               Change again
             </Button>
           ) : null}
-        </div>
       </div>
-    </div>
-  );
-}
-
-function resolveModelSwitchStepIndex(feedback: ModelSwitchFeedback) {
-  const message = feedback.message ?? "";
-
-  if (feedback.phase !== "saving") {
-    return 0;
-  }
-
-  if (/updating agentos snapshot|snapshot/i.test(message)) {
-    return 3;
-  }
-
-  if (/verifying selected provider|provider/i.test(message)) {
-    return 2;
-  }
-
-  if (/refreshing openclaw config|config/i.test(message)) {
-    return 1;
-  }
-
-  return 0;
-}
-
-function ModelSwitchLine({
-  label,
-  value,
-  surfaceTheme,
-  muted = false
-}: {
-  label: string;
-  value: string;
-  surfaceTheme: SurfaceTheme;
-  muted?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span
-        className={cn(
-          "text-[7px] uppercase tracking-[0.16em]",
-          surfaceTheme === "light" ? "text-[#9a7f6c]" : "text-slate-500"
-        )}
-      >
-        {label}
-      </span>
-      <span
-        className={cn(
-          "min-w-0 truncate text-right text-[10px]",
-          muted
-            ? surfaceTheme === "light"
-              ? "text-[#8a7261]"
-              : "text-slate-400"
-            : surfaceTheme === "light"
-              ? "text-[#3e2f24]"
-              : "text-white"
-        )}
-      >
-        {value}
-      </span>
     </div>
   );
 }

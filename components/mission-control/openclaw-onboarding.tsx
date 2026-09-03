@@ -206,6 +206,7 @@ export function OpenClawOnboarding({
     selectedVisualStage === "finish" && !canShowFinish && !showLaunchpad ? null : selectedVisualStage;
   const visualStage = effectiveSelectedVisualStage ?? defaultVisualStage;
   const renderLaunchpad = visualStage === "finish";
+  const isModelSwitchActive = visualStage === "models" && modelSwitchFeedback.phase !== "idle";
   const activeWizardStage: WizardStage = visualStage === "finish" ? stage : visualStage;
   const stageRun = activeWizardStage === "system" ? systemRun : modelRun;
   const stageStatusCopy =
@@ -322,31 +323,34 @@ export function OpenClawOnboarding({
                     </span>
                   </div>
                 </div>
-                <p className="mt-1.5 min-h-4 text-[12px] leading-4 text-muted-foreground max-sm:invisible sm:mt-2 sm:min-h-5 sm:text-[13px] sm:leading-5">
+                <p className={cn("mt-1.5 min-h-4 text-[12px] leading-4 text-muted-foreground max-sm:invisible sm:mt-2 sm:min-h-5 sm:text-[13px] sm:leading-5", isModelSwitchActive && "hidden")}>
                   Connect your local OpenClaw and prepare your environment.
                 </p>
               </div>
             </div>
 
-            <SetupStepper
-              activeStep={activeStepNumber}
-              systemReady={onboardingSystemReady}
-              modelReady={modelSetupConfirmed}
-              finishReady={canShowFinish}
-              surfaceTheme={surfaceTheme}
-              onSelectStage={(nextStage) => {
-                setSelectedVisualStage(nextStage);
-                if (nextStage !== "finish") {
-                  onSelectStage(nextStage);
-                }
-              }}
-            />
+            {!isModelSwitchActive ? (
+              <SetupStepper
+                activeStep={activeStepNumber}
+                systemReady={onboardingSystemReady}
+                modelReady={modelSetupConfirmed}
+                finishReady={canShowFinish}
+                surfaceTheme={surfaceTheme}
+                onSelectStage={(nextStage) => {
+                  setSelectedVisualStage(nextStage);
+                  if (nextStage !== "finish") {
+                    onSelectStage(nextStage);
+                  }
+                }}
+              />
+            ) : null}
           </div>
 
           <div
             className={cn(
               "min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-5 pt-4 sm:px-8 sm:pb-24 sm:pt-6 lg:px-12 [-webkit-overflow-scrolling:touch]",
-              visualStage === "system" && "sm:overflow-y-hidden"
+              visualStage === "system" && "sm:overflow-y-hidden",
+              isModelSwitchActive && "!overflow-y-hidden"
             )}
           >
             {renderLaunchpad ? (
@@ -405,7 +409,8 @@ export function OpenClawOnboarding({
           <div
             className={cn(
               "mt-auto shrink-0 flex flex-col gap-3 border-t px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-8 sm:py-4 lg:px-10",
-              surfaceTheme === "light" ? "border-border/70 bg-white/36" : "border-white/8 bg-black/10"
+              surfaceTheme === "light" ? "border-border/70 bg-white/36" : "border-white/8 bg-black/10",
+              isModelSwitchActive && "!hidden"
             )}
           >
             <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
