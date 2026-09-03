@@ -2820,11 +2820,14 @@ export function MissionControlShell({
       targetModelId.trim() === currentDefaultModelId.trim() &&
       resolveOpenClawModelReady(snapshot)
     ) {
+      await continueFromAi(thinking);
       return;
     }
 
     await runModelOnboarding(
-      currentDefaultModelId && targetModelId.trim() === currentDefaultModelId.trim()
+      currentDefaultModelId &&
+      targetModelId.trim() === currentDefaultModelId.trim() &&
+      resolveOpenClawModelReady(snapshot)
         ? {
             intent: "auto",
             modelId: targetModelId
@@ -3108,8 +3111,10 @@ export function MissionControlShell({
     setIsSettingsOpen(true);
   };
 
-  const enterAgentOS = useCallback(async () => {
-    if (!onboardingAiReady) {
+  const enterAgentOS = useCallback(async (readySnapshot?: MissionControlSnapshot) => {
+    const currentSnapshot = readySnapshot ?? snapshot;
+
+    if (!onboardingAiReady && !isChatGptConnectionReady(currentSnapshot)) {
       setIsOnboardingForcedOpen(true);
       setIsOnboardingDismissed(false);
       setShowOnboardingReadyState(false);
@@ -3117,7 +3122,7 @@ export function MissionControlShell({
       return;
     }
 
-    let entrySnapshot = snapshot;
+    let entrySnapshot = currentSnapshot;
 
     if (!hasAgentOSWorkspaceSetup(entrySnapshot)) {
       if (entrySnapshot.workspaces.length === 0) {
@@ -3157,25 +3162,36 @@ export function MissionControlShell({
     snapshot
   ]);
 
-  const continueFromAi = useCallback((thinking?: OpenClawThinkingLevel) => {
+  const continueFromAi = useCallback(async (thinking?: OpenClawThinkingLevel) => {
     if (thinking) {
       setSelectedOnboardingThinking(thinking);
     }
 
-    if (!isChatGptConnectionReady(snapshot)) {
+    let readySnapshot = snapshot;
+
+    if (!isChatGptConnectionReady(readySnapshot)) {
+      const refreshedSnapshot = await refreshSnapshot({ force: true }).catch(() => null);
+
+      if (refreshedSnapshot) {
+        readySnapshot = refreshedSnapshot;
+        setSnapshot(refreshedSnapshot);
+      }
+    }
+
+    if (!isChatGptConnectionReady(readySnapshot)) {
       setIsOnboardingForcedOpen(true);
       setIsOnboardingDismissed(false);
       setOnboardingStage("models");
       return;
     }
 
-    if (hasWorkspaceSetup) {
-      void enterAgentOS();
+    if (hasAgentOSWorkspaceSetup(readySnapshot)) {
+      void enterAgentOS(readySnapshot);
       return;
     }
 
     setShowOnboardingReadyState(true);
-  }, [enterAgentOS, hasWorkspaceSetup, snapshot]);
+  }, [enterAgentOS, refreshSnapshot, setSnapshot, snapshot]);
 
   const controlGateway = async (action: GatewayControlAction) => {
     setGatewayControlAction(action);

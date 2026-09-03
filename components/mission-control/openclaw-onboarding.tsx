@@ -207,6 +207,7 @@ export function OpenClawOnboarding({
   const visualStage = effectiveSelectedVisualStage ?? defaultVisualStage;
   const renderLaunchpad = visualStage === "finish";
   const isModelSwitchActive = visualStage === "models" && modelSwitchFeedback.phase !== "idle";
+  const isChatGptAuthSurface = visualStage === "models" && Boolean(chatGptBrowserAuth);
   const activeWizardStage: WizardStage = visualStage === "finish" ? stage : visualStage;
   const stageRun = activeWizardStage === "system" ? systemRun : modelRun;
   const stageStatusCopy =
@@ -302,7 +303,8 @@ export function OpenClawOnboarding({
         initial={{ opacity: 0, y: 18, scale: isMobileViewport ? 1 : 0.885 }}
         animate={{ opacity: 1, y: 0, scale: isMobileViewport ? 1 : 0.9 }}
         className={cn(
-          "relative z-10 flex h-dvh w-full min-h-0 max-h-dvh max-w-none flex-col overflow-hidden rounded-none border-0 sm:h-auto sm:max-h-[calc(100dvh-32px)] sm:max-w-[980px] sm:rounded-[18px] sm:border sm:backdrop-blur-2xl",
+          "relative z-10 flex h-dvh w-full min-h-0 max-h-dvh max-w-none flex-col overflow-hidden rounded-none border-0 sm:h-auto sm:max-h-[calc(100dvh-32px)] sm:rounded-[18px] sm:border sm:backdrop-blur-2xl",
+          isChatGptAuthSurface ? "sm:max-w-[720px]" : "sm:max-w-[980px]",
           surfaceTheme === "light"
             ? "bg-card text-foreground shadow-none sm:border-border/80 sm:bg-card/92 sm:shadow-[0_24px_70px_rgba(15,23,42,0.14)]"
             : "bg-background text-foreground shadow-none sm:border-primary/18 sm:bg-[hsl(var(--card)/0.88)] sm:shadow-[0_0_0_1px_hsl(var(--primary)/0.08),0_28px_90px_rgba(0,0,0,0.48)]"
@@ -323,13 +325,13 @@ export function OpenClawOnboarding({
                     </span>
                   </div>
                 </div>
-                <p className={cn("mt-1.5 min-h-4 text-[12px] leading-4 text-muted-foreground max-sm:invisible sm:mt-2 sm:min-h-5 sm:text-[13px] sm:leading-5", isModelSwitchActive && "hidden")}>
+                <p className={cn("mt-1.5 min-h-4 text-[12px] leading-4 text-muted-foreground max-sm:invisible sm:mt-2 sm:min-h-5 sm:text-[13px] sm:leading-5", (isModelSwitchActive || isChatGptAuthSurface) && "hidden")}>
                   Connect your local OpenClaw and prepare your environment.
                 </p>
               </div>
             </div>
 
-            {!isModelSwitchActive ? (
+            {!isModelSwitchActive && !isChatGptAuthSurface ? (
               <SetupStepper
                 activeStep={activeStepNumber}
                 systemReady={onboardingSystemReady}
@@ -348,7 +350,8 @@ export function OpenClawOnboarding({
 
           <div
             className={cn(
-              "min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-5 pt-4 sm:px-8 sm:pb-24 sm:pt-6 lg:px-12 [-webkit-overflow-scrolling:touch]",
+              "min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-5 pt-4 sm:px-8 sm:pt-6 lg:px-12 [-webkit-overflow-scrolling:touch]",
+              isChatGptAuthSurface ? "sm:pb-8" : "sm:pb-24",
               visualStage === "system" && "sm:overflow-y-hidden",
               isModelSwitchActive && "!overflow-y-hidden"
             )}
@@ -400,7 +403,10 @@ export function OpenClawOnboarding({
                 onConnectChatGPT={onConnectChatGPT}
                 chatGptBrowserAuth={chatGptBrowserAuth}
                 onSubmitChatGptRedirect={onSubmitChatGptRedirect}
-                onContinueFromAi={onContinueFromAi}
+                onContinueFromAi={(thinking) => {
+                  setSelectedVisualStage("finish");
+                  onContinueFromAi(thinking);
+                }}
                 onRunModelSetDefault={onRunModelSetDefault}
               />
             )}
@@ -410,7 +416,8 @@ export function OpenClawOnboarding({
             className={cn(
               "mt-auto shrink-0 flex flex-col gap-3 border-t px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-8 sm:py-4 lg:px-10",
               surfaceTheme === "light" ? "border-border/70 bg-white/36" : "border-white/8 bg-black/10",
-              isModelSwitchActive && "!hidden"
+              isModelSwitchActive && "!hidden",
+              isChatGptAuthSurface && "!hidden"
             )}
           >
             <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">

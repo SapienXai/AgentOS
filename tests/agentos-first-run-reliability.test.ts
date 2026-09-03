@@ -90,7 +90,7 @@ test("default model switching uses a compact feedback state", () => {
   const switchEnd = stagesSource.indexOf("function resolveModelDisplayLabel", switchStart);
   const switchSource = stagesSource.slice(switchStart, switchEnd);
 
-  assert.match(stagesSource, /open=\{run\.runState === "running" && modelSwitchFeedback\.phase === "idle"\}/);
+  assert.match(stagesSource, /open=\{run\.runState === "running" && modelSwitchFeedback\.phase === "idle" && !chatGptBrowserAuth\}/);
   assert.match(switchSource, /max-w-\[560px\] rounded-\[14px\]/);
   assert.match(switchSource, /role="status"/);
   assert.doesNotMatch(switchSource, /min-h-\[300px\]|Saving model route|Previous|Model route/);
@@ -111,6 +111,27 @@ test("ChatGPT return stays on model selection until the user confirms", () => {
   assert.match(flowSource, /id="chatgpt-reasoning-select"/);
   assert.match(flowSource, /\["xhigh", "Xhigh"\]/);
   assert.match(shellSource, /thinking: selectedOnboardingThinking/);
+  const modelSetDefaultStart = shellSource.indexOf("const runModelSetDefault = async");
+  const modelSetDefaultSource = shellSource.slice(modelSetDefaultStart, shellSource.indexOf("  const dismissOnboarding", modelSetDefaultStart));
+  assert.match(
+    modelSetDefaultSource,
+    /targetModelId\.trim\(\) === currentDefaultModelId\.trim\(\) &&\s*resolveOpenClawModelReady\(snapshot\)/
+  );
+  assert.match(modelSetDefaultSource, /await continueFromAi\(thinking\);\s*return;/);
+  assert.match(shellSource, /const enterAgentOS = useCallback\(async \(readySnapshot\?: MissionControlSnapshot\)/);
+  assert.match(shellSource, /const refreshedSnapshot = await refreshSnapshot\(\{ force: true \}\)/);
+  assert.match(shellSource, /void enterAgentOS\(readySnapshot\)/);
+});
+
+test("Continue to AgentOS advances the onboarding stage after model selection", () => {
+  const source = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding.tsx"), "utf8");
+  const continueHandlerStart = source.indexOf("onContinueFromAi={(thinking) => {");
+  const continueHandlerEnd = source.indexOf("onRunModelSetDefault", continueHandlerStart);
+  const continueHandler = source.slice(continueHandlerStart, continueHandlerEnd);
+
+  assert.notEqual(continueHandlerStart, -1);
+  assert.match(continueHandler, /setSelectedVisualStage\("finish"\)/);
+  assert.match(continueHandler, /onContinueFromAi\(thinking\)/);
 });
 
 test("Model Library ChatGPT account switching returns to live model selection", () => {
@@ -124,6 +145,21 @@ test("Model Library ChatGPT account switching returns to live model selection", 
   assert.match(shellSource, /const handleChatGptAccountSwitch = \(\) => \{/);
   assert.match(shellSource, /void runChatGptOnboarding\(true\);/);
   assert.match(shellSource, /onSwitchChatGptAccount=\{handleChatGptAccountSwitch\}/);
+});
+
+test("browser ChatGPT auth keeps onboarding focused and callback recovery compact", () => {
+  const onboardingSource = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding.tsx"), "utf8");
+  const stagesSource = readFileSync(path.join(process.cwd(), "components/mission-control/openclaw-onboarding.stages.tsx"), "utf8");
+
+  assert.match(onboardingSource, /const isChatGptAuthSurface = visualStage === "models" && Boolean\(chatGptBrowserAuth\);/);
+  assert.match(onboardingSource, /isChatGptAuthSurface \? "sm:max-w-\[720px\]" : "sm:max-w-\[980px\]"/);
+  assert.match(onboardingSource, /!isModelSwitchActive && !isChatGptAuthSurface/);
+  assert.match(onboardingSource, /isChatGptAuthSurface && "!hidden"/);
+  assert.match(stagesSource, /open=\{run\.runState === "running" && modelSwitchFeedback\.phase === "idle" && !chatGptBrowserAuth\}/);
+  assert.match(stagesSource, /role=\{browserAuthError \? "alert" : "status"\}/);
+  assert.match(stagesSource, /<details className="mt-2\.5 text-\[10px\]">/);
+  assert.match(stagesSource, /Use callback URL manually/);
+  assert.doesNotMatch(stagesSource, /Mobile callback fallback/);
 });
 
 test("launchpad uses the same compact status-row language as setup", () => {
