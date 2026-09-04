@@ -4,13 +4,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-// Historical 2026.8.1 final-certification wrapper. The active 2026.8.2
+// Historical 2026.8.1 final-certification wrapper. The active 2026.9.1
 // baseline uses openclaw-runtime-certification.ts and fresh-baseline-e2e.ts.
 const BRANCH = "upgrade/openclaw-2026.8.1";
 const STARTING_HEAD = "a929914efa8037c527e1196662cb2b49e55228ad";
 const TARGET_VERSION = "2026.8.1";
 const TARGET_COMMIT = "ea806575e6450e4d1efdfc72c19f04be982a1b9b";
-const TARGET_BUILD = "2026.8.1-ea806575e645-2026-08-31T00-16-08.235Z";
+const TARGET_BUILD = "2026.8.1-ea806575e645-2026-08-31T00-16-09.135Z";
 const PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_PACKAGE?.trim();
 const SOURCE_PACKAGE_INPUT = process.env.OPENCLAW_FINAL_CERTIFICATION_SOURCE_PACKAGE?.trim();
 const OUTPUT_PATH = process.env.OPENCLAW_FINAL_CERTIFICATION_OUTPUT?.trim() ||

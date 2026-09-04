@@ -12,7 +12,7 @@ import type {
 
 test("readiness gate blocks when a required core operation is missing", () => {
   const report = createReport([]);
-  const readiness = evaluateOpenClawRuntimeMigrationReadiness({ runtimeReport: report, staticTargetVersion: "2026.8.2", persistenceHealthy: true });
+  const readiness = evaluateOpenClawRuntimeMigrationReadiness({ runtimeReport: report, staticTargetVersion: "2026.9.1", persistenceHealthy: true });
 
   assert.equal(readiness.readyForMigrationEngine, false);
   assert.ok(readiness.blockers.some((blocker) => blocker.includes("chat.send")));
@@ -23,7 +23,7 @@ test("readiness gate ignores optional and experimental gaps", () => {
   report.operations.push(operation("talk.session.create", "uncertified", "experimental"));
   report.operations.push(operation("cron.run", "partially-certified", "optional"));
 
-  const readiness = evaluateOpenClawRuntimeMigrationReadiness({ runtimeReport: report, staticTargetVersion: "2026.8.2", persistenceHealthy: true });
+  const readiness = evaluateOpenClawRuntimeMigrationReadiness({ runtimeReport: report, staticTargetVersion: "2026.9.1", persistenceHealthy: true });
 
   assert.equal(readiness.readyForMigrationEngine, true);
   assert.equal(readiness.blockers.length, 0);
@@ -34,7 +34,7 @@ test("readiness gate requires model execution, streaming, and continuity evidenc
   const report = createReport(OPENCLAW_RUNTIME_MIGRATION_CORE_OPERATION_IDS
     .filter((operationId) => !["chat.send", "chat.streaming", "session.continuity"].includes(operationId))
     .map((operationId) => operation(operationId, "certified")));
-  const readiness = evaluateOpenClawRuntimeMigrationReadiness({ runtimeReport: report, staticTargetVersion: "2026.8.2", persistenceHealthy: true });
+  const readiness = evaluateOpenClawRuntimeMigrationReadiness({ runtimeReport: report, staticTargetVersion: "2026.9.1", persistenceHealthy: true });
 
   assert.equal(readiness.readyForMigrationEngine, false);
   assert.equal(readiness.blockers.filter((blocker) => /chat.send|chat.streaming|session.continuity/.test(blocker)).length, 3);
@@ -42,7 +42,7 @@ test("readiness gate requires model execution, streaming, and continuity evidenc
 
 test("readiness gate returns ready only with exact provenance, handshake, persistence, and core proofs", () => {
   const report = createReport(OPENCLAW_RUNTIME_MIGRATION_CORE_OPERATION_IDS.map((operationId) => operation(operationId, "certified")));
-  const readiness = evaluateOpenClawRuntimeMigrationReadiness({ runtimeReport: report, staticTargetVersion: "2026.8.2" });
+  const readiness = evaluateOpenClawRuntimeMigrationReadiness({ runtimeReport: report, staticTargetVersion: "2026.9.1" });
 
   assert.equal(readiness.readyForMigrationEngine, true);
   assert.equal(readiness.targetVersionMatched, true);
@@ -80,9 +80,9 @@ function createReport(operations: OpenClawRuntimeOperationEvidence[]): OpenClawR
   return {
     schemaVersion: 2,
     generatedAt: "2026-08-31T00:00:00.000Z",
-    targetVersion: "2026.8.2",
+    targetVersion: "2026.9.1",
     gatewayUrl: "ws://127.0.0.1:28789",
-    installedVersion: "2026.8.2",
+    installedVersion: "2026.9.1",
     buildId: "target-build",
     protocolVersion: 4,
     role: "operator",

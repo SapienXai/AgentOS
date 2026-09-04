@@ -1151,7 +1151,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
 
   async listModels(input: OpenClawListModelsInput = {}, options: OpenClawCommandOptions = {}) {
     const view = input.view ?? (input.all ? "all" : "default");
-    // OpenClaw 2026.8.2 accepts the catalog view here, but rejects provider as
+    // OpenClaw 2026.9.1 accepts the catalog view here, but rejects provider as
     // a request parameter. Provider-scoped callers are filtered below.
     const models = await this.gatewayFirst(
       "models.list",

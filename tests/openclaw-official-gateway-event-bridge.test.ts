@@ -129,7 +129,7 @@ async function createHarness() {
 
   const harness = await OfficialGatewayHarness.create({
     routes: {
-      status: ({ respond }) => respond({ version: "2026.8.2" }),
+      status: ({ respond }) => respond({ version: "2026.9.1" }),
       "sessions.subscribe": ({ respond }) => respond({ ok: true }),
       "sessions.list": ({ respond }) => respond({ sessions: [] }),
       "tasks.list": ({ respond }) => respond({ tasks: [] })

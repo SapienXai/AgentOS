@@ -1309,7 +1309,7 @@ test("native WS gateway client does not hide malformed Gateway typed responses b
   assert.match(client.getDiagnostics().lastNativeError ?? "", /malformed response/);
 });
 
-test("native models.list keeps provider filtering client-side for the 8.2 Gateway contract", async () => {
+test("native models.list keeps provider filtering client-side for the 9.1 Gateway contract", async () => {
   const fallback = new FallbackGatewayClient();
   const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {

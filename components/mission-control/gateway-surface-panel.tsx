@@ -70,7 +70,7 @@ export function GatewayProductSurfacePanel({
         <div className="min-w-0">
           <p className={gatewayLabelClassName(surfaceTheme)}>Gateway-native product surface map</p>
           <h3 className={cn("mt-1 text-sm font-semibold", surfaceTheme === "light" ? "text-foreground" : "text-slate-100")}>
-            OpenClaw 2026.8.2 surfaces exposed to AgentOS product flows
+            OpenClaw 2026.9.1 capabilities and product surfaces
           </h3>
           <p className={cn("mt-1 max-w-3xl text-xs leading-5", gatewayMutedTextClassName(surfaceTheme))}>
             This panel uses the live compatibility report and read-only native Gateway probes. Failed probes stay degraded and do not fall back to CLI.

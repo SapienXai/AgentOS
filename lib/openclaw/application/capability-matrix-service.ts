@@ -266,7 +266,8 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
           definition.fallbackAllowed ?? true,
           definition.recovery ?? null
         ),
-        baseline: definition.baseline
+        baseline: definition.baseline,
+        productIntegration: definition.productIntegration ?? "integrated"
       }
     ])
   ) as Record<string, OpenClawCapabilityOperation>;

@@ -335,7 +335,7 @@ function createSettingsLifecycleService() {
       authenticated: true,
       health: "live",
       protocolVersion: 4,
-      version: "2026.8.2",
+      version: "2026.9.1",
       sourceCommit: null,
       checkedAt: new Date().toISOString(),
       reason: null

@@ -26,7 +26,7 @@ type OfficialBackedGatewayClient = ReturnType<typeof createOfficialBackedOpenCla
 
 const execFileAsync = promisify(execFile);
 const PACKAGE_INPUT = process.env.OPENCLAW_IDENTITY_E2E_PACKAGE?.trim();
-const OUTPUT_PATH = process.env.OPENCLAW_IDENTITY_E2E_OUTPUT?.trim() || path.resolve("docs/evidence/openclaw-2026.8.2-identity-authorization.json");
+const OUTPUT_PATH = process.env.OPENCLAW_IDENTITY_E2E_OUTPUT?.trim() || path.resolve("docs/evidence/openclaw-2026.9.1-identity-authorization.json");
 const REQUEST_TIMEOUT_MS = 8_000;
 
 type CheckResult = {
@@ -44,7 +44,7 @@ type ConnectionProfileEvidence = OpenClawOperatorIdentity & {
 
 async function main() {
   if (!PACKAGE_INPUT) {
-    throw new Error("Set OPENCLAW_IDENTITY_E2E_PACKAGE to an exact OpenClaw 2026.8.2 package root.");
+    throw new Error("Set OPENCLAW_IDENTITY_E2E_PACKAGE to an exact OpenClaw 2026.9.1 package root.");
   }
 
   const packageRoot = path.resolve(PACKAGE_INPUT);
@@ -149,7 +149,7 @@ async function main() {
       disposableRootRemoved: false,
       gatewayProcessStopped: false
     },
-    gate: "OPENCLAW 8.2 IDENTITY/AUTHORIZATION GATE: FAIL",
+    gate: "OPENCLAW 9.1 IDENTITY/AUTHORIZATION GATE: FAIL",
     success: false
   };
 
@@ -246,15 +246,15 @@ async function main() {
     evidence.cleanup.disposableRootRemoved = !(await pathExists(disposableRoot));
     evidence.cleanup.gatewayProcessStopped = gateway.exitCode !== null;
     evidence.gate = success && cleanupStatus === "complete" && evidence.cleanup.disposableRootRemoved && evidence.cleanup.gatewayProcessStopped
-      ? "OPENCLAW 8.2 IDENTITY/AUTHORIZATION GATE: PASS"
-      : "OPENCLAW 8.2 IDENTITY/AUTHORIZATION GATE: FAIL";
+      ? "OPENCLAW 9.1 IDENTITY/AUTHORIZATION GATE: PASS"
+      : "OPENCLAW 9.1 IDENTITY/AUTHORIZATION GATE: FAIL";
     evidence.success = evidence.gate.endsWith("PASS");
     await mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
     await writeFile(OUTPUT_PATH, `${JSON.stringify(sanitizeEvidence(evidence), null, 2)}\n`, { mode: 0o600 });
   }
 
   if (!evidence.success) throw new Error(`Identity authorization certification failed. Evidence: ${OUTPUT_PATH}`);
-  console.log("OPENCLAW 8.2 IDENTITY/AUTHORIZATION GATE: PASS");
+  console.log("OPENCLAW 9.1 IDENTITY/AUTHORIZATION GATE: PASS");
   console.log(`Evidence: ${OUTPUT_PATH}`);
 }
 
@@ -337,7 +337,7 @@ async function verifyCliFallbackSafety(
     url: `ws://127.0.0.1:${runtime.port}`,
     token: runtime.token,
     scopes: ["operator.admin"],
-    fallback
+    fallback,
   });
   clients.push(adminClient);
 
@@ -345,16 +345,18 @@ async function verifyCliFallbackSafety(
   const adminResult = await adminAuthorization.authorizeMethod("agents.create", { agentDir: "[DISPOSABLE_AGENT_DIR]" });
   const proof = buildOpenClawNativeAuthorizationProof(adminResult, true);
   assert.ok(proof);
-  await adminClient.addAgent({
+  const nativeCreateResult = await adminClient.addAgent({
     id: "identity-e2e-admin-agent",
     workspace: runtime.workspaceDir,
     agentDir: adminAgentDir
   }, { authorizationProof: proof });
-  assert.deepEqual(fallbackCalls, ["agents.create"]);
+  assert.match(nativeCreateResult.stdout, /identity-e2e-admin-agent/);
+  assert.deepEqual(fallbackCalls, []);
   evidence.cliFallbackSafety.provenNativeAdmin = {
     result: "PASS",
     nativeIdentity: summarizeIdentity(adminResult.identity),
-    fallbackInvoked: true,
+    nativeGatewayInvoked: true,
+    fallbackInvoked: false,
     agentCreated: true,
     packageVersion: packageIdentity.version
   };
@@ -366,12 +368,13 @@ async function verifyCliFallbackSafety(
       workspace: runtime.workspaceDir,
       agentDir: path.join(path.dirname(runtime.configPath), "stale-agent")
     }, { authorizationProof: proof }),
-    /requires a current native Gateway authorization proof/
+    /requires a current native Gateway authorization proof|Gateway-native operation failed/
   );
-  assert.deepEqual(fallbackCalls, ["agents.create"]);
+  assert.deepEqual(fallbackCalls, []);
   evidence.cliFallbackSafety.staleNativeIdentity = {
     result: "PASS",
     fallbackInvokedAfterDisconnect: false,
+    rejection: "stale native identity rejected before any CLI fallback",
     observedIdentity: summarizeIdentity(adminClient.getDiagnostics().operatorIdentity ?? null)
   };
 

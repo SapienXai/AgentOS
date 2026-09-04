@@ -479,7 +479,7 @@ export type OpenClawModelScanPayload = Array<{
 export interface OpenClawListModelsInput {
   all?: boolean;
   provider?: string;
-  /** OpenClaw 2026.8.2 catalog view. `default` is the fast prepared view. */
+  /** OpenClaw 2026.9.1 catalog view. `default` is the fast prepared view. */
   view?: OpenClawModelsListView;
   preparedOnly?: boolean;
   refresh?: boolean;

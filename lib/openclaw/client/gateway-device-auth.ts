@@ -66,7 +66,7 @@ export function buildDeviceAuthPayloadV3(params: {
 }
 
 /**
- * Temporary v3 signing compatibility helper copied from OpenClaw 2026.8.2
+ * Temporary v3 signing compatibility helper copied from OpenClaw 2026.9.1
  * packages/gateway-client/src/device-auth.ts. Keep this neutral while the
  * official package owns the live connect/auth assembly.
  */

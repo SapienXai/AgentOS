@@ -94,6 +94,7 @@ const operationSurfaceMap: Partial<Record<string, OpenClawCompatibilityCapabilit
 };
 
 const operationRequiredScopes: Partial<Record<string, string[]>> = {
+  userDirectory: ["operator.read"],
   configSchemaLookup: ["operator.read"],
   configPatch: ["operator.admin"],
   modelAuth: ["operator.admin"],
@@ -385,6 +386,7 @@ async function checkOperationContract(
     surface: operationSurfaceMap[operation.id] ?? "gatewayHealth",
     required,
     baseline,
+    productIntegration: operation.productIntegration ?? "integrated",
     methods: operation.methods,
     events: operation.events ?? [],
     supportedMethod,

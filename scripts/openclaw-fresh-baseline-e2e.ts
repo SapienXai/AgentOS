@@ -11,11 +11,13 @@ import { OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION } fro
 import { serializeOpenClawRuntimeCertificationArtifact } from "@/lib/openclaw/runtime-certification/serialization";
 import { redactSecretText } from "@/lib/security/redaction";
 
-const TARGET_VERSION = "2026.8.2";
-const TARGET_COMMIT = "0965053fe6b9341776df147a6934b7485c60b5ca";
+const TARGET_VERSION = "2026.9.1";
+const TARGET_COMMIT = "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1";
 const TARGET_PACKAGE_INPUT = process.env.OPENCLAW_FRESH_BASELINE_PACKAGE?.trim();
 const OUTPUT_PATH = process.env.OPENCLAW_FRESH_BASELINE_OUTPUT?.trim() ||
-  path.resolve("docs/evidence/openclaw-2026.8.2-fresh-baseline.json");
+  path.resolve("docs/evidence/openclaw-2026.9.1-fresh-baseline.json");
+const RUNTIME_CERTIFICATION_OUTPUT_PATH = process.env.OPENCLAW_FRESH_BASELINE_RUNTIME_OUTPUT?.trim() ||
+  path.resolve("docs/evidence/openclaw-2026.9.1-runtime-certification.json");
 const REQUIRED_PROBE_IDS = [
   "gateway-health",
   "sessions-create",
@@ -40,7 +42,7 @@ type ExactPackageIdentity = {
 
 async function main() {
   if (!TARGET_PACKAGE_INPUT) {
-    throw new Error("Set OPENCLAW_FRESH_BASELINE_PACKAGE to an exact OpenClaw 2026.8.2 package root.");
+    throw new Error("Set OPENCLAW_FRESH_BASELINE_PACKAGE to an exact OpenClaw 2026.9.1 package root.");
   }
 
   const inputPackage = path.resolve(TARGET_PACKAGE_INPUT);
@@ -189,9 +191,15 @@ async function main() {
     };
     await mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
     await writeFile(OUTPUT_PATH, serializeOpenClawRuntimeCertificationArtifact(output), { mode: 0o600 });
+    await writePrimaryRuntimeCertificationEvidence({
+      certification,
+      provisionedIdentity,
+      runtimeChecks,
+      outputPath: RUNTIME_CERTIFICATION_OUTPUT_PATH
+    });
 
     if (!output.success) throw new Error("Fresh OpenClaw baseline gate failed after cleanup.");
-    console.log("OPENCLAW 8.2 FRESH BASELINE: PASS");
+    console.log("OPENCLAW 9.1 FRESH BASELINE: PASS");
     console.log(`Evidence: ${OUTPUT_PATH}`);
     return 0;
   } catch (error) {
@@ -202,6 +210,72 @@ async function main() {
     if (failure) await rm(fixtureRoot, { recursive: true, force: true }).catch(() => {});
     if (failure) console.error(`Fresh OpenClaw baseline certification failed: ${failure}`);
   }
+}
+
+async function writePrimaryRuntimeCertificationEvidence(input: {
+  certification: Record<string, unknown>;
+  provisionedIdentity: ExactPackageIdentity;
+  runtimeChecks: Record<string, boolean>;
+  outputPath: string;
+}) {
+  const runtime = asRecord(input.certification.runtime);
+  const results = Array.isArray(runtime?.results) ? runtime.results.map(asRecord).filter(Boolean) : [];
+  const primaryEvidence = {
+    schemaVersion: 1,
+    artifactType: "openclaw-runtime-certification",
+    generatedAt: new Date().toISOString(),
+    provenance: {
+      agentosCertifiedCodeHead: await readGitHead(),
+      openclawRelease: TARGET_VERSION,
+      openclawSourceCommit: TARGET_COMMIT,
+      openclawBuildId: input.provisionedIdentity.buildId,
+      openclawPackageHash: input.provisionedIdentity.packageHash,
+      gatewayClient: TARGET_VERSION,
+      gatewayProtocolPackage: TARGET_VERSION,
+      runtimePathMode: "exact-built-source-package-fixture",
+      gatewayPlacement: "disposable-loopback"
+    },
+    package: {
+      gatewayClient: TARGET_VERSION,
+      gatewayProtocol: TARGET_VERSION,
+      installedOpenClaw: input.provisionedIdentity.version,
+      exactPackageHash: input.provisionedIdentity.packageHash
+    },
+    handshake: {
+      protocolVersion: runtime?.protocolVersion ?? null,
+      installedVersion: runtime?.installedVersion ?? null,
+      buildId: runtime?.buildId ?? null,
+      role: runtime?.role ?? null,
+      scopes: runtime?.scopes ?? [],
+      methodCount: runtime?.methodCount ?? null,
+      eventCount: runtime?.eventCount ?? null,
+      capabilities: runtime?.capabilities ?? [],
+      advertisedMethods: runtime?.advertisedMethods ?? [],
+      advertisedEvents: runtime?.advertisedEvents ?? []
+    },
+    contract: {
+      static: input.certification.staticContract ?? null,
+      evidenceBridge: input.certification.evidenceBridge ?? null,
+      operationMatrix: runtime?.operations ?? [],
+      resultMatrix: results
+    },
+    reconnect: {
+      gatewayRestart: results.find((result) => result?.id === "gateway-restart") ?? null,
+      sessionContinuity: results.find((result) => result?.id === "session-continuity") ?? null,
+      officialReconnectOwner: "OpenClaw official Gateway client"
+    },
+    requestPolicy: {
+      status: "SEPARATE_AGENTOS_VALIDATION",
+      evidence: "Native transport, request policy, invalidation, generation fencing, and abort isolation are validated by the AgentOS contract suite."
+    },
+    skips: results.filter((result) => result?.status === "SKIPPED"),
+    expectedDenials: results.filter((result) => result?.status === "EXPECTED-DENIAL"),
+    runtime,
+    checks: input.runtimeChecks,
+    success: runtime?.summary && asRecord(runtime.summary)?.failed === 0 && asRecord(runtime.summary)?.unknown === 0 && Object.values(input.runtimeChecks).every(Boolean)
+  };
+  await mkdir(path.dirname(input.outputPath), { recursive: true });
+  await writeFile(input.outputPath, serializeOpenClawRuntimeCertificationArtifact(primaryEvidence), { mode: 0o600 });
 }
 
 async function readExactPackageIdentity(packageRoot: string): Promise<ExactPackageIdentity> {
@@ -348,7 +422,7 @@ async function runRuntimeCertification(input: {
         .join("; ")
       : "";
     const detail = redactSecretText(`${failures}\n${result.stderr}\n${result.stdout}`).trim().slice(-4_000);
-    throw new Error(`The real 8.2 Gateway certification child process failed.${detail ? ` ${detail}` : ""}`);
+    throw new Error(`The real 9.1 Gateway certification child process failed.${detail ? ` ${detail}` : ""}`);
   }
   return certification;
 }

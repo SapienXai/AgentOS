@@ -2,6 +2,7 @@ import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 
 export type OpenClawGatewayCompatibilityOperationId =
   | "health"
+  | "userDirectory"
   | "diagnosticsStability"
   | "gatewayIdentity"
   | "presence"
@@ -35,9 +36,12 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "chatControl"
   | "agentWait"
   | "sessionHistory"
+  | "sessionCollaboration"
   | "taskEvents"
+  | "taskSuggestions"
   | "taskAssign"
   | "taskCancel"
+  | "worktrees"
   | "artifacts"
   | "artifactDownload"
   | "runtimeSnapshot"
@@ -75,6 +79,8 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "tts"
   | "environments"
   | "skills"
+  | "skillsLibrary"
+  | "githubProfileSession"
   | "updates";
 
 export type OpenClawGatewayCompatibilityOperationDefinition = {
@@ -90,10 +96,13 @@ export type OpenClawGatewayCompatibilityOperationDefinition = {
   fallbackAllowed?: boolean;
   recovery?: string;
   baseline?: "required" | "optional" | "experimental";
+  /** OpenClaw advertises the surface; AgentOS may intentionally not integrate it yet. */
+  productIntegration?: "integrated" | "discovery-only";
 };
 
 export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibilityOperationDefinition[] = [
   { id: "health", label: "Gateway health", methods: ["health", "status"], baseline: "required" },
+  { id: "userDirectory", label: "Gateway user directory", methods: ["users.list"], baseline: "required" },
   { id: "diagnosticsStability", label: "Gateway diagnostics", methods: ["diagnostics.stability"], baseline: "optional" },
   { id: "gatewayIdentity", label: "Gateway identity", methods: ["gateway.identity.get"], baseline: "optional" },
   {
@@ -230,11 +239,49 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     baseline: "optional"
   },
   {
+    id: "sessionCollaboration",
+    label: "Session collaboration and ownership",
+    methods: [
+      "session.visibility.set",
+      "session.members.list",
+      "session.members.add",
+      "session.members.remove",
+      "session.members.listEvidence",
+      "session.suggestions.add",
+      "session.suggestions.list",
+      "session.suggestions.resolve",
+      "session.typing",
+      "session.discussion.info",
+      "session.discussion.open",
+      "sessions.assignOwner"
+    ],
+    events: ["session.sharing", "session.sharing.evidence", "session.typing"],
+    fallbackAllowed: false,
+    recovery: "OpenClaw owns session collaboration, participants, visibility, and ownership. AgentOS currently exposes this surface for capability discovery only.",
+    baseline: "optional",
+    productIntegration: "discovery-only"
+  },
+  {
     id: "taskEvents",
     label: "Task events",
     methods: ["tasks.list", "tasks.get"],
     events: ["task"],
     baseline: "optional"
+  },
+  {
+    id: "taskSuggestions",
+    label: "Task suggestions",
+    methods: [
+      "taskSuggestions.list",
+      "taskSuggestions.create",
+      "taskSuggestions.accept",
+      "taskSuggestions.dismiss"
+    ],
+    events: ["task.suggestion"],
+    fallbackAllowed: false,
+    recovery: "OpenClaw owns ephemeral task suggestions and their acceptance modes. AgentOS currently exposes this surface for capability discovery only.",
+    baseline: "optional",
+    productIntegration: "discovery-only"
   },
   {
     id: "taskAssign",
@@ -245,6 +292,22 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     baseline: "experimental"
   },
   { id: "taskCancel", label: "Task cancellation", methods: ["tasks.cancel"], baseline: "optional" },
+  {
+    id: "worktrees",
+    label: "Managed worktrees",
+    methods: [
+      "worktrees.list",
+      "worktrees.create",
+      "worktrees.remove",
+      "worktrees.restore",
+      "worktrees.gc",
+      "worktrees.branches"
+    ],
+    fallbackAllowed: false,
+    recovery: "OpenClaw owns managed worktree lifecycle and repository inspection. AgentOS currently exposes this surface for capability discovery only.",
+    baseline: "optional",
+    productIntegration: "discovery-only"
+  },
   {
     id: "artifacts",
     label: "Artifact sync",
@@ -388,6 +451,43 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   },
   { id: "environments", label: "Environments", methods: ["environments.list", "environments.status"], baseline: "optional" },
   { id: "skills", label: "Skill status", methods: ["skills.status"], baseline: "optional" },
+  {
+    id: "skillsLibrary",
+    label: "Skills library",
+    methods: [
+      "skills.library.list",
+      "skills.library.read",
+      "skills.library.save",
+      "skills.library.mutate",
+      "skills.library.activate",
+      "skills.library.import",
+      "skills.library.upload"
+    ],
+    fallbackAllowed: false,
+    recovery: "OpenClaw owns the shared skill library, revisions, uploads, and session activation. AgentOS currently exposes this surface for capability discovery only.",
+    baseline: "optional",
+    productIntegration: "discovery-only"
+  },
+  {
+    id: "githubProfileSession",
+    label: "GitHub profile and session publication",
+    methods: [
+      "users.github.status",
+      "users.github.authorize.start",
+      "users.github.authorize.poll",
+      "users.github.authorize.cancel",
+      "users.github.disconnect",
+      "sessions.github.options",
+      "sessions.github.status",
+      "sessions.github.confirm",
+      "sessions.github.publish",
+      "sessions.title.prepare"
+    ],
+    fallbackAllowed: false,
+    recovery: "OpenClaw owns GitHub identity and session publication flows. AgentOS currently exposes this surface for capability discovery only.",
+    baseline: "optional",
+    productIntegration: "discovery-only"
+  },
   { id: "updates", label: "Update status", methods: ["update.status", "update.run", "status"], baseline: "optional" }
 ];
 
@@ -563,6 +663,8 @@ export const OPENCLAW_2026_6_8_OPTIONAL_GATEWAY_METHODS = [
   "wizard.status"
 ] as const;
 
+const OPENCLAW_2026_9_1_REQUIRED_GATEWAY_METHODS = ["users.list"] as const;
+
 export const OPENCLAW_EXPERIMENTAL_GATEWAY_METHODS = [
   "artifacts.put",
   "artifacts.delete",
@@ -606,12 +708,16 @@ export const OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS = Array.from(
 export const OPENCLAW_GATEWAY_BASELINE_METHODS = Array.from(
   new Set([
     ...OPENCLAW_2026_6_8_REQUIRED_GATEWAY_METHODS,
+    ...OPENCLAW_2026_9_1_REQUIRED_GATEWAY_METHODS,
     ...OPENCLAW_2026_6_8_OPTIONAL_GATEWAY_METHODS
   ])
 ).sort();
 
 export const OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS = Array.from(
-  new Set(OPENCLAW_2026_6_8_REQUIRED_GATEWAY_METHODS)
+  new Set([
+    ...OPENCLAW_2026_6_8_REQUIRED_GATEWAY_METHODS,
+    ...OPENCLAW_2026_9_1_REQUIRED_GATEWAY_METHODS
+  ])
 ).sort();
 
 export const OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS = Array.from(

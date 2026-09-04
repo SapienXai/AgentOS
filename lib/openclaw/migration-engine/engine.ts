@@ -31,7 +31,7 @@ import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 
 export const OPENCLAW_PHASE_2B_SOURCE_VERSION = "2026.6.11";
 export const OPENCLAW_PHASE_2B_TARGET_VERSION = OPENCLAW_SUPPORTED_BASELINE_VERSION;
-export const OPENCLAW_PHASE_2B_TARGET_COMMIT = "0965053fe6b9341776df147a6934b7485c60b5ca";
+export const OPENCLAW_PHASE_2B_TARGET_COMMIT = "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1";
 
 const STEP_DEFINITIONS: Array<Omit<OpenClawMigrationStep, "status">> = [
   { id: "inspect", state: "preflight", description: "Inspect source state, config, runtime identity, and mutation ownership.", mutation: false, retryable: true },
@@ -406,6 +406,11 @@ export class OpenClawMigrationEngine {
     if (run.snapshot.config) {
       await mkdir(path.dirname(plan.paths.targetConfigPath), { recursive: true, mode: 0o700 });
       await cp(path.join(run.snapshot.root, run.snapshot.config.relativePath), plan.paths.targetConfigPath, { force: true });
+      await rebaseConfigPaths({
+        configPath: plan.paths.targetConfigPath,
+        fromRoot: plan.paths.sourceStateDir,
+        toRoot: plan.paths.targetStateDir,
+      });
     }
     return this.addEvidence(run, this.evidence("stage-target", "identity", "pass", "Exact target package and isolated source state staged side by side.", { packageRole: "isolated-staging", stateRole: "isolated-target" }));
   }
@@ -430,7 +435,9 @@ export class OpenClawMigrationEngine {
   private async stepMigrateState(plan: OpenClawMigrationPlan, run: OpenClawMigrationRun) {
     const binaryPath = resolveStagedBinary(plan, path.join(plan.paths.workRoot, "runs", plan.planId, "staged-target"));
     const beforeManifest = await captureStateManifest({ stateDir: plan.paths.targetStateDir, configPath: plan.paths.targetConfigPath });
-    const result = await this.command(binaryPath, ["doctor", "--fix", "--non-interactive", "--yes", "--no-workspace-suggestions"], plan);
+    // OpenClaw 2026.9.1 owns legacy workspace setup migration. Suppressing
+    // workspace handling here leaves the canonical Gateway unable to boot.
+    const result = await this.command(binaryPath, ["doctor", "--fix", "--non-interactive", "--yes"], plan);
     if (result.exitCode !== 0) throw new Error(`Target state migration failed: ${result.stderr || result.stdout || "no diagnostic"}`);
     let next = this.addEvidence(run, this.commandEvidence("migrate-state", result, "command", "Target explicit doctor repair completed in isolated state."));
     const afterManifest = await captureStateManifest({ stateDir: plan.paths.targetStateDir, configPath: plan.paths.targetConfigPath });
@@ -506,6 +513,13 @@ export class OpenClawMigrationEngine {
     const configBackup = path.join(swapRoot, "live-config-before-commit.json");
     let next = run;
     try {
+      if (await pathExists(plan.paths.targetConfigPath)) {
+        await rebaseConfigPaths({
+          configPath: plan.paths.targetConfigPath,
+          fromRoot: plan.paths.targetStateDir,
+          toRoot: plan.paths.sourceStateDir,
+        });
+      }
       if (await pathExists(plan.paths.installPackageRoot)) {
         await rename(plan.paths.installPackageRoot, packageBackup);
         next = await this.saveLiveSwap(next, { phase: "package-backed-up", packageBackedUp: true });
@@ -787,6 +801,45 @@ function parseCommandJson(result: OpenClawMigrationCommandResult) {
     }
   }
   return null;
+}
+
+async function rebaseConfigPaths(input: { configPath: string; fromRoot: string; toRoot: string }) {
+  const raw = await readFile(input.configPath, "utf8");
+  const config = JSON.parse(raw) as unknown;
+  const fromRoot = path.resolve(input.fromRoot);
+  const toRoot = path.resolve(input.toRoot);
+  const result = rewriteConfigPaths(config, fromRoot, toRoot);
+  if (!result.changed) return;
+  await writeFile(input.configPath, `${JSON.stringify(result.value, null, 2)}\n`, { mode: 0o600 });
+}
+
+function rewriteConfigPaths(value: unknown, fromRoot: string, toRoot: string): { value: unknown; changed: boolean } {
+  if (typeof value === "string") {
+    if (value === fromRoot) return { value: toRoot, changed: true };
+    const prefix = `${fromRoot}${path.sep}`;
+    if (value.startsWith(prefix)) return { value: `${toRoot}${value.slice(fromRoot.length)}`, changed: true };
+    return { value, changed: false };
+  }
+  if (Array.isArray(value)) {
+    let changed = false;
+    const next = value.map((entry) => {
+      const result = rewriteConfigPaths(entry, fromRoot, toRoot);
+      changed ||= result.changed;
+      return result.value;
+    });
+    return { value: next, changed };
+  }
+  if (value && typeof value === "object") {
+    let changed = false;
+    const next: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      const result = rewriteConfigPaths(entry, fromRoot, toRoot);
+      changed ||= result.changed;
+      next[key] = result.value;
+    }
+    return { value: next, changed };
+  }
+  return { value, changed: false };
 }
 
 function readString(value: unknown) {

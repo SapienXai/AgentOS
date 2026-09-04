@@ -15,7 +15,7 @@ import type {
 
 const handshake = {
   protocol: 4,
-  server: { version: "2026.8.2", buildId: "target-build" },
+  server: { version: "2026.9.1", buildId: "target-build" },
   features: {
     methods: ["config.get", "sessions.create", "sessions.messages.subscribe", "models.probe"],
     events: ["session.message"]
@@ -29,7 +29,7 @@ test("runtime certification records native PASS and response shape evidence", as
     return { config: {}, hash: "hash" };
   });
   const report = await runOpenClawRuntimeCertification({
-    targetVersion: "2026.8.2",
+    targetVersion: "2026.9.1",
     gatewayUrl: "ws://127.0.0.1:28789",
     handshake,
     clients: { default: { client, handshake } },

@@ -26,8 +26,8 @@ import type {
 
 type OfficialBackedGatewayClient = ReturnType<typeof createOfficialBackedOpenClawGatewayClient>;
 
-const TARGET_VERSION = process.env.OPENCLAW_RUNTIME_CERT_TARGET?.trim() || "2026.8.2";
-const TARGET_COMMIT = process.env.OPENCLAW_RUNTIME_CERT_TARGET_COMMIT?.trim() || "0965053fe6b9341776df147a6934b7485c60b5ca";
+const TARGET_VERSION = process.env.OPENCLAW_RUNTIME_CERT_TARGET?.trim() || "2026.9.1";
+const TARGET_COMMIT = process.env.OPENCLAW_RUNTIME_CERT_TARGET_COMMIT?.trim() || "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1";
 const STATIC_COMPARISON_SOURCE_VERSION = process.env.OPENCLAW_RUNTIME_CERT_STATIC_CURRENT_VERSION?.trim() || "2026.6.11";
 const GATEWAY_URL = process.env.OPENCLAW_RUNTIME_CERT_GATEWAY_URL?.trim() || "ws://127.0.0.1:18789";
 const TOKEN =
@@ -35,7 +35,7 @@ const TOKEN =
   process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN?.trim() ||
   null;
 const OUTPUT_PATH = process.env.OPENCLAW_RUNTIME_CERT_OUTPUT?.trim() ||
-  path.resolve("docs/evidence/openclaw-2026.8.2-runtime-certification.json");
+  path.resolve("docs/evidence/openclaw-2026.9.1-runtime-certification.json");
 const STATE_DIR = process.env.OPENCLAW_RUNTIME_CERT_STATE_DIR?.trim() || null;
 const OPENCLAW_CLI = process.env.OPENCLAW_RUNTIME_CERT_CLI?.trim() || null;
 const USE_FIXTURE = process.env.OPENCLAW_RUNTIME_CERT_USE_FIXTURE !== "0";
@@ -255,6 +255,36 @@ function createProbes(input: {
       params: {},
       validateResponse: objectWith("ok")
     }),
+    probe("gateway-status", "gateway.health", "Gateway status", "status", "required", OPTIONAL_DIMENSIONS, "AgentOS reads the native Gateway status snapshot during startup reconciliation.", {
+      clientId: "read",
+      params: {},
+      validateResponse: objectWith()
+    }),
+    probe("tasks-list", "taskEvents", "Task ledger", "tasks.list", "required", OPTIONAL_DIMENSIONS, "AgentOS reads the native task ledger before projecting task state.", {
+      clientId: "read",
+      params: {},
+      validateResponse: objectWith("tasks")
+    }),
+    probe("channels-status", "channels", "Channel status", "channels.status", "required", OPTIONAL_DIMENSIONS, "AgentOS reads configured channel status without probing or mutating external providers.", {
+      clientId: "read",
+      params: { probe: false },
+      validateResponse: objectWith()
+    }),
+    probe("skills-status", "skills", "Skill status", "skills.status", "required", OPTIONAL_DIMENSIONS, "AgentOS reads the effective skill status for the disposable dev agent.", {
+      clientId: "read",
+      params: { agentId: "dev" },
+      validateResponse: objectWith()
+    }),
+    probe("tools-catalog", "tools", "Tool catalog", "tools.catalog", "required", OPTIONAL_DIMENSIONS, "AgentOS reads the native tool catalog without invoking a tool.", {
+      clientId: "read",
+      params: { agentId: "dev" },
+      validateResponse: objectWith()
+    }),
+    probe("users-list", "userDirectory", "Gateway user directory", "users.list", "required", OPTIONAL_DIMENSIONS, "AgentOS reads the Gateway user directory with the minimum operator.read scope.", {
+      clientId: "read",
+      params: {},
+      validateResponse: objectWith("profiles")
+    }),
     probe("sessions-list", "sessions.list", "Sessions", "sessions.list", "required", OPTIONAL_DIMENSIONS, "AgentOS reads the Gateway session catalog.", {
       validateResponse: objectWith("sessions")
     }),
@@ -292,6 +322,27 @@ function createProbes(input: {
           context.data.sessionId = sessionId;
         }
       }
+    }),
+    probe("tools-effective", "tools", "Effective tools", "tools.effective", "required", OPTIONAL_DIMENSIONS, "AgentOS reads session-scoped effective tools without invoking or changing them.", {
+      clientId: "read",
+      params: { agentId: "dev", sessionKey: input.resources.sessionKey },
+      validateResponse: objectWith()
+    }),
+    probe("session-collaboration-members-read", "session.collaboration", "Session collaboration membership", "session.members.listEvidence", "optional", OPTIONAL_DIMENSIONS, "OpenClaw session collaboration is read safely for capability discovery without changing visibility, membership, or ownership.", {
+      params: { sessionKey: input.resources.sessionKey, agentId: "dev" },
+      validateResponse: objectWith("sessionKey", "members", "identities", "role", "allowedVisibilities")
+    }),
+    probe("worktrees-list-discovery", "worktrees", "Managed worktree inventory", "worktrees.list", "optional", OPTIONAL_DIMENSIONS, "OpenClaw managed worktrees are read safely for capability discovery; no worktree is created, removed, restored, or garbage-collected.", {
+      params: {},
+      validateResponse: objectWith("worktrees")
+    }),
+    probe("task-suggestions-list-discovery", "taskSuggestions", "Task suggestion inventory", "taskSuggestions.list", "optional", OPTIONAL_DIMENSIONS, "OpenClaw task suggestions are read safely for capability discovery; no suggestion is created, accepted, or dismissed.", {
+      params: {},
+      validateResponse: objectWith("suggestions")
+    }),
+    probe("skills-library-list-discovery", "skillsLibrary", "Skills library inventory", "skills.library.list", "optional", OPTIONAL_DIMENSIONS, "OpenClaw skills library entries are read safely for capability discovery; no skill, revision, selection, or activation is changed.", {
+      params: {},
+      validateResponse: objectWith("entries")
     }),
     probe("sessions-preview", "sessions.preview", "Session preview", "sessions.preview", "optional", OPTIONAL_DIMENSIONS, "The session preview is a lower-level optional roster projection.", {
       params: { keys: [input.resources.sessionKey] },
@@ -400,14 +451,10 @@ function createProbes(input: {
       validateResponse: objectWith("ok")
     }),
     probe("sessions-dispatch", "sessions.dispatch", "Session dispatch", "sessions.dispatch", "optional", OPTIONAL_DIMENSIONS, "AgentOS does not currently require worker/device dispatch; the documented auto-device request is probed while the disposable session is still active.", {
-      params: { key: input.resources.sessionKey, agentId: "dev", autoDevice: true },
-      expectedOutcome: "invalid-parameters",
-      validateResponse: objectWith("ok", "key", "sessionId", "placement")
+      skipReason: "No paired session-host node exists in the isolated runtime, so dispatch was intentionally not attempted."
     }),
     probe("sessions-move", "sessions.move", "Session placement move", "sessions.move", "optional", OPTIONAL_DIMENSIONS, "AgentOS does not currently require placement moves; a documented Gateway target with an intentionally unavailable environment is probed while the disposable session is active.", {
-      params: { key: input.resources.sessionKey, agentId: "dev", expected: { generation: 0, environmentId: "agentos-runtime-cert-missing-environment", ownerEpoch: 1 }, target: { kind: "gateway" } },
-      expectedOutcome: "invalid-parameters",
-      validateResponse: objectWith("ok", "key", "sessionId", "placement")
+      skipReason: "The disposable session remains on local placement and no alternate session-host environment exists, so placement mutation was intentionally not attempted."
     }),
     probe("session-continuity-read-denial", "session.continuity", "Read-only continuity mutation denial", "sessions.patch", "required", CORE_LIFECYCLE_DIMENSIONS, "A read-only caller must not mutate the session used for continuity.", {
       clientId: "read",

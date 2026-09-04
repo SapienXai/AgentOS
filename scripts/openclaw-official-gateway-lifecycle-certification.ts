@@ -13,16 +13,16 @@ import {
 } from "@/lib/openclaw/client/gateway-client";
 import { publicKeyRawBase64UrlFromPem } from "@/lib/openclaw/client/gateway-device-auth";
 
-const TARGET_VERSION = "2026.8.2";
-const TARGET_COMMIT = "0965053fe6b9341776df147a6934b7485c60b5ca";
+const TARGET_VERSION = "2026.9.1";
+const TARGET_COMMIT = "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1";
 const PACKAGE_INPUT = process.env.OPENCLAW_OFFICIAL_LIFECYCLE_PACKAGE?.trim();
 const OUTPUT_PATH = process.env.OPENCLAW_OFFICIAL_LIFECYCLE_OUTPUT?.trim() ||
-  path.resolve("docs/evidence/openclaw-2026.8.2-official-gateway-lifecycle-certification.json");
+  path.resolve("docs/evidence/openclaw-2026.9.1-official-gateway-lifecycle-certification.json");
 const REQUEST_TIMEOUT_MS = 8_000;
 
 async function main() {
   if (!PACKAGE_INPUT) {
-    throw new Error("Set OPENCLAW_OFFICIAL_LIFECYCLE_PACKAGE to an exact OpenClaw 2026.8.2 package root.");
+    throw new Error("Set OPENCLAW_OFFICIAL_LIFECYCLE_PACKAGE to an exact OpenClaw 2026.9.1 package root.");
   }
 
   const packageRoot = path.resolve(PACKAGE_INPUT);
@@ -185,7 +185,7 @@ async function main() {
   if (!evidence.success) {
     throw new Error(`Official Gateway lifecycle certification failed. Evidence: ${OUTPUT_PATH}`);
   }
-  console.log("OPENCLAW 8.2 OFFICIAL GATEWAY LIFECYCLE GATE: PASS");
+  console.log("OPENCLAW 9.1 OFFICIAL GATEWAY LIFECYCLE GATE: PASS");
   console.log(`Evidence: ${OUTPUT_PATH}`);
 }
 

@@ -11,6 +11,7 @@ import type {
 
 const areaByOperation: Record<string, OpenClawCompatibilityLabAreaId> = {
   health: "gateway-protocol",
+  userDirectory: "channels-accounts-scopes",
   logsTail: "gateway-protocol",
   updates: "rollback-recovery",
   models: "models-providers",
@@ -31,9 +32,12 @@ const areaByOperation: Record<string, OpenClawCompatibilityLabAreaId> = {
   chatControl: "sessions-tasks-agents",
   agentWait: "sessions-tasks-agents",
   sessionHistory: "sessions-tasks-agents",
+  sessionCollaboration: "sessions-tasks-agents",
   taskEvents: "sessions-tasks-agents",
+  taskSuggestions: "sessions-tasks-agents",
   taskAssign: "sessions-tasks-agents",
   taskCancel: "sessions-tasks-agents",
+  worktrees: "sessions-tasks-agents",
   artifacts: "sessions-tasks-agents",
   runtimeSnapshot: "sessions-tasks-agents",
   tools: "native-rpc",
@@ -52,7 +56,9 @@ const areaByOperation: Record<string, OpenClawCompatibilityLabAreaId> = {
   gmailProvisioning: "channels-accounts-scopes",
   automationProvisioning: "channels-accounts-scopes",
   browserProfiles: "channels-accounts-scopes",
-  skills: "config-patching"
+  skills: "config-patching",
+  skillsLibrary: "config-patching",
+  githubProfileSession: "channels-accounts-scopes"
 };
 
 const affectedFilesByArea: Record<OpenClawCompatibilityLabAreaId, string[]> = {
@@ -83,7 +89,7 @@ const regressionTestsByArea: Record<OpenClawCompatibilityLabAreaId, string[]> = 
 
 export const AGENTOS_OPENCLAW_CONTRACT: AgentOsOpenClawContract = {
   schemaVersion: 1,
-  agentOsContractVersion: "2026.8.2-agentos.1",
+  agentOsContractVersion: "2026.9.1-agentos.1",
   certifiedOpenClawBaseline: OPENCLAW_SUPPORTED_BASELINE_VERSION,
   operations: OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS.map(toContractOperation)
 };

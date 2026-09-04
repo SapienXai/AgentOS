@@ -42,7 +42,7 @@ test("compatibility report marks the stable advertised Gateway contract compatib
   assert.ok(report.summary.nativeGatewayCoveragePercent > 50);
 });
 
-test("compatibility report accepts the OpenClaw 2026.8.2 system-presence array", async () => {
+test("compatibility report accepts the OpenClaw 2026.9.1 system-presence array", async () => {
   const gateway = createCompatibilityGateway([
     ...OPENCLAW_GATEWAY_BASELINE_REQUIRED_METHODS,
     ...OPENCLAW_GATEWAY_BASELINE_OPTIONAL_METHODS
@@ -320,6 +320,7 @@ function createCompatibilityGateway(
   gateway.route("doctor.memory.status", (_frame, context) => context.respond({ ok: true }));
   gateway.route("diagnostics.stability", (_frame, context) => context.respond({ ok: true }));
   gateway.route("gateway.identity.get", (_frame, context) => context.respond({ id: "gateway-test" }));
+  gateway.route("users.list", (_frame, context) => context.respond({ profiles: [] }));
   gateway.route("system-presence", (_frame, context) => context.respond({ nodes: [] }));
   gateway.route("sessions.list", (_frame, context) => context.respond({ sessions: [] }));
   gateway.route("sessions.preview", (_frame, context) => context.respond({ messages: [], sessions: [] }));

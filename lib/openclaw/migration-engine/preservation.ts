@@ -45,7 +45,11 @@ export async function captureStatePreservation(input: {
     stateFiles.push(relativePath);
     stateHashes[relativePath] = await hashFile(filePath);
     if (relativePath.includes(".jsonl")) transcriptEvents += countLines(await readFile(filePath, "utf8"));
-    if (input.workspaceRelativePrefix && relativePath.startsWith(`${input.workspaceRelativePrefix}/`)) {
+    if (
+      input.workspaceRelativePrefix &&
+      relativePath.startsWith(`${input.workspaceRelativePrefix}/`) &&
+      !isOpenClawManagedWorkspaceFile(relativePath)
+    ) {
       workspaceHashes[relativePath] = stateHashes[relativePath];
     }
     if (relativePath.endsWith(".json") || relativePath.includes(".jsonl") || relativePath.endsWith(".sqlite")) {
@@ -154,6 +158,7 @@ export function compareDoctorMutationDelta(before: StateManifestEntry[], after: 
 function classifyDoctorPath(entryPath: string) {
   if (entryPath === "config/openclaw.json") return "config";
   if (/^state\/workspace\/(AGENTS|HEARTBEAT|TOOLS)\.md$/i.test(entryPath)) return "workspace-metadata";
+  if (/^state\/workspace\/openclaw-workspace-state\.json(?:\.migrated\..+)?$/i.test(entryPath)) return "generated-migration-artifact";
   if (entryPath.startsWith("state/workspace/")) return "unexpected-workspace-user-file";
   if (/session-sqlite-migration-runs|transcript|session/i.test(entryPath)) return "sessions-transcripts";
   if (/cron|automation/i.test(entryPath)) return "cron";
@@ -161,6 +166,11 @@ function classifyDoctorPath(entryPath: string) {
   if (/\.bak$|archive|generated|migration/i.test(entryPath)) return "generated-migration-artifact";
   if (/\.sqlite$|\.db$/i.test(entryPath)) return "sqlite";
   return "state-owned-file";
+}
+
+function isOpenClawManagedWorkspaceFile(relativePath: string) {
+  return /(^|\/)(AGENTS|BOOTSTRAP|HEARTBEAT|TOOLS|SOUL|IDENTITY|USER)\.md$/i.test(relativePath) ||
+    /(^|\/)openclaw-workspace-state\.json(?:\.migrated\..+)?$/i.test(relativePath);
 }
 
 async function walk(root: string, visit: (filePath: string, relativePath: string) => Promise<void>, current = root): Promise<void> {

@@ -18,7 +18,11 @@ import {
   normalizeDeviceMetadataForAuth
 } from "@/lib/openclaw/client/gateway-device-auth";
 import { resolveGatewayClientId } from "@/lib/openclaw/client/openclaw-protocol";
-import { getOpenClawGatewayCompatibilityOperation } from "@/lib/openclaw/client/gateway-compatibility";
+import {
+  getOpenClawGatewayCompatibilityOperation,
+  OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS,
+  type OpenClawGatewayCompatibilityOperationId
+} from "@/lib/openclaw/client/gateway-compatibility";
 import { NativeGatewayRequestError, normalizeClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import {
   resolveGatewayEventSupportState,
@@ -34,14 +38,15 @@ import {
   MIN_CONTROL_PROTOCOL_VERSION
 } from "@/lib/openclaw/client/native-ws-gateway-types";
 
-test("AgentOS derives the supported control range and roster capability from the official 8.2 package", () => {
+test("AgentOS derives the supported control range and roster capability from the official 9.1 package", () => {
   assert.equal(MIN_CONTROL_PROTOCOL_VERSION, 4);
   assert.equal(MAX_CONTROL_PROTOCOL_VERSION, 4);
   assert.equal(GATEWAY_CLIENT_CAPS.AGENT_KIND, "agent-kind");
   assert.equal(GATEWAY_CLIENT_CAPS.TOOL_EVENTS, "tool-events");
+  assert.equal(GATEWAY_CLIENT_CAPS.TERMINAL_SESSION_METADATA, "terminal-session-metadata");
 });
 
-test("official 8.2 schemas keep AgentOS native payloads closed and exact", () => {
+test("official 9.1 schemas keep AgentOS native payloads closed and exact", () => {
   assert.deepEqual(HelloOkSchema.required, ["type", "protocol", "server", "features", "snapshot", "auth", "policy"]);
   assert.deepEqual(AgentsCreateParamsSchema.required, ["name"]);
   assert.equal((AgentsCreateParamsSchema as { additionalProperties?: boolean }).additionalProperties, false);
@@ -51,7 +56,7 @@ test("official 8.2 schemas keep AgentOS native payloads closed and exact", () =>
   assert.equal((ChatSendParamsSchema as { additionalProperties?: boolean }).additionalProperties, false);
 });
 
-test("modern steering and injection builders match their distinct 8.2 identities", () => {
+test("modern steering and injection builders match their distinct 9.1 identities", () => {
   const steer = buildSessionSteerParams({
     key: "agent:worker-a:main",
     message: "Continue",
@@ -97,7 +102,7 @@ test("AgentOS uses the official client registry and only implemented capabilitie
   );
 });
 
-test("AgentOS device-auth metadata normalization matches the official 8.2 helper", () => {
+test("AgentOS device-auth metadata normalization matches the official 9.1 helper", () => {
   const vectors: Array<[string | null | undefined, string]> = [
     [undefined, ""],
     [null, ""],
@@ -130,11 +135,75 @@ test("AgentOS device-auth metadata normalization matches the official 8.2 helper
   );
 });
 
-test("the 8.2 task contract uses snapshot RPCs plus the raw task event", () => {
+test("the 9.1 task contract uses snapshot RPCs plus the raw task event", () => {
   const taskEvents = getOpenClawGatewayCompatibilityOperation("taskEvents");
 
   assert.deepEqual(taskEvents?.methods, ["tasks.list", "tasks.get"]);
   assert.deepEqual(taskEvents?.events, ["task"]);
+});
+
+test("9.1 discovery-only capability families preserve OpenClaw ownership", () => {
+  const expected: Record<string, { methods: string[]; events: string[] }> = {
+    taskSuggestions: {
+      methods: [
+        "taskSuggestions.list",
+        "taskSuggestions.create",
+        "taskSuggestions.accept",
+        "taskSuggestions.dismiss"
+      ],
+      events: ["task.suggestion"]
+    },
+    worktrees: {
+      methods: [
+        "worktrees.list",
+        "worktrees.create",
+        "worktrees.remove",
+        "worktrees.restore",
+        "worktrees.gc",
+        "worktrees.branches"
+      ],
+      events: []
+    },
+    skillsLibrary: {
+      methods: [
+        "skills.library.list",
+        "skills.library.read",
+        "skills.library.save",
+        "skills.library.mutate",
+        "skills.library.activate",
+        "skills.library.import",
+        "skills.library.upload"
+      ],
+      events: []
+    },
+    sessionCollaboration: {
+      methods: [
+        "session.visibility.set",
+        "session.members.list",
+        "session.members.add",
+        "session.members.remove",
+        "session.members.listEvidence",
+        "session.suggestions.add",
+        "session.suggestions.list",
+        "session.suggestions.resolve",
+        "session.typing",
+        "session.discussion.info",
+        "session.discussion.open",
+        "sessions.assignOwner"
+      ],
+      events: ["session.sharing", "session.sharing.evidence", "session.typing"]
+    }
+  };
+
+  for (const [operationId, contract] of Object.entries(expected)) {
+    const operation = getOpenClawGatewayCompatibilityOperation(operationId as OpenClawGatewayCompatibilityOperationId);
+    assert.deepEqual(operation.methods, contract.methods, operationId);
+    assert.deepEqual(operation.events ?? [], contract.events, operationId);
+    assert.equal(operation.productIntegration, "discovery-only", operationId);
+    for (const method of contract.methods) {
+      assert.equal(OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS.includes(method), true, method);
+    }
+  }
 });
 
 test("official Gateway discovery omission remains unknown rather than unsupported", () => {

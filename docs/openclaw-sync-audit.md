@@ -70,7 +70,7 @@ The CLI fallback remains intentional for:
 - Gateway process control: start/stop/restart still uses CLI because the Gateway cannot fully control its own process lifecycle from an unavailable or restarting state.
 - `models.scan`, because the current Gateway source does not expose a native `models.scan` method.
 - Gateway probe/discovery helpers, because the current supported native read surface is `health`/`status`; CLI `gateway probe` still provides broader reachability diagnostics.
-- Agent create/update fallback, when the Gateway does not advertise `agents.create` / `agents.update` or rejects the request. Native create uses only the exact 2026.8.2 fields (`name`, `workspace`, `model`, `emoji`, `avatar`); AgentOS still owns policy skills, bootstrap files, identity files, workspace manifests, and local metadata around those Gateway calls.
+- Agent create/update fallback, when the Gateway does not advertise `agents.create` / `agents.update` or rejects the request. Native create uses only the exact 2026.9.1 fields (`name`, `workspace`, `model`, `emoji`, `avatar`); AgentOS still owns policy skills, bootstrap files, identity files, workspace manifests, and local metadata around those Gateway calls.
 - Streaming chat transcript fallback where native session events are unavailable or older Gateways do not advertise compatible event subscriptions.
 - Channel/provider provisioning and route discovery with side effects across OpenClaw config, channel registries, logs, session stores, and AgentOS managed surface records.
 - Legacy planner/runtime compatibility paths that still depend on local OpenClaw state and CLI behavior.

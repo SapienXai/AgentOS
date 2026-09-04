@@ -143,7 +143,7 @@ export class FakeOpenClawGateway {
       type: "hello-ok",
       protocol: this.options.protocol ?? 4,
       server: {
-        version: "2026.8.2",
+        version: "2026.9.1",
         connId: "fake-connection"
       },
       features: {

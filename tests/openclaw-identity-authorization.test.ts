@@ -48,7 +48,7 @@ function nativeIdentity(grantedScopes: string[], requestedScopes = grantedScopes
   };
 }
 
-test("8.2 authorization uses granted scopes, not requested scopes", async () => {
+test("9.1 authorization uses granted scopes, not requested scopes", async () => {
   const service = new OpenClawAuthorizationService(fakeClient(nativeIdentity(
     ["operator.read"],
     ["operator.admin", "operator.read", "operator.write"]
@@ -61,7 +61,7 @@ test("8.2 authorization uses granted scopes, not requested scopes", async () => 
   assert.deepEqual((await service.authorizeCapability("canAdmin")).grantedScopes, ["operator.read"]);
 });
 
-test("8.2 dedicated scopes remain distinct and dynamic operations stay runtime-required", async () => {
+test("9.1 dedicated scopes remain distinct and dynamic operations stay runtime-required", async () => {
   const service = new OpenClawAuthorizationService(fakeClient(nativeIdentity([
     "operator.read",
     "operator.write",
@@ -80,7 +80,7 @@ test("8.2 dedicated scopes remain distinct and dynamic operations stay runtime-r
   assert.equal((await service.authorizeMethod("config.patch", { raw: {} })).state, "denied");
 });
 
-test("8.2 mutation policy classifies non-suffix mutation methods for fallback safety", () => {
+test("9.1 mutation policy classifies non-suffix mutation methods for fallback safety", () => {
   for (const method of [
     "channels.pairing.approve",
     "device.pair.approve",
@@ -495,9 +495,9 @@ test("selected public OpenClaw mutation routes require preflight and pass server
   assert.match(mobilePairingSource, /device\.pair\.setup"\s*\+\s*"Code/);
 });
 
-test("identity inventory pins the 8.2 contract and current AgentOS use", () => {
-  assert.equal(OPENCLAW_IDENTITY_CONTRACT_VERSION, "2026.8.2");
-  assert.equal(OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, "0965053fe6b9341776df147a6934b7485c60b5ca");
+test("identity inventory pins the 9.1 contract and current AgentOS use", () => {
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_VERSION, "2026.9.1");
+  assert.equal(OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1");
   assert.deepEqual(OPENCLAW_CAPABILITY_SCOPES.canUseTalkSecrets, ["operator.talk.secrets"]);
   assert.ok(OPENCLAW_8_2_IDENTITY_INVENTORY.some((entry) => entry.methodOrField === "users.list"));
   assert.ok(OPENCLAW_8_2_IDENTITY_INVENTORY.some((entry) => entry.methodOrField === "sessions.create/patch/delete/dispatch" && entry.dynamicAuthorization));

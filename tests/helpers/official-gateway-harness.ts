@@ -56,7 +56,7 @@ export class OfficialGatewayHarness {
       methods: options.methods ?? [],
       events: options.events ?? [],
       scopes: options.scopes ?? ["operator.admin", "operator.read", "operator.write"],
-      version: options.version ?? "2026.8.2",
+      version: options.version ?? "2026.9.1",
       challengeNonce: options.challengeNonce ?? "harness-nonce",
       challengeTimestamp: options.challengeTimestamp ?? Date.now(),
       connectFailure: options.connectFailure,

@@ -99,6 +99,7 @@ export interface OpenClawCompatibilityContractCheck {
   surface: OpenClawCompatibilityCapabilityId;
   required: boolean;
   baseline: "required" | "optional" | "experimental";
+  productIntegration?: "integrated" | "discovery-only";
   methods: string[];
   events: string[];
   supportedMethod: string | null;

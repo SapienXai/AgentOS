@@ -83,7 +83,7 @@ test("provider setup hints do not expose terminal commands in normal connection 
   );
 });
 
-test("models.list keeps the 8.2 provider and capability metadata", () => {
+test("models.list keeps the 9.1 provider and capability metadata", () => {
   const payload = normalizeModelsPayload({
     models: [{
       id: "reasoner",

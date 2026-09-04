@@ -277,6 +277,7 @@ export interface OpenClawCapabilityOperation {
   events: string[];
   fallbackAllowed: boolean;
   baseline?: "required" | "optional" | "experimental";
+  productIntegration?: "integrated" | "discovery-only";
   reason: string;
   recovery?: string | null;
   preferredMethod?: string | null;

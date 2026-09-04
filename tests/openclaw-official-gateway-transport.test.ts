@@ -55,7 +55,7 @@ test("official transport sends the canonical AgentOS handshake and correlates re
     const hello = transport.getHandshake();
     assert.equal(hellos.length, 1);
     assert.equal(hello?.protocol, 4);
-    assert.equal(hello?.server.version, "2026.8.2");
+    assert.equal(hello?.server.version, "2026.9.1");
     assert.equal(transport.getConnectionMetadata().clientName, GATEWAY_CLIENT_NAMES.GATEWAY_CLIENT);
     assert.equal(transport.getConnectionMetadata().mode, GATEWAY_CLIENT_MODES.BACKEND);
     assert.equal(transport.getConnectionMetadata().hasDeviceIdentity, false);

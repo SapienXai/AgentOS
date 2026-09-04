@@ -40,8 +40,8 @@ test("managed lifecycle serializes cross-action mutations and never double-spawn
     authenticated: true,
     health: readinessCalls > 1 ? "live" as const : "not-live" as const,
     protocolVersion: 3,
-    version: "2026.8.2",
-    sourceCommit: "0965053fe6b9341776df147a6934b7485c60b5ca",
+    version: "2026.9.1",
+    sourceCommit: "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
     checkedAt: new Date().toISOString(),
     reason: null
   });
@@ -124,7 +124,7 @@ test("external lifecycle delegates every mutation to the supervisor and preserve
       authenticated: true,
       health: "live",
       protocolVersion: 3,
-      version: "2026.8.2",
+      version: "2026.9.1",
       sourceCommit: null,
       checkedAt: new Date().toISOString(),
       reason: null
@@ -173,8 +173,8 @@ test("lifecycle recovery blocks a bounded crash loop", async () => {
         authenticated: true,
         health: "live",
         protocolVersionGateway: 4,
-        version: "2026.8.2",
-        sourceCommit: "0965053fe6b9341776df147a6934b7485c60b5ca",
+        version: "2026.9.1",
+        sourceCommit: "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
         message: "Crash-loop test"
       })
     },
@@ -183,8 +183,8 @@ test("lifecycle recovery blocks a bounded crash loop", async () => {
       authenticated: true,
       health: "live",
       protocolVersion: 4,
-      version: "2026.8.2",
-      sourceCommit: "0965053fe6b9341776df147a6934b7485c60b5ca",
+      version: "2026.9.1",
+      sourceCommit: "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
       checkedAt: new Date().toISOString(),
       reason: null
     }),
