@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-skills-effective-capabilities-certification",
+  "generatedAt": "2026-09-04T17:01:20.513Z",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "branch": "main",
+    "certifiedCodeHead": "12e0eaf657b2064706ec5c89d7439aa2b60c5cac",
+    "openClaw": {
+      "release": "2026.9.1",
+      "source": "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
+      "buildId": "2026.9.1-ad6fe23aecb9-2026-09-04T10-30-53.753Z",
+      "packageHash": "4fed530115d575fb0f6a677aeca9b854ae9956f022f443b0039f4f94263c0ebe",
+      "packageRoot": "[DISPOSABLE_EXACT_PACKAGE]"
+    },
+    "gatewayProtocol": 4,
+    "gatewayClient": "2026.9.1",
+    "gatewayProtocolPackage": "2026.9.1"
+  },
+  "runtime": {
+    "packageMode": "exact-openclaw-package-fixture",
+    "gatewayPlacement": "disposable-loopback",
+    "stateIsolation": true,
+    "configIsolation": true,
+    "userGatewayUntouched": true,
+    "realProviderCredentials": false
+  },
+  "skillsLibrary": {
+    "exactMethods": [
+      {
+        "method": "skills.library.list",
+        "scope": "operator.read",
+        "integrated": true
+      },
+      {
+        "method": "skills.library.read",
+        "scope": "operator.read",
+        "integrated": true
+      },
+      {
+        "method": "skills.library.save",
+        "scope": "operator.write",
+        "integrated": false
+      },
+      {
+        "method": "skills.library.mutate",
+        "scope": "operator.write",
+        "integrated": false
+      },
+      {
+        "method": "skills.library.activate",
+        "scope": "operator.write",
+        "integrated": true
+      },
+      {
+        "method": "skills.library.import",
+        "scope": "operator.write",
+        "integrated": false
+      },
+      {
+        "method": "skills.library.upload",
+        "scope": "operator.write",
+        "integrated": false
+      }
+    ],
+    "list": "PASS",
+    "read": "SKIPPED",
+    "save": "SKIPPED",
+    "upload": "SKIPPED",
+    "activate": "SKIPPED",
+    "ownership": "SKIPPED",
+    "revisionIdentity": "SKIPPED",
+    "sessionSelectionShape": "PASS",
+    "skipReasons": [
+      "skills.library.list returned an empty disposable library.",
+      "No entry was available for the exact read, revision, ownership, or activation contract calls."
+    ]
+  },
+  "tools": {
+    "catalog": "PASS",
+    "effective": "PASS",
+    "catalogPresenceIsNotAvailability": "PASS",
+    "catalogToolCount": 61,
+    "effectiveToolCount": 50,
+    "catalogOnlyTool": "code_execution"
+  },
+  "capabilityResolver": {
+    "statuses": {
+      "AVAILABLE": "PASS",
+      "REQUIRES_APPROVAL": "SKIPPED",
+      "NEEDS_SETUP": "SKIPPED",
+      "BLOCKED": "SKIPPED",
+      "UNAVAILABLE": "PASS",
+      "UNKNOWN": "SKIPPED"
+    },
+    "matrixSource": "deterministic resolver contract tests"
+  },
+  "sessionRevision": {
+    "status": "SKIPPED",
+    "reason": "The disposable exact runtime contained no library entry or session selection to compare."
+  },
+  "authorization": {
+    "staticScopes": {
+      "skills.library.list": [
+        "operator.read"
+      ],
+      "skills.library.read": [
+        "operator.read"
+      ],
+      "skills.library.activate": [
+        "operator.write"
+      ],
+      "tools.catalog": [
+        "operator.read"
+      ],
+      "tools.effective": [
+        "operator.read"
+      ]
+    },
+    "readScopeReads": "PASS",
+    "writeScopeActivation": "SKIPPED",
+    "gatewayFinalAuthority": true
+  },
+  "events": {
+    "nativeInventory": [
+      "skills.changed",
+      "sessions.changed",
+      "session.tool",
+      "session.approval",
+      "exec.approval.requested",
+      "exec.approval.resolved",
+      "plugin.approval.requested",
+      "plugin.approval.resolved"
+    ],
+    "observed": [
+      "health",
+      "cron",
+      "sessions.changed"
+    ],
+    "cacheInvalidation": "covered by event-bridge contract tests",
+    "coalescing": "existing AgentOS event bridge"
+  },
+  "performance": {
+    "capabilityServiceGraph": "one agent read + one bounded session read + parallel catalog/effective/library/account reads",
+    "nativeCertificationRpcCounts": {
+      "skills.library.list": 1,
+      "tools.catalog": 1,
+      "tools.effective": 1
+    },
+    "oneRpcPerTool": false,
+    "rootDashboardFullResolution": false,
+    "observedTimingMs": 25
+  },
+  "security": {
+    "credentialsExposed": false,
+    "tokensExposed": false,
+    "skillContentTrustedAsSystemInstruction": false,
+    "centralRedaction": true,
+    "nativeScopesEnforced": true,
+    "productPermissionsEnforced": true
+  },
+  "checks": {
+    "exactPackage": true,
+    "nativeTransport": true,
+    "skillsListContract": true,
+    "skillsActivationContract": "SKIPPED",
+    "toolsCatalogContract": true,
+    "toolsEffectiveContract": true,
+    "catalogNotAvailability": "PASS",
+    "availableFixture": "PASS",
+    "sessionSelectionShape": true,
+    "exactScopes": true,
+    "insufficientScopeDenied": "SKIPPED",
+    "noCliFallback": true,
+    "cleanup": true
+  },
+  "cleanup": {
+    "status": "complete",
+    "gatewayProcessStopped": true,
+    "disposableRootRemoved": true
+  },
+  "validation": {
+    "deterministicCapabilityMatrix": "PASS",
+    "nativeTransportContract": "PASS",
+    "targetedPhase2Tests": "PASS (113/113)",
+    "fullSuite": "PASS (1213/1213)",
+    "typecheck": "PASS",
+    "eslint": "PASS",
+    "productionBuild": "PASS",
+    "releaseConsistency": "PASS",
+    "packageBuild": "PASS",
+    "pack": "PASS",
+    "packageSmoke": "PASS",
+    "missionControlSmoke": "PASS",
+    "officialLifecycleCertification": "PASS",
+    "nativeWorkCertification": "PASS",
+    "officialProductionCertification": "PASS",
+    "gitDiffCheck": "PASS"
+  },
+  "skips": [
+    "No disposable library entry was created because skills.library.save/mutate are not product-integrated in Phase 2.",
+    "Approval, account-missing, explicit-policy-block, and runtime-missing fixtures are covered by deterministic tests; the exact disposable runtime did not naturally expose each state.",
+    "Exact session revision comparison is skipped because the disposable library was empty."
+  ],
+  "gate": "OPENCLAW 9.1 SKILLS + EFFECTIVE CAPABILITIES GATE: PASS",
+  "success": true
+}
