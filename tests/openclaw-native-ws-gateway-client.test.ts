@@ -1,28 +1,26 @@
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { test } from "node:test";
 
 import {
   clearOpenClawGatewayFallbackDiagnosticsForTesting,
   getRecentOpenClawGatewayFallbackDiagnostics,
-  NativeWsOpenClawGatewayClient,
-  type WebSocketFactory
+  NativeWsOpenClawGatewayClient
 } from "@/lib/openclaw/client/native-ws-gateway-client";
-import {
-  resolveConfiguredGatewaySecretFromLocalConfig,
-  resolveGatewayAuth
-} from "@/lib/openclaw/client/native-ws-gateway-auth";
 import { normalizeModelStatusPayload } from "@/lib/openclaw/client/native-ws-gateway-payloads";
 import { parseConfigPath } from "@/lib/openclaw/client/native-ws-gateway-utils";
+import type {
+  NativeHandshakePayload,
+  OpenClawGatewayTransport
+} from "@/lib/openclaw/client/native-ws-gateway-types";
 import type {
   ModelsStatusPayload,
   OpenClawAddAgentInput,
   OpenClawCommandOptions,
-  OpenClawGatewayClient
+  OpenClawGatewayClient,
+  OpenClawGatewayConnectionState,
+  OpenClawGatewayEventCallbacks,
+  OpenClawGatewayEventSubscription
 } from "@/lib/openclaw/client/gateway-client";
 import {
   AgentOsGatewayRequestPolicy,
@@ -433,12 +431,13 @@ class FallbackGatewayClient implements OpenClawGatewayClient {
   }
 }
 
-function createFakeWebSocket(
+function createFakeGatewayTransport(
   respond: (socket: {
     emitMessage: (frame: Record<string, unknown>) => void;
     emitRaw: (data: string) => void;
     close: () => void;
-  }, frame: SentFrame) => void
+  }, frame: SentFrame) => void,
+  transportOptions: { requestedScopes?: string[] } = {}
 ) {
   const sentFrames: SentFrame[] = [];
   const sockets: Array<{
@@ -447,69 +446,258 @@ function createFakeWebSocket(
     close: () => void;
   }> = [];
 
-  class FakeWebSocket {
-    readyState = 0;
-    private readonly listeners = new Map<string, Set<(event: unknown) => void>>();
+  let socket: typeof sockets[number] | null = null;
+  let handshake: NativeHandshakePayload | null = null;
+  let state: OpenClawGatewayConnectionState = "idle";
+  let generation = 0;
+  let lastConnectedAt: string | null = null;
+  let lastDisconnectedAt: string | null = null;
+  const pending = new Map<string, {
+    method: string;
+    resolve: (payload: unknown) => void;
+    reject: (error: unknown) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
+  const eventCallbacks = new Set<OpenClawGatewayEventCallbacks>();
 
-    constructor(readonly url: string) {
-      sockets.push({
-        emitMessage: (response) => this.emit("message", { data: JSON.stringify(response) }),
-        emitRaw: (response) => this.emit("message", { data: response }),
-        close: () => this.close()
-      });
-      globalThis.queueMicrotask(() => {
-        this.readyState = 1;
-        this.emit("open", {});
-      });
-    }
-
-    addEventListener(type: string, listener: (event: unknown) => void) {
-      const listeners = this.listeners.get(type) ?? new Set();
-      listeners.add(listener);
-      this.listeners.set(type, listeners);
-    }
-
-    removeEventListener(type: string, listener: (event: unknown) => void) {
-      this.listeners.get(type)?.delete(listener);
-    }
-
-    send(data: string) {
-      const frame = JSON.parse(data) as SentFrame;
-      sentFrames.push(frame);
-      respond(
-        {
-          emitMessage: (response) => this.emit("message", { data: JSON.stringify(response) }),
-          emitRaw: (response) => this.emit("message", { data: response }),
-          close: () => this.close()
-        },
-        frame
-      );
-    }
-
-    close() {
-      this.readyState = 3;
-      this.emit("close", { code: 1000, reason: "closed" });
-    }
-
-    private emit(type: string, event: unknown) {
-      for (const listener of this.listeners.get(type) ?? []) {
-        listener(event);
+  const emitRaw = (data: string) => {
+    let frame: Record<string, unknown>;
+    try {
+      frame = JSON.parse(data) as Record<string, unknown>;
+    } catch (error) {
+      for (const request of pending.values()) {
+        clearTimeout(request.timer);
+        request.reject(new NativeGatewayRequestError(
+          "OpenClaw Gateway returned malformed JSON.",
+          request.method,
+          true,
+          { cause: error, kind: "malformed-response" }
+        ));
       }
+      pending.clear();
+      return;
     }
-  }
-
-  return {
-    WebSocketImpl: FakeWebSocket as unknown as WebSocketFactory,
-    sentFrames,
-    sockets
+    if (frame.type === "event") {
+      for (const callbacks of eventCallbacks) {
+        callbacks.onEvent(frame as never);
+      }
+      return;
+    }
+    const id = typeof frame.id === "string" ? frame.id : null;
+    const request = id ? pending.get(id) : undefined;
+    if (!id || !request) {
+      return;
+    }
+    pending.delete(id);
+    clearTimeout(request.timer);
+    if (frame.ok === false) {
+      const errorRecord = frame.error && typeof frame.error === "object"
+        ? frame.error as Record<string, unknown>
+        : {};
+      request.reject(new NativeGatewayRequestError(
+        typeof errorRecord.message === "string" ? errorRecord.message : "OpenClaw Gateway request failed.",
+        request.method,
+        true,
+        { cause: frame.error }
+      ));
+      return;
+    }
+    request.resolve(frame.payload);
   };
+
+  const closeSocket = (closedSocket: typeof sockets[number]) => {
+    if (socket !== closedSocket) {
+      return;
+    }
+    socket = null;
+    handshake = null;
+    lastDisconnectedAt = new Date().toISOString();
+    state = "connecting";
+    for (const request of pending.values()) {
+      clearTimeout(request.timer);
+      request.reject(new NativeGatewayRequestError(
+        `OpenClaw Gateway request "${request.method}" was interrupted by a connection close.`,
+        request.method,
+        true,
+        { kind: "unreachable" }
+      ));
+    }
+    pending.clear();
+  };
+
+  const createSocket = () => {
+    const created = {
+      emitMessage: (frame: Record<string, unknown>) => emitRaw(JSON.stringify(frame)),
+      emitRaw,
+      close: () => closeSocket(created)
+    };
+    sockets.push(created);
+    socket = created;
+    return created;
+  };
+
+  const request = async <TPayload>(method: string, params: Record<string, unknown>, options: OpenClawCommandOptions, timeoutMs: number) => {
+    if (method !== "connect" && !handshake) {
+      await transport.probe(options, timeoutMs);
+    }
+    const activeSocket = socket ?? createSocket();
+    const id = `fake-${sentFrames.length + 1}`;
+    const frame: SentFrame = {
+      type: "req",
+      id,
+      method,
+      params: method === "connect"
+        ? {
+            minProtocol: 4,
+            maxProtocol: 4,
+            client: {
+              id: "gateway-client",
+              version: "agentos",
+              platform: process.platform,
+              mode: "backend"
+            },
+            role: "operator",
+            scopes: transportOptions.requestedScopes ?? [
+              "operator.admin",
+              "operator.read",
+              "operator.write",
+              "operator.approvals",
+              "operator.questions",
+              "operator.pairing",
+              "operator.talk",
+              "operator.talk.secrets"
+            ],
+            caps: ["agent-kind", "tool-events"]
+          }
+        : JSON.parse(JSON.stringify(params)) as Record<string, unknown>
+    };
+    sentFrames.push(frame);
+    return new Promise<TPayload>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new NativeGatewayRequestError(
+          `OpenClaw Gateway request "${method}" timed out after ${timeoutMs} ms.`,
+          method,
+          true,
+          { kind: "timeout" }
+        ));
+      }, timeoutMs);
+      pending.set(id, {
+        method,
+        resolve: (payload) => resolve(payload as TPayload),
+        reject,
+        timer
+      });
+      respond(activeSocket, frame);
+    });
+  };
+
+  const transport: OpenClawGatewayTransport = {
+    lifecycleOwner: "official",
+    async probe(options, timeoutMs) {
+      if (handshake) {
+        return handshake;
+      }
+      state = "connecting";
+      const payload = await request<NativeHandshakePayload>("connect", {}, options, timeoutMs);
+      if (payload.protocol !== undefined && payload.protocol !== 4) {
+        state = "error";
+        throw new NativeGatewayRequestError(
+          `OpenClaw Gateway protocol ${payload.protocol} is outside the supported range 4-4.`,
+          "connect",
+          true,
+          { kind: "protocol-mismatch" }
+        );
+      }
+      handshake = payload;
+      generation += 1;
+      state = "connected";
+      lastConnectedAt = new Date().toISOString();
+      return payload;
+    },
+    request,
+    async subscribe(params, callbacks, options, timeoutMs): Promise<OpenClawGatewayEventSubscription> {
+      eventCallbacks.add(callbacks);
+      try {
+        await transport.probe(options, timeoutMs);
+        if (params.subscribeSessions || params.includeSessions) {
+          await transport.request("sessions.subscribe", {}, options, timeoutMs);
+        }
+        const sessionKeys = Array.isArray(params.sessionKeys)
+          ? params.sessionKeys.filter((value): value is string => typeof value === "string")
+          : [];
+        for (const key of sessionKeys) {
+          await transport.request("sessions.messages.subscribe", { key }, options, timeoutMs);
+        }
+        return {
+          reconnectManagedByClient: true,
+          close: () => eventCallbacks.delete(callbacks)
+        };
+      } catch (error) {
+        eventCallbacks.delete(callbacks);
+        throw error;
+      }
+    },
+    close() {
+      if (socket) {
+        closeSocket(socket);
+      }
+      state = "closed";
+      eventCallbacks.clear();
+    },
+    getDiagnostics() {
+      return {
+        connectionState: state === "connected"
+          ? "connected"
+          : state === "closed"
+            ? "closed"
+            : state === "error"
+              ? "error"
+              : "connecting",
+        protocolVersion: typeof handshake?.protocol === "number" ? handshake.protocol : null,
+        gatewayCapabilities: [],
+        pendingRequestCount: pending.size,
+        lastNativeError: null,
+        lastConnectedAt,
+        lastDisconnectedAt,
+        operatorIdentity: transport.getOperatorIdentity()
+      };
+    },
+    getOperatorIdentity() {
+      const auth = handshake?.auth;
+      return {
+        requestedRole: "operator",
+        role: typeof auth?.role === "string" ? auth.role : null,
+        requestedScopes: transportOptions.requestedScopes ?? [
+          "operator.admin",
+          "operator.read",
+          "operator.write",
+          "operator.approvals",
+          "operator.questions",
+          "operator.pairing",
+          "operator.talk",
+          "operator.talk.secrets"
+        ],
+        grantedScopes: Array.isArray(auth?.scopes) ? auth.scopes.filter((value): value is string => typeof value === "string") : [],
+        grantedScopesKnown: Array.isArray(auth?.scopes),
+        deviceId: null,
+        connectionId: typeof handshake?.server?.connId === "string" ? handshake.server.connId : null,
+        authenticated: Boolean(auth?.role),
+        source: auth?.role ? "native-handshake" : "unavailable"
+      };
+    },
+    getGeneration: () => generation,
+    getLifecycleState: () => state
+  };
+
+  return { transport, sentFrames, sockets };
 }
 
 async function waitForNativePolicy(predicate: () => boolean, timeoutMs = 1_000) {
   const startedAt = Date.now();
   while (!predicate()) {
     if (Date.now() - startedAt > timeoutMs) {
-      throw new Error("Timed out waiting for custom Gateway request-policy state.");
+      throw new Error("Timed out waiting for official Gateway request-policy state.");
     }
     await delay(1);
   }
@@ -517,21 +705,21 @@ async function waitForNativePolicy(predicate: () => boolean, timeoutMs = 1_000) 
 
 test("native WS gateway client handshakes and correlates request responses", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: true,
         payload: frame.method === "connect"
-          ? { protocol: 3 }
+          ? { protocol: 4 }
           : { ok: true, method: frame.method, params: frame.params }
       });
     });
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -548,7 +736,7 @@ test("native WS gateway client handshakes and correlates request responses", asy
 
 test("native channel lifecycle uses channels.start and channels.stop without CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -569,7 +757,7 @@ test("native channel lifecycle uses channels.start and channels.stop without CLI
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -602,8 +790,10 @@ test("Railway rejects Gateway lifecycle control without invoking the CLI fallbac
 
   try {
     const fallback = new FallbackGatewayClient();
+    const { transport } = createFakeGatewayTransport(() => {});
     const client = new NativeWsOpenClawGatewayClient({
       fallback,
+      transport,
       url: "ws://127.0.0.1:18789"
     });
 
@@ -623,19 +813,19 @@ test("Railway rejects Gateway lifecycle control without invoking the CLI fallbac
 
 test("session model reset uses native sessions.patch without CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: true,
-        payload: frame.method === "connect" ? { protocol: 3 } : { ok: true }
+        payload: frame.method === "connect" ? { protocol: 4 } : { ok: true }
       });
     });
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -657,7 +847,7 @@ test("session model reset uses native sessions.patch without CLI fallback", asyn
 
 test("native WS gateway client reuses one persistent handshake for multiple RPCs", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -671,7 +861,7 @@ test("native WS gateway client reuses one persistent handshake for multiple RPCs
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -688,7 +878,7 @@ test("native WS gateway client reuses one persistent handshake for multiple RPCs
 test("native WS gateway client resolves out-of-order responses by request id", async () => {
   const fallback = new FallbackGatewayClient();
   const queued: Array<{ socket: { emitMessage: (frame: Record<string, unknown>) => void }; frame: SentFrame }> = [];
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     if (frame.method === "connect") {
       globalThis.queueMicrotask(() => {
         socket.emitMessage({ type: "res", id: frame.id, ok: true, payload: { protocol: 4 } });
@@ -715,7 +905,7 @@ test("native WS gateway client resolves out-of-order responses by request id", a
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -731,7 +921,7 @@ test("native WS gateway client resolves out-of-order responses by request id", a
 
 test("native WS gateway client ignores event frames while resolving RPC responses", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -750,7 +940,7 @@ test("native WS gateway client ignores event frames while resolving RPC response
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -760,7 +950,7 @@ test("native WS gateway client ignores event frames while resolving RPC response
 
 test("native WS gateway client exposes handshake feature discovery", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -783,7 +973,7 @@ test("native WS gateway client exposes handshake feature discovery", async () =>
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -798,7 +988,7 @@ test("native WS gateway client exposes handshake feature discovery", async () =>
 
 test("native WS gateway client records requested and granted operator identity separately", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -817,10 +1007,10 @@ test("native WS gateway client records requested and granted operator identity s
           : { ok: true }
       });
     });
-  });
+  }, { requestedScopes: ["operator.read", "operator.write", "operator.questions"] });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250,
     role: "operator",
@@ -841,7 +1031,7 @@ test("native WS gateway client records requested and granted operator identity s
 test("native WS gateway client records protocol mismatch recovery diagnostics", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -853,7 +1043,7 @@ test("native WS gateway client records protocol mismatch recovery diagnostics", 
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -874,29 +1064,29 @@ test("native WS gateway client records protocol mismatch recovery diagnostics", 
 test("native WS gateway client uses Gateway first for typed status requests", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
-      globalThis.queueMicrotask(() => {
-        socket.emitMessage({
-          type: "res",
-          id: frame.id,
-          ok: true,
-          payload: frame.method === "connect"
-            ? { protocol: 3 }
-            : {
-                version: "9.9.9",
-                update: {
-                  registry: {
-                    latestVersion: "10.0.0"
-                  }
-                },
-                ignored: true
-              }
-        });
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? { protocol: 4 }
+          : {
+              version: "9.9.9",
+              update: {
+                registry: {
+                  latestVersion: "10.0.0"
+                }
+              },
+              ignored: true
+            }
       });
     });
+  });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -944,19 +1134,19 @@ test("native WS gateway client does not backfill missing update registry details
       }
     }
   };
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: true,
-        payload: frame.method === "connect" ? { protocol: 3 } : { version: "9.9.9" }
+        payload: frame.method === "connect" ? { protocol: 4 } : { version: "9.9.9" }
       });
     });
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -980,19 +1170,19 @@ test("native WS gateway client uses CLI update status when Gateway lacks availab
       latestVersion: "10.0.0"
     }
   };
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: true,
-        payload: frame.method === "connect" ? { protocol: 3 } : { sentinel: null }
+        payload: frame.method === "connect" ? { protocol: 4 } : { sentinel: null }
       });
     });
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -1029,20 +1219,20 @@ test("native WS gateway client uses CLI update status when Gateway update status
       latestVersion: "10.0.0"
     }
   };
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: frame.method === "connect",
-        payload: frame.method === "connect" ? { protocol: 3 } : undefined,
+        payload: frame.method === "connect" ? { protocol: 4 } : undefined,
         error: frame.method === "connect" ? undefined : { message: "Gateway unavailable", code: "UNAVAILABLE" }
       });
     });
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -1065,112 +1255,7 @@ test("native WS gateway client keeps status native without cached CLI registry b
       }
     }
   };
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
-    globalThis.queueMicrotask(() => {
-      socket.emitMessage({
-        type: "res",
-        id: frame.id,
-        ok: true,
-        payload: frame.method === "connect" ? { protocol: 3 } : { version: "9.9.9" }
-      });
-    });
-  });
-  const client = new NativeWsOpenClawGatewayClient({
-    fallback,
-    webSocketFactory: WebSocketImpl,
-    url: "ws://127.0.0.1:18789",
-    timeoutMs: 250
-  });
-
-  await client.getStatus();
-
-  assert.deepEqual(await client.getStatus(), { version: "9.9.9" });
-  assert.deepEqual(fallback.calls, []);
-});
-
-test("native WS gateway client discovers configured Gateway auth for handshakes", async () => {
-  const fallback = new FallbackGatewayClient();
-  fallback.config.set("gateway.remote.token", "remote-token");
-  fallback.config.set("gateway.auth.token", "local-token");
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
-    globalThis.queueMicrotask(() => {
-      socket.emitMessage({
-        type: "res",
-        id: frame.id,
-        ok: true,
-        payload: frame.method === "connect" ? { protocol: 3 } : { version: "9.9.9" }
-      });
-    });
-  });
-  const client = new NativeWsOpenClawGatewayClient({
-    fallback,
-    webSocketFactory: WebSocketImpl,
-    url: "ws://127.0.0.1:18789",
-    timeoutMs: 250
-  });
-
-  await client.getStatus();
-
-  assert.deepEqual(sentFrames[0]?.params.auth, {
-    token: "local-token"
-  });
-});
-
-test("native WS gateway auth can read local OpenClaw config without CLI secret probes", async () => {
-  const previousStateDir = process.env.OPENCLAW_STATE_DIR;
-  const stateDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-config-auth-"));
-  process.env.OPENCLAW_STATE_DIR = stateDir;
-  await writeFile(join(stateDir, "openclaw.json"), JSON.stringify({
-    gateway: {
-      auth: {
-        token: "local-config-token"
-      }
-    }
-  }), "utf8");
-
-  try {
-    assert.deepEqual(
-      await resolveConfiguredGatewaySecretFromLocalConfig(["gateway.auth.token"]),
-      {
-        value: "local-config-token",
-        invalidConfig: false,
-        fromConfigFile: true
-      }
-    );
-  } finally {
-    if (previousStateDir === undefined) {
-      delete process.env.OPENCLAW_STATE_DIR;
-    } else {
-      process.env.OPENCLAW_STATE_DIR = previousStateDir;
-    }
-  }
-});
-
-test("native WS gateway client prefers shared auth over local device tokens", async () => {
-  const previousStateDir = process.env.OPENCLAW_STATE_DIR;
-  const previousToken = process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
-  const stateDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-device-auth-"));
-  const identityDir = join(stateDir, "identity");
-  await mkdir(identityDir, { recursive: true });
-  await writeFile(join(identityDir, "device.json"), JSON.stringify({
-    deviceId: "device-1",
-    publicKeyPem: "unused-public-key",
-    privateKeyPem: "unused-private-key"
-  }), "utf8");
-  await writeFile(join(identityDir, "device-auth.json"), JSON.stringify({
-    deviceId: "device-1",
-    tokens: {
-      operator: {
-        token: "read-only-device-token",
-        scopes: ["operator.read"]
-      }
-    }
-  }), "utf8");
-  process.env.OPENCLAW_STATE_DIR = stateDir;
-  process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = "shared-gateway-token";
-
-  const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -1180,221 +1265,36 @@ test("native WS gateway client prefers shared auth over local device tokens", as
       });
     });
   });
-
-  try {
-    const client = new NativeWsOpenClawGatewayClient({
-      fallback,
-      webSocketFactory: WebSocketImpl,
-      url: "ws://127.0.0.1:18789",
-      timeoutMs: 250
-    });
-
-    await client.getStatus();
-
-    assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "status"]);
-    assert.deepEqual(sentFrames[0]?.params.auth, {
-      token: "shared-gateway-token"
-    });
-    assert.equal(sentFrames[0]?.params.device, undefined);
-    assert.deepEqual(fallback.configCalls, []);
-  } finally {
-    if (previousStateDir === undefined) {
-      delete process.env.OPENCLAW_STATE_DIR;
-    } else {
-      process.env.OPENCLAW_STATE_DIR = previousStateDir;
-    }
-
-    if (previousToken === undefined) {
-      delete process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
-    } else {
-      process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = previousToken;
-    }
-  }
-});
-
-test("native WS gateway client prefers remote auth for remote Gateway URLs", async () => {
-  const fallback = new FallbackGatewayClient();
-  fallback.config.set("gateway.remote.token", "remote-token");
-  fallback.config.set("gateway.auth.token", "local-token");
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
-    globalThis.queueMicrotask(() => {
-      socket.emitMessage({
-        type: "res",
-        id: frame.id,
-        ok: true,
-        payload: frame.method === "connect" ? { protocol: 3 } : { version: "9.9.9" }
-      });
-    });
-  });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
-    url: "wss://gateway.example.test",
-    timeoutMs: 250
-  });
-
-  await client.getStatus();
-
-  assert.deepEqual(sentFrames[0]?.params.auth, {
-    token: "remote-token"
-  });
-});
-
-test("native WS gateway client uses env token without config secret probes", async () => {
-  const previousToken = process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
-  process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = "env-token";
-  const fallback = new FallbackGatewayClient();
-  fallback.failConfigWithInvalidConfig = true;
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
-    globalThis.queueMicrotask(() => {
-      socket.emitMessage({
-        type: "res",
-        id: frame.id,
-        ok: true,
-        payload: frame.method === "connect" ? { protocol: 3 } : { version: "9.9.9" }
-      });
-    });
-  });
-  const client = new NativeWsOpenClawGatewayClient({
-    fallback,
-    webSocketFactory: WebSocketImpl,
-    url: "ws://127.0.0.1:18789",
-    timeoutMs: 250
-  });
-
-  try {
-    await client.getStatus();
-
-    assert.deepEqual(sentFrames[0]?.params.auth, {
-      token: "env-token"
-    });
-    assert.deepEqual(fallback.configCalls, []);
-  } finally {
-    if (previousToken === undefined) {
-      delete process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
-    } else {
-      process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = previousToken;
-    }
-  }
-});
-
-test("native WS gateway auth prefers current loopback config over a stale server env token", async () => {
-  const previousStateDir = process.env.OPENCLAW_STATE_DIR;
-  const previousToken = process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
-  const stateDir = await mkdtemp(join(tmpdir(), "agentos-openclaw-local-config-auth-"));
-  await writeFile(join(stateDir, "openclaw.json"), JSON.stringify({
-    gateway: {
-      auth: {
-        token: "current-config-token"
-      }
-    }
-  }), "utf8");
-  process.env.OPENCLAW_STATE_DIR = stateDir;
-  process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = "stale-env-token";
-
-  try {
-    const auth = await resolveGatewayAuth(
-      new FallbackGatewayClient(),
-      {},
-      "ws://127.0.0.1:18789",
-      {}
-    );
-
-    assert.deepEqual(auth, {
-      token: "current-config-token",
-      password: ""
-    });
-  } finally {
-    if (previousStateDir === undefined) {
-      delete process.env.OPENCLAW_STATE_DIR;
-    } else {
-      process.env.OPENCLAW_STATE_DIR = previousStateDir;
-    }
-    if (previousToken === undefined) {
-      delete process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
-    } else {
-      process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = previousToken;
-    }
-  }
-});
-
-test("native WS gateway client stops config auth probing after invalid config", async () => {
-  const fallback = new FallbackGatewayClient();
-  fallback.failConfigWithInvalidConfig = true;
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
-    globalThis.queueMicrotask(() => {
-      socket.emitMessage({
-        type: "res",
-        id: frame.id,
-        ok: true,
-        payload: frame.method === "connect" ? { protocol: 3 } : { version: "9.9.9" }
-      });
-    });
-  });
-  const client = new NativeWsOpenClawGatewayClient({
-    fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
 
   await client.getStatus();
 
-  assert.equal(sentFrames[0]?.params.auth, undefined);
-  assert.deepEqual(fallback.configCalls, ["gateway.auth.token"]);
-});
-
-test("native WS gateway client does not send redacted OpenClaw secrets", async () => {
-  clearOpenClawGatewayFallbackDiagnosticsForTesting();
-  const fallback = new FallbackGatewayClient();
-  fallback.config.set("gateway.auth.token", "__OPENCLAW_REDACTED__");
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
-    globalThis.queueMicrotask(() => {
-      socket.emitMessage({
-        type: "res",
-        id: frame.id,
-        ok: true,
-        payload: { protocol: 3 }
-      });
-    });
-  });
-  const client = new NativeWsOpenClawGatewayClient({
-    fallback,
-    webSocketFactory: WebSocketImpl,
-    url: "ws://127.0.0.1:18789",
-    timeoutMs: 250
-  });
-
-  await assert.rejects(
-    () => client.getStatus(),
-    /Gateway-native operation failed; CLI fallback disabled/
-  );
-  assert.equal(sentFrames.length, 0);
+  assert.deepEqual(await client.getStatus(), { version: "9.9.9" });
   assert.deepEqual(fallback.calls, []);
-  assert.deepEqual(getRecentOpenClawGatewayFallbackDiagnostics(), []);
-  const diagnostics = client.getDiagnostics();
-  assert.equal(diagnostics.lastNativeError?.includes("__OPENCLAW_REDACTED__"), false);
-  assert.match(diagnostics.lastNativeError ?? "", /redacted secret/);
 });
-
 test("native WS gateway client does not hide malformed Gateway typed responses behind CLI", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: true,
         payload: frame.method === "connect"
-          ? { protocol: 3 }
+          ? { protocol: 4 }
           : { models: [{ id: "missing-name" }] }
       });
     });
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -1411,7 +1311,7 @@ test("native WS gateway client does not hide malformed Gateway typed responses b
 
 test("native models.list keeps provider filtering client-side for the 8.2 Gateway contract", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -1430,7 +1330,7 @@ test("native models.list keeps provider filtering client-side for the 8.2 Gatewa
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -1472,7 +1372,7 @@ test("native WS gateway client falls back to CLI when Google provider catalog is
       }
     ]
   };
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -1486,7 +1386,7 @@ test("native WS gateway client falls back to CLI when Google provider catalog is
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -1501,7 +1401,7 @@ test("native WS gateway client falls back to CLI when Google provider catalog is
 
 test("native WS gateway client treats mixed model auth profiles as connected when one profile is usable", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       const payload =
         frame.method === "connect"
@@ -1535,7 +1435,7 @@ test("native WS gateway client treats mixed model auth profiles as connected whe
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -1555,7 +1455,7 @@ test("native WS gateway client treats mixed model auth profiles as connected whe
 
 test("native WS gateway client derives default model from configured model tags", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       const payload =
         frame.method === "connect"
@@ -1586,7 +1486,7 @@ test("native WS gateway client derives default model from configured model tags"
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -1601,7 +1501,7 @@ test("native WS gateway client derives default model from configured model tags"
 
 test("native WS gateway client preserves Codex runtime auth routes for readiness", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       const payload =
         frame.method === "connect"
@@ -1637,7 +1537,7 @@ test("native WS gateway client preserves Codex runtime auth routes for readiness
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -1707,7 +1607,7 @@ test("native WS gateway client recovers partial Codex model auth status through 
       unusableProfiles: []
     } as never
   };
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       const payload =
         frame.method === "connect"
@@ -1738,7 +1638,7 @@ test("native WS gateway client recovers partial Codex model auth status through 
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -1770,7 +1670,7 @@ test("native WS gateway client recovers partial Codex model auth status through 
 
 test("native WS gateway client reads agent model status through Gateway methods", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       const payload =
         frame.method === "connect"
@@ -1802,7 +1702,7 @@ test("native WS gateway client reads agent model status through Gateway methods"
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -1830,7 +1730,7 @@ test("native WS gateway client reads agent model status through Gateway methods"
 
 test("native WS gateway client sets model auth order through Gateway before CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -1842,7 +1742,7 @@ test("native WS gateway client sets model auth order through Gateway before CLI 
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -1869,7 +1769,7 @@ test("native WS gateway client sets model auth order through Gateway before CLI 
 
 test("native WS gateway client uses model auth order compatibility aliases before CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -1883,7 +1783,7 @@ test("native WS gateway client uses model auth order compatibility aliases befor
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -1905,14 +1805,14 @@ test("native WS gateway client clears operation fallback diagnostics after Gatew
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
   let malformed = true;
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: frame.method === "connect" || !malformed,
         payload: frame.method === "connect"
-          ? { protocol: 3 }
+          ? { protocol: 4 }
           : malformed
             ? undefined
             : { models: [{ id: "gpt-5.5", provider: "openai", name: "GPT 5.5", input: ["text"] }] },
@@ -1924,7 +1824,7 @@ test("native WS gateway client clears operation fallback diagnostics after Gatew
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -1952,14 +1852,14 @@ test("native WS gateway client clears operation fallback diagnostics after Gatew
 test("native WS gateway client uses Gateway first for agent list", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: true,
         payload: frame.method === "connect"
-          ? { protocol: 3 }
+          ? { protocol: 4 }
           : {
               defaultId: "main",
               mainKey: "main",
@@ -1977,7 +1877,7 @@ test("native WS gateway client uses Gateway first for agent list", async () => {
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2001,14 +1901,14 @@ test("native WS gateway client uses Gateway first for agent list", async () => {
 test("native WS gateway client reads config paths from Gateway snapshots", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: true,
         payload: frame.method === "connect"
-          ? { protocol: 3 }
+          ? { protocol: 4 }
           : {
               exists: true,
               valid: true,
@@ -2026,7 +1926,7 @@ test("native WS gateway client reads config paths from Gateway snapshots", async
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2040,7 +1940,7 @@ test("native WS gateway client reads config paths from Gateway snapshots", async
 test("native WS gateway client dedupes concurrent config snapshot reads", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     if (frame.method === "connect") {
       globalThis.queueMicrotask(() => {
         socket.emitMessage({ type: "res", id: frame.id, ok: true, payload: { protocol: 4 } });
@@ -2070,7 +1970,7 @@ test("native WS gateway client dedupes concurrent config snapshot reads", async 
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2088,12 +1988,12 @@ test("native WS gateway client dedupes concurrent config snapshot reads", async 
   assert.deepEqual(fallback.calls, []);
 });
 
-test("custom transport preserves shared AgentOS request-policy semantics", async () => {
+test("official transport preserves shared AgentOS request-policy semantics", async () => {
   let now = 1_000;
   let readCount = 0;
   const pendingResponses = new Map<string, (payload: unknown) => void>();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames, sockets } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames, sockets } = createFakeGatewayTransport((socket, frame) => {
     if (frame.method === "policy.signal") {
       if (sentFrames.filter((sent) => sent.method === "policy.signal").length === 1) {
         pendingResponses.set(frame.id, (payload) => socket.emitMessage({
@@ -2145,7 +2045,7 @@ test("custom transport preserves shared AgentOS request-policy semantics", async
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
     requestPolicy: new AgentOsGatewayRequestPolicy({ now: () => now }),
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2203,27 +2103,27 @@ test("custom transport preserves shared AgentOS request-policy semantics", async
     );
     await client.call("policy.read", { id: "ambiguous" });
 
-    client.close("custom policy reconnect");
+  client.close("request policy reconnect");
     await delay(0);
     await client.call("policy.read", { a: 1, b: 2 });
     assert.equal(sentFrames.filter((frame) => frame.method === "policy.read").length, 6);
     assert.deepEqual(fallback.calls, []);
   } finally {
-    client.close("custom request-policy test cleanup");
+  client.close("request-policy test cleanup");
   }
 });
 
 test("native WS gateway client uses Gateway first for session list", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: true,
         payload: frame.method === "connect"
-          ? { protocol: 3 }
+          ? { protocol: 4 }
           : {
               sessions: [{
                 key: "agent:main:direct:test",
@@ -2238,7 +2138,7 @@ test("native WS gateway client uses Gateway first for session list", async () =>
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2260,14 +2160,14 @@ test("native WS gateway client uses Gateway first for session list", async () =>
 test("native WS gateway client uses Gateway first for channel status", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: true,
         payload: frame.method === "connect"
-          ? { protocol: 3 }
+          ? { protocol: 4 }
           : {
               ts: 123,
               channelOrder: ["telegram"],
@@ -2289,7 +2189,7 @@ test("native WS gateway client uses Gateway first for channel status", async () 
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2318,19 +2218,19 @@ test("native WS gateway client uses Gateway first for channel status", async () 
 test("native WS gateway client surfaces malformed channel status without CLI fallback", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: true,
-        payload: frame.method === "connect" ? { protocol: 3 } : { channelOrder: [] }
+        payload: frame.method === "connect" ? { protocol: 4 } : { channelOrder: [] }
       });
     });
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2348,7 +2248,7 @@ test("native WS gateway client surfaces malformed channel status without CLI fal
 test("native WS gateway client runs channel QR login and logout through Gateway", async () => {
   const fallback = new FallbackGatewayClient();
   const qrDataUrl = "data:image/png;base64,cXItY29kZQ==";
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       const payload = frame.method === "connect"
         ? { protocol: 4 }
@@ -2362,7 +2262,7 @@ test("native WS gateway client runs channel QR login and logout through Gateway"
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2394,7 +2294,7 @@ test("native WS gateway client runs channel QR login and logout through Gateway"
 
 test("native WS gateway client reads channel logs through Gateway before CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -2408,7 +2308,7 @@ test("native WS gateway client reads channel logs through Gateway before CLI fal
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2423,7 +2323,7 @@ test("native WS gateway client reads channel logs through Gateway before CLI fal
 
 test("native WS gateway client provisions channel accounts through Gateway before CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -2435,7 +2335,7 @@ test("native WS gateway client provisions channel accounts through Gateway befor
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2460,7 +2360,7 @@ test("native WS gateway client provisions channel accounts through Gateway befor
 
 test("native WS gateway client removes channel accounts through Gateway before CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -2472,7 +2372,7 @@ test("native WS gateway client removes channel accounts through Gateway before C
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2494,7 +2394,7 @@ test("native WS gateway client removes channel accounts through Gateway before C
 
 test("native WS gateway client sets up Gmail webhooks through Gateway before CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -2506,7 +2406,7 @@ test("native WS gateway client sets up Gmail webhooks through Gateway before CLI
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2525,7 +2425,7 @@ test("native WS gateway client sets up Gmail webhooks through Gateway before CLI
 
 test("native WS gateway client approves device access through Gateway before CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       const payload = frame.method === "connect"
         ? { protocol: 4 }
@@ -2548,7 +2448,7 @@ test("native WS gateway client approves device access through Gateway before CLI
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2565,7 +2465,7 @@ test("native WS gateway client approves device access through Gateway before CLI
 test("native WS gateway client retries device approval without scopes for older Gateway contracts", async () => {
   const fallback = new FallbackGatewayClient();
   let approveCalls = 0;
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       if (frame.method === "connect") {
         socket.emitMessage({
@@ -2608,7 +2508,7 @@ test("native WS gateway client retries device approval without scopes for older 
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2637,14 +2537,14 @@ test("native WS gateway client retries device approval without scopes for older 
 test("native WS gateway client mutates config through Gateway snapshots", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: true,
         payload: frame.method === "connect"
-          ? { protocol: 3 }
+          ? { protocol: 4 }
           : frame.method === "config.get"
             ? {
                 exists: true,
@@ -2662,7 +2562,7 @@ test("native WS gateway client mutates config through Gateway snapshots", async 
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2685,7 +2585,7 @@ test("native WS gateway client mutates config through Gateway snapshots", async 
 
 test("native WS gateway client persists agents.list even when the Gateway snapshot already matches", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -2710,7 +2610,7 @@ test("native WS gateway client persists agents.list even when the Gateway snapsh
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2734,7 +2634,7 @@ test("native WS gateway client persists agents.list even when the Gateway snapsh
 
 test("native WS gateway config object replacement removes omitted members with merge-patch tombstones", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -2764,7 +2664,7 @@ test("native WS gateway config object replacement removes omitted members with m
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2799,7 +2699,7 @@ test("native WS gateway config object replacement removes omitted members with m
 
 test("native WS gateway client returns config reload metadata from schema lookup", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -2817,7 +2717,7 @@ test("native WS gateway client returns config reload metadata from schema lookup
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2834,7 +2734,7 @@ test("native WS gateway client returns config reload metadata from schema lookup
 
 test("native WS gateway client closes persistent connection after Gateway auth URL config mutation", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -2852,7 +2752,7 @@ test("native WS gateway client closes persistent connection after Gateway auth U
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2873,7 +2773,7 @@ test("native WS gateway client closes persistent connection after Gateway auth U
 test("native WS gateway client falls back to CLI for Gateway auth config repair when token mismatches", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -2887,7 +2787,7 @@ test("native WS gateway client falls back to CLI for Gateway auth config repair 
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2904,7 +2804,7 @@ test("native WS gateway client reports OK after auth repair reconnects", async (
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
   let connectAttempts = 0;
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       if (frame.method === "connect") {
         connectAttempts += 1;
@@ -2930,7 +2830,7 @@ test("native WS gateway client reports OK after auth repair reconnects", async (
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -2951,7 +2851,7 @@ test("native WS gateway client reports OK after auth repair reconnects", async (
 test("native WS gateway client falls back from config.patch to config.apply", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       if (frame.method === "config.patch") {
         socket.emitMessage({
@@ -2986,7 +2886,7 @@ test("native WS gateway client falls back from config.patch to config.apply", as
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3007,7 +2907,7 @@ test("native WS gateway client falls back from config.patch to config.apply", as
 test("native WS gateway client does not use CLI fallback when config.patch is rate limited", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       if (frame.method === "config.patch") {
         socket.emitMessage({
@@ -3033,7 +2933,7 @@ test("native WS gateway client does not use CLI fallback when config.patch is ra
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3057,7 +2957,7 @@ test("native WS gateway client does not use CLI fallback when config.patch is ra
 
 test("native WS gateway client does not escalate config.patch conflict to apply or CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -3078,7 +2978,7 @@ test("native WS gateway client does not escalate config.patch conflict to apply 
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3098,7 +2998,7 @@ test("native WS gateway client does not escalate config.patch conflict to apply 
 
 test("native WS gateway client does not escalate config.patch auth failure to apply or CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -3119,7 +3019,7 @@ test("native WS gateway client does not escalate config.patch auth failure to ap
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3139,7 +3039,7 @@ test("native WS gateway client does not escalate config.patch auth failure to ap
 
 test("native WS gateway client does not CLI fallback after sent config.apply timeout", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       if (frame.method === "config.patch") {
         socket.emitMessage({
@@ -3169,14 +3069,14 @@ test("native WS gateway client does not CLI fallback after sent config.apply tim
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 20
   });
 
   await assert.rejects(
     () => client.setConfig("gateway.remote.url", "ws://127.0.0.1:18789"),
-    /Timed out waiting for OpenClaw Gateway method "config.apply"/
+    /timed out after/
   );
   assert.deepEqual(sentFrames.map((frame) => frame.method), [
     "connect",
@@ -3190,10 +3090,10 @@ test("native WS gateway client does not CLI fallback after sent config.apply tim
 
 test("native WS gateway client refuses redacted config writes without CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket(() => {});
+  const { transport, sentFrames } = createFakeGatewayTransport(() => {});
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3206,59 +3106,12 @@ test("native WS gateway client refuses redacted config writes without CLI fallba
   assert.deepEqual(fallback.calls, []);
 });
 
-test("native WS gateway client does not surface stale connecting socket close errors", async () => {
-  const fallback = new FallbackGatewayClient();
-  let terminated = false;
-
-  class ClosingBeforeOpenSocket extends EventEmitter {
-    readyState = 0;
-
-    constructor(readonly url: string) {
-      super();
-    }
-
-    send() {
-      throw new Error("socket is not open");
-    }
-
-    close() {
-      this.readyState = 3;
-      this.emit("close", 1006, "closed before open");
-      globalThis.queueMicrotask(() => {
-        this.emit("error", new Error("WebSocket was closed before the connection was established"));
-      });
-    }
-
-    terminate() {
-      terminated = true;
-      this.readyState = 3;
-      this.emit("close", 1006, "terminated before open");
-      globalThis.queueMicrotask(() => {
-        this.emit("error", new Error("WebSocket was closed before the connection was established"));
-      });
-    }
-  }
-
-  const client = new NativeWsOpenClawGatewayClient({
-    fallback,
-    webSocketFactory: ClosingBeforeOpenSocket as unknown as WebSocketFactory,
-    url: "ws://127.0.0.1:18789",
-    timeoutMs: 5
-  });
-
-  await assert.rejects(
-    () => client.listAgents(),
-    /Timed out connecting to OpenClaw Gateway/
-  );
-  await new Promise((resolve) => globalThis.setTimeout(resolve, 10));
-  assert.equal(terminated, true);
-});
 
 test("native WS gateway client surfaces native failure without CLI fallback after Gateway failure", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
   fallback.failStatus = true;
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     if (frame.method !== "connect") {
       return;
     }
@@ -3274,7 +3127,7 @@ test("native WS gateway client surfaces native failure without CLI fallback afte
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3291,7 +3144,7 @@ test("native WS gateway client surfaces native failure without CLI fallback afte
 test("native WS gateway client does not CLI fallback when handshake auth fails", async () => {
   const fallback = new FallbackGatewayClient();
   const failures: string[] = [];
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     if (frame.method !== "connect") {
       return;
     }
@@ -3309,7 +3162,7 @@ test("native WS gateway client does not CLI fallback when handshake auth fails",
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250,
     onNativeFailure: (error) => failures.push(error instanceof Error ? error.message : String(error))
@@ -3325,10 +3178,10 @@ test("native WS gateway client does not CLI fallback when handshake auth fails",
 
 test("native WS gateway client does not CLI fallback on native timeout", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl } = createFakeWebSocket(() => {});
+  const { transport } = createFakeGatewayTransport(() => {});
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 20
   });
@@ -3342,7 +3195,7 @@ test("native WS gateway client does not CLI fallback on native timeout", async (
 
 test("native WS gateway client does not CLI fallback after sent mutation timeout", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     if (frame.method === "connect") {
       globalThis.queueMicrotask(() => {
         socket.emitMessage({ type: "res", id: frame.id, ok: true, payload: { protocol: 4 } });
@@ -3351,14 +3204,14 @@ test("native WS gateway client does not CLI fallback after sent mutation timeout
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 20
   });
 
   await assert.rejects(
     () => client.deleteAgent("agent-1"),
-    /Timed out waiting for OpenClaw Gateway method "agents.delete"/
+    /timed out after/
   );
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "agents.delete"]);
   assert.deepEqual(fallback.calls, []);
@@ -3366,7 +3219,7 @@ test("native WS gateway client does not CLI fallback after sent mutation timeout
 
 test("native WS gateway client attempts an omitted mutation before applying fallback policy", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     if (frame.method === "connect") {
       globalThis.queueMicrotask(() => {
         socket.emitMessage({
@@ -3380,14 +3233,14 @@ test("native WS gateway client attempts an omitted mutation before applying fall
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
 
   await assert.rejects(
     () => client.deleteAgent("agent-1"),
-    /Timed out waiting for OpenClaw Gateway method "agents\.delete"/
+    /timed out after/
   );
 
   assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "agents.delete"]);
@@ -3396,7 +3249,7 @@ test("native WS gateway client attempts an omitted mutation before applying fall
 
 test("native WS gateway client blocks CLI fallback for sent mutation auth failures", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -3409,7 +3262,7 @@ test("native WS gateway client blocks CLI fallback for sent mutation auth failur
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3424,7 +3277,7 @@ test("native WS gateway client blocks CLI fallback for sent mutation auth failur
 
 test("native WS gateway client blocks CLI fallback for sent mutation malformed request failures", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -3437,7 +3290,7 @@ test("native WS gateway client blocks CLI fallback for sent mutation malformed r
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3452,12 +3305,12 @@ test("native WS gateway client blocks CLI fallback for sent mutation malformed r
 
 test("native WS gateway client honors forced CLI mode without opening a socket", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket(() => {
+  const { transport, sentFrames } = createFakeGatewayTransport(() => {
     throw new Error("socket should not be used");
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250,
     forceCli: true
@@ -3472,12 +3325,12 @@ test("native WS gateway client honors forced CLI mode without opening a socket",
 
 test("native WS gateway client blocks per-request CLI mutation fallback without native proof", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket(() => {
+  const { transport, sentFrames } = createFakeGatewayTransport(() => {
     throw new Error("socket should not be used");
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3498,20 +3351,20 @@ test("native WS gateway client blocks per-request CLI mutation fallback without 
 test("native WS gateway client classifies unknown Gateway methods as unsupported", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: frame.method === "connect",
-        payload: frame.method === "connect" ? { protocol: 3 } : undefined,
+        payload: frame.method === "connect" ? { protocol: 4 } : undefined,
         error: frame.method === "connect" ? undefined : { message: "INVALID_REQUEST: unknown method: models.authStatus" }
       });
     });
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3525,7 +3378,7 @@ test("native WS gateway client classifies unknown Gateway methods as unsupported
 
 test("native WS gateway client uses Gateway first for critical workflows with compatible payloads", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -3533,7 +3386,7 @@ test("native WS gateway client uses Gateway first for critical workflows with co
         ok: true,
         payload: frame.method === "connect"
           ? {
-              protocol: 3,
+              protocol: 4,
               server: { connId: "connection-1" },
               auth: { role: "operator", scopes: ["operator.admin"] }
             }
@@ -3543,7 +3396,7 @@ test("native WS gateway client uses Gateway first for critical workflows with co
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3578,7 +3431,7 @@ test("native WS gateway client uses Gateway first for critical workflows with co
 
 test("native WS gateway client waits for agent turn completion when a timeout is requested", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -3607,7 +3460,7 @@ test("native WS gateway client waits for agent turn completion when a timeout is
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3632,7 +3485,7 @@ test("native WS gateway client waits for agent turn completion when a timeout is
 test("native WS gateway client retries agent wait with session params for legacy Gateway schemas", async () => {
   const fallback = new FallbackGatewayClient();
   let waitAttempts = 0;
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       if (frame.method === "connect") {
         socket.emitMessage({
@@ -3683,7 +3536,7 @@ test("native WS gateway client retries agent wait with session params for legacy
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3713,7 +3566,7 @@ test("native WS gateway client retries agent wait with session params for legacy
 
 test("native WS gateway client returns Gateway wait timeout payloads", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -3741,7 +3594,7 @@ test("native WS gateway client returns Gateway wait timeout payloads", async () 
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3761,14 +3614,14 @@ test("native WS gateway client returns Gateway wait timeout payloads", async () 
 test("native WS gateway client retries chat.send when the Gateway registry confirms the agent", async () => {
   const fallback = new FallbackGatewayClient();
   let chatAttempts = 0;
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       if (frame.method === "connect") {
         socket.emitMessage({
           type: "res",
           id: frame.id,
           ok: true,
-          payload: { protocol: 3 }
+          payload: { protocol: 4 }
         });
         return;
       }
@@ -3812,7 +3665,7 @@ test("native WS gateway client retries chat.send when the Gateway registry confi
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3834,19 +3687,19 @@ test("native WS gateway client retries chat.send when the Gateway registry confi
 
 test("native WS gateway client sends task steering and context injection without CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
         id: frame.id,
         ok: true,
-        payload: frame.method === "connect" ? { protocol: 3 } : { ok: true, method: frame.method }
+        payload: frame.method === "connect" ? { protocol: 4 } : { ok: true, method: frame.method }
       });
     });
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3875,7 +3728,7 @@ test("native WS gateway client sends task steering and context injection without
 
 test("native WS gateway client omits workspace when falling back from chat.send to sessions.send", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -3892,7 +3745,7 @@ test("native WS gateway client omits workspace when falling back from chat.send 
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3907,7 +3760,7 @@ test("native WS gateway client omits workspace when falling back from chat.send 
 
 test("native WS gateway client creates explicit sessions without patching metadata before chat send", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -3928,7 +3781,7 @@ test("native WS gateway client creates explicit sessions without patching metada
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -3956,7 +3809,7 @@ test("native WS gateway client creates explicit sessions without patching metada
 
 test("native WS gateway client keeps direct chat moving when session creation params are rejected", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -3983,7 +3836,7 @@ test("native WS gateway client keeps direct chat moving when session creation pa
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4007,7 +3860,7 @@ test("native WS gateway client keeps direct chat moving when session creation pa
 test("native WS gateway client keeps agent creation on the native lifecycle", async () => {
   clearOpenClawGatewayFallbackDiagnosticsForTesting();
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4026,7 +3879,7 @@ test("native WS gateway client keeps agent creation on the native lifecycle", as
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4041,7 +3894,7 @@ test("native WS gateway client keeps agent creation on the native lifecycle", as
 
 test("native agent creation refreshes its connection after disconnect", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4059,7 +3912,7 @@ test("native agent creation refreshes its connection after disconnect", async ()
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4071,7 +3924,7 @@ test("native agent creation refreshes its connection after disconnect", async ()
 
 test("native WS gateway client uses agents.update when supported", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4083,7 +3936,7 @@ test("native WS gateway client uses agents.update when supported", async () => {
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4102,7 +3955,7 @@ test("native WS gateway client uses agents.update when supported", async () => {
 
 test("native WS gateway client attempts an omitted mutation without inventing a fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4121,7 +3974,7 @@ test("native WS gateway client attempts an omitted mutation without inventing a 
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4134,7 +3987,7 @@ test("native WS gateway client attempts an omitted mutation without inventing a 
 
 test("native WS gateway client sets agent identity through Gateway before CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4146,7 +3999,7 @@ test("native WS gateway client sets agent identity through Gateway before CLI fa
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4173,7 +4026,7 @@ test("native WS gateway client sets agent identity through Gateway before CLI fa
 
 test("native WS gateway client provisions automations through Gateway before CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4185,7 +4038,7 @@ test("native WS gateway client provisions automations through Gateway before CLI
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4221,7 +4074,7 @@ test("native WS gateway client provisions automations through Gateway before CLI
 
 test("native WS gateway client exposes optional Gateway support methods", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4245,7 +4098,7 @@ test("native WS gateway client exposes optional Gateway support methods", async 
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4271,7 +4124,7 @@ test("native WS gateway client exposes optional Gateway support methods", async 
 
 test("native WS gateway client exposes OpenClaw 2026.6.8 Gateway surfaces without CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4303,7 +4156,7 @@ test("native WS gateway client exposes OpenClaw 2026.6.8 Gateway surfaces withou
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4338,7 +4191,7 @@ test("native WS gateway client exposes OpenClaw 2026.6.8 Gateway surfaces withou
 
 test("native WS gateway client exposes Phase 2 runtime Gateway methods", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4391,7 +4244,7 @@ test("native WS gateway client exposes Phase 2 runtime Gateway methods", async (
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4471,7 +4324,7 @@ test("native WS gateway client exposes Phase 2 runtime Gateway methods", async (
 
 test("native WS gateway client attempts omitted stable tool methods natively", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4485,7 +4338,7 @@ test("native WS gateway client attempts omitted stable tool methods natively", a
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4499,7 +4352,7 @@ test("native WS gateway client attempts omitted stable tool methods natively", a
 
 test("native WS gateway client queries chat history with sessionKey for explicit agent sessions", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4518,7 +4371,7 @@ test("native WS gateway client queries chat history with sessionKey for explicit
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4539,7 +4392,7 @@ test("native WS gateway client queries chat history with sessionKey for explicit
 
 test("native WS runtime snapshot only queries artifacts with an explicit Gateway scope", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4560,7 +4413,7 @@ test("native WS runtime snapshot only queries artifacts with an explicit Gateway
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4590,7 +4443,7 @@ test("native WS runtime snapshot only queries artifacts with an explicit Gateway
 test("native WS gateway client receives canonical task events without a task RPC", async () => {
   const fallback = new FallbackGatewayClient();
   const events: unknown[] = [];
-  const { WebSocketImpl, sentFrames, sockets } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames, sockets } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4610,7 +4463,7 @@ test("native WS gateway client receives canonical task events without a task RPC
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4652,7 +4505,7 @@ test("native WS gateway client streams agent turns through chat.send and session
   const fallback = new FallbackGatewayClient();
   const stdout: string[] = [];
   let subscriptionSocket: { emitMessage: (frame: Record<string, unknown>) => void } | null = null;
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4702,7 +4555,7 @@ test("native WS gateway client streams agent turns through chat.send and session
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4733,7 +4586,7 @@ test("native WS gateway client streams agent turns through chat.send and session
 test("native WS gateway client reads assistant text from Gateway message content arrays", async () => {
   const fallback = new FallbackGatewayClient();
   let subscriptionSocket: { emitMessage: (frame: Record<string, unknown>) => void } | null = null;
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4778,7 +4631,7 @@ test("native WS gateway client reads assistant text from Gateway message content
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4796,7 +4649,7 @@ test("native WS gateway client does not synthesize final text for empty stream c
   const fallback = new FallbackGatewayClient();
   const stdout: string[] = [];
   let subscriptionSocket: { emitMessage: (frame: Record<string, unknown>) => void } | null = null;
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4832,7 +4685,7 @@ test("native WS gateway client does not synthesize final text for empty stream c
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4863,7 +4716,7 @@ test("native WS gateway client does not synthesize final text for empty stream c
 test("native WS gateway client explains failed chat stream events without assistant text", async () => {
   const fallback = new FallbackGatewayClient();
   let subscriptionSocket: { emitMessage: (frame: Record<string, unknown>) => void } | null = null;
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4902,7 +4755,7 @@ test("native WS gateway client explains failed chat stream events without assist
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4925,7 +4778,7 @@ test("native WS gateway client explains failed chat stream events without assist
 test("native WS gateway client suppresses lifecycle stop reasons for empty chat streams", async () => {
   const fallback = new FallbackGatewayClient();
   let subscriptionSocket: { emitMessage: (frame: Record<string, unknown>) => void } | null = null;
-  const { WebSocketImpl } = createFakeWebSocket((socket, frame) => {
+  const { transport } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -4962,7 +4815,7 @@ test("native WS gateway client suppresses lifecycle stop reasons for empty chat 
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -4981,7 +4834,7 @@ test("native WS gateway client suppresses lifecycle stop reasons for empty chat 
 
 test("native WS gateway client resolves stream completion through agent.wait when events have no final text", async () => {
   const fallback = new FallbackGatewayClient();
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -5008,7 +4861,7 @@ test("native WS gateway client resolves stream completion through agent.wait whe
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });
@@ -5035,7 +4888,7 @@ test("native WS gateway client resolves stream completion through agent.wait whe
 test("native WS gateway client subscribes to Gateway session events without legacy events.subscribe", async () => {
   const fallback = new FallbackGatewayClient();
   const events: string[] = [];
-  const { WebSocketImpl, sentFrames } = createFakeWebSocket((socket, frame) => {
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
     globalThis.queueMicrotask(() => {
       socket.emitMessage({
         type: "res",
@@ -5054,7 +4907,7 @@ test("native WS gateway client subscribes to Gateway session events without lega
   });
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: WebSocketImpl,
+    transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 250
   });

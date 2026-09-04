@@ -63,8 +63,7 @@ export type OpenClawGatewayRecentFallbackDiagnostic = {
 
 export type OpenClawGatewayClientDiagnostics = {
   mode: "native-ws" | "cli";
-  transportImplementation?: "official" | "custom" | "cli";
-  transportSelectionWarning?: string | null;
+  transportImplementation?: "official" | "cli";
   gatewayMode: OpenClawGatewayMode;
   statusLabel: string;
   recovery: string | null;

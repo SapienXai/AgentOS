@@ -21,9 +21,8 @@ const TARGET_VERSION = "2026.8.2";
 const TARGET_COMMIT = "0965053fe6b9341776df147a6934b7485c60b5ca";
 const PACKAGE_INPUT = process.env.OPENCLAW_OFFICIAL_PRODUCTION_PACKAGE?.trim();
 const OUTPUT_PATH = process.env.OPENCLAW_OFFICIAL_PRODUCTION_OUTPUT?.trim() ||
-  path.resolve("docs/evidence/openclaw-2026.8.2-production-cutover-certification.json");
+  path.resolve("docs/evidence/openclaw-2026.8.2-final-official-runtime-certification.json");
 const REQUEST_TIMEOUT_MS = 8_000;
-const TRANSPORT_SELECTOR = "AGENTOS_OPENCLAW_TRANSPORT";
 const FORCE_CLI_KEYS = [
   "AGENTOS_OPENCLAW_GATEWAY_CLIENT",
   "OPENCLAW_GATEWAY_CLIENT",
@@ -120,13 +119,9 @@ async function main() {
     },
     factory: {
       default: "SKIPPED",
-      explicitOfficial: "SKIPPED",
-      customRollback: "SKIPPED",
       forcedCli: "SKIPPED",
-      invalidSelector: "SKIPPED",
       singletonReset: "SKIPPED",
-      selectedTransport: null as "official" | "custom" | "cli" | null,
-      warning: null as string | null,
+      selectedTransport: null as "official" | "cli" | null,
       noMixedDualTransport: "PASS"
     },
     handshake: {
@@ -204,7 +199,6 @@ async function main() {
     const defaultDiagnostics = client.getDiagnostics?.();
     evidence.factory.default = defaultDiagnostics?.transportImplementation === "official" ? "PASS" : "FAIL";
     evidence.factory.selectedTransport = defaultDiagnostics?.transportImplementation ?? null;
-    evidence.factory.warning = defaultDiagnostics?.transportSelectionWarning ?? null;
     addRow(
       evidence,
       "factory",
@@ -213,25 +207,6 @@ async function main() {
       evidence.factory.default,
       `getOpenClawGatewayClient() selected ${defaultDiagnostics?.transportImplementation ?? "unavailable"}.`
     );
-
-    resetOpenClawGatewayClient("explicit official selector certification");
-    process.env[TRANSPORT_SELECTOR] = "official";
-    client = getOpenClawGatewayClient();
-    const explicitOfficialDiagnostics = client.getDiagnostics?.();
-    evidence.factory.explicitOfficial = explicitOfficialDiagnostics?.transportImplementation === "official" ? "PASS" : "FAIL";
-    addRow(
-      evidence,
-      "factory",
-      "explicit official selector",
-      null,
-      evidence.factory.explicitOfficial,
-      `Explicit selector selected ${explicitOfficialDiagnostics?.transportImplementation ?? "unavailable"}.`
-    );
-    await runOperation(evidence, "factory", "explicit official health read", "health", () => client!.getHealth({ timeoutMs: REQUEST_TIMEOUT_MS }), { required: true });
-
-    resetOpenClawGatewayClient("restore default selector certification");
-    delete process.env[TRANSPORT_SELECTOR];
-    client = getOpenClawGatewayClient();
 
     await certifyHandshakeAndCoreReads(client, evidence);
     await certifyAgentOperations(client, evidence, workspaceDir);
@@ -258,41 +233,16 @@ async function main() {
     closeSubscription(eventSubscription);
     eventSubscription = null;
 
-    resetOpenClawGatewayClient("production certification rollback");
-    client = null;
-    process.env[TRANSPORT_SELECTOR] = "custom";
-    process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = gatewayToken;
-    const customClient = getOpenClawGatewayClient();
-    const customDiagnostics = customClient.getDiagnostics?.();
-    evidence.factory.customRollback = customDiagnostics?.transportImplementation === "custom" ? "PASS" : "FAIL";
-    addRow(
-      evidence,
-      "factory",
-      "explicit custom rollback",
-      null,
-      evidence.factory.customRollback,
-      `Rollback selected ${customDiagnostics?.transportImplementation ?? "unavailable"}; selection was explicit.`
-    );
-    await runOperation(evidence, "rollback", "custom health read", "health", () => customClient.getHealth({ timeoutMs: REQUEST_TIMEOUT_MS }), { required: true });
-    addRow(
-      evidence,
-      "rollback",
-      "official socket accidentally active during custom rollback",
-      null,
-      customDiagnostics?.transportImplementation === "custom" ? "PASS" : "FAIL",
-      "The official singleton was closed before the explicit custom client was created; the rollback read completed on the custom transport."
-    );
     addRow(
       evidence,
       "factory",
       "no mixed dual transport",
       null,
       "PASS",
-      "Factory selection creates one transport implementation per singleton; official and custom sockets are never created together."
+      "The native factory creates only the official transport; CLI is a separate forced client."
     );
     resetOpenClawGatewayClient("restore official production default");
     client = null;
-    delete process.env[TRANSPORT_SELECTOR];
     delete process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
     client = getOpenClawGatewayClient();
     const restoredDiagnostics = client.getDiagnostics?.();
@@ -308,7 +258,6 @@ async function main() {
     await runOperation(evidence, "factory", "restored official health read", "health", () => client!.getHealth({ timeoutMs: REQUEST_TIMEOUT_MS }), { required: true });
 
     resetOpenClawGatewayClient("explicit token production certification");
-    process.env[TRANSPORT_SELECTOR] = "official";
     process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = gatewayToken;
     const explicitTokenClient = getOpenClawGatewayClient();
     const explicitTokenDiagnostics = explicitTokenClient.getDiagnostics?.();
@@ -317,7 +266,6 @@ async function main() {
     addRow(evidence, "auth", "explicit token does not get overridden by stored device auth", "connect", evidence.auth.explicitToken, "The production factory supplied the explicit token path; stored device identity was not selected as the credential override.");
 
     resetOpenClawGatewayClient("restore device-auth production certification");
-    delete process.env[TRANSPORT_SELECTOR];
     delete process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
     client = getOpenClawGatewayClient();
     await runOperation(evidence, "auth", "device auth after explicit token reset", "health", () => client!.getHealth({ timeoutMs: REQUEST_TIMEOUT_MS }), { required: true });
@@ -343,23 +291,10 @@ async function main() {
     evidence.factory.forcedCli = cliDiagnostics?.transportImplementation === "cli" ? "PASS" : "FAIL";
     addRow(evidence, "factory", "forced CLI override", null, evidence.factory.forcedCli, "The existing explicit CLI override remains authoritative.");
 
-    resetOpenClawGatewayClient("invalid selector certification");
-    client = null;
-    delete process.env.AGENTOS_OPENCLAW_GATEWAY_CLIENT;
-    process.env[TRANSPORT_SELECTOR] = "invalid-value";
-    const invalidClient = getOpenClawGatewayClient();
-    const invalidDiagnostics = invalidClient.getDiagnostics?.();
-    evidence.factory.invalidSelector = invalidDiagnostics?.transportImplementation === "official" &&
-      invalidDiagnostics.transportSelectionWarning !== null ? "PASS" : "FAIL";
-    addRow(evidence, "factory", "invalid selector fails closed", null, evidence.factory.invalidSelector, "Invalid selector remains on official and exposes a bounded warning.");
-
-    client = invalidClient;
+    client = getOpenClawGatewayClient();
     evidence.observations.fallbackTotalAfterDefaultCertification = client.getDiagnostics?.()?.fallbackTotal ?? 0;
     evidence.success = evidence.factory.default === "PASS" &&
-      evidence.factory.explicitOfficial === "PASS" &&
-      evidence.factory.customRollback === "PASS" &&
       evidence.factory.forcedCli === "PASS" &&
-      evidence.factory.invalidSelector === "PASS" &&
       evidence.factory.singletonReset === "PASS" &&
       evidence.factory.noMixedDualTransport === "PASS" &&
       evidence.matrix.every((row) => row.status !== "FAIL");
@@ -564,7 +499,7 @@ async function certifyRequestPolicy(client: OpenClawGatewayClient, evidence: Cer
   evidence.observations.requestPolicyInvalidationObserved = true;
   addRow(evidence, "request-policy", "generation/read policy remains active", "config.get", "PASS", "Request policy diagnostics remained available on the official production path; detailed wire-count invariants are covered by focused harness tests.");
   for (const operation of ["TTL expiry", "mutation invalidation", "sent ambiguous mutation", "AbortSignal isolation", "old generation fencing"]) {
-    addRow(evidence, "request-policy", operation, null, "PASS", "Covered by the shared AgentOS policy contract tests and official/custom transport regression tests.");
+    addRow(evidence, "request-policy", operation, null, "PASS", "Covered by the shared AgentOS policy contract tests and official transport regression tests.");
   }
 }
 
@@ -800,14 +735,12 @@ function configureProductionEnvironment(input: { url: string; stateDir: string; 
   process.env["AGENTOS_OPENCLAW_GATEWAY_URL"] = input.url;
   process.env["OPENCLAW_STATE_DIR"] = input.stateDir;
   process.env["OPENCLAW_CONFIG_PATH"] = input.configPath;
-  delete process.env[TRANSPORT_SELECTOR];
   delete process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN;
   delete process.env.AGENTOS_OPENCLAW_GATEWAY_PASSWORD;
   for (const key of FORCE_CLI_KEYS) delete process.env[key];
 }
 
 function restoreProductionEnvironment() {
-  delete process.env[TRANSPORT_SELECTOR];
   delete process.env.AGENTOS_OPENCLAW_GATEWAY_URL;
   delete process.env.OPENCLAW_STATE_DIR;
   delete process.env.OPENCLAW_CONFIG_PATH;
@@ -913,13 +846,9 @@ type CertificationEvidence = {
   };
   factory: {
     default: CertificationStatus;
-    explicitOfficial: CertificationStatus;
-    customRollback: CertificationStatus;
     forcedCli: CertificationStatus;
-    invalidSelector: CertificationStatus;
     singletonReset: CertificationStatus;
-    selectedTransport: "official" | "custom" | "cli" | null;
-    warning: string | null;
+    selectedTransport: "official" | "cli" | null;
     noMixedDualTransport: CertificationStatus;
   };
   handshake: {

@@ -1,13 +1,20 @@
 import {
   NativeWsOpenClawGatewayClient,
-  type NativeWsOpenClawGatewayClientOptions,
-  type WebSocketFactory
+  type NativeWsOpenClawGatewayClientOptions
 } from "@/lib/openclaw/client/native-ws-gateway-client";
-import type { NativeHandshakePayload } from "@/lib/openclaw/client/native-ws-gateway-types";
+import type {
+  NativeHandshakePayload,
+  OpenClawGatewayTransport
+} from "@/lib/openclaw/client/native-ws-gateway-types";
+import { OPENCLAW_GATEWAY_PROTOCOL_RANGE } from "@/lib/openclaw/client/native-ws-gateway-types";
+import { NativeGatewayError, NativeGatewayRequestError } from "@/lib/openclaw/client/gateway-client";
 import type {
   OpenClawAddAgentInput,
   OpenClawCommandOptions,
-  OpenClawGatewayClient
+  OpenClawGatewayClient,
+  OpenClawGatewayEventCallbacks,
+  OpenClawGatewayEventSubscription,
+  OpenClawGatewayConnectionState
 } from "@/lib/openclaw/client/gateway-client";
 
 export type FakeOpenClawGatewayRequestFrame = {
@@ -55,14 +62,14 @@ export type FakeOpenClawGatewaySocket = {
 export class FakeOpenClawGateway {
   readonly sentFrames: FakeOpenClawGatewayRequestFrame[] = [];
   readonly sockets: FakeOpenClawGatewaySocket[] = [];
-  readonly webSocketFactory: WebSocketFactory;
+  readonly transport: OpenClawGatewayTransport;
   private readonly routes = new Map<string, FakeOpenClawGatewayRoute>();
 
   constructor(private readonly options: FakeOpenClawGatewayOptions = {}) {
     for (const [method, route] of Object.entries(options.routes ?? {})) {
       this.routes.set(method, route);
     }
-    this.webSocketFactory = createFakeWebSocketFactory(this);
+    this.transport = createFakeGatewayTransport(this);
   }
 
   route(method: string, route: FakeOpenClawGatewayRoute) {
@@ -150,74 +157,268 @@ export class FakeOpenClawGateway {
   }
 }
 
-function createFakeWebSocketFactory(gateway: FakeOpenClawGateway): WebSocketFactory {
-  class FakeWebSocket implements FakeOpenClawGatewaySocket {
-    readyState = 0;
-    private readonly listeners = new Map<string, Set<(event: unknown) => void>>();
+function createFakeGatewayTransport(gateway: FakeOpenClawGateway): OpenClawGatewayTransport {
+  type Pending = {
+    method: string;
+    resolve: (payload: unknown) => void;
+    reject: (error: unknown) => void;
+    timer: ReturnType<typeof setTimeout>;
+  };
 
-    constructor(readonly url: string) {
-      gateway.sockets.push(this);
-      globalThis.queueMicrotask(() => {
-        if (this.readyState !== 0) {
-          return;
+  let socket: FakeOpenClawGatewaySocket | null = null;
+  let handshake: NativeHandshakePayload | null = null;
+  let lifecycleState: OpenClawGatewayConnectionState = "idle";
+  let generation = 0;
+  let lastConnectedAt: string | null = null;
+  let lastDisconnectedAt: string | null = null;
+  const pending = new Map<string, Pending>();
+  const subscriptions = new Set<OpenClawGatewayEventCallbacks>();
+
+  const emitClose = (closedSocket: FakeOpenClawGatewaySocket, code: number, reason: string) => {
+    void code;
+    void reason;
+    if (socket !== closedSocket) {
+      return;
+    }
+    socket = null;
+    handshake = null;
+    lastDisconnectedAt = new Date().toISOString();
+    lifecycleState = "connecting";
+    for (const request of pending.values()) {
+      clearTimeout(request.timer);
+      request.reject(new NativeGatewayRequestError(
+        `OpenClaw Gateway request "${request.method}" was interrupted by a connection close.`,
+        request.method,
+        true,
+        { kind: "unreachable" }
+      ));
+    }
+    pending.clear();
+  };
+
+  const emitRaw = (raw: string) => {
+    let frame: Record<string, unknown>;
+    try {
+      frame = JSON.parse(raw) as Record<string, unknown>;
+    } catch (error) {
+      for (const request of pending.values()) {
+        clearTimeout(request.timer);
+        request.reject(new NativeGatewayRequestError(
+          "OpenClaw Gateway returned malformed JSON.",
+          request.method,
+          true,
+          { cause: error, kind: "malformed-response" }
+        ));
+      }
+      pending.clear();
+      return;
+    }
+
+    if (frame.type === "event") {
+      for (const callback of subscriptions) {
+        callback.onEvent(frame as never);
+      }
+      return;
+    }
+
+    const id = typeof frame.id === "string" ? frame.id : null;
+    if (!id) {
+      return;
+    }
+    const request = pending.get(id);
+    if (!request) {
+      return;
+    }
+    pending.delete(id);
+    clearTimeout(request.timer);
+    if (frame.ok === false) {
+      const error = frame.error && typeof frame.error === "object"
+        ? frame.error as Record<string, unknown>
+        : {};
+      const message = typeof error.message === "string" ? error.message : "OpenClaw Gateway request failed.";
+      request.reject(new NativeGatewayRequestError(message, request.method, true, {
+        cause: frame.error,
+        kind: typeof error.code === "string" && /unknown method|unsupported/i.test(error.code)
+          ? "unsupported"
+          : undefined
+      }));
+      return;
+    }
+    request.resolve(frame.payload);
+  };
+
+  const createSocket = () => {
+    const created: FakeOpenClawGatewaySocket = {
+      url: "ws://127.0.0.1:18789",
+      readyState: 1,
+      emitMessage: (frame) => emitRaw(JSON.stringify(frame)),
+      emitRaw,
+      emitEvent: (event, payload) => emitRaw(JSON.stringify({ type: "event", event, payload })),
+      close: (code = 1000, reason = "closed") => emitClose(created, code, reason),
+      error: (error = new Error("Fake OpenClaw Gateway transport error")) => {
+        for (const callback of subscriptions) {
+          callback.onError?.(error);
         }
+      }
+    };
+    gateway.sockets.push(created);
+    socket = created;
+    return created;
+  };
 
-        this.readyState = 1;
-        this.emit("open", {});
+  const request = async <TPayload>(
+    method: string,
+    params: Record<string, unknown>,
+    options: OpenClawCommandOptions,
+    timeoutMs: number
+  ): Promise<TPayload> => {
+    if (method !== "connect" && !handshake) {
+      await transport.probe(options, timeoutMs);
+    }
+    const activeSocket = socket ?? createSocket();
+    const id = `fake-${gateway.sentFrames.length + 1}`;
+    const frame: FakeOpenClawGatewayRequestFrame = {
+      type: "req",
+      id,
+      method,
+      params: method === "connect"
+        ? {
+            minProtocol: 4,
+            maxProtocol: 4,
+            client: {
+              id: "gateway-client",
+              version: "agentos",
+              platform: process.platform,
+              mode: "backend"
+            },
+            role: "operator",
+            scopes: ["operator.admin", "operator.read", "operator.write"],
+            caps: ["agent-kind", "tool-events"]
+          }
+        : JSON.parse(JSON.stringify(params)) as Record<string, unknown>
+    };
+    gateway.sentFrames.push(frame);
+    return new Promise<TPayload>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new NativeGatewayRequestError(
+          `OpenClaw Gateway request "${method}" timed out after ${timeoutMs} ms.`,
+          method,
+          true,
+          { kind: "timeout" }
+        ));
+      }, timeoutMs);
+      pending.set(id, {
+        method,
+        resolve: (payload) => resolve(payload as TPayload),
+        reject,
+        timer
       });
-    }
-
-    addEventListener(type: string, listener: (event: unknown) => void) {
-      const listeners = this.listeners.get(type) ?? new Set();
-      listeners.add(listener);
-      this.listeners.set(type, listeners);
-    }
-
-    removeEventListener(type: string, listener: (event: unknown) => void) {
-      this.listeners.get(type)?.delete(listener);
-    }
-
-    send(data: string) {
-      const frame = JSON.parse(data) as FakeOpenClawGatewayRequestFrame;
-      gateway.sentFrames.push(frame);
-      void Promise.resolve(gateway.handleRequest(this, frame)).catch((error: unknown) => {
-        this.error(error);
-      });
-    }
-
-    emitMessage(frame: Record<string, unknown>) {
-      this.emitRaw(JSON.stringify(frame));
-    }
-
-    emitRaw(data: string) {
-      this.emit("message", { data });
-    }
-
-    emitEvent(event: string, payload?: unknown) {
-      this.emitMessage({ type: "event", event, payload });
-    }
-
-    close(code = 1000, reason = "closed") {
-      if (this.readyState === 3) {
+      if (options.signal?.aborted) {
+        clearTimeout(timer);
+        pending.delete(id);
+        reject(new NativeGatewayRequestError(
+          `OpenClaw Gateway request "${method}" was aborted.`,
+          method,
+          false,
+          { kind: "unreachable" }
+        ));
         return;
       }
+      void Promise.resolve(gateway.handleRequest(activeSocket, frame)).catch((error: unknown) => {
+        activeSocket.error(error);
+      });
+    });
+  };
 
-      this.readyState = 3;
-      this.emit("close", { code, reason });
-    }
-
-    error(error: unknown = new Error("Fake OpenClaw Gateway socket error")) {
-      this.emit("error", error);
-    }
-
-    private emit(type: string, event: unknown) {
-      for (const listener of this.listeners.get(type) ?? []) {
-        listener(event);
+  const transport: OpenClawGatewayTransport = {
+    lifecycleOwner: "official",
+    async probe(options, timeoutMs) {
+      if (handshake) {
+        return handshake;
       }
-    }
-  }
+      lifecycleState = "connecting";
+      const payload = await request<NativeHandshakePayload>("connect", {}, options, timeoutMs);
+      if (payload.protocol !== undefined && (
+        payload.protocol < OPENCLAW_GATEWAY_PROTOCOL_RANGE.min ||
+        payload.protocol > OPENCLAW_GATEWAY_PROTOCOL_RANGE.max
+      )) {
+        lifecycleState = "error";
+        throw new NativeGatewayError(
+          `OpenClaw Gateway protocol ${payload.protocol} is outside the supported range ${OPENCLAW_GATEWAY_PROTOCOL_RANGE.min}-${OPENCLAW_GATEWAY_PROTOCOL_RANGE.max}.`,
+          { kind: "protocol-mismatch" }
+        );
+      }
+      handshake = payload;
+      generation += 1;
+      lifecycleState = "connected";
+      lastConnectedAt = new Date().toISOString();
+      return payload;
+    },
+    request,
+    async subscribe(params, callbacks, options, timeoutMs): Promise<OpenClawGatewayEventSubscription> {
+      subscriptions.add(callbacks);
+      try {
+        await transport.probe(options, timeoutMs);
+        if (params.subscribeSessions || params.includeSessions) {
+          await transport.request("sessions.subscribe", {}, options, timeoutMs);
+        }
+        const sessionKeys = Array.isArray(params.sessionKeys)
+          ? params.sessionKeys.filter((value): value is string => typeof value === "string")
+          : [];
+        for (const key of sessionKeys) {
+          await transport.request("sessions.messages.subscribe", { key }, options, timeoutMs);
+        }
+        return {
+          reconnectManagedByClient: true,
+          close: () => subscriptions.delete(callbacks)
+        };
+      } catch (error) {
+        subscriptions.delete(callbacks);
+        throw error;
+      }
+    },
+    close(reason = "closed") {
+      if (socket) {
+        emitClose(socket, 1000, reason);
+      }
+      lifecycleState = "closed";
+      for (const callback of subscriptions) {
+        callback.onClose?.();
+      }
+      subscriptions.clear();
+    },
+    getDiagnostics() {
+      return {
+        connectionState: lifecycleState === "connected" ? "connected" : lifecycleState === "closed" ? "closed" : "connecting",
+        protocolVersion: typeof handshake?.protocol === "number" ? handshake.protocol : null,
+        gatewayCapabilities: [],
+        pendingRequestCount: pending.size,
+        lastNativeError: null,
+        lastConnectedAt,
+        lastDisconnectedAt,
+        operatorIdentity: transport.getOperatorIdentity()
+      };
+    },
+    getOperatorIdentity() {
+      const auth = handshake?.auth;
+      return {
+        requestedRole: "operator",
+        role: typeof auth?.role === "string" ? auth.role : null,
+        requestedScopes: ["operator.admin", "operator.read", "operator.write"],
+        grantedScopes: Array.isArray(auth?.scopes) ? auth.scopes.filter((value): value is string => typeof value === "string") : [],
+        grantedScopesKnown: Array.isArray(auth?.scopes),
+        deviceId: null,
+        connectionId: typeof handshake?.server?.connId === "string" ? handshake.server.connId : null,
+        authenticated: Boolean(auth?.role),
+        source: auth?.role ? "native-handshake" : "unavailable"
+      };
+    },
+    getGeneration: () => generation,
+    getLifecycleState: () => lifecycleState
+  };
 
-  return FakeWebSocket as unknown as WebSocketFactory;
+  return transport;
 }
 
 export class RecordingFallbackGatewayClient implements OpenClawGatewayClient {
@@ -537,13 +738,13 @@ export function createNativeGatewayTestClient(options: {
   gateway?: FakeOpenClawGateway;
   gatewayOptions?: FakeOpenClawGatewayOptions;
   fallback?: RecordingFallbackGatewayClient;
-  clientOptions?: Omit<NativeWsOpenClawGatewayClientOptions, "fallback" | "webSocketFactory">;
+  clientOptions?: Omit<NativeWsOpenClawGatewayClientOptions, "fallback" | "transport">;
 } = {}) {
   const gateway = options.gateway ?? new FakeOpenClawGateway(options.gatewayOptions);
   const fallback = options.fallback ?? new RecordingFallbackGatewayClient();
   const client = new NativeWsOpenClawGatewayClient({
     fallback,
-    webSocketFactory: gateway.webSocketFactory,
+    transport: gateway.transport,
     url: "ws://127.0.0.1:18789",
     timeoutMs: 50,
     ...options.clientOptions

@@ -4,15 +4,14 @@ import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 
-import WebSocket from "ws";
-
-/** TEST/CERTIFICATION-ONLY: exercises the legacy migration fixture path. */
+/** TEST/CERTIFICATION-ONLY: exercises migration semantics across runtimes. */
 import { createDefaultMigrationRuntimeHooks } from "@/lib/openclaw/migration-engine/runtime";
 import { OpenClawMigrationEngine, OPENCLAW_PHASE_2B_SOURCE_VERSION, OPENCLAW_PHASE_2B_TARGET_COMMIT, OPENCLAW_PHASE_2B_TARGET_VERSION, buildRollbackGate, buildSuccessGate } from "@/lib/openclaw/migration-engine/engine";
 import { readOpenClawRuntimeIdentity } from "@/lib/openclaw/migration-engine/paths";
 import { createOpenClawRuntimeProviderFixture } from "@/scripts/openclaw-runtime-provider-fixture";
-import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
-import { DEFAULT_NATIVE_TIMEOUT_MS, type WebSocketFactory } from "@/lib/openclaw/client/native-ws-gateway-types";
+import { createOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
+import type { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
+import { DEFAULT_NATIVE_TIMEOUT_MS } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { redactSecrets } from "@/lib/security/redaction";
 import { OPENCLAW_RECOMMENDED_VERSION, OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
 
@@ -159,7 +158,7 @@ async function runScenario(options: { failureInjection?: { step: "post-commit-ce
 }
 
 async function seedRealSourceState(gatewayUrl: string, modelId: string, token: string) {
-  const client = new NativeWsOpenClawGatewayClient({ url: gatewayUrl, token, scopes: ["operator.admin", "operator.read", "operator.write"], timeoutMs: DEFAULT_NATIVE_TIMEOUT_MS, clientName: "gateway-client", clientVersion: "0.1.0-migration-fixture", webSocketFactory: WebSocket as unknown as WebSocketFactory });
+  const client = createOpenClawGatewayClient({ url: gatewayUrl, token, scopes: ["operator.admin", "operator.read", "operator.write"], timeoutMs: DEFAULT_NATIVE_TIMEOUT_MS, clientName: "gateway-client", clientVersion: "0.1.0-migration-fixture" });
   try {
     const handshake = await retryHandshake(client);
     if (handshake.server?.version !== OPENCLAW_PHASE_2B_SOURCE_VERSION) throw new Error(`Source fixture Gateway reported ${handshake.server?.version ?? "unknown"}.`);

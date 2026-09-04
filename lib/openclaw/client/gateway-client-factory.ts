@@ -4,18 +4,10 @@ import type { GatewayClientName } from "@openclaw/gateway-protocol/client-info";
 import { CliOpenClawGatewayClient } from "@/lib/openclaw/client/cli-gateway-client";
 import { resolveOpenClawStateDir } from "@/lib/openclaw/client/gateway-state";
 import {
-  NativeWsOpenClawGatewayClient
-} from "@/lib/openclaw/client/native-ws-gateway-client";
-import {
   createOfficialBackedOpenClawGatewayClient,
   type OfficialBackedOpenClawGatewayClientOptions
 } from "@/lib/openclaw/client/official-gateway-factory";
-import {
-  isCliGatewayClientForcedByEnv,
-  resolveGatewayUrl,
-  resolveOpenClawTransportSelection
-} from "@/lib/openclaw/client/native-ws-gateway-policy";
-import type { NativeWsOpenClawGatewayClientOptions } from "@/lib/openclaw/client/native-ws-gateway-client";
+import { isCliGatewayClientForcedByEnv, resolveGatewayUrl } from "@/lib/openclaw/client/native-ws-gateway-policy";
 import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
 
 let defaultClient: OpenClawGatewayClient | null = null;
@@ -29,8 +21,6 @@ export type OpenClawGatewayClientFactoryOptions = Omit<
 > & {
   url?: string | null;
   clientName?: string;
-  webSocketFactory?: NativeWsOpenClawGatewayClientOptions["webSocketFactory"];
-  transport?: NativeWsOpenClawGatewayClientOptions["transport"];
 };
 
 export function createOpenClawGatewayClient(
@@ -39,16 +29,10 @@ export function createOpenClawGatewayClient(
   const cliClient = options.fallback ?? new CliOpenClawGatewayClient();
   const forceCli = options.forceCli || isCliGatewayClientForcedByEnv();
 
-  const selection = resolveOpenClawTransportSelection();
   const commonOptions = {
     fallback: cliClient,
-    url: options.url ?? resolveGatewayUrl(),
-    transportSelectionWarning: selection.warning
+    url: options.url ?? resolveGatewayUrl()
   } as const;
-
-  if (!forceCli && selection.implementation === "custom") {
-    return new NativeWsOpenClawGatewayClient({ ...options, ...commonOptions });
-  }
 
   return createOfficialBackedOpenClawGatewayClient({
     ...options,
@@ -63,10 +47,6 @@ export function createOpenClawGatewayClient(
     stateDir: options.stateDir ?? resolveOpenClawStateDir(),
     sharedStateMode: options.sharedStateMode ?? "managed-write",
     clientName: options.clientName as GatewayClientName | undefined,
-    // A custom WebSocketFactory/transport is only meaningful on the explicit
-    // rollback branch. Keep those test seams out of the official constructor.
-    webSocketFactory: undefined,
-    transport: undefined
   } as OfficialBackedOpenClawGatewayClientOptions);
 }
 

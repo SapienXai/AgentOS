@@ -5,12 +5,14 @@ import {
   mapOpenClawTaskListToRuntimes,
   mapOpenClawRuntimeSnapshotToRuntimes
 } from "@/lib/openclaw/application/runtime-state-service";
-import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
 import { buildTaskRecords } from "@/lib/openclaw/domains/task-records";
 import { normalizeOpenClawTaskSummary } from "@/lib/openclaw/domains/execution-identity";
 import { resolveTaskFollowUpContext } from "@/lib/openclaw/domains/task-follow-up";
-import type { OpenClawGatewayClient, OpenClawTaskPayload } from "@/lib/openclaw/client/gateway-client";
 import type { OpenClawAgent, RuntimeRecord } from "@/lib/openclaw/types";
+import {
+  createNativeGatewayTestClient,
+  RecordingFallbackGatewayClient
+} from "@/tests/helpers/fake-openclaw-gateway";
 
 test("exact OpenClaw task summaries retain only typed execution identity fields", () => {
   const summary = normalizeOpenClawTaskSummary({
@@ -142,20 +144,14 @@ test("follow-up reuses the canonical native execution identity over stale compat
 });
 
 test("unsupported tasks.assign never reaches Gateway or CLI transport", async () => {
-  let fallbackCalls = 0;
-  const fallback = {
-    assignTask: async (): Promise<OpenClawTaskPayload> => {
-      fallbackCalls += 1;
-      return {};
-    }
-  } as unknown as OpenClawGatewayClient;
-  const client = new NativeWsOpenClawGatewayClient({ fallback });
+  const fallback = new RecordingFallbackGatewayClient();
+  const gatewayClient = createNativeGatewayTestClient({ fallback });
 
   await assert.rejects(
-    client.assignTask({ taskId: "task-1", agentId: "agent-1" }),
+    gatewayClient.client.assignTask({ taskId: "task-1", agentId: "agent-1" }),
     (error: unknown) => error instanceof Error && /does not expose task assignment/i.test(error.message)
   );
-  assert.equal(fallbackCalls, 0);
+  assert.equal(fallback.calls.some((call) => call.method === "assignTask"), false);
 });
 
 function createAgent(): OpenClawAgent {

@@ -66,13 +66,13 @@ test("official transport sends the canonical AgentOS handshake and correlates re
   }
 });
 
-test("official transport remains thin while custom transport stays available for rollback", async () => {
+test("official transport is the sole native transport boundary", async () => {
   const factorySource = await readFile(
     join(process.cwd(), "lib/openclaw/client/gateway-client-factory.ts"),
     "utf8"
   );
-  assert.match(factorySource, /new NativeWsOpenClawGatewayClient/);
   assert.match(factorySource, /createOfficialBackedOpenClawGatewayClient/);
+  assert.doesNotMatch(factorySource, /custom transport|PersistentOpenClawGatewayConnection|WebSocketFactory/);
 });
 
 test("official transport preserves concurrent out-of-order responses", async () => {

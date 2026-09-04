@@ -37,12 +37,6 @@ export const MAX_CONTROL_PROTOCOL_VERSION = OPENCLAW_GATEWAY_PROTOCOL_RANGE.max;
 
 export { OPENCLAW_GATEWAY_PROTOCOL_RANGE, SERVER_OPERATOR_CLIENT_ID, SERVER_OPERATOR_CLIENT_MODE } from "@/lib/openclaw/client/openclaw-protocol";
 
-export const OPENCLAW_DEVICE_AUTH_FILE_NAME = "device-auth.json";
-
-export const OPENCLAW_DEVICE_IDENTITY_FILE_NAME = "device.json";
-
-export const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
-
 export const DEFAULT_OPERATOR_SCOPES = [
   "operator.admin",
   "operator.read",
@@ -55,25 +49,6 @@ export const DEFAULT_OPERATOR_SCOPES = [
 ];
 
 export const REDACTED_OPENCLAW_SECRET = "__OPENCLAW_REDACTED__";
-
-export type WebSocketLike = {
-  readonly readyState: number;
-  send(data: string): void;
-  close(code?: number, reason?: string): void;
-  terminate?: () => void;
-  addEventListener?: (type: string, listener: (event: unknown) => void) => void;
-  removeEventListener?: (type: string, listener: (event: unknown) => void) => void;
-  on?: (type: string, listener: (...args: unknown[]) => void) => void;
-  off?: (type: string, listener: (...args: unknown[]) => void) => void;
-  removeListener?: (type: string, listener: (...args: unknown[]) => void) => void;
-  onopen?: ((event: unknown) => void) | null;
-  onmessage?: ((event: unknown) => void) | null;
-  onerror?: ((event: unknown) => void) | null;
-  onclose?: ((event: unknown) => void) | null;
-};
-
-/** Rollback-only socket injection type; official transport owns its socket. */
-export type WebSocketFactory = new (url: string) => WebSocketLike;
 
 export type NativeWsOpenClawGatewayClientOptions = {
   url?: string | null;
@@ -90,19 +65,17 @@ export type NativeWsOpenClawGatewayClientOptions = {
   transport?: OpenClawGatewayTransport;
   /** Testable/shared AgentOS request policy; production creates one per client. */
   requestPolicy?: AgentOsGatewayRequestPolicy;
-  webSocketFactory?: WebSocketFactory;
   forceCli?: boolean;
-  transportSelectionWarning?: string | null;
   onNativeFailure?: (error: unknown, method: string) => void;
 };
 
 /**
- * The small request/event boundary shared by the custom and official paths.
- * Transport implementations own wire mechanics; the domain client owns
- * normalization, policy, fallback, and product semantics above this boundary.
+ * The small request/event boundary used by the AgentOS domain client.
+ * The production implementation is the official OpenClaw transport. Tests
+ * and migration tooling may inject a transport-neutral double at this seam.
  */
 export type OpenClawGatewayTransport = {
-  readonly lifecycleOwner?: "agentos" | "official";
+  readonly lifecycleOwner?: "official";
   request<TPayload>(
     method: string,
     params: Record<string, unknown>,
@@ -147,21 +120,4 @@ export type NativeHandshakePayload = {
   snapshot?: unknown;
   auth?: Partial<HelloOk["auth"]> & Record<string, unknown>;
   policy?: Partial<HelloOk["policy"]> & Record<string, unknown>;
-};
-
-export type GatewayConnectChallenge = {
-  nonce: string;
-  ts: number;
-};
-
-export type LocalDeviceAuth = {
-  deviceId: string;
-  publicKeyPem: string;
-  privateKeyPem: string;
-  token: string;
-};
-
-export type ConnectParamsContext = {
-  params: Record<string, unknown>;
-  deviceAuth: LocalDeviceAuth | null;
 };

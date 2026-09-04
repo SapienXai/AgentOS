@@ -1,9 +1,8 @@
 import "server-only";
 
 /**
- * Shared AgentOS domain/policy client. Its transport is injected by the
- * official factory in production; the custom connection remains an explicit
- * rollback implementation behind the transport selector.
+ * Shared AgentOS domain/policy client. Its historical class name is retained
+ * for compatibility while production always injects the official transport.
  */
 import { CliOpenClawGatewayClient } from "@/lib/openclaw/client/cli-gateway-client";
 import {
@@ -19,7 +18,6 @@ import {
   isGatewayTransportConfigPath,
   readConfigReloadKindFromSchemaLookup
 } from "@/lib/openclaw/client/native-ws-gateway-config";
-import { PersistentOpenClawGatewayConnection } from "@/lib/openclaw/client/native-ws-gateway-connection";
 import { AgentOsGatewayRequestPolicy } from "@/lib/openclaw/client/gateway-request-policy";
 import {
   clearGatewayFallbackDiagnostic,
@@ -87,8 +85,7 @@ import {
   CONNECT_METHOD,
   OPENCLAW_GATEWAY_PROTOCOL_RANGE,
   type NativeWsOpenClawGatewayClientOptions,
-  type OpenClawGatewayTransport,
-  type WebSocketFactory
+  type OpenClawGatewayTransport
 } from "@/lib/openclaw/client/native-ws-gateway-types";
 import {
   cloneJsonObject,
@@ -217,8 +214,7 @@ export {
 };
 export type {
   NativeWsOpenClawGatewayClientOptions,
-  OpenClawGatewayTransport,
-  WebSocketFactory
+  OpenClawGatewayTransport
 };
 export type { OpenClawGatewayFallbackDiagnostic } from "@/lib/openclaw/client/native-ws-gateway-errors";
 
@@ -285,7 +281,10 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   constructor(private readonly options: NativeWsOpenClawGatewayClientOptions = {}) {
     this.requestPolicy = options.requestPolicy ?? new AgentOsGatewayRequestPolicy();
     this.fallback = options.fallback ?? new CliOpenClawGatewayClient();
-    this.connection = options.transport ?? new PersistentOpenClawGatewayConnection(this.fallback, options);
+    if (!options.transport) {
+      throw new Error("NativeWsOpenClawGatewayClient requires the official OpenClaw Gateway transport.");
+    }
+    this.connection = options.transport;
   }
 
   close(reason = "closed") {
@@ -336,12 +335,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
 
     return {
       mode: forceCli ? "cli" : "native-ws",
-      transportImplementation: forceCli
-        ? "cli"
-        : this.connection.lifecycleOwner === "official"
-          ? "official"
-          : "custom",
-      transportSelectionWarning: this.options.transportSelectionWarning ?? null,
+      transportImplementation: forceCli ? "cli" : "official",
       gatewayMode,
       statusLabel: resolveGatewayStatusLabel(gatewayMode),
       recovery: resolveGatewayStatusRecovery(gatewayMode, activeNativeFailure?.recovery ?? null),

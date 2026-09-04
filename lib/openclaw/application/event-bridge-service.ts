@@ -20,20 +20,14 @@ export { normalizeOpenClawGatewayEventToRuntime } from "@/lib/openclaw/applicati
 
 const eventBridgeRoot = path.join(/*turbopackIgnore: true*/ process.cwd(), ".mission-control", "gateway-events");
 const maxBridgeRecords = 500;
-const defaultReconnectBaseMs = 1_000;
-const defaultReconnectMaxMs = 30_000;
 let subscription: OpenClawGatewayEventSubscription | null = null;
 let starting: Promise<void> | null = null;
 let lastError: string | null = null;
 let lastEventAt: string | null = null;
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempt = 0;
 let reconnecting = false;
-let suppressNextReconnect = false;
 let officialLifecycleManaged = false;
 let officialLifecycleState: OpenClawGatewayEventConnectionState = "stopped";
-let reconnectBaseMs = defaultReconnectBaseMs;
-let reconnectMaxMs = defaultReconnectMaxMs;
 let bridgeGeneration = 0;
 let lastSequenceGapAt: string | null = null;
 let expectedSequence: number | null = null;
@@ -223,9 +217,6 @@ async function startEventBridge(generation: number) {
         },
         onClose: () => {
           subscription = null;
-          if (!officialLifecycleManaged) {
-            scheduleEventBridgeReconnect(generation);
-          }
         }
       },
       { timeoutMs: 5_000 }
@@ -252,38 +243,8 @@ async function startEventBridge(generation: number) {
 
     subscription = null;
     lastError = redactErrorMessage(error, "OpenClaw Gateway event stream failed.");
-    scheduleEventBridgeReconnect(generation);
-  }
-}
-
-function scheduleEventBridgeReconnect(generation = bridgeGeneration) {
-  if (bridgeGeneration !== generation) {
-    return;
-  }
-
-  if (suppressNextReconnect) {
-    suppressNextReconnect = false;
     reconnecting = false;
-    return;
   }
-
-  if (officialLifecycleManaged || subscription || starting || reconnectTimer) {
-    return;
-  }
-
-  reconnectAttempt += 1;
-  reconnecting = true;
-  const delayMs = Math.min(reconnectMaxMs, reconnectBaseMs * 2 ** Math.max(0, reconnectAttempt - 1));
-
-  reconnectTimer = setTimeout(() => {
-    if (bridgeGeneration !== generation) {
-      reconnectTimer = null;
-      return;
-    }
-
-    reconnectTimer = null;
-    startOpenClawEventBridge();
-  }, delayMs);
 }
 
 function isBridgeConnected() {
@@ -414,7 +375,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function resetOpenClawEventBridgeForTesting() {
   bridgeGeneration += 1;
-  suppressNextReconnect = true;
   subscription?.close();
   subscription = null;
   starting = null;
@@ -433,24 +393,5 @@ export function resetOpenClawEventBridgeForTesting() {
   reconciliationPromise = null;
   reconciliationDirty = false;
   reconciliationFollowUp = false;
-  suppressNextReconnect = false;
   bridgeEventSubscribers.clear();
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-  reconnectBaseMs = defaultReconnectBaseMs;
-  reconnectMaxMs = defaultReconnectMaxMs;
-}
-
-export function setOpenClawEventBridgeReconnectPolicyForTesting(input: {
-  baseMs?: number;
-  maxMs?: number;
-}) {
-  reconnectBaseMs = typeof input.baseMs === "number" && Number.isFinite(input.baseMs) && input.baseMs >= 0
-    ? input.baseMs
-    : defaultReconnectBaseMs;
-  reconnectMaxMs = typeof input.maxMs === "number" && Number.isFinite(input.maxMs) && input.maxMs >= reconnectBaseMs
-    ? input.maxMs
-    : defaultReconnectMaxMs;
 }

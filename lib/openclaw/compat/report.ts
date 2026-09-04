@@ -391,10 +391,9 @@ async function detectNativeCapabilities(input: {
   }
 
   const nativeOptions = input.options.nativeClientOptions ?? {};
-  // A test-provided WebSocketFactory is the explicit compatibility seam for
-  // the rollback transport. Real compatibility probing stays on the selector
-  // and therefore official-backed by default.
-  const client = nativeOptions.webSocketFactory
+  // A test-provided transport-neutral boundary keeps compatibility probing
+  // deterministic without reintroducing a socket or protocol implementation.
+  const client = nativeOptions.transport
     ? new NativeWsOpenClawGatewayClient({
       timeoutMs: input.options.nativeTimeoutMs ?? defaultNativeTimeoutMs,
       ...nativeOptions
@@ -411,8 +410,7 @@ async function detectNativeCapabilities(input: {
       scopes: nativeOptions.scopes,
       fallback: nativeOptions.fallback,
       forceCli: nativeOptions.forceCli,
-      requestPolicy: nativeOptions.requestPolicy,
-      transportSelectionWarning: nativeOptions.transportSelectionWarning
+      requestPolicy: nativeOptions.requestPolicy
     });
 
   try {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -8,14 +8,9 @@ import {
   getOpenClawGatewayClient,
   resetOpenClawGatewayClient
 } from "@/lib/openclaw/client/gateway-client-factory";
-import {
-  AGENTOS_OPENCLAW_TRANSPORT_ENV,
-  resolveOpenClawTransportSelection
-} from "@/lib/openclaw/client/gateway-client";
 import { OfficialGatewayHarness } from "@/tests/helpers/official-gateway-harness";
 
 const ENVIRONMENT_KEYS = [
-  AGENTOS_OPENCLAW_TRANSPORT_ENV,
   "AGENTOS_OPENCLAW_GATEWAY_CLIENT",
   "OPENCLAW_GATEWAY_CLIENT",
   "AGENTOS_OPENCLAW_NATIVE_WS",
@@ -44,62 +39,22 @@ afterEach(() => {
   }
 });
 
-test("transport selector defaults to official and fails closed on invalid values", () => {
-  assert.deepEqual(resolveOpenClawTransportSelection(undefined), {
-    implementation: "official",
-    source: "default",
-    warning: null
-  });
-  assert.deepEqual(resolveOpenClawTransportSelection("official"), {
-    implementation: "official",
-    source: "explicit",
-    warning: null
-  });
-  assert.deepEqual(resolveOpenClawTransportSelection("custom"), {
-    implementation: "custom",
-    source: "explicit",
-    warning: null
-  });
-  assert.deepEqual(resolveOpenClawTransportSelection("typo"), {
-    implementation: "official",
-    source: "invalid",
-    warning: "Invalid AGENTOS_OPENCLAW_TRANSPORT value; using the official transport."
-  });
-});
-
 test("default factory selects the official-backed domain path", () => {
-  delete process.env[AGENTOS_OPENCLAW_TRANSPORT_ENV];
   delete process.env.AGENTOS_OPENCLAW_GATEWAY_CLIENT;
   delete process.env.OPENCLAW_GATEWAY_CLIENT;
   delete process.env.AGENTOS_OPENCLAW_NATIVE_WS;
 
   const client = getOpenClawGatewayClient();
-  assert.equal(client.getDiagnostics?.().transportImplementation, "official");
-  assert.equal(client.getDiagnostics?.().transportSelectionWarning, null);
-});
-
-test("explicit official selector and invalid selector stay on the official path", () => {
-  process.env[AGENTOS_OPENCLAW_TRANSPORT_ENV] = "official";
-  assert.equal(getOpenClawGatewayClient().getDiagnostics?.().transportImplementation, "official");
-
-  resetOpenClawGatewayClient("invalid selector test");
-  process.env[AGENTOS_OPENCLAW_TRANSPORT_ENV] = "invalid-value";
-  const diagnostics = getOpenClawGatewayClient().getDiagnostics?.();
+  const diagnostics = client.getDiagnostics?.();
   assert.equal(diagnostics?.transportImplementation, "official");
-  assert.equal(
-    diagnostics?.transportSelectionWarning,
-    "Invalid AGENTOS_OPENCLAW_TRANSPORT value; using the official transport."
-  );
+  assert.equal("transportSelectionWarning" in (diagnostics ?? {}), false);
 });
 
-test("custom selector is an explicit rollback and forced CLI remains authoritative", () => {
-  process.env[AGENTOS_OPENCLAW_TRANSPORT_ENV] = "custom";
-  assert.equal(getOpenClawGatewayClient().getDiagnostics?.().transportImplementation, "custom");
-
-  resetOpenClawGatewayClient("forced cli test");
+test("forced CLI is the only alternate factory path", () => {
   process.env.AGENTOS_OPENCLAW_GATEWAY_CLIENT = "cli";
   const diagnostics = getOpenClawGatewayClient().getDiagnostics?.();
   assert.equal(diagnostics?.transportImplementation, "cli");
+  assert.equal(diagnostics?.mode, "cli");
 });
 
 test("default factory reaches the official Gateway through the real domain client", async () => {
@@ -111,7 +66,6 @@ test("default factory reaches the official Gateway through the real domain clien
   });
 
   try {
-    delete process.env[AGENTOS_OPENCLAW_TRANSPORT_ENV];
     delete process.env.AGENTOS_OPENCLAW_GATEWAY_CLIENT;
     delete process.env.OPENCLAW_GATEWAY_CLIENT;
     delete process.env.AGENTOS_OPENCLAW_NATIVE_WS;
@@ -131,31 +85,12 @@ test("default factory reaches the official Gateway through the real domain clien
   }
 });
 
-test("custom rollback reaches the legacy transport without starting an official peer", async () => {
-  const stateDir = await mkdtemp(join(tmpdir(), "agentos-factory-custom-state-"));
-  const harness = await OfficialGatewayHarness.create({
-    routes: {
-      health: ({ respond }) => respond({ ok: true, source: "custom-harness" })
-    }
-  });
-
-  try {
-    process.env[AGENTOS_OPENCLAW_TRANSPORT_ENV] = "custom";
-    delete process.env.AGENTOS_OPENCLAW_GATEWAY_CLIENT;
-    delete process.env.OPENCLAW_GATEWAY_CLIENT;
-    delete process.env.AGENTOS_OPENCLAW_NATIVE_WS;
-    process.env.AGENTOS_OPENCLAW_GATEWAY_URL = harness.url;
-    process.env.AGENTOS_OPENCLAW_GATEWAY_TOKEN = "factory-test-token";
-    process.env.OPENCLAW_STATE_DIR = stateDir;
-
-    const client = getOpenClawGatewayClient();
-    const health = await client.getHealth({ timeoutMs: 2_000 });
-    assert.deepEqual(health, { ok: true, source: "custom-harness" });
-    assert.equal(client.getDiagnostics?.().transportImplementation, "custom");
-    assert.equal(harness.connectionCount, 1);
-    assert.deepEqual(harness.requests.map(({ method }) => method), ["connect", "health"]);
-  } finally {
-    await rm(stateDir, { recursive: true, force: true });
-    await harness.close();
-  }
+test("factory and policy contain no legacy native selector or custom branch", async () => {
+  const factory = await readFile(join(process.cwd(), "lib/openclaw/client/gateway-client-factory.ts"), "utf8");
+  const policy = await readFile(join(process.cwd(), "lib/openclaw/client/native-ws-gateway-policy.ts"), "utf8");
+  assert.doesNotMatch(factory, /transport selector|custom transport|PersistentOpenClawGatewayConnection/);
+  assert.doesNotMatch(factory, /WebSocketFactory|webSocketFactory/);
+  assert.doesNotMatch(policy, /AGENTOS_OPENCLAW_TRANSPORT|resolveOpenClawTransportSelection/);
+  assert.match(factory, /createOfficialBackedOpenClawGatewayClient/);
+  assert.match(factory, /isCliGatewayClientForcedByEnv/);
 });

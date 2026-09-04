@@ -8,6 +8,7 @@ import { test } from "node:test";
 import { setOpenClawGatewayClientForTesting } from "@/lib/openclaw/client/gateway-client-factory";
 import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
 import { isGatewayMutationMethod } from "@/lib/openclaw/client/native-ws-gateway-policy";
+import { FakeOpenClawGateway } from "@/tests/helpers/fake-openclaw-gateway";
 import {
   buildOpenClawNativeAuthorizationProof,
   isVerifiedNativeAuthorizationProof,
@@ -237,7 +238,8 @@ test("regression: unknown preflight blocks the explicit agentDir CLI mutation fa
       return { stdout: "", stderr: "", code: 0 };
     }
   } as unknown as OpenClawGatewayClient;
-  const client = new NativeWsOpenClawGatewayClient({ fallback, forceCli: true });
+  const gateway = new FakeOpenClawGateway();
+  const client = new NativeWsOpenClawGatewayClient({ fallback, forceCli: true, transport: gateway.transport });
   setOpenClawGatewayClientForTesting(fakeClient({
     requestedRole: "operator",
     role: null,

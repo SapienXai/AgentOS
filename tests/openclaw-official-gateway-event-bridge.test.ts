@@ -11,7 +11,6 @@ import {
   getOpenClawEventBridgeStatus,
   getOpenClawEventBridgeStreamStatus,
   resetOpenClawEventBridgeForTesting,
-  setOpenClawEventBridgeReconnectPolicyForTesting,
   subscribeOpenClawEventBridgeEvents
 } from "@/lib/openclaw/application/event-bridge-service";
 import { setOpenClawAdapterForTesting } from "@/lib/openclaw/adapter/openclaw-adapter";
@@ -38,7 +37,6 @@ test("official-backed event bridge replays subscriptions and continues deliverin
   activeClient = createOfficialBackedOpenClawGatewayClient({ url: activeHarness.url, token: "event-bridge-token" });
   setOpenClawGatewayClientForTesting(activeClient);
   await getOpenClawCapabilityMatrix({ force: true });
-  setOpenClawEventBridgeReconnectPolicyForTesting({ baseMs: 10, maxMs: 10 });
 
   const received: string[] = [];
   const unsubscribe = subscribeOpenClawEventBridgeEvents((frame) => received.push(frame.event));
@@ -103,7 +101,6 @@ test("official-backed event bridge leaves reconnect storms to the official clien
   activeClient = createOfficialBackedOpenClawGatewayClient({ url: activeHarness.url, token: "storm-token" });
   setOpenClawGatewayClientForTesting(activeClient);
   await getOpenClawCapabilityMatrix({ force: true });
-  setOpenClawEventBridgeReconnectPolicyForTesting({ baseMs: 10, maxMs: 10 });
 
   const unsubscribe = subscribeOpenClawEventBridgeEvents(() => {});
   try {

@@ -1,13 +1,8 @@
-import WebSocket from "ws";
-
-/**
- * TEST/CERTIFICATION-ONLY: migration certification retains the custom client
- * so staged and rollback fixtures can be compared without changing the
- * production Gateway selector.
- */
-import { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
+/** TEST/CERTIFICATION-ONLY: migration certification uses the official client path. */
+import { createOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
+import type { NativeWsOpenClawGatewayClient } from "@/lib/openclaw/client/native-ws-gateway-client";
 import { normalizeGatewayTurnEvent } from "@/lib/openclaw/client/native-ws-gateway-mappers";
-import type { GatewayEventFrame, WebSocketFactory } from "@/lib/openclaw/client/native-ws-gateway-types";
+import type { GatewayEventFrame } from "@/lib/openclaw/client/native-ws-gateway-types";
 import { DEFAULT_NATIVE_TIMEOUT_MS } from "@/lib/openclaw/client/native-ws-gateway-types";
 import type { OpenClawMigrationEvidence } from "@/lib/openclaw/migration-engine/types";
 import { OPENCLAW_SUPPORTED_BASELINE_VERSION } from "@/lib/openclaw/versions";
@@ -20,14 +15,13 @@ export async function certifyOpenClawMigrationRuntime(input: {
   expectedCommit?: string | null;
   existingSessionKey?: string;
 }): Promise<OpenClawMigrationEvidence> {
-  const client = new NativeWsOpenClawGatewayClient({
+  const client = createOpenClawGatewayClient({
     url: input.gatewayUrl,
     token: input.token,
     scopes: ["operator.admin", "operator.read", "operator.write", "operator.approvals", "operator.questions"],
     timeoutMs: DEFAULT_NATIVE_TIMEOUT_MS,
     clientName: "gateway-client",
     clientVersion: "0.1.0-migration-engine",
-    webSocketFactory: WebSocket as unknown as WebSocketFactory
   });
   const checks: string[] = [];
   const sessionKey = `agent:dev:agentos-migration-${Date.now()}`;

@@ -18,7 +18,6 @@ export type OfficialBackedOpenClawGatewayClientOptions = OfficialGatewayTranspor
   fallback?: OpenClawGatewayClient;
   forceCli?: boolean;
   onNativeFailure?: NativeWsOpenClawGatewayClientOptions["onNativeFailure"];
-  transportSelectionWarning?: NativeWsOpenClawGatewayClientOptions["transportSelectionWarning"];
   requestPolicy?: AgentOsGatewayRequestPolicy;
 };
 
@@ -70,7 +69,6 @@ export function createOfficialBackedOpenClawGatewayClient(
     fallback: options.fallback,
     forceCli: options.forceCli,
     onNativeFailure: options.onNativeFailure,
-    transportSelectionWarning: options.transportSelectionWarning,
     transport: coordinator,
     requestPolicy
   });

@@ -268,7 +268,7 @@ function baseReportOptions(
     },
     cliAvailable: true,
     nativeClientOptions: {
-      webSocketFactory: gateway.webSocketFactory,
+      transport: gateway.transport,
       url: "ws://127.0.0.1:18789",
       token: "test-token",
       timeoutMs: 100

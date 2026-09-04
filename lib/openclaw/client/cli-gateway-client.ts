@@ -368,7 +368,6 @@ export class CliOpenClawGatewayClient implements OpenClawGatewayClient {
     return {
       mode: "cli",
       transportImplementation: "cli",
-      transportSelectionWarning: null,
       gatewayMode: "cli-forced",
       statusLabel: "CLI fallback forced",
       recovery: "Unset the CLI-forced Gateway mode and restart AgentOS to use the native OpenClaw Gateway.",

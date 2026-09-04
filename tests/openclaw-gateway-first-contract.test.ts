@@ -14,7 +14,6 @@ import {
   getOpenClawEventBridgeStreamStatus,
   normalizeOpenClawGatewayEventToRuntime,
   resetOpenClawEventBridgeForTesting,
-  setOpenClawEventBridgeReconnectPolicyForTesting,
   startOpenClawEventBridge
 } from "@/lib/openclaw/application/event-bridge-service";
 import { setOpenClawAdapterForTesting, type OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
@@ -746,7 +745,7 @@ test("Gateway event bridge normalizes chat, tool, session, and approval events i
   assert.equal(runtime.metadata.approvalId, "approval-1");
 });
 
-test("Gateway event bridge reconnects after subscription close without duplicate active starts", async () => {
+test("Gateway event bridge leaves reconnect ownership to the Gateway client", async () => {
   const subscribeCalls: string[] = [];
   const activeSubscription: { close?: () => void } = {};
 
@@ -755,7 +754,6 @@ test("Gateway event bridge reconnects after subscription close without duplicate
     methods: ["sessions.subscribe"],
     events: ["session.message"]
   }));
-  setOpenClawEventBridgeReconnectPolicyForTesting({ baseMs: 10, maxMs: 10 });
   setOpenClawAdapterForTesting(createContractAdapter({
     async subscribeRuntimeEvents(_input, callbacks) {
       subscribeCalls.push("subscribe");
@@ -788,11 +786,11 @@ test("Gateway event bridge reconnects after subscription close without duplicate
   closeSubscription();
 
   assert.equal(getOpenClawEventBridgeStatus().connected, false);
-  assert.equal(getOpenClawEventBridgeStatus().reconnecting, true);
-  assert.equal(getOpenClawEventBridgeStatus().reconnectAttempt, 1);
-
-  await waitFor(() => subscribeCalls.length === 2);
-  assert.equal(getOpenClawEventBridgeStatus().connected, true);
+  assert.equal(getOpenClawEventBridgeStatus().reconnecting, false);
+  assert.equal(getOpenClawEventBridgeStatus().reconnectAttempt, 0);
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(subscribeCalls.length, 1);
+  assert.equal(getOpenClawEventBridgeStatus().connected, false);
   assert.equal(getOpenClawEventBridgeStatus().reconnecting, false);
 });
 
@@ -802,7 +800,6 @@ test("Gateway event bridge stream status exposes polling recovery without leakin
     methods: ["sessions.subscribe"],
     events: ["session.message", "task"]
   }));
-  setOpenClawEventBridgeReconnectPolicyForTesting({ baseMs: 10, maxMs: 10 });
   setOpenClawAdapterForTesting(createContractAdapter({
     async subscribeRuntimeEvents() {
       throw new Error("Gateway event stream rejected token=query-secret");
@@ -810,11 +807,11 @@ test("Gateway event bridge stream status exposes polling recovery without leakin
   }));
 
   startOpenClawEventBridge();
-  await waitFor(() => getOpenClawEventBridgeStatus().reconnecting || Boolean(getOpenClawEventBridgeStatus().lastError), 2_000);
+  await waitFor(() => Boolean(getOpenClawEventBridgeStatus().lastError), 2_000);
 
   const status = getOpenClawEventBridgeStreamStatus();
 
-  assert.equal(status.mode === "reconnecting" || status.mode === "polling", true);
+  assert.equal(status.mode, "polling");
   assert.equal(status.connected, false);
   assert.match(status.message ?? "", /refreshing task snapshots by polling/i);
   assert.match(status.recovery ?? "", /OpenClaw Gateway event stream failed|\[redacted\]/i);

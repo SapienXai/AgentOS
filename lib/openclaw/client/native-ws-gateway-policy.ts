@@ -15,16 +15,6 @@ import type {
   OpenClawGatewayRequestPolicy
 } from "@/lib/openclaw/client/types";
 
-export const AGENTOS_OPENCLAW_TRANSPORT_ENV = "AGENTOS_OPENCLAW_TRANSPORT";
-
-export type OpenClawTransportImplementation = "official" | "custom";
-
-export type OpenClawTransportSelection = {
-  implementation: OpenClawTransportImplementation;
-  source: "default" | "explicit" | "invalid";
-  warning: string | null;
-};
-
 const explicitGatewayMutationMethods = new Set([
   "channels.start",
   "channels.stop",
@@ -50,34 +40,6 @@ export function isCliGatewayClientForcedByEnv() {
   const nativeFlag = normalizeEnvFlag(process.env.AGENTOS_OPENCLAW_NATIVE_WS);
 
   return clientMode === "cli" || nativeFlag === "0" || nativeFlag === "false" || nativeFlag === "off";
-}
-
-export function resolveOpenClawTransportSelection(
-  value = process.env[AGENTOS_OPENCLAW_TRANSPORT_ENV]
-): OpenClawTransportSelection {
-  const normalized = normalizeEnvFlag(value);
-
-  if (!normalized) {
-    return {
-      implementation: "official",
-      source: "default",
-      warning: null
-    };
-  }
-
-  if (normalized === "official" || normalized === "custom") {
-    return {
-      implementation: normalized,
-      source: "explicit",
-      warning: null
-    };
-  }
-
-  return {
-    implementation: "official",
-    source: "invalid",
-    warning: "Invalid AGENTOS_OPENCLAW_TRANSPORT value; using the official transport."
-  };
 }
 
 export function resolveGatewayUrl(input?: string | null) {
