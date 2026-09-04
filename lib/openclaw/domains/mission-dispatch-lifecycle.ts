@@ -36,6 +36,8 @@ import type {
 
 type MissionDispatchCommandPayloadLike = {
   runId?: string;
+  sessionKey?: string;
+  sessionId?: string;
   status?: string;
   summary?: string;
   payloads?: Array<{
@@ -61,6 +63,7 @@ export type MissionDispatchPayload = {
   requestedModelId: string | null;
   workspaceId: string | null;
   workspacePath: string | null;
+  executionMode?: NonNullable<MissionSubmission["executionMode"]>;
   outputDir: string | null;
   outputDirRelative: string | null;
   notesDirRelative: string | null;
@@ -109,6 +112,7 @@ export function createMissionDispatchRecord(payload: MissionDispatchPayload): Mi
     requestedModelId: payload.requestedModelId,
     workspaceId: payload.workspaceId,
     workspacePath: payload.workspacePath,
+    executionMode: payload.executionMode,
     submittedAt: now,
     updatedAt: now,
     outputDir: payload.outputDir,

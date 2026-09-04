@@ -11,6 +11,7 @@ import { buildTaskViews, formatBigNumber, summarizeTokens, taskStatusIcons, type
 import { EmptyState, FilterChip, InspectorPanelFrame, KeyValue, MoreButton, OperationsPageLayout, PageHeader, ProgressBar, SearchToolbar, SectionCard, StatCard, StatGrid, StatusBadge, ToolbarButton, ViewToggle, pageSurface } from "@/components/operations/operations-ui";
 import { canCancelTask, formatTaskFilterLabel, formatTaskSortLabel, MetricMini, MissionDispatchDialog, resolveTaskTone, sortTaskViews, UnsupportedPanel } from "@/components/operations/operations-shared";
 import { TaskHealthCard, type TaskAuditActivity } from "@/components/operations/task-health-card";
+import { NativeExecutionInspector } from "@/components/operations/tasks/native-execution-inspector";
 import {
   ExpandableTaskResult,
   TaskFollowUpComposer,
@@ -83,6 +84,7 @@ export function TasksPageContent({
   const visibleListTasks = showAllMobileTasks ? filteredTasks : filteredTasks.slice(0, 8);
   const selectedTaskVisible = Boolean(selectedTask && filteredTasks.some((task) => task.id === selectedTask.id));
   const selectedFollowUp = selectedTask ? activeFollowUpByTaskId[selectedTask.id] ?? null : null;
+  const selectedNativeExecution = selectedTask ? findNativeExecution(snapshot, selectedTask) : null;
   const statusCounts: Record<TaskView["status"], number> = {
     queued: tasks.filter((task) => task.status === "queued").length,
     running: tasks.filter((task) => task.status === "running").length,
@@ -333,6 +335,10 @@ export function TasksPageContent({
       inspector={selectedTask ? (
           <TaskInspector
           task={selectedTask}
+          nativeExecution={selectedNativeExecution}
+          agents={snapshot.agents}
+          assignmentAvailable={snapshot.nativeWork?.availability.assignment === "supported"}
+          refresh={refresh}
           activeFollowUp={selectedFollowUp}
           isVisibleInCurrentFilters={selectedTaskVisible}
           onAbort={() => abortTask(selectedTask)}
@@ -347,6 +353,7 @@ export function TasksPageContent({
         open={dispatchOpen}
         agent={null}
         defaultWorkspaceId={activeWorkspaceId}
+        executionModes={{ isolated: snapshot.nativeWork?.availability.worktrees === "supported" }}
         onOpenChange={setDispatchOpen}
         onSubmitted={refresh}
       />
@@ -773,8 +780,24 @@ function taskCardTabStatusDotClassName(statusLabel: string) {
   }
 }
 
+function findNativeExecution(snapshot: MissionControlSnapshot, task: TaskView) {
+  const executions = snapshot.nativeWork?.executions ?? [];
+  const metadata = task.source?.metadata ?? {};
+  const sessionKey = typeof metadata.openClawSessionKey === "string"
+    ? metadata.openClawSessionKey
+    : typeof metadata.sessionKey === "string" ? metadata.sessionKey : null;
+  return executions.find((execution) =>
+    (sessionKey && execution.sessionKey === sessionKey) ||
+    (execution.sessionId && task.source?.sessionIds.includes(execution.sessionId))
+  ) ?? null;
+}
+
 function TaskInspector({
   task,
+  nativeExecution,
+  agents,
+  assignmentAvailable,
+  refresh,
   activeFollowUp,
   isVisibleInCurrentFilters,
   onAbort,
@@ -782,6 +805,10 @@ function TaskInspector({
   onActiveFollowUpChange
 }: {
   task: TaskView;
+  nativeExecution: import("@/lib/openclaw/types").NativeWorkExecutionProjection | null;
+  agents: MissionControlSnapshot["agents"];
+  assignmentAvailable: boolean;
+  refresh: () => Promise<void>;
   activeFollowUp?: SubmittedTaskFollowUp | null;
   isVisibleInCurrentFilters?: boolean;
   onAbort: () => void;
@@ -829,6 +856,7 @@ function TaskInspector({
           <Button variant="secondary" size="sm" className="h-7 rounded-[8px] px-2 text-[0.7rem]" disabled title="Task-to-agent messaging is not exposed from this inspector. Use the Agents page chat for direct messages.">Message</Button>
         </div>
       </SectionCard>
+      <NativeExecutionInspector execution={nativeExecution} agents={agents} refresh={refresh} assignmentAvailable={assignmentAvailable} />
       <SectionCard title="Runtime Context" className="mt-3">
         <div className="grid gap-2 p-2.5">
           <KeyValue label="Task id" value={shortId(task.id, 18)} />

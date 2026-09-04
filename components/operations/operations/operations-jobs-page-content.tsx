@@ -15,8 +15,9 @@ import { EmptyState, InspectorPanelFrame, KeyValue, OperationsPageLayout, PageHe
 import type { OperationJob, OperationsSnapshot } from "@/lib/agentos/operations/types";
 import type { MissionControlSnapshot } from "@/lib/agentos/contracts";
 import { cn } from "@/lib/utils";
+import { SuggestedWorkPanel } from "@/components/operations/operations/suggested-work-panel";
 
-export function OperationsJobsPageContent({ snapshot, activeWorkspaceId, surfaceTheme }: { snapshot: MissionControlSnapshot; activeWorkspaceId: string | null; surfaceTheme: "dark" | "light" }) {
+export function OperationsJobsPageContent({ snapshot, activeWorkspaceId, surfaceTheme, refresh }: { snapshot: MissionControlSnapshot; activeWorkspaceId: string | null; surfaceTheme: "dark" | "light"; refresh: () => Promise<void> }) {
   const [data, setData] = useState<OperationsSnapshot | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [expandedJobs, setExpandedJobs] = useState<Set<string>>(() => new Set());
@@ -36,6 +37,7 @@ export function OperationsJobsPageContent({ snapshot, activeWorkspaceId, surface
       description="Applying the requested operation change in OpenClaw."
     />
     <PageHeader surfaceTheme={surfaceTheme} title="Operations & Jobs" subtitle="OpenClaw cron is the execution source of truth. AgentOS adds safety checks, health projection, and an immutable operator audit trail." actions={<div className="flex shrink-0 items-center gap-2"><Button variant="secondary" size="sm" className="h-9 rounded-lg px-3" onClick={() => void load()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button><Button size="sm" className="h-9 rounded-lg px-3" disabled={data?.scheduler.state !== "available"} title={data?.scheduler.state !== "available" ? "Cron write capability is unavailable." : undefined} onClick={() => setCreating(true)}><Plus className="mr-1.5 h-3.5 w-3.5" />New job</Button></div>} />
+    <SuggestedWorkPanel nativeWork={snapshot.nativeWork} refresh={refresh} />
     <StatGrid columns={4}><StatCard label="Active" value={String(counts.active)} detail="Scheduled in OpenClaw" icon={CalendarClock} tone="info" /><StatCard label="Running" value={String(counts.running)} detail="Live cron runs" icon={Activity} tone="warning" /><StatCard label="Failed" value={String(counts.failed)} detail="Needs recovery" icon={AlertTriangle} tone="danger" /><StatCard label="Paused" value={String(counts.paused)} detail="Disabled jobs" icon={CirclePause} tone="muted" /></StatGrid>
     {data?.notices.map((notice) => <div key={notice.title} className="rounded-lg border border-[hsl(var(--status-warning)/0.25)] bg-[hsl(var(--status-warning)/0.08)] p-3 text-xs text-muted-foreground"><strong className="text-foreground">{notice.title}</strong><span className="ml-2">{notice.detail}</span></div>)}
     <SectionCard title="Jobs"><div className="space-y-2 p-2.5">{jobs.length ? jobs.map((job) => <OperationJobRow key={job.id} job={job} runs={(data?.runs ?? []).filter((run) => run.jobId === job.id)} snapshot={snapshot} surfaceTheme={surfaceTheme} expanded={expandedJobs.has(job.id)} selected={current?.id === job.id} busyAction={busyAction} onSelect={() => setSelected(job.id)} onToggle={() => setExpandedJobs((currentSet) => { const next = new Set(currentSet); if (next.has(job.id)) next.delete(job.id); else next.add(job.id); return next; })} onAction={perform} onDelete={() => setDeleteTarget(job)} />) : <EmptyState title="No OpenClaw jobs" description="Create a cron-backed operation when the Gateway advertises cron write support." />}</div></SectionCard>

@@ -198,15 +198,18 @@ export function MissionDispatchDialog({
   agent,
   defaultWorkspaceId = null,
   onOpenChange,
-  onSubmitted
+  onSubmitted,
+  executionModes
 }: {
   open: boolean;
   agent: AgentView | null;
   defaultWorkspaceId?: string | null;
   onOpenChange: (open: boolean) => void;
   onSubmitted: () => Promise<void>;
+  executionModes?: { isolated: boolean; reason?: string };
 }) {
   const [mission, setMission] = useState("");
+  const [executionMode, setExecutionMode] = useState<"standard" | "isolated-worktree">("standard");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const workspaceId = agent?.source?.workspaceId ?? defaultWorkspaceId ?? undefined;
@@ -214,6 +217,7 @@ export function MissionDispatchDialog({
   useEffect(() => {
     if (open) {
       setMission("");
+      setExecutionMode("standard");
       setError(null);
     }
   }, [open]);
@@ -235,7 +239,8 @@ export function MissionDispatchDialog({
         body: JSON.stringify({
           mission: trimmedMission,
           agentId: agent?.source?.id,
-          workspaceId
+          workspaceId,
+          executionMode
         })
       });
       const result = await response.json().catch(() => null) as { error?: string; summary?: string } | null;
@@ -276,6 +281,7 @@ export function MissionDispatchDialog({
           placeholder="Describe the task to run..."
           className="min-h-36 rounded-[12px] text-sm"
         />
+        {executionModes?.isolated ? <div className="space-y-1.5"><label htmlFor="mission-execution-mode" className="text-xs font-medium text-foreground">Execution mode</label><select id="mission-execution-mode" value={executionMode} onChange={(event) => setExecutionMode(event.target.value as typeof executionMode)} disabled={submitting} className="h-9 w-full rounded-lg border border-input bg-card px-3 text-xs text-foreground"><option value="standard">Standard session</option><option value="isolated-worktree">Isolated managed worktree</option></select><p className="text-[11px] leading-4 text-muted-foreground">OpenClaw verifies the workspace repository and owns the worktree lifecycle. Unsupported requests fail instead of downgrading.</p></div> : null}
         <DialogFooter>
           <Button variant="secondary" size="sm" className="h-8 rounded-[9px] text-xs" onClick={() => onOpenChange(false)}>
             Cancel

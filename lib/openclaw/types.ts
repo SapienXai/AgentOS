@@ -278,6 +278,7 @@ export interface OpenClawCapabilityOperation {
   fallbackAllowed: boolean;
   baseline?: "required" | "optional" | "experimental";
   productIntegration?: "integrated" | "discovery-only";
+  productIntegratedMethods?: string[];
   reason: string;
   recovery?: string | null;
   preferredMethod?: string | null;
@@ -369,6 +370,7 @@ export interface OpenClawCapabilityMatrix {
   authScopes?: string[];
   supportedMethods: string[];
   supportedEvents?: string[];
+  supportedCapabilities?: string[];
   configSchema: OpenClawCapabilitySupport;
   configSchemaLookup?: OpenClawCapabilitySupport;
   configPatch: OpenClawCapabilitySupport;
@@ -1086,6 +1088,75 @@ export interface RuntimeRecord {
   metadata: Record<string, unknown>;
 }
 
+export type NativeWorkCapabilityState = "supported" | "unsupported" | "unknown" | "degraded";
+
+export interface ManagedWorktreeProjection {
+  id: string;
+  name: string;
+  repoRoot: string;
+  path: string;
+  branch: string;
+  baseRef: string;
+  ownerKind: "manual" | "workboard" | "session";
+  ownerId: string | null;
+  createdAt: number;
+  lastActiveAt: number;
+  lifecycle: "active" | "removed" | "cleanup-failed";
+  cleanupOutcome: string | null;
+  sourceOfTruth: "openclaw";
+}
+
+export interface SessionOwnershipProjection {
+  createdActor: { type: "human" | "agent" | "system"; id: string | null; label: string | null } | null;
+  owner: { type: "human" | "agent" | "system"; id: string | null; label: string | null; assignedAt: number | null } | null;
+  participants: Array<{ identityId: string; label: string | null }>;
+  participantCount: number;
+  visibility: "shared" | "read-only" | "suggest" | "draft" | null;
+  sharingRole: "admin" | "owner" | "member" | "viewer" | null;
+  memberEvidence: Array<{ identityId: string; addedBy: string | null; addedByState: "known" | "unknown"; addedAt: number }>;
+  sourceOfTruth: "openclaw";
+}
+
+export interface NativeWorkExecutionProjection {
+  sessionKey: string;
+  sessionId: string | null;
+  agentId: string | null;
+  status: RuntimeStatus;
+  updatedAt: number | null;
+  execCwd: string | null;
+  worktree: { id: string; branch: string; repoRoot: string; path: string | null } | null;
+  ownership: SessionOwnershipProjection;
+  taskIds: string[];
+  sourceOfTruth: "openclaw";
+}
+
+export interface SuggestedWorkProjection {
+  id: string;
+  title: string;
+  summary: string;
+  prompt: string;
+  cwd: string;
+  sourceSessionKey: string;
+  sourceAgentId: string | null;
+  createdAt: number;
+  availableAcceptModes: Array<"worktree" | "local" | "cloud" | "session">;
+  status: "suggested";
+  sourceOfTruth: "openclaw";
+}
+
+export interface NativeWorkSnapshot {
+  availability: {
+    worktrees: NativeWorkCapabilityState;
+    suggestions: NativeWorkCapabilityState;
+    ownership: NativeWorkCapabilityState;
+    assignment: NativeWorkCapabilityState;
+  };
+  worktrees: ManagedWorktreeProjection[];
+  suggestions: SuggestedWorkProjection[];
+  executions: NativeWorkExecutionProjection[];
+  issues: string[];
+}
+
 export interface RuntimeOutputItem {
   id: string;
   role: "assistant" | "toolCall" | "toolResult" | "user";
@@ -1250,6 +1321,7 @@ export interface MissionControlSnapshot {
   runtimes: RuntimeRecord[];
   tasks: TaskRecord[];
   agentInbox: AgentInboxItem[];
+  nativeWork?: NativeWorkSnapshot;
   relationships: RelationshipRecord[];
   missionPresets: string[];
   channelRegistry: ChannelRegistry;
@@ -1326,6 +1398,7 @@ export interface MissionSubmission {
   requestId?: string;
   agentId?: string;
   workspaceId?: string;
+  executionMode?: "standard" | "isolated-worktree";
   thinking?: "off" | "minimal" | "low" | "medium" | "high";
   browserAccount?: {
     accountId: string;

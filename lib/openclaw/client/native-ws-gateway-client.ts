@@ -178,6 +178,11 @@ import type {
   OpenClawSessionControlPayload,
   OpenClawSessionModelPatchInput,
   OpenClawSessionModelPatchPayload,
+  OpenClawSessionAssignOwnerPayload,
+  OpenClawSessionCreateInput,
+  OpenClawSessionCreatePayload,
+  OpenClawSessionMembersEvidencePayload,
+  OpenClawSessionMembersPayload,
   OpenClawSessionPayload,
   OpenClawSessionSteerInput,
   OpenClawSessionsPayload,
@@ -188,7 +193,11 @@ import type {
   OpenClawTaskGetInput,
   OpenClawTaskListInput,
   OpenClawTaskListPayload,
+  OpenClawTaskSuggestionAcceptMode,
+  OpenClawTaskSuggestionsListPayload,
   OpenClawTaskPayload,
+  OpenClawWorktreesBranchesPayload,
+  OpenClawWorktreesListPayload,
   OpenClawToolInvokeInput,
   OpenClawToolInvokePayload,
   OpenClawToolsCatalogInput,
@@ -736,6 +745,111 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
 
   exportSession(input: OpenClawSessionExportInput = {}, options: OpenClawCommandOptions = {}) {
     return this.gatewayFirstSessionExport(input, options);
+  }
+
+  listWorktrees(options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawWorktreesListPayload>(
+      "worktrees.list",
+      {},
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawWorktreesListPayload>("worktrees.list", payload)
+    );
+  }
+
+  inspectWorktreeBranches(
+    input: { repoRoot: string; includeRepositoryStatus?: boolean },
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawWorktreesBranchesPayload>(
+      "worktrees.branches",
+      { ...input },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawWorktreesBranchesPayload>("worktrees.branches", payload)
+    );
+  }
+
+  createSession(input: OpenClawSessionCreateInput, options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawSessionCreatePayload>(
+      "sessions.create",
+      { ...input },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawSessionCreatePayload>("sessions.create", payload)
+    );
+  }
+
+  listTaskSuggestions(
+    input: { sessionKey?: string; agentId?: string } = {},
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawTaskSuggestionsListPayload>(
+      "taskSuggestions.list",
+      { ...input },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawTaskSuggestionsListPayload>("taskSuggestions.list", payload)
+    );
+  }
+
+  createTaskSuggestion(
+    input: { title: string; prompt: string; tldr: string; cwd: string; sessionKey: string; agentId?: string },
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<{ taskId: string; suggestion: OpenClawTaskSuggestionsListPayload["suggestions"][number] }>(
+      "taskSuggestions.create",
+      { ...input },
+      options,
+      (payload) => parseObjectGatewayPayload<{ taskId: string; suggestion: OpenClawTaskSuggestionsListPayload["suggestions"][number] }>("taskSuggestions.create", payload)
+    );
+  }
+
+  acceptTaskSuggestion(
+    input: { taskId: string; mode?: OpenClawTaskSuggestionAcceptMode; cloudProfileId?: string },
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<{ taskId: string; key: string }>(
+      "taskSuggestions.accept",
+      { ...input },
+      options,
+      (payload) => parseObjectGatewayPayload<{ taskId: string; key: string }>("taskSuggestions.accept", payload)
+    );
+  }
+
+  dismissTaskSuggestion(input: { taskId: string; reason?: string }, options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<{ taskId: string; dismissed: boolean }>(
+      "taskSuggestions.dismiss",
+      { ...input },
+      options,
+      (payload) => parseObjectGatewayPayload<{ taskId: string; dismissed: boolean }>("taskSuggestions.dismiss", payload)
+    );
+  }
+
+  listSessionMembers(input: { sessionKey: string; agentId?: string }, options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawSessionMembersPayload>(
+      "session.members.list",
+      { ...input },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawSessionMembersPayload>("session.members.list", payload)
+    );
+  }
+
+  listSessionMembersEvidence(input: { sessionKey: string; agentId?: string }, options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawSessionMembersEvidencePayload>(
+      "session.members.listEvidence",
+      { ...input },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawSessionMembersEvidencePayload>("session.members.listEvidence", payload)
+    );
+  }
+
+  assignSessionOwner(
+    input: { key: string; agentId?: string; owner: { type: "agent" | "human"; id: string } },
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawSessionAssignOwnerPayload>(
+      "sessions.assignOwner",
+      { ...input },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawSessionAssignOwnerPayload>("sessions.assignOwner", payload)
+    );
   }
 
   listTasks(input: OpenClawTaskListInput = {}, options: OpenClawCommandOptions = {}) {
@@ -2034,6 +2148,33 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       () => this.connection.request<TPayload>(method, params, options, timeoutMs),
       requestState
     );
+  }
+
+  private async nativeOnly<TPayload>(
+    method: string,
+    params: Record<string, unknown>,
+    options: OpenClawCommandOptions,
+    normalize: (payload: unknown) => TPayload
+  ) {
+    if (this.options.forceCli || isCliGatewayClientForcedByEnv()) {
+      throw new OpenClawGatewayClientError(
+        `${method} requires native OpenClaw Gateway support; CLI fallback is disabled for this operation.`,
+        "unsupported"
+      );
+    }
+
+    const payload = normalize(await this.callNative<unknown>(
+      method,
+      params,
+      options,
+      { ...resolveGatewayRequestPolicy(method, options), allowCliFallback: false }
+    ));
+    clearGatewayFallbackDiagnostic(method);
+    this.clearNativeFailure(method);
+    if (resolveGatewayRequestPolicy(method, options).safety === "mutation") {
+      this.requestPolicy.invalidateReadCache();
+    }
+    return payload;
   }
 
   private observeRequestPolicyState() {

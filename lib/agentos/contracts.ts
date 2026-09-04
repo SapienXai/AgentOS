@@ -4,6 +4,10 @@ import type {
   GatewayDiagnostics,
   AgentInboxItem,
   MissionControlSnapshot,
+  ManagedWorktreeProjection,
+  NativeWorkSnapshot,
+  NativeWorkExecutionProjection,
+  SuggestedWorkProjection,
   OpenClawAgent,
   RuntimeRecord,
   TaskRecord,
@@ -23,6 +27,7 @@ export type SurfaceAccountRecord = ChannelAccountRecord;
 export type SurfaceChannelRecord = WorkspaceChannelSummary;
 export type SurfaceBindingRecord = WorkspaceChannelWorkspaceBinding;
 export type SurfaceRegistryRecord = ChannelRegistry;
+export type { ManagedWorktreeProjection, NativeWorkSnapshot, NativeWorkExecutionProjection, SuggestedWorkProjection };
 
 export type RuntimeEventKind = "session" | "task" | "artifact" | "approval" | "tool" | "status" | "unknown";
 

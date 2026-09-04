@@ -35,6 +35,11 @@ import {
 } from "@/lib/agentos/application/browser-task-binding-service";
 import type { OpenClawCommandOptions } from "@/lib/openclaw/client/types";
 import { buildAgentSessionKey } from "@/lib/openclaw/client/native-ws-gateway-mappers";
+import {
+  capabilityState,
+  resolveIsolatedWorktreeEligibility,
+  type NativeWorkExecutionMode
+} from "@/lib/openclaw/domains/native-work-model";
 
 export type MissionDispatchWorkflowDependencies = {
   getMissionControlSnapshot: (options?: { force?: boolean; includeHidden?: boolean }) => Promise<MissionControlSnapshot>;
@@ -48,6 +53,7 @@ export async function submitMissionDispatch(
   gatewayOptions: OpenClawCommandOptions = {}
 ): Promise<MissionResponse> {
   const mission = input.mission.trim();
+  const executionMode: NativeWorkExecutionMode = input.executionMode ?? "standard";
 
   if (!mission) {
     throw new Error("Mission text is required.");
@@ -120,7 +126,8 @@ export async function submitMissionDispatch(
     workspacePath: missionWorkspace?.path ?? null,
     outputDir: outputPlan?.absoluteOutputDir ?? null,
     outputDirRelative: outputPlan?.relativeOutputDir ?? null,
-    notesDirRelative: outputPlan?.notesDirRelative ?? null
+    notesDirRelative: outputPlan?.notesDirRelative ?? null,
+    executionMode
   });
 
   await writeMissionDispatchRecord(dispatchRecord);
@@ -143,6 +150,7 @@ export async function submitMissionDispatch(
       summary: readinessError,
       payloads: [],
       meta: {
+        executionMode,
         outputDir: outputPlan?.absoluteOutputDir,
         outputDirRelative: outputPlan?.relativeOutputDir,
         notesDirRelative: outputPlan?.notesDirRelative
@@ -157,6 +165,71 @@ export async function submitMissionDispatch(
       throw new Error(
         "Secure browser account tasks require native OpenClaw Gateway mission dispatch. CLI fallback is disabled for task-bound browser profiles."
       );
+    }
+
+    if (executionMode === "isolated-worktree") {
+      if (input.browserAccount) {
+        throw new Error("Isolated worktree execution is unavailable for secure browser account missions.");
+      }
+      const adapter = getOpenClawAdapter();
+      if (!adapter.inspectWorktreeBranches || !adapter.createSession) {
+        throw new Error("OpenClaw native worktree session methods are unavailable; standard execution was not selected automatically.");
+      }
+      const repository = await adapter.inspectWorktreeBranches(
+        { repoRoot: missionWorkspace?.path ?? "", includeRepositoryStatus: true },
+        { ...gatewayOptions, timeoutMs: 15_000 }
+      );
+      const eligibility = resolveIsolatedWorktreeEligibility({
+        requestedMode: executionMode,
+        workspacePath: missionWorkspace?.path ?? null,
+        worktreesCapability: capabilityState(capabilityMatrix, "worktrees"),
+        repositoryStatus: repository.repositoryStatus ?? null
+      });
+      if (!eligibility.eligible) {
+        throw new Error(`${eligibility.reason} Standard execution was not selected automatically.`);
+      }
+      const created = await adapter.createSession(
+        {
+          agentId,
+          task: routedMission,
+          cwd: missionWorkspace!.path,
+          worktree: true,
+          idempotencyKey: dispatchRecord.id,
+          label: mission.slice(0, 60)
+        },
+        { ...gatewayOptions, timeoutMs: 60_000 }
+      );
+      const now = new Date().toISOString();
+      const createdStatus: MissionDispatchStatus = created.status === "completed"
+        ? "completed"
+        : created.status === "error" ? "stalled" : "running";
+      dispatchRecord = {
+        ...dispatchRecord,
+        sessionId: created.sessionId ?? dispatchRecord.sessionId,
+        status: createdStatus,
+        updatedAt: now,
+        runner: {
+          ...dispatchRecord.runner,
+          startedAt: now,
+          finishedAt: createdStatus === "completed" ? now : null,
+          lastHeartbeatAt: now
+        },
+        observation: {
+          runtimeId: created.runId ? `runtime:gateway:${created.runId}` : dispatchRecord.observation.runtimeId,
+          observedAt: now
+        },
+        result: {
+          runId: created.runId,
+          sessionKey: created.key ?? created.sessionKey,
+          sessionId: created.sessionId,
+          status: createdStatus,
+          summary: createdStatus === "running" ? "Isolated worktree session accepted by OpenClaw." : "Isolated worktree session completed.",
+          payloads: [],
+          meta: { executionMode, worktree: created.worktree ?? null }
+        },
+        error: createdStatus === "stalled" ? "OpenClaw could not start the isolated worktree session." : null
+      };
+      await writeMissionDispatchRecord(dispatchRecord);
     }
 
     if (input.browserAccount) {
@@ -182,7 +255,7 @@ export async function submitMissionDispatch(
       await writeMissionDispatchRecord(dispatchRecord);
     }
 
-    if (capabilityMatrix?.nativeMissionDispatch !== "unsupported") {
+    if (executionMode === "standard" && capabilityMatrix?.nativeMissionDispatch !== "unsupported") {
       const payload = await getOpenClawAdapter().runAgentTurn(
         {
           agentId,
@@ -224,7 +297,7 @@ export async function submitMissionDispatch(
       if (isMissionDispatchTerminalStatus(dispatchRecord.status) && dispatchRecord.browserBinding) {
         dispatchRecord = await finalizeDispatchBrowserBinding(dispatchRecord);
       }
-    } else {
+    } else if (executionMode === "standard") {
       dispatchRecord = await launchMissionDispatchRunner(dispatchRecord);
     }
   } catch (error) {
@@ -265,6 +338,8 @@ export async function submitMissionDispatch(
     summary,
     payloads,
     meta: {
+      executionMode,
+      sessionKey: dispatchRecord.result?.sessionKey ?? null,
       outputDir: outputPlan?.absoluteOutputDir,
       outputDirRelative: outputPlan?.relativeOutputDir,
       notesDirRelative: outputPlan?.notesDirRelative

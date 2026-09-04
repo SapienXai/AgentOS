@@ -18,6 +18,7 @@ const missionSchema = z.object({
   requestId: z.string().min(1).max(160).regex(/^[A-Za-z0-9:_-]+$/).optional(),
   agentId: z.string().optional(),
   workspaceId: z.string().optional(),
+  executionMode: z.enum(["standard", "isolated-worktree"]).optional(),
   accountTargetId: z.string().optional(),
   browserAccountId: z.string().uuid().optional(),
   thinking: z.enum(["off", "minimal", "low", "medium", "high"]).optional()
@@ -39,12 +40,14 @@ export async function POST(request: Request) {
 
   const openClawAuthorization = await requireAgentOsOpenClawPreflight(request, {
     operation: "mission.dispatch",
-    method: "chat.send",
-    params: { agentId: input.agentId ?? "resolved-by-agentos" },
+    method: input.executionMode === "isolated-worktree" ? "sessions.create" : "chat.send",
+    params: input.executionMode === "isolated-worktree"
+      ? { agentId: input.agentId ?? "resolved-by-agentos", worktree: true, cwd: "resolved-by-agentos" }
+      : { agentId: input.agentId ?? "resolved-by-agentos" },
     targetKind: "agent-session",
     targetId: input.agentId ?? null,
     securityClass: "privileged-mutation",
-    executionPath: input.accountTargetId || input.browserAccountId
+    executionPath: input.executionMode === "isolated-worktree" || input.accountTargetId || input.browserAccountId
       ? "gateway-native"
       : "gateway-or-verified-cli",
     productPermission: "missions.use"
@@ -70,6 +73,7 @@ export async function POST(request: Request) {
     const result = await submitMission({
       ...missionInput,
       mission: input.mission,
+      executionMode: input.executionMode,
       browserAccount: browserAccount ?? undefined
     }, openClawAuthorization.commandOptions);
 

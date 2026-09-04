@@ -34,6 +34,7 @@ export type MissionDispatchRecordLike = {
   requestedModelId?: string | null;
   workspaceId: string | null;
   workspacePath: string | null;
+  executionMode?: "standard" | "isolated-worktree";
   submittedAt: string;
   updatedAt: string;
   outputDir: string | null;

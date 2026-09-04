@@ -81,6 +81,11 @@ import type {
   OpenClawSessionControlPayload,
   OpenClawSessionModelPatchInput,
   OpenClawSessionModelPatchPayload,
+  OpenClawSessionAssignOwnerPayload,
+  OpenClawSessionCreateInput,
+  OpenClawSessionCreatePayload,
+  OpenClawSessionMembersEvidencePayload,
+  OpenClawSessionMembersPayload,
   OpenClawSessionPayload,
   OpenClawSessionSteerInput,
   OpenClawSessionsPayload,
@@ -91,7 +96,11 @@ import type {
   OpenClawTaskGetInput,
   OpenClawTaskListInput,
   OpenClawTaskListPayload,
+  OpenClawTaskSuggestionAcceptMode,
+  OpenClawTaskSuggestionsListPayload,
   OpenClawTaskPayload,
+  OpenClawWorktreesBranchesPayload,
+  OpenClawWorktreesListPayload,
   OpenClawToolInvokeInput,
   OpenClawToolInvokePayload,
   OpenClawToolsCatalogInput,
@@ -117,6 +126,16 @@ export interface OpenClawAdapter {
   setModelAuthOrder(input: OpenClawModelAuthOrderSetInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   listAgents(options?: OpenClawCommandOptions): Promise<OpenClawAgentListPayload>;
   listSessions(input?: OpenClawListSessionsInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionsPayload>;
+  listWorktrees?(options?: OpenClawCommandOptions): Promise<OpenClawWorktreesListPayload>;
+  inspectWorktreeBranches?(input: { repoRoot: string; includeRepositoryStatus?: boolean }, options?: OpenClawCommandOptions): Promise<OpenClawWorktreesBranchesPayload>;
+  createSession?(input: OpenClawSessionCreateInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionCreatePayload>;
+  listTaskSuggestions?(input?: { sessionKey?: string; agentId?: string }, options?: OpenClawCommandOptions): Promise<OpenClawTaskSuggestionsListPayload>;
+  createTaskSuggestion?(input: { title: string; prompt: string; tldr: string; cwd: string; sessionKey: string; agentId?: string }, options?: OpenClawCommandOptions): Promise<{ taskId: string; suggestion: OpenClawTaskSuggestionsListPayload["suggestions"][number] }>;
+  acceptTaskSuggestion?(input: { taskId: string; mode?: OpenClawTaskSuggestionAcceptMode; cloudProfileId?: string }, options?: OpenClawCommandOptions): Promise<{ taskId: string; key: string }>;
+  dismissTaskSuggestion?(input: { taskId: string; reason?: string }, options?: OpenClawCommandOptions): Promise<{ taskId: string; dismissed: boolean }>;
+  listSessionMembers?(input: { sessionKey: string; agentId?: string }, options?: OpenClawCommandOptions): Promise<OpenClawSessionMembersPayload>;
+  listSessionMembersEvidence?(input: { sessionKey: string; agentId?: string }, options?: OpenClawCommandOptions): Promise<OpenClawSessionMembersEvidencePayload>;
+  assignSessionOwner?(input: { key: string; agentId?: string; owner: { type: "agent" | "human"; id: string } }, options?: OpenClawCommandOptions): Promise<OpenClawSessionAssignOwnerPayload>;
   patchSessionModel?(input: OpenClawSessionModelPatchInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionModelPatchPayload>;
   describeSession(input?: OpenClawDescribeSessionInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionPayload>;
   getSessionHistory(
@@ -299,6 +318,66 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
 
   listSessions(input: OpenClawListSessionsInput = {}, options: OpenClawCommandOptions = {}) {
     return this.getClient().listSessions(input, options);
+  }
+
+  listWorktrees(options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.listWorktrees) return Promise.reject(new Error("OpenClaw does not expose worktrees.list."));
+    return client.listWorktrees(options);
+  }
+
+  inspectWorktreeBranches(input: { repoRoot: string; includeRepositoryStatus?: boolean }, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.inspectWorktreeBranches) return Promise.reject(new Error("OpenClaw does not expose worktrees.branches."));
+    return client.inspectWorktreeBranches(input, options);
+  }
+
+  createSession(input: OpenClawSessionCreateInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.createSession) return Promise.reject(new Error("OpenClaw does not expose sessions.create."));
+    return client.createSession(input, options);
+  }
+
+  listTaskSuggestions(input: { sessionKey?: string; agentId?: string } = {}, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.listTaskSuggestions) return Promise.reject(new Error("OpenClaw does not expose taskSuggestions.list."));
+    return client.listTaskSuggestions(input, options);
+  }
+
+  createTaskSuggestion(input: { title: string; prompt: string; tldr: string; cwd: string; sessionKey: string; agentId?: string }, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.createTaskSuggestion) return Promise.reject(new Error("OpenClaw does not expose taskSuggestions.create."));
+    return client.createTaskSuggestion(input, options);
+  }
+
+  acceptTaskSuggestion(input: { taskId: string; mode?: OpenClawTaskSuggestionAcceptMode; cloudProfileId?: string }, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.acceptTaskSuggestion) return Promise.reject(new Error("OpenClaw does not expose taskSuggestions.accept."));
+    return client.acceptTaskSuggestion(input, options);
+  }
+
+  dismissTaskSuggestion(input: { taskId: string; reason?: string }, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.dismissTaskSuggestion) return Promise.reject(new Error("OpenClaw does not expose taskSuggestions.dismiss."));
+    return client.dismissTaskSuggestion(input, options);
+  }
+
+  listSessionMembers(input: { sessionKey: string; agentId?: string }, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.listSessionMembers) return Promise.reject(new Error("OpenClaw does not expose session.members.list."));
+    return client.listSessionMembers(input, options);
+  }
+
+  listSessionMembersEvidence(input: { sessionKey: string; agentId?: string }, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.listSessionMembersEvidence) return Promise.reject(new Error("OpenClaw does not expose session.members.listEvidence."));
+    return client.listSessionMembersEvidence(input, options);
+  }
+
+  assignSessionOwner(input: { key: string; agentId?: string; owner: { type: "agent" | "human"; id: string } }, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.assignSessionOwner) return Promise.reject(new Error("OpenClaw does not expose sessions.assignOwner."));
+    return client.assignSessionOwner(input, options);
   }
 
   patchSessionModel(input: OpenClawSessionModelPatchInput, options: OpenClawCommandOptions = {}) {

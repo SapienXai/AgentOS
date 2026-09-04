@@ -25,11 +25,14 @@ import type {
 } from "@/lib/openclaw/state/snapshot-cache";
 import { MissionControlCacheService } from "@/lib/openclaw/application/mission-control-cache-service";
 import {
-  getCachedOpenClawCapabilityMatrix
+  getCachedOpenClawCapabilityMatrix,
+  getOpenClawCapabilityMatrix
 } from "@/lib/openclaw/application/capability-matrix-service";
 import {
   startOpenClawEventBridge
 } from "@/lib/openclaw/application/event-bridge-service";
+import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { loadNativeWorkSnapshot } from "@/lib/openclaw/application/mission-control/native-work-snapshot";
 import {
   settleRuntimeSnapshotPayloadFromOpenClaw
 } from "@/lib/openclaw/application/runtime-state-service";
@@ -477,6 +480,14 @@ async function loadMissionControlSnapshots({
       hasOpenClawSignal,
       runtimes
     });
+    const nativeWork = await loadNativeWorkSnapshot({
+      sessions: resolvedSessions.value?.sessions ?? [],
+      agents,
+      taskList: resolvedTaskList.value,
+      matrix: getCachedOpenClawCapabilityMatrix() ?? await getOpenClawCapabilityMatrix().catch(() => null),
+      adapter: getOpenClawAdapter(),
+      timeoutMs: profile === "interactive" ? 8_000 : 15_000
+    });
 
     const {
       visibleWorkspaces,
@@ -574,6 +585,7 @@ async function loadMissionControlSnapshots({
         runtimes,
         tasks,
         agentInbox,
+        nativeWork,
         relationships
       },
       visible: {
@@ -584,6 +596,7 @@ async function loadMissionControlSnapshots({
         runtimes: visibleRuntimes,
         tasks: visibleTasks,
         agentInbox: visibleAgentInbox,
+        nativeWork,
         relationships: visibleRelationships
       }
     };

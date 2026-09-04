@@ -98,6 +98,8 @@ export type OpenClawGatewayCompatibilityOperationDefinition = {
   baseline?: "required" | "optional" | "experimental";
   /** OpenClaw advertises the surface; AgentOS may intentionally not integrate it yet. */
   productIntegration?: "integrated" | "discovery-only";
+  /** Granular truth for additive surfaces that are only partially projected. */
+  productIntegratedMethods?: string[];
 };
 
 export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibilityOperationDefinition[] = [
@@ -259,7 +261,8 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     fallbackAllowed: false,
     recovery: "OpenClaw owns session collaboration, participants, visibility, and ownership. AgentOS currently exposes this surface for capability discovery only.",
     baseline: "optional",
-    productIntegration: "discovery-only"
+    productIntegration: "discovery-only",
+    productIntegratedMethods: ["session.members.list", "session.members.listEvidence", "sessions.assignOwner"]
   },
   {
     id: "taskEvents",
@@ -281,7 +284,8 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     fallbackAllowed: false,
     recovery: "OpenClaw owns ephemeral task suggestions and their acceptance modes. AgentOS currently exposes this surface for capability discovery only.",
     baseline: "optional",
-    productIntegration: "discovery-only"
+    productIntegration: "discovery-only",
+    productIntegratedMethods: ["taskSuggestions.list", "taskSuggestions.accept", "taskSuggestions.dismiss"]
   },
   {
     id: "taskAssign",
@@ -306,7 +310,8 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     fallbackAllowed: false,
     recovery: "OpenClaw owns managed worktree lifecycle and repository inspection. AgentOS currently exposes this surface for capability discovery only.",
     baseline: "optional",
-    productIntegration: "discovery-only"
+    productIntegration: "discovery-only",
+    productIntegratedMethods: ["worktrees.list", "worktrees.branches", "sessions.create"]
   },
   {
     id: "artifacts",

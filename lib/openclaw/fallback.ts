@@ -97,6 +97,18 @@ function createTransientSnapshot(
     runtimes: [],
     tasks: [],
     agentInbox: [],
+    nativeWork: {
+      availability: {
+        worktrees: "unknown",
+        suggestions: "unknown",
+        ownership: "unknown",
+        assignment: "unknown"
+      },
+      worktrees: [],
+      suggestions: [],
+      executions: [],
+      issues: [reason]
+    },
     relationships: [],
     missionPresets: [],
     channelRegistry: {

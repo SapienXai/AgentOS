@@ -98,6 +98,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
   let authScopes: string[] = [];
   let supportedMethods: string[] = [];
   let supportedEvents: string[] = [];
+  let supportedCapabilities: string[] = [];
   let methodContractSource: OpenClawGatewayMethodContractAuditSource = "unavailable";
 
   if (isCliGatewayClientForcedByEnv()) {
@@ -120,6 +121,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
       authScopes = readAuthScopes(capabilityPayload);
       supportedMethods = readSupportedMethods(capabilityPayload);
       supportedEvents = readSupportedEvents(capabilityPayload);
+      supportedCapabilities = readSupportedCapabilities(capabilityPayload);
     } else {
       try {
         const client = createOpenClawGatewayClient({ timeoutMs: 2_500 });
@@ -136,6 +138,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
         authScopes = readAuthScopes(hello);
         supportedMethods = readSupportedMethods(hello);
         supportedEvents = readSupportedEvents(hello);
+        supportedCapabilities = readSupportedCapabilities(hello);
       } catch (error) {
         diagnostics.push(`handshake: ${readErrorMessage(error)}`);
       }
@@ -267,7 +270,8 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
           definition.recovery ?? null
         ),
         baseline: definition.baseline,
-        productIntegration: definition.productIntegration ?? "integrated"
+        productIntegration: definition.productIntegration ?? "integrated",
+        productIntegratedMethods: definition.productIntegratedMethods ?? []
       }
     ])
   ) as Record<string, OpenClawCapabilityOperation>;
@@ -304,6 +308,7 @@ async function detectOpenClawCapabilityMatrix(): Promise<OpenClawCapabilityMatri
     authScopes,
     supportedMethods,
     supportedEvents,
+    supportedCapabilities,
     configSchema: support("config.schema"),
     configSchemaLookup: support(...getOpenClawGatewayMethodCandidates("configSchemaLookup")),
     configPatch: support(...getOpenClawGatewayMethodCandidates("configPatch")),
@@ -477,6 +482,12 @@ function readSupportedMethods(payload: unknown) {
 function readSupportedEvents(payload: unknown) {
   const direct = readStringArray(readProperty(payload, "events"));
   const features = readStringArray(readProperty(readProperty(payload, "features"), "events"));
+  return Array.from(new Set([...direct, ...features])).sort();
+}
+
+function readSupportedCapabilities(payload: unknown) {
+  const direct = readStringArray(readProperty(payload, "capabilities"));
+  const features = readStringArray(readProperty(readProperty(payload, "features"), "capabilities"));
   return Array.from(new Set([...direct, ...features])).sort();
 }
 

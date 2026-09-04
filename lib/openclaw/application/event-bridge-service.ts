@@ -278,10 +278,17 @@ function reconcileRuntimeProjection() {
       reconciliationFollowUp = false;
       try {
         const adapter = getOpenClawAdapter();
-        await Promise.all([
+        const refreshes: Array<Promise<unknown>> = [
           adapter.listSessions({}, { timeoutMs: 5_000 }),
           adapter.listTasks({}, { timeoutMs: 5_000 })
-        ]);
+        ];
+        if (adapter.listTaskSuggestions) {
+          refreshes.push(adapter.listTaskSuggestions({}, { timeoutMs: 5_000 }));
+        }
+        if (adapter.listWorktrees) {
+          refreshes.push(adapter.listWorktrees({ timeoutMs: 5_000 }));
+        }
+        await Promise.all(refreshes);
         if (bridgeGeneration !== generation) {
           return;
         }

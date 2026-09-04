@@ -1020,6 +1020,127 @@ export interface OpenClawAgentTurnInput {
   local?: boolean;
 }
 
+export type OpenClawWorktreeOwnerKind = "manual" | "workboard" | "session";
+export type OpenClawWorktreeCleanupOutcome =
+  | "removed-lossless"
+  | "retained-busy"
+  | "retained-dirty"
+  | "retained-unpushed"
+  | "retained-provisioned-drift";
+
+export interface OpenClawWorktreeRecord {
+  id: string;
+  name: string;
+  repoFingerprint: string;
+  repoRoot: string;
+  path: string;
+  branch: string;
+  baseRef: string;
+  ownerKind: OpenClawWorktreeOwnerKind;
+  ownerId?: string;
+  snapshotRef?: string;
+  createdAt: number;
+  lastActiveAt: number;
+  removedAt?: number;
+  runEndCleanup?: {
+    outcome: OpenClawWorktreeCleanupOutcome | "failed";
+    at: number;
+    reason?: string;
+  };
+}
+
+export interface OpenClawWorktreesListPayload {
+  worktrees: OpenClawWorktreeRecord[];
+}
+
+export interface OpenClawWorktreesBranchesPayload {
+  branches: Array<{ name: string; kind: "local" | "remote" }>;
+  defaultBranch?: string;
+  headBranch?: string;
+  repositoryStatus?: "git" | "not_git" | "unavailable";
+}
+
+export interface OpenClawTaskSuggestion {
+  id: string;
+  title: string;
+  prompt: string;
+  tldr: string;
+  cwd: string;
+  sessionKey: string;
+  agentId?: string;
+  createdAt: number;
+}
+
+export interface OpenClawTaskSuggestionsListPayload {
+  suggestions: OpenClawTaskSuggestion[];
+}
+
+export type OpenClawTaskSuggestionAcceptMode = "worktree" | "local" | "cloud" | "session";
+
+export interface OpenClawSessionCreateInput {
+  agentId: string;
+  task: string;
+  cwd: string;
+  worktree: true;
+  key?: string;
+  idempotencyKey?: string;
+  label?: string;
+  worktreeBaseRef?: string;
+  worktreeName?: string;
+}
+
+export interface OpenClawSessionCreatePayload {
+  ok?: boolean;
+  key?: string;
+  sessionKey?: string;
+  sessionId?: string;
+  runId?: string;
+  status?: string;
+  entry?: unknown;
+  worktree?: Pick<OpenClawWorktreeRecord, "id" | "path" | "branch" | "repoRoot">;
+  [key: string]: unknown;
+}
+
+export interface OpenClawSessionOwner {
+  actor: {
+    type: "agent" | "human" | "system";
+    id?: string;
+    label?: string;
+    avatarUrl?: string;
+  };
+  assignedBy?: {
+    type: "agent" | "human" | "system";
+    id?: string;
+    label?: string;
+    avatarUrl?: string;
+  };
+  assignedAt?: number;
+}
+
+export interface OpenClawSessionMembersPayload {
+  sessionKey: string;
+  owner?: OpenClawSessionOwner;
+  members: Array<{ identityId: string; addedBy: string; addedAt: number }>;
+  identities: Array<Record<string, unknown>>;
+  role: "admin" | "owner" | "member" | "viewer";
+  allowedVisibilities: Array<"shared" | "read-only" | "suggest" | "draft">;
+}
+
+export interface OpenClawSessionMembersEvidencePayload {
+  sessionKey: string;
+  owner?: OpenClawSessionOwner;
+  members: Array<{ identityId: string; addedBy?: string; addedByState?: "unknown"; addedAt: number }>;
+  identities: Array<Record<string, unknown>>;
+  role: "admin" | "owner" | "member" | "viewer";
+  allowedVisibilities: Array<"shared" | "read-only" | "suggest" | "draft">;
+}
+
+export interface OpenClawSessionAssignOwnerPayload {
+  ok: true;
+  key: string;
+  owner: OpenClawSessionOwner;
+}
+
 export interface OpenClawAbortTurnInput {
   sessionKey?: string | null;
   runId?: string | null;
@@ -1216,6 +1337,16 @@ export interface OpenClawGatewayClient {
   setModelAuthOrder(input: OpenClawModelAuthOrderSetInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   listAgents(options?: OpenClawCommandOptions): Promise<OpenClawAgentListPayload>;
   listSessions(input?: OpenClawListSessionsInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionsPayload>;
+  listWorktrees?(options?: OpenClawCommandOptions): Promise<OpenClawWorktreesListPayload>;
+  inspectWorktreeBranches?(input: { repoRoot: string; includeRepositoryStatus?: boolean }, options?: OpenClawCommandOptions): Promise<OpenClawWorktreesBranchesPayload>;
+  createSession?(input: OpenClawSessionCreateInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionCreatePayload>;
+  listTaskSuggestions?(input?: { sessionKey?: string; agentId?: string }, options?: OpenClawCommandOptions): Promise<OpenClawTaskSuggestionsListPayload>;
+  createTaskSuggestion?(input: Omit<OpenClawTaskSuggestion, "id" | "createdAt">, options?: OpenClawCommandOptions): Promise<{ taskId: string; suggestion: OpenClawTaskSuggestion }>;
+  acceptTaskSuggestion?(input: { taskId: string; mode?: OpenClawTaskSuggestionAcceptMode; cloudProfileId?: string }, options?: OpenClawCommandOptions): Promise<{ taskId: string; key: string }>;
+  dismissTaskSuggestion?(input: { taskId: string; reason?: string }, options?: OpenClawCommandOptions): Promise<{ taskId: string; dismissed: boolean }>;
+  listSessionMembers?(input: { sessionKey: string; agentId?: string }, options?: OpenClawCommandOptions): Promise<OpenClawSessionMembersPayload>;
+  listSessionMembersEvidence?(input: { sessionKey: string; agentId?: string }, options?: OpenClawCommandOptions): Promise<OpenClawSessionMembersEvidencePayload>;
+  assignSessionOwner?(input: { key: string; agentId?: string; owner: { type: "agent" | "human"; id: string } }, options?: OpenClawCommandOptions): Promise<OpenClawSessionAssignOwnerPayload>;
   patchSessionModel?(input: OpenClawSessionModelPatchInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionModelPatchPayload>;
   describeSession(input?: OpenClawDescribeSessionInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionPayload>;
   getSessionHistory(
