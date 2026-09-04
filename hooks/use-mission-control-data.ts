@@ -92,6 +92,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
     });
   }, []);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
+  const [liveRefreshGeneration, setLiveRefreshGeneration] = useState(0);
   const [hasReceivedLiveSnapshot, setHasReceivedLiveSnapshot] = useState(false);
   const [gatewayReachable, setGatewayReachable] = useState<boolean | null>(null);
   const [gatewayRegistered, setGatewayRegistered] = useState<boolean | null>(null);
@@ -118,6 +119,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
         setSafeSnapshot((currentSnapshot) =>
           isNewerSnapshot(nextSnapshot, currentSnapshot) ? nextSnapshot : currentSnapshot
         );
+        setLiveRefreshGeneration((current) => current + 1);
         setHasReceivedLiveSnapshot(true);
         setConnectionState("live");
       });
@@ -195,6 +197,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
   return {
     snapshot,
     connectionState,
+    liveRefreshGeneration,
     hasReceivedLiveSnapshot,
     gatewayReachable,
     gatewayRegistered,

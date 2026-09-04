@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 import {
   dedupeAttentionItems,
   getHumanControlInbox,
+  projectRuntimeTask,
+  resolveHumanControlCapabilityCandidates,
   projectApprovalRecord,
   projectCapabilityAttention,
   projectQuestionRecord,
@@ -12,7 +15,11 @@ import {
   resolveAttentionItem,
   sortAttentionItems
 } from "@/lib/openclaw/application/human-control-inbox-service";
-import type { AttentionItem, MissionControlSnapshot } from "@/lib/openclaw/types";
+import {
+  preserveQuestionAnswers,
+  shouldScheduleHumanControlRefresh
+} from "@/components/operations/human-control-inbox.utils";
+import type { AttentionItem, EffectiveCapability, MissionControlSnapshot, TaskRecord } from "@/lib/openclaw/types";
 import { OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS } from "@/lib/openclaw/client/gateway-compatibility";
 
 const agent = { id: "worker-1", name: "Backend Engineer" } as never;
@@ -34,7 +41,7 @@ const task = {
   artifactCount: 0,
   warningCount: 0,
   metadata: {}
-} as never;
+} as unknown as TaskRecord;
 
 function snapshot(overrides: Record<string, unknown> = {}) {
   return {
@@ -45,6 +52,30 @@ function snapshot(overrides: Record<string, unknown> = {}) {
     nativeWork: { suggestions: [] },
     ...overrides
   } as unknown as MissionControlSnapshot;
+}
+
+function capability(status: "needs-setup" | "blocked", id = "openclaw:email"): EffectiveCapability {
+  return {
+    id,
+    label: id,
+    category: "Communication",
+    description: "Email capability",
+    status,
+    configured: true,
+    effective: status === "needs-setup",
+    explanation: status === "needs-setup" ? "Connect an email account." : "This capability is blocked.",
+    reasons: [{ code: status === "needs-setup" ? "account_not_connected" : "policy_denied", message: "Fixture reason" }],
+    evidence: { tool: { id: id.replace("openclaw:", "") } },
+    remediation: status === "needs-setup" ? { id: "connect-account", label: "Connect account" } : { id: "review-policy", label: "Review policy" }
+  } as EffectiveCapability;
+}
+
+function emptyAttentionAdapter() {
+  return {
+    listNativeExecApprovals: async () => ({ approvals: [] }),
+    listNativePluginApprovals: async () => ({ approvals: [] }),
+    listQuestions: async () => ({ questions: [] })
+  } as never;
 }
 
 test("projects native approvals and questions into stable attention items", () => {
@@ -105,6 +136,118 @@ test("composes suggested work and only promotes actionable capability blockers",
   assert.equal(capability[0]?.availableActions[0]?.id, "open-setup");
 });
 
+test("production Inbox composition resolves capability attention from active context", async () => {
+  const result = await getHumanControlInbox({
+    snapshot: snapshot({ tasks: [task] }),
+    adapter: emptyAttentionAdapter(),
+    capabilityResolver: async (workerId, options) => {
+      assert.equal(workerId, "worker-1");
+      assert.equal(options.sessionKey, "agent:worker-1:main");
+      return {
+        workerId,
+        capturedAt: new Date().toISOString(),
+        session: { key: "agent:worker-1:main", updatedAt: null, profile: "coding" },
+        capabilities: [capability("needs-setup"), capability("blocked", "openclaw:shell")],
+        skills: [],
+        skillLibrary: { supported: true, error: null },
+        sources: { toolsCatalog: "native", toolsEffective: "native", skillsLibrary: "native", accounts: "native" },
+        summary: { available: 0, "requires-approval": 0, "needs-setup": 1, blocked: 1, unavailable: 0, unknown: 0 }
+      } as never;
+    }
+  });
+
+  assert.equal(result.items.some((item) => item.type === "needs-setup"), true);
+  assert.equal(result.items.some((item) => item.type === "blocked"), true);
+  assert.equal(result.sources.capabilities, "available");
+});
+
+test("idle worker capability gaps are not eligible for Human Control", async () => {
+  let resolverCalls = 0;
+  const result = await getHumanControlInbox({
+    snapshot: snapshot({ tasks: [{ ...task, status: "idle" }] }),
+    adapter: emptyAttentionAdapter(),
+    capabilityResolver: async () => {
+      resolverCalls += 1;
+      return {} as never;
+    }
+  });
+
+  assert.equal(resolverCalls, 0);
+  assert.equal(result.items.some((item) => item.type === "needs-setup" || item.type === "blocked"), false);
+});
+
+test("capability resolver failures preserve native Inbox items and source uncertainty", async () => {
+  const result = await getHumanControlInbox({
+    snapshot: snapshot({ tasks: [task] }),
+    adapter: {
+      listNativeExecApprovals: async () => ({ approvals: [{ id: "approval-1", request: { agentId: "worker-1", sessionKey: "session-1" } }] }),
+      listNativePluginApprovals: async () => ({ approvals: [] }),
+      listQuestions: async () => ({ questions: [] })
+    } as never,
+    capabilityResolver: async () => {
+      throw new Error("Gateway timeout");
+    }
+  });
+
+  assert.equal(result.items.some((item) => item.type === "approval"), true);
+  assert.equal(result.sources.capabilities, "unavailable");
+  assert.deepEqual(result.issues, ["Some active capability blockers could not be verified."]);
+});
+
+test("capability candidate resolution is bounded, deduplicated, and concurrency-limited", async () => {
+  const agents = Array.from({ length: 20 }, (_, index) => ({ id: `worker-${index}`, name: `Worker ${index}` }));
+  const tasks = agents.map((entry) => ({ ...task, id: `task-${entry.id}`, key: `agent:${entry.id}:main`, primaryAgentId: entry.id, primaryAgentName: entry.name, agentIds: [entry.id], metadata: {} }));
+  let active = 0;
+  let maxActive = 0;
+  let calls = 0;
+
+  const result = await resolveHumanControlCapabilityCandidates(snapshot({ agents, tasks }), [], {
+    concurrency: 4,
+    resolver: async (workerId) => {
+      calls += 1;
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      active -= 1;
+      return {
+        workerId,
+        session: { key: `agent:${workerId}:main`, updatedAt: null, profile: null },
+        capabilities: [],
+        skills: [],
+        skillLibrary: { supported: true, error: null },
+        sources: { toolsCatalog: "native", toolsEffective: "native", skillsLibrary: "native", accounts: "native" },
+        summary: { available: 0, "requires-approval": 0, "needs-setup": 0, blocked: 0, unavailable: 0, unknown: 0 }
+      } as never;
+    }
+  });
+
+  assert.equal(result.candidateCount, 16);
+  assert.equal(calls, 16);
+  assert.ok(maxActive <= 4);
+  assert.equal(result.failedCount, 0);
+});
+
+test("same worker and session is resolved once while separate sessions remain candidates", async () => {
+  const duplicateTask = { ...task, id: "task-duplicate", metadata: { openClawSessionKey: "agent:worker-1:main" } };
+  const secondSessionTask = { ...task, id: "task-second", key: "agent:worker-1:secondary", metadata: { openClawSessionKey: "agent:worker-1:secondary" } };
+  const calls: string[] = [];
+  await resolveHumanControlCapabilityCandidates(snapshot({ tasks: [duplicateTask, secondSessionTask] }), [], {
+    resolver: async (workerId, options) => {
+      calls.push(`${workerId}:${options.sessionKey}`);
+      return {
+        workerId,
+        session: { key: options.sessionKey ?? null, updatedAt: null, profile: null },
+        capabilities: [],
+        skills: [],
+        skillLibrary: { supported: true, error: null },
+        sources: { toolsCatalog: "native", toolsEffective: "native", skillsLibrary: "native", accounts: "native" },
+        summary: { available: 0, "requires-approval": 0, "needs-setup": 0, blocked: 0, unavailable: 0, unknown: 0 }
+      } as never;
+    }
+  });
+  assert.deepEqual(calls.sort(), ["worker-1:agent:worker-1:main", "worker-1:agent:worker-1:secondary"]);
+});
+
 test("deduplicates a matching blocker behind native approval and keeps unrelated blockers", () => {
   const approval = projectApprovalRecord({ id: "approval-1", request: { sessionKey: "session-1", toolName: "shell" } }, "exec");
   const blocked = projectCapabilityAttention([{
@@ -120,6 +263,69 @@ test("deduplicates a matching blocker behind native approval and keeps unrelated
   const result = dedupeAttentionItems([approval!, blocked!, unrelated!]);
   assert.equal(result.some((item) => item.id === blocked?.id), false);
   assert.equal(result.some((item) => item.id === unrelated?.id), true);
+});
+
+test("runtime projections carry reliable task session linkage", () => {
+  const runtime = projectRuntimeTask(task);
+  assert.equal(runtime.source.taskId, task.id);
+  assert.equal(runtime.source.sessionKey, "agent:worker-1:main");
+
+  const issue = projectRuntimeIssue({
+    id: "runtime-linked",
+    type: "unknown_runtime_action",
+    source: "system",
+    severity: "action_required",
+    title: "Execution needs review",
+    message: "The active task needs inspection.",
+    requestId: task.id,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    status: "open"
+  }, [agent], [task]);
+  assert.equal(issue.source.sessionKey, "agent:worker-1:main");
+  assert.equal(issue.source.taskId, task.id);
+});
+
+test("approval and question deduplication uses task/session identity without hiding unrelated work", () => {
+  const approval = projectApprovalRecord({ id: "approval-linked", request: { agentId: "worker-1", sessionKey: "session-1", toolName: "shell" } }, "exec", [agent], [task]);
+  const runtimeSameTask = projectRuntimeTask(task);
+  assert.equal(dedupeAttentionItems([approval!, runtimeSameTask]).some((item) => item.type === "runtime-issue"), false);
+
+  const otherTask = { ...task, id: "task-2", key: "agent:worker-1:secondary", sessionIds: ["session-2"], metadata: {} } as TaskRecord;
+  const approvalOtherSession = projectApprovalRecord({ id: "approval-other", request: { agentId: "worker-1", sessionKey: "session-1" } }, "exec", [agent], [task]);
+  const runtimeOtherSession = projectRuntimeTask(otherTask);
+  assert.equal(dedupeAttentionItems([approvalOtherSession!, runtimeOtherSession]).length, 2);
+
+  const question = projectQuestionRecord({
+    id: "question-linked",
+    questions: [{ questionId: "decision", header: "Decision", question: "Choose", options: [{ label: "A" }] }],
+    sessionKey: "session-1",
+    createdAtMs: 1_700_000_000_000,
+    expiresAtMs: 1_700_000_100_000,
+    status: "pending"
+  }, [agent], [task]);
+  assert.equal(dedupeAttentionItems([question!, runtimeSameTask]).some((item) => item.type === "runtime-issue"), false);
+
+  const unrelatedRuntime = projectRuntimeTask({ ...task, id: "task-3", key: "agent:worker-1:unrelated", sessionIds: ["session-3"], metadata: {} } as TaskRecord);
+  const questionWithoutLink = projectQuestionRecord({
+    id: "question-unrelated",
+    questions: [{ questionId: "decision", header: "Decision", question: "Choose", options: [{ label: "A" }] }],
+    agentId: "worker-1",
+    createdAtMs: 1_700_000_000_000,
+    expiresAtMs: 1_700_000_100_000,
+    status: "pending"
+  }, [agent], []);
+  assert.equal(dedupeAttentionItems([questionWithoutLink!, unrelatedRuntime]).length, 2);
+});
+
+test("blocked capability deduplication requires the same tool relationship", () => {
+  const approval = projectApprovalRecord({ id: "approval-shell", request: { sessionKey: "session-1", toolName: "shell" } }, "exec");
+  const blockedFiles = projectCapabilityAttention([{
+    workerId: "worker-1",
+    sessionKey: "session-1",
+    capability: { ...capability("blocked", "openclaw:files"), evidence: { tool: { id: "files" } } }
+  } as never])[0];
+  assert.equal(dedupeAttentionItems([approval!, blockedFiles!]).length, 2);
 });
 
 test("sorts by deterministic severity and oldest blocking time", () => {
@@ -187,4 +393,29 @@ test("Human Control integrates only native reads and resolutions", () => {
   assert.equal(integrated.get("execApprovals")?.fallbackAllowed, false);
   assert.equal(integrated.get("pluginApprovals")?.fallbackAllowed, false);
   assert.equal(integrated.get("questions")?.fallbackAllowed, false);
+});
+
+test("open Human Control reuses the existing live refresh signal and preserves drafts", async () => {
+  const source = await readFile("components/operations/human-control-inbox.tsx", "utf8");
+  assert.match(source, /refreshGeneration/);
+  assert.match(source, /HUMAN_CONTROL_INBOX_REFRESH_DEBOUNCE_MS/);
+  assert.match(source, /if \(!openRef\.current\) return/);
+  assert.match(source, /deferredRefreshRef/);
+  assert.match(source, /preserveQuestionAnswers/);
+  assert.doesNotMatch(source, /new EventSource/);
+
+  assert.equal(shouldScheduleHumanControlRefresh({ open: false, loading: false, pendingAction: false }), false);
+  assert.equal(shouldScheduleHumanControlRefresh({ open: true, loading: false, pendingAction: false }), true);
+  assert.equal(shouldScheduleHumanControlRefresh({ open: true, loading: true, pendingAction: false }), false);
+  assert.equal(shouldScheduleHumanControlRefresh({ open: true, loading: false, pendingAction: true }), false);
+
+  const question = projectQuestionRecord({
+    id: "question-draft",
+    questions: [{ questionId: "scope", header: "Scope", question: "Choose scope", options: [{ label: "US" }] }],
+    createdAtMs: 1_700_000_000_000,
+    expiresAtMs: 1_700_000_100_000,
+    status: "pending"
+  }, [], []);
+  assert.deepEqual(preserveQuestionAnswers([question!], { scope: ["US"], resolved: ["old"] }), { scope: ["US"] });
+  assert.deepEqual(preserveQuestionAnswers([], { resolved: ["old"] }), {});
 });

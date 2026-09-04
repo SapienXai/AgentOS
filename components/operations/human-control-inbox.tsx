@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, ChevronRight, Inbox, Loader2, ShieldAlert, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -9,17 +9,33 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { AttentionAction, AttentionItem, HumanControlInbox as HumanControlInboxPayload } from "@/lib/agentos/contracts";
+import {
+  HUMAN_CONTROL_INBOX_REFRESH_DEBOUNCE_MS,
+  preserveQuestionAnswers,
+  shouldScheduleHumanControlRefresh
+} from "@/components/operations/human-control-inbox.utils";
 import { cn } from "@/lib/utils";
 
 type SurfaceTheme = "dark" | "light";
 
-export function HumanControlInbox({ surfaceTheme }: { surfaceTheme: SurfaceTheme }) {
+export function HumanControlInbox({ surfaceTheme, refreshGeneration }: { surfaceTheme: SurfaceTheme; refreshGeneration: number }) {
   const [open, setOpen] = useState(false);
   const [payload, setPayload] = useState<HumanControlInboxPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
+  const refreshGenerationRef = useRef(refreshGeneration);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const deferredRefreshRef = useRef(false);
+  const openRef = useRef(open);
+  const loadingRef = useRef(loading);
+  const pendingIdRef = useRef(pendingId);
+  const loadInboxRef = useRef<() => Promise<void>>(async () => {});
+
+  openRef.current = open;
+  loadingRef.current = loading;
+  pendingIdRef.current = pendingId;
 
   useEffect(() => {
     if (!open || payload || loading || error) return;
@@ -34,12 +50,53 @@ export function HumanControlInbox({ surfaceTheme }: { surfaceTheme: SurfaceTheme
       const nextPayload = (await response.json()) as HumanControlInboxPayload & { error?: string };
       if (!response.ok || nextPayload.error) throw new Error(nextPayload.error || "Human Control is unavailable.");
       setPayload(nextPayload);
+      setAnswers((current) => preserveQuestionAnswers(nextPayload.items, current));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Human Control is unavailable.");
     } finally {
       setLoading(false);
     }
   }
+
+  loadInboxRef.current = loadInbox;
+
+  const scheduleInboxRefresh = useCallback(() => {
+    if (refreshTimerRef.current) return;
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null;
+      if (!openRef.current) return;
+      if (!shouldScheduleHumanControlRefresh({
+        open: openRef.current,
+        loading: loadingRef.current,
+        pendingAction: Boolean(pendingIdRef.current)
+      })) {
+        deferredRefreshRef.current = true;
+        return;
+      }
+      void loadInboxRef.current();
+    }, HUMAN_CONTROL_INBOX_REFRESH_DEBOUNCE_MS);
+  }, []);
+
+  useEffect(() => {
+    if (refreshGenerationRef.current === refreshGeneration) return;
+    refreshGenerationRef.current = refreshGeneration;
+    if (!open) return;
+    if (pendingId || loading) {
+      deferredRefreshRef.current = true;
+      return;
+    }
+    scheduleInboxRefresh();
+  }, [loading, open, pendingId, refreshGeneration, scheduleInboxRefresh]);
+
+  useEffect(() => {
+    if (!open || pendingId || loading || !deferredRefreshRef.current) return;
+    deferredRefreshRef.current = false;
+    scheduleInboxRefresh();
+  }, [loading, open, pendingId, scheduleInboxRefresh]);
+
+  useEffect(() => () => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+  }, []);
 
   async function runAction(item: AttentionItem, action: AttentionAction["id"], actionPayload?: { answers: { answers: Record<string, string[]> } }) {
     setPendingId(item.id);
@@ -54,6 +111,7 @@ export function HumanControlInbox({ surfaceTheme }: { surfaceTheme: SurfaceTheme
       if (!response.ok || result.error) throw new Error(result.error || "The action could not be completed.");
       setPayload(null);
       setAnswers({});
+      deferredRefreshRef.current = false;
       await loadInbox();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The action could not be completed.");

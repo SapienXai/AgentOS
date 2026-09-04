@@ -31,6 +31,14 @@ Effective-capability setup/blocker items are only admitted when a bounded caller
 
 Runtime issues use the existing actionable runtime issue projection and existing task/snapshot data. Human Control is lazy on the Dashboard: the compact launcher does not load the full queue while the root snapshot is rendered. The full inbox performs parallel bulk reads and never performs one RPC per worker, capability, approval, or revision.
 
+## Phase 3.1 hardening
+
+The production Inbox resolves capability attention only for a bounded set of workers and sessions from current running, queued, or stalled work and already surfaced native attention context. It does not scan idle workers. Candidate identities are deduplicated by worker plus session (or task when no session key is known), capped at 16, and resolved with concurrency four. A candidate resolution failure leaves native attention items visible and marks capability evidence unavailable instead of treating the failure as no blocker.
+
+The open Inbox reuses the existing Dashboard stream's live snapshot generation. It schedules one short, coalesced refresh only while the dialog is open; closed dialogs do not refetch on native events. In-progress actions defer event refreshes until the mutation's explicit native re-read completes. Question drafts remain keyed to their native question IDs and are removed only when the refreshed native list no longer contains them.
+
+Runtime attention carries the exact task session key when the existing task metadata or canonical task key provides it, while retaining the task ID. Deduplication uses stable native source identity, then session or task identity; blocked capability items additionally require the same tool identity. Approval and question items therefore suppress only the matching runtime/blocker representation, while unrelated work for the same worker remains visible. Source completeness distinguishes unavailable capability reads from verified empty results.
+
 The existing Gateway event bridge remains the only subscription/reconnect owner. Approval, question, suggestion, session, tool, and runtime events invalidate the relevant AgentOS read/snapshot caches. Reconnect or sequence-gap reconciliation re-reads the current native inventories rather than resurrecting local items.
 
 ## Security and trust

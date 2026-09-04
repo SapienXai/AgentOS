@@ -1193,6 +1193,7 @@ export type HumanControlInbox = {
     approvals: "available" | "unavailable";
     questions: "available" | "unavailable";
     suggestedWork: "available" | "unavailable";
+    capabilities: "available" | "partial" | "unavailable";
     runtime: "available" | "unavailable";
   };
   generatedAt: string;

@@ -272,8 +272,11 @@ export function resolveEffectiveCapability(input: CapabilityResolutionInput): Ef
   return buildCapability(input, "unknown", "AgentOS cannot determine this capability reliably from the current native facts.", evidence, reasons);
 }
 
-export async function getWorkerEffectiveCapabilities(workerId: string, options: { sessionKey?: string | null } = {}) {
-  const adapter = getOpenClawAdapter();
+export async function getWorkerEffectiveCapabilities(
+  workerId: string,
+  options: { sessionKey?: string | null; adapter?: ReturnType<typeof getOpenClawAdapter> } = {}
+) {
+  const adapter = options.adapter ?? getOpenClawAdapter();
   const [agentsResult, sessionsResult] = await Promise.allSettled([
     adapter.listAgents({ timeoutMs: 8_000 }),
     options.sessionKey

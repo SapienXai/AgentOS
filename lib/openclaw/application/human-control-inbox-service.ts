@@ -1,6 +1,9 @@
 import "server-only";
 
 import { getMissionControlSnapshot } from "@/lib/openclaw/application/mission-control-service";
+import {
+  getWorkerEffectiveCapabilities
+} from "@/lib/openclaw/application/worker-capability-service";
 import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import type {
@@ -19,7 +22,8 @@ import type {
   HumanControlInboxSummary,
   MissionControlSnapshot,
   OpenClawAgent,
-  TaskRecord
+  TaskRecord,
+  WorkerEffectiveCapabilitiesPayload
 } from "@/lib/openclaw/types";
 import { redactSecretText } from "@/lib/security/redaction";
 
@@ -42,7 +46,16 @@ export type HumanControlInboxOptions = HumanControlInboxFilter & {
   adapter?: OpenClawAdapter;
   snapshot?: MissionControlSnapshot;
   capabilities?: CapabilityAttentionCandidate[];
+  capabilityResolver?: CapabilityResolver;
 };
+
+export type CapabilityResolver = (
+  workerId: string,
+  options: { sessionKey?: string | null; adapter?: OpenClawAdapter }
+) => Promise<WorkerEffectiveCapabilitiesPayload>;
+
+export const HUMAN_CONTROL_CAPABILITY_CANDIDATE_LIMIT = 16;
+export const HUMAN_CONTROL_CAPABILITY_RESOLVER_CONCURRENCY = 4;
 
 type NativeApprovalRecord = {
   id: string;
@@ -68,19 +81,29 @@ export async function getHumanControlInbox(options: HumanControlInboxOptions = {
   const snapshot = snapshotResult;
   const agents = snapshot.agents;
   const tasks = snapshot.tasks;
-  const items = [
+  const nativeItems = [
     ...projectApprovalRecords(readApprovalRecords(execResult), "exec", agents, tasks),
     ...projectApprovalRecords(readApprovalRecords(pluginResult), "plugin", agents, tasks),
     ...projectQuestionRecords(readQuestionRecords(questionResult), agents, tasks),
     ...projectSuggestedWork(snapshot),
-    ...projectRuntimeAttention(snapshot, agents),
-    ...projectCapabilityAttention(options.capabilities ?? [])
+    ...projectRuntimeAttention(snapshot, agents)
+  ];
+  const capabilityResolution = options.capabilities
+    ? { candidates: options.capabilities, source: "available" as const, issues: [] as string[] }
+    : await resolveHumanControlCapabilityCandidates(snapshot, nativeItems, {
+        adapter,
+        resolver: options.capabilityResolver
+      });
+  const items = [
+    ...nativeItems,
+    ...projectCapabilityAttention(capabilityResolution.candidates)
   ];
   const filtered = filterAttentionItems(dedupeAttentionItems(items), options);
   const issues = [
     ...(execResult.status === "rejected" ? ["Execution approvals could not be verified from OpenClaw."] : []),
     ...(pluginResult.status === "rejected" ? ["Plugin approvals could not be verified from OpenClaw."] : []),
-    ...(questionResult.status === "rejected" ? ["Questions could not be verified from OpenClaw."] : [])
+    ...(questionResult.status === "rejected" ? ["Questions could not be verified from OpenClaw."] : []),
+    ...capabilityResolution.issues
   ];
 
   return {
@@ -90,10 +113,81 @@ export async function getHumanControlInbox(options: HumanControlInboxOptions = {
       approvals: execResult.status === "fulfilled" || pluginResult.status === "fulfilled" ? "available" : "unavailable",
       questions: questionResult.status === "fulfilled" ? "available" : "unavailable",
       suggestedWork: snapshot.nativeWork ? "available" : "unavailable",
+      capabilities: capabilityResolution.source,
       runtime: "available"
     },
     generatedAt: new Date().toISOString(),
     ...(issues.length > 0 ? { issues } : {})
+  };
+}
+
+export async function resolveHumanControlCapabilityCandidates(
+  snapshot: MissionControlSnapshot,
+  nativeItems: AttentionItem[] = [],
+  options: {
+    adapter?: OpenClawAdapter;
+    resolver?: CapabilityResolver;
+    maxCandidates?: number;
+    concurrency?: number;
+  } = {}
+) {
+  const maxCandidates = options.maxCandidates ?? HUMAN_CONTROL_CAPABILITY_CANDIDATE_LIMIT;
+  const concurrency = options.concurrency ?? HUMAN_CONTROL_CAPABILITY_RESOLVER_CONCURRENCY;
+  const contexts = collectCapabilityCandidateContexts(snapshot, nativeItems).slice(0, maxCandidates);
+  const resolver = options.resolver ?? getWorkerEffectiveCapabilities;
+  const resolved = await mapWithConcurrency(contexts, concurrency, async (context) => {
+    try {
+      const payload = await resolver(context.workerId, {
+        sessionKey: context.sessionKey,
+        adapter: options.adapter
+      });
+      return {
+        context,
+        payload
+      };
+    } catch {
+      return {
+        context,
+        payload: null
+      };
+    }
+  });
+  const candidates: CapabilityAttentionCandidate[] = [];
+  let resolvedCount = 0;
+  let failedCount = 0;
+
+  for (const result of resolved) {
+    if (!result.payload) {
+      failedCount += 1;
+      continue;
+    }
+
+    resolvedCount += 1;
+    for (const capability of result.payload.capabilities) {
+      candidates.push({
+        workerId: result.context.workerId,
+        workerLabel: result.context.workerLabel,
+        sessionKey: result.payload.session.key ?? result.context.sessionKey,
+        taskId: result.context.taskId,
+        capability
+      });
+    }
+  }
+
+  const source = failedCount === 0
+    ? "available" as const
+    : resolvedCount > 0
+      ? "partial" as const
+      : "unavailable" as const;
+  return {
+    candidates,
+    source,
+    issues: failedCount > 0 ? ["Some active capability blockers could not be verified."] : [],
+    candidateCount: contexts.length,
+    resolvedCount,
+    failedCount,
+    maxCandidates,
+    concurrency
   };
 }
 
@@ -144,7 +238,8 @@ export function projectApprovalRecord(
       system: "openclaw",
       kind: `${kind}.approval`,
       nativeId: record.id,
-      sessionKey
+      sessionKey,
+      taskId: task?.id ?? null
     },
     worker: { id: agentId, label: workerLabel },
     ...(task?.mission ? { mission: { id: null, title: task.mission } } : {}),
@@ -197,7 +292,8 @@ export function projectQuestionRecord(
       system: "openclaw",
       kind: "question",
       nativeId: record.id,
-      sessionKey: record.sessionKey ?? null
+      sessionKey: record.sessionKey ?? null,
+      taskId: task?.id ?? null
     },
     worker: { id: agentId, label: workerLabel },
     ...(task?.mission ? { mission: { id: null, title: task.mission } } : {}),
@@ -282,11 +378,17 @@ export function projectRuntimeAttention(snapshot: MissionControlSnapshot, agents
 }
 
 export function projectRuntimeIssue(issue: RuntimeIssue, agents: OpenClawAgent[] = [], tasks: TaskRecord[] = []): AttentionItem {
-  const task = issue.requestId ? tasks.find((candidate) => candidate.id === issue.requestId) : undefined;
+  const task = findTaskForRuntimeIssue(tasks, issue.requestId);
   return {
     id: `runtime:${issue.id}`,
     type: "runtime-issue",
-    source: { system: "agentos", kind: issue.type, nativeId: issue.id, taskId: task?.id ?? null },
+    source: {
+      system: "agentos",
+      kind: issue.type,
+      nativeId: issue.id,
+      sessionKey: task ? resolveTaskSessionKeyForAttention(task) : null,
+      taskId: task?.id ?? null
+    },
     worker: { id: task?.primaryAgentId ?? null, label: task?.primaryAgentName ?? resolveWorkerLabel(task?.primaryAgentId, agents) },
     ...(task?.mission ? { mission: { id: null, title: task.mission } } : {}),
     severity: issue.severity === "blocked" ? "critical" : "high",
@@ -304,7 +406,13 @@ export function projectRuntimeTask(task: TaskRecord): AttentionItem {
   return {
     id: `runtime:task:${task.id}`,
     type: "runtime-issue",
-    source: { system: "openclaw", kind: "task", nativeId: task.id, taskId: task.id },
+    source: {
+      system: "openclaw",
+      kind: "task",
+      nativeId: task.id,
+      sessionKey: resolveTaskSessionKeyForAttention(task),
+      taskId: task.id
+    },
     worker: { id: task.primaryAgentId ?? null, label: task.primaryAgentName ?? null },
     ...(task.mission ? { mission: { id: null, title: task.mission } } : {}),
     severity: "high",
@@ -328,9 +436,8 @@ export function dedupeAttentionItems(items: AttentionItem[]): AttentionItem[] {
     if (item.type !== "blocked" && item.type !== "runtime-issue") return true;
     return !current.some((candidate) =>
       (candidate.type === "approval" || candidate.type === "question") &&
-      candidate.source.sessionKey &&
-      candidate.source.sessionKey === item.source.sessionKey &&
-      (item.type !== "blocked" || candidate.evidence?.toolId === item.evidence?.toolId)
+      hasSharedWorkIdentity(candidate, item) &&
+      (item.type !== "blocked" || hasSharedToolIdentity(candidate, item))
     );
   });
 }
@@ -501,7 +608,133 @@ function resolveWorkerLabel(agentId: string | null | undefined, agents: OpenClaw
 }
 
 function findTaskForSession(tasks: TaskRecord[], sessionKey: string | null) {
-  return sessionKey ? tasks.find((task) => task.key === sessionKey || task.sessionIds.includes(sessionKey)) : undefined;
+  return sessionKey
+    ? tasks.find((task) =>
+        task.key === sessionKey ||
+        task.sessionIds.includes(sessionKey) ||
+        resolveTaskSessionKeyForAttention(task) === sessionKey
+      )
+    : undefined;
+}
+
+function findTaskForRuntimeIssue(tasks: TaskRecord[], requestId: string | undefined) {
+  const normalizedRequestId = requestId?.trim();
+  if (!normalizedRequestId) return undefined;
+
+  return tasks.find((task) =>
+    task.id === normalizedRequestId ||
+    task.dispatchId === normalizedRequestId ||
+    task.runtimeIds.includes(normalizedRequestId) ||
+    task.runIds.includes(normalizedRequestId) ||
+    task.metadata.openClawTaskId === normalizedRequestId
+  );
+}
+
+export function resolveTaskSessionKeyForAttention(task: TaskRecord) {
+  const metadataKeys = [
+    task.metadata.openClawSessionKey,
+    task.metadata.continuationSessionKey,
+    task.metadata.sessionKey,
+    task.metadata.gatewaySessionKey
+  ];
+  const metadataSessionKey = metadataKeys.find((value): value is string => typeof value === "string" && value.trim().length > 0);
+  if (metadataSessionKey) return metadataSessionKey.trim();
+
+  const taskKey = task.key.trim();
+  return taskKey.startsWith("agent:") ? taskKey : null;
+}
+
+type CapabilityCandidateContext = {
+  workerId: string;
+  workerLabel: string | null;
+  sessionKey: string | null;
+  taskId: string | null;
+};
+
+function collectCapabilityCandidateContexts(snapshot: MissionControlSnapshot, nativeItems: AttentionItem[]) {
+  const contexts = new Map<string, CapabilityCandidateContext>();
+  const agentLabels = new Map(snapshot.agents.map((agent) => [agent.id, agent.name]));
+
+  const addContext = (input: {
+    workerId?: string | null;
+    workerLabel?: string | null;
+    sessionKey?: string | null;
+    taskId?: string | null;
+  }) => {
+    const workerId = input.workerId?.trim();
+    if (!workerId) return;
+
+    const sessionKey = input.sessionKey?.trim() || null;
+    const taskId = input.taskId?.trim() || null;
+    const identity = `${workerId}:${sessionKey ?? `task:${taskId ?? "active"}`}`;
+    if (!contexts.has(identity)) {
+      contexts.set(identity, {
+        workerId,
+        workerLabel: input.workerLabel?.trim() || agentLabels.get(workerId) || null,
+        sessionKey,
+        taskId
+      });
+    }
+  };
+
+  for (const task of snapshot.tasks) {
+    if (task.status !== "running" && task.status !== "queued" && task.status !== "stalled") continue;
+    addContext({
+      workerId: task.primaryAgentId ?? task.agentIds[0] ?? null,
+      workerLabel: task.primaryAgentName,
+      sessionKey: resolveTaskSessionKeyForAttention(task),
+      taskId: task.id
+    });
+  }
+
+  for (const item of nativeItems) {
+    if (item.type !== "approval" && item.type !== "question" && item.type !== "suggested-work" && item.type !== "runtime-issue") continue;
+    addContext({
+      workerId: item.worker.id,
+      workerLabel: item.worker.label,
+      sessionKey: item.source.sessionKey,
+      taskId: item.source.taskId
+    });
+  }
+
+  return [...contexts.values()];
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, mapper: (item: T) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  const workerCount = Math.min(Math.max(1, Math.floor(concurrency)), items.length);
+  let nextIndex = 0;
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await mapper(items[index]);
+    }
+  }));
+
+  return results;
+}
+
+function hasSharedWorkIdentity(left: AttentionItem, right: AttentionItem) {
+  if (
+    left.source.system === right.source.system &&
+    left.source.kind === right.source.kind &&
+    left.source.nativeId &&
+    left.source.nativeId === right.source.nativeId
+  ) {
+    return true;
+  }
+
+  if (left.source.sessionKey && left.source.sessionKey === right.source.sessionKey) {
+    return true;
+  }
+
+  return Boolean(left.source.taskId && left.source.taskId === right.source.taskId);
+}
+
+function hasSharedToolIdentity(left: AttentionItem, right: AttentionItem) {
+  return Boolean(left.evidence?.toolId && right.evidence?.toolId && left.evidence.toolId === right.evidence.toolId);
 }
 
 function isBlockingTask(task: TaskRecord) {
