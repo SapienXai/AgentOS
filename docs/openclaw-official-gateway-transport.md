@@ -157,6 +157,32 @@ token/password environment inputs retain their credential behavior, and the
 official host's debug/error hooks remain redacted/no-op because AgentOS already
 projects sanitized lifecycle diagnostics.
 
+## Phase 5A.1 official production observation gate
+
+The bounded Level B production-equivalent observation completed against the exact
+OpenClaw 2026.8.2 package and an isolated managed-write state root. The sanitized
+evidence is recorded in
+`docs/evidence/openclaw-2026.8.2-official-production-observation.json`.
+
+The default factory selected the official transport, completed the v4 handshake,
+authenticated with canonical device state, served representative health, status,
+Gateway status, models, agents, sessions, tasks, channels, config, and cron reads,
+and recovered from an isolated Gateway restart with subscription replay and a
+post-reconnect RPC. Request-policy cache and invalidation behavior, device
+identity reuse, config set/unset, explicit selector behavior, and the custom
+rollback escape hatch were also observed. No custom transport was needed during
+the official observation and no unexpected fallback occurred. The single fallback
+recorded by the certification was the explicitly documented CLI-only
+`update.status` surface.
+
+Real production observation completed: **NO**. No deployed AgentOS environment
+was configured in the current runtime, and no live environment, channel account,
+provider credential, or customer state was touched. Provider-backed chat, live
+channel lifecycle, disposable task/session mutation, and disposable cron
+execution remain skipped where their required runtime targets or credentials were
+not available. Technical rollback-retirement readiness is **YES**; the real
+production observation gate is **not yet satisfied**, so Phase 5B must not begin.
+
 ## Certification coverage
 
 `tests/openclaw-official-gateway-transport.test.ts` uses a real local
