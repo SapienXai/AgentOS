@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-native-work-hardening-certification",
+  "generatedAt": "2026-09-04T14:26:37.131Z",
+  "provenance": {
+    "repository": "SapienXai/AgentOS",
+    "branch": "main",
+    "codeCommitUnderTest": "54cd154acd40a72020495dfcd4515457ead6008a",
+    "openClaw": {
+      "version": "2026.9.1",
+      "sourceCommit": "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
+      "buildId": "2026.9.1-ad6fe23aecb9-2026-09-04T10-30-53.753Z",
+      "packageHash": "4fed530115d575fb0f6a677aeca9b854ae9956f022f443b0039f4f94263c0ebe",
+      "packageRoot": "[DISPOSABLE_EXACT_PACKAGE]"
+    }
+  },
+  "runtime": {
+    "packageMode": "exact-openclaw-package-fixture",
+    "gatewayPlacement": "disposable-loopback",
+    "stateIsolation": true,
+    "configIsolation": true,
+    "userGatewayUntouched": true,
+    "realProviderCredentials": false
+  },
+  "contracts": {
+    "worktrees": [
+      "worktrees.list",
+      "worktrees.branches",
+      "sessions.create"
+    ],
+    "taskSuggestions": [
+      "taskSuggestions.list",
+      "taskSuggestions.create",
+      "taskSuggestions.accept",
+      "taskSuggestions.dismiss"
+    ],
+    "sessionOwnership": [
+      "session.members.list",
+      "session.members.listEvidence",
+      "sessions.assignOwner"
+    ],
+    "events": [
+      "task.suggestion",
+      "session.sharing",
+      "session.sharing.evidence"
+    ],
+    "noTaskSubscriptionMethod": true
+  },
+  "hardening": {
+    "eventFreshness": {
+      "missionControlSnapshotTtlMs": 30000,
+      "gatewayEventDebounceMs": 300,
+      "invalidationBeforeDebouncedRefresh": true,
+      "runtimeProof": "PASS"
+    },
+    "authorizationParity": {
+      "sourceCommit": "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
+      "staticMethodScopes": {
+        "taskSuggestions.list": [
+          "operator.read"
+        ],
+        "taskSuggestions.create": [
+          "operator.write"
+        ],
+        "taskSuggestions.accept": [
+          "operator.admin"
+        ],
+        "taskSuggestions.dismiss": [
+          "operator.write"
+        ],
+        "worktrees.list": [
+          "operator.read"
+        ],
+        "worktrees.branches": [
+          "operator.write"
+        ],
+        "worktrees.create": [
+          "operator.write"
+        ],
+        "worktrees.remove": [
+          "operator.admin"
+        ],
+        "worktrees.restore": [
+          "operator.admin"
+        ],
+        "worktrees.gc": [
+          "operator.admin"
+        ],
+        "session.members.list": [
+          "operator.read"
+        ],
+        "session.members.listEvidence": [
+          "operator.read"
+        ],
+        "session.members.add": [
+          "operator.write"
+        ],
+        "session.members.remove": [
+          "operator.write"
+        ],
+        "session.visibility.set": [
+          "operator.write"
+        ],
+        "sessions.assignOwner": [
+          "operator.write"
+        ]
+      }
+    },
+    "snapshotEfficiency": {
+      "maxSessionsProjected": 32,
+      "preHardeningMemberEvidenceRpcUpperBound": 64,
+      "rootMemberRpcCount": 0,
+      "rootEvidenceRpcCount": 0,
+      "detailMemberRpcCount": 1,
+      "detailEvidenceRpcCount": 1
+    }
+  },
+  "handshake": {
+    "protocol": 4,
+    "serverVersion": "2026.9.1",
+    "buildId": "2026.9.1-ad6fe23aecb9-2026-09-04T10-30-53.753Z",
+    "methods": [
+      "taskSuggestions.list",
+      "taskSuggestions.create",
+      "taskSuggestions.accept",
+      "taskSuggestions.dismiss",
+      "worktrees.list",
+      "worktrees.branches",
+      "worktrees.create",
+      "worktrees.remove",
+      "worktrees.restore",
+      "worktrees.gc",
+      "sessions.create",
+      "session.members.list",
+      "session.members.add",
+      "session.members.remove",
+      "sessions.assignOwner",
+      "session.members.listEvidence"
+    ],
+    "capabilities": [
+      "taskSuggestions.acceptModes"
+    ]
+  },
+  "checks": {
+    "exactPackage": true,
+    "nativeTransport": true,
+    "worktreeBranches": true,
+    "managedWorktreeSession": true,
+    "worktreeProjection": true,
+    "suggestionList": true,
+    "suggestionAccept": true,
+    "suggestionDismiss": true,
+    "suggestionEvent": true,
+    "eventFreshness": true,
+    "exactScopeParity": true,
+    "rootNativeWorkNoFanout": true,
+    "detailNativeWorkOnDemand": true,
+    "sessionMembers": true,
+    "sessionEvidence": true,
+    "ownerHandoff": "EXPECTED-DENIAL",
+    "noCliFallback": true,
+    "cleanup": true
+  },
+  "observations": {
+    "sessionKey": "agent:main:dashboard:105b51f5-a2a9-4c77-bf6d-f292f3cff933",
+    "sessionIdPresent": true,
+    "worktreeId": "547bde79-a179-4437-a7e2-0dd28d39f5ef",
+    "worktreePathReported": true,
+    "suggestionId": "task_af8a9e6c-390f-4735-b2da-1b1415445d1c",
+    "acceptedSessionKey": "agent:main:dashboard:6eaee349-ba76-4a16-abcb-0aec8d316248",
+    "eventNames": [
+      "health",
+      "cron",
+      "sessions.changed",
+      "update.available",
+      "task.suggestion"
+    ],
+    "ownerResult": "native authorization denied unidentified disposable operator",
+    "eventFreshnessLatencyMs": 7,
+    "rootMembershipRpcCount": 0,
+    "rootEvidenceRpcCount": 0,
+    "detailMembershipRpcCount": 1,
+    "detailEvidenceRpcCount": 1,
+    "fallbackTotal": 0
+  },
+  "cleanup": {
+    "status": "complete",
+    "gatewayProcessStopped": true,
+    "disposableRootRemoved": true
+  },
+  "gate": "OPENCLAW 9.1 NATIVE WORK HARDENING GATE: PASS",
+  "success": true
+}
