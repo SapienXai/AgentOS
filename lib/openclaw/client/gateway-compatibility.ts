@@ -323,7 +323,15 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   { id: "artifactDownload", label: "Artifact download", methods: ["artifacts.download"], baseline: "optional" },
   { id: "runtimeSnapshot", label: "Runtime snapshot", methods: ["sessions.list", "tasks.list"], baseline: "required" },
   { id: "commands", label: "Command catalog", methods: ["commands.list"], fallbackAllowed: false, baseline: "optional" },
-  { id: "tools", label: "Tool catalog", methods: ["tools.catalog", "tools.effective", "tools.invoke"], fallbackAllowed: false, baseline: "optional" },
+  {
+    id: "tools",
+    label: "Tool catalog",
+    methods: ["tools.catalog", "tools.effective", "tools.invoke"],
+    fallbackAllowed: false,
+    baseline: "optional",
+    productIntegration: "discovery-only",
+    productIntegratedMethods: ["tools.catalog", "tools.effective"]
+  },
   { id: "plugins", label: "Plugin catalog", methods: ["plugins.uiDescriptors", "plugins.list"], baseline: "optional" },
   {
     id: "execApprovals",
@@ -469,9 +477,11 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
       "skills.library.upload"
     ],
     fallbackAllowed: false,
-    recovery: "OpenClaw owns the shared skill library, revisions, uploads, and session activation. AgentOS currently exposes this surface for capability discovery only.",
+    recovery: "OpenClaw owns the shared skill library, revisions, uploads, and session activation. AgentOS consumes only the bounded list, read, and next-turn activation methods in this phase.",
     baseline: "optional",
-    productIntegration: "discovery-only"
+    productIntegration: "discovery-only",
+    productIntegratedMethods: ["skills.library.list", "skills.library.read", "skills.library.activate"],
+    events: ["skills.changed"]
   },
   {
     id: "githubProfileSession",

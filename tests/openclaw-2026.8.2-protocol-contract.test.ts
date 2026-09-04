@@ -174,7 +174,7 @@ test("9.1 discovery-only capability families preserve OpenClaw ownership", () =>
         "skills.library.import",
         "skills.library.upload"
       ],
-      events: []
+      events: ["skills.changed"]
     },
     sessionCollaboration: {
       methods: [
@@ -200,6 +200,16 @@ test("9.1 discovery-only capability families preserve OpenClaw ownership", () =>
     assert.deepEqual(operation.methods, contract.methods, operationId);
     assert.deepEqual(operation.events ?? [], contract.events, operationId);
     assert.equal(operation.productIntegration, "discovery-only", operationId);
+    if (operationId === "skillsLibrary") {
+      assert.deepEqual(operation.productIntegratedMethods, [
+        "skills.library.list",
+        "skills.library.read",
+        "skills.library.activate"
+      ]);
+    }
+    if (operationId === "tools") {
+      assert.deepEqual(operation.productIntegratedMethods, ["tools.catalog", "tools.effective"]);
+    }
     for (const method of contract.methods) {
       assert.equal(OPENCLAW_KNOWN_GATEWAY_FIRST_METHODS.includes(method), true, method);
     }

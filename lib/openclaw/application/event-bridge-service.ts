@@ -186,6 +186,9 @@ async function startEventBridge(generation: number) {
       },
       {
         onEvent: (frame) => {
+          if (isCapabilityFactChange(frame)) {
+            getOpenClawAdapter().invalidateReadCache?.();
+          }
           try {
             invalidateMissionControlSnapshot?.();
           } catch (error) {
@@ -255,6 +258,19 @@ async function startEventBridge(generation: number) {
     lastError = redactErrorMessage(error, "OpenClaw Gateway event stream failed.");
     reconnecting = false;
   }
+}
+
+function isCapabilityFactChange(frame: GatewayEventFrame) {
+  return [
+    "skills.changed",
+    "sessions.changed",
+    "session.tool",
+    "session.approval",
+    "exec.approval.requested",
+    "exec.approval.resolved",
+    "plugin.approval.requested",
+    "plugin.approval.resolved"
+  ].includes(frame.event);
 }
 
 function isBridgeConnected() {

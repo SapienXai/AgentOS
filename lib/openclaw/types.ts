@@ -1036,6 +1036,154 @@ export interface OpenClawAgent {
   policy: AgentPolicy;
 }
 
+export type EffectiveCapabilityStatus =
+  | "available"
+  | "requires-approval"
+  | "needs-setup"
+  | "blocked"
+  | "unavailable"
+  | "unknown";
+
+export type EffectiveCapabilityReasonCode =
+  | "tool_effective"
+  | "tool_not_effective"
+  | "tool_blocked"
+  | "tool_not_available"
+  | "account_not_connected"
+  | "approval_required"
+  | "runtime_unavailable"
+  | "session_context_missing"
+  | "skill_not_active"
+  | "policy_denied"
+  | "unknown";
+
+export type EffectiveCapabilityReason = {
+  code: EffectiveCapabilityReasonCode;
+  message: string;
+};
+
+export type EffectiveCapabilityEvidence = {
+  tool?: {
+    id: string;
+    toolIds?: string[];
+    catalogPresent: boolean;
+    effectivePresent: boolean | null;
+    deniedBySession: boolean;
+    source?: string | null;
+    sessionKey?: string | null;
+  };
+  skill?: {
+    skillId: string;
+    revision: string;
+    active: boolean;
+  };
+  account?: {
+    provider: string;
+    connected: boolean | null;
+    accountId?: string | null;
+  };
+  policy?: {
+    denied: boolean | null;
+    layer?: string | null;
+  };
+  approval?: {
+    required: boolean | null;
+    canRequest: boolean | null;
+  };
+  runtime?: {
+    available: boolean | null;
+    sessionKey?: string | null;
+    profile?: string | null;
+  };
+};
+
+export type EffectiveCapability = {
+  id: string;
+  label: string;
+  category: string;
+  description: string;
+  status: EffectiveCapabilityStatus;
+  explanation: string;
+  configured: boolean | null;
+  effective: boolean | null;
+  evidence: EffectiveCapabilityEvidence;
+  reasons: EffectiveCapabilityReason[];
+  remediation?: {
+    id: "connect-account" | "review-policy" | "activate-skill" | "open-settings";
+    label: string;
+  };
+};
+
+export type SkillLibraryOwnershipScope = "personal" | "shared" | "unknown";
+
+export type SkillLibraryItem = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  ownership: {
+    scope: SkillLibraryOwnershipScope;
+    ownerId: string | null;
+    ownerLabel: string | null;
+    authorId: string | null;
+  };
+  revision: {
+    id: string;
+    version: string | null;
+    createdAt: string | null;
+    updatedAt: string | null;
+  };
+  activation: {
+    enabled: boolean;
+    activeInSession: boolean | null;
+    activeRevisionId: string | null;
+    sessionKey: string | null;
+  };
+  source: "openclaw-library";
+  canEdit: boolean;
+  removed: boolean;
+};
+
+export type SkillLibraryRevision = {
+  id: string;
+  createdAt: string | null;
+};
+
+export type SkillLibraryDetail = {
+  item: SkillLibraryItem;
+  content: string;
+  files: Array<{
+    path: string;
+    content: string;
+    encoding: "utf8" | "base64";
+    executable: boolean;
+  }>;
+  revisions: SkillLibraryRevision[];
+};
+
+export type WorkerEffectiveCapabilitiesPayload = {
+  workerId: string;
+  capturedAt: string;
+  session: {
+    key: string | null;
+    updatedAt: number | null;
+    profile: string | null;
+  };
+  capabilities: EffectiveCapability[];
+  skills: SkillLibraryItem[];
+  skillLibrary: {
+    supported: boolean;
+    error: string | null;
+  };
+  sources: {
+    toolsCatalog: "native" | "unavailable";
+    toolsEffective: "native" | "unavailable" | "not-requested";
+    skillsLibrary: "native" | "unavailable";
+    accounts: "native" | "unavailable";
+  };
+  summary: Record<EffectiveCapabilityStatus, number>;
+};
+
 export interface ModelRecord {
   id: string;
   name: string;

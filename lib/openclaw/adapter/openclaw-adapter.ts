@@ -90,6 +90,12 @@ import type {
   OpenClawSessionSteerInput,
   OpenClawSessionsPayload,
   OpenClawSkillListPayload,
+  OpenClawSkillLibraryActivateInput,
+  OpenClawSkillLibraryActivatePayload,
+  OpenClawSkillLibraryListInput,
+  OpenClawSkillLibraryListPayload,
+  OpenClawSkillLibraryReadInput,
+  OpenClawSkillLibraryReadPayload,
   OpenClawStreamCallbacks,
   OpenClawTaskAssignInput,
   OpenClawTaskCancelInput,
@@ -117,6 +123,7 @@ export interface OpenClawAdapter {
   capture?(): OpenClawAdapter;
   /** Identity used to prevent answers crossing a Gateway reconnect. */
   getConnectionIdentity?(): { client: OpenClawGatewayClient; connectionId: string | null };
+  invalidateReadCache?(): void;
   getHealth(options?: OpenClawCommandOptions): Promise<OpenClawHealthPayload>;
   getStatus(options?: OpenClawCommandOptions): Promise<StatusPayload>;
   getUpdateStatus(options?: OpenClawCommandOptions): Promise<OpenClawUpdateStatusPayload>;
@@ -204,6 +211,9 @@ export interface OpenClawAdapter {
   setupGmailWebhook(input: OpenClawGmailSetupInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   listModels(input?: OpenClawListModelsInput, options?: OpenClawCommandOptions): Promise<ModelsPayload>;
   listSkills(options?: OpenClawCommandOptions & { eligible?: boolean }): Promise<OpenClawSkillListPayload>;
+  listSkillLibrary?(input?: OpenClawSkillLibraryListInput, options?: OpenClawCommandOptions): Promise<OpenClawSkillLibraryListPayload>;
+  readSkillLibrary?(input: OpenClawSkillLibraryReadInput, options?: OpenClawCommandOptions): Promise<OpenClawSkillLibraryReadPayload>;
+  activateSkillLibrary?(input: OpenClawSkillLibraryActivateInput, options?: OpenClawCommandOptions): Promise<OpenClawSkillLibraryActivatePayload>;
   listPlugins(options?: OpenClawCommandOptions): Promise<OpenClawPluginListPayload>;
   scanModels(options?: OpenClawCommandOptions & {
     yes?: boolean;
@@ -282,6 +292,10 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
       client,
       connectionId: client.getDiagnostics?.()?.operatorIdentity?.connectionId ?? null
     };
+  }
+
+  invalidateReadCache() {
+    this.getClient().invalidateReadCache?.();
   }
 
   getHealth(options: OpenClawCommandOptions = {}) {
@@ -638,6 +652,27 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
 
   listSkills(options: OpenClawCommandOptions & { eligible?: boolean } = {}) {
     return this.getClient().listSkills(options);
+  }
+
+  listSkillLibrary(input: OpenClawSkillLibraryListInput = {}, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    return client.listSkillLibrary?.(input, options) ?? Promise.reject(
+      new Error("OpenClaw does not expose skills.library.list.")
+    );
+  }
+
+  readSkillLibrary(input: OpenClawSkillLibraryReadInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    return client.readSkillLibrary?.(input, options) ?? Promise.reject(
+      new Error("OpenClaw does not expose skills.library.read.")
+    );
+  }
+
+  activateSkillLibrary(input: OpenClawSkillLibraryActivateInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    return client.activateSkillLibrary?.(input, options) ?? Promise.reject(
+      new Error("OpenClaw does not expose skills.library.activate.")
+    );
   }
 
   listPlugins(options: OpenClawCommandOptions = {}) {

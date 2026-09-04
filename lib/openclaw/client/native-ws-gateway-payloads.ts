@@ -161,6 +161,69 @@ export const skillsPayloadSchema = z
   })
   .passthrough();
 
+const skillLibraryEntrySchema = z.object({
+  skillId: z.string(),
+  slug: z.string(),
+  name: z.string(),
+  description: z.string(),
+  ownerProfileId: z.string().nullable(),
+  ownerLabel: z.string(),
+  authorProfileId: z.string(),
+  shared: z.boolean(),
+  enabled: z.boolean(),
+  removed: z.boolean(),
+  revision: z.string(),
+  createdAt: z.number().int().nonnegative(),
+  updatedAt: z.number().int().nonnegative(),
+  canEdit: z.boolean()
+}).passthrough();
+
+const skillLibrarySelectionSchema = z.object({
+  skillId: z.string(),
+  revision: z.string(),
+  name: z.string(),
+  ownerProfileId: z.string().nullable(),
+  slug: z.string(),
+  description: z.string(),
+  ownerLabel: z.string()
+}).passthrough();
+
+export const skillLibraryListPayloadSchema = z.object({
+  entries: z.array(skillLibraryEntrySchema),
+  profileId: z.string().nullable(),
+  multipleProfiles: z.boolean(),
+  defaultTarget: z.enum(["workspace", "personal", "unavailable"]),
+  canManageWorkspace: z.boolean(),
+  defaultSelectionLimit: z.number().int().nonnegative(),
+  defaultSelectionNotice: z.string().optional(),
+  session: z.object({
+    sessionKey: z.string(),
+    selections: z.array(skillLibrarySelectionSchema),
+    attachable: z.array(skillLibraryEntrySchema)
+  }).passthrough().optional()
+}).passthrough();
+
+export const skillLibraryReadPayloadSchema = z.object({
+  entry: skillLibraryEntrySchema,
+  content: z.string(),
+  files: z.array(z.object({
+    path: z.string(),
+    content: z.string(),
+    encoding: z.enum(["utf8", "base64"]).optional(),
+    executable: z.boolean().optional()
+  }).passthrough()),
+  revisions: z.array(z.object({
+    revision: z.string(),
+    createdAt: z.number().int().nonnegative()
+  }).passthrough())
+}).passthrough();
+
+export const skillLibraryActivatePayloadSchema = z.object({
+  sessionKey: z.string(),
+  selections: z.array(skillLibrarySelectionSchema),
+  sessionActivation: z.literal("next-turn")
+}).passthrough();
+
 export const pluginsPayloadSchema = z
   .object({
     plugins: z

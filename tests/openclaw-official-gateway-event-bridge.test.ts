@@ -142,6 +142,35 @@ test("official event delivery invalidates the snapshot before SSE subscribers re
   }
 });
 
+test("capability fact events invalidate the shared Gateway read cache", { concurrency: false }, async () => {
+  let invalidations = 0;
+  type TestEventCallbacks = { onEvent?: (frame: unknown) => void };
+  let callbacks: TestEventCallbacks | null = null;
+  setOpenClawCapabilityMatrixNativeCallerForTesting(async () => ({
+    protocolVersion: 4,
+    methods: ["sessions.subscribe"],
+    events: ["skills.changed", "session.tool"]
+  }));
+  setOpenClawAdapterForTesting({
+    invalidateReadCache: () => { invalidations += 1; },
+    subscribeRuntimeEvents: async (_input: unknown, next: TestEventCallbacks) => {
+      callbacks = next;
+      return { close: () => {} };
+    }
+  } as never);
+
+  const unsubscribe = subscribeOpenClawEventBridgeEvents(() => {});
+  try {
+    await waitFor(() => callbacks !== null);
+    const eventCallbacks = callbacks as unknown as TestEventCallbacks;
+    eventCallbacks.onEvent?.({ event: "skills.changed", payload: {}, seq: 1 });
+    eventCallbacks.onEvent?.({ event: "task", payload: {}, seq: 2 });
+    assert.equal(invalidations, 1);
+  } finally {
+    unsubscribe();
+  }
+});
+
 test("official-backed event bridge leaves reconnect storms to the official client", { concurrency: false }, async () => {
   activeHarness = await createHarness();
   activeClient = createOfficialBackedOpenClawGatewayClient({ url: activeHarness.url, token: "storm-token" });

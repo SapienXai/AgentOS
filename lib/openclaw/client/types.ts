@@ -450,6 +450,98 @@ export type OpenClawSkillListPayload = {
   }>;
 };
 
+/** Exact OpenClaw 2026.9.1 Skills Library wire types. */
+export type OpenClawSkillLibraryScope = "mine" | "team" | "all";
+
+export type OpenClawSkillLibraryEntry = {
+  skillId: string;
+  slug: string;
+  name: string;
+  description: string;
+  ownerProfileId: string | null;
+  ownerLabel: string;
+  authorProfileId: string;
+  shared: boolean;
+  enabled: boolean;
+  removed: boolean;
+  revision: string;
+  createdAt: number;
+  updatedAt: number;
+  canEdit: boolean;
+};
+
+export type OpenClawSkillLibrarySelection = {
+  skillId: string;
+  revision: string;
+  name: string;
+  ownerProfileId: string | null;
+  slug: string;
+  description: string;
+  ownerLabel: string;
+};
+
+export type OpenClawSkillLibraryListInput = {
+  sessionKey?: string;
+  scope?: OpenClawSkillLibraryScope;
+};
+
+export type OpenClawSkillLibraryListPayload = {
+  entries: OpenClawSkillLibraryEntry[];
+  profileId: string | null;
+  multipleProfiles: boolean;
+  defaultTarget: "workspace" | "personal" | "unavailable";
+  canManageWorkspace: boolean;
+  defaultSelectionLimit: number;
+  defaultSelectionNotice?: string;
+  session?: {
+    sessionKey: string;
+    selections: OpenClawSkillLibrarySelection[];
+    attachable: OpenClawSkillLibraryEntry[];
+  };
+};
+
+export type OpenClawSkillLibraryReadInput = {
+  skillId: string;
+  revision?: string;
+  sessionKey?: string;
+};
+
+export type OpenClawSkillLibraryReadPayload = {
+  entry: OpenClawSkillLibraryEntry;
+  content: string;
+  files: Array<{
+    path: string;
+    content: string;
+    encoding?: "utf8" | "base64";
+    executable?: boolean;
+  }>;
+  revisions: Array<{
+    revision: string;
+    createdAt: number;
+  }>;
+};
+
+export type OpenClawSkillLibraryActivateInput = {
+  sessionKey: string;
+  action: "attach" | "detach" | "refresh";
+  skillId?: string;
+  revision?: string;
+};
+
+export type OpenClawSkillLibraryActivatePayload = {
+  sessionKey: string;
+  selections: OpenClawSkillLibrarySelection[];
+  sessionActivation: "next-turn";
+};
+
+export type OpenClawSkillLibraryReceipt = {
+  state: "published" | "unchanged" | "removed";
+  target: "personal" | "team";
+  entry: OpenClawSkillLibraryEntry;
+  sessionActivation: "new-sessions";
+  nextAction: string;
+};
+
 export type OpenClawPluginListPayload = {
   plugins: Array<{
     id: string;
@@ -778,8 +870,9 @@ export type OpenClawToolsEffectivePayload = {
       source: "core" | "plugin" | "channel" | "mcp";
       pluginId?: string;
       channelId?: string;
-      risk?: "low" | "medium" | "high";
+      deniedBySession?: boolean;
       tags?: string[];
+      risk?: "low" | "medium" | "high";
     }>;
   }>;
   notices?: Array<{
@@ -1320,6 +1413,8 @@ export type OpenClawUpdateStatusPayload = Record<string, unknown> & {
 
 export interface OpenClawGatewayClient {
   getDiagnostics?(): OpenClawGatewayClientDiagnostics;
+  /** Invalidate AgentOS request-policy reads after a native upstream event. */
+  invalidateReadCache?(): void;
   getOperatorIdentity?(options?: OpenClawCommandOptions): Promise<OpenClawOperatorIdentity>;
   getHealth(options?: OpenClawCommandOptions): Promise<OpenClawHealthPayload>;
   getStatus(options?: OpenClawCommandOptions): Promise<StatusPayload>;
@@ -1414,6 +1509,9 @@ export interface OpenClawGatewayClient {
   removeChannelAccount(input: OpenClawChannelAccountRemoveInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   setupGmailWebhook(input: OpenClawGmailSetupInput, options?: OpenClawCommandOptions): Promise<CommandResult>;
   listSkills(options?: OpenClawCommandOptions & { eligible?: boolean }): Promise<OpenClawSkillListPayload>;
+  listSkillLibrary?(input?: OpenClawSkillLibraryListInput, options?: OpenClawCommandOptions): Promise<OpenClawSkillLibraryListPayload>;
+  readSkillLibrary?(input: OpenClawSkillLibraryReadInput, options?: OpenClawCommandOptions): Promise<OpenClawSkillLibraryReadPayload>;
+  activateSkillLibrary?(input: OpenClawSkillLibraryActivateInput, options?: OpenClawCommandOptions): Promise<OpenClawSkillLibraryActivatePayload>;
   listPlugins(options?: OpenClawCommandOptions): Promise<OpenClawPluginListPayload>;
   listModels(input?: OpenClawListModelsInput, options?: OpenClawCommandOptions): Promise<ModelsPayload>;
   scanModels(options?: OpenClawCommandOptions & { yes?: boolean; noInput?: boolean; noProbe?: boolean }): Promise<OpenClawModelScanPayload>;

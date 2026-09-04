@@ -123,6 +123,29 @@ test("9.1 native work methods use the exact upstream descriptor scopes", async (
   }
 });
 
+test("9.1 skills library and tool methods use exact upstream scopes", async () => {
+  const expected: Record<string, string> = {
+    "skills.library.list": "operator.read",
+    "skills.library.read": "operator.read",
+    "skills.library.activate": "operator.write",
+    "tools.catalog": "operator.read",
+    "tools.effective": "operator.read",
+    "tools.invoke": "operator.write"
+  };
+
+  const readService = new OpenClawAuthorizationService(fakeClient(nativeIdentity(["operator.read"])));
+  const writeService = new OpenClawAuthorizationService(fakeClient(nativeIdentity(["operator.write"])));
+  for (const [method, scope] of Object.entries(expected)) {
+    assert.deepEqual(OPENCLAW_STATIC_METHOD_SCOPES[method], [scope], method);
+    assert.deepEqual(resolveRequiredScopes(method), [scope], method);
+    const service = scope === "operator.read" ? readService : writeService;
+    assert.equal((await service.authorizeMethod(method)).state, "allowed", method);
+    if (scope === "operator.write") {
+      assert.equal((await readService.authorizeMethod(method)).state, "denied", method);
+    }
+  }
+});
+
 test("9.1 mutation policy classifies non-suffix mutation methods for fallback safety", () => {
   for (const method of [
     "channels.pairing.approve",

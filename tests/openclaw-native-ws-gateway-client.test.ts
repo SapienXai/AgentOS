@@ -4350,6 +4350,136 @@ test("native WS gateway client attempts omitted stable tool methods natively", a
   assert.deepEqual(fallback.calls, []);
 });
 
+test("native WS gateway client uses the exact Skills Library read and activation contract", async () => {
+  const fallback = new FallbackGatewayClient();
+  const skill = {
+    skillId: "11111111-1111-4111-8111-111111111111",
+    slug: "lead-qualification",
+    name: "Lead Qualification",
+    description: "Qualify leads.",
+    ownerProfileId: "profile-1",
+    ownerLabel: "Operator",
+    authorProfileId: "profile-1",
+    shared: false,
+    enabled: true,
+    removed: false,
+    revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    createdAt: 1756684800000,
+    updatedAt: 1756857600000,
+    canEdit: true
+  };
+  const selection = {
+    skillId: skill.skillId,
+    revision: skill.revision,
+    name: skill.name,
+    ownerProfileId: skill.ownerProfileId,
+    slug: skill.slug,
+    description: skill.description,
+    ownerLabel: skill.ownerLabel
+  };
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? { protocol: 4, features: { methods: ["skills.library.list", "skills.library.read", "skills.library.activate"] } }
+          : frame.method === "skills.library.list"
+            ? {
+                entries: [skill],
+                profileId: "profile-1",
+                multipleProfiles: false,
+                defaultTarget: "personal",
+                canManageWorkspace: false,
+                defaultSelectionLimit: 64,
+                session: {
+                  sessionKey: "agent:worker:main",
+                  selections: [selection],
+                  attachable: [skill]
+                }
+              }
+            : frame.method === "skills.library.read"
+              ? {
+                  entry: skill,
+                  content: "# Lead Qualification",
+                  files: [{ path: "SKILL.md", content: "IyBMRUFEX1FVQUxJRklDQVRJT04=", encoding: "base64", executable: false }],
+                  revisions: [{ revision: skill.revision, createdAt: skill.createdAt }]
+                }
+              : {
+                  sessionKey: "agent:worker:main",
+                  selections: [selection],
+                  sessionActivation: "next-turn"
+                }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    transport,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  assert.equal((await client.listSkillLibrary({ scope: "all", sessionKey: "agent:worker:main" })).entries[0]?.revision, skill.revision);
+  assert.equal((await client.readSkillLibrary({ skillId: skill.skillId, revision: skill.revision, sessionKey: "agent:worker:main" })).revisions[0]?.revision, skill.revision);
+  assert.equal((await client.activateSkillLibrary({ sessionKey: "agent:worker:main", action: "attach", skillId: skill.skillId, revision: skill.revision })).sessionActivation, "next-turn");
+  assert.deepEqual(sentFrames.map((frame) => frame.method), [
+    "connect",
+    "skills.library.list",
+    "skills.library.read",
+    "skills.library.activate"
+  ]);
+  assert.deepEqual(sentFrames[1]?.params, { scope: "all", sessionKey: "agent:worker:main" });
+  assert.deepEqual(sentFrames[2]?.params, { skillId: skill.skillId, revision: skill.revision, sessionKey: "agent:worker:main" });
+  assert.deepEqual(sentFrames[3]?.params, { sessionKey: "agent:worker:main", action: "attach", skillId: skill.skillId, revision: skill.revision });
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("Skills Library activation does not retry an ambiguous sent mutation", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
+    if (frame.method === "connect") {
+      globalThis.queueMicrotask(() => {
+        socket.emitMessage({ type: "res", id: frame.id, ok: true, payload: { protocol: 4 } });
+      });
+    }
+  });
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    transport,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 20
+  });
+
+  await assert.rejects(
+    () => client.activateSkillLibrary({
+      sessionKey: "agent:worker:main",
+      action: "attach",
+      skillId: "11111111-1111-4111-8111-111111111111",
+      revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }),
+    /timed out after/
+  );
+  assert.deepEqual(sentFrames.map((frame) => frame.method), ["connect", "skills.library.activate"]);
+  assert.deepEqual(fallback.calls, []);
+});
+
+test("Skills Library methods fail closed when the client is CLI-forced", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { transport } = createFakeGatewayTransport(() => {});
+  const client = new NativeWsOpenClawGatewayClient({
+    fallback,
+    forceCli: true,
+    transport,
+    url: "ws://127.0.0.1:18789",
+    timeoutMs: 250
+  });
+
+  await assert.rejects(client.listSkillLibrary(), /CLI fallback is disabled/);
+  assert.deepEqual(fallback.calls, []);
+});
+
 test("native WS gateway client queries chat history with sessionKey for explicit agent sessions", async () => {
   const fallback = new FallbackGatewayClient();
   const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {

@@ -65,6 +65,9 @@ import {
   parseGatewayPayload,
   parseObjectGatewayPayload,
   rememberStatusUpdateRegistry,
+  skillLibraryActivatePayloadSchema,
+  skillLibraryListPayloadSchema,
+  skillLibraryReadPayloadSchema,
   sessionsPayloadSchema,
   skillsPayloadSchema,
   statusPayloadSchema,
@@ -187,6 +190,12 @@ import type {
   OpenClawSessionSteerInput,
   OpenClawSessionsPayload,
   OpenClawSkillListPayload,
+  OpenClawSkillLibraryActivateInput,
+  OpenClawSkillLibraryActivatePayload,
+  OpenClawSkillLibraryListInput,
+  OpenClawSkillLibraryListPayload,
+  OpenClawSkillLibraryReadInput,
+  OpenClawSkillLibraryReadPayload,
   OpenClawStreamCallbacks,
   OpenClawTaskAssignInput,
   OpenClawTaskCancelInput,
@@ -299,6 +308,10 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
   close(reason = "closed") {
     this.connection.close(reason);
     this.requestPolicy.reset(this.connection.getGeneration());
+  }
+
+  invalidateReadCache() {
+    this.requestPolicy.invalidateReadCache();
   }
 
   async getOperatorIdentity(options: OpenClawCommandOptions = {}): Promise<OpenClawOperatorIdentity> {
@@ -1250,6 +1263,42 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
           : parsed;
       },
       () => this.fallback.listSkills(options)
+    );
+  }
+
+  listSkillLibrary(
+    input: OpenClawSkillLibraryListInput = {},
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawSkillLibraryListPayload>(
+      "skills.library.list",
+      { ...input },
+      options,
+      (payload) => parseGatewayPayload<OpenClawSkillLibraryListPayload>("skills.library.list", skillLibraryListPayloadSchema, payload)
+    );
+  }
+
+  readSkillLibrary(
+    input: OpenClawSkillLibraryReadInput,
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawSkillLibraryReadPayload>(
+      "skills.library.read",
+      { ...input },
+      options,
+      (payload) => parseGatewayPayload<OpenClawSkillLibraryReadPayload>("skills.library.read", skillLibraryReadPayloadSchema, payload)
+    );
+  }
+
+  activateSkillLibrary(
+    input: OpenClawSkillLibraryActivateInput,
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawSkillLibraryActivatePayload>(
+      "skills.library.activate",
+      { ...input },
+      options,
+      (payload) => parseGatewayPayload<OpenClawSkillLibraryActivatePayload>("skills.library.activate", skillLibraryActivatePayloadSchema, payload)
     );
   }
 
