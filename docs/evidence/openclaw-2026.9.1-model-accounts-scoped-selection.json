@@ -1,0 +1,315 @@
+{
+  "phase": "Phase 4 — Personal Model Accounts + Scoped Model Selection",
+  "certifiedCodeHead": "310e6d56cbbcf0cd6acc845b211c62ca143e8515",
+  "startingHead": "44b34d4dcf9ded5c2693f87837ba92c776dc6691",
+  "branch": "main",
+  "openclaw": {
+    "release": "2026.9.1",
+    "source": "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
+    "gatewayProtocol": 4,
+    "gatewayClient": "2026.9.1",
+    "gatewayProtocolPackage": "2026.9.1",
+    "auditBasis": "Exact 2026.9.1 package contract and pinned source provenance; no newer OpenClaw source was used."
+  },
+  "ownership": {
+    "openclaw": [
+      "model catalog",
+      "provider and model identity",
+      "auth profile state",
+      "availability and cooldown state",
+      "primary and fallback configuration",
+      "runtime model resolution",
+      "session override semantics",
+      "native authorization"
+    ],
+    "agentos": [
+      "workforce presentation",
+      "configured versus effective projection",
+      "selection UX",
+      "remediation wording",
+      "product permissions",
+      "audit metadata"
+    ],
+    "localAuthoritativeRegistries": {
+      "model": false,
+      "provider": false,
+      "availability": false,
+      "account": false,
+      "fallback": false,
+      "sessionModel": false
+    }
+  },
+  "contractAudit": {
+    "models.list": {
+      "scope": "operator.read",
+      "params": [
+        "view: default | configured | provider-config | all",
+        "preparedOnly?",
+        "refresh?",
+        "agentId?",
+        "includeProviderCapabilities?"
+      ],
+      "response": [
+        "models[]",
+        "model key/id/name/provider",
+        "available?",
+        "unavailableReason?",
+        "unavailableUntil?",
+        "deprecated?",
+        "disabled?",
+        "agentRuntime?",
+        "providerOutcomes[]"
+      ],
+      "agentScoped": true,
+      "normalReadsForceRefresh": false
+    },
+    "models.authStatus": {
+      "scope": "operator.read",
+      "params": ["refresh?", "agentId?"],
+      "response": [
+        "provider status",
+        "secret-free auth profiles",
+        "profile identity/type/status",
+        "expiry metadata",
+        "logout support",
+        "provider capabilities"
+      ],
+      "secretFree": true
+    },
+    "models.authLogout": {
+      "scope": "operator.admin",
+      "params": ["provider", "profileIds?", "agentId?"],
+      "mutation": "native provider/profile removal"
+    },
+    "models.probe": {
+      "scope": "operator.admin",
+      "productIntegrated": false,
+      "reason": "Discovered native probe surface is not needed for the Phase 4 product flow."
+    },
+    "models.authOrder.set": {
+      "productIntegrated": false,
+      "reason": "Exact compatibility surface remains discovery-only; AgentOS does not manage auth order."
+    },
+    "models.auth.order.set": {
+      "productIntegrated": false,
+      "reason": "Exact compatibility alias remains discovery-only; AgentOS does not manage auth order."
+    },
+    "models.scan": {
+      "productIntegrated": false,
+      "reason": "Legacy/discovery surface remains discovery-only."
+    },
+    "agents.list": {
+      "scope": "operator.read",
+      "response": "native worker primary and fallback model configuration"
+    },
+    "agents.update": {
+      "scope": "operator.admin",
+      "response": "native worker model selection; null clears the worker override"
+    },
+    "sessions.list": {
+      "scope": "operator.read",
+      "response": "native current model, provider, and modelOverrideSource"
+    },
+    "sessions.patch": {
+      "scope": "operator.write for the model-only envelope",
+      "params": ["key/sessionKey", "agentId?", "model: string | null"],
+      "timing": "native runtime semantics; AgentOS does not claim immediate replacement"
+    },
+    "config.patch": {
+      "scope": "native config authorization",
+      "use": "existing OpenClaw default and fallback configuration service"
+    }
+  },
+  "productIntegratedMethods": [
+    "models.list",
+    "models.authStatus",
+    "models.authLogout",
+    "agents.list",
+    "agents.update",
+    "sessions.list",
+    "sessions.patch",
+    "config.patch"
+  ],
+  "unsupportedOrDeferred": [
+    "dedicated account/profile selector",
+    "dedicated models.setDefault RPC",
+    "Mission model scope",
+    "models.probe product flow",
+    "models.scan product flow",
+    "auth-order mutation",
+    "provider-specific account transfer"
+  ],
+  "modelAvailability": {
+    "ready": "native available=true",
+    "needs-auth": "native unavailableReason=missing-auth",
+    "auth-failed": "native unavailableReason=auth-failed",
+    "cooldown": "native unavailableReason=cooldown",
+    "unavailable": "native available=false, missing, disabled, or deprecated",
+    "unknown": "native availability was not reported",
+    "catalogPresenceIsReadiness": false,
+    "configuredMissingModelPreserved": true,
+    "fallbackResolutionOwnedByOpenClaw": true
+  },
+  "selectionProjection": {
+    "scopes": ["default", "worker", "session"],
+    "default": {
+      "source": "OpenClaw agents.defaults model configuration",
+      "mutation": "existing native config.patch path"
+    },
+    "worker": {
+      "source": "OpenClaw agents.list plus agent-scoped models.list",
+      "automatic": "native clear/inherit; no pseudo-model ID",
+      "mutation": "agents.update"
+    },
+    "session": {
+      "source": "OpenClaw sessions.list native session row",
+      "mutation": "sessions.patch",
+      "clear": "model=null",
+      "provenance": {
+        "user": "explicit session override",
+        "auto": "native automatic/temporary selection",
+        "null": "native inherited state",
+        "missing": "unknown; not guessed"
+      }
+    },
+    "effectiveModelIsAgentOsFallback": false,
+    "sessionModelIsRewrittenToLatest": false,
+    "sessionModelOverrideIsLocal": false
+  },
+  "identityAndAccounts": {
+    "providerIdentitySource": "OpenClaw models.list and models.authStatus",
+    "modelIdentitySource": "OpenClaw native model key",
+    "profileIdentityPreserved": true,
+    "multipleProfilesRemainDistinct": true,
+    "personalOwnershipInvented": false,
+    "agentosUserIdEquatedToOpenclawProfileId": false,
+    "credentialsStoredByAgentos": false,
+    "chatgptCustomOauth": false
+  },
+  "mutationSafety": {
+    "nativeMutationFirst": true,
+    "blindRetryAfterAmbiguousTimeout": false,
+    "sessionSetReconciliation": "bounded sessions.list reread; success only when requested native model is visible",
+    "sessionResetReconciliation": "refreshed native snapshot verifies the override is gone",
+    "explicitInvalidationAndReread": true,
+    "productPermissions": true,
+    "gatewayFinalAuthorization": true
+  },
+  "runtimeCertification": {
+    "environment": {
+      "status": "SKIPPED",
+      "reason": "No isolated authenticated disposable OpenClaw Gateway was configured for this run. The user's loopback Gateway was intentionally not touched."
+    },
+    "models.list": {
+      "status": "SKIPPED",
+      "contract": "PASS",
+      "reason": "Live inventory/view/agentId/preparedOnly proof requires the isolated disposable runtime."
+    },
+    "providerAccountInventory": {
+      "status": "SKIPPED",
+      "contract": "PASS",
+      "reason": "Native secret-free normalization is covered; meaningful personal-account proof requires disposable provider state or interactive auth."
+    },
+    "chatgptLoginRouting": {
+      "status": "PASS",
+      "proof": [
+        "existing native setup routing retained",
+        "no custom OAuth implementation",
+        "secret-free state normalization",
+        "permission and error-path tests"
+      ],
+      "externalOAuthCompletion": "SKIPPED — real interactive provider authentication was not attempted"
+    },
+    "defaultSelection": {
+      "status": "SKIPPED",
+      "contract": "PASS",
+      "reason": "No disposable agent/config mutation was run against an isolated exact runtime."
+    },
+    "workerSelection": {
+      "status": "SKIPPED",
+      "contract": "PASS",
+      "reason": "No disposable agent mutation was run against an isolated exact runtime."
+    },
+    "sessionSelection": {
+      "status": "SKIPPED",
+      "contract": "PASS",
+      "reason": "Native sessions.patch integration and reconciliation are tested; no disposable authenticated session was created."
+    },
+    "fallbackRoundTrip": {
+      "status": "PASS",
+      "proof": "Native order is preserved and AgentOS contains no fallback-selection algorithm.",
+      "liveExecution": "SKIPPED — no billable provider call was forced"
+    },
+    "hotRefresh": {
+      "status": "SKIPPED",
+      "reason": "No isolated native auth/catalog mutation was available for safe live proof."
+    },
+    "cleanup": {
+      "status": "PASS",
+      "result": "No disposable runtime or user state was created or mutated."
+    }
+  },
+  "rpcBounds": {
+    "rootDashboardAdditionalPerWorkerModelAccountReads": 0,
+    "globalManagementRead": "bounded parallel models.list, models.authStatus, config reads, agent list, optional setup metadata",
+    "workerDetail": "lazy agent-scoped models.list plus bounded native state reads",
+    "sessionDetail": "bounded model catalog plus one sessions.list search",
+    "modelRequestsPerDropdownOption": 0,
+    "requestCoalescing": true,
+    "newPollingDaemon": false,
+    "newEventStream": false,
+    "newGatewaySubscription": false
+  },
+  "security": {
+    "credentialsExposed": false,
+    "tokensExposed": false,
+    "cookiesExposed": false,
+    "authSecretsStoredByAgentos": false,
+    "centralRedactionUsed": true,
+    "nativeScopesEnforced": true,
+    "productPermissionsEnforced": true,
+    "rawGatewayCallsFromReact": false,
+    "realUserGatewayTouched": false,
+    "realProviderCredentialsAccessed": false
+  },
+  "validation": {
+    "focusedNativeAndModelTests": {
+      "status": "PASS",
+      "tests": 221,
+      "failures": 0
+    },
+    "fullSuite": {
+      "status": "PASS",
+      "command": "pnpm test",
+      "tests": 1251,
+      "failures": 0
+    },
+    "typecheck": { "status": "PASS", "command": "pnpm typecheck" },
+    "eslint": { "status": "PASS", "command": "pnpm lint" },
+    "productionBuild": { "status": "PASS", "command": "pnpm build" },
+    "releaseConsistency": { "status": "PASS", "command": "pnpm check:release" },
+    "packageBuild": { "status": "PASS", "command": "pnpm build:agentos-package" },
+    "packagePack": { "status": "PASS", "command": "pnpm pack:agentos" },
+    "packageSmoke": { "status": "PASS", "command": "pnpm smoke:agentos-package" },
+    "gitDiffCheck": { "status": "PASS", "command": "git diff --check" },
+    "browserSmoke": {
+      "status": "SKIPPED",
+      "reason": "No local AgentOS server was running and starting one would require connecting to the user's Gateway; the isolated runtime guard was preserved."
+    },
+    "warnings": [
+      "Existing Browserslist data is 7 months old.",
+      "Existing Tailwind duration-[4000ms] ambiguity warning during package webpack build."
+    ]
+  },
+  "twoSha": {
+    "implementationCommit": "310e6d56cbbcf0cd6acc845b211c62ca143e8515",
+    "implementationMessage": "feat(openclaw): adopt personal model accounts and scoped selection",
+    "evidenceMessage": "docs(openclaw): record model account certification",
+    "evidencePointsToImplementationCommit": true
+  },
+  "remainingRisks": [
+    "Interactive provider OAuth completion and personal-account ownership remain live-runtime-skipped because real credentials were intentionally not used.",
+    "Provider-specific auth behavior may expose additional native statuses when a disposable authenticated profile exists.",
+    "Exact OpenClaw 2026.9.1 does not expose a native account/profile selector or Mission model scope, so those remain unsupported rather than simulated."
+  ]
+}
