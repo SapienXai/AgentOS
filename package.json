@@ -28,6 +28,7 @@
     "openclaw:session-task-e2e": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-session-task-e2e.ts",
     "openclaw:native-work-cert": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-native-work-certification.ts",
     "openclaw:skills-capabilities-cert": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-skills-effective-capabilities-certification.ts",
+    "openclaw:capability-truthfulness-skills-cert": "OPENCLAW_SKILLS_EFFECTIVE_SEED=1 node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-skills-effective-capabilities-certification.ts",
     "openclaw:fresh-baseline-e2e": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-fresh-baseline-e2e.ts",
     "openclaw:migration-e2e": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-migration-e2e.ts",
     "openclaw:final-certification": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-final-certification.ts",

@@ -1052,6 +1052,7 @@ export type EffectiveCapabilityReasonCode =
   | "account_not_connected"
   | "approval_required"
   | "runtime_unavailable"
+  | "effective_state_unavailable"
   | "session_context_missing"
   | "skill_not_active"
   | "policy_denied"
@@ -1071,6 +1072,10 @@ export type EffectiveCapabilityEvidence = {
     deniedBySession: boolean;
     source?: string | null;
     sessionKey?: string | null;
+  };
+  effectiveTools?: {
+    status: "available" | "failed" | "not-requested";
+    failure?: "timeout" | "insufficient-scope" | "unsupported" | "interrupted" | "malformed" | "unknown";
   };
   skill?: {
     skillId: string;
@@ -1177,7 +1182,7 @@ export type WorkerEffectiveCapabilitiesPayload = {
   };
   sources: {
     toolsCatalog: "native" | "unavailable";
-    toolsEffective: "native" | "unavailable" | "not-requested";
+    toolsEffective: "native" | "failed" | "not-requested";
     skillsLibrary: "native" | "unavailable";
     accounts: "native" | "unavailable";
   };

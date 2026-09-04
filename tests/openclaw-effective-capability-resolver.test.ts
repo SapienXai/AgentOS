@@ -5,6 +5,7 @@ import {
   getWorkerEffectiveCapabilities,
   normalizeSkillLibraryDetail,
   normalizeSkillLibraryItem,
+  readSkillLibraryDetail,
   resolveEffectiveCapability,
   type CapabilityResolutionInput
 } from "@/lib/openclaw/application/worker-capability-service";
@@ -85,6 +86,58 @@ test("native effective denial outranks downstream account setup", () => {
 
   assert.equal(result.status, "unavailable");
   assert.equal(result.reasons[0]?.code, "tool_not_effective");
+});
+
+test("a successful effective-tools read that omits a tool proves unavailability", () => {
+  const result = resolve({
+    tool: { ...baseInput.tool!, effectivePresent: false },
+    effectiveToolsRead: { status: "available" }
+  });
+
+  assert.equal(result.status, "unavailable");
+  assert.equal(result.reasons[0]?.code, "tool_not_effective");
+});
+
+test("an effective-tools timeout produces unknown instead of unavailable", () => {
+  const result = resolve({
+    effectiveToolsRead: { status: "failed", failure: "timeout" }
+  });
+
+  assert.equal(result.status, "unknown");
+  assert.equal(result.effective, true);
+  assert.equal(result.reasons[0]?.code, "effective_state_unavailable");
+  assert.equal(result.evidence.effectiveTools?.failure, "timeout");
+  assert.match(result.explanation, /could not verify this capability/i);
+  assert.equal(result.reasons.some((reason) => reason.code === "runtime_unavailable"), false);
+});
+
+test("an effective-tools authorization failure produces unknown instead of unavailable", () => {
+  const result = resolve({
+    effectiveToolsRead: { status: "failed", failure: "insufficient-scope" }
+  });
+
+  assert.equal(result.status, "unknown");
+  assert.equal(result.reasons[0]?.code, "effective_state_unavailable");
+});
+
+test("explicit runtime unavailability remains unavailable", () => {
+  const result = resolve({
+    runtime: { available: false, sessionKey: "agent:worker:main", profile: "coding" },
+    effectiveToolsRead: { status: "failed", failure: "timeout" }
+  });
+
+  assert.equal(result.status, "unavailable");
+  assert.equal(result.reasons[0]?.code, "runtime_unavailable");
+});
+
+test("deniedBySession remains blocked when effective tools are native", () => {
+  const result = resolve({
+    tool: { ...baseInput.tool!, deniedBySession: true },
+    effectiveToolsRead: { status: "available" }
+  });
+
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reasons[0]?.code, "policy_denied");
 });
 
 test("catalog presence alone stays unknown without native session-effective facts", () => {
@@ -189,6 +242,154 @@ test("library normalization preserves native ownership, latest revision, and ses
   assert.equal(detail.revisions[0]?.id, entry.revision);
 });
 
+test("skill detail joins the exact native session selection revision", async () => {
+  const calls: string[] = [];
+  const skillId = "11111111-1111-4111-8111-111111111111";
+  const latestRevision = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const sessionRevision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const entry = {
+    skillId,
+    slug: "lead-qualification",
+    name: "Lead Qualification",
+    description: "Qualify leads.",
+    ownerProfileId: "profile-1",
+    ownerLabel: "Operator",
+    authorProfileId: "profile-1",
+    shared: false,
+    enabled: true,
+    removed: false,
+    revision: latestRevision,
+    createdAt: 1756684800000,
+    updatedAt: 1756857600000,
+    canEdit: true
+  } as const;
+
+  setOpenClawAdapterForTesting({
+    async readSkillLibrary() {
+      calls.push("skills.library.read");
+      return {
+        entry,
+        content: "# Lead Qualification",
+        files: [],
+        revisions: [{ revision: latestRevision, createdAt: entry.createdAt }]
+      };
+    },
+    async listSkillLibrary() {
+      calls.push("skills.library.list");
+      return {
+        entries: [entry],
+        profileId: "profile-1",
+        multipleProfiles: false,
+        defaultTarget: "personal",
+        canManageWorkspace: false,
+        defaultSelectionLimit: 64,
+        session: {
+          sessionKey: "agent:worker:main",
+          selections: [{ skillId, revision: sessionRevision, name: entry.name, ownerProfileId: "profile-1" }],
+          attachable: []
+        }
+      };
+    }
+  } as never);
+
+  const detail = await readSkillLibraryDetail(skillId, { sessionKey: "agent:worker:main" });
+  assert.equal(detail.item.revision.id, latestRevision);
+  assert.equal(detail.item.activation.activeRevisionId, sessionRevision);
+  assert.equal(detail.item.activation.activeInSession, true);
+  assert.deepEqual(calls.sort(), ["skills.library.list", "skills.library.read"]);
+});
+
+test("skill detail reports known inactivity when session selection succeeds without a match", async () => {
+  const skillId = "11111111-1111-4111-8111-111111111111";
+  const entry = {
+    skillId,
+    slug: "lead-qualification",
+    name: "Lead Qualification",
+    description: "Qualify leads.",
+    ownerProfileId: "profile-1",
+    ownerLabel: "Operator",
+    authorProfileId: "profile-1",
+    shared: false,
+    enabled: true,
+    removed: false,
+    revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    createdAt: 1756684800000,
+    updatedAt: 1756857600000,
+    canEdit: true
+  } as const;
+  setOpenClawAdapterForTesting({
+    async readSkillLibrary() { return { entry, content: "# Skill", files: [], revisions: [] }; },
+    async listSkillLibrary() {
+      return {
+        entries: [entry], profileId: "profile-1", multipleProfiles: false, defaultTarget: "personal",
+        canManageWorkspace: false, defaultSelectionLimit: 64,
+        session: { sessionKey: "agent:worker:main", selections: [], attachable: [] }
+      };
+    }
+  } as never);
+
+  const detail = await readSkillLibraryDetail(skillId, { sessionKey: "agent:worker:main" });
+  assert.equal(detail.item.activation.activeInSession, false);
+  assert.equal(detail.item.activation.activeRevisionId, null);
+});
+
+test("skill detail keeps session activation unknown when selection read fails", async () => {
+  const skillId = "11111111-1111-4111-8111-111111111111";
+  const entry = {
+    skillId,
+    slug: "lead-qualification",
+    name: "Lead Qualification",
+    description: "Qualify leads.",
+    ownerProfileId: "profile-1",
+    ownerLabel: "Operator",
+    authorProfileId: "profile-1",
+    shared: false,
+    enabled: true,
+    removed: false,
+    revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    createdAt: 1756684800000,
+    updatedAt: 1756857600000,
+    canEdit: true
+  } as const;
+  setOpenClawAdapterForTesting({
+    async readSkillLibrary() { return { entry, content: "# Skill", files: [], revisions: [] }; },
+    async listSkillLibrary() { throw new Error("Gateway timeout"); }
+  } as never);
+
+  const detail = await readSkillLibraryDetail(skillId, { sessionKey: "agent:worker:main" });
+  assert.equal(detail.item.activation.activeInSession, null);
+  assert.equal(detail.item.activation.activeRevisionId, null);
+});
+
+test("skill detail without session context does not claim activation", async () => {
+  const entry = {
+    skillId: "11111111-1111-4111-8111-111111111111",
+    slug: "lead-qualification",
+    name: "Lead Qualification",
+    description: "Qualify leads.",
+    ownerProfileId: "profile-1",
+    ownerLabel: "Operator",
+    authorProfileId: "profile-1",
+    shared: false,
+    enabled: true,
+    removed: false,
+    revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    createdAt: 1756684800000,
+    updatedAt: 1756857600000,
+    canEdit: true
+  } as const;
+  let listCalls = 0;
+  setOpenClawAdapterForTesting({
+    async readSkillLibrary() { return { entry, content: "# Skill", files: [], revisions: [] }; },
+    async listSkillLibrary() { listCalls += 1; throw new Error("should not be called"); }
+  } as never);
+
+  const detail = await readSkillLibraryDetail(entry.skillId);
+  assert.equal(detail.item.activation.activeInSession, null);
+  assert.equal(detail.item.activation.activeRevisionId, null);
+  assert.equal(listCalls, 0);
+});
+
 test("worker capability resolution keeps the native read graph bounded", async () => {
   const calls: string[] = [];
   setOpenClawAdapterForTesting({
@@ -253,4 +454,37 @@ test("worker capability resolution keeps the native read graph bounded", async (
     "tools.catalog",
     "tools.effective"
   ].sort());
+});
+
+test("worker capability resolution does not turn an effective-tools read failure into runtime unavailable", async () => {
+  setOpenClawAdapterForTesting({
+    async listAgents() { return { agents: [{ id: "worker", tools: ["exec"] }] } as never; },
+    async listSessions() { return { sessions: [{ agentId: "worker", key: "agent:worker:main", updatedAt: 10 }] }; },
+    async getToolsCatalog() {
+      return {
+        agentId: "worker", profiles: [], groups: [{ id: "core", label: "Core", source: "core", tools: [
+          { id: "exec", label: "Shell", description: "Shell", source: "core", defaultProfiles: ["coding"] }
+        ] }]
+      };
+    },
+    async getEffectiveTools() { throw Object.assign(new Error("Gateway timeout"), { kind: "timeout" }); },
+    async listSkillLibrary() {
+      return {
+        entries: [], profileId: null, multipleProfiles: false, defaultTarget: "unavailable",
+        canManageWorkspace: false, defaultSelectionLimit: 64,
+        session: { sessionKey: "agent:worker:main", selections: [], attachable: [] }
+      };
+    },
+    async getChannelStatus() {
+      return { ts: 1, channelOrder: [], channelLabels: {}, channels: {}, channelAccounts: {}, channelDefaultAccountId: {} };
+    }
+  } as never);
+
+  const result = await getWorkerEffectiveCapabilities("worker");
+  const shell = result.capabilities.find((entry) => entry.id === "openclaw:shell");
+  assert.equal(shell?.status, "unknown");
+  assert.equal(shell?.evidence.runtime?.available, true);
+  assert.equal(shell?.evidence.effectiveTools?.status, "failed");
+  assert.equal(shell?.reasons[0]?.code, "effective_state_unavailable");
+  assert.equal(result.sources.toolsEffective, "failed");
 });

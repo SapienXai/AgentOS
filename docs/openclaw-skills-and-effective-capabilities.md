@@ -109,7 +109,11 @@ approval state.
 Reason codes are stable product values such as `tool_effective`,
 `tool_not_effective`, `tool_blocked`, `tool_not_available`,
 `account_not_connected`, `approval_required`, `runtime_unavailable`,
-`session_context_missing`, `skill_not_active`, `policy_denied`, and `unknown`.
+`effective_state_unavailable`, `session_context_missing`, `skill_not_active`,
+`policy_denied`, and `unknown`. A failed `tools.effective` observation is
+`Unknown` with `effective_state_unavailable`; it is not evidence that the
+runtime is unavailable. `Unavailable` is reserved for a successful native
+absence/denial or an explicit native runtime-unavailable fact.
 Every row includes structured evidence for tool, account, policy, approval,
 skill, and runtime facts when those facts exist.
 
@@ -155,3 +159,20 @@ The product integration registry remains granular: only
 `skills.library.list`, `skills.library.read`, and `skills.library.activate`
 are marked as consumed for this phase. The remaining library methods remain
 discovery-only even though their exact 2026.9.1 contracts are audited.
+
+## Phase 2.1 hardening
+
+Session-scoped Skill Detail uses one native `skills.library.read` and one
+parallel `skills.library.list({ sessionKey })` read in the AgentOS application
+service. The library entry supplies the latest revision; the session
+selection, joined only by native `skillId`, supplies the exact revision active
+for that session. A successful list with no selection means known inactive;
+an unsuccessful selection read leaves activation unknown. The latest revision
+never replaces the session revision.
+
+The runtime certification harness may seed one disposable skill through the
+official native `skills.library.save` method in an isolated exact 2026.9.1
+Gateway. This is certification-only fixture setup; save, mutate, import, and
+upload remain discovery-only product methods. The fixture is removed through
+the official native mutation contract, and no OpenClaw internal storage is
+written directly.

@@ -41,6 +41,15 @@ type CapabilityAccountFact = {
   accountId: string | null;
 };
 
+export type EffectiveToolsReadStatus = "available" | "failed" | "not-requested";
+export type EffectiveToolsReadFailure =
+  | "timeout"
+  | "insufficient-scope"
+  | "unsupported"
+  | "interrupted"
+  | "malformed"
+  | "unknown";
+
 export type CapabilityResolutionInput = {
   id: string;
   label: string;
@@ -67,6 +76,10 @@ export type CapabilityResolutionInput = {
     sessionKey?: string | null;
     profile?: string | null;
   } | null;
+  effectiveToolsRead?: {
+    status: EffectiveToolsReadStatus;
+    failure?: EffectiveToolsReadFailure;
+  };
 };
 
 const TOOL_CAPABILITY_GROUPS = [
@@ -174,7 +187,10 @@ export function resolveEffectiveCapability(input: CapabilityResolutionInput): Ef
             sessionKey: input.runtime.sessionKey ?? null,
             profile: input.runtime.profile ?? null
           }
-        }
+      }
+      : {}),
+    ...(input.effectiveToolsRead
+      ? { effectiveTools: input.effectiveToolsRead }
       : {})
   };
 
@@ -197,6 +213,20 @@ export function resolveEffectiveCapability(input: CapabilityResolutionInput): Ef
   if (input.runtime?.available === false) {
     addReason("runtime_unavailable", "The required OpenClaw runtime is unavailable.");
     return buildCapability(input, "unavailable", "The required runtime is unavailable right now.", evidence, reasons);
+  }
+
+  // A failed native observation is not proof that the runtime or tool is
+  // unavailable. Preserve the distinction so temporary Gateway failures,
+  // scope denials, and malformed responses remain honest UNKNOWN states.
+  if (input.effectiveToolsRead?.status === "failed") {
+    addReason("effective_state_unavailable", "AgentOS could not verify the effective tool state from OpenClaw.");
+    return buildCapability(
+      input,
+      "unknown",
+      "AgentOS could not verify this capability from the current OpenClaw runtime.",
+      evidence,
+      reasons
+    );
   }
 
   // A native effective denial is stronger than a downstream setup or
@@ -293,7 +323,12 @@ export async function getWorkerEffectiveCapabilities(workerId: string, options: 
     accounts,
     sessionKey,
     sessionProfile: effective?.profile ?? null,
-    runtimeAvailable: effectiveResult.status === "rejected" && sessionKey ? false : sessionKey ? true : null
+    runtimeAvailable: sessionKey ? true : null,
+    effectiveToolsRead: sessionKey
+      ? effectiveResult.status === "fulfilled"
+        ? { status: "available" }
+        : { status: "failed", failure: classifyEffectiveToolsReadFailure(effectiveResult.reason) }
+      : { status: "not-requested" }
   });
 
   const skills = library ? normalizeSkillLibraryItems(library, sessionKey) : [];
@@ -318,7 +353,7 @@ export async function getWorkerEffectiveCapabilities(workerId: string, options: 
     },
     sources: {
       toolsCatalog: catalogAvailable ? "native" : "unavailable",
-      toolsEffective: sessionKey ? (effectiveAvailable ? "native" : "unavailable") : "not-requested",
+      toolsEffective: sessionKey ? (effectiveAvailable ? "native" : "failed") : "not-requested",
       skillsLibrary: libraryAvailable ? "native" : "unavailable",
       accounts: accountResult.status === "fulfilled" ? "native" : "unavailable"
     },
@@ -326,10 +361,56 @@ export async function getWorkerEffectiveCapabilities(workerId: string, options: 
   } satisfies WorkerEffectiveCapabilitiesPayload;
 }
 
+export async function readSkillLibraryDetail(
+  skillId: string,
+  options: { revision?: string; sessionKey?: string | null } = {}
+): Promise<SkillLibraryDetail> {
+  const adapter = getOpenClawAdapter();
+  if (!adapter.readSkillLibrary) {
+    throw new Error("OpenClaw Skills Library read is unavailable.");
+  }
+
+  const detailPromise = adapter.readSkillLibrary({
+    skillId,
+    ...(options.revision ? { revision: options.revision } : {})
+  }, { timeoutMs: 8_000 });
+  const selectionPromise = options.sessionKey
+    ? adapter.listSkillLibrary
+      ? adapter.listSkillLibrary({ scope: "all", sessionKey: options.sessionKey }, { timeoutMs: 8_000 })
+      : Promise.reject(new Error("OpenClaw Skills Library session selection is unavailable."))
+    : Promise.resolve(null);
+
+  const [detailResult, selectionResult] = await Promise.allSettled([detailPromise, selectionPromise]);
+  if (detailResult.status === "rejected") {
+    throw detailResult.reason;
+  }
+
+  let activeRevisionId: string | null = null;
+  let activeInSession: boolean | null | undefined;
+  if (options.sessionKey) {
+    if (selectionResult.status === "fulfilled" && selectionResult.value) {
+      const selection = selectionResult.value.session?.selections.find((entry) => entry.skillId === skillId);
+      activeRevisionId = selection?.revision ?? null;
+      activeInSession = Boolean(selection);
+    } else {
+      // A failed selection observation is not evidence of known inactivity.
+      activeInSession = null;
+    }
+  }
+
+  return normalizeSkillLibraryDetail(
+    detailResult.value,
+    options.sessionKey ?? null,
+    activeRevisionId,
+    activeInSession
+  );
+}
+
 export function normalizeSkillLibraryItem(
   entry: OpenClawSkillLibraryEntry,
   sessionKey: string | null,
-  activeRevisionId: string | null = null
+  activeRevisionId: string | null = null,
+  activeInSessionOverride: boolean | null | undefined = undefined
 ): SkillLibraryItem {
   return {
     id: entry.skillId,
@@ -350,7 +431,9 @@ export function normalizeSkillLibraryItem(
     },
     activation: {
       enabled: entry.enabled,
-      activeInSession: sessionKey ? activeRevisionId !== null : null,
+      activeInSession: sessionKey
+        ? (activeInSessionOverride === undefined ? activeRevisionId !== null : activeInSessionOverride)
+        : null,
       activeRevisionId,
       sessionKey
     },
@@ -363,10 +446,11 @@ export function normalizeSkillLibraryItem(
 export function normalizeSkillLibraryDetail(
   payload: OpenClawSkillLibraryReadPayload,
   sessionKey: string | null = null,
-  activeRevisionId: string | null = null
+  activeRevisionId: string | null = null,
+  activeInSessionOverride: boolean | null | undefined = undefined
 ): SkillLibraryDetail {
   return {
-    item: normalizeSkillLibraryItem(payload.entry, sessionKey, activeRevisionId),
+    item: normalizeSkillLibraryItem(payload.entry, sessionKey, activeRevisionId, activeInSessionOverride),
     content: payload.content,
     files: payload.files.map((file) => ({
       path: file.path,
@@ -393,6 +477,10 @@ function buildCapabilities(input: {
   sessionKey: string | null;
   sessionProfile: string | null;
   runtimeAvailable: boolean | null;
+  effectiveToolsRead: {
+    status: EffectiveToolsReadStatus;
+    failure?: EffectiveToolsReadFailure;
+  };
 }) {
   const catalogTools = flattenCatalogTools(input.catalog);
   const effectiveTools = flattenEffectiveTools(input.effective);
@@ -465,7 +553,8 @@ function buildCapabilities(input: {
         available: input.runtimeAvailable,
         sessionKey: input.sessionKey,
         profile: input.sessionProfile
-      }
+      },
+      effectiveToolsRead: input.effectiveToolsRead
     });
   });
 }
@@ -597,6 +686,23 @@ function emptyCapabilitySummary(): Record<EffectiveCapabilityStatus, number> {
 function readSafeError(result: PromiseSettledResult<unknown>) {
   if (result.status === "fulfilled") return null;
   return redactErrorMessage(result.reason, "OpenClaw Skills Library is unavailable.");
+}
+
+function classifyEffectiveToolsReadFailure(error: unknown): EffectiveToolsReadFailure {
+  const kind = error && typeof error === "object" && "kind" in error
+    ? (error as { kind?: unknown }).kind
+    : null;
+  if (kind === "timeout") return "timeout";
+  if (kind === "unsupported") return "unsupported";
+  if (kind === "interrupted") return "interrupted";
+  if (kind === "malformed-response") return "malformed";
+
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  if (message.includes("scope") || message.includes("forbidden") || message.includes("permission") || message.includes("unauthoriz")) {
+    return "insufficient-scope";
+  }
+  if (message.includes("timeout") || message.includes("timed out")) return "timeout";
+  return "unknown";
 }
 
 function readString(value: unknown) {

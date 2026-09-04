@@ -21,6 +21,7 @@ import {
 const execFileAsync = promisify(execFile);
 const PACKAGE_INPUT = process.env.OPENCLAW_SKILLS_EFFECTIVE_PACKAGE?.trim() || "/tmp/openclaw-2026.9.1-source-agentos";
 const OUTPUT_PATH = process.env.OPENCLAW_SKILLS_EFFECTIVE_OUTPUT?.trim() || path.resolve("docs/evidence/openclaw-2026.9.1-skills-effective-capabilities.json");
+const SEED_DISPOSABLE_SKILL = process.env.OPENCLAW_SKILLS_EFFECTIVE_SEED === "1";
 const TARGET_VERSION = OPENCLAW_IDENTITY_CONTRACT_VERSION;
 const TARGET_COMMIT = OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT;
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -69,10 +70,14 @@ async function main() {
   const eventNames = new Set<string>();
   const rpcCounts: Record<string, number> = {};
   const count = (method: string) => { rpcCounts[method] = (rpcCounts[method] ?? 0) + 1; };
+  let seededSkillId: string | null = null;
+  let seededSkillRevision: string | null = null;
 
   const evidence = {
     schemaVersion: 1,
-    artifactType: "openclaw-skills-effective-capabilities-certification",
+    artifactType: SEED_DISPOSABLE_SKILL
+      ? "openclaw-capability-truthfulness-skills-runtime-certification"
+      : "openclaw-skills-effective-capabilities-certification",
     generatedAt: new Date().toISOString(),
     provenance: {
       repository: "SapienXai/AgentOS",
@@ -115,7 +120,22 @@ async function main() {
       ownership: "SKIPPED" as CertificationResult,
       revisionIdentity: "SKIPPED" as CertificationResult,
       sessionSelectionShape: "SKIPPED" as CertificationResult,
-      skipReasons: [] as string[]
+      skipReasons: [] as string[],
+      certificationFixture: {
+        enabled: SEED_DISPOSABLE_SKILL,
+        seedMethod: SEED_DISPOSABLE_SKILL ? "skills.library.save" : null,
+        seed: (SEED_DISPOSABLE_SKILL ? "SKIPPED" : "SKIPPED") as CertificationResult,
+        skillId: null as string | null,
+        revision: null as string | null,
+        read: "SKIPPED" as CertificationResult,
+        revisionIdentity: "SKIPPED" as CertificationResult,
+        activateAttach: "SKIPPED" as CertificationResult,
+        nextTurn: "SKIPPED" as CertificationResult,
+        sessionSelection: "SKIPPED" as CertificationResult,
+        detach: "SKIPPED" as CertificationResult,
+        skillCleanup: "SKIPPED" as CertificationResult,
+        skipReason: null as string | null
+      }
     },
     tools: {
       catalog: "SKIPPED" as CertificationResult,
@@ -135,6 +155,27 @@ async function main() {
         UNKNOWN: "SKIPPED" as CertificationResult
       },
       matrixSource: "deterministic resolver contract tests"
+    },
+    capabilityTruthfulness: {
+      effectiveToolsSuccessPresent: "AVAILABLE",
+      effectiveToolsSuccessAbsent: "UNAVAILABLE",
+      effectiveToolsDeniedBySession: "BLOCKED",
+      effectiveToolsReadTimeout: "UNKNOWN",
+      effectiveToolsReadAuthorizationFailure: "UNKNOWN",
+      explicitRuntimeUnavailable: "UNAVAILABLE",
+      unknownReasonCode: "effective_state_unavailable",
+      unknownExplanation: "AgentOS could not verify this capability from the current OpenClaw runtime.",
+      source: "deterministic resolver contract tests"
+    },
+    skillDetailRevisionTruth: {
+      latestRevisionSource: "skills.library.read.entry.revision",
+      sessionRevisionSource: "skills.library.list.session.selections[].revision",
+      joinIdentity: "skillId",
+      selectedSessionRevisionIsPreserved: true,
+      knownUnselectedState: false,
+      failedSelectionReadState: null,
+      noSessionContextState: null,
+      source: "deterministic application-service contract tests"
     },
     sessionRevision: {
       status: "SKIPPED" as CertificationResult,
@@ -183,6 +224,12 @@ async function main() {
       catalogNotAvailability: "SKIPPED" as CertificationResult,
       availableFixture: "SKIPPED" as CertificationResult,
       sessionSelectionShape: false,
+      disposableSkillSeed: "SKIPPED" as CertificationResult,
+      disposableSkillRead: "SKIPPED" as CertificationResult,
+      disposableSkillActivation: "SKIPPED" as CertificationResult,
+      disposableSkillSessionSelection: "SKIPPED" as CertificationResult,
+      disposableSkillDetach: "SKIPPED" as CertificationResult,
+      disposableSkillCleanup: "SKIPPED" as CertificationResult,
       exactScopes: false,
       insufficientScopeDenied: "SKIPPED" as CertificationResult,
       noCliFallback: false,
@@ -195,7 +242,7 @@ async function main() {
       fullSuite: "run separately"
     },
     skips: [
-      "No disposable library entry was created because skills.library.save/mutate are not product-integrated in Phase 2.",
+      ...(SEED_DISPOSABLE_SKILL ? [] : ["No disposable library entry was created because skills.library.save/mutate are certification-only methods and are not product-integrated."]),
       "Approval, account-missing, explicit-policy-block, and runtime-missing fixtures are covered by deterministic tests; the exact disposable runtime did not naturally expose each state.",
       "Exact session revision comparison is skipped because the disposable library was empty."
     ],
@@ -252,6 +299,44 @@ async function main() {
     assert.ok(sessionKey);
     resources.sessionKeys.push(sessionKey);
 
+    if (SEED_DISPOSABLE_SKILL) {
+      count("skills.library.save");
+      try {
+        const receipt = await client.callNative<{
+          state: "published" | "unchanged" | "removed";
+          target: "personal" | "team";
+          entry: { skillId: string; revision: string };
+          sessionActivation: "new-sessions";
+          nextAction: string;
+        }>("skills.library.save", {
+          expectedRevision: null,
+          slug: "agentos-phase-2-1-certification-skill",
+          content: "# AgentOS Phase 2.1 Certification Skill\n\nDisposable certification fixture.\n"
+        }, { timeoutMs: REQUEST_TIMEOUT_MS }, { safety: "mutation", allowCliFallback: false, timeoutMs: REQUEST_TIMEOUT_MS });
+        assert.equal(receipt.state, "published");
+        assert.ok(receipt.entry?.skillId);
+        assert.match(receipt.entry.revision, /^[a-f0-9]{64}$/);
+        seededSkillId = receipt.entry.skillId;
+        seededSkillRevision = receipt.entry.revision;
+        evidence.skillsLibrary.save = "PASS";
+        evidence.skillsLibrary.certificationFixture.seed = "PASS";
+        evidence.skillsLibrary.certificationFixture.skillId = seededSkillId;
+        evidence.skillsLibrary.certificationFixture.revision = seededSkillRevision;
+        evidence.checks.disposableSkillSeed = "PASS";
+      } catch (error) {
+        const outcome = classifySkillLibrarySeedOutcome(error);
+        evidence.skillsLibrary.save = outcome.status;
+        evidence.skillsLibrary.certificationFixture.seed = outcome.status;
+        evidence.skillsLibrary.certificationFixture.skipReason = outcome.reason;
+        evidence.checks.disposableSkillSeed = outcome.status;
+        if (outcome.status === "EXPECTED-DENIAL" || outcome.status === "SKIPPED") {
+          evidence.skillsLibrary.skipReasons.push(outcome.reason);
+        } else {
+          throw error;
+        }
+      }
+    }
+
     count("skills.library.list");
     const library = await client.listSkillLibrary({ scope: "all", sessionKey }, { timeoutMs: REQUEST_TIMEOUT_MS });
     assert.ok(Array.isArray(library.entries));
@@ -266,24 +351,61 @@ async function main() {
       evidence.skillsLibrary.skipReasons.push("skills.library.list returned an empty disposable library.");
     }
 
-    if (library.entries.length > 0) {
-      const firstEntry = library.entries[0];
+    const firstEntry = seededSkillId
+      ? library.entries.find((entry) => entry.skillId === seededSkillId)
+      : library.entries[0];
+    if (firstEntry) {
       count("skills.library.read");
-      const detail = await client.readSkillLibrary({ skillId: firstEntry.skillId, revision: firstEntry.revision, sessionKey }, { timeoutMs: REQUEST_TIMEOUT_MS });
+      const detail = await client.readSkillLibrary({ skillId: firstEntry.skillId, revision: firstEntry.revision }, { timeoutMs: REQUEST_TIMEOUT_MS });
       assert.equal(detail.entry.skillId, firstEntry.skillId);
       assert.equal(detail.entry.revision, firstEntry.revision);
       assert.ok(Array.isArray(detail.revisions));
       evidence.skillsLibrary.read = "PASS";
       evidence.skillsLibrary.ownership = firstEntry.shared || firstEntry.ownerProfileId ? "PASS" : "SKIPPED";
       evidence.skillsLibrary.revisionIdentity = /^[a-f0-9]{64}$/.test(firstEntry.revision) ? "PASS" : "FAIL";
+      evidence.skillsLibrary.certificationFixture.read = "PASS";
+      evidence.skillsLibrary.certificationFixture.revisionIdentity = evidence.skillsLibrary.revisionIdentity;
+      evidence.checks.disposableSkillRead = "PASS";
+
       count("skills.library.activate");
-      const activation = await client.activateSkillLibrary({ sessionKey, action: "refresh" }, { timeoutMs: REQUEST_TIMEOUT_MS });
+      const activation = await client.activateSkillLibrary({
+        sessionKey,
+        action: seededSkillId ? "attach" : "refresh",
+        ...(seededSkillId ? { skillId: firstEntry.skillId, revision: firstEntry.revision } : {})
+      }, { timeoutMs: REQUEST_TIMEOUT_MS });
       assert.equal(activation.sessionKey, sessionKey);
       assert.equal(activation.sessionActivation, "next-turn");
       assert.ok(Array.isArray(activation.selections));
       evidence.skillsLibrary.activate = "PASS";
       evidence.checks.skillsActivationContract = "PASS";
+      if (seededSkillId) {
+        evidence.skillsLibrary.certificationFixture.activateAttach = "PASS";
+        evidence.skillsLibrary.certificationFixture.nextTurn = "PASS";
+        evidence.checks.disposableSkillActivation = "PASS";
+        count("skills.library.list");
+        const attached = await client.listSkillLibrary({ scope: "all", sessionKey }, { timeoutMs: REQUEST_TIMEOUT_MS });
+        const selected = attached.session?.selections.find((selection) => selection.skillId === seededSkillId);
+        assert.equal(selected?.skillId, seededSkillId);
+        assert.equal(selected?.revision, firstEntry.revision);
+        evidence.sessionRevision.status = "PASS";
+        evidence.sessionRevision.reason = "OpenClaw returned the exact selected skillId and revision in skills.library.list(sessionKey).";
+        evidence.skillsLibrary.certificationFixture.sessionSelection = "PASS";
+        evidence.checks.disposableSkillSessionSelection = "PASS";
+
+        count("skills.library.activate");
+        const detached = await client.activateSkillLibrary({ sessionKey, action: "detach", skillId: seededSkillId }, { timeoutMs: REQUEST_TIMEOUT_MS });
+        assert.equal(detached.sessionKey, sessionKey);
+        assert.equal(detached.sessionActivation, "next-turn");
+        count("skills.library.list");
+        const afterDetach = await client.listSkillLibrary({ scope: "all", sessionKey }, { timeoutMs: REQUEST_TIMEOUT_MS });
+        assert.equal(afterDetach.session?.selections.some((selection) => selection.skillId === seededSkillId), false);
+        evidence.skillsLibrary.certificationFixture.detach = "PASS";
+        evidence.checks.disposableSkillDetach = "PASS";
+      }
     } else {
+      if (seededSkillId) {
+        throw new Error("The seeded Skills Library entry was not returned by the subsequent native list.");
+      }
       evidence.skillsLibrary.skipReasons.push("No entry was available for the exact read, revision, ownership, or activation contract calls.");
     }
 
@@ -389,6 +511,27 @@ async function main() {
     subscription?.close();
     readOnlyClient?.close("skills capability certification cleanup");
     if (client) {
+      if (seededSkillId && seededSkillRevision) {
+        count("skills.library.mutate");
+        try {
+          const removal = await client.callNative<{
+            state: "published" | "unchanged" | "removed";
+            entry: { skillId: string };
+          }>("skills.library.mutate", {
+            skillId: seededSkillId,
+            expectedRevision: seededSkillRevision,
+            action: "remove"
+          }, { timeoutMs: REQUEST_TIMEOUT_MS }, { safety: "mutation", allowCliFallback: false, timeoutMs: REQUEST_TIMEOUT_MS });
+          assert.equal(removal.state, "removed");
+          assert.equal(removal.entry.skillId, seededSkillId);
+          evidence.skillsLibrary.certificationFixture.skillCleanup = "PASS";
+          evidence.checks.disposableSkillCleanup = "PASS";
+        } catch (error) {
+          evidence.skillsLibrary.certificationFixture.skillCleanup = "FAIL";
+          evidence.skillsLibrary.certificationFixture.skipReason = sanitizeText(error instanceof Error ? error.message : String(error));
+          evidence.checks.disposableSkillCleanup = "FAIL";
+        }
+      }
       for (const sessionKey of [...resources.sessionKeys].reverse()) {
         await client.callNative("sessions.delete", { key: sessionKey, deleteTranscript: true }, { timeoutMs: REQUEST_TIMEOUT_MS }, { safety: "mutation", allowCliFallback: false, timeoutMs: REQUEST_TIMEOUT_MS }).catch(() => {});
       }
@@ -504,6 +647,18 @@ async function readGitHead() { return (await execFileAsync("git", ["rev-parse", 
 async function readGitBranch() { return (await execFileAsync("git", ["branch", "--show-current"], { cwd: process.cwd() })).stdout.trim(); }
 async function pathExists(candidate: string) { try { await readFile(candidate); return true; } catch { return false; } }
 function wait(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+function classifySkillLibrarySeedOutcome(error: unknown): { status: CertificationResult; reason: string } {
+  const raw = error instanceof Error ? error.message : String(error);
+  const normalized = raw.toLowerCase();
+  const reason = sanitizeText(raw);
+  if (normalized.includes("identity_required") || normalized.includes("identity") || normalized.includes("profile") || normalized.includes("synthetic") || normalized.includes("forbidden") || normalized.includes("permission") || normalized.includes("scope")) {
+    return { status: "EXPECTED-DENIAL", reason: `skills.library.save was denied by the isolated runtime: ${reason}` };
+  }
+  if (normalized.includes("unsupported") || normalized.includes("not found") || normalized.includes("unavailable")) {
+    return { status: "SKIPPED", reason: `skills.library.save could not be used in the isolated runtime: ${reason}` };
+  }
+  return { status: "FAIL", reason: `skills.library.save failed unexpectedly: ${reason}` };
+}
 function sanitizeText(value: string) { return value.replace(/agentos-skills-[A-Za-z0-9._-]+/g, "[REDACTED_TOKEN]").replace(/\/Users\/[^\s"']+/g, "[LOCAL_PATH]").replace(/\/tmp\/[^\s"']+/g, "[DISPOSABLE_PATH]").slice(0, 320); }
 function sanitizeEvidence(value: unknown): unknown {
   if (typeof value === "string") return sanitizeText(value);

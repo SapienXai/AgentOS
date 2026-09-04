@@ -4,7 +4,7 @@ import { z } from "zod";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
   getWorkerEffectiveCapabilities,
-  normalizeSkillLibraryDetail
+  readSkillLibraryDetail
 } from "@/lib/openclaw/application/worker-capability-service";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
@@ -41,20 +41,21 @@ export async function GET(request: Request, context: { params: Promise<{ agentId
 
     if (skillId) {
       const adapter = getOpenClawAdapter();
-      if (!adapter.readSkillLibrary) {
+      if (!adapter.readSkillLibrary || (sessionKey && !adapter.listSkillLibrary)) {
         return NextResponse.json({
           supported: false,
-          error: "OpenClaw Skills Library read is unavailable."
+          error: sessionKey
+            ? "OpenClaw Skills Library detail or session selection reads are unavailable."
+            : "OpenClaw Skills Library read is unavailable."
         });
       }
-      const detail = await adapter.readSkillLibrary({
-        skillId,
+      const detail = await readSkillLibraryDetail(skillId, {
         ...(query.get("revision") ? { revision: query.get("revision")! } : {}),
         ...(sessionKey ? { sessionKey } : {})
-      }, { timeoutMs: 8_000 });
+      });
       return NextResponse.json(redactSecrets({
         supported: true,
-        skill: normalizeSkillLibraryDetail(detail, sessionKey)
+        skill: detail
       }));
     }
 
