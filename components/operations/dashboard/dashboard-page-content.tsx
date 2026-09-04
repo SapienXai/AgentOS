@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
 import { RuntimeIssuesCard } from "@/components/runtime/runtime-inbox";
+import { HumanControlInbox } from "@/components/operations/human-control-inbox";
 import { TaskHealthCard, type TaskAuditActivity } from "@/components/operations/task-health-card";
 import type { MissionControlSnapshot, WorkspaceRecord } from "@/lib/agentos/contracts";
 import { compactPath, formatRelativeTime, formatTokens, resolveRelativeTimeReferenceMs } from "@/lib/openclaw/presenters";
@@ -320,6 +321,7 @@ export function DashboardPageContent({
           </SectionCard>
 
           <div className={cn("space-y-3 xl:col-span-5")}>
+            <HumanControlInbox surfaceTheme={surfaceTheme} />
             <TaskHealthCard
               snapshot={rootSnapshot}
               title="Task Health"

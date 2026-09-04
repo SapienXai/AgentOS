@@ -142,7 +142,7 @@ test("official event delivery invalidates the snapshot before SSE subscribers re
   }
 });
 
-test("capability fact events invalidate the shared Gateway read cache", { concurrency: false }, async () => {
+test("capability and Human Control fact events invalidate the shared Gateway read cache", { concurrency: false }, async () => {
   let invalidations = 0;
   type TestEventCallbacks = { onEvent?: (frame: unknown) => void };
   let callbacks: TestEventCallbacks | null = null;
@@ -164,8 +164,12 @@ test("capability fact events invalidate the shared Gateway read cache", { concur
     await waitFor(() => callbacks !== null);
     const eventCallbacks = callbacks as unknown as TestEventCallbacks;
     eventCallbacks.onEvent?.({ event: "skills.changed", payload: {}, seq: 1 });
-    eventCallbacks.onEvent?.({ event: "task", payload: {}, seq: 2 });
-    assert.equal(invalidations, 1);
+    eventCallbacks.onEvent?.({ event: "exec.approval.requested", payload: {}, seq: 2 });
+    eventCallbacks.onEvent?.({ event: "plugin.approval.resolved", payload: {}, seq: 3 });
+    eventCallbacks.onEvent?.({ event: "question.requested", payload: {}, seq: 4 });
+    eventCallbacks.onEvent?.({ event: "task.suggestion", payload: {}, seq: 5 });
+    eventCallbacks.onEvent?.({ event: "task", payload: {}, seq: 6 });
+    assert.equal(invalidations, 5);
   } finally {
     unsubscribe();
   }

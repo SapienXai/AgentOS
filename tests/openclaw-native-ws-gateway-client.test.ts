@@ -4122,6 +4122,43 @@ test("native WS gateway client exposes optional Gateway support methods", async 
   assert.deepEqual(fallback.calls, []);
 });
 
+test("native Human Control reads preserve exact 9.1 array approval responses and never fall back", async () => {
+  const fallback = new FallbackGatewayClient();
+  const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {
+    globalThis.queueMicrotask(() => {
+      socket.emitMessage({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: frame.method === "connect"
+          ? { protocol: 4 }
+          : frame.method === "exec.approval.list" || frame.method === "plugin.approval.list"
+            ? [{ id: "approval-1", request: { commandPreview: "echo safe" } }]
+            : frame.method === "question.list"
+              ? { questions: [] }
+              : frame.method.endsWith(".resolve")
+                ? { ok: true }
+                : { ok: true }
+      });
+    });
+  });
+  const client = new NativeWsOpenClawGatewayClient({ fallback, transport, url: "ws://127.0.0.1:18789", timeoutMs: 250 });
+
+  assert.deepEqual(await client.listNativeExecApprovals({ status: "pending" }), { approvals: [{ id: "approval-1", request: { commandPreview: "echo safe" } }] });
+  assert.deepEqual(await client.listNativePluginApprovals(), { approvals: [{ id: "approval-1", request: { commandPreview: "echo safe" } }] });
+  assert.deepEqual(await client.listQuestions(), { questions: [] });
+  await client.resolveNativeExecApproval({ approvalId: "approval-1", decision: "allow-once" });
+  await client.resolveNativePluginApproval({ approvalId: "approval-1", decision: "deny" });
+  assert.deepEqual(sentFrames.filter((frame) => frame.method !== "connect").map((frame) => [frame.method, frame.params]), [
+    ["exec.approval.list", { status: "pending" }],
+    ["plugin.approval.list", {}],
+    ["question.list", {}],
+    ["exec.approval.resolve", { id: "approval-1", decision: "allow-once" }],
+    ["plugin.approval.resolve", { id: "approval-1", decision: "deny" }]
+  ]);
+  assert.deepEqual(fallback.calls, []);
+});
+
 test("native WS gateway client exposes OpenClaw 2026.6.8 Gateway surfaces without CLI fallback", async () => {
   const fallback = new FallbackGatewayClient();
   const { transport, sentFrames } = createFakeGatewayTransport((socket, frame) => {

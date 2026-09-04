@@ -364,6 +364,7 @@ async function checkOperationContract(
   const status = resolveContractStatus({
     nativeGatewaySupported,
     cliFallbackAvailable,
+    missingScopes,
     versionDefaultExpectation,
     responseShapeStatus,
     liveFailure
@@ -433,12 +434,17 @@ function authorizesScope(grantedScope: string, requiredScope: string) {
 function resolveContractStatus(input: {
   nativeGatewaySupported: boolean;
   cliFallbackAvailable: boolean;
+  missingScopes: string[];
   versionDefaultExpectation: boolean;
   responseShapeStatus: OpenClawCompatibilityResponseShapeStatus;
   liveFailure: string | null;
 }): OpenClawCompatibilityContractStatus {
   if (input.nativeGatewaySupported) {
     return input.responseShapeStatus === "invalid" || input.liveFailure ? "failed" : "ok";
+  }
+
+  if (input.missingScopes.length > 0) {
+    return "degraded";
   }
 
   if (input.versionDefaultExpectation) {

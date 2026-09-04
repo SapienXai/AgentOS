@@ -156,6 +156,8 @@ import type {
   OpenClawExecApprovalListPayload,
   OpenClawExecApprovalResolveInput,
   OpenClawExecApprovalResolvePayload,
+  OpenClawNativeExecApprovalResolveInput,
+  OpenClawNativePluginApprovalResolveInput,
   OpenClawGatewayClient,
   OpenClawGatewayClientDiagnostics,
   OpenClawGatewayEventCallbacks,
@@ -171,6 +173,9 @@ import type {
   OpenClawLogsTailPayload,
   OpenClawModelAuthOrderSetInput,
   OpenClawModelScanPayload,
+  OpenClawQuestionListPayload,
+  OpenClawQuestionResolveInput,
+  OpenClawQuestionResolvePayload,
   ModelsStatusPayload,
   OpenClawRuntimeEventSubscriptionInput,
   OpenClawRuntimeSnapshotInput,
@@ -1129,6 +1134,51 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     return this.gatewaySurfaceCall("pluginApprovals", "plugin.approval.resolve", input, options, "mutation");
   }
 
+  listNativePluginApprovals(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawGatewaySurfacePayload>(
+      "plugin.approval.list",
+      { ...input },
+      options,
+      (payload) => Array.isArray(payload)
+        ? { approvals: payload }
+        : parseObjectGatewayPayload<OpenClawGatewaySurfacePayload>("plugin.approval.list", payload)
+    );
+  }
+
+  resolveNativePluginApproval(
+    input: OpenClawNativePluginApprovalResolveInput,
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawGatewaySurfacePayload>(
+      "plugin.approval.resolve",
+      { id: input.approvalId, decision: input.decision },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawGatewaySurfacePayload>("plugin.approval.resolve", payload)
+    );
+  }
+
+  listQuestions(options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawQuestionListPayload>(
+      "question.list",
+      {},
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawQuestionListPayload>("question.list", payload)
+    );
+  }
+
+  resolveQuestion(input: OpenClawQuestionResolveInput, options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawQuestionResolvePayload>(
+      "question.resolve",
+      {
+        id: input.id,
+        ...(input.cancel ? { cancel: true } : input.answers ? { answers: input.answers } : {}),
+        ...(input.resolvedBy ? { resolvedBy: input.resolvedBy } : {})
+      },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawQuestionResolvePayload>("question.resolve", payload)
+    );
+  }
+
   getChannelStatus(input: OpenClawChannelStatusInput = {}, options: OpenClawCommandOptions = {}) {
     return this.gatewayFirst(
       "channels.status",
@@ -2075,6 +2125,33 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
           },
           options
         )
+    );
+  }
+
+  listNativeExecApprovals(input: OpenClawExecApprovalListInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawExecApprovalListPayload>(
+      "exec.approval.list",
+      { ...input },
+      options,
+      (payload) => Array.isArray(payload)
+        ? { approvals: payload }
+        : (isObjectRecord(payload) ? payload as OpenClawExecApprovalListPayload : {})
+    );
+  }
+
+  resolveNativeExecApproval(
+    input: OpenClawNativeExecApprovalResolveInput,
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawExecApprovalResolvePayload>(
+      "exec.approval.resolve",
+      {
+        id: input.approvalId,
+        decision: input.decision,
+        ...(input.grantExpiresInDays !== undefined ? { grantExpiresInDays: input.grantExpiresInDays } : {})
+      },
+      options,
+      (payload) => (isObjectRecord(payload) ? payload as OpenClawExecApprovalResolvePayload : {})
     );
   }
 

@@ -269,7 +269,10 @@ function isCapabilityFactChange(frame: GatewayEventFrame) {
     "exec.approval.requested",
     "exec.approval.resolved",
     "plugin.approval.requested",
-    "plugin.approval.resolved"
+    "plugin.approval.resolved",
+    "question.requested",
+    "question.resolved",
+    "task.suggestion"
   ].includes(frame.event);
 }
 
@@ -308,13 +311,24 @@ function reconcileRuntimeProjection() {
           adapter.listSessions({}, { timeoutMs: 5_000 }),
           adapter.listTasks({}, { timeoutMs: 5_000 })
         ];
+        const optionalRefreshes: Array<Promise<unknown>> = [];
         if (adapter.listTaskSuggestions) {
-          refreshes.push(adapter.listTaskSuggestions({}, { timeoutMs: 5_000 }));
+          optionalRefreshes.push(adapter.listTaskSuggestions({}, { timeoutMs: 5_000 }));
         }
         if (adapter.listWorktrees) {
-          refreshes.push(adapter.listWorktrees({ timeoutMs: 5_000 }));
+          optionalRefreshes.push(adapter.listWorktrees({ timeoutMs: 5_000 }));
+        }
+        if (adapter.listNativeExecApprovals) {
+          optionalRefreshes.push(adapter.listNativeExecApprovals({ status: "pending", limit: 100 }, { timeoutMs: 5_000 }));
+        }
+        if (adapter.listNativePluginApprovals) {
+          optionalRefreshes.push(adapter.listNativePluginApprovals({}, { timeoutMs: 5_000 }));
+        }
+        if (adapter.listQuestions) {
+          optionalRefreshes.push(adapter.listQuestions({ timeoutMs: 5_000 }));
         }
         await Promise.all(refreshes);
+        await Promise.allSettled(optionalRefreshes);
         if (bridgeGeneration !== generation) {
           return;
         }

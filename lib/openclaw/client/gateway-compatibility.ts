@@ -345,7 +345,12 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
       "exec.approval.grants.list",
       "exec.approval.grants.revoke"
     ],
-    baseline: "optional"
+    events: ["exec.approval.requested", "exec.approval.resolved"],
+    fallbackAllowed: false,
+    recovery: "OpenClaw owns pending approval lifecycle. AgentOS Human Control uses native Gateway reads and resolution only.",
+    baseline: "optional",
+    productIntegration: "integrated",
+    productIntegratedMethods: ["exec.approval.list", "exec.approval.resolve"]
   },
   {
     id: "pluginApprovals",
@@ -356,13 +361,23 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
       "plugin.approval.waitDecision",
       "plugin.approval.resolve"
     ],
-    baseline: "optional"
+    events: ["plugin.approval.requested", "plugin.approval.resolved"],
+    fallbackAllowed: false,
+    recovery: "OpenClaw owns pending plugin approval lifecycle. AgentOS Human Control uses native Gateway reads and resolution only.",
+    baseline: "optional",
+    productIntegration: "integrated",
+    productIntegratedMethods: ["plugin.approval.list", "plugin.approval.resolve"]
   },
   {
     id: "questions",
     label: "Operator questions",
     methods: ["question.request", "question.waitAnswer", "question.resolve", "question.get", "question.list"],
-    baseline: "experimental"
+    events: ["question.requested", "question.resolved"],
+    fallbackAllowed: false,
+    recovery: "OpenClaw owns transient operator questions. AgentOS Human Control uses native Gateway reads and resolution only.",
+    baseline: "experimental",
+    productIntegration: "integrated",
+    productIntegratedMethods: ["question.list", "question.resolve"]
   },
   { id: "devicePairList", label: "Device pairing list", methods: ["device.pair.list", "devices.list", "gateway.devices.list"], baseline: "optional" },
   {

@@ -1310,6 +1310,60 @@ export type OpenClawExecApprovalResolvePayload = Record<string, unknown> & {
   status?: string;
 };
 
+export interface OpenClawNativeExecApprovalResolveInput {
+  approvalId: string;
+  decision: "allow-once" | "allow-always" | "deny";
+  grantExpiresInDays?: number;
+}
+
+export interface OpenClawNativePluginApprovalResolveInput {
+  approvalId: string;
+  decision: "allow-once" | "allow-always" | "deny";
+}
+
+export interface OpenClawQuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface OpenClawQuestionPrompt {
+  questionId: string;
+  header: string;
+  question: string;
+  options: OpenClawQuestionOption[];
+  multiSelect?: boolean;
+  isOther?: boolean;
+  isSecret?: boolean;
+}
+
+export interface OpenClawQuestionRecord {
+  id: string;
+  questions: OpenClawQuestionPrompt[];
+  agentId?: string;
+  sessionKey?: string;
+  runId?: string;
+  createdAtMs: number;
+  expiresAtMs: number;
+  status: "pending" | "answered" | "cancelled" | "expired";
+  answers?: { answers: Record<string, string[]> };
+  resolvedBy?: string;
+}
+
+export interface OpenClawQuestionListPayload {
+  questions: OpenClawQuestionRecord[];
+}
+
+export interface OpenClawQuestionResolveInput {
+  id: string;
+  answers?: { answers: Record<string, string[]> };
+  cancel?: true;
+  resolvedBy?: string;
+}
+
+export type OpenClawQuestionResolvePayload = Record<string, unknown> & {
+  status?: "answered" | "cancelled";
+};
+
 export type OpenClawCronStatusPayload = Record<string, unknown> & {
   enabled?: boolean;
   triggersEnabled?: boolean;
@@ -1490,6 +1544,12 @@ export interface OpenClawGatewayClient {
   invokeNode?(input: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   listPluginApprovals?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   resolvePluginApproval?(input: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+  listNativeExecApprovals?(input?: OpenClawExecApprovalListInput, options?: OpenClawCommandOptions): Promise<OpenClawExecApprovalListPayload>;
+  resolveNativeExecApproval?(input: OpenClawNativeExecApprovalResolveInput, options?: OpenClawCommandOptions): Promise<OpenClawExecApprovalResolvePayload>;
+  listNativePluginApprovals?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+  resolveNativePluginApproval?(input: OpenClawNativePluginApprovalResolveInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+  listQuestions?(options?: OpenClawCommandOptions): Promise<OpenClawQuestionListPayload>;
+  resolveQuestion?(input: OpenClawQuestionResolveInput, options?: OpenClawCommandOptions): Promise<OpenClawQuestionResolvePayload>;
   subscribeRuntimeEvents(
     input: OpenClawRuntimeEventSubscriptionInput,
     callbacks: OpenClawGatewayEventCallbacks,

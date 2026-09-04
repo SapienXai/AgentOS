@@ -146,6 +146,28 @@ test("9.1 skills library and tool methods use exact upstream scopes", async () =
   }
 });
 
+test("9.1 Human Control methods use dedicated native approval and question scopes", async () => {
+  const expected: Record<string, string> = {
+    "exec.approval.list": "operator.approvals",
+    "exec.approval.resolve": "operator.approvals",
+    "plugin.approval.list": "operator.approvals",
+    "plugin.approval.resolve": "operator.approvals",
+    "question.list": "operator.questions",
+    "question.resolve": "operator.questions"
+  };
+  const approvals = new OpenClawAuthorizationService(fakeClient(nativeIdentity(["operator.approvals"])));
+  const questions = new OpenClawAuthorizationService(fakeClient(nativeIdentity(["operator.questions"])));
+  for (const [method, scope] of Object.entries(expected)) {
+    assert.deepEqual(OPENCLAW_STATIC_METHOD_SCOPES[method], [scope], method);
+    assert.deepEqual(resolveRequiredScopes(method), [scope], method);
+    const allowed = scope === "operator.approvals" ? approvals : questions;
+    const denied = scope === "operator.approvals" ? questions : approvals;
+    const authorization = await allowed.authorizeMethod(method);
+    assert.equal(authorization.state, method === "question.resolve" ? "runtime-required" : "allowed", method);
+    assert.equal((await denied.authorizeMethod(method)).state, "denied", method);
+  }
+});
+
 test("9.1 mutation policy classifies non-suffix mutation methods for fallback safety", () => {
   for (const method of [
     "channels.pairing.approve",

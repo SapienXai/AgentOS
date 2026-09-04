@@ -1119,6 +1119,86 @@ export type EffectiveCapability = {
   };
 };
 
+export type AttentionItemType =
+  | "approval"
+  | "question"
+  | "suggested-work"
+  | "needs-setup"
+  | "blocked"
+  | "runtime-issue";
+
+export type AttentionSeverity = "critical" | "high" | "normal" | "low";
+
+export type AttentionAction = {
+  id: "approve" | "deny" | "answer" | "accept" | "dismiss" | "review" | "inspect" | "open-setup" | "review-policy";
+  label: string;
+  requiresPayload?: boolean;
+};
+
+export type AttentionItem = {
+  id: string;
+  type: AttentionItemType;
+  source: {
+    system: "openclaw" | "agentos";
+    kind: string;
+    nativeId?: string | null;
+    sessionKey?: string | null;
+    taskId?: string | null;
+  };
+  worker: {
+    id: string | null;
+    label: string | null;
+  };
+  mission?: {
+    id: string | null;
+    title: string | null;
+  };
+  severity: AttentionSeverity;
+  title: string;
+  summary: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  availableActions: AttentionAction[];
+  status: "pending" | "resolved" | "unavailable";
+  question?: Array<{
+    questionId: string;
+    text: string;
+    options: Array<{ label: string; description?: string }>;
+    multiSelect: boolean;
+    isOther?: boolean;
+    isSecret?: boolean;
+  }>;
+  evidence?: {
+    allowedDecisions?: string[];
+    capabilityId?: string;
+    toolId?: string;
+    reasonCode?: string;
+    runtimeIssueType?: string;
+  };
+};
+
+export type HumanControlInboxSummary = {
+  totalPending: number;
+  approvals: number;
+  questions: number;
+  suggestedWork: number;
+  setupAndBlockers: number;
+  runtimeIssues: number;
+};
+
+export type HumanControlInbox = {
+  items: AttentionItem[];
+  summary: HumanControlInboxSummary;
+  sources: {
+    approvals: "available" | "unavailable";
+    questions: "available" | "unavailable";
+    suggestedWork: "available" | "unavailable";
+    runtime: "available" | "unavailable";
+  };
+  generatedAt: string;
+  issues?: string[];
+};
+
 export type SkillLibraryOwnershipScope = "personal" | "shared" | "unknown";
 
 export type SkillLibraryItem = {

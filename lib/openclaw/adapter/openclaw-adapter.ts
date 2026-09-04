@@ -52,6 +52,8 @@ import type {
   OpenClawExecApprovalListPayload,
   OpenClawExecApprovalResolveInput,
   OpenClawExecApprovalResolvePayload,
+  OpenClawNativeExecApprovalResolveInput,
+  OpenClawNativePluginApprovalResolveInput,
   OpenClawAgentListPayload,
   OpenClawAgentTurnInput,
   OpenClawCommandOptions,
@@ -71,6 +73,9 @@ import type {
   OpenClawModelAuthOrderSetInput,
   OpenClawModelScanPayload,
   OpenClawPluginListPayload,
+  OpenClawQuestionListPayload,
+  OpenClawQuestionResolveInput,
+  OpenClawQuestionResolvePayload,
   OpenClawRuntimeEventSubscriptionInput,
   OpenClawRuntimeSnapshotInput,
   OpenClawRuntimeSnapshotPayload,
@@ -189,8 +194,14 @@ export interface OpenClawAdapter {
     listNodes?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
     describeNode?(input: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
     invokeNode?(input: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
-    listPluginApprovals?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
-    resolvePluginApproval?(input: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+  listPluginApprovals?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+  resolvePluginApproval?(input: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+  listNativeExecApprovals?(input?: OpenClawExecApprovalListInput, options?: OpenClawCommandOptions): Promise<OpenClawExecApprovalListPayload>;
+  resolveNativeExecApproval?(input: OpenClawNativeExecApprovalResolveInput, options?: OpenClawCommandOptions): Promise<OpenClawExecApprovalResolvePayload>;
+  listNativePluginApprovals?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+  resolveNativePluginApproval?(input: OpenClawNativePluginApprovalResolveInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+  listQuestions?(options?: OpenClawCommandOptions): Promise<OpenClawQuestionListPayload>;
+  resolveQuestion?(input: OpenClawQuestionResolveInput, options?: OpenClawCommandOptions): Promise<OpenClawQuestionResolvePayload>;
   subscribeRuntimeEvents(
     input: OpenClawRuntimeEventSubscriptionInput,
     callbacks: OpenClawGatewayEventCallbacks,
@@ -585,6 +596,38 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
       client.call<OpenClawGatewaySurfacePayload>("plugin.approval.resolve", input, options);
   }
 
+  listNativePluginApprovals(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.listNativePluginApprovals) {
+      return Promise.reject(new Error("OpenClaw native plugin approvals are unavailable."));
+    }
+    return client.listNativePluginApprovals(input, options);
+  }
+
+  resolveNativePluginApproval(input: OpenClawNativePluginApprovalResolveInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.resolveNativePluginApproval) {
+      return Promise.reject(new Error("OpenClaw native plugin approval resolution is unavailable."));
+    }
+    return client.resolveNativePluginApproval(input, options);
+  }
+
+  listQuestions(options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.listQuestions) {
+      return Promise.reject(new Error("OpenClaw does not expose question.list."));
+    }
+    return client.listQuestions(options);
+  }
+
+  resolveQuestion(input: OpenClawQuestionResolveInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.resolveQuestion) {
+      return Promise.reject(new Error("OpenClaw does not expose question.resolve."));
+    }
+    return client.resolveQuestion(input, options);
+  }
+
   subscribeRuntimeEvents(
     input: OpenClawRuntimeEventSubscriptionInput,
     callbacks: OpenClawGatewayEventCallbacks,
@@ -834,6 +877,22 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
         },
         options
       );
+  }
+
+  listNativeExecApprovals(input: OpenClawExecApprovalListInput = {}, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.listNativeExecApprovals) {
+      return Promise.reject(new Error("OpenClaw native exec approvals are unavailable."));
+    }
+    return client.listNativeExecApprovals(input, options);
+  }
+
+  resolveNativeExecApproval(input: OpenClawNativeExecApprovalResolveInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.resolveNativeExecApproval) {
+      return Promise.reject(new Error("OpenClaw native exec approval resolution is unavailable."));
+    }
+    return client.resolveNativeExecApproval(input, options);
   }
 
   getCronStatus(options: OpenClawCommandOptions = {}) {
