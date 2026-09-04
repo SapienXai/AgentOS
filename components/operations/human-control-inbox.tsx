@@ -18,14 +18,14 @@ import { cn } from "@/lib/utils";
 
 type SurfaceTheme = "dark" | "light";
 
-export function HumanControlInbox({ surfaceTheme, refreshGeneration }: { surfaceTheme: SurfaceTheme; refreshGeneration: number }) {
+export function HumanControlInbox({ surfaceTheme, attentionRefreshGeneration }: { surfaceTheme: SurfaceTheme; attentionRefreshGeneration: number }) {
   const [open, setOpen] = useState(false);
   const [payload, setPayload] = useState<HumanControlInboxPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
-  const refreshGenerationRef = useRef(refreshGeneration);
+  const refreshGenerationRef = useRef(attentionRefreshGeneration);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deferredRefreshRef = useRef(false);
   const openRef = useRef(open);
@@ -78,15 +78,15 @@ export function HumanControlInbox({ surfaceTheme, refreshGeneration }: { surface
   }, []);
 
   useEffect(() => {
-    if (refreshGenerationRef.current === refreshGeneration) return;
-    refreshGenerationRef.current = refreshGeneration;
+    if (refreshGenerationRef.current === attentionRefreshGeneration) return;
+    refreshGenerationRef.current = attentionRefreshGeneration;
     if (!open) return;
     if (pendingId || loading) {
       deferredRefreshRef.current = true;
       return;
     }
     scheduleInboxRefresh();
-  }, [loading, open, pendingId, refreshGeneration, scheduleInboxRefresh]);
+  }, [attentionRefreshGeneration, loading, open, pendingId, scheduleInboxRefresh]);
 
   useEffect(() => {
     if (!open || pendingId || loading || !deferredRefreshRef.current) return;

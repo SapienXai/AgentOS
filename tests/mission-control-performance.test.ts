@@ -21,7 +21,7 @@ test("runtime stream uses event-first status updates with bounded reconciliation
 
   assert.match(source, /STREAM_SYSTEM_STATUS_INTERVAL_MS\s*=\s*10_000/);
   assert.match(source, /STREAM_EVENT_DEBOUNCE_MS\s*=\s*300/);
-  assert.match(source, /subscribeOpenClawEventBridgeEvents\(\(\) => \{[\s\S]*?sendSystemStatus/);
+  assert.match(source, /subscribeOpenClawEventBridgeEvents\(\(frame\) => \{[\s\S]*?sendSystemStatus/);
   assert.match(source, /setInterval\(\(\) => \{[\s\S]*?STREAM_SYSTEM_STATUS_INTERVAL_MS/);
   assert.match(bridgeSource, /invalidateMissionControlSnapshot\?\.\(\);[\s\S]*?notifyBridgeEventSubscribers\(frame\)/);
 });

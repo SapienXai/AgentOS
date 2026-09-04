@@ -1,6 +1,8 @@
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
 import {
   getOpenClawEventBridgeStreamStatus,
+  getOpenClawAttentionRevision,
+  isHumanControlAttentionEvent,
   subscribeOpenClawEventBridgeEvents
 } from "@/lib/openclaw/application/event-bridge-service";
 import { redactErrorMessage, redactSecrets } from "@/lib/security/redaction";
@@ -189,8 +191,11 @@ export async function GET(request: Request) {
         return systemStatusTask;
       };
 
-      unsubscribeGatewayEvents = subscribeOpenClawEventBridgeEvents(() => {
+      unsubscribeGatewayEvents = subscribeOpenClawEventBridgeEvents((frame) => {
         void sendSystemStatus();
+        if (isHumanControlAttentionEvent(frame)) {
+          sendEvent("attention", { revision: getOpenClawAttentionRevision() });
+        }
         scheduleSnapshot(STREAM_EVENT_DEBOUNCE_MS);
       });
 

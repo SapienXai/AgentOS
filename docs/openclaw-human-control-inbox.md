@@ -35,11 +35,19 @@ Runtime issues use the existing actionable runtime issue projection and existing
 
 The production Inbox resolves capability attention only for a bounded set of workers and sessions from current running, queued, or stalled work and already surfaced native attention context. It does not scan idle workers. Candidate identities are deduplicated by worker plus session (or task when no session key is known), capped at 16, and resolved with concurrency four. A candidate resolution failure leaves native attention items visible and marks capability evidence unavailable instead of treating the failure as no blocker.
 
-The open Inbox reuses the existing Dashboard stream's live snapshot generation. It schedules one short, coalesced refresh only while the dialog is open; closed dialogs do not refetch on native events. In-progress actions defer event refreshes until the mutation's explicit native re-read completes. Question drafts remain keyed to their native question IDs and are removed only when the refreshed native list no longer contains them.
+The open Inbox reuses the existing Dashboard stream's attention-only revision signal. It schedules one short, coalesced refresh only while the dialog is open; closed dialogs do not refetch on native events. In-progress actions defer event refreshes until the mutation's explicit native re-read completes. Question drafts remain keyed to their native question IDs and are removed only when the refreshed native list no longer contains them.
 
 Runtime attention carries the exact task session key when the existing task metadata or canonical task key provides it, while retaining the task ID. Deduplication uses stable native source identity, then session or task identity; blocked capability items additionally require the same tool identity. Approval and question items therefore suppress only the matching runtime/blocker representation, while unrelated work for the same worker remains visible. Source completeness distinguishes unavailable capability reads from verified empty results.
 
 The existing Gateway event bridge remains the only subscription/reconnect owner. Approval, question, suggestion, session, tool, and runtime events invalidate the relevant AgentOS read/snapshot caches. Reconnect or sequence-gap reconciliation re-reads the current native inventories rather than resurrecting local items.
+
+## Phase 3.2 hardening
+
+Human Control is narrower than Worker Profile. Active-worker status alone does not promote every setup or policy gap: a capability blocker must have exact current-work tool evidence, such as a native approval, runtime `toolNames`, or another normalized attention record. Contexts without that evidence are left to Worker Profile and do not trigger a capability resolver call. Relevant contexts remain bounded at 16 with resolver concurrency four, and candidate identity is deduplicated by worker plus session (or task fallback).
+
+Derived capability attention IDs include the strongest deterministic work context: `session:<encodedSessionKey>`, then `task:<encodedTaskId>`, then `worker`. This keeps identical blockers in concurrent sessions distinct while preserving stable refresh identity. Semantic approval/question precedence remains separate from identity deduplication.
+
+The open Inbox listens to an attention-only revision event projected by the existing `/api/stream` connection. Generic snapshot changes such as health, heartbeat, usage, or telemetry do not advance that revision, while approval, question, suggestion, task/session, tool, skill, and other actionable attention changes do. Closed dialogs remain lazy; open dialogs perform one short coalesced reload and continue to defer refresh during mutations while preserving pending question drafts.
 
 ## Security and trust
 

@@ -40,6 +40,12 @@ export type CapabilityAttentionCandidate = {
   sessionKey?: string | null;
   taskId?: string | null;
   capability: EffectiveCapability;
+  relevance: CapabilityAttentionRelevance;
+};
+
+export type CapabilityAttentionRelevance = {
+  toolIds: string[];
+  sourceKinds: string[];
 };
 
 export type HumanControlInboxOptions = HumanControlInboxFilter & {
@@ -133,7 +139,9 @@ export async function resolveHumanControlCapabilityCandidates(
 ) {
   const maxCandidates = options.maxCandidates ?? HUMAN_CONTROL_CAPABILITY_CANDIDATE_LIMIT;
   const concurrency = options.concurrency ?? HUMAN_CONTROL_CAPABILITY_RESOLVER_CONCURRENCY;
-  const contexts = collectCapabilityCandidateContexts(snapshot, nativeItems).slice(0, maxCandidates);
+  const contexts = collectCapabilityCandidateContexts(snapshot, nativeItems)
+    .filter((context) => context.toolIds.length > 0)
+    .slice(0, maxCandidates);
   const resolver = options.resolver ?? getWorkerEffectiveCapabilities;
   const resolved = await mapWithConcurrency(contexts, concurrency, async (context) => {
     try {
@@ -169,7 +177,11 @@ export async function resolveHumanControlCapabilityCandidates(
         workerLabel: result.context.workerLabel,
         sessionKey: result.payload.session.key ?? result.context.sessionKey,
         taskId: result.context.taskId,
-        capability
+        capability,
+        relevance: {
+          toolIds: result.context.toolIds,
+          sourceKinds: result.context.sourceKinds
+        }
       });
     }
   }
@@ -338,13 +350,23 @@ export function projectSuggestedWork(snapshot: MissionControlSnapshot): Attentio
 
 export function projectCapabilityAttention(candidates: CapabilityAttentionCandidate[]): AttentionItem[] {
   return candidates
-    .filter(({ capability }) => capability.status === "needs-setup" || capability.status === "blocked")
+    .filter(({ capability, relevance }) =>
+      (capability.status === "needs-setup" || capability.status === "blocked") &&
+      isCapabilityOperationallyRelevant(capability, relevance)
+    )
     .map(({ workerId, workerLabel, sessionKey, taskId, capability }) => {
       const isBlocked = capability.status === "blocked";
       const reasonCode = capability.reasons[0]?.code ?? "unknown";
       const action = isBlocked ? "review-policy" : capability.remediation ? "open-setup" : null;
       return {
-        id: `${isBlocked ? "blocked" : "needs-setup"}:${workerId}:${capability.id}:${reasonCode}`,
+        id: buildCapabilityAttentionId({
+          type: isBlocked ? "blocked" : "needs-setup",
+          workerId,
+          sessionKey,
+          taskId,
+          capabilityId: capability.id,
+          reasonCode
+        }),
         type: isBlocked ? "blocked" as const : "needs-setup" as const,
         source: {
           system: "agentos" as const,
@@ -363,6 +385,42 @@ export function projectCapabilityAttention(candidates: CapabilityAttentionCandid
         evidence: { capabilityId: capability.id, reasonCode, toolId: capability.evidence.tool?.id }
       };
     });
+}
+
+export function isCapabilityOperationallyRelevant(
+  capability: EffectiveCapability,
+  relevance: CapabilityAttentionRelevance | undefined
+) {
+  const capabilityToolIds = [
+    capability.evidence.tool?.id,
+    ...(capability.evidence.tool?.toolIds ?? [])
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map(normalizeToolIdentity);
+  const relevantToolIds = new Set((relevance?.toolIds ?? []).map(normalizeToolIdentity));
+  return capabilityToolIds.some((toolId) => relevantToolIds.has(toolId));
+}
+
+export function buildCapabilityAttentionId(input: {
+  type: "blocked" | "needs-setup";
+  workerId: string;
+  sessionKey?: string | null;
+  taskId?: string | null;
+  capabilityId: string;
+  reasonCode: string;
+}) {
+  const context = input.sessionKey?.trim()
+    ? `session:${encodeURIComponent(input.sessionKey.trim())}`
+    : input.taskId?.trim()
+      ? `task:${encodeURIComponent(input.taskId.trim())}`
+      : "worker";
+  return [
+    input.type,
+    encodeURIComponent(input.workerId.trim()),
+    context,
+    encodeURIComponent(input.capabilityId),
+    encodeURIComponent(input.reasonCode)
+  ].join(":");
 }
 
 export function projectRuntimeAttention(snapshot: MissionControlSnapshot, agents: OpenClawAgent[] = snapshot.agents): AttentionItem[] {
@@ -649,6 +707,8 @@ type CapabilityCandidateContext = {
   workerLabel: string | null;
   sessionKey: string | null;
   taskId: string | null;
+  toolIds: string[];
+  sourceKinds: string[];
 };
 
 function collectCapabilityCandidateContexts(snapshot: MissionControlSnapshot, nativeItems: AttentionItem[]) {
@@ -660,6 +720,8 @@ function collectCapabilityCandidateContexts(snapshot: MissionControlSnapshot, na
     workerLabel?: string | null;
     sessionKey?: string | null;
     taskId?: string | null;
+    toolIds?: string[];
+    sourceKinds?: string[];
   }) => {
     const workerId = input.workerId?.trim();
     if (!workerId) return;
@@ -667,23 +729,45 @@ function collectCapabilityCandidateContexts(snapshot: MissionControlSnapshot, na
     const sessionKey = input.sessionKey?.trim() || null;
     const taskId = input.taskId?.trim() || null;
     const identity = `${workerId}:${sessionKey ?? `task:${taskId ?? "active"}`}`;
-    if (!contexts.has(identity)) {
-      contexts.set(identity, {
-        workerId,
-        workerLabel: input.workerLabel?.trim() || agentLabels.get(workerId) || null,
-        sessionKey,
-        taskId
-      });
+    const current = contexts.get(identity);
+    if (current) {
+      current.workerLabel ||= input.workerLabel?.trim() || agentLabels.get(workerId) || null;
+      current.toolIds = uniqueToolIdentities([...current.toolIds, ...(input.toolIds ?? [])]);
+      current.sourceKinds = uniqueStrings([...current.sourceKinds, ...(input.sourceKinds ?? [])]);
+      return;
     }
+
+    contexts.set(identity, {
+      workerId,
+      workerLabel: input.workerLabel?.trim() || agentLabels.get(workerId) || null,
+      sessionKey,
+      taskId,
+      toolIds: uniqueToolIdentities(input.toolIds ?? []),
+      sourceKinds: uniqueStrings(input.sourceKinds ?? [])
+    });
   };
+
+  const runtimes = Array.isArray(snapshot.runtimes) ? snapshot.runtimes : [];
+  const runtimesById = new Map(runtimes.map((runtime) => [runtime.id, runtime]));
 
   for (const task of snapshot.tasks) {
     if (task.status !== "running" && task.status !== "queued" && task.status !== "stalled") continue;
+    const taskRuntimes = runtimes.filter((runtime) =>
+      task.runtimeIds.includes(runtime.id) ||
+      runtime.taskId === task.id ||
+      runtime.metadata.taskId === task.id
+    );
+    const runtimeToolIds = [
+      ...taskRuntimes.flatMap((runtime) => runtime.toolNames ?? []),
+      ...(task.primaryRuntimeId ? runtimesById.get(task.primaryRuntimeId)?.toolNames ?? [] : [])
+    ];
     addContext({
       workerId: task.primaryAgentId ?? task.agentIds[0] ?? null,
       workerLabel: task.primaryAgentName,
       sessionKey: resolveTaskSessionKeyForAttention(task),
-      taskId: task.id
+      taskId: task.id,
+      toolIds: runtimeToolIds,
+      sourceKinds: ["task", ...taskRuntimes.map((runtime) => runtime.metadata.event).filter((event): event is string => typeof event === "string")]
     });
   }
 
@@ -693,7 +777,9 @@ function collectCapabilityCandidateContexts(snapshot: MissionControlSnapshot, na
       workerId: item.worker.id,
       workerLabel: item.worker.label,
       sessionKey: item.source.sessionKey,
-      taskId: item.source.taskId
+      taskId: item.source.taskId,
+      toolIds: item.evidence?.toolId ? [item.evidence.toolId] : [],
+      sourceKinds: [item.source.kind]
     });
   }
 
@@ -735,6 +821,18 @@ function hasSharedWorkIdentity(left: AttentionItem, right: AttentionItem) {
 
 function hasSharedToolIdentity(left: AttentionItem, right: AttentionItem) {
   return Boolean(left.evidence?.toolId && right.evidence?.toolId && left.evidence.toolId === right.evidence.toolId);
+}
+
+function normalizeToolIdentity(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function uniqueToolIdentities(values: string[]) {
+  return [...new Set(values.map(normalizeToolIdentity).filter(Boolean))];
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values)];
 }
 
 function isBlockingTask(task: TaskRecord) {

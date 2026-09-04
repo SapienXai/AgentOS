@@ -9,8 +9,10 @@ import {
 } from "@/lib/openclaw/application/capability-matrix-service";
 import { MissionControlCacheService } from "@/lib/openclaw/application/mission-control-cache-service";
 import {
+  getOpenClawAttentionRevision,
   getOpenClawEventBridgeStatus,
   getOpenClawEventBridgeStreamStatus,
+  isHumanControlAttentionEvent,
   registerMissionControlSnapshotInvalidator,
   resetOpenClawEventBridgeForTesting,
   subscribeOpenClawEventBridgeEvents
@@ -163,16 +165,27 @@ test("capability and Human Control fact events invalidate the shared Gateway rea
   try {
     await waitFor(() => callbacks !== null);
     const eventCallbacks = callbacks as unknown as TestEventCallbacks;
+    const attentionBefore = getOpenClawAttentionRevision();
     eventCallbacks.onEvent?.({ event: "skills.changed", payload: {}, seq: 1 });
     eventCallbacks.onEvent?.({ event: "exec.approval.requested", payload: {}, seq: 2 });
     eventCallbacks.onEvent?.({ event: "plugin.approval.resolved", payload: {}, seq: 3 });
     eventCallbacks.onEvent?.({ event: "question.requested", payload: {}, seq: 4 });
     eventCallbacks.onEvent?.({ event: "task.suggestion", payload: {}, seq: 5 });
     eventCallbacks.onEvent?.({ event: "task", payload: {}, seq: 6 });
+    eventCallbacks.onEvent?.({ event: "health", payload: {}, seq: 7 });
     assert.equal(invalidations, 5);
+    assert.equal(getOpenClawAttentionRevision(), attentionBefore + 6);
   } finally {
     unsubscribe();
   }
+});
+
+test("Human Control attention revision excludes generic runtime noise", () => {
+  assert.equal(isHumanControlAttentionEvent({ event: "exec.approval.requested" }), true);
+  assert.equal(isHumanControlAttentionEvent({ event: "task" }), true);
+  assert.equal(isHumanControlAttentionEvent({ event: "session.message" }), false);
+  assert.equal(isHumanControlAttentionEvent({ event: "health" }), false);
+  assert.equal(isHumanControlAttentionEvent({ event: "heartbeat" }), false);
 });
 
 test("official-backed event bridge leaves reconnect storms to the official client", { concurrency: false }, async () => {

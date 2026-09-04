@@ -70,7 +70,7 @@ export function DashboardPageContent({
   activeWorkspace,
   activeWorkspaceId,
   connectionState,
-  liveRefreshGeneration,
+  attentionRefreshGeneration,
   surfaceTheme,
   refresh,
   setSnapshot
@@ -80,7 +80,7 @@ export function DashboardPageContent({
   activeWorkspace: WorkspaceRecord | null;
   activeWorkspaceId: string | null;
   connectionState: "connecting" | "live" | "retrying";
-  liveRefreshGeneration: number;
+  attentionRefreshGeneration: number;
   surfaceTheme: "dark" | "light";
   refresh: () => Promise<void>;
   setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
@@ -323,7 +323,7 @@ export function DashboardPageContent({
           </SectionCard>
 
           <div className={cn("space-y-3 xl:col-span-5")}>
-            <HumanControlInbox surfaceTheme={surfaceTheme} refreshGeneration={liveRefreshGeneration} />
+            <HumanControlInbox surfaceTheme={surfaceTheme} attentionRefreshGeneration={attentionRefreshGeneration} />
             <TaskHealthCard
               snapshot={rootSnapshot}
               title="Task Health"

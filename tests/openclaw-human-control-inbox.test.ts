@@ -48,10 +48,15 @@ function snapshot(overrides: Record<string, unknown> = {}) {
     generatedAt: new Date().toISOString(),
     agents: [agent],
     tasks: [],
+    runtimes: [],
     diagnostics: { runtimeIssues: [] },
     nativeWork: { suggestions: [] },
     ...overrides
   } as unknown as MissionControlSnapshot;
+}
+
+function relevance(toolId: string) {
+  return { toolIds: [toolId], sourceKinds: ["session.tool"] };
 }
 
 function capability(status: "needs-setup" | "blocked", id = "openclaw:email"): EffectiveCapability {
@@ -128,17 +133,21 @@ test("composes suggested work and only promotes actionable capability blockers",
       effective: true,
       explanation: "No usable Gmail account is connected.",
       reasons: [{ code: "account_not_connected", message: "No account" }],
-      evidence: {},
+      evidence: { tool: { id: "gmail" } },
       remediation: "Connect a Gmail account"
-    }
+    },
+    relevance: relevance("gmail")
   } as never]);
-  assert.equal(capability[0]?.id, "needs-setup:worker-1:openclaw:gmail:account_not_connected");
+  assert.equal(capability[0]?.id, "needs-setup:worker-1:session:session-1:openclaw%3Agmail:account_not_connected");
   assert.equal(capability[0]?.availableActions[0]?.id, "open-setup");
 });
 
 test("production Inbox composition resolves capability attention from active context", async () => {
   const result = await getHumanControlInbox({
-    snapshot: snapshot({ tasks: [task] }),
+    snapshot: snapshot({
+      tasks: [{ ...task, runtimeIds: ["runtime-1"] }],
+      runtimes: [{ id: "runtime-1", toolNames: ["email", "shell"], metadata: {} }]
+    }),
     adapter: emptyAttentionAdapter(),
     capabilityResolver: async (workerId, options) => {
       assert.equal(workerId, "worker-1");
@@ -161,6 +170,62 @@ test("production Inbox composition resolves capability attention from active con
   assert.equal(result.sources.capabilities, "available");
 });
 
+test("active worker status alone does not promote unrelated capability gaps", async () => {
+  let resolverCalls = 0;
+  const result = await getHumanControlInbox({
+    snapshot: snapshot({
+      tasks: [{ ...task, runtimeIds: ["runtime-1"] }],
+      runtimes: [{ id: "runtime-1", toolNames: ["shell"], metadata: {} }]
+    }),
+    adapter: emptyAttentionAdapter(),
+    capabilityResolver: async () => {
+      resolverCalls += 1;
+      return {
+        workerId: "worker-1",
+        session: { key: "agent:worker-1:main", updatedAt: null, profile: "coding" },
+        capabilities: [capability("needs-setup", "openclaw:gmail"), capability("blocked", "openclaw:files")]
+      } as never;
+    }
+  });
+
+  assert.equal(resolverCalls, 1);
+  assert.equal(result.items.some((item) => item.type === "needs-setup" || item.type === "blocked"), false);
+});
+
+test("exact current tool evidence promotes only the matching capability blocker", async () => {
+  const result = await getHumanControlInbox({
+    snapshot: snapshot({
+      tasks: [{ ...task, runtimeIds: ["runtime-1"] }],
+      runtimes: [{ id: "runtime-1", toolNames: ["gmail"], metadata: {} }]
+    }),
+    adapter: emptyAttentionAdapter(),
+    capabilityResolver: async () => ({
+      workerId: "worker-1",
+      session: { key: "agent:worker-1:main", updatedAt: null, profile: "coding" },
+      capabilities: [capability("needs-setup", "openclaw:gmail"), capability("blocked", "openclaw:files")]
+    } as never)
+  });
+
+  assert.deepEqual(result.items.filter((item) => item.type === "needs-setup" || item.type === "blocked").map((item) => item.evidence?.toolId), ["gmail"]);
+});
+
+test("capability contexts without relevance evidence skip full resolution", async () => {
+  let resolverCalls = 0;
+  const result = await resolveHumanControlCapabilityCandidates(snapshot({
+    tasks: [task],
+    runtimes: [{ id: "runtime-1", taskId: task.id, toolNames: [], metadata: {} }]
+  }), [], {
+    resolver: async () => {
+      resolverCalls += 1;
+      return {} as never;
+    }
+  });
+
+  assert.equal(result.candidateCount, 0);
+  assert.equal(result.resolvedCount, 0);
+  assert.equal(resolverCalls, 0);
+});
+
 test("idle worker capability gaps are not eligible for Human Control", async () => {
   let resolverCalls = 0;
   const result = await getHumanControlInbox({
@@ -178,7 +243,10 @@ test("idle worker capability gaps are not eligible for Human Control", async () 
 
 test("capability resolver failures preserve native Inbox items and source uncertainty", async () => {
   const result = await getHumanControlInbox({
-    snapshot: snapshot({ tasks: [task] }),
+    snapshot: snapshot({
+      tasks: [{ ...task, runtimeIds: ["runtime-1"] }],
+      runtimes: [{ id: "runtime-1", toolNames: ["shell"], metadata: {} }]
+    }),
     adapter: {
       listNativeExecApprovals: async () => ({ approvals: [{ id: "approval-1", request: { agentId: "worker-1", sessionKey: "session-1" } }] }),
       listNativePluginApprovals: async () => ({ approvals: [] }),
@@ -196,12 +264,16 @@ test("capability resolver failures preserve native Inbox items and source uncert
 
 test("capability candidate resolution is bounded, deduplicated, and concurrency-limited", async () => {
   const agents = Array.from({ length: 20 }, (_, index) => ({ id: `worker-${index}`, name: `Worker ${index}` }));
-  const tasks = agents.map((entry) => ({ ...task, id: `task-${entry.id}`, key: `agent:${entry.id}:main`, primaryAgentId: entry.id, primaryAgentName: entry.name, agentIds: [entry.id], metadata: {} }));
+  const tasks = agents.map((entry) => ({ ...task, id: `task-${entry.id}`, key: `agent:${entry.id}:main`, primaryAgentId: entry.id, primaryAgentName: entry.name, agentIds: [entry.id], runtimeIds: [`runtime-${entry.id}`], metadata: {} }));
   let active = 0;
   let maxActive = 0;
   let calls = 0;
 
-  const result = await resolveHumanControlCapabilityCandidates(snapshot({ agents, tasks }), [], {
+  const result = await resolveHumanControlCapabilityCandidates(snapshot({
+    agents,
+    tasks,
+    runtimes: tasks.map((entry) => ({ id: entry.runtimeIds[0], toolNames: ["shell"], metadata: {} }))
+  }), [], {
     concurrency: 4,
     resolver: async (workerId) => {
       calls += 1;
@@ -231,7 +303,13 @@ test("same worker and session is resolved once while separate sessions remain ca
   const duplicateTask = { ...task, id: "task-duplicate", metadata: { openClawSessionKey: "agent:worker-1:main" } };
   const secondSessionTask = { ...task, id: "task-second", key: "agent:worker-1:secondary", metadata: { openClawSessionKey: "agent:worker-1:secondary" } };
   const calls: string[] = [];
-  await resolveHumanControlCapabilityCandidates(snapshot({ tasks: [duplicateTask, secondSessionTask] }), [], {
+  await resolveHumanControlCapabilityCandidates(snapshot({
+    tasks: [duplicateTask, secondSessionTask],
+    runtimes: [
+      { id: "runtime-duplicate", taskId: duplicateTask.id, toolNames: ["shell"], metadata: {} },
+      { id: "runtime-second", taskId: secondSessionTask.id, toolNames: ["shell"], metadata: {} }
+    ]
+  }), [], {
     resolver: async (workerId, options) => {
       calls.push(`${workerId}:${options.sessionKey}`);
       return {
@@ -253,12 +331,14 @@ test("deduplicates a matching blocker behind native approval and keeps unrelated
   const blocked = projectCapabilityAttention([{
     workerId: "worker-1",
     sessionKey: "session-1",
-    capability: { id: "openclaw:shell", label: "Shell", category: "Development", status: "blocked", configured: true, effective: false, explanation: "Shell is blocked.", reasons: [{ code: "policy_denied", message: "Denied" }], evidence: { tool: { id: "shell" } } }
+    capability: { id: "openclaw:shell", label: "Shell", category: "Development", status: "blocked", configured: true, effective: false, explanation: "Shell is blocked.", reasons: [{ code: "policy_denied", message: "Denied" }], evidence: { tool: { id: "shell" } } },
+    relevance: relevance("shell")
   } as never])[0];
   const unrelated = projectCapabilityAttention([{
     workerId: "worker-1",
     sessionKey: "session-1",
-    capability: { id: "openclaw:files", label: "Files", category: "Files & Data", status: "blocked", configured: true, effective: false, explanation: "Files are blocked.", reasons: [{ code: "policy_denied", message: "Denied" }], evidence: { tool: { id: "files" } } }
+    capability: { id: "openclaw:files", label: "Files", category: "Files & Data", status: "blocked", configured: true, effective: false, explanation: "Files are blocked.", reasons: [{ code: "policy_denied", message: "Denied" }], evidence: { tool: { id: "files" } } },
+    relevance: relevance("files")
   } as never])[0];
   const result = dedupeAttentionItems([approval!, blocked!, unrelated!]);
   assert.equal(result.some((item) => item.id === blocked?.id), false);
@@ -323,9 +403,48 @@ test("blocked capability deduplication requires the same tool relationship", () 
   const blockedFiles = projectCapabilityAttention([{
     workerId: "worker-1",
     sessionKey: "session-1",
-    capability: { ...capability("blocked", "openclaw:files"), evidence: { tool: { id: "files" } } }
+    capability: { ...capability("blocked", "openclaw:files"), evidence: { tool: { id: "files" } } },
+    relevance: relevance("files")
   } as never])[0];
   assert.equal(dedupeAttentionItems([approval!, blockedFiles!]).length, 2);
+});
+
+test("derived capability attention identity is stable and session-scoped", () => {
+  const first = projectCapabilityAttention([{
+    workerId: "worker-1",
+    sessionKey: "session-a",
+    capability: capability("blocked", "openclaw:shell"),
+    relevance: relevance("shell")
+  }])[0];
+  const second = projectCapabilityAttention([{
+    workerId: "worker-1",
+    sessionKey: "session-b",
+    capability: capability("blocked", "openclaw:shell"),
+    relevance: relevance("shell")
+  }])[0];
+  const repeated = projectCapabilityAttention([{
+    workerId: "worker-1",
+    sessionKey: "session-a",
+    capability: capability("blocked", "openclaw:shell"),
+    relevance: relevance("shell")
+  }])[0];
+  const taskScoped = projectCapabilityAttention([{
+    workerId: "worker-1",
+    taskId: "task-a",
+    capability: capability("blocked", "openclaw:shell"),
+    relevance: relevance("shell")
+  }])[0];
+  const secondTaskScoped = projectCapabilityAttention([{
+    workerId: "worker-1",
+    taskId: "task-b",
+    capability: capability("blocked", "openclaw:shell"),
+    relevance: relevance("shell")
+  }])[0];
+
+  assert.notEqual(first?.id, second?.id);
+  assert.equal(first?.id, repeated?.id);
+  assert.match(taskScoped?.id ?? "", /:task:task-a:/);
+  assert.notEqual(taskScoped?.id, secondTaskScoped?.id);
 });
 
 test("sorts by deterministic severity and oldest blocking time", () => {
@@ -397,12 +516,20 @@ test("Human Control integrates only native reads and resolutions", () => {
 
 test("open Human Control reuses the existing live refresh signal and preserves drafts", async () => {
   const source = await readFile("components/operations/human-control-inbox.tsx", "utf8");
-  assert.match(source, /refreshGeneration/);
+  const hookSource = await readFile("hooks/use-mission-control-data.ts", "utf8");
+  const streamSource = await readFile("app/api/stream/route.ts", "utf8");
+  assert.match(source, /attentionRefreshGeneration/);
   assert.match(source, /HUMAN_CONTROL_INBOX_REFRESH_DEBOUNCE_MS/);
   assert.match(source, /if \(!openRef\.current\) return/);
   assert.match(source, /deferredRefreshRef/);
   assert.match(source, /preserveQuestionAnswers/);
   assert.doesNotMatch(source, /new EventSource/);
+  assert.match(hookSource, /addEventListener\("attention"/);
+  assert.match(hookSource, /attentionRefreshGeneration/);
+  assert.doesNotMatch(hookSource, /liveRefreshGeneration/);
+  assert.match(streamSource, /isHumanControlAttentionEvent/);
+  assert.match(streamSource, /sendEvent\("attention"/);
+  assert.doesNotMatch(streamSource, /HumanControl EventSource/);
 
   assert.equal(shouldScheduleHumanControlRefresh({ open: false, loading: false, pendingAction: false }), false);
   assert.equal(shouldScheduleHumanControlRefresh({ open: true, loading: false, pendingAction: false }), true);

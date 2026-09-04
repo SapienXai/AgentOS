@@ -32,7 +32,7 @@ export function OperationsPage({
               activeWorkspace={context.activeWorkspace}
               activeWorkspaceId={context.activeWorkspaceId}
               connectionState={context.connectionState}
-              liveRefreshGeneration={context.liveRefreshGeneration}
+              attentionRefreshGeneration={context.attentionRefreshGeneration}
               surfaceTheme={context.surfaceTheme}
               refresh={context.refresh}
               setSnapshot={context.setSnapshot}

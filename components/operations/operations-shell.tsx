@@ -34,7 +34,7 @@ export type OperationsShellContext = {
   activeWorkspace: WorkspaceRecord | null;
   activeWorkspaceId: string | null;
   connectionState: "connecting" | "live" | "retrying";
-  liveRefreshGeneration: number;
+  attentionRefreshGeneration: number;
   surfaceTheme: "dark" | "light";
   refresh: () => Promise<void>;
   setSnapshot: Dispatch<SetStateAction<MissionControlSnapshot>>;
@@ -100,7 +100,7 @@ export function OperationsShell({
   initialSnapshot: MissionControlSnapshot;
   children: (context: OperationsShellContext) => ReactNode;
 }) {
-  const { snapshot, connectionState, liveRefreshGeneration, refresh, setSnapshot } = useMissionControlData(initialSnapshot);
+  const { snapshot, connectionState, attentionRefreshGeneration, refresh, setSnapshot } = useMissionControlData(initialSnapshot);
   const { surfaceTheme, setSurfaceTheme } = useMissionControlPreferences();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
     initialSnapshot.workspaces[0]?.id ?? null
@@ -509,7 +509,7 @@ export function OperationsShell({
             activeWorkspace,
             activeWorkspaceId,
             connectionState,
-            liveRefreshGeneration,
+            attentionRefreshGeneration,
             surfaceTheme,
             refresh,
             setSnapshot

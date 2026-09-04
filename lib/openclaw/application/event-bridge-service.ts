@@ -38,8 +38,25 @@ let sequenceGapCount = 0;
 let reconciliationPromise: Promise<void> | null = null;
 let reconciliationDirty = false;
 let reconciliationFollowUp = false;
+let attentionRevision = 0;
 let invalidateMissionControlSnapshot: (() => void) | null = null;
 const bridgeEventSubscribers = new Set<(frame: GatewayEventFrame) => void>();
+
+const HUMAN_CONTROL_ATTENTION_EVENTS = new Set([
+  "exec.approval.requested",
+  "exec.approval.resolved",
+  "plugin.approval.requested",
+  "plugin.approval.resolved",
+  "question.requested",
+  "question.resolved",
+  "task.suggestion",
+  "skills.changed",
+  "session.tool",
+  "session.approval",
+  "session.operation",
+  "sessions.changed",
+  "task"
+]);
 
 export function registerMissionControlSnapshotInvalidator(invalidator: () => void) {
   invalidateMissionControlSnapshot = invalidator;
@@ -123,6 +140,14 @@ export function getOpenClawEventBridgeStreamStatus(): OpenClawEventBridgeStreamS
   };
 }
 
+export function getOpenClawAttentionRevision() {
+  return attentionRevision;
+}
+
+export function isHumanControlAttentionEvent(frame: Pick<GatewayEventFrame, "event">) {
+  return HUMAN_CONTROL_ATTENTION_EVENTS.has(frame.event);
+}
+
 export function startOpenClawEventBridge() {
   if (subscription || starting) {
     return;
@@ -186,6 +211,9 @@ async function startEventBridge(generation: number) {
       },
       {
         onEvent: (frame) => {
+          if (isHumanControlAttentionEvent(frame)) {
+            attentionRevision += 1;
+          }
           if (isCapabilityFactChange(frame)) {
             getOpenClawAdapter().invalidateReadCache?.();
           }
@@ -440,5 +468,6 @@ export function resetOpenClawEventBridgeForTesting() {
   reconciliationPromise = null;
   reconciliationDirty = false;
   reconciliationFollowUp = false;
+  attentionRevision = 0;
   bridgeEventSubscribers.clear();
 }

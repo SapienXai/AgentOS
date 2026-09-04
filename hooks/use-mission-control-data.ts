@@ -92,7 +92,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
     });
   }, []);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
-  const [liveRefreshGeneration, setLiveRefreshGeneration] = useState(0);
+  const [attentionRefreshGeneration, setAttentionRefreshGeneration] = useState(0);
   const [hasReceivedLiveSnapshot, setHasReceivedLiveSnapshot] = useState(false);
   const [gatewayReachable, setGatewayReachable] = useState<boolean | null>(null);
   const [gatewayRegistered, setGatewayRegistered] = useState<boolean | null>(null);
@@ -119,10 +119,18 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
         setSafeSnapshot((currentSnapshot) =>
           isNewerSnapshot(nextSnapshot, currentSnapshot) ? nextSnapshot : currentSnapshot
         );
-        setLiveRefreshGeneration((current) => current + 1);
         setHasReceivedLiveSnapshot(true);
         setConnectionState("live");
       });
+    });
+
+    source.addEventListener("attention", (event) => {
+      const payload = JSON.parse(event.data) as { revision?: number };
+      setAttentionRefreshGeneration((current) =>
+        typeof payload.revision === "number" && Number.isFinite(payload.revision)
+          ? Math.max(current, payload.revision)
+          : current + 1
+      );
     });
 
     source.addEventListener("system-status", (event) => {
@@ -197,7 +205,7 @@ export function useMissionControlData(initialSnapshot: ControlPlaneSnapshot) {
   return {
     snapshot,
     connectionState,
-    liveRefreshGeneration,
+    attentionRefreshGeneration,
     hasReceivedLiveSnapshot,
     gatewayReachable,
     gatewayRegistered,
