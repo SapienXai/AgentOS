@@ -86,10 +86,12 @@ export function AgentModelPickerDialog({
   const pendingSetupModelIdRef = useRef<string | null>(null);
   const {
     models: sharedCatalogModels,
-    refresh: refreshSharedCatalog
+    refresh: refreshSharedCatalog,
+    selection: nativeSelection
   } = useModelCatalog({
     enabled: open,
-    snapshot
+    snapshot,
+    agentId
   });
   const modelOptions = useMemo(
     () => dedupeSnapshotModels(buildConfiguredModelRecords(sharedCatalogModels, snapshot.models)),
@@ -225,8 +227,8 @@ export function AgentModelPickerDialog({
   const selectedModel = selectedModelId
     ? findModelByCanonicalId(modelOptions, selectedModelId)
     : null;
-  const selectedModelSelectable = selectedModel ? isSelectableModel(selectedModel) : false;
-  const hasChanges = Boolean(selectedModelId) && selectedModelId !== currentModelId;
+  const selectedModelSelectable = selectedModel ? isSelectableModel(selectedModel) : !selectedModelId;
+  const hasChanges = selectedModelId !== currentModelId;
   const providerOptions = useMemo(
     () =>
       Array.from(new Set(modelOptions.map((model) => resolvePickerModelProvider(model))))
@@ -235,7 +237,7 @@ export function AgentModelPickerDialog({
     [modelOptions]
   );
   const saveModel = async () => {
-    if (!agent || !selectedModel || !selectedModelSelectable || !hasChanges) {
+    if (!agent || !hasChanges || (selectedModelId && (!selectedModel || !selectedModelSelectable))) {
       return;
     }
 
@@ -250,7 +252,7 @@ export function AgentModelPickerDialog({
         },
         body: JSON.stringify({
           id: agent.id,
-          modelId: selectedModelId
+          modelId: selectedModelId || null
         })
       });
 
@@ -260,10 +262,10 @@ export function AgentModelPickerDialog({
         throw new Error(payload.error || "Unable to update the agent model.");
       }
 
-      onSnapshotChange?.((current) => updateSnapshotAgentModel(current, agent.id, selectedModelId));
+      onSnapshotChange?.((current) => updateSnapshotAgentModel(current, agent.id, selectedModelId || null));
       pendingSetupModelIdRef.current = null;
       toast.success("Agent model updated.", {
-        description: selectedModel.name
+        description: selectedModel?.name || "Automatic — OpenClaw global default"
       });
       onOpenChange(false);
 
@@ -495,7 +497,9 @@ export function AgentModelPickerDialog({
                 <div className="min-w-0">
                   <p className={cn("text-[0.62rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Agent assignment</p>
                   <p className={cn("truncate text-[0.8rem] font-semibold", isLight ? "text-foreground" : "text-white")}>
-                    {currentModel?.name || (currentModelId ? currentModelId : "OpenClaw global default")}
+                    {nativeSelection?.effectiveModelId
+                      ? formatModelLabel(nativeSelection.effectiveModelId)
+                      : currentModel?.name || (currentModelId ? currentModelId : "OpenClaw global default")}
                   </p>
                 </div>
               </div>
@@ -557,6 +561,13 @@ export function AgentModelPickerDialog({
                 : "border-white/10 bg-[linear-gradient(180deg,rgba(10,15,30,0.82),rgba(5,8,18,0.86))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
             )}
           >
+            {nativeSelection ? (
+              <div className={cn("mb-2 rounded-[13px] border px-3 py-2 text-[0.7rem]", isLight ? "border-primary/20 bg-primary/5 text-foreground" : "border-violet-300/20 bg-violet-400/[0.07] text-slate-200")}>
+                <span className="font-semibold">Effective OpenClaw model: </span>
+                {nativeSelection.effectiveModelId ? formatModelLabel(nativeSelection.effectiveModelId) : "Unknown"}
+                <span className={cn("ml-1.5", isLight ? "text-muted-foreground" : "text-slate-400")}>{nativeSelection.explanation}</span>
+              </div>
+            ) : null}
             <div className="flex flex-col gap-1.5 xl:flex-row">
               <div className="flex min-w-0 flex-1 gap-1.5">
                 <div className="relative min-w-0 flex-1">
@@ -620,6 +631,28 @@ export function AgentModelPickerDialog({
 
             <div className="mt-2 min-h-0 flex-1 overflow-y-auto pr-1 lg:max-h-[calc(90dvh-180px)]">
               <div className="space-y-1">
+                <button
+                  type="button"
+                  aria-pressed={!selectedModelId}
+                  onClick={() => setSelectedModelId("")}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-[14px] border px-3 py-2.5 text-left transition",
+                    !selectedModelId
+                      ? isLight
+                        ? "border-primary/55 bg-primary/10"
+                        : "border-violet-400/85 bg-violet-500/10"
+                      : isLight
+                        ? "border-border bg-card hover:border-primary/25"
+                        : "border-white/8 bg-white/[0.035] hover:border-violet-300/25"
+                  )}
+                >
+                  <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[0.62rem]", !selectedModelId ? "border-primary bg-primary text-primary-foreground" : isLight ? "border-border text-muted-foreground" : "border-slate-500/70 text-slate-400")}>A</span>
+                  <span className="min-w-0 flex-1">
+                    <span className={cn("block text-[0.78rem] font-semibold", isLight ? "text-foreground" : "text-white")}>Automatic</span>
+                    <span className={cn("block text-[0.66rem]", isLight ? "text-muted-foreground" : "text-slate-400")}>Inherit the OpenClaw global default</span>
+                  </span>
+                  {!selectedModelId ? <Check className="h-3.5 w-3.5 text-primary" /> : null}
+                </button>
                 {visibleModels.length > 0 ? (
                   visibleModels.map((model) => {
                     const selected = selectedModelId === model.id;
@@ -785,7 +818,7 @@ export function AgentModelPickerDialog({
                     ? "bg-primary text-primary-foreground hover:bg-primary/90"
                     : "bg-[linear-gradient(135deg,#8b5cf6,#6d28d9)]"
                 )}
-                disabled={saving || !hasChanges || !selectedModelSelectable}
+                disabled={saving || !hasChanges || (Boolean(selectedModelId) && !selectedModelSelectable)}
                 onClick={() => {
                   void saveModel();
                 }}
@@ -1096,9 +1129,9 @@ function resolvePickerModelProvider(model: AgentModelRecord) {
 function updateSnapshotAgentModel(
   snapshot: MissionControlSnapshot,
   agentId: string,
-  modelId: string
+  modelId: string | null
 ) {
-  const canonicalModelId = normalizeOpenAiModelId(modelId);
+  const canonicalModelId = modelId ? normalizeOpenAiModelId(modelId) : "unassigned";
   const nextAgents = snapshot.agents.map((agent) =>
     agent.id === agentId
       ? {

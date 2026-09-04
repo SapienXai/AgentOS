@@ -138,14 +138,18 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
       }
     ],
     recovery: "Keep model selection explicit in AgentOS and update OpenClaw for native model auth order writes.",
-    baseline: "experimental"
+    baseline: "experimental",
+    productIntegration: "discovery-only",
+    productIntegratedMethods: []
   },
   {
     id: "modelScan",
     label: "Model scan",
     methods: ["models.scan"],
     recovery: "Use explicit model refresh/discovery fallback only as recovery and update OpenClaw for native models.scan.",
-    baseline: "experimental"
+    baseline: "experimental",
+    productIntegration: "discovery-only",
+    productIntegratedMethods: []
   },
   { id: "usageStatus", label: "Usage status", methods: ["usage.status"], baseline: "optional" },
   { id: "usageCost", label: "Usage cost", methods: ["usage.cost"], baseline: "optional" },

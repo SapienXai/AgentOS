@@ -571,6 +571,8 @@ export type OpenClawModelScanPayload = Array<{
 export interface OpenClawListModelsInput {
   all?: boolean;
   provider?: string;
+  /** Native OpenClaw 2026.9.1 agent-scoped model resolution context. */
+  agentId?: string;
   /** OpenClaw 2026.9.1 catalog view. `default` is the fast prepared view. */
   view?: OpenClawModelsListView;
   preparedOnly?: boolean;
@@ -636,6 +638,8 @@ export type OpenClawSessionsPayload = {
     totalTokens?: number;
     model?: string;
     modelProvider?: string;
+    /** Native OpenClaw session model provenance; null means inherited. */
+    modelOverrideSource?: "user" | "auto" | null;
     cacheRead?: number;
     kind?: string;
     origin?: string;

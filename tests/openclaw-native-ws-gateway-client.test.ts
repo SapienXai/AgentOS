@@ -1722,7 +1722,7 @@ test("native WS gateway client reads agent model status through Gateway methods"
     sentFrames.map((frame) => [frame.method, frame.params]).filter(([method]) => method !== "connect"),
     [
       ["models.authStatus", { agentId: "agent-1" }],
-      ["models.list", { view: "configured" }]
+      ["models.list", { view: "configured", agentId: "agent-1" }]
     ]
   );
   assert.deepEqual(fallback.calls, []);

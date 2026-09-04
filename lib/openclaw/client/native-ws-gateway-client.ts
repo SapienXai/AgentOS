@@ -626,7 +626,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     const agentId = input.agentId;
     const [authResult, modelsResult] = await Promise.allSettled([
       this.callNative<unknown>("models.authStatus", { agentId }, options),
-      this.callNative<unknown>("models.list", { view: "configured" }, options)
+      this.callNative<unknown>("models.list", { view: "configured", agentId }, options)
     ]);
     const failures = [
       { method: "models.authStatus", result: authResult },
@@ -1370,6 +1370,7 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       "models.list",
       {
         view,
+        ...(input.agentId ? { agentId: input.agentId } : {}),
         ...(input.preparedOnly !== undefined ? { preparedOnly: input.preparedOnly } : {}),
         ...(input.refresh !== undefined ? { refresh: input.refresh } : {}),
         ...(input.includeProviderCapabilities !== undefined

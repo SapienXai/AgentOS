@@ -3,7 +3,7 @@
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import type { AddModelsCatalogModel, MissionControlSnapshot } from "@/lib/agentos/contracts";
-import type { ModelManagementSnapshot } from "@/lib/openclaw/domains/model-management";
+import type { ModelManagementSnapshot, ModelSelectionProjection } from "@/lib/openclaw/domains/model-management";
 import { modelManagementModelToCatalogModel } from "@/lib/openclaw/domains/model-management";
 import { mergeCatalogWithConfiguredModels } from "@/lib/openclaw/domains/model-catalog-projection";
 
@@ -13,28 +13,32 @@ type ModelCatalogPayload = {
   age: number | null;
   checkedAt: string;
   warning?: string;
+  selection?: ModelSelectionProjection;
 };
 
 export type ModelCatalogView = "default" | "all";
 
 const MODEL_CATALOG_TIMEOUT_MS = 20_000;
 const MODEL_CATALOG_RECONCILE_INTERVAL_MS = 60_000;
-const cachedPayloads = new Map<ModelCatalogView, ModelCatalogPayload>();
-const catalogRequests = new Map<ModelCatalogView, Promise<ModelCatalogPayload>>();
+const cachedPayloads = new Map<string, ModelCatalogPayload>();
+const catalogRequests = new Map<string, Promise<ModelCatalogPayload>>();
 
-async function loadModelCatalog(view: ModelCatalogView, force = false) {
-  const cachedPayload = cachedPayloads.get(view);
+async function loadModelCatalog(view: ModelCatalogView, force = false, agentId?: string, sessionKey?: string) {
+  const cacheKey = `${view}:${agentId ?? "global"}:${sessionKey ?? "global"}`;
+  const cachedPayload = cachedPayloads.get(cacheKey);
   if (cachedPayload && !force) {
     return cachedPayload;
   }
 
-  const catalogRequest = catalogRequests.get(view);
+  const catalogRequest = catalogRequests.get(cacheKey);
   if (catalogRequest && !force) {
     return catalogRequest;
   }
 
   const endpoint = view === "all" ? "/api/models/catalog" : "/api/models/management";
-  const query = view === "all" ? "" : "?view=default";
+  const query = view === "all"
+    ? ""
+    : `?view=default${agentId ? `&agentId=${encodeURIComponent(agentId)}` : ""}${sessionKey ? `&sessionKey=${encodeURIComponent(sessionKey)}` : ""}`;
   const request = fetch(`${endpoint}${query}`, {
     signal: AbortSignal.timeout(MODEL_CATALOG_TIMEOUT_MS)
   }).then(async (response) => {
@@ -54,7 +58,8 @@ async function loadModelCatalog(view: ModelCatalogView, force = false) {
           source: "openclaw",
           age: null,
           checkedAt: managementPayload.checkedAt,
-          warning: managementPayload.diagnostics.catalogWarning || managementPayload.diagnostics.configWarning || undefined
+          warning: managementPayload.diagnostics.catalogWarning || managementPayload.diagnostics.configWarning || undefined,
+          selection: managementPayload.selection
         }
       : {
           models: Array.isArray((payload as ModelCatalogPayload).models) ? (payload as ModelCatalogPayload).models : [],
@@ -64,26 +69,31 @@ async function loadModelCatalog(view: ModelCatalogView, force = false) {
           warning: (payload as ModelCatalogPayload).warning
         };
 
-    cachedPayloads.set(view, normalizedPayload);
+    cachedPayloads.set(cacheKey, normalizedPayload);
     return normalizedPayload;
   }).finally(() => {
-    catalogRequests.delete(view);
+    catalogRequests.delete(cacheKey);
   });
-  catalogRequests.set(view, request);
+  catalogRequests.set(cacheKey, request);
   return request;
 }
 
 export function useModelCatalog({
   enabled,
   snapshot,
-  view = "default"
+  view = "default",
+  agentId,
+  sessionKey
 }: {
   enabled: boolean;
   snapshot: MissionControlSnapshot;
   view?: ModelCatalogView;
+  agentId?: string | null;
+  sessionKey?: string | null;
 }) {
-  const [payload, setPayload] = useState<ModelCatalogPayload | null>(() => cachedPayloads.get(view) ?? null);
-  const [isLoading, setIsLoading] = useState(enabled && !cachedPayloads.has(view));
+  const cacheKey = `${view}:${agentId ?? "global"}:${sessionKey ?? "global"}`;
+  const [payload, setPayload] = useState<ModelCatalogPayload | null>(() => cachedPayloads.get(cacheKey) ?? null);
+  const [isLoading, setIsLoading] = useState(enabled && !cachedPayloads.has(cacheKey));
   const [error, setError] = useState<string | null>(null);
   const recommendedModelIds = useMemo(
     () => [
@@ -103,7 +113,7 @@ export function useModelCatalog({
     setError(null);
 
     try {
-      const nextPayload = await loadModelCatalog(view, force);
+      const nextPayload = await loadModelCatalog(view, force, agentId ?? undefined, sessionKey ?? undefined);
       setPayload(nextPayload);
       return nextPayload;
     } catch (error) {
@@ -126,7 +136,7 @@ export function useModelCatalog({
     void refresh();
     // Catalog loading is intentionally keyed only by visibility; snapshot updates are merged below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, view]);
+  }, [agentId, enabled, sessionKey, view]);
 
   useEffect(() => {
     if (!enabled) {
@@ -138,7 +148,7 @@ export function useModelCatalog({
     }, MODEL_CATALOG_RECONCILE_INTERVAL_MS);
 
     return () => window.clearInterval(interval);
-  }, [enabled, view]);
+  }, [agentId, enabled, sessionKey, view]);
 
   const models = useMemo(
     () => mergeCatalogWithConfiguredModels(payload?.models ?? [], snapshot.models, recommendedModelIds),
@@ -153,6 +163,7 @@ export function useModelCatalog({
     warning: payload?.warning ?? null,
     age: payload?.age ?? null,
     checkedAt: payload?.checkedAt ?? null,
+    selection: payload?.selection ?? null,
     stale: typeof payload?.age === "number" && payload.age > MODEL_CATALOG_RECONCILE_INTERVAL_MS * 5,
     refresh
   };

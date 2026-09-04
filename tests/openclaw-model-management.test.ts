@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 
-import { modelManagementModelToCatalogModel, presentModelProviderSetupHint } from "@/lib/openclaw/domains/model-management";
+import {
+  modelManagementModelToCatalogModel,
+  presentModelProviderSetupHint,
+  resolveModelAvailability
+} from "@/lib/openclaw/domains/model-management";
 import { normalizeModelsPayload } from "@/lib/openclaw/client/native-ws-gateway-payloads";
 import { formatModelProviderLabel, modelProviderPresentationRegistry } from "@/lib/openclaw/model-provider-registry";
 
@@ -21,6 +25,7 @@ test("native model management preserves aliases, roles, and unavailable state wi
     input: "text,image",
     contextWindow: 128000,
     available: false,
+    availability: "needs-auth",
     unavailableReason: "missing-auth",
     reasoning: true,
     supportsTools: true,
@@ -54,6 +59,7 @@ test("model projection preserves unknown native availability and capabilities", 
     input: "text",
     contextWindow: null,
     available: null,
+    availability: "unknown",
     reasoning: undefined,
     supportsTools: undefined,
     tags: ["catalog"],
@@ -81,6 +87,24 @@ test("provider setup hints do not expose terminal commands in normal connection 
     presentModelProviderSetupHint("Stored and validated by OpenClaw"),
     "Stored and validated by OpenClaw"
   );
+});
+
+test("model availability maps exact native evidence without treating catalog presence as readiness", () => {
+  const cases = [
+    [{ available: true }, "ready"],
+    [{ available: false, unavailableReason: "missing-auth" }, "needs-auth"],
+    [{ available: false, unavailableReason: "auth-failed" }, "auth-failed"],
+    [{ available: false, unavailableReason: "cooldown" }, "cooldown"],
+    [{ available: false }, "unavailable"],
+    [{ available: null }, "unknown"],
+    [{ available: null, missing: true }, "unavailable"],
+    [{ available: null, disabled: true }, "unavailable"],
+    [{ available: null, deprecated: true }, "unavailable"]
+  ] as const;
+
+  for (const [nativeModel, expected] of cases) {
+    assert.equal(resolveModelAvailability(nativeModel), expected);
+  }
 });
 
 test("models.list keeps the 9.1 provider and capability metadata", () => {
@@ -141,9 +165,42 @@ test("post-onboarding management reads OpenClaw provider and auth metadata", () 
   assert.match(routeSource, /openclaw\.setup\.activate\.start/);
   assert.match(routeSource, /openclaw\.setup\.prepare\.start/);
   assert.match(serviceSource, /models\.authLogout/);
+  assert.match(serviceSource, /agentId/);
+  assert.match(serviceSource, /adapter\.listSessions/);
+  assert.match(serviceSource, /native-session/);
   assert.match(routeSource, /models\.manage/);
   assert.match(routeSource, /secrets\.manage/);
   assert.match(routeSource, /wizard-status[\s\S]*runtime\.use/);
+  assert.match(routeSource, /sessionKey/);
+});
+
+test("scoped model surfaces preserve native identity and keep unsupported scopes out of the product", () => {
+  const agentRouteSource = readFileSync(path.join(rootDir, "app/api/agents/route.ts"), "utf8");
+  const sessionRouteSource = readFileSync(path.join(rootDir, "app/api/sessions/model/route.ts"), "utf8");
+  const sessionServiceSource = readFileSync(path.join(rootDir, "lib/openclaw/application/session-model-service.ts"), "utf8");
+  const clientSource = readFileSync(path.join(rootDir, "lib/openclaw/client/native-ws-gateway-client.ts"), "utf8");
+
+  assert.match(agentRouteSource, /modelId: z\.string\(\)\.nullable\(\)\.optional\(\)/);
+  assert.match(sessionRouteSource, /action: z\.literal\("set"\)/);
+  assert.match(sessionRouteSource, /action: z\.literal\("inherit"\)/);
+  assert.match(sessionServiceSource, /patchSessionModel/);
+  assert.match(sessionServiceSource, /listSessions/);
+  assert.doesNotMatch(sessionServiceSource, /setModelAuthOrder/);
+  assert.match(clientSource, /models\.list[\s\S]*agentId/);
+});
+
+test("model compatibility keeps discovery-only auth-order and scan methods out of product integration", () => {
+  const compatibilitySource = readFileSync(
+    path.join(rootDir, "lib/openclaw/client/gateway-compatibility.ts"),
+    "utf8"
+  );
+
+  const authOrder = compatibilitySource.match(/id: "modelAuthOrder"[\s\S]*?productIntegratedMethods: \[\]/);
+  const scan = compatibilitySource.match(/id: "modelScan"[\s\S]*?productIntegratedMethods: \[\]/);
+  assert.ok(authOrder);
+  assert.ok(scan);
+  assert.match(authOrder[0], /productIntegration: "discovery-only"/);
+  assert.match(scan[0], /productIntegration: "discovery-only"/);
 });
 
 test("the global Models UX does not use agents.defaults.models as an allowlist", () => {

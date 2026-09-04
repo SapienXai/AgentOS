@@ -283,9 +283,17 @@ function readErrorMessage(error: unknown) {
   return typeof error === "string" ? error : "";
 }
 
-function normalizeAgentModelIdForUpdate(modelId: string | null | undefined) {
+function normalizeAgentModelIdForUpdate(modelId: string | null | undefined): string | null {
+  if (modelId === null || modelId === undefined) {
+    return null;
+  }
+
   const normalized = normalizeOptionalValue(modelId);
-  return normalized && isOpenAiBackedModel(normalized)
+  if (!normalized) {
+    return null;
+  }
+
+  return isOpenAiBackedModel(normalized)
     ? normalizeOpenAiModelId(normalized)
     : normalized;
 }
@@ -386,14 +394,14 @@ export async function updateAgent(input: AgentUpdateInput, gatewayOptions: OpenC
   const setupAgentId =
     snapshot.agents.find((entry) => entry.workspaceId === resolvedWorkspaceId && entry.policy.preset === "setup" && entry.id !== agentId)?.id ??
     null;
-  const nextModelId =
+  const nextModelId: string | null =
     input.modelId !== undefined
       ? normalizeAgentModelIdForUpdate(input.modelId)
       : agent.modelId === "unassigned"
-        ? resolveSnapshotDefaultAgentModelId(snapshot)
-        : agent.modelId;
+        ? resolveSnapshotDefaultAgentModelId(snapshot) ?? null
+        : agent.modelId ?? null;
 
-  if (input.modelId !== undefined) {
+  if (input.modelId !== undefined && nextModelId !== null) {
     assertAgentModelReadyForAssignment(snapshot, nextModelId);
   }
 

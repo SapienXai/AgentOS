@@ -1,6 +1,31 @@
 import type { AddModelsCatalogModel } from "@/lib/openclaw/types";
 import type { OpenClawModelsListView } from "@/lib/openclaw/client/types";
 
+export type ModelAvailabilityStatus =
+  | "ready"
+  | "needs-auth"
+  | "auth-failed"
+  | "cooldown"
+  | "unavailable"
+  | "unknown";
+
+export type ModelSelectionScope = "default" | "worker" | "session";
+
+export type ModelSelectionProjection = {
+  scope: ModelSelectionScope;
+  agentId?: string;
+  sessionKey?: string;
+  configuredModelId: string | null;
+  effectiveModelId: string | null;
+  effectiveProvider: string | null;
+  effectiveStatus: "known" | "unknown";
+  source: "native-default" | "native-agent" | "native-session" | "unknown";
+  inherited: boolean;
+  fallbackModels: string[];
+  overrideSource?: "user" | "auto" | null;
+  explanation: string;
+};
+
 export type ModelManagementAuthProfile = {
   id: string;
   type: string;
@@ -41,6 +66,7 @@ export type ModelManagementProvider = {
   source: "openclaw";
   setupAvailable: boolean;
   canLogout: boolean;
+  nativeOutcome?: "ready" | "auth-rejected" | "unavailable" | string;
   presentation: {
     accent?: string;
   };
@@ -55,12 +81,15 @@ export type ModelManagementModel = {
   contextWindow: number | null;
   contextWindows?: Array<{ id: string; label: string; contextWindow: number }>;
   available: boolean | null;
+  availability: ModelAvailabilityStatus;
+  missing?: boolean;
   unavailableReason?: string;
+  unavailableUntil?: number;
   reasoning?: boolean;
   supportsTools?: boolean;
   tags: string[];
   alias?: string;
-  role: "default" | "fallback" | "available" | "unavailable";
+  role: "default" | "fallback" | "available" | "unavailable" | "unknown";
   fallbackPosition?: number;
   linkedAgents: number;
   advanced: {
@@ -83,6 +112,7 @@ export type ModelManagementSnapshot = {
   };
   models: ModelManagementModel[];
   providers: ModelManagementProvider[];
+  selection?: ModelSelectionProjection;
   diagnostics: {
     authStatusAvailable: boolean;
     setupMetadataAvailable: boolean;
@@ -99,7 +129,18 @@ export type ModelManagementReadOptions = {
   view?: OpenClawModelsListView;
   refresh?: boolean;
   includeSetup?: boolean;
+  agentId?: string;
+  sessionKey?: string;
 };
+
+export function resolveModelAvailability(model: Pick<ModelManagementModel, "available" | "unavailableReason"> & { disabled?: boolean; deprecated?: boolean; missing?: boolean }): ModelAvailabilityStatus {
+  if (model.available === true) return "ready";
+  if (model.unavailableReason === "missing-auth") return "needs-auth";
+  if (model.unavailableReason === "auth-failed") return "auth-failed";
+  if (model.unavailableReason === "cooldown") return "cooldown";
+  if (model.available === false || model.disabled === true || model.deprecated === true || model.missing === true) return "unavailable";
+  return "unknown";
+}
 
 /**
  * Keep provider-owned setup hints useful without turning normal connection UI
@@ -124,7 +165,7 @@ export function modelManagementModelToCatalogModel(model: ModelManagementModel):
     contextWindow: model.contextWindow,
     local: model.provider === "ollama" || model.tags.includes("local"),
     available: model.available,
-    missing: model.available === false && model.unavailableReason === "missing-auth",
+    missing: model.missing === true || (model.available === false && model.unavailableReason === "missing-auth"),
     alreadyAdded: model.role === "default" || model.role === "fallback" || model.tags.includes("configured"),
     recommended: model.tags.some((tag) => ["recommended", "featured", "default"].includes(tag.toLowerCase())),
     supportsTools: model.supportsTools ?? null,

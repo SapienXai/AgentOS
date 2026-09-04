@@ -2428,6 +2428,9 @@ test("session runtime mapping derives agent id from Gateway session keys", () =>
       key: "agent:agent-1:explicit:session-1",
       sessionId: "session-1",
       updatedAt: Date.parse("2026-04-13T00:00:00.000Z"),
+      model: "gpt-5.4-mini",
+      modelProvider: "openai",
+      modelOverrideSource: "user",
       totalTokens: 42
     },
     [
@@ -2448,6 +2451,7 @@ test("session runtime mapping derives agent id from Gateway session keys", () =>
 
   assert.equal(runtime.agentId, "agent-1");
   assert.equal(runtime.modelId, "openai/gpt-5.4-mini");
+  assert.equal(runtime.modelOverrideSource, "user");
   assert.equal(runtime.tokenUsage?.total, 42);
 });
 

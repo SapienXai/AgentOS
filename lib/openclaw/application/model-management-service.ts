@@ -13,8 +13,10 @@ import type {
   ModelManagementModel,
   ModelManagementProvider,
   ModelManagementReadOptions,
-  ModelManagementSnapshot
+  ModelManagementSnapshot,
+  ModelSelectionProjection
 } from "@/lib/openclaw/domains/model-management";
+import { resolveModelAvailability } from "@/lib/openclaw/domains/model-management";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -63,24 +65,32 @@ export async function readModelManagementState(
 ): Promise<ModelManagementSnapshot> {
   const view = options.view ?? "default";
   const adapter = getOpenClawAdapter();
-  const [catalogResult, authResult, configResult, agentsResult, setupResult] = await Promise.all([
+  const [catalogResult, authResult, configResult, agentsResult, setupResult, sessionsResult] = await Promise.all([
     listOpenClawModels(
       {
         view,
         refresh: options.refresh,
-        includeProviderCapabilities: true
+        includeProviderCapabilities: true,
+        ...(options.agentId ? { agentId: options.agentId } : {})
       },
       { timeoutMs: view === "all" ? 20_000 : 8_000 }
     ).then((value) => ({ ok: true as const, value })).catch((error) => ({ ok: false as const, error })),
     adapter.call<OpenClawModelAuthStatusPayload>(
       "models.authStatus",
-      { refresh: options.refresh === true },
+      { refresh: options.refresh === true, ...(options.agentId ? { agentId: options.agentId } : {}) },
       { timeoutMs: 8_000 }
     ).then((value) => ({ ok: true as const, value })).catch((error) => ({ ok: false as const, error })),
     readDefaultsConfig(adapter),
     adapter.listAgents({ timeoutMs: 8_000 }).then((value) => ({ ok: true as const, value })).catch((error) => ({ ok: false as const, error })),
     options.includeSetup
       ? readSetupMetadata(adapter)
+      : Promise.resolve({ ok: true as const, value: null }),
+    options.sessionKey
+      ? adapter.listSessions({
+          limit: 20,
+          ...(options.agentId ? { agentId: options.agentId } : {}),
+          search: options.sessionKey
+        }, { timeoutMs: 8_000 }).then((value) => ({ ok: true as const, value })).catch((error) => ({ ok: false as const, error }))
       : Promise.resolve({ ok: true as const, value: null })
   ]);
 
@@ -119,7 +129,14 @@ export async function readModelManagementState(
     const fallbackPosition = fallbackById.get(key);
     const isDefault = Boolean(defaultModel && defaultModel.toLowerCase() === key) || model.tags.includes("default");
     const available = model.available;
-    const unavailable = available === false || model.missing || model.disabled === true || model.deprecated === true;
+    const availability = resolveModelAvailability({
+      available,
+      missing: model.missing,
+      unavailableReason: model.unavailableReason,
+      disabled: model.disabled,
+      deprecated: model.deprecated
+    });
+    const unavailable = availability === "unavailable";
     return {
       id,
       name: model.name || id,
@@ -129,12 +146,15 @@ export async function readModelManagementState(
       contextWindow: model.contextWindow,
       ...(model.contextWindows ? { contextWindows: model.contextWindows } : {}),
       available,
+      availability,
+      ...(model.missing ? { missing: true } : {}),
       ...(model.unavailableReason ? { unavailableReason: model.unavailableReason } : {}),
+      ...(model.unavailableUntil !== undefined ? { unavailableUntil: model.unavailableUntil } : {}),
       ...(model.reasoning !== undefined ? { reasoning: model.reasoning } : {}),
       ...(model.supportsTools !== undefined ? { supportsTools: model.supportsTools } : {}),
       tags: model.tags,
       ...(model.alias ? { alias: model.alias } : {}),
-      role: unavailable ? "unavailable" : isDefault ? "default" : fallbackPosition ? "fallback" : "available",
+      role: unavailable ? "unavailable" : availability === "unknown" ? "unknown" : isDefault ? "default" : fallbackPosition ? "fallback" : "available",
       ...(fallbackPosition ? { fallbackPosition } : {}),
       linkedAgents: linkedAgents.get(key) ?? 0,
       advanced: {
@@ -163,7 +183,9 @@ export async function readModelManagementState(
       input: "text",
       contextWindow: null,
       available: null,
-      tags: ["configured", "unknown"],
+      availability: "unavailable",
+      missing: true,
+      tags: ["configured", "missing"],
       role: isDefault ? "default" : fallbackPosition ? "fallback" : "unavailable",
       ...(fallbackPosition ? { fallbackPosition } : {}),
       linkedAgents: linkedAgents.get(id) ?? 0,
@@ -193,6 +215,15 @@ export async function readModelManagementState(
     modelPolicy: { allow: defaults.modelPolicy.allow },
     models,
     providers,
+    selection: buildSelectionProjection({
+      agentId: options.agentId,
+      sessionKey: options.sessionKey,
+      defaults,
+      agents: agentsResult.ok ? agentsResult.value.agents : [],
+      sessions: sessionsResult.ok ? sessionsResult.value?.sessions ?? [] : [],
+      sessionReadOk: sessionsResult.ok,
+      models
+    }),
     diagnostics: {
       authStatusAvailable: authResult.ok,
       setupMetadataAvailable: Boolean(setup),
@@ -200,6 +231,95 @@ export async function readModelManagementState(
       configWarning: configResult.ok ? null : "OpenClaw configuration could not be read; defaults may be incomplete."
     }
   };
+}
+
+function buildSelectionProjection(input: {
+  agentId?: string;
+  sessionKey?: string;
+  defaults: ReturnType<typeof normalizeDefaults>;
+  agents: Array<{ id: string; model?: { primary?: string; fallbacks?: string[] } }>;
+  sessions: Array<Record<string, unknown> & {
+    key?: string;
+    sessionId?: string;
+    model?: string;
+    modelProvider?: string;
+    modelOverrideSource?: "user" | "auto" | null;
+  }>;
+  sessionReadOk: boolean;
+  models: ModelManagementModel[];
+}): ModelSelectionProjection {
+  const defaultModelId = input.defaults.model.primary;
+  const agent = input.agentId ? input.agents.find((entry) => entry.id === input.agentId) : undefined;
+
+  if (input.sessionKey) {
+    const session = input.sessions.find((entry) => entry.key === input.sessionKey || entry.sessionId === input.sessionKey);
+    const sessionModelId = normalizeOptionalModelRef(session?.model);
+    const overrideSource = session?.modelOverrideSource;
+    const model = sessionModelId ? input.models.find((entry) => entry.id.toLowerCase() === sessionModelId.toLowerCase()) : undefined;
+    return {
+      scope: "session",
+      ...(input.agentId ? { agentId: input.agentId } : {}),
+      sessionKey: input.sessionKey,
+      configuredModelId: overrideSource === "user" ? sessionModelId : null,
+      effectiveModelId: sessionModelId,
+      effectiveProvider: session?.modelProvider ?? model?.provider ?? providerFromModelRef(sessionModelId),
+      effectiveStatus: input.sessionReadOk && sessionModelId ? "known" : "unknown",
+      source: input.sessionReadOk && sessionModelId ? "native-session" : "unknown",
+      inherited: overrideSource !== "user",
+      fallbackModels: agent?.model?.fallbacks ?? input.defaults.model.fallbacks,
+      ...(overrideSource !== undefined ? { overrideSource } : {}),
+      explanation: input.sessionReadOk
+        ? sessionModelId ? "OpenClaw reports this session model." : "OpenClaw did not report a model for this session."
+        : "OpenClaw session model state could not be read."
+    };
+  }
+
+  if (input.agentId) {
+    const configuredModelId = normalizeOptionalModelRef(agent?.model?.primary);
+    const inheritedModelId = configuredModelId ? null : defaultModelId;
+    const selectedModelId = configuredModelId ?? inheritedModelId;
+    const model = selectedModelId ? input.models.find((entry) => entry.id.toLowerCase() === selectedModelId.toLowerCase()) : undefined;
+    const effectiveModelId = model?.availability === "ready" ? selectedModelId : null;
+    const resolutionUnknown = Boolean(selectedModelId && model?.availability !== "ready");
+    return {
+      scope: "worker",
+      agentId: input.agentId,
+      configuredModelId,
+      effectiveModelId,
+      effectiveProvider: providerFromModelRef(effectiveModelId),
+      effectiveStatus: effectiveModelId && !resolutionUnknown ? "known" : "unknown",
+      source: effectiveModelId && !resolutionUnknown ? "native-agent" : "unknown",
+      inherited: !configuredModelId && Boolean(inheritedModelId),
+      fallbackModels: agent?.model?.fallbacks ?? input.defaults.model.fallbacks,
+      explanation: resolutionUnknown
+        ? "The configured OpenClaw model is not ready; fallback resolution remains runtime-owned."
+        : configuredModelId
+        ? "OpenClaw has an explicit worker model selection and reports it ready."
+        : inheritedModelId
+          ? "This worker inherits the OpenClaw default model."
+          : "OpenClaw did not report a model selection for this worker."
+    };
+  }
+
+  return {
+    scope: "default",
+    configuredModelId: defaultModelId,
+    effectiveModelId: input.models.some((model) => model.id.toLowerCase() === (defaultModelId ?? "").toLowerCase() && model.availability === "ready") ? defaultModelId : null,
+    effectiveProvider: input.models.some((model) => model.id.toLowerCase() === (defaultModelId ?? "").toLowerCase() && model.availability === "ready") ? providerFromModelRef(defaultModelId) : null,
+    effectiveStatus: defaultModelId && input.models.some((model) => model.id.toLowerCase() === defaultModelId.toLowerCase() && model.availability === "ready") ? "known" : "unknown",
+    source: defaultModelId && input.models.some((model) => model.id.toLowerCase() === defaultModelId.toLowerCase() && model.availability === "ready") ? "native-default" : "unknown",
+    inherited: false,
+    fallbackModels: input.defaults.model.fallbacks,
+    explanation: defaultModelId && input.models.some((model) => model.id.toLowerCase() === defaultModelId.toLowerCase() && model.availability === "ready")
+      ? "OpenClaw reports the configured default model as ready."
+      : defaultModelId
+        ? "The configured OpenClaw default is not ready; fallback resolution remains runtime-owned."
+      : "OpenClaw did not report a default model."
+  };
+}
+
+function providerFromModelRef(modelId: string | null) {
+  return modelId?.split("/", 1)[0] || null;
 }
 
 export async function setModelManagementDefault(modelId: string) {
@@ -241,11 +361,12 @@ export async function setModelManagementPolicy(allow: string[] | null) {
   await adapter.setConfig("agents.defaults", next, { timeoutMs: 8_000, replacePaths: ["agents.defaults.modelPolicy.allow"] });
 }
 
-export async function logoutModelProvider(provider: string, profileIds?: string[]) {
+export async function logoutModelProvider(provider: string, profileIds?: string[], agentId?: string) {
   const payload = await getOpenClawAdapter().call<OpenClawModelAuthLogoutPayload>(
     "models.authLogout",
     {
       provider: requiredText(provider, "Provider is required."),
+      ...(agentId?.trim() ? { agentId: agentId.trim() } : {}),
       ...(profileIds?.length ? { profileIds: profileIds.map((id) => requiredText(id, "Auth profile is required.")) } : {})
     },
     { timeoutMs: 15_000 }
@@ -343,6 +464,7 @@ function buildProviders(input: {
       source: "openclaw" as const,
       setupAvailable: setupMethods.length > 0 || prepareOptions.length > 0 || capabilityByProvider.has(id),
       canLogout: profiles.some((profile) => profile.logoutSupported),
+      ...(outcomeByProvider.has(id) ? { nativeOutcome: outcomeByProvider.get(id) } : {}),
       presentation: {
         ...(modelProviderPresentationRegistry[id]?.accent ? { accent: modelProviderPresentationRegistry[id].accent } : {})
       }

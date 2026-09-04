@@ -18,6 +18,7 @@ function createSnapshot(): MissionControlSnapshot {
         sessionId: "session-1",
         agentId: "researcher",
         modelId: "anthropic/claude-sonnet-4",
+        modelOverrideSource: "user",
         title: "Research session",
         updatedAt: 200
       },
@@ -70,4 +71,23 @@ test("session model scope reports only explicit OpenClaw session overrides", () 
     title: "Research session",
     updatedAt: 200
   });
+});
+
+test("native user provenance keeps an explicit session override even when the route matches the agent", () => {
+  const snapshot = createSnapshot();
+  snapshot.runtimes.push({
+    id: "same-route-explicit-runtime",
+    source: "session",
+    key: "agent:writer:explicit",
+    sessionId: "session-4",
+    agentId: "writer",
+    modelId: "openai/gpt-5.4",
+    modelOverrideSource: "user",
+    title: "Explicit same-route session",
+    updatedAt: 500
+  } as never);
+
+  const overrides = buildSessionModelOverrides(snapshot);
+
+  assert.equal(overrides.some((override) => override.sessionKey === "agent:writer:explicit"), true);
 });

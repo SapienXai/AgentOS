@@ -18,6 +18,8 @@ export type SessionsPayload = {
     totalTokens?: number;
     model?: string;
     modelProvider?: string;
+    /** Native OpenClaw session model provenance; null means inherited. */
+    modelOverrideSource?: "user" | "auto" | null;
     cacheRead?: number;
     kind?: string;
     origin?: string;
@@ -162,6 +164,12 @@ function normalizeSessionCatalogEntry(
   const ageMs = readSessionCatalogNumber(entry, "ageMs") ?? inferSessionAgeMs(updatedAt);
   const model = normalizeOptionalValue(typeof entry.model === "string" ? entry.model : undefined);
   const modelProvider = normalizeOptionalValue(typeof entry.modelProvider === "string" ? entry.modelProvider : undefined);
+  const modelOverrideSource =
+    entry.modelOverrideSource === "user" || entry.modelOverrideSource === "auto"
+      ? entry.modelOverrideSource
+      : entry.modelOverrideSource === null
+        ? null
+        : undefined;
   const key =
     normalizeOptionalValue(typeof entry.key === "string" ? entry.key : fallbackKey) ??
     sessionId ??
@@ -181,6 +189,7 @@ function normalizeSessionCatalogEntry(
         : undefined),
     model: model || undefined,
     modelProvider: modelProvider || undefined,
+    ...(modelOverrideSource !== undefined ? { modelOverrideSource } : {}),
     cacheRead,
     kind: inferSessionKindFromCatalogEntry(entry, key)
   };

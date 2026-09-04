@@ -3,7 +3,8 @@ import { z } from "zod";
 
 import {
   resetSessionModelOverride,
-  resetSessionModelOverrides
+  resetSessionModelOverrides,
+  setSessionModelOverride
 } from "@/lib/openclaw/application/session-model-service";
 import { redactSecretText, redactSecrets } from "@/lib/security/redaction";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
@@ -17,6 +18,7 @@ const sessionTargetSchema = z.object({
 });
 
 const inputSchema = z.discriminatedUnion("action", [
+  sessionTargetSchema.extend({ action: z.literal("set"), modelId: z.string().trim().min(1).max(512) }),
   sessionTargetSchema.extend({ action: z.literal("inherit") }),
   z.object({
     action: z.literal("inherit-many"),
@@ -29,6 +31,10 @@ export async function POST(request: Request) {
   if ("response" in permission) return permission.response;
   try {
     const input = inputSchema.parse(await request.json());
+    if (input.action === "set") {
+      const snapshot = await setSessionModelOverride(input);
+      return NextResponse.json(redactSecrets({ ok: true, snapshot }));
+    }
     if (input.action === "inherit") {
       const snapshot = await resetSessionModelOverride(input);
       return NextResponse.json(redactSecrets({ ok: true, resetCount: 1, failures: [], snapshot }));

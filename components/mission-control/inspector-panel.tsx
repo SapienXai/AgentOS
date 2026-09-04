@@ -54,6 +54,7 @@ import {
   useInspectorRuntimeOutput,
   useInspectorTaskDetailStream
 } from "@/components/mission-control/use-inspector-panel-data";
+import { useModelCatalog } from "@/hooks/use-model-catalog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge as UiBadge, type BadgeProps } from "@/components/ui/badge";
@@ -3190,8 +3191,43 @@ function RuntimeContent({
   onRefresh?: () => Promise<void>;
 }) {
   const [resettingModel, setResettingModel] = useState(false);
+  const [savingSessionModel, setSavingSessionModel] = useState(false);
+  const [sessionModelDraft, setSessionModelDraft] = useState("");
   const relativeTimeReferenceMs = resolveRelativeTimeReferenceMs(snapshot.generatedAt);
   const runtime = snapshot.runtimes.find((entry) => entry.id === runtimeId);
+  const {
+    models: sessionModelOptions,
+    isLoading: sessionModelsLoading,
+    selection: nativeSessionSelection
+  } = useModelCatalog({
+    enabled: runtime?.source === "session",
+    snapshot,
+    agentId: runtime?.agentId,
+    sessionKey: runtime?.key
+  });
+  const agent = snapshot.agents.find((entry) => entry.id === runtime?.agentId);
+  const agentModelId = agent?.modelId && agent.modelId !== "unassigned" ? agent.modelId : null;
+  const hasNativeSessionSelection = nativeSessionSelection?.scope === "session";
+  const hasSessionModelOverride =
+    runtime?.source === "session" &&
+    (hasNativeSessionSelection
+      ? nativeSessionSelection.overrideSource === "user"
+      : runtime.modelOverrideSource === "user" || (
+          !runtime.modelOverrideSource &&
+          Boolean(runtime.key) &&
+          Boolean(runtime.modelId) &&
+          Boolean(agentModelId) &&
+          runtime.modelId !== agentModelId
+        ));
+
+  useEffect(() => {
+    setSessionModelDraft(
+      hasSessionModelOverride
+        ? nativeSessionSelection?.configuredModelId ?? runtime?.modelId ?? ""
+        : ""
+    );
+  }, [hasSessionModelOverride, nativeSessionSelection?.configuredModelId, runtime?.id, runtime?.modelId]);
+
   const createdFiles = dedupeCreatedFiles(runtimeOutput?.createdFiles ?? (runtime ? extractCreatedFilesFromRuntime(runtime) : []));
   const runtimeWarnings = runtimeOutput?.warnings ?? (runtime ? extractWarningsFromRuntime(runtime) : []);
   const runtimeWarningSummary = runtimeOutput?.warningSummary ?? runtimeWarnings[0] ?? null;
@@ -3201,15 +3237,6 @@ function RuntimeContent({
   if (!runtime) {
     return null;
   }
-
-  const agent = snapshot.agents.find((entry) => entry.id === runtime.agentId);
-  const agentModelId = agent?.modelId && agent.modelId !== "unassigned" ? agent.modelId : null;
-  const hasSessionModelOverride =
-    runtime.source === "session" &&
-    Boolean(runtime.key) &&
-    Boolean(runtime.modelId) &&
-    Boolean(agentModelId) &&
-    runtime.modelId !== agentModelId;
 
   const resetModelOverride = async () => {
     if (!hasSessionModelOverride || resettingModel) {
@@ -3243,6 +3270,39 @@ function RuntimeContent({
     }
   };
 
+  const saveSessionModel = async () => {
+    if (!runtime || runtime.source !== "session" || !sessionModelDraft || savingSessionModel) {
+      return;
+    }
+
+    setSavingSessionModel(true);
+    try {
+      const response = await fetch("/api/sessions/model", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "set",
+          sessionKey: runtime.key,
+          agentId: runtime.agentId,
+          modelId: sessionModelDraft
+        })
+      });
+      const payload = (await response.json()) as { error?: string; snapshot?: MissionControlSnapshot };
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || "Unable to set the session model.");
+      }
+      if (payload.snapshot) {
+        onSnapshotChange?.(() => payload.snapshot!);
+      }
+      toast.success("Session model updated.");
+      void onRefresh?.().catch(() => undefined);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to set the session model.");
+    } finally {
+      setSavingSessionModel(false);
+    }
+  };
+
   return (
     <>
       <InfoCard icon={TerminalSquare} title="Runtime key" value={runtime.status}>
@@ -3256,8 +3316,30 @@ function RuntimeContent({
         title="Model scope"
         value={hasSessionModelOverride ? "session override" : "agent inherited"}
       >
-        <p>Session: {runtime.modelId || agentModelId || "OpenClaw default"}</p>
+        <p>Session: {nativeSessionSelection?.effectiveModelId || runtime.modelId || agentModelId || "OpenClaw default"}</p>
         <p>Agent: {agentModelId || "OpenClaw global default"}</p>
+        {runtime.source === "session" ? (
+          <div className="mt-2 space-y-2">
+            <label className="block text-[11px] text-slate-400" htmlFor={`session-model-${runtime.id}`}>Set session model</label>
+            <select
+              id={`session-model-${runtime.id}`}
+              value={sessionModelDraft}
+              disabled={sessionModelsLoading || savingSessionModel}
+              onChange={(event) => setSessionModelDraft(event.target.value)}
+              className="h-8 w-full rounded-[10px] border border-white/10 bg-slate-950/60 px-2 text-[11px] text-slate-100"
+            >
+              <option value="">Inherit agent model</option>
+              {sessionModelOptions.filter((model) => model.available === true).map((model) => (
+                <option key={model.id} value={model.id}>{model.name}</option>
+              ))}
+            </select>
+            {sessionModelDraft && sessionModelDraft !== runtime.modelId ? (
+              <Button type="button" variant="secondary" className="h-8 rounded-[10px] px-3 text-[11px]" onClick={() => void saveSessionModel()} disabled={savingSessionModel}>
+                {savingSessionModel ? "Saving…" : "Save session model"}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
         {hasSessionModelOverride ? (
           <Button
             type="button"

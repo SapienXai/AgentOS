@@ -32,7 +32,14 @@ export function buildSessionModelOverrides(
           : "";
       const sessionModelId = normalizeOpenAiModelId(runtime.modelId);
 
-      if (!agent || !agentModelId || modelIdsShareRoute(sessionModelId, agentModelId)) {
+      const nativeOverrideSource = runtime.modelOverrideSource;
+      const isExplicitNativeOverride = nativeOverrideSource === "user";
+
+      if (!agent || !agentModelId || nativeOverrideSource === "auto" || nativeOverrideSource === null) {
+        return [];
+      }
+
+      if (!isExplicitNativeOverride && modelIdsShareRoute(sessionModelId, agentModelId)) {
         return [];
       }
 

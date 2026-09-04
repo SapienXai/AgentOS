@@ -47,7 +47,8 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("logout"),
     provider: providerIdSchema,
-    profileIds: z.array(z.string().trim().min(1).max(256)).max(32).optional()
+    profileIds: z.array(z.string().trim().min(1).max(256)).max(32).optional(),
+    agentId: z.string().trim().min(1).max(128).optional()
   }),
   z.object({
     action: z.literal("activate-api-key"),
@@ -107,9 +108,11 @@ export async function GET(request: Request) {
   const view = viewSchema.catch("default").parse(url.searchParams.get("view") ?? "default");
   const includeSetup = url.searchParams.get("setup") === "1";
   const refresh = url.searchParams.get("refresh") === "1";
+  const agentId = url.searchParams.get("agentId")?.trim() || undefined;
+  const sessionKey = url.searchParams.get("sessionKey")?.trim() || undefined;
 
   try {
-    const state = await readModelManagementState({ view, includeSetup, refresh });
+    const state = await readModelManagementState({ view, includeSetup, refresh, agentId, sessionKey });
     return NextResponse.json(
       redactSecrets({
         ...state,
@@ -166,7 +169,7 @@ export async function POST(request: Request) {
         message = input.allow?.length ? "Model access policy updated." : "All models are allowed.";
         break;
       case "logout":
-        await logoutModelProvider(input.provider, input.profileIds);
+        await logoutModelProvider(input.provider, input.profileIds, input.agentId);
         message = "Provider connection removed.";
         break;
       case "activate-api-key":

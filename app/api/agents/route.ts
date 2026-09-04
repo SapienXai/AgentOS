@@ -83,7 +83,7 @@ const createAgentSchema = z.object({
 const updateAgentSchema = z.object({
   id: z.string().min(1),
   workspaceId: z.string().optional(),
-  modelId: z.string().optional(),
+  modelId: z.string().nullable().optional(),
   name: z.string().optional(),
   emoji: z.string().optional(),
   theme: z.string().optional(),

@@ -253,6 +253,7 @@ function normalizeRuntimeEntry(entry: Record<string, unknown>, context: RuntimeS
     workspaceId: workspaceId ?? undefined,
     workspacePath: workspacePath ?? undefined,
     modelId: readString(entry.modelId) ?? readString(entry.model) ?? undefined,
+    modelOverrideSource: normalizeModelOverrideSource(entry.modelOverrideSource),
     sessionId: readString(entry.sessionId) ?? undefined,
     taskId: readString(entry.taskId) ?? undefined,
     runId: readString(entry.runId) ?? undefined,
@@ -264,6 +265,14 @@ function normalizeRuntimeEntry(entry: Record<string, unknown>, context: RuntimeS
       gatewayObjectKind: "runtime"
     }
   } satisfies RuntimeRecord];
+}
+
+function normalizeModelOverrideSource(value: unknown): "user" | "auto" | null | undefined {
+  if (value === "user" || value === "auto" || value === null) {
+    return value;
+  }
+
+  return undefined;
 }
 
 function normalizeSessionRuntime(entry: Record<string, unknown>, context: RuntimeSnapshotMappingContext) {
@@ -289,6 +298,7 @@ function normalizeSessionRuntime(entry: Record<string, unknown>, context: Runtim
     totalTokens: readNumber(entry.totalTokens),
     model: readString(entry.model) ?? readString(entry.modelId) ?? undefined,
     modelProvider: readString(entry.modelProvider) ?? readString(entry.provider) ?? undefined,
+    modelOverrideSource: normalizeModelOverrideSource(entry.modelOverrideSource),
     kind: readString(entry.kind) ?? "runtime",
     origin: "openclaw-runtime-snapshot",
     mission: readString(entry.mission) ?? readString(entry.prompt) ?? undefined,

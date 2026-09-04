@@ -1309,6 +1309,8 @@ export interface RuntimeRecord {
   workspaceId?: string;
   workspacePath?: string;
   modelId?: string;
+  /** Native OpenClaw provenance for the session model shown in this runtime. */
+  modelOverrideSource?: "user" | "auto" | null;
   sessionId?: string;
   taskId?: string;
   runId?: string;
@@ -2527,7 +2529,7 @@ export interface AgentUpdateInput {
   id: string;
   workspaceId?: string;
   workspacePath?: string;
-  modelId?: string;
+  modelId?: string | null;
   name?: string;
   emoji?: string;
   theme?: string;

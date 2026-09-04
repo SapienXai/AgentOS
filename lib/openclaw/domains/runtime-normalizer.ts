@@ -57,6 +57,7 @@ export function mapSessionCatalogEntryToRuntime(
     workspaceId,
     workspacePath,
     modelId,
+    modelOverrideSource: session.modelOverrideSource,
     sessionId: session.sessionId,
     taskId,
     tokenUsage:
