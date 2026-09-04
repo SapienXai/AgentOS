@@ -7,9 +7,11 @@ import {
   getOpenClawCapabilityMatrix,
   setOpenClawCapabilityMatrixNativeCallerForTesting
 } from "@/lib/openclaw/application/capability-matrix-service";
+import { MissionControlCacheService } from "@/lib/openclaw/application/mission-control-cache-service";
 import {
   getOpenClawEventBridgeStatus,
   getOpenClawEventBridgeStreamStatus,
+  registerMissionControlSnapshotInvalidator,
   resetOpenClawEventBridgeForTesting,
   subscribeOpenClawEventBridgeEvents
 } from "@/lib/openclaw/application/event-bridge-service";
@@ -22,6 +24,7 @@ let activeClient: ReturnType<typeof createOfficialBackedOpenClawGatewayClient> |
 let activeHarness: OfficialGatewayHarness | null = null;
 
 afterEach(async () => {
+  registerMissionControlSnapshotInvalidator(() => {});
   resetOpenClawEventBridgeForTesting();
   clearOpenClawCapabilityMatrixCacheForTesting();
   setOpenClawGatewayClientForTesting(null);
@@ -91,6 +94,49 @@ test("official-backed event bridge coalesces sequence gaps into bounded reconcil
     assert.equal(getOpenClawEventBridgeStreamStatus().reconciliationState, "idle");
     assert.equal(getOpenClawEventBridgeStreamStatus().expectedSeq, 2);
     assert.equal(getOpenClawEventBridgeStreamStatus().receivedSeq, 3);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("official event delivery invalidates the snapshot before SSE subscribers refresh", { concurrency: false }, async () => {
+  activeHarness = await createHarness();
+  activeClient = createOfficialBackedOpenClawGatewayClient({ url: activeHarness.url, token: "freshness-token" });
+  setOpenClawGatewayClientForTesting(activeClient);
+  await getOpenClawCapabilityMatrix({ force: true });
+
+  const order: string[] = [];
+  let suggestionVisible = false;
+  const freshnessCache = new MissionControlCacheService<{ suggestionVisible: boolean }>({
+    ttlMs: 30_000,
+    load: async () => {
+      const value = { suggestionVisible };
+      return { visible: value, full: value };
+    }
+  });
+  assert.equal((await freshnessCache.getSnapshot({ force: true })).suggestionVisible, false);
+  assert.equal((await freshnessCache.getSnapshot()).suggestionVisible, false);
+  registerMissionControlSnapshotInvalidator(() => {
+    freshnessCache.clear();
+    order.push("invalidate");
+  });
+  const unsubscribe = subscribeOpenClawEventBridgeEvents((frame) => {
+    suggestionVisible = true;
+    order.push(`subscriber:${frame.event}`);
+  });
+  try {
+    await waitFor(() => countRequests("sessions.subscribe") === 1);
+    activeHarness.emitEvent("task.suggestion", { suggestion: { id: "suggestion-1" } });
+    activeHarness.emitEvent("session.sharing.evidence", { sessionKey: "agent:main:detail" });
+    await waitFor(() => order.filter((entry) => entry.startsWith("subscriber:")).length === 2);
+
+    assert.deepEqual(order.slice(0, 4), [
+      "invalidate",
+      "subscriber:task.suggestion",
+      "invalidate",
+      "subscriber:session.sharing.evidence"
+    ]);
+    assert.equal((await freshnessCache.getSnapshot()).suggestionVisible, true);
   } finally {
     unsubscribe();
   }

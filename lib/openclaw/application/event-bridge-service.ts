@@ -38,7 +38,12 @@ let sequenceGapCount = 0;
 let reconciliationPromise: Promise<void> | null = null;
 let reconciliationDirty = false;
 let reconciliationFollowUp = false;
+let invalidateMissionControlSnapshot: (() => void) | null = null;
 const bridgeEventSubscribers = new Set<(frame: GatewayEventFrame) => void>();
+
+export function registerMissionControlSnapshotInvalidator(invalidator: () => void) {
+  invalidateMissionControlSnapshot = invalidator;
+}
 
 export function getOpenClawEventBridgeStatus() {
   return {
@@ -181,6 +186,11 @@ async function startEventBridge(generation: number) {
       },
       {
         onEvent: (frame) => {
+          try {
+            invalidateMissionControlSnapshot?.();
+          } catch (error) {
+            lastError = redactErrorMessage(error, "Mission Control snapshot invalidation failed.");
+          }
           notifyBridgeEventSubscribers(frame);
           void persistGatewayEvent(frame).catch((error) => {
             lastError = redactErrorMessage(error, "OpenClaw Gateway event persistence failed.");

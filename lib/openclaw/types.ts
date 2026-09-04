@@ -1106,6 +1106,8 @@ export interface ManagedWorktreeProjection {
   sourceOfTruth: "openclaw";
 }
 
+export type SessionMembershipDetailState = "not-loaded" | "available" | "unavailable";
+
 export interface SessionOwnershipProjection {
   createdActor: { type: "human" | "agent" | "system"; id: string | null; label: string | null } | null;
   owner: { type: "human" | "agent" | "system"; id: string | null; label: string | null; assignedAt: number | null } | null;
@@ -1114,6 +1116,7 @@ export interface SessionOwnershipProjection {
   visibility: "shared" | "read-only" | "suggest" | "draft" | null;
   sharingRole: "admin" | "owner" | "member" | "viewer" | null;
   memberEvidence: Array<{ identityId: string; addedBy: string | null; addedByState: "known" | "unknown"; addedAt: number }>;
+  membershipDetailState: SessionMembershipDetailState;
   sourceOfTruth: "openclaw";
 }
 

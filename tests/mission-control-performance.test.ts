@@ -14,11 +14,16 @@ test("initial pages render before a slow OpenClaw snapshot blocks navigation", a
 });
 
 test("runtime stream uses event-first status updates with bounded reconciliation", async () => {
-  const source = await readFile("app/api/stream/route.ts", "utf8");
+  const [source, bridgeSource] = await Promise.all([
+    readFile("app/api/stream/route.ts", "utf8"),
+    readFile("lib/openclaw/application/event-bridge-service.ts", "utf8")
+  ]);
 
   assert.match(source, /STREAM_SYSTEM_STATUS_INTERVAL_MS\s*=\s*10_000/);
+  assert.match(source, /STREAM_EVENT_DEBOUNCE_MS\s*=\s*300/);
   assert.match(source, /subscribeOpenClawEventBridgeEvents\(\(\) => \{[\s\S]*?sendSystemStatus/);
   assert.match(source, /setInterval\(\(\) => \{[\s\S]*?STREAM_SYSTEM_STATUS_INTERVAL_MS/);
+  assert.match(bridgeSource, /invalidateMissionControlSnapshot\?\.\(\);[\s\S]*?notifyBridgeEventSubscribers\(frame\)/);
 });
 
 test("normal snapshot refresh is bounded while force refresh remains blocking", async () => {

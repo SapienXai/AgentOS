@@ -29,6 +29,7 @@ import {
   getOpenClawCapabilityMatrix
 } from "@/lib/openclaw/application/capability-matrix-service";
 import {
+  registerMissionControlSnapshotInvalidator,
   startOpenClawEventBridge
 } from "@/lib/openclaw/application/event-bridge-service";
 import { getOpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
@@ -176,6 +177,8 @@ export function invalidateMissionControlSnapshotCache() {
   missionControlCacheService.clear();
   clearMissionControlPayloadCaches();
 }
+
+registerMissionControlSnapshotInvalidator(invalidateMissionControlSnapshotCache);
 
 export async function getMissionControlSnapshot(
   options: { force?: boolean; includeHidden?: boolean; loadProfile?: SnapshotLoadProfile } = {}

@@ -5,6 +5,10 @@ import {
   NativeWsOpenClawGatewayClient
 } from "@/lib/openclaw/client/native-ws-gateway-client";
 import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
+import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { loadNativeSessionOwnershipDetail } from "@/lib/openclaw/application/mission-control/native-work-detail";
+import { loadNativeWorkSnapshot } from "@/lib/openclaw/application/mission-control/native-work-snapshot";
+import type { OpenClawCapabilityMatrix } from "@/lib/openclaw/types";
 import {
   capabilityState,
   normalizeManagedWorktree,
@@ -116,6 +120,58 @@ test("execution projection links the native session to its managed worktree", ()
   assert.equal(execution?.worktree?.id, "wt-1");
   assert.deepEqual(execution?.taskIds, ["task-1"]);
   assert.equal(execution?.ownership.sourceOfTruth, "openclaw");
+});
+
+test("root native work projection does not fan out membership detail", async () => {
+  let memberCalls = 0;
+  let evidenceCalls = 0;
+  const adapter = {
+    listWorktrees: async () => ({ worktrees: [] }),
+    listTaskSuggestions: async () => ({ suggestions: [] }),
+    listSessionMembers: async () => {
+      memberCalls += 1;
+      return { members: [] };
+    },
+    listSessionMembersEvidence: async () => {
+      evidenceCalls += 1;
+      return { members: [] };
+    }
+  } as unknown as OpenClawAdapter;
+  const matrix = {
+    supportedMethods: [
+      "worktrees.list",
+      "taskSuggestions.list",
+      "session.members.list",
+      "session.members.listEvidence"
+    ],
+    operations: {
+      worktrees: { mode: "gateway-native" },
+      taskSuggestions: { mode: "gateway-native" },
+      sessionCollaboration: { mode: "gateway-native" }
+    }
+  } as unknown as OpenClawCapabilityMatrix;
+
+  const snapshot = await loadNativeWorkSnapshot({
+    sessions: [{ key: "agent:main:detail", agentId: "main", status: "idle" }] as never,
+    agents: [],
+    matrix,
+    adapter,
+    timeoutMs: 100
+  });
+
+  assert.equal(memberCalls, 0);
+  assert.equal(evidenceCalls, 0);
+  assert.equal(snapshot.executions[0]?.ownership.membershipDetailState, "not-loaded");
+
+  const detail = await loadNativeSessionOwnershipDetail({
+    execution: snapshot.executions[0]!,
+    adapter,
+    timeoutMs: 100
+  });
+  assert.equal(memberCalls, 1);
+  assert.equal(evidenceCalls, 1);
+  assert.equal(detail.state, "available");
+  assert.equal(detail.ownership.membershipDetailState, "available");
 });
 
 test("capability state remains unknown when the live handshake has no operation entry", () => {

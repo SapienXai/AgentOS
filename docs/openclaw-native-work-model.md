@@ -6,6 +6,25 @@ Phase 1 establishes the operator-facing projection for OpenClaw-managed worktree
 
 The supported baseline is OpenClaw `2026.9.1` with the exact AgentOS package versions pinned in `package.json`. This phase does not upgrade OpenClaw, publish packages, deploy, or push a branch.
 
+## Phase 1.1 hardening
+
+The existing Gateway event bridge invalidates the single Mission Control
+snapshot cache before the stream's existing 300 ms debounced refresh. Event
+delivery remains the trigger and refreshed OpenClaw list responses remain the
+source of truth; no second polling loop, reconnect owner, or refresh loop is
+introduced.
+
+Root Native Work snapshots now project only the summary fields already carried
+by `sessions.list`. Membership and evidence are marked `not-loaded` in the
+root projection and are hydrated only for the selected session through the
+existing ownership route using one `session.members.list` call and one
+`session.members.listEvidence` call. Failures remain `unavailable` and never
+become local ownership state.
+
+The AgentOS authorization preflight maps the integrated Native Work methods to
+the exact OpenClaw 2026.9.1 descriptor scopes. OpenClaw remains the final
+authorization authority for method and target policy.
+
 ## Ownership matrix
 
 | Concern | Owner | AgentOS responsibility | Transport |
@@ -53,7 +72,9 @@ The normalized execution projection preserves:
 - `sharingRole` (`admin`, `owner`, `member`, or `viewer`);
 - membership evidence, including `addedByState: "unknown"` when the native evidence intentionally has no principal.
 
-Membership reads are bounded to the first 32 session rows in the current native snapshot. This is a projection bound, not a new ownership source. Evidence is never replaced with a guessed principal.
+The root snapshot is bounded to the first 32 session rows and uses only the
+summary fields in each row. Membership detail is not loaded in that pass;
+evidence is never replaced with a guessed principal.
 
 The existing task inspector renders the native execution card. Its handoff control calls `sessions.assignOwner` only when the native method is advertised and an AgentOS agent is a valid target. It does not mutate AgentOS task ownership. Visibility/member writes are not exposed without a meaningful existing operator flow.
 
@@ -77,11 +98,16 @@ All native-only methods use `AgentOsGatewayRequestPolicy` with CLI fallback disa
 | --- | --- | --- |
 | `worktrees.list` | `operator.read` | `sessions.use` / runtime projection |
 | `worktrees.branches` | `operator.write` | `missions.use` |
+| `worktrees.create` | `operator.write` | `missions.use` |
+| `worktrees.remove` / `.restore` / `.gc` | `operator.admin` | not exposed in this phase |
 | `sessions.create` | native mutation scope | `missions.use` |
 | `taskSuggestions.list` | `operator.read` | `tasks.use` |
+| `taskSuggestions.create` | `operator.write` | not exposed in this phase |
 | `taskSuggestions.accept` | `operator.admin` | `tasks.use` |
 | `taskSuggestions.dismiss` | `operator.write` | `tasks.use` |
-| `session.members.list` / `.listEvidence` | `operator.read` | `sessions.use` |
+| `session.members.list` / `.listEvidence` | `operator.read` | `sessions.use` / selected-session detail |
+| `session.members.add` / `.remove` | `operator.write` | not exposed in this phase |
+| `session.visibility.set` | `operator.write` | not exposed in this phase |
 | `sessions.assignOwner` | `operator.write` | `sessions.use` |
 
 Mutation ambiguity is resolved by the existing native request policy and a refreshed snapshot; AgentOS does not blindly retry a sent mutation. Audit entries contain only non-sensitive operation and target metadata.
@@ -102,7 +128,11 @@ The contract tests cover exact 2026.9.1-shaped worktree, task suggestion, sessio
 
 The generated certification evidence is stored at:
 
-`docs/evidence/openclaw-2026.9.1-native-work-foundation.json`
+`docs/evidence/openclaw-2026.9.1-native-work-hardening.json`
+
+The historical Phase 1 evidence remains unchanged. It contains the documented
+event-name typo `session.evidence`; the correct 2026.9.1 event is
+`session.sharing.evidence`.
 
 No production readiness claim is made until that evidence records a clean implementation commit and the required certification gates pass.
 

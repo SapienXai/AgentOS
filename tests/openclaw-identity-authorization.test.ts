@@ -12,13 +12,15 @@ import { FakeOpenClawGateway } from "@/tests/helpers/fake-openclaw-gateway";
 import {
   buildOpenClawNativeAuthorizationProof,
   isVerifiedNativeAuthorizationProof,
-  OpenClawAuthorizationService
+  OpenClawAuthorizationService,
+  resolveRequiredScopes
 } from "@/lib/openclaw/identity/authorization";
 import {
   OPENCLAW_8_2_IDENTITY_INVENTORY,
   OPENCLAW_CAPABILITY_SCOPES,
   OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT,
-  OPENCLAW_IDENTITY_CONTRACT_VERSION
+  OPENCLAW_IDENTITY_CONTRACT_VERSION,
+  OPENCLAW_STATIC_METHOD_SCOPES
 } from "@/lib/openclaw/identity/contract";
 import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
 import type { OpenClawOperatorIdentity } from "@/lib/openclaw/identity/types";
@@ -78,6 +80,47 @@ test("9.1 dedicated scopes remain distinct and dynamic operations stay runtime-r
   assert.equal((await service.authorizeMethod("chat.send", { sessionKey: "agent:main:main" })).state, "runtime-required");
   assert.equal((await service.authorizeMethod("node.invoke", { nodeId: "node-1", command: "system.run" })).state, "runtime-required");
   assert.equal((await service.authorizeMethod("config.patch", { raw: {} })).state, "denied");
+});
+
+test("9.1 native work methods use the exact upstream descriptor scopes", async () => {
+  const expected: Record<string, string> = {
+    "taskSuggestions.list": "operator.read",
+    "taskSuggestions.create": "operator.write",
+    "taskSuggestions.accept": "operator.admin",
+    "taskSuggestions.dismiss": "operator.write",
+    "worktrees.list": "operator.read",
+    "worktrees.branches": "operator.write",
+    "worktrees.create": "operator.write",
+    "worktrees.remove": "operator.admin",
+    "worktrees.restore": "operator.admin",
+    "worktrees.gc": "operator.admin",
+    "session.members.list": "operator.read",
+    "session.members.listEvidence": "operator.read",
+    "session.members.add": "operator.write",
+    "session.members.remove": "operator.write",
+    "session.visibility.set": "operator.write",
+    "sessions.assignOwner": "operator.write"
+  };
+
+  assert.deepEqual(
+    Object.fromEntries(Object.keys(expected).map((method) => [method, OPENCLAW_STATIC_METHOD_SCOPES[method]])),
+    Object.fromEntries(Object.entries(expected).map(([method, scope]) => [method, [scope]]))
+  );
+
+  const readService = new OpenClawAuthorizationService(fakeClient(nativeIdentity(["operator.read"])));
+  const writeService = new OpenClawAuthorizationService(fakeClient(nativeIdentity(["operator.write"])));
+  const adminService = new OpenClawAuthorizationService(fakeClient(nativeIdentity(["operator.admin"])));
+  for (const [method, scope] of Object.entries(expected)) {
+    assert.deepEqual(resolveRequiredScopes(method), [scope], method);
+    const service = scope === "operator.read" ? readService : scope === "operator.write" ? writeService : adminService;
+    assert.equal((await service.authorizeMethod(method)).state, "allowed", method);
+    if (scope !== "operator.read") {
+      assert.equal((await readService.authorizeMethod(method)).state, "denied", method);
+    }
+    if (scope === "operator.admin") {
+      assert.equal((await writeService.authorizeMethod(method)).state, "denied", method);
+    }
+  }
 });
 
 test("9.1 mutation policy classifies non-suffix mutation methods for fallback safety", () => {

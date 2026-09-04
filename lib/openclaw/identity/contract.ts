@@ -370,5 +370,21 @@ export const OPENCLAW_STATIC_METHOD_SCOPES: Record<string, readonly string[]> = 
   "channels.stop": ["operator.admin"],
   "channels.logout": ["operator.admin"],
   "plugins.install": ["operator.admin"],
-  "config.patch": ["operator.admin"]
+  "config.patch": ["operator.admin"],
+  "taskSuggestions.list": ["operator.read"],
+  "taskSuggestions.create": ["operator.write"],
+  "taskSuggestions.accept": ["operator.admin"],
+  "taskSuggestions.dismiss": ["operator.write"],
+  "worktrees.list": ["operator.read"],
+  "worktrees.branches": ["operator.write"],
+  "worktrees.create": ["operator.write"],
+  "worktrees.remove": ["operator.admin"],
+  "worktrees.restore": ["operator.admin"],
+  "worktrees.gc": ["operator.admin"],
+  "session.members.list": ["operator.read"],
+  "session.members.listEvidence": ["operator.read"],
+  "session.members.add": ["operator.write"],
+  "session.members.remove": ["operator.write"],
+  "session.visibility.set": ["operator.write"],
+  "sessions.assignOwner": ["operator.write"]
 };

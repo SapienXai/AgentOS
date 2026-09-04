@@ -68,21 +68,9 @@ export async function loadNativeWorkSnapshot(input: {
 
   const taskIdsBySession = collectTaskIdsBySession(input.taskList);
   const sessions = input.sessions.filter((session) => typeof session.key === "string").slice(0, 32);
-  const memberCalls = ownershipState === "supported" && input.adapter.listSessionMembers
-    ? sessions.map((session) => input.adapter.listSessionMembers!({ sessionKey: session.key! }, { timeoutMs: input.timeoutMs }))
-    : [];
-  const evidenceCalls = ownershipState === "supported" && input.adapter.listSessionMembersEvidence
-    ? sessions.map((session) => input.adapter.listSessionMembersEvidence!({ sessionKey: session.key! }, { timeoutMs: input.timeoutMs }))
-    : [];
-  const [memberResults, evidenceResults] = await Promise.all([
-    Promise.allSettled(memberCalls),
-    Promise.allSettled(evidenceCalls)
-  ]);
 
   snapshot.executions = sessions
-    .map((session, index) => {
-      const memberResult = memberResults[index];
-      const evidenceResult = evidenceResults[index];
+    .map((session) => {
       const worktree = snapshot.worktrees.find((entry) =>
         (typeof session.worktree === "object" && session.worktree && "id" in session.worktree && entry.id === session.worktree.id) ||
         entry.path === session.spawnedWorkspaceDir || entry.path === session.spawnedCwd
@@ -91,17 +79,15 @@ export async function loadNativeWorkSnapshot(input: {
         session,
         input.agents.find((agent) => agent.id === session.agentId) ?? null,
         worktree,
-        memberResult?.status === "fulfilled" ? memberResult.value : undefined,
-        evidenceResult?.status === "fulfilled" ? evidenceResult.value : undefined,
-        taskIdsBySession.get(session.key!) ?? []
+        undefined,
+        undefined,
+        taskIdsBySession.get(session.key!) ?? [],
+        ownershipState === "supported" ? "not-loaded" : "unavailable"
       );
       return execution;
     })
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
 
-  if (ownershipState === "supported" && memberResults.some((result) => result.status === "rejected")) {
-    issues.push("Some session membership projections are unavailable; principal-less evidence remains explicit.");
-  }
   snapshot.issues = issues;
   return snapshot;
 }

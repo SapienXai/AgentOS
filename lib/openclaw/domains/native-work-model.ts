@@ -5,6 +5,7 @@ import type {
   NativeWorkSnapshot,
   OpenClawAgent,
   SessionOwnershipProjection,
+  SessionMembershipDetailState,
   SuggestedWorkProjection,
   RuntimeStatus
 } from "@/lib/openclaw/types";
@@ -100,7 +101,12 @@ export function normalizeSuggestedWork(value: unknown, availableAcceptModes = ["
   };
 }
 
-export function normalizeSessionOwnership(value: unknown, members?: unknown, evidence?: unknown): SessionOwnershipProjection {
+export function normalizeSessionOwnership(
+  value: unknown,
+  members?: unknown,
+  evidence?: unknown,
+  membershipDetailState: SessionMembershipDetailState = members === undefined && evidence === undefined ? "not-loaded" : "available"
+): SessionOwnershipProjection {
   const row = isRecord(value) ? value : {};
   const owner = isRecord(row.owner) ? row.owner : null;
   const ownerActor = owner && isRecord(owner.actor) ? owner.actor : null;
@@ -149,6 +155,7 @@ export function normalizeSessionOwnership(value: unknown, members?: unknown, evi
         };
       })
       .filter((entry): entry is SessionOwnershipProjection["memberEvidence"][number] => Boolean(entry)),
+    membershipDetailState,
     sourceOfTruth: "openclaw"
   };
 }
@@ -159,7 +166,8 @@ export function normalizeNativeWorkExecution(
   worktree: ManagedWorktreeProjection | null,
   members?: unknown,
   evidence?: unknown,
-  taskIds: string[] = []
+  taskIds: string[] = [],
+  membershipDetailState?: SessionMembershipDetailState
 ): NativeWorkExecutionProjection | null {
   if (!isRecord(value)) return null;
   const sessionKey = readString(value.key) ?? readString(value.sessionKey);
@@ -195,7 +203,7 @@ export function normalizeNativeWorkExecution(
       repoRoot: linkedWorktree.repoRoot,
       path: linkedWorktree.path || null
     } : null,
-    ownership: normalizeSessionOwnership(value, members, evidence),
+    ownership: normalizeSessionOwnership(value, members, evidence, membershipDetailState),
     taskIds,
     sourceOfTruth: "openclaw"
   };

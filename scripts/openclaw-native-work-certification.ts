@@ -7,16 +7,40 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
+import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
+import { loadNativeSessionOwnershipDetail } from "@/lib/openclaw/application/mission-control/native-work-detail";
+import { loadNativeWorkSnapshot } from "@/lib/openclaw/application/mission-control/native-work-snapshot";
+import { MissionControlCacheService } from "@/lib/openclaw/application/mission-control-cache-service";
 import { createOfficialBackedOpenClawGatewayClient } from "@/lib/openclaw/client/official-gateway-factory";
 import type { GatewayEventFrame } from "@/lib/openclaw/client/native-ws-gateway-types";
+import { resolveRequiredScopes } from "@/lib/openclaw/identity/authorization";
 import { OPENCLAW_IDENTITY_CONTRACT_BUILD, OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT, OPENCLAW_IDENTITY_CONTRACT_VERSION } from "@/lib/openclaw/identity/contract";
+import type { OpenClawCapabilityMatrix } from "@/lib/openclaw/types";
 
 const execFileAsync = promisify(execFile);
 const PACKAGE_INPUT = process.env.OPENCLAW_NATIVE_WORK_PACKAGE?.trim() || "/tmp/openclaw-2026.9.1-source-agentos";
-const OUTPUT_PATH = process.env.OPENCLAW_NATIVE_WORK_OUTPUT?.trim() || path.resolve("docs/evidence/openclaw-2026.9.1-native-work-foundation.json");
+const OUTPUT_PATH = process.env.OPENCLAW_NATIVE_WORK_OUTPUT?.trim() || path.resolve("docs/evidence/openclaw-2026.9.1-native-work-hardening.json");
 const TARGET_VERSION = OPENCLAW_IDENTITY_CONTRACT_VERSION;
 const TARGET_COMMIT = OPENCLAW_IDENTITY_CONTRACT_SOURCE_COMMIT;
 const REQUEST_TIMEOUT_MS = 10_000;
+const EXPECTED_NATIVE_WORK_SCOPES = {
+  "taskSuggestions.list": "operator.read",
+  "taskSuggestions.create": "operator.write",
+  "taskSuggestions.accept": "operator.admin",
+  "taskSuggestions.dismiss": "operator.write",
+  "worktrees.list": "operator.read",
+  "worktrees.branches": "operator.write",
+  "worktrees.create": "operator.write",
+  "worktrees.remove": "operator.admin",
+  "worktrees.restore": "operator.admin",
+  "worktrees.gc": "operator.admin",
+  "session.members.list": "operator.read",
+  "session.members.listEvidence": "operator.read",
+  "session.members.add": "operator.write",
+  "session.members.remove": "operator.write",
+  "session.visibility.set": "operator.write",
+  "sessions.assignOwner": "operator.write"
+} as const;
 
 type PackageIdentity = {
   version: string;
@@ -58,10 +82,12 @@ async function main() {
   let gateway: ChildProcess | null = null;
   let client: ReturnType<typeof createOfficialBackedOpenClawGatewayClient> | null = null;
   let subscription: { close: () => void } | null = null;
+  let freshnessCache: MissionControlCacheService<{ suggestionIds: string[] }> | null = null;
+  let resolveFreshnessEvent: (() => void) | null = null;
   const events: GatewayEventFrame[] = [];
   const evidence = {
     schemaVersion: 1,
-    artifactType: "openclaw-native-work-foundation-certification",
+    artifactType: "openclaw-native-work-hardening-certification",
     generatedAt: new Date().toISOString(),
     provenance: {
       repository: "SapienXai/AgentOS",
@@ -87,8 +113,28 @@ async function main() {
       worktrees: ["worktrees.list", "worktrees.branches", "sessions.create"],
       taskSuggestions: ["taskSuggestions.list", "taskSuggestions.create", "taskSuggestions.accept", "taskSuggestions.dismiss"],
       sessionOwnership: ["session.members.list", "session.members.listEvidence", "sessions.assignOwner"],
-      events: ["task.suggestion", "session.sharing", "session.evidence"],
+      events: ["task.suggestion", "session.sharing", "session.sharing.evidence"],
       noTaskSubscriptionMethod: true
+    },
+    hardening: {
+      eventFreshness: {
+        missionControlSnapshotTtlMs: 30_000,
+        gatewayEventDebounceMs: 300,
+        invalidationBeforeDebouncedRefresh: true,
+        runtimeProof: "pending" as "pending" | "PASS"
+      },
+      authorizationParity: {
+        sourceCommit: TARGET_COMMIT,
+        staticMethodScopes: Object.fromEntries(Object.entries(EXPECTED_NATIVE_WORK_SCOPES).map(([method, scope]) => [method, [scope]]))
+      },
+      snapshotEfficiency: {
+        maxSessionsProjected: 32,
+        preHardeningMemberEvidenceRpcUpperBound: 64,
+        rootMemberRpcCount: null as number | null,
+        rootEvidenceRpcCount: null as number | null,
+        detailMemberRpcCount: null as number | null,
+        detailEvidenceRpcCount: null as number | null
+      }
     },
     handshake: null as Record<string, unknown> | null,
     checks: {
@@ -101,6 +147,10 @@ async function main() {
       suggestionAccept: false,
       suggestionDismiss: false,
       suggestionEvent: false,
+      eventFreshness: false,
+      exactScopeParity: false,
+      rootNativeWorkNoFanout: false,
+      detailNativeWorkOnDemand: false,
       sessionMembers: false,
       sessionEvidence: false,
       ownerHandoff: "not-run" as "not-run" | "PASS" | "EXPECTED-DENIAL",
@@ -116,10 +166,15 @@ async function main() {
       acceptedSessionKey: null as string | null,
       eventNames: [] as string[],
       ownerResult: null as string | null,
+      eventFreshnessLatencyMs: null as number | null,
+      rootMembershipRpcCount: null as number | null,
+      rootEvidenceRpcCount: null as number | null,
+      detailMembershipRpcCount: null as number | null,
+      detailEvidenceRpcCount: null as number | null,
       fallbackTotal: null as number | null
     },
     cleanup: { status: "pending", gatewayProcessStopped: false, disposableRootRemoved: false },
-    gate: "OPENCLAW 9.1 NATIVE WORK FOUNDATION GATE: FAIL",
+    gate: "OPENCLAW 9.1 NATIVE WORK HARDENING GATE: FAIL",
     success: false
   };
 
@@ -146,7 +201,15 @@ async function main() {
     evidence.checks.exactPackage = true;
     evidence.checks.nativeTransport = client.getDiagnostics?.().transportImplementation === "official";
 
-    subscription = await client.subscribeNativeEvents({ subscribeSessions: true }, { onEvent: (frame) => events.push(frame) }, { timeoutMs: REQUEST_TIMEOUT_MS });
+    subscription = await client.subscribeNativeEvents({ subscribeSessions: true }, {
+      onEvent: (frame) => {
+        events.push(frame);
+        if (readEventName(frame) === "task.suggestion") {
+          freshnessCache?.clear();
+          resolveFreshnessEvent?.();
+        }
+      }
+    }, { timeoutMs: REQUEST_TIMEOUT_MS });
     const branches = await client.inspectWorktreeBranches({ repoRoot: resources.workspaceDir, includeRepositoryStatus: true }, { timeoutMs: REQUEST_TIMEOUT_MS });
     assert.equal(branches.repositoryStatus, "git");
     assert.ok(branches.branches.some((branch) => branch.kind === "local"));
@@ -177,6 +240,65 @@ async function main() {
     const projectedWorktree = worktrees.worktrees.find((entry) => entry.id === session.worktree?.id);
     evidence.checks.worktreeProjection = Boolean(projectedWorktree?.ownerKind === "session" && projectedWorktree.ownerId === sessionKey);
 
+    for (const [method, scope] of Object.entries(EXPECTED_NATIVE_WORK_SCOPES)) {
+      assert.deepEqual(resolveRequiredScopes(method), [scope], method);
+    }
+    evidence.checks.exactScopeParity = true;
+
+    const rpcCounts = {
+      members: 0,
+      evidence: 0
+    };
+    const countedAdapter = createNativeWorkCountingAdapter(client, rpcCounts);
+    const nativeWorkMatrix = {
+      supportedMethods: [
+        "worktrees.list",
+        "taskSuggestions.list",
+        "session.members.list",
+        "session.members.listEvidence"
+      ],
+      operations: {
+        worktrees: { mode: "gateway-native" },
+        taskSuggestions: { mode: "gateway-native" },
+        sessionCollaboration: { mode: "gateway-native" }
+      }
+    } as unknown as OpenClawCapabilityMatrix;
+    const [liveSessions, liveTasks] = await Promise.all([
+      client.listSessions({}, { timeoutMs: REQUEST_TIMEOUT_MS }),
+      client.listTasks({}, { timeoutMs: REQUEST_TIMEOUT_MS })
+    ]);
+    const rootProjection = await loadNativeWorkSnapshot({
+      sessions: liveSessions.sessions,
+      agents: [],
+      taskList: liveTasks,
+      matrix: nativeWorkMatrix,
+      adapter: countedAdapter,
+      timeoutMs: REQUEST_TIMEOUT_MS
+    });
+    assert.equal(rpcCounts.members, 0);
+    assert.equal(rpcCounts.evidence, 0);
+    const projectedExecution = rootProjection.executions.find((entry) => entry.sessionKey === sessionKey);
+    assert.equal(projectedExecution?.ownership.membershipDetailState, "not-loaded");
+    evidence.checks.rootNativeWorkNoFanout = true;
+    evidence.observations.rootMembershipRpcCount = rpcCounts.members;
+    evidence.observations.rootEvidenceRpcCount = rpcCounts.evidence;
+    evidence.hardening.snapshotEfficiency.rootMemberRpcCount = rpcCounts.members;
+    evidence.hardening.snapshotEfficiency.rootEvidenceRpcCount = rpcCounts.evidence;
+
+    const detailProjection = await loadNativeSessionOwnershipDetail({
+      execution: projectedExecution!,
+      adapter: countedAdapter,
+      timeoutMs: REQUEST_TIMEOUT_MS
+    });
+    assert.equal(detailProjection.state, "available");
+    assert.equal(rpcCounts.members, 1);
+    assert.equal(rpcCounts.evidence, 1);
+    evidence.checks.detailNativeWorkOnDemand = true;
+    evidence.observations.detailMembershipRpcCount = rpcCounts.members;
+    evidence.observations.detailEvidenceRpcCount = rpcCounts.evidence;
+    evidence.hardening.snapshotEfficiency.detailMemberRpcCount = rpcCounts.members;
+    evidence.hardening.snapshotEfficiency.detailEvidenceRpcCount = rpcCounts.evidence;
+
     const members = await client.listSessionMembers({ sessionKey }, { timeoutMs: REQUEST_TIMEOUT_MS });
     const memberEvidence = await client.listSessionMembersEvidence({ sessionKey }, { timeoutMs: REQUEST_TIMEOUT_MS });
     evidence.checks.sessionMembers = Array.isArray(members.members);
@@ -193,6 +315,22 @@ async function main() {
       evidence.observations.ownerResult = "native authorization denied unidentified disposable operator";
     }
 
+    freshnessCache = new MissionControlCacheService<{ suggestionIds: string[] }>({
+      ttlMs: 30_000,
+      load: async () => {
+        const payload = await client!.listTaskSuggestions({ sessionKey }, { timeoutMs: REQUEST_TIMEOUT_MS });
+        const value = { suggestionIds: payload.suggestions.map((suggestion) => suggestion.id) };
+        return { visible: value, full: value };
+      }
+    });
+    const freshnessBefore = await freshnessCache.getSnapshot({ force: true });
+    const freshnessCached = await freshnessCache.getSnapshot();
+    assert.deepEqual(freshnessBefore.suggestionIds, []);
+    assert.deepEqual(freshnessCached.suggestionIds, []);
+    const freshnessStartedAt = Date.now();
+    const freshnessEvent = new Promise<void>((resolve) => {
+      resolveFreshnessEvent = resolve;
+    });
     const createdSuggestion = await client.createTaskSuggestion({
       title: "Inspect native work evidence",
       prompt: "Inspect the native work evidence and report the exact session identity.",
@@ -203,6 +341,16 @@ async function main() {
     }, { timeoutMs: REQUEST_TIMEOUT_MS });
     const suggestionId = createdSuggestion.taskId;
     evidence.observations.suggestionId = suggestionId;
+    await Promise.race([
+      freshnessEvent,
+      wait(REQUEST_TIMEOUT_MS).then(() => { throw new Error("Timed out waiting for the native task suggestion event."); })
+    ]);
+    const freshnessAfter = await freshnessCache.getSnapshot();
+    assert.ok(freshnessAfter.suggestionIds.includes(suggestionId));
+    evidence.checks.eventFreshness = true;
+    evidence.observations.eventFreshnessLatencyMs = Date.now() - freshnessStartedAt;
+    evidence.hardening.eventFreshness.runtimeProof = "PASS";
+    resolveFreshnessEvent = null;
     const suggestions = await client.listTaskSuggestions({ sessionKey }, { timeoutMs: REQUEST_TIMEOUT_MS });
     assert.ok(suggestions.suggestions.some((suggestion) => suggestion.id === suggestionId));
     evidence.checks.suggestionList = true;
@@ -252,16 +400,34 @@ async function main() {
     evidence.cleanup.disposableRootRemoved = !(await pathExists(resources.disposableRoot));
     evidence.checks.cleanup = evidence.cleanup.gatewayProcessStopped && evidence.cleanup.disposableRootRemoved;
     evidence.gate = Object.values(evidence.checks).every((value) => value === true || value === "PASS" || value === "EXPECTED-DENIAL")
-      ? "OPENCLAW 9.1 NATIVE WORK FOUNDATION GATE: PASS"
-      : "OPENCLAW 9.1 NATIVE WORK FOUNDATION GATE: FAIL";
+      ? "OPENCLAW 9.1 NATIVE WORK HARDENING GATE: PASS"
+      : "OPENCLAW 9.1 NATIVE WORK HARDENING GATE: FAIL";
     evidence.success = evidence.gate.endsWith("PASS");
     await mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
     await writeFile(OUTPUT_PATH, `${JSON.stringify(sanitizeEvidence(evidence), null, 2)}\n`, { mode: 0o600 });
   }
 
   if (!evidence.success) throw new Error(`Native work certification failed. Evidence: ${OUTPUT_PATH}`);
-  console.log("OPENCLAW 9.1 NATIVE WORK FOUNDATION GATE: PASS");
+  console.log("OPENCLAW 9.1 NATIVE WORK HARDENING GATE: PASS");
   console.log(`Evidence: ${OUTPUT_PATH}`);
+}
+
+function createNativeWorkCountingAdapter(
+  client: NonNullable<ReturnType<typeof createOfficialBackedOpenClawGatewayClient>>,
+  counts: { members: number; evidence: number }
+) {
+  return {
+    listWorktrees: (options: { timeoutMs?: number }) => client.listWorktrees(options),
+    listTaskSuggestions: (input: { sessionKey?: string }, options: { timeoutMs?: number }) => client.listTaskSuggestions(input, options),
+    listSessionMembers: (input: { sessionKey: string }, options: { timeoutMs?: number }) => {
+      counts.members += 1;
+      return client.listSessionMembers(input, options);
+    },
+    listSessionMembersEvidence: (input: { sessionKey: string }, options: { timeoutMs?: number }) => {
+      counts.evidence += 1;
+      return client.listSessionMembersEvidence(input, options);
+    }
+  } as unknown as OpenClawAdapter;
 }
 
 function createClient(resources: RuntimeResources) {
