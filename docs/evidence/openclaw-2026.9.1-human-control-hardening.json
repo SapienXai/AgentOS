@@ -1,0 +1,192 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-human-control-hardening-certification",
+  "generatedAt": "2026-09-04T19:40:47Z",
+  "startingCodeHead": "20fbeba6eaa82c267040cef027626371c4f65ecf",
+  "certifiedCodeHead": "6ca56b5337c7e019f065b54130d01b73067ba374",
+  "openClaw": {
+    "release": "2026.9.1",
+    "source": "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
+    "gatewayProtocol": 4,
+    "gatewayClient": "2026.9.1",
+    "gatewayProtocolPackage": "2026.9.1",
+    "packageHash": "4fed530115d575fb0f6a677aeca9b854ae9956f022f443b0039f4f94263c0ebe"
+  },
+  "productionCapabilityAttention": {
+    "status": "PASS",
+    "productionPath": "getHumanControlInbox -> resolveHumanControlCapabilityCandidates -> getWorkerEffectiveCapabilities -> projectCapabilityAttention",
+    "candidateSources": [
+      "running tasks",
+      "queued tasks",
+      "stalled tasks",
+      "workers and sessions referenced by current native attention items"
+    ],
+    "operationalRelevance": "Only active or current native work contexts are eligible; idle workers are not scanned.",
+    "candidateIdentity": "workerId + sessionKey, falling back to workerId + taskId when no session key is known",
+    "maxCandidates": 16,
+    "resolverConcurrency": 4,
+    "candidateDeduplication": "PASS",
+    "duplicateWorkerSessionResolution": "PASS",
+    "activeNeedsSetup": "PASS",
+    "activeBlocked": "PASS",
+    "idleWorkerSuppression": "PASS",
+    "resolverFailureIsolation": "PASS",
+    "failureSemantics": "A failed candidate resolver preserves native attention and reports partial/unavailable capability source completeness; it is not treated as no blocker."
+  },
+  "openInboxRefresh": {
+    "status": "PASS",
+    "liveTransport": "Existing /api/stream EventSource and Dashboard snapshot generation",
+    "newEventSource": false,
+    "newGatewaySubscription": false,
+    "closedInbox": "No Human Control refetch when closed",
+    "openInbox": "A changed snapshot generation schedules one bounded refetch while open",
+    "debounceMilliseconds": 150,
+    "coalescing": "PASS",
+    "pendingMutation": "Refresh is deferred until the action settles, then the action path performs an authoritative read",
+    "questionDraftPreservation": "Answers are keyed by native question ID and retained for still-present questions; resolved questions are removed",
+    "directGatewayAccessFromReact": false
+  },
+  "runtimeLinkageAndDedup": {
+    "status": "PASS",
+    "runtimeSessionLinkage": "Runtime issue/task projections propagate sessionKey when exact task/session metadata or stable task linkage provides it, while retaining taskId.",
+    "noFabricatedLinkage": true,
+    "matchingOrder": [
+      "same native source identity",
+      "same non-empty sessionKey",
+      "same non-empty taskId"
+    ],
+    "approvalRuntimeDedup": "Same-work runtime issues are suppressed when a pending approval is the stronger item; different sessions remain visible.",
+    "questionRuntimeDedup": "A question suppresses only the runtime item sharing the proven task/session work identity.",
+    "approvalBlockedDedup": "A blocked capability is suppressed only for the same session and matching toolId; unrelated blocked tools remain visible.",
+    "sameWorkerUnrelatedIssuesPreserved": true,
+    "timestampOrLabelInference": false,
+    "repeatedEventDeduplication": true
+  },
+  "sourceCompleteness": {
+    "capabilities": "available | partial | unavailable",
+    "partialIssue": "Some active capability blockers could not be verified.",
+    "emptyInboxHonesty": "Capability-source uncertainty is represented separately from an authoritative empty result.",
+    "nativeAttentionSources": [
+      "exec approvals",
+      "plugin approvals",
+      "questions",
+      "task suggestions",
+      "runtime issues"
+    ]
+  },
+  "events": {
+    "bridge": "Existing AgentOS Gateway event bridge",
+    "refreshSignal": "Existing Dashboard snapshot event generation",
+    "relevantExistingEvents": [
+      "exec.approval.requested",
+      "exec.approval.resolved",
+      "plugin.approval.requested",
+      "plugin.approval.resolved",
+      "question.requested",
+      "question.resolved",
+      "task.suggestion",
+      "skills.changed",
+      "session.tool",
+      "sessions.changed"
+    ],
+    "cacheInvalidation": "Existing event bridge and request policy",
+    "coalescing": "PASS",
+    "reconnectReconciliation": "Existing bulk native inventory reconciliation; capability resolution is deferred until an Inbox read.",
+    "sameConnectionExecLifecycle": "DOCUMENTED-RUNTIME-BEHAVIOR: the exact disposable runtime did not fan same-connection approval lifecycle events back to the certification subscriber; action reads and reconnect reconciliation remain authoritative."
+  },
+  "performance": {
+    "inboxGraph": "Existing bounded Mission Control snapshot plus parallel bulk attention reads and at most 16 deduplicated capability contexts resolved with concurrency 4",
+    "candidateBound": 16,
+    "resolverConcurrency": 4,
+    "dashboardExtraCapabilityRpcCount": 0,
+    "perWorkerOrganizationWideFanout": false,
+    "perCapabilityFanout": false,
+    "perItemFanout": false,
+    "duplicateCandidateResolution": false,
+    "requestCoalescing": "Existing AgentOsGatewayRequestPolicy plus one 150ms open-Inbox refresh debounce",
+    "observedTiming": "No additional root Dashboard capability reads; bounded detail resolution verified by deterministic instrumentation tests."
+  },
+  "runtime": {
+    "isolated": true,
+    "gatewayPlacement": "disposable-loopback",
+    "handshake": "PASS",
+    "userGatewayTouched": false,
+    "realCredentialsAccessed": false,
+    "productionCapabilityAttention": "PASS: application-service composition proven with deterministic capability resolver fixture",
+    "openInboxRefresh": "PASS: existing live refresh abstraction and open/closed/coalescing behavior covered by tests",
+    "approvalDedup": "PASS",
+    "questionDedup": "PASS",
+    "needsSetup": "PASS: deterministic production-path fixture",
+    "blocked": "PASS: deterministic production-path fixture",
+    "execApproval": {
+      "pendingRead": "PASS",
+      "projection": "PASS",
+      "resolve": "PASS",
+      "event": "SKIPPED",
+      "eventReason": "Same-connection approval lifecycle events were not fanned back by the exact runtime."
+    },
+    "pluginApproval": {
+      "pendingRead": "PASS",
+      "projection": "SKIPPED",
+      "resolve": "SKIPPED",
+      "event": "SKIPPED",
+      "reason": "Safe fixture creation requires a trusted plugin runtime owner."
+    },
+    "suggestedWork": {
+      "pendingRead": "PASS",
+      "projection": "SKIPPED",
+      "reason": "No disposable native suggestion was seeded; existing task-suggestion integration is reused."
+    },
+    "runtimeIssue": {
+      "projection": "SKIPPED",
+      "reason": "No disposable runtime failure fixture was seeded; deterministic projection and dedup tests cover the path."
+    },
+    "cleanup": "PASS: disposable state removed and gateway stopped"
+  },
+  "security": {
+    "credentialsExposed": false,
+    "tokensExposed": false,
+    "realUserStateTouched": false,
+    "untrustedContentAsAgentOsInstruction": false,
+    "centralRedaction": true,
+    "nativeScopesEnforced": true,
+    "productPermissionsEnforced": true,
+    "blindMutationRetry": false
+  },
+  "validation": {
+    "productionCapabilityIntegrationTests": "PASS",
+    "liveRefreshTests": "PASS",
+    "dedupTests": "PASS",
+    "questionDraftTests": "PASS",
+    "rpcBoundTests": "PASS",
+    "architectureLock": "PASS",
+    "humanControlRegressions": "PASS",
+    "fullSuite": "PASS (1242/1242)",
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "productionBuild": "PASS",
+    "releaseConsistency": "PASS",
+    "packageBuild": "PASS",
+    "pack": "PASS",
+    "packageSmoke": "PASS",
+    "gitDiffCheck": "PASS"
+  },
+  "architectureSafeguards": {
+    "newAttentionDatabase": false,
+    "newCapabilitySourceOfTruth": false,
+    "newEventSource": false,
+    "newGatewaySubscription": false,
+    "newPollingSystem": false,
+    "newReconnectOwner": false,
+    "directRawGatewayCallsFromReact": false,
+    "cliFallback": false,
+    "openClawVersionChanged": false,
+    "workerProfileRedesigned": false
+  },
+  "remainingRisks": [
+    "Exact plugin approval projection and mutation remain runtime-skipped because safe fixture creation requires a trusted plugin runtime owner.",
+    "The exact runtime does not fan same-connection exec approval lifecycle events back to the subscriber; explicit action re-reads and reconnect reconciliation remain the correctness path.",
+    "No disposable task-suggestion or runtime-failure fixture was seeded; those paths are covered by deterministic application tests and existing native integrations."
+  ],
+  "result": "PASS_WITH_DOCUMENTED_RUNTIME_EXCEPTIONS"
+}
