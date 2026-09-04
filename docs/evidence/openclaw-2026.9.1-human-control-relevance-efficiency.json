@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-human-control-relevance-efficiency-certification",
+  "generatedAt": "2026-09-04T20:38:53Z",
+  "startingCodeHead": "9b3632db7f4f206f3be5ecc88140a670093a8e58",
+  "certifiedCodeHead": "9ec65530a051bf108dc58fd3ff878fc720814833",
+  "openClaw": {
+    "release": "2026.9.1",
+    "source": "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
+    "gatewayProtocol": 4,
+    "gatewayClient": "2026.9.1",
+    "gatewayProtocolPackage": "2026.9.1",
+    "packageHash": "4fed530115d575fb0f6a677aeca9b854ae9956f022f443b0039f4f94263c0ebe"
+  },
+  "operationalRelevance": {
+    "status": "PASS",
+    "activeWorkerAloneSufficient": false,
+    "requiredEvidence": "An active or native-attention worker/session must have exact current-work tool evidence before capability resolution and projection.",
+    "evidenceSources": [
+      "RuntimeRecord.toolNames for runtimes linked by task runtimeIds, taskId, or primaryRuntimeId",
+      "native approval evidence.toolId",
+      "normalized native attention tool identity"
+    ],
+    "noEvidenceBehavior": "Capability resolver is skipped and no derived Human Control item is projected; Worker Profile remains the comprehensive capability surface.",
+    "displayLabelOrTimestampInference": false,
+    "candidateBound": 16,
+    "resolverConcurrency": 4,
+    "productionPath": "getHumanControlInbox -> resolveHumanControlCapabilityCandidates -> relevance prefilter -> getWorkerEffectiveCapabilities -> projectCapabilityAttention",
+    "unrelatedNeedsSetupSuppressed": "PASS",
+    "relevantNeedsSetupProjected": "PASS",
+    "relevantBlockedProjected": "PASS"
+  },
+  "derivedAttentionIdentity": {
+    "status": "PASS",
+    "format": "<type>:<encodedWorkerId>:session:<encodedSessionKey>:<encodedCapabilityId>:<encodedReasonCode>, with task:<encodedTaskId> or worker fallback",
+    "contextPrecedence": [
+      "sessionKey",
+      "taskId",
+      "worker"
+    ],
+    "randomIds": false,
+    "sameWorkerDifferentSessionsCollide": false,
+    "repeatedProjectionStable": true,
+    "taskFallbackDistinct": true,
+    "rawContextShownAsPrimaryUi": false
+  },
+  "semanticDeduplication": {
+    "status": "PASS",
+    "identityDedupSeparatedFromSemanticDedup": true,
+    "approvalVsBlocked": "A blocked capability is suppressed only when the approval shares work context and exact tool identity.",
+    "approvalVsRuntime": "Shared native work context takes approval precedence; unrelated runtime work remains visible.",
+    "questionVsRuntime": "A question takes precedence only for the same proven task/session work.",
+    "sameWorkerUnrelatedWorkPreserved": true,
+    "repeatedNativeEvents": "No duplicate projection identity is created."
+  },
+  "attentionRefresh": {
+    "status": "PASS",
+    "transport": "Existing /api/stream EventSource and existing OpenClaw event bridge",
+    "newEventSource": false,
+    "newGatewaySubscription": false,
+    "signal": "Existing stream emits an attention event containing the event-bridge attentionRevision only for attention-relevant native events.",
+    "relevantEvents": [
+      "exec.approval.requested",
+      "exec.approval.resolved",
+      "plugin.approval.requested",
+      "plugin.approval.resolved",
+      "question.requested",
+      "question.resolved",
+      "task.suggestion",
+      "skills.changed",
+      "session.tool",
+      "session.approval",
+      "session.operation",
+      "sessions.changed",
+      "task"
+    ],
+    "genericNoiseExcluded": [
+      "health",
+      "heartbeat",
+      "session.message",
+      "usage-only snapshot changes",
+      "telemetry-only snapshot changes"
+    ],
+    "genericSnapshotUnchangedAttention": "No attention event and no full Inbox reload.",
+    "closedInbox": "No /api/human-control refetch from attention signals.",
+    "openInbox": "One approximately 150ms coalesced reload while open.",
+    "burstCoalescing": "PASS",
+    "pendingMutation": "Background refresh is deferred until the action's explicit native reread settles.",
+    "questionDrafts": "Preserved by native questionId while still pending; removed when the question disappears from the authoritative list."
+  },
+  "performance": {
+    "status": "PASS",
+    "candidatePrefilter": "Only deduplicated active/native contexts with exact tool evidence reach capability resolution.",
+    "maximumCandidates": 16,
+    "resolverConcurrency": 4,
+    "zeroEvidenceActiveContexts": "0 capability resolver calls",
+    "sameWorkerSessionMultipleRecords": "1 capability resolver call",
+    "multipleToolsSameWorkerSession": "1 capability resolver call",
+    "perWorkerOrganizationWideFanout": false,
+    "perCapabilityFanout": false,
+    "perItemFanout": false,
+    "rootDashboardExtraCapabilityRpcCount": 0,
+    "requestCoalescing": "Existing AgentOsGatewayRequestPolicy and event bridge."
+  },
+  "runtimeCertification": {
+    "runtime": "OpenClaw 2026.9.1",
+    "source": "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
+    "gatewayPlacement": "isolated disposable loopback",
+    "userGatewayTouched": false,
+    "unrelatedCapabilitySuppression": "PASS",
+    "relevantNeedsSetup": "PASS",
+    "relevantBlocked": "PASS",
+    "multiSessionIdentity": "PASS",
+    "genericSnapshotNoRefresh": "PASS",
+    "attentionChangeRefresh": "PASS",
+    "approvalDedup": "PASS",
+    "questionDedup": "PASS",
+    "sameConnectionExecLifecycle": "DOCUMENTED-RUNTIME-BEHAVIOR",
+    "sameConnectionExecLifecycleNote": "The exact disposable runtime did not fan approval lifecycle events back to the same native subscriber; action paths explicitly reread authoritative state and architecture does not depend on same-connection event fanout.",
+    "pluginApproval": "SKIPPED",
+    "pluginApprovalSkipReason": "Safe fixture creation requires a trusted plugin runtime owner.",
+    "baselineExactHumanControlCertification": "PASS",
+    "cleanup": "PASS"
+  },
+  "security": {
+    "credentialsExposed": false,
+    "tokensExposed": false,
+    "realCredentialsAccessed": false,
+    "skillOrAttentionContentTrustedAsAgentosInstruction": false,
+    "centralRedaction": true,
+    "nativeScopesEnforced": true,
+    "agentosProductPermissionsEnforced": true,
+    "blindMutationRetry": false
+  },
+  "validation": {
+    "focusedHardeningTests": "PASS (32 tests)",
+    "fullSuite": "PASS (1247 tests, 0 failures)",
+    "typeScript": "PASS",
+    "eslint": "PASS",
+    "productionBuild": "PASS",
+    "releaseConsistency": "PASS",
+    "packageBuild": "PASS",
+    "pack": "PASS",
+    "packageSmoke": "PASS",
+    "gitDiffCheck": "PASS",
+    "exactRuntimeHumanControlGate": "PASS"
+  },
+  "architectureSafeguards": {
+    "localAttentionDatabase": false,
+    "localCapabilitySourceOfTruth": false,
+    "newEventSource": false,
+    "newGatewaySubscription": false,
+    "newPollingSystem": false,
+    "newReconnectOwner": false,
+    "directGatewayCallsFromReact": false,
+    "cliFallbackForNativeAttention": false,
+    "openClawVersionChanged": false,
+    "phase4FunctionalityAdded": false
+  },
+  "remainingRisks": [
+    "The exact runtime still does not guarantee same-connection exec approval lifecycle event fanout; explicit native rereads and reconnect reconciliation remain the correctness path.",
+    "Plugin approval live fixture creation remains unavailable without a trusted plugin runtime owner.",
+    "Provider-specific capability evidence remains dependent on the existing native channel/account adapter coverage."
+  ],
+  "result": "PHASE COMPLETE WITH DOCUMENTED EXCEPTIONS"
+}
