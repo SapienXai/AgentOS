@@ -239,16 +239,17 @@ export async function createExecutionEnvironment(
   const adapter = options.adapter ?? getOpenClawAdapter();
   if (!adapter.createNativeExecutionEnvironment) throw new ExecutionTopologyUnavailableError("OpenClaw environments.create is unavailable.");
   const commandOptions = withTimeout(options.commandOptions, options.timeoutMs);
-  const before = await readExecutionTopology({ adapter, commandOptions, timeoutMs: options.timeoutMs });
   return executeNativeMutation({
     operation: "environments.create",
     mutate: () => adapter.createNativeExecutionEnvironment!(input, commandOptions),
     reconcile: async () => {
-      const after = await readExecutionTopology({ adapter, commandOptions, timeoutMs: options.timeoutMs });
-      const created = after.environments.find((environment) => environment.worker?.providerId === input.profileId && !before.environments.some((entry) => entry.id === environment.id));
+      // The public 2026.9.1 environment summary exposes worker.providerId but
+      // not the requested profileId or create idempotency identity. A new
+      // same-provider row is therefore not causal evidence for this request.
+      await readExecutionTopology({ adapter, commandOptions, timeoutMs: options.timeoutMs });
       return {
-        verified: Boolean(created),
-        result: created ? toNativeEnvironmentMutationPayload(created) : null
+        verified: false,
+        result: null
       };
     }
   });
@@ -271,12 +272,13 @@ export async function destroyExecutionEnvironment(
     mutate: () => adapter.destroyNativeExecutionEnvironment!(input, commandOptions),
     reconcile: async () => {
       const after = await readExecutionTopology({ adapter, commandOptions, timeoutMs: options.timeoutMs });
+      if (after.sourceStatus !== "available") return { verified: false, result: null };
       const current = after.environments.find((environment) => environment.id === input.environmentId);
+      const wasAlreadyDestroyed = target.worker?.state === "destroyed";
+      if (!current) return { verified: !wasAlreadyDestroyed, result: null };
       return {
-        verified: Boolean(current) && current?.status !== "unavailable" && current?.worker?.state === "destroyed"
-          ? hasEnvironmentTransition(target, current)
-          : !current,
-        result: current ? toNativeEnvironmentMutationPayload(current) : null
+        verified: !wasAlreadyDestroyed && current.worker?.state === "destroyed" && hasEnvironmentTransition(target, current),
+        result: toNativeEnvironmentMutationPayload(current)
       };
     }
   });

@@ -4,7 +4,9 @@ import { test } from "node:test";
 
 import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import {
+  createExecutionEnvironment,
   dispatchSession,
+  destroyExecutionEnvironment,
   moveSession,
   reclaimSession,
   readExecutionTopology
@@ -39,6 +41,27 @@ function environment(overrides: Partial<OpenClawEnvironmentSummary> = {}): OpenC
     invocableCommands: [],
     ...overrides
   };
+}
+
+function workerEnvironment(
+  state: string,
+  overrides: Partial<OpenClawEnvironmentSummary> = {}
+): OpenClawEnvironmentSummary {
+  return environment({
+    id: "worker:123",
+    type: "worker",
+    label: "Disposable worker",
+    status: state === "destroyed" ? "unavailable" : "available",
+    trust: "disposable",
+    worker: {
+      providerId: "provider-acme",
+      state,
+      ageMs: 1,
+      attachedSessionIds: [],
+      tunnelStatus: "connected"
+    },
+    ...overrides
+  });
 }
 
 function sessionPlacement(state: string, generation: number, environmentId?: string) {
@@ -226,6 +249,305 @@ test("topology read failure is unknown rather than an authoritative empty invent
 
   assert.equal(topology.sourceStatus, "unknown");
   assert.deepEqual(topology.environments, []);
+});
+
+test("normal environment create success does not perform reconciliation", async () => {
+  let createCalls = 0;
+  let topologyReads = 0;
+  const result = await createExecutionEnvironment(
+    { profileId: "profile-a", idempotencyKey: "create-a" },
+    {
+      adapter: {
+        listNativeExecutionEnvironments: async () => {
+          topologyReads += 1;
+          return { environments: [] };
+        },
+        createNativeExecutionEnvironment: async () => {
+          createCalls += 1;
+          return workerEnvironment("requested");
+        }
+      } as unknown as OpenClawAdapter
+    }
+  );
+
+  assert.equal(result.outcome, "succeeded");
+  assert.equal(result.reconciled, false);
+  assert.equal(createCalls, 1);
+  assert.equal(topologyReads, 0);
+});
+
+test("ambiguous create never treats provider identity as causal proof", async () => {
+  const cases = [
+    {
+      profileId: "profile-a",
+      environments: [workerEnvironment("ready")]
+    },
+    {
+      profileId: "provider-acme",
+      environments: [workerEnvironment("ready")]
+    },
+    {
+      profileId: "profile-a",
+      environments: [
+        workerEnvironment("ready"),
+        workerEnvironment("ready", { id: "worker:456" })
+      ]
+    }
+  ];
+
+  for (const scenario of cases) {
+    let createCalls = 0;
+    let topologyReads = 0;
+    const result = await createExecutionEnvironment(
+      { profileId: scenario.profileId, idempotencyKey: `create-${scenario.profileId}` },
+      {
+        adapter: {
+          listNativeExecutionEnvironments: async () => {
+            topologyReads += 1;
+            return {
+              environments: scenario.environments,
+              profiles: [{ id: scenario.profileId, providerId: "provider-acme" }]
+            };
+          },
+          createNativeExecutionEnvironment: async () => {
+            createCalls += 1;
+            throw new NativeGatewayRequestError(
+              "response lost after create",
+              "environments.create",
+              true,
+              { kind: "timeout" }
+            );
+          }
+        } as unknown as OpenClawAdapter
+      }
+    );
+
+    assert.equal(result.outcome, "unknown");
+    assert.equal(result.reconciled, false);
+    assert.equal(result.retryable, false);
+    assert.equal(createCalls, 1);
+    assert.equal(topologyReads, 1);
+  }
+});
+
+test("ambiguous create with unavailable topology remains unknown", async () => {
+  let topologyReads = 0;
+  const result = await createExecutionEnvironment(
+    { profileId: "profile-a", idempotencyKey: "create-a" },
+    {
+      adapter: {
+        listNativeExecutionEnvironments: async () => {
+          topologyReads += 1;
+          throw new NativeGatewayError("Gateway unavailable", { kind: "unreachable" });
+        },
+        createNativeExecutionEnvironment: async () => {
+          throw new NativeGatewayRequestError(
+            "response lost after create",
+            "environments.create",
+            true,
+            { kind: "timeout" }
+          );
+        }
+      } as unknown as OpenClawAdapter
+    }
+  );
+
+  assert.equal(result.outcome, "unknown");
+  assert.equal(result.retryable, false);
+  assert.equal(topologyReads, 1);
+});
+
+test("definite environment create rejection does not reread topology", async () => {
+  let topologyReads = 0;
+  const result = await createExecutionEnvironment(
+    { profileId: "profile-a", idempotencyKey: "create-a" },
+    {
+      adapter: {
+        listNativeExecutionEnvironments: async () => {
+          topologyReads += 1;
+          return { environments: [workerEnvironment("ready")] };
+        },
+        createNativeExecutionEnvironment: async () => {
+          throw new NativeGatewayError("Missing scope", { kind: "scope-limited" });
+        }
+      } as unknown as OpenClawAdapter
+    }
+  );
+
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.reconciled, false);
+  assert.equal(topologyReads, 0);
+});
+
+test("ambiguous destroy recognizes a retained unavailable destroyed row", async () => {
+  let topologyReads = 0;
+  let destroyCalls = 0;
+  const result = await destroyExecutionEnvironment(
+    { environmentId: "worker:123" },
+    {
+      adapter: {
+        listNativeExecutionEnvironments: async () => {
+          topologyReads += 1;
+          return {
+            environments: [topologyReads === 1 ? workerEnvironment("ready") : workerEnvironment("destroyed")]
+          };
+        },
+        destroyNativeExecutionEnvironment: async () => {
+          destroyCalls += 1;
+          throw new NativeGatewayRequestError(
+            "response lost after destroy",
+            "environments.destroy",
+            true,
+            { kind: "timeout" }
+          );
+        }
+      } as unknown as OpenClawAdapter
+    }
+  );
+
+  assert.equal(result.outcome, "succeeded");
+  assert.equal(result.reconciled, true);
+  assert.equal(destroyCalls, 1);
+  assert.equal(topologyReads, 2);
+});
+
+test("normal environment destroy success does not perform reconciliation", async () => {
+  let destroyCalls = 0;
+  let topologyReads = 0;
+  const result = await destroyExecutionEnvironment(
+    { environmentId: "worker:123" },
+    {
+      adapter: {
+        listNativeExecutionEnvironments: async () => {
+          topologyReads += 1;
+          return { environments: [workerEnvironment("ready")] };
+        },
+        destroyNativeExecutionEnvironment: async () => {
+          destroyCalls += 1;
+          return workerEnvironment("destroying");
+        }
+      } as unknown as OpenClawAdapter
+    }
+  );
+
+  assert.equal(result.outcome, "succeeded");
+  assert.equal(result.reconciled, false);
+  assert.equal(destroyCalls, 1);
+  assert.equal(topologyReads, 1);
+});
+
+test("ambiguous destroy reconciles an authoritative missing row", async () => {
+  let topologyReads = 0;
+  const result = await destroyExecutionEnvironment(
+    { environmentId: "worker:123" },
+    {
+      adapter: {
+        listNativeExecutionEnvironments: async () => {
+          topologyReads += 1;
+          return { environments: topologyReads === 1 ? [workerEnvironment("ready")] : [] };
+        },
+        destroyNativeExecutionEnvironment: async () => {
+          throw new NativeGatewayRequestError("response lost", "environments.destroy", true, { kind: "timeout" });
+        }
+      } as unknown as OpenClawAdapter
+    }
+  );
+
+  assert.equal(result.outcome, "succeeded");
+  assert.equal(result.reconciled, true);
+  assert.equal(topologyReads, 2);
+});
+
+test("ambiguous destroy does not claim unchanged or non-terminal state", async () => {
+  for (const afterState of ["ready", "destroying", "failed", "orphaned"]) {
+    let topologyReads = 0;
+    const result = await destroyExecutionEnvironment(
+      { environmentId: "worker:123" },
+      {
+        adapter: {
+          listNativeExecutionEnvironments: async () => {
+            topologyReads += 1;
+            return { environments: [workerEnvironment(afterState)] };
+          },
+          destroyNativeExecutionEnvironment: async () => {
+            throw new NativeGatewayRequestError("response lost", "environments.destroy", true, { kind: "timeout" });
+          }
+        } as unknown as OpenClawAdapter
+      }
+    );
+
+    assert.equal(result.outcome, "unknown");
+    assert.equal(result.reconciled, false);
+    assert.equal(result.retryable, false);
+    assert.equal(topologyReads, 2);
+  }
+});
+
+test("pre-existing destroyed environment does not prove ambiguous destroy success", async () => {
+  let topologyReads = 0;
+  const result = await destroyExecutionEnvironment(
+    { environmentId: "worker:123" },
+    {
+      adapter: {
+        listNativeExecutionEnvironments: async () => {
+          topologyReads += 1;
+          return { environments: [workerEnvironment("destroyed")] };
+        },
+        destroyNativeExecutionEnvironment: async () => {
+          throw new NativeGatewayRequestError("response lost", "environments.destroy", true, { kind: "timeout" });
+        }
+      } as unknown as OpenClawAdapter
+    }
+  );
+
+  assert.equal(result.outcome, "unknown");
+  assert.equal(result.reconciled, false);
+  assert.equal(topologyReads, 2);
+});
+
+test("definite environment destroy rejection does not reread topology", async () => {
+  let topologyReads = 0;
+  const result = await destroyExecutionEnvironment(
+    { environmentId: "worker:123" },
+    {
+      adapter: {
+        listNativeExecutionEnvironments: async () => {
+          topologyReads += 1;
+          return { environments: [workerEnvironment("ready")] };
+        },
+        destroyNativeExecutionEnvironment: async () => {
+          throw new NativeGatewayError("Missing scope", { kind: "scope-limited" });
+        }
+      } as unknown as OpenClawAdapter
+    }
+  );
+
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.reconciled, false);
+  assert.equal(topologyReads, 1);
+});
+
+test("destroy ambiguity with unavailable topology is not absence proof", async () => {
+  let topologyReads = 0;
+  const result = await destroyExecutionEnvironment(
+    { environmentId: "worker:123" },
+    {
+      adapter: {
+        listNativeExecutionEnvironments: async () => {
+          topologyReads += 1;
+          if (topologyReads === 1) return { environments: [workerEnvironment("ready")] };
+          throw new NativeGatewayError("Gateway unavailable", { kind: "unreachable" });
+        },
+        destroyNativeExecutionEnvironment: async () => {
+          throw new NativeGatewayRequestError("response lost", "environments.destroy", true, { kind: "timeout" });
+        }
+      } as unknown as OpenClawAdapter
+    }
+  );
+
+  assert.equal(result.outcome, "unknown");
+  assert.equal(result.reconciled, false);
+  assert.equal(topologyReads, 2);
 });
 
 test("dispatch uses native method once and reconciles an actual placement transition", async () => {

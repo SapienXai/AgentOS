@@ -146,3 +146,31 @@ node, second placement target, or configured zero-risk cloud provider is
 assumed. Therefore live external-node dispatch/move and cloud create/destroy
 may remain skipped; such skips are not replaced by fake nodes, cloud records,
 or user-device mutations.
+
+## Phase 8.1 — Cloud environment mutation identity
+
+The pinned public 2026.9.1 environment contract keeps these identities
+separate. A worker summary exposes its native `providerId`; the configured
+profile list exposes `profile.id` and its `providerId`; neither the worker
+summary nor the create result exposes the requested profile ID or the create
+idempotency key as a stable operation identity. The provider/profile mapping is
+useful metadata, but it cannot prove which concurrent `environments.create`
+request produced a new worker.
+
+AgentOS sends one server-generated idempotency key to the native create method
+and does not copy OpenClaw's internal environment-ID derivation or add a local
+create registry. A normal native response is successful as returned. If the
+response is ambiguous, AgentOS performs at most one authoritative topology
+read and returns `unknown` because the public contract cannot causally identify
+the created environment. It never guesses from provider, profile/provider
+equality, label, creation time, or list order, and it never retries.
+
+For `environments.destroy`, the pre-mutation native environment identity and
+worker state are captured. An ambiguous operation is reconciled only when the
+authoritative topology is available and either the same target is absent or
+the same native row transitioned from a non-terminal state to
+`worker.state=destroyed`. OpenClaw maps that terminal worker state to
+`status=unavailable`, so unavailable status is not a reason to reject the
+terminal proof. `destroying`, `failed`, `orphaned`, unchanged state, and an
+unavailable/unknown topology remain `unknown`; a pre-existing destroyed row
+cannot prove that the current request caused the transition.
