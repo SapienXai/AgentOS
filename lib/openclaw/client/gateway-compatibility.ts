@@ -81,6 +81,7 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "talkClient"
   | "tts"
   | "environments"
+  | "executionPlacement"
   | "skills"
   | "skillsLibrary"
   | "githubProfileSession"
@@ -556,6 +557,33 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     baseline: "optional"
   },
   { id: "environments", label: "Environments", methods: ["environments.list", "environments.status"], baseline: "optional" },
+  {
+    id: "executionPlacement",
+    label: "Execution topology and placement",
+    methods: [
+      "environments.list",
+      "environments.status",
+      "environments.create",
+      "environments.destroy",
+      "node.list",
+      "node.describe",
+      "sessions.dispatch",
+      "sessions.move",
+      "sessions.reclaim"
+    ],
+    events: ["node.event", "sessions.changed", "session.operation"],
+    fallbackAllowed: false,
+    recovery: "OpenClaw owns execution topology, placement, and worker lifecycle. AgentOS only exposes native reads and bounded placement actions.",
+    baseline: "optional",
+    productIntegration: "integrated",
+    productIntegratedMethods: [
+      "environments.list",
+      "environments.status",
+      "sessions.dispatch",
+      "sessions.move",
+      "sessions.reclaim"
+    ]
+  },
   { id: "skills", label: "Skill status", methods: ["skills.status"], baseline: "optional" },
   {
     id: "skillsLibrary",

@@ -863,6 +863,127 @@ export type OpenClawSessionPayload = Record<string, unknown> & {
   messages?: unknown[];
 };
 
+/**
+ * Exact 2026.9.1 environment facts. OpenClaw owns the inventory and the
+ * lifecycle; AgentOS only carries the bounded native projection forward.
+ */
+export type OpenClawEnvironmentSummary = {
+  id: string;
+  type: string;
+  label?: string;
+  status: string;
+  platform?: string;
+  sessionHost?: boolean;
+  trust?: string;
+  capabilities?: string[];
+  invocableCommands?: string[];
+  workerSlots?: {
+    total: number;
+    available: number;
+  };
+  workerBundle?:
+    | { status: "installed"; version: string }
+    | { status: "missing" };
+  lastConnectedAtMs?: number;
+  lastDisconnectedAtMs?: number;
+  lastSeenAtMs?: number;
+  lastSeenReason?: string;
+  issues?: Array<Record<string, unknown>>;
+  worker?: {
+    providerId: string;
+    leaseId?: string;
+    state: string;
+    ageMs: number;
+    idleMs?: number;
+    attachedSessionIds: string[];
+    tunnelStatus: string;
+    error?: string;
+    desktop?: boolean;
+    desktopApps?: string[];
+  };
+  [key: string]: unknown;
+};
+
+export type OpenClawEnvironmentProfile = {
+  id: string;
+  providerId: string;
+  trust?: string;
+  executionMode?: string;
+  executionModes?: string[];
+  machines?: Array<Record<string, unknown>>;
+};
+
+export type OpenClawEnvironmentListPayload = {
+  environments: OpenClawEnvironmentSummary[];
+  profiles?: OpenClawEnvironmentProfile[];
+};
+
+export type OpenClawEnvironmentMutationPayload = OpenClawEnvironmentSummary;
+
+export type OpenClawSessionPlacement = Record<string, unknown> & {
+  state?: string;
+  generation?: number;
+  environmentId?: string;
+  /** Exact native field on worker-owned placements. */
+  activeOwnerEpoch?: number;
+  /** Legacy compatibility shape accepted only when native data uses it. */
+  ownerEpoch?: number;
+  profileId?: string;
+  runner?: { kind?: string; status?: string; deviceId?: string };
+  requestedAtMs?: number;
+  updatedAtMs?: number;
+};
+
+export type OpenClawSessionsDispatchInput = {
+  key: string;
+  agentId?: string;
+  profileId?: string;
+  deviceId?: string;
+  autoDevice?: true;
+  machineClass?: string;
+};
+
+export type OpenClawSessionsDispatchPayload = Record<string, unknown> & {
+  ok?: boolean;
+  key?: string;
+  sessionId?: string;
+  placement?: OpenClawSessionPlacement;
+};
+
+export type OpenClawSessionsMoveInput = {
+  key: string;
+  agentId?: string;
+  expected: {
+    generation: number;
+    environmentId: string;
+    ownerEpoch: number;
+  };
+  target:
+    | { kind: "gateway" }
+    | { kind: "profile"; profileId: string; machineClass?: string }
+    | { kind: "device"; deviceId: string };
+  abandonSource?: boolean;
+};
+
+export type OpenClawSessionsMovePayload = Record<string, unknown> & {
+  ok?: boolean;
+  key?: string;
+  sessionId?: string;
+  placement?: Pick<OpenClawSessionPlacement, "state" | "generation"> & OpenClawSessionPlacement;
+};
+
+export type OpenClawSessionsReclaimInput = {
+  key: string;
+  agentId?: string;
+};
+
+export type OpenClawSessionsReclaimPayload = Record<string, unknown> & {
+  ok?: boolean;
+  key?: string;
+  sessionId?: string;
+  placement?: OpenClawSessionPlacement;
+};
+
 export type OpenClawSessionHistoryPayload = Record<string, unknown> & {
   messages?: unknown[];
   turns?: unknown[];
@@ -1775,6 +1896,17 @@ export interface OpenClawGatewayClient {
   setAgentFile?(input: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   listEnvironments?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   getEnvironmentStatus?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+  /** Native-only execution topology and placement methods. The CLI client intentionally omits these. */
+  listNativeExecutionEnvironments?(options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentListPayload>;
+  getNativeExecutionEnvironmentStatus?(input: { environmentId: string }, options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentSummary>;
+  createNativeExecutionEnvironment?(input: { profileId: string; idempotencyKey: string }, options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentMutationPayload>;
+  destroyNativeExecutionEnvironment?(input: { environmentId: string; force?: boolean }, options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentMutationPayload>;
+  listNativeNodes?(options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+  describeNativeNode?(input: { nodeId: string }, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+  getNativeSession?(input: { key: string; agentId?: string }, options?: OpenClawCommandOptions): Promise<OpenClawSessionPayload>;
+  dispatchNativeSession?(input: OpenClawSessionsDispatchInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionsDispatchPayload>;
+  moveNativeSession?(input: OpenClawSessionsMoveInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionsMovePayload>;
+  reclaimNativeSession?(input: OpenClawSessionsReclaimInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionsReclaimPayload>;
   getTalkCatalog?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   getTalkConfig?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
   getTtsStatus?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;

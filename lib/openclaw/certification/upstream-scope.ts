@@ -32,6 +32,18 @@ export const PHASE_7_NATIVE_METHODS = [
 
 export type Phase7NativeMethod = typeof PHASE_7_NATIVE_METHODS[number];
 
+export const PHASE_8_STATIC_NATIVE_METHODS = [
+  "node.list",
+  "node.describe",
+  "environments.list",
+  "environments.status",
+  "environments.create",
+  "environments.destroy",
+  "sessions.reclaim"
+] as const;
+
+export type Phase8StaticNativeMethod = typeof PHASE_8_STATIC_NATIVE_METHODS[number];
+
 /**
  * Parse the pinned OpenClaw core descriptor table without treating an
  * AgentOS-owned scope map as upstream evidence. The descriptor rows are a

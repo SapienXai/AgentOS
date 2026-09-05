@@ -62,6 +62,9 @@ import type {
   OpenClawAgentTurnInput,
   OpenClawCommandOptions,
   OpenClawConfigSnapshotPayload,
+  OpenClawEnvironmentListPayload,
+  OpenClawEnvironmentMutationPayload,
+  OpenClawEnvironmentSummary,
   OpenClawGatewayControlOptions,
   OpenClawGatewayRestartRequestInput,
   OpenClawGatewaySuspendPrepareInput,
@@ -114,6 +117,12 @@ import type {
   OpenClawSessionsPayload,
   OpenClawSessionVisibilitySetInput,
   OpenClawSessionVisibilitySetPayload,
+  OpenClawSessionsDispatchInput,
+  OpenClawSessionsDispatchPayload,
+  OpenClawSessionsMoveInput,
+  OpenClawSessionsMovePayload,
+  OpenClawSessionsReclaimInput,
+  OpenClawSessionsReclaimPayload,
   OpenClawSkillListPayload,
   OpenClawSkillLibraryActivateInput,
   OpenClawSkillLibraryActivatePayload,
@@ -234,6 +243,17 @@ export interface OpenClawAdapter {
     setAgentFile?(input: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
     listEnvironments?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
     getEnvironmentStatus?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+    /** Native-only topology and placement methods; no CLI compatibility fallback. */
+    listNativeExecutionEnvironments?(options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentListPayload>;
+    getNativeExecutionEnvironmentStatus?(input: { environmentId: string }, options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentSummary>;
+    createNativeExecutionEnvironment?(input: { profileId: string; idempotencyKey: string }, options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentMutationPayload>;
+    destroyNativeExecutionEnvironment?(input: { environmentId: string; force?: boolean }, options?: OpenClawCommandOptions): Promise<OpenClawEnvironmentMutationPayload>;
+    listNativeNodes?(options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+    describeNativeNode?(input: { nodeId: string }, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
+    getNativeSession?(input: { key: string; agentId?: string }, options?: OpenClawCommandOptions): Promise<OpenClawSessionPayload>;
+    dispatchNativeSession?(input: OpenClawSessionsDispatchInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionsDispatchPayload>;
+    moveNativeSession?(input: OpenClawSessionsMoveInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionsMovePayload>;
+    reclaimNativeSession?(input: OpenClawSessionsReclaimInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionsReclaimPayload>;
     getTalkCatalog?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
     getTalkConfig?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
     getTtsStatus?(input?: OpenClawGatewaySurfaceInput, options?: OpenClawCommandOptions): Promise<OpenClawGatewaySurfacePayload>;
@@ -743,6 +763,30 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
       client.call<OpenClawGatewaySurfacePayload>("environments.status", input, options);
   }
 
+  listNativeExecutionEnvironments(options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.listNativeExecutionEnvironments) return Promise.reject(nativeMethodUnavailable("environments.list"));
+    return client.listNativeExecutionEnvironments(options);
+  }
+
+  getNativeExecutionEnvironmentStatus(input: { environmentId: string }, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.getNativeExecutionEnvironmentStatus) return Promise.reject(nativeMethodUnavailable("environments.status"));
+    return client.getNativeExecutionEnvironmentStatus(input, options);
+  }
+
+  createNativeExecutionEnvironment(input: { profileId: string; idempotencyKey: string }, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.createNativeExecutionEnvironment) return Promise.reject(nativeMethodUnavailable("environments.create"));
+    return client.createNativeExecutionEnvironment(input, options);
+  }
+
+  destroyNativeExecutionEnvironment(input: { environmentId: string; force?: boolean }, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.destroyNativeExecutionEnvironment) return Promise.reject(nativeMethodUnavailable("environments.destroy"));
+    return client.destroyNativeExecutionEnvironment(input, options);
+  }
+
   getTalkCatalog(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
     const client = this.getClient();
     return client.getTalkCatalog?.(input, options) ?? client.call<OpenClawGatewaySurfacePayload>("talk.catalog", input, options);
@@ -773,9 +817,45 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
     return client.describeNode?.(input, options) ?? client.call<OpenClawGatewaySurfacePayload>("node.describe", input, options);
   }
 
+  listNativeNodes(options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.listNativeNodes) return Promise.reject(nativeMethodUnavailable("node.list"));
+    return client.listNativeNodes(options);
+  }
+
+  describeNativeNode(input: { nodeId: string }, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.describeNativeNode) return Promise.reject(nativeMethodUnavailable("node.describe"));
+    return client.describeNativeNode(input, options);
+  }
+
   invokeNode(input: OpenClawGatewaySurfaceInput, options: OpenClawCommandOptions = {}) {
     const client = this.getClient();
     return client.invokeNode?.(input, options) ?? client.call<OpenClawGatewaySurfacePayload>("node.invoke", input, options);
+  }
+
+  getNativeSession(input: { key: string; agentId?: string }, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.getNativeSession) return Promise.reject(nativeMethodUnavailable("sessions.get"));
+    return client.getNativeSession(input, options);
+  }
+
+  dispatchNativeSession(input: OpenClawSessionsDispatchInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.dispatchNativeSession) return Promise.reject(nativeMethodUnavailable("sessions.dispatch"));
+    return client.dispatchNativeSession(input, options);
+  }
+
+  moveNativeSession(input: OpenClawSessionsMoveInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.moveNativeSession) return Promise.reject(nativeMethodUnavailable("sessions.move"));
+    return client.moveNativeSession(input, options);
+  }
+
+  reclaimNativeSession(input: OpenClawSessionsReclaimInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.reclaimNativeSession) return Promise.reject(nativeMethodUnavailable("sessions.reclaim"));
+    return client.reclaimNativeSession(input, options);
   }
 
   listPluginApprovals(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {

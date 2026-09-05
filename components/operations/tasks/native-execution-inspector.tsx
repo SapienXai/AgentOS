@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Check, GitBranch, Loader2, Plus, Trash2, Users } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, GitBranch, Loader2, MapPin, Plus, RefreshCw, Trash2, Users } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
 import { KeyValue, SectionCard, StatusBadge } from "@/components/operations/operations-ui";
 import type { AgentRecord, NativeWorkExecutionProjection } from "@/lib/agentos/contracts";
 import type { SessionMembershipDetailState, SessionOwnershipProjection } from "@/lib/openclaw/types";
+import { isEnvironmentEligible, type ExecutionDestination, type ExecutionTopologyProjection, type SessionPlacementProjection } from "@/lib/openclaw/domains/execution-topology";
 
 type NativeProfileOption = {
   profileId: string;
@@ -17,7 +18,7 @@ type NativeProfileOption = {
 
 type SessionVisibility = NonNullable<SessionOwnershipProjection["visibility"]>;
 
-export function NativeExecutionInspector({ execution, agents, refresh, assignmentAvailable }: { execution: NativeWorkExecutionProjection | null; agents: AgentRecord[]; refresh: () => Promise<void>; assignmentAvailable: boolean }) {
+export function NativeExecutionInspector({ execution, agents, refresh, assignmentAvailable, attentionRefreshGeneration }: { execution: NativeWorkExecutionProjection | null; agents: AgentRecord[]; refresh: () => Promise<void>; assignmentAvailable: boolean; attentionRefreshGeneration: number }) {
   const [agentId, setAgentId] = useState(execution?.ownership.owner?.id ?? agents[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [ownershipDetail, setOwnershipDetail] = useState<SessionOwnershipProjection | null>(execution?.ownership ?? null);
@@ -149,6 +150,7 @@ export function NativeExecutionInspector({ execution, agents, refresh, assignmen
         <KeyValue label="Participants" value={displayedOwnership.participantCount ? `${displayedOwnership.participants.map((entry) => entry.label ?? entry.identityId).join(", ")} · ${displayedOwnership.participantCount} total` : "None reported"} />
         <KeyValue label="Membership evidence" value={membershipEvidence} />
       </div>
+      <ExecutionPlacementPanel sessionKey={execution.sessionKey} attentionRefreshGeneration={attentionRefreshGeneration} />
       {agents.length ? (
         <div className="border-t border-border px-2.5 py-2.5">
           <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"><Users className="h-3.5 w-3.5" />Handoff owner</div>
@@ -203,4 +205,173 @@ export function NativeExecutionInspector({ execution, agents, refresh, assignmen
       ) : null}
     </SectionCard>
   );
+}
+
+function ExecutionPlacementPanel({ sessionKey, attentionRefreshGeneration }: { sessionKey: string; attentionRefreshGeneration: number }) {
+  const [placement, setPlacement] = useState<SessionPlacementProjection | null>(null);
+  const [canPlace, setCanPlace] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [topology, setTopology] = useState<ExecutionTopologyProjection | null>(null);
+  const [topologyLoading, setTopologyLoading] = useState(false);
+  const [topologyError, setTopologyError] = useState<string | null>(null);
+  const [target, setTarget] = useState<ExecutionDestination>({ kind: "automatic" });
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+    void (async () => {
+      try {
+        const response = await fetch(`/api/sessions/placement?sessionKey=${encodeURIComponent(sessionKey)}`, { cache: "no-store", signal: controller.signal });
+        const result = await response.json() as { placement?: SessionPlacementProjection; canPlace?: boolean; error?: string };
+        if (!response.ok || !result.placement) throw new Error(result.error || "OpenClaw session placement is unavailable.");
+        if (controller.signal.aborted) return;
+        setPlacement(result.placement);
+        setCanPlace(result.canPlace === true);
+      } catch (cause) {
+        if (controller.signal.aborted) return;
+        setError(cause instanceof Error ? cause.message : "OpenClaw session placement is unavailable.");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    })();
+    return () => controller.abort();
+  }, [sessionKey, refreshNonce, attentionRefreshGeneration]);
+
+  useEffect(() => {
+    if (!pickerOpen || topology) return;
+    const controller = new AbortController();
+    setTopologyLoading(true);
+    setTopologyError(null);
+    void (async () => {
+      try {
+        const response = await fetch("/api/openclaw/execution-topology", { cache: "no-store", signal: controller.signal });
+        const result = await response.json() as { topology?: ExecutionTopologyProjection; error?: string };
+        if (!response.ok || !result.topology) throw new Error(result.error || "OpenClaw execution destinations are unavailable.");
+        if (!controller.signal.aborted) setTopology(result.topology);
+      } catch (cause) {
+        if (!controller.signal.aborted) setTopologyError(cause instanceof Error ? cause.message : "OpenClaw execution destinations are unavailable.");
+      } finally {
+        if (!controller.signal.aborted) setTopologyLoading(false);
+      }
+    })();
+    return () => controller.abort();
+  }, [pickerOpen, topology]);
+
+  const environmentOptions = useMemo(
+    () => topology?.environments.filter((environment) => isEnvironmentEligible(environment) && (environment.type === "local" || environment.type === "node" || environment.id === "gateway")) ?? [],
+    [topology]
+  );
+  const placementLabel = placement?.environmentId === "gateway"
+    ? "Gateway"
+    : placement?.environmentId
+      ? topology?.environments.find((environment) => environment.id === placement.environmentId)?.label ?? placement.environmentId
+      : "Unknown";
+  const placementState = placement?.state === "unknown" ? "Unknown" : placement?.state ?? "Unknown";
+  const canReclaim = canPlace && placement?.state === "active";
+  const targetKey = target.kind === "automatic"
+    ? "automatic"
+    : target.kind === "gateway"
+      ? "gateway"
+      : target.kind === "device"
+        ? `device:${target.deviceId}`
+        : `profile:${target.profileId}`;
+
+  const mutatePlacement = async (action: "dispatch" | "move" | "reclaim", mutationTarget?: ExecutionDestination) => {
+    setBusy(true);
+    try {
+      const response = await fetch("/api/sessions/placement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, sessionKey, ...(mutationTarget ? { target: mutationTarget } : {}) })
+      });
+      const result = await response.json() as { error?: string; outcome?: string };
+      if (!response.ok || result.outcome === "unknown" || result.error) throw new Error(result.error || "OpenClaw did not confirm the placement change.");
+      toast.success(action === "reclaim" ? "Session reclaimed through OpenClaw." : "Session placement request accepted by OpenClaw.");
+      setPickerOpen(false);
+      setTopology(null);
+      setRefreshNonce((value) => value + 1);
+    } catch (cause) {
+      toast.error("Session placement was not changed.", { description: cause instanceof Error ? cause.message : "Unknown placement error." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyTarget = () => {
+    if (target.kind === "automatic") {
+      void mutatePlacement("dispatch", target);
+      return;
+    }
+    if (target.kind === "gateway" && placement?.environmentId === "gateway") return;
+    const active = placement?.state === "active" || placement?.state === "draining" || placement?.state === "reconciling";
+    void mutatePlacement(active ? "move" : "dispatch", target);
+  };
+
+  return (
+    <div className="border-t border-border px-2.5 py-2.5">
+      <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        <span className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />Execution placement</span>
+        <button type="button" className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => setRefreshNonce((value) => value + 1)} disabled={loading || busy} aria-label="Refresh execution placement">
+          <RefreshCw className={loading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
+        </button>
+      </div>
+      {loading ? <p className="text-xs text-muted-foreground">Reading native execution location…</p> : error ? <p className="text-xs text-muted-foreground">{error}</p> : (
+        <>
+          <div className="grid gap-1.5">
+            <KeyValue label="Running on" value={placementLabel} />
+            <KeyValue label="Native state" value={placementState} />
+          </div>
+          {canPlace ? (
+            <div className="mt-2">
+              <Button type="button" variant="secondary" size="sm" className="h-8 rounded-lg text-xs" disabled={busy} onClick={() => setPickerOpen((value) => !value)}>
+                <MapPin className="mr-1.5 h-3.5 w-3.5" />{pickerOpen ? "Close destinations" : "Change execution"}
+              </Button>
+              {canReclaim ? <Button type="button" variant="ghost" size="sm" className="ml-1.5 h-8 rounded-lg text-xs" disabled={busy} onClick={() => void mutatePlacement("reclaim")}>
+                Reclaim
+              </Button> : null}
+            </div>
+          ) : <p className="mt-2 text-[10px] leading-4 text-muted-foreground">Placement changes are restricted to the AgentOS owner policy. OpenClaw remains the final authority.</p>}
+          {pickerOpen ? (
+            <div className="mt-2 grid gap-2 rounded-lg border border-border bg-muted/20 p-2">
+              {topologyLoading ? <p className="text-xs text-muted-foreground">Loading native destinations…</p> : topologyError ? <p className="text-xs text-muted-foreground">{topologyError}</p> : topology?.sourceStatus !== "available" ? <p className="text-xs text-muted-foreground">OpenClaw did not provide a current destination inventory.</p> : (
+                <>
+                  <label className="grid gap-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Run on
+                    <select value={targetKey} onChange={(event) => setTarget(resolveDestination(event.target.value, topology))} disabled={busy} className="h-8 min-w-0 rounded-lg border border-input bg-card px-2 text-xs font-normal normal-case tracking-normal text-foreground">
+                      <option value="automatic">Automatic — OpenClaw managed</option>
+                      {environmentOptions.map((environment) => {
+                        const option = environment.id === "gateway" || environment.type === "local"
+                          ? { key: "gateway", label: `${environment.label} · Local` }
+                          : { key: `device:${environment.id.replace(/^node:/, "")}`, label: `${environment.label} · ${environment.platform ?? "Session host"}` };
+                        return <option key={option.key} value={option.key}>{option.label}</option>;
+                      })}
+                      {(topology.profiles ?? []).map((profile) => <option key={`profile:${profile.id}`} value={`profile:${profile.id}`}>{profile.id} · Native worker profile</option>)}
+                    </select>
+                  </label>
+                  <Button type="button" size="sm" className="h-8 rounded-lg text-xs" disabled={busy || (target.kind === "gateway" && placement?.environmentId === "gateway")} onClick={applyTarget}>
+                    {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}Request native placement
+                  </Button>
+                  <p className="text-[10px] leading-4 text-muted-foreground">Automatic means OpenClaw-managed placement. A request is not shown as current until native session evidence reports it.</p>
+                </>
+              )}
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+function resolveDestination(value: string, topology: ExecutionTopologyProjection): ExecutionDestination {
+  if (value === "automatic") return { kind: "automatic" };
+  if (value === "gateway") return { kind: "gateway" };
+  if (value.startsWith("device:")) return { kind: "device", deviceId: value.slice("device:".length) };
+  if (value.startsWith("profile:") && topology.profiles.some((profile) => profile.id === value.slice("profile:".length))) {
+    return { kind: "profile", profileId: value.slice("profile:".length) };
+  }
+  return { kind: "automatic" };
 }

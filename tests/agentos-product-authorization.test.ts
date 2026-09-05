@@ -26,8 +26,11 @@ test("central product policy separates owner controls from member runtime access
   assert.equal(canAgentOsActorUseProductPermission(member, "runtime.use"), true);
   assert.equal(canAgentOsActorUseProductPermission(member, "sessions.use"), true);
   assert.equal(canAgentOsActorUseProductPermission(owner, "sessions.collaborate"), true);
+  assert.equal(canAgentOsActorUseProductPermission(owner, "sessions.place"), true);
   assert.equal(canAgentOsActorUseProductPermission(member, "sessions.collaborate"), false);
+  assert.equal(canAgentOsActorUseProductPermission(member, "sessions.place"), false);
   assert.equal(canAgentOsActorUseProductPermission(service, "sessions.collaborate"), false);
+  assert.equal(canAgentOsActorUseProductPermission(service, "sessions.place"), false);
   assert.equal(canAgentOsActorUseProductPermission(member, "users.manage"), false);
   assert.equal(canAgentOsActorUseProductPermission(member, "gateway.manage"), false);
   assert.equal(canAgentOsActorUseProductPermission(member, "secrets.manage"), false);
@@ -41,9 +44,11 @@ test("permission matrix is bounded and explicit for service/internal actors", ()
   const matrix = getAgentOsProductPermissionMatrix();
   assert.ok(matrix.owner.includes("users.manage"));
   assert.ok(matrix.owner.includes("sessions.collaborate"));
+  assert.ok(matrix.owner.includes("sessions.place"));
   assert.ok(matrix.owner.includes("models.manage"));
   assert.ok(matrix.member.includes("runtime.use"));
   assert.ok(!matrix.member.includes("sessions.collaborate"));
+  assert.ok(!matrix.member.includes("sessions.place"));
   assert.ok(!matrix.member.includes("lifecycle.manage"));
   assert.ok(!matrix.service.includes("users.manage"));
 });

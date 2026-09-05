@@ -41,12 +41,14 @@ export function TasksPageContent({
   snapshot,
   activeWorkspaceId,
   surfaceTheme,
-  refresh
+  refresh,
+  attentionRefreshGeneration
 }: {
   snapshot: MissionControlSnapshot;
   activeWorkspaceId: string | null;
   surfaceTheme: "dark" | "light";
   refresh: () => Promise<void>;
+  attentionRefreshGeneration: number;
 }) {
   const tasks = useMemo(
     () => buildTaskViews(snapshot),
@@ -339,6 +341,7 @@ export function TasksPageContent({
           agents={snapshot.agents}
           assignmentAvailable={snapshot.nativeWork?.availability.assignment === "supported"}
           refresh={refresh}
+          attentionRefreshGeneration={attentionRefreshGeneration}
           activeFollowUp={selectedFollowUp}
           isVisibleInCurrentFilters={selectedTaskVisible}
           onAbort={() => abortTask(selectedTask)}
@@ -798,6 +801,7 @@ function TaskInspector({
   agents,
   assignmentAvailable,
   refresh,
+  attentionRefreshGeneration,
   activeFollowUp,
   isVisibleInCurrentFilters,
   onAbort,
@@ -809,6 +813,7 @@ function TaskInspector({
   agents: MissionControlSnapshot["agents"];
   assignmentAvailable: boolean;
   refresh: () => Promise<void>;
+  attentionRefreshGeneration: number;
   activeFollowUp?: SubmittedTaskFollowUp | null;
   isVisibleInCurrentFilters?: boolean;
   onAbort: () => void;
@@ -856,7 +861,7 @@ function TaskInspector({
           <Button variant="secondary" size="sm" className="h-7 rounded-[8px] px-2 text-[0.7rem]" disabled title="Task-to-agent messaging is not exposed from this inspector. Use the Agents page chat for direct messages.">Message</Button>
         </div>
       </SectionCard>
-      <NativeExecutionInspector execution={nativeExecution} agents={agents} refresh={refresh} assignmentAvailable={assignmentAvailable} />
+      <NativeExecutionInspector execution={nativeExecution} agents={agents} refresh={refresh} assignmentAvailable={assignmentAvailable} attentionRefreshGeneration={attentionRefreshGeneration} />
       <SectionCard title="Runtime Context" className="mt-3">
         <div className="grid gap-2 p-2.5">
           <KeyValue label="Task id" value={shortId(task.id, 18)} />

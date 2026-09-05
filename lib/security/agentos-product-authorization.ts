@@ -13,6 +13,7 @@ export type AgentOsProductPermission =
   | "runtime.use"
   | "sessions.use"
   | "sessions.collaborate"
+  | "sessions.place"
   | "tasks.use"
   | "automations.manage"
   | "missions.use"
@@ -79,6 +80,7 @@ const OWNER_PERMISSIONS = new Set<AgentOsProductPermission>([
   "runtime.use",
   "sessions.use",
   "sessions.collaborate",
+  "sessions.place",
   "tasks.use",
   "missions.use",
   "agents.read",

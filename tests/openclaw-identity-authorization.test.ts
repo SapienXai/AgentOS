@@ -123,6 +123,29 @@ test("9.1 native work methods use the exact upstream descriptor scopes", async (
   }
 });
 
+test("9.1 execution topology methods use exact static and dynamic scopes", async () => {
+  const expected: Record<string, string> = {
+    "node.list": "operator.read",
+    "node.describe": "operator.read",
+    "environments.list": "operator.read",
+    "environments.status": "operator.read",
+    "environments.create": "operator.admin",
+    "environments.destroy": "operator.admin",
+    "sessions.reclaim": "operator.write"
+  };
+  for (const [method, scope] of Object.entries(expected)) {
+    assert.deepEqual(OPENCLAW_STATIC_METHOD_SCOPES[method], [scope], method);
+    assert.deepEqual(resolveRequiredScopes(method), [scope], method);
+  }
+
+  assert.deepEqual(resolveRequiredScopes("sessions.dispatch", { autoDevice: true }), ["operator.write"]);
+  assert.deepEqual(resolveRequiredScopes("sessions.dispatch", { profileId: "profile-1" }), ["operator.admin"]);
+  assert.deepEqual(resolveRequiredScopes("sessions.move", { target: { kind: "device", deviceId: "node-1" } }), ["operator.write"]);
+  assert.deepEqual(resolveRequiredScopes("sessions.move", { target: { kind: "profile", profileId: "profile-1" } }), ["operator.admin"]);
+  assert.deepEqual(resolveRequiredScopes("node.invoke", { nodeId: "node-1", command: "system.run" }), ["operator.write"]);
+  assert.deepEqual(resolveRequiredScopes("node.invoke", { nodeId: "node-1", command: "browser.proxy" }), ["operator.admin"]);
+});
+
 test("9.1 skills library and tool methods use exact upstream scopes", async () => {
   const expected: Record<string, string> = {
     "skills.library.list": "operator.read",

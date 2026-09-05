@@ -235,6 +235,15 @@ import type {
   OpenClawTaskPayload,
   OpenClawWorktreesBranchesPayload,
   OpenClawWorktreesListPayload,
+  OpenClawEnvironmentListPayload,
+  OpenClawEnvironmentMutationPayload,
+  OpenClawEnvironmentSummary,
+  OpenClawSessionsDispatchInput,
+  OpenClawSessionsDispatchPayload,
+  OpenClawSessionsMoveInput,
+  OpenClawSessionsMovePayload,
+  OpenClawSessionsReclaimInput,
+  OpenClawSessionsReclaimPayload,
   OpenClawToolInvokeInput,
   OpenClawToolInvokePayload,
   OpenClawToolsCatalogInput,
@@ -1387,8 +1396,56 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     return this.gatewaySurfaceCall("environments", "environments.list", input, options);
   }
 
+  listNativeExecutionEnvironments(options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawEnvironmentListPayload>(
+      "environments.list",
+      {},
+      options,
+      parseNativeEnvironmentListPayload
+    );
+  }
+
   getEnvironmentStatus(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
     return this.gatewaySurfaceCall("environments", "environments.status", input, options);
+  }
+
+  getNativeExecutionEnvironmentStatus(
+    input: { environmentId: string },
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawEnvironmentSummary>(
+      "environments.status",
+      { environmentId: input.environmentId },
+      options,
+      (payload) => parseNativeEnvironmentSummary("environments.status", payload)
+    );
+  }
+
+  createNativeExecutionEnvironment(
+    input: { profileId: string; idempotencyKey: string },
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawEnvironmentMutationPayload>(
+      "environments.create",
+      { profileId: input.profileId, idempotencyKey: input.idempotencyKey },
+      options,
+      (payload) => parseNativeEnvironmentSummary("environments.create", payload)
+    );
+  }
+
+  destroyNativeExecutionEnvironment(
+    input: { environmentId: string; force?: boolean },
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawEnvironmentMutationPayload>(
+      "environments.destroy",
+      {
+        environmentId: input.environmentId,
+        ...(input.force === undefined ? {} : { force: input.force })
+      },
+      options,
+      (payload) => parseNativeEnvironmentSummary("environments.destroy", payload)
+    );
   }
 
   getTalkCatalog(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
@@ -1415,8 +1472,90 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     return this.gatewaySurfaceCall("nodePresence", "node.describe", input, options);
   }
 
+  listNativeNodes(options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawGatewaySurfacePayload>(
+      "node.list",
+      {},
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawGatewaySurfacePayload>("node.list", payload)
+    );
+  }
+
+  describeNativeNode(input: { nodeId: string }, options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawGatewaySurfacePayload>(
+      "node.describe",
+      { nodeId: input.nodeId },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawGatewaySurfacePayload>("node.describe", payload)
+    );
+  }
+
   invokeNode(input: OpenClawGatewaySurfaceInput, options: OpenClawCommandOptions = {}) {
     return this.gatewaySurfaceCall("nodeInvoke", "node.invoke", input, options, "mutation");
+  }
+
+  getNativeSession(input: { key: string; agentId?: string }, options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawSessionPayload>(
+      "sessions.get",
+      {
+        key: input.key,
+        ...(input.agentId ? { agentId: input.agentId } : {})
+      },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawSessionPayload>("sessions.get", payload)
+    );
+  }
+
+  dispatchNativeSession(
+    input: OpenClawSessionsDispatchInput,
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawSessionsDispatchPayload>(
+      "sessions.dispatch",
+      {
+        key: input.key,
+        ...(input.agentId ? { agentId: input.agentId } : {}),
+        ...(input.profileId ? { profileId: input.profileId } : {}),
+        ...(input.deviceId ? { deviceId: input.deviceId } : {}),
+        ...(input.autoDevice === true ? { autoDevice: true as const } : {}),
+        ...(input.machineClass ? { machineClass: input.machineClass } : {})
+      },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawSessionsDispatchPayload>("sessions.dispatch", payload)
+    );
+  }
+
+  moveNativeSession(
+    input: OpenClawSessionsMoveInput,
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawSessionsMovePayload>(
+      "sessions.move",
+      {
+        key: input.key,
+        ...(input.agentId ? { agentId: input.agentId } : {}),
+        expected: input.expected,
+        target: input.target,
+        ...(input.abandonSource === undefined ? {} : { abandonSource: input.abandonSource })
+      },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawSessionsMovePayload>("sessions.move", payload)
+    );
+  }
+
+  reclaimNativeSession(
+    input: OpenClawSessionsReclaimInput,
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<OpenClawSessionsReclaimPayload>(
+      "sessions.reclaim",
+      {
+        key: input.key,
+        ...(input.agentId ? { agentId: input.agentId } : {})
+      },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawSessionsReclaimPayload>("sessions.reclaim", payload)
+    );
   }
 
   listPluginApprovals(input: OpenClawGatewaySurfaceInput = {}, options: OpenClawCommandOptions = {}) {
@@ -3443,4 +3582,97 @@ function normalizeOpenClawUserProfile(value: unknown): OpenClawUserProfile | nul
     githubIdentity,
     role: typeof profile.role === "string" ? profile.role : null
   };
+}
+
+function parseNativeEnvironmentListPayload(payload: unknown): OpenClawEnvironmentListPayload {
+  const record = parseObjectGatewayPayload<Record<string, unknown>>("environments.list", payload);
+  if (!Array.isArray(record.environments)) {
+    throw new OpenClawGatewayClientError("OpenClaw returned an invalid environments.list payload.", "malformed-response");
+  }
+
+  const environments = record.environments.map((entry) => parseNativeEnvironmentSummary("environments.list", entry));
+  const profiles = Array.isArray(record.profiles)
+    ? record.profiles.flatMap((entry) => {
+        if (!isObjectRecord(entry) || typeof entry.id !== "string" || typeof entry.providerId !== "string") return [];
+        return [{
+          id: entry.id,
+          providerId: entry.providerId,
+          ...(typeof entry.trust === "string" ? { trust: entry.trust } : {}),
+          ...(typeof entry.executionMode === "string" ? { executionMode: entry.executionMode } : {}),
+          ...(Array.isArray(entry.executionModes) ? { executionModes: readStringArray(entry.executionModes) } : {}),
+          ...(Array.isArray(entry.machines) ? { machines: entry.machines.filter(isObjectRecord).slice(0, 32) } : {})
+        }];
+      })
+    : undefined;
+
+  return {
+    environments,
+    ...(profiles ? { profiles } : {})
+  };
+}
+
+function parseNativeEnvironmentSummary(method: string, payload: unknown): OpenClawEnvironmentSummary {
+  const record = parseObjectGatewayPayload<Record<string, unknown>>(method, payload);
+  const environment = isObjectRecord(record.environment)
+    ? record.environment
+    : isObjectRecord(record.result) && isObjectRecord(record.result.environment)
+      ? record.result.environment
+      : record;
+  const id = readNonEmptyString(environment.id);
+  const type = readNonEmptyString(environment.type);
+  const status = readNonEmptyString(environment.status);
+  if (!id || !type || !status) {
+    throw new OpenClawGatewayClientError(`OpenClaw returned an invalid ${method} environment payload.`, "malformed-response");
+  }
+
+  const worker = isObjectRecord(environment.worker) &&
+      typeof environment.worker.providerId === "string" &&
+      typeof environment.worker.state === "string" &&
+      typeof environment.worker.ageMs === "number" &&
+      typeof environment.worker.tunnelStatus === "string" &&
+      Array.isArray(environment.worker.attachedSessionIds)
+    ? {
+        providerId: environment.worker.providerId,
+        state: environment.worker.state,
+        ageMs: environment.worker.ageMs,
+        tunnelStatus: environment.worker.tunnelStatus,
+        attachedSessionIds: environment.worker.attachedSessionIds.filter((entry): entry is string => typeof entry === "string").slice(0, 128),
+        ...(typeof environment.worker.leaseId === "string" ? { leaseId: environment.worker.leaseId } : {}),
+        ...(typeof environment.worker.idleMs === "number" ? { idleMs: environment.worker.idleMs } : {}),
+        ...(typeof environment.worker.error === "string" ? { error: environment.worker.error } : {}),
+        ...(typeof environment.worker.desktop === "boolean" ? { desktop: environment.worker.desktop } : {}),
+        ...(Array.isArray(environment.worker.desktopApps) ? { desktopApps: readStringArray(environment.worker.desktopApps) } : {})
+      }
+    : undefined;
+
+  return {
+    ...environment,
+    id,
+    type,
+    status,
+    ...(typeof environment.label === "string" ? { label: environment.label } : {}),
+    ...(typeof environment.platform === "string" ? { platform: environment.platform } : {}),
+    ...(typeof environment.sessionHost === "boolean" ? { sessionHost: environment.sessionHost } : {}),
+    ...(typeof environment.trust === "string" ? { trust: environment.trust } : {}),
+    ...(Array.isArray(environment.capabilities) ? { capabilities: readStringArray(environment.capabilities) } : {}),
+    ...(Array.isArray(environment.invocableCommands) ? { invocableCommands: readStringArray(environment.invocableCommands) } : {}),
+    ...(isObjectRecord(environment.workerSlots) && typeof environment.workerSlots.total === "number" && typeof environment.workerSlots.available === "number"
+      ? { workerSlots: { total: environment.workerSlots.total, available: environment.workerSlots.available } }
+      : {}),
+    ...(isObjectRecord(environment.workerBundle) && environment.workerBundle.status === "installed" && typeof environment.workerBundle.version === "string"
+      ? { workerBundle: { status: "installed" as const, version: environment.workerBundle.version } }
+      : isObjectRecord(environment.workerBundle) && environment.workerBundle.status === "missing"
+        ? { workerBundle: { status: "missing" as const } }
+        : {}),
+    ...(typeof environment.lastConnectedAtMs === "number" ? { lastConnectedAtMs: environment.lastConnectedAtMs } : {}),
+    ...(typeof environment.lastDisconnectedAtMs === "number" ? { lastDisconnectedAtMs: environment.lastDisconnectedAtMs } : {}),
+    ...(typeof environment.lastSeenAtMs === "number" ? { lastSeenAtMs: environment.lastSeenAtMs } : {}),
+    ...(typeof environment.lastSeenReason === "string" ? { lastSeenReason: environment.lastSeenReason } : {}),
+    ...(Array.isArray(environment.issues) ? { issues: environment.issues.filter(isObjectRecord).slice(0, 64) } : {}),
+    ...(worker ? { worker } : {})
+  };
+}
+
+function readStringArray(value: unknown[]) {
+  return value.filter((entry): entry is string => typeof entry === "string" && entry.length > 0).slice(0, 128);
 }

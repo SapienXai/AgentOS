@@ -60,6 +60,7 @@ export function OperationsPage({
               activeWorkspaceId={context.activeWorkspaceId}
               surfaceTheme={context.surfaceTheme}
               refresh={context.refresh}
+              attentionRefreshGeneration={context.attentionRefreshGeneration}
             />
           );
         }
