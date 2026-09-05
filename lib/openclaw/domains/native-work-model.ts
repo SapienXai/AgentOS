@@ -108,13 +108,26 @@ export function normalizeSessionOwnership(
   membershipDetailState: SessionMembershipDetailState = members === undefined && evidence === undefined ? "not-loaded" : "available"
 ): SessionOwnershipProjection {
   const row = isRecord(value) ? value : {};
-  const owner = isRecord(row.owner) ? row.owner : null;
-  const ownerActor = owner && isRecord(owner.actor) ? owner.actor : null;
+  const sharing = isRecord(members) ? members : null;
+  const rowOwner = isRecord(row.owner) ? row.owner : null;
+  const owner = rowOwner ?? (isRecord(sharing?.owner) ? sharing.owner : null);
+  const ownerActor = rowOwner && isRecord(rowOwner.actor)
+    ? rowOwner.actor
+    : isRecord(sharing?.owner)
+      ? sharing.owner
+      : null;
   const createdActor = isRecord(row.createdActor) ? row.createdActor : null;
-  const participantRows = Array.isArray(row.participants) ? row.participants : [];
-  const participantCount = readNumber(row.participantCount) ?? participantRows.length;
-  const memberRows = isRecord(members) && Array.isArray(members.members) ? members.members : [];
+  const participantRows = Array.isArray(row.participants)
+    ? row.participants
+    : sharing && Array.isArray(sharing.identities)
+      ? sharing.identities.map((identity) => ({ identity }))
+      : [];
+  const memberRows = sharing && Array.isArray(sharing.members) ? sharing.members : [];
+  const participantCount = readNumber(row.participantCount) ?? Math.max(participantRows.length, memberRows.length);
   const evidenceRows = isRecord(evidence) && Array.isArray(evidence.members) ? evidence.members : memberRows;
+  const allowedVisibilities = sharing && Array.isArray(sharing.allowedVisibilities)
+    ? sharing.allowedVisibilities.filter(isVisibility)
+    : [];
 
   return {
     createdActor: createdActor ? {
@@ -140,7 +153,8 @@ export function normalizeSessionOwnership(
       .slice(0, 4),
     participantCount,
     visibility: readVisibility(row.visibility),
-    sharingRole: readSharingRole(row.sharingRole) ?? (isRecord(members) ? readSharingRole(members.role) : null),
+    allowedVisibilities,
+    sharingRole: readSharingRole(row.sharingRole) ?? readSharingRole(sharing?.role),
     memberEvidence: evidenceRows
       .map((entry) => {
         const member = isRecord(entry) ? entry : {};
@@ -158,6 +172,10 @@ export function normalizeSessionOwnership(
     membershipDetailState,
     sourceOfTruth: "openclaw"
   };
+}
+
+function isVisibility(value: unknown): value is NonNullable<SessionOwnershipProjection["visibility"]> {
+  return value === "shared" || value === "read-only" || value === "suggest" || value === "draft";
 }
 
 export function normalizeNativeWorkExecution(

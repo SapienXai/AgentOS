@@ -15,6 +15,23 @@ export const PHASE_6_NATIVE_METHODS = [
 
 export type Phase6NativeMethod = typeof PHASE_6_NATIVE_METHODS[number];
 
+export const PHASE_7_NATIVE_METHODS = [
+  "users.list",
+  "users.self",
+  "users.setDisplayName",
+  "users.setAvatar",
+  "users.linkEmail",
+  "users.setRole",
+  "session.visibility.set",
+  "session.members.list",
+  "session.members.listEvidence",
+  "session.members.add",
+  "session.members.remove",
+  "sessions.assignOwner"
+] as const;
+
+export type Phase7NativeMethod = typeof PHASE_7_NATIVE_METHODS[number];
+
 /**
  * Parse the pinned OpenClaw core descriptor table without treating an
  * AgentOS-owned scope map as upstream evidence. The descriptor rows are a
@@ -43,4 +60,12 @@ export function comparePinnedMethodScopes(
   methods: readonly string[] = PHASE_6_NATIVE_METHODS
 ) {
   return methods.every((method) => expected[method]?.length === 1 && expected[method][0] === actual[method]);
+}
+
+/** A negative contract assertion for intentionally absent native methods. */
+export function assertPinnedMethodAbsent(source: string, method: string) {
+  const escapedMethod = method.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (new RegExp(`\\[\\s*"${escapedMethod}"\\s*,`).test(source)) {
+    throw new Error(`Pinned OpenClaw descriptor unexpectedly exposes ${method}.`);
+  }
 }

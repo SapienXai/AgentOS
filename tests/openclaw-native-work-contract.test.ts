@@ -7,6 +7,7 @@ import {
 import type { OpenClawGatewayClient } from "@/lib/openclaw/client/types";
 import type { OpenClawAdapter } from "@/lib/openclaw/adapter/openclaw-adapter";
 import { loadNativeSessionOwnershipDetail } from "@/lib/openclaw/application/mission-control/native-work-detail";
+import { reconcileNativeSessionOwnerMutation } from "@/lib/openclaw/application/session-collaboration-service";
 import { loadNativeWorkSnapshot } from "@/lib/openclaw/application/mission-control/native-work-snapshot";
 import type { OpenClawCapabilityMatrix } from "@/lib/openclaw/types";
 import {
@@ -187,4 +188,39 @@ test("native work operations fail closed when CLI transport is forced", async ()
   });
   await assert.rejects(client.listWorktrees(), /CLI fallback is disabled/);
   await assert.rejects(client.acceptTaskSuggestion({ taskId: "suggestion-1" }), /CLI fallback is disabled/);
+});
+
+test("ambiguous native owner mutation is reconciled by one authoritative reread without retry", async () => {
+  let assignmentCalls = 0;
+  let memberReads = 0;
+  const adapter = {
+    assignSessionOwner: async () => {
+      assignmentCalls += 1;
+      throw new Error("transport timeout after dispatch");
+    },
+    listSessionMembers: async () => {
+      memberReads += 1;
+      return {
+        owner: { actor: { type: "human", id: "native-profile-1" } },
+        members: [],
+        identities: [],
+        role: "owner",
+        allowedVisibilities: []
+      };
+    }
+  } as unknown as OpenClawAdapter;
+
+  await assert.rejects(
+    adapter.assignSessionOwner!({ key: "agent:main:collaboration", owner: { type: "human", id: "native-profile-1" } }),
+    /transport timeout/
+  );
+  const reconciliation = await reconcileNativeSessionOwnerMutation({
+    adapter,
+    sessionKey: "agent:main:collaboration",
+    target: { type: "human", id: "native-profile-1" },
+    timeoutMs: 100
+  });
+  assert.equal(reconciliation.verified, true);
+  assert.equal(assignmentCalls, 1);
+  assert.equal(memberReads, 1);
 });

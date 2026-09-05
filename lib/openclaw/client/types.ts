@@ -90,8 +90,13 @@ export type OpenClawGatewayClientDiagnostics = {
 export type OpenClawUserProfile = {
   profileId: string;
   displayName: string | null;
-  avatar: string | null;
-  email: string | null;
+  emails: string[];
+  avatarMime: "image/png" | "image/jpeg" | "image/webp" | null;
+  hasAvatar: boolean;
+  mergedInto: string | null;
+  createdAt: number | null;
+  updatedAt: number | null;
+  githubIdentity: { login: string; profileUrl: string; avatarUrl: string } | null;
   role: string | null;
 };
 
@@ -1394,7 +1399,7 @@ export interface OpenClawSessionOwner {
 
 export interface OpenClawSessionMembersPayload {
   sessionKey: string;
-  owner?: OpenClawSessionOwner;
+  owner?: { type: "agent" | "human" | "system"; id: string; label?: string; identity?: string };
   members: Array<{ identityId: string; addedBy: string; addedAt: number }>;
   identities: Array<Record<string, unknown>>;
   role: "admin" | "owner" | "member" | "viewer";
@@ -1403,7 +1408,7 @@ export interface OpenClawSessionMembersPayload {
 
 export interface OpenClawSessionMembersEvidencePayload {
   sessionKey: string;
-  owner?: OpenClawSessionOwner;
+  owner?: { type: "agent" | "human" | "system"; id: string; label?: string; identity?: string };
   members: Array<{ identityId: string; addedBy?: string; addedByState?: "unknown"; addedAt: number }>;
   identities: Array<Record<string, unknown>>;
   role: "admin" | "owner" | "member" | "viewer";
@@ -1414,6 +1419,32 @@ export interface OpenClawSessionAssignOwnerPayload {
   ok: true;
   key: string;
   owner: OpenClawSessionOwner;
+}
+
+export type OpenClawSessionVisibility = "shared" | "read-only" | "suggest" | "draft";
+
+export interface OpenClawSessionVisibilitySetInput {
+  sessionKey: string;
+  agentId?: string;
+  visibility: OpenClawSessionVisibility;
+}
+
+export interface OpenClawSessionVisibilitySetPayload {
+  ok: true;
+  sessionKey: string;
+  visibility: OpenClawSessionVisibility;
+}
+
+export interface OpenClawSessionMemberMutationInput {
+  sessionKey: string;
+  agentId?: string;
+  identityId: string;
+}
+
+export interface OpenClawSessionMemberMutationPayload {
+  ok: true;
+  sessionKey: string;
+  identityId: string;
 }
 
 export interface OpenClawAbortTurnInput {
@@ -1673,8 +1704,8 @@ export interface OpenClawGatewayClient {
   getGatewayStatus(options?: OpenClawCommandOptions): Promise<GatewayStatusPayload>;
   listUsers?(options?: OpenClawCommandOptions): Promise<OpenClawUserListPayload>;
   getCurrentUser?(options?: OpenClawCommandOptions): Promise<OpenClawUserProfile | null>;
-  setUserDisplayName?(profileId: string, displayName: string, options?: OpenClawCommandOptions): Promise<OpenClawUserProfile | null>;
-  setUserAvatar?(profileId: string, avatar: string | null, options?: OpenClawCommandOptions): Promise<OpenClawUserProfile | null>;
+  setUserDisplayName?(profileId: string, displayName: string | null, options?: OpenClawCommandOptions): Promise<OpenClawUserProfile | null>;
+  setUserAvatar?(profileId: string, input: { mime: "image/png" | "image/jpeg" | "image/webp"; avatarBase64: string }, options?: OpenClawCommandOptions): Promise<OpenClawUserProfile | null>;
   linkUserEmail?(profileId: string, email: string, options?: OpenClawCommandOptions): Promise<OpenClawUserProfile | null>;
   setUserRole?(profileId: string, role: string | null, options?: OpenClawCommandOptions): Promise<OpenClawUserProfile | null>;
   listGatewayRoleNames?(options?: OpenClawCommandOptions): Promise<string[]>;
@@ -1692,6 +1723,9 @@ export interface OpenClawGatewayClient {
   dismissTaskSuggestion?(input: { taskId: string; reason?: string }, options?: OpenClawCommandOptions): Promise<{ taskId: string; dismissed: boolean }>;
   listSessionMembers?(input: { sessionKey: string; agentId?: string }, options?: OpenClawCommandOptions): Promise<OpenClawSessionMembersPayload>;
   listSessionMembersEvidence?(input: { sessionKey: string; agentId?: string }, options?: OpenClawCommandOptions): Promise<OpenClawSessionMembersEvidencePayload>;
+  setSessionVisibility?(input: OpenClawSessionVisibilitySetInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionVisibilitySetPayload>;
+  addSessionMember?(input: OpenClawSessionMemberMutationInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionMemberMutationPayload>;
+  removeSessionMember?(input: OpenClawSessionMemberMutationInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionMemberMutationPayload>;
   assignSessionOwner?(input: { key: string; agentId?: string; owner: { type: "agent" | "human"; id: string } }, options?: OpenClawCommandOptions): Promise<OpenClawSessionAssignOwnerPayload>;
   patchSessionModel?(input: OpenClawSessionModelPatchInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionModelPatchPayload>;
   describeSession(input?: OpenClawDescribeSessionInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionPayload>;

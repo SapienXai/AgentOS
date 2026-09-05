@@ -102,11 +102,15 @@ import type {
   OpenClawSessionAssignOwnerPayload,
   OpenClawSessionCreateInput,
   OpenClawSessionCreatePayload,
+  OpenClawSessionMemberMutationInput,
+  OpenClawSessionMemberMutationPayload,
   OpenClawSessionMembersEvidencePayload,
   OpenClawSessionMembersPayload,
   OpenClawSessionPayload,
   OpenClawSessionSteerInput,
   OpenClawSessionsPayload,
+  OpenClawSessionVisibilitySetInput,
+  OpenClawSessionVisibilitySetPayload,
   OpenClawSkillListPayload,
   OpenClawSkillLibraryActivateInput,
   OpenClawSkillLibraryActivatePayload,
@@ -176,6 +180,9 @@ export interface OpenClawAdapter {
   dismissTaskSuggestion?(input: { taskId: string; reason?: string }, options?: OpenClawCommandOptions): Promise<{ taskId: string; dismissed: boolean }>;
   listSessionMembers?(input: { sessionKey: string; agentId?: string }, options?: OpenClawCommandOptions): Promise<OpenClawSessionMembersPayload>;
   listSessionMembersEvidence?(input: { sessionKey: string; agentId?: string }, options?: OpenClawCommandOptions): Promise<OpenClawSessionMembersEvidencePayload>;
+  setSessionVisibility?(input: OpenClawSessionVisibilitySetInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionVisibilitySetPayload>;
+  addSessionMember?(input: OpenClawSessionMemberMutationInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionMemberMutationPayload>;
+  removeSessionMember?(input: OpenClawSessionMemberMutationInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionMemberMutationPayload>;
   assignSessionOwner?(input: { key: string; agentId?: string; owner: { type: "agent" | "human"; id: string } }, options?: OpenClawCommandOptions): Promise<OpenClawSessionAssignOwnerPayload>;
   patchSessionModel?(input: OpenClawSessionModelPatchInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionModelPatchPayload>;
   describeSession(input?: OpenClawDescribeSessionInput, options?: OpenClawCommandOptions): Promise<OpenClawSessionPayload>;
@@ -491,6 +498,24 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
     const client = this.getClient();
     if (!client.listSessionMembersEvidence) return Promise.reject(new Error("OpenClaw does not expose session.members.listEvidence."));
     return client.listSessionMembersEvidence(input, options);
+  }
+
+  setSessionVisibility(input: OpenClawSessionVisibilitySetInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.setSessionVisibility) return Promise.reject(new Error("OpenClaw does not expose session.visibility.set."));
+    return client.setSessionVisibility(input, options);
+  }
+
+  addSessionMember(input: OpenClawSessionMemberMutationInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.addSessionMember) return Promise.reject(new Error("OpenClaw does not expose session.members.add."));
+    return client.addSessionMember(input, options);
+  }
+
+  removeSessionMember(input: OpenClawSessionMemberMutationInput, options: OpenClawCommandOptions = {}) {
+    const client = this.getClient();
+    if (!client.removeSessionMember) return Promise.reject(new Error("OpenClaw does not expose session.members.remove."));
+    return client.removeSessionMember(input, options);
   }
 
   assignSessionOwner(input: { key: string; agentId?: string; owner: { type: "agent" | "human"; id: string } }, options: OpenClawCommandOptions = {}) {

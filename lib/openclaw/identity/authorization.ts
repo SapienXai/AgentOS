@@ -230,7 +230,7 @@ export function resolveRequiredScopes(method: string, params: Record<string, unk
   if (method.startsWith("agents.")) return method === "agents.list" ? ["operator.read"] : ["operator.admin"];
   if (method.startsWith("exec.approval.")) return ["operator.approvals"];
   if (method.startsWith("device.pair.") || method.startsWith("node.pair.")) return ["operator.pairing"];
-  if (method.startsWith("users.")) return method === "users.list" ? ["operator.read"] : ["operator.admin"];
+  if (method.startsWith("users.")) return ["operator.admin"];
 
   return ["operator.admin"];
 }

@@ -114,7 +114,14 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     productIntegration: "integrated",
     productIntegratedMethods: ["health", "status"]
   },
-  { id: "userDirectory", label: "Gateway user directory", methods: ["users.list"], baseline: "required" },
+  {
+    id: "userDirectory",
+    label: "Gateway user directory",
+    methods: ["users.list"],
+    baseline: "required",
+    productIntegration: "integrated",
+    productIntegratedMethods: ["users.list"]
+  },
   {
     id: "diagnosticsStability",
     label: "Gateway diagnostics",
@@ -323,10 +330,17 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     ],
     events: ["session.sharing", "session.sharing.evidence", "session.typing"],
     fallbackAllowed: false,
-    recovery: "OpenClaw owns session collaboration, participants, visibility, and ownership. AgentOS currently exposes this surface for capability discovery only.",
+    recovery: "OpenClaw owns session collaboration, participants, visibility, and ownership. AgentOS exposes only the bounded native reads and owner/sharing actions listed below.",
     baseline: "optional",
     productIntegration: "discovery-only",
-    productIntegratedMethods: ["session.members.list", "session.members.listEvidence", "sessions.assignOwner"]
+    productIntegratedMethods: [
+      "session.visibility.set",
+      "session.members.list",
+      "session.members.add",
+      "session.members.remove",
+      "session.members.listEvidence",
+      "sessions.assignOwner"
+    ]
   },
   {
     id: "taskEvents",

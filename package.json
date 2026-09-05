@@ -24,6 +24,7 @@
     "openclaw:lifecycle-e2e": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-lifecycle-e2e.ts",
     "openclaw:identity-e2e": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-identity-e2e.ts",
     "openclaw:multi-user-e2e": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-multi-user-e2e.ts",
+    "openclaw:multi-user-collaboration-certification": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-multi-user-collaboration-certification.ts",
     "openclaw:automation-e2e": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-automation-e2e.ts",
     "openclaw:session-task-e2e": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-session-task-e2e.ts",
     "openclaw:native-work-cert": "node -r ./tests/register-paths.cjs -r jiti/register.js scripts/openclaw-native-work-certification.ts",

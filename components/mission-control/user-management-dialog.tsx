@@ -16,7 +16,14 @@ type UserSummary = {
   role: "owner" | "member";
   status: "active" | "disabled";
   profile: { displayName: string; email: string };
-  openClaw: { linkageState: string; role: string | null; profileId: string | null };
+  openClaw: {
+    linkageState: string;
+    role: string | null;
+    profileId: string | null;
+    nativeState?: string;
+    nativeProfileName?: string | null;
+    nativeRole?: string | null;
+  };
 };
 
 export function UserManagementDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -34,7 +41,35 @@ export function UserManagementDialog({ open, onOpenChange }: { open: boolean; on
       const response = await fetch("/api/users", { cache: "no-store" });
       const payload = (await response.json()) as { users?: UserSummary[]; error?: string };
       if (!response.ok) throw new Error(payload.error || "Users could not be loaded.");
-      setUsers(payload.users ?? []);
+      const localUsers = payload.users ?? [];
+      setUsers(localUsers.map((user) => ({
+        ...user,
+        openClaw: { ...user.openClaw, nativeState: user.openClaw.profileId ? "UNKNOWN" : "UNLINKED", nativeProfileName: null, nativeRole: null }
+      })));
+      try {
+        const nativeResponse = await fetch("/api/users/openclaw", { cache: "no-store" });
+        const nativePayload = (await nativeResponse.json()) as {
+          associations?: Array<{ actorId: string; identity?: { state?: string; associatedProfile?: { displayName?: string | null }; nativeRole?: string | null } }>;
+        };
+        if (nativeResponse.ok) {
+          const associations = new Map((nativePayload.associations ?? []).map((entry) => [entry.actorId, entry.identity]));
+          setUsers(localUsers.map((user) => {
+            const identity = associations.get(user.actorId);
+            return {
+              ...user,
+              openClaw: {
+                ...user.openClaw,
+                nativeState: identity?.state ?? (user.openClaw.profileId ? "UNKNOWN" : "UNLINKED"),
+                nativeProfileName: identity?.associatedProfile?.displayName ?? null,
+                nativeRole: identity?.nativeRole ?? null
+              }
+            };
+          }));
+        }
+      } catch {
+        // The AgentOS account list remains usable when the optional native
+        // directory is unavailable.
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Users could not be loaded.");
     } finally {
@@ -108,7 +143,7 @@ export function UserManagementDialog({ open, onOpenChange }: { open: boolean; on
 
           <div className="min-h-40 rounded-xl border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between gap-2"><p className="text-sm font-semibold">Accounts</p><Button type="button" variant="ghost" size="icon" onClick={() => void loadUsers()} disabled={loading} aria-label="Refresh users"><RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} /></Button></div>
-            {loading ? <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Loading accounts…</p> : users.length === 0 ? <p className="text-xs text-muted-foreground">No accounts are available.</p> : <div className="space-y-2">{users.map((user) => <div key={user.actorId} className="rounded-lg border border-border/70 p-2.5"><div className="flex items-start gap-2"><span className="mt-0.5 rounded-md bg-muted p-1.5"><UserRound className="size-3.5" /></span><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{user.profile.displayName || user.username}</p><p className="truncate text-[11px] text-muted-foreground">@{user.username}</p></div><Badge variant={user.status === "active" ? "success" : "muted"}>{user.status}</Badge></div><div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground"><Badge variant="muted">{user.role}</Badge><span>OpenClaw: {user.openClaw.linkageState}</span>{user.openClaw.role ? <span>({user.openClaw.role})</span> : null}</div><div className="mt-2 flex flex-wrap gap-1.5"><Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => void updateUser(user, { operation: "status", status: user.status === "active" ? "disabled" : "active" }, user.status === "active" ? "User disabled." : "User enabled.")}><UserX className="mr-1.5 size-3.5" />{user.status === "active" ? "Disable" : "Enable"}</Button>{user.role === "member" ? <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => void updateUser(user, { operation: "role", role: "owner" }, "User promoted to owner.")}><ShieldCheck className="mr-1.5 size-3.5" />Promote</Button> : null}</div></div>)}</div>}
+            {loading ? <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Loading accounts…</p> : users.length === 0 ? <p className="text-xs text-muted-foreground">No accounts are available.</p> : <div className="space-y-2">{users.map((user) => <div key={user.actorId} className="rounded-lg border border-border/70 p-2.5"><div className="flex items-start gap-2"><span className="mt-0.5 rounded-md bg-muted p-1.5"><UserRound className="size-3.5" /></span><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{user.profile.displayName || user.username}</p><p className="truncate text-[11px] text-muted-foreground">@{user.username}</p></div><Badge variant={user.status === "active" ? "success" : "muted"}>{user.status}</Badge></div><div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground"><Badge variant="muted">{user.role}</Badge><span>OpenClaw: {user.openClaw.nativeState === "METADATA_ASSOCIATED" ? "metadata only" : user.openClaw.nativeState?.toLowerCase() ?? "not checked"}</span>{user.openClaw.nativeProfileName ? <span>({user.openClaw.nativeProfileName}{user.openClaw.nativeRole ? ` · ${user.openClaw.nativeRole}` : ""})</span> : null}</div><div className="mt-2 flex flex-wrap gap-1.5"><Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => void updateUser(user, { operation: "status", status: user.status === "active" ? "disabled" : "active" }, user.status === "active" ? "User disabled." : "User enabled.")}><UserX className="mr-1.5 size-3.5" />{user.status === "active" ? "Disable" : "Enable"}</Button>{user.role === "member" ? <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => void updateUser(user, { operation: "role", role: "owner" }, "User promoted to owner.")}><ShieldCheck className="mr-1.5 size-3.5" />Promote</Button> : null}</div></div>)}</div>}
           </div>
         </div>
 

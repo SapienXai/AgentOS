@@ -108,6 +108,7 @@ test("current entrypoints use the factory and keep CLI fallback separate", async
     "scripts/openclaw-lifecycle-e2e.ts",
     "scripts/openclaw-identity-e2e.ts",
     "scripts/openclaw-multi-user-e2e.ts",
+    "scripts/openclaw-multi-user-collaboration-certification.ts",
     "scripts/openclaw-session-task-e2e.ts",
     "scripts/openclaw-compat.ts",
     "scripts/openclaw-migration-e2e.ts",

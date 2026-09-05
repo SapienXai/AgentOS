@@ -96,8 +96,8 @@ export const OPENCLAW_8_2_IDENTITY_INVENTORY = [
     targetDependent: false,
     connectionLocal: false,
     deviceIdentityInvolved: false,
-    currentAgentOsUse: "not-used",
-    sourceNote: "9.1 exposes durable Gateway user profiles; AgentOS does not yet delegate its users."
+    currentAgentOsUse: "used",
+    sourceNote: "AgentOS uses the native directory lazily for identity presentation and native human target validation; it remains an OpenClaw directory, not an AgentOS user registry."
   },
   {
     classification: "user-directory",
@@ -148,8 +148,8 @@ export const OPENCLAW_8_2_IDENTITY_INVENTORY = [
     targetDependent: true,
     connectionLocal: false,
     deviceIdentityInvolved: false,
-    currentAgentOsUse: "future",
-    sourceNote: "Role definitions and assignment are Gateway-owned."
+    currentAgentOsUse: "used",
+    sourceNote: "Explicit OpenClaw role administration is separate from the AgentOS owner/member role."
   },
   {
     classification: "approval-authority",
@@ -391,6 +391,9 @@ export const OPENCLAW_STATIC_METHOD_SCOPES: Record<string, readonly string[]> = 
   "tools.invoke": ["operator.write"],
   "users.list": ["operator.read"],
   "users.self": ["operator.write"],
+  "users.setDisplayName": ["operator.write"],
+  "users.setAvatar": ["operator.write"],
+  "users.linkEmail": ["operator.admin"],
   "users.setRole": ["operator.admin"],
   "device.pair.list": ["operator.pairing"],
   "device.pair.approve": ["operator.pairing"],

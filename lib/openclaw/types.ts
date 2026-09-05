@@ -1350,6 +1350,7 @@ export interface SessionOwnershipProjection {
   participants: Array<{ identityId: string; label: string | null }>;
   participantCount: number;
   visibility: "shared" | "read-only" | "suggest" | "draft" | null;
+  allowedVisibilities: Array<"shared" | "read-only" | "suggest" | "draft">;
   sharingRole: "admin" | "owner" | "member" | "viewer" | null;
   memberEvidence: Array<{ identityId: string; addedBy: string | null; addedByState: "known" | "unknown"; addedAt: number }>;
   membershipDetailState: SessionMembershipDetailState;

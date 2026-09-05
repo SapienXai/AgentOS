@@ -332,7 +332,7 @@ export async function updateAgentOsUserOpenClawLinkage(input: {
       profileId: input.profileId,
       role: input.role,
       linkageState: input.linkageState,
-      lastVerifiedAt: input.lastVerifiedAt ?? new Date().toISOString()
+      lastVerifiedAt: input.lastVerifiedAt === undefined ? new Date().toISOString() : input.lastVerifiedAt
     };
     user.updatedAt = new Date().toISOString();
     return user;

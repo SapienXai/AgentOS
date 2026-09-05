@@ -208,11 +208,15 @@ import type {
   OpenClawSessionAssignOwnerPayload,
   OpenClawSessionCreateInput,
   OpenClawSessionCreatePayload,
+  OpenClawSessionMemberMutationInput,
+  OpenClawSessionMemberMutationPayload,
   OpenClawSessionMembersEvidencePayload,
   OpenClawSessionMembersPayload,
   OpenClawSessionPayload,
   OpenClawSessionSteerInput,
   OpenClawSessionsPayload,
+  OpenClawSessionVisibilitySetInput,
+  OpenClawSessionVisibilitySetPayload,
   OpenClawSkillListPayload,
   OpenClawSkillLibraryActivateInput,
   OpenClawSkillLibraryActivatePayload,
@@ -537,16 +541,16 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     return normalizeOpenClawUserProfile(payload);
   }
 
-  async setUserDisplayName(profileId: string, displayName: string, options: OpenClawCommandOptions = {}) {
+  async setUserDisplayName(profileId: string, displayName: string | null, options: OpenClawCommandOptions = {}) {
     return this.callUserMutation("users.setDisplayName", { profileId, displayName }, options);
   }
 
-  async setUserAvatar(profileId: string, avatar: string | null, options: OpenClawCommandOptions = {}) {
-    return this.callUserMutation("users.setAvatar", { profileId, avatar }, options);
+  async setUserAvatar(profileId: string, input: { mime: "image/png" | "image/jpeg" | "image/webp"; avatarBase64: string }, options: OpenClawCommandOptions = {}) {
+    return this.callUserMutation("users.setAvatar", { profileId, mime: input.mime, avatarBase64: input.avatarBase64 }, options);
   }
 
   async linkUserEmail(profileId: string, email: string, options: OpenClawCommandOptions = {}) {
-    return this.callUserMutation("users.linkEmail", { profileId, email }, options);
+    return this.callUserMutation("users.linkEmail", { email, targetProfileId: profileId }, options);
   }
 
   async setUserRole(profileId: string, role: string | null, options: OpenClawCommandOptions = {}) {
@@ -1018,6 +1022,33 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
       { ...input },
       options,
       (payload) => parseObjectGatewayPayload<OpenClawSessionMembersEvidencePayload>("session.members.listEvidence", payload)
+    );
+  }
+
+  setSessionVisibility(input: OpenClawSessionVisibilitySetInput, options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawSessionVisibilitySetPayload>(
+      "session.visibility.set",
+      { ...input },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawSessionVisibilitySetPayload>("session.visibility.set", payload)
+    );
+  }
+
+  addSessionMember(input: OpenClawSessionMemberMutationInput, options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawSessionMemberMutationPayload>(
+      "session.members.add",
+      { ...input },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawSessionMemberMutationPayload>("session.members.add", payload)
+    );
+  }
+
+  removeSessionMember(input: OpenClawSessionMemberMutationInput, options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawSessionMemberMutationPayload>(
+      "session.members.remove",
+      { ...input },
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawSessionMemberMutationPayload>("session.members.remove", payload)
     );
   }
 
@@ -3384,11 +3415,32 @@ function normalizeOpenClawUserProfile(value: unknown): OpenClawUserProfile | nul
   if (!profile) return null;
   const profileId = readNonEmptyString(profile.profileId ?? profile.id);
   if (!profileId) return null;
+  const emails = Array.isArray(profile.emails)
+    ? profile.emails.filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
+    : [];
+  const avatarMime = profile.avatarMime === "image/png" || profile.avatarMime === "image/jpeg" || profile.avatarMime === "image/webp"
+    ? profile.avatarMime
+    : null;
+  const githubIdentity = isObjectRecord(profile.githubIdentity) &&
+      typeof profile.githubIdentity.login === "string" &&
+      typeof profile.githubIdentity.profileUrl === "string" &&
+      typeof profile.githubIdentity.avatarUrl === "string"
+    ? {
+        login: profile.githubIdentity.login,
+        profileUrl: profile.githubIdentity.profileUrl,
+        avatarUrl: profile.githubIdentity.avatarUrl
+      }
+    : null;
   return {
     profileId,
     displayName: typeof profile.displayName === "string" ? profile.displayName : null,
-    avatar: typeof profile.avatar === "string" ? profile.avatar : null,
-    email: typeof profile.email === "string" ? profile.email : null,
+    emails,
+    avatarMime,
+    hasAvatar: profile.hasAvatar === true,
+    mergedInto: typeof profile.mergedInto === "string" ? profile.mergedInto : null,
+    createdAt: typeof profile.createdAt === "number" ? profile.createdAt : null,
+    updatedAt: typeof profile.updatedAt === "number" ? profile.updatedAt : null,
+    githubIdentity,
     role: typeof profile.role === "string" ? profile.role : null
   };
 }

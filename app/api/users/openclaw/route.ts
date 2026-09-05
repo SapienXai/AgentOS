@@ -2,13 +2,16 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import {
+  listAgentOsUsers,
   getCurrentAgentOsUser,
   updateManagedAgentOsUserOpenClawLinkage
 } from "@/lib/agentos/application/agentos-account-service";
+import { projectAgentOsOpenClawIdentity } from "@/lib/openclaw/domains/native-human-identity";
 import {
   OpenClawUserProfileCapabilityError,
   listOpenClawGatewayRoleNames,
   listOpenClawUserProfiles,
+  reconcileOpenClawUserRoleMutation,
   setOpenClawUserRole
 } from "@/lib/openclaw/application/user-profile-service";
 import { requireAgentOsOpenClawPreflight } from "@/lib/security/agentos-openclaw-request";
@@ -21,16 +24,29 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const linkageSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("link"), actorId: z.string().uuid(), profileId: z.string().trim().min(1).max(200) }),
-  z.object({ action: z.literal("unlink"), actorId: z.string().uuid(), profileId: z.string().trim().min(1).max(200) }),
-  z.object({ action: z.literal("role"), actorId: z.string().uuid(), profileId: z.string().trim().min(1).max(200), role: z.string().trim().min(1).max(80).nullable() })
+  z.object({ action: z.literal("link"), actorId: z.string().uuid(), profileId: z.string().trim().min(1).max(128) }),
+  z.object({ action: z.literal("unlink"), actorId: z.string().uuid(), profileId: z.string().trim().min(1).max(128) }),
+  z.object({ action: z.literal("role"), actorId: z.string().uuid(), profileId: z.string().trim().min(1).max(128), role: z.string().trim().min(1).max(80).nullable() })
 ]);
 
 export async function GET(request: Request) {
   const permission = await requireAgentOsProductPermission(request, "users.manage");
   if ("response" in permission) return permission.response;
   try {
-    return NextResponse.json({ profiles: await listOpenClawUserProfiles() }, { headers: { "Cache-Control": "no-store" } });
+    const [native, agentOsUsers] = await Promise.all([listOpenClawUserProfiles(), listAgentOsUsers()]);
+    const profiles = native.profiles;
+    const associations = agentOsUsers.map((user) => ({
+      actorId: user.actorId,
+      username: user.username,
+      agentOsRole: user.role,
+      status: user.status,
+      identity: projectAgentOsOpenClawIdentity({ linkage: user.openClaw, profiles })
+    }));
+    return NextResponse.json({
+      profiles,
+      connection: { attribution: "shared-service", nativeHumanIdentityVerified: false },
+      associations
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json({
       error: redactErrorMessage(error, "Unable to inspect OpenClaw user profiles."),
@@ -51,7 +67,9 @@ export async function PATCH(request: Request) {
     if (!user) return NextResponse.json({ error: "AgentOS user was not found.", code: "user-not-found" }, { status: 404 });
     const profiles = await listOpenClawUserProfiles();
     const profile = profiles.profiles.find((entry) => entry.profileId === input.profileId);
-    if (!profile) return NextResponse.json({ error: "The OpenClaw profile was not found.", code: "openclaw-profile-not-found" }, { status: 404 });
+    // Unlinking is allowed to reconcile a stale metadata association. Link and
+    // native role operations must still target a currently listed profile.
+    if (input.action !== "unlink" && !profile) return NextResponse.json({ error: "The OpenClaw profile was not found.", code: "openclaw-profile-not-found" }, { status: 404 });
 
     if (input.action === "role") {
       const authorization = await requireAgentOsOpenClawPreflight(request, {
@@ -69,25 +87,41 @@ export async function PATCH(request: Request) {
       if (input.role !== null && roleNames && !roleNames.includes(input.role)) {
         return NextResponse.json({ error: "The OpenClaw role is not defined by the active Gateway policy.", code: "openclaw-role-not-configured" }, { status: 400 });
       }
-      const updated = await setOpenClawUserRole(input.profileId, input.role, authorization.commandOptions);
-      await updateManagedAgentOsUserOpenClawLinkage({
-        actorId: input.actorId,
-        profileId: input.profileId,
-        role: input.role,
-        linkageState: "linked"
-      });
-      await recordAgentOsAuditEvent({ actor: permission.actor, operation: "users.openclaw.set-role", targetKind: "openclaw-user-profile", targetId: input.profileId, result: "succeeded" }).catch(() => {});
-      return NextResponse.json({ profile: updated, roleNames });
+      try {
+        const updated = await setOpenClawUserRole(input.profileId, input.role, authorization.commandOptions);
+        await recordAgentOsAuditEvent({ actor: permission.actor, operation: "users.openclaw.set-role", targetKind: "openclaw-user-profile", targetId: input.profileId, result: "succeeded" }).catch(() => {});
+        return NextResponse.json({ profile: updated, roleNames });
+      } catch (error) {
+        const reconciliation = await reconcileOpenClawUserRoleMutation({
+          profileId: input.profileId,
+          expectedRole: input.role,
+          options: authorization.commandOptions
+        });
+        if (reconciliation.verified) {
+          await recordAgentOsAuditEvent({ actor: permission.actor, operation: "users.openclaw.set-role", targetKind: "openclaw-user-profile", targetId: input.profileId, result: "succeeded" }).catch(() => {});
+          return NextResponse.json({ profile: reconciliation.profile, roleNames, reconciled: true });
+        }
+        await recordAgentOsAuditEvent({ actor: permission.actor, operation: "users.openclaw.set-role", targetKind: "openclaw-user-profile", targetId: input.profileId, result: "unknown" }).catch(() => {});
+        throw error;
+      }
     }
 
     if (input.action === "unlink") {
       if (user.openClaw.profileId !== input.profileId) return NextResponse.json({ error: "The OpenClaw profile is not linked to this AgentOS user.", code: "openclaw-linkage-mismatch" }, { status: 409 });
       await updateManagedAgentOsUserOpenClawLinkage({ actorId: input.actorId, profileId: null, role: null, linkageState: "unlinked", lastVerifiedAt: null });
     } else {
-      await updateManagedAgentOsUserOpenClawLinkage({ actorId: input.actorId, profileId: profile.profileId, role: profile.role, linkageState: "linked" });
+      if (!profile) return NextResponse.json({ error: "The OpenClaw profile was not found.", code: "openclaw-profile-not-found" }, { status: 404 });
+      // The stored linkage is compatibility metadata. It is intentionally not
+      // marked as verified because this request still uses the shared Gateway
+      // service identity rather than the AgentOS actor's native credentials.
+      await updateManagedAgentOsUserOpenClawLinkage({ actorId: input.actorId, profileId: profile.profileId, role: profile.role, linkageState: "linked", lastVerifiedAt: null });
     }
     await recordAgentOsAuditEvent({ actor: permission.actor, operation: `users.openclaw.${input.action}`, targetKind: "openclaw-user-profile", targetId: input.profileId, result: "succeeded" }).catch(() => {});
-    return NextResponse.json({ linkage: input.action === "link" ? profile.profileId : null, state: input.action === "link" ? "linked" : "unlinked" });
+    return NextResponse.json({
+      linkage: input.action === "link" ? input.profileId : null,
+      state: input.action === "link" ? "metadata-associated" : "unlinked",
+      nativeHumanIdentityVerified: false
+    });
   } catch (error) {
     return NextResponse.json({
       error: redactErrorMessage(error, "Unable to update OpenClaw user linkage."),
