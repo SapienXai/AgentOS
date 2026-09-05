@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getMissionControlSnapshot } from "@/lib/agentos/control-plane";
+import {
+  executeNativeDoctorMutation,
+  getNativeDoctorSnapshot
+} from "@/lib/openclaw/application/native-doctor-service";
 import { controlGateway } from "@/lib/openclaw/application/gateway-service";
 import { requireAgentOsProductPermission } from "@/lib/security/agentos-product-authorization";
 import { recordAgentOsAuditEvent } from "@/lib/security/agentos-audit";
@@ -18,7 +22,7 @@ const actionMessageMap = {
   start: "Gateway started.",
   stop: "Gateway stopped.",
   restart: "Gateway restarted.",
-  doctor: "OpenClaw doctor repair completed."
+  doctor: "Native OpenClaw diagnostics refreshed."
 } satisfies Record<z.infer<typeof gatewayControlSchema>["action"], string>;
 
 export async function POST(request: Request) {
@@ -36,6 +40,54 @@ export async function POST(request: Request) {
         },
         { status: 400 }
       );
+    }
+
+    if (input.action === "doctor") {
+      const nativeDoctor = await getNativeDoctorSnapshot();
+      await recordAgentOsAuditEvent({
+        actor: authorization.actor,
+        operation: "gateway.native-diagnostics",
+        targetKind: "gateway",
+        result: "succeeded"
+      }).catch(() => {});
+      const snapshot = await getMissionControlSnapshot({ force: true });
+      return NextResponse.json({
+        message: actionMessageMap[input.action],
+        nativeDoctor: redactSecrets(nativeDoctor),
+        snapshot: redactSecrets(snapshot)
+      });
+    }
+
+    if (input.action === "restart") {
+      const nativeDoctor = await getNativeDoctorSnapshot();
+      if (!nativeDoctor.identity.connectionId || nativeDoctor.runtime.status === "unavailable") {
+        return NextResponse.json(
+          { error: "Native Gateway restart requires a reachable, authenticated OpenClaw Gateway." },
+          { status: 409 }
+        );
+      }
+      const nativeResult = await executeNativeDoctorMutation({
+        action: "gateway.restart.request",
+        input: { reason: "AgentOS operator requested restart", skipDeferral: false }
+      });
+      if (nativeResult.outcome === "failed" || nativeResult.outcome === "unknown") {
+        return NextResponse.json(
+          { error: nativeResult.message, nativeResult },
+          { status: nativeResult.outcome === "unknown" ? 409 : 400 }
+        );
+      }
+      await recordAgentOsAuditEvent({
+        actor: authorization.actor,
+        operation: "gateway.restart.request",
+        targetKind: "gateway",
+        targetId: nativeDoctor.identity.connectionId,
+        result: "succeeded"
+      }).catch(() => {});
+      return NextResponse.json({
+        message: "Native Gateway restart requested.",
+        nativeResult,
+        snapshot: redactSecrets(currentSnapshot)
+      });
     }
 
     await controlGateway(input.action);

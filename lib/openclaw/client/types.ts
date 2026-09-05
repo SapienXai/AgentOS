@@ -141,6 +141,59 @@ export type OpenClawHealthPayload = Record<string, unknown> & {
   ok?: boolean;
 };
 
+/** Exact native Gateway diagnostics payloads are intentionally open records.
+ * OpenClaw owns their evolving detail; AgentOS only projects bounded fields. */
+export type OpenClawDiagnosticsStabilityPayload = Record<string, unknown>;
+
+export type OpenClawConfigSnapshotPayload = Record<string, unknown> & {
+  exists?: boolean;
+  valid?: boolean;
+  hash?: string;
+  configRevisionHash?: string;
+  appliedConfigHash?: string | null;
+  config?: Record<string, unknown>;
+  resolved?: unknown;
+};
+
+export type OpenClawUpdateStatusNativePayload = Record<string, unknown> & {
+  sentinel?: unknown;
+  updateAvailable?: Record<string, unknown> | null;
+  effectiveChannel?: "stable" | "extended-stable" | "beta" | "dev";
+  schedule?: Record<string, unknown>;
+};
+
+export type OpenClawUpdateRunInput = {
+  sessionKey?: string;
+  note?: string;
+  continuationMessage?: string;
+  restartDelayMs?: number;
+  timeoutMs?: number;
+  target?: {
+    kind: "git";
+    upstreamRef: string;
+    upstreamSha: string;
+  };
+};
+
+export type OpenClawGatewayRestartRequestInput = {
+  reason?: string;
+  skipDeferral?: boolean;
+};
+
+export type OpenClawGatewaySuspendPrepareInput = {
+  requestId: string;
+  terminalPolicy?: "preserve" | "terminate";
+  drain?: boolean;
+};
+
+export type OpenClawGatewaySuspendStatusInput = {
+  suspensionId: string;
+};
+
+export type OpenClawGatewaySuspendResumeInput = {
+  suspensionId: string;
+};
+
 export type OpenClawGatewayEventFrame = EventFrame;
 
 export interface OpenClawGatewayEventCallbacks {
@@ -1600,8 +1653,21 @@ export interface OpenClawGatewayClient {
   invalidateReadCache?(): void;
   getOperatorIdentity?(options?: OpenClawCommandOptions): Promise<OpenClawOperatorIdentity>;
   getHealth(options?: OpenClawCommandOptions): Promise<OpenClawHealthPayload>;
+  /** Native-only diagnostics methods; the CLI client intentionally omits these. */
+  getNativeHealth?(options?: OpenClawCommandOptions & { probe?: boolean }): Promise<OpenClawHealthPayload>;
+  getNativeStatus?(options?: OpenClawCommandOptions): Promise<StatusPayload>;
+  getDiagnosticsStability?(options?: OpenClawCommandOptions): Promise<OpenClawDiagnosticsStabilityPayload>;
+  getConfigSnapshot?(options?: OpenClawCommandOptions): Promise<OpenClawConfigSnapshotPayload>;
   getStatus(options?: OpenClawCommandOptions): Promise<StatusPayload>;
   getUpdateStatus(options?: OpenClawCommandOptions): Promise<OpenClawUpdateStatusPayload>;
+  getNativeUpdateStatus?(options?: OpenClawCommandOptions & { refreshCheckout?: boolean }): Promise<OpenClawUpdateStatusNativePayload>;
+  holdNativeUpdate?(options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
+  runNativeUpdate?(input?: OpenClawUpdateRunInput, options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
+  getNativeGatewayRestartPreflight?(options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
+  requestNativeGatewayRestart?(input?: OpenClawGatewayRestartRequestInput, options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
+  prepareNativeGatewaySuspend?(input: OpenClawGatewaySuspendPrepareInput, options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
+  getNativeGatewaySuspendStatus?(input: OpenClawGatewaySuspendStatusInput, options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
+  resumeNativeGatewaySuspend?(input: OpenClawGatewaySuspendResumeInput, options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
   getGatewayStatus(options?: OpenClawCommandOptions): Promise<GatewayStatusPayload>;
   listUsers?(options?: OpenClawCommandOptions): Promise<OpenClawUserListPayload>;
   getCurrentUser?(options?: OpenClawCommandOptions): Promise<OpenClawUserProfile | null>;

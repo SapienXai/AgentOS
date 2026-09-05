@@ -353,8 +353,19 @@ export const configSnapshotPayloadSchema = z
     exists: z.boolean().optional(),
     valid: z.boolean().optional(),
     hash: z.string().optional(),
+    configRevisionHash: z.string().optional(),
+    appliedConfigHash: z.string().nullable().optional(),
     config: z.record(z.string(), z.unknown()).optional(),
     resolved: z.unknown().optional()
+  })
+  .passthrough();
+
+export const nativeUpdateStatusPayloadSchema = z
+  .object({
+    sentinel: z.unknown(),
+    updateAvailable: z.record(z.string(), z.unknown()).nullable(),
+    effectiveChannel: z.enum(["stable", "extended-stable", "beta", "dev"]).optional(),
+    schedule: z.record(z.string(), z.unknown()).optional()
   })
   .passthrough();
 

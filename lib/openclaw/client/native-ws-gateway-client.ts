@@ -66,6 +66,7 @@ import {
   memoryDreamDiaryPayloadSchema,
   memorySearchPayloadSchema,
   memoryStatusPayloadSchema,
+  nativeUpdateStatusPayloadSchema,
   parseGatewayPayload,
   parseObjectGatewayPayload,
   rememberStatusUpdateRegistry,
@@ -171,6 +172,14 @@ import type {
   OpenClawGatewaySurfacePayload,
   OpenClawGmailSetupInput,
   OpenClawHealthPayload,
+  OpenClawDiagnosticsStabilityPayload,
+  OpenClawConfigSnapshotPayload,
+  OpenClawUpdateStatusNativePayload,
+  OpenClawUpdateRunInput,
+  OpenClawGatewayRestartRequestInput,
+  OpenClawGatewaySuspendPrepareInput,
+  OpenClawGatewaySuspendStatusInput,
+  OpenClawGatewaySuspendResumeInput,
   OpenClawListModelsInput,
   OpenClawListSessionsInput,
   OpenClawLogsTailInput,
@@ -442,6 +451,17 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
     );
   }
 
+  /** Native-only health read used by the online Doctor projection. */
+  getNativeHealth(options: OpenClawCommandOptions & { probe?: boolean } = {}) {
+    const { probe, ...commandOptions } = options;
+    return this.nativeOnly<OpenClawHealthPayload>(
+      "health",
+      probe === undefined ? {} : { probe },
+      commandOptions,
+      (payload) => parseObjectGatewayPayload<OpenClawHealthPayload>("health", payload)
+    );
+  }
+
   getStatus(options: OpenClawCommandOptions = {}) {
     if (this.options.forceCli || isCliGatewayClientForcedByEnv()) {
       return this.fallback.getStatus(options);
@@ -470,6 +490,34 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         this.recordGatewayFallback("status", error);
         return this.fallback.getStatus(options);
       });
+  }
+
+  /** Native-only status read; online operational views must not fall back to CLI. */
+  getNativeStatus(options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<StatusPayload>(
+      "status",
+      {},
+      options,
+      (payload) => parseGatewayPayload<StatusPayload>("status", statusPayloadSchema, payload)
+    );
+  }
+
+  getDiagnosticsStability(options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawDiagnosticsStabilityPayload>(
+      "diagnostics.stability",
+      {},
+      options,
+      (payload) => parseObjectGatewayPayload<OpenClawDiagnosticsStabilityPayload>("diagnostics.stability", payload)
+    );
+  }
+
+  getConfigSnapshot(options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<OpenClawConfigSnapshotPayload>(
+      "config.get",
+      {},
+      options,
+      (payload) => parseGatewayPayload<OpenClawConfigSnapshotPayload>("config.get", configSnapshotPayloadSchema, payload)
+    );
   }
 
   async listUsers(options: OpenClawCommandOptions = {}): Promise<OpenClawUserListPayload> {
@@ -550,6 +598,107 @@ export class NativeWsOpenClawGatewayClient implements OpenClawGatewayClient {
         this.recordGatewayFallback("update.status", error);
         return this.fallback.getUpdateStatus(options);
       });
+  }
+
+  getNativeUpdateStatus(
+    options: OpenClawCommandOptions & { refreshCheckout?: boolean } = {}
+  ) {
+    const { refreshCheckout, ...commandOptions } = options;
+    return this.nativeOnly<OpenClawUpdateStatusNativePayload>(
+      "update.status",
+      refreshCheckout === undefined ? {} : { refreshCheckout },
+      commandOptions,
+      (payload) => parseGatewayPayload<OpenClawUpdateStatusNativePayload>("update.status", nativeUpdateStatusPayloadSchema, payload)
+    );
+  }
+
+  holdNativeUpdate(options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<Record<string, unknown>>(
+      "update.hold",
+      {},
+      options,
+      (payload) => parseObjectGatewayPayload<Record<string, unknown>>("update.hold", payload)
+    );
+  }
+
+  runNativeUpdate(input: OpenClawUpdateRunInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<Record<string, unknown>>(
+      "update.run",
+      {
+        ...(input.sessionKey ? { sessionKey: input.sessionKey } : {}),
+        ...(input.note !== undefined ? { note: input.note } : {}),
+        ...(input.continuationMessage !== undefined ? { continuationMessage: input.continuationMessage } : {}),
+        ...(input.restartDelayMs !== undefined ? { restartDelayMs: input.restartDelayMs } : {}),
+        ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+        ...(input.target ? { target: input.target } : {})
+      },
+      options,
+      (payload) => parseObjectGatewayPayload<Record<string, unknown>>("update.run", payload)
+    );
+  }
+
+  getNativeGatewayRestartPreflight(options: OpenClawCommandOptions = {}) {
+    return this.nativeOnly<Record<string, unknown>>(
+      "gateway.restart.preflight",
+      {},
+      options,
+      (payload) => parseObjectGatewayPayload<Record<string, unknown>>("gateway.restart.preflight", payload)
+    );
+  }
+
+  requestNativeGatewayRestart(
+    input: OpenClawGatewayRestartRequestInput = {},
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<Record<string, unknown>>(
+      "gateway.restart.request",
+      {
+        ...(input.reason ? { reason: input.reason } : {}),
+        ...(input.skipDeferral === undefined ? {} : { skipDeferral: input.skipDeferral })
+      },
+      options,
+      (payload) => parseObjectGatewayPayload<Record<string, unknown>>("gateway.restart.request", payload)
+    );
+  }
+
+  prepareNativeGatewaySuspend(
+    input: OpenClawGatewaySuspendPrepareInput,
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<Record<string, unknown>>(
+      "gateway.suspend.prepare",
+      {
+        requestId: input.requestId,
+        ...(input.terminalPolicy ? { terminalPolicy: input.terminalPolicy } : {}),
+        ...(input.drain === undefined ? {} : { drain: input.drain })
+      },
+      options,
+      (payload) => parseObjectGatewayPayload<Record<string, unknown>>("gateway.suspend.prepare", payload)
+    );
+  }
+
+  getNativeGatewaySuspendStatus(
+    input: OpenClawGatewaySuspendStatusInput,
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<Record<string, unknown>>(
+      "gateway.suspend.status",
+      { suspensionId: input.suspensionId },
+      options,
+      (payload) => parseObjectGatewayPayload<Record<string, unknown>>("gateway.suspend.status", payload)
+    );
+  }
+
+  resumeNativeGatewaySuspend(
+    input: OpenClawGatewaySuspendResumeInput,
+    options: OpenClawCommandOptions = {}
+  ) {
+    return this.nativeOnly<Record<string, unknown>>(
+      "gateway.suspend.resume",
+      { suspensionId: input.suspensionId },
+      options,
+      (payload) => parseObjectGatewayPayload<Record<string, unknown>>("gateway.suspend.resume", payload)
+    );
   }
 
   getGatewayStatus(options: OpenClawCommandOptions = {}) {

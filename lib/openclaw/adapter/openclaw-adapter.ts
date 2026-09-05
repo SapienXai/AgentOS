@@ -3,6 +3,7 @@ import "server-only";
 import type { CommandResult } from "@/lib/openclaw/cli";
 import { runGatewayConfigMutationWithPacing } from "@/lib/openclaw/application/config-pacing-service";
 import { getOpenClawGatewayClient } from "@/lib/openclaw/client/gateway-client-factory";
+import { OpenClawGatewayClientError } from "@/lib/openclaw/client/native-ws-gateway-errors";
 import type {
   GatewayProbePayload,
     GatewayStatusPayload,
@@ -57,7 +58,12 @@ import type {
   OpenClawAgentListPayload,
   OpenClawAgentTurnInput,
   OpenClawCommandOptions,
+  OpenClawConfigSnapshotPayload,
   OpenClawGatewayControlOptions,
+  OpenClawGatewayRestartRequestInput,
+  OpenClawGatewaySuspendPrepareInput,
+  OpenClawGatewaySuspendResumeInput,
+  OpenClawGatewaySuspendStatusInput,
   OpenClawChatInjectInput,
     OpenClawGatewayClient,
     OpenClawGatewayEventCallbacks,
@@ -66,6 +72,7 @@ import type {
     OpenClawGatewaySurfacePayload,
   OpenClawGmailSetupInput,
   OpenClawHealthPayload,
+  OpenClawDiagnosticsStabilityPayload,
   OpenClawListModelsInput,
   OpenClawListSessionsInput,
   OpenClawLogsTailInput,
@@ -125,6 +132,8 @@ import type {
   OpenClawToolsEffectiveInput,
   OpenClawToolsEffectivePayload,
   OpenClawUpdateAgentInput,
+  OpenClawUpdateRunInput,
+  OpenClawUpdateStatusNativePayload,
   OpenClawUpdateStatusPayload,
   StatusPayload
 } from "@/lib/openclaw/client/gateway-client";
@@ -136,8 +145,20 @@ export interface OpenClawAdapter {
   getConnectionIdentity?(): { client: OpenClawGatewayClient; connectionId: string | null };
   invalidateReadCache?(): void;
   getHealth(options?: OpenClawCommandOptions): Promise<OpenClawHealthPayload>;
+  getNativeHealth?(options?: OpenClawCommandOptions & { probe?: boolean }): Promise<OpenClawHealthPayload>;
+  getNativeStatus?(options?: OpenClawCommandOptions): Promise<StatusPayload>;
+  getDiagnosticsStability?(options?: OpenClawCommandOptions): Promise<OpenClawDiagnosticsStabilityPayload>;
+  getConfigSnapshot?(options?: OpenClawCommandOptions): Promise<OpenClawConfigSnapshotPayload>;
   getStatus(options?: OpenClawCommandOptions): Promise<StatusPayload>;
   getUpdateStatus(options?: OpenClawCommandOptions): Promise<OpenClawUpdateStatusPayload>;
+  getNativeUpdateStatus?(options?: OpenClawCommandOptions & { refreshCheckout?: boolean }): Promise<OpenClawUpdateStatusNativePayload>;
+  holdNativeUpdate?(options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
+  runNativeUpdate?(input?: OpenClawUpdateRunInput, options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
+  getNativeGatewayRestartPreflight?(options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
+  requestNativeGatewayRestart?(input?: OpenClawGatewayRestartRequestInput, options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
+  prepareNativeGatewaySuspend?(input: OpenClawGatewaySuspendPrepareInput, options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
+  getNativeGatewaySuspendStatus?(input: OpenClawGatewaySuspendStatusInput, options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
+  resumeNativeGatewaySuspend?(input: OpenClawGatewaySuspendResumeInput, options?: OpenClawCommandOptions): Promise<Record<string, unknown>>;
   getGatewayStatus(options?: OpenClawCommandOptions): Promise<GatewayStatusPayload>;
   getModelStatus(options?: OpenClawCommandOptions): Promise<ModelsStatusPayload>;
   getAgentModelStatus(input: OpenClawAgentModelStatusInput, options?: OpenClawCommandOptions): Promise<ModelsStatusPayload>;
@@ -327,12 +348,60 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
     return this.getClient().getHealth(options);
   }
 
+  getNativeHealth(options: OpenClawCommandOptions & { probe?: boolean } = {}) {
+    return this.getClient().getNativeHealth?.(options) ?? Promise.reject(nativeMethodUnavailable("health"));
+  }
+
+  getNativeStatus(options: OpenClawCommandOptions = {}) {
+    return this.getClient().getNativeStatus?.(options) ?? Promise.reject(nativeMethodUnavailable("status"));
+  }
+
+  getDiagnosticsStability(options: OpenClawCommandOptions = {}) {
+    return this.getClient().getDiagnosticsStability?.(options) ?? Promise.reject(nativeMethodUnavailable("diagnostics.stability"));
+  }
+
+  getConfigSnapshot(options: OpenClawCommandOptions = {}) {
+    return this.getClient().getConfigSnapshot?.(options) ?? Promise.reject(nativeMethodUnavailable("config.get"));
+  }
+
   getStatus(options: OpenClawCommandOptions = {}) {
     return this.getClient().getStatus(options);
   }
 
   getUpdateStatus(options: OpenClawCommandOptions = {}) {
     return this.getClient().getUpdateStatus(options);
+  }
+
+  getNativeUpdateStatus(options: OpenClawCommandOptions & { refreshCheckout?: boolean } = {}) {
+    return this.getClient().getNativeUpdateStatus?.(options) ?? Promise.reject(nativeMethodUnavailable("update.status"));
+  }
+
+  holdNativeUpdate(options: OpenClawCommandOptions = {}) {
+    return this.getClient().holdNativeUpdate?.(options) ?? Promise.reject(nativeMethodUnavailable("update.hold"));
+  }
+
+  runNativeUpdate(input: OpenClawUpdateRunInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.getClient().runNativeUpdate?.(input, options) ?? Promise.reject(nativeMethodUnavailable("update.run"));
+  }
+
+  getNativeGatewayRestartPreflight(options: OpenClawCommandOptions = {}) {
+    return this.getClient().getNativeGatewayRestartPreflight?.(options) ?? Promise.reject(nativeMethodUnavailable("gateway.restart.preflight"));
+  }
+
+  requestNativeGatewayRestart(input: OpenClawGatewayRestartRequestInput = {}, options: OpenClawCommandOptions = {}) {
+    return this.getClient().requestNativeGatewayRestart?.(input, options) ?? Promise.reject(nativeMethodUnavailable("gateway.restart.request"));
+  }
+
+  prepareNativeGatewaySuspend(input: OpenClawGatewaySuspendPrepareInput, options: OpenClawCommandOptions = {}) {
+    return this.getClient().prepareNativeGatewaySuspend?.(input, options) ?? Promise.reject(nativeMethodUnavailable("gateway.suspend.prepare"));
+  }
+
+  getNativeGatewaySuspendStatus(input: OpenClawGatewaySuspendStatusInput, options: OpenClawCommandOptions = {}) {
+    return this.getClient().getNativeGatewaySuspendStatus?.(input, options) ?? Promise.reject(nativeMethodUnavailable("gateway.suspend.status"));
+  }
+
+  resumeNativeGatewaySuspend(input: OpenClawGatewaySuspendResumeInput, options: OpenClawCommandOptions = {}) {
+    return this.getClient().resumeNativeGatewaySuspend?.(input, options) ?? Promise.reject(nativeMethodUnavailable("gateway.suspend.resume"));
   }
 
   getGatewayStatus(options: OpenClawCommandOptions = {}) {
@@ -1001,6 +1070,13 @@ export class GatewayBackedOpenClawAdapter implements OpenClawAdapter {
     const client = this.getClient();
     return client.listCronRuns?.(input, options) ?? client.call<OpenClawCronRunsPayload>("cron.runs", { ...input }, options);
   }
+}
+
+function nativeMethodUnavailable(method: string) {
+  return new OpenClawGatewayClientError(
+    `OpenClaw native ${method} is unavailable; the adapter does not provide a native implementation.`,
+    "unsupported"
+  );
 }
 
 let defaultAdapter: OpenClawAdapter | null = null;

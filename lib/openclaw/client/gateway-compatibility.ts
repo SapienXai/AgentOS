@@ -18,8 +18,10 @@ export type OpenClawGatewayCompatibilityOperationId =
   | "logsTail"
   | "messaging"
   | "configSchemaLookup"
+  | "configRead"
   | "configPatch"
   | "gatewayRestart"
+  | "gatewaySuspend"
   | "secrets"
   | "wizard"
   | "sessionLifecycle"
@@ -104,9 +106,23 @@ export type OpenClawGatewayCompatibilityOperationDefinition = {
 };
 
 export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibilityOperationDefinition[] = [
-  { id: "health", label: "Gateway health", methods: ["health", "status"], baseline: "required" },
+  {
+    id: "health",
+    label: "Gateway health",
+    methods: ["health", "status"],
+    baseline: "required",
+    productIntegration: "integrated",
+    productIntegratedMethods: ["health", "status"]
+  },
   { id: "userDirectory", label: "Gateway user directory", methods: ["users.list"], baseline: "required" },
-  { id: "diagnosticsStability", label: "Gateway diagnostics", methods: ["diagnostics.stability"], baseline: "optional" },
+  {
+    id: "diagnosticsStability",
+    label: "Gateway diagnostics",
+    methods: ["diagnostics.stability"],
+    baseline: "optional",
+    productIntegration: "integrated",
+    productIntegratedMethods: ["diagnostics.stability"]
+  },
   { id: "gatewayIdentity", label: "Gateway identity", methods: ["gateway.identity.get"], baseline: "optional" },
   {
     id: "presence",
@@ -199,12 +215,34 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
   { id: "logsTail", label: "Gateway logs", methods: ["logs.tail"], baseline: "required" },
   { id: "messaging", label: "Operator messaging", methods: ["send", "push.test"], baseline: "optional" },
   { id: "configSchemaLookup", label: "Config schema lookup", methods: ["config.schema.lookup", "config.schema"], baseline: "required" },
+  {
+    id: "configRead",
+    label: "Config application state",
+    methods: ["config.get"],
+    baseline: "required",
+    productIntegration: "integrated",
+    productIntegratedMethods: ["config.get"]
+  },
   { id: "configPatch", label: "Config patch", methods: ["config.patch", "config.apply", "config.set"], baseline: "required" },
   {
     id: "gatewayRestart",
     label: "Gateway restart control",
     methods: ["gateway.restart.preflight", "gateway.restart.request"],
-    baseline: "experimental"
+    baseline: "experimental",
+    productIntegration: "integrated",
+    productIntegratedMethods: ["gateway.restart.request"]
+  },
+  {
+    id: "gatewaySuspend",
+    label: "Gateway suspension control",
+    methods: ["gateway.suspend.prepare", "gateway.suspend.status", "gateway.suspend.resume"],
+    baseline: "experimental",
+    productIntegration: "integrated",
+    productIntegratedMethods: [
+      "gateway.suspend.prepare",
+      "gateway.suspend.status",
+      "gateway.suspend.resume"
+    ]
   },
   { id: "secrets", label: "Secret reload and resolution", methods: ["secrets.reload", "secrets.resolve"], baseline: "optional" },
   { id: "wizard", label: "Setup wizard", methods: ["wizard.start", "wizard.next", "wizard.status", "wizard.cancel"], baseline: "optional" },
@@ -544,7 +582,14 @@ export const OPENCLAW_GATEWAY_COMPATIBILITY_OPERATIONS: OpenClawGatewayCompatibi
     baseline: "optional",
     productIntegration: "discovery-only"
   },
-  { id: "updates", label: "Update status", methods: ["update.status", "update.run", "status"], baseline: "optional" }
+  {
+    id: "updates",
+    label: "Update status",
+    methods: ["update.status", "update.run", "update.hold", "status"],
+    baseline: "optional",
+    productIntegration: "integrated",
+    productIntegratedMethods: ["update.status", "update.run", "update.hold"]
+  }
 ];
 
 export const OPENCLAW_GATEWAY_BASELINE_VERSION = OPENCLAW_SUPPORTED_BASELINE_VERSION;
@@ -705,7 +750,11 @@ export const OPENCLAW_2026_6_8_OPTIONAL_GATEWAY_METHODS = [
   "tools.catalog",
   "tools.effective",
   "tools.invoke",
+  "gateway.suspend.prepare",
+  "gateway.suspend.status",
+  "gateway.suspend.resume",
   "update.run",
+  "update.hold",
   "usage.cost",
   "usage.status",
   "voicewake.get",

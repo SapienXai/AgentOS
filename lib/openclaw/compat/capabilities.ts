@@ -24,7 +24,18 @@ const capabilityDefinitions: CapabilityDefinition[] = [
   {
     id: "gatewayHealth",
     label: "Gateway health",
-    methods: ["health", "status", "logs.tail", "diagnostics.stability", "gateway.identity.get", "gateway.restart.preflight", "gateway.restart.request"]
+    methods: [
+      "health",
+      "status",
+      "logs.tail",
+      "diagnostics.stability",
+      "gateway.identity.get",
+      "gateway.restart.preflight",
+      "gateway.restart.request",
+      "gateway.suspend.prepare",
+      "gateway.suspend.status",
+      "gateway.suspend.resume"
+    ]
   },
   {
     id: "presence",
@@ -256,7 +267,7 @@ const capabilityDefinitions: CapabilityDefinition[] = [
   {
     id: "updates",
     label: "Updates",
-    methods: ["update.status", "update.run"]
+    methods: ["update.status", "update.run", "update.hold"]
   },
   {
     id: "commands",

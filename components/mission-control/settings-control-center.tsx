@@ -59,6 +59,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PikoLoader } from "@/components/ui/piko-loader";
 import { GatewayProductSurfacePanel } from "@/components/mission-control/gateway-surface-panel";
+import { NativeDoctorPanel } from "@/components/mission-control/native-doctor-panel";
 import { OpenClawAppConnectDialog } from "@/components/mission-control/openclaw-app-connect-dialog";
 import {
   RuntimeGatewayInlineWarning,
@@ -1746,7 +1747,7 @@ export function SettingsControlCenter(
                         { action: "start", label: "Start", disabledReason: isGatewayServiceOnline ? "The Gateway is already running." : null },
                         { action: "stop", label: "Stop", disabledReason: !isGatewayServiceOnline ? "The Gateway is already stopped." : null },
                         { action: "restart", label: "Restart", disabledReason: !isGatewayServiceOnline ? "Start the Gateway before restarting it." : null },
-                        { action: "doctor", label: "Doctor --fix", disabledReason: null }
+                        { action: "doctor", label: "Native diagnostics", disabledReason: null }
                       ] as const).map(({ action, label, disabledReason }) => (
                         <Button
                           key={action}
@@ -2242,6 +2243,7 @@ export function SettingsControlCenter(
                   }
                 >
                   <div className="space-y-2">
+                    <NativeDoctorPanel surfaceTheme={surfaceTheme} />
                     <RuntimeInboxPanel
                       snapshot={snapshot}
                       surfaceTheme={surfaceTheme}
@@ -4653,13 +4655,13 @@ function gatewayOperationSteps(kind: GatewayOperationKind) {
     case "repair-access":
       return ["Prepare access repair", "Approve scopes and sync", "Verify native authentication"];
     case "restart":
-      return ["Prepare control request", "Restart Gateway service", "Verify refreshed runtime state"];
+      return ["Prepare native request", "Request safe Gateway restart", "Await reconnect verification"];
     case "start":
       return ["Prepare control request", "Start Gateway service", "Verify refreshed runtime state"];
     case "stop":
       return ["Prepare control request", "Stop Gateway service", "Verify stopped runtime state"];
     case "doctor":
-      return ["Prepare recovery request", "Run OpenClaw doctor --fix", "Refresh Gateway diagnostics"];
+      return ["Prepare native read", "Read OpenClaw runtime evidence", "Refresh Gateway diagnostics"];
   }
 }
 
@@ -4670,7 +4672,7 @@ function gatewayOperationLabel(kind: GatewayOperationKind) {
     case "repair-access":
       return "Repair local Gateway access";
     case "doctor":
-      return "Run OpenClaw doctor --fix";
+      return "Read native OpenClaw diagnostics";
     default:
       return `${kind.charAt(0).toUpperCase()}${kind.slice(1)} Gateway`;
   }
@@ -4679,9 +4681,9 @@ function gatewayOperationLabel(kind: GatewayOperationKind) {
 function gatewayControlRunningMessage(action: GatewayControlAction) {
   switch (action) {
     case "doctor":
-      return "Running OpenClaw doctor --fix and waiting for refreshed Gateway diagnostics.";
+      return "Reading native OpenClaw diagnostics and waiting for refreshed Gateway state.";
     case "restart":
-      return "Restarting the Gateway service and waiting for a refreshed runtime snapshot.";
+      return "Requesting a safe native Gateway restart and waiting for reconnect state.";
     case "start":
       return "Starting the Gateway service and waiting for a refreshed runtime snapshot.";
     case "stop":
@@ -4692,9 +4694,9 @@ function gatewayControlRunningMessage(action: GatewayControlAction) {
 function gatewayControlSuccessMessage(action: GatewayControlAction) {
   switch (action) {
     case "doctor":
-      return "OpenClaw doctor --fix completed and Gateway diagnostics were refreshed.";
+      return "Native OpenClaw diagnostics completed and Gateway state was refreshed.";
     case "restart":
-      return "Gateway restarted and the refreshed runtime state was received.";
+      return "Native Gateway restart was accepted; reconnect verification is pending.";
     case "start":
       return "Gateway started and the refreshed runtime state was received.";
     case "stop":

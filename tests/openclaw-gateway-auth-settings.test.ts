@@ -27,14 +27,15 @@ test("Gateway settings route unreachable Gateway repair to rollback or process r
   assert.match(source, /disabled=\{gatewayActionBusy \|\| Boolean\(gatewayAccessRepairDisabledReason\)\}/);
 });
 
-test("Gateway settings expose OpenClaw doctor repair through Gateway control", () => {
+test("Gateway settings expose native OpenClaw diagnostics through Gateway control", () => {
   const settingsSource = readFileSync(join(process.cwd(), "components/mission-control/settings-control-center.tsx"), "utf8");
   const routeSource = readFileSync(join(process.cwd(), "app/api/gateway/control/route.ts"), "utf8");
   const serviceSource = readFileSync(join(process.cwd(), "lib/openclaw/application/gateway-service.ts"), "utf8");
 
   assert.match(settingsSource, /\{ action: "start", label: "Start"/);
-  assert.match(settingsSource, /\{ action: "doctor", label: "Doctor --fix"/);
-  assert.match(settingsSource, /Doctor --fix/);
+  assert.match(settingsSource, /\{ action: "doctor", label: "Native diagnostics"/);
+  assert.match(settingsSource, /Native diagnostics/);
+  assert.match(settingsSource, /<NativeDoctorPanel/);
   assert.match(routeSource, /z\.enum\(\["start", "stop", "restart", "doctor"\]\)/);
   assert.match(serviceSource, /runOpenClaw\(\["doctor", "--fix"\]/);
 });
@@ -66,7 +67,7 @@ test("Gateway operations keep visible progress and durable results", () => {
   const shellSource = readFileSync(join(process.cwd(), "components/mission-control/mission-control-shell.tsx"), "utf8");
 
   assert.match(settingsSource, /aria-label="Gateway operation progress"/);
-  assert.match(settingsSource, /"Prepare control request", "Restart Gateway service", "Verify refreshed runtime state"/);
+  assert.match(settingsSource, /"Prepare native request", "Request safe Gateway restart", "Await reconnect verification"/);
   assert.match(settingsSource, /finishGatewayOperation\("repair-token", "success"/);
   assert.match(settingsSource, /finishGatewayOperation\("repair-access", "error"/);
   assert.match(settingsSource, /Dismiss Gateway operation result/);
