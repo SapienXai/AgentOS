@@ -1,0 +1,230 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "openclaw-native-doctor-update-recovery-certification",
+  "generatedAt": "2026-09-05T10:42:33.490Z",
+  "certifiedCodeHead": "ed546768e4a85b34a68c285bbe56b6d221b96bfd",
+  "openClaw": {
+    "release": "2026.9.1",
+    "source": "ad6fe23aecb9b833d68139b0ddc9f239b894d2f1",
+    "gatewayProtocol": 4,
+    "gatewayClient": "2026.9.1",
+    "gatewayProtocolPackage": "2026.9.1",
+    "buildId": "2026.9.1-ad6fe23aecb9-2026-09-04T10-30-53.753Z",
+    "packageHash": "4fed530115d575fb0f6a677aeca9b854ae9956f022f443b0039f4f94263c0ebe",
+    "packageRoot": "[DISPOSABLE_EXACT_PACKAGE]"
+  },
+  "methods": {
+    "health": {
+      "scope": "operator.read",
+      "params": "{}",
+      "productIntegration": "integrated",
+      "authority": "OpenClaw-native",
+      "status": "PASS",
+      "result": "native response shape accepted"
+    },
+    "healthProbe": {
+      "scope": "operator.read",
+      "params": "{probe:true}",
+      "productIntegration": "integrated",
+      "authority": "OpenClaw-native",
+      "status": "PASS",
+      "result": "native response shape accepted"
+    },
+    "status": {
+      "scope": "operator.read",
+      "params": "{}",
+      "productIntegration": "integrated",
+      "authority": "OpenClaw-native",
+      "status": "PASS",
+      "result": "native response shape accepted"
+    },
+    "diagnostics.stability": {
+      "scope": "operator.read",
+      "params": "{}",
+      "productIntegration": "integrated",
+      "authority": "OpenClaw-native",
+      "status": "PASS",
+      "result": "native response shape accepted"
+    },
+    "config.get": {
+      "scope": "operator.read",
+      "params": "{}",
+      "productIntegration": "integrated",
+      "authority": "OpenClaw-native",
+      "status": "PASS",
+      "result": "native response shape accepted"
+    },
+    "update.status": {
+      "scope": "operator.read",
+      "params": "{refreshCheckout?:boolean}",
+      "productIntegration": "integrated",
+      "authority": "OpenClaw-native",
+      "status": "PASS",
+      "result": "native response shape accepted"
+    },
+    "update.hold": {
+      "scope": "operator.admin",
+      "params": "{}",
+      "productIntegration": "integrated",
+      "authority": "OpenClaw-native",
+      "status": "PASS",
+      "result": "native response shape accepted"
+    },
+    "update.run": {
+      "scope": "operator.admin",
+      "params": "{sessionKey?,note?,target?}",
+      "productIntegration": "integrated",
+      "authority": "OpenClaw-native",
+      "status": "SKIPPED",
+      "result": "Not executed: update.run can install packages or hand off to an external supervisor."
+    },
+    "gateway.restart.preflight": {
+      "scope": "operator.read",
+      "params": "{}",
+      "productIntegration": "compatibility-only",
+      "authority": "OpenClaw-native",
+      "status": "PASS",
+      "result": "native response shape accepted"
+    },
+    "gateway.restart.request": {
+      "scope": "operator.admin",
+      "params": "{reason?,skipDeferral?}",
+      "productIntegration": "integrated",
+      "authority": "OpenClaw-native",
+      "status": "SKIPPED",
+      "result": "Not executed: restart.request intentionally terminates the disposable Gateway before final probes."
+    },
+    "gateway.suspend.prepare": {
+      "scope": "operator.admin",
+      "params": "{requestId,terminalPolicy?,drain?}",
+      "productIntegration": "typed-only",
+      "authority": "OpenClaw-native",
+      "status": "PASS",
+      "result": "busy"
+    },
+    "gateway.suspend.status": {
+      "scope": "operator.read",
+      "params": "{suspensionId}",
+      "productIntegration": "typed-only",
+      "authority": "OpenClaw-native",
+      "status": "SKIPPED",
+      "result": "No suspension lease was issued by the disposable runtime."
+    },
+    "gateway.suspend.resume": {
+      "scope": "operator.admin",
+      "params": "{suspensionId}",
+      "productIntegration": "typed-only",
+      "authority": "OpenClaw-native",
+      "status": "SKIPPED",
+      "result": "No suspension lease was issued by the disposable runtime."
+    }
+  },
+  "runtime": {
+    "packageMode": "exact-openclaw-package-fixture",
+    "gatewayPlacement": "disposable-loopback",
+    "isolatedState": true,
+    "isolatedConfig": true,
+    "handshake": "PASS",
+    "nativeTransport": true,
+    "userGatewayTouched": false,
+    "realInstallationUpdated": false,
+    "realCredentialsAccessed": false
+  },
+  "observations": {
+    "savedVsAppliedUsesNativeHashes": "PASS",
+    "rawConfigHashUsedAsAppliedHash": false,
+    "healthReadFailureIsHealthy": false,
+    "transportFailureIsUnavailable": false,
+    "updateStatusRefreshForcedOnNormalRead": false,
+    "externalVersionLookup": false,
+    "acceptedRestartMeansCompleted": false,
+    "identityContinuity": "PASS",
+    "noCliFallback": "PASS"
+  },
+  "projections": {
+    "health": "native ok=true is healthy; ok=false is degraded; failed read is unknown",
+    "status": "native status remains separate from reachability/health",
+    "stability": "bounded native diagnostics fields only",
+    "configApplication": "configRevisionHash equals appliedConfigHash => applied; known mismatch => restart-required; missing evidence => unknown",
+    "update": "native update.status owns availability, channel, schedule, and sentinel",
+    "recovery": "deterministic AgentOS projection; no independent diagnosis or healing loop"
+  },
+  "recoveryActions": {
+    "native": [
+      "health",
+      "status",
+      "diagnostics.stability",
+      "config.get",
+      "update.status",
+      "update.hold",
+      "update.run",
+      "gateway.restart.request",
+      "gateway.suspend.prepare",
+      "gateway.suspend.status",
+      "gateway.suspend.resume"
+    ],
+    "confirmationRequired": [
+      "update.run",
+      "gateway.restart.request",
+      "gateway.suspend.prepare",
+      "gateway.suspend.resume"
+    ],
+    "normalUserSuspensionButton": false,
+    "arbitraryShellOrProcessControl": false
+  },
+  "authorization": {
+    "exactScopes": "PASS",
+    "agentOsProductPermissions": true,
+    "gatewayFinalAuthority": true,
+    "scopeWidening": false
+  },
+  "ambiguity": {
+    "updateRun": "unknown until reconnect and fresh health/status/update.status reconciliation",
+    "restartRequest": "accepted or intentional disconnect is not completed verification",
+    "suspensionPrepare": "use gateway.suspend.status only when native suspensionId is known",
+    "blindRetry": false,
+    "reconciliationOwner": "existing AgentOS request policy, reconnect owner, and native reads"
+  },
+  "boundaries": {
+    "online": "native OpenClaw Gateway control plane",
+    "offline": "existing verified AgentOS supervisor boundary",
+    "cliCompatibility": "legacy/offline recovery only; no online native fallback",
+    "competingLifecycleAuthority": false,
+    "noPolling": true,
+    "noNewGatewaySubscription": true,
+    "noNewReconnectOwner": true
+  },
+  "security": {
+    "arbitraryShellExposed": false,
+    "pidControlsExposed": false,
+    "filesystemUpdateTargetExposed": false,
+    "secretConfigExposed": false,
+    "diagnosticPayloadTrustedAsInstruction": false,
+    "centralRedaction": true
+  },
+  "performance": {
+    "rootDashboardExtraDoctorRpcCount": 0,
+    "detailReads": "bounded parallel native reads",
+    "updateStatusNormalRead": "one lazy native read; refreshCheckout only on explicit fresh check",
+    "organizationWideFanout": false,
+    "perWorkerHealthFanout": false,
+    "requestCoalescing": "existing AgentOsGatewayRequestPolicy"
+  },
+  "rpcCounts": {
+    "health": 2,
+    "status": 1,
+    "diagnostics.stability": 1,
+    "config.get": 1,
+    "update.status": 1,
+    "gateway.restart.preflight": 1,
+    "update.hold": 1,
+    "gateway.suspend.prepare": 1
+  },
+  "cleanup": {
+    "status": "complete",
+    "gatewayProcessStopped": true,
+    "disposableRootRemoved": true
+  },
+  "skips": [],
+  "success": true
+}
